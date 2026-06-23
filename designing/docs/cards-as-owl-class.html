@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Board as a Projected Domain — Card as owl:Class</title>
+<style>
+  :root{ --ink:#1a2230; --muted:#5b6678; --line:#d3dae3; --accent:#1f6feb; --accent-bg:#eaf2ff; --warn:#b06a00; --warn-bg:#fff4e2; --ok:#1a7f4b; --ok-bg:#e7f6ee; }
+  *{box-sizing:border-box}
+  body{font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Georgia,serif;color:var(--ink);margin:0 auto;max-width:780px;padding:1in 0.9in 1.3in;background:#fff}
+  h1{font-size:31px;line-height:1.12;margin:0 0 6px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  .sub{color:var(--muted);font-size:16px;margin:0 0 28px;border-bottom:1px solid var(--line);padding-bottom:18px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  h2{font-size:21px;margin:38px 0 10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  h3{font-size:16px;margin:22px 0 6px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#2a3344}
+  p{margin:12px 0}
+  .lede{font-size:19px;color:#2a3344;line-height:1.55}
+  strong{color:#10243f}
+  ul{margin:10px 0;padding-left:24px} li{margin:7px 0}
+  code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f4f6f9;padding:1px 5px;border-radius:4px;color:#33404f}
+  pre{background:#f6f8fa;border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#243043}
+  .box{border:1px solid var(--line);border-radius:8px;padding:14px 18px;margin:18px 0;font-size:16px}
+  .go{background:var(--ok-bg);border-color:var(--ok)} .go b{color:var(--ok)}
+  .warn{background:var(--warn-bg);border-color:var(--warn)} .warn b{color:var(--warn)}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:15px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f4f6f9;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  .note{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+
+<h1>The Board as a Projected Domain</h1>
+<p class="sub">Design spike (#3575) — model <code>Card</code> as an owl:Class and project the cards API from the model, the same move <code>generate-dal</code> (#3567) just proved. Scopes the exercise; does not build it. · Wren · 2026-06-23</p>
+
+<p class="lede">The team's board is the one piece of core infrastructure still built the old way: <strong>flat Vikunja string-labels</strong>, hand-managed, untyped, unvalidated. Everything else is moving to <em>generate-from-model</em>. This doc asks whether the board should too — and the answer, now that the generator can emit both read and governed-write surfaces, is <strong>yes, eventually</strong>: it becomes one more projected domain.</p>
+
+<h2>1 · The problem: the board is config-in-strings</h2>
+<p>A card today is a Vikunja task carrying a bag of string labels across nine axes — <code>owner:</code>, <code>priority:</code>, <code>status</code> (the bucket), <code>type:</code>, <code>origin:</code>, <code>domain:</code>, <code>chunk:</code>, <code>sequence:</code>, <code>subproduct:</code>. There is no schema. The axes are a hardcoded map in <code>cards/src/config.ts</code>; a value is valid because a human remembered to add it.</p>
+<p>This is not academic. <strong>#3432 — landed today — was exactly this failure</strong>: the <code>chunk</code> axis silently dropped any value not in the static label map, so cards filed with a real priority chunk landed untagged and invisible in the priorities readout. The bug was only possible because chunk is unmodeled string config rather than a typed relationship to a real <code>Chunk</code> node. The class of bug is structural, not a one-off.</p>
+<p>The symptoms of config-in-strings:</p>
+<ul>
+  <li><strong>No validation.</strong> Nothing refuses an off-list value at the source — it just silently doesn't stick (#3432) or lands as a typo that fragments a chunk.</li>
+  <li><strong>No relationships.</strong> A chunk, a sequence, a domain are <em>strings</em>, not nodes — so you can't ask "what chunks does this product own?" or "which cards block this one?" without scraping labels.</li>
+  <li><strong>The readout is a label-scrape.</strong> <code>chorus_priorities_readout</code> is TAGGED-ONLY because tags are the only structure there is; an untagged card is simply invisible.</li>
+  <li><strong>Drift by construction.</strong> The axes live in code; changing them is a code edit + deploy, exactly the config-in-code anti-pattern the <code>properties</code> domain exists to retire.</li>
+</ul>
+
+<h2>2 · The model: Card as an owl:Class</h2>
+<p>Model the board the way every other domain is modeled — a class with typed datatype properties, edge relationships to first-class nodes, and a SHACL shape that is the validation floor.</p>
+<pre>chorus:Card  a owl:Class ;
+  # datatype properties (the scalars)
+  title        xsd:string     # sh:minCount 1  (the floor)
+  status       chorus:Lane    # enum: Next | WIP | Blocked | Done | Won't Do | …
+  priority     chorus:Prio    # enum: P1 | P2 | P3
+  cardType     chorus:Kind    # enum: new | enhance | fix | chore | swat
+  origin       chorus:Origin  # enum: reflective | reactive
+  experience   xsd:string     # the Experience floor (gate-product reads it)
+  acceptance   xsd:string     # the AC floor
+
+  # edge properties (relationships to REAL nodes, not strings)
+  ownedBy      → chorus:Role        # wren | silas | kade | jeff
+  inChunk      → chorus:Chunk       # coherent-model, loom-authoring, …  (a NODE)
+  inSequence   → chorus:Subproduct  # athena | loom | werk | borg | …
+  inDomain     → chorus:Domain      # the existing Domain class
+  blockedBy    → chorus:Card        # dependency edges → a real DAG
+  partOf       → chorus:Card        # parent/child (epics, #2561-style splits)</pre>
+<p>The decisive shift is the edge properties. <strong>A chunk stops being a string and becomes a <code>chorus:Chunk</code> node</strong> — so #3432 cannot recur (you can't "silently drop" an edge to a node the way you drop an unmatched string), the priorities readout becomes a <em>query over typed instances</em> rather than a label-scrape, and "what does this product own / what blocks this" become graph traversals. The completeness floor (title, Experience, AC) becomes <code>sh:minCount</code> on the shape — the gate-product floor enforced at the model, not in bouncer prose.</p>
+<p class="note">This is the same containment grammar the repo already uses (ADR-041, #3488): Card relates to Chunk / Subproduct / Domain the way Service relates to Domain relates to Product. The board is not a special case — it's another region of the one graph.</p>
+
+<h2>3 · What owl-api projects vs what stays hand-written</h2>
+<p>The discipline from the platform doc: <strong>build the integration, rent the orchestration</strong>. Applied here, and now concrete because <code>generate()→RouteTable→serve</code> already projects <em>any</em> class to a live API, and <code>generate-dal</code> (#3567) projects a governed write-edge:</p>
+<table>
+  <tr><th>Concern</th><th>Source</th><th>How</th></tr>
+  <tr><td><b>Cards read API</b> — GET /cards, /cards/:id, /cards?chunk=X, the priorities readout as a query</td><td><b>Projected</b></td><td>owl-api <code>serve</code> already does this for every shaped class. Card becomes one more served class — near-zero new code.</td></tr>
+  <tr><td><b>Validation</b> — refuse off-enum status/priority, enforce the title+Experience+AC floor</td><td><b>Projected</b></td><td>The SHACL shape is the validator; the generator reads it (the same <code>mandatory</code>/secured projection used today).</td></tr>
+  <tr><td><b>Governed writes</b> — create/move/tag a card with auth + scope + shape-validate</td><td><b>Projected</b></td><td>The <code>generate-dal</code> write-edge landed today. The board's mutations become a governed DAL like any other writer.</td></tr>
+  <tr><td><b>Orchestration</b> — lane transitions, WIP limits, the bouncer, gate sequencing</td><td><b>Hand-written</b></td><td>This is <em>logic</em>, not schema — it stays code (the verb layer), reading the typed model rather than scraping labels.</td></tr>
+  <tr><td><b>The Kanban UI</b> (Vikunja today)</td><td><b>Rented / retired</b></td><td>Once the model is the source of truth, Vikunja is a <em>view</em> — kept as a board UI, or retired for a generated one. Not the system of record.</td></tr>
+</table>
+<p>So the board splits cleanly: <strong>schema + read + validated-write = projected; transition logic = hand-written; UI = rented.</strong> The same three-way cut the platform makes everywhere.</p>
+
+<h2>4 · Migration cost vs the flat-Vikunja status quo</h2>
+<p>This is a strangler-fig, identical in shape to the domain build process (Shape → Generate → Land → Migrate → Retire), not a big-bang rewrite:</p>
+<ul>
+  <li><strong>Shape</strong> — author <code>chorus:Card</code> + <code>Chunk</code>/<code>Subproduct</code> nodes + the SHACL floor. Small; the axes already exist as strings to lift.</li>
+  <li><strong>Generate</strong> — <code>owl-api serve</code> picks up Card as another class. Near-free given today's generator.</li>
+  <li><strong>Migrate data</strong> — the real cost: convert ~live Vikunja tasks (labels → typed instances + edges). One-time backfill; the label values become node references. This is the expensive leg.</li>
+  <li><strong>Repoint</strong> — the <code>cards</code> CLI + the <code>chorus_cards_*</code> MCP tools read/write the generated API instead of Vikunja directly. Bounded — they're already one chokepoint each (the #3566 pattern).</li>
+  <li><strong>Retire</strong> — Vikunja drops to a view or is removed; <code>config.ts</code>'s static label maps are deleted (the #3432 source).</li>
+</ul>
+<p class="note">Cost is dominated by the data migration + repointing the CLI/MCP, not by the generation — exactly the asymmetry the #3567 spike found for the write-lane (the emit is cheap; moving the consumers is the work).</p>
+
+<div class="box warn">
+<p><b>The honest cost:</b> the board is load-bearing and used by every role every minute. A migration that corrupts or loses card state is a far worse failure than the #3432-class bug it cures. So this is gated on a reversible, dual-write migration (model + Vikunja in parallel until proven), and it must not jump ahead of <strong>#2159</strong> — the board <em>hierarchy</em> model (value-stream → domain → sub-product → work-unit) — which decides the very relationships <code>Card</code> would point at. Modeling Card before #2159 settles the containment shape would model it against a moving target.</p>
+</div>
+
+<h2>5 · Recommendation — go/no-go</h2>
+<div class="box go">
+<p><b>GO — but sequenced, not now.</b> The capability question is <em>answered</em>: owl-api can project the cards read API (it serves any shaped class today) and the governed write (generate-dal landed today). The board <em>can</em> become a projected domain. This is the natural endpoint of the generate-from-model thesis applied to our own coordination substrate.</p>
+</div>
+<p><strong>The sequencing:</strong></p>
+<ul>
+  <li><strong>First, #2159</strong> (Chorus-native board — the value-stream → domain → sub-product → work-unit hierarchy). That card already owns the relationship model; <code>Card-as-owl:Class</code> is its schema layer. <em>Fold this spike's model into #2159</em> rather than running a competing board-modeling effort.</li>
+  <li><strong>Then</strong>, once the GOVERN write-lane (#3573) matures the generated-DAL pattern on a real consumer, the board's writes ride the same rails — no bespoke board-write code.</li>
+  <li><strong>Don't</strong> build a standalone board projection now. #3432 already drained the acute pain (chunks stick at add-time); the board works. Building ahead of #2159 risks modeling against a moving containment shape.</li>
+</ul>
+<p><strong>Net:</strong> record the answer (yes, the board is projectable; here is the Card model and the three-way cut), fold the model into #2159, and let the write-lane prove out on #3573 first. No new build card off this spike.</p>
+
+<h2>Related</h2>
+<ul>
+  <li><strong>#2159</strong> — Chorus-native board (value-stream → domain → sub-product hierarchy) — <em>the home this model folds into.</em></li>
+  <li><strong>#3432</strong> — chunk dropped at add-time (landed) — the live symptom of config-in-strings this would structurally end.</li>
+  <li><strong>#3567</strong> — generate-dal spike (landed) — proves the governed-write projection the board's mutations would ride.</li>
+  <li><strong>#3573</strong> — Govern Fuseki writes — matures the generated-DAL pattern the board would reuse.</li>
+  <li>ADR-041 / #3488 — the repo-is-recursive-OWL-projection containment grammar Card slots into.</li>
+</ul>
+
+</body>
+</html>
