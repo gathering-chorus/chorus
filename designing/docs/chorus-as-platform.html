@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chorus — A System to Build Systems</title>
+<style>
+  :root{ --ink:#1a2230; --muted:#5b6678; --line:#d3dae3; --accent:#1f6feb; --accent-bg:#eaf2ff; --warn:#b06a00; --warn-bg:#fff4e2; }
+  *{box-sizing:border-box}
+  body{font:17px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Georgia,serif;color:var(--ink);
+       margin:0 auto;max-width:760px;padding:1in 0.9in 1.3in;background:#fff}
+  h1{font-size:32px;line-height:1.12;margin:0 0 6px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  .sub{color:var(--muted);font-size:16px;margin:0 0 30px;border-bottom:1px solid var(--line);padding-bottom:20px;
+       font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  h2{font-size:21px;margin:40px 0 10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+  p{margin:12px 0}
+  .lede{font-size:19px;color:#2a3344;line-height:1.55}
+  strong{color:#10243f}
+  ul{margin:10px 0;padding-left:24px} li{margin:7px 0}
+  .frontier{background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:16px 20px;margin:22px 0;font-size:16px}
+  .frontier b{color:var(--warn)}
+  .lenses{display:grid;grid-template-columns:160px 1fr;gap:10px 18px;margin:14px 0;font-size:16px}
+  .lenses dt{font-weight:700} .lenses dd{margin:0;color:#33404f}
+  h3{font-size:16px;margin:22px 0 6px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#2a3344}
+  .note{color:var(--muted);font-size:15px}
+  .appx{font-size:15px} .appx ul{margin:6px 0 14px}
+  code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:#f4f6f9;padding:1px 5px;border-radius:4px;color:#33404f}
+</style>
+</head>
+<body>
+
+<h1>Chorus — A System to Build Systems</h1>
+<p class="sub">What it is — for someone meeting it for the first time: a potential adopter, a collaborator, or anyone trying to compose a team of humans and AI agents that holds together without a person in the middle of every message.</p>
+
+<p class="lede">Chorus is a <strong>platform</strong>, in the oldest sense of the word: its product is not a feature, it is a <strong>method of building</strong>. It is a system that builds systems — and the people building inside it happen to be AI agents, working alongside one human. Everything it produces is downstream of a single bet: get the <em>way</em> you build right, and what you build follows.</p>
+
+<h2>1 · The product is the method</h2>
+<p>Most software is a set of features. Chorus is the machine that forges software — the repeatable cycle that takes an idea and carries it all the way to a working, observed, reflected-upon change. What it would hand to someone else isn't its applications; it's the <strong>forge</strong>.</p>
+<p>The proof that this is more than a slogan: <strong>the system generates large parts of itself.</strong> The same model that <em>describes</em> Chorus is the model it <em>uses</em> to generate its own interfaces, its own tests, and the scaffolding of its own actions — from one source. (The logic inside those actions is still written by hand; what's generated is the shape, the contract, the wiring.) A system that can regenerate its own structure can build anything shaped like it.</p>
+
+<h2>2 · A small grammar: nouns, verbs, events</h2>
+<p>Underneath everything is a grammar small enough to fit in a sentence: the system is made of <strong>nouns, verbs, and events.</strong></p>
+<ul>
+  <li>A <strong>noun</strong> is a thing — a domain, a product, a piece of work. It has structure and identity. (Some nouns are objects; some are processes turned into things, so they can be measured.)</li>
+  <li>A <strong>verb</strong> is an action — commit, deploy, register, run. A small, fixed set, kept small on purpose.</li>
+  <li>An <strong>event</strong> is what a verb gives off when it fires: the signal that something happened. Events are how the system sees itself.</li>
+</ul>
+<p>The decisive move is that <strong>nouns and verbs are peers — neither owns the other.</strong> This isn't the usual arrangement where a thing <em>has</em> its methods. It's two independent lists, and you compose them: a noun <em>uses</em> a verb when it needs one. "Commit" belongs to no single kind of work; anything that needs to commit, uses it. You build a verb for the first thing that needs it, and you generalize it the moment a <em>second</em> thing needs it — never before.</p>
+<p>And you compose <strong>on need</strong>, not in advance. You don't pre-build every combination of noun and verb; you wire one to the other where there is an actual demand. That single rule — <em>compose on need</em> — is what keeps the system from sprawling into the thing it's trying to replace.</p>
+<p>If that sounds like ecology, it should. A noun is an <strong>element</strong>; a verb is a <strong>function</strong> it performs. The two oldest principles of permaculture design turn out to be the two directions of this same grid: <em>each element performs many functions</em> (a noun does many verbs), and <em>each function is supported by many elements</em> (a verb serves many nouns). Redundancy by design — and that is where the resilience comes from.</p>
+
+<h2>3 · How it builds — a cycle, not a pipeline</h2>
+<p>The method is a cycle, run over and over: <strong>shape an idea → direct it → design it → build it → prove it → reflect — and shape the next thing.</strong> Each step moves a piece of work from one state to the next by running it through a sequence of verbs. A "flow" is just a noun routed through verbs — the same shape as a factory line or an integration pipeline.</p>
+<p>The cycle isn't rebuilt per project. It is generated from the model and applies to <em>any</em> stream of work — building a change, forging a new piece of the model, running the team's daily rhythm, reflecting on the system's own health, bringing outside data in. Same cycle, different content.</p>
+
+<h2>4 · Build the connections; rent the conductor</h2>
+<p>Running a flow has two layers, and Chorus treats them very differently:</p>
+<ul>
+  <li><strong>Integration</strong> — the wiring that lets a verb act on a noun and pass the result to the next step. This Chorus <em>builds</em>: one uniform interface that every action plugs into.</li>
+  <li><strong>Orchestration</strong> — the conductor that decides which verbs run, in what order, with what checks. This Chorus <em>rents</em>. Because every verb is uniform on the same interface, a conductor can drive them without bespoke glue — today an off-the-shelf build runner for code and a scheduler for time-based rhythms; a data-flow engine for ingestion is the same pattern, not yet wired.</li>
+</ul>
+<p>The discipline: don't build an orchestration engine. Build the connective tissue once, keep it uniform, and choose the right conductor per problem. The model makes that choice legible — every stream of work <em>records</em> how it's triggered (by an event, a clock, a continuous flow, incoming data), which names the tool to reach for. (Today that's a human reading the field, not yet an automatic selection.)</p>
+
+<h2>5 · One standard, many owners</h2>
+<p>The data isn't designed by one architect. Each domain's owner defines that domain's own data — the person closest to it knows it best. What's held in common is the <strong>standard</strong> every definition must meet, not the definitions themselves. It's a hard-won lesson from large-scale enterprise integration: a single architect designing everyone's data becomes a bottleneck that loses the very expertise it was meant to gather. The anti-pattern, avoided on purpose: <em>one owner designing all the data, everywhere.</em></p>
+
+<h2>6 · How the team is composed and organized</h2>
+<p>This is the part most worth taking, because it's the transferable one: <strong>how do you compose and organize a team of AI agents — and one human — so it coheres without the human becoming the bottleneck?</strong></p>
+<p><strong>Composed.</strong> A few AI agents, each a distinct and persistent role with its own character, plus one human as the owner. A role is defined not by a job title but by what it is <em>accountable for</em> — the nouns it owns (its domains) and the verbs it performs (its actions). It's the same peer grid from the grammar, now at the scale of people: roles own elements, and the functions over them.</p>
+<p>And each role is two things at once: it runs its own streams of work, <em>and</em> it helps build the shared platform every stream uses — security, observability, the model, the tooling. Stream-aligned and platform, in one small team.</p>
+<p><strong>Organized.</strong> Work moves through the cycle, and the roles coordinate by <em>emitting and consuming events</em> — one role's output is another's input — rather than a human carrying messages between them. Each role offers its capabilities to the others as a <em>service they can call</em>, not a queue they wait on. Each owns its own domain's data, to one shared standard. The effect is a team whose coordination lives <strong>in the system, not in a person's head</strong> — which is the only way a team of agents stays coherent when the human steps away.</p>
+
+<h2>7 · The influences, made usable</h2>
+<p>Four unrelated fields independently describe this structure — which is the strongest sign it's a real pattern, not one team's invention. But they earn their place here not as theory; as <strong>patterns you can take and apply</strong>, especially to how a team is composed. Each, with its example and its takeaway:</p>
+<dl class="lenses">
+  <dt>Permaculture<br><span style="font-weight:400;color:#5b6678;font-size:14px">each element, many functions</span></dt>
+  <dd>A role isn't single-purpose. One role builds, tests, <em>and</em> ships — the way a single chicken gives eggs, pest control, <em>and</em> fertile soil. <strong>Take:</strong> don't carve roles into single tasks; let each serve several functions, and let each function be covered by more than one role. That redundancy is what carries the team when a role is busy, or wrong.</dd>
+  <dt>Team Topologies<br><span style="font-weight:400;color:#5b6678;font-size:14px">platform as a service</span></dt>
+  <dd>Shared capabilities — observability, security, the model — are offered as <em>self-serve services</em> the other roles call, not a ticket queue they wait in. <strong>Take:</strong> organize a team for <em>flow</em> — make internal capabilities consumable on demand, so no one is blocked waiting on another's attention.</dd>
+  <dt>Cybernetics<br><span style="font-weight:400;color:#5b6678;font-size:14px">close the loop</span></dt>
+  <dd>The team runs on a shared event stream: one role's output becomes another's input. A feedback loop, not a chain of hand-offs through a manager. <strong>Take:</strong> wire outputs to inputs directly and let the <em>system</em> route the work — sense, respond, repeat — instead of a person dispatching every step.</dd>
+  <dt>Rhizome<br><span style="font-weight:400;color:#5b6678;font-size:14px">no center</span></dt>
+  <dd>Any role connects to any other directly; none is the router — and, the real point, neither is the human. <strong>Take:</strong> decentralize coordination. The fastest way to slow a team is to make one member — or the owner — the bus every message must pass through.</dd>
+</dl>
+<p>The engineering practice running underneath all four is <strong>Extreme Programming</strong> — small releases, test-first, integrating continuously, pairing. The lenses say <em>why this shape</em>; XP is the disciplined <em>how to build</em> inside it.</p>
+<p>Four languages, one law — but the usable version is plainer than that: <strong>compose roles that each do many things; offer what you build as a service; close the loop so the system routes the work; and keep the human off the critical path of coordination.</strong></p>
+
+<h2>8 · The honest frontier</h2>
+<div class="frontier">
+<p><b>The hard, unsolved part — worth naming plainly — is self-regulation.</b> All four lenses describe a system that holds its own health: a garden that tends itself, a regulator that corrects itself, a network that heals its own connections. Chorus has the <em>structure</em> of that system, but not yet the reflex. Today, when something drifts, a human still tends to notice first. Closing that gap — making the system sense and correct its own operational health before a person has to — is the frontier the entire design is pointed at. Saying so is what keeps the rest from being a brochure.</p>
+</div>
+
+<h2>9 · What you'd adopt</h2>
+<p>If you took Chorus, you wouldn't be taking an app. You'd be taking the <strong>method</strong> — the system-to-build-systems — and configuring it to your own streams of work. The deliverable isn't software; it is a repeatable, instrumented, legible way to forge software, with a small team — human and agent — working the cycle.</p>
+
+<h2 id="appendix">Appendix — Prior art</h2>
+<p class="note">This artifact is the synthesis-and-apex of months of work, not a fresh start. The lineage, grouped:</p>
+<div class="appx">
+
+<h3>What Chorus is — system / cybernetics / harness</h3>
+<ul>
+  <li><code>chorus-reference-model.html</code> — the reference model</li>
+  <li><code>why-and-how-of-chorus.html</code> · <code>system-model-thinking.html</code></li>
+  <li><code>cybernetic-systems-chorus.html</code> · <code>chorus-nervous-system.html</code> · <code>HOMEOSTASIS_RESEARCH.html</code></li>
+  <li><code>harness-engineering-chorus.html</code> · <code>FORCING_PATTERN_HIP.html</code> · <code>HIP_002_GENERATED_SEAM.html</code></li>
+  <li><code>chorus-protocol-stack-positioning.html</code> · <code>protocol-stack.html</code></li>
+</ul>
+
+<h3>How it builds — the value-stream framework</h3>
+<ul>
+  <li><code>value-stream-design.html</code> · <code>value-stream-template.html</code> · <code>chorus-value-stream-deep-dive.html</code></li>
+  <li><code>athena-value-stream-design.html</code> · <code>borg-value-stream-design.html</code> · <code>loom-value-stream-design.html</code> · <code>clearing-value-stream-design.html</code> · <code>convergence-value-stream-design.html</code></li>
+</ul>
+
+<h3>The model — nouns / generation / projection</h3>
+<ul>
+  <li><code>self-model-owl-framework.html</code> — the model-first framework</li>
+  <li><code>owl-spec-as-source-flow.html</code> · <code>owl-to-v2-mapping.html</code></li>
+  <li><code>athena-borg-conceptual-model.html</code> · <code>chorus-product-domain-hierarchy.html</code> · <code>chorus-domain-decomposition.html</code></li>
+  <li><code>chorus-model-data.html</code> · <code>domain-model-asis-tobe.html</code></li>
+</ul>
+
+<h3>Philosophical foundations — permaculture / XP / cybernetics</h3>
+<ul>
+  <li><code>platform/api/src/sparql/seeds/permaculture-principles.rq</code> — the 12 Holmgren parents + ~13 cross-cutting children (skos:broader) + three readings each (the principle system's source of truth; the role-specific principles live in a separate seed)</li>
+  <li><code>book/principles-reconstructed.html</code> — human-readable principle hierarchy</li>
+  <li><code>cybernetic-systems-chorus.html</code> · <code>HOMEOSTASIS_RESEARCH.html</code> — the formal self-regulation floor (Wiener / Ashby / Beer / Meadows)</li>
+  <li>XP in the substrate: <code>skills/pair/SKILL.md</code> (strong-style) · <code>platform/services/chorus-hooks/src/hooks/tdd_gate.rs</code> · <code>platform/services/werk-test/</code> · <code>platform/scripts/clippy-ratchet.py</code> · <code>.github/workflows/quality.yml</code> · <code>skills/gate-*/</code></li>
+  <li>Lived permaculture: <code>memory/user_jeff_garden_is_lived_permaculture.md</code></li>
+</ul>
+
+<h3>Strategy / positioning</h3>
+<ul>
+  <li><code>chorus-wardley.html</code> · <code>WARDLEY_MAP_ICD.html</code></li>
+  <li><code>chorus-consulting.html</code> · <code>chorus-distribution-assessment.html</code></li>
+</ul>
+
+<p class="note" style="margin-top:14px">Lineage beyond docs: the assemblage model (2026-04-11), Jeff's Staples canonical-model / ESB / Splunk integration-architecture background, and ADR-032 (verb contract), ADR-041 (recursive repo), ADR-045 (a domain is an owl:Class), ADR-046 (the emit contract).</p>
+</div>
+
+</body>
+</html>
