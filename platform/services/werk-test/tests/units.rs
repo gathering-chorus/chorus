@@ -2,8 +2,9 @@
 //! Each test maps to an AC: affected-unit detection on the diff, the bootstrap
 //! escape, and the advisory→blocking gate decision.
 use werk_test::{
-    affected_units, check_plan, gate_outcome, is_self_modifying, spine_args, CheckKind,
-    GateOutcome, PlannedCheck, TestUnit,
+    affected_units, cargo_skip_args, check_plan, expired_cases, gate_outcome, is_self_modifying,
+    parse_quarantine_rows, quarantine_report, spine_args, CheckKind, GateOutcome, PlannedCheck,
+    Quarantined, TestUnit,
 };
 
 fn plan_kinds(units: &[TestUnit]) -> Vec<CheckKind> {
@@ -176,6 +177,102 @@ fn plan_clippy_and_doc_are_workspace_level_no_unit() {
     let ws: Vec<&PlannedCheck> = plan.iter().filter(|c| c.unit.is_none()).collect();
     assert_eq!(ws.len(), 2);
     assert!(ws.iter().all(|c| matches!(c.kind, CheckKind::ClippyRatchet | CheckKind::DocCoherence)));
+}
+
+// --- quarantine: skip flaky cases at the gate, report them visibly (#2530 absorbed) ---
+
+#[test]
+fn cargo_skip_args_empty_when_nothing_quarantined() {
+    // no quarantine → the normal `cargo test` invocation is unchanged (no trailing `--`).
+    assert!(cargo_skip_args(&[]).is_empty());
+}
+
+#[test]
+fn cargo_skip_args_builds_one_skip_per_quarantined_case() {
+    let got = cargo_skip_args(&["acquire_lock_reclaims_stale", "flaky_net_timeout"]);
+    assert_eq!(
+        got,
+        s(&["--", "--skip", "acquire_lock_reclaims_stale", "--skip", "flaky_net_timeout"])
+    );
+}
+
+#[test]
+fn quarantine_report_none_is_explicit_not_silent() {
+    // a skip must be VISIBLE even when empty — never a silent absence (#3443 bar).
+    assert_eq!(quarantine_report(&[]), "quarantined: none");
+}
+
+#[test]
+fn quarantine_report_lists_case_reason_and_expiry() {
+    let q = vec![
+        Quarantined {
+            case: "flaky_net_timeout".into(),
+            reason: "intermittent net".into(),
+            until: "2026-07-01".into(),
+        },
+    ];
+    let line = quarantine_report(&q);
+    assert!(line.contains("flaky_net_timeout"), "names the case");
+    assert!(line.contains("intermittent net"), "names the reason");
+    assert!(line.contains("2026-07-01"), "names the expiry");
+    assert!(line.contains('1'), "counts how many were skipped");
+}
+
+// --- parse_quarantine_rows: the curl|jq TSV → Quarantined (read-wiring, testable) ---
+
+#[test]
+fn parse_quarantine_rows_empty_input_is_empty() {
+    assert!(parse_quarantine_rows("").is_empty());
+    assert!(parse_quarantine_rows("\n  \n").is_empty());
+}
+
+#[test]
+fn parse_quarantine_rows_reads_case_reason_until() {
+    let tsv = "flaky_net_timeout\tintermittent net\t2026-07-01\n";
+    assert_eq!(
+        parse_quarantine_rows(tsv),
+        vec![Quarantined {
+            case: "flaky_net_timeout".into(),
+            reason: "intermittent net".into(),
+            until: "2026-07-01".into(),
+        }]
+    );
+}
+
+#[test]
+fn parse_quarantine_rows_skips_lines_with_no_case() {
+    // a row whose testName column is blank can't be skipped by name — drop it.
+    let tsv = "\tsome reason\t2026-07-01\nreal_case\twhy\t2026-08-01\n";
+    let got = parse_quarantine_rows(tsv);
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].case, "real_case");
+}
+
+// --- expired_cases: quarantineUntil < today → auto-file-card candidates (#2530) ---
+
+#[test]
+fn expired_cases_flags_past_expiry_only() {
+    let q = vec![
+        Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-01".into() }, // past
+        Quarantined { case: "b".into(), reason: "r".into(), until: "2026-12-31".into() }, // future
+    ];
+    let expired = expired_cases(&q, "2026-06-23");
+    assert_eq!(expired.len(), 1);
+    assert_eq!(expired[0].case, "a");
+}
+
+#[test]
+fn expired_cases_today_is_not_yet_expired() {
+    // until == today: the hold runs through end of day, not expired yet.
+    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "2026-06-23".into() }];
+    assert!(expired_cases(&q, "2026-06-23").is_empty());
+}
+
+#[test]
+fn expired_cases_blank_until_is_never_expired() {
+    // a malformed/blank expiry must not silently auto-file — be conservative.
+    let q = vec![Quarantined { case: "a".into(), reason: "r".into(), until: "".into() }];
+    assert!(expired_cases(&q, "2026-06-23").is_empty());
 }
 
 // --- spine_args: typed failure emission shape (#3162 inherited-trace pattern) ---

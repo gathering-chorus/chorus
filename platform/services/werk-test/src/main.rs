@@ -10,7 +10,8 @@
 use std::path::Path;
 use std::process::Command;
 use werk_test::{
-    affected_units, check_plan, gate_outcome, is_self_modifying, spine_args, CheckKind, TestUnit,
+    affected_units, cargo_skip_args, check_plan, gate_outcome, is_self_modifying,
+    parse_quarantine_rows, quarantine_report, spine_args, CheckKind, Quarantined, TestUnit,
     TS_PACKAGES,
 };
 
@@ -52,6 +53,12 @@ fn run(args: &[String]) -> Result<i32, String> {
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
+    // Quarantined cases (flaky holds) the gate must SKIP — fetched from the tests
+    // domain (#2530). A skip is always VISIBLE, never silent (#3443).
+    let quarantined = quarantined_cases();
+    let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
+    println!("{}", quarantine_report(&quarantined));
+
     println!(
         "-- werk-test #{} ({}) — {} unit(s), {} check(s){} --",
         card,
@@ -65,7 +72,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let ok = match (&check.kind, &check.unit) {
-            (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => run_cargo(&werk, c),
+            (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => run_cargo(&werk, c, &q_names),
             (CheckKind::Tsc, Some(TestUnit::TsPackage(p))) => run_tsc(&werk, p),
             (CheckKind::Jest, Some(TestUnit::TsPackage(p))) => run_jest(&werk, p),
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
@@ -121,13 +128,35 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 }
 
 /// `cargo test --lib --bins` in the crate dir, iff it has a Cargo.toml (a path
-/// match without a manifest is skipped = pass; nothing to run).
-fn run_cargo(werk: &str, name: &str) -> bool {
+/// match without a manifest is skipped = pass; nothing to run). Quarantined case
+/// names are appended as `-- --skip <case>` (#2530) so a flaky hold can't block the
+/// gate; an empty quarantine set leaves the invocation byte-identical.
+fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> bool {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return true;
     }
-    status_ok(Command::new("cargo").args(["test", "--lib", "--bins"]).current_dir(&dir))
+    let mut args: Vec<String> = vec!["test".into(), "--lib".into(), "--bins".into()];
+    args.extend(cargo_skip_args(quarantined));
+    status_ok(Command::new("cargo").args(&args).current_dir(&dir))
+}
+
+/// Fetch the quarantined test cases from the tests domain (owl-api `/tests`), via a
+/// curl|jq subprocess so the verb stays zero-dep/std-only (ADR-032 §6, same pattern
+/// as `emit_spine`). Best-effort: any failure (endpoint down, jq absent) yields an
+/// EMPTY set — quarantine never blocks the gate from running, it only relaxes it.
+/// Each row is `testName\treason\tuntil`. (Server-side `?quarantined=true` filtering
+/// is a follow-on; today we pull and filter client-side.)
+fn quarantined_cases() -> Vec<Quarantined> {
+    let endpoint = std::env::var("OWL_API_TESTS")
+        .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
+    let jq = r#".data[] | select(.quarantined==true) | [.testName,.quarantineReason,.quarantineUntil] | @tsv"#;
+    let pipe = format!("curl -s '{}' | jq -r '{}'", endpoint, jq);
+    let out = match Command::new("bash").args(["-c", &pipe]).output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return Vec::new(),
+    };
+    parse_quarantine_rows(&String::from_utf8_lossy(&out))
 }
 
 /// `tsc --noEmit` per TS package. Shares the dep-availability guard with jest:
