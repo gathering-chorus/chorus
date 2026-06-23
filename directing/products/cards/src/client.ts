@@ -227,7 +227,6 @@ export class BoardClient {
       ['priority', 'priority', (s) => s.toUpperCase()],
       ['domain', 'domain', (s) => s.toLowerCase()],
       ['product', 'product', (s) => s.toLowerCase()],
-      ['chunk', 'chunk', (s) => s.toLowerCase()],
       ['sequence', 'sequence', (s) => s.toLowerCase()],
       ['type', 'type', (s) => s.toLowerCase()],
     ];
@@ -236,6 +235,19 @@ export class BoardClient {
       if (!value) continue;
       const labelId = LABELS[category][caseFn(value)];
       if (labelId) await this.addLabel(taskId, labelId);
+    }
+    // #3432: chunk is the dynamic PRIORITY axis (#3267) — not in the static
+    // LABELS.chunk map. Routing it through the static lookup above silently
+    // dropped every priority chunk (coherent-model, loom-authoring, …) because
+    // LABELS.chunk[value] was undefined → cards landed untagged, invisible in
+    // chorus_priorities_readout (TAGGED-ONLY) until a manual cards_set. Apply
+    // it by NAME (find-or-create), the same path cards_set uses, so any chunk
+    // sticks at add-time. Same code path = fixes /card AND chorus_cards_add.
+    if (opts.chunk) {
+      const name = `chunk:${opts.chunk.toLowerCase()}`;
+      const existing = (await this.listLabels()).find((l) => l.title === name);
+      const label = existing ?? await this.createLabel(name);
+      await this.addLabel(taskId, label.id);
     }
   }
 
