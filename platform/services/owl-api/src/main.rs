@@ -3,7 +3,7 @@
 //!   owl-api generate [--class Domain]            → prints routes.json (the artifact)
 //!   owl-api serve [--class Domain] [--port 3360] → generates, then serves
 
-use owl_api::{all_vocab_classes, dashboards_json, generate, generate_product_index, generate_verb, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
+use owl_api::{all_vocab_classes, dal_skeleton_ts, dashboards_json, generate, generate_product_index, generate_verb, mcp_binding, openapi_json, page_html, routes_json, serve, tests_manifest};
 use std::process::ExitCode;
 
 fn arg(args: &[String], flag: &str, default: &str) -> String {
@@ -90,6 +90,22 @@ fn main() -> ExitCode {
                 }
             }
         }
+        // #3567 SPIKE — the `dal` make-target: emit a STANDALONE per-product TS
+        // write-edge for a class, projected from its shape (generate()→RouteTable
+        // reused; only the emitter is new). Scope is the per-product generate-time
+        // param; for the PoC it derives from the class's instances graph (where the
+        // writes land). Same read-shape → emit spine as the verb/mcp targets, Rust→TS.
+        Some("generate-dal") => match generate(&class) {
+            Ok(t) => {
+                let scope = vec![t.instances_graph.clone()];
+                print!("{}", dal_skeleton_ts(&t, &scope));
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("owl-api: {}", e);
+                ExitCode::FAILURE
+            }
+        },
         // #3488 — print the resolved repo land location (chorus:repoTarget or
         // class-keyed default) so the land/drift scripts know WHERE to write +
         // diff this class's generated artifacts. The config-as-data location.
