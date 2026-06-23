@@ -197,6 +197,90 @@ pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
     plan
 }
 
+/// A test case quarantined out of the BLOCKING gate: flaky, with a tracked reason
+/// and an expiry (#2530, absorbed into #2819). Quarantine is the governed middle
+/// path between "a flaky test blocks everyone" and "someone silently comments it
+/// out and it rots": the gate SKIPS it (a quarantined case can't block a land), the
+/// nightly still RUNS it to collect flakiness signal and reports it separately, and
+/// an expiry query (`until` < today) auto-files a card so it can't be forgotten.
+///
+/// This is a value in the `validityClass` family on `chorus:Test` (the field is
+/// already on TestShape, empty today), written via the DAL authored lane with audit
+/// stamps. `case` matches the test's `testName` — the handle cargo/jest recognize.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Quarantined {
+    pub case: String,
+    pub reason: String,
+    pub until: String,
+}
+
+/// Build the cargo args that EXCLUDE quarantined cases from a `cargo test` run:
+/// `cargo test --lib --bins -- --skip <case> --skip <case>`. Empty in → empty out,
+/// with NO trailing `--`, so an un-quarantined run is byte-identical to today's
+/// invocation. cargo's libtest harness matches each `--skip` value as a substring
+/// against the test path, so the case's `testName` is the right handle.
+///
+/// Rust-only by design: jest has no clean exclude-by-name CLI, so jest enforcement
+/// is a separate mechanism (a generated skip-list the jest setup reads) — an
+/// explicit follow-on, not faked here.
+pub fn cargo_skip_args(quarantined: &[&str]) -> Vec<String> {
+    if quarantined.is_empty() {
+        return Vec::new();
+    }
+    let mut v = vec!["--".to_string()];
+    for c in quarantined {
+        v.push("--skip".to_string());
+        v.push((*c).to_string());
+    }
+    v
+}
+
+/// Parse the `curl … | jq -r '… | @tsv'` output (one `testName\treason\tuntil`
+/// row per quarantined case) into `Quarantined`. Pure, so the read-wiring is
+/// testable rather than a thin shell. A row with a blank case (no `testName`)
+/// can't be `--skip`'d by name, so it's dropped — better to run a mis-recorded
+/// hold than to skip the wrong thing.
+pub fn parse_quarantine_rows(tsv: &str) -> Vec<Quarantined> {
+    tsv.lines()
+        .filter_map(|line| {
+            let mut f = line.split('\t');
+            let case = f.next().unwrap_or("").trim();
+            if case.is_empty() {
+                return None;
+            }
+            Some(Quarantined {
+                case: case.to_string(),
+                reason: f.next().unwrap_or("").to_string(),
+                until: f.next().unwrap_or("").to_string(),
+            })
+        })
+        .collect()
+}
+
+/// The quarantines whose `until` is strictly before `today` (ISO `YYYY-MM-DD`,
+/// lexically ordered = chronologically ordered) — the auto-file-card candidates
+/// (#2530). `until == today` is NOT expired (the hold runs through end of day); a
+/// blank/malformed `until` is never expired (don't silently file on bad data).
+pub fn expired_cases<'a>(q: &'a [Quarantined], today: &str) -> Vec<&'a Quarantined> {
+    q.iter()
+        .filter(|x| !x.until.is_empty() && x.until.as_str() < today)
+        .collect()
+}
+
+/// One-line, ALWAYS-printed report of the cases the gate skipped because they're
+/// quarantined — a skip must be VISIBLE, never a silent absence (#3443 "I don't see
+/// it" bar). Empty set → an explicit `quarantined: none`, not blank.
+pub fn quarantine_report(q: &[Quarantined]) -> String {
+    if q.is_empty() {
+        return "quarantined: none".to_string();
+    }
+    let items: Vec<String> = q
+        .iter()
+        .map(|x| format!("{} ({}, until {})", x.case, x.reason, x.until))
+        .collect();
+    format!("quarantined ({} skipped): {}", q.len(), items.join("; "))
+}
+
 /// Pure arg-builder for a chorus-log spine emit (mirrors werk-build #3166). The
 /// verb emits a typed `test.failed` per failed check on the inherited trace
 /// (#3162), so a red gate is queryable, not just a pipeline exit code.

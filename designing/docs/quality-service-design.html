@@ -58,7 +58,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 
 <table>
 <tr><th>Component</th><th>Status</th><th>Source</th><th>Gap</th></tr>
-<tr><td>Test pyramid taxonomy</td><td><span class="tag-real">REAL</span></td><td>/borg/quality page + API at /api/chorus/quality/summary crawls files into layer buckets</td><td>No written spec of what belongs in each layer; file-name inference, not declarative</td></tr>
+<tr><td>Test pyramid taxonomy</td><td><span class="tag-real">REAL (declarative since #2818/#2819)</span></td><td>4,617 per-case Tests served by owl-api at <code>:3360/tests</code>, each carrying a declarative <code>pyramidLayer</code> (unit/integration/e2e/…) + <code>hermeticity</code> — not file-name inference</td><td>RESOLVED (gap #7): layer is a queryable graph field, not inferred. Backfill of legacy untagged cases is the residual</td></tr>
 <tr><td>Coverage measurement (Rust)</td><td><span class="tag-real">REAL</span></td><td>tarpaulin per-crate, configs with per-file + global floors</td><td>ops.rs seam work proved feasible (77.69%); some crates still baseline-as-floor</td></tr>
 <tr><td>Coverage measurement (TS)</td><td><span class="tag-partial">PARTIAL</span></td><td>jest per-package, per-file thresholds</td><td>Global platform/api threshold at 0%; HTTP-over-wire tests don't instrument server.ts; gameable via mock-farming</td></tr>
 <tr><td>Pre-commit gate</td><td><span class="tag-real">REAL</span></td><td>.git/hooks/pre-commit runs tsc + jest + secret scan</td><td>Doesn't run coverage check; no per-layer enforcement</td></tr>
@@ -66,7 +66,7 @@ Every change ships with confidence proportional to its blast radius. When Qualit
 <tr><td>5 demo gates + cold-eyes review</td><td><span class="tag-real">REAL (#3284/#3193)</span></td><td>Explore-type subagents in demo prework, recorded via <code>werk-demo gate</code> / <code>werk-review verdict</code>; werk-demo REFUSES to present un-gated</td><td>Gate findings quality varies; the friction board tracks real-catch rate (a gate-quality subagent caught a live XSS-class bug 2026-06-10 — the existence proof)</td></tr>
 <tr><td>Stop-the-line</td><td><span class="tag-real">REAL (revived #3334)</span></td><td>stop_on_error hook; revival makes werk-verb typed refusals non-benign (a refusal stops the line, not just compiler errors)</td><td>Reactive; doesn't catch weak tests, only broken ones</td></tr>
 <tr><td>Test-value policy</td><td><span class="tag-real">REAL (written 2026-06-10, #3324)</span></td><td>The audit taxonomy below + <code>proving/verb-test-matrix.md</code></td><td>Applied to the verb crates (119 tests classified, 20 deleted); not yet applied portfolio-wide</td></tr>
-<tr><td>Per-domain per-layer floors</td><td><span class="tag-none">MISSING</span></td><td>&mdash;</td><td>Single global coverage % is blunt; pyramid shape not enforced per domain</td></tr>
+<tr><td>Per-domain per-layer floors</td><td><span class="tag-partial">PARTIAL (foundation since #2819)</span></td><td>The generated tests-domain API joins <code>Test covers&rarr;Domain</code> + <code>pyramidLayer</code>, so "the tests covering domain X, by layer" is now a query — the data foundation a per-domain floor needs</td><td>PARTIAL (gap #3): the query foundation exists; the enforcing gate (a floor keyed on the per-domain/per-layer counts) is not yet wired</td></tr>
 <tr><td>Bug-escape measurement</td><td><span class="tag-none">MISSING</span></td><td>&mdash;</td><td>No feedback loop from production bugs back to test-suite weakness</td></tr>
 </table>
 

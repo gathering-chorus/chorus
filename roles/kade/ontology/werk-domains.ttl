@@ -334,6 +334,25 @@ chorus:testConcern a owl:DatatypeProperty ;
     rdfs:domain chorus:Test ; rdfs:range xsd:string ;
     rdfs:comment "api | ui | perf | security — the CONCERN axis (what-aspect-is-tested), ORTHOGONAL to pyramidLayer (where-in-the-pyramid). Destination for @test-type's category values as @test-type retires (#3540): unit/integration/e2e/bdd→pyramidLayer, api/ui/perf/security→testConcern. Optional — a test has exactly one pyramidLayer but zero-or-one concern (an e2e security test = pyramidLayer:e2e + testConcern:security). #3540 selection reads pyramidLayer ONLY; testConcern is for future 'run all security tests' queries. (Kade #2818 taxonomy ruling.)" .
 
+# --- quarantine (#2530, absorbed into #2819) --------------------------------
+# DISTINCT from validityClass (#3324): validityClass asks "is this test
+# meaningful?" (permanent value taxonomy); quarantine asks "is this flaky test
+# TEMPORARILY non-gating?" (a tracked, expiring operational hold). The nearest
+# validityClass value, "integration-not-gated", is permanent-by-nature; a
+# quarantine is a dated decision that auto-files a card when it expires. Hence
+# its own triple, not a validityClass value. Written via the DAL authored lane
+# with audit stamps (dcterms:created/creator). werk-test SKIPS quarantined cases
+# at the gate (can't block a land); nightly RUNS them, reports separately.
+chorus:quarantined a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:boolean ;
+    rdfs:comment "true → this test is a tracked flaky hold: the blocking gate skips it, the nightly runs-but-does-not-gate on it. Requires quarantineReason + quarantineUntil when true (SHACL). Default absent = not quarantined." .
+chorus:quarantineReason a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:string ;
+    rdfs:comment "Why this test is quarantined (e.g. 'intermittent network timeout'). Required when quarantined=true — no silent skips." .
+chorus:quarantineUntil a owl:DatatypeProperty ;
+    rdfs:domain chorus:Test ; rdfs:range xsd:date ;
+    rdfs:comment "The expiry date. When quarantineUntil < today, the expiry query auto-files a card with the owner (shared primitive with #2527's nightly drift lane). Required when quarantined=true." .
+
 # =============================================================================
 # INSTANCE ASSERTIONS — extending EXISTING nodes (no new IRI mints pre-DAL;
 # legacy -domain IRIs are write-frozen per ADR-040 but extant — extended in
@@ -368,11 +387,24 @@ chorus:code-domain
     chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" ;
     chorus:hasRecordClass chorus:SourceFile , chorus:CardDiff , chorus:QualityFinding .
 
-chorus:tests-domain
+# #3554/#2819 — the tests domain (V2 IRI chorus:tests), COMPLETED + deduped from the legacy
+# chorus:tests-domain node. definesVocabulary mounts all three record kinds (Test/TestResult/
+# TestSuiteRun) into owl-api's served set. Placement uses existing nodes (Silas to confirm the
+# loom placement). hasDesignDoc carried as a string from the legacy node — Document-typing is
+# the residual. The legacy chorus:tests-domain triples are removed in the same pass.
+chorus:tests a chorus:Domain ;
+    rdfs:label "tests" ;
+    rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
+    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
-    chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
-    chorus:gaps "no per-test identity in the graph — Test/TestResult are ingestion contracts (#2818/#2819); werk-test (#3190) blocked on this" ;
-    chorus:hasRecordClass chorus:Test , chorus:TestSuiteRun , chorus:TestResult .
+    chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
+    chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
+
+chorus:chorusProduct chorus:hasDomain chorus:tests .
 
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;
@@ -461,6 +493,11 @@ chorus:SourceFileShape a sh:NodeShape ;
 
 chorus:TestShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
+    # #3570 — Test's instance HOME graph. owl-api resolve_instances_graph reads this declared
+    # override (lib.rs:803) → serves /tests from urn:chorus:domains:tests, not the vague
+    # urn:chorus:instances bucket. The 4617 Test instances are moved there to match. ("tests not
+    # instances" — Jeff, 2026-06-22; the urn becomes meaningful, owl-api dictates it.)
+    chorus:instancesGraph "urn:chorus:domains:tests" ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
 
@@ -479,14 +516,31 @@ chorus:TestResultShape a sh:NodeShape ;
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
     sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:SourceFile ] ;
-    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:Domain ] ;          # #2819 — covers a real Domain (was SubDomain/V1); THIS is the cross-domain join target
     sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ; sh:in ( "unit" "integration" "e2e" "contract" "fitness" "smoke" "bdd" ) ] ;
     # validityClass + hermeticity: enum-if-present (NO minCount — ingestion mints identity
     # before the tagging pass classifies; a freshly-crawled Test is legitimately untagged).
     sh:property [ sh:path chorus:validityClass ; sh:in ( "valid" "asserts-retired-behavior" "passes-by-definition" "integration-not-gated" ) ] ;
     sh:property [ sh:path chorus:hermeticity ; sh:in ( "hermetic" "needs-stack" ) ] ;
     # testConcern (#3540): the orthogonal CONCERN axis, optional (a test may have no concern).
-    sh:property [ sh:path chorus:testConcern ; sh:in ( "api" "ui" "perf" "security" ) ] .
+    sh:property [ sh:path chorus:testConcern ; sh:in ( "api" "ui" "perf" "security" ) ] ;
+    # quarantine (#2530): the three props served + carried; optional (most tests aren't held).
+    # Conditional requirement (reason+until iff quarantined) lives in QuarantineShape below.
+    sh:property [ sh:path chorus:quarantined ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path chorus:quarantineReason ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:quarantineUntil ; sh:datatype xsd:date ] .
+
+# A quarantine is never silent: if quarantined=true, BOTH a reason and an expiry
+# are required (#2530). SHACL conditional — either not-quarantined, or both set.
+chorus:QuarantineShape a sh:NodeShape ;
+    sh:targetClass chorus:Test ;
+    sh:or (
+        [ sh:not [ sh:path chorus:quarantined ; sh:hasValue true ] ]
+        [ sh:and (
+            [ sh:path chorus:quarantineReason ; sh:minCount 1 ]
+            [ sh:path chorus:quarantineUntil ; sh:minCount 1 ]
+        ) ]
+    ) .
 
 chorus:VerbRunEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:VerbRun ;
