@@ -151,7 +151,7 @@ use owl_api::{effective_fetch_query, NS};
 
 #[test]
 fn fetch_query_reads_instances_via_hasproperty_no_projection() {
-    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1");
+    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chorus:instances");
     // reads the LIVE instances graph — not a projection/mirror store
     assert!(q.contains("urn:chorus:instances"), "must read urn:chorus:instances live");
     // traverses hasProperty → Property{propertyKey, propertyValue, propertyValueType}
@@ -163,7 +163,7 @@ fn fetch_query_reads_instances_via_hasproperty_no_projection() {
 
 #[test]
 fn fetch_query_is_node_scoped_one_round_trip() {
-    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1");
+    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chorus:instances");
     // anchored on the node IRI — fetches THAT node's properties
     assert!(q.contains("https://jeffbridwell.com/chorus#node1"));
     // fetches the FULL property set — key-selection is pure code, NOT a SPARQL filter
@@ -172,7 +172,7 @@ fn fetch_query_is_node_scoped_one_round_trip() {
 
 #[test]
 fn fetch_query_row_contract_matches_parser() {
-    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1");
+    let q = effective_fetch_query("https://jeffbridwell.com/chorus#node1", "urn:chorus:instances");
     // CONCAT "iri|key|valueType|value" into the single ?v that select_v/parse_property_row consume
     assert!(q.contains("CONCAT"));
     assert!(q.contains("AS ?v"));
