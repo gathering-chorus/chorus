@@ -1,40 +1,39 @@
-# Daily Ops Review — 2026-06-22
+# Daily Ops Review — 2026-06-23
 
 ## 1. Hooks Health
 **Status: YELLOW**
-`cargo check` passes; 8 dead-code warnings, 20-day carry (unchanged since Jun 2). Dead: `load_role_sections` (protocol_contract.rs:155), `chorus_worktree_override` (types.rs:64), plus 6 others.
+`cargo check` passes (28s clean build); 8 dead-code warnings, now 21-day carry (unchanged since Jun 2). Dead: `load_role_sections` (protocol_contract.rs:155), `chorus_worktree_override` (types.rs:64), plus 6 others.
 **Action:** Silas — suppress with `#[allow(dead_code)]` or delete; escalate to RED at next weekly.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW**
-17 plists in `proving/config/launchagents/` reference `/tmp/` for log paths (hooks, api, clearing, context-cache ×3, cruft-scan, fuseki-{compact,perf}, harvest-exporter, jeff-input-monitor, launchagent-metrics, nudge-health, ops, perf-baseline). 20-day carry.
+17+ plists across `proving/config/launchagents/` and `platform/services/` still use `/tmp/` for StandardOut/Err paths (hooks, api, context-cache ×3, alert-notifier, clearing, fuseki, harvest-exporter, etc.). 21-day carry.
 **Action:** Migrate StandardOut/Err to `~/Library/Logs/Chorus/`; blocked without host LaunchAgent access.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW**
-3 shared fragments updated today (cross-machine-operations-{core,reference}.md, portfolio-reference.md); 45 of 48 fragments still at Jun 5 mtime (17-day carry). No role CLAUDE.md regeneration visible.
-**Action:** Wren — run claudemd pipeline to regenerate role files from updated shared fragments.
+**Status: YELLOW (carry)**
+`messages/claudemd/` not accessible in this remote environment; cannot diff fragments. Previous finding (Jun 22): 45 of 48 fragments at Jun 5 mtime (18-day carry), 3 shared fragments updated Jun 22. No confirmed regeneration of role files.
+**Action:** Wren — run claudemd pipeline; confirm role CLAUDE.md files were regenerated from Jun 22 fragment updates.
 
 ## 4. CSC Compliance
-**Status: YELLOW**
-9+ `/tmp/` refs in `platform/scripts/`: coherence-check (PULSE_FILE, STATE_DIR), werk-init.sh (CACHE), bedroom-heartbeat.sh, bridge-subscriber-watchdog.sh, look.sh, bridge-subscriber.js, index-crawler-snapshots.sh, crawler-hydrate-graph.sh. 20-day carry.
-**Action:** Silas — categorize transient state (acceptable) vs. persistent log paths (must migrate).
+**Status: GREEN**
+No `/tmp/` refs found in `messages/scripts/` or `architect/scripts/`. Clean.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Clean. Latest commit: #3551 (wren, Jun 22). External repos not in this clone. No action.
+All 7 role directories clean. Latest commit: #3560 (silas, Jun 21, fuseki-backup + CMDB schema). No action.
 
 ## 6. Stale WIP Cards
 **Status: RED**
-Board snapshots 76 days old (Apr 7). Two WIP cards both stuck at Apr 7: "Framework service design — OWL entity model" and "Restore chorus product boundary". 20-day carry with no board refresh.
-**Action:** Jeff or Wren — refresh board snapshot; confirm whether cards closed or truly stale.
+Board snapshots not present in this environment (`platform/logs/board-snapshot-*.json` absent). Prior reading (Jun 22): snapshots 76 days old (Apr 7), 2 WIP cards untouched since Apr 7 — "Framework service design — OWL entity model" and "Restore chorus product boundary". Now 77-day carry.
+**Action:** Jeff or Wren — refresh board snapshot urgently; confirm whether cards closed or truly stalled.
 
 ## 7. Domain Context Freshness
 **Status: YELLOW**
-4 of 5 domain-context files at Jun 5 (17 days): chorus, music, photos, seeds. Chorus domain had 8+ commits this week (#3528–#3551) but context doc untouched. Infrastructure updated today.
-**Action:** Wren — update domain-context-chorus.md to reflect CI work, worktree model, and binary deploy changes from the last two weeks.
+All 5 domain-context files last touched Jun 19 (4 days). Chorus and infrastructure domains had commits Jun 21 (#3560 silas: fuseki-backup + CMDB; #3569 silas: nightly-coverage) not reflected in their contexts. Under 7-day threshold but drifting after active shipping week (50 commits in 7 days).
+**Action:** Wren — update domain-context-chorus.md and domain-context-infrastructure.md for Jun 21 infra work before next 7-day trigger.
 
 ## 8. Disk Delta
 **Status: UNKNOWN**
-No perf-baseline JSON logs in this environment (`proving/logs/perf-baseline-YYYY-MM-DD.json` on host only). Cannot compare growth.
-**Action:** Verify `com.chorus.perf-baseline` LaunchAgent fires on host; surface logs to repo.
+No perf-baseline JSON logs available in this environment (repo is 349 MB total). `com.chorus.perf-baseline` LaunchAgent defined but outputs to host only.
+**Action:** Silas — surface latest perf-baseline snapshot to repo (e.g., `proving/logs/perf-baseline-latest.json`) for remote visibility.
