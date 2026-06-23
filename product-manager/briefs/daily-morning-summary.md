@@ -1,35 +1,34 @@
-# Daily Morning Summary — 2026-06-22
+# Daily Morning Summary — 2026-06-23
 
-**HEADLINE:** All 4 JS test suites are dark Day 14 — `browserslist@4.28.4` was yanked from npm; one lock file pin unblocks everything.
+**HEADLINE:** Quality is fully dark Day 15 across all 4 suites and lint — `npm ci` at repo root unblocks everything at once.
 
 ---
 
-## OPS — YELLOW (Silas, 2026-06-22)
-- **RED:** Board snapshot 76 days stale (Apr 7); two WIP cards orphaned: "Framework service design — OWL entity model" and "Restore chorus product boundary" — need refresh or close
-- YELLOW: 8 dead-code warnings in `chorus-hooks` — day 20; escalates to RED at next weekly
-- YELLOW: LaunchAgent logs to `/tmp/` — day 20; blocked without host access
-- YELLOW: CLAUDE.md fragments — 45 of 48 still at Jun 5; 3 shared fragments updated today; role files need regeneration (Wren action)
-- YELLOW: Domain context — `domain-context-chorus.md` 17 days stale despite 8+ commits this week (Wren action)
-- GREEN: Git clean; latest commit #3551 (Wren, Jun 22)
+## OPS — YELLOW/RED (Silas, 2026-06-23)
+- **RED:** Board snapshot now 77 days stale (Apr 7); two WIP cards "Framework service design — OWL entity model" and "Restore chorus product boundary" unconfirmed — closed or truly stalled?
+- YELLOW: 8 dead-code warnings in `chorus-hooks` — day 21; escalates to RED at next weekly
+- YELLOW: LaunchAgent logs to `/tmp/` — day 21; blocked without host access
+- YELLOW: CLAUDE.md fragments — role files not confirmed regenerated after Jun 22 fragment updates (Wren action)
+- YELLOW: Domain context — Jun 21 infra commits (#3560, #3569) not reflected in chorus/infrastructure contexts (Wren action)
+- GREEN: Git clean; CSC clean. Disk delta UNKNOWN (perf-baseline not surfaced to repo).
 
-## QUALITY — RED (Kade, 2026-06-22)
-- **All 4 suites BLOCKED** — `browserslist@4.28.4` yanked from npm registry, **Day 14**; 0 tests run
-- **Lint BLOCKED** — `@eslint/js` missing at root, **Day 16**
-- **Build RED:** 150 type errors — unchanged from yesterday (+1 regression from Jun 21 still unresolved)
-- Fix: pin `browserslist` to latest stable in lock file → `npm ci` across all packages; unblocks all 4 suites at once
+## QUALITY — RED (Kade, 2026-06-23)
+- **All 4 suites BLOCKED** — `ts-jest` preset missing (error type reverted from yesterday's npm E404), **Day 15**; 0 tests run
+- **Lint BLOCKED** — `@eslint/js` missing at root, **Day 17**
+- **Build RED:** 150 type errors — day 3 of unresolved Jun 21 regression
+- Root cause: node_modules incomplete repo-wide. Fix: `npm ci` at repo root unblocks all 4 suites + lint simultaneously.
 
-## YESTERDAY — 7 cards shipped (Jun 21)
-- **Wren (3):** #3544, #3548, #3551
-- **Silas (2):** #3540, #3550
-- **Kade (2):** #3190 (unblocked by Silas #3546 phantom fix), #2818
+## YESTERDAY — 5 cards shipped (Jun 21–22)
+- **Kade (3):** #3527 (nightly-suite consolidation: 3 runners → 1), #3556 (deterministic hermetic guards), #3557 (stack-gate nightly)
+- **Silas (2):** #3560 (fuseki-backup + CMDB schema), #3569 (nightly-coverage)
+- **Wren (1):** #3545
 
 ## TODAY — Recommended priorities
-1. **Fix `browserslist` lock file (P0)** — Day 14 blocker; pin to latest stable, run `npm ci` root + all packages; 30-min fix that unblocks all quality signal
-2. **Build regression (P1)** — 150 type errors with an unowned +1 from Jun 21; assign before it compounds
-3. **Board snapshot refresh (P1)** — 76 days blind; two cards may be long-closed
-4. **CLAUDE.md regeneration (P2)** — Wren: run claudemd pipeline; 3 fragments updated today
-5. **Domain context refresh (P2)** — Wren: update `domain-context-chorus.md` to reflect CI and worktree changes
+1. **`npm ci` at repo root (P0)** — Day 15 blocker; single command unblocks all tests and lint; assign now
+2. **Build regression (P1)** — 150 type errors, +1 from Jun 21 still unowned; assign to Kade before it compounds
+3. **Board snapshot refresh (P1)** — 77 days blind; two cards need triage (Jeff call)
+4. **CLAUDE.md regeneration + domain contexts (P2)** — Wren: run claudemd pipeline; update chorus + infrastructure contexts for Jun 21 infra work
 
 ## BLOCKERS — Needs Jeff
-- **Quality dark Day 14 (RED):** All JS tests blocked by yanked npm package. Lock file update is the fix — who owns it?
-- **Board state unknown (RED):** 76-day-old snapshot makes WIP invisible. Refresh or grant host access today.
+- **Quality dark Day 15 (RED):** `npm ci` at root is the fix — who runs it?
+- **Board state unknown (RED — 77d):** "Framework service design — OWL entity model" and "Restore chorus product boundary" — closed or stalled?
