@@ -28,6 +28,7 @@ fn table() -> RouteTable {
         mandatory: vec!["comment".into()],       // #3468 — model-projected completeness floor
         repo_target: "generated/domain".into(),  // #3488 — repo land location
         exposure: vec![],
+        instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-compat)
     }
 }
 

@@ -199,6 +199,7 @@ pub struct RouteTable {
     pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
+    pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
 }
 
 /// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
@@ -544,6 +545,23 @@ pub fn resolve_repo_target(declared: Option<&str>, chain: &[(RepoKind, &str)]) -
     project_repo_path(chain)
 }
 
+/// #3570 — a kind's instance HOME graph, derived (the domains.* data/noun spine).
+/// `declared` (`chorus:instancesGraph`) is the explicit override / migration target;
+/// otherwise project `urn:chorus:domains:<domain>` from the kind's domain; otherwise
+/// the back-compat default (`urn:chorus:instances`) so unmigrated kinds keep serving.
+/// Pure so it's unit-pinned; the SPARQL reads that supply `declared`/`domain` in
+/// generate() are integration-proven separately. This is the data half of the noun
+/// model: nouns home in `domains.*`, organized by domain, not one undifferentiated bucket.
+pub fn resolve_instances_graph(declared: Option<&str>, domain: Option<&str>) -> String {
+    if let Some(g) = declared.map(str::trim).filter(|s| !s.is_empty()) {
+        return g.to_string();
+    }
+    if let Some(d) = domain.map(str::trim).filter(|s| !s.is_empty()) {
+        return format!("urn:chorus:domains:{}", d);
+    }
+    INSTANCES_GRAPH.to_string()
+}
+
 /// #3488 — read a single containment-edge target's localname for `class` (None
 /// if absent). Covers both modeling styles: the edge on the shape
 /// (`?shape sh:targetClass <class> ; <pred> ?t`) or on the class directly
@@ -777,7 +795,22 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .into_iter()
         .filter_map(|row| row.split_once('|').map(|(f, l)| (f.to_string(), l.to_string())))
         .collect();
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure })
+    // #3570 — resolve the instance HOME graph (the domains.* spine). chorus:instancesGraph
+    // is the explicit override / migration target; else urn:chorus:domains:<domain> derived
+    // from the domain that definesVocabulary this class; else the back-compat default. A
+    // kind serves from its real home instead of the undifferentiated urn:chorus:instances bucket.
+    let igq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let declared_ig = select_v(&sparql_json(&igq)?).into_iter().next();
+    let dq = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let domain_of = select_v(&sparql_json(&dq)?).into_iter().next();
+    let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref());
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph })
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -1019,28 +1052,28 @@ fn dal_err_resp(e: &str) -> (u16, String) {
 
 /// Query the ownedBy role of an entity (for authZ). None = no ownedBy on record →
 /// authz_allows fails closed.
-fn query_owned_by(entity: &str) -> Option<String> {
+fn query_owned_by(entity: &str, instances_graph: &str) -> Option<String> {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
-        ns = NS, g = INSTANCES_GRAPH, e = entity
+        ns = NS, g = instances_graph, e = entity
     );
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
 /// Does the entity already have a partOf parent? (single-parent → 2nd add is 409).
-fn partof_exists(entity: &str) -> bool {
+fn partof_exists(entity: &str, instances_graph: &str) -> bool {
     let q = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:partOf ?p . BIND('y' AS ?v) }} }}",
-        ns = NS, g = INSTANCES_GRAPH, e = entity
+        ns = NS, g = instances_graph, e = entity
     );
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
 }
 
 /// Does the entity exist at all? (create → 409 if it does; replace → 404 if it doesn't).
-fn entity_exists(entity: &str) -> bool {
+fn entity_exists(entity: &str, instances_graph: &str) -> bool {
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
-        ns = NS, g = INSTANCES_GRAPH, e = entity
+        ns = NS, g = instances_graph, e = entity
     );
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
 }
@@ -1096,7 +1129,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             return write_resp("validation", "invalid entity name");
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
-        let owned = query_owned_by(e);
+        let owned = query_owned_by(e, &table.instances_graph);
         if !authz_allows(caller_role, owned.as_deref()) {
             emit_write_spine(caller_role, method, e, "", "authz");
             return write_resp("authz", "only the owning role may write this node (ownedBy)");
@@ -1117,7 +1150,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             }
             let insert = matches!(op, WriteOp::AddEdge { .. });
             // AC2 — single-parent partOf: a 2nd parent is a 409, never silently accepted.
-            if insert && edge_is_single_valued(edge) && partof_exists(name) {
+            if insert && edge_is_single_valued(edge) && partof_exists(name, &table.instances_graph) {
                 emit_write_spine(caller_role, "add-edge", name, edge, "conflict");
                 return write_resp("conflict", "partOf is single-valued: node already has a parent");
             }
@@ -1163,7 +1196,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             if !is_safe_local(&name) {
                 return write_resp("validation", "invalid entity name");
             }
-            if entity_exists(&name) {
+            if entity_exists(&name, &table.instances_graph) {
                 emit_write_spine(caller_role, "create", &name, "", "conflict");
                 return write_resp("conflict", "entity already exists");
             }
@@ -1193,7 +1226,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
-            if !entity_exists(name) {
+            if !entity_exists(name, &table.instances_graph) {
                 return write_resp("not-found", "entity does not exist");
             }
             let props = collect_entity_props(body, &table.fields);
@@ -1573,7 +1606,7 @@ pub fn build_scope_node(node_iri: &str, kind: ScopeKind, rows: &[String]) -> R<S
 /// as "iri|key|valueType|value" rows (value LAST so it may contain '|') in ONE round-trip.
 /// The key is selected in pure code (decide_effective_value), never filtered in SPARQL —
 /// so the round-trip stays one and key-selection stays unit-tested.
-pub fn effective_fetch_query(node_iri: &str) -> String {
+pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
     format!(
         "SELECT ?v WHERE {{ \
            GRAPH <{g}> {{ \
@@ -1584,7 +1617,7 @@ pub fn effective_fetch_query(node_iri: &str) -> String {
            }} \
            BIND(CONCAT(STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
          }}",
-        g = INSTANCES_GRAPH,
+        g = instances_graph,
         ns = NS,
         node = node_iri
     )
@@ -1723,11 +1756,11 @@ pub fn page_html(t: &RouteTable) -> String {
 /// `contains`, ~80 files on the cards domain) as duplicate JSON keys — malformed
 /// JSON. links also drops the per-edge label lookup (#3354): a link is a traversal
 /// ref, the label lives on the target — fewer queries, ADR-conformant.
-fn entity_json(name: &str, exposure: &[(String, String)], authed: bool) -> R<(String, String)> {
+fn entity_json(name: &str, exposure: &[(String, String)], authed: bool, instances_graph: &str) -> R<(String, String)> {
     let subject = format!("{}{}", NS, name);
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} BIND(CONCAT(STR(?p), \"|\", STR(?o)) AS ?v) }} ORDER BY ?v",
-        g = INSTANCES_GRAPH, s = subject
+        g = instances_graph, s = subject
     );
     let body = sparql_json(&q)?;
     let prs = select_v(&body);
@@ -1974,7 +2007,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if !is_safe_key(key) {
             return (400, "{ \"error\": \"invalid key\" }".to_string());
         }
-        let q = effective_fetch_query(&format!("{}{}", NS, node));
+        let q = effective_fetch_query(&format!("{}{}", NS, node), &table.instances_graph);
         return match sparql_json(&q) {
             Ok(body) => {
                 let rows = select_v(&body);
@@ -1989,7 +2022,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -2038,7 +2071,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             .collect();
         let q = format!(
             "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }} }} ORDER BY ?v",
-            g = INSTANCES_GRAPH, c = table.class, ns = NS, opts = opts, cat = cat
+            g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
         );
         return match sparql_json(&q) {
             Ok(body) => {
@@ -2119,7 +2152,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             // derives from the shape's declared edge (sh:inversePath chorus:inStream), one source of truth.
             let q = format!(
                 "SELECT DISTINCT ?v WHERE {{ GRAPH <{g}> {{ {{ <{ns}{n}> <{ns}contains> ?o }} UNION {{ <{ns}{n}> <{ns}hasDomain> ?o }} UNION {{ ?o <{ns}inStream> <{ns}{n}> }} }} BIND(STR(?o) AS ?v) }}",
-                g = INSTANCES_GRAPH, ns = NS, n = name
+                g = table.instances_graph, ns = NS, n = name
             );
             return match sparql_json(&q) {
                 Ok(body) => {
@@ -2139,7 +2172,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if parts.len() == 3 && parts[2] == "partof" {
             let q = format!(
                 "SELECT ?v WHERE {{ GRAPH <{g}> {{ {{ ?s <{ns}contains> <{ns}{n}> }} UNION {{ ?s <{ns}hasDomain> <{ns}{n}> }} }} BIND(STR(?s) AS ?v) }}",
-                g = INSTANCES_GRAPH, ns = NS, n = name
+                g = table.instances_graph, ns = NS, n = name
             );
             return match sparql_json(&q) {
                 Ok(body) => {
@@ -2160,7 +2193,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if parts.len() == 3 && parts[2] == "has-child" {
             let q = format!(
                 "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> <{ns}hasChild> ?o }} BIND(STR(?o) AS ?v) }}",
-                g = INSTANCES_GRAPH, ns = NS, n = name
+                g = table.instances_graph, ns = NS, n = name
             );
             return match sparql_json(&q) {
                 Ok(body) => {
@@ -2182,7 +2215,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if parts.len() == 3 && parts[2] == "completeness" {
             let q = format!(
                 "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{n}> ?p ?o . FILTER(isLiteral(?o)) BIND(CONCAT(REPLACE(STR(?p), '.*#', ''), '|', STR(?o)) AS ?v) }} }}",
-                g = INSTANCES_GRAPH, ns = NS, n = name
+                g = table.instances_graph, ns = NS, n = name
             );
             return match sparql_json(&q) {
                 Ok(body) => {
@@ -2200,7 +2233,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
             };
         }
-        return match entity_json(name, &table.exposure, authed) {
+        return match entity_json(name, &table.exposure, authed, &table.instances_graph) {
             Ok((data, links)) => {
                 meta.result_count = 1;
                 // #3506 / ADR-047 — wrap the entity read in the uniform envelope
@@ -3036,6 +3069,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -3071,6 +3105,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -3097,6 +3132,7 @@ mod tests {
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
             repo_target: String::new(),
             exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
             routes: vec![
                 "GET /domains".into(),
                 "GET /domains/:name".into(),
@@ -3246,6 +3282,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -3309,6 +3346,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -3333,7 +3371,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![] };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
