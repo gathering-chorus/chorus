@@ -10,6 +10,22 @@ export interface IcdSparqlClientDeps {
   queryUrl: string;
   updateUrl: string;
   fetchFn?: typeof fetch;
+  /** #3566 LOCK — when set, writes carry HTTP Basic auth. Reads stay open. */
+  auth?: { user: string; password: string };
+}
+
+/** #3566 — build the Authorization: Basic header value for a write credential. */
+export function basicAuthHeader(auth: { user: string; password: string }): string {
+  return 'Basic ' + Buffer.from(`${auth.user}:${auth.password}`).toString('base64');
+}
+
+/** #3566 — read the Fuseki write credential from the environment. Returns undefined
+ *  when FUSEKI_ADMIN_PASSWORD is unset, so writers stay unauthenticated (current
+ *  behavior) until the credential is deployed — no breakage at code-land time. */
+export function fusekiWriteAuthFromEnv(env: NodeJS.ProcessEnv = process.env): { user: string; password: string } | undefined {
+  const password = env.FUSEKI_ADMIN_PASSWORD;
+  if (!password) return undefined;
+  return { user: env.FUSEKI_ADMIN_USER || 'admin', password };
 }
 
 /** SPARQL response shape — caller downcasts bindings to the expected shape. */
@@ -31,9 +47,11 @@ export function createIcdSparqlClient(deps: IcdSparqlClientDeps): IcdSparqlClien
       return resp.json() as Promise<IcdSparqlResponse>;
     },
     async update(update: string): Promise<void> {
+      const headers: Record<string, string> = { 'Content-Type': 'application/sparql-update' };
+      if (deps.auth) headers['Authorization'] = basicAuthHeader(deps.auth);
       const resp = await fetchFn(deps.updateUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/sparql-update' },
+        headers,
         body: update,
       });
       if (!resp.ok) {

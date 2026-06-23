@@ -12,6 +12,7 @@ import os from 'os';
 import Database from 'better-sqlite3';
 import { createIndexAllSources, type IndexAllSourcesDeps } from './index-all-sources';
 import { createAthenaSparqlClient, createSparqlLoader } from './athena-sparql';
+import { fusekiWriteAuthFromEnv } from './icd-sparql';
 import { fetchLoomPrinciples } from './handlers/loom-principles';
 import { fetchLoomPolicies } from './handlers/loom-policies';
 import { collectAllDocs } from './handlers/doc-catalog';
@@ -47,7 +48,7 @@ function lines(...parts: Array<string | undefined | false>): string {
 
 // eslint-disable-next-line complexity -- cohesive multi-source SPARQL load (principles/policies/practices each loaded + mapped in one place); splitting scatters the wiring (#3429)
 async function fetchGraphKnowledge(repoRoot: string): Promise<GraphRow[]> {
-  const athena = createAthenaSparqlClient({ sparqlUrl: FUSEKI_SPARQL, updateUrl: FUSEKI_UPDATE });
+  const athena = createAthenaSparqlClient({ sparqlUrl: FUSEKI_SPARQL, updateUrl: FUSEKI_UPDATE, auth: fusekiWriteAuthFromEnv() });
   const loadQuery = createSparqlLoader({ fs, sparqlDir: path.join(repoRoot, 'platform/api/src/sparql') });
   const rows: GraphRow[] = [];
 
