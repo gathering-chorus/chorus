@@ -1198,6 +1198,105 @@ fn write_resp(tag: &str, message: &str) -> (u16, String) {
 /// called (caller_role = the verified token's role). Entity create/replace return
 /// a typed 501 (the next slice: full-property-body shape validation); edge add/
 /// remove + entity delete are live.
+/// #3573 — max bytes for a single STRUCTURED write body. 64 KiB is generous for one
+/// entity (a Test/Quarantine row is < 1 KiB) and bounds runaway/oversized writes.
+pub const MAX_WRITE_BYTES: usize = 65_536;
+
+/// #3573 — max bytes for a GSP BULK load (a TTL blob, not one entity). Larger by
+/// design; still bounded. Tune to the real harvest/migration sizes.
+pub const MAX_BULK_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
+
+/// #3573 AC5 (closed-shape) — the first body property whose predicate the shape does
+/// NOT declare (truly off-model), else None. `fields` = RouteTable.fields ("name|kind").
+/// The write-envelope keys (name, target) are not shape props and pass; declared edges
+/// are in the model and pass. SHACL is open by default; this is the sh:closed reject.
+pub fn off_model_property(body: &str, fields: &[String]) -> Option<String> {
+    let declared: std::collections::HashSet<&str> =
+        fields.iter().map(|f| f.split('|').next().unwrap_or(f)).collect();
+    for key in json_top_level_keys(body) {
+        if key == "name" || key == "target" { continue; } // write-envelope, not shape props
+        if !declared.contains(key.as_str()) {
+            return Some(key);
+        }
+    }
+    None
+}
+
+/// Enumerate the TOP-LEVEL object keys of a (flat) JSON body, zero-dep. Tracks
+/// string-state + brace/bracket depth so only depth-1 keys (property names) are
+/// returned — nested values, escaped quotes, and array elements don't leak in.
+pub fn json_top_level_keys(json: &str) -> Vec<String> {
+    let mut keys = Vec::new();
+    let mut depth: i32 = 0;
+    let mut in_str = false;
+    let mut esc = false;
+    let mut cur = String::new();
+    let mut last_str_at_1: Option<String> = None;
+    for c in json.chars() {
+        if in_str {
+            if esc { esc = false; cur.push(c); }
+            else if c == '\\' { esc = true; }
+            else if c == '"' {
+                in_str = false;
+                if depth == 1 { last_str_at_1 = Some(std::mem::take(&mut cur)); } else { cur.clear(); }
+            } else { cur.push(c); }
+        } else {
+            match c {
+                '"' => { in_str = true; cur.clear(); }
+                '{' | '[' => { depth += 1; if depth != 1 { last_str_at_1 = None; } }
+                '}' | ']' => { depth -= 1; last_str_at_1 = None; }
+                ':' if depth == 1 => { if let Some(k) = last_str_at_1.take() { keys.push(k); } }
+                ',' => last_str_at_1 = None,
+                _ => {}
+            }
+        }
+    }
+    keys
+}
+
+#[cfg(test)]
+mod bounds_closedshape_tests {
+    use super::*;
+
+    fn test_fields() -> Vec<String> {
+        vec![
+            "filePath|datatype:string".into(),
+            "testName|datatype:string".into(),
+            "quarantined|datatype:boolean".into(),
+            "covers|edge:Domain".into(),
+        ]
+    }
+
+    #[test]
+    fn off_model_property_rejects_unknown_predicate() {
+        let body = r#"{"name":"t1","filePath":"a.rs","evil":"haha"}"#;
+        assert_eq!(off_model_property(body, &test_fields()), Some("evil".to_string()));
+    }
+
+    #[test]
+    fn off_model_property_allows_declared_and_envelope_keys() {
+        let body = r#"{"name":"t1","filePath":"a.rs","quarantined":true,"covers":"tests"}"#;
+        assert_eq!(off_model_property(body, &test_fields()), None);
+    }
+
+    #[test]
+    fn json_top_level_keys_ignores_nested_and_escapes() {
+        let body = r#"{"name":"t1","note":"a \"quote\" : here","meta":{"inner":"x"}}"#;
+        let keys = json_top_level_keys(body);
+        assert!(keys.contains(&"name".to_string()));
+        assert!(keys.contains(&"note".to_string()));
+        assert!(keys.contains(&"meta".to_string()));
+        assert!(!keys.contains(&"inner".to_string())); // nested key not surfaced
+        assert!(!keys.contains(&"here".to_string()));   // value-with-colon not a key
+    }
+
+    #[test]
+    fn bounds_predicate_separates_oversized_from_ok() {
+        assert!("x".repeat(MAX_WRITE_BYTES + 1).len() > MAX_WRITE_BYTES);
+        assert!("x".repeat(1024).len() <= MAX_WRITE_BYTES);
+    }
+}
+
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
@@ -1205,6 +1304,12 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
+    // #3573 (bounds) — cap the structured write body before any graph work. A single
+    // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
+    if body.len() > MAX_WRITE_BYTES {
+        return write_resp("validation", &format!(
+            "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
     // entity name (None for CreateEntity) + injection-safety
     let entity: Option<String> = match &op {
         WriteOp::CreateEntity => None,
@@ -1289,6 +1394,12 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 emit_write_spine(caller_role, "create", &name, "", "conflict");
                 return write_resp("conflict", "entity already exists");
             }
+            // #3573 AC5 — closed-shape: reject an off-model property, don't silently drop it
+            // (collect_entity_props would otherwise ignore unknown keys = silent loss).
+            if let Some(bad) = off_model_property(body, &table.fields) {
+                emit_write_spine(caller_role, "create", &name, "", "off-model");
+                return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
+            }
             let props = collect_entity_props(body, &table.fields);
             // #3468 — DELEGATE THE WRITE TO THE DAL (chorus-model). owl-api is
             // read-only by contract; the DAL is the ONE governed write path. It
@@ -1317,6 +1428,11 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // above. Must exist (404 otherwise).
             if !entity_exists(name, &table.instances_graph) {
                 return write_resp("not-found", "entity does not exist");
+            }
+            // #3573 AC5 — closed-shape: reject an off-model property on replace too.
+            if let Some(bad) = off_model_property(body, &table.fields) {
+                emit_write_spine(caller_role, "replace", name, "", "off-model");
+                return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
             }
             let props = collect_entity_props(body, &table.fields);
             if props.is_empty() {
@@ -2546,10 +2662,17 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
     eprintln!("owl-api: serving {} generated API(s) on :{} [{}] (read-only; writes go through chorus-model)", tables.len(), port, classes.join(", "));
     let mut req_counter: u64 = 0;
-    // #3402 — seam auth config, loaded ONCE (no per-request env read, no graph call).
-    let secret = std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().into_bytes();
-    let allowed_webids = auth::chorus_agent_webids();
-    if secret.is_empty() {
+    // #3402/#3573 — seam auth config, loaded ONCE (no per-request env read, no graph
+    // call). #3573 (b): the single shared secret is now a per-product KeyRegistry,
+    // resolved from phase-1 static rows + an env-reader (key_id → bytes). Phase-1 maps
+    // the 3 chorus agents → "chorus" → CHORUS_SERVICE_TOKEN_SECRET, so this is a strict
+    // superset of #3402 (nothing regresses); phase-2 swaps the row SOURCE to the model
+    // projection without touching this call-site (the KeyRegistry/verify_token contract).
+    let registry = auth::KeyRegistry::resolve(
+        &auth::phase1_registry_rows(),
+        |kid| std::env::var(kid).ok().map(|s| s.into_bytes()),
+    );
+    if std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().is_empty() {
         // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
         eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
     }
@@ -2698,21 +2821,34 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            match auth::verify_token(token, &secret, &allowed_webids, now_secs) {
+            match auth::verify_token(token, &registry, now_secs) {
                 Err(_) => {
                     let (c, t) = write_status("authn-missing");
                     ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
                      ReqMeta { route: "write-authn".into(), ..Default::default() })
                 }
                 Ok(claims) => {
-                    let role = role_from_webid(&claims.web_id).unwrap_or_default();
-                    let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                    let (c, b) = handle_write(&method, &path, body_str, table, &role);
-                    ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                    // #3573 Part C — SCOPE enforcement (the realm-isolation control,
+                    // Silas's invariant): a token carrying a scope claim (dal_edge-minted)
+                    // may write ONLY graphs in that scope; targetGraph is VALIDATED against
+                    // it, never used to SET it. Out-of-scope → 403. Legacy/unscoped tokens
+                    // (scope empty) fall through to handle_write's ownedBy authZ — mixed-state
+                    // by construction (#3414 philosophy): existing writers don't break before
+                    // they migrate to the scoped lane (#3573 incr-2). scope_allows is #3567 (landed).
+                    let target_graph = header("x-target-graph");
+                    if !claims.scope.is_empty() && !scope_allows(&target_graph, &claims.scope) {
+                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573)\" }}", json_escape(&target_graph))),
+                         ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
+                    } else {
+                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                        let (c, b) = handle_write(&method, &path, body_str, table, &role);
+                        ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                    }
                 }
             }
         } else {
-            match auth::seam_auth(&path, &header("authorization"), &secret, &allowed_webids, now_secs, &table.secured) {
+            match auth::seam_auth(&path, &header("authorization"), &registry, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
                 None => {
                     let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
@@ -2720,7 +2856,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     // gates `internal`-exposure fields on an exposure-enforced shape.
                     let ah = header("authorization");
                     let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
-                    let authed = auth::verify_token(tok, &secret, &allowed_webids, now_secs).is_ok();
+                    let authed = auth::verify_token(tok, &registry, now_secs).is_ok();
                     handle_meta(&hp, table, authed)
                 }
             }
