@@ -1,0 +1,35 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #2819 — the tests verb-family modeled as PEER Verb instances (not subordinate to the
+# tests noun). Same VerbShape contract owl-api generate-verb reads (designing/data/verb-shape.ttl).
+# verbFamily="tests" binds these to the tests noun; the generated skeleton is identical in
+# shape to athena-deploy's — only family/inputs/repoTarget differ, and run()'s body is the seam.
+
+# run — execute a selected slice of the tests set. Hand-seam = the jest/cargo/bats executor.
+chorus:verb-tests-run a chorus:Verb ;
+    rdfs:label "tests-run" ;
+    chorus:verbName     "tests-run" ;
+    chorus:verbFamily   "tests" ;
+    chorus:invocability "invoked" ;
+    chorus:repoTarget   "platform/services/werk-test" ;
+    chorus:verbInput    "scope|datatype:string" ;
+    chorus:verbInput    "domain|datatype:string" ;
+    chorus:verbOutput   "summary|datatype:string" ;
+    chorus:verbEdge     "atStep|value-stream-step-building" ;
+    chorus:verbEdge     "inProduct|chorus" .
+
+# register — declare a Test into the set. Generated write = POST /tests; hand-seam = source extraction.
+chorus:verb-tests-register a chorus:Verb ;
+    rdfs:label "tests-register" ;
+    chorus:verbName     "tests-register" ;
+    chorus:verbFamily   "tests" ;
+    chorus:invocability "invoked" ;
+    chorus:repoTarget   "platform/services/werk-test" ;
+    chorus:verbInput    "filePath|datatype:string" ;
+    chorus:verbInput    "testName|datatype:string" ;
+    chorus:verbOutput   "iri|datatype:string" ;
+    chorus:verbEdge     "atStep|value-stream-step-building" ;
+    chorus:verbEdge     "inProduct|chorus" .

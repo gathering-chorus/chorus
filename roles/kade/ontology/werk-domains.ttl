@@ -368,11 +368,24 @@ chorus:code-domain
     chorus:gaps "blast-radius first-class entity defers to werk-code (#3148 lineage)" ;
     chorus:hasRecordClass chorus:SourceFile , chorus:CardDiff , chorus:QualityFinding .
 
-chorus:tests-domain
+# #3554/#2819 — the tests domain (V2 IRI chorus:tests), COMPLETED + deduped from the legacy
+# chorus:tests-domain node. definesVocabulary mounts all three record kinds (Test/TestResult/
+# TestSuiteRun) into owl-api's served set. Placement uses existing nodes (Silas to confirm the
+# loom placement). hasDesignDoc carried as a string from the legacy node — Document-typing is
+# the residual. The legacy chorus:tests-domain triples are removed in the same pass.
+chorus:tests a chorus:Domain ;
+    rdfs:label "tests" ;
+    rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
+    chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:value-stream-step-building ;
     chorus:status "building" ;
-    chorus:hasDesignDoc "designing/docs/quality-service-design.html" ;
-    chorus:gaps "no per-test identity in the graph — Test/TestResult are ingestion contracts (#2818/#2819); werk-test (#3190) blocked on this" ;
-    chorus:hasRecordClass chorus:Test , chorus:TestSuiteRun , chorus:TestResult .
+    chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
+    chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
+
+chorus:chorusProduct chorus:hasDomain chorus:tests .
 
 chorus:hasRecordClass a owl:AnnotationProperty ;
     rdfs:label "has record class" ;
@@ -461,6 +474,11 @@ chorus:SourceFileShape a sh:NodeShape ;
 
 chorus:TestShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
+    # #3570 — Test's instance HOME graph. owl-api resolve_instances_graph reads this declared
+    # override (lib.rs:803) → serves /tests from urn:chorus:domains:tests, not the vague
+    # urn:chorus:instances bucket. The 4617 Test instances are moved there to match. ("tests not
+    # instances" — Jeff, 2026-06-22; the urn becomes meaningful, owl-api dictates it.)
+    chorus:instancesGraph "urn:chorus:domains:tests" ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ]  .
 
@@ -479,7 +497,7 @@ chorus:TestResultShape a sh:NodeShape ;
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;
     sh:property [ sh:path chorus:inFile ; sh:minCount 1 ; sh:class chorus:SourceFile ] ;
-    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:covers ; sh:minCount 1 ; sh:class chorus:Domain ] ;          # #2819 — covers a real Domain (was SubDomain/V1); THIS is the cross-domain join target
     sh:property [ sh:path chorus:pyramidLayer ; sh:minCount 1 ; sh:in ( "unit" "integration" "e2e" "contract" "fitness" "smoke" "bdd" ) ] ;
     # validityClass + hermeticity: enum-if-present (NO minCount — ingestion mints identity
     # before the tagging pass classifies; a freshly-crawled Test is legitimately untagged).
