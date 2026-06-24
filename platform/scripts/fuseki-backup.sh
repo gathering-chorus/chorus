@@ -50,6 +50,7 @@ mount_ok=0; mount_err=""
 for attempt in 1 2 3 4 5; do
   if mount_err="$(mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>&1)"; then mount_ok=1; break; fi
   log "mount_apfs attempt $attempt/5 failed: $mount_err"
+  umount "$MNT" 2>/dev/null || true   # #3582 (Kade DE-review): clear any partial mount so the next attempt's error isn't masked by an already-mounted path
   sleep 3
 done
 [ "$mount_ok" = 1 ] || { log "ERROR: mount_apfs failed after 5 attempts for $SNAP: $mount_err"; spine ops.backup.fuseki.failed reason=mount-failed detail="$mount_err"; exit 1; }
