@@ -1,34 +1,33 @@
-# Daily Morning Summary — 2026-06-23
+# Daily Morning Summary — 2026-06-24
 
-**HEADLINE:** Quality is fully dark Day 15 across all 4 suites and lint — `npm ci` at repo root unblocks everything at once.
+**HEADLINE:** Quality tooling has been dark for 15 days while yesterday's sprint shipped ~10 cards — one `npm ci` at repo root restores test visibility across all packages.
 
 ---
 
-## OPS — YELLOW/RED (Silas, 2026-06-23)
-- **RED:** Board snapshot now 77 days stale (Apr 7); two WIP cards "Framework service design — OWL entity model" and "Restore chorus product boundary" unconfirmed — closed or truly stalled?
-- YELLOW: 8 dead-code warnings in `chorus-hooks` — day 21; escalates to RED at next weekly
-- YELLOW: LaunchAgent logs to `/tmp/` — day 21; blocked without host access
-- YELLOW: CLAUDE.md fragments — role files not confirmed regenerated after Jun 22 fragment updates (Wren action)
-- YELLOW: Domain context — Jun 21 infra commits (#3560, #3569) not reflected in chorus/infrastructure contexts (Wren action)
-- GREEN: Git clean; CSC clean. Disk delta UNKNOWN (perf-baseline not surfaced to repo).
+**OPS:** YELLOW overall (2 REDs)
+- RED: Domain context drift — chorus 66 days stale, infra 91 days; both domains had heavy shipping this week. Wren to update today.
+- RED: Stale WIP cards — 2 cards untouched 78 days; board snapshot still inaccessible, status unknown.
+- YELLOW: 22-day carry on hooks dead-code (8 warnings), LaunchAgent /tmp refs (30+ plists), CLAUDE.md fragment lag (4 days), CSC /tmp audit pending.
+- GREEN: Git working tree clean.
 
-## QUALITY — RED (Kade, 2026-06-23)
-- **All 4 suites BLOCKED** — `ts-jest` preset missing (error type reverted from yesterday's npm E404), **Day 15**; 0 tests run
-- **Lint BLOCKED** — `@eslint/js` missing at root, **Day 17**
-- **Build RED:** 150 type errors — day 3 of unresolved Jun 21 regression
-- Root cause: node_modules incomplete repo-wide. Fix: `npm ci` at repo root unblocks all 4 suites + lint simultaneously.
+**QUALITY:** RED across all packages
+- 4 test suites BLOCKED: `ts-jest` preset not found (node_modules incomplete) — day 15.
+- Build: 150 TypeScript type errors, unchanged — day 3 regression from Jun 21.
+- Lint: BLOCKED (`@eslint/js` not found) — day 17.
+- Root cause: `npm ci` at repo root fixes tests + lint simultaneously.
 
-## YESTERDAY — 5 cards shipped (Jun 21–22)
-- **Kade (3):** #3527 (nightly-suite consolidation: 3 runners → 1), #3556 (deterministic hermetic guards), #3557 (stack-gate nightly)
-- **Silas (2):** #3560 (fuseki-backup + CMDB schema), #3569 (nightly-coverage)
-- **Wren (1):** #3545
+**YESTERDAY:** Heavy shipping sprint — ~10 cards merged.
+- Wren: #3570 (domains.* spine, 56+ tests), #3432 (chunk add-time fix), #3391 (Chorus-as-platform shaping), #3575 (board-as-domain spike), #3567.
+- Silas: #3573, #3574, #3566, #3579.
+- Kade: #2819.
 
-## TODAY — Recommended priorities
-1. **`npm ci` at repo root (P0)** — Day 15 blocker; single command unblocks all tests and lint; assign now
-2. **Build regression (P1)** — 150 type errors, +1 from Jun 21 still unowned; assign to Kade before it compounds
-3. **Board snapshot refresh (P1)** — 77 days blind; two cards need triage (Jeff call)
-4. **CLAUDE.md regeneration + domain contexts (P2)** — Wren: run claudemd pipeline; update chorus + infrastructure contexts for Jun 21 infra work
+**TODAY (recommended priorities):**
+1. Run `npm ci` at repo root — unblocks all 4 test suites and lint immediately. (Kade or Jeff)
+2. Resolve 150 TS type errors — regression is 3 days old, unowned. (Kade)
+3. Update `domain-context-chorus.md` + `domain-context-infrastructure.md` — both RED overdue. (Wren)
+4. Run claudemd pipeline — role CLAUDE.md not regenerated after sprint. (Wren)
 
-## BLOCKERS — Needs Jeff
-- **Quality dark Day 15 (RED):** `npm ci` at root is the fix — who runs it?
-- **Board state unknown (RED — 77d):** "Framework service design — OWL entity model" and "Restore chorus product boundary" — closed or stalled?
+**BLOCKERS (needs Jeff):**
+- Quality dark Day 15 (RED): `npm ci` needs someone with a working npm environment — who runs it?
+- Board state unknown (RED — 78d): "Framework service design — OWL entity model" + "Restore chorus product boundary" — closed or stalled?
+- LaunchAgent /tmp migration requires host LaunchAgent access; no path forward without it.
