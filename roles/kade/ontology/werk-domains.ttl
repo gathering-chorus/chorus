@@ -392,14 +392,15 @@ chorus:code-domain
 # TestSuiteRun) into owl-api's served set. Placement uses existing nodes (Silas to confirm the
 # loom placement). hasDesignDoc carried as a string from the legacy node — Document-typing is
 # the residual. The legacy chorus:tests-domain triples are removed in the same pass.
-chorus:tests a chorus:Domain ;
+chorus:tests a owl:Class, chorus:Domain ;
     rdfs:label "tests" ;
     rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
-    chorus:ownedBy chorus:role-kade ;
+    chorus:ownedBy chorus:kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
     chorus:atStream chorus:chorusStream ;
-    chorus:atStep chorus:value-stream-step-building ;
+    chorus:partOf chorus:chorusProduct ;
+    chorus:atStep chorus:Building ;
     chorus:status "building" ;
     chorus:gaps "verbEvent typed emits not yet generated (owl-api code); run()/register() executor bodies are the hand seam; hasDesignDoc not yet a typed Document." ;
     chorus:hasDesignDoc "designing/docs/quality-service-design.html" .
