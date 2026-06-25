@@ -937,12 +937,19 @@ chorus:spine-service a chorus:SubDomain ;
 # the ADR-045 section. partOf borgProduct directly (a first-class config-as-data domain,
 # no longer nested under observability). Edges repointed; blast-radius(Properties-domain) → ∅. ---
 
-chorus:security-domain a chorus:SubDomain ;
+chorus:security-domain a owl:Class , chorus:Domain ;   # #3584: SubDomain → v2 Domain (punned, like chorus:Properties); parent borgProduct (Jeff 2026-06-25)
     rdfs:label "Security & Trust" ;
     rdfs:comment "Authn / authz / permissions / health / monitoring / keys+tokens. Bootstrap-as-security cross-cutting — every domain consumes it. Owner: silas. #2659." ;
+    chorus:purpose "Attest who is acting, what they may do, what credentials are in play, and the current security posture — across every domain." ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:atStep chorus:Proving ;
+    chorus:status "building" ;
+    chorus:gaps "Instances not yet populated; per-product write-lane + Shiro cutover pending (#3564 program)." ;
     chorus:ownedBy chorus:silas ;
-    chorus:primaryStep chorus:Proving ;
-    chorus:runsOn chorus:library, chorus:bedroom .
+    chorus:runsOn chorus:library, chorus:bedroom ;
+    chorus:repoTarget "borg/security" ;
+    chorus:definesVocabulary chorus:Credential , chorus:Permission , chorus:SecurityProbe , chorus:AuthBoundary .
 
 chorus:time-domain a chorus:SubDomain ;
     rdfs:label "Time" ;
@@ -1184,7 +1191,7 @@ chorus:loom chorus:hasDomain chorus:loom-policies .
 chorus:athena-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties .
+chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties, chorus:security-domain .
 # ^ chorus:Properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
@@ -1688,6 +1695,23 @@ chorus:bypassAudit a owl:DatatypeProperty ;
 
 # --- Security domain SHACL (#2659) ---
 
+# #3584 — field-exposure classification (ADR-048 §3): USED on ServiceShape props but
+# never declared until now (undefined-symbol latent bug). public=any caller, internal=authed only, secret=never emitted.
+chorus:exposure a owl:AnnotationProperty ;
+    rdfs:label "exposure" ;
+    rdfs:comment "Field visibility on a PropertyShape: public | internal | secret (ADR-048 §3)." .
+chorus:public   a owl:NamedIndividual ; rdfs:label "public" .
+chorus:internal a owl:NamedIndividual ; rdfs:label "internal" .
+chorus:secret   a owl:NamedIndividual ; rdfs:label "secret" .
+
+# #3584 — chorus:repoTarget was ALSO used (chorus:Properties, and the security-domain decl above)
+# but never declared — same undefined-symbol class. Declared here (helps Properties too).
+chorus:repoTarget a owl:DatatypeProperty ;
+    rdfs:label "repo target" ;
+    rdfs:comment "Repo path a domain projects to (the ADR-041 repo-as-projection override)." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range xsd:string .
+
 chorus:CredentialShape a sh:NodeShape ;
     sh:targetClass chorus:Credential ;
     sh:property [
@@ -1704,6 +1728,11 @@ chorus:CredentialShape a sh:NodeShape ;
         sh:path chorus:source ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:class chorus:Role ;
     ] .
 
 chorus:PermissionShape a sh:NodeShape ;
@@ -1731,6 +1760,11 @@ chorus:PermissionShape a sh:NodeShape ;
         sh:path chorus:explicitGrant ;
         sh:minCount 1 ;
         sh:datatype xsd:boolean ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:class chorus:Role ;
     ] .
 
 chorus:SecurityProbeShape a sh:NodeShape ;
@@ -1749,6 +1783,11 @@ chorus:SecurityProbeShape a sh:NodeShape ;
         sh:path chorus:framingClass ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:class chorus:Role ;
     ] .
 
 chorus:AuthBoundaryShape a sh:NodeShape ;
@@ -1772,6 +1811,11 @@ chorus:AuthBoundaryShape a sh:NodeShape ;
         sh:path chorus:checkType ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:minCount 1 ;
+        sh:class chorus:Role ;
     ] .
 
 # --- Properties domain — config-as-data (#3433) ---
