@@ -42,7 +42,18 @@ SNAP="com.apple.TimeMachine.${SNAP_DATE}.local"
 log "snapshot: $SNAP"
 
 # 2. mount it read-only and locate the TDB2 dir
-mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>/dev/null || { log "ERROR: mount_apfs failed for $SNAP"; spine ops.backup.fuseki.failed reason=mount-failed; exit 1; }
+# #3582 — retry + CAPTURE the error. The 2026-06-24 03:00 failure was transient (a clean
+# user-context mount of the same snapshot succeeds — privilege is NOT the issue); a freshly
+# created snapshot isn't always immediately mountable. The old `2>/dev/null` HID the real
+# cause, leaving "mount-failed" with no detail. Retry with a settle delay; log real stderr.
+mount_ok=0; mount_err=""
+for attempt in 1 2 3 4 5; do
+  if mount_err="$(mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>&1)"; then mount_ok=1; break; fi
+  log "mount_apfs attempt $attempt/5 failed: $mount_err"
+  umount "$MNT" 2>/dev/null || true   # #3582 (Kade DE-review): clear any partial mount so the next attempt's error isn't masked by an already-mounted path
+  sleep 3
+done
+[ "$mount_ok" = 1 ] || { log "ERROR: mount_apfs failed after 5 attempts for $SNAP: $mount_err"; spine ops.backup.fuseki.failed reason=mount-failed detail="$mount_err"; exit 1; }
 SRC="$MNT/$SNAP_REL"
 [ -d "$SRC/Data-0003" ] || { log "ERROR: snapshot missing TDB2 dir at $SRC"; spine ops.backup.fuseki.failed reason=no-tdb2-in-snapshot; exit 1; }
 
