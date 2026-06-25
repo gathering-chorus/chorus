@@ -20,6 +20,8 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function get(url) { return fetch(url).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
   function unwrap(b, key, alt) { var d = (b && b.data) || b || {}; var v = d[key] || (alt ? d[alt] : null) || []; return Array.isArray(v) ? v : []; }
+  // #3581 — strip a namespace/prefix from an IRI-ish value: "chorus:Designing" → "Designing".
+  function localName(v) { return v == null ? v : String(v).replace(/^.*[#:\/]/, ''); }
 
   // v1-id → v2-name resolution (#3373; pure + exported). Exact match wins; else strip a
   // -domain/-service suffix onto its v2 home; v1-only ids stay null (never a wrong match).
@@ -34,14 +36,15 @@
   function overlayIdentity(d) {
     return get(OWL + '/domains').then(function (list) {
       if (!list) return;
-      var names = (list.items || []).map(function (x) { return x.name; });
+      var names = ((list.data) || []).map(function (x) { return x.name; });   // #3581: .data envelope
       var v2 = resolveV2(id, names);
       if (!v2) return;
       return get(OWL + '/domains/' + encodeURIComponent(v2)).then(function (g) {
         if (g) {
-          if (g.comment) d.comment = g.comment;
-          if (g.ownedBy && g.ownedBy.label) d.owner = g.ownedBy.label;
-          if (g.atStep && g.atStep.label) d.step = g.atStep.label;
+          var gd = g.data || {}, gl = g.links || {};   // #3581: {data:{...}, links:{...}} envelope
+          if (gd.comment) d.comment = gd.comment;
+          if (gl.ownedBy) d.owner = localName(gl.ownedBy);
+          if (gl.atStep) d.step = localName(gl.atStep);
           var sb = $('stats-bar'); if (sb) sb.setAttribute('data-identity-source', 'generated-api');
         }
         // AC2 upward direction — render the parent Product/SubProduct from the model (non-fatal).
@@ -109,18 +112,19 @@
   // async: fetch the full set from owl-api, enrich each with step/owner/status, render the catalog fold.
   function renderTheSet() {
     return get(OWL + '/domains').then(function (list) {
-      var items = (list && list.items) || [];
+      var items = (list && list.data) || [];   // #3581: owl-api envelope is {data:[...]}, not .items
       if (!items.length) return;
-      return Promise.all(items.map(function (it) {
-        return get(OWL + '/domains/' + encodeURIComponent(it.name)).then(function (g) {
-          return { name: it.name, label: it.label || it.name, status: (g && g.status) || it.status || '?',
-                   step: (g && g.atStep && g.atStep.label) || '?', owner: (g && g.ownedBy && g.ownedBy.label) || '?' };
-        });
-      })).then(function (rows) {
-        var slot = $('the-set'); if (!slot) return;
-        slot.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">The Set &mdash; all domains (' + rows.length + ', live catalog)</summary>' +
-          '<div style="padding-top:.5rem">' + setRowsHtml(rows) + '</div></details></div>';
+      // #3581: collapse the multi-valued fan-out (one /domains row per definesVocabulary value)
+      // into one row per DISTINCT domain. Fields are already flat on each row.
+      var seen = {}, rows = [];
+      items.forEach(function (it) {
+        if (seen[it.name]) return; seen[it.name] = 1;
+        rows.push({ name: it.name, label: it.label || it.name, status: it.status || '?',
+                    step: localName(it.atStep) || '?', owner: localName(it.ownedBy) || '?' });
       });
+      var slot = $('the-set'); if (!slot) return;
+      slot.innerHTML = '<div class="card"><details open><summary style="cursor:pointer;font-weight:var(--fw-semibold)">The Set &mdash; all domains (' + rows.length + ', live catalog)</summary>' +
+        '<div style="padding-top:.5rem">' + setRowsHtml(rows) + '</div></details></div>';
     });
   }
 
