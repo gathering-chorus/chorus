@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # Doc coherence report — 2026-06-23 15:36
+=======
+# Doc coherence report — 2026-06-23 14:02
+>>>>>>> 93cf4b58 (kade: #3580)
 
 content-dup-groups: 13
 basename-dup-groups: 37
