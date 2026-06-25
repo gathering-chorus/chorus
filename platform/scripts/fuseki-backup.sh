@@ -27,7 +27,7 @@ CHORUS_LOG="${CHORUS_LOG:-/Users/jeffbridwell/CascadeProjects/chorus/platform/sc
 
 log(){ echo "$(date '+%F %T') [$LOG_TAG] $*"; }
 spine(){ "$CHORUS_LOG" "$1" silas "${@:2}" 2>/dev/null || true; }
-cleanup(){ umount "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
+cleanup(){ sudo -n umount "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
 trap cleanup EXIT
 
 # 0. bedroom reachable (read is free; this is the precondition)
@@ -42,15 +42,17 @@ SNAP="com.apple.TimeMachine.${SNAP_DATE}.local"
 log "snapshot: $SNAP"
 
 # 2. mount it read-only and locate the TDB2 dir
-# #3582 — retry + CAPTURE the error. The 2026-06-24 03:00 failure was transient (a clean
-# user-context mount of the same snapshot succeeds — privilege is NOT the issue); a freshly
-# created snapshot isn't always immediately mountable. The old `2>/dev/null` HID the real
-# cause, leaving "mount-failed" with no detail. Retry with a settle delay; log real stderr.
+# #3582/#3586 — retry + CAPTURE the error. ROOT CAUSE (corrected): the scheduled LaunchAgent
+# context lacks the Full Disk Access an interactive Terminal has, so plain mount_apfs returns
+# "Operation not permitted". An interactive mount succeeds (Terminal has FDA) — which is why
+# the "transient" theory was wrong. Fix (#3586): `sudo -n mount_apfs` via the NOPASSWD
+# /etc/sudoers.d/fuseki-backup grant (mount_apfs + umount only). The retry + captured stderr
+# remain as a safety net for genuinely-transient mount hiccups.
 mount_ok=0; mount_err=""
 for attempt in 1 2 3 4 5; do
-  if mount_err="$(mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>&1)"; then mount_ok=1; break; fi
+  if mount_err="$(sudo -n mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>&1)"; then mount_ok=1; break; fi
   log "mount_apfs attempt $attempt/5 failed: $mount_err"
-  umount "$MNT" 2>/dev/null || true   # #3582 (Kade DE-review): clear any partial mount so the next attempt's error isn't masked by an already-mounted path
+  sudo -n umount "$MNT" 2>/dev/null || true   # #3582 (Kade DE-review): clear any partial mount so the next attempt's error isn't masked by an already-mounted path
   sleep 3
 done
 [ "$mount_ok" = 1 ] || { log "ERROR: mount_apfs failed after 5 attempts for $SNAP: $mount_err"; spine ops.backup.fuseki.failed reason=mount-failed detail="$mount_err"; exit 1; }
@@ -71,7 +73,7 @@ if [ "$SRC_N" != "$DST_N" ]; then
 fi
 
 # 5. release the snapshot + prune old remote backups (keep last $KEEP)
-umount "$MNT" 2>/dev/null || true
+sudo -n umount "$MNT" 2>/dev/null || true
 tmutil deletelocalsnapshots "$SNAP_DATE" 2>/dev/null || true
 ssh -o ConnectTimeout=10 "$REMOTE" "ls -1dt '$DEST_BASE'/fuseki-pods-* 2>/dev/null | tail -n +$((KEEP+1)) | xargs -I{} rm -rf {}" 2>/dev/null || true
 
