@@ -1183,7 +1183,7 @@ chorus:loom chorus:hasDomain chorus:loom-policies .
 chorus:athena-product chorus:hasDomain chorus:domains-domain, chorus:services-domain .
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties .
+chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties, chorus:security-trust .   # #3587: repointed from security-domain → security-trust (V2 canonical); security-trust also has partOf borgProduct
 # ^ chorus:Properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
