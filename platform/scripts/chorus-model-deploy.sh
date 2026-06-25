@@ -32,6 +32,13 @@ else
   MODEL_SET=(
     "$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
     "$CHORUS_ROOT/roles/kade/ontology/werk-domains.ttl"
+    # #3593 — the 34 V2 domains were LIVE-ONLY (materialized into the graph, not in any
+    # deployed file), so a default deploy that made one a staging-subject wiped its decl
+    # (the #3587 security-trust incident). Bring their sources INTO the MODEL_SET so a
+    # default deploy re-asserts them instead of wiping — AND so the retire-subject step
+    # below has the FULL domain set in staging (its safety precondition).
+    "$CHORUS_ROOT/roles/wren/ontology/domains-wren-silas.ttl"
+    "$CHORUS_ROOT/roles/kade/ontology/domains-kade-3581.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
@@ -81,7 +88,21 @@ done
 # SUBJECT is (re)defined in staging, then INSERT staging. A domain deploy replaces
 # only its OWN subjects' triples; every sibling domain + live-loaded instance data
 # survives. No full-graph clear (dodges #3496's large-clear NodeTableTRDF failure).
-MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }"
+# #3593 retire-subject: on a FULL deploy (the complete MODEL_SET is in staging), also
+# DELETE ontology subjects typed chorus:Domain/SubDomain that are ABSENT from staging —
+# i.e. domains removed from the model (the strangler-fig RETIRE leg; #3587 left a phantom
+# because the additive merge alone never deletes a removed subject). SAFETY: correct ONLY
+# when staging holds ALL domains, so it is GATED OFF for TTL= partial deploys (a single-
+# file staging would mark every OTHER domain "absent" → mass delete). RETIRE_ABSENT
+# defaults to 1 on a full deploy (TTL unset), 0 on a TTL= override; tests force it with a
+# throwaway ONTOLOGY_GRAPH. Appended to the SAME transaction (staging still exists here).
+RETIRE_ABSENT="${RETIRE_ABSENT:-$([ -z "${TTL:-}" ] && echo 1 || echo 0)}"
+NS_CHORUS="https://jeffbridwell.com/chorus#"
+RETIRE_CLAUSE=""
+if [ "$RETIRE_ABSENT" = "1" ]; then
+  RETIRE_CLAUSE=" ; DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?s a ?t ; ?p ?o . FILTER(?t IN (<${NS_CHORUS}Domain>, <${NS_CHORUS}SubDomain>)) } FILTER NOT EXISTS { GRAPH <$STAGING> { ?s ?sp ?so } } }"
+fi
+MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
 ccode=$(curl -s -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
   --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
