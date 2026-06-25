@@ -1704,6 +1704,14 @@ chorus:public   a owl:NamedIndividual ; rdfs:label "public" .
 chorus:internal a owl:NamedIndividual ; rdfs:label "internal" .
 chorus:secret   a owl:NamedIndividual ; rdfs:label "secret" .
 
+# #3584 — chorus:repoTarget was ALSO used (chorus:Properties, and the security-domain decl above)
+# but never declared — same undefined-symbol class. Declared here (helps Properties too).
+chorus:repoTarget a owl:DatatypeProperty ;
+    rdfs:label "repo target" ;
+    rdfs:comment "Repo path a domain projects to (the ADR-041 repo-as-projection override)." ;
+    rdfs:domain chorus:Domain ;
+    rdfs:range xsd:string .
+
 chorus:CredentialShape a sh:NodeShape ;
     sh:targetClass chorus:Credential ;
     sh:property [
