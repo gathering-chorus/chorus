@@ -2132,6 +2132,7 @@ chorus:ProductShape a sh:NodeShape ;
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;
     sh:targetClass chorus:Domain ;
+    chorus:instancesGraph "urn:chorus:ontology" ;   # #3581: serve the punned Domain class-individuals from the ontology graph where they LIVE (not the empty urn:chorus:instances default) — fixes owl-api /domains=0. Steward call A (Silas, 2026-06-25); mirrors TestShape:instancesGraph.
     sh:property [ sh:path rdfs:label               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy           ; sh:minCount 1 ; sh:class chorus:Role ] ;
