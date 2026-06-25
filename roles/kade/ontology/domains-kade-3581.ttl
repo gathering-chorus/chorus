@@ -1,0 +1,52 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3581 — Kade-lane domain materialization (round 1: the 5 non-tests).
+# Paired Wren(drive)+Kade(this file). Authored to the VERIFIED RESOLVING forms
+# (every edge target confirmed to exist in urn:chorus:ontology — NOT tree.json's
+# value-stream-step-*/role-*/bare-product forms, which dangle):
+#   ownedBy → chorus:kade · atStep → chorus:Building|Designing (capitalized bare)
+#   partOf  → chorus:chorusProduct (the real Product; coarse, matching Properties template)
+#   atStream → chorus:chorusStream · punned owl:Class + chorus:Domain
+# definesVocabulary ONLY where a real owl:Class exists (verified live); else FLAGGED.
+# Subproduct granularity (werk/convergence) = follow-on additive edge + Jeff call (Wren carding).
+# tests is ROUND 2 (re-deploy Test/TestResult/TestSuiteRun classes + the tests domain).
+
+chorus:code a owl:Class, chorus:Domain ;
+  rdfs:label "code" ; chorus:comment "Source code quality — linting, type-checking, and static analysis." ;
+  chorus:purpose "Keep the source trustworthy at rest — lint, type-check, and static-analysis ratchets that only tighten — so quality is enforced continuously, not audited after the fact." ;
+  chorus:ownedBy chorus:kade ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/scripts/clippy-ratchet.sh" ; chorus:definesVocabulary chorus:CodeFile .
+
+chorus:pipelines a owl:Class, chorus:Domain ;
+  rdfs:label "pipelines" ; chorus:comment "CI/CD and build orchestration — how code moves from commit to production. Parent of the cicd child domain (#3275)." ;
+  chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
+  chorus:ownedBy chorus:kade ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline ;
+  chorus:hasChild chorus:cicd .
+
+chorus:cicd a owl:Class, chorus:Domain ;
+  rdfs:label "cicd" ; chorus:comment "The CI/CD orchestrator — the act + werk.yml pipeline (commit->build->deploy->test->rollback) that runs werk's Building value stream. Child domain of pipelines; service-warranting. #3275." ;
+  chorus:purpose "Run werk's Building value stream as one orchestrated engine — act + werk.yml driving commit->build->deploy->test->rollback — so the pipeline is a single declared, observable mechanism rather than a chain of hand-run verbs." ;
+  chorus:ownedBy chorus:kade ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget ".github/workflows/werk.yml" ; chorus:definesVocabulary chorus:Workflow .
+
+chorus:version-control a owl:Class, chorus:Domain ;
+  rdfs:label "version-control" ; chorus:comment "Git workflow, branches, worktrees, hooks, and commit policy enforcement." ;
+  chorus:purpose "Make git movement safe and legible for a multi-agent team — ephemeral per-card worktrees, branch and commit-policy enforcement at the hooks — so concurrent role work never corrupts shared history." ;
+  chorus:ownedBy chorus:kade ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/scripts/chorus-werk" .
+  # FLAG: no real owl:Class vocab (WerkSlot/MergeEvent are record classes, not the domain's noun) — omitted, not faked.
+
+chorus:integrations a owl:Class, chorus:Domain ;
+  rdfs:label "integrations" ; chorus:comment "Connections to external systems — NiFi, APIs, cross-product data flows." ;
+  chorus:purpose "Connect the system to the outside — NiFi flows, external APIs, and cross-product data movement — so integration is a governed boundary, not ad-hoc glue." ;
+  chorus:ownedBy chorus:kade ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "convergence" .
+  # FLAG: no real owl:Class vocab — omitted, not faked.
