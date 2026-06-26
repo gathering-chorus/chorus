@@ -19,6 +19,17 @@ if ! "$REPO/platform/scripts/gate-test-type.sh" staged; then
   exit 1
 fi
 
+# #3598 — retirement gate: a deleted surface (script/gate/hook/source) must not
+# leave orphaned tests that still reference it (the rot class that fed the nightly
+# false-reds — git-queue.sh/show-gate.sh/done-gate.sh deleted, their .bats left
+# behind). Diff-scoped to staged deletions; fail-opens on infra gaps.
+if ! CHORUS_ROOT="$REPO" "$REPO/platform/scripts/retirement-gate.sh"; then
+  echo "" >&2
+  echo "🪦 pre-commit BLOCKED: a deleted surface still has tests referencing it (#3598)." >&2
+  echo "   Retire or repoint those tests in THIS commit — don't leave orphaned rot." >&2
+  exit 1
+fi
+
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks not installed (brew install gitleaks) — secret scan SKIPPED" >&2
   exit 0  # fail-open on missing tool: don't block work on a dev-setup gap; CI gates hard
