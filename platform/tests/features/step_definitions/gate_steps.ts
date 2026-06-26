@@ -2,6 +2,7 @@ import { Given, When, Then, Before, After } from '@cucumber/cucumber';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import assert from 'assert';
 
 const HOOK_SHIM = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/chorus-hooks/target/release/chorus-hook-shim';
@@ -9,6 +10,16 @@ const STATE_DIR = '/tmp/claude-team-scan';
 const BRIEFS_DIR = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/briefs';
 const HOME = process.env.HOME || '/Users/jeffbridwell';
 const TEST_CARD_ID = '99998';
+
+// #3598 — HERMETIC target paths. The steps used to edit ABSOLUTE CANONICAL paths
+// (/Users/.../chorus/roles/kade/src/app.ts), so canonical_write_guard (which runs
+// FIRST in the hook) fired "canonical is read-only" BEFORE the gate under test
+// (tdd/log_first/memory/pair) could run — ~33 false reds every nightly. Fix: edit
+// paths in a sandbox OUTSIDE canonical that PRESERVE the roles/<role>/ structure
+// the domain gates classify by. canonical_write_guard keys on $CHORUS_HOME, so a
+// /tmp sandbox path passes through to the real gate. No <ROLE>_WERK needed.
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'bdd-gate-'));
+const sandboxPath = (rel: string): string => path.join(SANDBOX, rel);
 
 // Test isolation — each scenario gets a unique session and clean state
 const ALL_ROLES = ['kade', 'silas', 'wren'];
@@ -35,7 +46,7 @@ Before(function () {
     sessionLines: [],
     hookResult: null,
     stateBackups: new Map(),
-    targetFile: '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs',
+    targetFile: sandboxPath('platform/services/smoke-test.rs'),
     targetTool: 'Edit',
     cwd: '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade',
   };
@@ -396,7 +407,7 @@ Given('the previous tool was {string} with exit code {int}', function (cmd: stri
 
 When('they try to edit a code file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs';
+  ctx.targetFile = sandboxPath('platform/services/smoke-test.rs');
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -406,7 +417,7 @@ When('they try to edit a code file', function () {
 
 When('they try to edit a code file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/src/app.ts';
+  ctx.targetFile = sandboxPath('roles/kade/src/app.ts');
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -418,7 +429,7 @@ When('they try to edit a cross-domain code file', function () {
   ctx.targetTool = 'Edit';
   // Cross-domain for kade (engineer): must NOT contain /engineer/ or /src/
   // (memory_gate treats both as Kade's own domain)
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/wren/scripts/gate-check.ts';
+  ctx.targetFile = sandboxPath('roles/wren/scripts/gate-check.ts');
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -428,7 +439,7 @@ When('they try to edit a cross-domain code file', function () {
 
 When('they try to edit a file in their own domain', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/roles/kade/src/app.ts';
+  ctx.targetFile = sandboxPath('roles/kade/src/app.ts');
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -438,7 +449,7 @@ When('they try to edit a file in their own domain', function () {
 
 When('they try to edit a markdown file', function () {
   ctx.targetTool = 'Edit';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/README.md';
+  ctx.targetFile = sandboxPath('platform/README.md');
   ctx.hookResult = callHook('Edit', {
     file_path: ctx.targetFile,
     old_string: 'x',
@@ -469,7 +480,7 @@ When('they try to run acp on the card', function () {
 
 When('they try to read a code file', function () {
   ctx.targetTool = 'Read';
-  ctx.targetFile = '/Users/jeffbridwell/CascadeProjects/chorus/platform/services/smoke-test.rs';
+  ctx.targetFile = sandboxPath('platform/services/smoke-test.rs');
   ctx.hookResult = callHook('Read', {
     file_path: ctx.targetFile,
   }, ctx.sessionId, ctx.cwd, ctx.role);

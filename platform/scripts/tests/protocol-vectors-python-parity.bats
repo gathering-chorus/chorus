@@ -48,13 +48,9 @@ print('ok')
 # was removed from .protocol_test_vectors.json (only empty/known_content remain),
 # so the test IndexError'd every run. Retired with its fixture, not left as rot.
 
-@test "vector core_paths matches manifest protocol_core" {
-  run python3 -c "
-import json
-v = json.load(open('$VECTORS'))
-m = json.load(open('$CHORUS_ROOT/designing/claudemd/manifest.json'))
-assert sorted(v['core_paths']) == sorted(m['protocol_core']), (v['core_paths'], m['protocol_core'])
-print('ok')
-"
-  [ "$status" -eq 0 ]
-}
+# NOTE: the "vector core_paths matches manifest protocol_core" test was retired
+# (#3598, confirmed by Wren as claudemd owner). #3254 deliberately removed the
+# core_paths pin from .protocol_test_vectors.json — pinning a live-content path
+# set cried wolf on every CLAUDE.md regen. Whether the live doc matches its
+# fragments is the RUNTIME guard's job, not this unit test's. Re-adding core_paths
+# would re-introduce the exact churn #3254 killed. Retired with its field.
