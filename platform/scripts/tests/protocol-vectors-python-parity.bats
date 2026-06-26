@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit
 # #2311 — Python side of the cross-language parity contract.
 #
 # The Rust hook's sibling test asserts identical digests. Any canonicalization
@@ -43,15 +44,9 @@ print('ok')
   [ "$status" -eq 0 ]
 }
 
-@test "live_core fixture matches hash stamped in role CLAUDE.md headers" {
-  stamp=$(grep -oE 'protocol-core: sha256=[a-f0-9]+' "$CHORUS_ROOT/roles/kade/CLAUDE.md" | head -1 | cut -d= -f2)
-  vector=$(python3 -c "
-import json
-v = json.load(open('$VECTORS'))
-print([f for f in v['fixtures'] if f['name']=='live_core'][0]['expected_core_hash'])
-")
-  [ "$stamp" = "$vector" ]
-}
+# NOTE: the "live_core fixture" test was retired (#3598) — the live_core fixture
+# was removed from .protocol_test_vectors.json (only empty/known_content remain),
+# so the test IndexError'd every run. Retired with its fixture, not left as rot.
 
 @test "vector core_paths matches manifest protocol_core" {
   run python3 -c "
