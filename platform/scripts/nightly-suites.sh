@@ -300,7 +300,8 @@ run_one_attempt() {
       local out rc jest_env
       jest_env=$(_npm_jest_env "$path")
       out=$(cd "$path" && env $jest_env npx jest --passWithNoTests --silent 2>&1); rc=$?
-      out=$(echo "$out" | tail -3)
+      # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
+      # failure detail at the source so the saved fail-log held nothing usable).
       summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
       [ "$rc" -ne 0 ] && status="fail"
       ;;
@@ -371,7 +372,11 @@ run_one_attempt() {
   local _flog; _flog=$(_fail_log_path "$kind" "$path")
   if [ "$status" = "fail" ]; then
     mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
-    printf '%s\n' "${out:-}" | tail -25 > "$_flog" 2>/dev/null || true
+    # #3598 — log ALL errors, not a tail. The old `tail -25` kept only the LAST
+    # ~1 failure of a multi-failure suite (cucumber emits 756 lines / 29 failures);
+    # you could never diagnose the suite from its saved log, forcing a re-run.
+    # Keep the full output so the log IS the source of truth.
+    printf '%s\n' "${out:-}" > "$_flog" 2>/dev/null || true
   else
     rm -f "$_flog" 2>/dev/null || true
   fi
@@ -466,7 +471,7 @@ run_smoke() {
   local out rc; out=$(bash "$sc" --all 2>&1); rc=$?
   if [ "$rc" -eq 0 ]; then echo "SUITE|smoke|$sc|kade|pass|1 pass, 0 fail (smoke --all clean)"
   else
-    mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true; printf '%s\n' "$out" | tail -25 > "$(_fail_log_path smoke "$sc")" 2>/dev/null || true
+    mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true; printf '%s\n' "$out" > "$(_fail_log_path smoke "$sc")" 2>/dev/null || true  # #3598 — full output, not tail
     echo "SUITE|smoke|$sc|kade|fail|0 pass, 1 fail (smoke --all rc=$rc)"
   fi
 }
