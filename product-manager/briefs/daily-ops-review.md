@@ -1,40 +1,40 @@
-# Daily Ops Review — 2026-06-26
+# Daily Ops Review — 2026-06-29
 
 ## 1. Hooks Health
 **Status: YELLOW (carry)**
-`cargo check` passes (30s clean); same 8 dead-code warnings, now 24-day carry. Confirmed today: `load_role_sections` (protocol_contract.rs:155), `chorus_worktree_override` (types.rs:64) still present.
-**Action:** Silas — suppress with `#[allow(dead_code)]` or delete dead code; no movement in 24 days.
+`cargo check` passes (36s) with 8 warnings — count unchanged from yesterday. Dead code: `load_role_sections` (protocol_contract.rs:155), `chorus_worktree_override` (types.rs:64), plus 6 others. No regression, no remediation.
+**Action:** Silas — suppress or delete; 25-day carry, no movement.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-17+ plists in `proving/config/launchagents/` use `/tmp/` for StandardOut/Err (hooks, api, context-cache ×3, alert-notifier, clearing, fuseki ×2, ops, cruft-scan, nudge-health, perf-baseline, harvest-exporter, jeff-input-monitor). 24-day carry.
-**Action:** Migrate StandardOut/Err to `~/Library/Logs/Chorus/`; blocked without host LaunchAgent access.
+36 plist files use `/tmp/` for stdout/stderr across `proving/config/launchagents/`, `config/launchagents/`, and `platform/scripts/launchagents-canonical/`. Count unchanged from yesterday. Structural, not incidental.
+**Action:** Migrate StandardOut/Err to `~/Library/Logs/Chorus/`; file a card to scope the sweep.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (approaching threshold)**
-`designing/claudemd/` (roles/ + shared/, 24+ fragments) last committed Jun 21 — 5 days, threshold Jun 28. Chorus domain shipping hard (#3593, #3596, #3581 this week); fragments lag. No role CLAUDE.md files exist in `roles/` subdirs.
-**Action:** Wren — run claudemd pipeline before Jun 28; focus on chorus-prompt.md and shared protocol fragments.
+**Status: YELLOW (carry)**
+`designing/claudemd/shared/` has 21 fragments; 18/21 last touched Jun 5 (24 days). 3 updated today (cross-machine-operations-core/reference, portfolio-reference). Chorus domain shipping heavily (#3581–#3596) but `chorus-prompt.md` and most shared fragments lag.
+**Action:** Wren — refresh `chorus-prompt.md` and any shared fragments that reference chorus protocol state.
 
 ## 4. CSC Compliance
-**Status: YELLOW (carry)**
-36 scripts in `platform/scripts/` reference `/tmp/`; ~15 non-test uses hardcoded (look.sh, bedroom-heartbeat.sh, deep-health.sh, chorus-query.sh, crawler-hydrate-graph.sh). DEC-114 is detected at runtime by deep-health.sh but not remediated at source.
-**Action:** Silas — annotate legitimate /tmp uses; migrate state files to `$CHORUS_HOME` paths.
+**Status: RED (carry)**
+15 non-plist scripts in `platform/scripts/` have hardcoded `/tmp/` paths: `bridge-subscriber.js` (runtime inbox), `coherence-check`, `look.sh`, `bedroom-heartbeat.sh`, `index-crawler-snapshots.sh`, `werk-init.sh`, others. Unresolved since May review.
+**Action:** Silas — assign owner or timebox for July. `bridge-subscriber.js` is highest risk (runtime, role-scoped inbox path).
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Working tree clean across all tracked dirs. Today: #3593 (silas) + #3596 (kade) merged. No uncommitted changes. No action.
+Repo clean — 0 uncommitted changes. Last commits: #3593 (silas) and #3596 (kade) merged via PRs #713/#712. No action.
 
 ## 6. Stale WIP Cards
-**Status: UNKNOWN (carry)**
-Live Vikunja board not queryable from remote container; no snapshot committed to repo. Prior reading (Jun 25) flagged 2 cards untouched since Apr 7 (now 80 days): "Framework service design — OWL entity model" and "Restore chorus product boundary".
-**Action:** Jeff or Wren — pull board snapshot; confirm stale cards are closed, blocked, or re-groomed.
+**Status: RED**
+Board snapshot shows exactly 2 WIP cards, both untouched since 2026-04-07 (82 days): #1759 [Wren] "Framework service design — OWL entity model" and #1791 [Silas] "Restore chorus product boundary". No fresh WIP.
+**Action:** Wren + Silas — close, park, or re-groom both cards today; 82-day WIP limbo is a planning liability.
 
 ## 7. Domain Context Freshness
-**Status: YELLOW (approaching threshold)**
-`domain-context-chorus.md` last committed Jun 21 (5 days); 10+ Chorus cards shipped since (#3593, #3596, #3581, #3586, #3584, #3582, #3573, #3579, #3575). Will breach 7-day threshold Jun 28. `domain-context-infrastructure.md` fresh (Jun 26). Music/photos/seeds unchanged but no active cards in those domains.
-**Action:** Wren — update domain-context-chorus.md today or tomorrow; infrastructure OK.
+**Status: YELLOW**
+`domain-context-infrastructure.md` updated today (Jun 29) — fresh. `domain-context-chorus.md` last touched Jun 5 (24 days); 5+ cards shipped in chorus domain this week (#3581, #3587, #3590, #3593, #3596). Music/photos/seeds stale at 24 days but no active cards in those domains.
+**Action:** Wren or Silas — update `domain-context-chorus.md`; chorus context has drifted past shipped state.
 
 ## 8. Disk Delta
 **Status: N/A**
-No perf-baseline snapshots in repo (LaunchAgent outputs to host only; `proving/logs/perf-baseline-*.json` not committed). Cannot compute delta from remote context.
-**Action:** Silas — surface nightly perf-baseline JSON to repo for delta tracking across sessions.
+No runtime perf-baseline snapshots committed to repo (`perf-baseline.sh` exists but outputs to host only). Cannot compute delta from remote context.
+**Action:** Silas — surface nightly baseline JSON to repo path for cross-session delta tracking.
