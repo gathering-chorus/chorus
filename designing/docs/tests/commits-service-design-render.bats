@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: ui
 # Test: rendered HTML for the version-control service design contains the
 # mermaid loader so that ```mermaid``` blocks render visually as diagrams,
 # not as code text.
@@ -13,10 +14,11 @@ HTML="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/designing/docs/
   grep -q 'import mermaid from' "$HTML"
 }
 
-@test "rendered html contains the werk-lifecycle mermaid block" {
-  grep -q 'subgraph WERK' "$HTML"
-}
-
-@test "rendered html contains the shared-infrastructure mermaid block" {
-  grep -q 'subgraph SHARED' "$HTML"
+# #3598 — the WERK/SHARED subgraph assertions were retired: the diagram was
+# restructured from labelled subgraphs to a flat mermaid `flowchart` (the doc
+# legitimately changed, the render is fine). Assert the diagram still RENDERS
+# rather than coupling to brittle subgraph label names.
+@test "rendered html contains a mermaid diagram" {
+  grep -q 'class="mermaid"' "$HTML"
+  grep -qE 'flowchart|graph (TD|LR)' "$HTML"
 }
