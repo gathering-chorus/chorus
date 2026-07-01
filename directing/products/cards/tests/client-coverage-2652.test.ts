@@ -1,3 +1,5 @@
+// @test-type: unit — BoardClient with the api() HTTP layer fully stubbed; no
+// socket opened, no live Vikunja/network. Pure client-logic coverage.
 /**
  * #2652 AC11 — BoardClient coverage uplift (44% → ≥70%).
  * Each test instantiates BoardClient directly with the api() HTTP layer stubbed.
@@ -17,7 +19,6 @@ function stub(client: BoardClient, opts: {
   const labels = opts.labels ?? [];
   const responses = opts.responses ?? new Map();
   const tasks = opts.tasks ?? new Map();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).api = jest.fn(async (method: string, endpoint: string, body?: object) => {
     calls.push({ method, endpoint, body });
     const key = `${method} ${endpoint}`;
@@ -33,15 +34,12 @@ function stub(client: BoardClient, opts: {
     if (method === 'GET' && taskMatch) return tasks.get(parseInt(taskMatch[1], 10));
     return { ok: true };
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).fetchTask = jest.fn(async (apiId: number) => {
     const t = tasks.get(apiId);
     if (!t) throw new Error(`No task ${apiId}`);
     return t;
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).resolveIndex = jest.fn(async (i: number) => i);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).clearCache = jest.fn();
   return { calls, labels };
 }

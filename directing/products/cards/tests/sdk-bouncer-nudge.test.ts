@@ -1,3 +1,5 @@
+// @test-type: unit — sendCardApprovalNudge with the pulse messaging API stubbed;
+// no live socket/session. Pure SDK-logic assertion on the delivered payload.
 /**
  * sendCardApprovalNudge — #2924 AC1.
  *
@@ -89,9 +91,7 @@ describe('sendCardApprovalNudge (#2924 AC1)', () => {
   });
 
   test('returns delivered:false with no-fetch-impl when fetch unavailable', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const origFetch = (globalThis as any).fetch;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).fetch = undefined;
     try {
       const result = await sendCardApprovalNudge({
@@ -102,7 +102,6 @@ describe('sendCardApprovalNudge (#2924 AC1)', () => {
       expect(result.delivered).toBe(false);
       expect(result.error).toBe('no-fetch-impl');
     } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (globalThis as any).fetch = origFetch;
     }
   });

@@ -1,28 +1,17 @@
 {
-  "generatedAt": "2026-05-24T14:57:06.331Z",
+  "generatedAt": "2026-07-01T14:02:37.574Z",
   "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop.",
   "counts": {
     "sonarjs/no-duplicate-string": 4,
     "sonarjs/cognitive-complexity": 19,
-    "__syntax__": 12,
-    "preserve-caught-error": 14,
-    "security/detect-object-injection": 7,
-    "security/detect-unsafe-regex": 6,
-    "security/detect-non-literal-regexp": 3,
-    "complexity": 7,
-    "quotes": 18,
-    "@typescript-eslint/no-unnecessary-condition": 13,
-    "@typescript-eslint/no-explicit-any": 7,
-    "security/detect-non-literal-fs-filename": 8,
-    "no-useless-assignment": 9,
-    "no-sparse-arrays": 1,
-    "@typescript-eslint/no-base-to-string": 15,
-    "jest/no-conditional-expect": 5,
+    "complexity": 5,
+    "@typescript-eslint/require-await": 5,
+    "@typescript-eslint/no-unnecessary-condition": 12,
+    "no-useless-assignment": 3,
+    "@typescript-eslint/no-floating-promises": 1,
     "jest/no-disabled-tests": 2,
-    "max-lines-per-function": 8,
-    "max-depth": 2,
-    "no-useless-catch": 2,
-    "@typescript-eslint/require-await": 20,
-    "@typescript-eslint/no-floating-promises": 2
+    "max-lines-per-function": 6,
+    "preserve-caught-error": 1,
+    "no-useless-catch": 1
   }
 }
