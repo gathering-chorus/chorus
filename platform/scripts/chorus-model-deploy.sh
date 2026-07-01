@@ -96,24 +96,62 @@ done
 # file staging would mark every OTHER domain "absent" → mass delete). RETIRE_ABSENT
 # defaults to 1 on a full deploy (TTL unset), 0 on a TTL= override; tests force it with a
 # throwaway ONTOLOGY_GRAPH. Appended to the SAME transaction (staging still exists here).
-RETIRE_ABSENT="${RETIRE_ABSENT:-$([ -z "${TTL:-}" ] && echo 1 || echo 0)}"
+# #3536: KILL the truncate-default. Retire (destructive domain-delete) is now explicit
+# opt-in (RETIRE_ABSENT=1), never the default — the old "default 1 on full deploy" was the
+# 06-26 graph-wipe root (a default deploy whose staging lacked the 34 live domains retired
+# them all). Deploys never truncate by default; when retire IS opted in, the union≥live
+# guard below refuses on thin staging. ("stop truncating our data" — Jeff, 2026-06-30.)
+RETIRE_ABSENT="${RETIRE_ABSENT:-0}"
 NS_CHORUS="https://jeffbridwell.com/chorus#"
 RETIRE_CLAUSE=""
 if [ "$RETIRE_ABSENT" = "1" ]; then
+  # #3536 empty-staging guard: retire DELETEs live domain subjects ABSENT from staging.
+  # If staging holds ZERO domains, retire would delete EVERY live domain — the catastrophic
+  # wipe. Refuse fail-loud. (A count vs LIVE can't be used: retiring N domains legitimately
+  # makes staging = live-N, so "staging < live" wrongly blocks all retirement — TDD caught
+  # that. Load failures are already caught above; MODEL_SET completeness is the #3593 fix;
+  # this is the last-resort backstop against a 0-domain staging ever driving a total wipe.)
+  _stag=$(curl -s "$FUSEKI_QUERY" --data-urlencode "query=PREFIX c: <${NS_CHORUS}> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$STAGING> { ?s a ?t . FILTER(?t IN (c:Domain, c:SubDomain)) } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+  if [ "${_stag:-0}" -eq 0 ]; then
+    echo "chorus-model-deploy: REFUSING retire — staging has 0 domain subjects (empty/incomplete staging would delete ALL live domains; #3536 guard)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retire-guard-empty-staging" staging=0 2>/dev/null || true
+    curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
   RETIRE_CLAUSE=" ; DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?s a ?t ; ?p ?o . FILTER(?t IN (<${NS_CHORUS}Domain>, <${NS_CHORUS}SubDomain>)) } FILTER NOT EXISTS { GRAPH <$STAGING> { ?s ?sp ?so } } }"
 fi
 MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
 ccode=$(curl -s -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
   --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
-curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 if [ "$ccode" != "200" ] && [ "$ccode" != "204" ]; then
   echo "chorus-model-deploy: additive merge staging->ontology failed (http $ccode)" >&2
   head -3 /tmp/chorus-model-copy-resp.txt >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="merge-http-$ccode" 2>/dev/null || true
+  curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
 code="$ccode"
+
+# #3536 AC2 OUTPUT VERIFICATION (postcondition — staging still present, fail-loud at the source).
+# Assert every staged subject actually landed in the ontology — catches a lying-2xx / partial
+# INSERT. Since the merge re-inserts ALL staging triples for staged subjects, a staged subject
+# present post-merge carries its triples — so this IS the "expected classes + shapes present
+# post-deploy" check (e.g. DomainShape keeps its sh:property — the #3536 06-20 wipe class).
+# Co-tenant preservation / "no unexpected deletion" is STRUCTURAL, not runtime-checked: the
+# additive merge only DELETEs staged subjects, so non-staged subjects are untouched by
+# construction (a runtime co-tenant diff would be dead code). SHACL input-validation is the
+# remaining AC2 gap, gated on a SHACL tool — tracked on the card, not faked here.
+_missing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+  "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$ONTOLOGY_GRAPH> { ?s ?q ?r } } }" \
+  -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+if [ "${_missing:-0}" -ne 0 ] 2>/dev/null; then
+  echo "chorus-model-deploy: OUTPUT-VERIFY FAILED — ${_missing} staged subject(s) absent from <$ONTOLOGY_GRAPH> post-merge (INSERT dropped data; #3536 AC2)" >&2
+  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-staged-missing" missing="${_missing}" 2>/dev/null || true
+  curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  exit 1
+fi
+curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 
 # Verify it actually landed — count triples (proof, not assumption).
 n=$(curl -s "$FUSEKI_QUERY" --data-urlencode \

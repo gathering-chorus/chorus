@@ -101,3 +101,36 @@ EOF
   run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SCRIPT"
   [ "$output" -ge 2 ]
 }
+
+# --- #3536: stop-truncating primitive (default-off flip + empty-staging backstop) ---
+
+@test "#3536 RETIRE_ABSENT defaults OFF — no truncate-by-default (the 06-26 wipe root)" {
+  run grep -cE 'RETIRE_ABSENT:-0' "$SCRIPT"
+  [ "$output" -ge 1 ]
+  # the old default-1-on-full-deploy form must be gone
+  run grep -cE 'RETIRE_ABSENT:-\$\(\[ -z' "$SCRIPT"
+  [ "$output" -eq 0 ]
+}
+
+@test "#3536 empty-staging guard: retire against 0-domain staging REFUSES, never wipes live" {
+  G="${TEST_GRAPH}-empty"
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  pre="$(mktemp)"; cat > "$pre" <<'EOF'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
+EOF
+  curl -s -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  # staging TTL with NO domain subjects (valid TTL, zero domains) + explicit retire
+  nodom="$(mktemp).ttl"; cat > "$nodom" <<'EOF'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:someInst a chorus:Test ; chorus:purpose "not a domain" .
+EOF
+  run env ONTOLOGY_GRAPH="$G" TTL="$nodom" RETIRE_ABSENT=1 bash "$SCRIPT"
+  rm -f "$pre" "$nodom"
+  # guard REFUSES (exit non-zero)
+  [ "$status" -ne 0 ]
+  # live domain SURVIVES — no wipe
+  run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+}
