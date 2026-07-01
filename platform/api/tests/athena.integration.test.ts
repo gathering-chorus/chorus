@@ -404,12 +404,28 @@ describeIntegration('POST /api/athena/subdomains', () => {
   });
 });
 
-describeIntegration('POST /api/athena/reload', () => {
-  test('returns 200 or 500 with envelope', async () => {
+// #3602 — SKIPPED (was describeIntegration). This test POSTed /api/athena/reload,
+// which DROPs urn:chorus:ontology then reloads chorus.ttl ONLY, collapsing the graph
+// to 1 domain. Running it in the integration suite wiped PRODUCTION ~3x/week —
+// untraceable (raw DROP emits no model.deploy event). The old body asserted only the
+// envelope shape → green-while-wiping. DO NOT UNSKIP until /api/athena/reload routes
+// through the non-truncating deploy (additive MODEL_SET merge, never DROP — Silas #3536
+// / Wren endpoint fix). The body now ASSERTS domain-count survival, so an unskip against
+// a still-truncating endpoint FAILS loudly instead of silently wiping.
+describe.skip('POST /api/athena/reload', () => {
+  test('reload preserves the ontology (survival: subdomain count not collapsed)', async () => {
+    const before = await (await fetch(`${API}/api/athena/subdomains`)).json();
+    const beforeCount = before._meta.count as number;
+
     const res = await fetch(`${API}/api/athena/reload`, { method: 'POST' });
     const body = await res.json();
     expect(body._meta.query_name).toBe('reload');
-    // May fail with 401 from Fuseki — that's expected until auth is configured
+
+    const after = await (await fetch(`${API}/api/athena/subdomains`)).json();
+    // Survival: reload must NOT shrink the graph. The wipe collapsed 34 → 1, so a
+    // non-truncating reload keeps every subdomain (count preserved, and never ≤ 1).
+    expect(after._meta.count).toBeGreaterThanOrEqual(beforeCount);
+    expect(after._meta.count).toBeGreaterThan(1);
   });
 });
 
