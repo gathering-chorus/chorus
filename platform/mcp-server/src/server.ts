@@ -741,58 +741,128 @@ const PRIORITIES_READOUT_TOOL_DEF = {
   },
 } as const;
 
-// #3594 — the V1→V2 Athena migration readout. Thin readout sibling of priorities
-// (#3268): ONE fixed deterministic report, no params, querying the GRAPH directly
-// (the stable layer — kinds don't drift the way owl-api's response envelope did).
+// #3594 — the V1→V2 Athena migration readout, REBUILT as a per-DOMAIN stage matrix.
+// The per-kind counter it started as answered the wrong question (Jeff 2026-07-01:
+// "there were 5+ attributes to track for each domain"). For each V2 domain it tracks
+// the migration stages: created / owl-src / loaded / owl-api-run / v1-data-retired /
+// v1-code-retired / done. Graph- and source-derivable stages are computed truthfully;
+// owl-api-run and v1-code-retired are marked '—' (not-yet-instrumented), NEVER faked —
+// so the scoreboard can't read more-done than it is.
 const MIGRATION_READOUT_TOOL_DEF = {
   name: 'chorus_migration_readout',
   description:
-    'Get the live V1→V2 Athena migration status: per-kind instance counts straight from the graph (Domain/SubDomain/Product/Service/ValueStream/ValueStreamStep/Test), V1/V2 tagged. ONE fixed deterministic report answering "where are we in the V1→V2 work" — the headline is SubDomain (V1) shrinking toward 0 as the domain cutover completes. Reads urn:chorus:ontology directly (the stable layer), so it cannot drift like an owl-api-shape consumer. No params; identical every call. Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
+    'Get the live V1→V2 Athena migration status as a per-DOMAIN stage matrix: for each V2 chorus:Domain, its progress across created / owl-src / loaded / owl-api-run / v1-data-retired / v1-code-retired / done. Graph- and source-derivable stages are real; owl-api-run and v1-code-retired are marked "—" (not-yet-instrumented), never faked. ONE fixed deterministic report answering "where is each domain in the V1→V2 work" — the create side is largely done; the headline is the v1-retired column filling in. No params. Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
   inputSchema: { type: 'object', properties: {} },
 } as const;
 
-// #3594 — the migration-relevant kinds, in fixed order, + their V1/V2 role.
-const MIGRATION_KINDS = ['Domain', 'SubDomain', 'Product', 'Service', 'ValueStream', 'ValueStreamStep', 'Test'] as const;
-const MIGRATION_TAG: Record<string, string> = { Domain: 'V2', Test: 'V2', SubDomain: 'V1 → retire' };
+// #3594 — a stage cell: true=done (✓), false=not-done (·), null=not-yet-instrumented (—).
+type MigrationCell = boolean | null;
+const migrationCell = (v: MigrationCell): string => (v === null ? '—' : v ? '✓' : '·');
 
-/** #3594 — PURE render (unit-tested, like renderPrioritiesReadout): {kind: count}
- *  → the ONE fixed readout text. Never re-improvised per call. */
-export function renderMigrationReadout(counts: Record<string, number>): string {
-  const lines: string[] = ['V1→V2 Athena migration — per-kind counts (live graph):', ''];
-  for (const k of MIGRATION_KINDS) {
-    lines.push(`  chorus:${k.padEnd(18)} ${String(counts[k] ?? 0).padStart(5)}   ${MIGRATION_TAG[k] ?? ''}`.trimEnd());
+export interface MigrationInputs {
+  domains: string[]; // V2 chorus:Domain localnames present in urn:chorus:ontology
+  srcDomains: string[]; // domain localnames declared in a committed MODEL_SET .ttl
+  subdomainStems: string[]; // V1 chorus:SubDomain localnames, '-domain'/'-service' suffix stripped
+}
+export interface MigrationRow {
+  domain: string;
+  created: MigrationCell;
+  owlSrc: MigrationCell;
+  loaded: MigrationCell;
+  owlApi: MigrationCell;
+  v1Retired: MigrationCell;
+  v1Code: MigrationCell;
+  done: MigrationCell;
+}
+
+/** #3594 — PURE (unit-tested): raw graph/source facts → one row per domain. owl-api-run
+ *  and v1-code-retired stay null (not-yet-instrumented); done stays false while any stage
+ *  is unproven — the matrix never claims a domain fully migrated on partial evidence. */
+export function computeMigrationRows(inp: MigrationInputs): MigrationRow[] {
+  const src = new Set(inp.srcDomains);
+  const stems = new Set(inp.subdomainStems.map((s) => s.toLowerCase()));
+  return [...inp.domains].sort().map((d) => ({
+    domain: d,
+    created: true, // it is a chorus:Domain in the graph
+    owlSrc: src.has(d), // declared in committed MODEL_SET source
+    loaded: true, // read live from urn:chorus:ontology
+    owlApi: null, // not-yet-instrumented
+    v1Retired: !stems.has(d.toLowerCase()), // no lingering V1 SubDomain twin (by stripped name)
+    v1Code: null, // not-yet-instrumented
+    done: false, // honest: can't be ✓ while owl-api/v1-code unproven
+  }));
+}
+
+/** #3594 — PURE render (unit-tested): rows → the fixed per-domain matrix text. */
+export function renderMigrationReadout(rows: MigrationRow[]): string {
+  const lines: string[] = [
+    'V1→V2 Athena migration — per-domain stage matrix (live graph + committed source):',
+    '',
+    '  domain            created owl-src loaded owl-api v1-retired v1-code done',
+  ];
+  for (const r of rows) {
+    lines.push(
+      `  ${r.domain.padEnd(16)} ${migrationCell(r.created).padEnd(7)} ${migrationCell(r.owlSrc).padEnd(7)} ${migrationCell(r.loaded).padEnd(6)} ${migrationCell(r.owlApi).padEnd(7)} ${migrationCell(r.v1Retired).padEnd(10)} ${migrationCell(r.v1Code).padEnd(7)} ${migrationCell(r.done)}`.trimEnd(),
+    );
   }
-  lines.push('', 'where-are-we: chorus:SubDomain (V1) → 0 is the domain-cutover progress bar.');
+  const n = rows.length;
+  const done = (f: (r: MigrationRow) => MigrationCell): number => rows.filter((r) => f(r) === true).length;
+  lines.push(
+    '',
+    `${n} domains — created ${done((r) => r.created)}/${n} · owl-src ${done((r) => r.owlSrc)}/${n} · loaded ${done((r) => r.loaded)}/${n} · v1-retired ${done((r) => r.v1Retired)}/${n}`,
+    'legend: ✓ done · · not-done · — not-yet-instrumented (owl-api-run, v1-code-retired). done=✓ only when every stage is real.',
+  );
   return lines.join('\n');
 }
 
-// #3594 — handler: COUNT each kind in urn:chorus:ontology via curl→Fuseki. No fuseki
-// client in this server (#2997), so subprocess the query the same way priorities
-// subprocesses sqlite3. ONE SPARQL query; the pure render makes the report.
+// #3594 — handler: gather the facts (graph via curl→Fuseki; source via grep of the
+// committed MODEL_SET .ttl), then the pure compute+render. Same subprocess pattern as
+// priorities (#2997: no fuseki/fs client in this server). owl-api-run / v1-code-retired
+// aren't graph- or source-derivable → left null (not-yet-instrumented) by compute.
 async function executeMigrationReadout(
   execFileAsync: ExecFileAsync,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const endpoint = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/sparql';
-  const query =
-    'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
-    'SELECT ?kind (COUNT(DISTINCT ?s) AS ?count) WHERE { GRAPH ?g { ?s a ?kind } VALUES ?kind { ' +
-    MIGRATION_KINDS.map((k) => `chorus:${k}`).join(' ') +
-    ' } } GROUP BY ?kind';
-  const counts: Record<string, number> = {};
-  try {
+  const root = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const P = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> ';
+  const names = async (query: string): Promise<string[]> => {
     const { stdout } = await execFileAsync(
       'curl',
-      ['-s', endpoint, '--data-urlencode', `query=${query}`, '-H', 'Accept: application/sparql-results+json'],
+      ['-s', endpoint, '--data-urlencode', `query=${P}${query}`, '-H', 'Accept: application/sparql-results+json'],
       { timeout: 10_000 },
     );
-    const j = JSON.parse(stdout) as { results?: { bindings?: Array<{ kind: { value: string }; count: { value: string } }> } };
-    for (const b of j.results?.bindings ?? []) {
-      counts[String(b.kind.value).replace(/^.*[#/]/, '')] = Number(b.count.value);
+    const j = JSON.parse(stdout) as { results?: { bindings?: Array<{ s: { value: string } }> } };
+    return (j.results?.bindings ?? []).map((b) => String(b.s.value).replace(/^.*[#/]/, ''));
+  };
+  try {
+    const domains = await names('SELECT ?s WHERE { GRAPH <urn:chorus:ontology> { ?s a chorus:Domain } }');
+    const subs = await names('SELECT ?s WHERE { GRAPH ?g { ?s a chorus:SubDomain } }');
+    const subdomainStems = subs.map((s) => s.replace(/-(domain|service)$/i, ''));
+    // owl-src: which domain localnames are declared in a committed MODEL_SET .ttl
+    const files = [
+      'roles/silas/ontology/chorus.ttl',
+      'roles/kade/ontology/werk-domains.ttl',
+      'roles/wren/ontology/domains-wren-silas.ttl',
+      'roles/kade/ontology/domains-kade-3581.ttl',
+    ].map((f) => `${root}/${f}`);
+    let srcDomains: string[] = [];
+    try {
+      const { stdout } = await execFileAsync('grep', ['-rhoE', 'chorus:[A-Za-z0-9_-]+ +a', ...files], { timeout: 8_000 });
+      const srcSet = new Set(
+        stdout
+          .split('\n')
+          .map((l) => l.replace(/^chorus:/, '').replace(/ +a$/, '').trim())
+          .filter(Boolean),
+      );
+      srcDomains = domains.filter((d) => srcSet.has(d));
+    } catch {
+      // files unreadable / grep found nothing — leave srcDomains empty; owl-src reads '·' honestly
     }
+    const rows = computeMigrationRows({ domains, srcDomains, subdomainStems });
+    return { content: [{ type: 'text', text: renderMigrationReadout(rows) }] };
   } catch (err) {
-    throw new Error(`migration-readout: graph read failed — ${(err as Error).message}`, { cause: err });
+    throw new Error(`migration-readout: gather failed — ${(err as Error).message}`, { cause: err });
   }
-  return { content: [{ type: 'text', text: renderMigrationReadout(counts) }] };
 }
 
 /** #3268 — a row as read from the board: card display-index, title, bucket, and
