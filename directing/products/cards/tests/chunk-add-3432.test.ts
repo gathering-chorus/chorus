@@ -29,7 +29,6 @@ function stub(client: BoardClient, opts: {
   const calls: Array<{ method: string; endpoint: string; body?: object }> = [];
   const labels = opts.labels ?? [];
   const tasks = opts.tasks ?? new Map();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).api = jest.fn(async (method: string, endpoint: string, body?: object) => {
     calls.push({ method, endpoint, body });
     if (method === 'GET' && endpoint.startsWith('/labels')) return labels;
@@ -42,9 +41,7 @@ function stub(client: BoardClient, opts: {
     if (method === 'GET' && taskMatch) return tasks.get(parseInt(taskMatch[1], 10));
     return { ok: true };
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).resolveIndex = jest.fn(async (i: number) => i);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (client as any).clearCache = jest.fn();
   return { calls, labels };
 }
@@ -62,7 +59,6 @@ describe('#3432 — chunk applied at add-time', () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const { calls } = stub(client, { tasks: new Map([[500, makeTask(500)]]), labels: [] });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (client as any).applyAddLabels(500, { chunk: 'coherent-model' });
 
     // the chunk:coherent-model label is created (not in static LABELS.chunk)
@@ -82,7 +78,6 @@ describe('#3432 — chunk applied at add-time', () => {
       labels: [{ id: 19, title: 'chunk:memory' }],
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (client as any).applyAddLabels(500, { chunk: 'memory' });
 
     // no new label created — the existing one is reused
@@ -97,7 +92,6 @@ describe('#3432 — chunk applied at add-time', () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const { calls } = stub(client, { tasks: new Map([[500, makeTask(500)]]), labels: [] });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (client as any).applyAddLabels(500, { chunk: 'Coherent-Model' });
 
     const created = calls.find((c) => c.method === 'PUT' && c.endpoint === '/labels'
@@ -109,7 +103,6 @@ describe('#3432 — chunk applied at add-time', () => {
     const client = new BoardClient('http://localhost:3456', 'fake-token', GATHERING);
     const { calls } = stub(client, { tasks: new Map([[500, makeTask(500)]]), labels: [] });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (client as any).applyAddLabels(500, { domain: 'chorus', chunk: 'loom-authoring' });
 
     // domain (static LABELS.domain) still produces a label application
