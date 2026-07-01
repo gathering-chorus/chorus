@@ -741,6 +741,60 @@ const PRIORITIES_READOUT_TOOL_DEF = {
   },
 } as const;
 
+// #3594 — the V1→V2 Athena migration readout. Thin readout sibling of priorities
+// (#3268): ONE fixed deterministic report, no params, querying the GRAPH directly
+// (the stable layer — kinds don't drift the way owl-api's response envelope did).
+const MIGRATION_READOUT_TOOL_DEF = {
+  name: 'chorus_migration_readout',
+  description:
+    'Get the live V1→V2 Athena migration status: per-kind instance counts straight from the graph (Domain/SubDomain/Product/Service/ValueStream/ValueStreamStep/Test), V1/V2 tagged. ONE fixed deterministic report answering "where are we in the V1→V2 work" — the headline is SubDomain (V1) shrinking toward 0 as the domain cutover completes. Reads urn:chorus:ontology directly (the stable layer), so it cannot drift like an owl-api-shape consumer. No params; identical every call. Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
+  inputSchema: { type: 'object', properties: {} },
+} as const;
+
+// #3594 — the migration-relevant kinds, in fixed order, + their V1/V2 role.
+const MIGRATION_KINDS = ['Domain', 'SubDomain', 'Product', 'Service', 'ValueStream', 'ValueStreamStep', 'Test'] as const;
+const MIGRATION_TAG: Record<string, string> = { Domain: 'V2', Test: 'V2', SubDomain: 'V1 → retire' };
+
+/** #3594 — PURE render (unit-tested, like renderPrioritiesReadout): {kind: count}
+ *  → the ONE fixed readout text. Never re-improvised per call. */
+export function renderMigrationReadout(counts: Record<string, number>): string {
+  const lines: string[] = ['V1→V2 Athena migration — per-kind counts (live graph):', ''];
+  for (const k of MIGRATION_KINDS) {
+    lines.push(`  chorus:${k.padEnd(18)} ${String(counts[k] ?? 0).padStart(5)}   ${MIGRATION_TAG[k] ?? ''}`.trimEnd());
+  }
+  lines.push('', 'where-are-we: chorus:SubDomain (V1) → 0 is the domain-cutover progress bar.');
+  return lines.join('\n');
+}
+
+// #3594 — handler: COUNT each kind in urn:chorus:ontology via curl→Fuseki. No fuseki
+// client in this server (#2997), so subprocess the query the same way priorities
+// subprocesses sqlite3. ONE SPARQL query; the pure render makes the report.
+async function executeMigrationReadout(
+  execFileAsync: ExecFileAsync,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const endpoint = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/sparql';
+  const query =
+    'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
+    'SELECT ?kind (COUNT(DISTINCT ?s) AS ?count) WHERE { GRAPH ?g { ?s a ?kind } VALUES ?kind { ' +
+    MIGRATION_KINDS.map((k) => `chorus:${k}`).join(' ') +
+    ' } } GROUP BY ?kind';
+  const counts: Record<string, number> = {};
+  try {
+    const { stdout } = await execFileAsync(
+      'curl',
+      ['-s', endpoint, '--data-urlencode', `query=${query}`, '-H', 'Accept: application/sparql-results+json'],
+      { timeout: 10_000 },
+    );
+    const j = JSON.parse(stdout) as { results?: { bindings?: Array<{ kind: { value: string }; count: { value: string } }> } };
+    for (const b of j.results?.bindings ?? []) {
+      counts[String(b.kind.value).replace(/^.*[#/]/, '')] = Number(b.count.value);
+    }
+  } catch (err) {
+    throw new Error(`migration-readout: graph read failed — ${(err as Error).message}`, { cause: err });
+  }
+  return { content: [{ type: 'text', text: renderMigrationReadout(counts) }] };
+}
+
 /** #3268 — a row as read from the board: card display-index, title, bucket, and
  *  its comma-joined label titles (owner:*, chunk:*, sequence:* …). */
 export interface ReadoutRow { idx: number; title: string; bucket: string; labels: string | null; }
@@ -2600,6 +2654,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_SET_TOOL_DEF,
       CARDS_VIEW_TOOL_DEF,
       PRIORITIES_READOUT_TOOL_DEF,
+      MIGRATION_READOUT_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
@@ -2813,6 +2868,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const a = (req.params.arguments ?? {}) as { role?: string };
         const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : undefined;
         return executePrioritiesReadout(execFileAsync, role);
+      }
+      case 'chorus_migration_readout': {
+        return executeMigrationReadout(execFileAsync);
       }
       case 'chorus_commit_status': {
         const parsed = CommitStatusInput.safeParse(req.params.arguments);
