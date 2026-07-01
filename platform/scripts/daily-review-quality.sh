@@ -17,19 +17,33 @@ APP_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site"
 STATUS="green"
 ISSUES=""
 
-# classify_suite <kind> <summary> → echoes "parsed|passed|failed|total"
+# classify_suite <kind> <status> <summary> → echoes "verdict|passed|failed|total"
+# #3571: EXIT CODE IS THE VERDICT. `status` is nightly-suites.sh's rc-derived
+# verdict (pass|fail|skip; empty = the suite emitted no verdict at all), and it is
+# AUTHORITATIVE. `summary` is parsed ONLY for the counts (enrichment). The old
+# code ignored `status` and RE-DERIVED a verdict from artifact text — so a passing
+# crate whose output the parser couldn't read read "DID NOT RUN", and an rc≠0 run
+# read a false "1/1 failed". That re-derivation WAS the ~37-false-reds/night bug.
+#   verdict ∈ green | fail | broke | skip | norun
 # Extracted (#3537) so the nightly consumer AND test-daily-review-lint-parse.sh call
-# the SAME logic — the test guards real code, not a mirror copy (Wren's #3537 review).
+# the SAME logic — the test guards real code, not a mirror copy.
 classify_suite() {
-  local kind="$1" summary="$2"
-  local s_total=0 s_failed=0 s_passed=0 parsed="no"
+  local kind="$1" status="$2" summary="$3"
+  local s_total=0 s_failed=0 s_passed=0
+
+  # Verdict from status first. Empty status = no rc emitted = genuine did-not-run.
+  case "$status" in
+    skip) printf 'skip|0|0|0\n';  return ;;
+    "")   printf 'norun|0|0|0\n'; return ;;
+  esac
+
+  # Parse counts (enrichment ONLY — never the verdict) — best-effort per kind.
   case "$kind" in
     npm)
       if echo "$summary" | grep -qE "[0-9]+ total"; then
         s_total=$(echo "$summary" | grep -oE '[0-9]+ total' | head -1 | grep -oE '[0-9]+')
         s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_passed=$(echo "$summary" | grep -oE '[0-9]+ passed' | head -1 | grep -oE '[0-9]+' || echo 0)
-        parsed="yes"
       fi
       ;;
     cargo)
@@ -38,22 +52,31 @@ classify_suite() {
         s_passed=$(echo "$summary" | grep -oE '[0-9]+ ok' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_failed=$(echo "$summary" | grep -oE '[0-9]+ failed' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_total=$((s_passed + s_failed))
-        [ "$s_total" -gt 0 ] && parsed="yes"
       fi
       ;;
     shell|lint)
-      # lint (#3484/#3537): run_lint_ratchet emits the same "N pass, N fail" shape as
-      # shell suites ("1 pass, 0 fail (lint:ratchet clean — ...)"). Without `lint` here the
-      # SUITE|lint line fell through → parsed=no → false "DID NOT RUN" though lint is green.
       if echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
         s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_total=$((s_passed + s_failed))
-        [ "$s_total" -gt 0 ] && parsed="yes"
       fi
       ;;
   esac
-  printf '%s|%s|%s|%s\n' "$parsed" "${s_passed:-0}" "${s_failed:-0}" "${s_total:-0}"
+
+  if [ "$status" = "fail" ]; then
+    if [ "${s_failed:-0}" -gt 0 ]; then
+      # rc≠0 with a parseable failing count → real test failure(s)
+      [ "${s_total:-0}" -gt 0 ] || s_total=$s_failed   # real fallback (s_total is "0", not empty)
+      printf 'fail|%s|%s|%s\n' "${s_passed:-0}" "$s_failed" "$s_total"
+    else
+      # rc≠0 but no test count (compile/build died before tests ran) → BUILD BROKE,
+      # a distinct reader-signal from N-tests-failed (both RED, different reason).
+      printf 'broke|%s|1|1\n' "${s_passed:-0}"
+    fi
+  else
+    # status=pass → GREEN even if the summary didn't parse — THE false-red fix.
+    printf 'green|%s|0|%s\n' "${s_passed:-0}" "${s_total:-${s_passed:-0}}"
+  fi
 }
 
 # When SOURCED (by the parser-test), expose classify_suite and stop — don't run the 6am
@@ -81,33 +104,49 @@ SILAS_FAILS=""
 SUITE_ALL_GREEN=0
 SUITE_WITH_FAIL=0
 SUITE_NO_RUN=0
+SUITE_SKIP=0
 TOTAL_TESTS=0
 FAILED_TESTS=0
 while IFS='|' read -r marker kind path owner status summary; do
   [ "$marker" = "SUITE" ] || continue
   name=$(basename "$path")
 
-  # classify via the shared function (sourced by test-daily-review-lint-parse.sh too)
-  IFS='|' read -r parsed s_passed s_failed s_total <<< "$(classify_suite "$kind" "$summary")"
+  # #3571: verdict FROM status (exit-code-is-verdict); classify_suite parses counts only.
+  IFS='|' read -r verdict s_passed s_failed s_total <<< "$(classify_suite "$kind" "$status" "$summary")"
   : "${s_total:=0}" "${s_failed:=0}" "${s_passed:=0}"
 
-  if [ "$parsed" = "no" ]; then
-    SUITE_NO_RUN=$((SUITE_NO_RUN+1))
-    line="${kind}:${name}: DID NOT RUN (no parseable test output)"
-    if [ "$owner" = "kade" ]; then KADE_FAILS+="${line}\n"; else SILAS_FAILS+="${line}\n"; fi
-  elif [ "$s_failed" -gt 0 ]; then
-    SUITE_WITH_FAIL=$((SUITE_WITH_FAIL+1))
-    TOTAL_TESTS=$((TOTAL_TESTS + s_total))
-    FAILED_TESTS=$((FAILED_TESTS + s_failed))
-    line="${kind}:${name}: ${s_failed}/${s_total} failed"
-    if [ "$owner" = "kade" ]; then KADE_FAILS+="${line}\n"; else SILAS_FAILS+="${line}\n"; fi
-  else
-    SUITE_ALL_GREEN=$((SUITE_ALL_GREEN+1))
-    TOTAL_TESTS=$((TOTAL_TESTS + s_total))
-  fi
+  case "$verdict" in
+    skip)
+      SUITE_SKIP=$((SUITE_SKIP+1))
+      ;;
+    norun)
+      SUITE_NO_RUN=$((SUITE_NO_RUN+1))
+      line="${kind}:${name}: DID NOT RUN (no verdict emitted)"
+      if [ "$owner" = "kade" ]; then KADE_FAILS+="${line}\n"; else SILAS_FAILS+="${line}\n"; fi
+      ;;
+    broke)
+      # #3571 (Silas nit): a build-broke has no tests — count it at the SUITE level
+      # only (SUITE_WITH_FAIL), don't touch the test-level FAILED_TESTS tally (which
+      # would conflate it with a failed test + push PASSED_TESTS negative if all broke).
+      SUITE_WITH_FAIL=$((SUITE_WITH_FAIL+1))
+      line="${kind}:${name}: BUILD BROKE (rc≠0, no test output)"
+      if [ "$owner" = "kade" ]; then KADE_FAILS+="${line}\n"; else SILAS_FAILS+="${line}\n"; fi
+      ;;
+    fail)
+      SUITE_WITH_FAIL=$((SUITE_WITH_FAIL+1))
+      TOTAL_TESTS=$((TOTAL_TESTS + s_total))
+      FAILED_TESTS=$((FAILED_TESTS + s_failed))
+      line="${kind}:${name}: ${s_failed}/${s_total} failed"
+      if [ "$owner" = "kade" ]; then KADE_FAILS+="${line}\n"; else SILAS_FAILS+="${line}\n"; fi
+      ;;
+    *)  # green
+      SUITE_ALL_GREEN=$((SUITE_ALL_GREEN+1))
+      TOTAL_TESTS=$((TOTAL_TESTS + s_total))
+      ;;
+  esac
 done <<< "$SUITES_OUT"
 
-SUITE_TOTAL=$((SUITE_ALL_GREEN + SUITE_WITH_FAIL + SUITE_NO_RUN))
+SUITE_TOTAL=$((SUITE_ALL_GREEN + SUITE_WITH_FAIL + SUITE_NO_RUN + SUITE_SKIP))
 PASSED_TESTS=$((TOTAL_TESTS - FAILED_TESTS))
 if [ "$TOTAL_TESTS" -gt 0 ]; then
   PASS_PCT=$(awk -v p=$PASSED_TESTS -v t=$TOTAL_TESTS 'BEGIN { printf "%.2f", (p / t) * 100 }')
@@ -115,7 +154,7 @@ else
   PASS_PCT="n/a"
 fi
 
-TEST_SUMMARY="${SUITE_TOTAL} suites: ${SUITE_ALL_GREEN} all-green, ${SUITE_WITH_FAIL} with ≥1 failing test, ${SUITE_NO_RUN} did not run; ${FAILED_TESTS} failing tests / ${TOTAL_TESTS} total (${PASS_PCT}% pass)"
+TEST_SUMMARY="${SUITE_TOTAL} suites: ${SUITE_ALL_GREEN} all-green, ${SUITE_WITH_FAIL} with ≥1 failing/broke, ${SUITE_SKIP} skipped (no stack), ${SUITE_NO_RUN} did not run; ${FAILED_TESTS} failing tests / ${TOTAL_TESTS} total (${PASS_PCT}% pass)"
 
 # #2438 wave 2 (Wren): surface failing-suite names inline so triage doesn't
 # need a separate fetch. Top 5 with ellipsis; combined across kade+silas.
