@@ -1,38 +1,38 @@
-# Daily Ops Review — 2026-07-01
+# Daily Ops Review — 2026-07-02
 
 ## 1. Hooks Health
-**Status: YELLOW (carry)**
-`cargo check` passes (30s) with 8 warnings — count unchanged. Dead code: `load_role_sections` (protocol_contract.rs:155), `chorus_worktree_override` (types.rs:64), plus 6 others. No errors, no regression.
-**Action:** Silas — suppress or delete; 27-day carry, no movement.
+**Status: YELLOW (carry, 28d)**
+`cargo check` passes with 8 warnings — count unchanged. Dead code: `load_role_sections`, `find_most_recent_pending`, `handle_approval_request`, `is_demo_or_done`, `has_test_run`, `has_production_code_edit`, `at_step` (×3), `chorus_worktree_override`. No errors.
+**Action:** Silas — suppress or delete; 28-day carry with no movement.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-17 plist files in `proving/config/launchagents/` use `/tmp/` for stdout/stderr. Structural, unchanged.
+17+ plist files in `proving/config/launchagents/` use `/tmp/` for stdout/stderr. Structural, unchanged.
 **Action:** Migrate StandardOut/Err to `~/Library/Logs/Chorus/`; no card assigned yet.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (carry)**
-50 fragments in `designing/claudemd/`; last committed 2026-06-21 (10 days). `chorus-prompt.md` and shared fragments lag behind #3581–#3598 shipped this week. Day count ticking up.
-**Action:** Wren — refresh `chorus-prompt.md` and fragments referencing chorus protocol state.
+**Status: YELLOW (carry, 11d)**
+50 fragments in `designing/claudemd/`; last committed 2026-06-22 (11 days). `chorus-prompt.md` and shared fragments lag #3581–#3602 shipped this week. Day count ticking up.
+**Action:** Wren — refresh fragments referencing chorus protocol state; worktree-convention.md may need #2913 update.
 
 ## 4. CSC Compliance
 **Status: RED (carry)**
-58 non-test scripts in `platform/scripts/` have hardcoded `/tmp/` paths. Core violations unchanged: `bridge-subscriber.js` (runtime inbox), `coherence-check` (STATE_DIR), `look.sh`, `werk-init.sh`, `bedroom-heartbeat.sh`.
-**Action:** Silas — `bridge-subscriber.js` runtime /tmp inbox is highest risk; assign card for July.
+58 non-test scripts in `platform/scripts/` have hardcoded `/tmp/` paths (requested `messages/scripts/` + `architect/scripts/` don't exist). Core violations: `bridge-subscriber.js`, `coherence-check`, `look.sh`, `werk-init.sh`, `bedroom-heartbeat.sh`.
+**Action:** Silas — `bridge-subscriber.js` runtime /tmp inbox is highest risk; assign July card.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo clean — 0 uncommitted changes. Last commit: #3598 (kade). No action.
+Repo clean — 0 uncommitted changes. Last commit: `c76068b` silas: daily quality review 2026-07-02. No action.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry)**
-WF-165 (card #1704) in_progress since 2026-03-26 (97 days), 0 steps completed. #1759 [Wren] + #1791 [Silas] now 84 days in WIP with no repo activity.
-**Action:** Wren + Silas — close, park, or re-groom today; three 80+ day WIPs is planning debt.
+**Status: RED (carry, unverifiable)**
+Board CLI unavailable in remote env; snapshots absent. Carry from Jul 1: #1704 (98+ days), #1759/#1791 (85+ days WIP, no repo activity).
+**Action:** Wren + Silas — close, park, or re-groom; three 80+ day WIPs is planning debt.
 
 ## 7. Domain Context Freshness
-**Status: RED (escalated)**
-All 5 domain-context files last committed 2026-06-21 (10 days). Card #3598 shipped today; 6 chorus cards (#3581–#3598) shipped since last update with zero context refresh. 10-day drift crossed the 7-day threshold.
-**Action:** Wren — `domain-context-chorus.md` most urgent; flag if other domains gained cards too.
+**Status: RED (carry, 11d)**
+All 5 domain-context files last committed 2026-06-22 (11 days). Cards #3589/#3590/#3594/#3596/#3598/#3602 shipped since last update; chorus domain most impacted. 11-day drift on active domains.
+**Action:** Wren — `domain-context-chorus.md` most urgent; refresh today.
 
 ## 8. Disk Delta
 **Status: N/A**
