@@ -18,6 +18,11 @@
 #
 # Spine: model.deployed {graph, triples} on success; model.deploy.failed {graph, reason/http}.
 # Exit: 0 deployed + verified; 1 invalid model / load failed / verify failed.
+#
+# #3536 cross-links (AC6): #3535 (ADR-linter — the post-deploy VERIFY gate; complements this
+# WRITE-side safety, not yet built), #3517 (the binary-deploy atomic+verify analog), and this
+# script IS what #3536 hardens — the old blind GSP PUT that clobbered co-tenants is replaced by
+# the additive, non-truncating, output-verified merge below.
 
 set -uo pipefail
 
@@ -162,6 +167,23 @@ if [ -z "$n" ] || [ "$n" = "0" ]; then
   echo "chorus-model-deploy: PUT returned $code but graph <$ONTOLOGY_GRAPH> is empty — deploy NOT verified" >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-empty" 2>/dev/null || true
   exit 1
+fi
+
+# #3536 AC2 — SHACL REPORT (report-only, NEVER a gate). Wren's ruling 2026-07-02:
+# validate the deployed model against its OWN V2 shapes (chorus.ttl DomainShape/ServiceShape/…)
+# and EMIT the violation count as an info signal — a migration-progress number (N→0 as domains
+# get authored), NOT a deploy gate. A hard gate would refuse every deploy (the model is mid-
+# migration). Deploy-SAFETY is the non-truncation/empty-staging guard above (data-COMPLETENESS
+# here is a separate concern). shapes.ttl (V1: SubProduct/SubDomain/CatalogDoc) is deliberately
+# ignored — validating V2 data against V1 shapes is meaningless noise. Full deploys only
+# (TTL= partial/test deploys skip it — keeps the bats suite fast; the report is for real deploys).
+if [ -z "${TTL:-}" ] && command -v shacl >/dev/null 2>&1; then
+  _v2shapes="$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
+  _union="$(mktemp)"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
+  _shacl_n=$(shacl validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null | grep -c 'sh:resultSeverity' 2>/dev/null || echo 0)
+  rm -f "$_union"
+  echo "chorus-model-deploy: SHACL report (V2 shapes, non-gating) — ${_shacl_n} violation(s) [migration-progress signal, not a gate]"
+  "$CHORUS_LOG" model.deploy.shacl "$ROLE" graph="$ONTOLOGY_GRAPH" violations="${_shacl_n:-0}" gating=false 2>/dev/null || true
 fi
 
 echo "chorus-model-deploy: deployed ${#MODEL_SET[@]} model file(s) -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
