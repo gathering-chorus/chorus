@@ -20,6 +20,8 @@ teardown() {
   curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-bad" -o /dev/null 2>/dev/null || true
   curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-retire" -o /dev/null 2>/dev/null || true
   curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-partial" -o /dev/null 2>/dev/null || true
+  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-empty" -o /dev/null 2>/dev/null || true
+  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-proving" -o /dev/null 2>/dev/null || true
 }
 
 @test "chorus-model-deploy loads chorus.ttl into the ontology graph (exit 0)" {
@@ -100,4 +102,63 @@ EOF
 @test "#3593 MODEL_SET includes the 34-domain sources (domains-wren-silas + domains-kade-3581)" {
   run grep -cE 'domains-wren-silas\.ttl|domains-kade-3581\.ttl' "$SCRIPT"
   [ "$output" -ge 2 ]
+}
+
+# --- #3536: stop-truncating primitive (default-off flip + empty-staging backstop) ---
+
+@test "#3536 RETIRE_ABSENT defaults OFF — no truncate-by-default (the 06-26 wipe root)" {
+  run grep -cE 'RETIRE_ABSENT:-0' "$SCRIPT"
+  [ "$output" -ge 1 ]
+  # the old default-1-on-full-deploy form must be gone
+  run grep -cE 'RETIRE_ABSENT:-\$\(\[ -z' "$SCRIPT"
+  [ "$output" -eq 0 ]
+}
+
+@test "#3536 empty-staging guard: retire against 0-domain staging REFUSES, never wipes live" {
+  G="${TEST_GRAPH}-empty"
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  pre="$(mktemp)"; cat > "$pre" <<'EOF'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:domainKeep a chorus:Domain ; chorus:purpose "keep" .
+EOF
+  curl -s -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  # staging TTL with NO domain subjects (valid TTL, zero domains) + explicit retire
+  nodom="$(mktemp).ttl"; cat > "$nodom" <<'EOF'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+chorus:someInst a chorus:Test ; chorus:purpose "not a domain" .
+EOF
+  run env ONTOLOGY_GRAPH="$G" TTL="$nodom" RETIRE_ABSENT=1 bash "$SCRIPT"
+  rm -f "$pre" "$nodom"
+  # guard REFUSES (exit non-zero)
+  [ "$status" -ne 0 ]
+  # live domain SURVIVES — no wipe
+  run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:domainKeep a chorus:Domain } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+}
+
+# --- #3536 AC5: the proving case — the exact 06-20 shape-wipe this card exists to fix ---
+
+@test "#3536 AC5 proving case: re-deploy restores DomainShape's 11 sh:property AND preserves a co-tenant" {
+  G="${TEST_GRAPH}-proving"
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
+  # Reproduce the wipe: a stripped DomainShape (0 sh:property, the 06-20 broken state)
+  # + a co-tenant subject that is NOT in chorus.ttl (must survive the deploy).
+  pre="$(mktemp)"; cat > "$pre" <<'EOF'
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+chorus:DomainShape a sh:NodeShape .
+chorus:coTenantProbe a chorus:Test ; chorus:purpose "co-tenant, absent from chorus.ttl" .
+EOF
+  curl -s -X POST -H 'Content-Type: text/turtle' --data-binary "@$pre" "$GSP?graph=$G" >/dev/null
+  rm -f "$pre"
+  # deploy the REAL model (chorus.ttl) into the test graph
+  env ONTOLOGY_GRAPH="$G" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  # AC5a — DomainShape's 11 sh:property attrs are RESTORED (the wipe is undone)
+  run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT (COUNT(?pp) AS ?n) WHERE { GRAPH <$G> { chorus:DomainShape sh:property ?pp } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"value":"11"'* ]]
+  # AC5b — the co-tenant (not in chorus.ttl) SURVIVES (co-tenant-safe, AC3 proven end-to-end)
+  run curl -s "$Q" --data-urlencode "query=PREFIX chorus: <https://jeffbridwell.com/chorus#> ASK { GRAPH <$G> { chorus:coTenantProbe a chorus:Test } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+  curl -s -X DELETE "$GSP?graph=$G" -o /dev/null 2>/dev/null || true
 }
