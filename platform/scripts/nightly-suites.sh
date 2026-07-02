@@ -211,9 +211,12 @@ _npm_jest_env() {
   echo ""
 }
 
-# Run a single suite with one retry on failure — absorbs concurrent-run flakes
-# where a standalone run passes but parallel pressure causes a timeout/race.
-# If the suite fails twice, report fail.
+# Run a single suite — ONE attempt, deterministic result.
+# #3597: the retry-to-absorb-concurrent-flakes band-aid is GONE. It papered over
+# non-determinism (a standalone pass but a parallel-pressure race) instead of
+# preventing it; the single-flight lock (--run-all dispatch) prevents the overlap
+# at the source, so a retry can now only HIDE a real intermittent failure. One
+# attempt: a suite passes or fails, and we believe the result.
 run_one() {
   local kind="$1" path="$2" owner="$3"
   # #3557 stack-gate: a live-stack suite with no stack is a SKIP, not a fail.
@@ -221,12 +224,7 @@ run_one() {
     echo "SUITE|$kind|$path|$owner|skip|skipped — no live stack (#3557)"
     return
   fi
-  local out1 out2 line1 line2
-  line1=$(run_one_attempt "$kind" "$path" "$owner")
-  case "$line1" in *"|pass|"*) echo "$line1"; return ;; esac
-  line2=$(run_one_attempt "$kind" "$path" "$owner")
-  # Use the second attempt's result (pass absorbs the flake, fail confirms).
-  echo "$line2"
+  run_one_attempt "$kind" "$path" "$owner"
 }
 
 # Extract a parseable pass/fail summary from a shell test script's full stdout.
@@ -430,21 +428,35 @@ run_coverage() {
   local floors="${NIGHTLY_COVERAGE_FLOORS:-$CHORUS_ROOT/coverage-floors.yml}"
   [ -f "$floors" ] || return 0
   local dry="${NIGHTLY_COVERAGE_DRY_RUN:-}" fix="${NIGHTLY_COVERAGE_FIXTURES:-}"
-  local lang rel floor owner dir sj pct
+  local lang rel floor owner dir sj pct rc
   while IFS=' ' read -r lang rel floor; do
     [ -z "$lang" ] && continue
-    owner=$(_cov_owner "$rel"); dir="$CHORUS_ROOT/$rel"; pct=""; sj=""
+    owner=$(_cov_owner "$rel"); dir="$CHORUS_ROOT/$rel"; pct=""; sj=""; rc=0
     if [ "$lang" = "ts" ]; then
       if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/coverage/coverage-summary.json"
-      elif [ -d "$dir" ]; then (cd "$dir" && npx jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1 || true); sj="$dir/coverage/coverage-summary.json"; fi
+      elif [ -d "$dir" ]; then
+        (cd "$dir" && npx jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1); rc=$?
+        sj="$dir/coverage/coverage-summary.json"
+      else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['total']['statements']['pct'])" 2>/dev/null || true)
     elif [ "$lang" = "rust" ]; then
       if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/llvm-cov-summary.json"
-      elif [ -d "$dir" ]; then (cd "$dir" && cargo llvm-cov --summary-only --json >"$dir/llvm-cov-summary.json" 2>/dev/null || true); sj="$dir/llvm-cov-summary.json"; fi
+      elif [ -d "$dir" ]; then
+        (cd "$dir" && cargo llvm-cov --summary-only --json >"$dir/llvm-cov-summary.json" 2>/dev/null); rc=$?
+        sj="$dir/llvm-cov-summary.json"
+      else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['data'][0]['totals']['lines']['percent'])" 2>/dev/null || true)
     else continue; fi
-    if [ -z "$pct" ]; then
-      echo "SUITE|coverage|$rel|$owner|skip|coverage: unmeasured (no summary json — folds clean, no false red)"
+    # #3597 — deterministic grading: exit-code FIRST, artifact second, NEVER a third
+    # "unmeasured/skip" state. A declared floor means coverage MUST run; if the run
+    # errored (rc≠0) or ran but produced NO summary artifact, that is a FAIL we can
+    # SEE — not a silent skip that "folds clean" and hides a broken coverage setup.
+    # Reverses #3557's skip-on-unmeasured: skip WAS the "we don't know" third state
+    # Jeff's #3597 exists to eliminate ("either pass or fail, either way we know").
+    if [ "${rc:-1}" -ne 0 ]; then
+      echo "SUITE|coverage|$rel|$owner|fail|0 pass, 1 fail (coverage run errored rc=$rc — floor ${floor}%, no clean measurement)"
+    elif [ -z "$pct" ]; then
+      echo "SUITE|coverage|$rel|$owner|fail|0 pass, 1 fail (coverage ran but produced NO summary artifact — expected floor ${floor}%, got nothing)"
     elif python3 -c "import sys;sys.exit(0 if float('$pct')>=float('$floor') else 1)" 2>/dev/null; then
       echo "SUITE|coverage|$rel|$owner|pass|1 pass, 0 fail (coverage ${pct}% >= floor ${floor}%)"
     else
@@ -598,6 +610,26 @@ emit_suite_results() {
   done <<< "$results"
 }
 
+# #3597 — single-flight lock. macOS has no flock, so use mkdir (atomic on every
+# POSIX fs). Only one nightly run executes at a time; a second invocation while one
+# is in flight exits cleanly (declared), never a silent concurrent race — that race
+# is what produced the "standalone passes, parallel pressure fails" flakes the retry
+# band-aid used to absorb. A stale lock (holder crashed mid-run) is stolen: if the
+# recorded pid is no longer alive, reclaim it so a crash can't wedge the nightly.
+NIGHTLY_LOCKDIR="${NIGHTLY_LOCKDIR:-${TMPDIR:-/tmp}/chorus-nightly-suites.lock.d}"
+acquire_single_flight_lock() {
+  local d="$NIGHTLY_LOCKDIR"
+  if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
+  local oldpid; oldpid=$(cat "$d/pid" 2>/dev/null || true)
+  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    return 1   # a live run holds the lock
+  fi
+  rm -rf "$d" 2>/dev/null   # stale (dead/absent holder) — steal it
+  if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
+  return 1
+}
+release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
+
 # --- Dispatch ---
 # Below = dispatch-only (CLI entry, exits on unknown arg).
 # Above = sourceable (function definitions safe for unit tests to import).
@@ -620,7 +652,15 @@ case "${1:-}" in
     echo "# bats";      list_bats
     echo "# cucumber";  list_cucumber
     ;;
-  --run-all)    out=$(run_all); printf '%s\n' "$out"; emit_suite_results "$out"; notify_results "$out" ;;
+  --run-all)
+    # #3597 single-flight: refuse to run concurrently with another nightly.
+    if ! acquire_single_flight_lock; then
+      echo "nightly-suites: another run holds $NIGHTLY_LOCKDIR (pid $(cat "$NIGHTLY_LOCKDIR/pid" 2>/dev/null)) — exiting cleanly (single-flight, #3597)" >&2
+      exit 0
+    fi
+    trap release_single_flight_lock EXIT
+    out=$(run_all); printf '%s\n' "$out"; emit_suite_results "$out"; notify_results "$out"
+    ;;
   *)
     echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all}" >&2
     exit 2
