@@ -54,7 +54,10 @@ classify_suite() {
         s_total=$((s_passed + s_failed))
       fi
       ;;
-    shell|lint)
+    shell|lint|coverage)
+      # #3600 — coverage emits the same "N pass, N fail (coverage % vs floor)" shape as
+      # shell/lint. Without `coverage` here a coverage-floor MISS fell through to the broke
+      # verdict → mislabeled "BUILD BROKE (rc≠0, no test output)" though coverage ran fine.
       if echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
         s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
         s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
