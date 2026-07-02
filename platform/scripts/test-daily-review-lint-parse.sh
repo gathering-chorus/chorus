@@ -47,8 +47,13 @@ check "cargo pass + unparseable summary → GREEN (was false DID-NOT-RUN)" \
   "$(bucket cargo pass 'Compiling werk-push v0.1.0 / Finished test profile')" "GREEN:0"
 check "npm pass + no jest-summary line → GREEN (was false DID-NOT-RUN)" \
   "$(bucket npm pass 'ran, produced no parseable Tests: line')" "GREEN:0"
-check "coverage pass (percent output, no test count) → GREEN (a nightly DID-NOT-RUN)" \
-  "$(bucket coverage pass 'statements 82.10% ( 1234/1503 )')" "GREEN:0"
+check "coverage pass (real nightly format: 'N pass, N fail (coverage % >= floor)') → GREEN" \
+  "$(bucket coverage pass '1 pass, 0 fail (coverage 82% >= floor 70%)')" "GREEN:1"
+# #3600 — a coverage-floor MISS is a real fail, NOT 'BUILD BROKE (rc≠0, no test output)'.
+# Before: coverage kind had no parse branch → fell through to the broke verdict, mislabeling
+# a measured-but-under-floor result as a broken build. Now it reads its honest count.
+check "coverage FAIL (under floor) → FAILED, not the false BUILD BROKE (#3600)" \
+  "$(bucket coverage fail '0 pass, 1 fail (coverage 78.1% < floor 80%)')" "FAILED:1/1"
 check "smoke pass → GREEN" \
   "$(bucket smoke pass 'smoke-check: all endpoints 200')" "GREEN:0"
 

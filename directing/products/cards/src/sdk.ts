@@ -1683,8 +1683,8 @@ export async function tagCard(client: BoardClient, index: number, value: string,
   try {
     const card = await client.view(index);
     title = card.title;
-    alreadyHas = (card.domains || []).includes(`${category}:${value.toLowerCase()}`)
-              || (card.domains || []).includes(`${category}:${value}`);
+    alreadyHas = card.domains.includes(`${category}:${value.toLowerCase()}`)
+              || card.domains.includes(`${category}:${value}`);
   } catch { /* best effort */ }
   if (alreadyHas) {
     console.log(`#${index} already has ${category}:${value} — no-op`);
@@ -1706,7 +1706,7 @@ export async function untagCard(client: BoardClient, index: number, value: strin
   let alreadyAbsent = false;
   try {
     const card = await client.view(index);
-    alreadyAbsent = !(card.domains || []).some((l) =>
+    alreadyAbsent = !card.domains.some((l) =>
       l === `${category}:${value.toLowerCase()}` || l === `${category}:${value}`);
   } catch { /* best effort — fall through to attempt */ }
   if (alreadyAbsent) {

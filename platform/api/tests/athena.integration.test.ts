@@ -412,6 +412,7 @@ describeIntegration('POST /api/athena/subdomains', () => {
 // through the non-truncating deploy (additive MODEL_SET merge, never DROP — Silas #3536
 // / Wren endpoint fix). The body now ASSERTS domain-count survival, so an unskip against
 // a still-truncating endpoint FAILS loudly instead of silently wiping.
+// eslint-disable-next-line jest/no-disabled-tests -- #3602: intentional safety skip (documented above); unskip only once the endpoint stops truncating.
 describe.skip('POST /api/athena/reload', () => {
   test('reload preserves the ontology (survival: subdomain count not collapsed)', async () => {
     const before = await (await fetch(`${API}/api/athena/subdomains`)).json();
