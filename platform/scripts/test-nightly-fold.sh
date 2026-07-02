@@ -25,7 +25,7 @@ mkdir -p "$TMP/fix/platform/passproj/coverage" "$TMP/fix/platform/failproj/cover
 echo '{"total":{"statements":{"pct":85.0}}}' > "$TMP/fix/platform/passproj/coverage/coverage-summary.json"
 echo '{"total":{"statements":{"pct":50.0}}}' > "$TMP/fix/platform/failproj/coverage/coverage-summary.json"
 echo '{"data":[{"totals":{"lines":{"percent":60.0}}}]}' > "$TMP/fix/platform/services/rustproj/llvm-cov-summary.json"
-# directing/missingproj has NO fixture -> skip
+# directing/missingproj has NO fixture -> FAIL (#3597: no artifact = loud fail)
 
 out=$(NIGHTLY_COVERAGE_FLOORS="$TMP/floors.yml" NIGHTLY_COVERAGE_DRY_RUN=1 NIGHTLY_COVERAGE_FIXTURES="$TMP/fix" run_coverage)
 
@@ -35,8 +35,9 @@ echo "$out" | grep -qE 'SUITE\|coverage\|platform/passproj\|silas\|pass\|' && ok
 echo "$out" | grep -qE 'SUITE\|coverage\|platform/failproj\|silas\|fail\|' && ok || bad "failproj should be fail"
 # 3. rust pass: 60 >= 45
 echo "$out" | grep -qE 'SUITE\|coverage\|platform/services/rustproj\|silas\|pass\|' && ok || bad "rustproj should be pass"
-# 4. missing fixture -> skip (not pass, not fail)
-echo "$out" | grep -qE 'SUITE\|coverage\|directing/missingproj\|kade\|skip\|' && ok || bad "missingproj should be skip"
+# 4. missing fixture -> FAIL. #3597: a declared floor means coverage MUST run; a
+#    missing summary artifact is a failure we can SEE, not a silent skip (reverses #3557).
+echo "$out" | grep -qE 'SUITE\|coverage\|directing/missingproj\|kade\|fail\|' && ok || bad "missingproj should FAIL — no artifact (#3597)"
 # 5. owner routing: directing -> kade, platform -> silas
 echo "$out" | grep 'directing/missingproj' | grep -q '|kade|' && ok || bad "directing should route to kade"
 # 6. run_smoke stack-gates: stack DOWN -> skip
@@ -46,8 +47,8 @@ smoke=$(run_smoke 2>/dev/null || true)
 if [ -x "$CHORUS_ROOT/platform/scripts/smoke-check.sh" ]; then
   echo "$smoke" | grep -qE 'SUITE\|smoke\|.*\|skip\|' && ok || bad "smoke should SKIP when stack down (got: $smoke)"
 else ok; fi
-# 7. unmeasured coverage is NEVER 'fail' (no false-red)
-echo "$out" | grep 'directing/missingproj' | grep -q '|fail|' && bad "unmeasured must not be fail" || ok
+# 7. #3597 — unmeasured coverage IS a fail (deterministic: no third "unknown" state).
+echo "$out" | grep 'directing/missingproj' | grep -q '|fail|' && ok || bad "unmeasured must be FAIL (#3597 — no third state)"
 
 echo "fold-test: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
