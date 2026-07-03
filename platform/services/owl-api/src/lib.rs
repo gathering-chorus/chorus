@@ -2871,10 +2871,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 ),
                 Ok(claims) => {
                     let target_graph = header("x-target-graph");
-                    if !claims.scope.is_empty() && !scope_allows(&target_graph, &claims.scope) {
+                    // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
+                    // entity writes (which allow legacy/unscoped mixed-state), batch is the
+                    // most destructive op; a legacy allow-all token has no business here.
+                    if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
                         (
                             403u16,
-                            format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope\" }}", json_escape(&target_graph)),
+                            format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
                         )
                     } else {
                         let role = role_from_webid(&claims.web_id).unwrap_or_default();
@@ -2939,14 +2942,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     } else {
                         let role = role_from_webid(&claims.web_id).unwrap_or_default();
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                        // #3573 — POST /batch routes to the governed batch op (typed-slot,
-                        // structural single-graph); every other write goes to handle_write.
-                        // Both are behind the same authN + scope gate above.
-                        let (c, b) = if path == "/batch" {
-                            handle_batch(&target_graph, body_str, &role)
-                        } else {
-                            handle_write(&method, &path, body_str, table, &role)
-                        };
+                        // (POST /batch is handled by the cross-class pre-table block above,
+                        // which `continue`s — it can't reach here. One site, no drift.)
+                        let (c, b) = handle_write(&method, &path, body_str, table, &role);
                         ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
                     }
                 }

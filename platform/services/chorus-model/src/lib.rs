@@ -523,11 +523,15 @@ fn is_iri_term(t: &str) -> bool {
             .contains(['<', '>', '"', '{', '}', '|', '^', '`', ' ', '\n', '\r', '\t', ';'])
 }
 
-/// A plain string literal `"..."`: no raw quote/newline/injection chars, no GRAPH.
+/// A plain string literal `"..."`. Blocks the chars that could break OUT of the
+/// door-assembled `"..."`: an unescaped quote (close early), newline/CR, tab (the
+/// batch delimiter), and `{ } ;` (open a block / start a new op). With those blocked,
+/// arbitrary text INSIDE the quotes — including the word "GRAPH" — is inert content
+/// (Wren gate 2026-07-03: don't refuse "photograph" / "/graphs/" / real descriptions).
 fn is_literal_term(t: &str) -> bool {
     t.len() >= 2 && t.starts_with('"') && t.ends_with('"') && {
         let inner = &t[1..t.len() - 1];
-        !inner.contains(['"', '\n', '\r', '\t', '{', '}', ';']) && !inner.to_ascii_uppercase().contains("GRAPH")
+        !inner.contains(['"', '\n', '\r', '\t', '{', '}', ';'])
     }
 }
 
@@ -748,6 +752,21 @@ mod tests {
         assert!(s.contains("GRAPH <urn:chorus:instances>"), "must be graph-scoped: {}", s);
         assert!(s.contains("DELETE WHERE") && s.contains("INSERT DATA"), "{}", s);
         assert!(!s.contains("urn:gathering"), "never another graph");
+    }
+
+    #[test]
+    fn batch_accepts_literal_containing_graph_word() {
+        // Wren gate: GRAPH-as-substring inside a properly-quoted literal is inert content;
+        // real values like a "/graphs/" path or "photograph" must NOT be refused.
+        let store = stub(&[], &[]);
+        let ins = vec![t(
+            "<urn:chorus:file/p>",
+            "<https://jeffbridwell.com/chorus#filePath>",
+            "\"/tmp/graphs/photograph.txt\"",
+        )];
+        let n = batch(&store, "urn:chorus:instances", &[], &ins).unwrap();
+        assert_eq!(n, 1, "a literal containing 'graph' must pass");
+        assert!(store.updates.borrow()[0].contains("photograph"), "real content preserved");
     }
 
     #[test]
