@@ -4046,3 +4046,21 @@ chorus:stale a owl:DatatypeProperty ;
     rdfs:range xsd:boolean ;
     chorus:writeOwner chorus:crawler .
 
+# --- FileShape (#3573): govern the crawler/enrichment File family, which was UNSHAPED
+# (no sh:NodeShape → the DAL had no floor to enforce, so File writes couldn't be governed).
+# CONSERVATIVE floor: only chorus:filePath (the identity predicate the crawler always
+# writes) is required — a crawler-only File, before enrichment adds domain/owner, still
+# passes. Every other predicate is TYPED but optional (no minCount) so staged/partial
+# writes never fail-closed. The chorus:writeOwner annotations (crawler vs enrichment)
+# remain the per-predicate authorship control; this shape is the DAL floor + type check.
+chorus:FileShape a sh:NodeShape ;
+    sh:targetClass chorus:File ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path chorus:filePath         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:fileSha          ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:fileLastModified ; sh:datatype xsd:dateTime ] ;
+    sh:property [ sh:path chorus:fileInDomain     ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:fileHasOwner     ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
+    sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
+

@@ -1128,9 +1128,69 @@ fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, calle
               "--edge".into(), format!("{}={}:{}", prop, kind, tname)], caller)
 }
 
+/// #3573 — BATCH via the DAL `batch` op. graph is the scope-VALIDATED x-target-graph;
+/// deletes/inserts are typed-slot triples passed as argv (never SPARQL text). The DAL
+/// re-validates every slot + refuses empty/off-realm graph (defense-in-depth).
+fn dal_batch(graph: &str, deletes: &[(String, String, String)], inserts: &[(String, String, String)], caller: &str) -> R<()> {
+    let mut args: Vec<String> = vec!["batch".into(), "--graph".into(), graph.to_string()];
+    for (s, p, o) in deletes {
+        args.push("--del".into()); args.push(s.clone()); args.push(p.clone()); args.push(o.clone());
+    }
+    for (s, p, o) in inserts {
+        args.push("--ins".into()); args.push(s.clone()); args.push(p.clone()); args.push(o.clone());
+    }
+    dal_run(&args, caller)
+}
+
+/// #3573 — governed BATCH route (POST /batch). Body is TAB-delimited lines:
+///   DEL\t<s>\t<p>\t<o>   (o may be ?o wildcard)
+///   INS\t<s>\t<p>\t<o>
+/// Tab can't appear in a valid IRI/literal, so owl-api never assembles SPARQL — it
+/// splits into typed argv and hands them to the chorus-model `batch` CLI (slot-
+/// validation + structural single-graph). `graph` = the scope-validated x-target-graph.
+fn handle_batch(graph: &str, body: &str, caller_role: &str) -> (u16, String) {
+    if graph.trim().is_empty() {
+        return write_resp("validation", "batch requires x-target-graph (no default graph, ever)");
+    }
+    if body.len() > MAX_WRITE_BYTES {
+        return write_resp("validation", &format!("batch body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    let mut deletes: Vec<(String, String, String)> = Vec::new();
+    let mut inserts: Vec<(String, String, String)> = Vec::new();
+    for line in body.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() { continue; }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != 4 {
+            return write_resp("validation", "batch line must be OP<tab>S<tab>P<tab>O");
+        }
+        let triple = (f[1].to_string(), f[2].to_string(), f[3].to_string());
+        match f[0] {
+            "DEL" => deletes.push(triple),
+            "INS" => inserts.push(triple),
+            _ => return write_resp("validation", "batch op must be DEL or INS"),
+        }
+    }
+    if deletes.is_empty() && inserts.is_empty() {
+        return write_resp("validation", "batch: no DEL/INS lines");
+    }
+    match dal_batch(graph, &deletes, &inserts, caller_role) {
+        Ok(_) => {
+            emit_write_spine(caller_role, "batch", graph, "", "ok");
+            write_resp("ok", &format!("batch applied: {} del, {} ins -> <{}> (via DAL)", deletes.len(), inserts.len(), graph))
+        }
+        Err(e) => {
+            emit_write_spine(caller_role, "batch", graph, "", "error");
+            dal_err_resp(&e)
+        }
+    }
+}
+
 /// Map a DAL refusal string onto owl-api's typed write response.
 fn dal_err_resp(e: &str) -> (u16, String) {
-    if e.contains("shape-violation") || e.contains("unknown-endpoint") || e.contains("unknown-target") || e.contains("bad-property") {
+    if e.contains("shape-violation") || e.contains("unknown-endpoint") || e.contains("unknown-target") || e.contains("bad-property") || e.contains("batch:") {
+        // #3573 — a batch refusal (empty/off-realm graph, injection-shaped slot) is a
+        // client-side validation reject, not a server error: return 4xx, never 502.
         write_resp("validation", e)
     } else if e.contains("not-found") {
         write_resp("not-found", e)
@@ -2790,6 +2850,46 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             Some(SurfaceHit::Class { rewritten_path, .. }) => rewritten_path,
             None => path,
         };
+        // #3573 — /batch is a CROSS-CLASS governed write (owned by no single class
+        // table), so it's handled here, before table-selection. Same gate as per-class
+        // writes: Bearer required (else 401), x-target-graph must be in the token scope
+        // (else 403). Delegates to handle_batch → the typed-slot chorus-model batch op.
+        if method == "POST" && path == "/batch" {
+            let now_secs = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let auth_hdr = header("authorization");
+            let token = auth_hdr
+                .strip_prefix("Bearer ")
+                .or_else(|| auth_hdr.strip_prefix("bearer "))
+                .unwrap_or(&auth_hdr);
+            let (code, body) = match auth::verify_token(token, &registry, now_secs) {
+                Err(_) => (
+                    401u16,
+                    "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
+                ),
+                Ok(claims) => {
+                    let target_graph = header("x-target-graph");
+                    // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
+                    // entity writes (which allow legacy/unscoped mixed-state), batch is the
+                    // most destructive op; a legacy allow-all token has no business here.
+                    if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
+                        (
+                            403u16,
+                            format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
+                        )
+                    } else {
+                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                        handle_batch(&target_graph, body_str, &role)
+                    }
+                }
+            };
+            let resp = http_response_ct(status_line(code), &body, "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
         let table = match select_table(&path, tables) {
             Some(t) => t,
             None => {
@@ -2842,6 +2942,8 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     } else {
                         let role = role_from_webid(&claims.web_id).unwrap_or_default();
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                        // (POST /batch is handled by the cross-class pre-table block above,
+                        // which `continue`s — it can't reach here. One site, no drift.)
                         let (c, b) = handle_write(&method, &path, body_str, table, &role);
                         ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
                     }
