@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, WriteReq};
+use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -101,6 +101,35 @@ fn run() -> Result<String, String> {
                 remove_edge(&store, &req.kind, &req.name, prop, tkind, tname)?
             };
             Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
+        }
+        // #3573 — governed BATCH: the migration target owl-api's /batch delegates to.
+        // Typed slots only (no writer SPARQL text), structural single-graph, empty/
+        // off-realm graph refused. Args: batch --graph <g> [--del S P O]... [--ins S P O]...
+        // where S/P/O are already-serialized terms (<iri> or "literal").
+        Some("batch") => {
+            let mut graph = String::new();
+            let mut deletes: Vec<(String, String, String)> = Vec::new();
+            let mut inserts: Vec<(String, String, String)> = Vec::new();
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--graph" => {
+                        graph = args.get(i + 1).ok_or("--graph needs a value")?.clone();
+                        i += 2;
+                    }
+                    "--del" | "--ins" => {
+                        let s = args.get(i + 1).ok_or("--del/--ins needs S P O")?.clone();
+                        let p = args.get(i + 2).ok_or("--del/--ins needs S P O")?.clone();
+                        let o = args.get(i + 3).ok_or("--del/--ins needs S P O")?.clone();
+                        if args[i] == "--del" { deletes.push((s, p, o)); } else { inserts.push((s, p, o)); }
+                        i += 4;
+                    }
+                    other => return Err(format!("batch: unknown arg '{}'\n{}", other, usage())),
+                }
+            }
+            let store = FusekiStore::new();
+            let n = batch(&store, &graph, &deletes, &inserts)?;
+            Ok(format!("batch: {} triple(s) applied to <{}>", n, graph))
         }
         _ => Err(usage()),
     }

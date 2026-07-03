@@ -504,6 +504,95 @@ pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── #3573 governed BATCH op ───────────────────────────────────────────────
+// The migration target for chorus's ~10 raw batch writers (crawler-hydrate,
+// enrichment, facet, tag-tests, seed-loom, migrate-aliases — they all do
+// DELETE-WHERE + INSERT-DATA loops direct to Fuseki :3030 today). Wren's door
+// floor (2026-07-03): TYPED SLOTS ONLY — no writer-supplied SPARQL text ever
+// reaches Fuseki. The door assembles `GRAPH <g> { s p o }`; each slot is a value
+// validated as a well-formed IRI or literal. Empty/off-realm graph = HARD REFUSE
+// (no default graph, EVER). This is the property the whole write door exists for:
+// the embedded-GRAPH-in-WHERE escape can't happen if there's no writer text.
+
+/// An IRI term: `<...>` with no delimiter/injection chars inside.
+fn is_iri_term(t: &str) -> bool {
+    t.len() >= 2
+        && t.starts_with('<')
+        && t.ends_with('>')
+        && !t[1..t.len() - 1]
+            .contains(['<', '>', '"', '{', '}', '|', '^', '`', ' ', '\n', '\r', '\t', ';'])
+}
+
+/// A plain string literal `"..."`: no raw quote/newline/injection chars, no GRAPH.
+fn is_literal_term(t: &str) -> bool {
+    t.len() >= 2 && t.starts_with('"') && t.ends_with('"') && {
+        let inner = &t[1..t.len() - 1];
+        !inner.contains(['"', '\n', '\r', '{', '}', ';']) && !inner.to_ascii_uppercase().contains("GRAPH")
+    }
+}
+
+/// Subject/predicate must be IRIs; a delete object may also be the single wildcard `?o`.
+fn subj_pred_ok(t: &str) -> bool { is_iri_term(t) }
+fn obj_ok(t: &str, allow_wildcard: bool) -> bool {
+    (allow_wildcard && t == "?o") || is_iri_term(t) || is_literal_term(t)
+}
+
+/// Governed batch write — structural single-graph, typed-slot only, one transaction.
+/// `deletes`: (s,p,o) patterns, o may be "?o" (delete all matching) → DELETE WHERE.
+/// `inserts`: (s,p,o) ground triples → INSERT DATA. Returns count of triples touched.
+pub fn batch(
+    store: &dyn Store,
+    graph: &str,
+    deletes: &[(String, String, String)],
+    inserts: &[(String, String, String)],
+) -> R<usize> {
+    // Wren gate 1 — a batch with no target graph is a REFUSAL, never a default-graph fallback.
+    if graph.trim().is_empty() {
+        witness("model.batch.refused", &[("reason", "empty-graph")]);
+        return Err("batch: target graph is required (no default graph, ever)".into());
+    }
+    // Wren gate 2 — defense-in-depth: the DAL only ever writes urn:chorus:* (scope is
+    // enforced upstream at the door; this ensures the DAL itself can't write off-realm).
+    if !graph.starts_with("urn:chorus:") || graph.contains(['<', '>', '{', '}', ' ', ';']) {
+        witness("model.batch.refused", &[("graph", graph), ("reason", "off-realm-graph")]);
+        return Err(format!("batch: graph '{}' is outside urn:chorus:* or malformed (refused)", graph));
+    }
+    for (s, p, o) in deletes {
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, true) {
+            witness("model.batch.refused", &[("graph", graph), ("reason", "bad-delete-slot")]);
+            return Err("batch: a delete triple has an invalid/injection-shaped slot".into());
+        }
+    }
+    for (s, p, o) in inserts {
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, false) {
+            witness("model.batch.refused", &[("graph", graph), ("reason", "bad-insert-slot")]);
+            return Err("batch: an insert triple has an invalid/injection-shaped slot".into());
+        }
+    }
+    if deletes.is_empty() && inserts.is_empty() {
+        return Err("batch: nothing to do (no deletes and no inserts)".into());
+    }
+    // Door-assembled SPARQL. Every clause is GRAPH <graph>-scoped by construction.
+    let mut sparql = String::new();
+    for (s, p, o) in deletes {
+        sparql.push_str(&format!(
+            "DELETE WHERE {{ GRAPH <{g}> {{ {s} {p} {o} }} }} ;\n",
+            g = graph, s = s, p = p, o = o
+        ));
+    }
+    if !inserts.is_empty() {
+        let mut body = String::new();
+        for (s, p, o) in inserts {
+            body.push_str(&format!("{s} {p} {o} . ", s = s, p = p, o = o));
+        }
+        sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = graph, b = body));
+    }
+    store.update(&sparql)?;
+    let (nd, ni) = (deletes.len().to_string(), inserts.len().to_string());
+    witness("model.batch", &[("graph", graph), ("deletes", nd.as_str()), ("inserts", ni.as_str())]);
+    Ok(deletes.len() + inserts.len())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,6 +698,56 @@ mod tests {
             required: required.iter().map(|s| s.to_string()).collect(),
             updates: Default::default(),
         }
+    }
+
+    // ── #3573 batch-op security guards (the door's reason to exist) ──
+    fn t(s: &str, p: &str, o: &str) -> (String, String, String) { (s.into(), p.into(), o.into()) }
+
+    #[test]
+    fn batch_refuses_empty_graph_no_default_ever() {
+        let store = stub(&[], &[]);
+        let ins = vec![t("<urn:chorus:x>", "<urn:chorus:p>", "<urn:chorus:o>")];
+        assert!(batch(&store, "", &[], &ins).is_err(), "empty graph must refuse");
+        assert!(store.updates.borrow().is_empty(), "nothing written on empty-graph refusal");
+    }
+
+    #[test]
+    fn batch_refuses_off_realm_graph() {
+        let store = stub(&[], &[]);
+        let ins = vec![t("<urn:chorus:x>", "<urn:chorus:p>", "<urn:chorus:o>")];
+        assert!(batch(&store, "urn:gathering:photos", &[], &ins).is_err(), "off-realm graph must refuse");
+        assert!(store.updates.borrow().is_empty());
+    }
+
+    #[test]
+    fn batch_refuses_injection_shaped_slots_and_writes_nothing() {
+        let store = stub(&[], &[]);
+        // object tries to break out into another GRAPH via ; INSERT ... GRAPH <other>
+        let evil_o = vec![t("<urn:chorus:x>", "<urn:chorus:p>",
+            "<urn:chorus:o> } } ; INSERT DATA { GRAPH <urn:gathering:x> { <a> <b> <c> } } #")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_o).is_err());
+        // predicate is the bare GRAPH keyword (not an IRI)
+        let evil_p = vec![t("<urn:chorus:y>", "GRAPH", "?o")];
+        assert!(batch(&store, "urn:chorus:instances", &evil_p, &[]).is_err());
+        // a raw variable object (not the single allowed ?o wildcard)
+        let evil_v = vec![t("<urn:chorus:z>", "<urn:chorus:p>", "?anything")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_v).is_err());
+        assert!(store.updates.borrow().is_empty(), "no injection-shaped batch may write");
+    }
+
+    #[test]
+    fn batch_accepts_valid_and_is_single_graph_scoped() {
+        let store = stub(&[], &[]);
+        let dels = vec![t("<urn:chorus:file/a>", "<https://jeffbridwell.com/chorus#fileInDomain>", "?o")];
+        let ins = vec![t("<urn:chorus:file/a>", "<https://jeffbridwell.com/chorus#fileInDomain>", "<urn:chorus:domain/x>")];
+        let n = batch(&store, "urn:chorus:instances", &dels, &ins).unwrap();
+        assert_eq!(n, 2, "two triples touched");
+        let ups = store.updates.borrow();
+        assert_eq!(ups.len(), 1, "one transaction");
+        let s = &ups[0];
+        assert!(s.contains("GRAPH <urn:chorus:instances>"), "must be graph-scoped: {}", s);
+        assert!(s.contains("DELETE WHERE") && s.contains("INSERT DATA"), "{}", s);
+        assert!(!s.contains("urn:gathering"), "never another graph");
     }
 
     #[test]
