@@ -1,3 +1,4 @@
+// @test-type: integration — hits the live Chorus API via startTestApp; RUN_INTEGRATION-gated tier.
 /**
  * Search freshness metadata tests — #1878
  *
@@ -6,6 +7,13 @@
  */
 
 import { startTestApp, type TestApp } from './lib/test-app';
+
+// #3606 — integration budget. These tests assert _meta CORRECTNESS, not
+// latency; under the nightly's full-suite parallel load the first search
+// (cold FTS + freshness caches) exceeds jest's 5s default and the suite
+// red-ed on timeout with every assertion untested (03:16 run: 27.7s suite).
+// 30s bounds a genuinely-hung API while never failing on load contention.
+jest.setTimeout(30000);
 
 describe('GET /api/chorus/search — _meta freshness (#1878)', () => {
 

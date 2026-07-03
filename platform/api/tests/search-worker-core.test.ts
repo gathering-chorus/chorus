@@ -1,3 +1,4 @@
+// @test-type: unit — fake lance table + fake embedder; no process spawn, no live services.
 /**
  * #3382 — pure message logic for the off-process semantic-search worker.
  * Tests the handler in isolation (fake lance table + fake embedder), no real
@@ -62,5 +63,29 @@ describe('handleSearchMessage (#3382)', () => {
       { query: 'q', limit: 5 } as unknown as SearchRequest,
     );
     expect(reply.id).toBe(-1);
+  });
+
+  // #3606 — the health cache's vector count. When lance moved off-process
+  // (#3382), server.ts stubbed getLanceTable() → null and /health/detail
+  // reported vectors:0 forever — test-api-health red + lancedb-stale alert
+  // false-firing while 13GB of vectors sat on disk. The count now rides the
+  // worker protocol as an op:'count' request.
+  it("op:'count' replies with the table's row count, no embed involved", async () => {
+    const table = { ...fakeTable([]), countRows: async () => 33417 };
+    const neverEmbed = async () => { throw new Error('embed must not be called for count'); };
+    const reply = await handleSearchMessage(
+      { table, embed: neverEmbed },
+      { id: 21, query: '', limit: 0, op: 'count' },
+    );
+    if (!('rows' in reply)) throw new Error('expected rows');
+    expect(reply.rows).toEqual([{ count: 33417 }]);
+  });
+
+  it("op:'count' with no table replies count 0, not an error", async () => {
+    const reply = await handleSearchMessage(
+      { table: null, embed: fakeEmbed },
+      { id: 22, query: '', limit: 0, op: 'count' },
+    );
+    expect(reply).toEqual({ id: 22, rows: [{ count: 0 }] });
   });
 });

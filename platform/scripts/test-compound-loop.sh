@@ -8,7 +8,24 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 PASS=0
 FAIL=0
-HOOKS_LOG="$HOME/Library/Logs/Chorus/chorus-hooks.stdout.log"
+# #3606 — chorus-hooks.stdout.log no longer exists; Loki holds the spine
+# events durably (CLAUDE.md: ALWAYS use Loki for log search).
+LOKI="${LOKI_URL:-http://localhost:3102}"
+_loki_injected() {
+  local start
+  start="$(( $(date +%s) - ${AWARENESS_WINDOW_S:-43200} ))000000000"
+  curl -s -G "$LOKI/loki/api/v1/query_range" \
+    --data-urlencode 'query={appName="chorus-events"} |= "context.inject.injected"' \
+    --data-urlencode "start=$start" --data-urlencode "limit=1000" 2>/dev/null \
+    | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    for s in d.get('data',{}).get('result',[]):
+        for v in s.get('values',[]): print(v[1])
+except Exception:
+    pass" 2>/dev/null
+}
 HOOKS_STDERR="$HOME/Library/Logs/Chorus/chorus-hooks.stderr.log"
 
 assert_contains() {
@@ -67,7 +84,7 @@ fi
 
 # --- Test 4: Context injection fired in the last 5 minutes ---
 echo "Test 4: Context injection fired recently"
-recent=$(tail -50 "$HOOKS_LOG" 2>/dev/null | grep 'context-inject.*event.*injected')
+recent=$(_loki_injected | head -1)
 if [ -n "$recent" ]; then
   echo "  PASS: context injection fired"
   ((PASS++))
@@ -78,7 +95,7 @@ fi
 
 # --- Test 5: Multiple roles receiving injection ---
 echo "Test 5: Multiple roles receiving context injection"
-roles=$(tail -100 "$HOOKS_LOG" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep 'context-inject.*injected' | grep -oE 'role=[a-z]+' | sort -u | wc -l | tr -d ' ')
+roles=$(_loki_injected | grep -oE '"role":"(wren|silas|kade)"' | sort -u | wc -l | tr -d ' ')
 if [ "$roles" -ge 2 ]; then
   echo "  PASS: $roles roles receiving injection"
   ((PASS++))

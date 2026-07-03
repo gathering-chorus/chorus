@@ -187,12 +187,13 @@ mkdir -p "$CANONICAL/platform/api/node_modules/some-pkg"
 echo '{}' > "$CANONICAL/platform/api/node_modules/some-pkg/package.json"
 
 "$CHORUS_WERK" add kade 3002 > /dev/null 2>&1
-assert "add creates platform/api/node_modules in werk" test -e "$WERK_BASE/kade-3002/platform/api/node_modules"
-assert "platform/api/node_modules is a symlink" test -L "$WERK_BASE/kade-3002/platform/api/node_modules"
-LINK_TARGET=$(readlink "$WERK_BASE/kade-3002/platform/api/node_modules" 2>/dev/null)
-assert "node_modules symlink points at canonical" test "$LINK_TARGET" = "$CANONICAL/platform/api/node_modules"
-assert "node_modules content reachable through symlink" test -f "$WERK_BASE/kade-3002/platform/api/node_modules/some-pkg/package.json"
-assert "no symlink for npm dir without canonical node_modules" test ! -e "$WERK_BASE/kade-3002/platform/empty-pkg/node_modules"
+# #3169 moved node_modules bootstrap OUT of `add` into the werk-build preamble
+# (werk_build::ensure_node_modules is the single owner). `add` must NOT create
+# node_modules — asserting the retired behavior kept this suite red for weeks
+# after the move (#3606). The current contract: a fresh werk has no
+# node_modules until werk-build runs.
+assert "add does NOT bootstrap node_modules (#3169 — werk-build preamble owns it)" test ! -e "$WERK_BASE/kade-3002/platform/api/node_modules"
+assert "add leaves empty-pkg untouched too" test ! -e "$WERK_BASE/kade-3002/platform/empty-pkg/node_modules"
 "$CHORUS_WERK" remove kade 3002 > /dev/null 2>&1
 
 # --- TEST 15: remove emits card.branch.closed spine event ---

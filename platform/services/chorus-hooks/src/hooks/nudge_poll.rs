@@ -345,28 +345,58 @@ mod tests {
         assert!(unread.is_empty(), "oldest nudge falls outside window");
     }
 
-    /// Smoke test against the live chorus.log to verify parse works on real event
-    /// shapes emitted by nudge.rs wedge 1, and that windowed fold stays under the
-    /// 100ms p95 budget per AC 0.1.
+    /// Smoke test against the live chorus.log: parse must not panic on real
+    /// event shapes emitted by nudge.rs wedge 1. #3606 — the latency assert
+    /// moved to `latency_budget_on_synthetic_50k`: a wall-clock budget against
+    /// the LIVE, unboundedly-growing log (122MB by 2026-07) under arbitrary
+    /// machine load was red-by-construction — and under llvm-cov
+    /// instrumentation (several× slower) it could never pass. That one assert
+    /// was BOTH nightly reds: cargo "53 ok, 1 failed" and coverage rc=101.
     #[test]
-    fn real_log_smoke_and_latency() {
+    fn real_log_smoke() {
         let log_path = Path::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/logs/chorus.log");
         if !log_path.exists() {
             // CI or clean environment — skip gracefully.
             return;
         }
         for role in &["silas", "wren", "kade"] {
-            let t = std::time::Instant::now();
-            let unread = fetch_unread(role, log_path, 50_000);
-            let elapsed_ms = t.elapsed().as_millis();
+            // No panic + plausible result is the whole contract; count depends
+            // on live state.
+            let _ = fetch_unread(role, log_path, 50_000).len();
+        }
+    }
+
+    /// AC 0.1 latency budget on a CONTROLLED input: 50k synthetic lines in a
+    /// tmp fixture, so the measurement is the algorithm — not whatever size
+    /// the live log happens to be or what else the box is doing. Wall-clock
+    /// assert skipped under coverage instrumentation (cfg(coverage), set by
+    /// cargo-llvm-cov) where timing is meaningless; the parse still runs
+    /// there so coverage is collected.
+    #[test]
+    fn latency_budget_on_synthetic_50k() {
+        let log = fixture_path("latency-50k");
+        let mut lines: Vec<String> = Vec::with_capacity(50_000);
+        for i in 0..49_999 {
+            lines.push(format!(
+                r#"{{"timestamp":"2026-04-21T17:00:00.000-0400","event":"noise.{}","role":"system"}}"#,
+                i
+            ));
+        }
+        lines.push(emitted("wren", "silas", "ntr-latency", "one real nudge in the noise"));
+        let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
+        write_log(&log, &refs);
+
+        let t = std::time::Instant::now();
+        let unread = fetch_unread("silas", &log, 50_000);
+        let elapsed_ms = t.elapsed().as_millis();
+
+        assert_eq!(unread.len(), 1, "the one real nudge must be found among 50k lines");
+        if !cfg!(coverage) {
             assert!(
                 elapsed_ms < 200,
-                "fetch_unread({}, 50k) took {}ms — AC 0.1 budget is 100ms p95 / 200ms hard ceiling",
-                role, elapsed_ms
+                "fetch_unread(silas, 50k synthetic) took {}ms — AC 0.1 budget is 100ms p95 / 200ms hard ceiling",
+                elapsed_ms
             );
-            // Just verify no panic and plausible result — count can be 0 or more
-            // depending on live state. `_ = unread` consumes the value.
-            let _ = unread.len();
         }
     }
 

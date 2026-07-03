@@ -492,10 +492,10 @@ function spawnSearchWorker(): WorkerLike {
   };
 }
 
-const searchPool = createWorkerPool<{ query: string; limit: number; role?: string }, SearchRequest>({
+const searchPool = createWorkerPool<{ query: string; limit: number; role?: string; op?: 'search' | 'count' }, SearchRequest>({
   spawn: spawnSearchWorker,
   label: 'search',
-  buildRequest: (id, q) => ({ id, query: q.query, limit: q.limit, role: q.role }),
+  buildRequest: (id, q) => ({ id, query: q.query, limit: q.limit, role: q.role, op: q.op }),
 });
 
 // --- Embed-at-ingest: embed new messages after indexing ---
@@ -1737,9 +1737,16 @@ import { createHealthCache } from './health-cache';
 const _healthCache = createHealthCache({
   dbPath: DB_PATH,
   DatabaseCtor: Database,
-  // #3382 — lance handle is off-process; vector count no longer read in-process
-  // (no alert keys on it). FOLLOW-UP: restore the count via a worker stat call.
-  getLanceTable: () => null,
+  // #3382 moved the lance handle off-process; the stub here made /health/detail
+  // report vectors:0 forever (test-api-health red + lancedb-stale false alert
+  // while 13GB of vectors sat on disk). #3606: a facade whose countRows rides
+  // the worker protocol (op:'count'), so the health cache code is unchanged.
+  getLanceTable: () => ({
+    countRows: async () => {
+      const rows = (await searchPool.run({ query: '', limit: 0, op: 'count' })) as Array<{ count?: number }>;
+      return rows[0]?.count ?? 0;
+    },
+  }),
   fs: { existsSync: (p) => fs.existsSync(p), statSync: (p) => fs.statSync(p) },
   hookBinaryPath: path.resolve(__dirname, '../../services/chorus-hooks/target/release/chorus-hooks'),
 });

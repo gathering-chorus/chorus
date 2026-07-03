@@ -68,6 +68,9 @@ echo "\$@" >> "$SPINE_LOG"
 EOF
 chmod +x "$STUB_DIR/chorus-log"
 export PATH="$STUB_DIR:$PATH"
+# #3606: the Rust werk-sync emits via CHORUS_LOG_BIN override (absolute-path
+# emit otherwise — #3151); export it so the stub captures emits hermetically.
+export CHORUS_LOG_BIN="$STUB_DIR/chorus-log"
 
 # Case 1: `repair` on detached HEAD re-attaches to main and ff's to origin/main
 git -C "$CANONICAL" checkout -q --detach HEAD 2>/dev/null

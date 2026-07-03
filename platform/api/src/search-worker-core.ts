@@ -12,6 +12,10 @@ export interface SearchRequest {
   query: string;
   limit: number;
   role?: string;
+  /** #3606 — 'count' asks for the table's row count (the health cache's vector
+   *  stat; the in-process lance handle was removed by #3382 and its stub made
+   *  /health/detail report vectors:0 forever). Default: 'search'. */
+  op?: 'search' | 'count';
 }
 
 export type SearchReply = { id: number; rows: unknown[] } | { id: number; error: string };
@@ -31,6 +35,11 @@ export async function handleSearchMessage(deps: SearchDeps, msg: SearchRequest):
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- msg arrives via worker IPC; typed but may be malformed, keep the guard
   const id = msg && typeof msg.id === 'number' ? msg.id : -1;
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- IPC message; op may be absent on old callers
+    if (msg && msg.op === 'count') {
+      const count = (await deps.table?.countRows?.()) ?? 0;
+      return { id, rows: [{ count }] };
+    }
     const rows = await searchInTable(deps.table, deps.embed, msg.query, msg.limit, msg.role);
     return { id, rows };
   } catch (e) {

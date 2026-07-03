@@ -24,6 +24,10 @@ use tracing::{info, trace};
 use types::{HookInput, HookResponse};
 
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+// #3606 — /tmp is the legacy MIRROR only; the durable contract path is
+// state_paths::hook_pid_durable() (~/.chorus/run/). macOS evicted the /tmp
+// pid file of a >3-day-old daemon while its active socket survived, breaking
+// orphan detection and redding socket_bind's pid_file_exists test.
 const PID_PATH: &str = "/tmp/chorus-hooks.pid";
 const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
 const HOOK_LOG_MAX: u64 = 10 * 1024 * 1024; // 10MB rotation
@@ -104,12 +108,14 @@ async fn main() {
         .with_target(false)
         .init();
 
-    // Exclusive socket bind with orphan detection (#1939)
+    // Exclusive socket bind with orphan detection (#1939).
+    // #3606: read the durable pid first, legacy /tmp mirror second — the
+    // mirror may have been OS-evicted while the holder is alive and well.
+    let pid_durable = chorus_hooks::shared::state_paths::hook_pid_durable();
     if Path::new(SOCKET_PATH).exists() {
-        let holder_alive = Path::new(PID_PATH)
-            .exists()
-            .then(|| std::fs::read_to_string(PID_PATH).ok())
-            .flatten()
+        let holder_alive = [pid_durable.as_str(), PID_PATH]
+            .iter()
+            .find_map(|p| std::fs::read_to_string(p).ok())
             .and_then(|s| s.trim().parse::<u32>().ok())
             .map(|pid| {
                 // kill -0 checks if process exists without sending a signal
@@ -130,8 +136,13 @@ async fn main() {
     // Write PID file for orphan detection.
     // #2559: PID file lifecycle matches socket lifecycle — both written here
     // on launch, both removed in shutdown_signal on graceful exit.
-    std::fs::write(PID_PATH, std::process::id().to_string())
+    // #3606: durable path is the contract; /tmp is a best-effort mirror.
+    if let Some(dir) = Path::new(&pid_durable).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(&pid_durable, std::process::id().to_string())
         .expect("Failed to write PID file");
+    let _ = std::fs::write(PID_PATH, std::process::id().to_string());
 
     let state = AppState::new();
 
@@ -193,7 +204,9 @@ async fn shutdown_signal() {
     info!("Shutting down...");
     // #2559: clean shutdown removes both socket and pid in lockstep —
     // stale pid otherwise lets `kill $(cat …)` target a recycled-PID process.
+    // #3606: durable pid + legacy /tmp mirror both cleaned.
     chorus_hooks::cleanup_runtime_files(Path::new(SOCKET_PATH), Path::new(PID_PATH));
+    let _ = std::fs::remove_file(chorus_hooks::shared::state_paths::hook_pid_durable());
 }
 
 async fn health() -> &'static str {

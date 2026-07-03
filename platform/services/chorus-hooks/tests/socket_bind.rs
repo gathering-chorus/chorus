@@ -4,24 +4,38 @@
 use std::fs;
 use std::path::Path;
 
-const PID_PATH: &str = "/tmp/chorus-hooks.pid";
 const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+
+// #3606 — the PID file's durable home is ~/.chorus/run/ (see state_paths).
+// macOS periodically evicts /tmp files not accessed for ~3 days, so a
+// long-lived daemon's /tmp pid file evaporated while its active socket
+// (exempt from eviction) survived — this suite then read red on any box
+// where the daemon had been up >3 days, and orphan detection was genuinely
+// broken. /tmp remains a best-effort mirror for `kill $(cat ...)` muscle
+// memory; the durable path is the contract.
+fn pid_path() -> String {
+    format!(
+        "{}/.chorus/run/chorus-hooks.pid",
+        std::env::var("HOME").expect("HOME not set")
+    )
+}
 
 #[test]
 fn pid_file_exists_when_hooks_running() {
-    // If chorus-hooks is running, it should have a PID file
+    // If chorus-hooks is running, it should have a durable PID file
     if Path::new(SOCKET_PATH).exists() {
         assert!(
-            Path::new(PID_PATH).exists(),
-            "Socket exists but no PID file — orphan detection won't work"
+            Path::new(&pid_path()).exists(),
+            "Socket exists but no durable PID file — orphan detection won't work"
         );
     }
 }
 
 #[test]
 fn pid_file_contains_valid_pid() {
-    if Path::new(PID_PATH).exists() {
-        let contents = fs::read_to_string(PID_PATH).expect("Failed to read PID file");
+    let p = pid_path();
+    if Path::new(&p).exists() {
+        let contents = fs::read_to_string(&p).expect("Failed to read PID file");
         let pid: u32 = contents.trim().parse().expect("PID file should contain a number");
         assert!(pid > 0, "PID should be positive");
     }

@@ -210,3 +210,132 @@ describe('non-JSON / file-tailed lines (#3031)', () => {
     expect(spine).toMatchObject({ role: 'kade', card_id: 3031 });
   });
 });
+
+// --- #3606 — pain-rollup + per-key query coverage (was the 47-stmt uncovered
+// region behind the platform/api coverage red). rollupRawLines is pure by
+// design; fixtures drive it, no Loki.
+import { rollupRawLines, windowToSeconds, queryPainRollup } from '../src/handlers/logs-query';
+
+describe('windowToSeconds (#3029 v1.1)', () => {
+  it('parses <n>[smhd]; rejects everything else', () => {
+    expect(windowToSeconds('30m')).toBe(1800);
+    expect(windowToSeconds('6h')).toBe(21600);
+    expect(windowToSeconds('7d')).toBe(604800);
+    expect(windowToSeconds('45s')).toBe(45);
+    expect(windowToSeconds('1w')).toBeNull();
+    expect(windowToSeconds('h')).toBeNull();
+  });
+});
+
+function painBody(values: Array<[string, string]>) {
+  return { data: { resultType: 'streams', result: [{ values }] } };
+}
+const pline = (ts: string, o: Record<string, unknown>): [string, string] => [ts, JSON.stringify(o)];
+
+describe('rollupRawLines (#3029/#3165)', () => {
+  it('groups by role·event·reason, counts, ranks by count desc, tracks cards + latest detail', () => {
+    const body = painBody([
+      pline('1000000000000000000', { event: 'demo.show.failed', role: 'kade', reason: 'no_demo_started', card_id: 3606 }),
+      pline('3000000000000000000', { event: 'demo.show.failed', role: 'kade', reason: 'no_demo_started', card_id: 3600, detail: 'latest detail line' }),
+      pline('2000000000000000000', { event: 'werk.merge.refused', role: 'wren', reason: 'dirty', card_id: 3603 }),
+    ]);
+    const { classes, total } = rollupRawLines(body);
+    expect(total).toBe(3);
+    expect(classes).toHaveLength(2);
+    expect(classes[0]).toMatchObject({ role: 'kade', event: 'demo.show.failed', reason: 'no_demo_started', count: 2, cards: ['3600', '3606'] });
+    expect(classes[0].detail).toContain('latest detail line'); // detail follows the LATEST ns
+    expect(classes[1].count).toBe(1);
+  });
+
+  it('drops synthetic test cards, unparseable lines, and role-filtered rows', () => {
+    const body = painBody([
+      pline('1', { event: 'x.failed', role: 'kade', card_id: 99998 }), // synthetic
+      ['2', 'not json at all'],
+      pline('3', { event: 'y.failed', role: 'wren' }),
+      pline('4', { event: 'z.failed', role: 'kade' }),
+    ]);
+    const { classes, total } = rollupRawLines(body, { role: 'kade' });
+    expect(total).toBe(1);
+    expect(classes[0].event).toBe('z.failed');
+  });
+
+  it('attributes products by event family and resolves domain via the injected board resolver', () => {
+    const body = painBody([
+      pline('1', { event: 'crawler.graph.failed', role: 'system', card_id: 1320 }),
+      pline('2', { event: 'werk.build.failed', role: 'kade', card_id: 3606 }),
+    ]);
+    const { classes, byProduct } = rollupRawLines(body, {}, (cardId) => (cardId === '3606' ? 'chorus' : 'photos'));
+    expect(byProduct).toEqual({ Gathering: 1, Chorus: 1 });
+    const crawl = classes.find((c) => c.event === 'crawler.graph.failed');
+    expect(crawl).toMatchObject({ product: 'Gathering', domain: 'photos' });
+  });
+});
+
+describe('queryPainRollup (#3029)', () => {
+  it('refuses bad windows without touching Loki', async () => {
+    let fetched = 0;
+    const deps: LogsQueryDeps = { ...baseDeps, fetchImpl: (async () => { fetched++; return {} as Response; }) as unknown as LogsQueryDeps['fetchImpl'] };
+    const r = await queryPainRollup({ window: 'fortnight' }, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('time-range-invalid');
+    expect(fetched).toBe(0);
+  });
+
+  it('rolls up a successful Loki response', async () => {
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: async () => ({
+        ok: true, status: 200,
+        json: async () => painBody([pline('1000000000000000000', { event: 'a.failed', role: 'silas', reason: 'boom' })]),
+      }) as unknown as Response,
+    };
+    const r = await queryPainRollup({ window: '1d' }, deps);
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.total).toBe(1);
+      expect(r.classes[0]).toMatchObject({ role: 'silas', event: 'a.failed', reason: 'boom' });
+    }
+  });
+
+  it('maps Loki 400 to query-syntax-error', async () => {
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'parse error' }) as unknown as Response,
+    };
+    const r = await queryPainRollup({ window: '1d' }, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('query-syntax-error');
+  });
+});
+
+describe('logsForCard / logsForBranch — JSON-field anchored queries', () => {
+  it('logsForCard builds a card_id field anchor and returns rows', async () => {
+    let seenUrl = '';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: (async (url: string) => {
+        seenUrl = String(url);
+        return { ok: true, status: 200, json: async () => painBody([pline('1', { event: 'werk.landed', role: 'kade', card_id: 3606 })]) } as unknown as Response;
+      }) as LogsQueryDeps['fetchImpl'],
+    };
+    const r = await logsForCard({ card_id: 3606 }, deps);
+    expect(r.ok).toBe(true);
+    expect(decodeURIComponent(seenUrl)).toContain('card_id');
+    expect(decodeURIComponent(seenUrl)).toContain('3606');
+  });
+
+  it('logsForBranch anchors on the branch field', async () => {
+    let seenUrl = '';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: (async (url: string) => {
+        seenUrl = String(url);
+        return { ok: true, status: 200, json: async () => painBody([]) } as unknown as Response;
+      }) as LogsQueryDeps['fetchImpl'],
+    };
+    const r = await logsForBranch({ branch: 'kade/3606' }, deps);
+    expect(r.ok).toBe(true);
+    expect(decodeURIComponent(seenUrl)).toContain('branch');
+    expect(decodeURIComponent(seenUrl)).toContain('kade/3606');
+  });
+});

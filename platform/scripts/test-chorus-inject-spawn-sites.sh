@@ -59,6 +59,7 @@ for pat in "${PATTERNS[@]}"; do
     offenders+=("$file: $line")
   done < <(grep -rEn \
     --exclude-dir=node_modules --exclude-dir=target --exclude-dir=dist --exclude-dir=.git \
+    --exclude-dir=logs --exclude='*.log' \
     "$pat" "${SEARCH_DIRS[@]}" 2>/dev/null)
 done
 

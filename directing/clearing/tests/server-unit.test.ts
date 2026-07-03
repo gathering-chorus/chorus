@@ -46,6 +46,11 @@ process.env.CLEARING_SCAN_DIR = TMP;
 process.env.CLEARING_PULSE_FILE = path.join(TMP, 'pulse.json');
 process.env.CLEARING_PROJECTS_DIR = TMP;
 process.env.CHORUS_ROOT = TMP;
+// #3606 — hermeticity: the jeff-message socket test used to hand off to the
+// LIVE pulse (:3475), which DELIVERED "socket-test-*" messages to Wren's real
+// terminal on every suite run (23 on 2026-07-03 alone). A test brings its own
+// world: point pulse at a dead local port so nothing leaves the process.
+process.env.PULSE_URL = 'http://127.0.0.1:1';
 
 // Now import — listener is guarded.
 import { server, io, clearingChat, extractSequenceTags, formatObserverDigest } from '../src/server';
