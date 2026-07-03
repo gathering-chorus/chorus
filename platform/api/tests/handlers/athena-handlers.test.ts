@@ -1,4 +1,5 @@
 /**
+ * @test-type: unit
  * Athena handler unit tests — #2278.
  *
  * Direct handler invocation with injected deps (no HTTP, no Fuseki).
@@ -16,10 +17,6 @@ import {
   fetchAthenaSubdomains,
   type AthenaSubdomainsDeps,
 } from '../../src/handlers/athena-subdomains';
-import {
-  fetchAthenaProducts,
-  type AthenaProductsDeps,
-} from '../../src/handlers/athena-products';
 import {
   fetchAthenaSteps,
   type AthenaStepsDeps,
@@ -75,13 +72,14 @@ describe('fetchAthenaHealth', () => {
     expect(body._meta.error).toBe(true);
   });
 
-  test('queries list includes health, products, subdomains', async () => {
+  test('queries list includes health and subdomains, not retired products (#3603)', async () => {
     const deps: AthenaHealthDeps = { sparql: emptySparql, loadQuery };
     const r = await fetchAthenaHealth(deps);
     const queries: any[] = (r.body as any).data.queries;
     expect(queries.some(q => q.name === 'health')).toBe(true);
-    expect(queries.some(q => q.name === 'products')).toBe(true);
     expect(queries.some(q => q.name === 'subdomains')).toBe(true);
+    expect(queries.some(q => q.name === 'products')).toBe(false);
+    expect(queries.some(q => q.name === 'subproducts')).toBe(false);
   });
 });
 
@@ -131,25 +129,7 @@ describe('fetchAthenaSubdomains', () => {
   });
 });
 
-// ── fetchAthenaProducts ──
-
-describe('fetchAthenaProducts', () => {
-  test('returns 200 with array data and athena envelope', async () => {
-    const deps: AthenaProductsDeps = { sparql: emptySparql, loadQuery, envelope: undefined };
-    const r = await fetchAthenaProducts(deps);
-    expect(r.status).toBe(200);
-    const body = r.body as any;
-    expect(Array.isArray(body.data)).toBe(true);
-    expect(body._meta.source).toBe('athena');
-    expect(body._meta.query_name).toBe('products');
-  });
-
-  test('returns 500 when SPARQL throws', async () => {
-    const deps: AthenaProductsDeps = { sparql: throwingSparql, loadQuery, envelope: undefined };
-    const r = await fetchAthenaProducts(deps);
-    expect(r.status).toBe(500);
-  });
-});
+// fetchAthenaProducts RETIRED (#3603) — owl-api :3360/products is the product API.
 
 // ── fetchAthenaSteps ──
 

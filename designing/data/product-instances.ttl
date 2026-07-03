@@ -2,6 +2,15 @@
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 
 # #3545 — shape-valid Products. comment emitted as BOTH rdfs:comment (shape sh:path) AND chorus:comment (generator field projection) — dual until the generator aligns. From products.json.
+# #3603 — this file is THE definition home for child products (ProductShape floor
+# content); structural edges (partOf / hasDomain / consumes / atStep) live in
+# roles/silas/ontology/chorus.ttl. Added: product-clearing, product-spine,
+# product-pulse, product-convergence (roster per Jeff 2026-07-03: Chorus →
+# {Athena, Loom, Werk, Borg, Clearing→{Spine, Pulse}, Convergence}; Gathering
+# top-level; Senses not a product). chorusProduct / borgProduct / gathering keep
+# their legacy IRIs and defs in chorus.ttl (IRI convergence is #1772).
+# hasDesignDoc: unfilled everywhere, named in gaps — no Document instances exist
+# in the graph (docs live in doc-catalog-registry.json); convergence follow-on.
 
 chorus:product-athena a chorus:Product ;
     rdfs:label "Athena" ; chorus:label "Athena" ;
@@ -13,15 +22,11 @@ chorus:product-athena a chorus:Product ;
     chorus:vision "A single SHACL-gated model whose one generator projects Product, Domain, Service, and ValueStream into uniform generated APIs and pages, made whole by construction through the DAL as the only write path." ;
     chorus:gaps "A v1 predicate layer still being cleaned, the Service class not yet instantiated, and the generator not yet projecting inverse-path relationships as nested fields." .
 
-chorus:product-borg a chorus:Product ;
-    rdfs:label "Borg" ; chorus:label "Borg" ;
-    rdfs:comment "Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes." ; chorus:comment "Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes." ;
-    chorus:ownedBy chorus:role-silas ;
-    chorus:status "building" ;
-    chorus:audience "The roles (to self-coordinate and catch a dark peer, flapping service, or drift before Jeff does) and Jeff (outcomes only — a calm board, or the single thing that needs him)." ;
-    chorus:valueProposition "Borg's product isn't dashboards — it's Jeff's attention back: it surfaces the one thing that needs a person, calmly, to the owner, so no human is ever the first to notice a stall." ;
-    chorus:vision "A model-driven reflect cycle where monitor and alert are ontology domains whose contracts generate, the page renders a verdict not a readout, and the capability travels generatively to run with chorus off." ;
-    chorus:gaps "Probes were bespoke and lied, there is no liveness or crash-loop signal, alerts are hand-routed, there is no model-driven contract, and there is no Borg page — the observation surfaces are scattered." .
+# product-borg RETIRED (#3603) — it duplicated chorus:borgProduct (the edge-holder:
+# ~30 inbound partOf/belongsTo/hasDomain edges in chorus.ttl). One node per product:
+# borgProduct survives; product-borg's floor content was folded onto borgProduct's
+# definition in chorus.ttl. The live product-borg instance is deleted by the #3603
+# migration.
 
 chorus:product-werk a chorus:Product ;
     rdfs:label "Werk" ; chorus:label "Werk" ;
@@ -32,6 +37,46 @@ chorus:product-werk a chorus:Product ;
     chorus:valueProposition "Every accepted card leaves as merged source on origin/main with a coherent receipt — one trace from pull to deployed cdhash — so a green result can't lie and work arrives proven rather than taken on faith." ;
     chorus:vision "Generated domain APIs over the graph end the reconcile treadmill structurally — typed contracts at every boundary, every card a coherent SKU." ;
     chorus:gaps "werk-test is held behind the generated tests-domain API; the tests domain lacks per-test identity and result ingestion; card-acceptance does not yet advance artifact status; advisory test and review steps are not yet gates." .
+
+chorus:product-clearing a chorus:Product ;
+    rdfs:label "The Clearing" ; chorus:label "The Clearing" ;
+    rdfs:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse." ; chorus:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "operating" ;
+    chorus:audience "Jeff and all three roles during alignment moments. Borg reads the transcripts, and decisions marked in-channel are captured to the decision log." ;
+    chorus:valueProposition "Real-time multi-party alignment with decisions captured where they happen — Jeff stops being the transport layer between role terminals." ;
+    chorus:vision "One shared room where the team aligns in minutes instead of relaying briefs, with every DECISION: line landing in the graph automatically." ;
+    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Transcript indexing depends on the index-freshness pipeline that alerts today." .
+
+chorus:product-spine a chorus:Product ;
+    rdfs:label "Spine" ; chorus:label "Spine" ;
+    rdfs:comment "The audit trail — structured event log of all team activity and state changes. Child product of The Clearing." ; chorus:comment "The audit trail — structured event log of all team activity and state changes. Child product of The Clearing." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "operating" ;
+    chorus:audience "All roles and Borg as writers/readers, and Jeff via dashboards, traces, and readouts." ;
+    chorus:valueProposition "One append-only truth about what happened — traces, fitness functions, and Borg's reflection all read the same spine instead of competing logs." ;
+    chorus:vision "Every act in the system is an event on one spine with a threaded trace — the team's history is queryable, not anecdotal." ;
+    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). ADR-046 spine reshape (EmitContract consumption, failureClass spans) in flight." .
+
+chorus:product-pulse a chorus:Product ;
+    rdfs:label "Pulse" ; chorus:label "Pulse" ;
+    rdfs:comment "Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing." ; chorus:comment "Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:status "operating" ;
+    chorus:audience "Jeff at a glance, the roles for mutual observation, alerting as a consumer." ;
+    chorus:valueProposition "Silence becomes a signal: heartbeats and declared states let the roles watch each other, so Jeff is never the first to notice a stall." ;
+    chorus:vision "The running team is legible at a glance — who is alive, building, blocked, or dark, without anyone asking." ;
+    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Nudge-delivery health (no-window failures) still alerts. Pulse domain newly authored in #3603." .
+
+chorus:product-convergence a chorus:Product ;
+    rdfs:label "Convergence" ; chorus:label "Convergence" ;
+    rdfs:comment "Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph." ; chorus:comment "Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "building" ;
+    chorus:audience "The roles as integration authors, the graph as the destination, the ICD gate as the enforcement point." ;
+    chorus:valueProposition "Harvesters and pipelines governed by ICDs — every integration is declared before it is coded, so data lineage is a contract rather than an accident." ;
+    chorus:vision "Data from every surface converges into the one graph through declared contracts; the V1/V2 domain-layer convergence is this product finishing its own job." ;
+    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). V1/V2 domain IRI duplication outstanding. Change-management engine (impact, propagate, verify) not yet built." .
 
 chorus:product-loom a chorus:Product ;
     rdfs:label "Loom" ; chorus:label "Loom" ;

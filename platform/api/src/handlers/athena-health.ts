@@ -30,8 +30,7 @@ const DEFAULT_ENDPOINT = 'http://localhost:3030/pods/sparql';
 
 const DEFAULT_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
-  { name: 'products', path: '/api/athena/products', description: 'List all products' },
-  { name: 'subproducts', path: '/api/athena/subproducts', description: 'List sub-products with owner, domain count, consumes count' },
+  // #3603: products/subproducts retired — owl-api :3360/products is the product API.
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
   { name: 'steps', path: '/api/athena/steps', description: 'Value stream steps with sub-domains at each step' },

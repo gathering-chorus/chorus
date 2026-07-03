@@ -1853,8 +1853,8 @@ const SPARQL_DIR = path.resolve(__dirname, 'sparql');
 
 const ATHENA_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
-  { name: 'products', path: '/api/athena/products', description: 'List all products' },
-  { name: 'subproducts', path: '/api/athena/subproducts', description: 'List sub-products with owner, domain count, consumes count' },
+  // #3603: products/subproducts retired from the hand-coded surface — owl-api
+  // :3360/products (generated from chorus:ProductShape) is the product API.
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
   { name: 'steps', path: '/api/athena/steps', description: 'Value stream steps with sub-domains at each step' },
@@ -1877,8 +1877,6 @@ const loadSparql = createSparqlLoader({ fs, sparqlDir: SPARQL_DIR });
 // loader are injected so unit tests run without Fuseki.
 import { fetchAthenaHealth } from './handlers/athena-health';
 import { fetchAthenaValidate } from './handlers/athena-validate';
-import { fetchAthenaProducts } from './handlers/athena-products';
-import { fetchAthenaSubproducts } from './handlers/athena-subproducts';
 import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
@@ -1912,11 +1910,7 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// GET /api/athena/products — list all products
-app.get('/api/athena/products', async (_req: Request, res: Response) => {
-  const r = await fetchAthenaProducts({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
-  res.status(r.status).json(r.body);
-});
+// #3603: GET /api/athena/products RETIRED — owl-api :3360/products serves products.
 
 // #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
 // chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
@@ -1949,18 +1943,9 @@ app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
   }
 });
 
-// GET /api/chorus/products — full product hierarchy: products → subproducts → subdomains (#2093, extracted #2189)
-import { fetchChorusProducts } from './handlers/chorus-products';
-app.get('/api/chorus/products', async (_req: Request, res: Response) => {
-  const r = await fetchChorusProducts({ sparql: athenaSparqlQuery });
-  res.status(r.status).json(r.body);
-});
-
-// GET /api/athena/subproducts — list sub-products with owner, domain count, consumes count
-app.get('/api/athena/subproducts', async (_req: Request, res: Response) => {
-  const r = await fetchAthenaSubproducts({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
-  res.status(r.status).json(r.body);
-});
+// #3603: GET /api/chorus/products + GET /api/athena/subproducts RETIRED —
+// SubProduct is gone from the model; owl-api :3360/products (generated from
+// chorus:ProductShape) is the only product serving surface.
 
 // GET /api/athena/subdomains — list sub-domains with owner, step. Filter: ?owner, ?step
 app.get('/api/athena/subdomains', async (req: Request, res: Response) => {
@@ -3162,37 +3147,41 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
       return { href: doc.href, source: doc.source, title: doc.title, tags };
     });
 
-    // Compose Athena shape from live queries + tagger maps.
-    // Athena's subdomain endpoint doesn't carry subproduct linkage today; we
-    // rely on SUBPRODUCT_DOMAINS as the authoritative bridge (same source the
-    // tagger uses, so tags and tree agree).
-    const [pRes, spRes, sdRes] = await Promise.all([
-      fetch('http://localhost:3340/api/athena/products').then(r => r.json()),
-      fetch('http://localhost:3340/api/athena/subproducts').then(r => r.json()),
+    // Compose Athena shape from owl-api (#3603: the hand-coded products/
+    // subproducts endpoints are retired; owl-api :3360/products — generated from
+    // chorus:ProductShape — is the product source). SubProduct is gone from the
+    // model: the tree's middle level is the CHILD products (product-loom, …),
+    // top level stays the hubs. SUBPRODUCT_DOMAINS remains the tagger bridge.
+    const [pRes, sdRes] = await Promise.all([
+      fetch('http://localhost:3360/products').then(r => r.json()),
       fetch('http://localhost:3340/api/athena/subdomains?limit=100').then(r => r.json()),
-    ]) as [{ data?: Array<{ uri?: string; label?: string }> }, { data?: Array<{ uri?: string; label?: string; owner?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
+    ]) as [{ data?: Array<{ name?: string; label?: string; ownedBy?: string }> }, { data?: Array<{ id?: string; label?: string }> }];
 
-    const products = (pRes.data || []).map(p => ({
-      id: (p.uri || '').split('#').pop() || '',
+    const TOP_LEVEL = new Set(['chorusProduct', 'gathering', 'borgProduct']);
+    const allProducts = (pRes.data || []).map(p => ({
+      id: p.name || '',
       label: p.label || '',
+      owner: (p.ownedBy || '').replace(/^role-/, ''),
     }));
+    // Hubs first (chorusProduct/gathering may predate serving; keep them present).
+    const products = [
+      { id: 'chorusProduct', label: 'Chorus' },
+      { id: 'gathering', label: 'Gathering' },
+      ...allProducts.filter(p => TOP_LEVEL.has(p.id)).map(({ id, label }) => ({ id, label })),
+    ].filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
 
-    // Subproducts: Athena returns label + uri; product association is by name —
-    // the live API doesn't expose it, so we map by convention (Loom/Werk/etc.
-    // belong to Chorus product).
-    const subproducts = (spRes.data || [])
-      .map(sp => ({
-        id: (sp.uri || '').split('#').pop() || '',
-        label: sp.label || '',
-        product: 'chorusProduct',
-      }));
+    // Middle level: child products (former subproduct slot in the tree shape).
+    const subproducts = allProducts
+      .filter(p => !TOP_LEVEL.has(p.id))
+      .map(sp => ({ id: sp.id, label: sp.label, product: 'chorusProduct' }));
 
-    // Build subdomain → subproduct from SUBPRODUCT_DOMAINS
+    // Build subdomain → child-product from SUBPRODUCT_DOMAINS (tagger short
+    // names 'loom'/'werk'/… map to the product-* IRI convention; retired
+    // 'quality' matches nothing and drops out).
     const sdToSp: Record<string, string> = {};
     for (const [sp, doms] of Object.entries(SUBPRODUCT_DOMAINS)) {
       for (const d of doms) {
-        // Map tagger short names ('loom', 'werk-product') to Athena URIs from spRes
-        const match = subproducts.find(s => s.id === sp || s.id === `${sp}-product`);
+        const match = subproducts.find(s => s.id === `product-${sp}` || s.id === sp || s.id === `${sp}-product`);
         if (match) sdToSp[d] = match.id;
       }
     }

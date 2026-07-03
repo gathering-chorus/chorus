@@ -10,7 +10,11 @@
 # BEFORE deploy. EDGE FORMS = the live RESOLVING IRIs (verified on fact, Wren+Kade):
 #   ownedBy → BARE role (chorus:wren/silas)         [NOT chorus:role-wren]
 #   atStep  → CAPITALIZED step (chorus:Shaping…Proving) [NOT value-stream-step-x]
-#   partOf  → real PRODUCT (chorus:chorusProduct/borgProduct — only 3 Products exist)
+#   partOf  → the owning PRODUCT. #3603: re-parented from coarse chorusProduct to
+#             the typed child products (loomProduct/athenaProduct/clearingProduct/
+#             spineProduct/werkProduct) per Jeff's roster call 2026-07-03 — this is
+#             the follow-on the note below named. memory/knowledge/search stay
+#             chorusProduct (cross-product capabilities).
 #   atStream→ chorus:chorusStream
 # COARSE partOf (chorusProduct/borgProduct) matches the one valid template; the
 # subproduct (loom/athena/clearing/werk) granularity is a FOLLOW-ON additive edge +
@@ -21,42 +25,42 @@
 chorus:roles a owl:Class, chorus:Domain ;
   rdfs:label "roles" ; chorus:comment "Team member identities, capabilities, and session lifecycle." ;
   chorus:purpose "Define who the team is — each role's identity, accountability, and session lifecycle." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "roles" ; chorus:definesVocabulary chorus:Role, chorus:AgentRole, chorus:HumanRole .
 
 chorus:principles a owl:Class, chorus:Domain ;
   rdfs:label "principles" ; chorus:comment "Values and constraints governing team decisions and priorities." ;
   chorus:purpose "Hold the values and constraints that govern how the team decides and prioritizes." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/principles" ; chorus:definesVocabulary chorus:Principle .
 
 chorus:policies a owl:Class, chorus:Domain ;
   rdfs:label "policies" ; chorus:comment "Rules that enforce principles in practice — hooks, guards, gates." ;
   chorus:purpose "Turn principles into enforced rules — the hooks, guards, and gates that hold the line." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/policies" ; chorus:definesVocabulary chorus:Policy .
 
 chorus:practices a owl:Class, chorus:Domain ;
   rdfs:label "practices" ; chorus:comment "Repeatable patterns the team uses — how we work, not just what we value." ;
   chorus:purpose "Capture the repeatable ways the team works — the how, distinct from the values." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/practices" ; chorus:definesVocabulary chorus:Practice .
 
 chorus:skills a owl:Class, chorus:Domain ;
   rdfs:label "skills" ; chorus:comment "Invokable capabilities — /skill-name commands that automate team workflows." ;
   chorus:purpose "Provide the team's invokable capabilities — the /skill commands that automate workflows." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill, chorus:UtilitySkill .
 
 chorus:decisions a owl:Class, chorus:Domain ;
   rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
   chorus:purpose "Record the team's decisions with their context, rationale, and tradeoffs — the why behind the system." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "designing/decisions" .
   # FLAG: no real owl:Class vocab (no chorus:Decision/ADR class) — definesVocabulary omitted, not faked.
@@ -64,7 +68,7 @@ chorus:decisions a owl:Class, chorus:Domain ;
 chorus:rcas a owl:Class, chorus:Domain ;
   rdfs:label "rcas" ; chorus:comment "Root cause analyses — what broke, why, and what changed as a result." ;
   chorus:purpose "Hold root-cause analyses — what broke, why, and what changed so it doesn't recur." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/rcas" .
   # FLAG: no real owl:Class vocab (no chorus:RCA class) — omitted, not faked.
@@ -73,14 +77,14 @@ chorus:rcas a owl:Class, chorus:Domain ;
 chorus:domains a owl:Class, chorus:Domain ;
   rdfs:label "domains" ; chorus:comment "The canonical product/domain/service structural model — this tree." ;
   chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-athena ;
   chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "designing/domains" ; chorus:definesVocabulary chorus:Domain, chorus:SubDomain, chorus:CollectionDomain .
 
 chorus:services a owl:Class, chorus:Domain ;
   rdfs:label "services" ; chorus:comment "Service definitions, interfaces, and ownership within the product model." ;
   chorus:purpose "Define the system's services — their interfaces, ownership, and place in the product model." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-athena ;
   chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "designing/services" ; chorus:definesVocabulary chorus:Service, chorus:ServiceDesign .
 
@@ -113,7 +117,7 @@ chorus:search a owl:Class, chorus:Domain ;
 chorus:messages a owl:Class, chorus:Domain ;
   rdfs:label "messages" ; chorus:comment "Direct role-to-role communications — nudges and the bridge messaging API." ;
   chorus:purpose "Carry direct role-to-role communication — nudges and the bridge messaging path." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-clearing ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/handlers/chorus-conversation.ts" .
   # FLAG: no real owl:Class vocab (no chorus:Message class) — omitted, not faked.
@@ -121,7 +125,7 @@ chorus:messages a owl:Class, chorus:Domain ;
 chorus:streams a owl:Class, chorus:Domain ;
   rdfs:label "streams" ; chorus:comment "Event streams and pub/sub channels the team uses to coordinate." ;
   chorus:purpose "Carry the event streams and pub/sub channels the team coordinates over." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-clearing ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "directing/clearing/src/tailer.ts" .
   # FLAG: no real owl:Class vocab (no chorus:Stream class) — omitted, not faked.
@@ -129,14 +133,14 @@ chorus:streams a owl:Class, chorus:Domain ;
 chorus:spine a owl:Class, chorus:Domain ;
   rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
   chorus:purpose "Be the system's audit trail — the structured event log of all activity and state changes." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-spine ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/spine-event-write.ts" ; chorus:definesVocabulary chorus:Vertebra, chorus:EmitContract, chorus:EventCategory .
 
 chorus:cards a owl:Class, chorus:Domain ;
   rdfs:label "cards" ; chorus:comment "Kanban board and card lifecycle — the unit of work tracking for the team." ;
   chorus:purpose "Track the team's work as cards through the board lifecycle — the unit of work." ;
-  chorus:ownedBy chorus:wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:ownedBy chorus:wren ; chorus:partOf chorus:product-werk ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "directing/products/cards" ; chorus:definesVocabulary chorus:WorkItem .
 

@@ -1,8 +1,0 @@
-PREFIX chorus: <https://jeffbridwell.com/chorus#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?product ?label WHERE {
-  GRAPH <urn:chorus:ontology> {
-    ?product a chorus:Product .
-    OPTIONAL { ?product rdfs:label ?label }
-  }
-} ORDER BY ?label
