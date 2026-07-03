@@ -338,6 +338,7 @@ setInterval(() => {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
+import { readSpineLines, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -445,87 +446,9 @@ app.get('/api/commands/:role', (req, res) => {
   res.json({ text: lines.join('\n') || `No commands recorded for ${role}`, lines: lines.length });
 });
 
-type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
-
-const TURN_SKIP_PREFIXES = ['[nudge from', '[feedback]', '[response]', '[reply]', '[ack]', '[direction]', '[correction]'];
-const TURN_SKIP_CONTAINS = ['<command-', 'Base directory for this skill', '[Request interrupted', '[Image:', '/var/folders'];
+// #3607 — spine parsing + TAIL-READ moved to src/spine-tail.ts (was a full
+// readFileSync of the 117MB log per 3s poll; see that module + its tests).
 const OBS_SKIP_TOKENS = ['nudge', 'chorus-log', 'role-state', 'cards', 'smoke-check'];
-
-function formatToolDisplay(summary: string, action: string): string | null {
-  if (action === 'Read' || action === 'Glob' || action === 'Grep') return null;
-  if (action === 'Bash') return summary.replace(/^Bash: /, '→ ');
-  if (action === 'Edit') return summary.replace(/^Edit: /, '✏️ ');
-  if (action === 'Write') return summary.replace(/^Write: /, '📝 ');
-  return summary;
-}
-
-interface LogEntry {
-  timestamp?: string;
-  role?: string;
-  event?: string;
-  summary?: string;
-  action?: string;
-  tool_count?: string | number;
-  from?: string;
-  target?: string;
-}
-
-function parseTurnLine(entry: LogEntry, role: string): StreamLine | null {
-  let summary = (entry.summary ?? '').substring(0, 200);
-  if (TURN_SKIP_PREFIXES.some((p) => summary.startsWith(p))) return null;
-  if (TURN_SKIP_CONTAINS.some((p) => summary.includes(p))) return null;
-  summary = summary.replace(/\s*\|\s*tools:\s*[^|]*\|\s*[\d.]+s\s*$/, '').trim();
-  if (!summary) return null;
-  const toolCount = parseInt(String(entry.tool_count ?? '0'), 10);
-  const isJeffInput = toolCount === 0;
-  if (isJeffInput && summary.length < 5) return null;
-  return {
-    ts: entry.timestamp ?? '',
-    role: isJeffInput ? 'jeff' : role,
-    type: 'turn',
-    text: isJeffInput ? `→${role}: ${summary}` : summary,
-  };
-}
-
-function parseToolEntry(entry: LogEntry, role: string): StreamLine | null {
-  const display = formatToolDisplay((entry.summary ?? '').substring(0, 120), entry.action ?? '');
-  if (display === null) return null;
-  return { ts: entry.timestamp ?? '', role, type: 'tool', text: display };
-}
-
-// #2435 — canonical event is nudge.emitted. chorus-log packs the first kv as
-// the JSON field; for nudge.emitted that's "from":"<sender>,to=...,content=<preview>".
-function parseNudgeEntry(entry: LogEntry, role: string): StreamLine | null {
-  const packed = entry.from ?? entry.target ?? '';
-  const content = packed.match(/content=(.+)/)?.[1] || '';
-  if (!content.includes('[gemba]')) return null;
-  return { ts: entry.timestamp ?? '', role, type: 'gemba', text: content.substring(0, 200) };
-}
-
-function parseLogEntry(entry: LogEntry): StreamLine | null {
-  const role = entry.role ?? '';
-  if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
-  const event = entry.event ?? '';
-  if (event === 'session_tool') return parseToolEntry(entry, role);
-  if (event === 'session_turn') return parseTurnLine(entry, role);
-  if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
-  return null;
-}
-
-function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
-  const out: StreamLine[] = [];
-  try {
-    const logLines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(Boolean);
-    let count = 0;
-    for (let i = logLines.length - 1; i >= 0 && count < limit * 2; i--) {
-      try {
-        const line = parseLogEntry(JSON.parse(logLines[i]));
-        if (line) { out.push(line); count++; }
-      } catch { /* ignored */ }
-    }
-  } catch { /* ignored */ }
-  return out;
-}
 
 function parseObservation(line: string, seen: Set<string>): StreamLine | null {
   try {

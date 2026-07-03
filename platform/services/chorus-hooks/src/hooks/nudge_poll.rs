@@ -26,11 +26,41 @@ pub struct UnreadNudge {
     pub content: String,
 }
 
+/// #3607 — tail budget for the log read. The fold only ever looks at the last
+/// `window_events` lines (≤50k, ~100B/line ≈ 5MB); 8MB covers that with slack.
+/// Before this, fetch_unread did read_to_string of the ENTIRE chorus.log —
+/// 117MB unrotated — on EVERY per-prompt poll, and the real_log_smoke_and_latency
+/// canary blew its 200ms ceiling exactly as designed.
+const TAIL_BYTES: u64 = 8 * 1024 * 1024;
+
+/// Read the last `TAIL_BYTES` of the log as (lossy) UTF-8, dropping the partial
+/// first line when the read starts mid-file. None on missing/unreadable file.
+fn read_log_tail(log_path: &Path) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = fs::File::open(log_path).ok()?;
+    let size = f.metadata().ok()?.len();
+    let start = size.saturating_sub(TAIL_BYTES);
+    if start > 0 {
+        f.seek(SeekFrom::Start(start)).ok()?;
+    }
+    let mut bytes = Vec::with_capacity((size - start) as usize);
+    f.read_to_end(&mut bytes).ok()?;
+    let mut text = String::from_utf8_lossy(&bytes).into_owned();
+    if start > 0 {
+        match text.find('\n') {
+            Some(nl) => { text.drain(..=nl); }
+            None => return Some(String::new()),
+        }
+    }
+    Some(text)
+}
+
 /// Return the unread set for `role`: nudge.emitted events addressed to this
 /// role with no matching nudge.surfaced. Scans at most the last `window_events`
-/// lines of the log. Returns newest first. Empty on missing log.
+/// lines of the log (tail-read — never the whole file). Returns newest first.
+/// Empty on missing log.
 pub fn fetch_unread(role: &str, log_path: &Path, window_events: usize) -> Vec<UnreadNudge> {
-    let Ok(content) = fs::read_to_string(log_path) else {
+    let Some(content) = read_log_tail(log_path) else {
         return Vec::new();
     };
 
