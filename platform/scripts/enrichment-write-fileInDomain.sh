@@ -64,7 +64,36 @@ start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
 
 files=0; edges=0; failures=0; batch_body=""
 
+# #3573 — governed-door migration (GATED). CHORUS_WRITE_DOOR=1 routes writes through
+# owl-api's POST /batch (minted scoped token + typed slots) instead of raw SPARQL to
+# :3030. Default 0 = the current raw path — ZERO behavior change until cutover, and a
+# door mint/reach failure falls back to raw so a door fault never black-holes writes
+# (Wren's gated-fallback floor, 2026-07-03).
+USE_DOOR="${CHORUS_WRITE_DOOR:-0}"
+DOOR_BASE="${OWL_API_BASE:-http://localhost:3360}"
+MINT_BIN="${CHORUS_ROOT}/platform/scripts/chorus-mint-token.py"
+DOOR_WEBID="${CHORUS_AGENT_WEBID:-http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me}"
+door_body=""; BEARER=""
+if [ "$USE_DOOR" = "1" ]; then
+  BEARER=$(python3 "$MINT_BIN" --web-id "$DOOR_WEBID" --scope "$HYDRATION_GRAPH" 2>/dev/null)
+  if [ -z "$BEARER" ]; then
+    echo "enrichment-write-fileInDomain: door mint failed — falling back to raw path" >&2
+    USE_DOOR=0
+  fi
+fi
+
 flush_batch() {
+  if [ "$USE_DOOR" = "1" ]; then
+    # governed path: POST the typed-slot tab body to owl-api /batch (auth+scope+DAL).
+    [ -z "$door_body" ] && return 0
+    local rc; rc=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$DOOR_BASE/batch" \
+      -H "Authorization: Bearer $BEARER" -H "x-target-graph: $HYDRATION_GRAPH" \
+      --data-binary "$door_body" 2>/dev/null || echo "000")
+    [ "$rc" != "200" ] && failures=$((failures + 1))
+    door_body=""
+    return 0
+  fi
+  # raw path (default until cutover)
   [ -z "$batch_body" ] && return 0
   local rc; rc=$(post_update "$batch_body")
   [ "$rc" != "200" ] && [ "$rc" != "204" ] && failures=$((failures + 1))
@@ -91,6 +120,9 @@ except Exception: print('')")
 DELETE WHERE { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileHasOwner> ?_o } } ;
 INSERT DATA { GRAPH <${HYDRATION_GRAPH}> { <${uri}> <${CHORUS_NS}fileInDomain> <${CHORUS_NS}${dom}> ; <${CHORUS_NS}fileHasOwner> <${CHORUS_NS}${owner}> } } ;
 "
+  # #3573 — same intent as typed slots for the governed /batch door (o=?o deletes all).
+  door_body="${door_body}$(printf 'DEL\t<%s>\t<%sfileInDomain>\t?o\nDEL\t<%s>\t<%sfileHasOwner>\t?o\nINS\t<%s>\t<%sfileInDomain>\t<%s%s>\nINS\t<%s>\t<%sfileHasOwner>\t<%s%s>\n' \
+    "$uri" "$CHORUS_NS" "$uri" "$CHORUS_NS" "$uri" "$CHORUS_NS" "$CHORUS_NS" "$dom" "$uri" "$CHORUS_NS" "$CHORUS_NS" "$owner")"
   files=$((files + 1)); edges=$((edges + 1))
 done
 
