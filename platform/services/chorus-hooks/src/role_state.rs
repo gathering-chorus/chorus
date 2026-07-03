@@ -544,7 +544,11 @@ mod tests {
     /// Pre-existing queue files must survive all transitions unchanged.
     #[test]
     fn no_transition_drains_retired_inbox() {
-        let test_role = "test-no-drain-post-cutover";
+        // #3607 — per-process role name: this test collided with itself when two
+        // pipelines' cargo-test runs raced on the same /tmp/voice-inbox path
+        // (one run's cleanup ate the other's fixture mid-assert; blocked a land).
+        let test_role = format!("test-no-drain-post-cutover-{}", std::process::id());
+        let test_role = test_role.as_str();
         let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
         let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
 
