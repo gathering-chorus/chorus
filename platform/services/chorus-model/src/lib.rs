@@ -527,7 +527,7 @@ fn is_iri_term(t: &str) -> bool {
 fn is_literal_term(t: &str) -> bool {
     t.len() >= 2 && t.starts_with('"') && t.ends_with('"') && {
         let inner = &t[1..t.len() - 1];
-        !inner.contains(['"', '\n', '\r', '{', '}', ';']) && !inner.to_ascii_uppercase().contains("GRAPH")
+        !inner.contains(['"', '\n', '\r', '\t', '{', '}', ';']) && !inner.to_ascii_uppercase().contains("GRAPH")
     }
 }
 
