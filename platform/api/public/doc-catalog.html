@@ -200,12 +200,12 @@ let driftByHref = new Map();  // href → divergence_fields[]
 let panelDoc = null;  // { href, title, suggest, current }
 
 async function load() {
-  const [treeR, tagsR, catR, productsR, subproductsR, subdomainsR, driftR, curatedR] = await Promise.all([
+  // #3603: /api/athena/products + /api/athena/subproducts retired (results were
+  // unused here anyway); owl-api :3360/products is the product API.
+  const [treeR, tagsR, catR, subdomainsR, driftR, curatedR] = await Promise.all([
     fetch('/api/doc-catalog/tree').then(r => r.json()),
     fetch('/api/doc-catalog/tags').then(r => r.json()),
     fetch('/api/doc-catalog').then(r => r.json()),
-    fetch('/api/athena/products').then(r => r.json()).catch(() => ({ data: [] })),
-    fetch('/api/athena/subproducts').then(r => r.json()).catch(() => ({ data: [] })),
     fetch('/api/athena/subdomains?limit=200').then(r => r.json()).catch(() => ({ data: [] })),
     fetch('/api/chorus/catalog/drift').then(r => r.json()).catch(() => ({ data: { drift: [] } })),
     fetch('/api/chorus/catalog/curated').then(r => r.json()).catch(() => ({ data: { curated: [] } })),

@@ -1,14 +1,14 @@
 /**
+ * @test-type: integration
  * #2208 — Data-driven regression for additional Athena GET handlers.
  *
- * Batches products, subproducts, owners, blast-radius through the same
+ * Batches owners, blast-radius, steps, machines, health through the same
+ * (products/subproducts retired #3603 — owl-api :3360/products serves products)
  * oxigraph + TTL + golden JSON pattern. Adds blast-radius consume edge
  * to the fixture so the traversal has something to find.
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import { fetchAthenaProducts } from '../../src/handlers/athena-products';
-import { fetchAthenaSubproducts } from '../../src/handlers/athena-subproducts';
 import { fetchAthenaOwners } from '../../src/handlers/athena-owners';
 import { fetchAthenaBlastRadius } from '../../src/handlers/athena-blast-radius';
 import { fetchAthenaSteps } from '../../src/handlers/athena-steps';
@@ -51,18 +51,6 @@ async function assertGolden(name: string, actual: unknown): Promise<void> {
 describe('#2208 data regression — athena batch', () => {
   const sparql = makeSparqlFromTtl(FIXTURE_TTL, 'urn:chorus:ontology');
   const deps = { sparql, loadQuery, envelope };
-
-  test('/api/athena/products', async () => {
-    const r = await fetchAthenaProducts(deps);
-    expect(r.status).toBe(200);
-    await assertGolden('athena-products', stripVolatile(r.body));
-  });
-
-  test('/api/athena/subproducts', async () => {
-    const r = await fetchAthenaSubproducts(deps);
-    expect(r.status).toBe(200);
-    await assertGolden('athena-subproducts', stripVolatile(r.body));
-  });
 
   test('/api/athena/owners', async () => {
     const r = await fetchAthenaOwners(deps);

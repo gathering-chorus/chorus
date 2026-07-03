@@ -1331,3 +1331,4 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Silas] 2026-06-18 → ADR-046 (Domain→Observability, the emit-contract) converged SA↔DE with Kade; DORA mapping VERIFIED off the live spine (werk = first instance; failureClass excludes tooling; lead-time decomposed); co-author werk EmitContract on #3476 land → kade
 - [Silas] 2026-06-18 → gathered #3466 PASS (partOf spine; durability hold: tree.json retires only after #3493 committed-source round-trips) + #3476 PASS (land idempotency) → wren, kade
 - [Silas] 2026-06-18 → ops: clearing deep-health false-alarm → verified UP (200/running), NO restart (probe stale-path, not the service) → self
+- [Wren] → built #3603 in werk (V1 product-layer retire: model+code+staged migration, commit bbeb7c22; deploy leg gated on #3573 door merge) → Jeff (/cw when ready), Silas (door dependency)

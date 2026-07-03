@@ -12,17 +12,7 @@
       {
         "name": "health",
         "path": "/api/athena/health",
-        "description": "Ontology health — triple count, endpoint status"
-      },
-      {
-        "name": "products",
-        "path": "/api/athena/products",
-        "description": "List all products"
-      },
-      {
-        "name": "subproducts",
-        "path": "/api/athena/subproducts",
-        "description": "List sub-products with owner, domain count, consumes count"
+        "description": "Ontology health \u2014 triple count, endpoint status"
       },
       {
         "name": "subdomains",

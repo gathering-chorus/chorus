@@ -36,18 +36,18 @@ describeIntegration('GET /api/athena/health', () => {
   });
 });
 
-describeIntegration('GET /api/athena/products', () => {
-  test('returns product list with uri and label', async () => {
+describeIntegration('retired product endpoints (#3603)', () => {
+  test('GET /api/athena/products is gone — owl-api :3360/products is the product API', async () => {
     const res = await fetch(`${API}/api/athena/products`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.source).toBe('athena');
-    expect(Array.isArray(body.data)).toBe(true);
-    expect(body.data.length).toBeGreaterThan(0);
-    for (const p of body.data) {
-      expect(p.uri).toBeDefined();
-      expect(p.label).toBeDefined();
-    }
+    expect(res.status).toBe(404);
+  });
+  test('GET /api/athena/subproducts is gone', async () => {
+    const res = await fetch(`${API}/api/athena/subproducts`);
+    expect(res.status).toBe(404);
+  });
+  test('GET /api/chorus/products is gone', async () => {
+    const res = await fetch(`${API}/api/chorus/products`);
+    expect(res.status).toBe(404);
   });
 });
 
@@ -249,7 +249,7 @@ describeIntegration('GET /api/athena/machines', () => {
 
 describeIntegration('_meta envelope', () => {
   test('all endpoints include query_name, duration_ms, cached', async () => {
-    const endpoints = ['health', 'products', 'subproducts', 'subdomains', 'steps', 'owners', 'machines'];
+    const endpoints = ['health', 'subdomains', 'steps', 'owners', 'machines']; // products/subproducts retired #3603
     for (const ep of endpoints) {
       const res = await fetch(`${API}/api/athena/${ep}`);
       const body = await res.json();

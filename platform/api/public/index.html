@@ -62,7 +62,9 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 <script>
 (async function() {
   try {
-    const res = await fetch('/api/chorus/products');
+    // #3603: /api/chorus/products retired with the SubProduct layer — owl-api
+    // :3360/products (generated from chorus:ProductShape) is the product API.
+    const res = await fetch('http://localhost:3360/products');
     const data = await res.json();
     const container = document.getElementById('products');
 
@@ -90,58 +92,24 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       ],
     };
 
-    for (const p of data.products) {
+    // owl-api shape: { data: [{ name, label, comment, ownedBy, status, … }] }.
+    // Products are flat typed chorus:Product rows (SubProduct is gone); skip the
+    // parent hub card, render each product with the local description/link maps.
+    const products = data.data || [];
+    for (const p of products) {
+      if (p.label === 'Chorus (Product)') continue;
       const div = document.createElement('div');
-      const cls = p.label.toLowerCase().replace(/[^a-z]/g, '');
-      div.className = 'product ' + (cls === 'chorusproduct' ? '' : cls);
-
-      let domainsHtml = '';
-      if (p.subproducts && p.subproducts.length > 0) {
-        for (const sp of p.subproducts) {
-          domainsHtml += '<div style="margin-bottom:8px"><strong>' + sp.label + '</strong>';
-          if (sp.owner) domainsHtml += ' <span style="font-size:0.75rem;color:#888">(' + sp.owner + ')</span>';
-          domainsHtml += '<br/>';
-          for (const d of sp.domains) domainsHtml += '<span>' + d + '</span>';
-          domainsHtml += '</div>';
-        }
-      }
-      if (p.domains && p.domains.length > 0) {
-        domainsHtml += '<div class="domains">';
-        for (const d of p.domains) domainsHtml += '<span>' + d + '</span>';
-        domainsHtml += '</div>';
-      }
-
-      let linksHtml = '';
-      const links = pageLinks[p.label] || (p.subproducts || []).flatMap(sp => pageLinks[sp.label] || []);
-      if (links.length > 0) {
-        linksHtml = '<div class="links">' + links.map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('') + '</div>';
-      }
-
+      div.className = 'product ' + p.label.toLowerCase().replace(/[^a-z]/g, '');
+      const owner = (p.ownedBy || '').replace(/^role-/, '');
+      const links = (pageLinks[p.label] || []).map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('');
       div.innerHTML = '<h2>' + p.label + '</h2>'
-        + '<div class="desc">' + (descriptions[p.label] || '') + '</div>'
-        + domainsHtml
-        + linksHtml;
-
-      // Skip the parent Chorus product — show subproducts directly
-      if (p.label === 'Chorus (Product)') {
-        for (const sp of p.subproducts) {
-          const spDiv = document.createElement('div');
-          spDiv.className = 'product ' + sp.label.toLowerCase().replace(/[^a-z]/g, '');
-          let spDomains = sp.domains.map(d => '<span>' + d + '</span>').join('');
-          let spLinks = (pageLinks[sp.label] || []).map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('');
-          spDiv.innerHTML = '<h2>' + sp.label + '</h2>'
-            + (sp.owner ? '<div class="owner">' + sp.owner + '</div>' : '')
-            + '<div class="desc">' + (descriptions[sp.label] || '') + '</div>'
-            + '<div class="domains">' + spDomains + '</div>'
-            + (spLinks ? '<div class="links">' + spLinks + '</div>' : '');
-          container.appendChild(spDiv);
-        }
-      } else {
-        container.appendChild(div);
-      }
+        + (owner ? '<div class="owner">' + owner + '</div>' : '')
+        + '<div class="desc">' + (descriptions[p.label] || p.comment || '') + '</div>'
+        + (links ? '<div class="links">' + links + '</div>' : '');
+      container.appendChild(div);
     }
 
-    document.getElementById('meta').textContent = 'Chorus — ' + data.products.length + ' products, ' + data.elapsed_ms + 'ms from Fuseki';
+    document.getElementById('meta').textContent = 'Chorus — ' + products.length + ' products from owl-api (generated from chorus:ProductShape)';
   } catch (err) {
     document.getElementById('meta').textContent = 'Failed to load: ' + err.message;
   }
