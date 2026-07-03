@@ -1,35 +1,36 @@
-# Daily Morning Summary — 2026-07-02
+# Daily Morning Summary — 2026-07-03
 
-**HEADLINE:** Quality tooling dark 21+ days and domain context drifting 11 days — both Wren-owned and overdue; Kade eliminated ~37 false nightly reds yesterday, giving clean signal when suites finally run.
+**HEADLINE:** Quality still dark day 21 — `npm ci` at repo root unblocks all 4 suites immediately; ops unchanged, Wren owns two overdue refreshes today.
 
 ---
 
-**OPS:** RED (3 REDs, 3 YELLOWs) — Silas review 2026-07-01, no change
-- RED: Domain context freshness — now 11-day drift, 6 chorus cards shipped without refresh; `domain-context-chorus.md` most urgent. Wren-owned.
-- RED: Stale WIP — WF-165 (#1704) now 98 days, 0 steps; #1759 [Wren] + #1791 [Silas] now 85 days. Three 80+ day WIPs is active planning debt.
-- RED: CSC /tmp compliance — 58 scripts, `bridge-subscriber.js` runtime inbox highest risk. Still no card, no owner.
-- YELLOW: Hooks dead code (28d carry), LaunchAgent /tmp refs (structural), CLAUDE.md fragment lag (chorus-prompt.md stale vs. #3581–#3598).
+**OPS:** RED (3 REDs, 3 YELLOWs) — Silas review 2026-07-02, no change from yesterday
+- RED: Domain context — all 5 files 11d stale; `domain-context-chorus.md` most urgent (6 chorus cards shipped since last update). Wren-owned today.
+- RED: Stale WIP — #1704 (99d), #1759/#1791 (86d); board unverifiable from remote; planning debt compounding daily.
+- RED: CSC /tmp — 58 scripts, `bridge-subscriber.js` runtime inbox highest risk; still no card, no owner.
+- YELLOW: Hooks dead code (28d), LaunchAgent /tmp refs (structural), CLAUDE.md fragments 11d stale (lag vs. #3581–#3602).
 - GREEN: Repo clean.
 
-**QUALITY:** RED — all 4 suites blocked; Kade review 2026-07-02
-- 0 tests run: `ts-jest` preset not found — day 21. Root fix: `npm ci` at repo root.
-- Build: 150 TypeScript type errors — day 9 (regression from 2026-06-21, unchanged).
-- Lint: `@eslint/js` not found — day 23. Same root fix.
-- Bright spot: Kade fixed #3571 (nightly parser) + #3589 (lint ratchet) yesterday — ~37 false-reds/night eliminated. Real signal when suites run again.
+**QUALITY:** RED — all 4 suites blocked, 0 tests run; Kade review 2026-07-02
+- Tests: `ts-jest` preset not found — day 21 across clearing, workflow-engine, chorus-sdk, pulse.
+- Lint: `@eslint/js` missing — day 23. Same root cause.
+- Build: 150 TypeScript type errors — day 12, regression from 2026-06-21, unowned.
+- Fix: `npm ci` at repo root resolves tests + lint in one shot.
 
-**YESTERDAY (2026-07-01):** Active shipping day.
-- Kade shipped #3602, fixed #3571 (nightly suite parser false-reds) and #3589 (lint-ratchet false-reds). Significant quality infra cleanup.
-- Wren shipped #3594.
-- No decisions recorded.
+**YESTERDAY (2026-07-02):** 3 cards shipped (PRs #721–723).
+- #3597 (kade) — nightly-suites determinism (3 behavioral fixes to `nightly-suites.sh`).
+- #3536 (silas) — PR #722.
+- #3600 (kade) — PR #721.
+- Silas wrote daily ops + quality reviews.
 
 **TODAY (recommended priorities):**
-1. Wren: Update `domain-context-chorus.md` — RED, 11-day drift, Wren-owned, today.
-2. Wren: Refresh `chorus-prompt.md` and CLAUDE.md fragments vs. #3581–#3598.
-3. Wren + Silas: Triage #1704, #1759, #1791 — close or park; no card survives 90+ days.
-4. Jeff or Kade: Run `npm ci` at repo root — unblocks 4 test suites + lint immediately.
-5. Silas: Assign card for `bridge-subscriber.js` /tmp migration (CSC RED, no owner).
+1. Kade or Silas: `npm ci` at repo root — kills the 21-day test blackout in one command.
+2. Wren: Refresh `domain-context-chorus.md` — Silas flagged today-urgent (RED, 11d).
+3. Wren: Sweep CLAUDE.md fragments for #2913 worktree convention and #3581–#3602 lag.
+4. Silas: File July card for `bridge-subscriber.sh` /tmp CSC violation.
+5. Team: Close or park #1704, #1759, #1791 — 80+ day WIPs erode planning credibility.
 
 **BLOCKERS (needs Jeff):**
-- Quality dark Day 21 (RED): `npm ci` unrun — who owns the npm environment on this repo?
-- Stale WIPs (RED): WF-165 at 98 days with 0 steps — decision needed to close or re-scope.
-- CSC /tmp: `bridge-subscriber.js` runtime inbox is real risk; still no card after ops RED carry.
+- 150 type errors since 2026-06-21 (12d) — no owner, no card; assign or it keeps aging.
+- Stale WIPs 80–99 days: call them done/parked or WIP limit is fiction.
+- `npm ci` unrun for 21 days: who owns the TS environment health on this repo?
