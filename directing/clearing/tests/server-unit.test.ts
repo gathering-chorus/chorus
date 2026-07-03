@@ -48,7 +48,7 @@ process.env.CLEARING_PROJECTS_DIR = TMP;
 process.env.CHORUS_ROOT = TMP;
 
 // Now import — listener is guarded.
-import { server, io, clearingChat, extractSequenceTags } from '../src/server';
+import { server, io, clearingChat, extractSequenceTags, formatObserverDigest } from '../src/server';
 
 let baseUrl: string;
 
@@ -76,6 +76,43 @@ async function call(p: string, opts: Parameters<typeof fetch>[1] = {}) {
   }
   return { status: res.status, body, headers: res.headers };
 }
+
+describe('formatObserverDigest — observer digest formatting (#3604)', () => {
+  const now = new Date('2026-07-03T12:00:00Z').toISOString();
+
+  test('dedupes, maps actions to emoji, skips nudges, appends card', () => {
+    const content = [
+      JSON.stringify({ ts: now, digest: 'editing src/foo.ts', card: '42' }),
+      JSON.stringify({ ts: now, digest: 'editing src/foo.ts', card: '42' }), // duplicate → deduped
+      JSON.stringify({ ts: now, digest: 'nudging: wren about x' }),           // skipped
+      JSON.stringify({ ts: now, digest: 'writing notes.md' }),
+      JSON.stringify({ ts: now, digest: 'committing changes' }),
+    ].join('\n');
+    const lines = formatObserverDigest(content);
+    const joined = lines.join('\n');
+    expect(joined).toContain('✏️ src/foo.ts');   // editing → emoji
+    expect(joined).toContain('#42');              // card appended
+    expect(joined).toContain('📝 notes.md');      // writing → emoji
+    expect(joined).toContain('📦 commit');        // committing changes → mapped
+    expect(joined).not.toContain('nudging');      // nudge line skipped
+    expect(lines.filter((l) => l.includes('✏️ src/foo.ts')).length).toBe(1); // deduped to one
+  });
+
+  test('empty content yields no lines', () => {
+    expect(formatObserverDigest('')).toEqual([]);
+  });
+
+  test('truncates an over-70-char digest with an ellipsis', () => {
+    const lines = formatObserverDigest(JSON.stringify({ ts: now, digest: 'x'.repeat(200) }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('...');
+  });
+
+  test('skips malformed json lines but keeps valid ones', () => {
+    const lines = formatObserverDigest('not-json\n' + JSON.stringify({ ts: now, digest: 'building: thing' }));
+    expect(lines.join('\n')).toContain('🔨 thing');
+  });
+});
 
 describe('server — health and basic reads', () => {
   test('GET /health returns ok with port', async () => {

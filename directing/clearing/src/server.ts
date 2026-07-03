@@ -34,6 +34,43 @@ if (!CHORUS_ROOT) {
 // test fixtures → non-deterministic SSE-test flake under load (#3528 green-main).
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
 
+// #3604 — extracted from GET /api/commands/:role so the digest formatting is a pure,
+// unit-testable function (dedup + nudge-skip + action→emoji map + truncate). Takes the
+// raw observations-jsonl content, returns formatted display lines (last 60, deduped).
+export function formatObserverDigest(content: string): string[] {
+  const out: string[] = [];
+  const obsLines = content.trim().split('\n').filter(Boolean);
+  const seen = new Set<string>();
+  for (const line of obsLines.slice(-60)) {
+    try {
+      const obs = JSON.parse(line);
+      const key = `${obs.ts}|${obs.digest}`;   // dedup the observer double-write
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const ts = new Date(obs.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+      const card = obs.card ? ` #${obs.card}` : '';
+      let short = obs.digest || '';
+      if (short.startsWith('nudging:')) continue;   // role-to-role coordination (#1675)
+      short = short.replace(/^bash: bash .*\/scripts\//, '→ ')
+                    .replace(/^bash: cd .*? && /, '→ ')
+                    .replace(/^bash: /, '→ ')
+                    .replace(/^board op: bash .*\/cards /, '📋 ')
+                    .replace(/^committing changes$/, '📦 commit')
+                    .replace(/^editing /, '✏️ ')
+                    .replace(/^writing /, '📝 ')
+                    .replace(/^service op: /, '⚙️ ')
+                    .replace(/^state change: /, '🔄 ')
+                    .replace(/^running tests: /, '🧪 ')
+                    .replace(/^building: /, '🔨 ')
+                    .replace(/^agent: /, '🤖 ')
+                    .replace(/^skill: /, '⚡ ');
+      if (short.length > 70) short = short.substring(0, 67) + '...';
+      out.push(`${ts}  ${short}${card}`);
+    } catch { /* skip malformed line */ }
+  }
+  return out;
+}
+
 // Auth token for remote access (#1719)
 // Generate a stable token per machine — persists across restarts
 const crypto = require('crypto');
@@ -291,12 +328,13 @@ try {
 } catch { /* ignored */ }
 
 // Save messages every 10 seconds
+// #3604 — unref: background save timer must not keep Node's loop alive (jest exit clean).
 setInterval(() => {
   try {
     const msgs = messageRouter.getRecent(200, true);
     fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
   } catch { /* ignored */ }
-}, 10000);
+}, 10000).unref?.();
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
@@ -401,40 +439,7 @@ app.get('/api/commands/:role', (req, res) => {
 
   try {
     const content = fs.readFileSync(obsFile, 'utf-8');
-    const obsLines = content.trim().split('\n').filter(Boolean);
-    const seen = new Set<string>();
-
-    for (const line of obsLines.slice(-60)) {
-      try {
-        const obs = JSON.parse(line);
-        // Deduplicate (observer double-write bug)
-        const key = `${obs.ts}|${obs.digest}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        const ts = new Date(obs.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
-        const card = obs.card ? ` #${obs.card}` : '';
-        // Shorten digest to just the action
-        let short = obs.digest || '';
-        // Skip nudge commands from commands view — role-to-role coordination (#1675)
-        if (short.startsWith('nudging:')) continue;
-        short = short.replace(/^bash: bash .*\/scripts\//, '→ ')
-                      .replace(/^bash: cd .*? && /, '→ ')
-                      .replace(/^bash: /, '→ ')
-                      .replace(/^board op: bash .*\/cards /, '📋 ')
-                      .replace(/^committing changes$/, '📦 commit')
-                      .replace(/^editing /, '✏️ ')
-                      .replace(/^writing /, '📝 ')
-                      .replace(/^service op: /, '⚙️ ')
-                      .replace(/^state change: /, '🔄 ')
-                      .replace(/^running tests: /, '🧪 ')
-                      .replace(/^building: /, '🔨 ')
-                      .replace(/^agent: /, '🤖 ')
-                      .replace(/^skill: /, '⚡ ');
-        if (short.length > 70) short = short.substring(0, 67) + '...';
-        lines.push(`${ts}  ${short}${card}`);
-      } catch { /* ignored */ }
-    }
+    lines.push(...formatObserverDigest(content));   // #3604 — extracted, unit-tested
   } catch { /* ignored */ }
 
   res.json({ text: lines.join('\n') || `No commands recorded for ${role}`, lines: lines.length });
@@ -913,10 +918,11 @@ io.on('connection', (socket) => {
 });
 
 // Broadcast tile updates every 5 seconds
+// #3604 — unref: background broadcast timer must not keep Node's loop alive (jest exit clean).
 setInterval(() => {
   tilePoller.poll();
   io.emit('tiles', tilePoller.getTiles());
-}, 5000);
+}, 5000).unref?.();
 
 // Broadcast new messages as they arrive
 messageRouter.on('message', (msg) => {
