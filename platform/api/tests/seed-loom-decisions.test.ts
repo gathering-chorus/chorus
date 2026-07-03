@@ -1,3 +1,4 @@
+// @test-type: unit — parses repo-committed markdown + tmp fixtures; no Fuseki (apply path untested by design).
 import {
   parseDecisions,
   parseAdrFromString,
@@ -130,5 +131,45 @@ describe('buildInsert', () => {
     expect(sparql.includes('chorus:status')).toBe(false);
     expect(sparql.includes('chorus:relatedCard')).toBe(false);
     expect(sparql.includes('chorus:supersedes')).toBe(false);
+  });
+});
+
+// --- #3606 — cover buildInsert / parseAdr / loadAllRows (were the 57.94% gap).
+import * as fsx from 'fs';
+import * as osx from 'os';
+import * as pathx from 'path';
+import { buildInsert, parseAdr, loadAllRows } from '../src/seed-loom-decisions';
+
+describe('buildInsert (#3606)', () => {
+  it('wraps rows in one INSERT DATA targeting the instances graph', () => {
+    const rows = [
+      { id: 'dec-001', uri: 'https://jeffbridwell.com/chorus#dec-001', decisionType: 'DEC' as const, label: 'First', body: '## DEC-1: First', source: 's' },
+    ];
+    const q = buildInsert(rows as Parameters<typeof buildInsert>[0]);
+    expect(q).toContain('INSERT DATA');
+    expect(q).toContain('urn:chorus:instances');
+    expect(q).toContain('dec-001');
+  });
+});
+
+describe('parseAdr (file path) (#3606)', () => {
+  it('reads and parses an ADR file from disk', () => {
+    const tmp = pathx.join(osx.tmpdir(), `adr-3606-${process.pid}.md`);
+    fsx.writeFileSync(tmp, '# ADR-042: Test Architecture Decision\n\n**Status:** Accepted\n');
+    try {
+      const row = parseAdr(tmp);
+      expect(row).toMatchObject({ id: 'adr-042', decisionType: 'ADR', label: 'Test Architecture Decision', status: 'Accepted' });
+    } finally { fsx.unlinkSync(tmp); }
+  });
+});
+
+describe('loadAllRows against the repo itself (#3606)', () => {
+  it('parses decisions.md + the ADR dir without collisions — the repo stays seedable', () => {
+    const rows = loadAllRows();
+    expect(rows.length).toBeGreaterThan(50); // repo has 100+ DECs & ADRs
+    expect(rows.some((r) => r.decisionType === 'DEC')).toBe(true);
+    expect(rows.some((r) => r.decisionType === 'ADR')).toBe(true);
+    // every row minted a stable uri
+    expect(rows.every((r) => r.uri.includes('#dec-') || r.uri.includes('#adr-'))).toBe(true);
   });
 });

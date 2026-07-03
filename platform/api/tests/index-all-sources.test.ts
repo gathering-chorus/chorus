@@ -63,6 +63,29 @@ describe('createIndexAllSources', () => {
     expect(wm.length).toBe(1);
   });
 
+  it('indexes clearing transcripts when the chat dir exists (#3606 — the populated path)', async () => {
+    const { ctor, runs } = fakeDbFactory();
+    const fs = {
+      existsSync: (p: string) => p === '/tmp/chorus-chat',
+      readdirSync: jest.fn((p: string) => (p === '/tmp/chorus-chat' ? ['sess-1.md', 'notes.txt'] : [])),
+      readFileSync: jest.fn(() => 'transcript body'),
+      statSync: jest.fn(() => ({ mtime: { toISOString: () => '2026-07-03T12:00:00Z' } })),
+    };
+    const run = createIndexAllSources({
+      dbPath: '/db', DatabaseCtor: ctor as any,
+      fs: fs as any, path: FAKE_PATH as any,
+      repoRoot: '/repo', homedir: () => '/home',
+      now: () => '2026-07-03T12:00:00Z',
+    });
+    const r = await run();
+    expect(r.indexed.clearing).toBe('1 transcripts indexed'); // .md only, .txt skipped
+    const inserts = runs.filter(e => e.sql.includes('INTO messages') && e.args[0] === 'clearing');
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].args[1]).toBe('clearing:sess-1.md');
+    const wm = runs.filter(e => e.sql.includes('INSERT INTO watermarks') && e.args[0] === 'clearing');
+    expect(wm.length).toBe(1);
+  });
+
   it('does NOT index spine even when the log exists — telemetry lives in Loki (#3136)', async () => {
     // #3136 REMOVE — spine was 82% of the corpus and the search-latency floor; it is
     // telemetry, queried by trace/card/time via Loki, never by meaning. Removal means

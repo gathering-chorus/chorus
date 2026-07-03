@@ -1,3 +1,4 @@
+// @test-type: unit — pure parser/formatter fixtures; no Loki, no live services.
 /**
  * flow-report core — unit tests (#3269).
  *
@@ -302,5 +303,44 @@ describe('normalizeLine malformed-ts tolerance (#3266 — the BSD %3N corruption
     expect(e?.event).toBe('werk.landed');
     expect(e?.card_id).toBe(3322);
     expect(e?.ts).toBe(17811076913);
+  });
+});
+
+// --- #3606 — cover normalizeLine branches, esc, fetchJob pagination (were the 40.74% gap).
+import { normalizeLine, esc } from '../src/flow-report-cli';
+
+describe('normalizeLine (#3606)', () => {
+  it('parses a spine JSON line with numeric ts', () => {
+    const e = normalizeLine('{"ts": 1700000000000, "event": "werk.landed", "card_id": 3606, "role": "kade", "reason": "ok"}');
+    expect(e).toMatchObject({ ts: 1700000000000, event: 'werk.landed', card_id: 3606, role: 'kade' });
+    expect(e!.detail).toBe('ok');
+  });
+
+  it('repairs the #3266 malformed-epoch witness lines ("ts":<n>N)', () => {
+    const e = normalizeLine('{"ts":1781107691300N,"event":"witness.presented"}');
+    expect(e).toMatchObject({ ts: 1781107691300, event: 'witness.presented' });
+  });
+
+  it('falls back to timestamp string; rejects unparseable ts', () => {
+    expect(normalizeLine('{"timestamp":"2026-07-03T12:00:00Z","event":"x"}')).toMatchObject({ event: 'x' });
+    expect(normalizeLine('{"timestamp":"not a date","event":"x"}')).toBeNull();
+  });
+
+  it('rejects non-JSON, JSON without event, and non-object lines', () => {
+    expect(normalizeLine('plain text')).toBeNull();
+    expect(normalizeLine('{"ts": 1}')).toBeNull();
+    expect(normalizeLine('{"broken')).toBeNull();
+  });
+
+  it('joins detail from the high-signal fields, capped at 200 chars', () => {
+    const e = normalizeLine(JSON.stringify({ ts: 1, event: 'e', reason: 'r', error: 'x'.repeat(300) }));
+    expect(e!.detail.startsWith('r x')).toBe(true);
+    expect(e!.detail.length).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('esc (#3606)', () => {
+  it('escapes all five HTML metacharacters', () => {
+    expect(esc(`<a href="x" & 'y'>`)).toBe('&lt;a href=&quot;x&quot; &amp; &#39;y&#39;&gt;');
   });
 });

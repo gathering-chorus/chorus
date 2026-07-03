@@ -1,6 +1,11 @@
 import * as http from 'http';
 
-const CHORUS_API = process.env.CHORUS_API_URL ?? 'http://localhost:3340';
+// #3606 — resolved per call, not at module load, so callers (and tests) can
+// point at a different chorus-api after import; module-load capture froze the
+// URL before any consumer could configure it.
+function chorusApi(): string {
+  return process.env.CHORUS_API_URL ?? 'http://localhost:3340';
+}
 
 export interface SearchResult {
   source: string;
@@ -20,7 +25,7 @@ export interface SearchResponse {
  * Search the Chorus index for messages matching a term.
  */
 export function search(term: string, limit = 20): Promise<SearchResponse> {
-  const url = `${CHORUS_API}/api/chorus/search?q=${encodeURIComponent(term)}&limit=${limit}`;
+  const url = `${chorusApi()}/api/chorus/search?q=${encodeURIComponent(term)}&limit=${limit}`;
 
   return new Promise((resolve, reject) => {
     http.get(url, (res) => {
