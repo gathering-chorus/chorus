@@ -198,7 +198,13 @@ function indexState(ctx: IndexCtx): string {
 
 function indexClearing(ctx: IndexCtx): string | void {
   const chatDir = '/tmp/chorus-chat';
-  if (!ctx.fs.existsSync(chatDir)) return;
+  if (!ctx.fs.existsSync(chatDir)) {
+    // /tmp/chorus-chat is ephemeral — absent after every reboot. Checked-and-
+    // empty is not dead: without this stamp the clearing watermark freezes at
+    // its last pre-reboot value and freshness reports the source dead forever.
+    ctx.updateWatermark.run!('clearing', ctx.now, ctx.now);
+    return '0 transcripts indexed (chat dir absent)';
+  }
   let indexed = 0;
   for (const file of ctx.fs.readdirSync(chatDir).filter((f) => f.endsWith('.md'))) {
     const filePath = ctx.path.join(chatDir, file);

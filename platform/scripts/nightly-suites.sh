@@ -211,6 +211,23 @@ _npm_jest_env() {
   echo ""
 }
 
+# #3606 — does this package actually test with jest? Discovery (has_jest_setup)
+# admits any package with a scripts.test, but a test script like `tsx --test`
+# (mcp-server) is node's runner, not jest. Only run `npx jest` where jest is
+# genuinely configured: scripts.test mentions jest, a `jest` key exists, or a
+# jest.config.* file is present.
+_npm_package_uses_jest() {
+  local d="$1" pj="$1/package.json"
+  [ -f "$pj" ] || return 1
+  jq -er '.scripts.test // ""' "$pj" 2>/dev/null | grep -q "jest" && return 0
+  jq -e '.jest' "$pj" >/dev/null 2>&1 && return 0
+  local f
+  for f in jest.config.js jest.config.ts jest.config.cjs jest.config.mjs; do
+    [ -f "$d/$f" ] && return 0
+  done
+  return 1
+}
+
 # Run a single suite — ONE attempt, deterministic result.
 # #3597: the retry-to-absorb-concurrent-flakes band-aid is GONE. It papered over
 # non-determinism (a standalone pass but a parallel-pressure race) instead of
@@ -296,11 +313,30 @@ run_one_attempt() {
       # CONSTRUCTED when RUN_INTEGRATION=true, gated on the live stack. Stack down
       # → never built → api hermetic-only, can't false-red. (See _npm_jest_env.)
       local out rc jest_env
-      jest_env=$(_npm_jest_env "$path")
-      out=$(cd "$path" && env $jest_env npx jest --passWithNoTests --silent 2>&1); rc=$?
-      # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
-      # failure detail at the source so the saved fail-log held nothing usable).
-      summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
+      if _npm_package_uses_jest "$path"; then
+        jest_env=$(_npm_jest_env "$path")
+        out=$(cd "$path" && env $jest_env npx jest --passWithNoTests --silent 2>&1); rc=$?
+        # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
+        # failure detail at the source so the saved fail-log held nothing usable).
+        summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
+      else
+        # #3606 — a package whose scripts.test is NOT jest (mcp-server: tsx
+        # --test, node's runner) runs its OWN runner. Hardcoded `npx jest`
+        # here downloaded jest into the shared npx cache at 3am, died on
+        # cache corruption (ENOTEMPTY), and reported a blank-summary fail
+        # for weeks while the package's real suite passed.
+        out=$(cd "$path" && npm test --silent 2>&1); rc=$?
+        # node test runner summary: "# pass N" / "# fail N"; fall back to
+        # the last non-empty line so the summary is never blank again.
+        local np nf
+        np=$(echo "$out" | grep -E '^# pass ' | tail -1 | awk '{print $3}')
+        nf=$(echo "$out" | grep -E '^# fail ' | tail -1 | awk '{print $3}')
+        if [ -n "$np" ] || [ -n "$nf" ]; then
+          summary="pass ${np:-0}, fail ${nf:-0}"
+        else
+          summary=$(echo "$out" | grep -v '^\s*$' | tail -1 | tr -d '\n' | cut -c1-160)
+        fi
+      fi
       [ "$rc" -ne 0 ] && status="fail"
       ;;
     cargo)
@@ -651,6 +687,23 @@ case "${1:-}" in
     echo "# shell";     list_shell
     echo "# bats";      list_bats
     echo "# cucumber";  list_cucumber
+    ;;
+  --run-one)
+    # #3606 — run a single suite exactly as the nightly would (stack-gate
+    # included), emit its SUITE line, exit 0/1 on pass/fail. Gives a red suite
+    # a one-command reproduction instead of a full --run-all.
+    _kind="${2:-}"; _path="${3:-}"
+    if [ -z "$_kind" ] || [ -z "$_path" ]; then
+      echo "Usage: $0 --run-one {npm|cargo|shell|bats|cucumber} <path>" >&2; exit 2
+    fi
+    case "$_kind" in
+      npm)   _owner=$(owner_for_npm "$_path") ;;
+      cargo) _owner=$(owner_for_cargo "$_path" 2>/dev/null || echo silas) ;;
+      *)     _owner="silas" ;;
+    esac
+    _line=$(run_one "$_kind" "$_path" "$_owner")
+    printf '%s\n' "$_line"
+    echo "$_line" | grep -q '|fail|' && exit 1 || exit 0
     ;;
   --run-all)
     # #3597 single-flight: refuse to run concurrently with another nightly.
