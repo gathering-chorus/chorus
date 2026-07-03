@@ -102,8 +102,14 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
 
 /// Best-effort spine emit via the canonical chorus-log (absolute home path — the
 /// #3151 daemon-PATH lesson). A missing/failing chorus-log never affects recovery.
+/// CHORUS_LOG_BIN overrides the path — the same stub contract nightly-suites.sh
+/// documents, so hermetic tests can capture emits without a real canonical tree
+/// (test-chorus-werk-sync-auto-repair.sh's `canonical.repaired` red, #3606).
 fn emit(home: &Path, event: &str, extras: &[(&str, &str)]) {
-    let log = home.join("platform/scripts/chorus-log");
+    let log = env::var_os("CHORUS_LOG_BIN")
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| home.join("platform/scripts/chorus-log"));
     if !log.exists() {
         return;
     }

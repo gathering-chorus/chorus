@@ -10,6 +10,13 @@ echo "chorus-werk-sync: DEPRECATED — use \`werk-sync $*\` (#3300); forwarding"
 if command -v werk-sync >/dev/null 2>&1; then
   exec werk-sync "$@"
 fi
+# #3606 — the deployed binary home (#2734: ~/.chorus/bin is THE deploy location).
+# The nightly's launchd PATH has no ~/.chorus/bin, so command -v missed the
+# deployed binary and this stub exited 1 — the werk-sync suite cluster's red.
+DEPLOYED="$HOME/.chorus/bin/werk-sync"
+if [ -x "$DEPLOYED" ]; then
+  exec "$DEPLOYED" "$@"
+fi
 FALLBACK="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/services/werk-sync/target/release/werk-sync"
 if [ -x "$FALLBACK" ]; then
   exec "$FALLBACK" "$@"
