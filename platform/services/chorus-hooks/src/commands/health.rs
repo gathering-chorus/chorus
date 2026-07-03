@@ -279,6 +279,12 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
         }
     }
 
+    // #3607 — log rotation existed (#1622, log_rotate below) but NOTHING scheduled
+    // it: com.gathering.log-rotate only rotates Gathering logs, so chorus.log grew
+    // unbounded (117MB) and every whole-file reader paid ~2.4s per read. Ride the
+    // existing hourly agent instead of adding a new LaunchAgent.
+    let _ = log_rotate();
+
     println!("Hourly check complete: disk={}% uncommitted={}", disk_pct, uncommitted);
     ExitCode::SUCCESS
 }
