@@ -3,6 +3,13 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/tests/**/*.test.ts'],
   moduleFileExtensions: ['ts', 'js', 'json'],
+  // #3606 — single worker for determinism. Under parallel workers a teardown
+  // race intermittently force-exits a worker AND loses its coverage slice
+  // (server.ts then reads 79% < its 80 threshold → rc=1 → the nightly's
+  // "coverage run errored rc=1 — no clean measurement" red). The suite runs
+  // ~11s; serial costs nothing and kills the whole race class. Remove only
+  // with 10 consecutive clean parallel coverage runs as evidence.
+  maxWorkers: 1,
   // #2524 convention: *.integration.test.ts excluded from hermetic default.
   // Run integration tier with RUN_INTEGRATION=true.
   testPathIgnorePatterns: process.env.RUN_INTEGRATION === 'true' ? ['/node_modules/'] : [
