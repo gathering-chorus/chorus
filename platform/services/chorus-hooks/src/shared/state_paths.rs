@@ -60,8 +60,21 @@ pub fn messages_db() -> String {
 /// Hook server socket
 pub const HOOK_SOCKET: &str = "/tmp/chorus-hooks.sock";
 
-/// Hook server PID file
+/// Hook server PID file — legacy /tmp mirror. macOS evicts /tmp files
+/// unaccessed ~3 days, so this path CANNOT be the contract for a long-lived
+/// daemon (#3606: the active socket survived eviction, the pid file didn't →
+/// orphan detection broken + socket_bind suite red). Kept as a best-effort
+/// mirror for `kill $(cat /tmp/chorus-hooks.pid)` muscle memory.
 pub const HOOK_PID: &str = "/tmp/chorus-hooks.pid";
+
+/// Hook server PID file — durable contract home (#3606). ~/.chorus/run is
+/// never OS-evicted; orphan detection and tests read this path.
+pub fn hook_pid_durable() -> String {
+    format!(
+        "{}/.chorus/run/chorus-hooks.pid",
+        std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
+    )
+}
 
 /// Session init gate directory
 pub const SESSION_INIT_DIR: &str = "/tmp/claude-session-init";
