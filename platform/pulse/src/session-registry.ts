@@ -16,7 +16,7 @@
  * entries are never resolved (and can be pruned). This is what stops the
  * stale "wren — -zsh" class — a dead session can't be a target.
  */
-import { readdirSync, readFileSync, unlinkSync } from 'fs';
+import { readdirSync, readFileSync, unlinkSync, appendFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 import os from 'os';
 import path from 'path';
@@ -125,10 +125,26 @@ export function readRegistry(dir: string = SESSIONS_DIR): SessionReg[] {
  * time so the registry self-heals — no manual `rm` ever again. Best-effort.
  * Returns the swept filenames (for the caller's spine event / log line).
  */
+/** #3608 AC2 — spine emitter seam so sweeps are queryable in Loki, not lost to
+ * stdout (Kade's review + product gate). Injectable; the default appends a
+ * canonical chorus.log JSON line (same shape the pulse emitSpine writes). */
+export type SweepEmit = (event: string, fields: Record<string, string>) => void;
+
+export function defaultSweepEmit(event: string, fields: Record<string, string>): void {
+  try {
+    const logPath = process.env.CHORUS_SPINE_LOG
+      || path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'logs', 'chorus.log');
+    const line = JSON.stringify({ timestamp: new Date().toISOString(), event, role: 'pulse', ...fields });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed internal spine log path
+    appendFileSync(logPath, line + '\n');
+  } catch { /* spine emit is best-effort — never break delivery */ }
+}
+
 export function sweepRegistry(
   dir: string = SESSIONS_DIR,
   isAlive: IsAlive = pidAlive,
   roleOf: RoleOfPid = actualRoleOfPid,
+  emit: SweepEmit = defaultSweepEmit,
 ): string[] {
   const swept: string[] = [];
   for (const r of readRegistry(dir)) {
@@ -139,11 +155,14 @@ export function sweepRegistry(
     const file = path.join(dir, `${r.role}-${r.pid}.json`);
     try {
       unlinkSync(file);
-      swept.push(`${r.role}-${r.pid}.json${poisoned ? ` (poisoned: pid runs ${actual})` : ' (dead pid)'}`);
+      const desc = `${r.role}-${r.pid}.json${poisoned ? ` (poisoned: pid runs ${actual})` : ' (dead pid)'}`;
+      swept.push(desc);
+      // AC2 — poison/stale sweeps are spine events, queryable, never stdout-only.
+      emit(poisoned ? 'routing.poison.detected' : 'routing.stale.swept', {
+        reg_role: r.role, pid: String(r.pid), tty: r.tty,
+        ...(poisoned ? { actual_role: actual as string } : {}),
+      });
     } catch { /* vanished or unwritable — skip */ }
-  }
-  if (swept.length > 0) {
-    console.warn(`[session-registry] swept ${swept.length} stale/poisoned registration(s): ${swept.join(', ')}`);
   }
   return swept;
 }
@@ -154,8 +173,8 @@ export function sweepRegistry(
  * #3608: sweeps dead + poisoned entries first (self-healing), then resolves
  * with role re-verification.
  */
-export function resolveRoleTarget(role: string, dir: string = SESSIONS_DIR, isAlive: IsAlive = pidAlive, roleOf: RoleOfPid = actualRoleOfPid): SessionReg | null {
-  sweepRegistry(dir, isAlive, roleOf);
+export function resolveRoleTarget(role: string, dir: string = SESSIONS_DIR, isAlive: IsAlive = pidAlive, roleOf: RoleOfPid = actualRoleOfPid, emit: SweepEmit = defaultSweepEmit): SessionReg | null {
+  sweepRegistry(dir, isAlive, roleOf, emit);
   return resolveTarget(readRegistry(dir), role, isAlive, roleOf);
 }
 

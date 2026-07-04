@@ -171,20 +171,25 @@ describe('#3608 sweepRegistry self-heal', () => {
   const writeReg = (r: SessionReg) =>
     writeFileSync(path.join(dir, `${r.role}-${r.pid}.json`), JSON.stringify(r));
 
-  test('deletes poisoned + dead entries, keeps verified live ones', () => {
+  test('deletes poisoned + dead entries, keeps verified live ones, emits spine events (AC2)', () => {
     writeReg(reg({ role: 'silas', pid: 74581, tty: '/dev/ttys001' })); // poisoned (pid runs wren)
     writeReg(reg({ role: 'silas', pid: 999, tty: '/dev/ttys009' }));   // dead
     writeReg(reg({ role: 'wren', pid: 74581, tty: '/dev/ttys001' }));  // verified live
-    const swept = sweepRegistry(dir, (pid) => pid !== 999, (pid) => (pid === 74581 ? 'wren' : null));
+    const events: Array<{ event: string; fields: Record<string, string> }> = [];
+    const swept = sweepRegistry(dir, (pid) => pid !== 999, (pid) => (pid === 74581 ? 'wren' : null),
+      (event, fields) => events.push({ event, fields }));
     expect(swept).toHaveLength(2);
     expect(readdirSync(dir)).toEqual(['wren-74581.json']);
+    expect(events.map((e) => e.event).sort()).toEqual(['routing.poison.detected', 'routing.stale.swept']);
+    const poison = events.find((e) => e.event === 'routing.poison.detected');
+    expect(poison?.fields).toMatchObject({ reg_role: 'silas', pid: '74581', actual_role: 'wren' });
   });
 
   test('resolveRoleTarget self-heals then resolves: poison gone, correct target returned', () => {
     writeReg(reg({ role: 'silas', pid: 74581, tty: '/dev/ttys001', registered_at: '999' })); // poison at wren pid
     writeReg(reg({ role: 'silas', pid: 81082, tty: '/dev/ttys002', registered_at: '100' })); // real silas
     const roleOf = (pid: number) => (pid === 74581 ? 'wren' : pid === 81082 ? 'silas' : null);
-    const out = resolveRoleTarget('silas', dir, () => true, roleOf);
+    const out = resolveRoleTarget('silas', dir, () => true, roleOf, () => {});
     expect(out?.tty).toBe('/dev/ttys002');
     expect(readdirSync(dir).sort()).toEqual(['silas-81082.json']);
   });
