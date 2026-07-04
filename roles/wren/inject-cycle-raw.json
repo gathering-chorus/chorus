@@ -1,0 +1,168 @@
+{
+  "inject_id": "inj-wren-1780429072533191000",
+  "request": {
+    "appName": "chorus-events",
+    "calls": [
+      {
+        "fired": true,
+        "query": "http://localhost:3340/api/chorus/search?q=chorus-inject%20calls&mode=relevance&limit=5&domain=chorus",
+        "target": "chorus"
+      },
+      {
+        "fired": true,
+        "query": "chorus-inject calls cant logs all",
+        "target": "memory"
+      },
+      {
+        "fired": true,
+        "query": "snapshot",
+        "target": "pulse"
+      },
+      {
+        "fired": true,
+        "query": "recent-8",
+        "target": "spine"
+      },
+      {
+        "fired": true,
+        "query": "wren",
+        "target": "athena"
+      },
+      {
+        "fired": true,
+        "query": "loki-errors-15m",
+        "target": "logs"
+      }
+    ],
+    "component": "context-inject",
+    "domain_tag": "chorus",
+    "event": "context.inject.request",
+    "inject_id": "inj-wren-1780429072533191000",
+    "keywords": [
+      "chorus-inject",
+      "calls",
+      "cant",
+      "logs",
+      "all"
+    ],
+    "level": "info",
+    "prompt": "u still cant show me the logs for all the 6 chorus-inject calls",
+    "role": "wren",
+    "session_id": "8e8c21c0-8b77-4e9a-8b29-4c2bfac7e7b3",
+    "timestamp": "2026-06-02T19:37:52.665+0000"
+  },
+  "response": {
+    "appName": "chorus-events",
+    "assembled_bytes": 4209,
+    "athena": "  domain: chorus (244 cards total, 3 WIP)\n  Team coordination product. Hooks, gates, pulse, Clearing.\n",
+    "candidates": [
+      {
+        "content": "---\nname: project-3079-sentinel-findings\nmetadata: \n  node_type: memory\n  type: project\n  originSessionId: 520ab184-64a6-4030-a169-b9b5b6b14d8d\n---\n\n#3079 shipped 2026-05-25. Current-op sentinel live in chorus-api.\n\n**Two confirmed blockers (both op=unknown = request handlers, not scheduled jobs):**\n1. `GET /api/chorus/search` \u2014 FTS queries 5\u201310s, stacking when context_inject fires ~100\u00d7/3min\n2. `GET /api/chorus/crawl/*` \u2014 5\u201343s per domain during 30-min batch runs (crawl/photos=42s)\n\n**Wren's fix plan (on #3077 AC6):**\n1. Profile in-handler hotspot first (not isolated bench)\n2. Short-TTL result cache keyed by (query,mode,role) \u2014 kills most load cheaply\n3. worker_thread for cold cache-misses only\n\n**#3080 (Wren, bouncer, pending Jeff approval):** architectural fix \u2014 split chorus-api into ingestion workers + thin serving API, decouple by data stores.\n\n**Why:** chorus-api is one Node process where ingestion (crawl, reindex, embed) shares the event loop with serving (search, cards, context, nudge). Any heavy ingestion job freezes serving for all roles + Jeff.\n\n**How to apply:** If investigating future eventloop.blocked events, check search handler first (most frequent), then crawl batch windows (every 30 min, identifiable by access log showing sequential crawl/* calls).\n",
+        "rank": 1,
+        "score": 0.0,
+        "source": "system",
+        "ts": "2026-05-30T18:09:33.594Z"
+      },
+      {
+        "content": "---\nname: project_context_injection_restored_3048\nmetadata: \n  node_type: memory\n  type: project\n  originSessionId: 44140fad-c092-48b7-9d6e-80a3bb82993d\n---\n\nThe per-prompt context_inject (#3032) had been dead since ~2026-04-20: #2249's \"manifest is default\" early-returned in `check()` BEFORE the search/Loki path ran, so `chorus_hits=0` every prompt and Jeff hand-carried context every session. That dead injector was *the* reason the agent ran blind cross-session.\n\n#3048 (2026-05-24, Wren) fixed it \u2014 three silent droppers removed, in coupled layers:\n1. the #2249 manifest short-circuit in context_inject.rs \u2192 removed (manifest AND dynamic search/Loki now both run, one combined block);\n2. the 500ms per-call `.timeout()` caps + the 700ms `envelope_budget` \u2192 removed (calls run uncapped; failures log loudly, AC4);\n3. **the shim socket read timeout 5s\u219215s** (shim.rs) \u2014 the real transport bug: uncapped `check()` takes ~3-10s, the old 5s window cut the slow response off \u2192 shim got 0 bytes. This was the hardest to find (integration test of `check()` passed because it bypassed the shim).\n\nLive proof: daemon log shows `chorus_hits=5 log_errors=5 memory_hits=5 elapsed_ms=3115` per prompt for all roles (was 0 hits for a month). Jeff: \"thats way better than it was yesterday.\"\n\nOpen item (Jeff said watch, don't re-cap): ~3-10s/prompt latency \u2014 the cost of uncapped live calls. If it bites, make search/Loki fast or background-cache (like pulse), NOT a silent timeout.\n\nVerification lesson: an isolation test of the daemon function is necessary but NOT sufficient \u2014 verify the FULL shim\u2192daemon\u2192prompt transport, or you ship a check() that works and a delivery that drops. See [[feedback_claimed_tested_when_it_was_a_lie]], [[feedback_verify_through_the_tool_not_the_route]]. The acp double-junk-commits when the werk is gone \u2014 repair via [[project_stale_base_silent_revert_is_vc_churn_root]] / chorus-werk-sync repair.\n",
+        "rank": 2,
+        "score": 0.0,
+        "source": "system",
+        "ts": "2026-05-30T18:09:33.594Z"
+      },
+      {
+        "content": "# Demo brief \u2014 #2727 chain (pulse-owns-delivery)\n\n**Date:** 2026-05-08 Boston\n**Cards shipped:** #2727 + #2763 + #2764 + #2765 + #2766\n**Verified by:** live round-trip during build, integration tests, end-to-end pulse + worker + chorus-inject\n\n## What changed for the user\n\nBefore: nudges flowed sender \u2192 chorus.log \u2192 2s-cadence LaunchAgent poll \u2192 chorus-inject keystroke. State of \"is this nudge delivered\" was derived from spine event fold; messages.db accumulated 10,500+ pending rows because the old delivery path was retired and nothing took over the drain.\n\nAfter: nudges flow sender \u2192 POST /api/nudge \u2192 pulse stores row \u2192 async delivery worker calls chorus-inject \u2192 markDelivered or markFailed with typed error. Every nudge gets a UUIDv7 trace_id at sender mint, propagated via X-Chorus-Trace-Id header, stored as indexed messages.db column, stamped on every spine event. One Loki query returns one nudge's full lifecycle.\n\nFor Jeff in normal use: nothing visible \u2014 keystrokes still land the same way. For debugging: the \"where is this nudge in the lifecycle\" question becomes one query instead of a fold.\n\n## Receipts\n\n### messages.db row state, post-cutover (2026-05-08 ~08:11 Boston)\n\n```\ntotal=10629  pending=10627  (+1 new test row written + delivered + audited via worker)\n```\n\nThe +1 was a test marker `cutover-2764-1778242318` sent silas \u2192 wren. Worker called chorus-inject; keystroke landed in Wren terminal; Jeff confirmed receipt. Pulse pending count reports old-schema `acknowledged=0`; separate getStats migration follow-on (small).\n\n### chorus.log lifecycle for one test nudge (2026-05-08 08:19 Boston, post-#2764 retirement, post-emitSpine timestamp fix)\n\n```\n[2026-05-08T08:19:09.880-0400] event=nudge.requested            role=silas\n[2026-05-08T08:19:09.892-0400] event=nudge.emitted              role=silas    (migration-window dual-emit)\n[2026-05-08T12:19:11.122Z]     event=nudge.surfaced             role=pulse    (worker emit, post-deliver)\n```\n\n12ms request \u2192 emit. Worker emit follows once chorus-inject returns success. Pre-#2765 binary still emits old `ntr-` format trace_id; post-merge rebuild will produce UUIDv7 in field schema.\n\n### Trace_id correlation (after #2765 merge + canonical rebuild)\n\nA nudge sent silas \u2192 wren with trace_id `018f-xxxx-xxxx`:\n\n```sql\nSELECT trace_id, \"from\", \"to\", content, delivery_status, delivered_at FROM messages WHERE trace_id = '018f-xxxx-xxxx';\n```\n\n```logql\n{event=~\"nudge\\\\..*\"} | json | trace_id=\"018f-xxxx-xxxx\"\n```\n\nBoth return the same nudge \u2014 DB has the row + terminal state, Loki has the chronological event stream. Spine \u2194 DB join is structural via the indexed trace_id column.\n\n### Spine-tick-poller retirement (2026-05-08, #2764)\n\nPre-cutover: `launchctl list | grep spine-tick-poller` showed 3 active (wren/silas/kade pollers, PIDs 49043/49046/49050).\nPost-cutover: empty. Plists moved to `~/Library/LaunchAgents/.disabled/`. Direct cutover with rollback ready (`launchctl bootin` brings back) \u2014 Jeff veto on 24h soak.\n\n### Test coverage shipped\n\n- **store.test.ts**: 7 new delivery-column tests (sendNudge \u2192 pending; markDelivered \u2192 delivered; markFailed \u2192 failed + last_delivery_error; getPendingDeliveries oldest-first; migration idempotent)\n- **delivery-worker.test.ts**: 17 worker-contract tests (classifyInjectResult; success path; permanent failure; transient retry; exhausted retries; per-receiver serial FIFO; cross-receiver parallel; scanAndRequeue; startupSmoke; default backoff schedule)\n- **service.test.ts**: 5 new E2E tests (#2766) \u2014 POST /api/nudge \u2192 real Express + real worker + mocked inject, covering happy-path / retry / hard-fail-permanent / hard-fail-exhausted / trace_id propagation\n- **chorus-hooks integration**: 4 origin-tag tests + 6 nudge-suite tests + 5 chorus_log validation unit tests\n\nTotal: 66 tests across pulse + chorus-hooks for the nudge lifecycle.\n\n## Architectural deltas captured\n\n- **Mitigation A dual-emit**: sender emits BOTH `nudge.requested` and `nudge.emitted` during the read-side migration window. Closes the silent-observability-gap (Silas ops review during #2763). Cleanup card retires `nudge.emitted` after readers cut over.\n- **Opt-in scanAndRequeue at boot**: `PULSE_REQUEUE_ON_BOOT=1` env var. Default unset = no stampede on deploy. Boot fail-fast on smoke OR scan errors. Three startup events emitted: `requeue.skipped`, `requeue.start{pending}`, `requeue.complete{enqueued}`.\n- **PERMANENT_REASONS narrowing**: only `no claude window found` is structurally classified by chorus-inject (per Kade gemba). tcc-denied / window-ambiguous / encoding-error treated as transient \u2014 retry-until-exhausted is more honest than false-permanent.\n- **selfTest via --count-windows**: chorus-inject doesn't have `--self-test` flag. Worker boot smoke uses `--count-windows claude` which exists and exercises the binary + TCC path.\n- **chorus_log field validation**: nudge.* events refused at call site if missing required fields. Substring match (caller-controlled payload order; bounded false-positive); upgrade to comma-split parser if observed in production. Rust-side only; TS worker emits via structured JSON.\n- **emitSpine timestamp field**: pulse worker writes `timestamp:` (canonical chorus.log convention) \u2014 earlier wrote `ts:`; one-line fix during #2764 cutover verification.\n\n## Named follow-ons\n\n- **Read-side migration of nudge.emitted consumers** (Clearing tailer.ts, MCP server.ts, pulse service.ts comments) \u2014 parent card to be filed\n- **Dual-emit cleanup card** \u2014 drops `nudge.emitted` from sender after readers migrate\n- **TS-side chorus_log equivalent validation** \u2014 symmetry with the Rust validator (worker emits via structured JSON, less prone to forgotten fields, but no enforcement layer)\n- **getStats migration** \u2014 `pending` count currently reports `acknowledged=0` (old-schema); update to `delivery_status='pending'`\n- **Schema registration** \u2014 `nudge.requested` / `nudge.surfaced` / `nudge.surface.failed` / `nudge.health.*` not yet in `designing/schemas/spine-events.json`\n- **#2799** \u2014 chorus_acp force-with-lease passthrough for rebased-local-vs-origin case (filed today; observed 3x)\n- **#2748** \u2014 synthetic self-to-self nudge probe + 99.9% delivery SLA alert\n- **#2749** \u2014 chorus-api `/api/nudges?role=` endpoint + Clearing UI repoint\n- **#2725** \u2014 legacy code path deletion (sender-side messages.db touches)\n\n## How Jeff verified live during build\n\n- Live round-trip: silas \u2192 wren nudge \"ack\" reply, both directions arrived as keystrokes. Timestamp 08:18 Boston.\n- Pulse pending count incremented +1 per test send (worker enqueueing as expected).\n- Marker text (`cutover-2764-1778242318`, `audit-fix-1778242749`) appeared in Wren terminal as user input \u2014 Jeff received and acknowledged.\n- chorus.log entries for each test marker showed full event chain.\n\nThis is the design's promise made structural: pulse owns the lifecycle, the spine has the audit, the DB has the state, trace_id joins them.\n",
+        "rank": 3,
+        "score": 0.0,
+        "source": "wren",
+        "ts": "2026-05-08T15:56:39.468Z"
+      },
+      {
+        "content": "---\nname: project_integration_controller_architecture\ndescription: \"The 2026-05-30 convergence: MCP = API gateway / integration framework; cross-cutting IoC (log/error/trace) = an integration CONTROLLER consumed as a ~library. Unifies #3139/#3140/#3143/#3147. Next step = /clearing to nail the emit API + 2 event schemas (deferred to fresh session).\"\nmetadata: \n  node_type: memory\n  type: project\n  originSessionId: c8db0c02-4cca-4266-9746-6bbbb2b40464\n---\n\n2026-05-30, Jeff + Kade + Wren + Silas converged on this (distinguished-engineer thread). The big synthesis of the day.\n\n**The architecture:** MCP is our **API gateway / integration framework** (Wren's lane, Jeff's call \u2014 ties to the registry-map \"MCP = integration domain\"). We do all cross-cutting **inversion-of-control** \u2014 logging, error-handling, trace \u2014 at this seam. It's not bespoke middleware: it's an **integration controller consumed as a ~library**. The MCP gateway is its flagship consumer; the verb binaries + chorus-api are other consumers.\n\n**The \"~\" carries the cross-language wrinkle (load-bearing):** can't be ONE literal lib across Rust+TS, so it's a **library-PAIR** \u2014 a TS lib (gateway + chorus-api) + a Rust crate (verb binaries) \u2014 both built from **ONE contract** (schema-source + A2 codegen, the #3140 fork). One controller, two language-libs, many consumers. Get it wrong \u2192 back to two-impls-kept-honest-by-a-test (the thing we reject).\n\n**Two IoC seams, converging on one contract:**\n1. **MCP gateway** (Wren) \u2014 for agent/tool traffic. Can only invert IoC for MCP-mediated calls.\n2. **Verb/binary contract** (Kade/Silas \u2014 the rust core self-emitting, ADR-032 blueprint + #3135 resolve_trace) \u2014 for substrate processes that run OUTSIDE MCP (act, orchestrators, crawler, pulse). They can't invert to the gateway.\nBoth converge on: **one sink (spine), one trace (/tmp/<card>-trace carrier), one envelope (#3140).** \"spine and mcp are together\" is true at the sink+trace+envelope layer \u2014 MCP feeds the spine alongside off-gateway emitters, doesn't contain it.\n\n**The cards are ONE architecture from different angles:**\n- **#3139** (language ADR: rust core / TS membrane) = WHERE each seam lives.\n- **#3140** (one logging envelope, schema-source/codegen \u2014 Silas, GATED GREEN by Kade 2026-05-30) = the shared contract + the controller's LOGGING aspect (its \"library extraction\" step 2 IS the controller's first aspect).\n- **#3143** (A2 codegen) = generates the Rust structs + TS types from the schema.\n- **#3147** (inject request+response obs \u2014 Wren) = the controller's log+trace aspect pointed at context_inject = the FIRST real consumer, forces the crate API + exercises the codegen.\n- **#3146** (dead-code gate) = adjacent, same enforce-don't-discipline principle.\n\n**Lane split (settled):** Wren = MCP gateway + TS lib; **Kade = the Rust crate** (the emit API + codegen'd structs); Silas = the schema (#3140 spine-events.json) + ops. Shared contract = #3139 + #3140.\n\n**The emit API being co-designed (from #3147's need):** `emit_request()` returns an `inject_id` (a SPAN), `emit_response(inject_id, ...)` takes it \u2014 so request\u2194response PAIRING lives IN the controller, not hand-rolled per consumer. **Trace** is controller-minted/propagated (#3135 resolve_trace: env\u2192/tmp/<card>-trace\u2192mint). #3147's two events: `context.inject.request {prompt, keywords[], wip_card, domain_tag, calls[]}` + `context.inject.response {candidates[], winners[], assembled_bytes, stage_timings, drops[]}` \u2014 both conform to the #3140 envelope.\n\n**Guardrail (agreed):** controller stays THIN \u2014 log/error/trace envelope, nothing more. Creep line = the moment it DOES something with the data beyond log+trace (a 4th/5th responsibility = god-framework = blarf). Earns rent because log/error/trace are genuinely cross-cutting + recurring (proven 3\u00d7 today); stops the instant it's a kitchen sink.\n\n**Q1 design call (best-effort vs fail-loud):** runtime best-effort (logging must never break the op \u2014 witness contract), + fail-loud at boot/CI schema-validate (#3143 codegen makes it a COMPILE error \u2014 the strongest form). Never fail the emit.\n\n**Closes a loop:** the registry-map's \"Convergence/integration = 0 runtime surface\" \u2014 this controller IS that surface. (Ownership nuance to settle: MCP-integration-framework = Wren vs NiFi data-convergence subproduct = Kade \u2014 different \"integrations,\" don't conflate.)\n\n**NEXT STEP (deferred to fresh session, Jeff's timing \u2014 marathon day 2026-05-30):** venue is an ASYNC BRIEF, not /clearing (/clearing is a DEAD skill, Jeff flagged 2026-05-30 \u2014 don't use it). Kade's first action on resume: write a brief to Wren + Silas proposing the `emit_request`/`emit_response` signatures + the 2 `spine-events.json` schema entries (`context.inject.request` / `context.inject.response`). They react async \u2192 lock it \u2192 Kade builds the crate API \u2192 Wren populates at context_inject's request/response points. Silas owns the schema add. Design is written + lanes clear, so deferring loses nothing. [[project_v1_v2_noninterop_cutover_dilemma]] [[feedback_testing_not_enforced_is_chronic_not_new]]\n",
+        "rank": 4,
+        "score": 0.0,
+        "source": "system",
+        "ts": "2026-05-30T18:47:34.299Z"
+      },
+      {
+        "content": "\n\nInject failed for both \u2014 \"osascript is not allowed to send keystrokes.\" The chorus-hooks server binary was rebuilt for #2077 and needs Accessibility re-toggling. But wait \u2014 the inject should go through `chorus-inject` now, not through the server binary.\n\nThe problem: the shim delegates to `chorus-inject` via `process.rs`, but the *nudge* command in `nudge.rs` may still call `process::inject_by_tab_name()` which now calls `chorus-inject`. Let me check if `chorus-inject` still has permission:",
+        "rank": 5,
+        "score": 0.0,
+        "source": "silas",
+        "ts": "2026-04-05T15:00:20.917Z"
+      }
+    ],
+    "component": "context-inject",
+    "drops": [],
+    "elapsed_ms": 97,
+    "event": "context.inject.response",
+    "inject_id": "inj-wren-1780429072533191000",
+    "level": "info",
+    "log_errors": 2,
+    "logs": [
+      {
+        "summary": "mcp.tool.error silas",
+        "ts": ""
+      },
+      {
+        "summary": "context.inject.response kade",
+        "ts": ""
+      }
+    ],
+    "memory": [
+      "[feedback_substrate_degradation_must_hard_error.md] When chorus-api / chorus-mcp / fuseki / loki / any load-bearing substrate is down or returning degraded responses, the failure must surface as a hard ",
+      "[project_spine_cannot_show_what_is_running.md] 2026-05-30/31: Jeff \u2014 \"i have no clue what is running or not, the traces should show it.\" They don't, and last night's own traces proved why.",
+      "[feedback_drop_the_cape_done_means_in_hand.md] 2026-06-02 \u2014 a long, sprawling, frustrating session. Jeff named the failures plainly; capture them so they don't repeat.",
+      "[feedback_no_smell_receptors_full_alarm_on_output.md] Two missing pieces, not one:",
+      "[reference_gathering_stack_is_native_not_docker.md] The whole gathering personal-site stack runs as **native `com.gathering.*` LaunchAgents** \u2014 `app`, `fuseki`, `loki`, `grafana`, `vikunja`, `prometheus"
+    ],
+    "memory_hits": 5,
+    "pulse": true,
+    "pulse_snapshot": "  health: unknown (failures=0, warnings=0)\n  board.wip: 3 cards \u2192 GET /api/chorus/context/board/wip\n  role kade: state=building card=\n  role silas: state=idle card=\n  role wren: state=idle card=\n",
+    "role": "wren",
+    "spine": [
+      {
+        "event": "context.inject.response",
+        "role": "kade",
+        "ts": "2026-06-02T19:37:22"
+      },
+      {
+        "event": "context.inject.injected",
+        "role": "kade",
+        "ts": "2026-06-02T19:37:22"
+      },
+      {
+        "event": "interaction.pattern.detected",
+        "role": "kade",
+        "ts": "2026-06-02T15:37:22"
+      },
+      {
+        "event": "system.heartbeat",
+        "role": "silas",
+        "ts": "2026-06-02T15:37:27"
+      },
+      {
+        "event": "observer.digest",
+        "role": "kade",
+        "ts": "2026-06-02T15:37:36"
+      },
+      {
+        "event": "system.heartbeat",
+        "role": "silas",
+        "ts": "2026-06-02T15:37:37"
+      },
+      {
+        "event": "system.heartbeat",
+        "role": "silas",
+        "ts": "2026-06-02T15:37:48"
+      },
+      {
+        "event": "context.inject.request",
+        "role": "wren",
+        "ts": "2026-06-02T19:37:52"
+      }
+    ],
+    "spine_events": 8,
+    "timestamp": "2026-06-02T19:37:52.762+0000"
+  }
+}

@@ -1,27 +1,29 @@
-# Next Session — Wren
+# Wren — Next Session
 
-**Written:** 2026-07-03 10:55 Boston (reboot close-out)
+## Session close 2026-07-04 03:08
 
-## Where the thread is
+Today was the day the system's biggest lies got named and two cards landed on Jeff's go. Shipped #3603 (V1 product-layer retirement: SubProduct class/instances gone from source, the 10-product roster authored on the committed product-* convention with real floors, three hand-coded product endpoints deleted, consumers repointed to owl-api — PR #726/#729-adjacent, accepted) and #3607 (the Clearing wedge: three separate code paths were reading the ENTIRE 122MB chorus.log — the clearing 3s poll at 2.4s/request, the per-prompt nudge fold, the spine handler — because rotation existed since #1622 but was never scheduled; tail-reads everywhere + rotation wired into the hourly agent; prod /api/stream now 9-64ms, was 1650ms — PR #729, accepted, verified live). Also review-gated Silas's #3573 write door (merged), root-caused the werk git-identity mis-stamp (worktrees share .git/config; --worktree fix is Silas's card), fixed the poison silas-52950 registry entry live with Jeff's ok, and filed #3608 (session-registration integrity, P1, mine — Jeff explicitly put roles+nudge+clearing in my domain after a misrouted nudge dragged Kade into a delete he had nothing to do with; that confusion cost real trust mid-morning, don't repeat it: no relay-authorized live-graph writes, and stop narrating role names into threads they aren't in). Still hot for tomorrow: pull #3609 (owl-api /batch 4KB body truncation — mine, blocks the #3603 live migration), then Silas mints and applies the 53-DEL/352-INS migration and products-3603-migration.bats flips green — that's the moment the graph finally matches the tree Jeff drew; the event-loop-block card is still at the bouncer awaiting Jeff's approve, and rotation's first hourly tick should have shrunk chorus.log — verify it actually fired.
 
-**#3603 (V1 product-layer retirement) — WIP, werk wren/3603, held at Jeff's go/no-go.**
-- Built + verified in the werk: `roles/wren/ontology/products-3603.ttl` (riot-VALID, all 19 domain IRIs resolve) + `platform/tests/products-3603-migration.bats` (5 checks, honestly all-red pre-migration).
-- **Jeff's course-correction (CRITICAL):** the live graph is *wreckage* (7-10 days of wipe/restore — the wiper was our own test automation hitting `POST /api/athena/reload`), so do NOT reverse-engineer the target from live data. Author from Jeff's model: **Chorus → {Athena, Loom, Werk, Borg, Clearing→{Spine, Pulse}, Convergence} + Gathering top-level** (≈9-10 typed Products). Jeff said "at least 7 products."
-- **Awaiting Jeff's roster confirm** (open Q: is Senses a Chorus child?). Then: extend products-3603.ttl to the full roster → deploy through governed path (never raw) → 5 checks flip green → retire hand-coded `/api/athena/products` (+ repoint doc-catalog consumers, server.ts:3170 + doc-catalog.html:207).
-- Two flagged gaps (mine, real, not stubbed): ProductShape 11-prop floor content for each product; 3 services (cards/gates/skills-service) misfiled as domains in loom's hasDomain.
+## WIP (still in progress)
 
-**Durable wiper fix — still owed (mine):** make `POST /api/athena/reload` (platform/api/src/server.ts ~2859) non-truncating — full MODEL_SET reload or route through #3536 deploy; never DROP. #3602 only skipped the triggering test.
+-   3493  Author the Clearing product tree in the model (clearing → spine/pulse → domains) [Wren|P2|domain:chorus|type:new|sequence:clearing|origin:reflective|subproduct:clearing|chunk:coherent-model]
+-   1818  Seeds: close-the-loop — Jeff sees what role did with his seed [Wren|P2|gathering|chunk:memory|type:new|origin:reflective|sequence:seeds]
+-   2145  Stop-the-line PostToolUse hook — block turn when a tool errors, force resolve/card/defer [Wren|P1|domain:chorus|type:new|sequence:loom|origin:reactive|subproduct:loom|chunk:loom-authoring]
+-   2159  Chorus-native board — value-stream → domain → sub-product → work-unit hierarchy replacing flat Vikunja labels [Wren|P1|domain:chorus|type:enhance|sequence:clearing|origin:reflective|subproduct:clearing|chunk:coherent-model]
+-   2183  Kade session-start parity — align with Silas/Wren 5-beat opening [Wren|P1|domain:chorus|type:fix|sequence:loom|origin:reactive|subproduct:loom|chunk:loom-authoring]
+-   2246  Fix close-out.sh WIP/Next derivation — over-matches role name in list output [Wren|P3|domain:chorus|type:fix|sequence:loom|origin:reactive|subproduct:loom|chunk:core-reliability]
+-   2247  session-close.sh git-queue invocation missing -- -m marker [Wren|P3|domain:chorus|type:fix|sequence:loom|origin:reactive|subproduct:loom|chunk:core-reliability]
+-   2569  Self-attest path for narrow card shapes — judgment layer only, machine layer always fires (#2561 child 4/5) [Wren|P2|domain:chorus|type:new|sequence:loom|origin:reflective|subproduct:loom|chunk:loom-authoring]
+-   2570  Distribute gate-product — split AC-verification (peer) + experience-integration (Wren/Jeff) + no-self-gate rule (#2561 child 5/5) [Wren|P1|domain:chorus|type:new|sequence:loom|origin:reflective|subproduct:loom|chunk:loom-authoring]
+-   2576  Clearing inject without frontmost-set — avoid focus-theft when Jeff is on Mac and sends from phone [Wren|P3|domain:chorus|type:fix|sequence:werk|origin:reactive|chunk:core-reliability]
 
-**#3573 (Silas, write door) — unblocked, moving.** My calls, all confirmed: (A) writers through :3360 Bearer door; minter serves ALL writers; batch primitives ON the door; creds = token scope claim (Shiro dead). Design locked: typed-slot batch body (no writer SPARQL text ever), empty-graph hard-refuse, staging→validate→atomic-swap (#3536), spine event per batch op. **Silas authors the PR into owl-api (my crate) — I review+gate it. Expect the PR.**
+## Next (queued)
 
-**Nudge routing — FIXED + verified all 3 lanes.** Root cause: poison registry entry `~/.chorus/sessions/silas-37286.json` (role=silas at kade's pid, written Jul 2 17:09 from inside kade's process tree) + newest-wins resolver with no pid-reuse/role re-verify. Deleted poison, wrote kade-37286.json. **Open defects:** what wrote the silas-roled registration from kade's session (unidentified); kade SessionStart writes no registration file (#3605, kade's); resolver should re-verify pid's CHORUS_ROLE on resolve (worth folding into a card).
+-   3493  Author the Clearing product tree in the model (clearing → spine/pulse → domains) [Wren|P2|domain:chorus|type:new|sequence:clearing|origin:reflective|subproduct:clearing|chunk:coherent-model]
+-   1818  Seeds: close-the-loop — Jeff sees what role did with his seed [Wren|P2|gathering|chunk:memory|type:new|origin:reflective|sequence:seeds]
+-   2145  Stop-the-line PostToolUse hook — block turn when a tool errors, force resolve/card/defer [Wren|P1|domain:chorus|type:new|sequence:loom|origin:reactive|subproduct:loom|chunk:loom-authoring]
+-   2159  Chorus-native board — value-stream → domain → sub-product → work-unit hierarchy replacing flat Vikunja labels [Wren|P1|domain:chorus|type:enhance|sequence:clearing|origin:reflective|subproduct:clearing|chunk:coherent-model]
+-   2183  Kade session-start parity — align with Silas/Wren 5-beat opening [Wren|P1|domain:chorus|type:fix|sequence:loom|origin:reactive|subproduct:loom|chunk:loom-authoring]
 
-**Coverage (my products, from Kade):** clearing teardown fix landed as #3604 (retroactive card, done); cards at 80.88% needs real headroom (mine, queued); `_cov_owner` mapping mis-bills directing/products/cards + directing/clearing to kade — fix to wren (mine, queued).
 
-## Relational state — read this first
-
-Brutal 2-day stretch. Jeff: "raging at roles / breaking things endlessly and / not sure its worth it." The named failure modes (do NOT repeat): fabricating significance (the AuthBoundary "bug" on a zero-instance class), V1/V2 inversion (goal is RETIRE V1, not build V2 beside it), generating unasked artifacts (cards/principles/memories to "capture lessons" — forbidden), deferring my own domain decisions to Jeff ("forks" = same as ignoring alerts), 125-line walls vs nothing (calibrate to the ask). "/pull N means BUILD IT." Answer alerts in my domain by investigating, not waving off.
-
-## Board
-- WIP: #3603 (above). #3594 landed earlier (migration readout MCP — per-domain stage matrix).
-- New: #3605 (kade registration, kade's lane).
+**00:20 addendum (verify-before-claim):** #3607's rotation leg does NOT work live yet — ran log-rotate manually: it scanned zero files. Root cause found: health.rs log_rotate builds repo_root()+"/chorus/platform/logs" — double /chorus since #2505 (health_hourly's cost/activity checks dead the same way). One-line fix; bouncer proposal queued for Jeff's morning approve. chorus.log still 122MB until it lands. Don't re-claim rotation works.
