@@ -12,7 +12,7 @@
 //!
 //! Zero-dep (ADR-032 §1): std-only HTTP on TcpListener; SPARQL via `curl`.
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::TcpListener;
 use std::process::Command;
 
@@ -2717,6 +2717,54 @@ pub fn read_domain_surfaces() -> R<Vec<DomainSurface>> {
         .collect())
 }
 
+/// #3609 — read a full HTTP request: headers to CRLFCRLF, then the body until
+/// Content-Length is satisfied, capped at `max_body + 1` bytes of body (one
+/// past the cap so an oversize body is DETECTABLE and 422s with the cap
+/// message downstream, instead of truncating silently at the old single-4KB
+/// read — which made every >4KB /batch body fail 4-field validation).
+/// Never hangs: the caller sets a read timeout; EOF/timeout returns what
+/// arrived. Generic over Read so the loop is unit-tested with chunked mocks.
+pub fn read_http_request<Rd: std::io::Read>(r: &mut Rd, max_body: usize) -> String {
+    let mut data: Vec<u8> = Vec::with_capacity(8192);
+    let mut buf = [0u8; 4096];
+    // 1) headers — read until the blank line; bound headers at 64KB (flood guard)
+    let header_end = loop {
+        match r.read(&mut buf) {
+            Ok(0) => break None,
+            Ok(n) => {
+                data.extend_from_slice(&buf[..n]);
+                if let Some(pos) = data.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break Some(pos + 4);
+                }
+                if data.len() > 64 * 1024 {
+                    break None;
+                }
+            }
+            Err(_) => break None,
+        }
+    };
+    let Some(hend) = header_end else {
+        return String::from_utf8_lossy(&data).into_owned();
+    };
+    // 2) body — honor Content-Length, capped one past max_body (oversize detectable)
+    let head_lower = String::from_utf8_lossy(&data[..hend]).to_ascii_lowercase();
+    let content_length: usize = head_lower
+        .lines()
+        .find(|l| l.starts_with("content-length:"))
+        .and_then(|l| l.splitn(2, ':').nth(1))
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(0);
+    let want = content_length.min(max_body + 1);
+    while data.len() < hend + want {
+        match r.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => data.extend_from_slice(&buf[..n]),
+            Err(_) => break,
+        }
+    }
+    String::from_utf8_lossy(&data).into_owned()
+}
+
 pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
@@ -2762,9 +2810,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
         let started = std::time::Instant::now();
-        let mut buf = [0u8; 4096];
-        let n = stream.read(&mut buf).unwrap_or(0);
-        let req = String::from_utf8_lossy(&buf[..n]);
+        // #3609 — bounded read timeout so a client that stalls mid-body can never
+        // hang the single-threaded serve loop; read_http_request returns whatever
+        // arrived and downstream validation 422s a truncated batch.
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+        let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
+        let req = req_string.as_str();
         let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
         // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
         // breaks select_table at serve level); carry it to handle for pagination.
@@ -3751,5 +3802,79 @@ mod tests {
         assert!(ts.contains("\"filePath\""));
         assert!(ts.contains("export async function writeTest("));
         assert!(!ts.contains("#Test")); // no raw IRI leaked into the symbol
+    }
+}
+
+#[cfg(test)]
+mod read_http_request_tests {
+    use super::read_http_request;
+
+    /// Mock reader delivering the request in fixed-size chunks — models a TCP
+    /// stream where one read() never returns the whole body (the #3609 bug).
+    struct Chunked {
+        data: Vec<u8>,
+        pos: usize,
+        chunk: usize,
+    }
+    impl std::io::Read for Chunked {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.pos >= self.data.len() {
+                return Ok(0);
+            }
+            let n = self.chunk.min(buf.len()).min(self.data.len() - self.pos);
+            buf[..n].copy_from_slice(&self.data[self.pos..self.pos + n]);
+            self.pos += n;
+            Ok(n)
+        }
+    }
+
+    fn req_with_body(body: &str) -> Vec<u8> {
+        format!(
+            "POST /batch HTTP/1.1\r\nContent-Length: {}\r\nx-target-graph: urn:chorus:t\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn reads_a_58kb_body_to_content_length_across_many_chunks() {
+        // the #3603 migration is 405 lines / ~58KB — the exact payload the old
+        // single-4096-read truncated.
+        let line = "INS\t<urn:chorus:s>\t<urn:chorus:p>\t<urn:chorus:o>\n";
+        let body = line.repeat(58_000 / line.len() + 1);
+        let mut r = Chunked { data: req_with_body(&body), pos: 0, chunk: 1024 };
+        let req = read_http_request(&mut r, 65_536);
+        let got_body = req.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+        assert_eq!(got_body.len(), body.len(), "full body read to Content-Length");
+        assert!(got_body.ends_with(line.trim_end_matches('\n')) || got_body.ends_with(line));
+    }
+
+    #[test]
+    fn no_content_length_returns_headers_without_hanging() {
+        let raw = b"GET /health HTTP/1.1\r\nHost: x\r\n\r\n".to_vec();
+        let mut r = Chunked { data: raw, pos: 0, chunk: 7 };
+        let req = read_http_request(&mut r, 65_536);
+        assert!(req.starts_with("GET /health"));
+    }
+
+    #[test]
+    fn oversize_body_reads_one_past_cap_so_422_fires_not_silent_truncation() {
+        let body = "x".repeat(70_000);
+        let mut r = Chunked { data: req_with_body(&body), pos: 0, chunk: 4096 };
+        let req = read_http_request(&mut r, 65_536);
+        let got_body = req.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+        assert!(got_body.len() > 65_536, "body must exceed the cap so handle_batch 422s");
+        assert!(got_body.len() <= 65_537 + 4096, "bounded — never reads the flood");
+    }
+
+    #[test]
+    fn eof_mid_body_returns_partial_never_hangs() {
+        let mut raw = req_with_body(&"y".repeat(10_000));
+        raw.truncate(raw.len() - 6_000); // client dies mid-body
+        let mut r = Chunked { data: raw, pos: 0, chunk: 2048 };
+        let req = read_http_request(&mut r, 65_536);
+        let got_body = req.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+        assert_eq!(got_body.len(), 4_000, "returns what arrived; downstream validation refuses");
     }
 }
