@@ -39,7 +39,7 @@ spine_emit() {
 running_cdhash() {
   local label="$1"
   local pid
-  pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
+  pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*' || true)
   if [ -z "$pid" ]; then echo ""; return; fi
   local bin_path
   bin_path=$(lsof -p "$pid" 2>/dev/null | awk '$4=="txt" {print $NF; exit}')
@@ -161,7 +161,11 @@ crate_to_label() {
 
 # Get running PID of a launchd label, or empty.
 label_pid() {
-  launchctl list "$1" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*'
+  # #3606: `|| true` — under set -euo pipefail, a not-running (periodic) agent
+  # makes this grep exit 1, which silently KILLED cmd_start/cmd_restart before
+  # any output or kickstart (test-agent-state Test 6's red; also why
+  # `agent-state.sh restart clearing` no-oped on 2026-07-03).
+  launchctl list "$1" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*' || true
 }
 
 cmd_start() {

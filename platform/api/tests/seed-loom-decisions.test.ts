@@ -138,7 +138,7 @@ describe('buildInsert', () => {
 import * as fsx from 'fs';
 import * as osx from 'os';
 import * as pathx from 'path';
-import { buildInsert, parseAdr, loadAllRows } from '../src/seed-loom-decisions';
+import { parseAdr, loadAllRows } from '../src/seed-loom-decisions';
 
 describe('buildInsert (#3606)', () => {
   it('wraps rows in one INSERT DATA targeting the instances graph', () => {

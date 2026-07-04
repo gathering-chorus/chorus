@@ -1,3 +1,4 @@
+// @test-type: unit — in-memory sqlite + fake fetch/exec deps; no Fuseki, no Loki, no live services.
 /**
  * chorus-crawl handler — unit tests (#2189).
  *
@@ -353,4 +354,50 @@ describe('fetchCrawl (#2189 /api/chorus/crawl/:domain)', () => {
     expect(b.logs ?? []).toEqual([]);
     jest.useRealTimers();
   }, 30_000);
+});
+
+// --- #3606 — OWL bucket coverage: collectOwlClassProps / collectOwlRelations /
+// formatOwlProperty paths (lines ~313-352) had no fixture driving them.
+describe('fetchCrawl — OWL bucket (#3606)', () => {
+  // SPARQL POSTs hit fusekiUrl (not Loki's filename= route). Return class rows
+  // for the class query, other-class rows for the relations query.
+  function owlFetch(): FetchFn {
+    return (async (url: string, opts?: { body?: string }) => {
+      // sparqlPost sends application/x-www-form-urlencoded (query=<encoded sparql>)
+      const body = decodeURIComponent(String(opts?.body ?? '').replace(/\+/g, ' '));
+      if (url.includes('/pods/sparql')) {
+        if (body.includes('?class a owl:Class')) {
+          return {
+            ok: true, status: 200,
+            json: async () => ({ results: { bindings: [
+              { class: { value: 'https://x#PhotoAsset' }, p: { value: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type' }, o: { value: 'owl:Class' } },
+              { class: { value: 'https://x#PhotoAsset' }, p: { value: 'https://x#hasPath' }, o: { value: '/Volumes/G/' + 'x'.repeat(90) } },
+              { p: { value: 'https://x#orphan' }, o: { value: 'no-class-row' } },
+            ] } }),
+          };
+        }
+        if (body.includes('?other a owl:Class')) {
+          return {
+            ok: true, status: 200,
+            json: async () => ({ results: { bindings: [
+              { other: { value: 'https://x#MusicTrack' } },
+              {},
+            ] } }),
+          };
+        }
+      }
+      return { ok: false, status: 503, json: async () => ({}) };
+    }) as unknown as FetchFn;
+  }
+
+  it('collects class properties (skipping #type rows and class-less rows) and other-class relations', async () => {
+    const r = await fetchCrawl('photos', deps({ fetchFn: owlFetch() }));
+    expect(r.status).toBe(200);
+    const owl = (r.body as { owl: { properties: string[]; relationships: string[] } }).owl;
+    // #type predicate row skipped; long value truncated with ellipsis
+    expect(owl.properties).toHaveLength(1);
+    expect(owl.properties[0]).toMatch(/^PhotoAsset::hasPath=/);
+    expect(owl.properties[0]).toContain('...');
+    expect(owl.relationships).toContain('https://x#MusicTrack');
+  });
 });

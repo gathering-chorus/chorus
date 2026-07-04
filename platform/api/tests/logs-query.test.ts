@@ -276,8 +276,7 @@ describe('queryPainRollup (#3029)', () => {
     let fetched = 0;
     const deps: LogsQueryDeps = { ...baseDeps, fetchImpl: (async () => { fetched++; return {} as Response; }) as unknown as LogsQueryDeps['fetchImpl'] };
     const r = await queryPainRollup({ window: 'fortnight' }, deps);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('time-range-invalid');
+    expect(r).toMatchObject({ ok: false, reason: 'time-range-invalid' });
     expect(fetched).toBe(0);
   });
 
@@ -290,11 +289,8 @@ describe('queryPainRollup (#3029)', () => {
       }) as unknown as Response,
     };
     const r = await queryPainRollup({ window: '1d' }, deps);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.total).toBe(1);
-      expect(r.classes[0]).toMatchObject({ role: 'silas', event: 'a.failed', reason: 'boom' });
-    }
+    expect(r).toMatchObject({ ok: true, total: 1 });
+    expect((r as { classes: unknown[] }).classes[0]).toMatchObject({ role: 'silas', event: 'a.failed', reason: 'boom' });
   });
 
   it('maps Loki 400 to query-syntax-error', async () => {
@@ -303,8 +299,7 @@ describe('queryPainRollup (#3029)', () => {
       fetchImpl: async () => ({ ok: false, status: 400, text: async () => 'parse error' }) as unknown as Response,
     };
     const r = await queryPainRollup({ window: '1d' }, deps);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('query-syntax-error');
+    expect(r).toMatchObject({ ok: false, reason: 'query-syntax-error' });
   });
 });
 

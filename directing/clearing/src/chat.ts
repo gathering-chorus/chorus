@@ -200,7 +200,7 @@ export class ClearingChat {
     }, 30_000);
     // #3604 — unref: this background auto-save timer must not keep Node's event loop
     // alive, or jest can't exit (rc=1) and coverage reads a false red.
-    this.autoSaveInterval.unref?.();
+    this.autoSaveInterval.unref();
   }
 
   private stopAutoSave() {
