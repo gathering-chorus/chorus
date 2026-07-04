@@ -47,6 +47,15 @@ restore_state() {
 
 setup() {
   snapshot_state
+  # #3608 — test brings its own world: the real shim's `session-start silas`
+  # calls were writing REAL registrations into ~/.chorus/sessions from
+  # whatever session hosted the test run (find_claude walks to the host's
+  # claude), poisoning nudge routing team-wide (both 07-03 misroutes). The
+  # shim now honors CHORUS_SESSIONS_DIR; point it at the test tmpdir so this
+  # suite is structurally unable to touch the live registry. Belt to the
+  # env-verify suspenders (registration also refuses when CHORUS_ROLE of the
+  # invoking tree doesn't match the argv role).
+  export CHORUS_SESSIONS_DIR="$BATS_TEST_TMPDIR/sessions"
 }
 
 teardown() {
