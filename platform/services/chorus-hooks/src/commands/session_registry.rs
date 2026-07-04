@@ -177,10 +177,32 @@ fn prune_registry(dir: &std::path::Path, me_role: &str, me_pid: u32, me_tty: &st
     }
 }
 
+/// #3608 — is this process entitled to register as `role`? Only when its OWN
+/// environment says it IS that role. This is what stops the poison-writer
+/// class: session-start-orchestration-e2e.bats ran the real shim as
+/// `session-start silas` from wren's/kade's session trees, find_claude walked
+/// up to the HOST's interactive claude, and the registry got a silas entry at
+/// another role's pid — then same-tty pruning EVICTED the host's true
+/// registration. Pure so it's unit-tested without env mutation.
+pub fn registration_permitted(argv_role: &str, env_role: Option<&str>) -> bool {
+    env_role == Some(argv_role)
+}
+
 /// Capture + write the session registration. Best-effort: any failure returns
 /// silently (registration is an optimization; name-match remains the fallback).
 /// Writes NOTHING to stdout — the SessionStart envelope JSON must stay clean.
 pub fn register(role: &str) {
+    // #3608 — refuse to register a role this process doesn't actually run as.
+    // Emits a spine event so refusals are visible, not silent (ADR-046).
+    let env_role = std::env::var("CHORUS_ROLE").ok();
+    if !registration_permitted(role, env_role.as_deref()) {
+        let _ = crate::chorus_log::run_silent(&[
+            "session.registration.refused".to_string(),
+            role.to_string(),
+            format!("env_role={}", env_role.unwrap_or_else(|| "unset".to_string())),
+        ]);
+        return;
+    }
     let home = match std::env::var("HOME") {
         Ok(h) => h,
         Err(_) => return,
@@ -190,7 +212,12 @@ pub fn register(role: &str) {
         None => return,
     };
     let host = host_from_term_program(std::env::var("TERM_PROGRAM").ok().as_deref());
-    let dir = PathBuf::from(&home).join(".chorus").join("sessions");
+    // #3608 — test isolation seam: suites point this at their own tmpdir so a
+    // test run can NEVER touch the live registry (test-brings-its-own-world).
+    let dir = match std::env::var("CHORUS_SESSIONS_DIR") {
+        Ok(d) if !d.is_empty() => PathBuf::from(d),
+        _ => PathBuf::from(&home).join(".chorus").join("sessions"),
+    };
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }
@@ -203,7 +230,16 @@ pub fn register(role: &str) {
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let json = registration_json(role, pid, &tty, host, now);
-    let _ = std::fs::write(dir.join(format!("{}-{}.json", role, pid)), json);
+    if std::fs::write(dir.join(format!("{}-{}.json", role, pid)), json).is_ok() {
+        // #3608 — registrations are visible on the spine (legibility), so a
+        // role that never registers (the kade #3605 gap) is diagnosable from
+        // the absence of this event, not from a delivery failure later.
+        let _ = crate::chorus_log::run_silent(&[
+            "session.registered".to_string(),
+            role.to_string(),
+            format!("pid={},tty={},host={}", pid, tty, host),
+        ]);
+    }
 }
 
 /// Remove this session's registration (best-effort, called at session close).
