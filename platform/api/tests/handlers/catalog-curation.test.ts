@@ -54,16 +54,12 @@ describe('validateTags', () => {
 
   it('rejects unknown vocabulary values with the field named', () => {
     const r = validateTags({ href: '/d', product: 'nonsense' });
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toBe('unknown product: nonsense');
+    expect(r).toEqual({ ok: false, error: 'unknown product: nonsense' });
   });
 
   it('accepts valid five-field tags and free-form domain', () => {
     const r = validateTags({ href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'anything-goes' });
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.tags).toMatchObject({ href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'anything-goes' });
-    }
+    expect(r).toMatchObject({ ok: true, tags: { href: '/d', product: 'chorus', subproduct: 'werk', role: 'kade', domain: 'anything-goes' } });
   });
 
   it('rejects a non-string domain', () => {

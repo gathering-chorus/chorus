@@ -306,8 +306,8 @@ describe('normalizeLine malformed-ts tolerance (#3266 — the BSD %3N corruption
   });
 });
 
-// --- #3606 — cover normalizeLine branches, esc, fetchJob pagination (were the 40.74% gap).
-import { normalizeLine, esc } from '../src/flow-report-cli';
+// --- #3606 — cover normalizeLine branches, esc (were the 40.74% gap).
+// (normalizeLine/esc already imported at top of file)
 
 describe('normalizeLine (#3606)', () => {
   it('parses a spine JSON line with numeric ts', () => {

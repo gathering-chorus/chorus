@@ -334,7 +334,7 @@ setInterval(() => {
     const msgs = messageRouter.getRecent(200, true);
     fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
   } catch { /* ignored */ }
-}, 10000).unref?.();
+}, 10000).unref();
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
@@ -845,7 +845,7 @@ io.on('connection', (socket) => {
 setInterval(() => {
   tilePoller.poll();
   io.emit('tiles', tilePoller.getTiles());
-}, 5000).unref?.();
+}, 5000).unref();
 
 // Broadcast new messages as they arrive
 messageRouter.on('message', (msg) => {

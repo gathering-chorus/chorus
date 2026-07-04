@@ -120,6 +120,7 @@ export function readSpineLines(fs: typeof fs_node, logFile: string, limit: numbe
   let count = 0;
   for (let i = logLines.length - 1; i >= 0 && count < limit * 2; i--) {
     try {
+      // eslint-disable-next-line security/detect-object-injection -- i is the bounded loop index over logLines, never untrusted input (#3606)
       const line = parseLogEntry(JSON.parse(logLines[i]));
       if (line) { out.push(line); count++; }
     } catch { /* ignored */ }

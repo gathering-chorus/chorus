@@ -59,3 +59,48 @@ describe('#3485 pulse shared-secret', () => {
     delete process.env.PULSE_ALLOW_DIRECT_POST;
   });
 });
+
+// --- #3606 — the create-race path (lines 54-60) had no coverage: losing the
+// 'wx' exclusive-create race must fall back to reading the winner's secret,
+// and a doubly-failing FS must yield null (fail-open at the gate).
+describe('#3606 create-race fallback', () => {
+  it('losing the wx race reads the winner secret; total FS failure yields null (fail-open)', () => {
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fsm = require('fs');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('./pulse-secret');
+
+      // Race-lost: first read misses (no file yet), create throws EEXIST
+      // (another process won), second read returns the winner's value.
+      const readSpy = jest.spyOn(fsm, 'readFileSync')
+        .mockImplementationOnce(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); })
+        .mockImplementationOnce(() => 'winner-secret\n');
+      const writeSpy = jest.spyOn(fsm, 'writeFileSync')
+        .mockImplementation(() => { throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' }); });
+
+      expect(mod.resolvePulseSecret()).toBe('winner-secret');
+      readSpy.mockRestore();
+      writeSpy.mockRestore();
+    });
+
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fsm = require('fs');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('./pulse-secret');
+
+      // Doubly-failing FS: both reads throw, create throws → null, and the
+      // gate fails OPEN (delivery must never break on FS trouble).
+      const readSpy = jest.spyOn(fsm, 'readFileSync')
+        .mockImplementation(() => { throw Object.assign(new Error('EIO'), { code: 'EIO' }); });
+      const writeSpy = jest.spyOn(fsm, 'writeFileSync')
+        .mockImplementation(() => { throw Object.assign(new Error('EIO'), { code: 'EIO' }); });
+
+      expect(mod.resolvePulseSecret()).toBeNull();
+      expect(mod.callerIsAuthorized(undefined)).toBe(true); // fail-open
+      readSpy.mockRestore();
+      writeSpy.mockRestore();
+    });
+  });
+});

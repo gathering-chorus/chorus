@@ -688,6 +688,34 @@ case "${1:-}" in
     echo "# bats";      list_bats
     echo "# cucumber";  list_cucumber
     ;;
+  --last-run)
+    # #3606/#3272 — READ mode: replay the LATEST run's SUITE lines from the
+    # log (launchd StandardOutPath appends runs with no separators; the block
+    # boundary is the first repeated (kind,path) key walking backward).
+    # daily-review consumes THIS instead of re-running --run-all in a launchd
+    # env with no cargo (the 2026-07-04 false 30-red wall). No third state:
+    # missing or stale (>26h) log = a loud, parseable SUITE fail + rc 1.
+    _log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+    if [ ! -f "$_log" ]; then
+      echo "SUITE|meta|$_log|silas|fail|0 pass, 1 fail (nightly log MISSING — no run to read, run the 03:00 nightly)"
+      exit 1
+    fi
+    _age=$(( $(date +%s) - $(stat -f %m "$_log" 2>/dev/null || echo 0) ))
+    if [ "$_age" -gt 93600 ]; then
+      echo "SUITE|meta|$_log|silas|fail|0 pass, 1 fail (nightly log STALE — ${_age}s old > 26h; the 03:00 run did not write)"
+      exit 1
+    fi
+    python3 - "$_log" <<'PYEOF'
+import sys
+lines=[l for l in open(sys.argv[1],errors='replace').read().splitlines() if l.startswith('SUITE|')]
+seen=set(); run=[]
+for l in reversed(lines):
+    p=l.split('|'); key=(p[1],p[2])
+    if key in seen: break
+    seen.add(key); run.append(l)
+for l in reversed(run): print(l)
+PYEOF
+    ;;
   --run-one)
     # #3606 — run a single suite exactly as the nightly would (stack-gate
     # included), emit its SUITE line, exit 0/1 on pass/fail. Gives a red suite
@@ -715,7 +743,7 @@ case "${1:-}" in
     out=$(run_all); printf '%s\n' "$out"; emit_suite_results "$out"; notify_results "$out"
     ;;
   *)
-    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all}" >&2
+    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all|--last-run|--run-one <kind> <path>}" >&2
     exit 2
     ;;
 esac

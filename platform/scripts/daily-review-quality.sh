@@ -100,7 +100,11 @@ classify_suite() {
 # test in a 1000-test suite should not read the same as a 1000-test suite that
 # could not compile. Three categories now: all-green, with ≥1 failing test,
 # did not run.
-SUITES_OUT=$(bash "${SCRIPT_DIR}/nightly-suites.sh" --run-all 2>&1 || true)
+# #3606/#3272 — READ the 03:00 nightly's results; never re-run. The 6 AM
+# launchd env has no cargo on PATH, so a re-run manufactured a 30-suite
+# false-red wall (2026-07-04) and clobbered the per-suite failure logs.
+# --last-run fails loud (parseable SUITE|meta fail) on a missing/stale log.
+SUITES_OUT=$(bash "${SCRIPT_DIR}/nightly-suites.sh" --last-run 2>&1 || true)
 TEST_SUMMARY=""
 KADE_FAILS=""
 SILAS_FAILS=""
