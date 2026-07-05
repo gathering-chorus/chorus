@@ -169,6 +169,7 @@ describe('#3608 sweepRegistry self-heal', () => {
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
   const writeReg = (r: SessionReg) =>
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled tmpdir fixture path, never caller input (#3606)
     writeFileSync(path.join(dir, `${r.role}-${r.pid}.json`), JSON.stringify(r));
 
   test('deletes poisoned + dead entries, keeps verified live ones, emits spine events (AC2)', () => {
@@ -179,6 +180,7 @@ describe('#3608 sweepRegistry self-heal', () => {
     const swept = sweepRegistry(dir, (pid) => pid !== 999, (pid) => (pid === 74581 ? 'wren' : null),
       (event, fields) => events.push({ event, fields }));
     expect(swept).toHaveLength(2);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled tmpdir fixture path, never caller input (#3606)
     expect(readdirSync(dir)).toEqual(['wren-74581.json']);
     expect(events.map((e) => e.event).sort()).toEqual(['routing.poison.detected', 'routing.stale.swept']);
     const poison = events.find((e) => e.event === 'routing.poison.detected');
@@ -191,6 +193,7 @@ describe('#3608 sweepRegistry self-heal', () => {
     const roleOf = (pid: number) => (pid === 74581 ? 'wren' : pid === 81082 ? 'silas' : null);
     const out = resolveRoleTarget('silas', dir, () => true, roleOf, () => {});
     expect(out?.tty).toBe('/dev/ttys002');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- test-controlled tmpdir fixture path, never caller input (#3606)
     expect(readdirSync(dir).sort()).toEqual(['silas-81082.json']);
   });
 });
