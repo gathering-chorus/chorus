@@ -3027,12 +3027,21 @@ app.post('/api/chorus/trace', (req: Request, res: Response) => {
 
 // /api/chorus/trace/* — correlation-id hop chain + observed integrations (extracted #2189)
 import { fetchTraceByCorrelation, fetchTraceIntegrations } from './handlers/chorus-trace';
-app.get('/api/chorus/trace/:correlationId', (req: Request, res: Response) => {
+app.get('/api/chorus/trace/:correlationId', async (req: Request, res: Response) => {
   if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; }
   const db = new Database(DB_PATH, { readonly: true });
   db.pragma('journal_mode = WAL');
   try {
-    const r = fetchTraceByCorrelation(req.params.correlationId, { db });
+    // #3621 — fold spine events by trace_id (Loki via logsForTrace) so the
+    // viewer shows the werk run, not just HTTP hops (the #3609 {hops:[]} gap).
+    const r = await fetchTraceByCorrelation(req.params.correlationId, {
+      db,
+      fetchSpineEvents: async (traceId) => {
+        const lr = await logsForTrace({ trace_id: traceId, time_window: '7d' }, painLokiDeps);
+        if (!lr.ok) throw new Error(`${lr.reason}: ${lr.detail ?? ''}`);
+        return lr.events as Array<Record<string, unknown>>;
+      },
+    });
     res.status(r.status).json(r.body);
   } finally { db.close(); }
 });

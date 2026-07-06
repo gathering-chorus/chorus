@@ -297,6 +297,35 @@ pub fn spine_args(event: &str, role: &str, card: &str, trace: &str, extras: &[(&
     v
 }
 
+/// #3621 — the canonical wide `test.completed` field set, emitted on EVERY run.
+/// Green earns evidence too: werk-test used to emit only `test.failed`, so a
+/// passing blocking gate left zero spine trace — "all tests passed" and "the
+/// step never ran" were indistinguishable (the #3609 trace-visibility gap).
+/// Pure builder → unit-testable; the impure emit stays in main.
+pub fn completed_extras(
+    outcome: &GateOutcome,
+    units: usize,
+    checks_run: usize,
+    checks_failed: usize,
+    duration_ms: u128,
+    self_modifying: bool,
+) -> Vec<(String, String)> {
+    let mut v = vec![
+        ("verdict".to_string(), outcome.label().to_string()),
+        ("units".to_string(), units.to_string()),
+        ("checks_run".to_string(), checks_run.to_string()),
+        ("checks_failed".to_string(), checks_failed.to_string()),
+        ("duration_ms".to_string(), duration_ms.to_string()),
+    ];
+    if checks_failed > 0 {
+        v.push(("failureClass".to_string(), "test-red".to_string()));
+    }
+    if self_modifying {
+        v.push(("advisory".to_string(), "true".to_string()));
+    }
+    v
+}
+
 impl GateOutcome {
     /// Process exit code: only `Block` stops the land (exit 1). `AdvisoryFail`
     /// is honest-red-but-non-blocking → exit 0 (the bootstrap escape). `Pass` /
