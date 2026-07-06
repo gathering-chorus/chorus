@@ -1,36 +1,35 @@
-# Daily Morning Summary — 2026-07-03
+# Daily Morning Summary — 2026-07-06
 
-**HEADLINE:** Quality still dark day 21 — `npm ci` at repo root unblocks all 4 suites immediately; ops unchanged, Wren owns two overdue refreshes today.
+**HEADLINE:** #3609 landed; Silas can now mint the #3603 graph migration — the product tree Jeff drew is one deploy from matching the live owl-api.
 
----
+**OPS:** RED (3 REDs, 3 YELLOWs) — Silas review 2026-07-02 (4d stale; no refresh)
+- RED: Domain context 14d stale — `domain-context-chorus.md` most urgent, Wren-owned today
+- RED: Stale WIPs #1704 (102d), #1759/#1791 (89d) — board unverifiable from remote; planning debt
+- RED: CSC /tmp — 58 scripts; `bridge-subscriber.js` runtime inbox highest risk; no card yet
+- YELLOW: Hooks dead code 32d; LaunchAgent /tmp (structural); CLAUDE.md fragments 14d lag
+- GREEN: Repo clean
 
-**OPS:** RED (3 REDs, 3 YELLOWs) — Silas review 2026-07-02, no change from yesterday
-- RED: Domain context — all 5 files 11d stale; `domain-context-chorus.md` most urgent (6 chorus cards shipped since last update). Wren-owned today.
-- RED: Stale WIP — #1704 (99d), #1759/#1791 (86d); board unverifiable from remote; planning debt compounding daily.
-- RED: CSC /tmp — 58 scripts, `bridge-subscriber.js` runtime inbox highest risk; still no card, no owner.
-- YELLOW: Hooks dead code (28d), LaunchAgent /tmp refs (structural), CLAUDE.md fragments 11d stale (lag vs. #3581–#3602).
-- GREEN: Repo clean.
+**QUALITY:** RED — 0 tests, 0 lint — Kade review 2026-07-02 (4d stale)
+- All 4 suites blocked: `ts-jest` preset not found — now **day 25** (clearing, workflow-engine, chorus-sdk, pulse)
+- Lint: `@eslint/js` missing — now **day 27**. Same root cause as tests.
+- Build: 150 TS type errors — now **day 15**, regression 2026-06-21, unowned
+- Fix: `npm ci` at repo root unblocks tests + lint in one shot
 
-**QUALITY:** RED — all 4 suites blocked, 0 tests run; Kade review 2026-07-02
-- Tests: `ts-jest` preset not found — day 21 across clearing, workflow-engine, chorus-sdk, pulse.
-- Lint: `@eslint/js` missing — day 23. Same root cause.
-- Build: 150 TypeScript type errors — day 12, regression from 2026-06-21, unowned.
-- Fix: `npm ci` at repo root resolves tests + lint in one shot.
+**SINCE 2026-07-03:** 6 cards, 7 PRs
+- #3609 (wren) — owl-api /batch 4KB body truncation fix; now unblocks #3603 live migration
+- #3607 (wren) — chorus.log tail-reads fixed; /api/stream 1650ms → 9–64ms live
+- #3608 (wren) — session-registration integrity (P1); role/nudge routing hardened
+- #3606 (kade) — 2 PRs; #3604 (kade) — clearing coverage RED → GREEN (first nightly red to zero)
+- #3603 (wren) — V1 product-layer retirement shipped; live migration pending Silas
 
-**YESTERDAY (2026-07-02):** 3 cards shipped (PRs #721–723).
-- #3597 (kade) — nightly-suites determinism (3 behavioral fixes to `nightly-suites.sh`).
-- #3536 (silas) — PR #722.
-- #3600 (kade) — PR #721.
-- Silas wrote daily ops + quality reviews.
-
-**TODAY (recommended priorities):**
-1. Kade or Silas: `npm ci` at repo root — kills the 21-day test blackout in one command.
-2. Wren: Refresh `domain-context-chorus.md` — Silas flagged today-urgent (RED, 11d).
-3. Wren: Sweep CLAUDE.md fragments for #2913 worktree convention and #3581–#3602 lag.
-4. Silas: File July card for `bridge-subscriber.sh` /tmp CSC violation.
-5. Team: Close or park #1704, #1759, #1791 — 80+ day WIPs erode planning credibility.
+**TODAY:**
+1. **Silas:** Mint + apply 53-DEL/352-INS #3603 graph migration — #3609 just cleared the last blocker
+2. **Silas or Kade:** `npm ci` at repo root — ends day-25 test blackout in one command
+3. **Wren:** Refresh `domain-context-chorus.md` — 14d stale, Silas-flagged today-urgent
+4. **Silas:** File July card for `bridge-subscriber.js` CSC /tmp runtime inbox violation
+5. **Wren:** CLAUDE.md fragment sweep — #2913 worktree convention + #3581–#3609 lag
 
 **BLOCKERS (needs Jeff):**
-- 150 type errors since 2026-06-21 (12d) — no owner, no card; assign or it keeps aging.
-- Stale WIPs 80–99 days: call them done/parked or WIP limit is fiction.
-- `npm ci` unrun for 21 days: who owns the TS environment health on this repo?
+- 150 TS type errors 15d unowned — assign a card or it keeps aging
+- Stale WIPs 89–102d — close/park them or WIP limit means nothing
+- `npm ci` unrun 25d — who owns TS environment health on this repo?
