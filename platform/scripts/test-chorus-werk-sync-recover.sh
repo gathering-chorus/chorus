@@ -50,6 +50,14 @@ setup_repo_with_remote() {
   )
 }
 
+# #3606 — resolve the real binary BEFORE isolating HOME: the wrapper's
+# $HOME/.chorus/bin fallback can't work under the fake HOME (last night's
+# 1-pass/5-fail: every invocation died binary-not-found with empty output).
+if [ -z "${WERK_SYNC_BIN:-}" ]; then
+  for cand in "$(command -v werk-sync 2>/dev/null)" "$HOME/.chorus/bin/werk-sync"; do
+    [ -n "$cand" ] && [ -x "$cand" ] && export WERK_SYNC_BIN="$cand" && break
+  done
+fi
 # Use a unique HOME so we don't pollute the real ~/.chorus/recovery
 TEST_HOME="/tmp/chorus-recover-test-$$"
 mkdir -p "$TEST_HOME/.chorus"

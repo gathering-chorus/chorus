@@ -66,9 +66,7 @@ describe('#3485 pulse shared-secret', () => {
 describe('#3606 create-race fallback', () => {
   it('losing the wx race reads the winner secret; total FS failure yields null (fail-open)', () => {
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const fsm = require('fs');
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mod = require('./pulse-secret');
 
       // Race-lost: first read misses (no file yet), create throws EEXIST
@@ -85,9 +83,7 @@ describe('#3606 create-race fallback', () => {
     });
 
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const fsm = require('fs');
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const mod = require('./pulse-secret');
 
       // Doubly-failing FS: both reads throw, create throws → null, and the

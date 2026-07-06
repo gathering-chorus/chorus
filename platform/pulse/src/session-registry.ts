@@ -135,8 +135,7 @@ export function defaultSweepEmit(event: string, fields: Record<string, string>):
     const logPath = process.env.CHORUS_SPINE_LOG
       || path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'logs', 'chorus.log');
     const line = JSON.stringify({ timestamp: new Date().toISOString(), event, role: 'pulse', ...fields });
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fixed internal spine log path
-    appendFileSync(logPath, line + '\n');
+    appendFileSync(logPath, line + '\n'); // covered by the file-level #3429 disable — inner directive was flagged unused (#3606)
   } catch { /* spine emit is best-effort — never break delivery */ }
 }
 

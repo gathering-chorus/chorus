@@ -7,6 +7,12 @@
 # `werk-sync {repair|recover}` — this alias will be dropped once callers are clean.
 set -uo pipefail
 echo "chorus-werk-sync: DEPRECATED — use \`werk-sync $*\` (#3300); forwarding" >&2
+# #3606 — explicit binary override. The recover test isolates HOME (so real
+# ~/.chorus/recovery is never touched), which silently defeated the
+# $HOME/.chorus/bin fallback below — resolution must survive a fake HOME.
+if [ -n "${WERK_SYNC_BIN:-}" ] && [ -x "${WERK_SYNC_BIN}" ]; then
+  exec "${WERK_SYNC_BIN}" "$@"
+fi
 if command -v werk-sync >/dev/null 2>&1; then
   exec werk-sync "$@"
 fi
