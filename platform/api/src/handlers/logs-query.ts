@@ -31,7 +31,9 @@ export type LogsRefusal =
   | 'result-too-large'
   | 'rate-limited';
 
-export type TimeWindow = '5m' | '15m' | '1h' | '6h' | '1d';
+// #3621 — '7d': a card's werk trace matters for days (the #3609 trace aged out
+// of 1d before anyone could view it folded). Week-wide is still one bounded query.
+export type TimeWindow = '5m' | '15m' | '1h' | '6h' | '1d' | '7d';
 
 export type LogsQueryDeps = {
   fetchImpl: typeof fetch;
@@ -48,6 +50,7 @@ const TIME_WINDOW_SECONDS: Record<TimeWindow, number> = {
   '1h': 3600,
   '6h': 21600,
   '1d': 86400,
+  '7d': 604800,
 };
 
 function resolveTimeRange(deps: LogsQueryDeps, start?: string, end?: string, window?: TimeWindow): { startNs: string; endNs: string } | { error: string } {

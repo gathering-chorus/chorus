@@ -3037,7 +3037,7 @@ app.get('/api/chorus/trace/:correlationId', async (req: Request, res: Response) 
     const r = await fetchTraceByCorrelation(req.params.correlationId, {
       db,
       fetchSpineEvents: async (traceId) => {
-        const lr = await logsForTrace({ trace_id: traceId, time_window: '1d' }, painLokiDeps);
+        const lr = await logsForTrace({ trace_id: traceId, time_window: '7d' }, painLokiDeps);
         if (!lr.ok) throw new Error(`${lr.reason}: ${lr.detail ?? ''}`);
         return lr.events as Array<Record<string, unknown>>;
       },

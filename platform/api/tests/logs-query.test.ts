@@ -334,3 +334,21 @@ describe('logsForCard / logsForBranch — JSON-field anchored queries', () => {
     expect(decodeURIComponent(seenUrl)).toContain('kade/3606');
   });
 });
+
+describe("time_window '7d' (#3621 — a card's trace outlives 1d)", () => {
+  it('logsForTrace with 7d builds a week-wide range', async () => {
+    let seenUrl = '';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: (async (url: string) => {
+        seenUrl = String(url);
+        return { ok: true, status: 200, json: async () => ({ data: { result: [] } }) } as unknown as Response;
+      }) as LogsQueryDeps['fetchImpl'],
+    };
+    const r = await logsForTrace({ trace_id: 't-7d', time_window: '7d' }, deps);
+    expect(r.ok).toBe(true);
+    const u = new URL(seenUrl);
+    const spanNs = BigInt(u.searchParams.get('end')!) - BigInt(u.searchParams.get('start')!);
+    expect(spanNs).toBe(BigInt(7 * 86400) * 1000000000n);
+  });
+});
