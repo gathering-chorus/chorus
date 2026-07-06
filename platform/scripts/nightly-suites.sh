@@ -315,7 +315,11 @@ run_one_attempt() {
       local out rc jest_env
       if _npm_package_uses_jest "$path"; then
         jest_env=$(_npm_jest_env "$path")
-        out=$(cd "$path" && env $jest_env npx jest --passWithNoTests --silent 2>&1); rc=$?
+        # #3606 — --no-install: a package missing its local jest must FAIL LOUD
+        # ("jest not found"), never trigger an npx download into the shared cache
+        # at 3am (the 07-06 pulse red: canonical node_modules lacked jest → npx
+        # downloaded → corrupted-cache ENOTEMPTY → blank-summary fail).
+        out=$(cd "$path" && env $jest_env npx --no-install jest --passWithNoTests --silent 2>&1); rc=$?
         # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
         # failure detail at the source so the saved fail-log held nothing usable).
         summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
@@ -471,7 +475,7 @@ run_coverage() {
     if [ "$lang" = "ts" ]; then
       if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/coverage/coverage-summary.json"
       elif [ -d "$dir" ]; then
-        (cd "$dir" && npx jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1); rc=$?
+        (cd "$dir" && npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1); rc=$?  # #3606 --no-install: fail loud, never download
         sj="$dir/coverage/coverage-summary.json"
       else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['total']['statements']['pct'])" 2>/dev/null || true)

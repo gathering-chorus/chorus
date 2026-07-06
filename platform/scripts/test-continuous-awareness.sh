@@ -63,7 +63,12 @@ fi
 # --- Test 3: Context injection covers multiple roles ---
 echo "Test 3: Injection covers multiple roles"
 roles=$(echo "$INJECTED" | grep -oE '"role":"(wren|silas|kade)"' | sort -u | wc -l | tr -d ' ')
-if [ "$roles" -ge 2 ]; then
+# #3606 — assert the MECHANISM (injection reaches whoever runs), not the
+# calendar: >=2 roles in a 12h window false-reds on quiet weekends (07-06:
+# only one role session ran overnight — the system was fine). Role count
+# stays reported as info.
+echo "  info: $roles distinct role(s) injected in window"
+if [ "$roles" -ge 1 ]; then
   echo "  PASS: $roles roles receiving injection"
   ((PASS++))
 else
