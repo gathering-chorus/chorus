@@ -523,16 +523,34 @@ fn is_iri_term(t: &str) -> bool {
             .contains(['<', '>', '"', '{', '}', '|', '^', '`', ' ', '\n', '\r', '\t', ';'])
 }
 
-/// A plain string literal `"..."`. Blocks the chars that could break OUT of the
-/// door-assembled `"..."`: an unescaped quote (close early), newline/CR, tab (the
-/// batch delimiter), and `{ } ;` (open a block / start a new op). With those blocked,
-/// arbitrary text INSIDE the quotes — including the word "GRAPH" — is inert content
-/// (Wren gate 2026-07-03: don't refuse "photograph" / "/graphs/" / real descriptions).
+/// A string literal: plain `"..."` or typed `"..."^^<datatype-iri>` (#3622 —
+/// riot emits every SHACL cardinality as `"1"^^<xsd:integer>`; the door must
+/// carry it). Blocks the chars that could break OUT of the door-assembled
+/// `"..."`: an unescaped quote (close early), newline/CR, tab (the batch
+/// delimiter), and `{ } ;` (open a block / start a new op). With those blocked,
+/// arbitrary text INSIDE the quotes — including the word "GRAPH" — is inert
+/// content (Wren gate 2026-07-03: don't refuse "photograph" / real prose).
+/// The typed form's datatype is just another IRI check (is_iri_term — no
+/// injection chars). Language tags (`"x"@en`) stay rejected until a real
+/// writer emits them — widen deliberately, don't pre-open the parser surface.
 fn is_literal_term(t: &str) -> bool {
-    t.len() >= 2 && t.starts_with('"') && t.ends_with('"') && {
-        let inner = &t[1..t.len() - 1];
-        !inner.contains(['"', '\n', '\r', '\t', '{', '}', ';'])
+    fn quoted_ok(q: &str) -> bool {
+        q.len() >= 2 && q.starts_with('"') && q.ends_with('"') && {
+            let inner = &q[1..q.len() - 1];
+            !inner.contains(['"', '\n', '\r', '\t', '{', '}', ';'])
+        }
     }
+    if t.ends_with('"') {
+        return quoted_ok(t); // plain literal — `^^` INSIDE the quotes is content
+    }
+    // typed literal: the value can't contain `"` (charset), so the LAST `"^^<`
+    // is unambiguously the value/datatype seam.
+    if let Some(pos) = t.rfind("\"^^<") {
+        let quoted = &t[..pos + 1];
+        let datatype = &t[pos + 3..];
+        return quoted_ok(quoted) && is_iri_term(datatype);
+    }
+    false
 }
 
 /// Subject/predicate must be IRIs; a delete object may also be the single wildcard `?o`.
@@ -752,6 +770,54 @@ mod tests {
         assert!(s.contains("GRAPH <urn:chorus:instances>"), "must be graph-scoped: {}", s);
         assert!(s.contains("DELETE WHERE") && s.contains("INSERT DATA"), "{}", s);
         assert!(!s.contains("urn:gathering"), "never another graph");
+    }
+
+    // ── #3622 typed literals — SHACL cardinalities must pass, injection must not ──
+    #[test]
+    fn batch_accepts_typed_integer_literal_the_shacl_cardinality_form() {
+        let store = stub(&[], &[]);
+        let ins = vec![t(
+            "<urn:chorus:shape/x>",
+            "<http://www.w3.org/ns/shacl#minCount>",
+            "\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+        )];
+        let n = batch(&store, "urn:chorus:instances", &[], &ins).unwrap();
+        assert_eq!(n, 1, "typed integer literal must pass (riot's SHACL form)");
+        assert!(store.updates.borrow()[0].contains("^^<http://www.w3.org/2001/XMLSchema#integer>"));
+    }
+
+    #[test]
+    fn batch_refuses_typed_literal_with_bad_datatype_or_injected_value() {
+        let store = stub(&[], &[]);
+        // datatype not an IRI
+        let bad_dt = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1\"^^not-an-iri")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &bad_dt).is_err());
+        // datatype IRI with injection chars
+        let evil_dt = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1\"^^<urn:x> } ; INSERT")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_dt).is_err());
+        // injection inside the value of a typed literal
+        let evil_val = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1} ; DROP\"^^<urn:x>")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_val).is_err());
+        assert!(store.updates.borrow().is_empty(), "no typed-literal injection may write");
+    }
+
+    #[test]
+    fn batch_still_accepts_plain_literal_including_carets_inside() {
+        let store = stub(&[], &[]);
+        let ins = vec![
+            t("<urn:chorus:s>", "<urn:chorus:p>", "\"plain value\""),
+            t("<urn:chorus:s>", "<urn:chorus:p>", "\"a^^b inside quotes is content\""),
+        ];
+        assert_eq!(batch(&store, "urn:chorus:instances", &[], &ins).unwrap(), 2);
+    }
+
+    #[test]
+    fn batch_language_tag_decision_rejected_until_needed() {
+        // #3622 AC note: "x"@en is NOT accepted yet — no writer emits it; widen
+        // deliberately when one does, don't pre-open the parser surface.
+        let store = stub(&[], &[]);
+        let ins = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"x\"@en")];
+        assert!(batch(&store, "urn:chorus:instances", &[], &ins).is_err());
     }
 
     #[test]
