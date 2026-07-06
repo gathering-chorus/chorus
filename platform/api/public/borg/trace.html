@@ -80,7 +80,10 @@ async function load(){
   // Single source = logsForCard / logsForTrace. Prefer the purpose-named /logs/*
   // routes; fall back to /pain/card (same logsForCard) so the page works even
   // before the /logs/* routes deploy. Both hit the identical query.
-  const urls = trace ? [`/api/chorus/logs/trace/${encodeURIComponent(trace)}`]
+  // #3621 — the FOLDED viewer first: /api/chorus/trace/:id merges hop records +
+  // spine events into one timeline (the {hops:[]} blindness fix). /logs/trace
+  // stays as fallback so the page works against an older api.
+  const urls = trace ? [`/api/chorus/trace/${encodeURIComponent(trace)}`, `/api/chorus/logs/trace/${encodeURIComponent(trace)}`]
              : card ? [`/api/chorus/logs/card/${encodeURIComponent(card)}`, `/api/chorus/pain/card/${encodeURIComponent(card)}`]
              : null;
   if(!urls){ $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Enter a card # or trace.</div>'; return; }
@@ -91,8 +94,17 @@ async function load(){
     catch(e){ lastErr=e.message; }
   }
   if(!j){ $('#stream').innerHTML='<div class="err-msg">Fetch failed: '+esc(lastErr)+'</div>'; return; }
-  if(!j.ok){ $('#stream').innerHTML='<div class="err-msg">Query refused: '+esc(j.reason||'unknown')+(j.detail?' — '+esc(j.detail):'')+'</div>'; return; }
-  DATA = normalize(j.events||[]);
+  let rows;
+  if(j.timeline){ // #3621 fold shape: {correlationId, hops, events, timeline, spine_error?}
+    rows = j.timeline.map(t => t.kind==='hop'
+      ? {ts:t.ts||'', event:'hop:'+(t.call_stack||t.dest_service||'hop'), role:t.source_service||'', trace_id:j.correlationId, payload:t}
+      : Object.assign({payload:t}, t));
+    if(j.spine_error) $('#banner').innerHTML = '<div class="anomaly">⚠ spine fold degraded: '+esc(j.spine_error)+' — showing hop records only</div>';
+  } else {
+    if(!j.ok){ $('#stream').innerHTML='<div class="err-msg">Query refused: '+esc(j.reason||'unknown')+(j.detail?' — '+esc(j.detail):'')+'</div>'; return; }
+    rows = j.events||[];
+  }
+  DATA = normalize(rows);
   // workflow filter chips
   const wfs=[...new Set(DATA.filter(x=>!x.noise).map(x=>x.wf))].sort();
   $('#filters').innerHTML = wfs.map(w=>`<label class="chip-f"><input type="checkbox" value="${w}" checked> ${w}</label>`).join(' ');

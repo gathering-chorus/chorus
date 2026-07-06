@@ -298,3 +298,36 @@ fn spine_args_builds_event_role_card_trace_and_extras() {
         ]
     );
 }
+
+// --- #3621: the canonical wide test.completed — emitted ALWAYS (green included).
+// werk-test used to emit only test.failed, so a passing gate left ZERO spine
+// evidence — "all tests passed" and "the step never ran" were indistinguishable
+// in a trace (Jeff's #3609 question). completed_extras is the pure field
+// builder: verdict + counts + duration on every run, failureClass on red.
+
+#[test]
+fn completed_extras_carries_verdict_counts_and_duration_on_pass() {
+    let got = werk_test::completed_extras(&GateOutcome::Pass, 2, 5, 0, 12345, false);
+    assert!(got.contains(&("verdict".to_string(), "pass".to_string())));
+    assert!(got.contains(&("units".to_string(), "2".to_string())));
+    assert!(got.contains(&("checks_run".to_string(), "5".to_string())));
+    assert!(got.contains(&("checks_failed".to_string(), "0".to_string())));
+    assert!(got.contains(&("duration_ms".to_string(), "12345".to_string())));
+    // green carries NO failureClass — absence is meaningful, not accidental
+    assert!(!got.iter().any(|(k, _)| k == "failureClass"));
+}
+
+#[test]
+fn completed_extras_names_the_failure_class_on_block() {
+    let got = werk_test::completed_extras(&GateOutcome::Block, 1, 3, 2, 900, false);
+    assert!(got.contains(&("verdict".to_string(), "BLOCK".to_string())));
+    assert!(got.contains(&("checks_failed".to_string(), "2".to_string())));
+    assert!(got.contains(&("failureClass".to_string(), "test-red".to_string())));
+}
+
+#[test]
+fn completed_extras_marks_advisory_for_self_modifying_cards() {
+    let got = werk_test::completed_extras(&GateOutcome::AdvisoryFail, 1, 2, 1, 500, true);
+    assert!(got.contains(&("advisory".to_string(), "true".to_string())));
+    assert!(got.contains(&("verdict".to_string(), "advisory-fail (self-modifying)".to_string())));
+}

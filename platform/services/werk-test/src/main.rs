@@ -68,7 +68,20 @@ fn run(args: &[String]) -> Result<i32, String> {
         if self_mod { ", self-modifying → advisory" } else { "" }
     );
 
+    // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
+    let started_at = std::time::Instant::now();
+    emit_spine(
+        "test.started",
+        &role,
+        &card,
+        &trace,
+        &[
+            ("units", &units.len().to_string()),
+            ("checks_planned", &plan.len().to_string()),
+        ],
+    );
     let mut any_failed = false;
+    let mut failed_count: usize = 0;
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let ok = match (&check.kind, &check.unit) {
@@ -82,7 +95,9 @@ fn run(args: &[String]) -> Result<i32, String> {
         println!("   {}:{} … {}", check.kind.label(), target, if ok { "ok" } else { "FAIL" });
         if !ok {
             any_failed = true;
+            failed_count += 1;
             emit_spine(
+                "test.failed",
                 &role,
                 &card,
                 &trace,
@@ -92,6 +107,16 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
 
     let outcome = gate_outcome(units.len(), any_failed, self_mod);
+    let extras = werk_test::completed_extras(
+        &outcome,
+        units.len(),
+        plan.len(),
+        failed_count,
+        started_at.elapsed().as_millis(),
+        self_mod,
+    );
+    let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    emit_spine("test.completed", &role, &card, &trace, &extra_refs);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -244,9 +269,11 @@ fn status_ok(cmd: &mut Command) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-/// Emit a typed `test.failed` to the ONE spine via chorus-log (subprocess, so the
+/// Emit a typed test event to the ONE spine via chorus-log (subprocess, so the
 /// verb stays zero-dep per ADR-032 §6). Best-effort: never affects the gate.
-fn emit_spine(role: &str, card: &str, trace: &str, extras: &[(&str, &str)]) {
+/// #3621 — takes the event name: test.started / test.completed are emitted on
+/// EVERY run (green included), test.failed per failing check.
+fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str, &str)]) {
     let home = match std::env::var("CHORUS_HOME") {
         Ok(h) => h,
         Err(_) => return,
@@ -255,7 +282,7 @@ fn emit_spine(role: &str, card: &str, trace: &str, extras: &[(&str, &str)]) {
     if !Path::new(&log).is_file() {
         return;
     }
-    let args = spine_args("test.failed", role, card, trace, extras);
+    let args = spine_args(event, role, card, trace, extras);
     let mut argv: Vec<&str> = vec![&log];
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     argv.extend(refs);
