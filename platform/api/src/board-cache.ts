@@ -24,6 +24,11 @@ export interface CachedCard {
 export interface BoardCacheDeps {
   /** Run the `cards list` command (or equivalent) and return its stdout. */
   run: () => Promise<string>;
+  /** #3610 — eventloop-attribution hook (wired to setCurrentOp). Called with
+   *  'boardCache' around ONLY the sync parse slice, never across the run()
+   *  await: the old server.ts wrap spanned the whole async refresh, so any
+   *  block by any code during an in-flight refresh was mislabeled boardCache. */
+  setOp?: (op: string | null) => void;
 }
 
 export interface BoardCache {
@@ -100,8 +105,13 @@ export function createBoardCache(deps: BoardCacheDeps): BoardCache {
     inFlight = true;
     try {
       const stdout = await deps.run();
-      cards = parseCardsListOutput(stdout);
-      lastRefresh = Date.now();
+      deps.setOp?.('boardCache');
+      try {
+        cards = parseCardsListOutput(stdout);
+        lastRefresh = Date.now();
+      } finally {
+        deps.setOp?.(null);
+      }
     } catch {
       // Keep the previous snapshot on failure — better stale than empty.
     } finally {

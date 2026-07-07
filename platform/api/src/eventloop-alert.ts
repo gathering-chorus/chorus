@@ -75,24 +75,32 @@ export interface BlockAlert {
   ts: string;
   op: string;
   message: string;
+  /** #3610 — present only in captureStacks mode: the blocked-at stack of the
+   *  resource that blocked. The top frame IS the call site — measured, not inferred. */
+  stack?: string[];
 }
 
 /** Pure, honest formatter — only the measured block + which op was running (or unknown).
  *  `ts` field stays ISO (storage contract for spine event correlation); the
  *  human-facing `message` body renders Boston (#3093 — render-vs-storage
  *  boundary, Jeff doesn't read UTC). */
-export function formatBlockAlert(durationMs: number, ts: string, op: string): BlockAlert {
+export function formatBlockAlert(durationMs: number, ts: string, op: string, stack?: string[]): BlockAlert {
   const display = boston(ts);
+  const frames = (stack ?? []).map((f) => f.trim()).filter((f) => f.length > 0);
   const opNote = op === 'unknown'
     ? `The slow request is in the access log at this time — grep chorus-api.log around ${display} for the route.`
     : `Captured op: ${op}.`;
+  // A captured stack replaces the correlate-it-yourself pointer: the frame is
+  // the measured call site, still no inferred story beyond it.
+  const causeNote = frames.length > 0 ? `Blocked at: ${frames[0]}.` : opNote;
   return {
     duration_ms: durationMs,
     ts,
     op,
+    ...(frames.length > 0 ? { stack: frames } : {}),
     message:
       `chorus-api event loop blocked ${durationMs}ms at ${display}. ` +
-      opNote +
+      causeNote +
       ' No cause inferred; this is the measured block only.',
   };
 }
@@ -100,6 +108,13 @@ export function formatBlockAlert(durationMs: number, ts: string, op: string): Bl
 export interface EventloopAlertDeps {
   /** the `blocked` library callback-registrar; injectable for tests */
   blockedFn?: (cb: (ms: number) => void, opts: { threshold: number }) => void;
+  /** #3610 — the `blocked-at` registrar (stack-capturing); injectable for tests.
+   *  Only consulted when captureStacks is true. */
+  blockedAtFn?: (cb: (ms: number, stack: string[]) => void, opts: { threshold: number }) => void;
+  /** #3610 — diagnostic mode: capture the blocking stack via blocked-at
+   *  (async-hooks overhead — NEVER always-on; #3050's decision stands). Wired
+   *  from CHORUS_EVENTLOOP_STACKS=1 for a bounded trace window, then turned off. */
+  captureStacks?: boolean;
   /** spine record — fires on EVERY block (witness, cheap, real data) */
   emit: (a: BlockAlert) => void;
   /** call-to-action delivery — throttled */
@@ -118,19 +133,31 @@ export function startEventloopAlert(deps: EventloopAlertDeps): void {
   const bootDelayMs = deps.bootDelayMs ?? 10_000;
   const throttleMs = deps.throttleMs ?? 300_000;
   const now = deps.now ?? Date.now;
-   
-  const blockedFn = deps.blockedFn ?? require('blocked');
   let lastNudge = 0;
 
+  const fire = (ms: number, stack?: string[]): void => {
+    const a = formatBlockAlert(Math.round(ms), new Date(now()).toISOString(), getCurrentOp(), stack);
+    deps.emit(a);
+    if (now() - lastNudge >= throttleMs) {
+      lastNudge = now();
+      deps.nudge(a);
+    }
+  };
+
   const start = () => {
-    blockedFn((ms: number) => {
-      const a = formatBlockAlert(Math.round(ms), new Date(now()).toISOString(), getCurrentOp());
-      deps.emit(a);
-      if (now() - lastNudge >= throttleMs) {
-        lastNudge = now();
-        deps.nudge(a);
-      }
-    }, { threshold });
+    if (deps.captureStacks) {
+      // #3610 diagnostic mode — blocked-at names the call site. The library's
+      // callback is (time, stack, {type, resource}); adapt to (ms, stack).
+      const blockedAtFn = deps.blockedAtFn ?? ((cb: (ms: number, stack: string[]) => void, opts: { threshold: number }) => {
+
+        const blockedAt = require('blocked-at');
+        blockedAt((time: number, stack: string[]) => cb(time, stack), opts);
+      });
+      blockedAtFn((ms, stack) => fire(ms, stack), { threshold });
+      return;
+    }
+    const blockedFn = deps.blockedFn ?? require('blocked');
+    blockedFn((ms: number) => fire(ms), { threshold });
   };
 
   const t = setTimeout(start, bootDelayMs);
