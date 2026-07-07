@@ -171,6 +171,12 @@ $('#load').addEventListener('click',load);
 $('#q').addEventListener('input',render);
 $('#card').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
 $('#trace').addEventListener('keydown',e=>{if(e.key==='Enter')load();});
+// #3621 — the field you type in WINS. load() prefers trace over card, so a
+// leftover trace id silently hijacked every card query (Jeff typed card 3618
+// three times and kept getting another card's trace). Typing in one field
+// clears the other, so Load always queries what you just asked for.
+$('#card').addEventListener('input',()=>{ if($('#card').value.trim()) $('#trace').value=''; });
+$('#trace').addEventListener('input',()=>{ if($('#trace').value.trim()) $('#card').value=''; });
 // deep-link: ?card= or ?trace=
 const p=new URLSearchParams(location.search);
 if(p.get('card')){ $('#card').value=p.get('card'); load(); }
