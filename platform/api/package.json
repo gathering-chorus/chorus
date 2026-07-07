@@ -1,7 +1,7 @@
 {
   "name": "chorus-api",
   "version": "0.1.0",
-  "description": "HTTP wrapper around Chorus context index \u2014 file-backed reads, no cache",
+  "description": "HTTP wrapper around Chorus context index — file-backed reads, no cache",
   "main": "dist/server.js",
   "bin": {
     "chorus-api": "./bin/chorus-api"
@@ -20,6 +20,7 @@
     "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "^12.9.0",
     "blocked": "^1.3.0",
+    "blocked-at": "^1.2.0",
     "ejs": "^6.0.1",
     "express": "^4.21.0",
     "prom-client": "^15.1.3",

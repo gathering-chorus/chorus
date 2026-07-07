@@ -190,7 +190,9 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         "{}/chorus/platform/scripts/bridge-subscriber.js",
         std::env::var("HOME")
             .map(|h| format!("{}/CascadeProjects", h))
-            .unwrap_or_else(|_| repo_root().to_string())
+            // #3610: fallback was repo_root() + "/chorus/..." = double /chorus;
+            // repo_root() IS the checkout, so strip to its parent.
+            .unwrap_or_else(|_| repo_root().trim_end_matches("/chorus").to_string())
     );
     if std::path::Path::new(&subscriber_script).exists() {
         let already_running = std::process::Command::new("pgrep")
@@ -273,7 +275,9 @@ pub fn session_close_cmd(args: &[String]) -> ExitCode {
     }
 
     // Board audit
-    let board_ts = format!("{}/chorus/platform/scripts/cards", repo_root());
+    // #3610: same double-/chorus class as health.rs — this nonexistent path is
+    // why session-close board-audit/commit was a silent no-op (seen 2026-07-03).
+    let board_ts = format!("{}/platform/scripts/cards", repo_root());
     let _ = std::process::Command::new("bash")
         .args([&board_ts, "audit-close", role])
         .output().ok().and_then(|o| {

@@ -17,7 +17,7 @@ import fs from 'fs';
 // #3089: hoisted from the later import block so makeRequestOpMiddleware is
 // initialized before the `app.use(makeRequestOpMiddleware())` call below
 // (CJS compile evaluates imports in source order → TDZ if used before).
-import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware } from './eventloop-alert';
+import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware, firstAppFrame } from './eventloop-alert';
 
 const execAsync = promisify(exec);
 // #3197 — single root source. Replaces a wrong inline default
@@ -470,20 +470,24 @@ const boardCache = createBoardCache({
     const { stdout } = await execAsync(`bash ${boardTs} list 2>/dev/null`, envOpts);
     return stdout;
   },
+  // #3610 — op attribution scoped INSIDE refresh to the sync parse slice only.
+  // The old wrap here set currentOp before the async refresh and cleared it in
+  // .finally(), so the label spanned the whole cards-list shell-out await and
+  // ANY block by ANY code during an in-flight refresh was reported as
+  // op=boardCache — the mislabel that tainted the nightly trace evidence.
+  setOp: setCurrentOp,
 });
 
 const getBoardCards = (): CachedCard[] => boardCache.getCards();
 
-setCurrentOp('boardCache');
-void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
+void boardCache.refresh();
 // .unref() so this background refresh timer never keeps the process alive on
 // its own — in prod the HTTP listener holds the loop; in tests (which import
 // server.ts via startTestApp) an un-unref'd interval kept the jest worker alive
 // → "worker failed to exit gracefully" force-exit → the pipeline read a passing
 // suite as tests:fail. The recurring flake. The timer still fires every 60s.
 setInterval(() => {
-  setCurrentOp('boardCache');
-  void Promise.resolve(boardCache.refresh()).finally(() => setCurrentOp(null));
+  void boardCache.refresh();
 }, 60_000).unref();
 
 // --- LanceDB semantic search — OFF-PROCESS (#3382) ---
@@ -3466,11 +3470,17 @@ if (require.main === module) {
     emit: (a) =>
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         'domain=chorus',
-        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=in-process'], () => {}),
+        `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=in-process',
+        // #3610 — in stack-capture mode the first app frame is the measured call site
+        ...(a.stack ? [`blocked_at=${firstAppFrame(a.stack)}`] : [])], () => {}),
     // #3407 — route the event-loop-block ALERT to wren (chorus-api is her layer);
     // spine-emit role above stays the chorus-api emitter context.
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
     threshold: 3000,
+    // #3610 — bounded diagnostic window only (blocked-at async-hooks overhead is
+    // NOT prod-default; #3050's decision stands). Set CHORUS_EVENTLOOP_STACKS=1
+    // in the LaunchAgent env for a trace window, read the call sites, unset.
+    captureStacks: process.env.CHORUS_EVENTLOOP_STACKS === '1',
   });
 
   // Health cache refresh — runs every 30s under the live server only.

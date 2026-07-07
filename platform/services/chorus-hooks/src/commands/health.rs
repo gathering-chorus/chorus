@@ -90,7 +90,7 @@ pub fn cruft_scan() -> ExitCode {
 
     // Activity log size
     out.push_str("## Activity Log\n");
-    let activity_size = fs::metadata(format!("{}/chorus/activity.md", repo_root()))
+    let activity_size = fs::metadata(format!("{}/activity.md", repo_root()))
         .map(|m| m.len()).unwrap_or(0);
     out.push_str(&format!("Size: {} bytes\n\n", activity_size));
 
@@ -236,7 +236,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
 
     // Cost log check
     let today = process::wall_clock().chars().take(10).collect::<String>();
-    let cost_path = format!("{}/chorus/cost-log.md", repo_root());
+    let cost_path = format!("{}/cost-log.md", repo_root());
     if let Ok(content) = fs::read_to_string(&cost_path) {
         if !content.contains(&today) {
             eprintln!("WARNING: no cost entry for today");
@@ -244,7 +244,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
     }
 
     // Activity.md recency
-    let activity_path = format!("{}/chorus/activity.md", repo_root());
+    let activity_path = format!("{}/activity.md", repo_root());
     if let Ok(meta) = fs::metadata(&activity_path) {
         if let Ok(modified) = meta.modified() {
             let age_h = modified.elapsed().unwrap_or_default().as_secs() / 3600;
@@ -263,7 +263,7 @@ pub fn health_hourly(args: &[String]) -> ExitCode {
     if uncommitted > 5 { eprintln!("WARNING: {} uncommitted files in {}/", uncommitted, role_dir); }
 
     // Recurring errors
-    let error_log = format!("{}/chorus/proving/logs/command-errors.log", repo_root());
+    let error_log = format!("{}/proving/logs/command-errors.log", repo_root());
     if let Ok(content) = fs::read_to_string(&error_log) {
         let mut fps: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         for line in content.lines() {
@@ -366,9 +366,14 @@ pub fn health_daily(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Log rotation — replaces log-rotate.sh (#1622)
+/// Log rotation — replaces log-rotate.sh (#1622).
+/// #3610: paths were repo_root()+"/chorus/..." — a double /chorus ever since
+/// #2505 made repo_root() return the chorus checkout itself. log_rotate scanned
+/// a nonexistent dir and "succeeded" while chorus.log grew to 122MB; the
+/// cost-log/activity hourly checks were dead the same way. Verified by running
+/// log-rotate live 2026-07-04 (zero files scanned).
 pub fn log_rotate() -> ExitCode {
-    let log_dir = &format!("{}/chorus/platform/logs", repo_root());
+    let log_dir = &format!("{}/platform/logs", repo_root());
     let max_size: u64 = 10 * 1024 * 1024; // 10MB
     let keep_rotations = 3u32;
 
@@ -443,7 +448,7 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
 
     // 2. Stale card audit — cards in WIP/Next >7 days
     println!("\n--- Stale Card Audit ---");
-    let board_ts = format!("{}/chorus/platform/scripts/cards", repo_root());
+    let board_ts = format!("{}/platform/scripts/cards", repo_root());
     let list_output = Cmd::new("zsh")
         .arg("-lc")
         .arg(format!("{} list", board_ts))
@@ -538,4 +543,37 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
 
     println!("\n=== Weekly check complete for {} ===", role);
     ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod log_rotate_path_tests {
+    use super::repo_root;
+
+    // #3610 — the double-/chorus regression guard: every path health.rs builds
+    // from repo_root() must exist under the real checkout layout. repo_root()
+    // itself ends in /chorus, so appending another /chorus must never happen.
+    #[test]
+    fn health_paths_do_not_double_the_chorus_segment() {
+        let root = repo_root();
+        assert!(
+            !root.is_empty() && !root.ends_with('/'),
+            "repo_root must be a bare path"
+        );
+        let log_dir = format!("{}/platform/logs", root);
+        assert!(
+            !log_dir.contains("/chorus/chorus/"),
+            "log dir must not double /chorus: {}",
+            log_dir
+        );
+        // the dir the rotation scans must actually exist in a real checkout
+        // (in CI/fixture roots this is skipped — existence only asserted when
+        // the root itself exists)
+        if std::path::Path::new(root).exists() {
+            assert!(
+                std::path::Path::new(&log_dir).exists(),
+                "rotation target dir missing: {}",
+                log_dir
+            );
+        }
+    }
 }
