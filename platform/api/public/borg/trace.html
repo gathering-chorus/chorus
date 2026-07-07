@@ -54,6 +54,21 @@ const fullMsg = e => {
 };
 const NOISE = new Set(['tool_call','observer.digest','search.query.executed','nudge.requested','nudge.emitted','mcp.cards.set.invoked','mcp.cards.set.delivered','mcp.cards.add.invoked','mcp.cards.add.delivered']);
 let DATA = [];
+function verbOf(ev){
+  const rules=[['pull.','pull'],['worktree.','pull'],['fetch.','pull'],['gh.','pull'],['card.wip','pull'],
+    ['commit.','commit'],['staged','commit'],['committed','commit'],['rebase.','commit'],
+    ['push.','push'],['pushed','push'],
+    ['unit.build','build'],['build.','build'],['node-modules','build'],['rebuilt','build'],
+    ['deploy.','deploy'],['installed','deploy'],['verified','deploy'],['wrapper-','deploy'],['slot.','deploy'],['manifest.','deploy'],['binary.','deploy'],
+    ['env.','env'],
+    ['test.','test'],
+    ['demo.','demo'],['review.','review'],
+    ['merge.','merge'],['merged','merge'],['content.verified','merge'],
+    ['accept.','accept'],['signal.','accept'],['card.done','accept'],
+    ['werk.','werk'],['card.','card'],['lock.','werk'],['api.','api'],['hop:','hop']];
+  for(const [pre,lab] of rules) if(ev.startsWith(pre)) return lab;
+  return 'other';
+}
 function wfLabel(trace, all){
   const names = all.filter(x=>x.trace===trace).map(x=>x.event);
   const rules = [['chorus_pull_card','pull'],['chorus_acp','acp'],['chorus_commit','commit'],['chorus_cards_done','done'],['demo.','demo'],['env.','env'],['build.','build'],['ac.ticked','card'],['card.item','card'],['card.pulled','card'],['card.blast','card'],['card.werk','card'],['card.quality','quality'],['card.branch','acp'],['search','search']];
@@ -72,7 +87,7 @@ function normalize(events){
     out.push({ts:e.ts,event:ev,role:e.role||'',trace:tr,full_trace:e.trace_id||'',msg,err:isErr(e),pl:e.payload||{},noise:NOISE.has(ev)});
   }
   out.sort((a,b)=> (a.ts<b.ts?-1:a.ts>b.ts?1:0)); // oldest -> newest
-  for(const x of out){ x.wf=wfLabel(x.trace,out); x.color=color(x.full_trace); }
+  for(const x of out){ x.wf=verbOf(x.event); x.color=color(x.full_trace); }
   return out;
 }
 async function load(){
@@ -106,12 +121,19 @@ async function load(){
     rows = j.events||[];
   }
   DATA = normalize(rows);
+  // #3621 — reflect what actually loaded; a leftover value in the other input
+  // was masquerading as context (card said 3618 while the trace was another
+  // card's run). The un-used input clears; the summary names the source.
+  if(trace){ $('#card').value=''; } else if(card){ $('#trace').value=''; }
+  const roles=[...new Set(DATA.map(x=>x.role).filter(Boolean))].join(',');
+  const cards=[...new Set(DATA.map(x=>String((x.pl&&x.pl.card_id)||x.card_id||'')).filter(v=>v&&v!=='undefined'))].join(',');
+  window.__loaded = trace ? `trace ${trace}${cards?' · card #'+cards:''}${roles?' · roles: '+roles:''}` : `card #${card}${roles?' · roles: '+roles:''}`;
   // workflow filter chips
   const wfs=[...new Set(DATA.filter(x=>!x.noise).map(x=>x.wf))].sort();
   $('#filters').innerHTML = wfs.map(w=>`<label class="chip-f"><input type="checkbox" value="${w}" checked> ${w}</label>`).join(' ');
   $('#filters').querySelectorAll('input').forEach(c=>c.addEventListener('change',render));
   const traces=new Set(DATA.map(x=>x.trace)), singletons=[...traces].filter(t=>DATA.filter(x=>x.trace===t).length===1).length, errs=DATA.filter(x=>x.err).length;
-  $('#sum').innerHTML=`<b>${DATA.length}</b> events · <b>${traces.size}</b> traces · <b>${errs}</b> errors · oldest→newest · click a row for full payload`;
+  $('#sum').innerHTML=`<span style='color:#5f6368'>loaded: ${window.__loaded||''}</span> · <b>${DATA.length}</b> events · <b>${traces.size}</b> traces · <b>${errs}</b> errors · oldest→newest · click a row for full payload`;
   // #3621 — APPEND, don't clobber: this line was wiping the degraded-fold
   // banner set above (Jeff saw 0 events with no explanation when Loki timed out).
   $('#banner').innerHTML += singletons>3 ? `<div class="anomaly">⚠ ${singletons} of ${traces.size} traces are single-event — likely a trace-generation anomaly (see #3121). Rendered truthfully, not coalesced.</div>` : '';
