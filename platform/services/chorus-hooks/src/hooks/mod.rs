@@ -44,3 +44,4 @@ pub mod nudge_poll;
 pub mod nudge_drain; // #3218 — reliable FIFO drain off messages.db (PreToolUse + Stop)
 pub mod canonical_write_guard;
 pub mod card_add_probe;
+pub mod memory_pressure_guard; // #3625 — refuse Task/Agent fanout under memory pressure

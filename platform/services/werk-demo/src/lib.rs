@@ -1612,7 +1612,149 @@ pub fn ops_ctx(base: &str, gate: &str, health: &str) -> String {
     )
 }
 
+/// #3625 AC2 — memory floor before every headless-claude spawn. Born from the
+/// 2026-07-07 Library OOM: swap went 4.7→20GB in 15 minutes while gate claudes,
+/// an Explore fanout, and werk env-up overlapped on the 16GB box; Jeff hard
+/// powered off. Each gate/review below adds a 0.5–2GB process — spawning into
+/// an already-spiraling box is what turns pressure into a seizure.
+///
+/// Parse `sysctl vm.swapusage` "used" into bytes. Handles M/G/K suffixes.
+pub fn parse_swap_used_bytes(sysctl_out: &str) -> Option<u64> {
+    let rest = sysctl_out.split("used =").nth(1)?;
+    let tok = rest.split_whitespace().next()?;
+    let (num, unit) = tok.split_at(tok.len().saturating_sub(1));
+    let val: f64 = num.parse().ok()?;
+    let mult = match unit {
+        "K" => 1024.0,
+        "M" => 1024.0 * 1024.0,
+        "G" => 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((val * mult) as u64)
+}
+
+/// Parse `memory_pressure -Q` "System-wide memory free percentage: NN%".
+pub fn parse_free_pct(out: &str) -> Option<u8> {
+    let rest = out.split("free percentage:").nth(1)?;
+    rest.trim().trim_end_matches('%').split('%').next()?.trim().parse().ok()
+}
+
+/// true = proceed. A metric that can't be measured never blocks (hosted CI,
+/// non-macOS); a measurable metric past its floor always does.
+pub fn memory_floor_verdict(
+    swap_used: Option<u64>,
+    free_pct: Option<u8>,
+    swap_floor: u64,
+    free_floor: u8,
+) -> bool {
+    if let Some(swap) = swap_used {
+        if swap > swap_floor {
+            return false;
+        }
+    }
+    if let Some(free) = free_pct {
+        if free < free_floor {
+            return false;
+        }
+    }
+    true
+}
+
+/// Testable wait core: pull samples until one clears the floor or max_checks
+/// is spent. Returns (cleared, checks_consumed). The caller owns the sleeping.
+pub fn wait_for_floor_core(
+    samples: impl Iterator<Item = (Option<u64>, Option<u8>)>,
+    swap_floor: u64,
+    free_floor: u8,
+    max_checks: u32,
+) -> (bool, u32) {
+    let mut checks = 0;
+    for (swap, free) in samples {
+        checks += 1;
+        if memory_floor_verdict(swap, free, swap_floor, free_floor) {
+            return (true, checks);
+        }
+        if checks >= max_checks {
+            return (false, checks);
+        }
+    }
+    (false, checks)
+}
+
+fn sample_memory() -> (Option<u64>, Option<u8>) {
+    let swap = Command::new("sysctl")
+        .arg("vm.swapusage")
+        .output()
+        .ok()
+        .and_then(|o| parse_swap_used_bytes(&String::from_utf8_lossy(&o.stdout)));
+    let free = Command::new("memory_pressure")
+        .arg("-Q")
+        .output()
+        .ok()
+        .and_then(|o| parse_free_pct(&String::from_utf8_lossy(&o.stdout)));
+    (swap, free)
+}
+
+/// Block until the box has headroom for one more headless claude, bounded.
+/// Floors/wait are env-tunable (CHORUS_MEM_SWAP_FLOOR_GB, default 8 — same
+/// threshold as the LibrarySwapPressure alert; CHORUS_MEM_FREE_FLOOR_PCT,
+/// default 10; CHORUS_MEM_WAIT_SECS, default 300). CHORUS_MEM_FLOOR_DISABLE
+/// skips entirely. Returns false when pressure never cleared — the caller
+/// records a visible refusal, never spawns anyway.
+fn wait_for_memory_floor(home: &Path, role: &str, card: u64, label: &str, round: &str) -> bool {
+    if env::var("CHORUS_MEM_FLOOR_DISABLE").is_ok() {
+        return true;
+    }
+    let swap_floor = env::var("CHORUS_MEM_SWAP_FLOOR_GB")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(8)
+        * 1024 * 1024 * 1024;
+    let free_floor: u8 = env::var("CHORUS_MEM_FREE_FLOOR_PCT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10);
+    let wait_secs: u64 = env::var("CHORUS_MEM_WAIT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(300);
+    const POLL_SECS: u64 = 15;
+    let max_checks = (wait_secs / POLL_SECS).max(1) as u32;
+
+    let mut deferred = false;
+    let mut checks = 0u32;
+    loop {
+        let (swap, free) = sample_memory();
+        checks += 1;
+        if memory_floor_verdict(swap, free, swap_floor, free_floor) {
+            if deferred {
+                let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+                jsonl(home, role, card, &trace, "demo.memory.cleared",
+                      &format!(",\"label\":\"{}\",\"round\":\"{}\",\"checks\":{}", label, round, checks));
+            }
+            return true;
+        }
+        if !deferred {
+            deferred = true;
+            let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+            jsonl(home, role, card, &trace, "demo.memory.deferred",
+                  &format!(",\"label\":\"{}\",\"round\":\"{}\",\"swap_bytes\":{},\"free_pct\":{}",
+                           label, round, swap.unwrap_or(0), free.unwrap_or(0)));
+            emit_spine(home, "demo.memory.deferred", role, card, &trace);
+        }
+        if checks >= max_checks {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(POLL_SECS));
+    }
+}
+
 fn run_one_gate(home: &Path, role: &str, card: u64, gate: &str, round: &str) {
+    if !wait_for_memory_floor(home, role, card, gate, round) {
+        record_gate(home, role, card, gate, "error",
+                    "memory-pressure: swap/free floor not met after bounded wait — gate spawn refused, not piled onto a spiraling box (#3625)", round);
+        return;
+    }
     let skill = home.join(format!("skills/gate-{}/SKILL.md", gate));
     let skill_md = match fs::read_to_string(&skill) {
         Ok(s) => s,
@@ -1773,6 +1915,12 @@ pub fn review_system_prompt(peer: &str, identity: &str) -> String {
 /// becomes a deterministic in-process GATE, not an awaited live-session reply (the
 /// step-5 fix: spawn-and-record replaces nudge-and-wait, which had no reliable writer).
 fn run_one_review(home: &Path, role: &str, card: u64, peer: &str, round: &str) {
+    // #3625 AC2 — same memory floor as gates: a review is one more headless claude.
+    if !wait_for_memory_floor(home, role, card, peer, round) {
+        record_gather_replied(home, role, card, peer, "error",
+            "memory-pressure: swap/free floor not met after bounded wait — review spawn refused (#3625)");
+        return;
+    }
     let _ = round; // verdict round/patch are stamped by record_gather_replied (current_round/current_patch_id)
     let peer_md = home.join(format!("roles/{}/CLAUDE.md", peer));
     let identity = match fs::read_to_string(&peer_md) {

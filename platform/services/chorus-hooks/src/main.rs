@@ -307,6 +307,17 @@ async fn pre_tool_use_inner(
         // else: this IS the reply — allow it through; sending it clears the debt.
     }
 
+    // #3625 AC2 — memory-pressure guard on subagent spawns. Refuses Task/Agent
+    // fanouts while the box is past the swap/free floor (2026-07-07 OOM: 4
+    // parallel Explore agents piled onto gate claudes + env-up → hard power-off).
+    if matches!(tool.as_str(), "Task" | "Agent") {
+        _last_module = "memory_pressure_guard".into();
+        let r = hooks::memory_pressure_guard::check(input).await;
+        if r.stderr.is_some() {
+            return (_last_module.clone(), r);
+        }
+    }
+
     match tool.as_str() {
         "Bash" => {
             // sparql guard

@@ -2125,6 +2125,57 @@
         "role": "Acting role"
       }
     },
+    "test.started": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 `started` phase (test.started). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "test.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 `completed` phase (test.completed). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "test.failed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 `failed` phase (test.failed). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
+      }
+    },
+    "demo.memory.deferred": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer: a gate/review spawn hit the memory floor (#3625 \u2014 swap/free past threshold, the 2026-07-07 OOM signature) and is waiting for pressure to drain before spawning its headless claude.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "label": "Gate or peer whose spawn deferred",
+        "swap_bytes": "Swap used at defer time (bytes)",
+        "free_pct": "System-wide free memory percent at defer time"
+      }
+    },
+    "demo.memory.cleared": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `demo` sequencer: memory pressure drained within the bounded wait; the deferred gate/review spawn proceeded (#3625).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "label": "Gate or peer whose spawn resumed",
+        "checks": "Poll cycles consumed before clearing"
+      }
+    },
     "demo.reviews.running": {
       "vertebra": "proving",
       "source": "werk",
