@@ -1,0 +1,266 @@
+﻿# ============================================================================
+# #3618 — The security family, modeled completely, once.
+# DRAFT for Jeff's review — nothing here deploys until reviewed (AC2) and the
+# door (#3609) can carry the batch.
+#
+# What this file does, in one pass (then the model FREEZES for the program):
+#   1. chorus:security — the domain node, properly authored (#3466 template).
+#      RENAMES chorus:security-trust → chorus:security. Migration is DEL/INS
+#      through the door: 44 live triples (borgProduct hasDomain edge + 8
+#      domains' consumes edges + the node's own statements), 2 authored TTLs,
+#      1 script (chorus-model-deploy.sh). Same pattern as #3603.
+#   2. chorus:identity — child domain of security (Jeff 2026-07-04: identity
+#      is a child, per the "complex enough to force a reusable service" test).
+#   3. chorus:Principal — the missing load-bearing class: the thing that
+#      authenticates, holds credentials, and ACTS AS a role. Role stays in
+#      the roles domain (Wren); the holdsRole edge is the agreed boundary.
+#   4. chorus:APISurface + securedBy/requiresScope — so securing a surface is
+#      a model edit the generator projects (#3414 seam, extended).
+#   5. Instances for the FIRST secured class (#3618 AC4): the discover/index
+#      system-writer endpoints on chorus-api.
+#   6. SHACL shapes for every class that takes instances — the DAL floor.
+#
+# Existing vocab RE-HOMED (not rewritten): Credential/Permission/SecurityProbe/
+# AuthBoundary + their #2659 properties stay as-is in chorus.ttl; this file
+# adds their definesVocabulary edges, shapes, and the domain structure above.
+# ============================================================================
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+
+# ----------------------------------------------------------------------------
+# 1. THE DOMAIN — chorus:security (renamed from chorus:security-trust, #3587)
+# ----------------------------------------------------------------------------
+
+chorus:security a owl:Class, chorus:Domain ;
+    rdfs:label "security" ;
+    chorus:comment "Who may touch what, provably. Authentication (identity), authorization (permissions), secrets custody, TCC/platform trust, and the live security posture — modeled, generated, attested." ;
+    chorus:purpose "Protect Jeff's data from agent intrusion and agent error: every write surface carries a door, every door checks an unforgeable identity, every check is attestable from the graph." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStep chorus:Operating ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
+    chorus:instancesGraph "urn:chorus:domains:security" ;
+    chorus:definesVocabulary chorus:Credential, chorus:Permission,
+        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate .
+
+chorus:hasDomain-security-stmt a rdf:Statement ;
+    rdfs:comment "Migration note (#3618): borgProduct chorus:hasDomain repoints security-trust → security in the same DEL/INS batch; the 8 consumes edges (code, gates, toolchain, athena, convergence, domains, integrations, knowledge) repoint identically. Script: platform/scripts/security-3618-migrate.sh (generate|apply, door-only)." .
+
+# ----------------------------------------------------------------------------
+# 2. THE CHILD — chorus:identity (authentication: who is this, provably)
+# ----------------------------------------------------------------------------
+
+chorus:identity a owl:Class, chorus:Domain ;
+    rdfs:label "identity" ;
+    chorus:comment "The authentication child of security: principals, the credentials they own, the roles they act as, and the key registry that verifies them. One reusable service (mint/verify/revoke) — every door calls the same one." ;
+    chorus:purpose "Make 'who did this' cryptographically true: retire self-declared DEPLOY_ROLE attribution; an agent cannot impersonate a role or Jeff." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:partOf chorus:security ;
+    chorus:atStep chorus:Operating ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
+    chorus:instancesGraph "urn:chorus:domains:security" ;
+    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry .
+
+# ----------------------------------------------------------------------------
+# 3. IDENTITY VOCABULARY — Principal, KeyRegistryEntry, the joining edges
+# ----------------------------------------------------------------------------
+
+chorus:Principal a owl:Class ;
+    rdfs:label "Principal" ;
+    rdfs:comment "An authenticatable actor: an agent session, a service, a herald job, or Jeff. The thing a token asserts. A Principal HOLDS roles (roles domain) and OWNS credentials — a role is something an identity holds, not something it is. The nudge-registry poisoning (#3608) was the collapse of this distinction. #3618." .
+
+chorus:KeyRegistryEntry a owl:Class ;
+    rdfs:label "Key Registry Entry" ;
+    rdfs:comment "The model-resolved successor to the phase-1 static webId list in auth.rs (#3573): maps a Principal's webId to its signing key id and permitted scopes. Key VALUES stay in env/keychain (chorus:source names the surface); the registry holds structure only. #3618 models it; #3613 makes owl-api resolve from it." .
+
+chorus:holdsRole a owl:ObjectProperty ;
+    rdfs:label "holds role" ;
+    rdfs:comment "The join between identity (security domain, Silas) and Role (roles domain, Wren) — THE shared boundary, designed jointly. A Principal may hold many roles over time; verification of the claim lives at this edge. #3618." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range chorus:Role .
+
+chorus:ownsCredential a owl:ObjectProperty ;
+    rdfs:label "owns credential" ;
+    rdfs:comment "Links a Principal to the credentials minted for it. Revoking the Principal revokes the chain. #3618." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range chorus:Credential .
+
+chorus:webId a owl:DatatypeProperty ;
+    rdfs:label "web id" ;
+    rdfs:comment "The Principal's stable identifier as the door sees it (the token's webId claim). #3618." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range xsd:string .
+
+chorus:keyId a owl:DatatypeProperty ;
+    rdfs:label "key id" ;
+    rdfs:comment "Which signing key verifies this registry entry — an env-var NAME (e.g. CHORUS_SERVICE_TOKEN_SECRET), never a value. #3618." ;
+    rdfs:domain chorus:KeyRegistryEntry ;
+    rdfs:range xsd:string .
+
+chorus:permittedScope a owl:DatatypeProperty ;
+    rdfs:label "permitted scope" ;
+    rdfs:comment "A graph URI this registry entry may be granted in a token scope claim. Repeatable. The door refuses scopes outside this set. #3618." ;
+    rdfs:domain chorus:KeyRegistryEntry ;
+    rdfs:range xsd:string .
+
+chorus:forPrincipal a owl:ObjectProperty ;
+    rdfs:label "for principal" ;
+    rdfs:comment "The Principal a KeyRegistryEntry authenticates. #3618." ;
+    rdfs:domain chorus:KeyRegistryEntry ;
+    rdfs:range chorus:Principal .
+
+# ----------------------------------------------------------------------------
+# 4. SECURED SURFACES — APISurface + the annotation the generator projects
+# ----------------------------------------------------------------------------
+
+chorus:APISurface a owl:Class ;
+    rdfs:label "API Surface" ;
+    rdfs:comment "A mutation endpoint (or class of them) on a served API. Modeling a surface is the precondition for securing it — you cannot annotate what the model does not know exists (chorus-api: 64 mutation endpoints counted 2026-07-04, 5 previously modeled). #3618." .
+
+chorus:Gate a owl:Class ;
+    rdfs:label "Gate" ;
+    rdfs:comment "A runtime check that guards an API surface: Bearer required, scope validated, decision emitted (attempt/refuse/allow). Distinct from AuthBoundary — an AuthBoundary is a trust edge BETWEEN two domains; a Gate sits ON a surface. #3618." .
+
+chorus:securedBy a owl:ObjectProperty ;
+    rdfs:label "secured by" ;
+    rdfs:comment "The Gate that guards this surface. Presence of this edge IS the secured-surface annotation the generator projects into the envelope (extends the #3414 seam beyond owl-api's own routes). No edge = surface not yet gated (mixed-state by construction, visible in the graph). #3618." ;
+    rdfs:domain chorus:APISurface ;
+    rdfs:range chorus:Gate .
+
+chorus:requiresScope a owl:DatatypeProperty ;
+    rdfs:label "requires scope" ;
+    rdfs:comment "The graph/namespace scope a token must carry to pass this surface's gate. #3618." ;
+    rdfs:domain chorus:APISurface ;
+    rdfs:range xsd:string .
+
+chorus:httpMethod a owl:DatatypeProperty ;
+    rdfs:label "http method" ;
+    rdfs:comment "The mutation verb this surface gates: POST | PUT | DELETE | PATCH. The envelope is mutation-only; reads stay open. #3618." ;
+    rdfs:domain chorus:APISurface ;
+    rdfs:range xsd:string .
+
+chorus:pathPrefix a owl:DatatypeProperty ;
+    rdfs:label "path prefix" ;
+    rdfs:comment "A request-path prefix this surface gates. REPEATABLE — a surface class can cover several concrete endpoints (e.g. reindex|index|embed). The emitter projects one envelope row per prefix. #3618." ;
+    rdfs:domain chorus:APISurface ;
+    rdfs:range xsd:string .
+
+chorus:servedBy a owl:ObjectProperty ;
+    rdfs:label "served by" ;
+    rdfs:comment "Which execution unit hosts this surface (the ServiceInstance side of the 2026-07-03 Service/instanceOf discussion — e.g. com.chorus.api). #3618." ;
+    rdfs:domain chorus:APISurface ;
+    rdfs:range chorus:Service .
+
+# ----------------------------------------------------------------------------
+# 5. FIRST SECURED CLASS — instances (discover/index system writers, AC4)
+#    Consumers: crawler-index, reindex-worker, embed-worker LaunchAgents.
+# ----------------------------------------------------------------------------
+
+# FIRST FLIP = zero-caller surfaces only (verified live 2026-07-07 via Loki, 7d):
+#   /api/chorus/reindex 0, /api/athena/discover-pages 0, /api/athena/discover-endpoints 0.
+# The busy siblings (index 13k/wk, discover-code 248, discover-tests 199, embed 2)
+# have live callers that must be credentialed BEFORE their gate flips — deferred
+# to #3619 (deploy-before-require, one caller at a time). This keeps #3618's flip
+# a real live proof with ZERO breakage.
+chorus:surface-discover-writes a chorus:APISurface ;
+    rdfs:label "chorus-api discover writes (zero-caller)" ;
+    rdfs:comment "discover-pages + discover-endpoints — zero live callers (Loki 7d). First flip. #3618." ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-pages", "/api/athena/discover-endpoints" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-index-writes a chorus:APISurface ;
+    rdfs:label "chorus-api reindex write (zero-caller)" ;
+    rdfs:comment "reindex only — zero live callers (Loki 7d). index (13k/wk) + embed deferred to #3619. First flip. #3618." ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/reindex" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .
+
+chorus:gate-chorus-api-mutations a chorus:Gate ;
+    rdfs:label "chorus-api mutation gate" ;
+    rdfs:comment "The generated envelope on chorus-api mutation routes: Bearer required, scope checked, attempt/refuse/allow spine events. Bypass env vars: none (by design). #3618." ;
+    chorus:ownerRole chorus:role-silas .
+
+# Principals for the first class's consumers (creds deployed BEFORE the flip):
+chorus:principal-crawler-index a chorus:Principal ;
+    rdfs:label "crawler-index worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/crawler-index/profile/card.ttl#me" .
+chorus:principal-reindex-worker a chorus:Principal ;
+    rdfs:label "reindex worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me" .
+chorus:principal-embed-worker a chorus:Principal ;
+    rdfs:label "embed worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/embed-worker/profile/card.ttl#me" .
+
+# ----------------------------------------------------------------------------
+# 6. SHACL FLOORS — the DAL refuses instances below these
+#
+# NAMED property shapes throughout, no blank nodes and no sh:in lists (RDF
+# collections are blank-node chains): the door's typed-slot batch carries only
+# IRIs and literals, and a blank node is unaddressable for later migration.
+# Enums are expressed as sh:pattern — same floor, slot-safe. Found live when
+# the first apply refused a 21-blank-node batch (2026-07-04).
+# ----------------------------------------------------------------------------
+
+chorus:PrincipalShape a sh:NodeShape ;
+    sh:targetClass chorus:Principal ;
+    sh:property chorus:PrincipalShape-webId ;
+    sh:property chorus:PrincipalShape-label .
+chorus:PrincipalShape-webId a sh:PropertyShape ;
+    sh:path chorus:webId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:PrincipalShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+
+chorus:KeyRegistryEntryShape a sh:NodeShape ;
+    sh:targetClass chorus:KeyRegistryEntry ;
+    sh:property chorus:KeyRegistryEntryShape-forPrincipal ;
+    sh:property chorus:KeyRegistryEntryShape-keyId ;
+    sh:property chorus:KeyRegistryEntryShape-permittedScope .
+chorus:KeyRegistryEntryShape-forPrincipal a sh:PropertyShape ;
+    sh:path chorus:forPrincipal ; sh:minCount 1 ; sh:class chorus:Principal .
+chorus:KeyRegistryEntryShape-keyId a sh:PropertyShape ;
+    sh:path chorus:keyId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^[A-Z0-9_]+$" ;
+    sh:message "keyId is an env-var NAME (write_scrubber class: never a value)" .
+chorus:KeyRegistryEntryShape-permittedScope a sh:PropertyShape ;
+    sh:path chorus:permittedScope ; sh:minCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^urn:chorus:" ;
+    sh:message "scopes stay inside the chorus realm" .
+
+chorus:APISurfaceShape a sh:NodeShape ;
+    sh:targetClass chorus:APISurface ;
+    sh:property chorus:APISurfaceShape-label ;
+    sh:property chorus:APISurfaceShape-servedBy .
+    # securedBy deliberately NOT minCount 1: unsecured surfaces must be
+    # REPRESENTABLE so the #3619 rollout can query its own remaining work.
+chorus:APISurfaceShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:APISurfaceShape-servedBy a sh:PropertyShape ;
+    sh:path chorus:servedBy ; sh:minCount 1 .
+
+chorus:GateShape a sh:NodeShape ;
+    sh:targetClass chorus:Gate ;
+    sh:property chorus:GateShape-label ;
+    sh:property chorus:GateShape-ownerRole .
+chorus:GateShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:GateShape-ownerRole a sh:PropertyShape ;
+    sh:path chorus:ownerRole ; sh:minCount 1 .
+
+# NOTE: Credential/Permission/SecurityProbe/AuthBoundary already have LIVE
+# NodeShapes in chorus.ttl (6/7 triples each, loaded pre-door). This card is
+# ADDITIVE — it does NOT redefine them (that would collide + drag their
+# blank-node property shapes through the door, which the typed-slot batch
+# refuses). Converting those four to named property shapes is its own small
+# migration, tracked as a #3618 follow-on note, not folded in here.

@@ -39,7 +39,7 @@ else
     "$CHORUS_ROOT/roles/kade/ontology/werk-domains.ttl"
     # #3593 — the 34 V2 domains were LIVE-ONLY (materialized into the graph, not in any
     # deployed file), so a default deploy that made one a staging-subject wiped its decl
-    # (the #3587 security-trust incident). Bring their sources INTO the MODEL_SET so a
+    # (the #3587 security incident). Bring their sources INTO the MODEL_SET so a
     # default deploy re-asserts them instead of wiping — AND so the retire-subject step
     # below has the FULL domain set in staging (its safety precondition).
     "$CHORUS_ROOT/roles/wren/ontology/domains-wren-silas.ttl"

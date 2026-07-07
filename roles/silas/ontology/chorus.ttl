@@ -1018,8 +1018,11 @@ chorus:spine-service a chorus:SubDomain ;
 
 # #3587 — chorus:security-domain RETIRED (first V1→V2 retirement). Consolidated into
 # chorus:security-trust (the bare-name V2 canonical from #3581; superset vocab = these 4
-# classes + TrustMetric). The 29 inbound consumes + borgProduct hasDomain were repointed to
-# security-trust. #3584's GLOBAL fixes (chorus:exposure + chorus:repoTarget declarations,
+# classes + TrustMetric). The 29 inbound consumes + borgProduct hasDomain were repointed.
+# #3618 — chorus:security-trust RENAMED → chorus:security (second rename; "trust" carried
+# no meaning the definition didn't). All refs in this file now use chorus:security; the
+# live-graph migration (44 triples) rides security-3618-migrate.sh through the door.
+# #3584's GLOBAL fixes (chorus:exposure + chorus:repoTarget declarations,
 # chorus:ownedBy on the 4 security class shapes) are NOT domain-specific and are retained below.
 
 chorus:time-domain a chorus:SubDomain ;
@@ -1251,7 +1254,7 @@ chorus:observability-domain chorus:hasDomain chorus:time-domain .
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties, chorus:security-trust .   # #3587: repointed from security-domain → security-trust (V2 canonical); security-trust also has partOf borgProduct
+chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
 # ^ chorus:Properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
@@ -1327,36 +1330,36 @@ chorus:infrastructure-domain chorus:consumes chorus:Properties .
 chorus:deploys-domain chorus:consumes chorus:Properties .
 chorus:logs-domain chorus:consumes chorus:Properties .
 
-chorus:code-domain chorus:consumes chorus:security-trust .
-chorus:gates-service chorus:consumes chorus:security-trust .
-chorus:toolchain-domain chorus:consumes chorus:security-trust .
-chorus:athena-domain chorus:consumes chorus:security-trust .
-chorus:convergence-domain chorus:consumes chorus:security-trust .
-chorus:domains-domain chorus:consumes chorus:security-trust .
-chorus:integrations-domain chorus:consumes chorus:security-trust .
-chorus:knowledge-domain chorus:consumes chorus:security-trust .
-chorus:services-domain chorus:consumes chorus:security-trust .
-chorus:cards-service chorus:consumes chorus:security-trust .
-chorus:alerts-monitors-domain chorus:consumes chorus:security-trust .
-chorus:chorus-domain chorus:consumes chorus:security-trust .
-chorus:deploys-domain chorus:consumes chorus:security-trust .
-chorus:infrastructure-domain chorus:consumes chorus:security-trust .
-chorus:logs-domain chorus:consumes chorus:security-trust .
-chorus:messages-domain chorus:consumes chorus:security-trust .
-chorus:observability-domain chorus:consumes chorus:security-trust .
-chorus:Properties chorus:consumes chorus:security-trust .
+chorus:code-domain chorus:consumes chorus:security .
+chorus:gates-service chorus:consumes chorus:security .
+chorus:toolchain-domain chorus:consumes chorus:security .
+chorus:athena-domain chorus:consumes chorus:security .
+chorus:convergence-domain chorus:consumes chorus:security .
+chorus:domains-domain chorus:consumes chorus:security .
+chorus:integrations-domain chorus:consumes chorus:security .
+chorus:knowledge-domain chorus:consumes chorus:security .
+chorus:services-domain chorus:consumes chorus:security .
+chorus:cards-service chorus:consumes chorus:security .
+chorus:alerts-monitors-domain chorus:consumes chorus:security .
+chorus:chorus-domain chorus:consumes chorus:security .
+chorus:deploys-domain chorus:consumes chorus:security .
+chorus:infrastructure-domain chorus:consumes chorus:security .
+chorus:logs-domain chorus:consumes chorus:security .
+chorus:messages-domain chorus:consumes chorus:security .
+chorus:observability-domain chorus:consumes chorus:security .
+chorus:Properties chorus:consumes chorus:security .
 # pulse-metrics-domain security edge removed
-chorus:loom-rcas chorus:consumes chorus:security-trust .
-chorus:streams-domain chorus:consumes chorus:security-trust .
-chorus:loom-analytics chorus:consumes chorus:security-trust .
-chorus:loom-decisions chorus:consumes chorus:security-trust .
-chorus:loom-metrics chorus:consumes chorus:security-trust .
-chorus:loom-policies chorus:consumes chorus:security-trust .
-chorus:loom-practices chorus:consumes chorus:security-trust .
-chorus:loom-principles chorus:consumes chorus:security-trust .
-chorus:skills-service chorus:consumes chorus:security-trust .
-chorus:spine-service chorus:consumes chorus:security-trust .
-chorus:roles-domain chorus:consumes chorus:security-trust .
+chorus:loom-rcas chorus:consumes chorus:security .
+chorus:streams-domain chorus:consumes chorus:security .
+chorus:loom-analytics chorus:consumes chorus:security .
+chorus:loom-decisions chorus:consumes chorus:security .
+chorus:loom-metrics chorus:consumes chorus:security .
+chorus:loom-policies chorus:consumes chorus:security .
+chorus:loom-practices chorus:consumes chorus:security .
+chorus:loom-principles chorus:consumes chorus:security .
+chorus:skills-service chorus:consumes chorus:security .
+chorus:spine-service chorus:consumes chorus:security .
+chorus:roles-domain chorus:consumes chorus:security .
 
 chorus:code-domain chorus:consumes chorus:time-domain .
 chorus:gates-service chorus:consumes chorus:time-domain .
@@ -1376,7 +1379,7 @@ chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
 chorus:observability-domain chorus:consumes chorus:time-domain .
 chorus:Properties chorus:consumes chorus:time-domain .
-chorus:security-trust chorus:consumes chorus:time-domain .
+chorus:security chorus:consumes chorus:time-domain .
 # pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
 chorus:streams-domain chorus:consumes chorus:time-domain .

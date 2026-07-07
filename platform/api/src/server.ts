@@ -44,6 +44,27 @@ app.use(express.json());
 // doesn't leak past the response.
 app.use(makeRequestOpMiddleware());
 
+// #3618 — the security envelope: gates model-declared mutation surfaces.
+// Mounted here (before route handlers) but DEPLOY-SAFE: enabled only when
+// CHORUS_SECURITY_ENVELOPE_ENABLE=1 (the flip step, after a surface's consumers
+// carry credentials). Off = pure pass-through. The surface table is loaded
+// async from the model below (after the SPARQL client exists) and swapped into
+// this mutable ref without re-mounting; empty until loaded = gates nothing.
+import { securityEnvelope, type SecuredSurface } from './security-envelope';
+import { projectSecuredSurfaces } from './security-surfaces-emit';
+let SECURED_SURFACES: SecuredSurface[] = [];
+app.use(securityEnvelope({
+  getSurfaces: () => SECURED_SURFACES,
+  secret: process.env.CHORUS_SERVICE_TOKEN_SECRET ?? '',
+  nowSecs: () => Math.floor(Date.now() / 1000),
+  enabled: process.env.CHORUS_SECURITY_ENVELOPE_ENABLE === '1',
+  emit: (event: string, fields: Record<string, string>) => {
+    const args = [event, 'silas'];
+    for (const [k, v] of Object.entries(fields)) args.push(`${k}=${v}`);
+    execFile(CHORUS_LOG, args, () => { /* fire-and-forget */ });
+  },
+}));
+
 // #2998 — MCP transport REMOVED from chorus-api. /mcp now served by the
 // chorus-mcp daemon on :3341 (separate LaunchAgent com.chorus.mcp). Decouples
 // MCP from chorus-api's deploy lifecycle so chorus-api redeploys no longer
@@ -1877,6 +1898,22 @@ const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: 
 const athenaSparqlQuery = _athena.query;
 const athenaSparqlUpdate = _athena.update;
 const athenaEnvelope = createEnvelopeBuilder({ graph: ATHENA_GRAPH, now: bostonNow });
+
+// #3618 — load the secured-surface table from the model at boot. Populates the
+// mutable ref the envelope middleware (mounted above) reads per-request. Fail
+// LOUD on error (spine event + stderr) but do NOT crash the hub: an empty table
+// gates nothing, so a transient Fuseki blip at boot degrades to open-and-flagged,
+// never to a dead chorus-api. A health probe can catch the flagged state.
+projectSecuredSurfaces({ sparql: (q: string) => athenaSparqlQuery(q) })
+  .then((table) => {
+    SECURED_SURFACES = table;
+    execFile(CHORUS_LOG, ['security.envelope.loaded', 'silas', `surfaces=${table.length}`], () => {});
+  })
+  .catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[security-envelope] surface-table load FAILED (gating nothing until reload): ${msg}\n`);
+    execFile(CHORUS_LOG, ['security.envelope.load_failed', 'silas', `error=${msg.slice(0, 120)}`], () => {});
+  });
 const loadSparql = createSparqlLoader({ fs, sparqlDir: SPARQL_DIR });
 
 // GET /api/athena/health — discovery endpoint, lists available queries
