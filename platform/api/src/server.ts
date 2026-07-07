@@ -3075,13 +3075,26 @@ app.get('/api/chorus/trace/:correlationId', async (req: Request, res: Response) 
   try {
     // #3621 — fold spine events by trace_id (Loki via logsForTrace) so the
     // viewer shows the werk run, not just HTTP hops (the #3609 {hops:[]} gap).
+    // Fold is OPT-IN (?events=1): the 7d Loki scan costs seconds, and the
+    // legacy hop-consumers (#2100/#2102/#2103 integration suites, hop tooling)
+    // need the instant hop-only path — their 5s budgets red-ed the first night
+    // the fold was unconditional (07-07: npm:api 11/1923). trace.html asks for it.
+    const wantFold = req.query.events === '1' || req.query.events === 'true';
     const r = await fetchTraceByCorrelation(req.params.correlationId, {
       db,
-      fetchSpineEvents: async (traceId) => {
-        const lr = await logsForTrace({ trace_id: traceId, time_window: '7d' }, painLokiDeps);
-        if (!lr.ok) throw new Error(`${lr.reason}: ${lr.detail ?? ''}`);
-        return lr.events as Array<Record<string, unknown>>;
-      },
+      ...(wantFold ? {
+        // Tiered window (#3621 07-07): the flat 7d scan TIMED OUT on live prod
+        // (loki-unreachable abort) — the viewer rendered 0 events for a trace
+        // with 433. Fresh traces (the common case) resolve in the fast 1d tier;
+        // only genuinely old traces pay the 7d scan.
+        fetchSpineEvents: async (traceId: string) => {
+          const fast = await logsForTrace({ trace_id: traceId, time_window: '1d' }, painLokiDeps);
+          if (fast.ok && fast.events.length > 0) return fast.events as Array<Record<string, unknown>>;
+          const wide = await logsForTrace({ trace_id: traceId, time_window: '7d' }, painLokiDeps);
+          if (!wide.ok) throw new Error(`${wide.reason}: ${wide.detail ?? ''}`);
+          return wide.events as Array<Record<string, unknown>>;
+        },
+      } : {}),
     });
     res.status(r.status).json(r.body);
   } finally { db.close(); }

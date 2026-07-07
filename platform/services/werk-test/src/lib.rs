@@ -318,7 +318,7 @@ pub fn completed_extras(
         ("duration_ms".to_string(), duration_ms.to_string()),
     ];
     if checks_failed > 0 {
-        v.push(("failureClass".to_string(), "test-red".to_string()));
+        v.push(("failureClass".to_string(), "change".to_string()));
     }
     if self_modifying {
         v.push(("advisory".to_string(), "true".to_string()));
