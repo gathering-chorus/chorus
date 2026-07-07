@@ -1,0 +1,43 @@
+# ============================================================================
+# #3619 Class A wave 2 — four more zero-caller mutation endpoints.
+# Verified 0 live callers (Loki 7d, 2026-07-07 15:55): chorus/rca,
+# chorus/spine-event (spine writes go through chorus-log CLI, not HTTP),
+# doc-catalog/link, and the icd provider-sections PUT that wave 1's
+# POST-only surface missed. Same securedBy gate as #3618.
+# NOT here: chorus/trace (26.5k/wk — busiest mutation endpoint, Class B),
+# doc-catalog/add (chorus-mcp tool caller, credential first).
+# ============================================================================
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-rca-write a chorus:APISurface ;
+    rdfs:label "chorus-api rca write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/rca" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-spine-event-write a chorus:APISurface ;
+    rdfs:label "chorus-api spine-event write (zero HTTP callers; spine flows via chorus-log CLI)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/spine-event" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-doc-catalog-link-write a chorus:APISurface ;
+    rdfs:label "chorus-api doc-catalog link write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/doc-catalog/link" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-icd-put-writes a chorus:APISurface ;
+    rdfs:label "chorus-api ICD provider-sections PUT (zero-caller; wave-1 surface was POST-only)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/icd/domains/" ;
+    chorus:requiresScope "urn:chorus:icd" ;
+    chorus:servedBy chorus:services .
