@@ -352,3 +352,22 @@ describe("time_window '7d' (#3621 — a card's trace outlives 1d)", () => {
     expect(spanNs).toBe(BigInt(7 * 86400) * 1000000000n);
   });
 });
+
+describe('logsForTrace stream selector (#3621 — no wildcard scans)', () => {
+  it('selects the named spine-carrying jobs, not {job=~".+"}', async () => {
+    let seenUrl = '';
+    const deps: LogsQueryDeps = {
+      ...baseDeps,
+      fetchImpl: (async (url: string) => {
+        seenUrl = decodeURIComponent(String(url));
+        return { ok: true, status: 200, json: async () => ({ data: { result: [] } }) } as unknown as Response;
+      }) as LogsQueryDeps['fetchImpl'],
+    };
+    await logsForTrace({ trace_id: 't-sel', time_window: '1d' }, deps);
+    expect(seenUrl).not.toContain('job=~".+"');
+    expect(seenUrl).toContain('werk-verbs');
+    expect(seenUrl).toContain('platform-chorus');
+    expect(seenUrl).toContain('chorus-api');
+    expect(seenUrl).toContain('daemon-logs');
+  });
+});

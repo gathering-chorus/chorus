@@ -161,6 +161,13 @@ export async function logsForCard(
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
 }
 
+// #3621 — the jobs that actually carry trace_id-bearing spine events, measured
+// live 07-07 (wildcard @7d: 12.2s → aborts under load; this union: 4.5s, 96% of
+// lines). permission-prompts / command-errors are telemetry echoes of shell
+// commands (the #2820 spawn-sites lesson: records of commands, not events) and
+// are deliberately excluded. Extend HERE when a new spine writer appears.
+const TRACE_JOBS = 'werk-verbs|platform-chorus|platform-logs|chorus-api|daemon-logs|chorus-hooks|chorus-mcp';
+
 export async function logsForTrace(
   args: { trace_id: string; time_window?: TimeWindow },
   deps: LogsQueryDeps,
@@ -171,7 +178,9 @@ export async function logsForTrace(
   // that literally quote the UUID get pulled in, distorting the per-trace
   // count. The envelope contract in #2839 places trace_id as a top-level
   // field; this query reads against that shape.
-  const query = `{job=~".+"} |~ "\\"trace_id\\":\\"${args.trace_id}\\""`;
+  // Field-anchored (#2860 contract — bare substring over-matched nudge bodies
+  // quoting the UUID: Wren's 23-vs-13 leak) + narrowed stream selector (#3621).
+  const query = `{job=~"${TRACE_JOBS}"} |~ "\\"trace_id\\":\\"${args.trace_id}\\""`;
   const range = resolveTimeRange(deps, undefined, undefined, window);
   if ('error' in range) return { ok: false, reason: TIME_RANGE_INVALID, detail: range.error };
   return executeLokiQuery(query, range.startNs, range.endNs, 1000, deps);
