@@ -322,7 +322,7 @@ fn completed_extras_names_the_failure_class_on_block() {
     let got = werk_test::completed_extras(&GateOutcome::Block, 1, 3, 2, 900, false);
     assert!(got.contains(&("verdict".to_string(), "BLOCK".to_string())));
     assert!(got.contains(&("checks_failed".to_string(), "2".to_string())));
-    assert!(got.contains(&("failureClass".to_string(), "test-red".to_string())));
+    assert!(got.contains(&("failureClass".to_string(), "change".to_string()))); // closed {change,tooling} DORA enum
 }
 
 #[test]

@@ -83,7 +83,7 @@ async function load(){
   // #3621 — the FOLDED viewer first: /api/chorus/trace/:id merges hop records +
   // spine events into one timeline (the {hops:[]} blindness fix). /logs/trace
   // stays as fallback so the page works against an older api.
-  const urls = trace ? [`/api/chorus/trace/${encodeURIComponent(trace)}`, `/api/chorus/logs/trace/${encodeURIComponent(trace)}`]
+  const urls = trace ? [`/api/chorus/trace/${encodeURIComponent(trace)}?events=1`, `/api/chorus/logs/trace/${encodeURIComponent(trace)}`]
              : card ? [`/api/chorus/logs/card/${encodeURIComponent(card)}`, `/api/chorus/pain/card/${encodeURIComponent(card)}`]
              : null;
   if(!urls){ $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Enter a card # or trace.</div>'; return; }
