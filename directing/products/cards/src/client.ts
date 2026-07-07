@@ -7,6 +7,7 @@ import * as https from 'http';
 import { execSync } from 'child_process';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
 import { LABELS, resolveBucket } from './config';
+import { fileTaskCache, TaskCache } from './task-cache';
 
 const VIKUNJA_DB = process.env.VIKUNJA_DB || `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/vikunja/db/vikunja.db`;
 
@@ -119,17 +120,25 @@ export class BoardClient {
     return this.taskMap;
   }
 
-  /** Clear cached task map (call after mutations) */
+  /** Clear cached task map + the shared disk sweep cache (call after mutations) */
   clearCache(): void {
     this.taskMap = null;
+    this.sweepCache().invalidate();
+  }
+
+  // #3625 AC3 — lazy so env overrides (tests) and projectId are read at use time.
+  private sweepCache(): TaskCache {
+    return fileTaskCache(this.board.projectId);
   }
 
   async resolveIndex(index: number): Promise<number> {
     const map = await this.buildTaskMap();
     const id = map.get(index);
     if (id !== undefined) return id;
-    // Bucket query misses old Done tasks — fall back to full project scan
-    const allTasks = await this.fetchAllTasks();
+    // Bucket query misses old Done tasks — fall back to full project scan.
+    // fresh=true: the index may have been created by another process within
+    // the cache TTL; this scan must not trust the disk cache (#3625).
+    const allTasks = await this.fetchAllTasks(true);
     for (const task of allTasks) {
       if (!map.has(task.index)) map.set(task.index, task.id);
     }
@@ -153,8 +162,17 @@ export class BoardClient {
     return this.api<VikunjaTask>('GET', `/tasks/${apiId}`);
   }
 
-  /** Fetch all tasks via paginated project endpoint (no per-bucket cap) */
-  async fetchAllTasks(): Promise<VikunjaTask[]> {
+  /** Fetch all tasks via paginated project endpoint (no per-bucket cap).
+   *  #3625 AC3 — served from a short-TTL disk cache shared across concurrent
+   *  CLI invocations; the 73-page sweep runs once per TTL window, not once
+   *  per invocation. Pass fresh=true to force a live sweep (resolveIndex's
+   *  fallback must see tasks added by OTHER processes inside the TTL). */
+  async fetchAllTasks(fresh = false): Promise<VikunjaTask[]> {
+    const cache = this.sweepCache();
+    if (!fresh) {
+      const cached = cache.read();
+      if (cached) return cached;
+    }
     const all: VikunjaTask[] = [];
     for (let page = 1; ; page++) {
       const tasks = await this.api<VikunjaTask[]>(
@@ -164,6 +182,7 @@ export class BoardClient {
       if (tasks.length === 0) break;
       all.push(...tasks);
     }
+    cache.write(all);
     return all;
   }
 
