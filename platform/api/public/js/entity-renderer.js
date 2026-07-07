@@ -4,10 +4,19 @@
 // Reads window.OWL_CLASS / window.OWL_COLLECTION injected by page_html. Never hand-edit
 // the page — regenerate from the model.
 (function () {
-  var API = '/api/athena';
+  // #3627 — collections come from owl-api (:3360, OWL_PORT injected by page_html).
+  // The old base '/api/athena' was retired by #3603; fetching it 404'd and the
+  // swallowed error rendered as "No instances in the model" — a lie. CORS on
+  // owl-api (#3373) exists precisely for this :3340-page → :3360-API read.
+  var API = location.protocol + '//' + location.hostname + ':' + (window.OWL_PORT || 3360);
   var CLASS = window.OWL_CLASS || '';
   var COLL = window.OWL_COLLECTION || '';
-  function get(u) { return fetch(API + u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); }
+  var FETCH_FAILED = false;
+  function get(u) {
+    return fetch(API + u)
+      .then(function (r) { if (!r.ok) { FETCH_FAILED = true; return null; } return r.json(); })
+      .catch(function () { FETCH_FAILED = true; return null; });
+  }
   function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : String(s)); return d.innerHTML; }
   // scalar fields we don't surface as rows (identity / housekeeping)
   var HIDE = { name: 1, label: 1, iri: 1, type: 1, created: 1, creator: 1, modified: 1 };
@@ -41,7 +50,9 @@
   }
   function render(items) {
     var title = document.getElementById('domain-title');
-    if (title) title.textContent = CLASS + ' (' + items.length + ')';
+    // #3627 — never headline a count we didn't fetch: "(0)" on a dead API reads
+    // as "your model is empty", which is the exact lie this card removes.
+    if (title) title.textContent = (FETCH_FAILED && !items.length) ? CLASS : CLASS + ' (' + items.length + ')';
     var host = document.getElementById('content-sections');
     if (!host) return;
     Promise.all(items.map(function (it) {
@@ -62,7 +73,10 @@
         html += '<section class="er-card"><h2>' + esc(it.label || it.name) + '</h2>' +
           '<table class="er-kt">' + fieldRows(it) + '</table>' + chips + '</section>';
       });
-      host.innerHTML = html || '<p class="muted">No ' + esc(CLASS) + ' instances in the model.</p>';
+      // #3627 — an unreachable API must never render as an empty model.
+      host.innerHTML = html || (FETCH_FAILED
+        ? '<p class="muted">Cannot reach the model API at ' + esc(API) + ' — this is a fetch failure, not an empty model.</p>'
+        : '<p class="muted">No ' + esc(CLASS) + ' instances in the model.</p>');
     });
   }
   if (!COLL) return;
