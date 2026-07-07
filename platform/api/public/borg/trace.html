@@ -88,6 +88,7 @@ async function load(){
              : null;
   if(!urls){ $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Enter a card # or trace.</div>'; return; }
   $('#stream').innerHTML='<div style="padding:20px;color:#80868b">Loading…</div>';
+  $('#banner').innerHTML='';
   let j=null, lastErr='';
   for(const url of urls){
     try { const r=await fetch(url); if(r.ok){ j=await r.json(); break; } lastErr='HTTP '+r.status; }
@@ -111,7 +112,9 @@ async function load(){
   $('#filters').querySelectorAll('input').forEach(c=>c.addEventListener('change',render));
   const traces=new Set(DATA.map(x=>x.trace)), singletons=[...traces].filter(t=>DATA.filter(x=>x.trace===t).length===1).length, errs=DATA.filter(x=>x.err).length;
   $('#sum').innerHTML=`<b>${DATA.length}</b> events · <b>${traces.size}</b> traces · <b>${errs}</b> errors · oldest→newest · click a row for full payload`;
-  $('#banner').innerHTML = singletons>3 ? `<div class="anomaly">⚠ ${singletons} of ${traces.size} traces are single-event — likely a trace-generation anomaly (see #3121). Rendered truthfully, not coalesced.</div>` : '';
+  // #3621 — APPEND, don't clobber: this line was wiping the degraded-fold
+  // banner set above (Jeff saw 0 events with no explanation when Loki timed out).
+  $('#banner').innerHTML += singletons>3 ? `<div class="anomaly">⚠ ${singletons} of ${traces.size} traces are single-event — likely a trace-generation anomaly (see #3121). Rendered truthfully, not coalesced.</div>` : '';
   render();
 }
 function render(){
