@@ -1,0 +1,97 @@
+#!/usr/bin/env node
+/**
+ * #3619 AC4 — the live sweep: prove zero unauthenticated mutation endpoints
+ * on chorus-api, against the RUNNING system.
+ *
+ * Inputs (all live/deployed truth, no hand-maintained lists):
+ *   routes    — parsed from the deployed server.ts (what the API declares)
+ *   surfaces  — the model's securedBy projection, same SPARQL the envelope
+ *               boots from (fuseki urn:chorus:ontology)
+ *   ledger    — proving/security/sweep-exemptions.json (reason + card per
+ *               unflipped endpoint; the visible remaining-debt list)
+ *
+ * Probes ONLY the secured set (expected 401 — the gate refuses before any
+ * handler runs, so a probe can never mutate). Unprotected endpoints are never
+ * probed: classification alone makes them red — a live POST would be a write.
+ *
+ * Exit 0 = no unprotected endpoints (ratchet holds; exemptions may remain).
+ * Exit 1 = unprotected endpoint(s) or a secured endpoint that did NOT 401.
+ * DONE (AC4) = exit 0 with an empty exemptions ledger.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+const API = path.join(ROOT, 'platform', 'api');
+const { parseMutationRoutes, classifyEndpoints } = require(path.join(API, 'dist', 'security-sweep.js'));
+const { projectSecuredSurfaces } = require(path.join(API, 'dist', 'security-surfaces-emit.js'));
+
+const FUSEKI = process.env.CHORUS_FUSEKI_URL || 'http://localhost:3030/pods/sparql';
+const API_BASE = process.env.CHORUS_API_URL || 'http://localhost:3340';
+const LEDGER = path.join(ROOT, 'proving', 'security', 'sweep-exemptions.json');
+
+async function sparql(query) {
+  const res = await fetch(FUSEKI, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sparql-query', Accept: 'application/sparql-results+json' },
+    body: query,
+  });
+  if (!res.ok) throw new Error(`fuseki ${res.status}`);
+  return res.json();
+}
+
+async function probe401(route) {
+  const url = API_BASE + route.path.replace(/:[^/]+/g, 'sweep-probe');
+  try {
+    const res = await fetch(url, { method: route.method, headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    return { route, status: res.status, refused: res.status === 401 || res.status === 403 };
+  } catch (e) {
+    return { route, status: 0, refused: false, error: String(e) };
+  }
+}
+
+(async () => {
+  const serverSrc = fs.readFileSync(path.join(API, 'src', 'server.ts'), 'utf8');
+  const routes = parseMutationRoutes(serverSrc);
+  const surfaces = await projectSecuredSurfaces({ sparql });
+  const exemptions = JSON.parse(fs.readFileSync(LEDGER, 'utf8'));
+
+  const gap = classifyEndpoints(routes, surfaces, exemptions);
+
+  let red = false;
+  console.log(`security-sweep: ${routes.length} mutation endpoints | secured=${gap.secured.length} exempted=${gap.exempted.length} unprotected=${gap.unprotected.length}`);
+
+  if (gap.unprotected.length) {
+    red = true;
+    console.log('\nUNPROTECTED (no surface, no exemption — the red set):');
+    for (const r of gap.unprotected) console.log(`  ${r.method} ${r.path}`);
+  }
+  if (gap.staleExemptions.length) {
+    console.log('\nSTALE exemptions (no matching route — prune the ledger):');
+    for (const e of gap.staleExemptions) console.log(`  ${e.method} ${e.path} (${e.reason})`);
+  }
+
+  // 401-probe the secured set — proves the gates are LIVE, not just modeled.
+  const probes = await Promise.all(gap.secured.map(probe401));
+  const leaks = probes.filter(p => !p.refused);
+  if (leaks.length) {
+    red = true;
+    console.log('\nSECURED-BUT-NOT-REFUSING (modeled secured, live probe did not 401/403):');
+    for (const l of leaks) console.log(`  ${l.route.method} ${l.route.path} → ${l.status}${l.error ? ' ' + l.error : ''}`);
+  } else if (gap.secured.length) {
+    console.log(`\n401-proof: all ${gap.secured.length} secured endpoints refused unauthenticated probes.`);
+  }
+
+  if (gap.exempted.length) {
+    console.log('\nExempted (remaining #3619 debt, reason + card in the ledger):');
+    for (const r of gap.exempted) console.log(`  ${r.method} ${r.path}`);
+  }
+
+  const done = !red && gap.exempted.length === 0 && gap.staleExemptions.length === 0;
+  console.log(`\n${red ? 'RED — unauthenticated mutation surface exists' : done ? 'DONE — zero unauthenticated mutation endpoints, ledger empty (#3619 AC4)' : 'GREEN (ratchet) — no unprotected endpoints; exemptions remain'}`);
+  process.exit(red ? 1 : 0);
+})().catch(e => {
+  // A sweep that cannot run must fail loud — an unrunnable truth-teller is red.
+  console.error(`security-sweep: FAILED to run — ${e.message}`);
+  process.exit(1);
+});

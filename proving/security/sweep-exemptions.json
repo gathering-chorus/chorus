@@ -1,0 +1,308 @@
+[
+  {
+    "method": "POST",
+    "path": "/api/cards/add",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/move",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/done",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/tag",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/set",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/view",
+    "reason": "Class A held — cards/* board write path, Wren round-trip check before flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/chorus/index",
+    "reason": "Class B — 13.6k/wk caller (reindex-worker index-worker.js); mint+send token, flip LAST (highest stakes)",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/chorus/embed",
+    "reason": "Class B — nightly-test caller (2/wk); credential with the index batch",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/icd/domains/:id/providers/:pid/sections",
+    "reason": "Class A remainder — provider-sections PUT missed by the icd/domains POST surface; add method-correct surface next wave",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/code",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/discover-code",
+    "reason": "Class B — discovery scheduler caller (459/wk combined); credential scheduler then flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/discover-tests",
+    "reason": "Class B — discovery scheduler caller (459/wk combined); credential scheduler then flip",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/pages",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/integrations",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/persistence",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/services",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/services/:eid/description",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/persistence/:eid/description",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/owner",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/pipeline",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/logs",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/gaps",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/prior-art",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/actors",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/athena/subdomains/:id/:section/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/actors/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/scenarios/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/contract/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/pages/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/integrations/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/persistence/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/services/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/pipeline/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/logs/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/gaps/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/prior-art/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/scenarios",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/contract",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/principles",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id/principles/:entityId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "PUT",
+    "path": "/api/athena/subdomains/:id",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/subdomains/:id/consumes",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/athena/subdomains/:id/consumes/:targetId",
+    "reason": "Class B — Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/reload",
+    "reason": "Class B — GSP bulk-load path; needs the governed bulk-load primitive (#3573), not just a token",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/athena/validate",
+    "reason": "Class B — 204/wk; identify caller (validation job/UI) then credential",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/chorus/rca",
+    "reason": "Class A candidate — verify zero callers (Loki 7d) then flip with next wave",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/chorus/spine-event",
+    "reason": "Class A candidate — verify zero callers (Loki 7d) then flip with next wave",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/chorus/trace",
+    "reason": "Class A candidate — verify zero callers (Loki 7d) then flip with next wave",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/doc-catalog/add",
+    "reason": "Class A candidate — verify zero callers (Loki 7d) then flip with next wave",
+    "card": 3619
+  },
+  {
+    "method": "POST",
+    "path": "/api/doc-catalog/link",
+    "reason": "Class A candidate — verify zero callers (Loki 7d) then flip with next wave",
+    "card": 3619
+  }
+]
