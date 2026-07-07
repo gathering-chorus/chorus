@@ -30,6 +30,30 @@ describe('#3610 formatBlockAlert with a captured stack', () => {
     expect(a.message).toContain('2026-07-07 14:00:00 EDT');
   });
 
+  it('names the first APP frame, skipping blocked-at/node-internal plumbing (verified live: real captures are topped by AsyncHook.init + timers internals)', () => {
+    const PLUMBED = [
+      'at AsyncHook.init (/api/node_modules/blocked-at/index.js:31:11)',
+      'at emitInitNative (node:internal/async_hooks:202:43)',
+      'at initAsyncResource (node:internal/timers:165:5)',
+      'at new Timeout (node:internal/timers:199:5)',
+      'at setTimeout (node:timers:163:19)',
+      'at refresh (/api/src/board-cache.ts:103:15)',
+      'at runScriptInThisContext (node:internal/vm:209:10)',
+    ];
+    const a = formatBlockAlert(3500, TS, 'unknown', PLUMBED);
+    expect(a.message).toContain('Blocked at: at refresh (/api/src/board-cache.ts:103:15)');
+    expect(a.stack).toEqual(PLUMBED); // full stack preserved untouched — no editing the evidence
+  });
+
+  it('all-plumbing stack falls back to the top frame rather than fabricating', () => {
+    const ONLY_PLUMBING = [
+      'at AsyncHook.init (/api/node_modules/blocked-at/index.js:31:11)',
+      'at emitInitNative (node:internal/async_hooks:202:43)',
+    ];
+    const a = formatBlockAlert(3500, TS, 'unknown', ONLY_PLUMBING);
+    expect(a.message).toContain('Blocked at: at AsyncHook.init');
+  });
+
   it('empty stack falls back to the stackless contract (no fabricated frame)', () => {
     const a = formatBlockAlert(3500, TS, 'unknown', []);
     expect(a.stack).toBeUndefined();

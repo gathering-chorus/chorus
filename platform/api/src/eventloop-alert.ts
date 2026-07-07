@@ -84,6 +84,17 @@ export interface BlockAlert {
  *  `ts` field stays ISO (storage contract for spine event correlation); the
  *  human-facing `message` body renders Boston (#3093 — render-vs-storage
  *  boundary, Jeff doesn't read UTC). */
+/** #3610 — blocked-at stacks are topped by capture plumbing (AsyncHook.init in
+ *  blocked-at itself, then node:internal async_hooks/timers frames) before the
+ *  frame that actually created the blocking resource. Verified live on this
+ *  node. Pick the first frame that is neither; fall back to the raw top frame
+ *  rather than fabricate. The full stack is never edited — only the headline. */
+export function firstAppFrame(frames: string[]): string | undefined {
+  const isPlumbing = (f: string): boolean =>
+    f.includes('node_modules/blocked-at/') || /\(?node:/.test(f);
+  return frames.find((f) => !isPlumbing(f)) ?? frames[0];
+}
+
 export function formatBlockAlert(durationMs: number, ts: string, op: string, stack?: string[]): BlockAlert {
   const display = boston(ts);
   const frames = (stack ?? []).map((f) => f.trim()).filter((f) => f.length > 0);
@@ -92,7 +103,7 @@ export function formatBlockAlert(durationMs: number, ts: string, op: string, sta
     : `Captured op: ${op}.`;
   // A captured stack replaces the correlate-it-yourself pointer: the frame is
   // the measured call site, still no inferred story beyond it.
-  const causeNote = frames.length > 0 ? `Blocked at: ${frames[0]}.` : opNote;
+  const causeNote = frames.length > 0 ? `Blocked at: ${firstAppFrame(frames)}.` : opNote;
   return {
     duration_ms: durationMs,
     ts,

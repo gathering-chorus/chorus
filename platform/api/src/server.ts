@@ -17,7 +17,7 @@ import fs from 'fs';
 // #3089: hoisted from the later import block so makeRequestOpMiddleware is
 // initialized before the `app.use(makeRequestOpMiddleware())` call below
 // (CJS compile evaluates imports in source order → TDZ if used before).
-import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware } from './eventloop-alert';
+import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware, firstAppFrame } from './eventloop-alert';
 
 const execAsync = promisify(exec);
 // #3197 — single root source. Replaces a wrong inline default
@@ -3471,8 +3471,8 @@ if (require.main === module) {
       execFile('bash', [CHORUS_LOG, 'eventloop.blocked', 'silas',
         'domain=chorus',
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=in-process',
-        // #3610 — in stack-capture mode the top frame is the measured call site
-        ...(a.stack ? [`blocked_at=${a.stack[0]}`] : [])], () => {}),
+        // #3610 — in stack-capture mode the first app frame is the measured call site
+        ...(a.stack ? [`blocked_at=${firstAppFrame(a.stack)}`] : [])], () => {}),
     // #3407 — route the event-loop-block ALERT to wren (chorus-api is her layer);
     // spine-emit role above stays the chorus-api emitter context.
     nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
