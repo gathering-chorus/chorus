@@ -55,17 +55,22 @@ const fullMsg = e => {
 const NOISE = new Set(['tool_call','observer.digest','search.query.executed','nudge.requested','nudge.emitted','mcp.cards.set.invoked','mcp.cards.set.delivered','mcp.cards.add.invoked','mcp.cards.add.delivered']);
 let DATA = [];
 function verbOf(ev){
+  // Badge vocabulary = the REAL verb set (ls ~/.chorus/bin/werk-*): pull commit
+  // push build test deploy demo review merge accept sync unpull. Jeff 07-07:
+  // 'env' and 'werk' are NOT verbs — env.up belongs to deploy, env.down to
+  // accept, and werk.* is the RUN lifecycle from the orchestrator, badged 'run'.
   const rules=[['pull.','pull'],['worktree.','pull'],['fetch.','pull'],['gh.','pull'],['card.wip','pull'],
     ['commit.','commit'],['staged','commit'],['committed','commit'],['rebase.','commit'],
     ['push.','push'],['pushed','push'],
     ['unit.build','build'],['build.','build'],['node-modules','build'],['rebuilt','build'],
     ['deploy.','deploy'],['installed','deploy'],['verified','deploy'],['wrapper-','deploy'],['slot.','deploy'],['manifest.','deploy'],['binary.','deploy'],
-    ['env.','env'],
+    ['env.up','deploy'],['env.down','accept'],
     ['test.','test'],
     ['demo.','demo'],['review.','review'],
     ['merge.','merge'],['merged','merge'],['content.verified','merge'],
     ['accept.','accept'],['signal.','accept'],['card.done','accept'],
-    ['werk.','werk'],['card.','card'],['lock.','werk'],['api.','api'],['hop:','hop']];
+    ['sync.','sync'],['canonical.','sync'],['unpull.','unpull'],
+    ['werk.','run'],['lock.','run'],['card.','card'],['api.','api'],['hop:','hop']];
   for(const [pre,lab] of rules) if(ev.startsWith(pre)) return lab;
   return 'other';
 }
