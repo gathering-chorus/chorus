@@ -1,0 +1,39 @@
+# #3619 — lock discover-code / discover-tests / validate / embed.
+# Live-caller check 2026-07-07: Loki 4h = 0 hits on all four; the 7d counts
+# (248/199/204/2) trace to test suites running against their OWN app instance
+# (tests/lib/test-app boots with an empty surface table, unaffected by live
+# locks) and nightly bursts. Same securedBy gate as #3618.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-discover-code-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena discover-code write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-code" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-discover-tests-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena discover-tests write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/discover-tests" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-validate-write a chorus:APISurface ;
+    rdfs:label "chorus-api athena validate write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/validate" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-embed-write a chorus:APISurface ;
+    rdfs:label "chorus-api embed write" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/embed" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .

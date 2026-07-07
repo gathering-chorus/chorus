@@ -1,308 +1,224 @@
 [
   {
     "method": "POST",
-    "path": "/api/cards/add",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/cards/move",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/cards/done",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/cards/tag",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/cards/set",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/cards/view",
-    "reason": "Class A held \u2014 cards/* board write path, Wren round-trip check before flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
     "path": "/api/chorus/index",
-    "reason": "Class B \u2014 13.6k/wk caller (reindex-worker index-worker.js); mint+send token, flip LAST (highest stakes)",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/chorus/embed",
-    "reason": "Class B \u2014 nightly-test caller (2/wk); credential with the index batch",
-    "card": 3619
-  },
-  {
-    "method": "PUT",
-    "path": "/api/icd/domains/:id/providers/:pid/sections",
-    "reason": "Class A wave 2 \u2014 0 callers (Loki 7d verified 2026-07-07); flipping (method-correct PUT surface)",
+    "reason": "flips at #3619 land \u2014 caller is ~/.chorus/scripts/heartbeat-probe.sh (every 2 min); token wired at flip time alongside the surface apply",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/code",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/athena/discover-code",
-    "reason": "Class B \u2014 discovery scheduler caller (459/wk combined); credential scheduler then flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/athena/discover-tests",
-    "reason": "Class B \u2014 discovery scheduler caller (459/wk combined); credential scheduler then flip",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/pages",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/integrations",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/persistence",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/services",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/services/:eid/description",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/persistence/:eid/description",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/owner",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/pipeline",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/logs",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/gaps",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/prior-art",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/actors",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "DELETE",
     "path": "/api/athena/subdomains/:id/:section/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/actors/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/scenarios/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/contract/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/pages/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/integrations/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/persistence/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/services/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/pipeline/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/logs/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/gaps/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/prior-art/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/scenarios",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/contract",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/principles",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id/principles/:entityId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "PUT",
     "path": "/api/athena/subdomains/:id",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/subdomains/:id/consumes",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "DELETE",
     "path": "/api/athena/subdomains/:id/consumes/:targetId",
-    "reason": "Class B \u2014 Athena UI + discover writes (1.4k/wk family); needs browser-obtained token or stays session-gated",
+    "reason": "follow-on \u2014 Athena UI browser writes (1.4k/wk family); needs a session-to-token bridge (browser cannot carry a service token); ADR-050/#3564 DAL-first lane",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/athena/reload",
-    "reason": "Class B \u2014 GSP bulk-load path; needs the governed bulk-load primitive (#3573), not just a token",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/athena/validate",
-    "reason": "Class B \u2014 204/wk; identify caller (validation job/UI) then credential",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/chorus/rca",
-    "reason": "Class A wave 2 \u2014 0 callers (Loki 7d verified 2026-07-07); flipping",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/chorus/spine-event",
-    "reason": "Class A wave 2 \u2014 0 callers via HTTP (spine writes go through chorus-log CLI, not this endpoint; Loki 7d = 0); flipping",
+    "reason": "follow-on \u2014 GSP bulk-load path; needs the governed bulk-load primitive (#3573), a token alone does not govern it",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/chorus/trace",
-    "reason": "Class B \u2014 26.5k/wk (Loki 7d, 2026-07-07): busiest mutation endpoint on the API; identify emitter, credential, flip with the index tier",
+    "reason": "flips at #3619 land \u2014 callers are chorus-sdk maybeFireTrace + shim-wrapper role-state bridge, both token-wired in this branch; lock applies after the land deploys them",
     "card": 3619
   },
   {
     "method": "POST",
     "path": "/api/doc-catalog/add",
-    "reason": "Class B-lite \u2014 2/wk, caller is chorus-mcp's doc_catalog_add tool; credential chorus-mcp then flip",
-    "card": 3619
-  },
-  {
-    "method": "POST",
-    "path": "/api/doc-catalog/link",
-    "reason": "Class A wave 2 \u2014 0 callers (Loki 7d verified 2026-07-07); flipping",
+    "reason": "follow-on \u2014 caller is chorus-mcp (2/wk); needs the SDK token helper shared into mcp-server (new dep) before its gate flips",
     "card": 3619
   }
 ]

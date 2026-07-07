@@ -4,6 +4,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { mintServiceToken } from './token';
 
 const LOG_FILE = path.resolve(__dirname, '../../logs/chorus.log');
 const SCHEMA_FILE = path.resolve(__dirname, '../../../designing/schemas/spine-events.json');
@@ -267,9 +268,15 @@ function buildTracePayload(entry: SpineEvent, extra: Partial<Record<string, stri
 function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string | number>>): void {
   const hopNum = extra.hop ? parseInt(String(extra.hop), 10) : NaN;
   if (isNaN(hopNum)) return;
+  // #3619 — /api/chorus/trace is behind the security envelope; carry a scoped
+  // token when a secret is resolvable, else send bare (fail-open — the emit
+  // contract is fire-and-forget, a missing local secret never breaks it).
+  const token = mintServiceToken(['urn:chorus:ops']);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   fetch('http://localhost:3340/api/chorus/trace', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(buildTracePayload(entry, extra, hopNum)),
     signal: AbortSignal.timeout(3000),
   }).catch(() => {});

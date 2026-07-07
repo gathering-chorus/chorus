@@ -1,0 +1,15 @@
+# #3619 — lock the cards/* mutation endpoints. Verified no callers:
+# source grep = zero non-server references to /api/cards; Loki 7d = one
+# 400 from silas's own 2026-07-07 13:14 session test. The cards CLI writes
+# Vikunja directly (#2544 HTTP wrapper unused). One prefix surface covers
+# add/move/done/tag/set/view (all POST /api/cards/*).
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-cards-writes a chorus:APISurface ;
+    rdfs:label "chorus-api cards writes (zero-caller — CLI writes Vikunja direct)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/cards/" ;
+    chorus:requiresScope "urn:chorus:cards" ;
+    chorus:servedBy chorus:services .

@@ -19,7 +19,7 @@ chorus:surface-rca-write a chorus:APISurface ;
     chorus:servedBy chorus:services .
 
 chorus:surface-spine-event-write a chorus:APISurface ;
-    rdfs:label "chorus-api spine-event write (zero HTTP callers; spine flows via chorus-log CLI)" ;
+    rdfs:label "chorus-api spine-event write (zero HTTP callers — spine flows via chorus-log CLI)" ;
     chorus:securedBy chorus:gate-chorus-api-mutations ;
     chorus:httpMethod "POST" ;
     chorus:pathPrefix "/api/chorus/spine-event" ;
@@ -35,7 +35,7 @@ chorus:surface-doc-catalog-link-write a chorus:APISurface ;
     chorus:servedBy chorus:services .
 
 chorus:surface-icd-put-writes a chorus:APISurface ;
-    rdfs:label "chorus-api ICD provider-sections PUT (zero-caller; wave-1 surface was POST-only)" ;
+    rdfs:label "chorus-api ICD provider-sections PUT (zero-caller — wave-1 surface was POST-only)" ;
     chorus:securedBy chorus:gate-chorus-api-mutations ;
     chorus:httpMethod "PUT" ;
     chorus:pathPrefix "/api/icd/domains/" ;
