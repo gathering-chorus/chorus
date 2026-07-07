@@ -84,7 +84,7 @@ function normalize(events){
     const msg=fullMsg(e);
     const key=ev+'|'+msg+'|'+(e.trace_id||'');
     if(seen.has(key)) continue; seen.add(key);
-    out.push({ts:e.ts,event:ev,role:e.role||'',trace:tr,full_trace:e.trace_id||'',msg,err:isErr(e),pl:e.payload||{},noise:NOISE.has(ev)});
+    out.push({ts:e.ts,event:ev,role:e.role||'',card_id:e.card_id||(e.payload&&e.payload.card_id)||'',trace:tr,full_trace:e.trace_id||'',msg,err:isErr(e),pl:e.payload||{},noise:NOISE.has(ev)});
   }
   out.sort((a,b)=> (a.ts<b.ts?-1:a.ts>b.ts?1:0)); // oldest -> newest
   for(const x of out){ x.wf=verbOf(x.event); x.color=color(x.full_trace); }
@@ -126,7 +126,7 @@ async function load(){
   // card's run). The un-used input clears; the summary names the source.
   if(trace){ $('#card').value=''; } else if(card){ $('#trace').value=''; }
   const roles=[...new Set(DATA.map(x=>x.role).filter(Boolean))].join(',');
-  const cards=[...new Set(DATA.map(x=>String((x.pl&&x.pl.card_id)||x.card_id||'')).filter(v=>v&&v!=='undefined'))].join(',');
+  const cards=[...new Set(DATA.map(x=>String(x.card_id||'')).filter(v=>v&&v!=='undefined'))].join(',');
   window.__loaded = trace ? `trace ${trace}${cards?' · card #'+cards:''}${roles?' · roles: '+roles:''}` : `card #${card}${roles?' · roles: '+roles:''}`;
   // workflow filter chips
   const wfs=[...new Set(DATA.filter(x=>!x.noise).map(x=>x.wf))].sort();
