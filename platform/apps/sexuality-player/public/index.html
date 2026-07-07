@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Player</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; color: #ddd; font-family: -apple-system, sans-serif; height: 100vh; overflow: hidden; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: var(--panel-width, 320px) 6px 1fr;
+    height: 100vh;
+  }
+
+  .resize-divider {
+    background: #222;
+    cursor: col-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+  }
+  .resize-divider:hover, .resize-divider.dragging { background: #4a9eff; }
+  .resize-divider::after { content: '⋮'; color: #666; font-size: 14px; }
+  .resize-divider:hover::after, .resize-divider.dragging::after { color: #fff; }
+
+  /* ── LEFT PANEL ── */
+  .left-panel {
+    display: grid;
+    grid-template-rows: auto 1fr 1fr;
+    border-right: 1px solid #333;
+    overflow: hidden;
+  }
+
+  .panel-section {
+    border-bottom: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    resize: vertical;
+    min-height: 60px;
+  }
+  .panel-section:last-child { border-bottom: none; }
+
+  .panel-header {
+    padding: 10px 12px;
+    background: #1a1a1a;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #999;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    cursor: grab;
+  }
+  .panel-header:active { cursor: grabbing; }
+  .panel-section.dragging { opacity: 0.5; }
+  .panel-section.drag-over { border-top: 3px solid #58a6ff; }
+
+  .panel-body {
+    overflow-y: auto;
+    flex: 1;
+    padding: 6px;
+  }
+
+  /* Playlist */
+  .tree-group { margin-bottom: 4px; }
+  .tree-label {
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    cursor: pointer;
+    user-select: none;
+  }
+  .tree-label:hover { color: #ccc; }
+  .tree-item {
+    padding: 4px 8px 4px 24px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tree-item:hover { background: #252525; }
+  .tree-item.active { background: #2a4a6b; color: #fff; }
+  .tree-item .item-count { color: #666; font-size: 11px; }
+  .tree-item .remove-btn {
+    display: none;
+    width: 16px; height: 16px;
+    border: none; background: transparent;
+    color: #a44; font-size: 12px; cursor: pointer;
+  }
+  .tree-item:hover .remove-btn { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Picker */
+  .picker-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+    padding: 6px 8px;
+    flex-shrink: 0;
+  }
+  .picker-filters .full-row {
+    grid-column: 1 / -1;
+  }
+  .picker-filters select, .picker-filters input {
+    background: #222;
+    border: 1px solid #444;
+    color: #ddd;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    width: 100%;
+  }
+
+  .picker-item {
+    padding: 5px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .picker-item:hover { background: #252525; }
+  .picker-item.ineligible { opacity: 0.35; }
+  .picker-item .folder-info { display: flex; align-items: center; gap: 6px; overflow: hidden; }
+  .picker-item .folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .picker-item .folder-count { color: #666; font-size: 11px; flex-shrink: 0; }
+  .picker-item .add-btn {
+    width: 18px; height: 18px;
+    border-radius: 3px;
+    border: 1px solid #555;
+    background: transparent;
+    color: #888;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .picker-item .add-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+  .picker-item .add-btn.added { background: #4a9eff; border-color: #4a9eff; color: #fff; }
+
+  .picker-status {
+    padding: 8px;
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+  }
+
+  /* Photo strip */
+  .photo-strip {
+    display: flex;
+    gap: 2px;
+    padding: 4px 8px;
+    background: #1a1a1a;
+    overflow-x: auto;
+    flex-shrink: 0;
+    height: 140px;
+    align-items: center;
+    scrollbar-width: thin;
+    scrollbar-color: #444 #1a1a1a;
+  }
+  .photo-strip:empty { display: none; }
+  .photo-strip img {
+    height: 120px;
+    width: 120px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s, border-color 0.15s;
+    border: 2px solid transparent;
+    flex-shrink: 0;
+  }
+  .photo-strip img:hover { opacity: 0.9; }
+  .photo-strip img.active { opacity: 1; border-color: #4a9eff; }
+
+  /* Player */
+  .player-surface {
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .player-viewport {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .player-viewport img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .player-viewport video {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .player-placeholder {
+    color: #444;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .player-controls {
+    padding: 8px 16px;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .player-controls button {
+    background: #333;
+    border: 1px solid #555;
+    color: #ddd;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .player-controls button:hover { background: #444; }
+  .player-controls button.playing { background: #2a6b2a; border-color: #4a9; }
+
+  .speed-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+  }
+  .speed-control input[type="range"] { width: 80px; accent-color: #4a9eff; }
+  .speed-label { min-width: 30px; text-align: center; }
+
+  .now-playing {
+    font-size: 18px;
+    font-weight: 600;
+    color: #fff;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .volume-note {
+    font-size: 10px;
+    color: #555;
+  }
+
+  /* Model tree */
+  .model-item {
+    padding: 5px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: #bbb;
+  }
+  .model-item:hover { background: #252525; }
+  .model-item .model-count { color: #555; font-size: 11px; font-weight: 400; }
+  .model-sets {
+    display: none;
+    padding-left: 12px;
+  }
+  .model-sets.open { display: block; }
+  .model-sets .picker-item { font-weight: 400; color: #999; }
+
+  .show-more-row { display: flex; gap: 6px; padding: 6px 8px; }
+  .show-more-row button {
+    flex: 1;
+    background: #222; border: 1px solid #444; color: #9ab;
+    padding: 5px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;
+  }
+  .show-more-row button:hover { border-color: #4a9eff; color: #4a9eff; }
+
+  #toast {
+    position: fixed; bottom: 16px; right: 16px; z-index: 99;
+    background: #7a2a2a; color: #fff;
+    padding: 10px 14px; border-radius: 6px; font-size: 12px;
+    max-width: 340px; display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="toast"></div>
+
+<div class="layout">
+  <div class="left-panel">
+
+    <!-- PLAYLIST -->
+    <div class="panel-section" draggable="true">
+      <div class="panel-header">
+        Playlist
+        <button id="clearPlaylist" style="background:transparent; border:1px solid #444; color:#888; font-size:10px; padding:2px 6px; border-radius:3px; cursor:pointer;">Clear</button>
+      </div>
+      <div class="picker-filters">
+        <select id="plCat"><option value="">All Categories</option></select>
+        <select id="plTag"><option value="">All Tags</option></select>
+        <select id="plAlpha"><option value="">A-Z</option></select>
+        <input id="plText" type="text" placeholder="Text…" style="grid-column: span 2;">
+        <select id="plSite"><option value="">All Sites</option></select>
+        <select id="plSort" style="grid-column: span 2;">
+          <option value="added">Sort: Order added</option>
+          <option value="name">Sort: Name A-Z</option>
+          <option value="model">Sort: Model A-Z</option>
+          <option value="site">Sort: Site A-Z</option>
+        </select>
+        <input id="plMaxPhotos" type="number" min="1" placeholder="Max #📷" title="Hide photo sets with more photos than this">
+      </div>
+      <div class="panel-body" id="playlistPanel">
+        <div class="picker-status">Loading playlist...</div>
+      </div>
+    </div>
+
+    <!-- PHOTOS PICKER -->
+    <div class="panel-section" draggable="true">
+      <div class="panel-header">Photos</div>
+      <div class="picker-filters">
+        <select id="photoCat"><option value="">All Categories</option></select>
+        <select id="photoTag"><option value="">All Tags</option></select>
+        <select id="photoAlpha"><option value="">A-Z</option></select>
+        <input id="photoText" type="text" placeholder="Text…" class="full-row" style="grid-column: span 2;">
+        <select id="photoSite"><option value="">All Sites</option></select>
+      </div>
+      <div class="panel-body" id="photoList">
+        <div class="picker-status">Loading...</div>
+      </div>
+    </div>
+
+    <!-- VIDEOS PICKER -->
+    <div class="panel-section" draggable="true">
+      <div class="panel-header">Videos</div>
+      <div class="picker-filters">
+        <select id="videoCat"><option value="">All Categories</option></select>
+        <select id="videoTag"><option value="">All Tags</option></select>
+        <select id="videoAlpha"><option value="">A-Z</option></select>
+        <input id="videoText" type="text" placeholder="Text…" style="grid-column: span 2;">
+        <select id="videoSite"><option value="">All Sites</option></select>
+      </div>
+      <div class="panel-body" id="videoList">
+        <div class="picker-status">Loading...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RESIZE DIVIDER -->
+  <div class="resize-divider" id="resizeDivider"></div>
+
+  <!-- PLAYER -->
+  <div class="player-surface">
+    <div class="photo-strip" id="photoStrip"></div>
+    <div class="player-viewport" id="viewport">
+      <div class="player-placeholder" id="placeholder">
+        <div style="font-size: 48px; margin-bottom: 12px;">▶</div>
+        Select a playlist item to begin
+      </div>
+    </div>
+    <div class="player-controls">
+      <button id="btnPrev">⏮</button>
+      <button id="btnPlay">▶ Play</button>
+      <button id="btnNext">⏭</button>
+      <span class="now-playing" id="nowPlaying"></span>
+      <div class="speed-control">
+        <span>⏱</span>
+        <input type="range" id="speedSlider" min="1" max="15" value="5">
+        <span class="speed-label" id="speedLabel">5s</span>
+      </div>
+      <div class="volume-note">🔊 HomePod 50%</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let photoSets = [];
+let videoSets = [];
+let playlist = { photos: [], videos: [] };
+let currentItem = null; // { type: 'photo'|'video', index: number }
+let currentFiles = [];  // files in current set
+let currentFileIndex = 0;
+let playing = false;
+let playTimer = null;
+let slideInterval = 5;
+let playlistCollapsed = { photos: false, videos: false };
+const RENDER_CHUNK = 300;
+let photoRenderLimit = RENDER_CHUNK;
+let videoRenderLimit = RENDER_CHUNK;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => { t.style.display = 'none'; }, 6000);
+}
+
+// ── Init ──
+
+async function init() {
+  const [photos, videos, pl] = await Promise.all([
+    fetch(`${API}/api/photos`).then(r => r.json()),
+    fetch(`${API}/api/videos`).then(r => r.json()),
+    fetch(`${API}/api/playlists`).then(r => r.json()),
+  ]);
+
+  photoSets = photos;
+  videoSets = videos;
+  playlist = pl;
+
+  populateFilters();
+  renderPhotoPicker();
+  renderVideoPicker();
+  renderPlaylist();
+
+  // Speed slider
+  const slider = document.getElementById('speedSlider');
+  const label = document.getElementById('speedLabel');
+  slider.addEventListener('input', () => {
+    slideInterval = parseInt(slider.value);
+    label.textContent = `${slideInterval}s`;
+    if (playing && currentItem?.type === 'photo') {
+      clearInterval(playTimer);
+      playTimer = setInterval(nextFile, slideInterval * 1000);
+    }
+  });
+
+  document.getElementById('btnPlay').addEventListener('click', togglePlay);
+  document.getElementById('btnPrev').addEventListener('click', prevFile);
+  document.getElementById('btnNext').addEventListener('click', nextFile);
+  document.getElementById('clearPlaylist').addEventListener('click', () => {
+    playlist = { photos: [], videos: [] };
+    savePlaylist();
+    renderPlaylist();
+    renderPhotoPicker();
+    renderVideoPicker();
+  });
+
+  // Filter listeners — a filter change resets the incremental render window
+  ['photoCat', 'photoTag', 'photoAlpha', 'photoText', 'photoSite'].forEach(id => {
+    document.getElementById(id).addEventListener(id.endsWith('Text') ? 'input' : 'change', () => {
+      photoRenderLimit = RENDER_CHUNK;
+      renderPhotoPicker();
+    });
+  });
+  ['videoCat', 'videoTag', 'videoAlpha', 'videoText', 'videoSite'].forEach(id => {
+    document.getElementById(id).addEventListener(id.endsWith('Text') ? 'input' : 'change', () => {
+      videoRenderLimit = RENDER_CHUNK;
+      renderVideoPicker();
+    });
+  });
+  ['plCat', 'plTag', 'plAlpha', 'plText', 'plSite', 'plSort', 'plMaxPhotos'].forEach(id => {
+    const evt = (id.endsWith('Text') || id === 'plMaxPhotos') ? 'input' : 'change';
+    document.getElementById(id).addEventListener(evt, renderPlaylist);
+  });
+}
+
+// ── Filters ──
+
+function populateFilters() {
+  const photoCats = [...new Set(photoSets.map(s => s.category))].filter(c => c !== 'unknown').sort();
+  const photoTags = [...new Set(photoSets.map(s => s.tag))].filter(t => t !== 'unknown').sort();
+  const photoSites = [...new Set(photoSets.map(s => s.site))].filter(s => s !== 'unknown').sort();
+  const videoCats = [...new Set(videoSets.flatMap(s => s.categories || [s.category]))].filter(c => c !== 'unknown').sort();
+  const videoSites = [...new Set(videoSets.flatMap(s => s.sites || [s.site]))].filter(s => s !== 'unknown').sort();
+
+  const alphaLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+  fillSelect('photoCat', photoCats, 'All Categories');
+  fillSelect('photoTag', photoTags, 'All Tags');
+  fillSelect('photoAlpha', alphaLetters, 'A-Z');
+  fillSelect('photoSite', photoSites, 'All Sites');
+  const videoTags = [...new Set(videoSets.flatMap(s => s.tags || (s.tag && s.tag !== 'unknown' ? [s.tag] : [])))].sort();
+  fillSelect('videoCat', videoCats, 'All Categories');
+  fillSelect('videoTag', videoTags, 'All Tags');
+  fillSelect('videoAlpha', alphaLetters, 'A-Z');
+  fillSelect('videoSite', videoSites, 'All Sites');
+
+  // Playlist filters draw from the union of both catalogs
+  fillSelect('plCat', [...new Set([...photoCats, ...videoCats])].sort(), 'All Categories');
+  fillSelect('plTag', [...new Set([...photoTags, ...videoTags])].sort(), 'All Tags');
+  fillSelect('plAlpha', alphaLetters, 'A-Z');
+  fillSelect('plSite', [...new Set([...photoSites, ...videoSites])].sort(), 'All Sites');
+}
+
+function fillSelect(id, values, defaultLabel) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<option value="">${defaultLabel}</option>` +
+    values.map(v => `<option value="${v}">${v}</option>`).join('');
+}
+
+// ── Grouping ──
+
+function groupByModel(sets) {
+  const groups = {};
+  for (const s of sets) {
+    const model = s.modelName || s.name;
+    if (!groups[model]) groups[model] = [];
+    groups[model].push(s);
+  }
+  return groups;
+}
+
+let expandedPhotoModels = new Set();
+let expandedVideoModels = new Set();
+let photoCountCache = {}; // path → count
+
+async function toggleModel(type, model) {
+  const set = type === 'photo' ? expandedPhotoModels : expandedVideoModels;
+  if (set.has(model)) {
+    set.delete(model);
+  } else {
+    set.add(model);
+    // Fetch counts for photo sets in this model if not cached
+    if (type === 'photo') {
+      const groups = groupByModel(photoSets);
+      const sets = groups[model] || [];
+      const uncounted = sets.filter(s => !(s.path in photoCountCache));
+      await Promise.all(uncounted.map(async (s) => {
+        try {
+          const r = await fetch(`${API}/api/photos/count?path=${encodeURIComponent(s.path)}`);
+          const data = await r.json();
+          photoCountCache[s.path] = data.count;
+          s.photoCount = data.count;
+          s.eligible = data.eligible;
+        } catch { /* skip */ }
+      }));
+    }
+  }
+  if (type === 'photo') renderPhotoPicker(); else renderVideoPicker();
+}
+
+// ── Photo Picker ──
+
+function renderPhotoPicker() {
+  const cat = document.getElementById('photoCat').value;
+  const tag = document.getElementById('photoTag').value;
+  const alpha = document.getElementById('photoAlpha').value;
+  const text = document.getElementById('photoText').value.toLowerCase();
+  const site = document.getElementById('photoSite').value;
+
+  let filtered = photoSets;
+  if (cat) filtered = filtered.filter(s => s.category === cat);
+  if (tag) filtered = filtered.filter(s => s.tag === tag);
+  if (alpha) filtered = filtered.filter(s => s.modelName && s.modelName.charAt(0).toUpperCase() === alpha);
+  if (text) filtered = filtered.filter(s => s.modelName && s.modelName.toLowerCase().includes(text));
+  if (site) filtered = filtered.filter(s => s.site === site);
+
+  const groups = groupByModel(filtered);
+  const modelNames = Object.keys(groups).sort();
+
+  const el = document.getElementById('photoList');
+  if (modelNames.length === 0) {
+    el.innerHTML = '<div class="picker-status">No matching sets</div>';
+    return;
+  }
+
+  // Incremental render — every model reachable via Show more / Show all (#3624)
+  const displayModels = modelNames.slice(0, photoRenderLimit);
+
+  el.innerHTML = displayModels.map(model => {
+    const sets = groups[model];
+    const isOpen = expandedPhotoModels.has(model);
+    const safeModel = model.replace(/'/g, "\\'");
+
+    let html = `<div class="model-item" onclick="toggleModel('photo','${safeModel}')">
+      <span>${isOpen ? '▾' : '▸'} ${model}</span>
+      <span class="model-count">${sets.length} sets</span>
+    </div>`;
+
+    if (isOpen) {
+      html += `<div class="model-sets open">`;
+      html += sets.map(s => {
+        const inPlaylist = playlist.photos.some(p => p.path === s.path);
+        const esc = str => str.replace(/'/g, "\\'");
+        const count = photoCountCache[s.path];
+        const counted = count !== undefined;
+        const eligible = !counted || count > 0;
+        const countLabel = counted ? `<span class="folder-count" style="color:${eligible ? '#666' : '#a44'}">${count}</span>` : '';
+        return `<div class="picker-item ${eligible ? '' : 'ineligible'}" onclick="${eligible ? `previewPhotoSet('${esc(s.path)}', '${esc(s.name)}')` : ''}" style="cursor:${eligible ? 'pointer' : 'default'};">
+          <div class="folder-info">
+            <span class="folder-name" title="${s.name}">${s.name}</span>
+            ${countLabel}
+          </div>
+          ${eligible ?
+            `<button class="add-btn ${inPlaylist ? 'added' : ''}" onclick="event.stopPropagation(); togglePhotoPlaylist('${esc(s.path)}', '${esc(s.name)}', '${esc(s.modelName || '')}', '${esc(s.site || '')}')">${inPlaylist ? '✓' : '+'}</button>` :
+            `<span style="color:#a44;font-size:10px;">empty</span>`
+          }
+        </div>`;
+      }).join('');
+      html += '</div>';
+    }
+
+    return html;
+  }).join('');
+
+  if (modelNames.length > photoRenderLimit) {
+    const left = modelNames.length - photoRenderLimit;
+    el.innerHTML += `<div class="show-more-row">
+      <button onclick="showMorePhotos(false)">Show ${Math.min(RENDER_CHUNK, left)} more (${left} left)</button>
+      <button onclick="showMorePhotos(true)">Show all ${modelNames.length}</button>
+    </div>`;
+  }
+}
+
+function showMorePhotos(all) {
+  photoRenderLimit = all ? Infinity : photoRenderLimit + RENDER_CHUNK;
+  renderPhotoPicker();
+}
+
+function showMoreVideos(all) {
+  videoRenderLimit = all ? Infinity : videoRenderLimit + RENDER_CHUNK;
+  renderVideoPicker();
+}
+
+// ── Video Picker ──
+
+let videoModelFiles = {}; // cache of loaded video file lists per model path
+
+async function toggleVideoModel(modelPath, modelName) {
+  if (expandedVideoModels.has(modelName)) {
+    expandedVideoModels.delete(modelName);
+    renderVideoPicker();
+    return;
+  }
+
+  if (!videoModelFiles[modelPath]) {
+    const files = await fetch(`${API}/api/videos/list?path=${encodeURIComponent(modelPath)}`).then(r => r.json());
+    videoModelFiles[modelPath] = files;
+  }
+  expandedVideoModels.add(modelName);
+  renderVideoPicker();
+}
+
+function renderVideoPicker() {
+  const cat = document.getElementById('videoCat').value;
+  const tag = document.getElementById('videoTag').value;
+  const alpha = document.getElementById('videoAlpha').value;
+  const text = document.getElementById('videoText').value.toLowerCase();
+  const site = document.getElementById('videoSite').value;
+
+  let filtered = videoSets;
+  if (cat) filtered = filtered.filter(s => (s.categories || []).includes(cat) || s.category === cat);
+  if (tag) filtered = filtered.filter(s => (s.tags || []).includes(tag) || s.tag === tag);
+  if (alpha) filtered = filtered.filter(s => s.name.charAt(0).toUpperCase() === alpha);
+  if (text) filtered = filtered.filter(s => s.name.toLowerCase().includes(text));
+  if (site) filtered = filtered.filter(s => (s.sites || []).includes(site) || s.site === site);
+
+  filtered.sort((a, b) => a.name.localeCompare(b.name));
+  const displayModels = filtered.slice(0, videoRenderLimit);
+
+  const el = document.getElementById('videoList');
+  if (displayModels.length === 0) {
+    el.innerHTML = '<div class="picker-status">No matching videos</div>';
+    return;
+  }
+
+  el.innerHTML = displayModels.map(v => {
+    const isOpen = expandedVideoModels.has(v.name);
+    const esc = str => str.replace(/'/g, "\\'");
+
+    let html = `<div class="model-item" onclick="toggleVideoModel('${esc(v.path)}', '${esc(v.name)}')">
+      <span>${isOpen ? '▾' : '▸'} ${v.name}</span>
+      <span class="model-count">${v.videoCount} videos</span>
+    </div>`;
+
+    if (isOpen && videoModelFiles[v.path]) {
+      html += '<div class="model-sets open">';
+      html += videoModelFiles[v.path].map(file => {
+        const vidUrl = file.url;
+        const vidName = file.filename;
+        const inPlaylist = playlist.videos.some(p => p.path === vidUrl);
+        return `<div class="picker-item" onclick="playVideoFile('${esc(vidUrl)}')" style="cursor:pointer;">
+          <span class="folder-name" title="${vidName}">${vidName}</span>
+          <button class="add-btn ${inPlaylist ? 'added' : ''}" onclick="event.stopPropagation(); toggleVideoPlaylist('${esc(vidUrl)}', '${esc(vidName)}', '${esc(v.name)}', '${esc(v.site || '')}')">${inPlaylist ? '✓' : '+'}</button>
+        </div>`;
+      }).join('');
+      html += '</div>';
+    }
+
+    return html;
+  }).join('');
+
+  if (filtered.length > videoRenderLimit) {
+    const left = filtered.length - videoRenderLimit;
+    el.innerHTML += `<div class="show-more-row">
+      <button onclick="showMoreVideos(false)">Show ${Math.min(RENDER_CHUNK, left)} more (${left} left)</button>
+      <button onclick="showMoreVideos(true)">Show all ${filtered.length}</button>
+    </div>`;
+  }
+}
+
+// ── Playlist ──
+
+function togglePhotoPlaylist(setPath, name, modelName, site) {
+  const idx = playlist.photos.findIndex(p => p.path === setPath);
+  if (idx >= 0) {
+    playlist.photos.splice(idx, 1);
+    playlistMutate('remove', { type: 'photos', path: setPath });
+  } else {
+    const item = { path: setPath, name, modelName: modelName || '', site: site || '' };
+    playlist.photos.push(item);
+    playlistMutate('add', { type: 'photos', item });
+  }
+  renderPlaylist();
+  renderPhotoPicker();
+}
+
+function toggleVideoPlaylist(videoUrl, name, modelName, site) {
+  const idx = playlist.videos.findIndex(p => p.path === videoUrl);
+  if (idx >= 0) {
+    playlist.videos.splice(idx, 1);
+    playlistMutate('remove', { type: 'videos', path: videoUrl });
+  } else {
+    const item = { path: videoUrl, name, modelName: modelName || '', site: site || '' };
+    playlist.videos.push(item);
+    playlistMutate('add', { type: 'videos', item });
+  }
+  renderPlaylist();
+  renderVideoPicker();
+}
+
+// Per-item persistence — request body stays tiny no matter how large the
+// playlist grows. On failure: tell the user and resync from disk so the UI
+// never silently shows unsaved state (#3624).
+async function playlistMutate(op, payload) {
+  try {
+    const r = await fetch(`${API}/api/playlists/${op}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+  } catch (err) {
+    showToast(`Playlist save failed (${err.message}) — reloading saved state`);
+    playlist = await fetch(`${API}/api/playlists`).then(r => r.json()).catch(() => playlist);
+    renderPlaylist();
+    renderPhotoPicker();
+    renderVideoPicker();
+  }
+}
+
+// Whole-blob save — used by Clear (and any future reorder)
+async function savePlaylist() {
+  try {
+    const r = await fetch(`${API}/api/playlists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(playlist),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  } catch (err) {
+    showToast(`Playlist save failed: ${err.message}`);
+  }
+}
+
+// Resolve display/filter metadata for a playlist item from the loaded catalogs
+function playlistItemMeta(item, type) {
+  if (type === 'photos') {
+    const set = photoSets.find(s => s.path === item.path);
+    return {
+      model: item.modelName || set?.modelName || item.name,
+      site: item.site || set?.site || 'unknown',
+      category: set?.category || 'unknown',
+      tags: set?.tag && set.tag !== 'unknown' ? [set.tag] : [],
+    };
+  }
+  // Videos: item.path is a proxy URL wrapping the file path — recover the
+  // model folder to match the videoSets catalog entry
+  let folder = null;
+  const m = item.path.match(/path=([^&]+)/);
+  if (m) {
+    try { folder = decodeURIComponent(m[1]).replace(/\/[^/]*$/, ''); } catch { /* keep null */ }
+  }
+  const entry = folder ? videoSets.find(v => v.path === folder) : null;
+  return {
+    model: item.modelName || entry?.name || item.name,
+    site: item.site || entry?.site || 'unknown',
+    category: entry?.category || 'unknown',
+    categories: entry?.categories || [],
+    tags: entry?.tags || (entry?.tag && entry.tag !== 'unknown' ? [entry.tag] : []),
+  };
+}
+
+function filterPlaylistSection(items, type) {
+  const cat = document.getElementById('plCat').value;
+  const tag = document.getElementById('plTag').value;
+  const alpha = document.getElementById('plAlpha').value;
+  const text = document.getElementById('plText').value.toLowerCase();
+  const site = document.getElementById('plSite').value;
+  const sort = document.getElementById('plSort').value;
+
+  let out = items.map(item => ({ item, meta: playlistItemMeta(item, type) }));
+  if (cat) out = out.filter(x => x.meta.category === cat || (x.meta.categories || []).includes(cat));
+  if (tag) out = out.filter(x => (x.meta.tags || []).includes(tag));
+  if (alpha) out = out.filter(x => (x.meta.model || '').charAt(0).toUpperCase() === alpha);
+  if (text) out = out.filter(x =>
+    (x.item.name || '').toLowerCase().includes(text) || (x.meta.model || '').toLowerCase().includes(text));
+  if (site) out = out.filter(x => x.meta.site === site);
+
+  // Not-to-exceed photo count — photos section only. Items whose count hasn't
+  // resolved yet stay visible and re-filter once the background count lands.
+  const maxPhotos = parseInt(document.getElementById('plMaxPhotos').value, 10);
+  if (type === 'photos' && maxPhotos > 0) {
+    out = out.filter(x => {
+      const cnt = photoCountCache[x.item.path];
+      return cnt == null || cnt <= maxPhotos;
+    });
+  }
+
+  if (sort === 'name') out.sort((a, b) => (a.item.name || '').localeCompare(b.item.name || ''));
+  else if (sort === 'model') out.sort((a, b) => (a.meta.model || '').localeCompare(b.meta.model || ''));
+  else if (sort === 'site') out.sort((a, b) => (a.meta.site || '').localeCompare(b.meta.site || ''));
+  // 'added' keeps stored order
+
+  return out;
+}
+
+function togglePlaylistSection(section) {
+  playlistCollapsed[section] = !playlistCollapsed[section];
+  renderPlaylist();
+}
+
+function renderPlaylist() {
+  const el = document.getElementById('playlistPanel');
+
+  if (playlist.photos.length === 0 && playlist.videos.length === 0) {
+    el.innerHTML = '<div class="picker-status">Empty — add sets from pickers below</div>';
+    return;
+  }
+
+  const esc = str => (str || '').replace(/'/g, "\\'");
+  let html = '';
+
+  const sections = [
+    { key: 'photos', label: 'Photos', items: playlist.photos, load: 'loadPhotoByPath', removeType: 'photo' },
+    { key: 'videos', label: 'Videos', items: playlist.videos, load: 'loadVideoByPath', removeType: 'video' },
+  ];
+
+  for (const sec of sections) {
+    if (sec.items.length === 0) continue;
+    const collapsed = playlistCollapsed[sec.key];
+    const shown = filterPlaylistSection(sec.items, sec.key);
+    html += `<div class="tree-group">
+      <div class="tree-label" onclick="togglePlaylistSection('${sec.key}')">${collapsed ? '▸' : '▾'} ${sec.label} <span class="item-count" style="color:#555">${shown.length}${shown.length !== sec.items.length ? ` / ${sec.items.length}` : ''}</span></div>`;
+    if (!collapsed) {
+      html += shown.map(({ item }) => {
+        const isActive = currentItem?.type === sec.removeType && currentItem?.path === item.path;
+        let cntLabel = '';
+        if (sec.key === 'photos') {
+          const cnt = photoCountCache[item.path];
+          cntLabel = `<span class="folder-count" style="flex-shrink:0;margin-left:6px">${cnt == null ? '…' : cnt}</span>`;
+        }
+        return `<div class="tree-item ${isActive ? 'active' : ''}" onclick="${sec.load}('${esc(item.path)}')">
+          <span class="folder-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.name}">${item.name}</span>
+          ${cntLabel}
+          <button class="remove-btn" onclick="event.stopPropagation(); removeFromPlaylist('${sec.removeType}', '${esc(item.path)}')">✕</button>
+        </div>`;
+      }).join('');
+      if (shown.length === 0) html += '<div class="picker-status">No items match the filters</div>';
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+  ensurePlaylistPhotoCounts();
+}
+
+// Fill photo counts for playlist items not yet counted, then re-render once.
+// Failed lookups cache as null so they render '…' without refetch storms.
+let playlistCountsInFlight = false;
+async function ensurePlaylistPhotoCounts() {
+  if (playlistCountsInFlight) return;
+  const missing = playlist.photos.filter(p => !(p.path in photoCountCache));
+  if (missing.length === 0) return;
+  playlistCountsInFlight = true;
+  await Promise.all(missing.map(async p => {
+    try {
+      const r = await fetch(`${API}/api/photos/count?path=${encodeURIComponent(p.path)}`);
+      const d = await r.json();
+      photoCountCache[p.path] = d.count;
+    } catch {
+      photoCountCache[p.path] = null;
+    }
+  }));
+  playlistCountsInFlight = false;
+  renderPlaylist();
+}
+
+function removeFromPlaylist(type, itemPath) {
+  const list = type === 'photo' ? playlist.photos : playlist.videos;
+  const idx = list.findIndex(p => p.path === itemPath);
+  if (idx >= 0) list.splice(idx, 1);
+  playlistMutate('remove', { type: type === 'photo' ? 'photos' : 'videos', path: itemPath });
+  renderPlaylist();
+  renderPhotoPicker();
+  renderVideoPicker();
+}
+
+// Preview a photo set — show first image without autoplay
+async function previewPhotoSet(setPath, name) {
+  stopPlay();
+  const files = await fetch(`${API}/api/photos/set?path=${encodeURIComponent(setPath)}`).then(r => r.json());
+  if (files.length > 0) {
+    currentItem = { type: 'photo-preview' };
+    currentFiles = files;
+    currentFileIndex = 0;
+    const viewport = document.getElementById('viewport');
+    viewport.innerHTML = `<img src="${files[0].url}" alt="${files[0].filename}">`;
+    document.getElementById('nowPlaying').textContent = `${name} — 1 / ${files.length}`;
+    document.querySelector('.player-controls').style.display = 'flex';
+    renderPhotoStrip();
+  }
+}
+
+// Play a single video file directly from picker
+function playVideoFile(url) {
+  stopPlay();
+  currentItem = { type: 'video-direct' };
+  currentFiles = [{ url, filename: decodeURIComponent(url.split('/').pop() || 'video') }];
+  currentFileIndex = 0;
+  showCurrentFile();
+}
+
+// ── Player ──
+
+async function loadPhotoByPath(setPath) {
+  stopPlay();
+  const setInfo = playlist.photos.find(p => p.path === setPath);
+  if (!setInfo) return;
+  currentItem = { type: 'photo', path: setPath };
+
+  const files = await fetch(`${API}/api/photos/set?path=${encodeURIComponent(setInfo.path)}`).then(r => r.json());
+  currentFiles = files;
+  currentFileIndex = 0;
+
+  renderPlaylist();
+  showCurrentFile();
+}
+
+async function loadVideoByPath(videoPath) {
+  stopPlay();
+  const setInfo = playlist.videos.find(v => v.path === videoPath);
+  if (!setInfo) return;
+  currentItem = { type: 'video', path: videoPath };
+
+  // If path is a proxy URL (individual video), play directly
+  if (setInfo.path.startsWith('/api/proxy/')) {
+    currentFiles = [{ url: setInfo.path, filename: setInfo.name }];
+  } else {
+    const files = await fetch(`${API}/api/videos/list?path=${encodeURIComponent(setInfo.path)}`).then(r => r.json());
+    currentFiles = files;
+  }
+  currentFileIndex = 0;
+
+  renderPlaylist();
+  showCurrentFile();
+}
+
+function showCurrentFile() {
+  const viewport = document.getElementById('viewport');
+  const file = currentFiles[currentFileIndex];
+  if (!file) return;
+
+  const nowPlaying = document.getElementById('nowPlaying');
+
+  const controlsBar = document.querySelector('.player-controls');
+
+  if (currentItem.type === 'photo' || currentItem.type === 'photo-preview') {
+    viewport.innerHTML = `<img src="${file.url}" alt="${file.filename}">`;
+    const photoEntry = playlist.photos.find(p => p.path === currentItem.path);
+    const displayName = (photoEntry?.modelName && photoEntry?.site)
+      ? `${photoEntry.modelName} — ${photoEntry.site}`
+      : photoEntry?.modelName || photoEntry?.name || '';
+    nowPlaying.textContent = `${displayName} — ${currentFileIndex + 1} / ${currentFiles.length}`;
+    controlsBar.style.display = 'flex';
+    renderPhotoStrip();
+  } else {
+    // Video: use native controls only, hide bottom bar
+    viewport.innerHTML = `<video src="${file.url}" controls preload="auto" style="width:100%;height:100%;"></video>`;
+    const setName = currentItem.path ? (playlist.videos.find(v => v.path === currentItem.path)?.name || '') : '';
+    nowPlaying.textContent = setName ? `${setName} — ${currentFileIndex + 1} / ${currentFiles.length}` : file.filename;
+    controlsBar.style.display = 'none';
+    document.getElementById('photoStrip').innerHTML = ''; // Clear strip for video
+  }
+}
+
+function togglePlay() {
+  if (!currentItem || currentFiles.length === 0) return;
+
+  if (playing) {
+    stopPlay();
+  } else {
+    playing = true;
+    document.getElementById('btnPlay').textContent = '⏸ Pause';
+    document.getElementById('btnPlay').classList.add('playing');
+
+    if (currentItem.type === 'photo') {
+      playTimer = setInterval(nextFile, slideInterval * 1000);
+    } else {
+      // For video, autoplay is handled by the video element
+      const video = document.querySelector('video');
+      if (video) video.play();
+    }
+  }
+}
+
+function stopPlay() {
+  playing = false;
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  document.getElementById('btnPlay').textContent = '▶ Play';
+  document.getElementById('btnPlay').classList.remove('playing');
+}
+
+function nextFile() {
+  if (currentFiles.length === 0) return;
+  currentFileIndex = (currentFileIndex + 1) % currentFiles.length;
+  showCurrentFile();
+}
+
+function prevFile() {
+  if (currentFiles.length === 0) return;
+  currentFileIndex = (currentFileIndex - 1 + currentFiles.length) % currentFiles.length;
+  showCurrentFile();
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      togglePlay();
+      break;
+    case 'ArrowRight':
+      nextFile();
+      break;
+    case 'ArrowLeft':
+      prevFile();
+      break;
+  }
+});
+
+init();
+
+// ── Resize divider ──
+(function() {
+  const divider = document.getElementById('resizeDivider');
+  const layout = document.querySelector('.layout');
+  let startX, startWidth;
+
+  divider.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = document.querySelector('.left-panel').offsetWidth;
+    divider.classList.add('dragging');
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', onStop);
+  });
+
+  function onDrag(e) {
+    const newWidth = Math.max(200, Math.min(600, startWidth + (e.clientX - startX)));
+    layout.style.setProperty('--panel-width', newWidth + 'px');
+  }
+
+  function onStop() {
+    divider.classList.remove('dragging');
+    document.removeEventListener('mousemove', onDrag);
+    document.removeEventListener('mouseup', onStop);
+  }
+})();
+
+// ── Photo strip ──
+function renderPhotoStrip() {
+  const strip = document.getElementById('photoStrip');
+  if (!currentItem || (currentItem.type !== 'photo' && currentItem.type !== 'photo-preview') || currentFiles.length === 0) {
+    strip.innerHTML = '';
+    return;
+  }
+
+  strip.innerHTML = currentFiles.map((f, i) =>
+    `<img src="${f.url}" class="${i === currentFileIndex ? 'active' : ''}" onclick="jumpToPhoto(${i})" loading="lazy" alt="${f.filename}">`
+  ).join('');
+
+  // Scroll active thumbnail into view
+  const active = strip.querySelector('.active');
+  if (active) active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+}
+
+function jumpToPhoto(index) {
+  currentFileIndex = index;
+  showCurrentFile();
+}
+
+// Panel drag-to-reorder
+(function() {
+  let dragEl = null;
+  const panel = document.querySelector('.left-panel');
+  panel.addEventListener('dragstart', e => {
+    dragEl = e.target.closest('.panel-section');
+    if (dragEl) dragEl.classList.add('dragging');
+  });
+  panel.addEventListener('dragend', () => {
+    if (dragEl) dragEl.classList.remove('dragging');
+    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('drag-over'));
+    dragEl = null;
+  });
+  panel.addEventListener('dragover', e => {
+    e.preventDefault();
+    const target = e.target.closest('.panel-section');
+    if (target && target !== dragEl) {
+      document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('drag-over'));
+      target.classList.add('drag-over');
+    }
+  });
+  panel.addEventListener('drop', e => {
+    e.preventDefault();
+    const target = e.target.closest('.panel-section');
+    if (target && dragEl && target !== dragEl) {
+      const sections = [...panel.querySelectorAll('.panel-section')];
+      const dragIdx = sections.indexOf(dragEl);
+      const dropIdx = sections.indexOf(target);
+      if (dragIdx < dropIdx) target.after(dragEl);
+      else target.before(dragEl);
+    }
+    document.querySelectorAll('.panel-section').forEach(s => s.classList.remove('drag-over'));
+  });
+})();
+</script>
+
+</body>
+</html>
