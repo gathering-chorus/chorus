@@ -1,0 +1,66 @@
+# ============================================================================
+# #3619 Class A wave — secure the zero-caller mutation endpoints.
+# Verified 0 live callers (Loki 7d + last-hour + source grep, 2026-07-07).
+# Same securedBy gate as #3618 (gate-chorus-api-mutations). cards/* EXCLUDED
+# from this wave — board write path, Wren's domain, needs her round-trip check.
+# Busy families (index/subdomains/discover/validate/reload) are the
+# credential-then-flip work, NOT here.
+# ============================================================================
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-alert-write a chorus:APISurface ;
+    rdfs:label "chorus-api alert write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/alert" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-open-write a chorus:APISurface ;
+    rdfs:label "chorus-api open write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/open" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-pulse-write a chorus:APISurface ;
+    rdfs:label "chorus-api pulse write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/pulse" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-role-state-write a chorus:APISurface ;
+    rdfs:label "chorus-api role-state write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/role-state" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-voice-write a chorus:APISurface ;
+    rdfs:label "chorus-api voice write (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/voice/" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-catalog-writes a chorus:APISurface ;
+    rdfs:label "chorus-api catalog writes (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/catalog/" ;
+    chorus:requiresScope "urn:chorus:catalog" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-icd-writes a chorus:APISurface ;
+    rdfs:label "chorus-api ICD domain writes (zero-caller)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/icd/domains/" ;
+    chorus:requiresScope "urn:chorus:icd" ;
+    chorus:servedBy chorus:services .

@@ -7,7 +7,11 @@ The point of this inventory: split the 64 into **flip-now** (zero live callers �
 ## Prereq — step 0 (blocks the ALLOW path on every class)
 `chorus-api-wrapper.sh` does NOT source `~/.chorus/secrets/chorus-realm.env`, so chorus-api has no `CHORUS_SERVICE_TOKEN_SECRET`. The envelope's REFUSE path (401) works without it (proven live #3618), but the ALLOW path (scoped-token→200) cannot verify until the wrapper sources the realm secret (reference, not value — same pattern as owl-api-launch.sh). **Do this first**, else no credentialed caller can pass any flipped gate.
 
-## CLASS A — zero-caller (flip-now, no credentialing) — ~34 endpoints
+## CLASS A — zero-caller — ✅ FIRST WAVE FLIPPED LIVE 2026-07-07 (10 endpoints, all 401)
+
+Secured + live-401-proven: chorus/{alert,open,pulse,role-state,voice/*,catalog/*}, icd/domains/*. Zero breakage (busy index still 202). cards/* HELD (Wren round-trip check). Source: security-3619-surfaces.ttl, applied via door.
+
+### (original class A table)
 Loki 7d = 0 hits. Securing these breaks nothing (same profile as #3618's reindex/discover-pages/discover-endpoints). Verify each 0 before flip (a caller could appear).
 
 | Family | Endpoints | 7d hits |
