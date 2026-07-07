@@ -176,8 +176,8 @@ chorus:alerts-monitors a owl:Class, chorus:Domain ;
   chorus:repoTarget "proving/domains/alerts" .
   # FLAG: no clean owl:Class vocab (Gate/GateResult are gate-level, not alerts) — omitted, not faked.
 
-chorus:security-trust a owl:Class, chorus:Domain ;
-  rdfs:label "security-trust" ; chorus:comment "Authentication, authorization, secrets management, and TCC permissions." ;
+chorus:security a owl:Class, chorus:Domain ;
+  rdfs:label "security" ; chorus:comment "Authentication, authorization, secrets management, and TCC permissions." ;
   chorus:purpose "Hold the system's trust boundary — auth, secrets, permissions, and the probes that test it." ;
   chorus:ownedBy chorus:silas ; chorus:partOf chorus:borgProduct ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
