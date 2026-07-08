@@ -35,15 +35,15 @@ ONT = "urn:chorus:ontology"
 INS = "urn:chorus:instances"
 
 SEVEN = ["athena", "loom", "werk", "borg", "clearing", "convergence", "pulse"]
-PARENT = "product-chorus"
+PARENT = "chorus"  # BARE grain — silas ruling 14:11: ADR-040 kinds table is the law, product is a bare kind
 # Displaced instances squatting in the schema room. NOT listed: chorus#gathering
 # (a different product entirely — out of this card's scope, flagged in scratch);
 # chorusStream/security edge noise + `tests` hasDomain (silas coherence calls).
 RETIRE_IN_ONT = [f"product-{n}" for n in
                  ["athena", "loom", "werk", "clearing", "convergence", "pulse", "spine"]] \
                 + ["chorusProduct", "borgProduct"]
-EDGE_REPOINT = {"chorusProduct": PARENT, "borgProduct": "product-borg",
-                "product-spine": "product-clearing"}
+EDGE_REPOINT = {"chorusProduct": PARENT, "borgProduct": "borg",
+                "product-spine": "clearing"}
 # silas zero-orphan check 13:34 — the 3 edges OUTSIDE the 44 mapped, dispositioned:
 #   gathering partOf chorusStream        -> DROP (out-of-scope product; not stream-contained)
 #   chorusProduct partOf chorusStream    -> dies with the chorusProduct subject-delete (P3)
@@ -57,10 +57,13 @@ EXPLICIT_EDGE_OPS = [
 # partOf everywhere — no parallel contains vocabulary):
 #   memory/knowledge/search -> product-pulse (Jeff 13:31: search is part of pulse)
 #   tests -> product-werk (silas 13:34: werk owns build->test->deploy)
-CHILD_OVERRIDES = {"memory": "product-pulse", "knowledge": "product-pulse",
-                   "search": "product-pulse", "tests": "product-werk"}
+CHILD_OVERRIDES = {"memory": "pulse", "knowledge": "pulse",
+                   "search": "pulse", "tests": "werk"}
 SCALARS = ["label", "comment", "status", "audience", "gaps",
            "valueProposition", "vision", "purpose"]
+# PM-authored fill for fields absent in EVERY copy (conform data to the shape
+# floor, never relax it — #3558's own law). Marked here, noted on the card.
+AUTHORED_FIELDS = {"convergence": {"vision": "Every outside source lands through one governed ingestion path — mapped, reconciled, and conformed to the canonical model before it enters the graph, so nothing arrives unshaped."}}
 
 
 def sparql(q):
@@ -105,17 +108,13 @@ def call(method, path, body=None, headers=None, token="", execute=False):
         return e.code, e.read().decode()[:200]
 
 
-def nt_term(v):
-    """Render a value as an N-Triples term slot: IRI -> <...>, else quoted literal."""
-    if v.startswith("http://") or v.startswith("https://") or v.startswith("urn:"):
-        return f"<{v}>"
-    esc = v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
-    return f'"{esc}"'
+def preds_of(local, graph):
+    rows = sparql(f"SELECT DISTINCT ?p WHERE {{ GRAPH <{graph}> {{ <{NS}{local}> ?p ?o }} }}")
+    return [b["p"]["value"] for b in rows]
 
 
-def triples_of(local, graph):
-    rows = sparql(f"SELECT ?p ?o WHERE {{ GRAPH <{graph}> {{ <{NS}{local}> ?p ?o }} }}")
-    return [(f"<{NS}{local}>", f"<{b['p']['value']}>", nt_term(b["o"]["value"])) for b in rows]
+def fields_localname(vals):
+    return [v.rsplit("#", 1)[-1] for v in vals]
 
 
 def post_batch(graph, lines, token, execute):
@@ -123,9 +122,7 @@ def post_batch(graph, lines, token, execute):
     if not execute:
         print(f"  DRY: POST /batch -> <{graph}>  ({len(lines)} lines, {len(body)} bytes)")
         for l in lines[:400]:
-            print("       ", " ".join(l)[:150])
-        if len(lines) > 400:
-            print(f"        ... +{len(lines)-6} more")
+            print("       ", " ".join(l)[:160])
         return 200, "dry-run"
     req = urllib.request.Request(OWL + "/batch", method="POST", data=body.encode(),
         headers={"Authorization": f"Bearer {token}", "x-target-graph": graph,
@@ -135,6 +132,23 @@ def post_batch(graph, lines, token, execute):
             return r.status, r.read().decode()[:200]
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode()[:200]
+
+
+def dal_add(local, fields, edges, execute):
+    """Insert one product through chorus-model add — the DAL escapes field values
+    internally and validates the shape floor; prose (semicolons etc.) rides safely."""
+    import subprocess
+    args = ["chorus-model", "add", "--kind", "product", "--name", local]
+    for k, v in fields.items():
+        args += ["--field", f"{k}={v}"]
+    for prop, target in edges:
+        args += ["--edge", f"{prop}={target}"]
+    if not execute:
+        print(f"  DRY: chorus-model add product {local} fields={list(fields)} edges={edges}")
+        return 0, "dry-run"
+    r = subprocess.run(args, capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "DEPLOY_ROLE": "wren"})
+    return r.returncode, (r.stdout + r.stderr).strip()[:200]
 
 
 def main():
@@ -148,74 +162,88 @@ def main():
 
     P = lambda local: f"<{NS}{local}>"
     PARTOF = f"<{NS}partOf>"
-    ins_lines = []   # -> urn:chorus:instances
-    ont_lines = []   # -> urn:chorus:ontology
 
-    # P1 — canonical products into Product's resolved room (urn:chorus:instances).
-    # Wholesale node copy from the source graph (preserves type/ownedBy/atStep/
-    # hasDomain/multi-valued fields exactly), EXCEPT partOf (containment is set
-    # explicitly below) — and for the parent, EXCEPT hasDomain (memory/knowledge/
-    # search/tests re-home to pulse/werk per Jeff 13:31 + silas 13:34) with the
-    # label overridden to "Chorus".
-    for n in SEVEN + ["__parent__"]:
-        local = PARENT if n == "__parent__" else f"product-{n}"
-        src_graph = ONT
-        src_local = "chorusProduct" if n == "__parent__" else local
-        src_triples = triples_of(src_local, ONT)
-        if not src_triples and n != "__parent__":
-            src_triples = triples_of(local, INS)  # borg's only V2 copy lives in instances
-            src_graph = INS
-        if not src_triples:
+    # ---- assemble ----
+    # Batch A (instances): wildcard-object DELs — subject+predicate exact IRIs,
+    # object ?o. Wipes every stale product row completely; charset-safe always.
+    batch_a = []
+    for n in SEVEN + [None]:
+        for local in ((PARENT, "chorusProduct", "product-chorus") if n is None
+                      else (n, f"product-{n}")):
+            for pred in preds_of(local, INS):
+                batch_a.append(("DEL", P(local), f"<{pred}>", "?o"))
+
+    # DAL adds: one per canonical product, full field set from the source copy.
+    adds = []
+    for n in SEVEN + [None]:
+        local = PARENT if n is None else n
+        src_local = "chorusProduct" if n is None else f"product-{n}"
+        src = dict(fields_of(src_local, INS)) if n else {}
+        src.update(fields_of(src_local, ONT))  # ontology (current model) wins per field
+        if not src:
             sys.exit(f"REFUSED: no source content anywhere for {local}")
-        for t in triples_of(local, INS):  # wipe the stale instance row (enumerated)
-            ins_lines.append(("DEL",) + t)
-        for (subj, pred, obj) in src_triples:
-            if pred == PARTOF:
-                continue
-            if n == "__parent__":
-                if pred == f"<{NS}hasDomain>":
-                    continue
-                if pred == "<http://www.w3.org/2000/01/rdf-schema#label>":
-                    obj = '"Chorus"'
-            ins_lines.append(("INS", P(local), pred, obj))
-    for n in SEVEN:  # the parent contains the seven
-        ins_lines.append(("INS", P(f"product-{n}"), PARTOF, P(PARENT)))
+        fields = {f: src[f][0] for f in SCALARS if f in src}
+        for k, v in AUTHORED_FIELDS.get(local, {}).items():
+            fields.setdefault(k, v)
+        edges = []
+        if "ownedBy" in src:
+            edges.append(("ownedBy", "role:" + fields_localname(src["ownedBy"])[0].removeprefix("role-")))
+        if n is None:
+            fields["label"] = "Chorus"
+            edges += [("hasChild", f"product:{c}") for c in SEVEN]
+        else:
+            edges.append(("partOf", f"product:{PARENT}"))
+            for d in fields_localname(src.get("hasDomain", [])):
+                edges.append(("hasDomain", f"domain:{d}"))
+        adds.append((local, fields, edges))
 
-    # P2 — re-point every legacy containment edge (zero-orphan contract).
+    # Batch B (ontology): edge re-points (all-IRI) + displaced-subject wipes
+    # (wildcard-object per distinct predicate).
+    batch_b = []
     edge_count = 0
     for old, new in EDGE_REPOINT.items():
         for c in partof_children(old):
             if c.startswith("product-") or c in RETIRE_IN_ONT:
                 continue
             target = CHILD_OVERRIDES.get(c, new)
-            ont_lines.append(("DEL", P(c), PARTOF, P(old)))
-            ont_lines.append(("INS", P(c), PARTOF, P(target)))
+            batch_b.append(("DEL", P(c), PARTOF, P(old)))
+            batch_b.append(("INS", P(c), PARTOF, P(target)))
             edge_count += 1
-    # the 3-edge disposition (silas 13:34)
-    ont_lines.append(("DEL", P("gathering"), PARTOF, P("chorusStream")))
-    ont_lines.append(("DEL", P("identity"), PARTOF, P("security")))
-    ont_lines.append(("INS", P("identity"), PARTOF, P("product-borg")))
-
-    # P3 — retire displaced Product instances from the schema room (full enumerated wipe).
+    batch_b.append(("DEL", P("gathering"), PARTOF, P("chorusStream")))
+    batch_b.append(("DEL", P("identity"), PARTOF, P("security")))
+    batch_b.append(("INS", P("identity"), PARTOF, P("borg")))
     for local in RETIRE_IN_ONT:
-        for t in triples_of(local, ONT):
-            ont_lines.append(("DEL",) + t)
+        for pred in preds_of(local, ONT):
+            batch_b.append(("DEL", P(local), f"<{pred}>", "?o"))
 
-    print(f"#3558 recovery plan — batches: instances {len(ins_lines)} lines, "
-          f"ontology {len(ont_lines)} lines, {edge_count} edge re-points, execute={execute}")
-    for graph, lines in ((INS, ins_lines), (ONT, ont_lines)):
-        code, msg = post_batch(graph, lines, token, execute)
+    print(f"#3558 recovery plan — batchA(instances) {len(batch_a)} DELs · "
+          f"{len(adds)} DAL adds · batchB(ontology) {len(batch_b)} lines "
+          f"({edge_count} edge re-points) · execute={execute}")
+
+    # ---- apply, stop at first failure ----
+    code, msg = post_batch(INS, batch_a, token, execute)
+    if execute:
+        print(f"  {code} POST /batch <{INS}> {msg[:100]}")
+        if code >= 400:
+            sys.exit(f"STOPPED: batch A -> {code} {msg}")
+    for local, fields, edges in adds:
+        code, msg = dal_add(local, fields, edges, execute)
         if execute:
-            print(f"  {code} POST /batch <{graph}> {msg[:100]}")
-            if code >= 400:
-                sys.exit(f"STOPPED at first failure (no partial wreckage): batch <{graph}> -> {code} {msg}")
+            print(f"  rc={code} chorus-model add {local} {msg[:90]}")
+            if code != 0:
+                sys.exit(f"STOPPED: dal add {local} -> {msg}")
+    code, msg = post_batch(ONT, batch_b, token, execute)
+    if execute:
+        print(f"  {code} POST /batch <{ONT}> {msg[:100]}")
+        if code >= 400:
+            sys.exit(f"STOPPED: batch B -> {code} {msg}")
 
-    # P4 — verify (read-only; runs in both modes). Self-verifiable per Jeff's bar.
+    # ---- verify (read-only, both modes) ----
     for g in (INS, ONT):
         n = sparql(f"SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE "
                    f"{{ GRAPH <{g}> {{ ?s a <{NS}Product> }} }}")[0]["n"]["value"]
         print(f"verify: Product count in {g}: {n}")
-    canon = ", ".join(f"<{NS}product-{n}>" for n in SEVEN) + f", <{NS}{PARENT}>"
+    canon = ", ".join(f"<{NS}{n}>" for n in SEVEN) + f", <{NS}{PARENT}>"
     outside = sparql(
         f"SELECT (COUNT(?c) AS ?n) WHERE {{ GRAPH <{ONT}> {{ ?c <{NS}partOf> ?t . "
         f"?t a <{NS}Product> . FILTER(?t NOT IN ({canon})) }} }}"
