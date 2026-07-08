@@ -1,3 +1,4 @@
+// @test-type: integration — hits the live chorus-api at :3340; carries a scoped service token on writes (#3619).
 /**
  * Scheduled reindex tests — #1960
  *
@@ -11,6 +12,10 @@
  */
 
 import { startTestApp, type TestApp } from './lib/test-app';
+import { withServiceAuth } from './lib/service-token';
+// #3619 — live mutation endpoints are envelope-secured; this suite is a real
+// consumer and carries a scoped token on every write (deploy-before-require).
+withServiceAuth();
 
 describe('Scheduled reindex — index_freshness (#1960)', () => {
 

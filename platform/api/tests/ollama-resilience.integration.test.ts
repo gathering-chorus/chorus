@@ -16,6 +16,10 @@
  */
 
 import { startTestApp, type TestApp } from './lib/test-app';
+import { withServiceAuth } from './lib/service-token';
+// #3619 — live mutation endpoints are envelope-secured; this suite is a real
+// consumer and carries a scoped token on every write (deploy-before-require).
+withServiceAuth();
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://127.0.0.1:11434';
 

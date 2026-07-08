@@ -1,3 +1,4 @@
+// @test-type: integration — hits the live chorus-api at :3340; carries a scoped service token on writes (#3619).
 /**
  * Tests for POST /api/athena/subdomains/:id/owner (#2508).
  *
@@ -5,6 +6,10 @@
  * Integration tests hit the live API at localhost:3340 — gated on RUN_INTEGRATION.
  */
 import { patchTtlOwner, findBlockTerminator } from '../src/handlers/athena-owner-write';
+import { withServiceAuth } from './lib/service-token';
+// #3619 — live mutation endpoints are envelope-secured; this suite is a real
+// consumer and carries a scoped token on every write (deploy-before-require).
+withServiceAuth();
 
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';

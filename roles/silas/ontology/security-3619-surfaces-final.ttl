@@ -1,0 +1,67 @@
+# #3619 — FINAL wave: lock every remaining mutation endpoint. Zero
+# unauthenticated mutation surface on chorus-api (AC4 done-state). Callers
+# token-wired in THIS branch: SDK maybeFireTrace, shim role-state bridge,
+# mcp doc-catalog, heartbeat-probe index poke, and the 6 integration suites
+# (tests/lib/service-token). Athena UI browser writes 401 until the session
+# bridge exists — default-deny is correct (anonymous write refused, not
+# silently accepted). Deduped to one surface per (method, path-prefix, scope);
+# the envelope matches by prefix so subdomains/* collapses to method-keyed rows.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:surface-post-api-chorus-index a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/chorus/index (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/index" ;
+    chorus:requiresScope "urn:chorus:index" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-delete-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api DELETE /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "DELETE" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-put-api-athena-subdomains a chorus:APISurface ;
+    rdfs:label "chorus-api PUT /api/athena/subdomains (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/athena/subdomains" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-athena-reload a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/athena/reload (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/reload" ;
+    chorus:requiresScope "urn:chorus:domains:code" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-chorus-trace a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/chorus/trace (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/chorus/trace" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-post-api-doc-catalog-add a chorus:APISurface ;
+    rdfs:label "chorus-api POST /api/doc-catalog/add (prefix surface)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/doc-catalog/add" ;
+    chorus:requiresScope "urn:chorus:ops" ;
+    chorus:servedBy chorus:services .
+
