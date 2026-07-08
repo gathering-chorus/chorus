@@ -94,30 +94,6 @@ pub fn find_all_pending(role: &str, pending_dir: &Path) -> Vec<PathBuf> {
     hits.into_iter().map(|(p, _)| p).collect()
 }
 
-/// Find the most-recently-modified `<role>-*.argv.json` file under `pending_dir`.
-/// Returns `None` if the directory doesn't exist or has no matching files.
-pub fn find_most_recent_pending(role: &str, pending_dir: &Path) -> Option<PathBuf> {
-    let prefix = format!("{}-", role);
-    let entries = std::fs::read_dir(pending_dir).ok()?;
-    let mut best: Option<(PathBuf, SystemTime)> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if !name.starts_with(&prefix) || !name.ends_with(".argv.json") {
-            continue;
-        }
-        let mtime = match entry.metadata().and_then(|m| m.modified()) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
-        match best {
-            None => best = Some((path, mtime)),
-            Some((_, prev_mtime)) if mtime > prev_mtime => best = Some((path, mtime)),
-            _ => {}
-        }
-    }
-    best.map(|(p, _)| p)
-}
 
 /// True if the file's mtime is older than `PENDING_TIMEOUT_SECS` relative to `now`.
 pub fn is_stale(path: &Path, now: SystemTime) -> bool {
@@ -233,76 +209,10 @@ pub enum ApprovalOutcome {
     SpawnFailed,
 }
 
-/// Orchestrate the approve/deny pass on the most-recent pending request for
-/// a role. Pure relative to the injected `spawn_cards` closure — tests pass
-/// a mock; production passes a closure that invokes the cards CLI with
-/// DEPLOY_ROLE=jeff (bypasses the bouncer cleanly per #2905).
-///
-/// `spawn_cards(desc_path, argv) -> Ok(true)` means the card was filed
-/// successfully. The closure owns the actual subprocess invocation so this
-/// function stays test-able without a live cards CLI.
-pub fn handle_approval_request<F>(
-    role: &str,
-    signal: ApprovalSignal,
-    pending_dir: &Path,
-    now: SystemTime,
-    spawn_cards: F,
-) -> ApprovalOutcome
-where
-    F: FnOnce(&Path, Vec<String>) -> std::io::Result<bool>,
-{
-    let pending_path = match find_most_recent_pending(role, pending_dir) {
-        Some(p) => p,
-        None => return ApprovalOutcome::NoPending,
-    };
-    if is_stale(&pending_path, now) {
-        remove_pending_pair(&pending_path);
-        return ApprovalOutcome::TimedOut;
-    }
-    let payload_str = match std::fs::read_to_string(&pending_path) {
-        Ok(s) => s,
-        Err(_) => return ApprovalOutcome::ReadFailed,
-    };
-    let payload: PendingPayload = match serde_json::from_str(&payload_str) {
-        Ok(p) => p,
-        Err(_) => return ApprovalOutcome::ParseFailed,
-    };
-    match signal {
-        ApprovalSignal::Deny => {
-            let title = payload.title.clone();
-            remove_pending_pair(&pending_path);
-            ApprovalOutcome::Denied { title }
-        }
-        ApprovalSignal::Approve => {
-            let desc = payload.opts.description.clone().unwrap_or_default();
-            let desc_path = std::env::temp_dir().join(format!(
-                "card-approval-{}-{}.md",
-                std::process::id(),
-                now.duration_since(SystemTime::UNIX_EPOCH)
-                    .map(|d| d.as_millis())
-                    .unwrap_or(0),
-            ));
-            if std::fs::write(&desc_path, &desc).is_err() {
-                return ApprovalOutcome::ReadFailed;
-            }
-            let argv = build_cards_add_argv(&payload);
-            let result = spawn_cards(&desc_path, argv);
-            let _ = std::fs::remove_file(&desc_path);
-            match result {
-                Ok(true) => {
-                    let title = payload.title.clone();
-                    remove_pending_pair(&pending_path);
-                    ApprovalOutcome::Approved { title }
-                }
-                _ => ApprovalOutcome::SpawnFailed,
-            }
-        }
-    }
-}
 
 /// #2964: drain the entire pending queue for a role on one approval keyword.
 /// Iterates over every `<role>-*.argv.json` in `pending_dir` oldest-first.
-/// Each payload is processed via the same logic as `handle_approval_request`
+/// Each payload: stale/parse/approve/deny handling inline
 /// (stale → TimedOut + cleanup; parse-fail → ParseFailed + preserve; approve
 /// → spawn + cleanup on success; deny → cleanup). Returns one `ApprovalOutcome`
 /// per payload, in processing order — caller iterates to emit per-card spine
@@ -517,31 +427,8 @@ mod tests {
         file.set_modified(target).unwrap();
     }
 
-    #[test]
-    fn find_most_recent_pending_returns_none_when_dir_missing() {
-        let tmp = TempDir::new().unwrap();
-        let missing = tmp.path().join("does-not-exist");
-        assert!(find_most_recent_pending("wren", &missing).is_none());
-    }
 
-    #[test]
-    fn find_most_recent_pending_returns_none_when_no_match() {
-        let tmp = TempDir::new().unwrap();
-        write_pending(tmp.path(), "silas", "x", "{}");
-        write_pending(tmp.path(), "kade", "y", "{}");
-        assert!(find_most_recent_pending("wren", tmp.path()).is_none());
-    }
 
-    #[test]
-    fn find_most_recent_pending_picks_newest_mtime_for_role() {
-        let tmp = TempDir::new().unwrap();
-        let older = write_pending(tmp.path(), "wren", "a", "{}");
-        let newer = write_pending(tmp.path(), "wren", "b", "{}");
-        // Make "older" actually older.
-        set_mtime(&older, 60);
-        let found = find_most_recent_pending("wren", tmp.path()).unwrap();
-        assert_eq!(found, newer);
-    }
 
     #[test]
     fn is_stale_true_when_older_than_timeout() {
@@ -661,111 +548,11 @@ mod tests {
         .to_string()
     }
 
-    #[test]
-    fn handle_approve_happy_path() {
-        let tmp = TempDir::new().unwrap();
-        write_pending(tmp.path(), "wren", "live", &fresh_payload_json());
-        let mut captured_argv: Vec<String> = Vec::new();
-        let mut captured_desc_present = false;
-        let argv_ref = &mut captured_argv;
-        let desc_ref = &mut captured_desc_present;
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Approve,
-            tmp.path(),
-            SystemTime::now(),
-            |desc_path, argv| {
-                *desc_ref = desc_path.exists();
-                *argv_ref = argv;
-                Ok(true)
-            },
-        );
-        assert_eq!(outcome, ApprovalOutcome::Approved { title: "test card".into() });
-        assert!(captured_desc_present, "desc file should exist at spawn time");
-        assert_eq!(captured_argv[0], "test card");
-        // pending pair cleaned up
-        assert!(!tmp.path().join("wren-live.argv.json").exists());
-        assert!(!tmp.path().join("wren-live.txt").exists());
-    }
 
-    #[test]
-    fn handle_deny_happy_path() {
-        let tmp = TempDir::new().unwrap();
-        write_pending(tmp.path(), "wren", "live", &fresh_payload_json());
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Deny,
-            tmp.path(),
-            SystemTime::now(),
-            |_, _| panic!("spawn_cards must not be called on deny"),
-        );
-        assert_eq!(outcome, ApprovalOutcome::Denied { title: "test card".into() });
-        assert!(!tmp.path().join("wren-live.argv.json").exists());
-        assert!(!tmp.path().join("wren-live.txt").exists());
-    }
 
-    #[test]
-    fn handle_no_pending_returns_no_pending() {
-        let tmp = TempDir::new().unwrap();
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Approve,
-            tmp.path(),
-            SystemTime::now(),
-            |_, _| panic!("spawn must not run when there's no pending"),
-        );
-        assert_eq!(outcome, ApprovalOutcome::NoPending);
-    }
 
-    #[test]
-    fn handle_stale_pending_times_out_and_cleans_up() {
-        let tmp = TempDir::new().unwrap();
-        let argv = write_pending(tmp.path(), "wren", "old", &fresh_payload_json());
-        set_mtime(&argv, PENDING_TIMEOUT_SECS + 30);
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Approve,
-            tmp.path(),
-            SystemTime::now(),
-            |_, _| panic!("spawn must not run when stale"),
-        );
-        assert_eq!(outcome, ApprovalOutcome::TimedOut);
-        assert!(!argv.exists());
-        assert!(!tmp.path().join("wren-old.txt").exists());
-    }
 
-    #[test]
-    fn handle_parse_failed_when_json_garbage() {
-        let tmp = TempDir::new().unwrap();
-        write_pending(tmp.path(), "wren", "bad", "{not valid json");
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Approve,
-            tmp.path(),
-            SystemTime::now(),
-            |_, _| panic!("spawn must not run on parse failure"),
-        );
-        assert_eq!(outcome, ApprovalOutcome::ParseFailed);
-        // pending preserved for inspection
-        assert!(tmp.path().join("wren-bad.argv.json").exists());
-    }
 
-    #[test]
-    fn handle_spawn_failed_preserves_pending() {
-        let tmp = TempDir::new().unwrap();
-        let argv = write_pending(tmp.path(), "wren", "live", &fresh_payload_json());
-        let outcome = handle_approval_request(
-            "wren",
-            ApprovalSignal::Approve,
-            tmp.path(),
-            SystemTime::now(),
-            |_, _| Ok(false), // simulate exit-status non-zero
-        );
-        assert_eq!(outcome, ApprovalOutcome::SpawnFailed);
-        // pending preserved so Jeff can retry / inspect
-        assert!(argv.exists());
-        assert!(tmp.path().join("wren-live.txt").exists());
-    }
 
     #[test]
     fn cards_cli_path_env_override() {

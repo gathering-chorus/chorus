@@ -391,19 +391,6 @@ fn main() -> ExitCode {
         input
     };
 
-    // #2625: inject CHORUS_WORKTREE_OVERRIDE into JSON. Shim env vars don't
-    // cross the unix-socket boundary to the daemon, same as DEPLOY_ROLE.
-    let input = if std::env::var("CHORUS_WORKTREE_OVERRIDE").is_ok() {
-        if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) {
-            json["chorus_worktree_override"] = serde_json::Value::Bool(true);
-            json.to_string()
-        } else {
-            input
-        }
-    } else {
-        input
-    };
-
     // #3252: propagate CHORUS_TRACE_ID — the SHARED werk trace minted by the
     // demo/build/deploy lifecycle (#2897) — into the JSON so the daemon's
     // hook.decision events carry the same `trace` join key as those verbs.

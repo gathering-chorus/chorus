@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use crate::shared::state_paths::chorus_root;
 
 /// Role detection from working directory
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -57,11 +56,6 @@ pub struct HookInput {
     pub hook_type: Option<String>,
     /// Injected by shim from DEPLOY_ROLE env var (#1714)
     pub deploy_role: Option<String>,
-    /// #2625: injected by shim from CHORUS_WORKTREE_OVERRIDE env. Env vars
-    /// don't cross the unix-socket boundary to the daemon; shim writes them
-    /// into the JSON for hooks to read.
-    #[serde(default)]
-    pub chorus_worktree_override: Option<bool>,
     /// #3252: the SHARED werk trace_id. Shim injects this from CHORUS_TRACE_ID
     /// (the demo/build/deploy lifecycle trace minted in #2897) — same socket-
     /// crossing pattern as `deploy_role` / `chorus_worktree_override`, because

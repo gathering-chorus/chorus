@@ -47,8 +47,6 @@ struct Product {
     owned_by: String,
     status: String,
     gaps: Vec<String>,
-    #[serde(rename = "atStep", default)]
-    at_step: String,
     #[serde(rename = "hasDomain", default)]
     has_domain: Vec<String>,
     #[serde(rename = "hasDesignDoc", default)]
@@ -63,8 +61,6 @@ struct Domain {
     owned_by: String,
     status: String,
     gaps: Vec<String>,
-    #[serde(rename = "atStep", default)]
-    at_step: String,
     #[serde(default)]
     hosts: Vec<String>,
     #[serde(rename = "hasDesignDoc", default)]
@@ -79,8 +75,6 @@ struct Service {
     owned_by: String,
     status: String,
     gaps: Vec<String>,
-    #[serde(rename = "atStep", default)]
-    at_step: String,
     #[serde(default)]
     #[serde(rename = "notInScope")]
     not_in_scope: Vec<String>,

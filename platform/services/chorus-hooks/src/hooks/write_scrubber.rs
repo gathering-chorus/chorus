@@ -165,7 +165,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
+            trace_id: None, tool_output_is_error: None,}
     }
 
     fn make_edit_input(file_path: &str, new_string: &str) -> HookInput {
@@ -183,7 +183,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
+            trace_id: None, tool_output_is_error: None,}
     }
 
     // === Shared file detection ===
@@ -335,7 +335,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,};
+            trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert!(r.stdout.is_none());
         assert_eq!(r.exit_code, 0);

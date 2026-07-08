@@ -7,6 +7,9 @@ description = "Long-running hook service for Claude Code — replaces 12 bash/py
 # #2284: explicit lint config — parity with gathering ESLint ruleset.
 # Warnings tracked in platform/state/gate-warning-baseline; gate-code fails on increase.
 [lints.rust]
+# `coverage` is set by the tarpaulin/llvm-cov runs, not a cargo feature — declare
+# it so check-cfg doesn't flag the nudge_poll cfg gate as a typo.
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(coverage)"] }
 dead_code = "warn"
 unused_imports = "warn"
 unused_variables = "warn"
