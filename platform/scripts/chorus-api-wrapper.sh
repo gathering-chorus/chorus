@@ -20,6 +20,18 @@ if [ -f "$APP_ENV" ]; then
   set +a
 fi
 
+# #3619 step 0 — source the realm secret so chorus-api can VERIFY service tokens
+# at the security envelope's allow path (CHORUS_SERVICE_TOKEN_SECRET; same env
+# file owl-api-launch.sh sources). Reference-only: the gitignored file holds the
+# value, never this script. Without it the envelope 401s every token (refuse
+# path works; allow path can't verify). Optional so non-realm boxes still boot.
+REALM_ENV="$HOME/.chorus/secrets/chorus-realm.env"
+if [ -f "$REALM_ENV" ]; then
+  set -a
+  source "$REALM_ENV"
+  set +a
+fi
+
 cd "$API_DIR"
 
 exec /Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node dist/server.js

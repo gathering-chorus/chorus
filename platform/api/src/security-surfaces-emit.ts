@@ -14,7 +14,11 @@
 import type { SecuredSurface } from './security-envelope';
 
 export interface SparqlRows {
-  results: { bindings: Array<Record<string, { value: string }>> };
+  // #3619 — a binding row OMITS keys bound only by OPTIONAL clauses (method,
+  // pathPrefix, requiresScope in SURFACE_QUERY), so a value can be absent. The
+  // `| undefined` makes that honest — the b.x?.value guards below are then
+  // load-bearing, not redundant (no-unnecessary-condition, Kade #3618 lint).
+  results: { bindings: Array<Record<string, { value: string } | undefined>> };
 }
 
 export interface EmitDeps {

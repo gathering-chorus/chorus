@@ -48,8 +48,19 @@ if [ "$CMD" = "role-state" ] && [ -n "$1" ] && [ -n "$2" ]; then
   STATE="$2"
   CARD_ID=$(echo "$*" | grep -oE 'card=[0-9]+' | head -1 | sed 's/card=//')
   TRACE_ID="state-${ROLE}-${CARD_ID:-none}-$(date +%s)"
+  # #3619 — /api/chorus/trace is envelope-secured; carry a scoped token when
+  # mintable (realm env present), else send bare and let the envelope decide.
+  # Fail-open: this POST was always fire-and-forget.
+  TRACE_AUTH=""
+  if [ -f "$HOME/.chorus/secrets/chorus-realm.env" ]; then
+    TRACE_AUTH=$(set -a; . "$HOME/.chorus/secrets/chorus-realm.env" 2>/dev/null; \
+      python3 "$HOME/CascadeProjects/chorus/platform/scripts/chorus-mint-token.py" \
+        --web-id "http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me" \
+        --scope "urn:chorus:ops" 2>/dev/null || true)
+  fi
   curl -s -X POST http://localhost:3340/api/chorus/trace \
     -H 'Content-Type: application/json' \
+    ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
     -d "{\"correlationId\":\"${TRACE_ID}\",\"hop\":1,\"callStack\":\"integration\",\"source\":{\"domain\":\"chorus\",\"service\":\"role-state\",\"instance\":\"${ROLE}\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"${STATE}\"}}" \
     --max-time 3 > /dev/null 2>&1 &
 fi

@@ -30,6 +30,7 @@ import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { decideRunAction } from './werk-run-state';
 import { readRun, writeRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
+import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
 // This keeps chorus-mcp's surface minimal — only depends on cards CLI, git-queue,
@@ -1761,9 +1762,14 @@ async function executeDocCatalogAdd(
   const url = `${apiBase}/api/doc-catalog/add`;
   const body: Record<string, string> = { filePath: args.filePath, href: args.href };
   if (args.group) body.group = args.group;
+  // #3619 — the endpoint is envelope-secured; carry a scoped token when
+  // mintable, else send bare and let the envelope decide (fail-open).
+  const svcToken = mintServiceToken(['urn:chorus:ops']);
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (svcToken) headers['Authorization'] = `Bearer ${svcToken}`;
   const resp = await fetchImpl(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   if (!resp.ok) {

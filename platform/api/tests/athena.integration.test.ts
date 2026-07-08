@@ -6,6 +6,10 @@
  * Integration tests — hit live Chorus API at localhost:3340.
  * Requires RUN_INTEGRATION=true, Chorus API running, Fuseki on 3030.
  */
+import { withServiceAuth } from './lib/service-token';
+// #3619 — live mutation endpoints are envelope-secured; this suite is a real
+// consumer and carries a scoped token on every write (deploy-before-require).
+withServiceAuth();
 
 const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';

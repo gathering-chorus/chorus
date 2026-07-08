@@ -1,3 +1,4 @@
+// @test-type: integration — hits the live chorus-api at :3340; carries a scoped service token on writes (#3619).
 /**
  * Discover UI pages per domain — #2065
  *
@@ -7,6 +8,10 @@
 
 import { startTestApp, type TestApp } from './lib/test-app';
 import { scanLoomHtml } from '../src/discover-pages-loom';
+import { withServiceAuth } from './lib/service-token';
+// #3619 — live mutation endpoints are envelope-secured; this suite is a real
+// consumer and carries a scoped token on every write (deploy-before-require).
+withServiceAuth();
 
 describe('Discover pages (#2065)', () => {
 
