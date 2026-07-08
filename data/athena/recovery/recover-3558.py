@@ -105,6 +105,38 @@ def call(method, path, body=None, headers=None, token="", execute=False):
         return e.code, e.read().decode()[:200]
 
 
+def nt_term(v):
+    """Render a value as an N-Triples term slot: IRI -> <...>, else quoted literal."""
+    if v.startswith("http://") or v.startswith("https://") or v.startswith("urn:"):
+        return f"<{v}>"
+    esc = v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\t", "\\t")
+    return f'"{esc}"'
+
+
+def triples_of(local, graph):
+    rows = sparql(f"SELECT ?p ?o WHERE {{ GRAPH <{graph}> {{ <{NS}{local}> ?p ?o }} }}")
+    return [(f"<{NS}{local}>", f"<{b['p']['value']}>", nt_term(b["o"]["value"])) for b in rows]
+
+
+def post_batch(graph, lines, token, execute):
+    body = "\n".join("\t".join(l) for l in lines)
+    if not execute:
+        print(f"  DRY: POST /batch -> <{graph}>  ({len(lines)} lines, {len(body)} bytes)")
+        for l in lines[:400]:
+            print("       ", " ".join(l)[:150])
+        if len(lines) > 400:
+            print(f"        ... +{len(lines)-6} more")
+        return 200, "dry-run"
+    req = urllib.request.Request(OWL + "/batch", method="POST", data=body.encode(),
+        headers={"Authorization": f"Bearer {token}", "x-target-graph": graph,
+                 "Content-Type": "text/plain"})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, r.read().decode()[:200]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:200]
+
+
 def main():
     execute = "--execute" in sys.argv
     token = os.environ.get("CHORUS_WRITE_TOKEN", "")
@@ -114,72 +146,75 @@ def main():
         if not token:
             sys.exit("REFUSED: CHORUS_WRITE_TOKEN not set (mint per the #3619 lane)")
 
-    ops = []  # (method, path, body, extra-headers)
+    P = lambda local: f"<{NS}{local}>"
+    PARTOF = f"<{NS}partOf>"
+    ins_lines = []   # -> urn:chorus:instances
+    ont_lines = []   # -> urn:chorus:ontology
 
     # P1 — canonical products into Product's resolved room (urn:chorus:instances).
-    # Content source: current ontology copies (the model as authored); borg's only
-    # V2 copy already lives in instances. DELETE-then-POST = idempotent upsert.
-    for n in SEVEN:
-        local = f"product-{n}"
-        src = fields_of(local, ONT) or fields_of(local, INS)
-        if not src:
+    # Wholesale node copy from the source graph (preserves type/ownedBy/atStep/
+    # hasDomain/multi-valued fields exactly), EXCEPT partOf (containment is set
+    # explicitly below) — and for the parent, EXCEPT hasDomain (memory/knowledge/
+    # search/tests re-home to pulse/werk per Jeff 13:31 + silas 13:34) with the
+    # label overridden to "Chorus".
+    for n in SEVEN + ["__parent__"]:
+        local = PARENT if n == "__parent__" else f"product-{n}"
+        src_graph = ONT
+        src_local = "chorusProduct" if n == "__parent__" else local
+        src_triples = triples_of(src_local, ONT)
+        if not src_triples and n != "__parent__":
+            src_triples = triples_of(local, INS)  # borg's only V2 copy lives in instances
+            src_graph = INS
+        if not src_triples:
             sys.exit(f"REFUSED: no source content anywhere for {local}")
-        body = {"name": local}
-        body.update({f: src[f][0] for f in SCALARS if f in src})
-        ops.append(("DELETE", f"/products/{local}", None, None))
-        ops.append(("POST", "/products", body, None))
-    parent_src = fields_of("chorusProduct", ONT)
-    if not parent_src:
-        sys.exit("REFUSED: chorusProduct content missing — parent authoring source gone")
-    parent = {f: parent_src[f][0] for f in SCALARS if f in parent_src}
-    parent.update({"name": PARENT, "label": "Chorus"})  # override AFTER copy
-    ops.append(("DELETE", f"/products/{PARENT}", None, None))
-    ops.append(("POST", "/products", parent, None))
+        for t in triples_of(local, INS):  # wipe the stale instance row (enumerated)
+            ins_lines.append(("DEL",) + t)
+        for (subj, pred, obj) in src_triples:
+            if pred == PARTOF:
+                continue
+            if n == "__parent__":
+                if pred == f"<{NS}hasDomain>":
+                    continue
+                if pred == "<http://www.w3.org/2000/01/rdf-schema#label>":
+                    obj = '"Chorus"'
+            ins_lines.append(("INS", P(local), pred, obj))
     for n in SEVEN:  # the parent contains the seven
-        ops.append(("POST", f"/products/product-{n}/partof",
-                    {"target": f"product:{PARENT}"}, None))
+        ins_lines.append(("INS", P(f"product-{n}"), PARTOF, P(PARENT)))
 
-    # P2 — re-point every legacy containment edge (zero-orphan contract, silas count-check).
+    # P2 — re-point every legacy containment edge (zero-orphan contract).
     edge_count = 0
     for old, new in EDGE_REPOINT.items():
         for c in partof_children(old):
             if c.startswith("product-") or c in RETIRE_IN_ONT:
-                continue  # the seven ride P1 parent edges; retired subjects die whole in P3
+                continue
             target = CHILD_OVERRIDES.get(c, new)
-            ops.append(("DELETE", f"/domains/{c}/partof",
-                        {"target": f"product:{old}"}, None))
-            ops.append(("POST", f"/domains/{c}/partof",
-                        {"target": f"product:{target}"}, None))
+            ont_lines.append(("DEL", P(c), PARTOF, P(old)))
+            ont_lines.append(("INS", P(c), PARTOF, P(target)))
             edge_count += 1
+    # the 3-edge disposition (silas 13:34)
+    ont_lines.append(("DEL", P("gathering"), PARTOF, P("chorusStream")))
+    ont_lines.append(("DEL", P("identity"), PARTOF, P("security")))
+    ont_lines.append(("INS", P("identity"), PARTOF, P("product-borg")))
 
-    for method, path, body in EXPLICIT_EDGE_OPS:  # the 3-edge disposition + tests->werk
-        ops.append((method, path, body, None))
-        edge_count += 1
-
-    # P3 — retire displaced Product instances from the schema room, via the one
-    # cross-graph door: POST /batch, x-target-graph names the graph explicitly.
-    # (Batch payload shape confirmed at silas green-check before --execute.)
+    # P3 — retire displaced Product instances from the schema room (full enumerated wipe).
     for local in RETIRE_IN_ONT:
-        ops.append(("POST", "/batch",
-                    {"op": "delete-subject", "subject": f"{NS}{local}"},
-                    {"x-target-graph": ONT}))
+        for t in triples_of(local, ONT):
+            ont_lines.append(("DEL",) + t)
 
-    print(f"#3558 recovery plan — {len(ops)} ops, {edge_count} edge re-points, "
-          f"execute={execute}")
-    for method, path, body, headers in ops:
-        code, msg = call(method, path, body, headers, token, execute)
+    print(f"#3558 recovery plan — batches: instances {len(ins_lines)} lines, "
+          f"ontology {len(ont_lines)} lines, {edge_count} edge re-points, execute={execute}")
+    for graph, lines in ((INS, ins_lines), (ONT, ont_lines)):
+        code, msg = post_batch(graph, lines, token, execute)
         if execute:
-            print(f"  {code} {method} {path} {msg[:80]}")
+            print(f"  {code} POST /batch <{graph}> {msg[:100]}")
             if code >= 400:
-                sys.exit(f"STOPPED at first failure (no partial wreckage): "
-                         f"{method} {path} -> {code} {msg}")
+                sys.exit(f"STOPPED at first failure (no partial wreckage): batch <{graph}> -> {code} {msg}")
 
     # P4 — verify (read-only; runs in both modes). Self-verifiable per Jeff's bar.
     for g in (INS, ONT):
         n = sparql(f"SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE "
                    f"{{ GRAPH <{g}> {{ ?s a <{NS}Product> }} }}")[0]["n"]["value"]
         print(f"verify: Product count in {g}: {n}")
-    # silas step-4 contract: 47 accounted, 0 partOf targets outside the 8 canonical
     canon = ", ".join(f"<{NS}product-{n}>" for n in SEVEN) + f", <{NS}{PARENT}>"
     outside = sparql(
         f"SELECT (COUNT(?c) AS ?n) WHERE {{ GRAPH <{ONT}> {{ ?c <{NS}partOf> ?t . "
