@@ -132,8 +132,16 @@ fn discover_in_tree_finds_pulse_and_every_service_not_just_an_allowlist() {
     // ran stale. Structural enumeration finds it because it IS a build-script
     // package — no rule to add, no list to forget.
     let root = fixture("pulse");
+    // binary crates carry src/main.rs like their real counterparts (#3431: the
+    // discovery skips lib-only crates — they build inside their dependents).
     write(&root, "platform/services/werk-build/Cargo.toml", "[package]\nname=\"werk-build\"\n");
+    write(&root, "platform/services/werk-build/src/main.rs", "fn main(){}");
     write(&root, "platform/services/chorus-hooks/Cargo.toml", "[package]\nname=\"chorus-hooks\"\n");
+    write(&root, "platform/services/chorus-hooks/src/main.rs", "fn main(){}");
+    // a LIB-ONLY sibling crate (path-dep target, e.g. werk-teardown) is NOT a
+    // standalone unit — no binary for build-signed.sh to sign (#3431).
+    write(&root, "platform/services/werk-teardown/Cargo.toml", "[package]\nname=\"werk-teardown\"\n\n[lib]\nname=\"werk_teardown\"\npath=\"src/lib.rs\"\n");
+    write(&root, "platform/services/werk-teardown/src/lib.rs", "pub fn x(){}");
     write(&root, "platform/api/package.json", r#"{"name":"chorus-api","scripts":{"build":"tsc"}}"#);
     write(&root, "platform/pulse/package.json", r#"{"name":"chorus-messaging","scripts":{"build":"tsc"}}"#);
     write(&root, "platform/mcp-server/package.json", r#"{"name":"chorus-mcp","scripts":{"build":"tsc"}}"#);
@@ -148,9 +156,11 @@ fn discover_in_tree_finds_pulse_and_every_service_not_just_an_allowlist() {
     assert!(units.contains(&BuildUnit::TsService("chorus-mcp".to_string())));
     assert!(units.contains(&BuildUnit::RustCrate("werk-build".to_string())));
     assert!(units.contains(&BuildUnit::RustCrate("chorus-hooks".to_string())));
-    // no-build package and docs are absent.
+    // no-build package, docs, and the lib-only crate are absent.
     assert!(!units.iter().any(|u| u.name() == "configonly"));
-    assert_eq!(units.len(), 5, "exactly the 2 crates + 3 build-script services");
+    assert!(!units.iter().any(|u| u.name() == "werk-teardown"),
+        "lib-only crates are not standalone build units (#3431) — they compile inside their dependents");
+    assert_eq!(units.len(), 5, "exactly the 2 binary crates + 3 build-script services");
 }
 
 #[test]
