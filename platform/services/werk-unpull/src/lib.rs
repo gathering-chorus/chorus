@@ -238,18 +238,23 @@ pub fn unpull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String>
     }
 
     // ── Step 4: tear down worktree + branch (idempotent on already-removed).
-    // chorus-werk remove also refuses dirty — Step 2 surfaced it earlier, typed.
-    let mut branch_closed = true;
-    if let Err(e) = run(&script(home, "chorus-werk"), &["remove", role, &card.to_string()]) {
-        let lc = e.to_lowercase();
-        if lc.contains("already removed") {
-            jsonl(home, role, card, &trace, "werk.remove.idempotent", "");
-        } else {
-            return Err(refuse("werk-close", "branch-close-fail", e));
+    // #3431: native via werk-teardown (dirty-refuse, two-tier merge proof #3014,
+    // orphan-propagate #3498, .werk-mcp teardown #3016) — no chorus-werk shell-out.
+    // Step 2 surfaced dirty earlier, typed; the teardown re-checks as a backstop.
+    let branch_closed = true;
+    {
+        use werk_teardown::{teardown_werk, Teardown, TeardownError};
+        let mut emit = |event: &str, extras: &[(&str, &str)]| {
+            emit_spine(home, event, role, card, &trace, extras);
+        };
+        match teardown_werk(home, werk_base, role, card, &mut emit) {
+            Ok(Teardown::AlreadyRemoved) => jsonl(home, role, card, &trace, "werk.remove.idempotent", ""),
+            Ok(Teardown::OrphanPropagated) => jsonl(home, role, card, &trace, "werk.remove.orphan_propagated", ""),
+            Ok(Teardown::Removed) => {}
+            Err(TeardownError::Dirty(m)) => return Err(refuse("werk-preflight", "werk-dirty", m)),
+            Err(e) => return Err(refuse("werk-close", "branch-close-fail", e.to_string())),
         }
     }
-    let _ = branch_closed; // closed (or already was) on every non-refused path.
-    branch_closed = true;
 
     // ── Step 5: role-state idle (best-effort, non-fatal — a local declaration).
     let _ = run(&script(home, "role-state"), &[role, "idle"]);

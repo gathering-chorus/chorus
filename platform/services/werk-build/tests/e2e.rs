@@ -116,7 +116,9 @@ fn e2e_build_in_werk() {
     git(&home, &["worktree", "add", "-q", "-b", "silas/8001", werk.to_str().unwrap(), "origin/main"]);
     fs::create_dir_all(werk.join("platform/services/widget/src")).unwrap();
     fs::write(werk.join("platform/services/widget/Cargo.toml"), "[package]\nname=\"widget\"\n").unwrap();
-    commit_file(&werk, "platform/services/widget/src/lib.rs", "// widget\n");
+    // src/main.rs — a BINARY crate, like every real standalone unit (#3431:
+    // lib-only crates are excluded from discovery; they build via dependents).
+    commit_file(&werk, "platform/services/widget/src/main.rs", "fn main(){}\n");
 
     // --- happy path: builds the werk crate, emits cdhash ---
     let summary = build(8001, "silas", &home, &werk_base, "werk", &[]).expect("happy build");
@@ -154,12 +156,12 @@ fn e2e_build_in_werk() {
     // never the werk. This is Jeff's "one head": the same werk-build, a different root.
     fs::create_dir_all(origin.join("platform/services/prodgadget/src")).unwrap();
     fs::write(origin.join("platform/services/prodgadget/Cargo.toml"), "[package]\nname=\"prodgadget\"\n").unwrap();
-    fs::write(origin.join("platform/services/prodgadget/src/lib.rs"), "// prod\n").unwrap();
+    fs::write(origin.join("platform/services/prodgadget/src/main.rs"), "fn main(){}\n").unwrap();
     // A SECOND crate on main the card did NOT touch — proves the crate-scope filter builds
     // ONLY the card's crate, not the whole tree (no full-repo build / cross-crate coupling).
     fs::create_dir_all(origin.join("platform/services/otherlib/src")).unwrap();
     fs::write(origin.join("platform/services/otherlib/Cargo.toml"), "[package]\nname=\"otherlib\"\n").unwrap();
-    fs::write(origin.join("platform/services/otherlib/src/lib.rs"), "// other\n").unwrap();
+    fs::write(origin.join("platform/services/otherlib/src/main.rs"), "fn main(){}\n").unwrap();
     git(&origin, &["add", "."]);
     git(&origin, &["commit", "-q", "-m", "prod crate on main"]);
 

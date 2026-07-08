@@ -83,12 +83,23 @@ fn crate_binaries_in_unions_explicit_bins_and_src_bin_autobins() {
     assert_eq!(got, vec!["werk-accept".to_string(), "werk-do-more".to_string(), "werk-finalize".to_string()]);
     fs::remove_dir_all(&dir).ok();
 
-    // simple single-binary crate (no [[bin]], no src/bin) → falls back to package name
+    // simple single-binary crate (no [[bin]], no src/bin, src/main.rs present)
+    // → falls back to package name
     let d2 = std::env::temp_dir().join(format!("wd-cb2-{}", n));
-    fs::create_dir_all(&d2).unwrap();
+    fs::create_dir_all(d2.join("src")).unwrap();
     fs::write(d2.join("Cargo.toml"), "[package]\nname = \"werk-merge\"\nversion = \"0.1.0\"\n").unwrap();
+    fs::write(d2.join("src/main.rs"), "fn main(){}").unwrap();
     assert_eq!(crate_binaries_in(&d2), vec!["werk-merge".to_string()]);
     fs::remove_dir_all(&d2).ok();
+
+    // #3431 — LIB-ONLY crate (src/lib.rs, no main.rs/[[bin]]/src/bin) emits NO
+    // binaries: deploy must not hunt for a phantom target/release binary.
+    let d4 = std::env::temp_dir().join(format!("wd-cb4-{}", n));
+    fs::create_dir_all(d4.join("src")).unwrap();
+    fs::write(d4.join("Cargo.toml"), "[package]\nname = \"werk-teardown\"\nversion = \"0.1.0\"\n\n[lib]\nname = \"werk_teardown\"\npath = \"src/lib.rs\"\n").unwrap();
+    fs::write(d4.join("src/lib.rs"), "pub fn x(){}").unwrap();
+    assert_eq!(crate_binaries_in(&d4), Vec::<String>::new());
+    fs::remove_dir_all(&d4).ok();
 
     // no Cargo.toml → basename fallback
     let d3 = std::env::temp_dir().join(format!("wd-cb3-{}", n));
@@ -159,8 +170,12 @@ fn werk_fixture(tag: &str) -> PathBuf {
     // structural service-binary selection (#3317) is exercised, not just the fallback.
     w("platform/services/chorus-hooks/Cargo.toml",
         "[package]\nname=\"chorus-hooks\"\n\n[[bin]]\nname = \"chorus-hooks\"\npath = \"src/main.rs\"\n\n[[bin]]\nname = \"chorus-hook-shim\"\npath = \"src/shim.rs\"\n");
+    // single-binary crates carry src/main.rs like their real counterparts — the
+    // package-name fallback is gated on it (#3431 lib-only crates emit no bins).
     w("platform/services/chorus-inject/Cargo.toml", "[package]\nname=\"chorus-inject\"\n");
+    w("platform/services/chorus-inject/src/main.rs", "fn main(){}");
     w("platform/services/werk-deploy/Cargo.toml", "[package]\nname=\"werk-deploy\"\n");
+    w("platform/services/werk-deploy/src/main.rs", "fn main(){}");
     // committed launchd plists (the structural "is it a service?" signal).
     w("config/launchagents/com.chorus.hooks.plist", "<plist><string>chorus-hook-shim</string></plist>");
     w("config/launchagents/com.chorus.inject.plist", "<plist><string>chorus-inject</string></plist>");

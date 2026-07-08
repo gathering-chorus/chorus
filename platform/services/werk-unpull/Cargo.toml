@@ -3,9 +3,12 @@ name = "werk-unpull"
 version = "0.1.0"
 edition = "2021"
 
-# Self-contained: ZERO dependencies (ADR-032 §1 blueprint). std only; `git`,
-# `cards`, `chorus-werk`, `role-state`, `chorus-log` as subprocesses.
+# Self-contained: ZERO external/registry dependencies (ADR-032 §1 blueprint).
+# std only; `git`, `cards`, `role-state`, `chorus-log` as subprocesses. The
+# sibling path-dep werk-teardown (#3431) is itself zero-external-dep — worktree
+# teardown is the verb's own domain now, no more `chorus-werk remove` shell-out.
 [dependencies]
+werk-teardown = { path = "../werk-teardown" }
 
 [[bin]]
 name = "werk-unpull"

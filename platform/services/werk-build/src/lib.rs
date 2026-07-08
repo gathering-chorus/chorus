@@ -157,14 +157,28 @@ pub fn has_build_script(pkg_json: &str) -> bool {
 pub fn discover_build_units_in_tree(werk_root: &Path) -> Vec<BuildUnit> {
     let mut units: BTreeSet<BuildUnit> = BTreeSet::new();
 
-    // Rust crates: platform/services/<name>/Cargo.toml.
+    // Rust crates: platform/services/<name>/Cargo.toml — BINARY crates only.
+    // A lib-only sibling (no src/main.rs, no [[bin]], no src/bin/*.rs — e.g.
+    // werk-teardown, #3431) is compiled inside its dependents' cargo builds via
+    // the path dep; as a standalone unit it has no binary for build-signed.sh
+    // to sign, so it can never emit a cdhash and would fail every run.
     let services = werk_root.join("platform/services");
     if let Ok(entries) = fs::read_dir(&services) {
         for e in entries.flatten() {
-            if e.path().join("Cargo.toml").is_file() {
-                if let Some(n) = e.file_name().to_str() {
-                    units.insert(BuildUnit::RustCrate(n.to_string()));
-                }
+            let dir = e.path();
+            if !dir.join("Cargo.toml").is_file() {
+                continue;
+            }
+            let has_binary_root = dir.join("src/main.rs").is_file()
+                || dir.join("src/bin").is_dir()
+                || fs::read_to_string(dir.join("Cargo.toml"))
+                    .map(|t| t.contains("[[bin]]"))
+                    .unwrap_or(false);
+            if !has_binary_root {
+                continue;
+            }
+            if let Some(n) = e.file_name().to_str() {
+                units.insert(BuildUnit::RustCrate(n.to_string()));
             }
         }
     }

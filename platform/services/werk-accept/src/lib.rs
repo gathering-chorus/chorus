@@ -354,7 +354,29 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
             &format!("{},\"result\":\"fail\",\"error\":\"{}\"", fail_extra("env-down-fail"), e.replace('"', "'"))),
     }
 
-    let _ = run(&script_path(home, "chorus-werk"), &["remove", role, &card.to_string()]);
+    // #3431: native teardown via werk-teardown (dirty-refuse, two-tier merge proof,
+    // orphan-propagate, .werk-mcp teardown) — no chorus-werk shell-out. Stays
+    // best-effort like the shell-out it replaces: post-accept teardown must never
+    // block finalization, but the outcome is witnessed honestly either way.
+    {
+        let werk_base = env::var("CHORUS_WERK_BASE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| home.parent().map(|p| p.join("chorus-werk")).unwrap_or_else(|| home.join("..")));
+        let mut emit = |event: &str, extras: &[(&str, &str)]| {
+            let card_f = format!("card={}", card);
+            let mut args: Vec<String> = vec![event.to_string(), role.to_string(), card_f];
+            for (k, v) in extras {
+                args.push(format!("{}={}", k, v));
+            }
+            let argrefs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            let _ = run(&script_path(home, "chorus-log"), &argrefs);
+        };
+        match werk_teardown::teardown_werk(home, &werk_base, role, card, &mut emit) {
+            Ok(_) => jsonl(home, role, card, &trace, "accept.teardown", ",\"result\":\"ok\""),
+            Err(e) => jsonl(home, role, card, &trace, "accept.teardown.failed",
+                &format!("{},\"result\":\"fail\",\"error\":\"{}\"", fail_extra("teardown-fail"), e.to_string().replace('"', "'"))),
+        }
+    }
 
     // gh chorus/accept on the merged main HEAD — sha from CANONICAL (the werk may be gone
     // after remove; canonical always has origin/main). Kade's navigator call (#3).

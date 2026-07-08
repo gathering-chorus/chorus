@@ -56,15 +56,20 @@ fn scenario(card: u64) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
     write_exec(&scripts.join("role-state"), &format!("#!/bin/sh\necho \"role-state $*\" >> \"{c}\"\nexit 0\n", c = calls.display()));
     write_exec(&scripts.join("chorus-log"), &format!("#!/bin/sh\necho \"$@\" >> \"{s}\"\n", s = spine.display()));
 
-    // real repo + worktree as the card werk (so `git status` is real).
-    let repo = tmp("repo");
-    git(&repo, &["init", "-q", "-b", "main", "."]);
-    fs::write(repo.join("README"), "x\n").unwrap();
-    git(&repo, &["add", "."]);
-    git(&repo, &["commit", "-q", "-m", "init"]);
+    // #3431: teardown is NATIVE — home must BE the canonical repo (as in
+    // production, where CHORUS_HOME is the repo and holds platform/scripts).
+    // bare origin + home clone + the card werk as a real worktree of home.
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "--bare", "-b", "main", "."]);
+    git(&home, &["init", "-q", "-b", "main", "."]);
+    git(&home, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    fs::write(home.join("README"), "x\n").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "init"]);
+    git(&home, &["push", "-q", "origin", "main"]);
     let werk_base = tmp("werkbase");
     let werk = werk_base.join(format!("kade-{}", card));
-    git(&repo, &["worktree", "add", "-q", "-b", &format!("kade/{}", card), werk.to_str().unwrap(), "main"]);
+    git(&home, &["worktree", "add", "-q", "-b", &format!("kade/{}", card), werk.to_str().unwrap(), "main"]);
     (home, werk_base, calls, spine)
 }
 
@@ -82,12 +87,15 @@ fn happy_path_moves_next_removes_werk_idles_and_witnesses() {
     let branch = unpull(9001, "kade", &home, &werk_base).expect("unpull ok");
     assert_eq!(branch, "kade/9001", "returns the prior branch");
     let c = read(&calls);
-    // the contract order: view → move Next → chorus-werk remove → role-state idle.
+    // the contract order: view → move Next → (native teardown) → role-state idle.
     let idx = |s: &str| c.find(s).unwrap_or_else(|| panic!("missing call {s}: {c}"));
     assert!(idx("cards view 9001") < idx("cards move 9001 Next"), "{c}");
-    assert!(idx("cards move 9001 Next") < idx("chorus-werk remove kade 9001"), "{c}");
-    assert!(idx("chorus-werk remove kade 9001") < idx("role-state kade idle"), "{c}");
+    assert!(idx("cards move 9001 Next") < idx("role-state kade idle"), "{c}");
+    // #3431: teardown is native — no chorus-werk shell-out; real git state proves it.
+    assert!(!c.contains("chorus-werk"), "no chorus-werk shell-out remains: {c}");
+    assert!(!werk_base.join("kade-9001").exists(), "worktree dir removed natively");
     let s = read(&spine);
+    assert!(s.contains("card.branch.closed"), "teardown spines card.branch.closed: {s}");
     assert!(s.contains("card.unpulled") && s.contains("prior_branch=kade/9001"), "contract event: {s}");
 }
 
@@ -102,7 +110,7 @@ fn dirty_werk_refuses_typed_before_any_teardown() {
     assert!(err.starts_with("werk-dirty"), "typed werk-dirty: {err}");
     let c = read(&calls);
     assert!(!c.contains("cards move"), "board untouched on refusal: {c}");
-    assert!(!c.contains("chorus-werk remove"), "werk NOT torn down — work preserved: {c}");
+    assert!(werk_base.join("kade-9002").exists(), "werk NOT torn down — work preserved");
     assert!(werk_base.join("kade-9002/uncommitted.txt").exists(), "the file is still there");
     assert!(read(&spine).contains("reason=werk-dirty"), "refusal spined");
 }
@@ -137,18 +145,24 @@ fn missing_werk_refuses_werk_not_initialized() {
 }
 
 #[test]
-fn idempotent_already_next_and_already_removed_complete() {
+fn idempotent_already_next_completes() {
+    // Partial-unpull re-run: the board flip already happened (already-Next), the
+    // werk still stands — the re-run completes teardown and witnesses. (The
+    // fully-torn-down re-run refuses at Step 2 werk-not-initialized by design —
+    // covered by missing_werk_refuses_werk_not_initialized. #3431: the old
+    // "werk dir present but remove says already-removed" shim state could never
+    // occur natively, so that half is retired with the shell-out.)
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     reset_env();
     let (home, werk_base, calls, spine) = scenario(9005);
     std::env::set_var("CARDS_MOVE_BEHAVIOR", "already");
-    std::env::set_var("WERK_REMOVE_BEHAVIOR", "already");
     let branch = unpull(9005, "kade", &home, &werk_base)
         .expect("a partial unpull re-runs to completion (idempotent)");
     reset_env();
     assert_eq!(branch, "kade/9005");
     let c = read(&calls);
     assert!(c.contains("role-state kade idle"), "ran to the end: {c}");
+    assert!(!werk_base.join("kade-9005").exists(), "teardown completed natively");
     assert!(read(&spine).contains("card.unpulled"), "still witnesses completion");
 }
 
@@ -161,8 +175,15 @@ fn real_move_or_remove_failures_refuse_typed() {
     let err = unpull(9006, "kade", &home, &werk_base).expect_err("real move failure refuses");
     assert!(err.starts_with("move-fail"), "{err}");
     std::env::set_var("CARDS_MOVE_BEHAVIOR", "ok");
-    std::env::set_var("WERK_REMOVE_BEHAVIOR", "fail");
-    let err = unpull(9006, "kade", &home, &werk_base).expect_err("real remove failure refuses");
+    // #3431: the real teardown-failure class is now UNMERGED WORK — a committed
+    // (clean-tree) commit that never reached origin/main. The native two-tier
+    // merge proof (#3014) must refuse rather than delete real work.
+    let werk = werk_base.join("kade-9006");
+    fs::write(werk.join("real-work.txt"), "committed, never merged\n").unwrap();
+    git(&werk, &["add", "."]);
+    git(&werk, &["commit", "-q", "-m", "unmerged work"]);
+    let err = unpull(9006, "kade", &home, &werk_base).expect_err("unmerged branch refuses teardown");
     assert!(err.starts_with("branch-close-fail"), "{err}");
+    assert!(err.contains("not on origin/main"), "refusal names the unmerged work: {err}");
     reset_env();
 }
