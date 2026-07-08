@@ -152,21 +152,6 @@ fn load_core_paths() -> std::io::Result<Vec<String>> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "protocol_core item not string"))).collect()
 }
 
-fn load_role_sections(role: &str) -> std::io::Result<Vec<String>> {
-    let body = fs::read_to_string(manifest_path())?;
-    let v: serde_json::Value = serde_json::from_str(&body)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    let role_obj = v.get("roles")
-        .and_then(|r| r.get(role))
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, format!("roles.{} missing", role)))?;
-    let sections = role_obj.get("sections")
-        .and_then(|s| s.as_array())
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "sections missing"))?;
-    sections.iter()
-        .map(|x| x.as_str().map(String::from)
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "section not string")))
-        .collect()
-}
 
 pub fn read_protocol_version() -> std::io::Result<String> {
     let p = protocol_version_path();

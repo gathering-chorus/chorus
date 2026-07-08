@@ -43,21 +43,6 @@ fn is_production_code(path: &str) -> bool {
     crate::shared::file_classification::is_production_code(path)
 }
 
-/// Check if the current tool call is a demo action.
-/// /acp and cards-done are NOT included — acceptance is a product decision
-/// by Jeff/Wren, not a build action. The TDD gate checks the invoker's
-/// session, but the acceptor isn't the builder (#1996).
-/// demo_gate.rs handles done-without-demo separately.
-fn is_demo_or_done(input: &HookInput) -> bool {
-    let tool = input.tool_name_str();
-
-    if tool == "Skill" {
-        let skill = input.get_tool_input_str("skill");
-        return skill == "demo";
-    }
-
-    false
-}
 
 /// Check if the current tool call is editing production code
 fn is_code_edit(input: &HookInput) -> bool {
@@ -165,65 +150,7 @@ fn has_test_file_edit(input: &HookInput, state: &AppState) -> bool {
     false
 }
 
-/// Scan session JSONL for evidence of test runs
-fn has_test_run(input: &HookInput, state: &AppState) -> bool {
-    let session_id = match &input.session_id {
-        Some(id) => id.clone(),
-        None => return true,
-    };
 
-    let cwd = input.cwd.as_deref().unwrap_or("");
-    let lines = state.session_cache.get_tail(&session_id, cwd, 500);
-    if lines.is_empty() {
-        return true;
-    }
-
-    for line in &lines {
-        let lower = line.to_lowercase();
-        if (lower.contains("cargo test") || lower.contains("npx jest")
-            || lower.contains("npm test") || lower.contains("npm run test")
-            || lower.contains("npx cucumber") || lower.contains("vitest")
-            || lower.contains("bats "))
-            && lower.contains("\"bash\"")
-        {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if this session edited any production code files
-fn has_production_code_edit(input: &HookInput, state: &AppState) -> bool {
-    let session_id = match &input.session_id {
-        Some(id) => id.clone(),
-        None => return false,
-    };
-
-    let cwd = input.cwd.as_deref().unwrap_or("");
-    let lines = state.session_cache.get_tail(&session_id, cwd, 500);
-
-    for line in &lines {
-        let lower = line.to_lowercase();
-        if (lower.contains("\"edit\"") || lower.contains("\"write\"")) && lower.contains("file_path") {
-            // Extract file path and check if it's production code
-            if let Some(start) = lower.find("file_path") {
-                let rest = &line[start..];
-                // Look for the value after file_path
-                if let Some(val_start) = rest.find('"').and_then(|i| rest[i+1..].find('"').map(|j| i + 1 + j + 1)) {
-                    if let Some(val_end) = rest[val_start..].find('"') {
-                        let path = &rest[val_start..val_start + val_end];
-                        if is_production_code(path) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
 
 /// Card-type-specific test guidance — tells the role what kind of test to write
 fn test_guidance(card_type: &str) -> &'static str {
@@ -276,9 +203,9 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     // misfired ~100+ times across 03/04 (chorus-index search receipts) on doc work,
     // bats tests, cross-session work, page-graph populates. The discipline lives at
     // Gate 1 (code-edit time), not at demo time. Validation surface for non-code
-    // cards is the demo itself, not a synthetic test-run check. is_demo_or_done /
-    // has_production_code_edit / has_test_run helpers are kept for now; they may be
-    // removed in a follow-up if no consumer surfaces.
+    // cards is the demo itself, not a synthetic test-run check. the helpers
+    // (is_demo_or_done / has_production_code_edit / has_test_run) sat unused for two
+    // months and were removed by #2588 — the follow-up this note anticipated.
 
     HookResponse::allow()
 }
@@ -300,7 +227,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".to_string()),
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
+            trace_id: None, tool_output_is_error: None,}
     }
 
     fn state() -> AppState { AppState::new() }
@@ -330,32 +257,6 @@ mod tests {
         assert!(!is_production_code("tests/integration.rs"));
         assert!(!is_production_code("README.md"));
         assert!(!is_production_code("target/debug/build.rs"));
-    }
-
-    #[test]
-    fn detects_demo_skill() {
-        let input = make_input("Skill", "skill", "demo");
-        assert!(is_demo_or_done(&input));
-    }
-
-    #[test]
-    fn acp_not_demo_or_done() {
-        // #1996: /acp is acceptance, not a build action — TDD gate shouldn't block it
-        let input = make_input("Skill", "skill", "acp");
-        assert!(!is_demo_or_done(&input));
-    }
-
-    #[test]
-    fn board_done_not_demo_or_done() {
-        // #1996: cards done handled by demo_gate.rs, not TDD gate
-        let input = make_input("Bash", "command", "bash board-ts done 1811");
-        assert!(!is_demo_or_done(&input));
-    }
-
-    #[test]
-    fn ignores_other_bash() {
-        let input = make_input("Bash", "command", "ls -la");
-        assert!(!is_demo_or_done(&input));
     }
 
     #[test]
@@ -392,7 +293,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".into()),
-            chorus_worktree_override: None, trace_id: None,
+            trace_id: None,
             tool_output_is_error: None,
         };
         let r = check(&input, &state());
@@ -437,7 +338,7 @@ mod tests {
             })),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
+            trace_id: None, tool_output_is_error: None,}
     }
     fn write(file: &str, content: &str) -> HookInput {
         HookInput {
@@ -445,7 +346,7 @@ mod tests {
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
             tool_response: None, session_id: None, cwd: None, prompt: None,
             stop_hook_active: None, hook_type: None, deploy_role: Some("kade".into()),
-            chorus_worktree_override: None, trace_id: None, tool_output_is_error: None,}
+            trace_id: None, tool_output_is_error: None,}
     }
 
     #[test]

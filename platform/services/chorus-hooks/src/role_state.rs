@@ -18,7 +18,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use crate::process;
-use crate::shared::state_paths::chorus_root;
 
 const SCAN_DIR: &str = "/tmp/claude-team-scan";
 const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "idle"];

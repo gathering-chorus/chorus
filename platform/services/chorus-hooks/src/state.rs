@@ -61,6 +61,12 @@ pub struct Config {
     pub home_dir: PathBuf,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
