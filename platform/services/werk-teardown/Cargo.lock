@@ -3,12 +3,5 @@
 version = 4
 
 [[package]]
-name = "werk-accept"
-version = "0.1.0"
-dependencies = [
- "werk-teardown",
-]
-
-[[package]]
 name = "werk-teardown"
 version = "0.1.0"

@@ -76,7 +76,11 @@ fn canon_running_proof_fixture() -> (PathBuf, PathBuf) {
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::write(origin.join("README"), "x").unwrap();
     fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
+    fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
     fs::write(origin.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
+    // src/main.rs mirrors the real single-binary crate — the package-name
+    // fallback is gated on it (#3431: lib-only crates emit no binaries).
+    fs::write(origin.join("platform/services/chorus-inject/src/main.rs"), "fn main(){}").unwrap();
     fs::write(origin.join("platform/services/chorus-inject/src/lib.rs"), "// v0\n").unwrap();
     fs::create_dir_all(origin.join("config/launchagents")).unwrap();
     fs::write(origin.join("config/launchagents/com.chorus.inject.plist"), "<plist><string>chorus-inject</string></plist>").unwrap();
@@ -177,7 +181,11 @@ fn e2e_deploy_both_slots_and_guards() {
     // a hardcoded name). The crate lives on MAIN (the native canonical path classifies
     // + installs from canonical, the post-merge reality); the card then modifies it.
     fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
+    fs::create_dir_all(origin.join("platform/services/chorus-inject/src")).unwrap();
     fs::write(origin.join("platform/services/chorus-inject/Cargo.toml"), "[package]\nname=\"chorus-inject\"\n").unwrap();
+    // src/main.rs mirrors the real single-binary crate — the package-name
+    // fallback is gated on it (#3431: lib-only crates emit no binaries).
+    fs::write(origin.join("platform/services/chorus-inject/src/main.rs"), "fn main(){}").unwrap();
     fs::write(origin.join("platform/services/chorus-inject/src/lib.rs"), "// v0\n").unwrap();
     fs::create_dir_all(origin.join("config/launchagents")).unwrap();
     fs::write(origin.join("config/launchagents/com.chorus.inject.plist"),

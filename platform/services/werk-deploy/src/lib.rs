@@ -220,7 +220,13 @@ pub fn crate_binaries_in(crate_dir: &Path) -> Vec<String> {
     if !explicit.is_empty() {
         out.extend(explicit);
     } else if autobins.is_empty() {
-        out.extend(pkg.clone());
+        // Single-binary fallback needs an actual binary root. A LIB-ONLY crate
+        // (src/lib.rs, no main.rs, no [[bin]], no src/bin — e.g. werk-teardown,
+        // #3431) emits no binaries; returning the package name here would send
+        // deploy hunting for a target/release binary that cannot exist.
+        if crate_dir.join("src").join("main.rs").is_file() {
+            out.extend(pkg.clone());
+        }
     } else if crate_dir.join("src").join("main.rs").is_file() {
         out.extend(pkg.clone());
     }

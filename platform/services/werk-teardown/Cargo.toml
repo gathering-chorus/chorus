@@ -1,0 +1,17 @@
+# #3431 — shared worktree-teardown semantics for werk-accept + werk-unpull.
+# Self-contained per the werk-verb blueprint (#3045): ZERO external/registry
+# dependencies — std only + a direct libc `getuid` extern. Sibling crates take
+# this as a WORKSPACE PATH DEP, which preserves the blueprint's two protections
+# (no network/registry at build; independently buildable+signable). Scope is
+# deliberately narrow — remove/merge-proof semantics only (Silas, 2026-07-08);
+# do not grow this into a git-common junk drawer.
+[package]
+name = "werk-teardown"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+name = "werk_teardown"
+path = "src/lib.rs"

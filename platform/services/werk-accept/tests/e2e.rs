@@ -58,12 +58,20 @@ fn signal_then_finalize_one_exit_verb() {
     assert!(Command::new("git").args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
         .status().unwrap().success());
     let werk_base = tmp("werk");
+    // #3431: finalize's teardown is NATIVE now — it reads CHORUS_WERK_BASE.
+    std::env::set_var("CHORUS_WERK_BASE", werk_base.to_str().unwrap());
     let werk = werk_base.join("kade-9001");
     git(&home, &["worktree", "add", "-b", "kade/9001", werk.to_str().unwrap(), "origin/main"]);
     fs::write(werk.join("w.txt"), "x").unwrap();
     git(&werk, &["add", "."]);
     git(&werk, &["commit", "-q", "-m", "work"]);
     git(&werk, &["push", "-q", "origin", "kade/9001"]);
+    // Tier-1 merge proof for the native teardown (#3014): an acp-style commit
+    // referencing #9001 on origin/main — the squash-merge analogue.
+    fs::write(home.join("landed-9001.txt"), "sq").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "#9001 (kade) (#1)"]);
+    git(&home, &["push", "-q", "origin", "main"]);
 
     // #3183: place the chorus shims at the ABSOLUTE paths accept resolves — home/
     // platform/scripts (cards/chorus-log/chorus-werk) + $CHORUS_BIN (werk-deploy) —
@@ -120,9 +128,13 @@ fn signal_then_finalize_one_exit_verb() {
     assert!(after_fin.contains("cards done 9001"), "finalize marks the card Done");
     assert!(after_fin.contains("chorus-log card.accepted"), "finalize emits card.accepted");
     assert!(after_fin.contains("werk-deploy env-down kade"), "finalize tears down kade's variant");
-    let env_down_at = after_fin.find("werk-deploy env-down").expect("env-down logged");
-    let werk_remove_at = after_fin.find("chorus-werk remove kade 9001").expect("chorus-werk remove logged");
-    assert!(env_down_at < werk_remove_at, "env-down precedes chorus-werk remove");
+    // #3431: teardown is NATIVE — no chorus-werk shell-out, and the real git state
+    // proves it ran (env-down precedes it in code order; handles released first).
+    assert!(!after_fin.contains("chorus-werk remove"), "no chorus-werk shell-out remains (#3431)");
+    assert!(!werk.exists(), "native teardown removed the worktree dir");
+    assert!(!Command::new("git").args(["-C", home.to_str().unwrap(), "rev-parse", "--verify", "refs/heads/kade/9001"])
+        .output().unwrap().status.success(), "native teardown deleted the local branch");
+    assert!(after_fin.contains("chorus-log card.branch.closed"), "teardown emits card.branch.closed via chorus-log");
     assert!(!after_fin.contains("pr merge"), "finalize never merges (werk-merge owns merge)");
 
     // (5) signal self-accept nuance: wren signaling a WREN-owned card => Err. signal
@@ -140,6 +152,11 @@ fn signal_then_finalize_one_exit_verb() {
     git(&werk2, &["add", "."]);
     git(&werk2, &["commit", "-q", "-m", "work2"]);
     git(&werk2, &["push", "-q", "origin", "kade/9003"]);
+    // Tier-1 merge proof for 9003's native teardown (#3431).
+    fs::write(home.join("landed-9003.txt"), "sq").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "#9003 (kade) (#2)"]);
+    git(&home, &["push", "-q", "origin", "main"]);
     std::env::set_var("CARDS_OWNER", "kade");
     std::env::set_var("CARDS_STATUS", "WIP");
     // werk-demo emits demo.presented when the demo runs at present time. Pre-seed it so

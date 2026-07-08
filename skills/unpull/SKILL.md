@@ -6,7 +6,7 @@ user-invocable: true
 
 # /unpull — Reverse a Pull
 
-Jeff says `/unpull <card-id>` (or `/unpull` to unpull the role's current WIP) and the card goes from WIP back to Next, the werk detaches to origin/main, the local + remote branches are deleted, role-state goes idle, and a `card.unpulled` spine event is emitted. **One MCP call. The skill does NOT execute the steps directly — `chorus_unpull_card` does.**
+Jeff says `/unpull <card-id>` (or `/unpull` to unpull the role's current WIP) and the card goes from WIP back to Next, the werk detaches to origin/main, the local + remote branches are deleted, role-state goes idle, and a `card.unpulled` spine event is emitted. **One MCP call. The skill does NOT execute the steps directly — `werk-unpull` does.**
 
 ## Argument
 
@@ -24,10 +24,10 @@ The skill's only job is collecting the args and invoking the MCP. One thing to v
 
 That's it. Validate / werk-pre-flight / move / branch teardown / role-state / spine — all owned by the MCP.
 
-## Step 1: Invoke `chorus_unpull_card`
+## Step 1: Invoke `werk-unpull`
 
 ```
-mcp__chorus-api__chorus_unpull_card({ role: "<your-role>", card_id: <CARD_ID> })
+mcp__chorus-api__werk-unpull({ role: "<your-role>", card_id: <CARD_ID> })
 ```
 
 That's the entire skill. The MCP runs the atomic transaction:
@@ -35,7 +35,7 @@ That's the entire skill. The MCP runs the atomic transaction:
 - validate (card is WIP and owned by role)
 - werk pre-flight (refuses `werk-dirty` so you don't lose uncommitted work)
 - `cards move <id> Next`
-- `chorus-werk remove <role> <id>` (removes the card's ephemeral worktree, deletes the branch, prunes stale admin entries, emits `card.branch.closed`)
+- native worktree teardown (#3431, werk-teardown crate): removes the card's ephemeral worktree, two-tier merge proof before branch delete (#3014), deletes local + remote branch (#3498 orphan-propagate), prunes stale admin entries, emits `card.branch.closed`
 - `role-state <role> idle`
 - emit `card.unpulled` spine event
 
@@ -55,7 +55,7 @@ Stop. The pull is reversed; nothing else to do.
 
 ## Hard rules
 
-- **Use `chorus_unpull_card` MCP — never raw `cards move`, `git`, `chorus-werk`, `role-state`, or `chorus-log` from this skill.** Those bypass the typed refusal taxonomy and leave stale state — that's the exact pattern this card was filed to fix.
+- **Use `werk-unpull` MCP — never raw `cards move`, `git`, `role-state`, or `chorus-log` from this skill.** Those bypass the typed refusal taxonomy and leave stale state — that's the exact pattern this card was filed to fix.
 - **No confirmation prompt.** Jeff said unpull, so unpull.
 - **Werk-dirty refusal is the safety net.** If you have uncommitted work, the MCP refuses and tells you which files. Commit, stash, or explicitly abandon them yourself — don't pass a flag to suppress the refusal (there isn't one).
 
