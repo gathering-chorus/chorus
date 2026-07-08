@@ -55,6 +55,27 @@ describe('parseMutationRoutes', () => {
     ].join('\n');
     expect(parseMutationRoutes(src)).toHaveLength(3);
   });
+
+  test('sees backtick/template-literal route paths (server.ts:2621 class)', () => {
+    // Kade's finding: a quote-only regex false-clears this real route.
+    const src = 'app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, h)';
+    const routes = parseMutationRoutes(src);
+    expect(routes).toHaveLength(1);
+    expect(routes[0].method).toBe('POST');
+    // Captured up to the interpolation; classify's /: split yields the prefix.
+    expect(routes[0].path.startsWith('/api/athena/subdomains/:id/services/:eid/')).toBe(true);
+  });
+
+  test('a backtick route is covered by its prefix surface, not left unprotected', () => {
+    const routes = parseMutationRoutes('app.post(`/api/athena/subdomains/:id/services/:eid/${pred}`, h)');
+    const gap = classifyEndpoints(
+      routes,
+      [{ method: 'POST', pathPrefix: '/api/athena/subdomains', requiresScope: 'urn:chorus:domains:code', surface: 's' }],
+      [],
+    );
+    expect(gap.unprotected).toHaveLength(0);
+    expect(gap.secured).toHaveLength(1);
+  });
 });
 
 describe('classifyEndpoints', () => {

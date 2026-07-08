@@ -35,7 +35,12 @@ export interface SweepGap {
   staleExemptions: SweepExemption[];
 }
 
-const ROUTE_RE = /^\s*app\.(post|put|delete|patch)\(\s*['"]([^'"]+)['"]/;
+// #3619 — match single/double/backtick-quoted route paths. Kade caught a
+// template-literal route (server.ts:2621 `/api/.../${pred}`) the quote-only
+// regex missed — a security sweep that can't see a route false-clears it. A
+// backtick path captures up to its first ${…}; classifyEndpoints splits on
+// /: (and now ${) so the static prefix still matches the right surface.
+const ROUTE_RE = /^\s*app\.(post|put|delete|patch)\(\s*['"`]([^'"`$]+)/;
 
 /** Parse mutation-route declarations from Express server source. Line-anchored:
  *  a commented-out `// app.post(...)` never counts. */

@@ -41,9 +41,18 @@ async function sparql(query) {
 }
 
 async function probe401(route) {
-  const url = API_BASE + route.path.replace(/:[^/]+/g, 'sweep-probe');
+  const url = API_BASE + route.path.replace(/:[^/]+/g, 'sweep-probe').replace(/\$\{[^}]+\}/g, 'sweep-probe');
   try {
-    const res = await fetch(url, { method: route.method, headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    // #3619 (Kade) — no body on DELETE: some Express DELETE handlers 400 on a
+    // JSON body BEFORE the auth middleware, which would read as "not refusing"
+    // (false positive) on the very endpoints the sweep must trust. The envelope
+    // runs ahead of the handler, so a bare request still hits the 401 path.
+    const init = { method: route.method };
+    if (route.method !== 'DELETE') {
+      init.headers = { 'Content-Type': 'application/json' };
+      init.body = '{}';
+    }
+    const res = await fetch(url, init);
     return { route, status: res.status, refused: res.status === 401 || res.status === 403 };
   } catch (e) {
     return { route, status: 0, refused: false, error: String(e) };
