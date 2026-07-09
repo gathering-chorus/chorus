@@ -58,6 +58,14 @@ EXPLICIT_EDGE_OPS = [
 #   memory/knowledge/search -> product-pulse (Jeff 13:31: search is part of pulse)
 #   tests -> product-werk (silas 13:34: werk owns build->test->deploy)
 # Every product's REAL design doc on disk (verified ls 2026-07-09; no fabrication):
+# DocumentShape.hasDomain sh:class = SubDomain (V1-era constraint, conformed to;
+# modernizing that shape is follow-on work, not smuggled into recovery). Targets
+# verified against the 44 live SubDomains 2026-07-09:
+DOC_SUBDOMAIN = {
+    "athena": "athena-domain", "borg": "observability-domain", "loom": "loom-principles",
+    "werk": "tests-domain", "clearing": "cards-service", "convergence": "convergence-domain",
+    "pulse": "spine-service", "chorus": "chorus-domain",
+}
 DOC_MAP = {
     "athena": ("athena-product-design", "Athena — Product Design", "designing/docs/athena-product-design.html"),
     "borg": ("borg-product-design", "Borg — Product Design", "designing/docs/borg-product-design.html"),
@@ -78,6 +86,7 @@ DOMAIN_FILL = {
     "clearing": ["cards", "messages", "streams"],
     "convergence": ["integrations"],
     "chorus": ["pipelines", "cicd", "version-control", "code"],
+    "athena": ["domains", "services", "Properties"],
 }
 CHILD_OVERRIDES = {"memory": "pulse", "knowledge": "pulse",
                    "search": "pulse", "tests": "werk"}
@@ -246,16 +255,13 @@ def main():
             edges += [("hasChild", f"product:{c}") for c in SEVEN]
         else:
             edges.append(("partOf", f"product:{PARENT}"))
-            for d in fields_localname(src.get("hasDomain", [])):
-                edges.append(("hasDomain", f"domain:{d}"))
-        if not any(e[0] == "hasDomain" for e in edges):
-            for d in DOMAIN_FILL.get(local, []):
-                edges.append(("hasDomain", f"domain:{d}"))
+
+        for d in DOMAIN_FILL.get(local, []):  # V2 Domain grain only (source carried V1 SubDomains)
+            edges.append(("hasDomain", f"domain:{d}"))
         doc_name, doc_title, doc_path = DOC_MAP[local]
-        first_domain = next((t.split(":", 1)[1] for pr, t in edges if pr == "hasDomain"), "athena-domain")
         adds.append((doc_name, {"docTitle": doc_title, "label": doc_title,
                                 "comment": f"Committed at {doc_path} (repo). Graph row added by #3558 recovery."},
-                     [("hasDomain", f"domain:{first_domain}")], "document"))
+                     [("hasDomain", f"sub-domain:{DOC_SUBDOMAIN[local]}")], "document"))
         edges.append(("hasDesignDoc", f"document:{doc_name}"))
         adds.append((local, fields, edges, "product"))
 
