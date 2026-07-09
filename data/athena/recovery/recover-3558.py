@@ -57,6 +57,28 @@ EXPLICIT_EDGE_OPS = [
 # partOf everywhere — no parallel contains vocabulary):
 #   memory/knowledge/search -> product-pulse (Jeff 13:31: search is part of pulse)
 #   tests -> product-werk (silas 13:34: werk owns build->test->deploy)
+# Every product's REAL design doc on disk (verified ls 2026-07-09; no fabrication):
+DOC_MAP = {
+    "athena": ("athena-product-design", "Athena — Product Design", "designing/docs/athena-product-design.html"),
+    "borg": ("borg-product-design", "Borg — Product Design", "designing/docs/borg-product-design.html"),
+    "loom": ("loom-subproduct-design", "Loom — Subproduct Design", "designing/docs/loom-subproduct-design.html"),
+    "werk": ("werk-subproduct-design", "Werk — Subproduct Design", "designing/docs/werk-subproduct-design.html"),
+    "clearing": ("clearing-value-stream-design", "Clearing — Value-Stream Design", "designing/docs/clearing-value-stream-design.html"),
+    "convergence": ("convergence-value-stream-design", "Convergence — Value-Stream Design", "designing/docs/convergence-value-stream-design.html"),
+    "pulse": ("pulse-service-design", "Pulse — Service Design (to-be)", "designing/docs/chorus-pulse-tobe.html"),
+    "chorus": ("chorus-as-platform", "Chorus — A System to Build Systems", "designing/docs/chorus-as-platform.html"),
+}
+# hasDomain floor-fill where the source node carries none — SAME ownership mapping
+# as the P2 edge re-points (Jeff 13:31 pulse absorbs; silas 13:34 tests->werk):
+DOMAIN_FILL = {
+    "pulse": ["memory", "knowledge", "search"],
+    "werk": ["tests"],
+    "borg": ["infrastructure", "builds", "deploys", "logs", "alerts-monitors"],
+    "loom": ["principles", "practices", "policies", "decisions", "rcas"],
+    "clearing": ["cards", "messages", "streams"],
+    "convergence": ["integrations"],
+    "chorus": ["pipelines", "cicd", "version-control", "code"],
+}
 CHILD_OVERRIDES = {"memory": "pulse", "knowledge": "pulse",
                    "search": "pulse", "tests": "werk"}
 SCALARS = ["label", "comment", "status", "audience", "gaps",
@@ -158,17 +180,17 @@ def post_batch(graph, lines, token, execute):
         return e.code, e.read().decode()[:200]
 
 
-def dal_add(local, fields, edges, execute):
+def dal_add(local, fields, edges, execute, kind="product"):
     """Insert one product through chorus-model add — the DAL escapes field values
     internally and validates the shape floor; prose (semicolons etc.) rides safely."""
     import subprocess
-    args = ["chorus-model", "add", "--kind", "product", "--name", local]
+    args = ["chorus-model", "add", "--kind", kind, "--name", local]
     for k, v in fields.items():
         args += ["--field", f"{k}={v}"]
     for prop, target in edges:
         args += ["--edge", f"{prop}={target}"]
     if not execute:
-        print(f"  DRY: chorus-model add product {local} fields={list(fields)} edges={edges}")
+        print(f"  DRY: chorus-model add {kind} {local} fields={list(fields)} edges={edges}")
         return 0, "dry-run"
     r = subprocess.run(args, capture_output=True, text=True, timeout=60,
                        env={**os.environ, "DEPLOY_ROLE": "wren"})
@@ -226,7 +248,16 @@ def main():
             edges.append(("partOf", f"product:{PARENT}"))
             for d in fields_localname(src.get("hasDomain", [])):
                 edges.append(("hasDomain", f"domain:{d}"))
-        adds.append((local, fields, edges))
+        if not any(e[0] == "hasDomain" for e in edges):
+            for d in DOMAIN_FILL.get(local, []):
+                edges.append(("hasDomain", f"domain:{d}"))
+        doc_name, doc_title, doc_path = DOC_MAP[local]
+        first_domain = next((t.split(":", 1)[1] for pr, t in edges if pr == "hasDomain"), "athena-domain")
+        adds.append((doc_name, {"docTitle": doc_title, "label": doc_title,
+                                "comment": f"Committed at {doc_path} (repo). Graph row added by #3558 recovery."},
+                     [("hasDomain", f"domain:{first_domain}")], "document"))
+        edges.append(("hasDesignDoc", f"document:{doc_name}"))
+        adds.append((local, fields, edges, "product"))
 
     # Batch B (ontology): edge re-points (all-IRI) + displaced-subject wipes
     # (wildcard-object per distinct predicate).
@@ -260,8 +291,8 @@ def main():
                 sys.exit(f"STOPPED: batch A -> {code} {msg}")
     else:
         print("  batch A empty (already wiped in a prior run) — skipped")
-    for local, fields, edges in adds:
-        code, msg = dal_add(local, fields, edges, execute)
+    for local, fields, edges, kind in adds:
+        code, msg = dal_add(local, fields, edges, execute, kind)
         if execute:
             print(f"  rc={code} chorus-model add {local} {msg[:90]}")
             if code != 0:
