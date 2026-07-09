@@ -205,6 +205,8 @@ def main():
         src = dict(fields_of_snapshot(src_local)) if n else {}
         src.update(fields_of(src_local, INS) if n else {})
         src.update(fields_of(src_local, ONT))  # ontology (current model) wins per field
+        if n == "borg" and "atStep" not in src:
+            src["atStep"] = [NS + "Proving"]  # from borgProduct's own recorded atStep (queried 10:22)
         if not src:
             sys.exit(f"REFUSED: no source content anywhere for {local}")
         fields = {f: src[f][0] for f in SCALARS if f in src}
@@ -213,6 +215,10 @@ def main():
         edges = []
         if "ownedBy" in src:
             edges.append(("ownedBy", "role:" + fields_localname(src["ownedBy"])[0].removeprefix("role-")))
+        if "atStep" in src:
+            # sources carry CamelCase step individuals (chorus#Designing); the
+            # conformant grain is the typed value-stream-step-* instances
+            edges.append(("atStep", "value-stream-step:" + fields_localname(src["atStep"])[0].lower()))
         if n is None:
             fields["label"] = "Chorus"
             edges += [("hasChild", f"product:{c}") for c in SEVEN]
@@ -246,11 +252,14 @@ def main():
           f"({edge_count} edge re-points) · execute={execute}")
 
     # ---- apply, stop at first failure ----
-    code, msg = post_batch(INS, batch_a, token, execute)
-    if execute:
-        print(f"  {code} POST /batch <{INS}> {msg[:100]}")
-        if code >= 400:
-            sys.exit(f"STOPPED: batch A -> {code} {msg}")
+    if batch_a:
+        code, msg = post_batch(INS, batch_a, token, execute)
+        if execute:
+            print(f"  {code} POST /batch <{INS}> {msg[:100]}")
+            if code >= 400:
+                sys.exit(f"STOPPED: batch A -> {code} {msg}")
+    else:
+        print("  batch A empty (already wiped in a prior run) — skipped")
     for local, fields, edges in adds:
         code, msg = dal_add(local, fields, edges, execute)
         if execute:
