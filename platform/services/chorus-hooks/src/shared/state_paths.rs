@@ -70,8 +70,24 @@ pub const HOOK_PID: &str = "/tmp/chorus-hooks.pid";
 /// Hook server PID file — durable contract home (#3606). ~/.chorus/run is
 /// never OS-evicted; orphan detection and tests read this path.
 pub fn hook_pid_durable() -> String {
+    format!("{}/chorus-hooks.pid", hook_run_dir())
+}
+
+/// #3631 — the hook control socket, moved OFF world-writable /tmp into the
+/// durable run dir (~/.chorus/run, 0700). Two reasons, both load-bearing:
+/// (1) /tmp is OS-evicted and world-writable → the 14h flap + a stale-socket
+/// race; (2) the daemon enforces every security guard, so a 0o777 control
+/// socket any local process could connect to / delete was a real hole. Both
+/// the daemon (main.rs) and the shim (shim.rs) resolve THIS one function so
+/// they can never drift apart. The socket file itself is chmod 0600.
+pub fn hook_socket_durable() -> String {
+    format!("{}/chorus-hooks.sock", hook_run_dir())
+}
+
+/// The run dir (~/.chorus/run) — created 0700 by the daemon at startup.
+pub fn hook_run_dir() -> String {
     format!(
-        "{}/.chorus/run/chorus-hooks.pid",
+        "{}/.chorus/run",
         std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
     )
 }

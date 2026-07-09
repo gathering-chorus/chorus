@@ -37,7 +37,6 @@ use std::os::unix::net::UnixStream;
 use std::io::Write;
 use std::process::ExitCode;
 
-const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
 
 /// #2790 — daemon-unreachable response shape. Pure function so the inline
 /// tests below hammer it without touching the unix socket.
@@ -419,10 +418,24 @@ fn main() -> ExitCode {
     }
 
     // Connect to unix socket — #2790: fail closed for pre-tool-use, open elsewhere.
-    let mut stream = match UnixStream::connect(SOCKET_PATH) {
+    // #3631 — the socket lives in ~/.chorus/run (resolved by the SAME shared fn
+    // the daemon binds), no longer world-writable /tmp.
+    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
+    let mut stream = match UnixStream::connect(&socket_path) {
         Ok(s) => s,
         Err(e) => {
             log_debug(&format!("FAIL connect: {}", e));
+            // #2790/#3631 — the daemon is DOWN. Pre-tool-use normally fails
+            // closed here (denies), but that traps the recovery: the command
+            // that restarts the daemon would itself be denied → the 14h
+            // team-wide lockout. Let the DOCUMENTED recovery commands through so
+            // an agent can bring the daemon back; every other call still denies.
+            if endpoint == "pre-tool-use"
+                && chorus_hooks::shared::recovery::is_recovery_command(&input)
+            {
+                log_debug("ALLOW recovery command (daemon down, #2790 carve-out)");
+                return ExitCode::SUCCESS;
+            }
             return daemon_unreachable_response(&endpoint, &format!("connect: {}", e));
         }
     };
