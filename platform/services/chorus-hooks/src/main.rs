@@ -23,12 +23,10 @@ use tokio::net::UnixListener;
 use tracing::{info, trace};
 use types::{HookInput, HookResponse};
 
-const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
-// #3606 — /tmp is the legacy MIRROR only; the durable contract path is
-// state_paths::hook_pid_durable() (~/.chorus/run/). macOS evicted the /tmp
-// pid file of a >3-day-old daemon while its active socket survived, breaking
-// orphan detection and redding socket_bind's pid_file_exists test.
-const PID_PATH: &str = "/tmp/chorus-hooks.pid";
+// #3631 — the socket + pid paths moved OFF /tmp entirely (world-writable +
+// OS-evicted). They now live in ~/.chorus/run (0700), resolved by the shared
+// state_paths::hook_socket_durable() / hook_pid_durable() so the daemon and the
+// shim never drift. No /tmp mirror — the recycled-PID trap it fed is gone.
 const HOOK_LOG: &str = "/Users/jeffbridwell/Library/Logs/Gathering/hooks.log";
 const HOOK_LOG_MAX: u64 = 10 * 1024 * 1024; // 10MB rotation
 
@@ -108,41 +106,63 @@ async fn main() {
         .with_target(false)
         .init();
 
-    // Exclusive socket bind with orphan detection (#1939).
-    // #3606: read the durable pid first, legacy /tmp mirror second — the
-    // mirror may have been OS-evicted while the holder is alive and well.
+    // #3631 — durable, off-/tmp socket + pidfile in ~/.chorus/run (0700). The
+    // daemon and the shim both resolve state_paths::hook_socket_durable(), so
+    // they can never drift onto different paths.
     let pid_durable = chorus_hooks::shared::state_paths::hook_pid_durable();
-    if Path::new(SOCKET_PATH).exists() {
-        let holder_alive = [pid_durable.as_str(), PID_PATH]
-            .iter()
-            .find_map(|p| std::fs::read_to_string(p).ok())
-            .and_then(|s| s.trim().parse::<u32>().ok())
-            .map(|pid| {
-                // kill -0 checks if process exists without sending a signal
-                unsafe { libc::kill(pid as i32, 0) == 0 }
-            })
-            .unwrap_or(false);
+    let socket_path = chorus_hooks::shared::state_paths::hook_socket_durable();
+    let run_dir = chorus_hooks::shared::state_paths::hook_run_dir();
 
-        if holder_alive {
-            eprintln!("chorus-hooks: socket held by live process (see {}). Exiting.", PID_PATH);
-            std::process::exit(1);
+    // Run dir exists, owner-only (0700) — the control socket lives here, off
+    // world-writable /tmp (the old 0o777-socket-in-/tmp was both the flap source
+    // and a real hole: any local process could connect to or delete the guard
+    // daemon's socket).
+    let _ = std::fs::create_dir_all(&run_dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&run_dir, std::fs::Permissions::from_mode(0o700));
+    }
+
+    // #3631 — PID-reuse-proof singleton via flock, NOT kill(pid,0) (the recycled-
+    // PID trap that flapped 14h on 2026-07-08). The lock is held by the ACTUAL
+    // process and released by the kernel on death; the pidfile content is never
+    // trusted for liveness. Testable core in shared::singleton (two-instance +
+    // recycled-PID behavioral tests).
+    let lock_file = match chorus_hooks::shared::singleton::acquire_singleton(&pid_durable) {
+        Some(f) => f,
+        None => {
+            eprintln!(
+                "chorus-hooks: another live instance holds the lock ({pid_durable}). Exiting.",
+            );
+            // #3631 (Kade's review) — exit(0), a deliberate change from the old
+            // exit(1). A second instance losing the singleton race is EXPECTED,
+            // not a failure: the real daemon is serving. exit(0) keeps launchd
+            // from logging spurious failures/backoff for the redundant spawn
+            // (the launchd plist is plain KeepAlive; there is one instance in
+            // normal operation, so this path only fires on a manual+launchd race).
+            std::process::exit(0);
         }
-
-        // Holder is dead or no PID file — remove stale socket
-        info!("Removing stale socket (orphan detected)");
-        let _ = std::fs::remove_file(SOCKET_PATH);
+    };
+    // We hold the singleton lock. Record our PID (informational — liveness is the
+    // lock, not this number). Truncate first so a shorter pid can't leave stale bytes.
+    {
+        use std::io::{Seek, Write};
+        let mut f = &lock_file;
+        let _ = f.set_len(0);
+        let _ = f.rewind();
+        let _ = write!(f, "{}", std::process::id());
+        let _ = f.flush();
     }
+    // Hold the lock for the whole process lifetime — dropping the File releases it.
+    std::mem::forget(lock_file);
 
-    // Write PID file for orphan detection.
-    // #2559: PID file lifecycle matches socket lifecycle — both written here
-    // on launch, both removed in shutdown_signal on graceful exit.
-    // #3606: durable path is the contract; /tmp is a best-effort mirror.
-    if let Some(dir) = Path::new(&pid_durable).parent() {
-        let _ = std::fs::create_dir_all(dir);
+    // A socket left by a crashed prior instance is safe to clear now: we hold the
+    // exclusive lock, so no live daemon owns it.
+    if Path::new(&socket_path).exists() {
+        info!("Removing stale socket (we own the singleton lock)");
+        let _ = std::fs::remove_file(&socket_path);
     }
-    std::fs::write(&pid_durable, std::process::id().to_string())
-        .expect("Failed to write PID file");
-    let _ = std::fs::write(PID_PATH, std::process::id().to_string());
 
     let state = AppState::new();
 
@@ -155,16 +175,17 @@ async fn main() {
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024)) // 16MB — tool_response can be large
         .with_state(state);
 
-    let listener = UnixListener::bind(SOCKET_PATH).expect("Failed to bind unix socket");
+    let listener = UnixListener::bind(&socket_path).expect("Failed to bind unix socket");
 
-    // Set permissions so all users can connect
+    // #3631 — 0600, owner-only. The guard daemon's control socket is no longer
+    // world-writable (was 0o777 in /tmp).
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(SOCKET_PATH, std::fs::Permissions::from_mode(0o777));
+        let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
     }
 
-    info!("chorus-hooks listening on {}", SOCKET_PATH);
+    info!("chorus-hooks listening on {}", socket_path);
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
@@ -202,11 +223,13 @@ async fn shutdown_signal() {
     }
 
     info!("Shutting down...");
-    // #2559: clean shutdown removes both socket and pid in lockstep —
-    // stale pid otherwise lets `kill $(cat …)` target a recycled-PID process.
-    // #3606: durable pid + legacy /tmp mirror both cleaned.
-    chorus_hooks::cleanup_runtime_files(Path::new(SOCKET_PATH), Path::new(PID_PATH));
-    let _ = std::fs::remove_file(chorus_hooks::shared::state_paths::hook_pid_durable());
+    // #3631 — clean shutdown removes the durable socket + pid in lockstep. The
+    // flock is released automatically when the process exits (no manual unlock);
+    // clearing the socket lets the next start bind without a stale-file race.
+    chorus_hooks::cleanup_runtime_files(
+        Path::new(&chorus_hooks::shared::state_paths::hook_socket_durable()),
+        Path::new(&chorus_hooks::shared::state_paths::hook_pid_durable()),
+    );
 }
 
 async fn health() -> &'static str {

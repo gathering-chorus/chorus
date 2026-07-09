@@ -57,23 +57,40 @@ pub fn messages_db() -> String {
     format!("{}/platform/pulse/messages.db", chorus_root())
 }
 
-/// Hook server socket
-pub const HOOK_SOCKET: &str = "/tmp/chorus-hooks.sock";
-
-/// Hook server PID file — legacy /tmp mirror. macOS evicts /tmp files
-/// unaccessed ~3 days, so this path CANNOT be the contract for a long-lived
-/// daemon (#3606: the active socket survived eviction, the pid file didn't →
-/// orphan detection broken + socket_bind suite red). Kept as a best-effort
-/// mirror for `kill $(cat /tmp/chorus-hooks.pid)` muscle memory.
-pub const HOOK_PID: &str = "/tmp/chorus-hooks.pid";
+// #3631 (Kade's review) — the legacy /tmp consts HOOK_SOCKET/HOOK_PID were
+// DELETED. They were unused, but a `pub const` pointing at world-writable /tmp
+// is a loaded gun: any future code that grabs it silently reintroduces the exact
+// path this card abandons. The only socket/pid paths are hook_socket_durable()
+// / hook_pid_durable() (~/.chorus/run), which hard-fail rather than fall back.
 
 /// Hook server PID file — durable contract home (#3606). ~/.chorus/run is
 /// never OS-evicted; orphan detection and tests read this path.
 pub fn hook_pid_durable() -> String {
-    format!(
-        "{}/.chorus/run/chorus-hooks.pid",
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
-    )
+    format!("{}/chorus-hooks.pid", hook_run_dir())
+}
+
+/// #3631 — the hook control socket, moved OFF world-writable /tmp into the
+/// durable run dir (~/.chorus/run, 0700). Two reasons, both load-bearing:
+/// (1) /tmp is OS-evicted and world-writable → the 14h flap + a stale-socket
+/// race; (2) the daemon enforces every security guard, so a 0o777 control
+/// socket any local process could connect to / delete was a real hole. Both
+/// the daemon (main.rs) and the shim (shim.rs) resolve THIS one function so
+/// they can never drift apart. The socket file itself is chmod 0600.
+pub fn hook_socket_durable() -> String {
+    format!("{}/chorus-hooks.sock", hook_run_dir())
+}
+
+/// The run dir (~/.chorus/run) — created 0700 by the daemon at startup.
+/// #3631 (Kade's review): HARD-FAIL if $HOME is unset — do NOT fall back to
+/// /tmp. A silent /tmp fallback would reintroduce the exact evictable,
+/// world-writable path this fix exists to abandon; better to refuse to start
+/// than to silently run the guard daemon's socket in a world-writable dir.
+pub fn hook_run_dir() -> String {
+    let home = std::env::var("HOME").expect(
+        "chorus-hooks: HOME unset — refusing to fall back to world-writable /tmp \
+         for the control socket/pidfile (#3631). Set HOME in the LaunchAgent env.",
+    );
+    format!("{}/.chorus/run", home)
 }
 
 /// Session init gate directory
