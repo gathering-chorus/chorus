@@ -2341,8 +2341,16 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         return match sparql_json(&q) {
             Ok(body) => {
                 let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
+                // #3558 — dedupe rows by SUBJECT: multi-valued OPTIONAL fields fan one
+                // entity into N rows (borg x 5 hasDomain = 5 rows; domains "55" = 36
+                // entities). Count entities, not SPARQL rows; first row per subject wins.
+                let mut seen_subjects = std::collections::HashSet::new();
                 let items: Vec<String> = select_v(&body)
                     .into_iter()
+                    .filter(|rowv| {
+                        let subj = rowv.split('|').next().unwrap_or("").to_string();
+                        seen_subjects.insert(subj)
+                    })
                     .map(|rowv| {
                         let cols: Vec<&str> = rowv.split('|').collect();
                         let name = cols.first().map(|s| s.rsplit('#').next().unwrap_or(s)).unwrap_or("");
