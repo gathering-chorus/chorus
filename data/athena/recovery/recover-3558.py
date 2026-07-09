@@ -107,6 +107,14 @@ def sparql(q):
         return json.load(r)["results"]["bindings"]
 
 
+def nt_lit(v):
+    """Literal slot for the batch door — charset-checked (no \" \\n \\t {{ }} ;)."""
+    for bad in ('"', "\n", "\r", "\t", "{", "}", ";"):
+        if bad in v:
+            raise SystemExit(f"REFUSED: literal contains batch-forbidden char {bad!r}: {v[:60]}")
+    return f'"{v}"'
+
+
 def fields_of_snapshot(local):
     """Yesterday's pre-recovery snapshot — the wipe in run 1 emptied the live
     instances row for borg (its only V2 copy), so its content reads from the
@@ -259,9 +267,15 @@ def main():
         for d in DOMAIN_FILL.get(local, []):  # V2 Domain grain only (source carried V1 SubDomains)
             edges.append(("hasDomain", f"domain:{d}"))
         doc_name, doc_title, doc_path = DOC_MAP[local]
-        adds.append((doc_name, {"docTitle": doc_title, "label": doc_title,
-                                "comment": f"Committed at {doc_path} (repo). Graph row added by #3558 recovery."},
-                     [("hasDomain", f"sub-domain:{DOC_SUBDOMAIN[local]}")], "document"))
+        D = P(doc_name)
+        ins_doc = [
+            ("INS", D, "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", f"<{NS}Document>"),
+            ("INS", D, f"<{NS}docTitle>", nt_lit(doc_title)),
+            ("INS", D, f"<{NS}label>", nt_lit(doc_title)),
+            ("INS", D, f"<{NS}comment>", nt_lit(f"Committed at {doc_path} (repo). Graph row added by #3558 recovery.")),
+            ("INS", D, f"<{NS}hasDomain>", P(DOC_SUBDOMAIN[local])),
+        ]
+        batch_a.extend(ins_doc)
         edges.append(("hasDesignDoc", f"document:{doc_name}"))
         adds.append((local, fields, edges, "product"))
 
