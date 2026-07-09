@@ -1,41 +1,41 @@
-# Daily Ops Review — 2026-07-08
+# Daily Ops Review — 2026-07-09
 
 ## 1. Hooks Health
-**Status: YELLOW (carry, 34d)**
-`cargo check` passes with 8 warnings — count unchanged since Jun 4. Dead code: `load_role_sections`, `find_most_recent_pending`, `handle_approval_request`, `is_demo_or_done`, `has_test_run`, `has_production_code_edit`, `at_step` (×3), `chorus_worktree_override`. No errors.
-**Action:** Silas — suppress or delete; 34-day carry with no movement, assign to next triage.
+**Status: GREEN (resolved)**
+`cargo check` passes with 0 warnings — dead code symbols from yesterday's YELLOW carry (8 warnings: `load_role_sections`, `find_most_recent_pending`, etc.) are gone. Clean build.
+**Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-17 distinct plist files in `proving/config/launchagents/` use `/tmp/` for stdout/stderr (hooks, api, clearing, context-cache, fuseki, ops, etc.). Structural, unchanged.
-**Action:** Migrate StandardOut/Err to `~/Library/Logs/Chorus/`; no card assigned yet.
+17 distinct plist files in `proving/config/launchagents/` use `/tmp/` for stdout/stderr (hooks, api, clearing, context-cache × 3, fuseki, ops, posture-capture, etc.). Structural, unchanged.
+**Action:** Silas — open card to migrate StandardOut/Err to `~/Library/Logs/Chorus/`.
 
 ## 3. CLAUDE.md Fragments
-**Status: GREEN (resolved)**
-All 24 shared fragments in `designing/claudemd/shared/` show 2026-07-08 today — fully refreshed. Role-specific fragments (wren/silas/kade) also current.
+**Status: GREEN (carry)**
+24 shared fragments in `designing/claudemd/shared/` current; manifest build 217 / PROTOCOL_VERSION 1.4. Last pipeline run 2026-02-21 — see #8 risk note.
 **Action:** None.
 
 ## 4. CSC Compliance
 **Status: RED (carry)**
-52 non-test platform scripts have hardcoded `/tmp/` paths. `messages/scripts/` and `architect/scripts/` paths from spec don't exist — checked `platform/scripts/` as the live equivalent. Core violations: `look.sh`, `bridge-subscriber-watchdog.sh`, `werk-init.sh`, `bedroom-heartbeat.sh`, `index-crawler-snapshots.sh`.
-**Action:** Silas — `bridge-subscriber-watchdog.sh` /tmp state dir is highest risk; assign July card.
+Platform scripts clean (no new /tmp refs). Role scripts: kade/scripts/ has 5 hardcoded `/tmp/` paths (gen-thumbs-bedroom, wm-schema-extract, photo-pipeline ×2, run-canonical-rebuild); wren/scripts/ has 2 (site-walkthrough.mjs, style-lint.sh).
+**Action:** Silas — `photo-pipeline.py` /tmp state is highest risk; assign July card.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo clean — 0 uncommitted changes across all role directories.
+Repo clean — 0 uncommitted changes. Recent commits: silas daily quality review 2026-07-09, kade #2588/#3431, silas #3619 all landed cleanly.
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 104d)**
-WF-165 (card #1704 — "Fix session-start board unreachable") created 2026-03-26, never started, still `in_progress`. Step 1 (Kade) shows `status: ready` with no `started_at`. 104 days untouched.
-**Action:** Wren — close or re-groom #1704; it's planning debt at 100+ days.
+**Status: RED (carry, 93d)**
+2 WIP cards both last updated 2026-04-07 (93 days): #1759 "Framework service design — OWL entity model unifying borg chorus and jb ontologies" (Wren, P1) and #1791 "Restore chorus product boundary — chorus/ as namespace within platform/" (Silas, P1).
+**Action:** Wren — close or re-groom both; >90 days in WIP with no commits is planning debt.
 
 ## 7. Domain Context Freshness
-**Status: GREEN (resolved)**
-All 5 domain-context files (chorus, infrastructure, music, photos, seeds) updated today 2026-07-08. Drift from previous review cleared.
-**Action:** None.
+**Status: RED**
+All 5 domain-context files stale by content date: chorus 2026-04-19 (81d, 9+ cards shipped), infrastructure 2026-03-25 (106d), music 2026-03-26 (105d), photos 2026-03-26 (105d), seeds 2026-04-01 (99d). File mtimes from clone (2026-07-08) masked this; yesterday's GREEN was a false read.
+**Action:** Assign refresh sweep — Silas owns chorus/infra, Wren owns music/photos/seeds; target this sprint.
 
 ## 8. Disk Delta
-**Status: N/A**
-No runtime perf-baseline snapshots committed to repo (`perf-baseline.sh` writes to host only). Cannot compute delta from remote context.
-**Action:** Silas — surface nightly baseline JSON to a repo path for cross-session delta tracking.
+**Status: N/A (carry)**
+No runtime perf-baseline snapshots in repo. Repo total: 661M (platform 331M, roles 80M).
+**Action:** Silas — surface nightly baseline JSON to repo path for cross-session delta tracking.
