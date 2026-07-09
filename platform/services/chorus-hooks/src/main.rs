@@ -124,27 +124,20 @@ async fn main() {
         let _ = std::fs::set_permissions(&run_dir, std::fs::Permissions::from_mode(0o700));
     }
 
-    // #3631 — PID-reuse-proof singleton via flock, NOT kill(pid,0). The lock is
-    // held by the ACTUAL running process; the OS releases it the instant that
-    // process dies, so a stale pidfile with a RECYCLED pid can never masquerade
-    // as a live holder (the 14h 2026-07-08 flap: kill(recycled_pid,0)==0 →
-    // "holder alive" → exit-1 on every kickstart). If the lock is already held,
-    // a genuinely-live daemon owns it → we bow out cleanly.
-    use std::os::unix::io::AsRawFd;
-    let lock_file = std::fs::OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(&pid_durable)
-        .expect("Failed to open pid lock file");
-    let got_lock =
-        unsafe { libc::flock(lock_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 };
-    if !got_lock {
-        eprintln!(
-            "chorus-hooks: another live instance holds the lock ({pid_durable}). Exiting.",
-        );
-        std::process::exit(0); // not an error — the singleton is already serving
-    }
+    // #3631 — PID-reuse-proof singleton via flock, NOT kill(pid,0) (the recycled-
+    // PID trap that flapped 14h on 2026-07-08). The lock is held by the ACTUAL
+    // process and released by the kernel on death; the pidfile content is never
+    // trusted for liveness. Testable core in shared::singleton (two-instance +
+    // recycled-PID behavioral tests).
+    let lock_file = match chorus_hooks::shared::singleton::acquire_singleton(&pid_durable) {
+        Some(f) => f,
+        None => {
+            eprintln!(
+                "chorus-hooks: another live instance holds the lock ({pid_durable}). Exiting.",
+            );
+            std::process::exit(0); // not an error — the singleton is already serving
+        }
+    };
     // We hold the singleton lock. Record our PID (informational — liveness is the
     // lock, not this number). Truncate first so a shorter pid can't leave stale bytes.
     {

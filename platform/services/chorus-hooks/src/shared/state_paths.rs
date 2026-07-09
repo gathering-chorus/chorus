@@ -85,11 +85,16 @@ pub fn hook_socket_durable() -> String {
 }
 
 /// The run dir (~/.chorus/run) — created 0700 by the daemon at startup.
+/// #3631 (Kade's review): HARD-FAIL if $HOME is unset — do NOT fall back to
+/// /tmp. A silent /tmp fallback would reintroduce the exact evictable,
+/// world-writable path this fix exists to abandon; better to refuse to start
+/// than to silently run the guard daemon's socket in a world-writable dir.
 pub fn hook_run_dir() -> String {
-    format!(
-        "{}/.chorus/run",
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
-    )
+    let home = std::env::var("HOME").expect(
+        "chorus-hooks: HOME unset — refusing to fall back to world-writable /tmp \
+         for the control socket/pidfile (#3631). Set HOME in the LaunchAgent env.",
+    );
+    format!("{}/.chorus/run", home)
 }
 
 /// Session init gate directory
