@@ -3,10 +3,13 @@ name = "werk-commit"
 version = "0.1.0"
 edition = "2021"
 
-# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern
-# (libc is linked by default), and the `git`/`cards`/`gh` CLIs as subprocesses.
-# Same contract as werk-pull (#3045) — the v2 verb-binary blueprint.
+# Self-contained: ZERO external/registry dependencies. std only + a direct libc
+# `flock` extern (libc is linked by default), and the `git`/`cards`/`gh` CLIs as
+# subprocesses. Same contract as werk-pull (#3045) — the v2 verb-binary blueprint.
+# The sibling path-dep werk-teardown (zero-external-dep itself, #3431) provides the
+# ONE shared Tier-1 merge-proof (#3632 resume disposition) — never fork that logic.
 [dependencies]
+werk-teardown = { path = "../werk-teardown" }
 
 [[bin]]
 name = "werk-commit"

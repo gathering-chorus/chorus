@@ -1,6 +1,7 @@
 //! #3431 guardrail (Silas, 2026-07-08): the werk-teardown path-dep must never
 //! become an external-dep backdoor. Every [dependencies] entry in this crate
-//! and in the sibling crates that take it as a path dep must be a workspace
+//! and in the sibling crates that take it as a path dep (werk-accept,
+//! werk-unpull, and since #3632 werk-commit) must be a workspace
 //! `path = ...` dep — zero registry/network deps, preserving the #3045
 //! blueprint's protections (deterministic offline build, standalone signing).
 
@@ -41,7 +42,7 @@ fn non_path_deps(toml: &str) -> Vec<String> {
 #[test]
 fn teardown_and_its_dependents_have_zero_external_deps() {
     let dir = services_dir();
-    for crate_name in ["werk-teardown", "werk-accept", "werk-unpull"] {
+    for crate_name in ["werk-teardown", "werk-accept", "werk-unpull", "werk-commit"] {
         let manifest = dir.join(crate_name).join("Cargo.toml");
         let toml = fs::read_to_string(&manifest)
             .unwrap_or_else(|e| panic!("read {}: {}", manifest.display(), e));

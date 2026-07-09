@@ -149,3 +149,21 @@ fn resolve_trace_mints_then_persists_so_one_trace_threads() {
     // second resolve (no env) reads the SAME persisted trace → ONE trace threads through.
     assert_eq!(resolve_trace_in(card, None, &dir), minted);
 }
+
+// #3632 — a conflict on a GENERATED file carries no human decision; the hold
+// message must say so and name the recovery, so the next wedged resume
+// (#3431/#2588 shape) is self-service instead of archaeology.
+#[test]
+fn conflict_hold_message_flags_generated_files() {
+    let m = werk_commit::conflict_hold_message(
+        2588,
+        "kade",
+        &["knowledge/doc-coherence.md".to_string(), "src/real.rs".to_string()],
+    );
+    assert!(m.contains("GENERATED"), "names the generated class: {}", m);
+    assert!(m.contains("knowledge/doc-coherence.md"), "names the file: {}", m);
+    assert!(m.contains("--continue"), "names the verb recovery: {}", m);
+    // a purely hand-edited conflict gets NO generated note
+    let plain = werk_commit::conflict_hold_message(2588, "kade", &["src/real.rs".to_string()]);
+    assert!(!plain.contains("GENERATED"), "no note when nothing is generated: {}", plain);
+}
