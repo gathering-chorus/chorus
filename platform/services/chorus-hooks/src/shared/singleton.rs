@@ -24,6 +24,11 @@ pub fn acquire_singleton(pidfile_path: &str) -> Option<File> {
         .create(true)
         .read(true)
         .write(true)
+        // NEVER truncate a pidfile we're about to flock — an incoming instance
+        // must not zero the file out from under the live holder. Explicit here
+        // both for that semantic and to satisfy clippy::suspicious_open_options
+        // (create(true) with no truncate disposition).
+        .truncate(false)
         .open(pidfile_path)
         .ok()?;
     // LOCK_EX | LOCK_NB: exclusive, non-blocking — fail immediately if held.
