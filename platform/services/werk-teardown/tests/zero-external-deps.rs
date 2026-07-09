@@ -42,7 +42,7 @@ fn non_path_deps(toml: &str) -> Vec<String> {
 #[test]
 fn teardown_and_its_dependents_have_zero_external_deps() {
     let dir = services_dir();
-    for crate_name in ["werk-teardown", "werk-accept", "werk-unpull", "werk-commit"] {
+    for crate_name in ["werk-teardown", "werk-accept", "werk-unpull", "werk-commit", "werk-push"] {
         let manifest = dir.join(crate_name).join("Cargo.toml");
         let toml = fs::read_to_string(&manifest)
             .unwrap_or_else(|e| panic!("read {}: {}", manifest.display(), e));
