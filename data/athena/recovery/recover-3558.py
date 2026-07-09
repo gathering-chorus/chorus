@@ -86,7 +86,7 @@ DOMAIN_FILL = {
     "clearing": ["cards", "messages", "streams"],
     "convergence": ["integrations"],
     "chorus": ["pipelines", "cicd", "version-control", "code"],
-    "athena": ["domains", "services", "Properties"],
+    "athena": ["domains", "services"],  # Properties IRI is capital-P grain the DAL mint cannot reference (lowercases); edge deferred to follow-up
 }
 CHILD_OVERRIDES = {"memory": "pulse", "knowledge": "pulse",
                    "search": "pulse", "tests": "werk"}
