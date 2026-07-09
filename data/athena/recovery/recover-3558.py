@@ -238,7 +238,7 @@ def main():
 
     # DAL adds: one per canonical product, full field set from the source copy.
     adds = []
-    for n in SEVEN + [None]:
+    for n in [None] + SEVEN:
         local = PARENT if n is None else n
         src_local = "chorusProduct" if n is None else f"product-{n}"
         src = dict(fields_of_snapshot(src_local)) if n else {}
@@ -260,7 +260,7 @@ def main():
             edges.append(("atStep", "value-stream-step:" + fields_localname(src["atStep"])[0].lower()))
         if n is None:
             fields["label"] = "Chorus"
-            edges += [("hasChild", f"product:{c}") for c in SEVEN]
+            pass  # hasChild linked post-children (referential integrity)
         else:
             edges.append(("partOf", f"product:{PARENT}"))
 
@@ -317,6 +317,19 @@ def main():
             print(f"  rc={code} chorus-model add {local} {msg[:90]}")
             if code != 0:
                 sys.exit(f"STOPPED: dal add {local} -> {msg}")
+    for c in SEVEN:  # parent -> children, now that both ends exist
+        largs = ["chorus-model", "link", "--kind", "product", "--name", PARENT,
+                 "--edge", f"hasChild=product:{c}"]
+        if not execute:
+            print(f"  DRY: {' '.join(largs)}")
+        else:
+            import subprocess
+            lr = subprocess.run(largs, capture_output=True, text=True, timeout=60,
+                                env={**os.environ, "DEPLOY_ROLE": "wren"})
+            print(f"  rc={lr.returncode} link chorus hasChild {c} {(lr.stdout+lr.stderr).strip()[:80]}")
+            if lr.returncode != 0:
+                sys.exit(f"STOPPED: link hasChild {c} -> {(lr.stdout+lr.stderr).strip()[:200]}")
+
     code, msg = post_batch(ONT, batch_b, token, execute)
     if execute:
         print(f"  {code} POST /batch <{ONT}> {msg[:100]}")
