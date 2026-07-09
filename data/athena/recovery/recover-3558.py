@@ -267,7 +267,12 @@ def main():
         for d in DOMAIN_FILL.get(local, []):  # V2 Domain grain only (source carried V1 SubDomains)
             edges.append(("hasDomain", f"domain:{d}"))
         doc_name, doc_title, doc_path = DOC_MAP[local]
-        D = P(doc_name)
+        # DAL mints document IRIs with the document- prefix; match it. Also DEL the
+        # bare-IRI residue this block wrote in the prior run (5 preds, wildcard obj).
+        for pred in ("http://www.w3.org/1999/02/22-rdf-syntax-ns#type", f"{NS}docTitle",
+                     f"{NS}label", f"{NS}comment", f"{NS}hasDomain"):
+            batch_a.append(("DEL", P(doc_name), f"<{pred}>", "?o"))
+        D = P("document-" + doc_name)
         ins_doc = [
             ("INS", D, "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", f"<{NS}Document>"),
             ("INS", D, f"<{NS}docTitle>", nt_lit(doc_title)),
@@ -276,7 +281,7 @@ def main():
             ("INS", D, f"<{NS}hasDomain>", P(DOC_SUBDOMAIN[local])),
         ]
         batch_a.extend(ins_doc)
-        edges.append(("hasDesignDoc", f"document:{doc_name}"))
+        edges.append(("hasDesignDoc", f"document:{doc_name}"))  # DAL resolves to document-<name>
         adds.append((local, fields, edges, "product"))
 
     # Batch B (ontology): edge re-points (all-IRI) + displaced-subject wipes
