@@ -135,7 +135,13 @@ async fn main() {
             eprintln!(
                 "chorus-hooks: another live instance holds the lock ({pid_durable}). Exiting.",
             );
-            std::process::exit(0); // not an error — the singleton is already serving
+            // #3631 (Kade's review) — exit(0), a deliberate change from the old
+            // exit(1). A second instance losing the singleton race is EXPECTED,
+            // not a failure: the real daemon is serving. exit(0) keeps launchd
+            // from logging spurious failures/backoff for the redundant spawn
+            // (the launchd plist is plain KeepAlive; there is one instance in
+            // normal operation, so this path only fires on a manual+launchd race).
+            std::process::exit(0);
         }
     };
     // We hold the singleton lock. Record our PID (informational — liveness is the

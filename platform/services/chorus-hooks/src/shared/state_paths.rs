@@ -57,15 +57,11 @@ pub fn messages_db() -> String {
     format!("{}/platform/pulse/messages.db", chorus_root())
 }
 
-/// Hook server socket
-pub const HOOK_SOCKET: &str = "/tmp/chorus-hooks.sock";
-
-/// Hook server PID file — legacy /tmp mirror. macOS evicts /tmp files
-/// unaccessed ~3 days, so this path CANNOT be the contract for a long-lived
-/// daemon (#3606: the active socket survived eviction, the pid file didn't →
-/// orphan detection broken + socket_bind suite red). Kept as a best-effort
-/// mirror for `kill $(cat /tmp/chorus-hooks.pid)` muscle memory.
-pub const HOOK_PID: &str = "/tmp/chorus-hooks.pid";
+// #3631 (Kade's review) — the legacy /tmp consts HOOK_SOCKET/HOOK_PID were
+// DELETED. They were unused, but a `pub const` pointing at world-writable /tmp
+// is a loaded gun: any future code that grabs it silently reintroduces the exact
+// path this card abandons. The only socket/pid paths are hook_socket_durable()
+// / hook_pid_durable() (~/.chorus/run), which hard-fail rather than fall back.
 
 /// Hook server PID file — durable contract home (#3606). ~/.chorus/run is
 /// never OS-evicted; orphan detection and tests read this path.
