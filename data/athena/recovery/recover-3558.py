@@ -76,6 +76,30 @@ def sparql(q):
         return json.load(r)["results"]["bindings"]
 
 
+def fields_of_snapshot(local):
+    """Yesterday's pre-recovery snapshot — the wipe in run 1 emptied the live
+    instances row for borg (its only V2 copy), so its content reads from the
+    13:29 2026-07-08 snapshot. Read-only."""
+    import re, glob as g
+    snaps = sorted(g.glob(os.path.expanduser("~/chorus-graph-snapshots/instances-20260708-*.nt")))
+    if not snaps:
+        return {}
+    out = {}
+    pat = re.compile(rf"^<{re.escape(NS + local)}> <([^>]+)> (.+) \.$")
+    for line in open(snaps[-1], encoding="utf-8", errors="replace"):
+        m = pat.match(line.strip())
+        if not m:
+            continue
+        pred = m.group(1).rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+        obj = m.group(2).strip()
+        if obj.startswith("<") and obj.endswith(">"):
+            val = obj[1:-1]
+        else:
+            val = obj.split('"^^')[0].strip('"').encode().decode("unicode_escape")
+        out.setdefault(pred, []).append(val)
+    return out
+
+
 def fields_of(local, graph):
     rows = sparql(f"SELECT ?p ?o WHERE {{ GRAPH <{graph}> {{ <{NS}{local}> ?p ?o }} }}")
     out = {}
@@ -178,7 +202,8 @@ def main():
     for n in SEVEN + [None]:
         local = PARENT if n is None else n
         src_local = "chorusProduct" if n is None else f"product-{n}"
-        src = dict(fields_of(src_local, INS)) if n else {}
+        src = dict(fields_of_snapshot(src_local)) if n else {}
+        src.update(fields_of(src_local, INS) if n else {})
         src.update(fields_of(src_local, ONT))  # ontology (current model) wins per field
         if not src:
             sys.exit(f"REFUSED: no source content anywhere for {local}")
