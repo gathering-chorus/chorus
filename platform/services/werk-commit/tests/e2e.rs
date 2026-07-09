@@ -543,3 +543,67 @@ fn refusals_success_spine_and_continue_reconflict() {
         .output().unwrap();
     assert_eq!(String::from_utf8_lossy(&behind.stdout).trim(), "0", "landed on current main");
 }
+
+// #3632 — resume disposition. A clean werk whose card ALREADY LANDED on origin/main
+// is the SUCCESS state of a completed commit step, not a failure: three resumed
+// lands in one week (#3624/#3431/#2588) died at `nothing-to-commit` before the
+// pipeline's idempotent merge/accept verbs were ever reached. Same Tier-1 merge
+// proof as werk-teardown (#3014): a commit subject referencing #<card> on main.
+#[test]
+fn clean_werk_with_card_already_on_main_is_idempotent_success() {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9010");
+    git(&home, &["worktree", "add", "-b", "kade/9010", werk.to_str().unwrap(), "origin/main"]);
+    // the card's work is ON MAIN (squash-merge analogue: subject references #9010);
+    // the werk is clean and carries no commits ahead — the exact #2588 resume state.
+    fs::write(home.join("landed.txt"), "sq").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "#9010 (kade) (#999)"]);
+    git(&home, &["push", "-q", "origin", "main"]);
+
+    let head_before = Command::new("git")
+        .args(["-C", werk.to_str().unwrap(), "rev-parse", "HEAD"])
+        .output().unwrap();
+    let sha = commit(9010, "kade", "", &home, &werk_base)
+        .expect("#3632: resume commit on a landed card is idempotent success, not a refusal");
+    assert!(sha.len() >= 7, "returns HEAD sha");
+    assert_eq!(sha, String::from_utf8_lossy(&head_before.stdout).trim(),
+        "idempotent pass must not create a commit — HEAD unchanged");
+    let witness = fs::read_to_string(home.join("ops/logs/werk-commit.jsonl")).unwrap_or_default();
+    assert!(witness.contains("\"event\":\"commit.idempotent\""),
+        "witnesses commit.idempotent, not commit.refused: {}", witness);
+}
+
+// #3632 companion pin: WITHOUT the card's work on main, the clean-empty werk still
+// refuses loudly — the resume disposition must never let a genuinely-empty card
+// slip forward (#3624's first run was a real empty refusal and stays one).
+#[test]
+fn clean_werk_with_no_card_work_still_refuses_nothing_to_commit() {
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9011");
+    git(&home, &["worktree", "add", "-b", "kade/9011", werk.to_str().unwrap(), "origin/main"]);
+
+    let err = commit(9011, "kade", "", &home, &werk_base)
+        .expect_err("genuinely-empty werk must still refuse");
+    assert!(err.contains("nothing to commit"), "typed refusal preserved: {}", err);
+}

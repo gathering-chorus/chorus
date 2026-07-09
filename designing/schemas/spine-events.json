@@ -1895,7 +1895,7 @@
     "accept.teardown": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk `accept` sequencer (finalize ceremony): `accept.teardown` \u2014 the card's werk torn down natively via the werk-teardown crate (#3431). Registered by #3629.",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.teardown` — the card's werk torn down natively via the werk-teardown crate (#3431). Registered by #3629.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -1905,12 +1905,12 @@
     "accept.teardown.failed": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk `accept` sequencer (finalize ceremony): `accept.teardown.failed` \u2014 native werk-teardown (#3431) failed at accept; the card stays live-branched. Registered by #3629.",
+      "description": "Werk `accept` sequencer (finalize ceremony): `accept.teardown.failed` — native werk-teardown (#3431) failed at accept; the card stays live-branched. Registered by #3629.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
         "reason": "Teardown failure detail",
-        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
+        "failureClass": "change|tooling discriminator (#3513) — change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
       }
     },
     "accept.env_down": {
@@ -2012,6 +2012,17 @@
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
+      }
+    },
+    "commit.idempotent": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `commit` verb — `idempotent` phase (commit.idempotent, #3632): clean werk whose card work already landed on origin/main (Tier-1 proof); step-satisfied pass on resume, NOT a refusal. Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "reason": "Always work-already-on-main today",
+        "sha": "Werk HEAD at the idempotent pass"
       }
     },
     "commit.conflict": {
@@ -2149,35 +2160,45 @@
     "test.started": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 `started` phase (test.started). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "description": "Werk `test` verb — `started` phase (#3621 always-emit): the blocking test floor announces its plan (units, checks) at run start, so a trace can distinguish 'never ran' from 'ran silently'. Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "units": "Affected test units on the card's diff",
+        "checks_planned": "Checks the plan will run"
       }
     },
     "test.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 `completed` phase (test.completed). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "description": "Werk `test` verb — `completed` phase (#3621 always-emit, the canonical wide test event): verdict + counts + duration on EVERY run, green included; failureClass only on red; advisory flag on self-modifying cards. Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
-        "role": "Acting role"
+        "role": "Acting role",
+        "verdict": "pass | BLOCK | advisory-fail (self-modifying) | no-affected-units",
+        "units": "Affected test units",
+        "checks_run": "Checks executed",
+        "checks_failed": "Checks that failed",
+        "duration_ms": "Wall-clock duration of the gate",
+        "failureClass": "change | tooling (closed DORA enum; present only when checks_failed > 0 — a red check on the card diff is change-caused)",
+        "advisory": "true when self-modifying (non-blocking)"
       }
     },
     "test.failed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 `failed` phase (test.failed). Verb-phase event (#3513 naming law). Registered by #3625 (was a phantom flagged by werk-emit-conformance).",
+      "description": "Werk `test` verb — one typed failure per failing check (#3190; family-registered by #3621): names the check kind and unit so a red gate is queryable, not just an exit code.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
-        "failureClass": "change|tooling discriminator (#3513) \u2014 change = work-under-test bad (counts DORA CFR); tooling = pipeline mechanics (excluded); default tooling."
+        "check": "Check kind (cargo-test | tsc | jest | clippy-ratchet | doc-coherence)",
+        "unit": "Unit the check ran against (crate / package / workspace)"
       }
     },
     "demo.memory.deferred": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk `demo` sequencer: a gate/review spawn hit the memory floor (#3625 \u2014 swap/free past threshold, the 2026-07-07 OOM signature) and is waiting for pressure to drain before spawning its headless claude.",
+      "description": "Werk `demo` sequencer: a gate/review spawn hit the memory floor (#3625 — swap/free past threshold, the 2026-07-07 OOM signature) and is waiting for pressure to drain before spawning its headless claude.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -3113,7 +3134,7 @@
     "werk.remove.orphan_propagated": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `werk` sequencer (orchestrator run): `werk.remove.orphan_propagated` \u2014 werk-teardown propagated an orphaned-branch cleanup on remove (#3498). Registered by #3629.",
+      "description": "Werk `werk` sequencer (orchestrator run): `werk.remove.orphan_propagated` — werk-teardown propagated an orphaned-branch cleanup on remove (#3498). Registered by #3629.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -3180,44 +3201,6 @@
         "card": "Card id",
         "round": "Demo round key",
         "waited_s": "Seconds waited before timeout"
-      }
-    },
-    "test.started": {
-      "vertebra": "building",
-      "source": "werk",
-      "description": "Werk `test` verb — `started` phase (#3621 always-emit): the blocking test floor announces its plan (units, checks) at run start, so a trace can distinguish 'never ran' from 'ran silently'. Verb-phase event (#3513 naming law).",
-      "fields": {
-        "trace_id": "Werk trace join key",
-        "role": "Acting role",
-        "units": "Affected test units on the card's diff",
-        "checks_planned": "Checks the plan will run"
-      }
-    },
-    "test.completed": {
-      "vertebra": "building",
-      "source": "werk",
-      "description": "Werk `test` verb — `completed` phase (#3621 always-emit, the canonical wide test event): verdict + counts + duration on EVERY run, green included; failureClass only on red; advisory flag on self-modifying cards. Verb-phase event (#3513 naming law).",
-      "fields": {
-        "trace_id": "Werk trace join key",
-        "role": "Acting role",
-        "verdict": "pass | BLOCK | advisory-fail (self-modifying) | no-affected-units",
-        "units": "Affected test units",
-        "checks_run": "Checks executed",
-        "checks_failed": "Checks that failed",
-        "duration_ms": "Wall-clock duration of the gate",
-        "failureClass": "change | tooling (closed DORA enum; present only when checks_failed > 0 — a red check on the card diff is change-caused)",
-        "advisory": "true when self-modifying (non-blocking)"
-      }
-    },
-    "test.failed": {
-      "vertebra": "building",
-      "source": "werk",
-      "description": "Werk `test` verb — one typed failure per failing check (#3190; family-registered by #3621): names the check kind and unit so a red gate is queryable, not just an exit code.",
-      "fields": {
-        "trace_id": "Werk trace join key",
-        "role": "Acting role",
-        "check": "Check kind (cargo-test | tsc | jest | clippy-ratchet | doc-coherence)",
-        "unit": "Unit the check ran against (crate / package / workspace)"
       }
     }
   }

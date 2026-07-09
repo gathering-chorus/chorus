@@ -24,6 +24,10 @@ pub fn acquire_singleton(pidfile_path: &str) -> Option<File> {
         .create(true)
         .read(true)
         .write(true)
+        // Never truncate on open: a pidfile being flock'd must keep its contents
+        // until the lock is HELD (truncating before the flock races a live holder's
+        // pid off disk). Explicit disposition also satisfies suspicious_open_options.
+        .truncate(false)
         .open(pidfile_path)
         .ok()?;
     // LOCK_EX | LOCK_NB: exclusive, non-blocking — fail immediately if held.
