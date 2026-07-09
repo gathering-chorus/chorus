@@ -234,3 +234,67 @@ fn wrong_branch_refuses_sentinel_reaches_git_and_gh_fail_rolls_back() {
     assert!(emitted.contains("push.rolledback") && emitted.contains("reason=gh-register-fail"),
         "rollback reached the spine: {emitted}");
 }
+
+// #3632 — resume disposition, push half. After a land dies post-merge, the werk's
+// branch has nothing ahead of origin/main (rebase dropped the merged commits) —
+// that is the SUCCESS state of a completed push, not "commit first". Same Tier-1
+// proof as werk-commit/werk-teardown: a main subject referencing #<card>.
+#[test]
+fn clean_branch_with_card_already_on_main_is_idempotent_push() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let bin = tmp("bin");
+    write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
+    std::env::set_var("PATH", format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()));
+    std::env::set_var("GH_EXIT", "0");
+
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9020");
+    git(&home, &["worktree", "add", "-b", "kade/9020", werk.to_str().unwrap(), "origin/main"]);
+    // the card's work is on MAIN (squash analogue); a stale remote branch lingers
+    // at the pre-merge sha (#2588's exact post-recovery state).
+    git(&werk, &["push", "-q", "origin", "kade/9020"]);
+    fs::write(home.join("landed.txt"), "sq").unwrap();
+    git(&home, &["add", "."]);
+    git(&home, &["commit", "-q", "-m", "#9020 (kade) (#999)"]);
+    git(&home, &["push", "-q", "origin", "main"]);
+    git(&werk, &["fetch", "-q", "origin", "main"]);
+
+    let sha = push(9020, "kade", &home, &werk_base)
+        .expect("#3632: push on a landed card is idempotent success, not 'commit first'");
+    assert!(sha.len() >= 7);
+    let witness = fs::read_to_string(home.join("ops/logs/werk-push.jsonl")).unwrap_or_default();
+    assert!(witness.contains("\"event\":\"push.idempotent\""),
+        "witnesses push.idempotent: {}", witness);
+}
+
+// #3632 companion pin: no card work anywhere → still refuses (commit first).
+#[test]
+fn clean_branch_with_no_card_work_still_refuses_nothing_to_push() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let origin = tmp("origin");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("README"), "x").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    let home = tmp("home");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+    let werk_base = tmp("werk");
+    let werk = werk_base.join("kade-9021");
+    git(&home, &["worktree", "add", "-b", "kade/9021", werk.to_str().unwrap(), "origin/main"]);
+
+    let err = push(9021, "kade", &home, &werk_base).expect_err("empty branch refuses");
+    assert!(err.contains("nothing to push"), "typed refusal preserved: {}", err);
+}

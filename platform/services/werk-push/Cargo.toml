@@ -3,10 +3,13 @@ name = "werk-push"
 version = "0.1.0"
 edition = "2021"
 
-# Self-contained: ZERO dependencies. std only + a direct libc `flock` extern,
-# and the `git`/`gh` CLIs as subprocesses. The v2 verb-binary blueprint is
-# werk-pull (#3045); this is the atomic PUSH verb, split out of commit+push (#3056).
+# Self-contained: ZERO external/registry dependencies. std only + a direct libc
+# `flock` extern, and the `git`/`gh` CLIs as subprocesses. The v2 verb-binary
+# blueprint is werk-pull (#3045); this is the atomic PUSH verb (#3056 split).
+# The sibling path-dep werk-teardown (zero-external-dep itself, #3431) provides
+# the ONE shared Tier-1 merge-proof (#3632 resume disposition) — never fork it.
 [dependencies]
+werk-teardown = { path = "../werk-teardown" }
 
 [[bin]]
 name = "werk-push"

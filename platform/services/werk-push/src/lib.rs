@@ -270,13 +270,34 @@ pub fn push(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         return Err(format!("werk is on '{}', not '{}' — refusing to push", cur, branch));
     }
 
-    // nothing-to-push: no commits ahead of origin/main -> refuse (commit first).
+    // nothing-to-push: no commits ahead of origin/main -> two distinct states (#3632),
+    // mirroring werk-commit's resume disposition:
+    //   RESUME: the card's work already LANDED on origin/main (Tier-1 proof — a main
+    //   subject referencing #<card>). Nothing-ahead is the SUCCESS state of a
+    //   completed push; a stale pre-merge remote branch ref (the #2588 post-recovery
+    //   shape) is converged to local under the same lease the real push uses.
+    //   GENUINE EMPTY: no card work anywhere — refuse loudly (commit first), as before.
     let ahead = run_in(&werk_s, "git", &["rev-list", "--count", "origin/main..HEAD"])
         .unwrap_or_default()
         .trim()
         .parse::<u64>()
         .unwrap_or(0);
     if ahead == 0 {
+        let subjects = run_in(&werk_s, "git", &["log", "origin/main", "-n", "300", "--format=%s"])
+            .unwrap_or_default();
+        if werk_teardown::subjects_reference_card(&subjects, card) {
+            let sha = run_in(&werk_s, "git", &["rev-parse", "HEAD"])?.trim().to_string();
+            // best-effort remote-branch convergence — the branch ref only; failure is
+            // non-fatal (teardown's orphan-propagation is the backstop, #3498).
+            let _ = run_in_env(&werk_s, "git",
+                &["push", "--force-with-lease", "origin", &format!("HEAD:refs/heads/{}", branch)],
+                &[("_GIT_QUEUE_INTERNAL", "1")]);
+            jsonl(home, role, card, &trace, "push.idempotent",
+                &format!(",\"reason\":\"work-already-on-main\",\"sha\":\"{}\"", sha));
+            emit_spine(home, "push.idempotent", role, card, &trace,
+                &[("reason", "work-already-on-main"), ("sha", &sha)]);
+            return Ok(sha);
+        }
         jsonl(home, role, card, &trace, "push.refused", &fail_extra("nothing-to-push"));
         emit_spine(home, "push.refused", role, card, &trace, &[("reason", "nothing-to-push"), ("failureClass", failure_class("nothing-to-push")), ("disposition", "refuse")]);
         return Err(format!("#{}: nothing to push (no commits ahead of origin/main — commit first)", card));
