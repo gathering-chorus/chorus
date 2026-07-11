@@ -331,3 +331,64 @@ fn completed_extras_marks_advisory_for_self_modifying_cards() {
     assert!(got.contains(&("advisory".to_string(), "true".to_string())));
     assert!(got.contains(&("verdict".to_string(), "advisory-fail (self-modifying)".to_string())));
 }
+
+// ── #3634 — model-driven plan derivation from the tests domain ─────────────
+// The run plan comes from /tests rows (filePath → unit, covers → domain),
+// fetched via curl|jq at the boundary (the quarantine pattern) and parsed as
+// TSV here: changed units name the touched domains (the covers of tests living
+// in those units), and every unit holding tests covering a touched domain joins
+// the plan. UNION with the legacy path-derived units — the model can only ADD
+// coverage in v1, never subtract (the superset AC, proven by construction).
+
+#[test]
+fn model_plan_unions_covers_matched_units_with_legacy() {
+    use werk_test::{model_units, parse_test_rows, TestUnit};
+    // three tests: one in platform/api covering "senses", one in a rust crate
+    // covering "senses" (cross-unit blast radius!), one covering "borg" only.
+    let tsv = "platform/api/tests/a.test.ts\tsenses\n\
+               platform/services/pulse-gather/tests/b.rs\tsenses\n\
+               platform/pulse/tests/c.test.ts\tborg\n";
+    let rows = parse_test_rows(tsv);
+    assert_eq!(rows.len(), 3);
+    // the card changed platform/api only → legacy picks TsPackage(platform/api);
+    // its tests cover "senses" → pulse-gather (also covering senses) joins.
+    let legacy = vec![TestUnit::TsPackage("platform/api".to_string())];
+    let units = model_units(&rows, &legacy);
+    assert!(units.contains(&TestUnit::TsPackage("platform/api".to_string())), "legacy retained");
+    assert!(units.contains(&TestUnit::RustCrate("pulse-gather".to_string())),
+        "cross-unit covers match joins the plan: {:?}", units);
+    assert!(!units.contains(&TestUnit::TsPackage("platform/pulse".to_string())),
+        "unrelated domain (borg) stays out: {:?}", units);
+}
+
+#[test]
+fn model_plan_is_superset_of_legacy_by_construction() {
+    use werk_test::{model_units, parse_test_rows, TestUnit};
+    // empty model data → model_units == legacy exactly (never smaller).
+    let rows = parse_test_rows("");
+    let legacy = vec![TestUnit::RustCrate("werk-commit".to_string()), TestUnit::TsPackage("platform/api".to_string())];
+    let units = model_units(&rows, &legacy);
+    for l in &legacy {
+        assert!(units.contains(l), "legacy unit {:?} must survive", l);
+    }
+}
+
+#[test]
+fn parse_test_rows_tolerates_garbage_and_missing_fields() {
+    use werk_test::parse_test_rows;
+    assert!(parse_test_rows("not a tsv row").is_empty());
+    // rows missing either field are dropped, not panicked on.
+    assert!(parse_test_rows("only-one-field\n\tcovers-no-path\n").is_empty());
+}
+
+// ── #3634 — TestSuiteRun write-back payload ────────────────────────────────
+#[test]
+fn suite_run_payload_carries_the_run_facts() {
+    use werk_test::suite_run_payload;
+    let p = suite_run_payload("3634", "kade", "trace-x", "model", 5, 1, 1234, "blocked");
+    for needle in ["\"card\":\"3634\"", "\"role\":\"kade\"", "\"traceId\":\"trace-x\"",
+                   "\"planSource\":\"model\"", "\"checksPlanned\":5", "\"checksFailed\":1",
+                   "\"durationMs\":1234", "\"verdict\":\"blocked\"", "testsuiterun-3634-"] {
+        assert!(p.contains(needle), "payload missing {}: {}", needle, p);
+    }
+}
