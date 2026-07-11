@@ -441,6 +441,45 @@ pub fn suite_run_payload(
         "{{\"name\":\"testsuiterun-{}-{}\",\"card\":\"{}\",\"role\":\"{}\",\"traceId\":\"{}\",\
          \"planSource\":\"{}\",\"checksPlanned\":{},\"checksFailed\":{},\"durationMs\":{},\
          \"verdict\":\"{}\"}}",
-        card, ts, card, role, trace, plan_source, checks_planned, checks_failed, duration_ms, verdict
+        json_escape(card), ts, json_escape(card), json_escape(role), json_escape(trace),
+        json_escape(plan_source), checks_planned, checks_failed, duration_ms, json_escape(verdict)
     )
+}
+
+/// #3634 — the POST argv for the TestSuiteRun write-back, pure so the exact
+/// curl contract (auth header, content type, endpoint, fail-fast flags) is
+/// pinned by tests without a network.
+pub fn suite_run_post_args(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
+    vec![
+        "-sf".into(), "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
+        "-H".into(), format!("Authorization: Bearer {}", token),
+        "-H".into(), "Content-Type: application/json".into(),
+        "-d".into(), payload.into(), endpoint.into(),
+    ]
+}
+
+/// #3634 gather hardening (silas): minimal JSON string escaper — quotes,
+/// backslashes, and control characters. The verb builds its payload by hand
+/// (zero-dep blueprint), so every string field passes through here.
+pub fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// #3634 gather hardening (wren): the plan-source label as a pure decision —
+/// "model" only when the fetch succeeded AND returned rows; anything else is a
+/// witnessed fallback to the legacy lanes.
+pub fn plan_source_label(fetch_ok: bool, rows_len: usize) -> &'static str {
+    if fetch_ok && rows_len > 0 { "model" } else { "fallback" }
 }

@@ -11,8 +11,9 @@ use std::path::Path;
 use std::process::Command;
 use werk_test::{
     affected_units, cargo_skip_args, check_plan, gate_outcome, is_self_modifying,
-    model_units, parse_quarantine_rows, parse_test_rows, quarantine_report, spine_args,
-    suite_run_payload, CheckKind, Quarantined, TestRow, TestUnit, TS_PACKAGES,
+    model_units, parse_quarantine_rows, parse_test_rows, plan_source_label,
+    quarantine_report, spine_args, suite_run_payload, CheckKind, Quarantined, TestRow,
+    TestUnit, TS_PACKAGES,
 };
 
 fn main() {
@@ -312,19 +313,40 @@ fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str,
 fn fetch_test_rows() -> (Vec<TestRow>, &'static str) {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
-    let jq = r#".data[] | [.filePath,.covers] | @tsv"#;
-    let pipe = format!("curl -sf --max-time 10 '{}' | jq -r '{}'", endpoint, jq);
-    match Command::new("bash").args(["-c", &pipe]).output() {
-        Ok(o) if o.status.success() => {
-            let rows = parse_test_rows(&String::from_utf8_lossy(&o.stdout));
-            if rows.is_empty() {
-                (Vec::new(), "fallback")
-            } else {
-                (rows, "model")
-            }
+    // #3634 gather hardening (silas): NO shell interpolation — curl and jq run as
+    // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
+    // The jq filter emits one TSV row PER covers value, so a multi-valued covers
+    // (array in a future TestShape) fans out instead of being dropped silently.
+    let jq_filter = r#".data[] | .filePath as $f | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c] | @tsv"#;
+    let curl = Command::new("curl")
+        .args(["-sf", "--max-time", "10", &endpoint])
+        .output();
+    let body = match curl {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    let mut jq = match Command::new("jq")
+        .args(["-r", jq_filter])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    if let Some(mut stdin) = jq.stdin.take() {
+        use std::io::Write;
+        if stdin.write_all(&body).is_err() {
+            return (Vec::new(), plan_source_label(false, 0));
         }
-        _ => (Vec::new(), "fallback"),
     }
+    let out = match jq.wait_with_output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    let rows = parse_test_rows(&String::from_utf8_lossy(&out));
+    let label = plan_source_label(true, rows.len());
+    (rows, label)
 }
 
 /// #3634 write side — POST the run's TestSuiteRun through the generated write
@@ -353,11 +375,9 @@ fn post_suite_run(
     };
     let payload = suite_run_payload(card, role, trace, plan_source, checks_planned,
         checks_failed, duration_ms, verdict);
+    let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
     let ok = Command::new("curl")
-        .args(["-sf", "--max-time", "10", "-X", "POST",
-            "-H", &format!("Authorization: Bearer {}", token),
-            "-H", "Content-Type: application/json",
-            "-d", &payload, &endpoint])
+        .args(&args)
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false);

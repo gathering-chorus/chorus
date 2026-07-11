@@ -392,3 +392,58 @@ fn suite_run_payload_carries_the_run_facts() {
         assert!(p.contains(needle), "payload missing {}: {}", needle, p);
     }
 }
+
+#[test]
+fn suite_run_post_args_pin_the_curl_contract() {
+    use werk_test::suite_run_post_args;
+    let a = suite_run_post_args("http://x/testsuiteruns", "tok", "{\"k\":1}");
+    let joined = a.join(" ");
+    assert!(joined.starts_with("-sf --max-time 10 -X POST"), "fail-fast + bounded: {}", joined);
+    assert!(joined.contains("Authorization: Bearer tok"), "{}", joined);
+    assert!(joined.contains("Content-Type: application/json"), "{}", joined);
+    assert!(joined.ends_with("http://x/testsuiteruns"), "endpoint last: {}", joined);
+}
+
+// ── #3634 gather feedback (silas): JSON payload must survive hostile strings ─
+// (zero-dep crate: validated with the lib's own escaper, not serde)
+#[test]
+fn json_escape_neutralizes_quotes_backslashes_and_control_chars() {
+    use werk_test::json_escape;
+    assert_eq!(json_escape("plain"), "plain");
+    assert_eq!(json_escape(r#"qu"ote"#), r#"qu\"ote"#);
+    assert_eq!(json_escape(r"back\slash"), r"back\\slash");
+    assert_eq!(json_escape("new\nline"), r"new\nline");
+}
+
+#[test]
+fn suite_run_payload_escapes_every_string_field() {
+    use werk_test::suite_run_payload;
+    let p = suite_run_payload(r#"36"34"#, "kade", r#"tr"ace"#, "model", 1, 0, 2, r#"block"ed"#);
+    // no RAW interior quotes may survive: every quote inside a value must be escaped
+    assert!(p.contains(r#"36\"34"#), "card escaped: {}", p);
+    assert!(p.contains(r#"tr\"ace"#), "trace escaped: {}", p);
+    assert!(p.contains(r#"block\"ed"#), "verdict escaped: {}", p);
+    // structural sanity: after dropping escaped quotes, the raw quotes pair up
+    let unescaped = p.replace(r#"\""#, "");
+    assert_eq!(unescaped.matches('"').count() % 2, 0, "quotes balanced: {}", p);
+}
+
+// ── #3634 gather feedback (wren): fallback labeling is a pure, pinned decision ─
+#[test]
+fn plan_source_label_is_model_only_on_successful_nonempty_fetch() {
+    use werk_test::plan_source_label;
+    assert_eq!(plan_source_label(true, 10), "model");
+    assert_eq!(plan_source_label(true, 0), "fallback", "empty result = fallback");
+    assert_eq!(plan_source_label(false, 0), "fallback", "failed fetch = fallback");
+}
+
+// ── #3634 gather feedback (silas): multi-valued covers fans out, never drops ─
+#[test]
+fn parse_test_rows_accepts_fanned_multi_covers_rows() {
+    use werk_test::parse_test_rows;
+    // the jq filter emits one row per covers value — both rows parse
+    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\nplatform/api/tests/a.test.ts\tborg\n");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].covers, "senses");
+    assert_eq!(rows[1].covers, "borg");
+}
