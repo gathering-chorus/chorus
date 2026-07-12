@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domain — Athena</title>
+<!-- #3635 — the Jeff-approved domain INSTANCE page (2026-07-12 mock), ?d=<name>.
+     The family's domain view; the richer 17-facet /domain.html (root) remains until
+     its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script></head>
+<body><div class="wrap">
+<div class="crumb" id="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a></div>
+<h1 id="title">Domain</h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  const d = new URLSearchParams(location.search).get('d');
+  if (!d) { main.innerHTML = '<div class="err">No domain named — open as domain.html?d=&lt;name&gt;, e.g. from <a class="edge" href="domains.html">the domains page</a>.</div>'; return; }
+  try {
+    // edges (ownedBy/atStep/partOf/definesVocabulary) live on the COLLECTION row;
+    // literals on the entity read. Merge both.
+    const [entEnv, collEnv] = await Promise.all([
+      fetchJSON(`/domains/${encodeURIComponent(d)}`), fetchJSON('/domains')]);
+    const lit = (Array.isArray(entEnv.data) ? entEnv.data[0] : entEnv.data) || {};
+    const row = ((collEnv.data || []).find(r => r.name === d)) || {};
+    const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([, v]) => v !== '' && v != null)) };
+    if (!Object.keys(lit).length && !Object.keys(row).length) { main.innerHTML = `<div class="err">The model has no domain named "${esc(d)}" — that is the graph's answer, not a fetch failure.</div>`; return; }
+    const label = e.label || d;
+    document.title = `${label} — Domain — Athena`;
+    document.getElementById('title').innerHTML = `${esc(label[0].toUpperCase() + label.slice(1))} <span class="kind">&mdash; Domain</span>`;
+    const part = asArray(e.partOf).map(x => String(x).split('#').pop())[0] || '';
+    const step = stepLocal(e.atStep);
+    document.getElementById('crumb').innerHTML =
+      `<a href="value-stream.html">value stream</a> &rarr; <a href="value-stream.html">${esc(step ? step[0].toUpperCase() + step.slice(1) : '?')}</a>` +
+      (part ? ` &rarr; <a href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '') +
+      ` &rarr; ${esc(d)}`;
+
+    const vocab = asArray(e.definesVocabulary).sort();
+    const vocabRows = vocab.map(v =>
+      `<tr><td>${esc(v)}</td><td><a class="edge" href="${OWL}/${esc(v.toLowerCase())}s">:3360/${esc(v.toLowerCase())}s</a></td></tr>`).join('');
+
+    main.innerHTML = `
+<div class="promise"><strong>purpose:</strong> ${esc(e.purpose || '')}</div>
+<div class="stats">
+  <div class="stat"><div class="v">${ownerDot(e.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
+  <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
+  <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
+  <div class="stat"><div class="v">${part ? `<a class="edge" href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '<span class="empty">unclaimed</span>'}</div><div class="l">Product (partOf)</div></div>
+</div>
+<details class="fold" open><summary>Description <span class="src">rdfs:comment</span></summary><div class="body"><p>${esc(e.comment || '')}</p></div></details>
+<details class="fold" open><summary>Vocabulary (definesVocabulary) <span class="src">the classes this domain owns &mdash; each is a generated API</span></summary><div class="body">
+${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
+${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
+${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
+${srcNote(`GET /domains/${esc(d)}`)}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Products — Athena</title>
+<!-- #3635 — the Jeff-approved products collection (2026-07-12 mock). Hand-authored
+     pending the generator upgrade (teach page_html to emit this design); fetches
+     owl-api LIVE — the page IS the API's answer, including its gaps. -->
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script></head>
+<body><div class="wrap">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; products</div>
+<h1>Products <span class="kind">&mdash; Chorus</span></h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  try {
+    const env = await fetchJSON('/products');
+    const rows = env.data || [];
+    // containment lives in the has-child FOLD, not the collection row
+    const folds = await Promise.all(rows.map(r =>
+      fetchJSON(`/products/${encodeURIComponent(r.name)}/has-child`).catch(() => null)));
+    rows.forEach((r, i) => { r._children = (folds[i] && folds[i].hasChild) || []; });
+    const parent = rows.find(r => r._children.length);
+    const children = rows.filter(r => r !== parent).sort((a, b) => a.name.localeCompare(b.name));
+    const nDoms = new Set(rows.flatMap(r => asArray(r.hasDomain))).size;
+
+    function card(p, featured) {
+      const kids = (p._children || []).slice();
+      return `<div class="pcard${featured ? ' featured' : ''}" id="p-${esc(p.name)}">
+  <div class="phead"><h2><a class="edge" href="product.html?p=${encodeURIComponent(p.name)}">${esc(p.label || p.name[0].toUpperCase() + p.name.slice(1))}</a> <span class="kind">Product</span></h2>
+    <div class="pmeta">${ownerDot(p.ownedBy)} &middot; ${stepBadge(p.atStep)} &middot; <span class="status">${esc(p.status || 'no status')}</span></div></div>
+  <div class="promise"><strong>vision:</strong> ${esc(p.vision || '')}</div>
+  <p class="vp"><strong>value proposition:</strong> ${esc(p.valueProposition || '')}</p>
+  <div><span class="lbl">domains (${asArray(p.hasDomain).length})</span> ${domainChips(p.hasDomain)}</div>
+  ${kids.length ? `<div class="fold-mini"><span class="lbl">children</span> ${kids.sort().map(c => `<a class="edge" href="#p-${esc(c)}">${esc(c)}</a>`).join(' ')}</div>` : ''}
+</div>`;
+    }
+
+    main.innerHTML = `
+<div class="stats">
+  <div class="stat"><div class="v">${rows.length}</div><div class="l">Products</div></div>
+  <div class="stat"><div class="v">${parent ? `1 parent + ${children.length}` : 'flat'}</div><div class="l">Tree shape</div></div>
+  <div class="stat"><div class="v">${nDoms}</div><div class="l">Domains covered</div></div>
+</div>
+${parent ? card(parent, true) : ''}
+<div class="pgrid">${children.map(p => card(p, false)).join('\n')}</div>
+${srcNote('GET /products')}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>
