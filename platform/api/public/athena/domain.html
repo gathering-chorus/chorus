@@ -19,11 +19,14 @@
   try {
     // edges (ownedBy/atStep/partOf/definesVocabulary) live on the COLLECTION row;
     // literals on the entity read. Merge both.
-    const [entEnv, collEnv] = await Promise.all([
-      fetchJSON(`/domains/${encodeURIComponent(d)}`), fetchJSON('/domains')]);
+    const [entEnv, collEnv, prodsEnv] = await Promise.all([
+      fetchJSON(`/domains/${encodeURIComponent(d)}`), fetchJSON('/domains'), fetchJSON('/products')]);
     const lit = (Array.isArray(entEnv.data) ? entEnv.data[0] : entEnv.data) || {};
     const row = ((collEnv.data || []).find(r => r.name === d)) || {};
     const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([, v]) => v !== '' && v != null)) };
+    // the claiming product comes from the products' hasDomain edges (partOf is not a collection field)
+    for (const pr of (prodsEnv.data || []))
+      if (asArray(pr.hasDomain).includes(d)) e.partOf = pr.name;
     if (!Object.keys(lit).length && !Object.keys(row).length) { main.innerHTML = `<div class="err">The model has no domain named "${esc(d)}" — that is the graph's answer, not a fetch failure.</div>`; return; }
     const label = e.label || d;
     document.title = `${label} — Domain — Athena`;
@@ -52,8 +55,78 @@
 ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
 ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
 ${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
-${srcNote(`GET /domains/${esc(d)}`)}`;
+<div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
+${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/athena/subdomains, /api/chorus/domain)`)}`;
+    renderFacets(d);
   } catch (e) { fetchFailed(main, e); }
 })();
+
+// ---- the materialized view (#3635, Jeff's ruling 2026-07-12): the domain instance
+// page MUST conform to the 17-facet materialized view (domain-renderer.js contract) —
+// live graph-derived facets: cards, code, tests, alerts, logs, decisions, deps, etc.
+// Same endpoints as /domain.html; rendered in the family's design vocabulary.
+async function renderFacets(d) {
+  const el = document.getElementById('facets');
+  const ATHENA = '/api/athena/subdomains/';
+  const DOM = '/api/chorus/domain/';
+  // v2 name -> v1 facet id: try <name>-domain first (the athena grain), fall back to the bare name
+  let fid = `${d}-domain`;
+  let probe = await fetch(ATHENA + encodeURIComponent(fid)).then(r => r.ok ? r.json() : null).catch(() => null);
+  if (!probe || probe.error) {
+    fid = d;
+    probe = await fetch(ATHENA + encodeURIComponent(fid)).then(r => r.ok ? r.json() : null).catch(() => null);
+  }
+  const FACETS = [
+    { t: 'Cards', u: ATHENA + fid + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
+    { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
+    { t: 'API Contract', u: ATHENA + fid + '/services', k: 'endpoints', alt: 'services', cols: ['method', 'path', 'handler'] },
+    { t: 'UI Pages', u: ATHENA + fid + '/pages', k: 'pages', cols: ['route', 'path', 'pageType'] },
+    { t: 'Code', u: ATHENA + fid + '/code', k: 'files', cols: ['path', 'type'] },
+    { t: 'Tests', u: DOM + fid + '/tests', k: 'tests', cols: ['path', 'type'] },
+    { t: 'Persistence', u: ATHENA + fid + '/persistence', k: 'stores', alt: 'persistence', cols: ['label', 'namespace', 'records', 'status'] },
+    { t: 'Pipeline', u: DOM + fid + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'] },
+    { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
+    { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
+    { t: 'Decisions', u: DOM + fid + '/decisions', k: 'decisions', cols: ['id', 'title', 'type', 'date'] },
+    { t: 'Logs', u: DOM + fid + '/logs', k: 'logs', cols: ['label', 'location', 'status'] },
+    { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
+    { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
+    { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
+    { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
+    { t: 'Gaps & Status', u: ATHENA + fid + '/gaps', k: 'gaps', cols: ['type', 'description', 'severity'] },
+  ];
+  function unwrap(b, k, alt) {
+    const dd = (b && b.data) || b || {};
+    const v = dd[k] || (alt ? dd[alt] : null) || [];
+    return Array.isArray(v) ? v : [];
+  }
+  function table(items, cols) {
+    const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
+    const rows = items.slice(0, 40).map(it =>
+      `<tr>${cols.map(c => `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : esc(String(it[c] ?? '').slice(0, 120))}</td>`).join('')}</tr>`).join('');
+    const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
+    return `<table><tr>${head}</tr>${rows}</table>${more}`;
+  }
+  const bodies = await Promise.all(FACETS.map(f =>
+    fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
+  el.innerHTML = FACETS.map((f, i) => {
+    const b = bodies[i];
+    let inner, count;
+    if (f.k === '_deps') {
+      const dd = (b && b.data) || {};
+      const dir = dd.direct || { consumes: [], consumedBy: [] };
+      count = (dir.consumes || []).length + (dir.consumedBy || []).length;
+      inner = count
+        ? `<div><span class="lbl">depends on</span> ${(dir.consumes || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>
+           <div style="margin-top:6px"><span class="lbl">consumed by</span> ${(dir.consumedBy || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>`
+        : '<div class="empty">none recorded</div>';
+    } else {
+      const items = unwrap(b, f.k, f.alt);
+      count = items.length;
+      inner = count ? table(items, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
+    }
+    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">materialized &middot; live</span></summary><div class="body">${inner}</div></details>`;
+  }).join('');
+}
 </script>
 </body></html>
