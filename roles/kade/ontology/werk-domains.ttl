@@ -364,10 +364,10 @@ chorus:werk-product
     chorus:vision "Output you can stand behind: every card leaves as merged source on origin/main with a coherent receipt — one trace from pull to running cdhash." ;
     chorus:valueProposition "A green result can't lie: ten atomic verbs, one go-gated pipeline, witnesses at every step, GO=accept." ;
     chorus:audience "the three roles building Chorus and Gathering; Jeff accepting the work" ;
-    chorus:hasDesignDoc "designing/docs/werk-subproduct-design.html" ;
-    chorus:gaps "werk-test (#3190) held behind the generated tests domain API" ,
-        "tests domain lacks per-test identity (ingestion-first)" ,
-        "advisory test+review not yet promoted to gates (deliberate flip pattern)" .
+    chorus:hasDesignDoc "designing/docs/werk-product-design.html" ;  # renamed #3421: werk is a PRODUCT
+    chorus:gaps "tests domain lacks per-test TestResult grain (suite-level only, #3634)" ,
+        "TestSuiteRun write-back token provisioning (#3619) pending" ,
+        "review advisory not yet promoted to gate (deliberate flip pattern)" .
 
 chorus:pipelines-domain
     chorus:status "operating" ;

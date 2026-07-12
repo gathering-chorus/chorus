@@ -36,7 +36,7 @@ describe('#3361 — moved chorus pages serve from chorus at their building/ home
     try {
       const r = await hit(srv, '/building/products/werk/werk-process.html');
       expect(r.status).toBe(200);
-      expect(r.body).toContain('Werk Process — Card Lifecycle');
+      expect(r.body).toContain('werk-value-stream-design'); // #3421: werk-process retired to a pointer stub
     } finally {
       await close(srv);
     }

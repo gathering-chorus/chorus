@@ -28,4 +28,4 @@ Then supporting sections as needed: coherence claims, OWL/SHACL conformance, pat
 
 ## Reference implementation
 
-`werk-subproduct-design.html` (#3078, Kade) is the first doc built to this shape — use it as the worked example.
+`werk-product-design.html` (#3078 as werk-subproduct-design; renamed by #3421 — werk is a product) is the first doc built to this shape — use it as the worked example.
