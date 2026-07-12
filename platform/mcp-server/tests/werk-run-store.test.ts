@@ -1,14 +1,17 @@
 /**
  * #3443 AC7 — run-state persistence: the durable record a re-invoke reads to
  * attach instead of double-acting. Uses a temp dir; never touches the real
- * ~/.chorus/werk-runs.
+ * ~/.chorus/werk-runs. #3638 adds currentWerkPatchId's never-empty contract
+ * (hermetic: each test builds its own throwaway git repo).
  */
+// @test-type: unit — signal is fixture-data: tests build their own throwaway git repos/tmp dirs (hermetic, no shared service or live werk)
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning } from '../src/werk-run-store';
+import { execFileSync } from 'child_process';
+import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -50,6 +53,62 @@ describe('run-store persistence', () => {
     writeRun(run({ card: 102 }), dir);
     clearRun(102, dir);
     assert.equal(readRun(102, dir), null);
+  });
+});
+
+describe('currentWerkPatchId — never persists an empty key for a real werk (#3638)', () => {
+  // The #3421 root: `no diff vs origin/main` returned '' which was persisted as the
+  // record's patchId — an unkeyable present. The contract now: a werk whose git works
+  // ALWAYS yields a key (patch-id, or the `sha:<HEAD>` fallback when there is no
+  // diff / patch-id fails); '' remains only for total git failure (not a repo).
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+
+  test('werk with NO diff vs origin/main -> sha:<HEAD> fallback, not empty', () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'werk-patchid-'));
+    try {
+      git(repo, 'init', '-q');
+      git(repo, 'config', 'user.email', 't@t');
+      git(repo, 'config', 'user.name', 't');
+      writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+      git(repo, 'add', 'a.txt');
+      git(repo, 'commit', '-q', '-m', 'base');
+      git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD'); // merge-base == HEAD → no diff
+      const head = git(repo, 'rev-parse', 'HEAD');
+      assert.equal(currentWerkPatchId(repo), `sha:${head}`);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('werk WITH a diff vs origin/main -> real patch-id (fallback not taken)', () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'werk-patchid-'));
+    try {
+      git(repo, 'init', '-q');
+      git(repo, 'config', 'user.email', 't@t');
+      git(repo, 'config', 'user.name', 't');
+      writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+      git(repo, 'add', 'a.txt');
+      git(repo, 'commit', '-q', '-m', 'base');
+      git(repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+      writeFileSync(path.join(repo, 'a.txt'), 'two\n');
+      git(repo, 'add', 'a.txt');
+      git(repo, 'commit', '-q', '-m', 'change');
+      const id = currentWerkPatchId(repo);
+      assert.notEqual(id, '');
+      assert.equal(id.startsWith('sha:'), false); // a real patch-id, stable across rebase
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test('not a git repo at all -> empty (total git failure stays the degrade-to-attach path)', () => {
+    const plain = mkdtempSync(path.join(os.tmpdir(), 'werk-notgit-'));
+    try {
+      assert.equal(currentWerkPatchId(plain), '');
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
   });
 });
 

@@ -20,6 +20,23 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// #3638 — pipeline-regenerated files: the run's own gate steps rewrite these in
+/// the werk AFTER werk-commit, so a clean land arrives at teardown "dirty" with
+/// churn that is derived, not work (bit #3634 and #3421 on accept). Shared with
+/// werk-commit's conflict-hold messaging via the existing path-dep.
+pub const GENERATED_FILES: &[&str] = &["knowledge/doc-coherence.md"];
+
+/// The dirty paths from a `status --porcelain` listing that are NOT regenerated
+/// artifacts. Empty ⇒ the werk's only dirt is generated churn, safe to discard.
+pub fn non_generated_dirty(porcelain: &str) -> Vec<String> {
+    porcelain
+        .lines()
+        .filter(|l| l.len() > 3)
+        .map(|l| l[3..].trim().to_string())
+        .filter(|p| !GENERATED_FILES.iter().any(|g| p == g))
+        .collect()
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Teardown {
     /// worktree and/or branch removed; remote delete attempted.
@@ -151,15 +168,27 @@ pub fn teardown_werk(
         return Ok(Teardown::AlreadyRemoved);
     }
 
-    // Refuse on dirty werk — never silently lose work.
+    // Refuse on dirty werk — never silently lose work. #3638 carve-out: if the
+    // ONLY dirt is pipeline-regenerated files (the run's own gate steps rewrite
+    // them after werk-commit — hit accept on #3634 and #3421), discard that churn
+    // and proceed; the committed version is the record. Any real dirt still refuses.
     if werk_present {
         let dirty = git_out(&werk, &["status", "--porcelain"])
             .map_err(TeardownError::GitFail)?;
         if !dirty.trim().is_empty() {
-            return Err(TeardownError::Dirty(format!(
-                "{} has uncommitted changes — refusing remove (commit, stash, or abandon explicitly)",
-                werk.display()
-            )));
+            let real = non_generated_dirty(&dirty);
+            if real.is_empty() {
+                for f in GENERATED_FILES {
+                    let _ = git_out(&werk, &["checkout", "--", f]);
+                }
+                emit("teardown.generated.discarded", &[("files", &GENERATED_FILES.join(","))]);
+            } else {
+                return Err(TeardownError::Dirty(format!(
+                    "{} has uncommitted changes ({}) — refusing remove (commit, stash, or abandon explicitly)",
+                    werk.display(),
+                    real.join(", ")
+                )));
+            }
         }
         git_out(home, &["worktree", "remove", "--force", &werk.to_string_lossy()])
             .map_err(|e| TeardownError::GitFail(format!("worktree remove failed: {}", e)))?;

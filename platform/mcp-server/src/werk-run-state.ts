@@ -42,6 +42,21 @@ export type RunAction =
   | { kind: 'attach'; run: WerkRun }; // a run is already live/terminal → return it, do NOT double-act
 
 /**
+ * #3638 — is the recorded patch-id superseded by the werk's current one?
+ * The #3538 comparison, hardened for the #3421 stuck-present: a record persisted
+ * with an EMPTY patchId could never trip headChanged, so a fix commit after the
+ * present attached to the stale present forever (the only escape was hand-deleting
+ * the run record). Now an empty/absent RECORDED key on a KNOWN current key reads as
+ * superseded — one re-demo re-keys the record, then polls attach normally. An
+ * unknown CURRENT key (git hiccup at poll time) still degrades to not-superseded
+ * (attach), never a spurious re-run.
+ */
+export function patchSuperseded(recordedPatchId: string | undefined, currentPatchId: string): boolean {
+  if (!currentPatchId) return false;
+  return (recordedPatchId ?? '') !== currentPatchId;
+}
+
+/**
  * Decide what a chorus_werk invocation should do given the card's existing
  * run-state. The whole point: a re-invoke after a transport drop must NOT start
  * a second act — it attaches to the existing run and reports its real phase.

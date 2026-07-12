@@ -7,7 +7,7 @@
 // @test-type: unit
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideRunAction, extractFailureReason, parseExitSentinel, type WerkRun } from '../src/werk-run-state';
+import { decideRunAction, extractFailureReason, parseExitSentinel, patchSuperseded, type WerkRun } from '../src/werk-run-state';
 
 const run = (over: Partial<WerkRun> = {}): WerkRun => ({
   runId: 'r1', card: 3443, role: 'wren', go: false, phase: 'running',
@@ -79,6 +79,34 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
   test('GO while still RUNNING -> attach (cannot land what is still presenting)', () => {
     const r = run({ phase: 'running', go: false });
     assert.deepEqual(decideRunAction(r, true), { kind: 'attach', run: r });
+  });
+});
+
+describe('patchSuperseded — the #3538 comparison, hardened for empty records (#3638)', () => {
+  // The #3421 stuck-present: a record persisted with patchId '' could never trip
+  // headChanged, so a post-present fix commit attached to the stale present forever
+  // (the only escape was hand-deleting the run record). An EMPTY recorded patch on a
+  // known current patch must read as superseded — re-demo once, then the fresh record
+  // carries a real key and polls attach normally.
+  test('recorded EMPTY + current known -> superseded (legacy stuck record re-demos)', () => {
+    assert.equal(patchSuperseded('', 'abc123'), true);
+  });
+
+  test('recorded undefined + current known -> superseded (same stuck class)', () => {
+    assert.equal(patchSuperseded(undefined, 'abc123'), true);
+  });
+
+  test('same patch -> not superseded (poll attaches, no needless re-run)', () => {
+    assert.equal(patchSuperseded('abc123', 'abc123'), false);
+  });
+
+  test('different patch -> superseded (#3538 re-demo the new commit)', () => {
+    assert.equal(patchSuperseded('abc123', 'def456'), true);
+  });
+
+  test('current UNKNOWN (git hiccup at poll) -> not superseded (degrade to attach, never a spurious re-run)', () => {
+    assert.equal(patchSuperseded('abc123', ''), false);
+    assert.equal(patchSuperseded('', ''), false);
   });
 });
 
