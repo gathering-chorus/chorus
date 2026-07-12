@@ -24,6 +24,11 @@ import time
 import urllib.request
 import urllib.parse
 
+# #3637 — writes go through the one credential door (#3566): Basic auth when
+# FUSEKI_ADMIN_PASSWORD is set, anonymous otherwise (safe until #3630 flips).
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "platform", "scripts")))
+from fuseki_auth import write_auth_headers
+
 # --- Config ---
 APP_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "jeff-bridwell-personal-site")
 FUSEKI = "http://localhost:3030/pods"
@@ -61,7 +66,8 @@ def sparql_query(query):
 
 def sparql_update(update):
     data = urllib.parse.urlencode({"update": update}).encode()
-    req = urllib.request.Request(f"{FUSEKI}/update", data=data, method="POST")
+    req = urllib.request.Request(f"{FUSEKI}/update", data=data, method="POST",
+                                 headers=write_auth_headers())
     urllib.request.urlopen(req, timeout=60)
 
 
@@ -69,7 +75,8 @@ def load_graph(graph_uri, nt_path):
     with open(nt_path, "rb") as f:
         content = f.read()
     url = f"{FUSEKI}/data?graph={urllib.parse.quote(graph_uri, safe='')}"
-    req = urllib.request.Request(url, content, method="PUT")
+    req = urllib.request.Request(url, content, method="PUT",
+                                 headers=write_auth_headers())
     req.add_header("Content-Type", "application/n-triples")
     resp = urllib.request.urlopen(req, timeout=300)
     return resp.status

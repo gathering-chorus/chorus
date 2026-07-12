@@ -11,6 +11,7 @@ Flow: source-extraction (per-era SPARQL) → field-merge (Jolt) → validation �
 """
 
 import json
+import os
 import sys
 import urllib.request
 import urllib.parse
@@ -20,6 +21,20 @@ NIFI_URL = "https://192.168.86.242:8443/nifi-api"
 NIFI_USER = "admin"
 NIFI_PASS = "nifi-gathering-2026"
 FUSEKI_URL = "http://192.168.86.36:3030/pods/query"
+
+
+def fuseki_basic_auth_props():
+    """#3637 — InvokeHTTP Basic-auth props for Fuseki WRITE processors, from the
+    same env names as the one credential door (platform/scripts/fuseki_auth.py).
+    Empty when FUSEKI_ADMIN_PASSWORD is unset, so authoring stays safe pre-flip
+    (#3630). Read (query) processors must NOT get these."""
+    password = os.environ.get("FUSEKI_ADMIN_PASSWORD")
+    if not password:
+        return {}
+    return {
+        "Basic Authentication Username": os.environ.get("FUSEKI_ADMIN_USER", "admin"),
+        "Basic Authentication Password": password,
+    }
 
 ctx = ssl.create_default_context()
 ctx.check_hostname = False
@@ -398,7 +413,8 @@ if __name__ == "__main__":
         "Write to Fuseki", 300, 400, props={
             "HTTP Method": "PUT",
             "HTTP URL": "http://192.168.86.36:3030/pods/data?graph=urn:jb:photos/canonical/",
-            "Request Content-Type": "application/n-triples"
+            "Request Content-Type": "application/n-triples",
+            **fuseki_basic_auth_props()
         })
     connect(OUT_PG, out_in, convert, [""], src_type="INPUT_PORT")
     connect(OUT_PG, convert, fuseki_write, ["success"])
