@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-use werk_teardown::{subjects_reference_card, teardown_werk, Teardown, TeardownError};
+use werk_teardown::{non_generated_dirty, subjects_reference_card, teardown_werk, Teardown, TeardownError, GENERATED_FILES};
 
 static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 fn tmp(tag: &str) -> PathBuf {
@@ -197,4 +197,73 @@ fn card_boundary_300_does_not_match_3000() {
     assert!(!subjects_reference_card("no refs here", 300));
     // #3001 then #300 later on the same line still matches 300
     assert!(subjects_reference_card("#3001 relates to #300", 300));
+}
+
+// ── #3638: pipeline-regenerated churn must not wedge a clean teardown ──
+// The run's own gate steps rewrite knowledge/doc-coherence.md AFTER werk-commit,
+// so a fully-landed card arrives at accept "dirty" with derived churn. Hit twice
+// live (#3634, #3421) — both needed a manual clean + chorus-werk remove.
+
+/// Seed the scenario with a TRACKED generated file so a werk can dirty it.
+fn scenario_with_generated() -> (PathBuf, PathBuf) {
+    let (origin, home) = scenario();
+    fs::create_dir_all(home.join("knowledge")).unwrap();
+    fs::write(home.join("knowledge/doc-coherence.md"), "generated v1\n").unwrap();
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-m", "seed generated file"]);
+    git(&home, &["push", "origin", "main"]);
+    (origin, home)
+}
+
+#[test]
+fn generated_only_churn_discarded_and_teardown_proceeds() {
+    let (_origin, home) = scenario_with_generated();
+    let base = tmp("base");
+    let werk = add_werk(&home, &base, "kade", 77);
+    // merged card (tier-1 proof on main), then the pipeline regenerates the file
+    fs::write(werk.join("w.txt"), "w").unwrap();
+    git(&werk, &["add", "-A"]);
+    git(&werk, &["commit", "-m", "kade: #77 — work"]);
+    fs::write(home.join("squash77.txt"), "sq").unwrap();
+    git(&home, &["add", "-A"]);
+    git(&home, &["commit", "-m", "#77 (kade) (#998)"]);
+    git(&home, &["push", "origin", "main"]);
+    fs::write(werk.join("knowledge/doc-coherence.md"), "generated v2 — pipeline churn\n").unwrap();
+
+    let mut events = Vec::new();
+    let res = teardown_werk(&home, &base, "kade", 77, &mut collect_emit(&mut events));
+    assert_eq!(res, Ok(Teardown::Removed), "generated-only churn must not refuse");
+    assert!(!werk.exists(), "worktree removed after discarding generated churn");
+    assert!(events.iter().any(|e| e.starts_with("teardown.generated.discarded")),
+        "discard is witnessed, never silent: {:?}", events);
+}
+
+#[test]
+fn generated_plus_real_dirt_still_refused_nothing_lost() {
+    let (_origin, home) = scenario_with_generated();
+    let base = tmp("base");
+    let werk = add_werk(&home, &base, "kade", 78);
+    fs::write(werk.join("knowledge/doc-coherence.md"), "generated churn\n").unwrap();
+    fs::write(werk.join("precious.txt"), "real uncommitted work").unwrap();
+
+    let mut events = Vec::new();
+    let res = teardown_werk(&home, &base, "kade", 78, &mut collect_emit(&mut events));
+    match res {
+        Err(TeardownError::Dirty(msg)) => {
+            assert!(msg.contains("precious.txt"), "refusal names the REAL dirt: {}", msg);
+        }
+        other => panic!("expected Dirty refusal, got {:?}", other),
+    }
+    assert!(werk.join("precious.txt").exists(), "real work must be untouched");
+    assert_eq!(fs::read_to_string(werk.join("knowledge/doc-coherence.md")).unwrap(),
+        "generated churn\n", "on refusal, NOTHING is discarded — not even generated churn");
+}
+
+#[test]
+fn non_generated_dirty_parses_porcelain() {
+    let porcelain = " M knowledge/doc-coherence.md\n?? new-file.txt\n M src/lib.rs\n";
+    assert_eq!(non_generated_dirty(porcelain), vec!["new-file.txt".to_string(), "src/lib.rs".to_string()]);
+    assert!(non_generated_dirty(" M knowledge/doc-coherence.md\n").is_empty());
+    assert!(non_generated_dirty("").is_empty());
+    assert_eq!(GENERATED_FILES, &["knowledge/doc-coherence.md"]);
 }

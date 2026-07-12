@@ -554,6 +554,25 @@ pub fn test_result_recorded(witness: &str, card: u64) -> Option<String> {
         .find_map(|l| json_str_field(l, "result"))
 }
 
+/// #3638 — the `demo.test_result` recorded under THIS run's trace, if any. The
+/// pipeline's BLOCKING werk-test step records its verdict (via `werk-demo
+/// test-result`) under the run's shared CHORUS_TRACE_ID moments before the demo
+/// step; that same-run verdict is authoritative and the demo must not overwrite
+/// it with its generic self-run. Trace-scoped so a record from an EARLIER round
+/// never satisfies this — cross-round freshness stays with test_result_recorded.
+pub fn test_result_recorded_for_trace(witness: &str, card: u64, trace: &str) -> Option<String> {
+    if trace.is_empty() {
+        return None;
+    }
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .filter(|l| l.contains("\"event\":\"demo.test_result\"") && l.contains(&card_key))
+        .filter(|l| json_str_field(l, "trace_id").as_deref() == Some(trace))
+        .find_map(|l| json_str_field(l, "result"))
+}
+
 /// What the demo step returns to the act pipeline: a human-facing message + the
 /// process exit code act gates the merge on (Decision::exit_code, or a clean
 /// exit 2 for gates-missing). main() turns Err into exit 1 (real error).
@@ -1079,14 +1098,28 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // demo.test_result + spine event), not a human claim. It does NOT gate — a red or
     // un-run result is SHOWN on the decision surface; Jeff's go stays sovereign.
     // Skippable only in the unit/e2e suite (which seeds its own result, no real werk).
+    //
+    // #3638 — the SAME RUN's werk-test verdict wins. The pipeline's BLOCKING test
+    // step (#3190/#3634) already ran the card's affected units and recorded via
+    // `werk-demo test-result`; re-running the generic cargo default here produced
+    // a false `tests: fail` on every card (no root Cargo.toml — the badge
+    // contradicted the blocking verdict on the same surface). Trace-scoped: only a
+    // result recorded under THIS run's trace suppresses the self-run, so a stale
+    // record from an earlier round never masks an unrun suite.
     if !std::env::var("CHORUS_DEMO_SKIP_TEST_RUN").map(|v| v == "1").unwrap_or(false) {
-        let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
-            format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
-        });
-        let werk = format!("{}/{}-{}", werk_base, role, card);
-        let res = if run_card_tests(&werk) { "pass" } else { "fail" };
-        record_test_result(home, role, card, res);
-        jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
+        let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
+        if let Some(res) = test_result_recorded_for_trace(&witness_now, card, &trace) {
+            jsonl(home, role, card, &trace, "demo.test_ran",
+                  &format!(",\"result\":\"{}\",\"source\":\"werk-test\"", res));
+        } else {
+            let werk_base = env::var("CHORUS_WERK_BASE").unwrap_or_else(|_| {
+                format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
+            });
+            let werk = format!("{}/{}-{}", werk_base, role, card);
+            let res = if run_card_tests(&werk) { "pass" } else { "fail" };
+            record_test_result(home, role, card, res);
+            jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
+        }
     }
 
     // #3443 — the GATE step is RUN BY THIS BINARY (run_gates above), not delegated
@@ -2862,6 +2895,39 @@ mod tests {
     fn test_result_recorded_returns_latest() {
         let w = format!("{}\n{}", test_result_line(3263, "fail"), test_result_line(3263, "pass"));
         assert_eq!(test_result_recorded(&w, 3263), Some("pass".to_string()));
+    }
+
+    // #3638 — the badge sources the SAME RUN's werk-test verdict, trace-scoped.
+    fn test_result_line_traced(card: u64, result: &str, trace: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.test_result","role":"wren","card_id":{},"trace_id":"{}","result":"{}"}}"#,
+            card, trace, result
+        )
+    }
+
+    #[test]
+    fn same_trace_verdict_found_pass_and_fail() {
+        // PASS propagates — the false-red on a green blocking run is the #3638 defect
+        let w = test_result_line_traced(3638, "pass", "run-A");
+        assert_eq!(test_result_recorded_for_trace(&w, 3638, "run-A"), Some("pass".to_string()));
+        // and FAIL propagates too — the fix must never hide a real red
+        let w = test_result_line_traced(3638, "fail", "run-A");
+        assert_eq!(test_result_recorded_for_trace(&w, 3638, "run-A"), Some("fail".to_string()));
+    }
+
+    #[test]
+    fn stale_round_verdict_never_satisfies_the_current_trace() {
+        // a record from an EARLIER round (different trace) must not mask an unrun suite
+        let w = test_result_line_traced(3638, "pass", "run-OLD");
+        assert_eq!(test_result_recorded_for_trace(&w, 3638, "run-NEW"), None);
+        // and an empty current trace never matches anything
+        assert_eq!(test_result_recorded_for_trace(&w, 3638, ""), None);
+    }
+
+    #[test]
+    fn same_trace_wrong_card_never_matches() {
+        let w = test_result_line_traced(9999, "pass", "run-A");
+        assert_eq!(test_result_recorded_for_trace(&w, 3638, "run-A"), None);
     }
 
     #[test]

@@ -28,7 +28,7 @@ import { resolvePulseSecret } from './pulse-secret';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
-import { decideRunAction } from './werk-run-state';
+import { decideRunAction, patchSuperseded } from './werk-run-state';
 import { readRun, writeRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
@@ -2250,11 +2250,14 @@ async function executeChorusWerk(
   // Compare the werk's CURRENT patch-id to the recorded one: if HEAD advanced (the
   // caller committed a fix after the present), headChanged → start a fresh run
   // instead of returning the stale 'presented'. Sibling of #3461 (gather-gate
-  // patch-keying). Best-effort: an unknown patch-id (git hiccup) → headChanged=false
-  // → today's attach behavior, never a spurious re-run.
+  // patch-keying). #3638: comparison hardened in patchSuperseded — a record whose
+  // patchId is EMPTY (the #3421 stuck-present class; new records never persist one,
+  // per currentWerkPatchId's never-empty contract) reads as superseded so one fresh
+  // run re-keys it. An unknown CURRENT patch (git hiccup) → headChanged=false →
+  // attach, never a spurious re-run.
   const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   const currentPatch = currentWerkPatchId(werkDir);
-  const headChanged = !!(existingRun?.patchId && currentPatch && existingRun.patchId !== currentPatch);
+  const headChanged = patchSuperseded(existingRun?.patchId, currentPatch);
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.

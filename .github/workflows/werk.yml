@@ -100,6 +100,12 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" = 0 ]; then post success; else post failure; fi
+          # #3638 — record the REAL verdict into the demo witness (trace-scoped) so the
+          # demo's tests: badge shows this run's blocking result instead of re-running a
+          # generic cargo default that false-reds at the repo root (no root Cargo.toml).
+          DEPLOY_ROLE="${ROLE}" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" \
+            werk-demo test-result "${CARD_ID}" "$([ "$rc" = 0 ] && echo pass || echo fail)" \
+            || echo "WARN: werk-demo test-result write failed — demo badge will fall back to its self-run (#3638)"
           echo "werk-test: rc=$rc (BLOCKING — a red affected unit halts the land; self-modifying cards run advisory)"
           exit "$rc"
 

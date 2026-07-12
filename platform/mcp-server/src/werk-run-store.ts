@@ -20,23 +20,37 @@ export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 /** #3538 — the werk's current patch-id: `git patch-id --stable` of
  *  merge-base(origin/main,HEAD)..HEAD, mirroring werk-demo's git_patch_id. Computed
  *  with two execFileSync calls piped via stdin (no shell → no injection surface).
- *  Best-effort: '' on ANY failure → the caller treats unknown as headChanged=false
- *  (attach), so a git hiccup degrades to today's behavior, never a spurious re-run. */
+ *
+ *  #3638 never-empty contract: a werk whose git works ALWAYS yields a key. When
+ *  there is no diff vs main (resumed/landed werk) or patch-id itself fails, fall
+ *  back to `sha:<HEAD>` — stricter than a patch-id (a rebase re-demos) but never
+ *  the unkeyable '' that left #3421's present permanently stuck. '' now means
+ *  only total git failure (not a repo), which callers degrade to attach. */
 export function currentWerkPatchId(werkDir: string): string {
+  const headKey = (): string => {
+    try {
+      const head = execFileSync('git', ['-C', werkDir, 'rev-parse', 'HEAD'], {
+        encoding: 'utf8',
+      }).trim();
+      return head ? `sha:${head}` : '';
+    } catch {
+      return '';
+    }
+  };
   try {
     const base = execFileSync('git', ['-C', werkDir, 'merge-base', 'origin/main', 'HEAD'], {
       encoding: 'utf8',
     }).trim();
-    if (!base) return '';
+    if (!base) return headKey();
     const diff = execFileSync('git', ['-C', werkDir, 'diff', `${base}..HEAD`], {
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
-    if (!diff) return ''; // no diff vs main → no patch to key on
+    if (!diff) return headKey(); // no diff vs main → key on HEAD, not ''
     const out = execFileSync('git', ['patch-id', '--stable'], { input: diff, encoding: 'utf8' });
-    return out.trim().split(/\s+/)[0] || '';
+    return out.trim().split(/\s+/)[0] || headKey();
   } catch {
-    return '';
+    return headKey();
   }
 }
 

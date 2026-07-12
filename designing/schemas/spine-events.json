@@ -2184,6 +2184,46 @@
         "advisory": "true when self-modifying (non-blocking)"
       }
     },
+    "card.branch.closed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk teardown (#3431, registered by #3638's emit-sweep): the card's branch lifecycle closed \u2014 worktree pruned, local + remote branch deleted after the two-tier merge proof (or via orphan-propagate #3498). Emitted by werk-accept/werk-unpull through the shared werk-teardown lib.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "branch": "The closed <role>/<card> branch",
+        "via": "orphan-propagate when #3498 path; absent on normal removal"
+      }
+    },
+    "teardown.generated.discarded": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk teardown (#3638): the werk's only dirt at accept/unpull was pipeline-regenerated files (knowledge/doc-coherence.md class \u2014 the run's own gate steps rewrite them after werk-commit); the churn was discarded (checkout --) and teardown proceeded. Witnessed, never silent; any REAL dirt still refuses.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "files": "Comma-joined regenerated paths discarded"
+      }
+    },
+    "testsuiterun.posted": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 TestSuiteRun write-back succeeded (#3634): the run's suite-level result was POSTed to owl-api /testsuiteruns (declare\u2192consume\u2192record\u2192reflect loop closed). Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role"
+      }
+    },
+    "testsuiterun.post.skipped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 TestSuiteRun write-back skipped, witnessed fail-open (#3634): no write token (until #3619 provisioning) or POST failed; the test verdict still stands, the reflection leg is what was skipped \u2014 loud, never silent. Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "reason": "no-write-token | post-failed"
+      }
+    },
     "test.plan.degraded": {
       "vertebra": "building",
       "source": "werk",
