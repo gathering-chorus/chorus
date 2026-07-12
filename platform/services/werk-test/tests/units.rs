@@ -331,3 +331,119 @@ fn completed_extras_marks_advisory_for_self_modifying_cards() {
     assert!(got.contains(&("advisory".to_string(), "true".to_string())));
     assert!(got.contains(&("verdict".to_string(), "advisory-fail (self-modifying)".to_string())));
 }
+
+// ── #3634 — model-driven plan derivation from the tests domain ─────────────
+// The run plan comes from /tests rows (filePath → unit, covers → domain),
+// fetched via curl|jq at the boundary (the quarantine pattern) and parsed as
+// TSV here: changed units name the touched domains (the covers of tests living
+// in those units), and every unit holding tests covering a touched domain joins
+// the plan. UNION with the legacy path-derived units — the model can only ADD
+// coverage in v1, never subtract (the superset AC, proven by construction).
+
+#[test]
+fn model_plan_unions_covers_matched_units_with_legacy() {
+    use werk_test::{model_units, parse_test_rows, TestUnit};
+    // three tests: one in platform/api covering "senses", one in a rust crate
+    // covering "senses" (cross-unit blast radius!), one covering "borg" only.
+    let tsv = "platform/api/tests/a.test.ts\tsenses\n\
+               platform/services/pulse-gather/tests/b.rs\tsenses\n\
+               platform/pulse/tests/c.test.ts\tborg\n";
+    let rows = parse_test_rows(tsv);
+    assert_eq!(rows.len(), 3);
+    // the card changed platform/api only → legacy picks TsPackage(platform/api);
+    // its tests cover "senses" → pulse-gather (also covering senses) joins.
+    let legacy = vec![TestUnit::TsPackage("platform/api".to_string())];
+    let units = model_units(&rows, &legacy);
+    assert!(units.contains(&TestUnit::TsPackage("platform/api".to_string())), "legacy retained");
+    assert!(units.contains(&TestUnit::RustCrate("pulse-gather".to_string())),
+        "cross-unit covers match joins the plan: {:?}", units);
+    assert!(!units.contains(&TestUnit::TsPackage("platform/pulse".to_string())),
+        "unrelated domain (borg) stays out: {:?}", units);
+}
+
+#[test]
+fn model_plan_is_superset_of_legacy_by_construction() {
+    use werk_test::{model_units, parse_test_rows, TestUnit};
+    // empty model data → model_units == legacy exactly (never smaller).
+    let rows = parse_test_rows("");
+    let legacy = vec![TestUnit::RustCrate("werk-commit".to_string()), TestUnit::TsPackage("platform/api".to_string())];
+    let units = model_units(&rows, &legacy);
+    for l in &legacy {
+        assert!(units.contains(l), "legacy unit {:?} must survive", l);
+    }
+}
+
+#[test]
+fn parse_test_rows_tolerates_garbage_and_missing_fields() {
+    use werk_test::parse_test_rows;
+    assert!(parse_test_rows("not a tsv row").is_empty());
+    // rows missing either field are dropped, not panicked on.
+    assert!(parse_test_rows("only-one-field\n\tcovers-no-path\n").is_empty());
+}
+
+// ── #3634 — TestSuiteRun write-back payload ────────────────────────────────
+#[test]
+fn suite_run_payload_carries_the_run_facts() {
+    use werk_test::suite_run_payload;
+    let p = suite_run_payload("3634", "kade", "trace-x", "model", 5, 1, 1234, "blocked");
+    for needle in ["\"card\":\"3634\"", "\"role\":\"kade\"", "\"traceId\":\"trace-x\"",
+                   "\"planSource\":\"model\"", "\"checksPlanned\":5", "\"checksFailed\":1",
+                   "\"durationMs\":1234", "\"verdict\":\"blocked\"", "testsuiterun-3634-"] {
+        assert!(p.contains(needle), "payload missing {}: {}", needle, p);
+    }
+}
+
+#[test]
+fn suite_run_post_args_pin_the_curl_contract() {
+    use werk_test::suite_run_post_args;
+    let a = suite_run_post_args("http://x/testsuiteruns", "tok", "{\"k\":1}");
+    let joined = a.join(" ");
+    assert!(joined.starts_with("-sf --max-time 10 -X POST"), "fail-fast + bounded: {}", joined);
+    assert!(joined.contains("Authorization: Bearer tok"), "{}", joined);
+    assert!(joined.contains("Content-Type: application/json"), "{}", joined);
+    assert!(joined.ends_with("http://x/testsuiteruns"), "endpoint last: {}", joined);
+}
+
+// ── #3634 gather feedback (silas): JSON payload must survive hostile strings ─
+// (zero-dep crate: validated with the lib's own escaper, not serde)
+#[test]
+fn json_escape_neutralizes_quotes_backslashes_and_control_chars() {
+    use werk_test::json_escape;
+    assert_eq!(json_escape("plain"), "plain");
+    assert_eq!(json_escape(r#"qu"ote"#), r#"qu\"ote"#);
+    assert_eq!(json_escape(r"back\slash"), r"back\\slash");
+    assert_eq!(json_escape("new\nline"), r"new\nline");
+}
+
+#[test]
+fn suite_run_payload_escapes_every_string_field() {
+    use werk_test::suite_run_payload;
+    let p = suite_run_payload(r#"36"34"#, "kade", r#"tr"ace"#, "model", 1, 0, 2, r#"block"ed"#);
+    // no RAW interior quotes may survive: every quote inside a value must be escaped
+    assert!(p.contains(r#"36\"34"#), "card escaped: {}", p);
+    assert!(p.contains(r#"tr\"ace"#), "trace escaped: {}", p);
+    assert!(p.contains(r#"block\"ed"#), "verdict escaped: {}", p);
+    // structural sanity: after dropping escaped quotes, the raw quotes pair up
+    let unescaped = p.replace(r#"\""#, "");
+    assert_eq!(unescaped.matches('"').count() % 2, 0, "quotes balanced: {}", p);
+}
+
+// ── #3634 gather feedback (wren): fallback labeling is a pure, pinned decision ─
+#[test]
+fn plan_source_label_is_model_only_on_successful_nonempty_fetch() {
+    use werk_test::plan_source_label;
+    assert_eq!(plan_source_label(true, 10), "model");
+    assert_eq!(plan_source_label(true, 0), "fallback", "empty result = fallback");
+    assert_eq!(plan_source_label(false, 0), "fallback", "failed fetch = fallback");
+}
+
+// ── #3634 gather feedback (silas): multi-valued covers fans out, never drops ─
+#[test]
+fn parse_test_rows_accepts_fanned_multi_covers_rows() {
+    use werk_test::parse_test_rows;
+    // the jq filter emits one row per covers value — both rows parse
+    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\nplatform/api/tests/a.test.ts\tborg\n");
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].covers, "senses");
+    assert_eq!(rows[1].covers, "borg");
+}

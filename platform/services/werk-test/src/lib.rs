@@ -347,3 +347,139 @@ impl GateOutcome {
         }
     }
 }
+
+// ── #3634 — model-driven plan from the tests domain ────────────────────────
+
+/// One row of the tests-domain read: which file a test lives in, which domain
+/// it covers. Fetched via curl|jq at the boundary (the quarantine pattern,
+/// ADR-032 §6) and handed here as TSV `filePath\tcovers`.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct TestRow {
+    pub file_path: String,
+    pub covers: String,
+}
+
+/// Parse `filePath\tcovers` TSV rows; incomplete rows are dropped, never a panic.
+pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
+    tsv.lines()
+        .filter_map(|l| {
+            let mut it = l.trim().split('\t');
+            match (it.next(), it.next()) {
+                (Some(f), Some(c)) if !f.trim().is_empty() && !c.trim().is_empty() => {
+                    Some(TestRow { file_path: f.trim().to_string(), covers: c.trim().to_string() })
+                }
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// The unit a test file lives in — same classification rules as `affected_units`.
+pub fn unit_of_path(path: &str) -> Option<TestUnit> {
+    if let Some(rest) = path.strip_prefix("platform/services/") {
+        if let Some(name) = rest.split('/').next() {
+            if !name.is_empty() {
+                return Some(TestUnit::RustCrate(name.to_string()));
+            }
+        }
+    }
+    for pkg in TS_PACKAGES {
+        if path.starts_with(&format!("{}/", pkg)) {
+            return Some(TestUnit::TsPackage((*pkg).to_string()));
+        }
+    }
+    None
+}
+
+/// #3634 stage-2 (the query-from-model thesis the `affected_units` bridge note
+/// anticipates): touched domains = the `covers` of tests living in the card's
+/// legacy-derived units; every unit holding tests that cover a touched domain
+/// joins the plan. Always a UNION with legacy — in v1 the model only ADDS
+/// coverage (the superset AC holds by construction); shrinking to pure
+/// blast-radius selection is the follow-on flip once a week of runs proves it.
+pub fn model_units(rows: &[TestRow], legacy: &[TestUnit]) -> Vec<TestUnit> {
+    let mut units: Vec<TestUnit> = legacy.to_vec();
+    let touched: Vec<&str> = rows
+        .iter()
+        .filter(|r| unit_of_path(&r.file_path).map_or(false, |u| legacy.contains(&u)))
+        .map(|r| r.covers.as_str())
+        .collect();
+    let mut additions: Vec<TestUnit> = rows
+        .iter()
+        .filter(|r| touched.contains(&r.covers.as_str()))
+        .filter_map(|r| unit_of_path(&r.file_path))
+        .filter(|u| !units.contains(u))
+        .collect();
+    additions.sort_by_key(|u| match u {
+        TestUnit::RustCrate(n) => (0, n.clone()),
+        TestUnit::TsPackage(p) => (1, p.clone()),
+    });
+    additions.dedup();
+    units.extend(additions);
+    units
+}
+
+/// The TestSuiteRun instance a completed run posts back to the tests domain
+/// (#3634 write side): the graph's durable answer to "what ran, what failed".
+/// Name is unique per card+timestamp; the caller supplies verdict + counts.
+#[allow(clippy::too_many_arguments)]
+pub fn suite_run_payload(
+    card: &str,
+    role: &str,
+    trace: &str,
+    plan_source: &str,
+    checks_planned: usize,
+    checks_failed: usize,
+    duration_ms: u128,
+    verdict: &str,
+) -> String {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!(
+        "{{\"name\":\"testsuiterun-{}-{}\",\"card\":\"{}\",\"role\":\"{}\",\"traceId\":\"{}\",\
+         \"planSource\":\"{}\",\"checksPlanned\":{},\"checksFailed\":{},\"durationMs\":{},\
+         \"verdict\":\"{}\"}}",
+        json_escape(card), ts, json_escape(card), json_escape(role), json_escape(trace),
+        json_escape(plan_source), checks_planned, checks_failed, duration_ms, json_escape(verdict)
+    )
+}
+
+/// #3634 — the POST argv for the TestSuiteRun write-back, pure so the exact
+/// curl contract (auth header, content type, endpoint, fail-fast flags) is
+/// pinned by tests without a network.
+pub fn suite_run_post_args(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
+    vec![
+        "-sf".into(), "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
+        "-H".into(), format!("Authorization: Bearer {}", token),
+        "-H".into(), "Content-Type: application/json".into(),
+        "-d".into(), payload.into(), endpoint.into(),
+    ]
+}
+
+/// #3634 gather hardening (silas): minimal JSON string escaper — quotes,
+/// backslashes, and control characters. The verb builds its payload by hand
+/// (zero-dep blueprint), so every string field passes through here.
+pub fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// #3634 gather hardening (wren): the plan-source label as a pure decision —
+/// "model" only when the fetch succeeded AND returned rows; anything else is a
+/// witnessed fallback to the legacy lanes.
+pub fn plan_source_label(fetch_ok: bool, rows_len: usize) -> &'static str {
+    if fetch_ok && rows_len > 0 { "model" } else { "fallback" }
+}

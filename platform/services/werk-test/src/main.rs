@@ -11,8 +11,9 @@ use std::path::Path;
 use std::process::Command;
 use werk_test::{
     affected_units, cargo_skip_args, check_plan, gate_outcome, is_self_modifying,
-    parse_quarantine_rows, quarantine_report, spine_args, CheckKind, Quarantined, TestUnit,
-    TS_PACKAGES,
+    model_units, parse_quarantine_rows, parse_test_rows, plan_source_label,
+    quarantine_report, spine_args, suite_run_payload, CheckKind, Quarantined, TestRow,
+    TestUnit, TS_PACKAGES,
 };
 
 fn main() {
@@ -49,7 +50,13 @@ fn run(args: &[String]) -> Result<i32, String> {
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
 
     let changed = git_changed_files(&werk)?;
-    let units = affected_units(&changed);
+    let legacy_units = affected_units(&changed);
+    // #3634 — stage 2: derive the plan from the tests domain. Model rows (filePath,
+    // covers) widen the legacy path-derived units to every unit holding tests that
+    // cover a touched domain — UNION, never smaller (the superset AC). A failed
+    // fetch degrades to the legacy plan, loudly (test.plan.degraded), never silently.
+    let (rows, plan_source) = fetch_test_rows();
+    let units = model_units(&rows, &legacy_units);
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
@@ -70,6 +77,10 @@ fn run(args: &[String]) -> Result<i32, String> {
 
     // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
     let started_at = std::time::Instant::now();
+    if plan_source == "fallback" {
+        emit_spine("test.plan.degraded", &role, &card, &trace,
+            &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
+    }
     emit_spine(
         "test.started",
         &role,
@@ -78,6 +89,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         &[
             ("units", &units.len().to_string()),
             ("checks_planned", &plan.len().to_string()),
+            ("plan_source", plan_source),
         ],
     );
     let mut any_failed = false;
@@ -117,6 +129,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     );
     let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("test.completed", &role, &card, &trace, &extra_refs);
+    // #3634 write side — the run becomes a TestSuiteRun instance in the graph.
+    // Best-effort and WITNESSED either way: the gate's verdict never depends on
+    // the write, but a skipped post is a spine event, not a silence.
+    post_suite_run(&role, &card, &trace, plan_source, plan.len(), failed_count,
+        started_at.elapsed().as_millis(), outcome.label());
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -287,4 +304,105 @@ fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str,
     let refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     argv.extend(refs);
     let _ = Command::new("bash").args(&argv).status();
+}
+
+/// #3634 read side — fetch (filePath, covers) rows from the tests domain via
+/// curl|jq (the quarantine pattern; zero-dep per ADR-032 §6). Returns the rows
+/// plus the plan-source label: "model" on success, "fallback" on any failure —
+/// the caller witnesses the degradation, the gate still runs on legacy lanes.
+fn fetch_test_rows() -> (Vec<TestRow>, &'static str) {
+    let endpoint = std::env::var("OWL_API_TESTS")
+        .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
+    // #3634 gather hardening (silas): NO shell interpolation — curl and jq run as
+    // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
+    // The jq filter emits one TSV row PER covers value, so a multi-valued covers
+    // (array in a future TestShape) fans out instead of being dropped silently.
+    let jq_filter = r#".data[] | .filePath as $f | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c] | @tsv"#;
+    let curl = Command::new("curl")
+        .args(["-sf", "--max-time", "10", &endpoint])
+        .output();
+    let body = match curl {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    let mut jq = match Command::new("jq")
+        .args(["-r", jq_filter])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    if let Some(mut stdin) = jq.stdin.take() {
+        use std::io::Write;
+        if stdin.write_all(&body).is_err() {
+            return (Vec::new(), plan_source_label(false, 0));
+        }
+    }
+    let out = match jq.wait_with_output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return (Vec::new(), plan_source_label(false, 0)),
+    };
+    let rows = parse_test_rows(&String::from_utf8_lossy(&out));
+    let label = plan_source_label(true, rows.len());
+    (rows, label)
+}
+
+/// #3634 write side — POST the run's TestSuiteRun through the generated write
+/// surface with a #3619-scoped token. Token: $CHORUS_WRITE_TOKEN if the runner
+/// provides it, else minted via chorus-mint-token.py (secret sourced from the
+/// realm env inside the script — never echoed here). Every outcome is witnessed:
+/// testsuiterun.posted / testsuiterun.post.skipped with the reason.
+#[allow(clippy::too_many_arguments)]
+fn post_suite_run(
+    role: &str,
+    card: &str,
+    trace: &str,
+    plan_source: &str,
+    checks_planned: usize,
+    checks_failed: usize,
+    duration_ms: u128,
+    verdict: &str,
+) {
+    let endpoint = std::env::var("OWL_API_TESTSUITERUNS")
+        .unwrap_or_else(|_| "http://localhost:3360/testsuiteruns".to_string());
+    let token = std::env::var("CHORUS_WRITE_TOKEN").ok().filter(|t| !t.is_empty()).or_else(mint_token);
+    let Some(token) = token else {
+        emit_spine("testsuiterun.post.skipped", role, card, trace,
+            &[("reason", "no-write-token")]);
+        return;
+    };
+    let payload = suite_run_payload(card, role, trace, plan_source, checks_planned,
+        checks_failed, duration_ms, verdict);
+    let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
+    let ok = Command::new("curl")
+        .args(&args)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if ok {
+        emit_spine("testsuiterun.posted", role, card, trace, &[("verdict", verdict), ("plan_source", plan_source)]);
+    } else {
+        emit_spine("testsuiterun.post.skipped", role, card, trace, &[("reason", "post-failed")]);
+    }
+}
+
+/// Mint a write token scoped to the instances graph (#3619 lane). Best-effort.
+fn mint_token() -> Option<String> {
+    let home = std::env::var("CHORUS_HOME").ok()?;
+    let script = format!("{}/platform/scripts/chorus-mint-token.py", home);
+    if !Path::new(&script).is_file() {
+        return None;
+    }
+    let out = Command::new("python3")
+        .args([&script, "--web-id", "https://jeffbridwell.com/chorus#role-kade",
+            "--scope", "urn:chorus:instances"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if t.is_empty() { None } else { Some(t) }
 }
