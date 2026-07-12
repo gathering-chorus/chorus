@@ -5,7 +5,13 @@
 # around one stable chorus-werk/<role>/ dir) is gone. Its `repoint` verb swapped
 # branches in a live directory — branch-swap-in-place — which detached HEADs and
 # burned the team 2026-05-13/14. The ephemeral model has no repoint: each card
-# gets its own worktree, created on pull and destroyed on acp.
+# gets its own worktree, created on pull and destroyed on accept (GO=accept, #3311).
+#
+# acp NOTE (#3421): the 'acp' mentions below are KEPT deliberately — they are
+# historical rationale for the Tier-1 merge proof (the acceptance commits it
+# detects were created by the retired /acp verb; the proof logic survives in
+# werk-teardown #3431). The live verb vocabulary is the 12 werk-* binaries;
+# see designing/docs/werk-value-stream-design.html.
 #
 #   chorus-werk/<role>-<card>/   one worktree per card, on branch <role>/<card>
 #

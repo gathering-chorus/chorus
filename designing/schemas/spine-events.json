@@ -2184,6 +2184,16 @@
         "advisory": "true when self-modifying (non-blocking)"
       }
     },
+    "test.plan.degraded": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `test` verb \u2014 `plan.degraded` phase (#3634): the tests-domain fetch (owl-api /tests) failed or returned zero rows, so the run plan fell back to the legacy hardcoded unit list \u2014 loud, never silent. Verb-phase event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "reason": "fetch-failed | zero-rows"
+      }
+    },
     "test.failed": {
       "vertebra": "building",
       "source": "werk",
