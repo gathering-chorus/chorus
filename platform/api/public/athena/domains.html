@@ -16,20 +16,26 @@
 (async function () {
   const main = document.getElementById('main');
   try {
-    const env = await fetchJSON('/domains');
+    const [env, prodsEnv] = await Promise.all([fetchJSON('/domains'), fetchJSON('/products')]);
     const rows = (env.data || []).slice().sort((a, b) => a.name.localeCompare(b.name));
     const PRODUCT_ORDER = ['chorus', 'athena', 'borg', 'clearing', 'convergence', 'loom', 'pulse', 'werk'];
 
+    // partOf is NOT a /domains collection field (containment lives in folds) —
+    // the product that claims a domain comes from the products' own hasDomain edges.
+    const claimedBy = {};
+    for (const p of (prodsEnv.data || []))
+      for (const d of asArray(p.hasDomain)) claimedBy[d] = p.name;
+
     const groups = {};
     for (const d of rows) {
-      const p = asArray(d.partOf).map(x => String(x).split('#').pop())[0] || '(no product)';
+      const p = claimedBy[d.name] || '(no product)';
       (groups[p] = groups[p] || []).push(d);
     }
 
     function dcard(d) {
       const step = stepLocal(d.atStep);
       const off = step && !STEPS_RULED.includes(step) ? '<span class="flag">step off ruled model</span>' : '';
-      const legacyPart = asArray(d.partOf).some(x => String(x).includes('product-')) ? '<span class="flag">legacy partOf naming</span>' : '';
+      const legacyPart = !claimedBy[d.name] ? '<span class="flag">unclaimed by any product</span>' : '';
       const legacyOwner = d.ownedBy && !String(d.ownedBy).includes('role-') ? '<span class="flag">legacy owner naming</span>' : '';
       const vocab = asArray(d.definesVocabulary);
       const purpose = d.purpose || d.comment || '';
@@ -51,9 +57,9 @@ ${vocab.length ? `<span class="chip">${vocab.length} class${vocab.length !== 1 ?
 
     const nVocab = rows.filter(d => asArray(d.definesVocabulary).length).length;
     const nFlag = rows.filter(d =>
-      asArray(d.partOf).some(x => String(x).includes('product-')) ||
+      !claimedBy[d.name] ||
       (d.ownedBy && !String(d.ownedBy).includes('role-')) ||
-      !asArray(d.partOf).length).length;
+      (stepLocal(d.atStep) && !STEPS_RULED.includes(stepLocal(d.atStep)))).length;
 
     main.innerHTML = `
 <div class="promise">Every domain the model holds, grouped by the product that claims it (partOf). Every field is the graph's answer, including the inconsistencies &mdash; red flags mark data off the ruled model, so this page doubles as the cleanup worklist.</div>
