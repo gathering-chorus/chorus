@@ -2,7 +2,7 @@
 use werk_deploy::{
     branch_name, card_from_subject, cdhash_divergences, chorus_bin_install_cmd,
     crate_binaries_in, crate_binaries_with_service_in, demo_cdhashes, extract_running_cdhash,
-    landed_commit_ok, live_main_flag, mcp_init_ready, parse_build_summary, parse_target, require_approval,
+    landed_commit_ok, live_main_flag, mcp_init_ready, parse_build_summary, parse_target, partition_lib_only, require_approval,
     running_verdict, RunVerdict,
     resolve_trace, service_for_crate, spine_args, target_class_in, TargetClass,
 };
@@ -785,4 +785,37 @@ fn refresh_failure_retires_stale_slot_aside_so_canonical_serves() {
     let w = std::fs::read_to_string(home.join("ops/logs/werk-deploy.jsonl")).unwrap_or_default();
     assert!(w.contains("slot.retired_stale"), "retirement witnessed; got: {}", w);
     let _ = std::fs::remove_dir_all(&base);
+}
+
+// #3638 — a LIB-ONLY changed crate must be PARTITIONED OUT of the canonical deploy
+// list, not sent to deploy_crate_canonical where the werk-* CliVerb short-circuit
+// demands a binary that cannot exist (the exact #3638 land failure: werk-teardown
+// changed → deploy-canonical died with "binary missing for werk-teardown").
+#[test]
+fn partition_lib_only_splits_teardown_from_deployables() {
+    let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let root = std::env::temp_dir().join(format!("wd-plo-{}", n));
+    // lib-only crate (the werk-teardown shape)
+    let lib = root.join("platform/services/werk-teardown");
+    fs::create_dir_all(lib.join("src")).unwrap();
+    fs::write(lib.join("Cargo.toml"),
+        "[package]\nname = \"werk-teardown\"\nversion = \"0.1.0\"\n\n[lib]\nname = \"werk_teardown\"\npath = \"src/lib.rs\"\n").unwrap();
+    fs::write(lib.join("src/lib.rs"), "").unwrap();
+    // normal single-binary crate
+    let bin = root.join("platform/services/werk-commit");
+    fs::create_dir_all(bin.join("src")).unwrap();
+    fs::write(bin.join("Cargo.toml"), "[package]\nname = \"werk-commit\"\nversion = \"0.1.0\"\n").unwrap();
+    fs::write(bin.join("src/main.rs"), "fn main(){}").unwrap();
+
+    let crates = vec!["werk-teardown".to_string(), "werk-commit".to_string()];
+    let (deployable, lib_only) = partition_lib_only(&root, &crates);
+    assert_eq!(deployable, vec!["werk-commit".to_string()]);
+    assert_eq!(lib_only, vec!["werk-teardown".to_string()]);
+
+    // a crate dir that doesn't exist stays deployable — deploy's own error names it
+    // honestly rather than a silent skip hiding a real miss
+    let (d2, l2) = partition_lib_only(&root, &vec!["no-such-crate".to_string()]);
+    assert_eq!(d2, vec!["no-such-crate".to_string()]);
+    assert!(l2.is_empty());
+    fs::remove_dir_all(&root).ok();
 }

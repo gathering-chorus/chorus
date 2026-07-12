@@ -1503,6 +1503,26 @@ pub fn changed_service_crates(diff: &str) -> Vec<String> {
     out
 }
 
+/// #3638 — split a changed-crate list into (deployable, lib-only). A LIB-ONLY crate
+/// (Cargo.toml present, `crate_binaries_in` empty — e.g. werk-teardown, #3431) emits
+/// no binaries, so deploy_crate_canonical's werk-* CliVerb short-circuit would demand
+/// a target/release binary that cannot exist (the exact #3638 land failure). Lib-only
+/// crates ship through their dependents' builds; the skip is witnessed by the caller.
+/// A MISSING crate dir stays deployable so deploy's own error names it honestly.
+pub fn partition_lib_only(root: &Path, crates: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut deployable = Vec::new();
+    let mut lib_only = Vec::new();
+    for c in crates {
+        let dir = root.join("platform/services").join(c);
+        if dir.join("Cargo.toml").is_file() && crate_binaries_in(&dir).is_empty() {
+            lib_only.push(c.clone());
+        } else {
+            deployable.push(c.clone());
+        }
+    }
+    (deployable, lib_only)
+}
+
 /// #3243 — the card's changed TS SERVICES: chorus-mcp (`platform/mcp-server`) and chorus-api
 /// (`platform/api`). These live OUTSIDE `platform/services/`, so `changed_service_crates`
 /// misses them — the merged≠live hole that made #3239 (env-up forward) and #3241 (chorus_werk)
@@ -1547,7 +1567,15 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let range = if base.is_empty() { "origin/main..HEAD".to_string() } else { format!("{}..HEAD", base) };
     let diff = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "diff", "--name-only", &range])
         .unwrap_or_default();
-    let crates = changed_service_crates(&diff);
+    // #3638 — lib-only changed crates (werk-teardown class) are partitioned out with a
+    // witnessed skip: they emit no binary, and sending them to deploy_crate_canonical
+    // dies on a phantom target/release path (this card's own first land failure).
+    let all_crates = changed_service_crates(&diff);
+    let (crates, lib_only) = partition_lib_only(Path::new(&canonical_root_path(home)), &all_crates);
+    for c in &lib_only {
+        jsonl(home, role, card, trace, "deploy.skipped",
+            &format!(",\"target\":\"canonical\",\"crate\":\"{}\",\"reason\":\"lib-only-crate\"", c));
+    }
     // #3243 — TS services (chorus-mcp at platform/mcp-server, chorus-api at platform/api) live
     // OUTSIDE platform/services/, so changed_service_crates misses them. They are npm-built
     // in place by the native TS-daemon path (#3317), WITHOUT a werk-build step.
