@@ -58,6 +58,11 @@ pub fn sparql_json(query: &str) -> R<String> {
 /// The DAL's proven extractor: all bound values of the single ?v variable.
 /// Multi-column queries CONCAT their columns into ?v with a `|` separator —
 /// the single-var seam is what makes zero-dep parsing reliable.
+/// #3635 — values are JSON strings and MUST be unescaped: Fuseki ASCII-escapes
+/// non-ASCII (an em dash arrives as the text `—`); the old substring scan
+/// passed the escape through, json_escape then doubled the backslash, and every
+/// page rendered the escape sequence literally. The scan also now respects
+/// escaped quotes when finding the closing quote.
 pub fn select_v(body: &str) -> Vec<String> {
     let mut vals = Vec::new();
     for chunk in body.split("\"v\"").skip(1) {
@@ -65,13 +70,83 @@ pub fn select_v(body: &str) -> Vec<String> {
             let rest = &chunk[i + 7..];
             if let Some(start) = rest.find('"') {
                 let rest = &rest[start + 1..];
-                if let Some(end) = rest.find('"') {
-                    vals.push(rest[..end].to_string());
+                if let Some(raw) = scan_json_string(rest) {
+                    vals.push(json_unescape(raw));
                 }
             }
         }
     }
     vals
+}
+
+/// Slice up to the closing quote of a JSON string, honoring backslash escapes.
+fn scan_json_string(rest: &str) -> Option<&str> {
+    let bytes = rest.as_bytes();
+    let mut esc = false;
+    for (i, &c) in bytes.iter().enumerate() {
+        if esc {
+            esc = false;
+        } else if c == b'\\' {
+            esc = true;
+        } else if c == b'"' {
+            return Some(&rest[..i]);
+        }
+    }
+    None
+}
+
+/// Decode JSON string escapes (zero-dep): \" \\ \/ \n \r \t \uXXXX incl.
+/// surrogate pairs. Unknown escapes pass through verbatim rather than erroring —
+/// a read path must not refuse data it can still show.
+fn json_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('/') => out.push('/'),
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                match u32::from_str_radix(&hex, 16) {
+                    Ok(cp) if (0xD800..0xDC00).contains(&cp) => {
+                        // high surrogate — pair with the following \uXXXX low half
+                        let mut ahead = chars.clone();
+                        let paired = (ahead.next() == Some('\\') && ahead.next() == Some('u'))
+                            .then(|| ahead.by_ref().take(4).collect::<String>())
+                            .and_then(|h2| u32::from_str_radix(&h2, 16).ok())
+                            .filter(|lo| (0xDC00..0xE000).contains(lo))
+                            .and_then(|lo| char::from_u32(0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00)));
+                        if let Some(ch) = paired {
+                            out.push(ch);
+                            chars = ahead;
+                        } else {
+                            out.push('\u{FFFD}');
+                        }
+                    }
+                    Ok(cp) => out.push(char::from_u32(cp).unwrap_or('\u{FFFD}')),
+                    Err(_) => {
+                        out.push('\\');
+                        out.push('u');
+                        out.push_str(&hex);
+                    }
+                }
+            }
+            Some(other) => {
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 
@@ -2247,6 +2322,71 @@ pub fn is_safe_local(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// Collection marshal — one JSON object per SUBJECT, multi-valued fields aggregated.
+/// #3558 deduped rows by subject (first row wins), which fixed the fan-out counts but
+/// silently DROPPED every value after the first (borg showed 1 of 5 hasDomain). #3635:
+/// group the fanned rows per subject and merge — a field renders as a string when it
+/// has one value and a JSON array when it has several (additive under ADR-047; single-
+/// valued fields keep their exact prior shape). label/status take the first non-empty.
+pub fn collection_items(rows: Vec<String>, extra_names: &[String]) -> Vec<String> {
+    let mut order: Vec<String> = Vec::new();
+    let mut by_subj: std::collections::HashMap<String, Vec<Vec<String>>> =
+        std::collections::HashMap::new();
+    for rowv in rows {
+        let cols: Vec<String> = rowv.split('|').map(|s| s.to_string()).collect();
+        let subj = cols.first().cloned().unwrap_or_default();
+        if !by_subj.contains_key(&subj) {
+            order.push(subj.clone());
+        }
+        by_subj.entry(subj).or_default().push(cols);
+    }
+    order
+        .iter()
+        .map(|subj| {
+            let group = &by_subj[subj];
+            let name = subj.rsplit('#').next().unwrap_or(subj);
+            let pick = |idx: usize| {
+                group
+                    .iter()
+                    .filter_map(|c| c.get(idx))
+                    .find(|v| !v.is_empty())
+                    .cloned()
+                    .unwrap_or_default()
+            };
+            let mut obj = format!(
+                "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\"",
+                json_escape(name),
+                json_escape(&pick(1)),
+                json_escape(&pick(2))
+            );
+            for (i, fname) in extra_names.iter().enumerate() {
+                let mut vals: Vec<String> = Vec::new();
+                for c in group {
+                    if let Some(v) = c.get(3 + i) {
+                        if !v.is_empty() && !vals.contains(v) {
+                            vals.push(v.clone());
+                        }
+                    }
+                }
+                let rendered = match vals.len() {
+                    0 => "\"\"".to_string(),
+                    1 => format!("\"{}\"", json_escape(&vals[0])),
+                    _ => format!(
+                        "[{}]",
+                        vals.iter()
+                            .map(|v| format!("\"{}\"", json_escape(v)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                };
+                obj.push_str(&format!(", \"{}\": {}", json_escape(fname), rendered));
+            }
+            obj.push_str(" }");
+            obj
+        })
+        .collect()
+}
+
 fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool) -> (u16, String) {
     // #3506 / ADR-047 §7 — split the query string off BEFORE route matching, so
     // `?limit=&cursor=` (cursor pagination, AIP-158) never breaks the path parse.
@@ -2341,36 +2481,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         return match sparql_json(&q) {
             Ok(body) => {
                 let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
-                // #3558 — dedupe rows by SUBJECT: multi-valued OPTIONAL fields fan one
-                // entity into N rows (borg x 5 hasDomain = 5 rows; domains "55" = 36
-                // entities). Count entities, not SPARQL rows; first row per subject wins.
-                let mut seen_subjects = std::collections::HashSet::new();
-                let items: Vec<String> = select_v(&body)
-                    .into_iter()
-                    .filter(|rowv| {
-                        let subj = rowv.split('|').next().unwrap_or("").to_string();
-                        seen_subjects.insert(subj)
-                    })
-                    .map(|rowv| {
-                        let cols: Vec<&str> = rowv.split('|').collect();
-                        let name = cols.first().map(|s| s.rsplit('#').next().unwrap_or(s)).unwrap_or("");
-                        let mut obj = format!(
-                            "{{ \"name\": \"{}\", \"label\": \"{}\", \"status\": \"{}\"",
-                            json_escape(name),
-                            json_escape(cols.get(1).unwrap_or(&"")),
-                            json_escape(cols.get(2).unwrap_or(&""))
-                        );
-                        for (i, fname) in extra_names.iter().enumerate() {
-                            obj.push_str(&format!(
-                                ", \"{}\": \"{}\"",
-                                json_escape(fname),
-                                json_escape(cols.get(3 + i).unwrap_or(&""))
-                            ));
-                        }
-                        obj.push_str(" }");
-                        obj
-                    })
-                    .collect();
+                let items = collection_items(select_v(&body), &extra_names);
                 {
                     // #3506 / ADR-047 — the collection list, enveloped + paginated:
                     // kind = the item class, no `id`, `data` = the page, `count` = the
@@ -3218,6 +3329,77 @@ mod tests {
         assert!(!field_exposed(None, false));
         assert!(!field_exposed(None, true), "unmarked hidden even when authed (default-closed)");
         assert!(!field_exposed(Some("bogus"), true), "unknown level → hidden");
+    }
+
+    // #3635 — select_v decodes Fuseki's JSON escapes; pages were rendering the
+    // escape text (an em dash arrived as backslash-u-2014 and json_escape doubled
+    // the backslash). Also: closing-quote scan honors escaped quotes.
+    #[test]
+    fn select_v_decodes_json_escapes_from_fuseki() {
+        let body = r#"{"results":{"bindings":[
+            {"v":{"value":"dash \u2014 here"}},
+            {"v":{"value":"quote \" inside"}},
+            {"v":{"value":"emoji \ud83d\ude00 pair"}}
+        ]}}"#;
+        let vals = select_v(body);
+        assert_eq!(vals[0], "dash \u{2014} here", "\\uXXXX decodes to the real char");
+        assert_eq!(vals[1], "quote \" inside", "escaped quote doesn't truncate the value");
+        assert_eq!(vals[2], "emoji \u{1F600} pair", "surrogate pairs decode");
+    }
+
+    #[test]
+    fn json_escape_roundtrips_a_decoded_em_dash() {
+        // end-to-end contract: graph literal — → Fuseki — → select_v — →
+        // json_escape leaves the multibyte char alone → page shows —
+        assert_eq!(json_escape("a \u{2014} b"), "a \u{2014} b");
+    }
+
+    // #3635 — collection marshal aggregates multi-valued fields per subject.
+    // Pinned fixture for the #3558 fan-out: borg's 5 hasDomain rows must yield ONE
+    // item carrying ALL values (the dedupe kept the first row and dropped the rest).
+    #[test]
+    fn collection_items_aggregates_multivalued_fields_per_subject() {
+        let rows = vec![
+            "https://x#borg|Borg|building|logs".to_string(),
+            "https://x#borg|Borg|building|builds".to_string(),
+            "https://x#borg|Borg|building|deploys".to_string(),
+            "https://x#athena||building|domains".to_string(),
+        ];
+        let items = collection_items(rows, &["hasDomain".to_string()]);
+        assert_eq!(items.len(), 2, "entities, not SPARQL rows");
+        assert!(
+            items[0].contains("\"hasDomain\": [\"logs\", \"builds\", \"deploys\"]"),
+            "multi-valued renders as array, order-preserving: {}",
+            items[0]
+        );
+        assert!(items[0].contains("\"name\": \"borg\""));
+        assert!(
+            items[1].contains("\"hasDomain\": \"domains\""),
+            "single-valued keeps the prior string shape (ADR-047 additive): {}",
+            items[1]
+        );
+    }
+
+    #[test]
+    fn collection_items_cross_product_rows_dedupe_values() {
+        // two multi-valued fields fan as a cross-product; values dedupe per field
+        let rows = vec![
+            "https://x#d|D|ok|a|v1".to_string(),
+            "https://x#d|D|ok|a|v2".to_string(),
+            "https://x#d|D|ok|b|v1".to_string(),
+            "https://x#d|D|ok|b|v2".to_string(),
+        ];
+        let items = collection_items(rows, &["f1".to_string(), "f2".to_string()]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].contains("\"f1\": [\"a\", \"b\"]"), "{}", items[0]);
+        assert!(items[0].contains("\"f2\": [\"v1\", \"v2\"]"), "{}", items[0]);
+    }
+
+    #[test]
+    fn collection_items_empty_field_renders_empty_string() {
+        let rows = vec!["https://x#d|D|ok|".to_string()];
+        let items = collection_items(rows, &["f1".to_string()]);
+        assert!(items[0].contains("\"f1\": \"\""), "{}", items[0]);
     }
 
     // #3506 / ADR-047 §7 — cursor pagination: page slicing + next cursor + query parse.

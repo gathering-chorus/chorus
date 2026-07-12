@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domains — Athena</title>
+<!-- #3635 — the Jeff-approved domains collection (2026-07-12 mock). Grouped by the
+     product that claims each domain (partOf, live). Red flags mark data that doesn't
+     match the ruled model — the page doubles as the cleanup worklist. Hand-authored
+     pending the generator upgrade. -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script></head>
+<body><div class="wrap wide">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; domains</div>
+<h1>Domains <span class="kind">&mdash; Chorus</span></h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  try {
+    const env = await fetchJSON('/domains');
+    const rows = (env.data || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    const PRODUCT_ORDER = ['chorus', 'athena', 'borg', 'clearing', 'convergence', 'loom', 'pulse', 'werk'];
+
+    const groups = {};
+    for (const d of rows) {
+      const p = asArray(d.partOf).map(x => String(x).split('#').pop())[0] || '(no product)';
+      (groups[p] = groups[p] || []).push(d);
+    }
+
+    function dcard(d) {
+      const step = stepLocal(d.atStep);
+      const off = step && !STEPS_RULED.includes(step) ? '<span class="flag">step off ruled model</span>' : '';
+      const legacyPart = asArray(d.partOf).some(x => String(x).includes('product-')) ? '<span class="flag">legacy partOf naming</span>' : '';
+      const legacyOwner = d.ownedBy && !String(d.ownedBy).includes('role-') ? '<span class="flag">legacy owner naming</span>' : '';
+      const vocab = asArray(d.definesVocabulary);
+      const purpose = d.purpose || d.comment || '';
+      return `<div class="dcard">
+<h3><a href="domain.html?d=${encodeURIComponent(d.name)}">${esc(d.name)}</a>${off}${legacyPart}${legacyOwner}</h3>
+<div class="meta">${ownerDot(d.ownedBy)} &middot; ${stepBadge(d.atStep)} &middot; ${esc(d.status || 'no status')}</div>
+<div class="purpose">${esc(purpose.slice(0, 150))}${purpose.length > 150 ? '…' : ''}</div>
+${vocab.length ? `<span class="chip">${vocab.length} class${vocab.length !== 1 ? 'es' : ''}</span>` : '<span class="empty">no vocabulary yet</span>'}
+</div>`;
+    }
+
+    const keys = Object.keys(groups).sort((a, b) => {
+      const ia = PRODUCT_ORDER.indexOf(a), ib = PRODUCT_ORDER.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    });
+    const sections = keys.map(k =>
+      `<div class="psec"><h2>${esc(k)}</h2><span class="n">${groups[k].length} domains &middot; partOf edges as stored</span></div>
+<div class="dgrid">${groups[k].map(dcard).join('\n')}</div>`).join('\n');
+
+    const nVocab = rows.filter(d => asArray(d.definesVocabulary).length).length;
+    const nFlag = rows.filter(d =>
+      asArray(d.partOf).some(x => String(x).includes('product-')) ||
+      (d.ownedBy && !String(d.ownedBy).includes('role-')) ||
+      !asArray(d.partOf).length).length;
+
+    main.innerHTML = `
+<div class="promise">Every domain the model holds, grouped by the product that claims it (partOf). Every field is the graph's answer, including the inconsistencies &mdash; red flags mark data off the ruled model, so this page doubles as the cleanup worklist.</div>
+<div class="stats">
+  <div class="stat"><div class="v">${rows.length}</div><div class="l">Domains</div></div>
+  <div class="stat"><div class="v">${nVocab}</div><div class="l">With vocabulary</div></div>
+  <div class="stat"><div class="v">${rows.filter(d => d.ownedBy).length}</div><div class="l">With owner</div></div>
+  <div class="stat"><div class="v">${nFlag}</div><div class="l">Flagged (red)</div></div>
+</div>
+${sections}
+${srcNote('GET /domains')}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>
