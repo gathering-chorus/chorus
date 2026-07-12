@@ -10,7 +10,7 @@
 The operating system for a human+AI team. Three artifacts tell the story:
 - **System topology** (`/chorus/system`) — the interactive map of what exists
 - **Spine architecture** (`product-manager/chorus-spine.html`) — how the three thirds work
-- **Card lifecycle** (`product-manager/werk-process.html`) — how a piece of work flows
+- **Card lifecycle** (`designing/docs/werk-value-stream-design.html`; werk-process retired #3421) — how a piece of work flows
 
 ---
 

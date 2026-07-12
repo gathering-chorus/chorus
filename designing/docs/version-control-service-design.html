@@ -209,6 +209,21 @@ flowchart LR
 <li><strong>Class-A graph-backed migration of git history</strong> — git remains canonical store.</li>
 </ul>
 
+
+<h2>Parity receipts — the eight failures these verbs must never re-learn</h2>
+<p>Folded from the retired werk-v2 docs (#3421): each row is a REAL past failure whose fix is now embedded in the verbs. Any refactor must preserve these behaviors.</p>
+<table>
+<tr><th>Receipt</th><th>The invariant</th></tr>
+<tr><td>#2925</td><td>Resolve the exact <code>&lt;role&gt;-&lt;card&gt;</code> werk when card_id asserted — else 2+ werks &rarr; fallback to canonical &rarr; git runs from <code>main</code> &rarr; pre-push refuses.</td></tr>
+<tr><td>#2782</td><td>Derive cardId from the <b>branch</b> first, board as fallback — the board lags (merged&rarr;Done&rarr;0 WIP); board-only left cards stuck at Later.</td></tr>
+<tr><td>#2868</td><td>Intent-assertion guard: asserted card_id must equal derived — silent substitution shipped the wrong card.</td></tr>
+<tr><td>#2923</td><td>NO false-success fast-path: <code>git cherry</code>-empty can't tell already-merged from never-committed. Idempotency must be <b>per-step</b>. (The #3632 resume dispositions honor this: Tier-1 card-ref proof, never cherry-empty alone.)</td></tr>
+<tr><td>#2943</td><td>Idempotent re-run = Done + orphan remote branch &rarr; teardown only (agents can't <code>push --delete</code> directly, #2598; werk-teardown's orphan-propagate #3498 is the mechanized form).</td></tr>
+<tr><td>#2931</td><td>Write <code>Chorus-Trace-Id</code> / <code>Chorus-Card-Id</code> git trailers so build/deploy inherit the trace; fresh-minting a trace is the regression.</td></tr>
+<tr><td>#3012</td><td><b>Ordering keystone:</b> merge &rarr; promote &rarr; teardown &rarr; done; every substrate step <b>throws</b> (card stays WIP). The old order leaked 5 abandoned werks &rarr; resolver fell back to canonical &rarr; dirty-tree cascade.</td></tr>
+<tr><td>#2995</td><td>Promote werk&rarr;canonical only post-merge; skip if cdhash already matches (safe re-run); any promote-fail throws; kickstart services after.</td></tr>
+</table>
+
 <h2>References</h2>
 <ul>
 <li><a href="http://localhost:3340/athena/domain-detail.html?id=version-control-domain">Athena: <code>version-control-domain</code></a> — live source of truth (actors, scenarios, contract, dependencies, gaps)</li>

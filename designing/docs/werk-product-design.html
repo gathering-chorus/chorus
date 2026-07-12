@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Werk — Product Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  h4 { font-size: 0.92em; margin-top: 1em; color: #5b21b6; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #ede9fe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-size: 0.9em; }
+  .promise { background: #f5f3ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-style: italic; font-size: 0.9em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-op { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-bld { background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-exp { background: #dbeafe; color: #1e3a8a; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Werk <span>— Product Design</span></h1>
+<p class="date">Kade · <strong>product reconcile 2026-07-12 (#3421, Jeff's ruling: werk is a PRODUCT)</strong> · prior 2026-06-11 (#3340) · 2026-05-16 / 2026-05-25 (#3078) · product-design doc, peer to <a href="/designing/docs/athena-product-design.html"><code>athena-product-design.html</code></a> and <a href="/designing/docs/loom-subproduct-design.html"><code>loom-subproduct-design.html</code></a>. Werk is the Chorus execution protocol — how the team realizes value: turning intent into running, verified software across Building and Proving.</p>
+
+<p class="promise" style="font-style:normal;border-left-color:#0f9d8f;background:#eafaf7"><strong>TL;DR —</strong> The work this team does could be prompted into Claude for $200/mo. The reason it's worth more than that — the reason a <em>service</em> built on it can be sold — is that the output arrives <strong>proven</strong>: running, demonstrated, accountable. Not "I think it works," but "here it is, running, and here's the proof." <strong>Werk is the part of the model that makes "proven" true.</strong> Solo, you are the proof step yourself — Claude says done, the stale binary is still serving, and you find out when it breaks in front of someone. Werk closes that gap: one trace from <code>/pull</code> to the running cdhash, a check per verb, gates that refuse early — so a green result <em>can't lie</em>. Werk owns <strong>Building</strong> and <strong>Proving</strong>; the upstream steps decide <em>what</em> to build. Owner: Kade.</p>
+
+<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:10px 14px;margin:16px 0;border-radius:4px;font-size:0.85em"><strong>What changed in the 2026-07-12 reconcile (#3421):</strong> Werk is a <strong>Product</strong>, not a subproduct — Jeff's ruling, and the live graph already agrees (<code>/products</code> serves <code>werk</code> top-level, ownedBy role-kade, atStep Building). The verb set is <strong>12 binaries + 1 shared lib</strong> (werk-test and werk-unpull joined the family; <code>werk-teardown</code> is the shared native-teardown crate, #3431 — no Rust verb shells to bash <code>chorus-werk</code> anymore). The pipeline is <strong>ONE job, ONE run, GO-at-invoke</strong> (#3499) — the two-job present/land fork is gone; land steps gate on the demo verdict's <code>proven</code> output. <strong>werk-test is a BLOCKING gate</strong> (#3190) and, since #3634, <strong>model-driven</strong>: its run plan derives from the tests domain API (covers-based blast radius, superset-guaranteed) and every run writes a TestSuiteRun back. Resumes are first-class: <code>commit.idempotent</code>/<code>push.idempotent</code> dispositions (#3632) let an interrupted land skip completed steps instead of dying. This doc consolidates ten former werk docs (#3421); the retired ones are pointer stubs.</div>
+<h2>1 &middot; Why pay, not just prompt</h2>
+<p><strong>The question the whole team has to answer.</strong> Anyone can point Claude Code at a problem for $200/mo and get code that says it's done. If that's all this is, the subscription wins. The model is the same on both sides of the line — Claude writes the code either way. So Werk, and the team it serves, earns its keep only by delivering the one thing a solo prompt structurally can't: output you can <em>stand behind</em>.</p>
+<p><strong>Solo, you are the proof step.</strong> A card reads <em>Done</em> while the old binary is still serving; the demo went green over a stale build; the deploy reported success; the work stalls between steps because a human has to carry it across; weeks later no one can say which commit is actually running. Prompting alone, there is no one to catch the false-green but you — you are the architect, the reviewer, and the one who eats it when it breaks in front of your customer. The difference that justifies the cost isn't the code. It's the <em>discipline around it</em>.</p>
+<p><strong>Werk is that discipline.</strong> It's the protocol that carries a unit of work from <em>pulled</em> to <em>proven and accepted</em>, so the answer to "is it actually done?" is always a yes you can check, not a yes you take on faith. The <code>/werk</code> verbs are the interface; underneath — one trace from <code>/pull</code> to the running cdhash, a check per verb, gates that refuse early — exists for exactly one reason: so a green result can't lie. That is the difference between <em>"I built something"</em> and <em>"I can stand behind it"</em> — and standing behind it is what the service is sold on.</p>
+<p>And it is <strong>versioned</strong>. Every line of every session opens with the protocol version all three roles are executing under — the <code>Werk v1.4</code> in this turn's header. That stamp isn't decoration: it's how the team stays in sync. If two roles show different numbers, they've drifted, and that's a defect (#2311). You are inside Werk before you have pulled a single card — the protocol is the ground the whole session stands on, and the card pipeline is where it turns that ground into shipped, proven value.</p>
+<p><strong>Where value gets realized — Building and Proving:</strong> the upstream steps (shaping · designing · directing) produce <em>intent</em>; value is only <em>realized</em> when intent becomes running, verified software. That happens in two steps, and Werk owns the execution of both: <strong>Building</strong> (turning shaped/designed/directed work into running software on <code>main</code> — Werk's canonical anchor, <code>chorus:werk</code> · atStep Building) and <strong>Proving</strong> (<code>werk-demo</code> → GO (accept, #3311) — the work shown working and accepted with a coherent receipt). Building makes it <em>real</em>; Proving makes it <em>true</em>. The verbs map straight onto the two: pull→commit→push→build = Building; test→review→demo→GO (merge·sync·deploy·accept) = Proving.</p>
+<p><strong>How we know it's working — observed, not asserted.</strong> Werk's job is to make output you can <em>stand behind</em>; whether it actually does is measured in <a href="/gathering-docs/observing-value.html">Observing Value</a>, the canonical home for value observation. Werk's contribution is the raw data: it emits the spine events (<code>card.pulled</code> / <code>card.accepted</code> / <code>binary.deployed</code> / error + reopen) the flow metrics compute from — <strong>cycle time</strong>, <strong>lead time</strong>, <strong>escaping defects</strong> (the reactive-card rate), and <strong>MTTR</strong>. The bar: those four trend the right way and false-green acceptances trend to zero. <em>Canonical (Athena v2): <code>chorus:werk</code> · status operating · owner Kade · domains pipelines / version-control / code / tests.</em></p>
+
+<h2>2 &middot; The product</h2>
+<div class="promise">
+<strong>Werk is the execution protocol — how the team turns work into a done, verifiable result.</strong> Its <em>users</em> are the three roles building Chorus and Gathering, and Jeff accepting the work — the operators of the method, not its buyers. The external customer never touches Werk; what they buy is a service Werk makes trustworthy. The promise to the operators: every card that enters leaves as merged source on <code>origin/main</code> with a coherent receipt — one trace, /pull to deployed cdhash. Werk does <em>not</em> build artifacts or run them — that's the sibling <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> (Silas), handed off at the post-/acp release-trigger.
+</div>
+<p>The verb family is the developer interface — <strong>twelve zero-external-dependency Rust binaries</strong> (<code>werk-pull · commit · push · build · test · review · deploy · demo · merge · sync · accept · unpull</code>) plus the shared <strong><code>werk-teardown</code></strong> lib crate (#3431: the one native worktree-teardown implementation, path-dep'd by accept/unpull/commit/push — its zero-external-dep guard test covers all five crates). Each verb: its own flock, typed refusals, witness + spine emit (ADR-032), reachable via typed MCP tools and <code>/pull</code>/<code>/unpull</code>. <strong>The pipeline is ONE workflow file</strong> (<code>werk.yml</code>) run by act as <strong>ONE job, ONE run, GO-at-invoke</strong> (#3499): commit&rarr;push&rarr;build&rarr;test&rarr;review&rarr;deploy-werk&rarr;env-up&rarr;demo (the stop — werk-demo presents and exits), then merge&rarr;sync&rarr;deploy-canonical&rarr;accept gated on the demo verdict's <code>proven</code> output. Interrupted lands RESUME: a re-invoke attaches to the run on record; completed steps report <code>commit.idempotent</code>/<code>push.idempotent</code> (#3632, Tier-1 merge proof shared with werk-teardown) instead of refusing. <strong>GO=accept</strong> (#3311): Jeff's go at the demo IS the acceptance; there is no second accept moment. The <code>chorus_commit</code>/<code>chorus_acp</code> monolith is deleted, not deprecated. One environment (production, live); the per-card werk slot is the demo variant; gh mirrors each verb as a commit-status. Full mechanics: <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> (reconciled #3339).</p>
+
+<h2>3 &middot; Surfaces — how the team leverages Werk</h2>
+<p>The entry points the three roles use to drive work through Werk:</p>
+<ul>
+  <li><strong>The session header</strong> — every response opens with <code>Werk v1.4</code>: the protocol version all three roles execute under, refreshed each turn and drift-checked across roles (#2311). The most-seen surface of all — present from session start, before any card.</li>
+  <li><strong>The verbs + the one trigger</strong> — <code>/pull</code> (card to WIP + fresh werk), <code>chorus_werk</code> (run the pipeline to the demo stop; <code>go:true</code> on your GO lands it end-to-end), <code>/unpull</code>. The primary developer interface.</li>
+  <li><strong>The proving surfaces</strong> — 5 demo gates (product/code/quality/arch/ops) run as Explore subagents in demo prework + the cold-eyes review (one adversarial agent, diff+AC only, anti-ceremony-guarded — #3193); recorded on the witness; <code>werk-demo</code> refuses to present un-gated (#3284). The cockpit shows verbs · gates · tests · review · variant at the go/no/more decision.</li>
+  <li><strong>MCP write-paths</strong> — one typed tool per verb (<code>werk-pull</code> … <code>werk-review</code>) + <code>chorus_werk</code>; old <code>chorus_*_card</code> names are deprecation aliases (ADR-031). The surface is PINNED by a contract test — adding a verb is a conscious pin edit (#3329).</li>
+  <li><strong>GitHub</strong> — the PR + per-verb commit-status checks (<code>chorus/pull..accept</code>); the source-of-truth + process-holder surface.</li>
+  <li><strong>The spine</strong> — <code>card.pulled</code> / <code>card.demoed</code> / <code>card.accepted</code> + build/deploy events; the observability surface, queryable by card or trace.</li>
+  <li><strong>The board</strong> — the cards CLI (the cards-runner is Wren's, consumed from The Clearing) — where work enters and exits.</li>
+</ul>
+
+<h2>4 &middot; Supporting domains</h2>
+<p>Werk decomposes into four domains. <strong>UP:</strong> Werk is a top-level <code>chorus:Product</code> (Jeff's 2026-07-12 ruling; the live graph already serves it that way — the earlier "transitional <code>hasSubProduct</code>" note is retired). <strong>DOWN:</strong> four domains via <code>hasDomain</code>.</p>
+
+<pre class="mermaid">
+flowchart TD
+  Chorus["Chorus"] -->|hasChild| Werk["Werk — Product<br/>owned by Kade · Building step<br/>(live graph: top-level Product)"]
+  Werk -->|hasDomain| Pipelines["pipelines<br/>1..n instances, owned per-role;<br/>Kade governs the set —<br/>ADRs, act, verb contract"]
+  Werk -->|hasDomain| VCS["version-control<br/>verb binaries, ephemeral werks,<br/>guards, conflict-hold, recovery verbs"]
+  Werk -->|hasDomain| Code["code<br/>quality rules, lint, complexity,<br/>dup-string, no-warn-tier"]
+  Werk -->|hasDomain| Tests["tests<br/>TDD discipline, hermetic-by-default,<br/>integration-gated-explicitly"]
+  Werk -.->|consumes| BD["build+deploy<br/>(sibling — Silas)"]
+  classDef op fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef bld fill:#fef9c3,stroke:#854d0e,color:#854d0e;
+  classDef anchor fill:#ede9fe,stroke:#7c3aed,color:#5b21b6;
+  classDef sibling fill:#e0e7ff,stroke:#3730a3,color:#3730a3;
+  class Chorus,Werk anchor;
+  class VCS op;
+  class Code,Tests,Pipelines bld;
+  class BD sibling;
+</pre>
+<p class="caption">Werk → four Domains via <code>hasDomain</code>; Werk <code>consumes</code> Build+Deploy across the post-accept boundary (dashed — cross-cutting dependency, not containment). <strong>The structure stops at domains on purpose</strong> — each domain's services/verbs are the specific, carded work in the v2 cards + the <a href="/designing/docs/ci-pipeline-service-design.html">ci-cd</a> / <a href="/designing/docs/version-control-service-design.html">version-control</a> service-designs, not re-asserted here. Purple = product anchor · green = operating · yellow = building.</p>
+
+<h2>The four Domains</h2>
+
+<h3>pipelines <span class="t-bld">BUILDING</span></h3>
+<p><strong>What it is:</strong> a domain of <strong>1..n pipeline instances</strong>, owned per-role — the ci-cd/build pipeline is Kade's; the <strong>cards-runner</strong> (the Next→WIP→Demo→Done card lifecycle) is Wren's; build+deploy is Silas's. <strong>Promise (set-governance): Kade governs how the set behaves, not the instances</strong> — every pipeline is uniform via the frameworks: the verb contract (ADR-032), atomic execution + the human prod-gate (ADR-037), one build/deploy path (ADR-036), resource/verb/grain (ADR-031), <code>act</code> as the runner of the ONE <code>werk.yml</code>, typed refusals, and one commit-status check per verb. <em>(ADR-033 was never landed; its act-as-orchestrator framing is retired.)</em> Each instance conforms to the set's contracts; each owner builds their own.</p>
+<p><strong>Set-governance owner:</strong> Kade — frameworks, ADRs, <code>act</code>, contracts; NOT the individual instances (cards-runner is Wren's, build+deploy is Silas's). <strong>Design doc (the specifics):</strong> <a href="/designing/docs/ci-pipeline-service-design.html"><code>ci-pipeline-service-design.html</code></a> — the ci-cd instance: <code>act</code>, the verb binaries, the v8 model.</p>
+<p><strong>Shipped (as of 2026-07-12):</strong> the full 12-binary verb spine live; ONE-run GO-at-invoke <code>werk.yml</code> (#3499); GO=accept (#3311); --atomic across the family (#3294–#3297); <strong>werk-test flipped BLOCKING</strong> (#3190) and model-driven (#3634); resume-aware step dispositions (#3632); native teardown via the shared werk-teardown crate (#3431); detached-run store + WERK_EXIT reconcile (#3458); detached daemon self-deploy (#3320/#3323); <code>cargo-test-verbs</code> CI job; shape pinned by <code>werk-pipeline-shape.test.sh</code>.</p>
+<p><strong>Gaps (headline, in product-frame):</strong></p>
+<ul>
+  <li><strong>Try before you buy — CLOSED.</strong> Every card deploys to its werk slot and demos live before the GO; Jeff accepts only what he watched run.</li>
+<li><strong>Receipts reconcile — CLOSED.</strong> One shared trace threads both pipeline halves and every verb's witness (<code>ops/logs/werk-*.jsonl</code> + spine); the BSD-date corruption fixed (#3266).</li>
+<li><strong>Deployed-equals-running — CLOSED.</strong> werk-deploy verifies by installed content/cdhash (#3222/#3232); <code>deploy.cdhash.matched</code> is the proof event.</li>
+<li><strong>werk-test as a gate — CLOSED</strong> (#3190 blocking; #2530 quarantine governed-middle; #3634 model-driven plan + TestSuiteRun write-back). Remaining tail: runner-env write-token provisioning (#3619 lane) and the <code>?limit=10000</code> fetch ceiling (noted on #3634).</li>
+</ul>
+<p>Downstream gaps tracked: drift lane, sensor consumer registry, run-tests contract, ratchet drift signal, infra-card demo adapter. (Closed since the 2026-05-16 draft: KNOWN_FAILS allowlist Done; GHA org-billing alert Won't-Do.)</p>
+
+<h3>version-control <span class="t-op">OPERATING</span></h3>
+<p><strong>Promise:</strong> source state on <code>origin/main</code> is the only truth; every mutation flows through the verb binaries (<code>werk-commit</code>/<code>push</code>/<code>merge</code>) carrying card + trace; werks are ephemeral per-card worktrees (#2913), never branch-swapped in place; a rebase conflict HOLDS for <code>--continue</code>/<code>--abort</code> (#3304); a dropped land resumes by content-verify (#3336); recovery is verbs, not heroics (<code>werk-sync repair|recover</code>, <code>werk-unpull</code>).</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> <a href="/designing/docs/version-control-service-design.html"><code>version-control-service-design.html</code></a> (reconciled #3339) — the verb binaries, ephemeral werks, guards, enforcement boundaries.</p>
+<p><strong>Shipped:</strong> the commit→push→merge→accept verb chain with checks inside the verbs (the standalone hook era is over); ephemeral per-card worktrees; conflict hold/continue/abort (#3304); merge-by-oid + content-verify idempotency (#3175/#3336); GO=accept finalize (#3311); <code>werk-sync</code>/<code>werk-unpull</code> recovery verbs (#3300/#3299); end-to-end trace propagation.</p>
+<p><strong>Gaps:</strong> three-domain rollback across version-control / build / deploy (named in Build+Deploy doc as structurally hard, no card). Shared-HEAD race on canonical accepted-residual — closed. Same-role wrong-card commit-time defense was declined Won't-Do; the ephemeral-werk model (one worktree per card, branch named for the card) structurally narrows that class. Open: phantom git-queue references in guard deny-text (#3290, Silas).</p>
+
+<h3>code <span class="t-bld">BUILDING</span></h3>
+<p><strong>Promise:</strong> staged code that reaches a commit is type-clean, lint-clean below thresholds, free of duplicate-string accretion (≥5), and below cognitive-complexity 12 — refused at the pre-commit boundary, not at review.</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> <a href="/designing/docs/quality-service-design.html"><code>quality-service-design.html</code></a> (reconciled #3339; the .md twin is a stub) — gates model, test-value taxonomy, lint + complexity rules.</p>
+<p><strong>Shipped:</strong> sonarjs error tier wired in pre-commit (no-duplicate-string threshold 5, cognitive-complexity threshold 12), magic-comment override (<code>// cog-override: &lt;reason&gt;</code>) emits audit event. No-warn-tier convention asserted.</p>
+<p><strong>Gaps:</strong> no-warn-tier convention is not self-enforced — nothing today refuses a contributor adding a <code>warn</code>-tier rule. Trust audit for pre-merge maturity (claim that "trust burden moved to pre-merge" needs a check that pre-merge isn't quietly weakening) is uncarded. Ratchet drift signal still planned — baseline accretion only caught via manual audit.</p>
+
+<h3>tests <span class="t-bld">BUILDING</span></h3>
+<p><strong>Promise:</strong> tests describe the experience the card was filed to fix, not internal state; pre-commit runs hermetic tier only; integration tier is explicitly gated and runs in /demo. AC items become test cases before code. (DEC-1674.)</p>
+<p><strong>Owner:</strong> Kade. <strong>Design doc (the specifics):</strong> <a href="/designing/docs/tests-service-design.html"><code>tests-service-design.html</code></a> (#3473) — declared governed properties as the model, scanner&rarr;declared convergence, werk-test staging.</p>
+<p><strong>Shipped:</strong> hermetic-by-default discipline named as principle and enforced in pre-commit (cargo test --lib --bins / jest scope). Integration tests gated in /demo. TDD discipline written into CLAUDE.md (DEC-1674).</p>
+<p><strong>Shipped since the draft (2026-06-10, #3324 program):</strong> the test-value taxonomy written + applied with teeth (119 verb-crate tests classified, 20 deleted; ledger at <code>proving/verb-test-matrix.md</code>); PATH-shim hermetic-by-construction e2e as the house pattern; synthetic-traffic isolation (#3329); <code>cargo-test-verbs</code> CI tier.</p>
+<p><strong>Shipped since (the 2026-07 close of the §6 loop):</strong> the tests domain API is LIVE and CONSUMED — 4,617 <code>Test</code> instances with <code>covers</code> edges serve from owl-api <code>/tests</code>; <strong>werk-test derives its run plan from them</strong> (#3634: covers-based blast radius, UNION-with-legacy so the gate can never weaken, degradation to legacy lanes always a witnessed <code>test.plan.degraded</code>) and <strong>writes a TestSuiteRun back per run</strong> (fail-open, every skip witnessed). Quarantine reads the same surface (#2530). <strong>Remaining gaps:</strong> per-test-grain <code>TestResult</code> ingestion (suite grain only today); write-token provisioning in the runner env (#3619); the pure-blast-radius flip (drop the legacy union) once a week of model-plan runs proves it.</p>
+
+<h2>5 &middot; Domains → services</h2>
+<p>Each domain composes into the services/verbs that actually run. Those are the specific, carded work — specified in their own docs, not re-asserted here (and TO-BE as Athena <code>hosts</code> graph instances, per Path-to-close #5):</p>
+<ul>
+  <li><strong>pipelines</strong> → the v2 verb binaries + <code>act</code> orchestration — <a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> + the v2 cards.</li>
+  <li><strong>version-control</strong> → the verb binaries (commit/push/merge/sync/unpull), ephemeral werks, guards — <a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> (reconciled #3339).</li>
+  <li><strong>code</strong> → lint + complexity gates, blast-radius tooling — <a href="/designing/docs/quality-service-design.html">quality-service-design.html</a> (reconciled #3339).</li>
+  <li><strong>tests</strong> → jest / cargo / bats — no service-design yet (the domain's first need).</li>
+</ul>
+
+<h2>Card &harr; artifact coherence</h2>
+<p>The pipelines domain holds 1..n instances; the <strong>card pipeline is Wren's cards-runner</strong> (Werk consumes it to drive a card Next→WIP→Demo→Done). The <strong>artifact lifecycle</strong> is not a peer pipeline — it's a coherence concern: the card and the artifact lifecycle share one source-of-truth (the card + its commits), but they observe different state and emit different events, and the two must stay reconciled or the graph drifts behind reality.</p>
+
+<table>
+<tr><th>Stage</th><th>Card pipeline state</th><th>Artifact lifecycle event (Athena status)</th><th>Spine events Werk emits</th></tr>
+<tr><td>/pull</td><td>Next → WIP</td><td>artifact: no change (still <code>exploring</code> or <code>building</code>)</td><td><code>card.pulled</code></td></tr>
+<tr><td>code + tests</td><td>WIP</td><td>—</td><td><code>commit.queued</code>, <code>commit.completed</code> (per commit)</td></tr>
+<tr><td>werk-build + werk-deploy (werk slot)</td><td>WIP</td><td>—</td><td><code>build.preview.completed</code>, <code>deploy.preview.completed</code></td></tr>
+<tr><td>werk-demo</td><td>WIP → Demo</td><td>—</td><td><code>gate.*.passed</code>, <code>card.demoed</code></td></tr>
+<tr><td>GO (werk-accept)</td><td>Demo → Done</td><td>artifact: <code>building</code> → <code>operating</code> (if card declares it)</td><td><code>card.accepted</code>, <code>release.triggered</code></td></tr>
+<tr><td>post-merge</td><td>Done</td><td>artifact status now in effect</td><td><code>build.completed</code>, <code>binary.deployed</code>, <code>deploy.completed</code></td></tr>
+</table>
+
+<p><strong>The coherence claim:</strong> a card that touches a Service (e.g., quality-service, version-control-service) must declare whether its acceptance advances that Service's <code>chorus:status</code>. If the card is moving <code>building → operating</code>, acceptance writes that triple through the Athena API as part of the land. If the card doesn't move status, that's stated explicitly (a maintenance card on an <code>operating</code> service stays operating). Today: no enforcement — artifact status drifts behind reality. Path to close named below.</p>
+
+<h2>Coherence findings — synthesis</h2>
+<div class="finding"><strong>1. Two of the four Domains have service-designs; two don't.</strong> Version-control and pipelines have canonical docs and graph instances. Code has a markdown service-design that lags behind the wired pre-commit rules. Tests closed this gap: <code>tests-service-design.html</code> shipped (#3473) and the domain serves 4,617 Test instances from owl-api, consumed by werk-test (#3634). Code's markdown service-design lagging the wired pre-commit rules is the remaining doc gap.</div>
+<div class="finding"><strong>2. Werk-the-product is the locus where work-as-product and the artifact lifecycle meet.</strong> Athena gives the structural model; Werk runs the assembly line that produces instances of that model. Each accepted card must advance the artifact lifecycle in step with the card pipeline or the graph drifts behind reality.</div>
+<div class="finding"><strong>3. The pipelines domain's biggest gaps are product gaps, not infrastructure gaps.</strong> Customers can't try before they buy (werk-build + werk-deploy pre-accept — shipped: the werk slot IS the try); receipts don't reconcile (card_id across launchd); the brand promise isn't measurable (no deployed-equals-running). The CI/CD service-design's gap list reads as a punch list; under Werk-as-product framing, these are headline customer-experience defects.</div>
+<div class="finding"><strong>4. Werk does not own build+deploy.</strong> The post-accept release-trigger is the handoff line. Build+Deploy is a sibling under Silas. Werk's responsibility ends at "card accepted, commit on origin/main, trace_id propagating into the build pipeline."</div>
+
+<h2>Alternatives considered &amp; risks</h2>
+<p><strong>Rejected approaches (why this shape):</strong></p>
+<ul>
+  <li><strong>The <code>chorus_commit</code> / <code>chorus_acp</code> monolith</strong> — opaque, no per-step state. Rejected for per-verb binaries under the verb contract (ADR-032): each verb is testable, refusable, and carries its own gh check.</li>
+  <li><strong>Renaming pipelines → ci-cd (#2720)</strong> — collapsed the governed <em>set</em> into one <em>instance</em>. Reversed: pipelines is the domain (1..n instances); ci-cd is one instance Kade owns.</li>
+  <li><strong>The "two pipelines" framing</strong> — pinned the count at two and mis-typed the artifact lifecycle as a peer pipeline. Replaced by 1..n instances + the card ↔ artifact coherence claim.</li>
+  <li><strong>A preview / staging environment</strong> — rejected: there is one environment (production). <code>demo</code> proves werk code live before <code>acp</code> lands it; no separate stack to drift.</li>
+</ul>
+<p><strong>Risks / failure modes:</strong> the operational risks are the headline gaps in §4 — can't-try-before-you-buy, receipts-don't-reconcile, deployed≠running-unasserted. One structural risk to name outright: <strong>model-mirroring</strong> — because this doc's outline mirrors the Athena containment graph, anything the ontology can't express (cross-domain concerns, alternatives, this risk list itself) has no natural home; this section is the deliberate slack against that blind spot.</p>
+
+<h2>6 &middot; The model layer — query-backwards OWL &rarr; generated domain APIs</h2>
+<p><strong>Jeff's direction (2026-06-11), verbatim intentions:</strong> (1) get werk stabilized, observable — all other chorus work relies on werk; (2) model the OWL for werk so <strong>owl-api can generate APIs for Kade's domains in a deterministic way</strong>; (3) those APIs are really <strong>domain APIs that gather data from the graph via queries</strong>.</p>
+<p>The chain: werk stable+observable &rarr; werk's witnesses/spine events land as graph data &rarr; the OWL models the four domains &rarr; owl-api GENERATES the domain APIs deterministically &rarr; the APIs are query surfaces over the graph, never hand-built handlers. This ends the reconcile treadmill structurally: generated surfaces cannot forget to notice that the system changed.</p>
+<p><strong>The authoring rule — query-backwards:</strong> every class and property must map to graph data that exists or has a defined ingestion path (witnesses in <code>ops/logs/werk-*.jsonl</code>, spine events, verb runs, gate results, review verdicts, cards). A class that cannot answer a query is decoration and gets cut. First artifact: <code>roles/kade/ontology/werk-domains.ttl</code> — the four-domain refinement (cicd, version-control, code, tests), each class annotated with its data source and ingestion status. Grain: extends the canonical <code>chorus:</code> model (silas/ontology/chorus.ttl v0.3.0); the IRI-formation layer is explicitly PROVISIONAL pending Silas's #3256 keystone ADR (model-1) so the namespace grain lands once. Consumers: Silas's model program (model-3 reconcile cross-checks; model-5 owl-api generates); <strong>werk-test (#3190) is the first generated-API customer</strong> — it queries the tests domain for which-tests-for-which-card.</p>
+<p><strong>The DE finding that sequences the work:</strong> cicd and version-control are graph-ready today (rich, well-named witness events per verb run, gate, deploy); <strong>tests is not</strong> — no per-test identity, results transient. The tests OWL therefore ships ingestion-path-first or not at all.</p>
+
+<h3 id="owl-model">The model — entities, relationships, properties</h3>
+<p><strong>Generated from: <code>roles/kade/ontology/werk-domains.ttl</code> · 0.2.0-converged-2026-06-11</strong> — this section renders the model; it never forks it. <strong>The converged contract (2026-06-11):</strong> fold = query = endpoint; <span style="background:#e0e7ff;color:#3730a3;padding:1px 5px;border-radius:3px">authored</span> facets get CRUD via the domains API (SHACL-validated); <span style="background:#d1fae5;color:#065f46;padding:1px 5px;border-radius:3px">derived</span> folds get GETs only — the crawler is their sole writer, through the DAL (#3257), with <code>mintKey</code> read from this file (no code registry). Green = ingestible today · red = needs-identity (ingestion contract — fills at #2818/#2819).</p>
+<pre class="mermaid">
+flowchart TB
+  CARD(["Card"])
+  SCEN(["Scenario (authored)"]):::auth
+  subgraph SPINE["shared spine"]
+    VR["VerbRun"]; TR["TypedRefusal"]; WIT["Witness"]
+  end
+  subgraph CICD["cicd"]
+    PR2["PipelineRun"]; GR["GateResult"]; RV["ReviewVerdict"]; DV["DemoVerdict — the GO"]; DEP["Deployment {cdhash}"]
+  end
+  subgraph VC["version-control"]
+    WS["WerkSlot"]; ME["MergeEvent"]; CH["ConflictHold"]; RA["RecoveryAction"]
+  end
+  subgraph CODE["code"]
+    SF["SourceFile {filePath}"]; CD["CardDiff"]; QF["QualityFinding"]
+  end
+  subgraph TESTS["tests — ingestion-first"]
+    T["Test {filePath+testName} ⚠"]; TSR["TestSuiteRun"]; TRES["TestResult ⚠"]
+  end
+  CARD -->|hasVerbRun| VR
+  VR -->|refusedWith| TR
+  VR -.->|written to| WIT
+  CARD -->|hasGateResult| GR
+  CARD -->|hasReviewVerdict| RV
+  CARD -->|hasDemoVerdict| DV
+  DV ==>|"GO=accept #3311"| ME
+  CD -->|changed paths| SF
+  T -->|inFile| SF
+  T -->|"covers — the werk-test edge"| SD(["SubDomain"])
+  SCEN -->|"verifiedBy — intent bound to proof"| T
+  T -.-> TRES
+  TRES -.-> TSR
+  classDef ok fill:#d1fae5,stroke:#065f46,color:#065f46;
+  classDef gap fill:#fee2e2,stroke:#991b1b,color:#991b1b;
+  classDef auth fill:#e0e7ff,stroke:#3730a3,color:#3730a3;
+  class VR,TR,WIT,PR2,GR,RV,DV,DEP,WS,ME,CH,RA,CD,QF,TSR,SF ok;
+  class T,TRES gap;
+</pre>
+<h4>Entities (18 classes)</h4>
+<table><tbody><tr><th>Class</th><th>Domain</th><th>What it is</th><th>Mint key</th><th>Provenance</th><th>Status</th></tr>
+<tr><td><code>VerbRun</code></td><td>spine</td><td>One execution of a werk verb binary for a card: started/completed/refused, with trace, role, exit disposition. THE atom of werk observability.</td><td><code style="font-size:0.85em">("traceId" "verb" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>TypedRefusal</code></td><td>spine</td><td>A verb's typed refusal: reason drawn from that verb's taxonomy (e.g. no-werk, wrong-status, no-open-pr, gates-missing, no-ac, dirty-floor-inputs, ceremony-rejected).</td><td><code style="font-size:0.85em">("traceId" "verb" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Witness</code></td><td>spine</td><td>An append-only jsonl evidence stream owned by one verb (ops/logs/werk-&lt;verb&gt;.jsonl). The durable record a resume/recovery reads.</td><td><code style="font-size:0.85em">("verb")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>PipelineRun</code></td><td>cicd</td><td>One act dispatch of werk.yml for a card: the prove job (go!=true) or the land job (go=true). Brackets a set of VerbRuns under one trace.</td><td><code style="font-size:0.85em">("traceId" "job")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>GateResult</code></td><td>cicd</td><td>One recorded demo gate (product|code|quality|arch|ops): pass/fail + findings. Five required to present (#3284).</td><td><code style="font-size:0.85em">("cardId" "gate" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>ReviewVerdict</code></td><td>cicd</td><td>The cold-eyes review outcome (#3193): floor findings (review.floor) + agent verdict (review.verdict pass|fail with specific findings). Anti-ceremony-guarded at the recorder.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>DemoVerdict</code></td><td>cicd</td><td>The human decision of record: pass/fail + prover + decision (go). GO=accept (#3311) — this verdict is what werk-accept finalizes against.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Deployment</code></td><td>cicd</td><td>EXTENDS the canonical chorus:Deployment: a werk deploy event carries cdhash proof that deployed==running (#3222/#3232). Target: werk slot or canonical.</td><td><code style="font-size:0.85em">("binary" "cdhash")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>WerkSlot</code></td><td>version-control</td><td>An ephemeral per-card worktree (chorus-werk/&lt;role&gt;-&lt;card&gt;/, branch &lt;role&gt;/&lt;card&gt;), born on pull, removed on accept (#2913). Never branch-swapped in place.</td><td><code style="font-size:0.85em">("role" "cardId")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>MergeEvent</code></td><td>version-control</td><td>A squash-merge to main: PR resolved by HEAD oid (#3175), content-verified, idempotent on already-landed (#3336). Carries the approval {accepter, what, when} (#3297).</td><td><code style="font-size:0.85em">("cardId" "sha")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>ConflictHold</code></td><td>version-control</td><td>A rebase conflict held for in-verb resolution (#3304): markers in the werk, disposition held → continued|aborted.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>RecoveryAction</code></td><td>version-control</td><td>A canonical repair/recover or an unpull: the recovery-is-verbs surface (werk-sync #3300, werk-unpull #3299).</td><td><code style="font-size:0.85em">("ts" "kind")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>CardDiff</code></td><td>code</td><td>The merge-base diff of a card's werk vs origin/main (survives squash): changed files, changed units (crates/services), removed public symbols. Computed identically by deploy/review (the deploy_canonical commands).</td><td><code style="font-size:0.85em">("cardId" "sha")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-computed</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>QualityFinding</code></td><td>code</td><td>An objective code-quality signal on a card: floor findings (unchecked AC, src-without-test, removed-pub-symbol survivor check), lint/complexity refusals at commit, cog-override uses.</td><td><code style="font-size:0.85em">("cardId" "ts" "kind")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>SourceFile</code></td><td>code</td><td>ONE source file with durable identity: its repo-relative path (the IRI mint key per ADR-040 Rule 0: (SourceFile, path)). The crawler-lane noun the code domain joins through — CardDiff names paths, QualityFinding points at file:line, BlastRadius resolves symbols to files.</td><td><code style="font-size:0.85em">("filePath")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>Test</code></td><td>tests</td><td>ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818).</td><td><code style="font-size:0.85em">("filePath" "testName")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-crawl</span></td><td><span class="tag-missing">needs-identity</span></td></tr>
+<tr><td><code>TestSuiteRun</code></td><td>tests</td><td>A suite execution for a card (pipeline test step) or nightly (com.chorus.nightly-suites): pass/fail at suite grain.</td><td><code style="font-size:0.85em">("cardId" "ts")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-real">ingestible</span></td></tr>
+<tr><td><code>TestResult</code></td><td>tests</td><td>One Test's outcome in one run — the grain werk-test and flake-quarantine (#2530) need. Requires Test identity first.</td><td><code style="font-size:0.85em">("filePath" "testName" "runTs")</code></td><td><span style="background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:3px;font-size:0.75em;font-weight:600">derived-sweep</span></td><td><span class="tag-missing">needs-identity</span></td></tr>
+</tbody></table>
+<h4>Relationships (8 object properties)</h4>
+<table><tbody><tr><th>Property</th><th>Domain &rarr; Range</th><th>Meaning</th></tr>
+<tr><td><code>hasVerbRun</code></td><td><code>Card</code> &rarr; <code>VerbRun</code></td><td>Card → each verb execution in its lifecycle, ordered by ts on the shared trace.</td></tr>
+<tr><td><code>refusedWith</code></td><td><code>VerbRun</code> &rarr; <code>TypedRefusal</code></td><td></td></tr>
+<tr><td><code>hasGateResult</code></td><td><code>Card</code> &rarr; <code>GateResult</code></td><td></td></tr>
+<tr><td><code>hasReviewVerdict</code></td><td><code>Card</code> &rarr; <code>ReviewVerdict</code></td><td></td></tr>
+<tr><td><code>hasDemoVerdict</code></td><td><code>Card</code> &rarr; <code>DemoVerdict</code></td><td></td></tr>
+<tr><td><code>inFile</code></td><td><code>Test</code> &rarr; <code>SourceFile</code></td><td>Test → the SourceFile that declares it. The join CardDiff uses: changed paths → SourceFiles → Tests in/covering them.</td></tr>
+<tr><td><code>covers</code></td><td><code>Test</code> &rarr; <code>SubDomain</code></td><td>Test → the domain/unit it proves. THE edge werk-test queries (which-tests-for-which-card = card's changed units → covering tests). Populated by #2818 tagging.</td></tr>
+<tr><td><code>verifiedBy</code></td><td><code>Scenario</code> &rarr; <code>Test</code></td><td>Authored intent bound to derived proof: a Scenario (core class, authored via the domains API) is verified by the Tests that exercise it. The completeness story's load-bearing edge; werk-test's eventual which-scenarios-does-this-card-threaten query.</td></tr>
+</tbody></table>
+<h4>Properties (6 datatype properties)</h4>
+<table><tbody><tr><th>Property</th><th>On &rarr; Type</th><th>Meaning</th></tr>
+<tr><td><code>traceId</code></td><td><code>VerbRun</code> &rarr; string</td><td>The shared trace threading both pipeline halves (CHORUS_TRACE_ID).</td></tr>
+<tr><td><code>cdhash</code></td><td><code>Deployment</code> &rarr; string</td><td>The signed binary identity that survives TCC; the deployed==running discriminator.</td></tr>
+<tr><td><code>filePath</code></td><td><code>(shared)</code> &rarr; string</td><td>Repo-relative path. On SourceFile it IS the identity; on Test it is half the identity (filePath + testName); on QualityFinding it locates the finding. Deliberately no rdfs:domain — shared across the file-anchored classes.</td></tr>
+<tr><td><code>testName</code></td><td><code>Test</code> &rarr; string</td><td>The test's declared name within its file. Identity = (filePath, testName) — the IRI mint key for Test.</td></tr>
+<tr><td><code>pyramidLayer</code></td><td><code>Test</code> &rarr; string</td><td>unit | integration | e2e | bdd — declarative, replacing filename inference (quality design gap 7).</td></tr>
+<tr><td><code>validityClass</code></td><td><code>Test</code> &rarr; string</td><td>The #3324 taxonomy class — making test-value queryable, not a one-time audit.</td></tr>
+</tbody></table>
+
+<h4>Constraints (22 SHACL shapes — written with the model, not after)</h4>
+<p>The rule (Jeff, 2026-06-11): <strong>every class's shape requires at least its mint-key properties</strong> — identity is never optional (PK discipline) — and <strong>every edge carries <code>sh:class</code></strong> (the FK check: <code>covers</code> must point at a real SubDomain, <code>inFile</code> at a real SourceFile, <code>ofTest</code> at a real Test). Enforced by the DAL at <em>write time</em> with typed refusals, because SPARQL fails silently on broken chains — the write path is the only place referential integrity exists. Relational rigor, relocated entirely to the write side.</p>
+
+<h2>OWL + SHACL — conformance to Athena v2</h2>
+<p>This product adds no new structural classes. It uses Athena's <code>chorus:Product</code> / <code>chorus:Domain</code> / <code>chorus:Service</code> with the recursive containment model. The Werk-specific shape is:</p>
+
+<pre><code># Werk Product instance (AS-IS in the live graph; uses Athena schema)
+chorus:werk-product
+  a chorus:Product ;
+  chorus:label "Werk" ;
+  chorus:comment "The engineering pipeline — card in Next to merged source on origin/main." ;
+  chorus:ownedBy chorus:kade ;
+  chorus:vision "Typed contracts at every boundary; every card a coherent SKU." ;
+  chorus:valueProposition "Every accepted card advances both card-pipeline and artifact-lifecycle coherently, with one trace from /pull to deployed cdhash." ;
+  chorus:audience "roles building Chorus and Gathering" , "Jeff (customer of accepted work)" ;
+  chorus:status "operating" ;
+  chorus:atStep chorus:building-step ;
+  chorus:hasDesignDoc chorus:werk-product-design ;
+  chorus:hasDomain chorus:pipelines ,
+                   chorus:version-control ,
+                   chorus:code ,
+                   chorus:tests ;
+  chorus:consumes chorus:build-and-deploy-service ;
+  chorus:gaps
+ "per-test-grain TestResult ingestion (suite grain lands today via #3634 write-back)" ,
+ "runner-env write-token provisioning for the TestSuiteRun post (#3619)" ,
+ "Artifact-status advance on accept not enforced (graph drifts behind reality)" ,
+ "review step advisory by design (flip pattern; werk-test already flipped #3190)" .</code></pre>
+
+<p>Athena's invariant-rendering claim ("every stored attribute required, no conditional show-if-defined branches") is the design-time twin of Werk's runtime fitness function ("for every commit on origin/main, all step pairs emit started+completed with same card_id"). Same posture, different layer. Werk satisfies Athena's SHACL at write time; Werk's own pipeline satisfies its fitness function at run time. Both gates refuse early.</p>
+
+<h2>Path to close</h2>
+<ol>
+  <li><strong>DONE — tests-service-design.html</strong> (#3473) and the generated tests-domain loop it anticipated (#3634): werk-test queries which-tests-for-which-card and writes runs back. Remaining tail: per-test TestResult grain + write-token provisioning.</li>
+  <li><strong>Card-driven artifact-status advance.</strong> When werk-accept accepts a card that touches a Service, write the artifact-status transition (<code>chorus:status</code>) through the Athena API as part of the commit. Without this, the artifact lifecycle drifts behind reality and Athena's "graph is whole" claim fails.</li>
+  <li><strong>/werk/build + /werk/deploy as pre-/acp act jobs.</strong> The "try before you buy" gap. Designed in ci-pipeline doc, shipped only post-accept today. This is the single highest-impact change to Werk-the-product experience.</li>
+  <li><strong>card_id across the launchd boundary.</strong> Plist env override on the kickstart, OR pipeline-side manifest read. Until this lands, post-accept events fire as <code>role=system</code> and cross-step correlation by card is unbuildable. (Same gap Build+Deploy names as P1 #1.)</li>
+  <li><strong>Werk-domain instances in Athena.</strong> The four Domain instances and their hosted Service instances need to be authored under the recursive-Domain model — today the graph has <code>SubDomain</code> instances mis-typed per Athena's audit. Migration sequenced behind Athena's type-migration card.</li>
+</ol>
+
+<h2>Not in scope</h2>
+<ul>
+  <li><strong>Build + Deploy</strong> (Silas, sibling) — the artifact-production-to-running-state vertical. Werk consumes; doesn't own.</li>
+  <li><strong>Athena schema itself</strong> — Werk conforms to Athena v2, doesn't redefine. The recursive-Domain model and SHACL shapes are upstream decisions.</li>
+  <li><strong>The card system</strong> — Vikunja + cards CLI + the card lifecycle states are Wren's. Werk consumes the card-pipeline state-machine; doesn't define it.</li>
+  <li><strong>Gathering's CI</strong> — lives in <code>jeff-bridwell-personal-site</code> repo; smoke check is its problem (ADR-026 addendum).</li>
+  <li><strong>Quality at runtime</strong> — observability of the running system is Borg's substrate, not Werk's.</li>
+</ul>
+
+<h2>Appendix — card provenance</h2>
+<p>The body keeps the claims; the backing cards live here.</p>
+<ul>
+  <li><strong>v2 verb decomposition:</strong> #3045 (werk-pull, shipped); #3056 commit · #3057 accept · #3061 build · #3062 deploy · #3063 shared-trace · #3064 acp-orchestrator (carded).</li>
+  <li><strong>pipelines (orchestration / CI):</strong> #2933 · #2939 (act + dispatch); #2600 + DEC-2525 (cost-stop); #2527 drift lane · #2528 sensor registry · #2529 run-tests contract · #2496 ratchet drift · #2499 infra-card demo; #2497 KNOWN_FAILS (Done); #2591 GHA billing (Won't-Do).</li>
+  <li><strong>version-control:</strong> #2782 (chorus_commit/acp); #2735 + #2913 (ephemeral werks); #2580 · #2598 · #2625 (pre-merge 1–4); #2931 (trailers); #2943 (idempotent acp); #2944 (stale-base push refusal); #2706 (shared-HEAD, closed); #2641 (same-role wrong-card, Won't-Do).</li>
+  <li><strong>code:</strong> #2603 · #2627 (sonarjs error tier); #2496 (ratchet drift).</li>
+  <li><strong>tests:</strong> #2529 (run-tests contract); #2491 (test isolation); #2493 (sessions.test.ts fail).</li>
+</ul>
+
+<h2>References</h2>
+<p>The work-as-product reframe runs throughout: every card is a SKU, the demo is try-before-buy, the GO is the purchase, the spine is the receipt ledger.</p>
+<ul>
+  <li><a href="/designing/docs/werk-value-stream-design.html">werk-value-stream-design.html</a> — Kade (#3421). The Building-step value-stream instance: the 12-verb cycle, the act/werk.yml engine, sequencing.</li>
+  <li><a href="/designing/docs/werk-review-service-design.html">werk-review-service-design.html</a> — Kade (#3193). The cold-eyes review verb.</li>
+  <li><a href="/designing/docs/tests-service-design.html">tests-service-design.html</a> — Kade (#3473). The tests-domain canonical doc; the model werk-test consumes (#3634).</li>
+  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> — Kade. The source-of-truth slice: chorus_commit / chorus_acp / git-queue / werks / pre-merge surfaces 1–4 / trace propagation through commit trailers.</li>
+  <li><a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> — Kade. The orchestration slice: <code>act</code> as local runner, /werk verb dispatch, pre-merge surface 5, schedule-only main re-run, designed drift lane + sensor consumer registry.</li>
+  <li><a href="/designing/docs/quality-service-design.md">quality-service-design.md</a> — code-quality contracts (lint thresholds, cognitive-complexity, dup-string, no-warn-tier convention).</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — Silas. Sibling; Werk hands off here at the post-/acp release-trigger boundary.</li>
+  <li><a href="/designing/docs/athena-product-design.html">athena-product-design.html</a> — Wren. The structural / SHACL substrate every product uses; Werk conforms rather than redefines.</li>
+  <li><a href="/designing/docs/loom-subproduct-design.html">loom-subproduct-design.html</a> — Wren. Sibling (principles / practices / decisions / policies).</li>
+  <li>ADR-037 — atomic verb execution (the werk pipeline model: verbs-in-sequence, no orchestrator; one env = production; gh = source-of-truth + per-card process-holder; one commit-status per verb). With ADR-036 (one build/deploy path) + ADR-032 (verb contract), this is the live pipeline model. <em>Note (#3393): an earlier draft labeled this "ADR-033"; that number was never written for the pipeline and is now the crawler-decomposition ADR (#3069) — cite ADR-037 for the pipeline.</em></li>
+  <li>ADR-032 — verb contract v1 (per-verb build contract: zero-dep, env contract, shared trace, all-or-nothing rollback).</li>
+  <li>ADR-031 — resource/verb/grain convention (MCP + REST surface bindings).</li>
+  <li>ADR-026 — CI architecture + lock-file policy.</li>
+  <li>DEC-1674 — TDD discipline (AC → tests → code).</li>
+  <li>DEC-2525 — required-checks governance.</li>
+  <li>#2720 — canonical model proposed pipelines-domain → ci-cd; <strong>superseded</strong> — pipelines is the domain (1..n instances), ci-cd is one instance Kade owns. (Cards backing each claim: see the Card-provenance appendix.)</li>
+</ul>
+
+<p class="footer">Reconciled 2026-05-25 — Kade (#3078). Aligned to the v8 pipeline model (ADR-037, atomic verbs) + verb contract (ADR-032) + the v2 verb decomposition; <code>pipelines</code> kept as the domain (1..n instances, governed as a set by Kade — #2720's pipelines→ci-cd rename reversed per Jeff's model); gap list refreshed against the live board (#2497 Done + #2591 Won't-Do removed, #2706 closed). Original draft 2026-05-16.</p>
+
+</body>
+</html>

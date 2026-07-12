@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Werk — Value-Stream Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #7c3aed; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .promise { background: #f5f3ff; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #7c3aed; font-size: 0.9em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #ede9fe; color: #5b21b6; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Werk <span>— Value-Stream Design — the Building-step instance of the api-driven value-stream template</span></h1>
+<p class="date">Kade · 2026-07-12 · #3421 · INSTANCE of <a href="/designing/docs/value-stream-template.html"><code>value-stream-template.html</code></a>, peer to the athena / borg / clearing / convergence / loom instances. Registered in the live graph as <code>value-stream-werk</code>.</p>
+
+<p class="promise"><strong>Werk is how a card becomes proven, running software.</strong> The value stream spans <strong>Building</strong> (pulled → merged source on <code>origin/main</code>) and <strong>Proving</strong> (shown working, accepted on Jeff's GO, deployed, torn down clean). Its engine is the one pipeline — <code>chorus_werk</code> → <code>act</code> → <code>werk.yml</code> → the twelve verb binaries — and its ledger is the spine: one trace from <code>/pull</code> to the running cdhash, so a green result can't lie. The product frame lives in <a href="/designing/docs/werk-product-design.html"><code>werk-product-design.html</code></a>; this doc is the flow.</p>
+
+<h2>1 · The werk-* cycle</h2>
+<p>Twelve verbs, one order, one trace. Each verb is a zero-external-dependency Rust binary with its own flock, typed refusal taxonomy, witness (<code>ops/logs/werk-&lt;verb&gt;.jsonl</code>), and spine emits — the verb IS the contract (ADR-032/ADR-037).</p>
+<pre class="mermaid">
+flowchart LR
+  PULL["werk-pull<br/>card→WIP, fresh werk"] --> CODE["role writes<br/>code + tests"]
+  CODE --> COMMIT["werk-commit<br/>local commit + rebase"]
+  COMMIT --> PUSH["werk-push"] --> BUILD["werk-build<br/>(werk slot)"]
+  BUILD --> TEST["werk-test<br/>BLOCKING · model-driven"] --> REVIEW["werk-review<br/>cold-eyes floor"]
+  REVIEW --> DEPW["werk-deploy<br/>(werk slot + env-up)"] --> DEMO["werk-demo<br/>THE STOP — go/no/more"]
+  DEMO -->|"proven (GO)"| MERGE["werk-merge<br/>squash to main"] --> SYNC["sync<br/>ff canonical"] --> DEPC["werk-deploy<br/>(canonical)"] --> ACCEPT["werk-accept<br/>Done + native teardown"]
+  DEMO -->|no / more| HOLD["werk preserved<br/>for iteration"]
+</pre>
+<p class="caption">Recovery verbs off the main line: <code>werk-sync repair|recover</code> (canonical recovery), <code>werk-unpull</code> (the /pull inverse). The shared <code>werk-teardown</code> lib (#3431) is the one native teardown implementation under accept/unpull, with the two-tier squash-merge proof (#3014) and orphan propagation (#3498).</p>
+<p><strong>What crosses each seam:</strong> pull hands a clean worktree off origin/main on <code>&lt;role&gt;/&lt;card&gt;</code>; commit hands a rebased local sha; push hands the branch to origin + a <code>chorus/push</code> status; build hands signed werk-slot binaries (cdhash); test hands a BLOCKING verdict from the model-derived plan (#3634); review hands advisory floor findings; deploy-werk + env-up hand a live per-card variant; demo hands the witness (gates + gathers + test result + presented round) and STOPS for the human; on GO, merge hands a content-verified main sha, sync ffs canonical, deploy-canonical installs from main and verifies running==built, accept flips the board and tears down. <strong>Resume is first-class</strong> (#3632): a land that dies mid-run re-invokes and skips completed steps via idempotent dispositions instead of dying at them.</p>
+
+<h2>2 · The engine — chorus_werk → act → werk.yml</h2>
+<p>One trigger, one runner, one workflow file — the single generative mechanism of the stream:</p>
+<ul>
+  <li><strong><code>chorus_werk</code> (MCP)</strong> — the ONE pipeline trigger. Spawns <code>act</code> DETACHED (nothing held across the human wait), writes a run record (<code>~/.chorus/werk-runs/&lt;card&gt;.json</code> + <code>.log</code>); re-invoking POLLS: it attaches to a live run, or reads the <code>WERK_EXIT</code> sentinel and reports the terminal phase (#3458). <code>go:true</code> supplies the GO at invoke.</li>
+  <li><strong><code>act</code></strong> — runs the workflow locally (self-hosted map). No orchestration logic beyond "run the steps in order, stop on first failure."</li>
+  <li><strong><code>werk.yml</code></strong> — ONE job (#3499). Steps invoke verbs two ways today: through <code>chorus-mcp-call.sh</code> (commit/push/build/deploy/merge) or as direct binaries (test/review/demo/accept/sync) — a known asymmetry, named as pipeline debt in the product doc. The land steps gate on <code>steps.demo.outputs.proven</code>; the GO is patch-keyed on the witness, so a content-preserving rebase survives and a superseded patch re-demos.</li>
+</ul>
+<p><strong>The stop:</strong> <code>werk-demo</code> presents (cockpit: verbs · gates · tests · review · variant), notifies, and <em>exits</em> — a stopped pipeline, not a held connection. Jeff's go at the demo IS acceptance (GO=accept, #3311, DEC-048 authority in <code>werk-accept</code>).</p>
+
+<h2>3 · Werk's model &amp; the domains it supports</h2>
+<p>The model layer is <code>roles/kade/ontology/werk-domains.ttl</code> (rendered in the product doc §6): 18 classes across the shared spine (VerbRun / TypedRefusal / Witness) and the four domains — <strong>pipelines · version-control · code · tests</strong>. The authoring rule is query-backwards: a class that cannot answer a query from real graph data gets cut.</p>
+<p><strong>The loop is now closed in one domain and the pattern for the rest:</strong> the tests domain serves 4,617 <code>Test</code> instances with <code>covers</code> edges from owl-api; <code>werk-test</code> derives its run plan from them and writes <code>TestSuiteRun</code> instances back (#3634) — declare → consume → record → reflect. Pipelines and version-control are graph-ready (rich witness events per verb run); their ingestion sweep is the open leg.</p>
+
+<h2>4 · Ownership boundary (Werk)</h2>
+<table>
+<tr><th>Werk owns</th><th>Werk consumes (owner)</th></tr>
+<tr><td>The 12 verb binaries + werk-teardown lib; the verb contract; <code>werk.yml</code> + the act run; the demo ceremony; ephemeral per-card werks (#2913); the version-control / code / tests / pipelines domain set (set-governance)</td><td>The cards-runner + board lifecycle (Wren); Build+Deploy post-accept release trigger (Silas); the security envelope + token minting (#3618/#3619, Silas); owl-api generated domain surfaces (Wren); the spine + Loki (Silas)</td></tr>
+</table>
+<p>The boundary line is the post-accept release trigger: Werk's responsibility ends at "card accepted, commit on origin/main, canonical deployed and verified, trace propagating."</p>
+
+<h2>5 · Sequencing — spine first, legs derive</h2>
+<ol>
+  <li><strong>Spine (done):</strong> the verb binaries + one-run pipeline + witnesses + resume dispositions — stable and observable, everything else relies on it.</li>
+  <li><strong>Model legs (in flight):</strong> tests domain closed the full loop (#3634); pipelines/version-control ingestion sweeps derive next, then owl-api generates their domain APIs the same way.</li>
+  <li><strong>Flow hardening (owned tails):</strong> deploy self-clobber health-check + auto-rollback and the fail-closed recovery carve-out (Silas); the yml invocation-shape unification + inline-bash retirement (product doc, pipeline debt); pure blast-radius test selection once the superset week proves out.</li>
+</ol>
+
+<h2>7 · References</h2>
+<ul>
+  <li><a href="/designing/docs/werk-product-design.html">werk-product-design.html</a> — the product frame: domains, surfaces, model layer, gaps.</li>
+  <li><a href="/designing/docs/version-control-service-design.html">version-control-service-design.html</a> · <a href="/designing/docs/ci-pipeline-service-design.html">ci-pipeline-service-design.html</a> · <a href="/designing/docs/quality-service-design.html">quality-service-design.html</a> · <a href="/designing/docs/tests-service-design.html">tests-service-design.html</a> · <a href="/designing/docs/werk-review-service-design.html">werk-review-service-design.html</a> — the per-domain/verb service designs.</li>
+  <li><a href="/designing/docs/build-and-deploy-service-design.html">build-and-deploy-service-design.html</a> — the sibling boundary (Silas).</li>
+  <li><a href="/designing/docs/value-stream-template.html">value-stream-template.html</a> — the generic recipe this doc instantiates (Wren).</li>
+  <li>ADR-032 (verb contract) · ADR-037 (atomic verb execution) · ADR-046 (spine/EmitContract) · DEC-048 (accept authority) · DEC-1674 (TDD).</li>
+</ul>
+
+<p class="footer">Authored 2026-07-12 — Kade (#3421), from the two live-system censuses (verb-reality + doc-inventory) run that day. This is the value-stream design the five peer products already had and werk lacked; the ten former werk docs consolidate here + the product doc, with pointer stubs at their old URLs.</p>
+
+</body>
+</html>
