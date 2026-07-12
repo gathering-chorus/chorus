@@ -28,12 +28,26 @@ pub const GENERATED_FILES: &[&str] = &["knowledge/doc-coherence.md"];
 
 /// The dirty paths from a `status --porcelain` listing that are NOT regenerated
 /// artifacts. Empty ⇒ the werk's only dirt is generated churn, safe to discard.
+/// Assumes porcelain v1's fixed two-char status + space prefix (`XY path`); a
+/// rename line (`R  old -> new`) keeps its arrow form, which can never equal a
+/// GENERATED_FILES entry — renames always read as real dirt (refuse), the safe side.
 pub fn non_generated_dirty(porcelain: &str) -> Vec<String> {
     porcelain
         .lines()
         .filter(|l| l.len() > 3)
         .map(|l| l[3..].trim().to_string())
         .filter(|p| !GENERATED_FILES.iter().any(|g| p == g))
+        .collect()
+}
+
+/// The dirty paths that ARE regenerated artifacts — the subset actually discarded
+/// (witnessed precisely, not as the whole static list).
+pub fn generated_dirty(porcelain: &str) -> Vec<String> {
+    porcelain
+        .lines()
+        .filter(|l| l.len() > 3)
+        .map(|l| l[3..].trim().to_string())
+        .filter(|p| GENERATED_FILES.iter().any(|g| p == g))
         .collect()
 }
 
@@ -178,10 +192,11 @@ pub fn teardown_werk(
         if !dirty.trim().is_empty() {
             let real = non_generated_dirty(&dirty);
             if real.is_empty() {
-                for f in GENERATED_FILES {
+                let discarded = generated_dirty(&dirty);
+                for f in &discarded {
                     let _ = git_out(&werk, &["checkout", "--", f]);
                 }
-                emit("teardown.generated.discarded", &[("files", &GENERATED_FILES.join(","))]);
+                emit("teardown.generated.discarded", &[("files", &discarded.join(","))]);
             } else {
                 return Err(TeardownError::Dirty(format!(
                     "{} has uncommitted changes ({}) — refusing remove (commit, stash, or abandon explicitly)",
