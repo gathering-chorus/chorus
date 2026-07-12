@@ -48,6 +48,11 @@ else
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+
+# #3630 — carry the Fuseki write credential on GSP writes (empty unless
+# FUSEKI_ADMIN_PASSWORD set; harmless until shiro requires auth → deploy-
+# before-require). Same #3566 helper the other writers source.
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"
 ONTOLOGY_GRAPH="${ONTOLOGY_GRAPH:-urn:chorus:ontology}"
 CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
@@ -73,9 +78,9 @@ STAGING="${ONTOLOGY_GRAPH}-staging-deploy"
 # Step 1: load the model SET into a FRESH staging graph (native Turtle via GSP POST
 # — POST merges, so set members accumulate into one staging graph). Clear any
 # leftover staging from a prior aborted run first.
-curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 for ttl in "${MODEL_SET[@]}"; do
-  code=$(curl -s -o /tmp/chorus-model-deploy-resp.txt -w '%{http_code}' -X POST \
+  code=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-deploy-resp.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: text/turtle' --data-binary "@$ttl" \
     "$FUSEKI_GSP?graph=$STAGING" 2>/dev/null) || code="000"
   if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
@@ -120,20 +125,20 @@ if [ "$RETIRE_ABSENT" = "1" ]; then
   if [ "${_stag:-0}" -eq 0 ]; then
     echo "chorus-model-deploy: REFUSING retire — staging has 0 domain subjects (empty/incomplete staging would delete ALL live domains; #3536 guard)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retire-guard-empty-staging" staging=0 2>/dev/null || true
-    curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   RETIRE_CLAUSE=" ; DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?s a ?t ; ?p ?o . FILTER(?t IN (<${NS_CHORUS}Domain>, <${NS_CHORUS}SubDomain>)) } FILTER NOT EXISTS { GRAPH <$STAGING> { ?s ?sp ?so } } }"
 fi
 MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
-ccode=$(curl -s -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
+ccode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
   --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
 if [ "$ccode" != "200" ] && [ "$ccode" != "204" ]; then
   echo "chorus-model-deploy: additive merge staging->ontology failed (http $ccode)" >&2
   head -3 /tmp/chorus-model-copy-resp.txt >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="merge-http-$ccode" 2>/dev/null || true
-  curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
 code="$ccode"
@@ -153,10 +158,10 @@ _missing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
 if [ "${_missing:-0}" -ne 0 ] 2>/dev/null; then
   echo "chorus-model-deploy: OUTPUT-VERIFY FAILED — ${_missing} staged subject(s) absent from <$ONTOLOGY_GRAPH> post-merge (INSERT dropped data; #3536 AC2)" >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-staged-missing" missing="${_missing}" 2>/dev/null || true
-  curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
-curl -s -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 
 # Verify it actually landed — count triples (proof, not assumption).
 n=$(curl -s "$FUSEKI_QUERY" --data-urlencode \

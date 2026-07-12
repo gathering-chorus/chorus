@@ -23,6 +23,11 @@ FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
 CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log"
 ROLE="${ROLE:-$(whoami)}"
 
+# #3630 — carry the Fuseki write credential on writes (empty unless
+# FUSEKI_ADMIN_PASSWORD is set; harmless until shiro requires auth →
+# deploy-before-require). Same #3566 helper the other writers source.
+source "$(dirname "${BASH_SOURCE[0]}")/fuseki-auth.sh"
+
 usage() {
   cat <<EOF >&2
 Usage: write-story.sh "Title" "What he said" "What it tells us" "Where it applies"
@@ -107,7 +112,7 @@ INSERT DATA {
 SPARQL
 )
 
-HTTP_CODE=$(curl -s -o /tmp/write-story-resp.txt -w '%{http_code}' \
+HTTP_CODE=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/write-story-resp.txt -w '%{http_code}' \
   -X POST \
   -H "Content-Type: application/sparql-update" \
   --data-binary "$UPDATE" \

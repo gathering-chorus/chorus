@@ -417,6 +417,36 @@ for port in $LOCALHOST_ONLY_PORTS; do
   fi
 done
 
+# --- 18. Fuseki anon-write LOCK (#3630) — the store must refuse unauthenticated writes ---
+# The 62GB source-of-truth store accepts anonymous localhost writes today (204,
+# proven live 2026-07-09). This probe is the acceptance oracle for #3630: it
+# attempts an UNAUTHENTICATED SPARQL UPDATE into a throwaway graph. If the write
+# SUCCEEDS (2xx) the anon hole is OPEN — a FAILURE that stays red until the LOCK
+# lands and cannot silently reopen. If it's REFUSED (401/403) the LOCK holds.
+# Post-flip the INSERT is refused, so this probe writes NOTHING to the store; it
+# only self-cleans the throwaway graph on the pre-lock path where the write lands.
+ANON_PROBE_GRAPH="urn:chorus:health/anon-write-probe"
+ANON_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+  -X POST "http://localhost:3030/pods/update" \
+  -H "Content-Type: application/sparql-update" \
+  --data-binary "INSERT DATA { GRAPH <${ANON_PROBE_GRAPH}> { <urn:chorus:health/probe> <urn:chorus:health/at> \"deep-health\" } }" 2>/dev/null || echo "000")
+case "$ANON_CODE" in
+  2*)
+    # The anon write landed — the hole is open. Clean up the probe triple (also
+    # anon; it works precisely because the hole is still open).
+    curl -s -o /dev/null --max-time 5 -X POST "http://localhost:3030/pods/update" \
+      -H "Content-Type: application/sparql-update" \
+      --data-binary "DROP GRAPH <${ANON_PROBE_GRAPH}>" 2>/dev/null || true
+    FAILURES+=("fuseki-anon-write: :3030/pods/update accepted an UNAUTHENTICATED write (HTTP ${ANON_CODE}) — the 62GB source-of-truth store's anon-write LOCK is OPEN (#3630). Any local process can mutate the graph with no credential.")
+    ;;
+  401|403)
+    : # refused — the LOCK holds. Healthy.
+    ;;
+  *)
+    WARNINGS+=("fuseki-anon-write-probe: inconclusive (HTTP ${ANON_CODE:-000}) — could not confirm the store rejects anon writes (#3630 oracle). Fuseki reachability is owned by check 0.5/11.")
+    ;;
+esac
+
 # --- Report ---
 # Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
 if [ ${#FAILURES[@]} -gt 0 ]; then
