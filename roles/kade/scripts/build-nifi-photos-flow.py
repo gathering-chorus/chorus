@@ -11,6 +11,7 @@ Flow: source-extraction (per-era SPARQL) → field-merge (Jolt) → validation �
 """
 
 import json
+import os
 import sys
 import urllib.request
 import urllib.parse
@@ -27,7 +28,6 @@ def fuseki_basic_auth_props():
     same env names as the one credential door (platform/scripts/fuseki_auth.py).
     Empty when FUSEKI_ADMIN_PASSWORD is unset, so authoring stays safe pre-flip
     (#3630). Read (query) processors must NOT get these."""
-    import os
     password = os.environ.get("FUSEKI_ADMIN_PASSWORD")
     if not password:
         return {}
