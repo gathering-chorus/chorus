@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # fuseki-shiro-deploy.sh (#3630) — deploy the canonical Fuseki Shiro config to
-# the runtime location, substituting the write credential from the realm env.
+# the runtime location, substituting the write credential from its canonical home.
 #
 # The committed canonical config (launchagents-canonical/fuseki-shiro.ini) carries
 # ${FUSEKI_ADMIN_PASSWORD} as a PLACEHOLDER — never the secret. This step reads the
-# real value from ~/.chorus/secrets/chorus-realm.env (0600, owner-only) and writes
-# the runtime ~/.gathering/data/shiro.ini (also 0600). The password is never echoed
-# and never touches the repo.
+# real value from the gathering app .env (the SAME file the fuseki service and
+# chorus-api-wrapper.sh already source — no new secret home) and writes the runtime
+# ~/.gathering/data/shiro.ini (0600). The password is never echoed, never in the repo.
 #
 # DEPLOY-BEFORE-REQUIRE: this flips :3030 writes to require Basic auth. Every writer
 # must already carry the credential (TS via fusekiWriteAuthFromEnv #3566; shell via
@@ -32,11 +32,20 @@ if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
   exit 1
 fi
 
-# --- substitute ONLY the credential placeholder; write 0600 ---
+# --- substitute ONLY the credential placeholder; write 0600 ATOMICALLY ---
+# (#3630 review, Kade): render to a temp file in the SAME dir, then mv into place.
+# A mid-stream envsubst failure can never truncate/corrupt the live shiro.ini —
+# Fuseki would refuse to start on a half-written config. Live file is only ever
+# replaced by a complete, chmod'd temp via atomic rename.
 render() {
   umask 077
-  envsubst '${FUSEKI_ADMIN_PASSWORD}' < "$CANONICAL" > "$1"
-  chmod 600 "$1"
+  local dest="$1" tmp
+  tmp="$(mktemp "$(dirname "$dest")/.shiro.XXXXXX")" || { echo "render: mktemp failed" >&2; return 1; }
+  if ! envsubst '${FUSEKI_ADMIN_PASSWORD}' < "$CANONICAL" > "$tmp"; then
+    rm -f "$tmp"; echo "render: substitution failed — live config left untouched" >&2; return 1
+  fi
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$dest"
 }
 
 case "${1:-deploy}" in
@@ -57,6 +66,9 @@ case "${1:-deploy}" in
     ;;
   deploy)
     render "$RUNTIME"
+    # #3630 review (Wren): witness the flip operation on the spine.
+    "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/chorus-log" \
+      fuseki.shiro.deployed "${DEPLOY_ROLE:-silas}" runtime="$RUNTIME" writes=authcBasic 2>/dev/null || true
     echo "fuseki-shiro-deploy: wrote $RUNTIME (0600). Fuseki must reload to apply —"
     echo "  launchctl kickstart -k gui/$(id -u)/com.gathering.fuseki   (run on GO; this is the live flip)"
     ;;
