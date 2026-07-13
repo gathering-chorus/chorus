@@ -14,12 +14,14 @@ import * as path from 'path';
 function resolveSecret(): string | null {
   if (process.env.CHORUS_SERVICE_TOKEN_SECRET) return process.env.CHORUS_SERVICE_TOKEN_SECRET;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- env CHORUS_REALM_ENV_PATH (operator-set) or the fixed ~/.chorus/secrets/chorus-realm.env; no user input (#3639)
     const raw = fs.readFileSync(
       process.env.CHORUS_REALM_ENV_PATH ||
         path.join(os.homedir(), '.chorus', 'secrets', 'chorus-realm.env'),
       'utf8'
     );
     for (const line of raw.split('\n')) {
+      // eslint-disable-next-line security/detect-unsafe-regex -- anchored single-line matcher over trimmed env lines; linear, no nested quantifier backtracking (#3639)
       const m = /^(?:export\s+)?CHORUS_SERVICE_TOKEN_SECRET=(.+)$/.exec(line.trim());
       if (m) return m[1].replace(/^["']|["']$/g, '');
     }

@@ -42,6 +42,7 @@ export function fileTaskCache(projectId: number): TaskCache {
     read(): VikunjaTask[] | null {
       if (disabled()) return null;
       try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is cacheDir() (env CARDS_CACHE_DIR or ~/.chorus/cards-cache) + `tasks-${projectId}.json` with a numeric projectId; no user input reaches the path (#3639)
         const raw = fs.readFileSync(file(), 'utf8');
         const parsed = JSON.parse(raw) as { ts: number; tasks: VikunjaTask[] };
         if (!Array.isArray(parsed.tasks)) return null;
@@ -55,11 +56,14 @@ export function fileTaskCache(projectId: number): TaskCache {
     write(tasks: VikunjaTask[]): void {
       if (disabled()) return;
       try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is cacheDir() (env CARDS_CACHE_DIR or ~/.chorus/cards-cache) + `tasks-${projectId}.json` with a numeric projectId; no user input reaches the path (#3639)
         fs.mkdirSync(cacheDir(), { recursive: true });
         // Atomic: concurrent readers see either the old cache or the new one,
         // never a torn file.
         const tmp = `${file()}.${process.pid}.tmp`;
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is cacheDir() (env CARDS_CACHE_DIR or ~/.chorus/cards-cache) + `tasks-${projectId}.json` with a numeric projectId; no user input reaches the path (#3639)
         fs.writeFileSync(tmp, JSON.stringify({ ts: Date.now(), tasks }));
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is cacheDir() (env CARDS_CACHE_DIR or ~/.chorus/cards-cache) + `tasks-${projectId}.json` with a numeric projectId; no user input reaches the path (#3639)
         fs.renameSync(tmp, file());
       } catch {
         // Cache write failure is never an error path — the sweep succeeded.
@@ -68,6 +72,7 @@ export function fileTaskCache(projectId: number): TaskCache {
 
     invalidate(): void {
       try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is cacheDir() (env CARDS_CACHE_DIR or ~/.chorus/cards-cache) + `tasks-${projectId}.json` with a numeric projectId; no user input reaches the path (#3639)
         fs.unlinkSync(file());
       } catch {
         // already absent
