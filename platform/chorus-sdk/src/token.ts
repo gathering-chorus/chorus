@@ -32,8 +32,10 @@ function resolveSecret(): string | null {
   const fromEnv = process.env.CHORUS_SERVICE_TOKEN_SECRET;
   if (fromEnv) return fromEnv;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- realmPath() is env CHORUS_REALM_ENV_PATH (operator-set) or the fixed ~/.chorus/secrets/chorus-realm.env; no user input (#3639)
     const raw = fs.readFileSync(realmPath(), 'utf8');
     for (const line of raw.split('\n')) {
+      // eslint-disable-next-line security/detect-unsafe-regex -- anchored single-line matcher over trimmed env lines; linear, no nested quantifier backtracking (#3639)
       const m = /^(?:export\s+)?CHORUS_SERVICE_TOKEN_SECRET=(.+)$/.exec(line.trim());
       if (m) return m[1].replace(/^["']|["']$/g, '');
     }

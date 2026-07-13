@@ -14,6 +14,9 @@ module.exports = [
   {
     ignores: [
       '**/dist/**',
+      // #3639 — deploy rollback backups (werk-deploy TS-daemon path keeps dist.prev);
+      // built JS with eslint-disable comments stripped is not a lint target.
+      '**/dist.prev/**',
       '**/node_modules/**',
       '**/coverage/**',
       '**/*.d.ts',
