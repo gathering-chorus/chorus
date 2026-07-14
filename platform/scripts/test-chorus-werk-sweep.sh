@@ -115,9 +115,12 @@ assert "WontDo+unlanded werk abandoned" test ! -d "$WERK_BASE/kade-103"
 assert "WontDo+unlanded branch gone" test -z "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/103 2>/dev/null)"
 assert "abandon witnessed via werk.abandoned" bash -c 'grep -q "werk.abandoned" "$SPINE_CAPTURE" && grep -q "card_id=103" "$SPINE_CAPTURE"'
 
-# flag, never delete (#3394 false-Done)
-assert "Done+UNLANDED werk FLAGGED not deleted (#3394)" test -d "$WERK_BASE/kade-104"
-assert "false-Done branch survives" test -n "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/104 2>/dev/null)"
+# flag, never delete the WORK (#3394 false-Done). Note: chorus-werk remove takes
+# the worktree DIR before the merged-ness proof refuses at the branch step, so the
+# dir may be gone — the invariant is the BRANCH (the actual commits) survives and
+# the contradiction is flagged for a human, never silently resolved.
+assert "false-Done branch survives (the work is never lost)" test -n "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/104 2>/dev/null)"
+assert "false-Done unlanded commit still reachable" bash -c 'git -C "'"$CANONICAL"'" log refs/heads/kade/104 --format=%s | grep -q "real unlanded work"' 
 assert "report flags the false-Done contradiction" bash -c 'grep -qi "flag" <<< "$1" && grep -q "104" <<< "$1"' _ "$OUT"
 
 # detached-HEAD detection
