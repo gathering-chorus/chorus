@@ -3,7 +3,9 @@
 // an unreachable API renders an honest failure state, never an empty-but-confident
 // page (#3627 contract). Multi-valued fields arrive as string-or-array (ADR-047
 // additive) — asArray() normalizes.
-const OWL = `http://${location.hostname}:${window.OWL_PORT || 3360}`;
+// #3644 — same-origin via the chorus-api /owl proxy: one base that works on the
+// LAN and through any share/tunnel origin (the old `hostname:3360` broke off-LAN).
+const OWL = '/owl';
 const STEPS_RULED = ['shaping', 'directing', 'designing', 'building', 'proving', 'reflecting'];
 
 async function fetchJSON(path) {

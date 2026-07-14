@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# chorus-share — share a read-only slice of home infra through a tunnel (#3644).
+#
+# Design (DE discussion with Mark Nakib, 2026-07-14): the tunnel provider is
+# interchangeable; the guarantees live in chorus-share-guard.py on OUR side —
+# GET/HEAD only, path allowlist, mandatory per-session basic-auth. The write
+# plane (:3030 Fuseki, :3340 chorus-api) is unreachable BY CONSTRUCTION: the
+# guard only ever forwards GET/HEAD to the one upstream.
+#
+#   chorus-share up [path-prefix ...]   start guard + cloudflared quick tunnel
+#                                       (default share: /)
+#   chorus-share down                   tear both down
+#   chorus-share status                 what's shared right now
+#
+# Provider notes:
+#   - cloudflared quick tunnel: installed, zero-account, URL rotates per share.
+#   - ngrok: same guard fronts it; needs Jeff's authtoken (not configured).
+#     `ngrok http $SHARE_PORT --basic-auth ...` once a token exists.
+#   - durable pages: use a named Cloudflare Tunnel (see the #3644 evaluation).
+#
+# Environment: SHARE_UPSTREAM (default http://localhost:3000), SHARE_PORT (8899).
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GUARD="$SCRIPT_DIR/chorus-share-guard.py"
+RUN_DIR="${CHORUS_SHARE_RUN_DIR:-$HOME/.chorus/share}"
+SHARE_PORT="${SHARE_PORT:-8899}"
+SHARE_UPSTREAM="${SHARE_UPSTREAM:-http://localhost:3000}"
+CLOUDFLARED="${CLOUDFLARED_BIN:-$(command -v cloudflared || true)}"
+
+mkdir -p "$RUN_DIR"
+
+up() {
+  if [ -f "$RUN_DIR/guard.pid" ] && ps -p "$(cat "$RUN_DIR/guard.pid")" >/dev/null 2>&1; then
+    echo "chorus-share: already up — run 'chorus-share status' or 'chorus-share down' first" >&2
+    exit 3
+  fi
+  if [ -z "$CLOUDFLARED" ]; then
+    echo "chorus-share: cloudflared not found (brew install cloudflared)" >&2
+    exit 2
+  fi
+  local allow="${*:-/}"
+  allow="${allow// /,}"
+
+  # per-session credential — printed once, never persisted
+  local user="share" pass
+  pass=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 16)
+
+  SHARE_UPSTREAM="$SHARE_UPSTREAM" SHARE_ALLOW="$allow" SHARE_PORT="$SHARE_PORT" \
+    SHARE_AUTH="$user:$pass" \
+    python3 "$GUARD" >> "$RUN_DIR/guard.log" 2>&1 &
+  echo $! > "$RUN_DIR/guard.pid"
+  sleep 1
+  if ! ps -p "$(cat "$RUN_DIR/guard.pid")" >/dev/null 2>&1; then
+    echo "chorus-share: guard failed to start — $RUN_DIR/guard.log:" >&2
+    tail -3 "$RUN_DIR/guard.log" >&2
+    rm -f "$RUN_DIR/guard.pid"
+    exit 2
+  fi
+
+  "$CLOUDFLARED" tunnel --url "http://127.0.0.1:$SHARE_PORT" > "$RUN_DIR/tunnel.log" 2>&1 &
+  echo $! > "$RUN_DIR/tunnel.pid"
+
+  # quick tunnels print their URL asynchronously — poll the log
+  local url="" i
+  for i in $(seq 1 30); do
+    url=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$RUN_DIR/tunnel.log" | head -1)
+    [ -n "$url" ] && break
+    sleep 1
+  done
+  if [ -z "$url" ]; then
+    echo "chorus-share: tunnel did not come up — $RUN_DIR/tunnel.log:" >&2
+    tail -3 "$RUN_DIR/tunnel.log" >&2
+    down >/dev/null 2>&1
+    exit 2
+  fi
+
+  echo "$allow" > "$RUN_DIR/allow"
+  echo "$url" > "$RUN_DIR/url"
+  echo "chorus-share: UP (read-only, basic-auth)"
+  echo "  url:    $url"
+  echo "  paths:  $allow"
+  echo "  auth:   $user / $pass   (per-session; gone on 'down')"
+  echo "  guard:  GET/HEAD only -> $SHARE_UPSTREAM (write verbs 405, other paths 404)"
+}
+
+down() {
+  local any=0 name pid
+  for name in tunnel guard; do
+    if [ -f "$RUN_DIR/$name.pid" ]; then
+      pid=$(cat "$RUN_DIR/$name.pid")
+      if ps -p "$pid" >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null
+        any=1
+      fi
+      rm -f "$RUN_DIR/$name.pid"
+    fi
+  done
+  rm -f "$RUN_DIR/url" "$RUN_DIR/allow"
+  if [ "$any" = "1" ]; then
+    echo "chorus-share: DOWN (tunnel + guard stopped; credential dead)"
+  else
+    echo "chorus-share: nothing was up"
+  fi
+}
+
+status() {
+  if [ -f "$RUN_DIR/guard.pid" ] && ps -p "$(cat "$RUN_DIR/guard.pid")" >/dev/null 2>&1; then
+    echo "chorus-share: UP"
+    echo "  url:   $(cat "$RUN_DIR/url" 2>/dev/null || echo '?')"
+    echo "  paths: $(cat "$RUN_DIR/allow" 2>/dev/null || echo '?')"
+  else
+    echo "chorus-share: down"
+  fi
+}
+
+case "${1:-}" in
+  up) shift; up "$@" ;;
+  down) down ;;
+  status) status ;;
+  *) echo "usage: chorus-share up [path-prefix ...] | down | status" >&2; exit 2 ;;
+esac
