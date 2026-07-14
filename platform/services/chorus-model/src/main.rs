@@ -49,6 +49,11 @@ fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
                 req.edges.push((prop.to_string(), tkind.to_string(), tname.to_string()));
                 i += 2;
             }
+            "--graph" => {
+                // #3647 — the class's model-declared instance home (owl-api resolves + passes it).
+                req.graph = Some(args.get(i + 1).ok_or("--graph needs a value")?.clone());
+                i += 2;
+            }
             "--dry-run" => {
                 dry = true;
                 i += 1;
@@ -86,7 +91,7 @@ fn run() -> Result<String, String> {
         Some("delete") => {
             let (req, _) = parse_req(&args[1..])?;
             let store = FusekiStore::new();
-            Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name)?))
+            Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref())?))
         }
         Some(verb @ ("link" | "unlink")) => {
             let (req, _) = parse_req(&args[1..])?;
@@ -96,9 +101,9 @@ fn run() -> Result<String, String> {
                 .ok_or(format!("{} needs --edge prop=kind:name", verb))?;
             let store = FusekiStore::new();
             let subject = if verb == "link" {
-                add_edge(&store, &req.kind, &req.name, prop, tkind, tname)?
+                add_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref())?
             } else {
-                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname)?
+                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref())?
             };
             Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
         }

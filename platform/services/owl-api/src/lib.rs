@@ -1174,12 +1174,34 @@ fn dal_run(args: &[String], caller: &str) -> R<()> {
     Err(msg)
 }
 
+/// #3647 — the DAL kind for a class local name: ADR-040 kinds are KEBAB-CASE
+/// (value-stream-step), but the old derivation just lowercased (valuestreamstep)
+/// — chorus-model refused it as unknown-kind (found live in the #3613 drill).
+/// CamelCase → kebab, single implementation, used by every dal_* call-site.
+pub fn kind_of_class(class_local: &str) -> String {
+    let mut out = String::with_capacity(class_local.len() + 4);
+    for (i, c) in class_local.chars().enumerate() {
+        if c.is_ascii_uppercase() {
+            if i > 0 {
+                out.push('-');
+            }
+            out.push(c.to_ascii_lowercase());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// Create/replace an entity via the DAL `add` (full governed upsert: floor + mint
 /// + audit). ownedBy is a field literal owl-api's authZ reads back; DEPLOY_ROLE
-/// stamps the creator.
-fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> R<()> {
+/// stamps the creator. #3647: `graph` = the class's MODEL-DECLARED instance home
+/// (RouteTable.instances_graph — the same value every read + the ownedBy authz
+/// resolve), so create and authz agree on where the entity lives (the orphan fix).
+fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)], graph: &str) -> R<()> {
     let mut args: Vec<String> = vec![
         "add".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+        "--graph".into(), graph.to_string(),
         "--field".into(), format!("ownedBy={}", caller),
     ];
     for (f, v) in props {
@@ -1190,17 +1212,19 @@ fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)]) -> 
 }
 
 /// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
-fn dal_delete(kind: &str, name: &str, caller: &str) -> R<()> {
-    dal_run(&["delete".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string()], caller)
+fn dal_delete(kind: &str, name: &str, caller: &str, graph: &str) -> R<()> {
+    dal_run(&["delete".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+              "--graph".into(), graph.to_string()], caller)
 }
 
 /// Add/remove one edge via the DAL `link`/`unlink` (incremental + referential
 /// integrity + witness). The structural edges (partOf/contains/hasChild) connect
 /// bare-kind entities (Domain/Product), so the subject kind mints the target IRI
 /// identically (mint is kind-independent for bare kinds).
-fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, caller: &str) -> R<()> {
+fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, caller: &str, graph: &str) -> R<()> {
     let verb = if insert { "link" } else { "unlink" };
     dal_run(&[verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+              "--graph".into(), graph.to_string(),
               "--edge".into(), format!("{}={}:{}", prop, kind, tname)], caller)
 }
 
@@ -1487,8 +1511,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // #3468 — DELEGATE to the DAL (link/unlink): incremental edge write with
             // referential integrity + witness. Replaces the raw build_edge_update +
             // sparql_update path so edges ride the ONE governed write path too.
-            let kind = class_local.to_lowercase();
-            match dal_edge(insert, &kind, name, pred, &target, caller_role) {
+            let kind = kind_of_class(class_local);
+            match dal_edge(insert, &kind, name, pred, &target, caller_role, &table.instances_graph) {
                 Ok(_) => {
                     let verb = if insert { "add-edge" } else { "remove-edge" };
                     emit_write_spine(caller_role, verb, name, edge, "ok");
@@ -1502,8 +1526,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         }
         WriteOp::DeleteEntity { name } => {
             // #3468 — DELEGATE to the DAL `delete` (governed, fail-closed, witnessed).
-            let kind = class_local.to_lowercase();
-            match dal_delete(&kind, name, caller_role) {
+            let kind = kind_of_class(class_local);
+            match dal_delete(&kind, name, caller_role, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "delete-entity", name, "", "ok");
                     write_resp("ok", &format!("deleted {} (via DAL)", name))
@@ -1546,8 +1570,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // bypassed all of it (and contradicted owl-api's own read-only contract).
             // ownedBy is passed as a field literal (matches owl-api's authZ read) and
             // DEPLOY_ROLE=caller stamps the creator.
-            let kind = class_local.to_lowercase();
-            match dal_add(&kind, &name, caller_role, &props) {
+            let kind = kind_of_class(class_local);
+            match dal_add(&kind, &name, caller_role, &props, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "create", &name, "", "ok");
                     write_resp("created", &format!("created {} via DAL (ownedBy {})", name, caller_role))
@@ -1579,8 +1603,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // restate the COMPLETE entity (the floor re-applies; omitted edges/fields
             // are not preserved). This unifies replace onto the DAL's one write
             // semantic rather than owl-api's prior partial-update (a competing impl).
-            let kind = class_local.to_lowercase();
-            match dal_add(&kind, name, caller_role, &props) {
+            let kind = kind_of_class(class_local);
+            match dal_add(&kind, name, caller_role, &props, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
                     write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))
@@ -3777,6 +3801,18 @@ mod tests {
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me").as_deref(), Some("wren"));
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me").as_deref(), Some("silas"));
         assert_eq!(role_from_webid("https://example.com/nobody"), None);
+    }
+
+    #[test]
+    fn kind_of_class_maps_camelcase_to_adr040_kebab() {
+        // #3647 — the drill's third find: lowercasing ValueStreamStep produced
+        // 'valuestreamstep', unknown to the DAL's kebab kind table.
+        assert_eq!(kind_of_class("ValueStreamStep"), "value-stream-step");
+        assert_eq!(kind_of_class("ValueStream"), "value-stream");
+        assert_eq!(kind_of_class("Gate"), "gate");
+        assert_eq!(kind_of_class("Domain"), "domain");
+        assert_eq!(kind_of_class("Test"), "test");
+        assert_eq!(kind_of_class("TestSuiteRun"), "test-suite-run");
     }
 
     #[test]
