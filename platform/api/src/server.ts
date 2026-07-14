@@ -1848,6 +1848,31 @@ app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
 
 // crashAlert moved to src/server-helpers.ts (#2205 wave 12); imported above.
 
+// ── owl-api same-origin proxy (#3644) ────────────────────────────
+// The Athena page family fetches the generated model API. Fetching
+// `hostname:3360` directly couples every page to LAN topology and breaks the
+// moment a page is served through any other origin (the share tunnel exposed
+// this: browsers asked share-host:3360, which nothing serves). GET-only proxy;
+// upstream overridable for tests.
+app.use('/owl', async (req: Request, res: Response) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return res.status(405).json({ error: 'owl proxy is read-only (GET/HEAD)' });
+  }
+  // read at request time so tests can stub the upstream after import
+  const owlUpstream = process.env.OWL_UPSTREAM || 'http://127.0.0.1:3360';
+  try {
+    const r = await fetch(owlUpstream + req.originalUrl.replace(/^\/owl/, ''), {
+      headers: { Accept: String(req.headers.accept || 'application/json') },
+    });
+    res.status(r.status);
+    const ct = r.headers.get('content-type');
+    if (ct) res.header('Content-Type', ct);
+    res.send(Buffer.from(await r.arrayBuffer()));
+  } catch {
+    res.status(502).json({ error: 'owl-api unreachable through the proxy' });
+  }
+});
+
 // ── Athena CMDB API ──────────────────────────────────────────────
 // Named SPARQL queries against the Chorus ontology in Fuseki.
 // Access layer for agents — no raw SPARQL, no port guessing.
