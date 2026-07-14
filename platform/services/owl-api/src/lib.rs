@@ -18,6 +18,7 @@ use std::process::Command;
 
 /// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
 pub mod auth;
+pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
@@ -2928,6 +2929,40 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
         eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
     }
+    // #3613 / ADR-052 — the ES256 (Solid-OIDC/CSS) verifier, built ONCE at boot:
+    // issuer from env (deployment config, not per-principal data — §5), the
+    // Principal allow-set resolved from the model in ONE boot query (§5; empty ⇒
+    // ES256 fail-closed while the HS256 dual path keeps existing writers alive),
+    // JWKS fetched via curl with a kid-keyed cache (§2). Warm-fetch warns loudly
+    // on CSS-down-at-boot but never blocks boot.
+    let css_issuer = std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
+    let oidc_allow = oidc::resolve_principal_webids(|q| sparql_json(q).ok());
+    if oidc_allow.is_empty() {
+        eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); every ES256 token will be refused (fail-closed). HS256 legacy path unaffected.");
+    } else {
+        eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved)", oidc_allow.len());
+    }
+    let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+    let oidc_verifier = oidc::OidcVerifier::new(&css_issuer, oidc_allow, move || {
+        let out = Command::new("curl")
+            .args(["-sf", "--max-time", "3", &jwks_url])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+    });
+    let boot_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let warmed = oidc_verifier.warm_fetch(boot_now);
+    if warmed == 0 {
+        eprintln!("owl-api: WARNING — JWKS warm-fetch got 0 keys from {} (CSS down or no keys); ES256 verifies fail-closed until a kid-triggered refetch succeeds.", css_issuer);
+    } else {
+        eprintln!("owl-api: JWKS warm-fetch cached {} key(s) from {}", warmed, css_issuer);
+    }
     // #3494 — composed domain surfaces (the definesVocabulary fan-out): every domain
     // with chorus:repoTarget + definesVocabulary mounts at /<repoTarget>, composing
     // its vocab classes (whose RouteTables are already in `tables` via the serve
@@ -3059,7 +3094,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            let (code, body) = match auth::verify_token(token, &registry, now_secs) {
+            let (code, body) = match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => (
                     401u16,
                     "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
@@ -3116,7 +3151,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            match auth::verify_token(token, &registry, now_secs) {
+            match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => {
                     let (c, t) = write_status("authn-missing");
                     ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
@@ -3145,7 +3180,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 }
             }
         } else {
-            match auth::seam_auth(&path, &header("authorization"), &registry, now_secs, &table.secured) {
+            match oidc::seam_auth_any(&path, &header("authorization"), &registry, &oidc_verifier, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
                 None => {
                     let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
@@ -3153,7 +3188,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     // gates `internal`-exposure fields on an exposure-enforced shape.
                     let ah = header("authorization");
                     let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
-                    let authed = auth::verify_token(tok, &registry, now_secs).is_ok();
+                    let authed = oidc::verify_any(tok, &registry, &oidc_verifier, now_secs).is_ok();
                     handle_meta(&hp, table, authed)
                 }
             }
