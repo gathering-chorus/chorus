@@ -148,13 +148,27 @@ impl FusekiStore {
         Self { endpoint: std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string()) }
     }
     fn curl(&self, path: &str, data_param: &str, body: &str) -> R<String> {
+        // #3641 (#3630 follow-up): the shiro flip requires HTTP Basic auth on
+        // :3030 writes. Carry the credential from env — FUSEKI_ADMIN_USER/PASSWORD,
+        // the one-door names the bash writers (fuseki-auth.sh) and services already
+        // use. Absent/empty → no -u → anonymous, i.e. current behavior on an
+        // un-flipped store, so this is safe whether or not the lock is on.
+        let mut args: Vec<String> = vec![
+            "-sf".into(), "--max-time".into(), "20".into(),
+            "-H".into(), "Accept: application/sparql-results+json".into(),
+            "--data-urlencode".into(), format!("{}={}", data_param, body),
+        ];
+        if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+            if !pw.is_empty() {
+                let user = std::env::var("FUSEKI_ADMIN_USER")
+                    .unwrap_or_else(|_| "admin".to_string());
+                args.push("-u".into());
+                args.push(format!("{}:{}", user, pw));
+            }
+        }
+        args.push(format!("{}{}", self.endpoint, path));
         let out = Command::new("curl")
-            .args([
-                "-sf", "--max-time", "20",
-                "-H", "Accept: application/sparql-results+json",
-                "--data-urlencode", &format!("{}={}", data_param, body),
-                &format!("{}{}", self.endpoint, path),
-            ])
+            .args(&args)
             .output()
             .map_err(|e| format!("curl-spawn: {}", e))?;
         if !out.status.success() {
