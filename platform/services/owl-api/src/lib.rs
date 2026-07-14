@@ -1024,13 +1024,26 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
 // event per write — all in ONE generated path, so a write can't forget to auth,
 // validate, or log. Pure decision/builders are unit-tested; the I/O wraps them.
 
-/// The caller's ROLE from the verified token's webId. The static webid format is
-/// `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids). Returns the
-/// `<role>` segment, or None if the shape doesn't match (→ authZ fail-closed).
+/// The caller's ROLE from the verified token's webId. Two shapes are real:
+/// legacy HS256 `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids,
+/// dies with the HS256 arm at #3611 cutover) and the CSS pod shape #3613 mints:
+/// `<issuer>/<name>/profile/card#me` — CSS is the WebID's source of truth
+/// (ADR-052 §6); this parser RECORDS that shape, it doesn't invent one. Returns
+/// the agent segment, or None if neither shape matches (→ authZ fail-closed).
 pub fn role_from_webid(web_id: &str) -> Option<String> {
-    let after = web_id.split("/_agents/").nth(1)?;
-    let role = after.split('/').next()?;
-    if role.is_empty() { None } else { Some(role.to_string()) }
+    if let Some(after) = web_id.split("/_agents/").nth(1) {
+        let role = after.split('/').next()?;
+        return if role.is_empty() { None } else { Some(role.to_string()) };
+    }
+    // CSS pod shape: scheme://host/<name>/profile/card#me (no _agents, no .ttl)
+    let rest = web_id.split("://").nth(1)?;
+    let mut segs = rest.split('/');
+    let _host = segs.next()?;
+    let name = segs.next()?;
+    if segs.next()? == "profile" && segs.next()?.starts_with("card") && !name.is_empty() {
+        return Some(name.to_string());
+    }
+    None
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -3842,6 +3855,15 @@ mod tests {
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me").as_deref(), Some("wren"));
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me").as_deref(), Some("silas"));
         assert_eq!(role_from_webid("https://example.com/nobody"), None);
+        // #3613 — the CSS pod shape (what seed-css.sh actually minted 2026-07-14:
+        // no _agents, no .ttl, issuer host). CSS is the WebID source of truth.
+        assert_eq!(role_from_webid("http://localhost:3001/wren/profile/card#me").as_deref(), Some("wren"));
+        assert_eq!(role_from_webid("http://localhost:3001/silas/profile/card#me").as_deref(), Some("silas"));
+        assert_eq!(role_from_webid("http://localhost:3001/chorus-sdk/profile/card#me").as_deref(), Some("chorus-sdk"));
+        // near-misses stay None (authZ fail-closed): wrong tail, bare host, jeff's own profile parses as "jeff" — a NAME, membership still gated by the allow-set
+        assert_eq!(role_from_webid("http://localhost:3001/wren/settings/card#me"), None);
+        assert_eq!(role_from_webid("http://localhost:3001/"), None);
+        assert_eq!(role_from_webid("http://localhost:3001/jeff/profile/card#me").as_deref(), Some("jeff"));
     }
 
     #[test]
