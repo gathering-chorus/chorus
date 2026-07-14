@@ -1,3 +1,4 @@
+// @test-type: unit — source-string pins on server.ts + client html, no live server.
 /**
  * Socket.IO Ack Tests — #1934
  * Tests what Jeff SEES when he sends a message in the Clearing.
@@ -13,7 +14,12 @@ describe('AC1: Server jeff-message handler accepts ack callback', () => {
     expect(SERVER_SRC).toMatch(/jeff-message.*ack/s);
   });
   test('server calls ack with ok field', () => {
-    expect(SERVER_SRC).toMatch(/ack\?\.\(\{.*ok.*\}/s);
+    // #3646 — the ack call moved into the extracted contract module; the handler
+    // passes the socket ack through processJeffInput (behavior pinned in
+    // jeff-input-ack.test.ts).
+    const JEFF_INPUT_SRC = readFileSync(path.join(__dirname, '../src/jeff-input.ts'), 'utf-8');
+    expect(JEFF_INPUT_SRC).toMatch(/ack\?\.\(\{ ok: true \}\)/);
+    expect(SERVER_SRC).toMatch(/processJeffInput\(/);
   });
 });
 
