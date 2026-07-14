@@ -31,23 +31,23 @@
 
 chorus:principal-silas a chorus:Principal ;
     rdfs:label "silas (agent principal)" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me" ;
+    chorus:webId "http://localhost:3001/silas/profile/card#me" ;
     chorus:holdsRole chorus:role-silas .
 
 chorus:principal-wren a chorus:Principal ;
     rdfs:label "wren (agent principal)" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me" ;
+    chorus:webId "http://localhost:3001/wren/profile/card#me" ;
     chorus:holdsRole chorus:role-wren .
 
 chorus:principal-kade a chorus:Principal ;
     rdfs:label "kade (agent principal)" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/kade/profile/card.ttl#me" ;
+    chorus:webId "http://localhost:3001/kade/profile/card#me" ;
     chorus:holdsRole chorus:role-kade .
 
 chorus:principal-bridge a chorus:Principal ;
     rdfs:label "bridge (non-interactive relay principal)" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/bridge/profile/card.ttl#me" .
+    chorus:webId "http://localhost:3001/bridge/profile/card#me" .
 
 chorus:principal-chorus-sdk a chorus:Principal ;
     rdfs:label "chorus-sdk (service caller principal)" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me" .
+    chorus:webId "http://localhost:3001/chorus-sdk/profile/card#me" .
