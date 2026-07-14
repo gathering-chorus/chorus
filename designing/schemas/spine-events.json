@@ -2184,6 +2184,18 @@
         "advisory": "true when self-modifying (non-blocking)"
       }
     },
+    "werk.sweep.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "chorus-werk-sweep (#3541): the scheduled git-hygiene sweep finished — counts of werks swept (Done+proven-landed, removed), abandoned (Won't-Do unlanded, via #3542 with reason), flagged (false-Done #3394 shape / detached-HEAD / unreadable card / canonical divergence — human items, never auto-deleted), preserved (open cards). No silent caps: every non-swept werk is in the report.",
+      "fields": {
+        "role": "Always system (the sweeper's cross-role mandate)",
+        "swept": "Removed via content-proof",
+        "abandoned": "Torn down with recorded reason (#3542)",
+        "flagged": "Surfaced for a human, untouched",
+        "preserved": "Open cards, live work"
+      }
+    },
     "werk.abandoned": {
       "vertebra": "building",
       "source": "werk",

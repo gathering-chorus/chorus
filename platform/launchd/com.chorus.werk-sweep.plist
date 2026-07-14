@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- #3541: scheduled git-hygiene sweep. Daily 04:30, after the nightly
+         suites (03:00-04:00 window) so a nightly-created werk state settles.
+         The sweeper carries the cross-role teardown mandate; it acts only
+         through chorus-werk remove/abandon (all safety nets + witnesses apply).
+         Install (Silas lane): launchctl bootstrap gui/$(id -u) <this file> -->
+    <key>Label</key>
+    <string>com.chorus.werk-sweep</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-werk-sweep</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/ops/logs/werk-sweep.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/ops/logs/werk-sweep.log</string>
+</dict>
+</plist>
