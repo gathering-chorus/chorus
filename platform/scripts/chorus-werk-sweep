@@ -30,13 +30,40 @@ CHORUS_WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus
 CHORUS_CARDS_BIN="${CHORUS_CARDS_BIN:-$SCRIPT_DIR/cards}"
 CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR/chorus-log")}"
 CHORUS_WERK="$SCRIPT_DIR/chorus-werk"
+# Sweeping visits cards of ANY age — widen the Tier-1 merge-proof window so an
+# acceptance commit deep in main's history still proves the land (default 300
+# only covers the accept-path's recency; 50000 ≈ full history today).
+export CHORUS_MERGE_PROOF_WINDOW="${CHORUS_MERGE_PROOF_WINDOW:-50000}"
 
+# launchd does NOT create log dirs — silent log loss without this (Silas, #3541 gather)
+mkdir -p "$CHORUS_HOME/ops/logs" 2>/dev/null || true
+
+# FLAGGED counts FINDINGS, not werks — one werk can carry two flags (e.g. detached
+# AND unreadable card); each is a distinct human item and each gets its own line.
 SWEPT=0; ABANDONED=0; FLAGGED=0; PRESERVED=0
+
+# #3638's generated-churn carve-out, mirrored for the sweep (the accept path has
+# it in werk-teardown; bash remove does not): if a CLOSED card's werk is dirty
+# with ONLY regenerated artifacts, discard them so the merge proof can run.
+# Any other dirt is untouched — remove's refusal then classifies honestly.
+GENERATED_FILES="knowledge/doc-coherence.md"
+clean_generated_churn() { # <werk-dir> -> rc 0 if werk is now clean
+  local werk="$1" dirty real f
+  dirty=$(git -C "$werk" status --porcelain 2>/dev/null) || return 1
+  [ -z "$dirty" ] && return 0
+  real=$(awk '{ $1=""; sub(/^ /,""); print }' <<< "$dirty" | grep -vxF "$GENERATED_FILES" || true)
+  [ -n "$real" ] && return 1
+  for f in $GENERATED_FILES; do git -C "$werk" checkout -- "$f" 2>/dev/null; done
+  git -C "$werk" clean -fd -- $GENERATED_FILES 2>/dev/null || true
+  [ -z "$(git -C "$werk" status --porcelain 2>/dev/null)" ]
+}
 
 card_status() { # <card-id> -> status string on stdout; rc 1 = unreadable
   local view
   view=$("$CHORUS_CARDS_BIN" view "$1" 2>/dev/null) || return 1
-  sed -n 's/^[[:space:]]*Status:[[:space:]]*//p' <<< "$view" | head -1
+  # strip ANSI + trailing whitespace so real board output matches the case table
+  sed -n 's/^[[:space:]]*Status:[[:space:]]*//p' <<< "$view" | head -1 \
+    | sed -E $'s/\x1b\\[[0-9;]*m//g; s/[[:space:]]+$//'
 }
 
 # ── enumerate: werk dirs ∪ local role branches ──
@@ -80,15 +107,26 @@ for entry in "${TARGETS[@]+"${TARGETS[@]}"}"; do
 
   case "$status" in
     Done)
-      if "$CHORUS_WERK" remove "$role" "$card" >/dev/null 2>&1; then
+      if [ -d "$werk" ] && clean_generated_churn "$werk"; then :; fi
+      remove_err=$("$CHORUS_WERK" remove "$role" "$card" 2>&1 >/dev/null)
+      if [ $? -eq 0 ]; then
         echo "  swept $role-$card (Done, content proven on main)"
         SWEPT=$((SWEPT + 1))
       else
-        echo "  flag $role-$card: card Done but content NOT on main (#3394 false-Done shape) — NOT deleted, resolve by hand"
+        # classify the refusal so the human gets the right instruction
+        case "$remove_err" in
+          *"uncommitted changes"*)
+            echo "  flag $role-$card: Done but werk is DIRTY (uncommitted changes — often pre-#3638 generated churn) — clean the werk, then re-sweep" ;;
+          *"not on origin/main"*|*"could not determine merge state"*)
+            echo "  flag $role-$card: card Done but content NOT on main (#3394 false-Done shape) — work preserved on branch $role/$card (worktree dir may be gone; resolve from the branch ref)" ;;
+          *)
+            echo "  flag $role-$card: Done but remove refused: ${remove_err:0:120}" ;;
+        esac
         FLAGGED=$((FLAGGED + 1))
       fi
       ;;
     "Won't Do"|"Wont Do"|Archived)
+      if [ -d "$werk" ] && clean_generated_churn "$werk"; then :; fi
       if "$CHORUS_WERK" remove "$role" "$card" >/dev/null 2>&1; then
         echo "  swept $role-$card ($status, content proven on main)"
         SWEPT=$((SWEPT + 1))

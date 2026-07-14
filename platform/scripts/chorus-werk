@@ -301,10 +301,13 @@ cmd_remove() {
     local fetch_failed=0
     local attempt subjects
     # Match `#<card_id>` with a non-digit (or end) boundary so #300 doesn't
-    # match #3000. 300-commit window covers any plausible acp/close lag.
+    # match #3000. 300-commit window covers any plausible acp/close lag for the
+    # accept-path; the SWEEPER (#3541) widens it via CHORUS_MERGE_PROOF_WINDOW —
+    # old cards' acceptance commits scroll past 300 and false-flag as unlanded.
+    local proof_window="${CHORUS_MERGE_PROOF_WINDOW:-300}"
     for attempt in 1 2 3; do
       git -C "$CHORUS_HOME" fetch --quiet origin main 2>/dev/null || fetch_failed=1
-      subjects=$(git -C "$CHORUS_HOME" log origin/main -n 300 --format='%s' 2>/dev/null)
+      subjects=$(git -C "$CHORUS_HOME" log origin/main -n "$proof_window" --format='%s' 2>/dev/null)
       if grep -qE "#${card_id}([^0-9]|\$)" <<< "$subjects"; then
         acp_committed=1
         fetch_failed=0

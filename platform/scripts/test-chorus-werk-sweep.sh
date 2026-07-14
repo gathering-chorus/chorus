@@ -137,5 +137,43 @@ OUT2=$("$SWEEP" 2>&1)
 assert "unknown-card werk preserved (fail-closed board)" test -d "$WERK_BASE/kade-999"
 assert "unknown-card flagged in report" bash -c 'grep -q "999" <<< "$1"' _ "$OUT2"
 
+# Silas gather: real board output can carry trailing whitespace/ANSI — must still match
+cat > "$STUBS/cards-done-ansi" <<'EOS'
+#!/usr/bin/env bash
+printf '#%s stub\n' "$2"
+printf '  Status:   \033[32mDone\033[0m   \n'
+EOS
+chmod +x "$STUBS/cards-done-ansi"
+mkwerk kade 106
+OUT3=$(CHORUS_CARDS_BIN="$STUBS/cards-done-ansi" "$SWEEP" 2>&1)
+assert "ANSI/whitespace-wrapped Done status still sweeps" test ! -d "$WERK_BASE/kade-106"
+
+# refusal classification: Done + DIRTY werk -> dirty flag (not false-Done), untouched
+cat > "$STUBS/cards-done" <<'EOS'
+#!/usr/bin/env bash
+echo "#$2 stub"
+echo "  Status:   Done"
+EOS
+chmod +x "$STUBS/cards-done"
+mkwerk kade 107
+echo "uncommitted" > "$WERK_BASE/kade-107/dirt.txt"
+OUT4=$(CHORUS_CARDS_BIN="$STUBS/cards-done" "$SWEEP" 2>&1)
+assert "Done+dirty werk flagged as DIRTY" bash -c 'grep -q "DIRTY" <<< "$1" && grep -q "107" <<< "$1"' _ "$OUT4"
+assert "Done+dirty werk untouched" test -f "$WERK_BASE/kade-107/dirt.txt"
+
+# generated-only churn on a Done werk is discarded (the #3638 carve-out mirrored)
+# and the werk sweeps; REAL dirt still refuses (kade-107 above stays flagged).
+mkwerk kade 108
+mkdir -p "$WERK_BASE/kade-108/knowledge"
+echo "seed" > "$WERK_BASE/kade-108/knowledge/doc-coherence.md"
+git -C "$WERK_BASE/kade-108" add knowledge/doc-coherence.md
+git -C "$WERK_BASE/kade-108" -c user.email=t@t -c user.name=t commit -q -m "kade: #108 seed"
+# card 108 'Done' via the merge-proof: put an acceptance commit on main
+git -C "$CANONICAL" commit -q --allow-empty -m "#108 (kade) (#999)"
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+echo "regenerated churn" > "$WERK_BASE/kade-108/knowledge/doc-coherence.md"
+OUT5=$(CHORUS_CARDS_BIN="$STUBS/cards-done" "$SWEEP" 2>&1)
+assert "Done werk with generated-only churn sweeps clean" test ! -d "$WERK_BASE/kade-108"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
