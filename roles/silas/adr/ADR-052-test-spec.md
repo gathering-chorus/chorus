@@ -56,7 +56,7 @@ Named cases for the owl-api write-seam identity verification. Wren implements th
 ### 9. `hs256-legacy-allows` (migration only)
 - **Given** `TOKEN_HS256` (a not-yet-migrated writer)
 - **When** POST a write
-- **Then** `2xx`; the write lands. Dual-verify accepts the legacy identity **during rollout** (§7). This case is **deleted** when #3611 migrates the last writer and HS256 verify is removed — its deletion is the assertion that the cutover completed.
+- **Then** `2xx`; the write lands. Dual-verify accepts the legacy identity **during rollout** (§8). This case is **deleted** when #3611 migrates the last writer and HS256 verify is removed — its deletion is the assertion that the cutover completed.
 
 ### 10. `attribution-is-webid`
 - **Given** a `valid-allows` write

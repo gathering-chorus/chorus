@@ -36,7 +36,7 @@ Six parts:
 - **Humans** (Jeff, Mark, future users) mint via the browser OIDC grant on the **same** issuer. Same WebID primitive. This is the human-login half — a different grant on one door, not a separate system.
 
 ### 2. Verification at the one seam
-owl-api verifies the token at its single write seam (ADR-048 §5) — `jwtVerify` against the CSS JWKS (public-key), extract the `webid`, then feed the **existing** model-driven authz (ADR-048 scopes + `ownedBy`). During migration it verifies HS256 **and** ES256 side-by-side (§7); at rollout end it **replaces** the HS256 `mod auth` check. The spike's `gatedWrite` is the reference implementation.
+owl-api verifies the token at its single write seam (ADR-048 §5) — `jwtVerify` against the CSS JWKS (public-key), extract the `webid`, then feed the **existing** model-driven authz (ADR-048 scopes + `ownedBy`). During migration it verifies HS256 **and** ES256 side-by-side (§8); at rollout end it **replaces** the HS256 `mod auth` check. The spike's `gatedWrite` is the reference implementation.
 
 **JWKS caching (the decision Wren flagged): fetch-with-TTL + kid-keyed cache, fail-closed on no usable key.** Use `createRemoteJWKSet` semantics — cache keys, cooldown between refetches, refetch on an unknown `kid` — *not* a one-shot cache-at-boot (that can't pick up key rotation). Two hardenings: (a) a **boot warm-fetch** so CSS-down-at-boot surfaces as a loud warning early, but does **not** block boot; (b) when the token's `kid` is already cached, serve it **without** a live refetch, so a brief CSS blip does not fail otherwise-valid writes. **Fail-closed** only when the token's `kid` has no cached key *and* CSS is unreachable — a genuinely unverifiable token, never a transient outage masquerading as one. This is the `JWKS-unreachable` case in the spec.
 
@@ -57,13 +57,20 @@ The registry is **not new** — #3618 already authored it and the classes are **
 
 **The allow-set is `Principal.webId` alone.** Scope stays a per-request **token claim** validated at the seam (the existing #3573 check), *not* registry data — putting scope in the registry would create a second authz source that drifts against the claim. Registry-side scope *ceilings* (max grantable per principal), if ever wanted, are an authz-layer feature on top, not the seam's membership check. **Consequence: the CSS path needs only the `Principal` instances** (authored + `sh:conforms`-validated, `identity-principals-3613.ttl`); `KeyRegistryEntry` is legacy-HS256-only and retires with HS256. The seam resolves membership with `SELECT ?webid WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?webid } }`, fail-closed on absent (parity with `auth.rs:97`).
 
-### 6. Hardening path (named, not yet required)
+### 6. Credential storage convention (where per-agent CSS creds live)
+Follows the **#2734 single-home pattern** (Wren's ask, so her 403 isolation tests read the path rather than guess it): each agent's CSS client credential lives in a **per-agent home under `~/.chorus`** — `~/.chorus/identity/<agent>/cred.json` (mode 0600, owner-only) — **never in the repo, never as a value in a launchd plist** (plists carry a *reference*/path, not the secret; same boundary that broke TCC when secrets churned the cdhash). The value is the CSS `client_id`+`client_secret` for that agent's WebID; the model (`Principal` / any future `credentialRef`) names only the path, never the value (write_scrubber boundary).
+
+**"Not settable from the agent's own shell env" (the AC), concretely:** the credential is provisioned out-of-band into `~/.chorus/identity/<agent>/` by an admin step (`seed-css.sh`), readable by that agent's process but **not** something the agent mints for itself or exports as a forgeable string — an agent cannot promote itself by writing another agent's cred file (owner-only perms) or by setting an env var the door trusts (the door trusts the CSS-signed token, not the env).
+
+**Scoped for cross-agent isolation:** each agent's credential authenticates **only** its own WebID at CSS, so a token minted with wren's credential carries `webid=wren`, and the seam's authz refuses it acting as silas. This is exactly what Wren's 403 tests assert (`wren's token can't act as silas`) — the isolation is a property of *distinct per-agent credentials*, not a check the seam adds. One credential, one WebID, one identity.
+
+### 7. Hardening path (named, not yet required)
 CSS supports **DPoP** (proof-of-possession — the token bound to a holder key, so a stolen bearer token is useless). The spike used plain bearer. DPoP binding is the hardening follow-on; this ADR designs for it (the verify seam can require the `cnf` claim) without blocking the bearer-first cut.
 
-### 7. Migration posture — dual-verify side-by-side, not a cutover
+### 8. Migration posture — dual-verify side-by-side, not a cutover
 The seam verifies **HS256 and ES256 concurrently** through the rollout, selected behind the registry — an incoming token is tried against the CSS JWKS (ES256) *and* the legacy shared-secret (HS256); either valid identity is accepted. This is ADR-042 §60's "token-always clients, mixed state invisible to operations" pattern applied to the *upgrade*: the ~19 shared-secret writers do not all break the instant ES256 lands. **HS256 retires per-writer as #3611 migrates each to a CSS credential**, and the legacy verify path is deleted only when the last writer has moved (a tracked, asserted count — not a guess). No flag-day. **No interim weakening** (Wren's flag): until ES256 is proven, every write still has a working HS256 path; any owl-api deploy before the seam leg lands keeps riding HS256 unchanged.
 
-### 8. Sign-in method for humans — passkeys, orthogonal to verification
+### 9. Sign-in method for humans — passkeys, orthogonal to verification
 For the human browser grant, the sign-in method at CSS is **passkeys / WebAuthn** (Mark's proposal, Jeff+Mark session 2026-07-14): no shared password, phishing-resistant, device-bound. Architecturally this is **orthogonal to the owl-api seam** — *how* a human authenticates to CSS (passkey, password, whatever CSS supports) changes nothing downstream, because the seam only ever sees and verifies the resulting ES256/WebID token. That separation is the point: the sign-in method can evolve (passkeys today, something else later) without touching the verification boundary. Passkeys are a **CSS-side configuration**, recorded here so the human-login card set (Wren, filing today) and the ADR agree on the method.
 
 ## Consequences
@@ -75,7 +82,7 @@ For the human browser grant, the sign-in method at CSS is **passkeys / WebAuthn*
 - **Identity before scope.** This ADR delivers unforgeable **WHO**. ADR-048 scope enforcement (#3612) answers **WHAT-per-who** and is only meaningful once this lands — enforcing "only silas writes X" against a forgeable identity is theater. #3613 is the gating build; #3612's annotation + validation work overlaps and switches to live enforcement the moment this is in.
 - **CSS becomes load-bearing for writes.** The owl-api door now depends on CSS being reachable and the JWKS fetchable. Ops consequence: CSS gets a health check on the write-critical path, and owl-api caches the JWKS (with a bounded refresh) so a CSS blip doesn't fail every write. This is a new availability edge — name it in the threat model (#2444) and the monitor set.
 - **Migration cost is real.** ~19 shared-secret writers move to per-agent CSS credentials (#3611 UNTANGLE) — the bulk of the labor. The door change is small; the writer migration is the grind.
-- **Bearer-first is a known, time-boxed weakness.** Plain bearer tokens are stealable in transit; loopback-only + short TTL bound it now, DPoP (§6) closes it. Not pretended away — sequenced.
+- **Bearer-first is a known, time-boxed weakness.** Plain bearer tokens are stealable in transit; loopback-only + short TTL bound it now, DPoP (§7) closes it. Not pretended away — sequenced.
 
 ## Provenance
 
