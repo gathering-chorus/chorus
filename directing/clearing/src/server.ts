@@ -13,6 +13,7 @@ import path from 'path';
 import { TilePoller } from './tiles';
 import { MessageRouter } from './router';
 import { ChorusLogTailer } from './tailer';
+import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
@@ -819,24 +820,28 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Message from The Clearing UI — Jeff or guest (#1719, #1802 reverted to working state)
-  socket.on('jeff-message', async (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
-    const { text } = data;
-    if (!text.trim()) { ack?.({ ok: false, error: 'empty' }); return; }
-
+  // Message from The Clearing UI — Jeff or guest (#1719; ack contract rewritten #3646).
+  // The old inline body awaited every per-target hand-off (5s abort each, SEQUENTIAL)
+  // before acking, while the UI timed out at 3s — the works-once bug: boundary-timed
+  // sends showed "Failed" + restored the text for messages that had actually landed.
+  // Now: ingest → ack ok → parallel hand-offs, each outcome pushed to the client as a
+  // 'delivery-status' event the UI renders visibly.
+  socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
     const senderName = resolveJeffMessageSender(socket.handshake.headers.cookie || '', data.from);
-    messageRouter.ingest({ from: senderName, text: text.trim(), ts: new Date().toISOString(), type: 'jeff-input' });
-
-    const targets = pickJeffMessageTargets(text);
-    const cleanText = text.replace(/@(wren|silas|kade)\s*/gi, '').trim();
+    const cleanText = (data.text || '').replace(/@(wren|silas|kade)\s*/gi, '').trim();
     const finalText = cleanText.replace(/\[img:(\/uploads\/[^\]]+)\]/g, `[img:http://localhost:${PORT}$1]`);
     const safeMsg = finalText.replace(/"/g, '\\"');
-
-    for (const target of targets) {
-      const err = await deliverJeffMessageToTarget(target, safeMsg, cleanText);
-      if (err) { ack?.({ ok: false, error: err }); return; }
-    }
-    ack?.({ ok: true });
+    void processJeffInput(
+      {
+        ingest: (m) => messageRouter.ingest(m),
+        deliver: (target) => deliverJeffMessageToTarget(target, safeMsg, cleanText),
+        targetsOf: pickJeffMessageTargets,
+        now: () => new Date().toISOString(),
+        onDeliveryStatus: (status) => socket.emit('delivery-status', status),
+      },
+      { text: data.text || '', from: senderName },
+      ack,
+    );
   });
 });
 

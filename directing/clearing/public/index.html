@@ -614,6 +614,30 @@ socket.on('message', (msg) => {
   scrollToBottom();
 });
 
+// #3646 — per-target delivery outcome (the ack means accepted+persisted; this is
+// the terminal hand-off verdict). Failures render as a visible system line —
+// a failed delivery is information, never a silent drop.
+socket.on('delivery-status', (status) => {
+  if (status && status.ok === false) {
+    appendMessage({
+      from: 'system',
+      text: 'delivery to ' + status.target + ' failed: ' + (status.error || 'unknown') + ' — the message is saved; the room has it, ' + status.target + "'s terminal didn't get the nudge",
+      ts: new Date().toISOString(),
+      type: 'system',
+    });
+    scrollToBottom();
+  }
+});
+
+// #3646 — mobile wake: iOS/Android silently kill the socket when the app
+// backgrounds; on return, reconnect immediately instead of waiting for the
+// next heartbeat cycle to notice.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !socket.connected) {
+    socket.connect();
+  }
+});
+
 // Tile lock — click to target role(s)
 let lockedRole = null; // kept for backward compat
 const selectedRoles = new Set();
@@ -641,6 +665,16 @@ function sendMessage() {
   var text = input.value.trim();
   if (!text) return;
   var savedText = text;
+  // #3646 — never emit into a dead socket: Socket.IO buffers emits while
+  // disconnected (mobile backgrounding kills the socket silently), which made
+  // sends vanish or double-fire after reconnect. Fail honestly + keep the text.
+  if (!socket.connected) {
+    socket.connect(); // kick a reconnect attempt right now
+    sendBtn.textContent = 'Not connected';
+    sendBtn.classList.add('delivery-failed');
+    setTimeout(function() { sendBtn.textContent = 'Send'; sendBtn.classList.remove('delivery-failed'); }, 3000);
+    return; // text stays in the input
+  }
   sendBtn.textContent = 'Sending...';
   sendBtn.classList.add('sending');
   input.value = '';
@@ -658,9 +692,12 @@ function sendMessage() {
       setTimeout(function() { sendBtn.textContent = 'Send'; sendBtn.classList.remove('delivery-failed'); }, 3000);
     }
   }
+  // #3646 — 10s: the server now acks on ingest (fast), but remote origins ride
+  // the tunnel; the old 3s timer raced the server's 5s delivery hand-off and
+  // marked landed messages "Failed" (the works-once bug).
   var ackTimer = setTimeout(function() {
     onAck({ ok: false, error: 'timeout' });
-  }, 3000);
+  }, 10000);
   function emitOne(payload) {
     socket.emit('jeff-message', payload, function(result) {
       clearTimeout(ackTimer);

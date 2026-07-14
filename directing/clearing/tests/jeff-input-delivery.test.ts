@@ -1,3 +1,4 @@
+// @test-type: unit — source-string pins on server.ts wiring, readFileSync of repo files only.
 /**
  * #3343 — Jeff's Clearing input rides the pulse delivery worker.
  *
@@ -29,8 +30,14 @@ describe('#3343: delivery goes through pulse /api/jeff-input', () => {
     const fn = SERVER_SRC.slice(SERVER_SRC.indexOf('async function deliverJeffMessageToTarget'));
     expect(fn.slice(0, 2000)).not.toMatch(/\[nudge from/);
   });
-  test('handler awaits delivery so the ack is truthful', () => {
-    expect(SERVER_SRC).toMatch(/await deliverJeffMessageToTarget/);
+  test('handler routes through processJeffInput — ack means accepted+persisted (#3646)', () => {
+    // #3343 pinned ack-after-delivery ("truthful ack"); #3646 redefined the truth:
+    // the ack confirms INGEST (persisted), and per-target delivery verdicts travel
+    // as 'delivery-status' events. The behavioral contract is pinned in
+    // jeff-input-ack.test.ts; this pin holds the wiring.
+    expect(SERVER_SRC).toMatch(/processJeffInput\(/);
+    expect(SERVER_SRC).toMatch(/deliver: \(target\) => deliverJeffMessageToTarget/);
+    expect(SERVER_SRC).toMatch(/socket\.emit\('delivery-status', status\)/);
   });
   test('failure path still emits jeff.input.failed for audit continuity', () => {
     expect(SERVER_SRC).toMatch(/jeff\.input\.failed/);
