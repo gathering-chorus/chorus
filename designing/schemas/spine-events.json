@@ -2184,6 +2184,16 @@
         "advisory": "true when self-modifying (non-blocking)"
       }
     },
+    "werk.abandoned": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "chorus-werk abandon (#3542): a SUPERSEDED werk (card closed via another card / Won't-Do) was explicitly torn down with a recorded reason — the sanctioned replacement for manual `git branch -D`. Bypasses the merged-ness proof by declared intent; refused for active cards (fail-closed board check).",
+      "fields": {
+        "role": "Acting role",
+        "card_id": "Card whose werk was abandoned",
+        "reason": "The operator's explicit reason (required)"
+      }
+    },
     "card.branch.closed": {
       "vertebra": "building",
       "source": "werk",
