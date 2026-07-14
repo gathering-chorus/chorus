@@ -711,19 +711,20 @@ pub fn resolve_repo_target(declared: Option<&str>, chain: &[(RepoKind, &str)]) -
 
 /// #3570 — a kind's instance HOME graph, derived (the domains.* data/noun spine).
 /// `declared` (`chorus:instancesGraph`) is the explicit override / migration target;
-/// otherwise project `urn:chorus:domains:<domain>` from the kind's domain; otherwise
-/// the back-compat default (`urn:chorus:instances`) so unmigrated kinds keep serving.
-/// Pure so it's unit-pinned; the SPARQL reads that supply `declared`/`domain` in
-/// generate() are integration-proven separately. This is the data half of the noun
-/// model: nouns home in `domains.*`, organized by domain, not one undifferentiated bucket.
-pub fn resolve_instances_graph(declared: Option<&str>, domain: Option<&str>) -> String {
+/// otherwise project `urn:chorus:domains:<domain>` from the kind's domain.
+/// #3640 (ADR-051): a class that is NEITHER shape-declared NOR domain-declared is
+/// REFUSED — the silent `urn:chorus:instances` fallback is deleted. The fallback let
+/// the generator serve classes the model never placed, which is how Product instances
+/// scattered across graphs unnoticed (the July products incident). Refusal makes the
+/// missing declaration the loud, fixable event: land the model, then the API exists.
+pub fn resolve_instances_graph(declared: Option<&str>, domain: Option<&str>) -> R<String> {
     if let Some(g) = declared.map(str::trim).filter(|s| !s.is_empty()) {
-        return g.to_string();
+        return Ok(g.to_string());
     }
     if let Some(d) = domain.map(str::trim).filter(|s| !s.is_empty()) {
-        return format!("urn:chorus:domains:{}", d);
+        return Ok(format!("urn:chorus:domains:{}", d));
     }
-    INSTANCES_GRAPH.to_string()
+    Err("no instance home: no domain definesVocabulary this class and its shape declares no chorus:instancesGraph — land the model first (ADR-051; was the silent urn:chorus:instances fallback)".to_string())
 }
 
 /// #3488 — read a single containment-edge target's localname for `class` (None
@@ -973,7 +974,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     );
     let domain_of = select_v(&sparql_json(&dq)?).into_iter().next();
-    let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref());
+    let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref())?;
     Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph })
 }
 

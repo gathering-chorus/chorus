@@ -137,39 +137,26 @@ fn main() -> ExitCode {
         }
         Some("serve") => {
             let port: u16 = arg(&args, "--port", "3360").parse().unwrap_or(3360);
-            // #3466 — serve EVERY Athena primitive on ONE origin (multi-class).
-            // value-stream → product → domain → service is one live API. Generate
-            // each from its shape; skip any without a shape (graceful, not fatal),
-            // so adding a shape to the model adds its API with zero code change.
-            let candidates = ["ValueStream", "ValueStreamStep", "Product", "Domain", "Service"];
+            // #3640 (ADR-051) — the serve list IS the model: mount exactly the
+            // classes some domain definesVocabulary. The #3466 hardcoded candidate
+            // array is DELETED — a class with no declaring domain does not mount,
+            // and generate() refuses it (no silent instance-graph fallback). Adding
+            // a domain+vocabulary edge to the model adds its API with zero code
+            // change; nothing serves by accident.
             let mut tables = Vec::new();
-            for c in candidates {
-                match generate(c) {
-                    Ok(t) => {
-                        eprintln!("owl-api: + {} API", c);
-                        tables.push(t);
-                    }
-                    Err(e) => eprintln!("owl-api: skip {} ({})", c, e),
-                }
-            }
-            // #3494 — VOCABULARY FAN-OUT: every class any domain definesVocabulary
-            // gets its #3454 CRUD surface generated and mounted on this same origin.
-            // No per-class code: the domain's definesVocabulary edge IS the
-            // registration. Zero edges → adds nothing (so today, pre-#3489, it's a
-            // silent no-op; the moment the edges land, /<vocab-class> surfaces appear).
             match all_vocab_classes() {
                 Ok(vocab) => {
                     for c in vocab {
                         match generate(&c) {
                             Ok(t) => {
-                                eprintln!("owl-api: + {} API (vocab)", c);
+                                eprintln!("owl-api: + {} API (model-declared)", c);
                                 tables.push(t);
                             }
-                            Err(e) => eprintln!("owl-api: skip vocab {} ({})", c, e),
+                            Err(e) => eprintln!("owl-api: refuse {} ({})", c, e),
                         }
                     }
                 }
-                Err(e) => eprintln!("owl-api: vocab fan-out read failed ({})", e),
+                Err(e) => eprintln!("owl-api: vocabulary read failed ({})", e),
             }
             if tables.is_empty() {
                 eprintln!("owl-api: no classes generated — nothing to serve");
