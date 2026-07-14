@@ -38,6 +38,18 @@ done
 # --- secret sourcing (#3402) ---
 set -a
 [ -f "$HOME/.chorus/secrets/chorus-realm.env" ] && . "$HOME/.chorus/secrets/chorus-realm.env"
+
+# #3641 — carry the Fuseki write credential into owl-api's env so its chorus-model
+# spawns can -u their :3030 writes (the #3630 shiro flip now requires auth). Targeted
+# extract of just the two keys from the gathering app .env (the one-door cred home),
+# not a full source — don't pollute owl-api's env with app config. Empty until the
+# .env is present → chorus-model writes anon → prior behavior, safe.
+_appenv="${GATHERING_APP_ENV:-${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/../jeff-bridwell-personal-site/.env}"
+if [ -r "$_appenv" ]; then
+  export FUSEKI_ADMIN_PASSWORD="$(grep -E '^FUSEKI_ADMIN_PASSWORD=' "$_appenv" | head -1 | cut -d= -f2-)"
+  export FUSEKI_ADMIN_USER="$(grep -E '^FUSEKI_ADMIN_USER=' "$_appenv" | head -1 | cut -d= -f2-)"
+  [ -z "$FUSEKI_ADMIN_USER" ] && export FUSEKI_ADMIN_USER=admin
+fi
 set +a
 
 exec "$HOME/.chorus/bin/owl-api" "$@"

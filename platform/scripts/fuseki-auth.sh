@@ -34,4 +34,10 @@ fi
 FUSEKI_AUTH=()
 if [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
   FUSEKI_AUTH=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
+  # #3641 — EXPORT so a sourcing shell's chorus-model spawns (a subprocess, which
+  # reads FUSEKI_ADMIN_PASSWORD to add its own -u) inherit the credential. Without
+  # export it's a shell-local var: bash curl writers in-shell work (FUSEKI_AUTH),
+  # but chorus-model from the same shell 401s (Wren's bare-CLI catch on #3641).
+  export FUSEKI_ADMIN_PASSWORD
+  export FUSEKI_ADMIN_USER="${FUSEKI_ADMIN_USER:-admin}"
 fi
