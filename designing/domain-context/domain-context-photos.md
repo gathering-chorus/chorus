@@ -36,7 +36,7 @@ No photos-specific unit tests yet. The canonical rebuild (#1644) needs validatio
 | Thumbnails | `/Volumes/VideosNew/Gathering/Photos/generated/thumbnails/` (CSC) | 200x200 JPEG, date-bucketed |
 | Scripts | `scripts/harvest-iphone-photos.sh` | iPhone SQLite → JSON extraction |
 | Scripts | `engineer/scripts/build-nifi-photos-flow.py` | NiFi flow generator |
-| Scripts | `engineer/scripts/nifi/photos-merge.py` | Merge logic (Python, runs in NiFi ExecuteScript) |
+| Scripts | `jeff-bridwell-personal-site/scripts/nifi/photos-merge.py` | Merge logic (moved home #3599 — implementation-of-convergence stays in gathering; Groovy port at scripts/nifi-groovy/) |
 
 ## Key Decisions
 
