@@ -33,7 +33,7 @@ Each entry maps to: location, owner, run mode, and external dependencies.
 | configure-nifi-pipeline.sh | `building/products/convergence/one-shots/` | Silas | One-shot setup | NiFi API |
 | nifi-apple-to-fuseki.py | `building/products/convergence/` | Silas | Phase 1 standalone | Apple Photos SQLite, Fuseki, sips |
 | build-nifi-iphone-native.py | `building/products/convergence/one-shots/` | Silas | One-shot setup | NiFi API, SQLite JDBC driver |
-| generate-thumb-nifi.sh | `roles/kade/scripts/nifi/` | Kade | NiFi processor | sips, source photo files |
+| generate-thumb-nifi.sh | `jeff-bridwell-personal-site/scripts/nifi/` (moved #3599) | Kade | NiFi processor | sips, source photo files |
 
 ## Convergence / Harvest
 
