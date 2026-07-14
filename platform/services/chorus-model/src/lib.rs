@@ -285,6 +285,12 @@ pub struct WriteReq {
     pub name: String,
     pub fields: BTreeMap<String, String>,
     pub edges: Vec<(String, String, String)>, // (property, target_kind, target_name)
+    /// #3647 — the class's model-declared instance HOME graph (owl-api resolves it
+    /// via resolve_instances_graph and passes --graph). `None` = the legacy
+    /// urn:chorus:instances default (back-compat). Writing the declared home is
+    /// what makes the entity readable + authorizable (no orphan): owl-api authz
+    /// reads ownedBy from this same graph, so create must land here, not the bucket.
+    pub graph: Option<String>,
 }
 
 /// Validation + serialization, pure (store only consulted for shapes/integrity
@@ -347,6 +353,9 @@ fn witness(event: &str, kvs: &[(&str, &str)]) {
 pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     let class = class_iri(&req.kind)?;
     let (subject, turtle) = to_turtle(req)?;
+    // #3647 — write the class's model-declared home (or the legacy default). This
+    // is the same graph owl-api authz reads ownedBy from; a mismatch mints an orphan.
+    let g = req.graph.as_deref().unwrap_or(INSTANCES_GRAPH);
 
     // SHACL requirements from the ontology graph — fail-closed on missing required.
     let shape = read_shape(store, &class)?;
@@ -430,7 +439,7 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     let existing_created = store
         .select_v(&format!(
             "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
-            g = INSTANCES_GRAPH, s = subject, d = DCT
+            g = g, s = subject, d = DCT
         ))?
         .into_iter()
         .next();
@@ -442,7 +451,7 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
 
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ {t}{l}{a} }} }}",
-        g = INSTANCES_GRAPH, s = subject, t = turtle, l = label_extra, a = stamps
+        g = g, s = subject, t = turtle, l = label_extra, a = stamps
     ))?;
     let (nf, ne) = (req.fields.len().to_string(), req.edges.len().to_string());
     witness("model.write", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("iri", subject.as_str()), ("fields", nf.as_str()), ("edges", ne.as_str())]);
@@ -465,15 +474,17 @@ fn check_edge_prop(prop: &str) -> R<()> {
 /// that does not exist (so a typo can't be a silent no-op). Witnesses the delete.
 /// owl-api's DELETE delegates here instead of a raw SPARQL DELETE — one governed
 /// write path, audited, never silent.
-pub fn delete_entity(store: &dyn Store, kind: &str, name: &str) -> R<String> {
+pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&str>) -> R<String> {
     let subject = mint(kind, name)?;
     if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found")]);
         return Err(format!("not-found: <{}> does not exist", subject));
     }
+    // #3647 — delete from the class's declared home (or legacy default).
+    let g = graph.unwrap_or(INSTANCES_GRAPH);
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
-        g = INSTANCES_GRAPH, s = subject
+        g = g, s = subject
     ))?;
     witness("model.delete", &[("kind", kind), ("name", name), ("iri", subject.as_str())]);
     Ok(subject)
@@ -484,7 +495,7 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str) -> R<String> {
 /// wipes the node's other data. Referential integrity on BOTH endpoints
 /// (fail-closed). Witnesses the link. The governed replacement for owl-api's raw
 /// build_edge_update.
-pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str) -> R<String> {
+pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>) -> R<String> {
     check_edge_prop(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
@@ -494,9 +505,10 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
             return Err(format!("unknown-endpoint: <{}> does not exist — referential integrity, fail-closed", iri));
         }
     }
+    let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
     store.update(&format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
-        g = INSTANCES_GRAPH, ns = NS, s = subject, p = prop, t = target
+        g = g, ns = NS, s = subject, p = prop, t = target
     ))?;
     witness("model.link", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
@@ -505,13 +517,14 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// #3468 — REMOVE one edge (governed). Single DELETE DATA, witnessed. Idempotent:
 /// removing an absent edge is a no-op success (removal toward absence is safe).
 /// The governed replacement for owl-api's raw edge-delete.
-pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str) -> R<String> {
+pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>) -> R<String> {
     check_edge_prop(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
+    let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
     store.update(&format!(
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
-        g = INSTANCES_GRAPH, ns = NS, s = subject, p = prop, t = target
+        g = g, ns = NS, s = subject, p = prop, t = target
     ))?;
     witness("model.unlink", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
@@ -882,6 +895,39 @@ mod tests {
     }
 
     #[test]
+    fn write_routes_to_declared_home_when_provided() {
+        // #3647 — with a model-declared home graph, the write lands THERE, not the
+        // legacy urn:chorus:instances bucket. This is the orphan fix: owl-api authz
+        // reads ownedBy from the declared home, so create must write the same graph.
+        let target = format!("{}value-stream-step-proving", NS);
+        let store = stub(&[target.as_str()], &[]);
+        let home = "urn:chorus:domains:security";
+        let req = WriteReq {
+            kind: "domain".into(),
+            name: "tests".into(),
+            edges: vec![("atStep".into(), "value-stream-step".into(), "proving".into())],
+            graph: Some(home.into()),
+            ..Default::default()
+        };
+        write(&store, &req).unwrap();
+        let ups = store.updates.borrow();
+        assert!(ups[0].contains(home), "write must land in the declared home graph");
+        assert!(!ups[0].contains(INSTANCES_GRAPH), "must NOT write the legacy instances bucket when a home is declared");
+    }
+
+    #[test]
+    fn delete_and_edge_route_to_declared_home_when_provided() {
+        // #3647 — delete + edge ops honor the declared home too (owner-deletes-own
+        // must target the same graph the create wrote, else it fail-closed 403s).
+        let subj = format!("{}gate-x", NS);
+        let store = stub(&[subj.as_str()], &[]);
+        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:security")).unwrap();
+        let ups = store.updates.borrow();
+        assert!(ups[0].contains("urn:chorus:domains:security"), "delete targets the declared home");
+        assert!(!ups[0].contains(INSTANCES_GRAPH), "delete must not target the legacy bucket when a home is given");
+    }
+
+    #[test]
     fn write_stamps_audit_envelope_and_preserves_created() {
         // Jeff's ruling 2026-06-11: dcterms created/modified/creator on every
         // write; created survives a rewrite (read before replace).
@@ -908,7 +954,7 @@ mod tests {
     #[test]
     fn delete_entity_refuses_unknown_subject_fail_closed() {
         let store = stub(&[], &[]);
-        let e = delete_entity(&store, "domain", "ghost").unwrap_err();
+        let e = delete_entity(&store, "domain", "ghost", None).unwrap_err();
         assert!(e.starts_with("not-found"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "nothing deleted on a missing subject");
     }
@@ -917,7 +963,7 @@ mod tests {
     fn delete_entity_deletes_existing_subject() {
         let subj = format!("{}tests", NS);
         let store = stub(&[subj.as_str()], &[]);
-        let got = delete_entity(&store, "domain", "tests").unwrap();
+        let got = delete_entity(&store, "domain", "tests", None).unwrap();
         assert_eq!(got, subj);
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
@@ -932,7 +978,7 @@ mod tests {
         let subj = format!("{}tests", NS);
         let tgt = format!("{}athena", NS);
         let store = stub(&[subj.as_str(), tgt.as_str()], &[]);
-        let got = add_edge(&store, "domain", "tests", "partOf", "product", "athena").unwrap();
+        let got = add_edge(&store, "domain", "tests", "partOf", "product", "athena", None).unwrap();
         assert_eq!(got, subj);
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
@@ -944,7 +990,7 @@ mod tests {
     fn add_edge_refuses_missing_target_fail_closed() {
         let subj = format!("{}tests", NS);
         let store = stub(&[subj.as_str()], &[]); // target absent
-        let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost").unwrap_err();
+        let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost", None).unwrap_err();
         assert!(e.starts_with("unknown-endpoint"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "no edge written when an endpoint is missing");
     }
@@ -952,14 +998,14 @@ mod tests {
     #[test]
     fn add_edge_refuses_non_camelcase_property() {
         let store = stub(&[], &[]);
-        let e = add_edge(&store, "domain", "tests", "Part-Of", "product", "athena").unwrap_err();
+        let e = add_edge(&store, "domain", "tests", "Part-Of", "product", "athena", None).unwrap_err();
         assert!(e.starts_with("bad-property"), "{}", e);
     }
 
     #[test]
     fn remove_edge_is_idempotent_delete_data() {
         let store = stub(&[], &[]); // no existence requirement — removal toward absence
-        let got = remove_edge(&store, "domain", "tests", "partOf", "product", "athena").unwrap();
+        let got = remove_edge(&store, "domain", "tests", "partOf", "product", "athena", None).unwrap();
         assert_eq!(got, format!("{}tests", NS));
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
