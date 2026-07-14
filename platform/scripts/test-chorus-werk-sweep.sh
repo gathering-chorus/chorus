@@ -175,5 +175,18 @@ echo "regenerated churn" > "$WERK_BASE/kade-108/knowledge/doc-coherence.md"
 OUT5=$(CHORUS_CARDS_BIN="$STUBS/cards-done" "$SWEEP" 2>&1)
 assert "Done werk with generated-only churn sweeps clean" test ! -d "$WERK_BASE/kade-108"
 
+# launchd-bare-env regression (Jeff's live kickstart, 2026-07-14): with PATH
+# stripped to /usr/bin:/bin the sweeper must still resolve its tools and read
+# the (stubbed) board — a blind sweep is a report-only sweep.
+mkwerk kade 109
+git -C "$CANONICAL" commit -q --allow-empty -m "#109 (kade) (#997)"
+git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
+OUT6=$(env -i HOME="$HOME" PATH="/usr/bin:/bin" \
+  CHORUS_HOME="$CANONICAL" CHORUS_WERK_BASE="$WERK_BASE" SPINE_CAPTURE="$SPINE_CAPTURE" \
+  CHORUS_CARDS_BIN="$STUBS/cards-done" CHORUS_LOG_BIN="$STUBS/chorus-log" "$SWEEP" 2>&1)
+assert "bare-env sweep still reads the board (no unreadable flags)" \
+  bash -c '! grep -q "unreadable" <<< "$1"' _ "$OUT6"
+assert "bare-env sweep acted on the closed card" test ! -d "$WERK_BASE/kade-109"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

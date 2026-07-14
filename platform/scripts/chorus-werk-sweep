@@ -24,6 +24,12 @@
 # (same test-override pattern as chorus-werk).
 set -uo pipefail
 
+# launchd provides a bare PATH (/usr/bin:/bin) — the board CLI needs npx/node
+# from homebrew, and the verbs live in ~/.chorus/bin. Pin the PATH here so the
+# scheduled context matches an interactive one (the class behind the nightly
+# alarm battery's missing-env failures; caught live by Jeff's kickstart test).
+export PATH="/opt/homebrew/bin:$HOME/.local/bin:$HOME/.chorus/bin:/usr/local/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}"
