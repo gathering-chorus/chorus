@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# chorus-werk-sweep — scheduled git-hygiene: sweep stale werks + orphan branches (#3541).
+#
+# Mechanizes the hand-sweep of 2026-06-21 (25 stale werks) with the #3394 lesson
+# as the policy line — a deletion is either PROVEN landed or EXPLICITLY reasoned,
+# never inferred:
+#
+#   card open (WIP/Next/...)        -> PRESERVE (live work)
+#   card Done,   content on main    -> chorus-werk remove (content-check proves it)
+#   card Won't-Do, content unlanded -> chorus-werk abandon (#3542 — reasoned, witnessed)
+#   card Done,   content UNLANDED   -> FLAG, never delete (#3394 false-Done shape:
+#                                      a Done card whose work isn't on main is a
+#                                      contradiction for a human, not a cleanup)
+#   card unreadable                 -> FLAG + preserve (fail-closed board)
+#   werk detached-HEAD              -> FLAG (the 2026-05-13 failure class)
+#
+# Cross-role mandate: this sweeper is the AUTHORIZED automation for cross-role
+# teardown (an interactive agent is not — the 2026-06-21 classifier line). It
+# only ever acts through chorus-werk remove/abandon, so every safety net and
+# witness in those verbs applies here too. Reports everything; no silent caps.
+#
+# Scheduling: platform/launchd/com.chorus.werk-sweep.plist (daily 04:30).
+# Environment: CHORUS_HOME, CHORUS_WERK_BASE, CHORUS_CARDS_BIN, CHORUS_LOG_BIN
+# (same test-override pattern as chorus-werk).
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_HOME="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}"
+CHORUS_WERK_BASE="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}"
+CHORUS_CARDS_BIN="${CHORUS_CARDS_BIN:-$SCRIPT_DIR/cards}"
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR/chorus-log")}"
+CHORUS_WERK="$SCRIPT_DIR/chorus-werk"
+
+SWEPT=0; ABANDONED=0; FLAGGED=0; PRESERVED=0
+
+card_status() { # <card-id> -> status string on stdout; rc 1 = unreadable
+  local view
+  view=$("$CHORUS_CARDS_BIN" view "$1" 2>/dev/null) || return 1
+  sed -n 's/^[[:space:]]*Status:[[:space:]]*//p' <<< "$view" | head -1
+}
+
+# ── enumerate: werk dirs ∪ local role branches ──
+declare -a TARGETS=()
+seen=" "
+for werk in "$CHORUS_WERK_BASE"/kade-* "$CHORUS_WERK_BASE"/wren-* "$CHORUS_WERK_BASE"/silas-*; do
+  [ -d "$werk" ] || continue
+  name=$(basename "$werk")
+  role="${name%%-*}"; card="${name#*-}"
+  [[ "$card" =~ ^[0-9]+$ ]] || continue
+  TARGETS+=("$role $card"); seen="$seen$role/$card "
+done
+while IFS= read -r branch; do
+  branch="${branch#refs/heads/}"
+  role="${branch%%/*}"; card="${branch#*/}"
+  [[ "$role" =~ ^(kade|wren|silas)$ && "$card" =~ ^[0-9]+$ ]] || continue
+  case "$seen" in *" $role/$card "*|*"$role/$card "*) continue ;; esac
+  TARGETS+=("$role $card"); seen="$seen$role/$card "
+done < <(git -C "$CHORUS_HOME" for-each-ref --format='%(refname)' 'refs/heads/kade/*' 'refs/heads/wren/*' 'refs/heads/silas/*' 2>/dev/null)
+
+echo "chorus-werk-sweep: ${#TARGETS[@]} candidate werk(s)/branch(es)"
+
+for entry in "${TARGETS[@]+"${TARGETS[@]}"}"; do
+  role="${entry%% *}"; card="${entry#* }"
+  werk="$CHORUS_WERK_BASE/$role-$card"
+
+  # detached-HEAD detection first — a flag on any live werk regardless of card state
+  if [ -d "$werk" ]; then
+    head_ref=$(git -C "$werk" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+    if [ "$head_ref" = "HEAD" ]; then
+      echo "  flag $role-$card: detached-HEAD werk (branch-swap failure class) — resolve by hand"
+      FLAGGED=$((FLAGGED + 1))
+    fi
+  fi
+
+  if ! status=$(card_status "$card"); then
+    echo "  flag $role-$card: card #$card unreadable from the board — preserve (fail-closed)"
+    FLAGGED=$((FLAGGED + 1)); PRESERVED=$((PRESERVED + 1))
+    continue
+  fi
+
+  case "$status" in
+    Done)
+      if "$CHORUS_WERK" remove "$role" "$card" >/dev/null 2>&1; then
+        echo "  swept $role-$card (Done, content proven on main)"
+        SWEPT=$((SWEPT + 1))
+      else
+        echo "  flag $role-$card: card Done but content NOT on main (#3394 false-Done shape) — NOT deleted, resolve by hand"
+        FLAGGED=$((FLAGGED + 1))
+      fi
+      ;;
+    "Won't Do"|"Wont Do"|Archived)
+      if "$CHORUS_WERK" remove "$role" "$card" >/dev/null 2>&1; then
+        echo "  swept $role-$card ($status, content proven on main)"
+        SWEPT=$((SWEPT + 1))
+      elif "$CHORUS_WERK" abandon "$role" "$card" "sweeper: card $status, unlanded content superseded" >/dev/null 2>&1; then
+        echo "  abandoned $role-$card ($status, unlanded content — reasoned + witnessed via #3542)"
+        ABANDONED=$((ABANDONED + 1))
+      else
+        echo "  flag $role-$card: $status but neither remove nor abandon succeeded — resolve by hand"
+        FLAGGED=$((FLAGGED + 1))
+      fi
+      ;;
+    *)
+      echo "  preserve $role-$card (card #$card is '$status' — live work)"
+      PRESERVED=$((PRESERVED + 1))
+      ;;
+  esac
+done
+
+# canonical divergence — surfaced, not fixed (chorus-werk-sync repair is the fix path)
+canon_head=$(git -C "$CHORUS_HOME" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
+if [ "$canon_head" != "main" ]; then
+  echo "  flag canonical: HEAD is '$canon_head' (expected main) — run chorus-werk-sync repair"
+  FLAGGED=$((FLAGGED + 1))
+fi
+
+echo "sweep summary: swept=$SWEPT abandoned=$ABANDONED flagged=$FLAGGED preserved=$PRESERVED"
+"$CHORUS_LOG_BIN" werk.sweep.completed system \
+  "swept=$SWEPT" "abandoned=$ABANDONED" "flagged=$FLAGGED" "preserved=$PRESERVED" >/dev/null 2>&1 || true
+exit 0
