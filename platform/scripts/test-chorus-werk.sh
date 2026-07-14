@@ -290,5 +290,64 @@ assert "Tier-1 removes squash-orphan despite large origin/main history (#3018 pi
 assert "large-history squash-orphan branch is gone" test -z "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3006 2>/dev/null)"
 assert "large-history squash-orphan werk dir is gone" test ! -d "$WERK_BASE/kade-3006"
 
+
+# ═══ #3542: abandon — explicit teardown for superseded werks ═══
+# Stub board + spine surfaces so the tests stay hermetic:
+STUB_DIR="$TEST_ROOT/stubs"
+mkdir -p "$STUB_DIR"
+cat > "$STUB_DIR/cards-wip" <<'EOS'
+#!/usr/bin/env bash
+echo "#999 stub card"
+echo "  Status:   WIP"
+EOS
+cat > "$STUB_DIR/cards-wontdo" <<'EOS'
+#!/usr/bin/env bash
+echo "#999 stub card"
+echo "  Status:   Won't Do"
+EOS
+cat > "$STUB_DIR/chorus-log" <<'EOS'
+#!/usr/bin/env bash
+echo "$@" >> "${SPINE_CAPTURE:?}"
+EOS
+chmod +x "$STUB_DIR/cards-wip" "$STUB_DIR/cards-wontdo" "$STUB_DIR/chorus-log"
+export SPINE_CAPTURE="$TEST_ROOT/spine-capture.log"
+
+# --- TEST A1: abandon without a reason refuses (explicit, never silent) ---
+"$CHORUS_WERK" add kade 3542 > /dev/null 2>&1
+CHORUS_CARDS_BIN="$STUB_DIR/cards-wontdo" "$CHORUS_WERK" abandon kade 3542 > /dev/null 2>&1
+RC=$?
+assert "abandon without reason refuses (exit 2)" test "$RC" -eq 2
+assert "werk survives reason-less abandon" test -d "$WERK_BASE/kade-3542"
+
+# --- TEST A2: abandon of an ACTIVE (WIP) card refuses ---
+CHORUS_CARDS_BIN="$STUB_DIR/cards-wip" "$CHORUS_WERK" abandon kade 3542 "superseded by test" > /dev/null 2>&1
+RC=$?
+assert "abandon of WIP card refuses (exit 4)" test "$RC" -eq 4
+assert "werk survives WIP-card abandon" test -d "$WERK_BASE/kade-3542"
+
+# --- TEST A3: abandon of a closed card tears down DIRTY + UNMERGED werk ---
+echo "superseded content that will never land" > "$WERK_BASE/kade-3542/dead.txt"
+git -C "$WERK_BASE/kade-3542" add dead.txt
+git -C "$WERK_BASE/kade-3542" -c user.email=t@t -c user.name=t commit -q -m "kade: unlanded work"
+echo "dirty too" > "$WERK_BASE/kade-3542/uncommitted.txt"
+CHORUS_LOG_BIN="$STUB_DIR/chorus-log" CHORUS_CARDS_BIN="$STUB_DIR/cards-wontdo" \
+  "$CHORUS_WERK" abandon kade 3542 "superseded: closed via other card" > /dev/null 2>&1
+RC=$?
+assert "abandon of closed card succeeds (exit 0)" test "$RC" -eq 0
+assert "abandoned werk dir is gone" test ! -d "$WERK_BASE/kade-3542"
+assert "abandoned local branch is gone" test -z "$(git -C "$CANONICAL" rev-parse --verify refs/heads/kade/3542 2>/dev/null)"
+
+# --- TEST A4: abandon is witnessed — werk.abandoned with role/card/reason ---
+assert "werk.abandoned emitted with role+card+reason" \
+  bash -c 'grep -q "werk.abandoned" "$SPINE_CAPTURE" && grep -q "card_id=3542" "$SPINE_CAPTURE" && grep -q "superseded" "$SPINE_CAPTURE"'
+
+# --- TEST A5: abandon when the card lookup FAILS refuses (fail-closed) ---
+"$CHORUS_WERK" add kade 3543 > /dev/null 2>&1
+CHORUS_CARDS_BIN="/nonexistent/cards" "$CHORUS_WERK" abandon kade 3543 "some reason" > /dev/null 2>&1
+RC=$?
+assert "abandon fail-closed when board lookup fails (exit 4)" test "$RC" -eq 4
+assert "werk survives lookup-failure abandon" test -d "$WERK_BASE/kade-3543"
+"$CHORUS_WERK" remove kade 3543 > /dev/null 2>&1
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

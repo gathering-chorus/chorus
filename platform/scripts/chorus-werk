@@ -24,6 +24,14 @@
 #                            git worktree remove + delete local branch +
 #                            best-effort remote-ref delete + git worktree prune.
 #                            Idempotent: re-remove of a gone card is a no-op.
+#   abandon <role> <card-id> <reason>
+#                            #3542: explicit teardown for a SUPERSEDED werk whose
+#                            content will never land (card closed via another
+#                            card / Won't-Do). Bypasses the merged-ness proof AND
+#                            the dirty refusal — the required reason + the
+#                            card-not-active check are the consent. Refuses on an
+#                            ACTIVE card or when the board can't be read
+#                            (fail-closed). Witnessed via werk.abandoned.
 #   status                   list ephemeral worktrees (chorus-werk/<role>-*).
 #
 # Environment:
@@ -44,6 +52,9 @@ Usage: chorus-werk <subcommand> [args]
 Subcommands:
   add <role> <card-id>     create chorus-werk/<role>-<card>/ on branch <role>/<card-id>
   remove <role> <card-id>  remove the card's worktree + branch (refuses on dirty werk)
+  abandon <role> <card-id> <reason>
+                           tear down a SUPERSEDED werk (content won't land);
+                           requires a reason; refuses on an active card (#3542)
   status                   list ephemeral worktrees
 
 Environment:
@@ -317,7 +328,7 @@ cmd_remove() {
         exit 7
       fi
       if grep -q '^+' <<< "$cherry_out"; then
-        echo "chorus-werk: '$branch' has commits not on origin/main by content and no acp #${card_id} commit on main${stale_note} — refusing to delete. Merge or abandon explicitly (git branch -D)." >&2
+        echo "chorus-werk: '$branch' has commits not on origin/main by content and no acp #${card_id} commit on main${stale_note} — refusing to delete. Merge, or if superseded: chorus-werk abandon <role> <id> <reason> (#3542)." >&2
         exit 7
       fi
     fi
@@ -411,6 +422,82 @@ cmd_status() {
   fi
 }
 
+# #3542 — abandon: explicit teardown for a superseded werk. The safety inversion
+# vs remove: remove PROVES the content landed; abandon records WHY it never will.
+# Board lookup is env-overridable for hermetic tests (CHORUS_CARDS_BIN), spine
+# emit via CHORUS_LOG_BIN (mirrors nightly-suites.sh: logging failure must never
+# change the outcome, but the CARD lookup is fail-closed — no status, no abandon).
+SCRIPT_DIR_CW="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_CARDS_BIN="${CHORUS_CARDS_BIN:-$SCRIPT_DIR_CW/cards}"
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_CW/chorus-log")}"
+
+cmd_abandon() {
+  local role="${1:-}" card_id="${2:-}"; shift 2 2>/dev/null || true
+  local reason="${*:-}"
+  case "$role" in kade|wren|silas) ;; *)
+    echo "chorus-werk: unknown role '${role:-}' (expected kade, wren, or silas)" >&2; exit 2 ;;
+  esac
+  if ! [[ "$card_id" =~ ^[0-9]+$ ]]; then
+    echo "chorus-werk: card id must be a number, got '${card_id:-}'" >&2; exit 2
+  fi
+  if [ -z "$reason" ]; then
+    echo "chorus-werk: abandon requires an explicit reason — usage: chorus-werk abandon <role> <card-id> <reason>" >&2
+    exit 2
+  fi
+  require_canonical
+
+  # Fail-closed active-card check: only a closed card (Done / Won't Do) may be
+  # abandoned. A board we cannot read is a refusal, not a pass.
+  local card_view status
+  if ! card_view=$("$CHORUS_CARDS_BIN" view "$card_id" 2>/dev/null); then
+    echo "chorus-werk: cannot read card #$card_id from the board ($CHORUS_CARDS_BIN) — refusing to abandon (fail-closed)" >&2
+    exit 4
+  fi
+  status=$(sed -n 's/^[[:space:]]*Status:[[:space:]]*//p' <<< "$card_view" | head -1)
+  case "$status" in
+    Done|"Won't Do"|"Wont Do"|Archived) ;; # closed — abandonable
+    *)
+      echo "chorus-werk: card #$card_id status is '${status:-unknown}' — abandon is only for CLOSED cards (Done / Won't Do); an active card's werk is live work" >&2
+      exit 4 ;;
+  esac
+
+  local werk="$CHORUS_WERK_BASE/$role-$card_id"
+  local branch="$role/$card_id"
+  local removed_something=0
+
+  if [ -d "$werk" ]; then
+    # Dirty or not — abandoning discards by declared intent; say what is lost.
+    local dirty
+    dirty=$(git -C "$werk" status --porcelain 2>/dev/null | head -5)
+    [ -n "$dirty" ] && echo "chorus-werk: abandoning UNCOMMITTED changes in $werk (discarded by declared abandon):" >&2 && echo "$dirty" >&2
+    if ! git -C "$CHORUS_HOME" worktree remove --force "$werk" 2>&1; then
+      echo "chorus-werk: git worktree remove failed for $werk" >&2
+      exit 6
+    fi
+    removed_something=1
+  fi
+  if git -C "$CHORUS_HOME" rev-parse --verify -q "refs/heads/$branch" >/dev/null 2>&1; then
+    if ! git -C "$CHORUS_HOME" branch -D "$branch" 2>&1; then
+      echo "chorus-werk: 'git branch -D $branch' failed" >&2
+      exit 7
+    fi
+    removed_something=1
+  fi
+  # Best-effort remote delete + prune (same #3498 rationale as remove).
+  git -C "$CHORUS_HOME" push origin --delete "$branch" >/dev/null 2>&1 || true
+  git -C "$CHORUS_HOME" worktree prune 2>/dev/null || true
+
+  # Witness — never silent (logging failure does not change the outcome).
+  "$CHORUS_LOG_BIN" werk.abandoned "$role" "card_id=$card_id" "reason=$reason" >/dev/null 2>&1 || true
+
+  if [ "$removed_something" = "1" ]; then
+    echo "chorus-werk: ABANDONED $role-$card_id (worktree + branch torn down; reason: $reason)"
+  else
+    echo "chorus-werk: $role-$card_id already gone — abandon recorded (reason: $reason)"
+  fi
+  return 0
+}
+
 main() {
   if [ $# -lt 1 ]; then
     usage >&2
@@ -420,6 +507,7 @@ main() {
   case "$sub" in
     add) cmd_add "$@" ;;
     remove) cmd_remove "$@" ;;
+    abandon) cmd_abandon "$@" ;;
     prune-merged) cmd_prune_merged "$@" ;;
     status) cmd_status "$@" ;;
     -h|--help|help) usage ;;
