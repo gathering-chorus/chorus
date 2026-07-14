@@ -38,10 +38,27 @@ use std::collections::HashMap;
 /// uncached kid stays fail-closed (JwksUnreachable) rather than re-fetching.
 const JWKS_FETCH_COOLDOWN_SECS: u64 = 30;
 
+/// How long the model-resolved Principal allow-set stays fresh (seconds).
+/// MUST be ≤ the CSS token TTL: revocation is a model edit (drop the
+/// Principal), and the AC requires a revoked credential's writes to refuse
+/// within ONE token TTL — a lazily re-resolved cache with this bound delivers
+/// that without a per-request graph call (the #3406 freeze-class stays killed).
+const ALLOW_TTL_SECS: u64 = 300;
+/// Cooldown between re-resolve ATTEMPTS once the cache is stale.
+const ALLOW_RETRY_COOLDOWN_SECS: u64 = 30;
+
 struct JwksState {
     /// kid → SEC1 uncompressed point bytes (0x04 || x || y) for a P-256 key.
     keys: HashMap<String, Vec<u8>>,
     /// epoch-secs of the last fetch ATTEMPT (success or failure) — cooldown base.
+    last_attempt: u64,
+}
+
+struct AllowState {
+    webids: Vec<String>,
+    /// epoch-secs of the last SUCCESSFUL resolve — freshness base.
+    fetched_at: u64,
+    /// epoch-secs of the last resolve ATTEMPT — retry-cooldown base.
     last_attempt: u64,
 }
 
@@ -51,23 +68,63 @@ struct JwksState {
 /// without flapping the real issuer).
 pub struct OidcVerifier {
     issuer: String,
-    allow: Vec<String>,
+    /// Principal allow-set resolver (prod: the model query; tests: a stub).
+    /// None = graph unreachable — DISTINCT from Some(empty) = nobody allowed.
+    resolve_allow: Box<dyn Fn() -> Option<Vec<String>>>,
     fetch: Box<dyn Fn() -> Option<String>>,
     state: RefCell<JwksState>,
+    allow: RefCell<AllowState>,
 }
 
 impl OidcVerifier {
     pub fn new(
         issuer: &str,
-        allow: Vec<String>,
+        resolve_allow: impl Fn() -> Option<Vec<String>> + 'static,
         fetch: impl Fn() -> Option<String> + 'static,
     ) -> Self {
         Self {
             issuer: norm_iss(issuer),
-            allow,
+            resolve_allow: Box::new(resolve_allow),
             fetch: Box::new(fetch),
             state: RefCell::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
+            allow: RefCell::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
         }
+    }
+
+    /// Boot-prime the allow-set (same posture as warm_fetch: loud on failure,
+    /// never boot-blocking). Returns how many Principal webids were cached.
+    pub fn warm_allow(&self, now_secs: u64) -> usize {
+        let mut al = self.allow.borrow_mut();
+        al.last_attempt = now_secs;
+        if let Some(v) = (self.resolve_allow)() {
+            al.webids = v;
+            al.fetched_at = now_secs;
+        }
+        al.webids.len()
+    }
+
+    /// Membership with TTL'd lazy refresh: past ALLOW_TTL_SECS the set is
+    /// re-resolved (cooldown-bounded) so a model-side revocation — dropping the
+    /// Principal — takes effect within one TTL, no restart (the #3613 AC's
+    /// revocation drill). Resolve FAILURE empties the set (fail-closed): a
+    /// write needs the store anyway, so refusing authz when the store is
+    /// unreachable refuses nothing that could have succeeded.
+    fn allowed(&self, web_id: &str, now_secs: u64) -> bool {
+        let mut al = self.allow.borrow_mut();
+        let stale = now_secs.saturating_sub(al.fetched_at) >= ALLOW_TTL_SECS;
+        let can_retry = now_secs.saturating_sub(al.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
+            || al.last_attempt == 0;
+        if stale && can_retry {
+            al.last_attempt = now_secs;
+            match (self.resolve_allow)() {
+                Some(v) => {
+                    al.webids = v;
+                    al.fetched_at = now_secs;
+                }
+                None => al.webids.clear(),
+            }
+        }
+        al.webids.iter().any(|w| w == web_id)
     }
 
     /// Boot warm-fetch (ADR-052 §2a): populate the cache so a CSS blip after
@@ -171,7 +228,7 @@ impl OidcVerifier {
         let web_id = auth::json_string(payload, "webid")
             .or_else(|| auth::json_string(payload, "webId"))
             .ok_or(AuthError::Malformed)?;
-        if !self.allow.iter().any(|w| w == &web_id) {
+        if !self.allowed(&web_id, now_secs) {
             return Err(AuthError::WebIdNotAllowed);
         }
 
@@ -249,11 +306,10 @@ pub fn seam_auth_any(
 /// extractor) parses exactly that seam.
 pub const PRINCIPAL_ALLOW_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?v } }";
 
-pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Vec<String> {
-    match query(PRINCIPAL_ALLOW_QUERY) {
-        Some(body) => crate::select_v(&body),
-        None => Vec::new(),
-    }
+/// None = graph unreachable (caller decides the fail-closed posture);
+/// Some(empty) = reachable and genuinely nobody allowed.
+pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
+    query(PRINCIPAL_ALLOW_QUERY).map(|body| crate::select_v(&body))
 }
 
 /// Issuer equality with trailing-slash tolerance — `http://localhost:3001`
@@ -415,7 +471,9 @@ mod tests {
 
     fn verifier() -> OidcVerifier {
         let jwks = jwks_json(&css_key(), KID);
-        OidcVerifier::new(ISSUER, allow(), move || Some(jwks.clone()))
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || Some(jwks.clone()));
+        v.warm_allow(NOW);
+        v
     }
 
     fn token_valid() -> String {
@@ -494,7 +552,8 @@ mod tests {
     // ⇒ 401, never allow-on-error.
     #[test]
     fn jwks_unreachable_failclosed() {
-        let v = OidcVerifier::new(ISSUER, allow(), || None); // CSS down, cache empty
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || None); // CSS down, JWKS cache empty
+        v.warm_allow(NOW);
         assert_eq!(v.verify(&token_valid(), NOW), Err(AuthError::JwksUnreachable));
     }
 
@@ -505,9 +564,10 @@ mod tests {
         let up = Rc::new(Cell::new(true));
         let up_c = up.clone();
         let jwks = jwks_json(&css_key(), KID);
-        let v = OidcVerifier::new(ISSUER, allow(), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || {
             if up_c.get() { Some(jwks.clone()) } else { None }
         });
+        v.warm_allow(NOW);
         assert_eq!(v.warm_fetch(NOW), 1, "boot warm-fetch caches the CSS key");
         up.set(false); // CSS blips
         let c = v.verify(&token_valid(), NOW + 60).expect("cached kid verifies through the blip");
@@ -522,11 +582,12 @@ mod tests {
         let jwks = jwks_json(&css_key(), KID);
         let calls = Rc::new(Cell::new(0u32));
         let calls_c = calls.clone();
-        let v = OidcVerifier::new(ISSUER, allow(), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || {
             calls_c.set(calls_c.get() + 1);
             Some(jwks.clone())
         });
         v.warm_fetch(NOW);
+        v.warm_allow(NOW);
         let rotated = mint_es256(&css_key(), "rotated-kid", &payload(ISSUER, "chorus", &wren_webid(), NOW + 3600));
         // inside the cooldown: no refetch, fail closed
         assert_eq!(v.verify(&rotated, NOW + 5), Err(AuthError::JwksUnreachable));
@@ -576,10 +637,11 @@ mod tests {
     // the verified WebID; there is no claim an agent can add to act as another.
     #[test]
     fn webid_outside_allow_set_403s() {
-        let v = OidcVerifier::new(ISSUER, vec![silas_webid()], {
+        let v = OidcVerifier::new(ISSUER, || Some(vec![silas_webid()]), {
             let jwks = jwks_json(&css_key(), KID);
             move || Some(jwks.clone())
         });
+        v.warm_allow(NOW);
         // wren's (valid, CSS-signed) token against a silas-only allow-set
         assert_eq!(v.verify(&token_valid(), NOW), Err(AuthError::WebIdNotAllowed));
         let reg = KeyRegistry::resolve(&[], |_| None);
@@ -592,6 +654,54 @@ mod tests {
             &["/schema/domain".to_string()],
         );
         assert_eq!(r.map(|(c, _)| c), Some(403), "authenticated-but-not-permitted is 403");
+    }
+
+    // case 11 (unit half) — revocation-drill: dropping the Principal from the
+    // model refuses that WebID within one ALLOW_TTL (≤ token TTL), no restart.
+    // The live half (real CSS cred revoked, real store) runs at land time.
+    #[test]
+    fn revocation_propagates_within_one_ttl() {
+        let revoked = Rc::new(Cell::new(false));
+        let revoked_c = revoked.clone();
+        let jwks = jwks_json(&css_key(), KID);
+        let v = OidcVerifier::new(
+            ISSUER,
+            move || Some(if revoked_c.get() { vec![] } else { vec![wren_webid(), silas_webid()] }),
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        assert!(v.verify(&token_valid(), NOW).is_ok(), "pre-revocation: verifies");
+        revoked.set(true); // the model edit: Principal dropped
+        // inside the TTL the cache may still allow — that's the accepted bound
+        assert!(v.verify(&token_valid(), NOW + 10).is_ok(), "within TTL: stale cache may allow");
+        // past the TTL the refresh runs and the WebID is refused
+        assert_eq!(
+            v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1),
+            Err(AuthError::WebIdNotAllowed),
+            "past one TTL: revoked Principal is refused, no restart"
+        );
+    }
+
+    // allow-set resolver unreachable at refresh time ⇒ fail-closed (empty),
+    // never stale-forever: authz refuses when membership cannot be proven.
+    #[test]
+    fn allow_refresh_failure_fails_closed() {
+        let up = Rc::new(Cell::new(true));
+        let up_c = up.clone();
+        let jwks = jwks_json(&css_key(), KID);
+        let v = OidcVerifier::new(
+            ISSUER,
+            move || if up_c.get() { Some(vec![wren_webid()]) } else { None },
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        assert!(v.verify(&token_valid(), NOW).is_ok());
+        up.set(false); // graph goes unreachable
+        assert_eq!(
+            v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1),
+            Err(AuthError::WebIdNotAllowed),
+            "membership unprovable ⇒ refused (a write needs the store anyway)"
+        );
     }
 
     // alg=none / unknown-alg hardening: dispatch can't be tricked into a
@@ -625,8 +735,8 @@ mod tests {
             assert!(q.contains("urn:chorus:domains:security"), "scoped to the security domain graph");
             Some(body.clone())
         });
-        assert_eq!(got, vec![wren_webid(), silas_webid()]);
-        assert!(resolve_principal_webids(|_| None).is_empty(), "unreachable ⇒ empty ⇒ fail-closed");
+        assert_eq!(got, Some(vec![wren_webid(), silas_webid()]));
+        assert_eq!(resolve_principal_webids(|_| None), None, "unreachable is DISTINCT from empty");
     }
 
     // JWKS parse hardening: multiple keys, non-EC keys skipped, fields never

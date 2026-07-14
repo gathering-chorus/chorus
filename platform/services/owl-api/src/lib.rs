@@ -2936,14 +2936,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     // JWKS fetched via curl with a kid-keyed cache (§2). Warm-fetch warns loudly
     // on CSS-down-at-boot but never blocks boot.
     let css_issuer = std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
-    let oidc_allow = oidc::resolve_principal_webids(|q| sparql_json(q).ok());
-    if oidc_allow.is_empty() {
-        eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); every ES256 token will be refused (fail-closed). HS256 legacy path unaffected.");
-    } else {
-        eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved)", oidc_allow.len());
-    }
     let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
-    let oidc_verifier = oidc::OidcVerifier::new(&css_issuer, oidc_allow, move || {
+    let oidc_verifier = oidc::OidcVerifier::new(
+        &css_issuer,
+        // allow-set resolver: re-run lazily on the ALLOW_TTL cadence so a model
+        // revocation propagates within one token TTL (no restart, no per-request call)
+        || oidc::resolve_principal_webids(|q| sparql_json(q).ok()),
+        move || {
         let out = Command::new("curl")
             .args(["-sf", "--max-time", "3", &jwks_url])
             .output()
@@ -2952,11 +2951,18 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             return None;
         }
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
-    });
+        },
+    );
     let boot_now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let warmed_allow = oidc_verifier.warm_allow(boot_now);
+    if warmed_allow == 0 {
+        eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); ES256 tokens are refused (fail-closed) until the TTL'd re-resolve finds Principals. HS256 legacy path unaffected.");
+    } else {
+        eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved, TTL'd)", warmed_allow);
+    }
     let warmed = oidc_verifier.warm_fetch(boot_now);
     if warmed == 0 {
         eprintln!("owl-api: WARNING — JWKS warm-fetch got 0 keys from {} (CSS down or no keys); ES256 verifies fail-closed until a kid-triggered refetch succeeds.", css_issuer);
