@@ -1276,13 +1276,18 @@ fn dal_batch(graph: &str, deletes: &[(String, String, String)], inserts: &[(Stri
 /// Tab can't appear in a valid IRI/literal, so owl-api never assembles SPARQL — it
 /// splits into typed argv and hands them to the chorus-model `batch` CLI (slot-
 /// validation + structural single-graph). `graph` = the scope-validated x-target-graph.
-fn handle_batch(graph: &str, body: &str, caller_role: &str) -> (u16, String) {
+/// #3612 incr-2 — ONE governed batch primitive, two door routes: /batch (entity
+/// cap, 64 KiB) and /bulk (MAX_BULK_BYTES, 8 MiB — harvest/migration sizes).
+/// Silas's scope ruling (2026-07-15): chorus-model `batch` IS the bulk primitive
+/// (typed slots, witnessed, off-realm refuse) — /bulk delegates, never invents a
+/// second write path. `cap` + `op` are the only differences between the routes.
+fn handle_batch(graph: &str, body: &str, caller_role: &str, cap: usize, op: &str) -> (u16, String) {
     // #3612 — batch validation refusals leave through the one exit (typed + spine).
     if graph.trim().is_empty() {
-        return refuse_write(caller_role, "batch", graph, "validation", "batch requires x-target-graph (no default graph, ever)");
+        return refuse_write(caller_role, op, graph, "validation", &format!("{} requires x-target-graph (no default graph, ever)", op));
     }
-    if body.len() > MAX_WRITE_BYTES {
-        return refuse_write(caller_role, "batch", graph, "validation", &format!("batch body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    if body.len() > cap {
+        return refuse_write(caller_role, op, graph, "validation", &format!("{} body {} bytes exceeds {}-byte cap", op, body.len(), cap));
     }
     let mut deletes: Vec<(String, String, String)> = Vec::new();
     let mut inserts: Vec<(String, String, String)> = Vec::new();
@@ -1291,25 +1296,25 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str) -> (u16, String) {
         if line.trim().is_empty() { continue; }
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() != 4 {
-            return refuse_write(caller_role, "batch", graph, "validation", "batch line must be OP<tab>S<tab>P<tab>O");
+            return refuse_write(caller_role, op, graph, "validation", "batch line must be OP<tab>S<tab>P<tab>O");
         }
         let triple = (f[1].to_string(), f[2].to_string(), f[3].to_string());
         match f[0] {
             "DEL" => deletes.push(triple),
             "INS" => inserts.push(triple),
-            _ => return refuse_write(caller_role, "batch", graph, "validation", "batch op must be DEL or INS"),
+            _ => return refuse_write(caller_role, op, graph, "validation", "batch op must be DEL or INS"),
         }
     }
     if deletes.is_empty() && inserts.is_empty() {
-        return refuse_write(caller_role, "batch", graph, "validation", "batch: no DEL/INS lines");
+        return refuse_write(caller_role, op, graph, "validation", "batch: no DEL/INS lines");
     }
     match dal_batch(graph, &deletes, &inserts, caller_role) {
         Ok(_) => {
-            emit_write_spine(caller_role, "batch", graph, "", "ok");
-            write_resp("ok", &format!("batch applied: {} del, {} ins -> <{}> (via DAL)", deletes.len(), inserts.len(), graph))
+            emit_write_spine(caller_role, op, graph, "", "ok");
+            write_resp("ok", &format!("{} applied: {} del, {} ins -> <{}> (via DAL)", op, deletes.len(), inserts.len(), graph))
         }
         Err(e) => {
-            emit_write_spine(caller_role, "batch", graph, "", "error");
+            emit_write_spine(caller_role, op, graph, "", "error");
             dal_err_resp(&e)
         }
     }
@@ -3067,7 +3072,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // hang the single-threaded serve loop; read_http_request returns whatever
         // arrived and downstream validation 422s a truncated batch.
         let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-        let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
+        // #3612 — the socket read is bounded by the LARGEST route cap (bulk, 8 MiB);
+        // per-route caps (entity/batch 64 KiB, bulk 8 MiB) enforce the tighter
+        // bounds downstream with honest 422s. One past the cap so oversize is
+        // detectable, never silently truncated.
+        let req_string = read_http_request(&mut stream, MAX_BULK_BYTES);
         let req = req_string.as_str();
         let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
         // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
@@ -3158,7 +3167,10 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // table), so it's handled here, before table-selection. Same gate as per-class
         // writes: Bearer required (else 401), x-target-graph must be in the token scope
         // (else 403). Delegates to handle_batch → the typed-slot chorus-model batch op.
-        if method == "POST" && path == "/batch" {
+        // #3612 — /bulk is the SAME primitive at the bulk cap (MAX_BULK_BYTES): one
+        // gate, one delegate, different bound. Never a second write path.
+        if method == "POST" && (path == "/batch" || path == "/bulk") {
+            let (bulk_cap, bulk_op) = if path == "/bulk" { (MAX_BULK_BYTES, "bulk") } else { (MAX_WRITE_BYTES, "batch") };
             let now_secs = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
@@ -3170,21 +3182,21 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .unwrap_or(&auth_hdr);
             let (code, body) = match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => refuse_write(
-                    "anon", "batch", &header("x-target-graph"), "authn-missing",
-                    "a valid Bearer service-token is required for a batch write",
+                    "anon", bulk_op, &header("x-target-graph"), "authn-missing",
+                    &format!("a valid Bearer service-token is required for a {} write", bulk_op),
                 ),
                 Ok(claims) => {
                     let target_graph = header("x-target-graph");
                     let role = role_from_webid(&claims.web_id).unwrap_or_default();
-                    // #3573 Wren gate, uniform via #3612 govern_scope — /batch REQUIRES a
-                    // non-empty scope claim (require_scope=true). Unlike entity writes
-                    // (legacy/unscoped mixed-state), batch is the most destructive op; a
-                    // legacy allow-all token has no business here. Refusal = typed + spine.
-                    match govern_scope(&role, "batch", &claims.scope, &target_graph, true) {
+                    // #3573 Wren gate, uniform via #3612 govern_scope — /batch and /bulk
+                    // REQUIRE a non-empty scope claim (require_scope=true). Unlike entity
+                    // writes (legacy/unscoped mixed-state), these are the most destructive
+                    // ops; a legacy allow-all token has no business here. Refusal = typed + spine.
+                    match govern_scope(&role, bulk_op, &claims.scope, &target_graph, true) {
                         Err(refusal) => refusal,
                         Ok(()) => {
                             let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                            handle_batch(&target_graph, body_str, &role)
+                            handle_batch(&target_graph, body_str, &role, bulk_cap, bulk_op)
                         }
                     }
                 }
@@ -4172,15 +4184,10 @@ mod tests {
 
     #[test]
     fn govern_gate_refuses_every_primitive_off_realm_and_spines_each_refusal() {
-        let world = std::env::temp_dir().join(format!("owl-3612-govern-{}", std::process::id()));
-        let scripts = world.join("platform/scripts");
-        std::fs::create_dir_all(&scripts).unwrap();
-        std::fs::write(
-            scripts.join("chorus-log"),
-            "#!/bin/bash\necho \"$@\" >> \"$(cd \"$(dirname \"$0\")/../..\" && pwd)/spine.log\"\n",
-        )
-        .unwrap();
-        std::env::set_var("CHORUS_HOME", &world);
+        let world = spine_world();
+        // fresh ledger for THIS run — the world survives across runs (pid reuse
+        // would otherwise accumulate matching lines and break the exact count)
+        let _ = std::fs::write(world.join("spine.log"), "");
 
         let caller = "govtest-wren";
         let scope = vec!["urn:chorus:domains:tests".to_string()];
@@ -4218,10 +4225,68 @@ mod tests {
         }
         assert!(log.lines().any(|l| l.contains("anon") && l.contains("result=authn-missing")), "authn refusal spined: {}", log);
         // 6 off-realm + 1 unscoped-batch + 1 authn = 8 refusals, 8 lines (passes are silent here;
-        // their spine event is the write outcome downstream, not the gate)
+        // their spine event is the write outcome downstream, not the gate).
+        // Filter by THIS test's callers — the world is shared with the bulk-cap
+        // tests (deliberately: one CHORUS_HOME, no race on the env var).
         let mine = log.lines().filter(|l| l.contains(caller) || l.contains("anon")).count();
         assert_eq!(mine, 8, "exactly one spine line per refusal: {}", log);
-        let _ = std::fs::remove_dir_all(&world);
+        let _ = world; // shared world is NOT removed — concurrent tests still emit into it
+    }
+
+    // === #3612 incr-2 — /bulk rides the ONE governed batch primitive =========
+    //
+    // Silas's scope answer (2026-07-15): chorus-model `batch` IS the governed
+    // bulk primitive (typed slots, witnessed, off-realm refuse); /bulk is a door
+    // route that delegates to it with the BULK cap (MAX_BULK_BYTES, 8 MiB)
+    // instead of the entity cap (64 KiB). One primitive, two caps, same gate.
+
+    /// Shared bring-your-own-world for every test that can emit a spine event:
+    /// ONE deterministic CHORUS_HOME (same path in every caller, so concurrent
+    /// tests never point emissions at different worlds) with a stub chorus-log.
+    /// Callers that assert on spine.log filter by their own caller name.
+    fn spine_world() -> std::path::PathBuf {
+        let world = std::env::temp_dir().join(format!("owl-3612-govern-{}", std::process::id()));
+        let scripts = world.join("platform/scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("chorus-log"),
+            "#!/bin/bash\necho \"$@\" >> \"$(cd \"$(dirname \"$0\")/../..\" && pwd)/spine.log\"\n",
+        )
+        .unwrap();
+        std::env::set_var("CHORUS_HOME", &world);
+        world
+    }
+
+    #[test]
+    fn bulk_and_batch_are_one_primitive_with_different_caps() {
+        let _world = spine_world();
+        // NOTE: every probe here refuses at the CAP or the PARSER — none reaches
+        // the DAL spawn, so no store and no real binary is ever touched.
+        // over the entity cap but under the bulk cap: /batch refuses...
+        let big_valid = format!("INS\t<urn:x>\t<urn:y>\t\"{}\"", "v".repeat(MAX_WRITE_BYTES));
+        let (code, body) = handle_batch("urn:chorus:domains:tests", &big_valid, "captest-3612", MAX_WRITE_BYTES, "batch");
+        assert_eq!(code, 422, "batch keeps the 64 KiB entity cap: {}", body);
+        assert!(body.contains("exceeds"), "{}", body);
+        // ...while the SAME size through /bulk clears the size gate and reaches
+        // the parser (proven by a parse-shaped refusal on a malformed big line,
+        // which can only fire past the cap check)
+        let big_malformed = format!("INS\t<urn:x>\t<urn:y>\t\"{}\"\textra-slot", "v".repeat(MAX_WRITE_BYTES));
+        let (code, body) = handle_batch("urn:chorus:domains:tests", &big_malformed, "captest-3612", MAX_BULK_BYTES, "bulk");
+        assert_eq!(code, 422);
+        assert!(body.contains("OP<tab>"), "bulk cap admits the size, parser sees it: {}", body);
+        // and the bulk cap is still a cap — fail-closed on runaway bodies
+        let over = format!("INS\t<urn:x>\t<urn:y>\t\"{}\"", "v".repeat(MAX_BULK_BYTES));
+        let (code, body) = handle_batch("urn:chorus:domains:tests", &over, "captest-3612", MAX_BULK_BYTES, "bulk");
+        assert_eq!(code, 422, "over the bulk cap refuses: {}", body);
+        assert!(body.contains("exceeds"), "{}", body);
+    }
+
+    #[test]
+    fn bulk_validation_refusals_carry_the_bulk_op_label() {
+        let _world = spine_world();
+        let (code, body) = handle_batch("", "INS\t<urn:x>\t<urn:y>\t\"z\"", "captest-3612", MAX_BULK_BYTES, "bulk");
+        assert_eq!(code, 422);
+        assert!(body.contains("bulk requires x-target-graph"), "op label reaches the message: {}", body);
     }
 }
 
