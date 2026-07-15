@@ -1,36 +1,22 @@
+// @test-type: unit — handler tests with injected scanner/envelope fakes; no services.
 /**
- * chorus-tests handler — unit tests (#2189).
+ * chorus-tests handler — unit tests (#2189, rewired #3656).
  *
- * /api/chorus/tests/:domain and /api/chorus/tests both proxy Gathering's
- * quality API. Tests verify:
- *   - domain lowercased before proxy URL
- *   - upstream non-2xx → pass status + upstream error msg
- *   - upstream ok → envelope wraps data with count/total meta
+ * /api/chorus/tests/:domain and /api/chorus/tests call the LOCAL quality
+ * scanner (quality-summary.ts) directly — #3656 removed the HTTP proxy to
+ * Gathering's retired /api/quality/* surface. Tests verify:
+ *   - domain lowercased before scanner call
+ *   - scanner ok → envelope wraps data with count/total meta
  *   - all-scan flattens pyramid[].files[] into root-level files[]
- *   - fetch throws → 502 with envelope { error, _meta: { error: true } }
+ *   - scanner throws → 500 with envelope { error, _meta: { error: true } }
  *   - elapsed_ms captured via now() difference
  */
 import {
   fetchTestsByDomain,
   fetchTestsAll,
   type TestsDeps,
-  type FetchFn,
   type EnvelopeFn,
 } from '../../src/handlers/chorus-tests';
-
-function okFetch(body: unknown): FetchFn {
-  return async () => ({ ok: true, status: 200, json: async () => body });
-}
-
-function errFetch(status: number): FetchFn {
-  return async () => ({ ok: false, status, json: async () => ({}) });
-}
-
-function throwFetch(msg: string): FetchFn {
-  return async () => {
-    throw new Error(msg);
-  };
-}
 
 interface EnvelopeCall {
   queryName: string;
@@ -50,67 +36,61 @@ function spyEnvelope(): { fn: EnvelopeFn; calls: EnvelopeCall[] } {
 
 function deps(overrides: Partial<TestsDeps>, envelope: EnvelopeFn): TestsDeps {
   return {
-    fetchFn: okFetch({}),
     envelope,
     now: () => 0,
-    appBaseUrl: 'http://fake',
     ...overrides,
   };
 }
 
-describe('fetchTestsByDomain (#2189 /api/chorus/tests/:domain)', () => {
+describe('fetchTestsByDomain (#3656 /api/chorus/tests/:domain via local scanner)', () => {
   test('lowercases domain, wraps data in domain-tests envelope with count', async () => {
     const env = spyEnvelope();
     let t = 100;
-    const upstreamBody = { total: 42, somefield: 'x' };
-    let calledUrl = '';
-    const fetchFn: FetchFn = async (url) => {
-      calledUrl = url;
-      return { ok: true, status: 200, json: async () => upstreamBody };
+    const scannerBody = { domain: 'photos', total: 42, files: [], layers: [] };
+    let calledDomain = '';
+    const byDomainFn = (d: string) => {
+      calledDomain = d;
+      return scannerBody;
     };
-    const r = await fetchTestsByDomain('PhOtOs', deps({ fetchFn, now: () => (t += 5) }, env.fn));
-    expect(calledUrl).toBe('http://fake/api/quality/domain/photos');
+    const r = await fetchTestsByDomain('PhOtOs', deps({ byDomainFn, now: () => (t += 5) }, env.fn));
+    expect(calledDomain).toBe('photos');
     expect(r.status).toBe(200);
     expect(env.calls[0].queryName).toBe('domain-tests');
-    expect(env.calls[0].data).toEqual(upstreamBody);
+    expect(env.calls[0].data).toEqual(scannerBody);
     expect(env.calls[0].extra).toEqual({ count: 42 });
   });
 
-  test('upstream 404 → pass through status + upstream error message', async () => {
+  test('scanner throws → 500 with error envelope', async () => {
     const env = spyEnvelope();
-    const r = await fetchTestsByDomain('photos', deps({ fetchFn: errFetch(404) }, env.fn));
-    expect(r.status).toBe(404);
-    expect(r.body).toEqual({ error: 'upstream returned 404' });
-    expect(env.calls).toHaveLength(0);
-  });
-
-  test('fetch throws → 502 with error envelope', async () => {
-    const env = spyEnvelope();
-    const r = await fetchTestsByDomain('photos', deps({ fetchFn: throwFetch('ECONN') }, env.fn));
-    expect(r.status).toBe(502);
+    const byDomainFn = () => {
+      throw new Error('scan failed');
+    };
+    const r = await fetchTestsByDomain('photos', deps({ byDomainFn }, env.fn));
+    expect(r.status).toBe(500);
     expect(env.calls[0].queryName).toBe('domain-tests');
     expect(env.calls[0].extra).toEqual({ error: true });
-    expect((env.calls[0].data as { error: string }).error).toBe('ECONN');
+    expect((env.calls[0].data as { error: string }).error).toBe('scan failed');
   });
 
   test('data missing total → count defaults to 0', async () => {
     const env = spyEnvelope();
-    await fetchTestsByDomain('photos', deps({ fetchFn: okFetch({}) }, env.fn));
+    const byDomainFn = () => ({ domain: 'photos', total: 0, files: [], layers: [] });
+    await fetchTestsByDomain('photos', deps({ byDomainFn }, env.fn));
     expect(env.calls[0].extra).toEqual({ count: 0 });
   });
 });
 
-describe('fetchTestsAll (#2189 /api/chorus/tests)', () => {
+describe('fetchTestsAll (#3656 /api/chorus/tests via local scanner)', () => {
   test('flattens pyramid[].files[] into root-level files[]', async () => {
     const env = spyEnvelope();
-    const upstreamBody = {
+    const scannerBody = {
       total: 7,
       pyramid: [
         { name: 'unit', files: [{ name: 'a.test.ts', kind: 'unit', domain: 'music', count: 5 }] },
         { name: 'integration', files: [{ name: 'b.test.ts', kind: 'integration', domain: 'photos', count: 2 }] },
       ],
     };
-    await fetchTestsAll(deps({ fetchFn: okFetch(upstreamBody) }, env.fn));
+    await fetchTestsAll(deps({ scanFn: () => scannerBody }, env.fn));
     const flat = (env.calls[0].data as { files: Array<Record<string, unknown>> }).files;
     expect(flat).toEqual([
       { path: 'a.test.ts', type: 'unit', domain: 'music', count: 5, layer: 'unit' },
@@ -121,22 +101,18 @@ describe('fetchTestsAll (#2189 /api/chorus/tests)', () => {
 
   test('empty pyramid → empty files array', async () => {
     const env = spyEnvelope();
-    await fetchTestsAll(deps({ fetchFn: okFetch({ total: 0 }) }, env.fn));
+    await fetchTestsAll(deps({ scanFn: () => ({ total: 0 }) }, env.fn));
     const flat = (env.calls[0].data as { files: unknown[] }).files;
     expect(flat).toEqual([]);
   });
 
-  test('upstream 503 → status pass-through', async () => {
+  test('scanner throws → 500 with quality-scan error envelope', async () => {
     const env = spyEnvelope();
-    const r = await fetchTestsAll(deps({ fetchFn: errFetch(503) }, env.fn));
-    expect(r.status).toBe(503);
-    expect(r.body).toEqual({ error: 'upstream returned 503' });
-  });
-
-  test('fetch throws → 502 with quality-scan error envelope', async () => {
-    const env = spyEnvelope();
-    const r = await fetchTestsAll(deps({ fetchFn: throwFetch('timeout') }, env.fn));
-    expect(r.status).toBe(502);
+    const scanFn = () => {
+      throw new Error('walk failed');
+    };
+    const r = await fetchTestsAll(deps({ scanFn }, env.fn));
+    expect(r.status).toBe(500);
     expect(env.calls[0].queryName).toBe('quality-scan');
     expect(env.calls[0].extra).toEqual({ error: true });
   });

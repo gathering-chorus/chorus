@@ -27,14 +27,6 @@ function envelope(name: string, data: unknown, _ms: number, extra: Record<string
   return { _meta: { name, ...extra }, data };
 }
 
-function mockFetch(status: number, body: unknown): Response {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  } as unknown as Response;
-}
-
 function emptyResult(): SparqlResult {
   return { results: { bindings: [] } };
 }
@@ -52,9 +44,9 @@ function deps(overrides: Partial<DomainFacetDeps> = {}): DomainFacetDeps {
 // --- fetchDomainTests ---
 
 describe('fetchDomainTests', () => {
-  test('upstream 200 shapes files into tests array', async () => {
+  test('scanner data shapes files into tests array', async () => {
     const d = deps({
-      fetcher: async () => mockFetch(200, { files: [{ name: 'a.test.ts', kind: 'ts' }, { name: 'b.bats', kind: 'bats' }], total: 42 }),
+      qualityByDomain: () => ({ files: [{ name: 'a.test.ts', kind: 'ts' }, { name: 'b.bats', kind: 'bats' }], total: 42 }),
     });
     const r = await fetchDomainTests(d, 'chorus-domain');
     expect(r.status).toBe(200);
@@ -65,32 +57,24 @@ describe('fetchDomainTests', () => {
     expect(body.data.total).toBe(42);
   });
 
-  test('upstream 500 returns empty envelope (200, no 500)', async () => {
-    const d = deps({ fetcher: async () => mockFetch(500, {}) });
+  test('scanner throws returns empty envelope (200, no 500)', async () => {
+    const d = deps({ qualityByDomain: () => { throw new Error('scan failed'); } });
     const r = await fetchDomainTests(d, 'chorus-domain');
     expect(r.status).toBe(200);
     const body = r.body as { data: { tests: unknown[] } };
     expect(body.data.tests).toEqual([]);
   });
 
-  test('fetcher throws returns empty envelope (200, no 500)', async () => {
-    const d = deps({ fetcher: async () => { throw new Error('network'); } });
-    const r = await fetchDomainTests(d, 'chorus-domain');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { tests: unknown[] } };
-    expect(body.data.tests).toEqual([]);
-  });
-
-  test('strips -domain suffix before calling upstream', async () => {
-    let seenUrl = '';
+  test('strips -domain suffix before calling the scanner (#3656: local, no HTTP)', async () => {
+    let seenDomain = '';
     const d = deps({
-      fetcher: async (url: string) => { seenUrl = url; return mockFetch(200, { files: [] }); },
+      qualityByDomain: (domain: string) => { seenDomain = domain; return { files: [] }; },
     });
     await fetchDomainTests(d, 'chorus-domain');
-    expect(seenUrl).toBe('http://localhost:3000/api/quality/domain/chorus');
+    expect(seenDomain).toBe('chorus');
   });
 
-  test('#2485 — falls back to chorus:TestCoverage SPARQL when upstream has no data', async () => {
+  test('#2485 — falls back to chorus:TestCoverage SPARQL when scanner has no data', async () => {
     const sparqlResult: SparqlResult = {
       results: {
         bindings: [
@@ -100,7 +84,7 @@ describe('fetchDomainTests', () => {
       },
     };
     const d = deps({
-      fetcher: async () => mockFetch(200, { files: [], total: 0 }),
+      qualityByDomain: () => ({ files: [], total: 0 }),
       sparql: async () => sparqlResult,
     });
     const r = await fetchDomainTests(d, 'loom-decisions');
@@ -118,7 +102,7 @@ describe('fetchDomainTests', () => {
     // empty against the promoted graph. Assert the query SHAPE so revert → red.
     let q = '';
     const d = deps({
-      fetcher: async () => mockFetch(200, { files: [], total: 0 }),
+      qualityByDomain: () => ({ files: [], total: 0 }),
       sparql: async (qq: string) => { q = qq; return { results: { bindings: [] } } as SparqlResult; },
     });
     await fetchDomainTests(d, 'loom-decisions');
@@ -128,12 +112,12 @@ describe('fetchDomainTests', () => {
     expect(q).not.toMatch(/chorus:testType\s+\?testType/);
   });
 
-  test('#2485 — upstream data takes precedence; SPARQL fallback only fires on empty upstream', async () => {
+  test('#2485 — scanner data takes precedence; SPARQL fallback only fires on empty scan', async () => {
     const sparqlResult: SparqlResult = {
       results: { bindings: [{ testFile: { value: 'chorus/x.test.ts' }, testType: { value: 'unit' } }] },
     };
     const d = deps({
-      fetcher: async () => mockFetch(200, { files: [{ name: 'gathering/y.test.ts', kind: 'ts' }], total: 1 }),
+      qualityByDomain: () => ({ files: [{ name: 'gathering/y.test.ts', kind: 'ts' }], total: 1 }),
       sparql: async () => sparqlResult,
     });
     const r = await fetchDomainTests(d, 'chorus-domain');

@@ -1,3 +1,4 @@
+// @test-type: unit — pure fs scanner against a tempdir; no services.
 /**
  * #2485 Move 6 — discover-pages scanner extension for chorus/platform/api/public/loom/.
  *
@@ -33,6 +34,24 @@ describe('scanLoomHtml', () => {
     expect(entries[0].route).toBe('/loom/decisions.html');
     expect(entries[0].pageType).toBe('loom');
     expect(entries[0].path).toContain('decisions.html');
+  });
+
+  test('#3656: maps quality/index.html (directory page) to loom-quality when valid', () => {
+    fs.mkdirSync(path.join(tmp, 'quality'));
+    fs.writeFileSync(path.join(tmp, 'quality', 'index.html'), '<html></html>');
+    const valid = new Set(['loom-quality']);
+    const entries = scanLoomHtml(tmp, valid);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].domainId).toBe('loom-quality');
+    expect(entries[0].route).toBe('/loom/quality/');
+    expect(entries[0].pageType).toBe('loom');
+    expect(entries[0].path).toBe('chorus/platform/api/public/loom/quality/index.html');
+  });
+
+  test('#3656: skips directory pages whose derived subdomain is not valid', () => {
+    fs.mkdirSync(path.join(tmp, 'quality'));
+    fs.writeFileSync(path.join(tmp, 'quality', 'index.html'), '<html></html>');
+    expect(scanLoomHtml(tmp, new Set(['loom-decisions']))).toEqual([]);
   });
 
   test('skips files whose derived subdomain is not in the valid set', () => {

@@ -79,7 +79,12 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     };
 
     const pageLinks = {
-      'Loom': [{ label: 'Loom Dashboard', href: 'http://localhost:3000/loom' }],
+      'Loom': [
+        { label: 'Loom Dashboard', href: 'http://localhost:3000/loom' },
+        // #3656: quality is loom's (ADR-026), served by chorus-api itself —
+        // relative href so the page works through the share tunnel too.
+        { label: 'Quality Service', href: '/loom/quality/' },
+      ],
       'Athena': [
         { label: 'Domain Detail', href: 'http://localhost:3000/gathering-docs/domain-detail.html' },
         { label: 'Step Detail', href: 'http://localhost:3000/gathering-docs/step-detail.html' },
@@ -87,8 +92,7 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       'Werk': [{ label: 'Werk Dashboard', href: 'http://localhost:3000/werk' }],
       'The Clearing': [{ label: 'The Clearing', href: 'http://localhost:3470' }],
       'Borg': [
-        { label: 'Quality Service', href: 'http://localhost:3000/quality-service' },
-        { label: 'Hooks Dashboard', href: 'http://localhost:3000/hooks' },
+        { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],
     };
 
