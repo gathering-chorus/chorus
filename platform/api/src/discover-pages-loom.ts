@@ -17,6 +17,14 @@ export interface LoomPageEntry {
   domainId: string;
 }
 
+// #3656 — placement overrides for pages whose slug is not a subdomain.
+// quality → loom-practices: Silas's stamp — ADR-026 quality layers are team
+// practice; no single-page loom-quality subdomain gets spawned. Mirrors
+// DISCOVER_PAGES_ALIAS_OVERRIDES in server.ts.
+const LOOM_SLUG_OVERRIDES: Record<string, string> = {
+  quality: 'loom-practices',
+};
+
 export function scanLoomHtml(loomDir: string, validSubdomainIds: Set<string>): LoomPageEntry[] {
   const entries: LoomPageEntry[] = [];
   if (!fs.existsSync(loomDir)) return entries;
@@ -35,7 +43,7 @@ export function scanLoomHtml(loomDir: string, validSubdomainIds: Set<string>): L
     } else {
       continue;
     }
-    const domainId = `loom-${slug}`;
+    const domainId = LOOM_SLUG_OVERRIDES[slug] ?? `loom-${slug}`;
     if (!validSubdomainIds.has(domainId)) continue;
     entries.push({ route, path: relPath, pageType: 'loom', domainId });
   }

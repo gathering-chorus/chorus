@@ -36,19 +36,30 @@ describe('scanLoomHtml', () => {
     expect(entries[0].path).toContain('decisions.html');
   });
 
-  test('#3656: maps quality/index.html (directory page) to loom-quality when valid', () => {
+  test('#3656: maps quality/index.html (directory page) to loom-practices via override', () => {
+    // Silas's placement stamp: quality hangs on the existing loom-practices
+    // subdomain (ADR-026) — no loom-quality subdomain gets spawned for it.
     fs.mkdirSync(path.join(tmp, 'quality'));
     fs.writeFileSync(path.join(tmp, 'quality', 'index.html'), '<html></html>');
-    const valid = new Set(['loom-quality']);
+    const valid = new Set(['loom-practices']);
     const entries = scanLoomHtml(tmp, valid);
     expect(entries).toHaveLength(1);
-    expect(entries[0].domainId).toBe('loom-quality');
+    expect(entries[0].domainId).toBe('loom-practices');
     expect(entries[0].route).toBe('/loom/quality/');
     expect(entries[0].pageType).toBe('loom');
     expect(entries[0].path).toBe('chorus/platform/api/public/loom/quality/index.html');
   });
 
-  test('#3656: skips directory pages whose derived subdomain is not valid', () => {
+  test('#3656: non-overridden directory pages map to loom-<slug>', () => {
+    fs.mkdirSync(path.join(tmp, 'decisions'));
+    fs.writeFileSync(path.join(tmp, 'decisions', 'index.html'), '<html></html>');
+    const entries = scanLoomHtml(tmp, new Set(['loom-decisions']));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].domainId).toBe('loom-decisions');
+    expect(entries[0].route).toBe('/loom/decisions/');
+  });
+
+  test('#3656: skips directory pages whose mapped subdomain is not valid', () => {
     fs.mkdirSync(path.join(tmp, 'quality'));
     fs.writeFileSync(path.join(tmp, 'quality', 'index.html'), '<html></html>');
     expect(scanLoomHtml(tmp, new Set(['loom-decisions']))).toEqual([]);
