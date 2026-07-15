@@ -1866,7 +1866,7 @@ app.use('/owl', async (req: Request, res: Response) => {
     });
     res.status(r.status);
     const ct = r.headers.get('content-type');
-    if (ct) res.header('Content-Type', ct);
+    if (ct) res.type(ct);
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch {
     res.status(502).json({ error: 'owl-api unreachable through the proxy' });
