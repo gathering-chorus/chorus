@@ -1010,6 +1010,7 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
         "created" => (201, "created"),
         "authn-missing" => (401, "authn-missing"),   // no/invalid credential
         "authz" => (403, "authz"),                   // not the owning role (ownedBy)
+        "out-of-scope" => (403, "out-of-scope"),     // #3612 — target graph outside the token's realm
         "conflict" => (409, "conflict"),             // e.g. 2nd parent on single-valued partOf
         "validation" => (422, "validation"),         // malformed / shape violation
         "not-found" => (404, "not-found"),           // entity/edge target absent
@@ -1070,6 +1071,19 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
         ("DELETE", 3) => Some(WriteOp::RemoveEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
         _ => None,
+    }
+}
+
+/// #3612 — the primitive's spine label: ONE vocabulary shared by the door gate
+/// (govern_scope) and the handler's own emissions, so a refusal and its write
+/// outcome name the same primitive.
+pub fn write_op_label(op: &WriteOp) -> &'static str {
+    match op {
+        WriteOp::CreateEntity => "create",
+        WriteOp::ReplaceEntity { .. } => "replace",
+        WriteOp::DeleteEntity { .. } => "delete-entity",
+        WriteOp::AddEdge { .. } => "add-edge",
+        WriteOp::RemoveEdge { .. } => "remove-edge",
     }
 }
 
@@ -1263,11 +1277,12 @@ fn dal_batch(graph: &str, deletes: &[(String, String, String)], inserts: &[(Stri
 /// splits into typed argv and hands them to the chorus-model `batch` CLI (slot-
 /// validation + structural single-graph). `graph` = the scope-validated x-target-graph.
 fn handle_batch(graph: &str, body: &str, caller_role: &str) -> (u16, String) {
+    // #3612 — batch validation refusals leave through the one exit (typed + spine).
     if graph.trim().is_empty() {
-        return write_resp("validation", "batch requires x-target-graph (no default graph, ever)");
+        return refuse_write(caller_role, "batch", graph, "validation", "batch requires x-target-graph (no default graph, ever)");
     }
     if body.len() > MAX_WRITE_BYTES {
-        return write_resp("validation", &format!("batch body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+        return refuse_write(caller_role, "batch", graph, "validation", &format!("batch body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
     }
     let mut deletes: Vec<(String, String, String)> = Vec::new();
     let mut inserts: Vec<(String, String, String)> = Vec::new();
@@ -1276,17 +1291,17 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str) -> (u16, String) {
         if line.trim().is_empty() { continue; }
         let f: Vec<&str> = line.split('\t').collect();
         if f.len() != 4 {
-            return write_resp("validation", "batch line must be OP<tab>S<tab>P<tab>O");
+            return refuse_write(caller_role, "batch", graph, "validation", "batch line must be OP<tab>S<tab>P<tab>O");
         }
         let triple = (f[1].to_string(), f[2].to_string(), f[3].to_string());
         match f[0] {
             "DEL" => deletes.push(triple),
             "INS" => inserts.push(triple),
-            _ => return write_resp("validation", "batch op must be DEL or INS"),
+            _ => return refuse_write(caller_role, "batch", graph, "validation", "batch op must be DEL or INS"),
         }
     }
     if deletes.is_empty() && inserts.is_empty() {
-        return write_resp("validation", "batch: no DEL/INS lines");
+        return refuse_write(caller_role, "batch", graph, "validation", "batch: no DEL/INS lines");
     }
     match dal_batch(graph, &deletes, &inserts, caller_role) {
         Ok(_) => {
@@ -1364,6 +1379,44 @@ fn write_resp(tag: &str, message: &str) -> (u16, String) {
     let (code, t) = write_status(tag);
     let key = if code < 400 { "status" } else { "error" };
     (code, format!("{{ \"{}\": \"{}\", \"message\": \"{}\" }}", key, t, json_escape(message)))
+}
+
+/// #3612 GOVERN — the ONE refusal exit at the write boundary. Every door refusal
+/// (authn, out-of-scope, validation, authz) leaves through here: typed body via
+/// write_resp AND a spine event via emit_write_spine — a refusal is never silent.
+/// `op` names the write primitive; `target` is the graph or entity being refused.
+pub fn refuse_write(caller: &str, op: &str, target: &str, tag: &str, message: &str) -> (u16, String) {
+    emit_write_spine(caller, op, target, "", tag);
+    write_resp(tag, message)
+}
+
+/// #3612 GOVERN — the uniform namespace-scope verdict, one function for every
+/// write primitive (entity create/replace/delete, edges, batch, future bulk).
+/// `require_scope=true` (batch/bulk — the destructive ops): an empty scope claim
+/// refuses fail-closed. Entity writes (`false`) keep the #3573 incr-2 mixed-state:
+/// a legacy unscoped token falls through to ownedBy object-authz downstream.
+/// A scoped token may write ONLY graphs its scope names — off-realm → typed 403
+/// + spine, via refuse_write.
+pub fn govern_scope(
+    caller: &str,
+    op: &str,
+    scope: &[String],
+    target_graph: &str,
+    require_scope: bool,
+) -> Result<(), (u16, String)> {
+    if require_scope && scope.is_empty() {
+        return Err(refuse_write(
+            caller, op, target_graph, "out-of-scope",
+            &format!("{} requires a scoped token whose scope names target graph '{}'", op, target_graph),
+        ));
+    }
+    if !scope.is_empty() && !scope_allows(target_graph, scope) {
+        return Err(refuse_write(
+            caller, op, target_graph, "out-of-scope",
+            &format!("target graph '{}' is not in this token's scope (#3573/#3612)", target_graph),
+        ));
+    }
+    Ok(())
 }
 
 /// #3454 — the generated write handler. authZ (ownedBy, fail-closed) → shape
@@ -1478,10 +1531,11 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
     };
+    let op_label = write_op_label(&op);
     // #3573 (bounds) — cap the structured write body before any graph work. A single
     // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
     if body.len() > MAX_WRITE_BYTES {
-        return write_resp("validation", &format!(
+        return refuse_write(caller_role, op_label, "", "validation", &format!(
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
     }
     // entity name (None for CreateEntity) + injection-safety
@@ -1494,27 +1548,26 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
     };
     if let Some(e) = &entity {
         if !is_safe_local(e) {
-            return write_resp("validation", "invalid entity name");
+            return refuse_write(caller_role, op_label, e, "validation", "invalid entity name");
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
         let owned = query_owned_by(e, &table.instances_graph);
         if !authz_allows(caller_role, owned.as_deref()) {
-            emit_write_spine(caller_role, method, e, "", "authz");
-            return write_resp("authz", "only the owning role may write this node (ownedBy)");
+            return refuse_write(caller_role, op_label, e, "authz", "only the owning role may write this node (ownedBy)");
         }
     }
     match &op {
         WriteOp::AddEdge { name, edge } | WriteOp::RemoveEdge { name, edge } => {
             let pred = match edge_predicate(edge) {
                 Some(p) => p,
-                None => return write_resp("validation", "unknown edge type"),
+                None => return refuse_write(caller_role, op_label, name, "validation", "unknown edge type"),
             };
             let target = match parse_body_target(body) {
                 Some(t) => t,
-                None => return write_resp("validation", "missing 'target' in request body"),
+                None => return refuse_write(caller_role, op_label, name, "validation", "missing 'target' in request body"),
             };
             if !is_safe_local(&target) {
-                return write_resp("validation", "invalid target name");
+                return refuse_write(caller_role, op_label, name, "validation", "invalid target name");
             }
             let insert = matches!(op, WriteOp::AddEdge { .. });
             // AC2 — single-parent partOf: a 2nd parent is a 409, never silently accepted.
@@ -1559,10 +1612,10 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // by serve(). 409 if the entity already exists.
             let name = match json_field(body, "name") {
                 Some(n) => n,
-                None => return write_resp("validation", "create requires a 'name' in the body"),
+                None => return refuse_write(caller_role, op_label, "", "validation", "create requires a 'name' in the body"),
             };
             if !is_safe_local(&name) {
-                return write_resp("validation", "invalid entity name");
+                return refuse_write(caller_role, op_label, &name, "validation", "invalid entity name");
             }
             if entity_exists(&name, &table.instances_graph) {
                 emit_write_spine(caller_role, "create", &name, "", "conflict");
@@ -1570,6 +1623,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             }
             // #3573 AC5 — closed-shape: reject an off-model property, don't silently drop it
             // (collect_entity_props would otherwise ignore unknown keys = silent loss).
+            // Spine result stays "off-model" (not the generic tag) — AC2 names off-model
+            // shape refusals as their own observable class.
             if let Some(bad) = off_model_property(body, &table.fields) {
                 emit_write_spine(caller_role, "create", &name, "", "off-model");
                 return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
@@ -1610,7 +1665,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             }
             let props = collect_entity_props(body, &table.fields);
             if props.is_empty() {
-                return write_resp("validation", "replace requires at least one shape property in the body");
+                return refuse_write(caller_role, op_label, name, "validation", "replace requires at least one shape property in the body");
             }
             // #3468 — DELEGATE to the DAL `add` (idempotent full upsert). NOTE: the
             // DAL is single-writer full-replace by design (#3345) — a replace must
@@ -3114,24 +3169,23 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
             let (code, body) = match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
-                Err(_) => (
-                    401u16,
-                    "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
+                Err(_) => refuse_write(
+                    "anon", "batch", &header("x-target-graph"), "authn-missing",
+                    "a valid Bearer service-token is required for a batch write",
                 ),
                 Ok(claims) => {
                     let target_graph = header("x-target-graph");
-                    // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
-                    // entity writes (which allow legacy/unscoped mixed-state), batch is the
-                    // most destructive op; a legacy allow-all token has no business here.
-                    if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
-                        (
-                            403u16,
-                            format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
-                        )
-                    } else {
-                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
-                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                        handle_batch(&target_graph, body_str, &role)
+                    let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                    // #3573 Wren gate, uniform via #3612 govern_scope — /batch REQUIRES a
+                    // non-empty scope claim (require_scope=true). Unlike entity writes
+                    // (legacy/unscoped mixed-state), batch is the most destructive op; a
+                    // legacy allow-all token has no business here. Refusal = typed + spine.
+                    match govern_scope(&role, "batch", &claims.scope, &target_graph, true) {
+                        Err(refusal) => refusal,
+                        Ok(()) => {
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            handle_batch(&target_graph, body_str, &role)
+                        }
                     }
                 }
             };
@@ -3170,31 +3224,38 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
+            // #3612 — resolve the primitive's label BEFORE the gate, so an out-of-scope
+            // refusal on any of the five entity primitives is spine-attributed to the
+            // primitive it refused (one refusal vocabulary, gate + handler).
+            let plural = pluralize(table.class.rsplit('#').next().unwrap_or(""));
+            let op_label = parse_write(&method, &path, &plural)
+                .as_ref().map(write_op_label).unwrap_or("write");
             match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => {
-                    let (c, t) = write_status("authn-missing");
-                    ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
+                    ((refuse_write("anon", op_label, &path, "authn-missing", "a valid Bearer service-token is required for writes")),
                      ReqMeta { route: "write-authn".into(), ..Default::default() })
                 }
                 Ok(claims) => {
                     // #3573 Part C — SCOPE enforcement (the realm-isolation control,
-                    // Silas's invariant): a token carrying a scope claim (dal_edge-minted)
-                    // may write ONLY graphs in that scope; targetGraph is VALIDATED against
-                    // it, never used to SET it. Out-of-scope → 403. Legacy/unscoped tokens
-                    // (scope empty) fall through to handle_write's ownedBy authZ — mixed-state
-                    // by construction (#3414 philosophy): existing writers don't break before
-                    // they migrate to the scoped lane (#3573 incr-2). scope_allows is #3567 (landed).
+                    // Silas's invariant), uniform via #3612 govern_scope: a token carrying
+                    // a scope claim (dal_edge-minted) may write ONLY graphs in that scope;
+                    // targetGraph is VALIDATED against it, never used to SET it.
+                    // Out-of-scope → typed 403 + spine. Legacy/unscoped tokens (scope
+                    // empty, require_scope=false) fall through to handle_write's ownedBy
+                    // authZ — mixed-state by construction (#3414 philosophy): existing
+                    // writers don't break before they migrate to the scoped lane (#3573
+                    // incr-2). scope_allows is #3567 (landed).
                     let target_graph = header("x-target-graph");
-                    if !claims.scope.is_empty() && !scope_allows(&target_graph, &claims.scope) {
-                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573)\" }}", json_escape(&target_graph))),
-                         ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
-                    } else {
-                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
-                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                        // (POST /batch is handled by the cross-class pre-table block above,
-                        // which `continue`s — it can't reach here. One site, no drift.)
-                        let (c, b) = handle_write(&method, &path, body_str, table, &role);
-                        ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                    let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                    match govern_scope(&role, op_label, &claims.scope, &target_graph, false) {
+                        Err(refusal) => (refusal, ReqMeta { route: "write-authz-scope".into(), ..Default::default() }),
+                        Ok(()) => {
+                            let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                            // (POST /batch is handled by the cross-class pre-table block above,
+                            // which `continue`s — it can't reach here. One site, no drift.)
+                            let (c, b) = handle_write(&method, &path, body_str, table, &role);
+                            ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                        }
                     }
                 }
             }
@@ -4092,6 +4153,75 @@ mod tests {
         assert!(ts.contains("\"filePath\""));
         assert!(ts.contains("export async function writeTest("));
         assert!(!ts.contains("#Test")); // no raw IRI leaked into the symbol
+    }
+
+    // === #3612 GOVERN — one gate, one refusal exit, never silent ==============
+    //
+    // AC1: every write primitive runs the SAME namespace-scope check — proven by
+    // one refusal per primitive through the shared gate. AC2: an off-realm refusal
+    // is typed AND leaves a spine event. The test brings its own world: a temp
+    // CHORUS_HOME whose stub chorus-log appends argv to spine.log (no live daemon,
+    // no real spine). All spine assertions live in THIS one test — CHORUS_HOME is
+    // process-global and parallel tests must not race it.
+
+    #[test]
+    fn write_status_out_of_scope_is_typed_403() {
+        // off-realm graph is its own refusal, distinct from ownedBy authz
+        assert_eq!(write_status("out-of-scope"), (403, "out-of-scope"));
+    }
+
+    #[test]
+    fn govern_gate_refuses_every_primitive_off_realm_and_spines_each_refusal() {
+        let world = std::env::temp_dir().join(format!("owl-3612-govern-{}", std::process::id()));
+        let scripts = world.join("platform/scripts");
+        std::fs::create_dir_all(&scripts).unwrap();
+        std::fs::write(
+            scripts.join("chorus-log"),
+            "#!/bin/bash\necho \"$@\" >> \"$(cd \"$(dirname \"$0\")/../..\" && pwd)/spine.log\"\n",
+        )
+        .unwrap();
+        std::env::set_var("CHORUS_HOME", &world);
+
+        let caller = "govtest-wren";
+        let scope = vec!["urn:chorus:domains:tests".to_string()];
+        let off_realm = "urn:chorus:domains:photos";
+        // one refusal per write primitive in the door — the SAME gate refuses all six
+        let primitives = ["create", "replace", "delete-entity", "add-edge", "remove-edge", "batch"];
+        for op in primitives {
+            let (code, body) = govern_scope(caller, op, &scope, off_realm, op == "batch")
+                .expect_err(&format!("{} off-realm must refuse", op));
+            assert_eq!(code, 403, "{} off-realm is a 403", op);
+            assert!(body.contains("out-of-scope"), "{} refusal is typed: {}", op, body);
+        }
+        // batch fail-closed-by-omission: an UNSCOPED (legacy) token cannot batch
+        let (code, body) = govern_scope(caller, "batch", &[], "urn:chorus:domains:tests", true)
+            .expect_err("unscoped batch must refuse");
+        assert_eq!(code, 403);
+        assert!(body.contains("out-of-scope"), "{}", body);
+        // entity writes tolerate legacy unscoped tokens (mixed-state, #3573 incr-2):
+        // the gate passes and object-level ownedBy authz downstream still applies
+        assert!(govern_scope(caller, "create", &[], "urn:chorus:domains:tests", false).is_ok());
+        // in-scope writes pass
+        assert!(govern_scope(caller, "create", &scope, "urn:chorus:domains:tests", false).is_ok());
+        // authn refusal ALSO leaves through the one exit — typed 401 + spine
+        let (code, body) = refuse_write("anon", "create", "-", "authn-missing", "a valid Bearer service-token is required for writes");
+        assert_eq!(code, 401);
+        assert!(body.contains("authn-missing"), "{}", body);
+
+        // AC2 — never silent: one spine line per refusal, none for the passes
+        let log = std::fs::read_to_string(world.join("spine.log")).expect("spine.log written");
+        for op in primitives {
+            assert!(
+                log.lines().any(|l| l.contains(caller) && l.contains(&format!("op={}", op)) && l.contains("result=out-of-scope")),
+                "spine records the {} refusal: {}", op, log
+            );
+        }
+        assert!(log.lines().any(|l| l.contains("anon") && l.contains("result=authn-missing")), "authn refusal spined: {}", log);
+        // 6 off-realm + 1 unscoped-batch + 1 authn = 8 refusals, 8 lines (passes are silent here;
+        // their spine event is the write outcome downstream, not the gate)
+        let mine = log.lines().filter(|l| l.contains(caller) || l.contains("anon")).count();
+        assert_eq!(mine, 8, "exactly one spine line per refusal: {}", log);
+        let _ = std::fs::remove_dir_all(&world);
     }
 }
 
