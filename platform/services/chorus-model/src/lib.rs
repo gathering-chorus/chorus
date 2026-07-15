@@ -27,6 +27,7 @@ use std::process::Command;
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
+pub const SECURITY_GRAPH: &str = "urn:chorus:domains:security";
 pub const FUSEKI: &str = "http://localhost:3030/pods";
 
 pub type R<T> = Result<T, String>;
@@ -338,7 +339,10 @@ fn now_iso() -> String {
 fn witness(event: &str, kvs: &[(&str, &str)]) {
     let root = std::env::var("CHORUS_ROOT")
         .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-    let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "silas".to_string());
+    // #3651 — NEVER mint a role identity as a default. An env-less caller logs
+    // as "unattributed"; the identity gate (verify_identity) has already refused
+    // its writes, so this only labels the refusal events themselves.
+    let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "unattributed".to_string());
     let mut args: Vec<String> = vec![event.to_string(), role];
     for (k, v) in kvs {
         args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
@@ -349,8 +353,67 @@ fn witness(event: &str, kvs: &[(&str, &str)]) {
     }
 }
 
-/// Full governed write: shape check → referential integrity → idempotent UPDATE.
-pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
+/// #3651 — a VERIFIED writer identity. The ONLY constructor is `verify_identity`
+/// (Principal-registry-checked, fail-closed); every mutating verb requires one,
+/// so an unverified caller cannot reach a write — the type is the proof. This
+/// closes the audit's top gap: the DAL defaulted DEPLOY_ROLE to "silas"/"system",
+/// letting any process shelling the binary bypass the door and self-attribute.
+#[derive(Debug)]
+pub struct Identity(String);
+
+impl Identity {
+    pub fn role(&self) -> &str {
+        &self.0
+    }
+    /// Resolve from the process env (DEPLOY_ROLE) — the CLI boundary.
+    pub fn resolve(store: &dyn Store) -> R<Identity> {
+        verify_identity(std::env::var("DEPLOY_ROLE").ok().as_deref(), store)
+    }
+}
+
+/// Verify a claimed identity against the Principal registry (ADR-052 §5 — the
+/// same allow-set-as-data the owl-api door resolves). Fail-closed at every step:
+/// absent → refuse; malformed (before any query — no claim text ever reaches
+/// SPARQL) → refuse; not a registered chorus:Principal → refuse; registry
+/// unreachable → the store error propagates, still a refusal.
+pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
+    let claim = match claim.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(c) => c,
+        None => {
+            witness("model.refused", &[("reason", "identity-missing")]);
+            return Err(
+                "identity-missing: DEPLOY_ROLE is unset — the DAL refuses unattributed writes \
+                 (fail closed, #3651). Set DEPLOY_ROLE=<registered principal>."
+                    .into(),
+            );
+        }
+    };
+    let ok_syntax = claim.len() <= 32
+        && claim.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
+        && claim.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if !ok_syntax {
+        witness("model.refused", &[("reason", "identity-malformed")]);
+        return Err(format!(
+            "identity-malformed: '{}' — a principal claim is lowercase kebab, ≤32 chars",
+            claim
+        ));
+    }
+    let known = store.ask(&format!(
+        "ASK {{ GRAPH <{g}> {{ <{ns}principal-{c}> a <{ns}Principal> }} }}",
+        g = SECURITY_GRAPH, ns = NS, c = claim
+    ))?;
+    if !known {
+        witness("model.refused", &[("reason", "identity-unknown"), ("claim", claim)]);
+        return Err(format!(
+            "identity-unknown: '{}' is not a registered chorus:Principal in <{}> — writes refuse (fail closed, #3651)",
+            claim, SECURITY_GRAPH
+        ));
+    }
+    Ok(Identity(claim.to_string()))
+}
+
+/// Full governed write: identity → shape check → referential integrity → idempotent UPDATE.
+pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let class = class_iri(&req.kind)?;
     let (subject, turtle) = to_turtle(req)?;
     // #3647 — write the class's model-declared home (or the legacy default). This
@@ -433,9 +496,9 @@ pub fn write(store: &dyn Store, req: &WriteReq) -> R<String> {
     // created survives rewrites — read the existing value before the replace.
     const DCT: &str = "http://purl.org/dc/terms/";
     let now = now_iso();
-    // Kade's review catch: never mis-attribute the audit trail — unknown caller
-    // is stamped "system", not a default role.
-    let creator = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "system".to_string());
+    // #3651 — the creator stamp IS the verified identity. No env re-read, no
+    // "system" default: an unverified caller can't reach this line at all.
+    let creator = id.role().to_string();
     let existing_created = store
         .select_v(&format!(
             "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
@@ -474,7 +537,7 @@ fn check_edge_prop(prop: &str) -> R<()> {
 /// that does not exist (so a typo can't be a silent no-op). Witnesses the delete.
 /// owl-api's DELETE delegates here instead of a raw SPARQL DELETE — one governed
 /// write path, audited, never silent.
-pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&str>) -> R<String> {
+pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
     let subject = mint(kind, name)?;
     if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found")]);
@@ -495,7 +558,7 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
 /// wipes the node's other data. Referential integrity on BOTH endpoints
 /// (fail-closed). Witnesses the link. The governed replacement for owl-api's raw
 /// build_edge_update.
-pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>) -> R<String> {
+pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
     check_edge_prop(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
@@ -517,7 +580,7 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// #3468 — REMOVE one edge (governed). Single DELETE DATA, witnessed. Idempotent:
 /// removing an absent edge is a no-op success (removal toward absence is safe).
 /// The governed replacement for owl-api's raw edge-delete.
-pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>) -> R<String> {
+pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
     check_edge_prop(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
@@ -594,6 +657,7 @@ pub fn batch(
     graph: &str,
     deletes: &[(String, String, String)],
     inserts: &[(String, String, String)],
+    _id: &Identity,
 ) -> R<usize> {
     // Wren gate 1 — a batch with no target graph is a REFUSAL, never a default-graph fallback.
     if graph.trim().is_empty() {
@@ -741,6 +805,10 @@ mod tests {
         }
     }
 
+    /// #3651 — an in-crate test identity (the private constructor is crate-visible;
+    /// out-of-crate callers can only get an Identity through verify_identity).
+    fn tid() -> Identity { Identity("kade".into()) }
+
     fn stub(existing: &[&str], required: &[&str]) -> StubStore {
         StubStore {
             existing: existing.iter().map(|s| s.to_string()).collect(),
@@ -756,7 +824,7 @@ mod tests {
     fn batch_refuses_empty_graph_no_default_ever() {
         let store = stub(&[], &[]);
         let ins = vec![t("<urn:chorus:x>", "<urn:chorus:p>", "<urn:chorus:o>")];
-        assert!(batch(&store, "", &[], &ins).is_err(), "empty graph must refuse");
+        assert!(batch(&store, "", &[], &ins, &tid()).is_err(), "empty graph must refuse");
         assert!(store.updates.borrow().is_empty(), "nothing written on empty-graph refusal");
     }
 
@@ -764,7 +832,7 @@ mod tests {
     fn batch_refuses_off_realm_graph() {
         let store = stub(&[], &[]);
         let ins = vec![t("<urn:chorus:x>", "<urn:chorus:p>", "<urn:chorus:o>")];
-        assert!(batch(&store, "urn:gathering:photos", &[], &ins).is_err(), "off-realm graph must refuse");
+        assert!(batch(&store, "urn:gathering:photos", &[], &ins, &tid()).is_err(), "off-realm graph must refuse");
         assert!(store.updates.borrow().is_empty());
     }
 
@@ -774,13 +842,13 @@ mod tests {
         // object tries to break out into another GRAPH via ; INSERT ... GRAPH <other>
         let evil_o = vec![t("<urn:chorus:x>", "<urn:chorus:p>",
             "<urn:chorus:o> } } ; INSERT DATA { GRAPH <urn:gathering:x> { <a> <b> <c> } } #")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &evil_o).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_o, &tid()).is_err());
         // predicate is the bare GRAPH keyword (not an IRI)
         let evil_p = vec![t("<urn:chorus:y>", "GRAPH", "?o")];
-        assert!(batch(&store, "urn:chorus:instances", &evil_p, &[]).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &evil_p, &[], &tid()).is_err());
         // a raw variable object (not the single allowed ?o wildcard)
         let evil_v = vec![t("<urn:chorus:z>", "<urn:chorus:p>", "?anything")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &evil_v).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_v, &tid()).is_err());
         assert!(store.updates.borrow().is_empty(), "no injection-shaped batch may write");
     }
 
@@ -789,7 +857,7 @@ mod tests {
         let store = stub(&[], &[]);
         let dels = vec![t("<urn:chorus:file/a>", "<https://jeffbridwell.com/chorus#fileInDomain>", "?o")];
         let ins = vec![t("<urn:chorus:file/a>", "<https://jeffbridwell.com/chorus#fileInDomain>", "<urn:chorus:domain/x>")];
-        let n = batch(&store, "urn:chorus:instances", &dels, &ins).unwrap();
+        let n = batch(&store, "urn:chorus:instances", &dels, &ins, &tid()).unwrap();
         assert_eq!(n, 2, "two triples touched");
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1, "one transaction");
@@ -808,7 +876,7 @@ mod tests {
             "<http://www.w3.org/ns/shacl#minCount>",
             "\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>",
         )];
-        let n = batch(&store, "urn:chorus:instances", &[], &ins).unwrap();
+        let n = batch(&store, "urn:chorus:instances", &[], &ins, &tid()).unwrap();
         assert_eq!(n, 1, "typed integer literal must pass (riot's SHACL form)");
         assert!(store.updates.borrow()[0].contains("^^<http://www.w3.org/2001/XMLSchema#integer>"));
     }
@@ -818,13 +886,13 @@ mod tests {
         let store = stub(&[], &[]);
         // datatype not an IRI
         let bad_dt = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1\"^^not-an-iri")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &bad_dt).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &bad_dt, &tid()).is_err());
         // datatype IRI with injection chars
         let evil_dt = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1\"^^<urn:x> } ; INSERT")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &evil_dt).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_dt, &tid()).is_err());
         // injection inside the value of a typed literal
         let evil_val = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"1} ; DROP\"^^<urn:x>")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &evil_val).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &evil_val, &tid()).is_err());
         assert!(store.updates.borrow().is_empty(), "no typed-literal injection may write");
     }
 
@@ -835,7 +903,7 @@ mod tests {
             t("<urn:chorus:s>", "<urn:chorus:p>", "\"plain value\""),
             t("<urn:chorus:s>", "<urn:chorus:p>", "\"a^^b inside quotes is content\""),
         ];
-        assert_eq!(batch(&store, "urn:chorus:instances", &[], &ins).unwrap(), 2);
+        assert_eq!(batch(&store, "urn:chorus:instances", &[], &ins, &tid()).unwrap(), 2);
     }
 
     #[test]
@@ -844,7 +912,7 @@ mod tests {
         // deliberately when one does, don't pre-open the parser surface.
         let store = stub(&[], &[]);
         let ins = vec![t("<urn:chorus:s>", "<urn:chorus:p>", "\"x\"@en")];
-        assert!(batch(&store, "urn:chorus:instances", &[], &ins).is_err());
+        assert!(batch(&store, "urn:chorus:instances", &[], &ins, &tid()).is_err());
     }
 
     #[test]
@@ -857,7 +925,7 @@ mod tests {
             "<https://jeffbridwell.com/chorus#filePath>",
             "\"/tmp/graphs/photograph.txt\"",
         )];
-        let n = batch(&store, "urn:chorus:instances", &[], &ins).unwrap();
+        let n = batch(&store, "urn:chorus:instances", &[], &ins, &tid()).unwrap();
         assert_eq!(n, 1, "a literal containing 'graph' must pass");
         assert!(store.updates.borrow()[0].contains("photograph"), "real content preserved");
     }
@@ -871,7 +939,7 @@ mod tests {
             edges: vec![("ownedBy".into(), "role".into(), "nonexistent-q".into())],
             ..Default::default()
         };
-        let e = write(&store, &req).unwrap_err();
+        let e = write(&store, &req, &tid()).unwrap_err();
         assert!(e.starts_with("unknown-target"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "nothing written on refusal");
     }
@@ -886,7 +954,7 @@ mod tests {
             edges: vec![("atStep".into(), "value-stream-step".into(), "proving".into())],
             ..Default::default()
         };
-        let subj = write(&store, &req).unwrap();
+        let subj = write(&store, &req, &tid()).unwrap();
         assert_eq!(subj, format!("{}tests", NS));
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
@@ -909,7 +977,7 @@ mod tests {
             graph: Some(home.into()),
             ..Default::default()
         };
-        write(&store, &req).unwrap();
+        write(&store, &req, &tid()).unwrap();
         let ups = store.updates.borrow();
         assert!(ups[0].contains(home), "write must land in the declared home graph");
         assert!(!ups[0].contains(INSTANCES_GRAPH), "must NOT write the legacy instances bucket when a home is declared");
@@ -921,7 +989,7 @@ mod tests {
         // must target the same graph the create wrote, else it fail-closed 403s).
         let subj = format!("{}gate-x", NS);
         let store = stub(&[subj.as_str()], &[]);
-        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:security")).unwrap();
+        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:security"), &tid()).unwrap();
         let ups = store.updates.borrow();
         assert!(ups[0].contains("urn:chorus:domains:security"), "delete targets the declared home");
         assert!(!ups[0].contains(INSTANCES_GRAPH), "delete must not target the legacy bucket when a home is given");
@@ -933,7 +1001,7 @@ mod tests {
         // write; created survives a rewrite (read before replace).
         let store = stub(&[], &[]);
         let req = WriteReq { kind: "role".into(), name: "audit-x".into(), ..Default::default() };
-        write(&store, &req).unwrap();
+        write(&store, &req, &tid()).unwrap();
         let up = store.updates.borrow()[0].clone();
         assert!(up.contains("dc/terms/created"), "created stamped");
         assert!(up.contains("dc/terms/modified"), "modified stamped");
@@ -944,7 +1012,7 @@ mod tests {
     fn write_enforces_shape_required_fields_from_store() {
         let store = stub(&[], &["vision"]);
         let req = WriteReq { kind: "product".into(), name: "testprod".into(), ..Default::default() };
-        let e = write(&store, &req).unwrap_err();
+        let e = write(&store, &req, &tid()).unwrap_err();
         assert!(e.starts_with("shape-violation"), "{}", e);
         assert!(e.contains("vision"));
     }
@@ -954,7 +1022,7 @@ mod tests {
     #[test]
     fn delete_entity_refuses_unknown_subject_fail_closed() {
         let store = stub(&[], &[]);
-        let e = delete_entity(&store, "domain", "ghost", None).unwrap_err();
+        let e = delete_entity(&store, "domain", "ghost", None, &tid()).unwrap_err();
         assert!(e.starts_with("not-found"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "nothing deleted on a missing subject");
     }
@@ -963,7 +1031,7 @@ mod tests {
     fn delete_entity_deletes_existing_subject() {
         let subj = format!("{}tests", NS);
         let store = stub(&[subj.as_str()], &[]);
-        let got = delete_entity(&store, "domain", "tests", None).unwrap();
+        let got = delete_entity(&store, "domain", "tests", None, &tid()).unwrap();
         assert_eq!(got, subj);
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
@@ -978,7 +1046,7 @@ mod tests {
         let subj = format!("{}tests", NS);
         let tgt = format!("{}athena", NS);
         let store = stub(&[subj.as_str(), tgt.as_str()], &[]);
-        let got = add_edge(&store, "domain", "tests", "partOf", "product", "athena", None).unwrap();
+        let got = add_edge(&store, "domain", "tests", "partOf", "product", "athena", None, &tid()).unwrap();
         assert_eq!(got, subj);
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
@@ -990,7 +1058,7 @@ mod tests {
     fn add_edge_refuses_missing_target_fail_closed() {
         let subj = format!("{}tests", NS);
         let store = stub(&[subj.as_str()], &[]); // target absent
-        let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost", None).unwrap_err();
+        let e = add_edge(&store, "domain", "tests", "partOf", "product", "ghost", None, &tid()).unwrap_err();
         assert!(e.starts_with("unknown-endpoint"), "{}", e);
         assert!(store.updates.borrow().is_empty(), "no edge written when an endpoint is missing");
     }
@@ -998,14 +1066,14 @@ mod tests {
     #[test]
     fn add_edge_refuses_non_camelcase_property() {
         let store = stub(&[], &[]);
-        let e = add_edge(&store, "domain", "tests", "Part-Of", "product", "athena", None).unwrap_err();
+        let e = add_edge(&store, "domain", "tests", "Part-Of", "product", "athena", None, &tid()).unwrap_err();
         assert!(e.starts_with("bad-property"), "{}", e);
     }
 
     #[test]
     fn remove_edge_is_idempotent_delete_data() {
         let store = stub(&[], &[]); // no existence requirement — removal toward absence
-        let got = remove_edge(&store, "domain", "tests", "partOf", "product", "athena", None).unwrap();
+        let got = remove_edge(&store, "domain", "tests", "partOf", "product", "athena", None, &tid()).unwrap();
         assert_eq!(got, format!("{}tests", NS));
         let ups = store.updates.borrow();
         assert_eq!(ups.len(), 1);
