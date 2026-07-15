@@ -192,6 +192,12 @@ function readCache(): QualityScan | null {
     if (Date.now() - cached.timestamp > CACHE_TTL_MS) return null;
     // A pre-#3657 scanner cache has no source block — treat as expired.
     if (!cached.data?.source) return null;
+    // Presentation is never trusted from cache: a cache written by an older
+    // build would keep serving its colors/names past a deploy for a full TTL.
+    for (const layer of cached.data.pyramid || []) {
+      const meta = LAYER_ORDER.find((l) => l.key === layer.key);
+      if (meta) { layer.color = meta.color; layer.name = meta.name; }
+    }
     return cached.data;
   } catch {
     return null;

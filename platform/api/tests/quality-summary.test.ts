@@ -174,4 +174,15 @@ describe('#3657: cache', () => {
     await getQualityScan();
     expect(fs.existsSync(path.join(tmpDir, 'quality-cache.json'))).toBe(true);
   });
+
+  test('presentation is re-stamped on cache read — stale cached colors never survive a deploy', async () => {
+    const fresh = await getQualityScan();
+    const cacheFile = path.join(tmpDir, 'quality-cache.json');
+    const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+    for (const layer of cached.data.pyramid) layer.color = '#000000'; // an old build's palette
+    fs.writeFileSync(cacheFile, JSON.stringify(cached));
+    const reread = await getQualityScan();
+    expect(reread.pyramid.map((l) => l.color)).toEqual(fresh.pyramid.map((l) => l.color));
+    expect(reread.pyramid.some((l) => l.color === '#000000')).toBe(false);
+  });
 });
