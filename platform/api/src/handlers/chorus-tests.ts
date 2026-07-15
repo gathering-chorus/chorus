@@ -1,15 +1,15 @@
 /**
  * GET /api/chorus/tests, GET /api/chorus/tests/:domain (#2098, extracted #2189).
  *
- * #3656: rewired from HTTP proxies against Gathering's /api/quality/* (retired
- * with the quality-service residue) to direct calls into the local scanner
- * (quality-summary.ts). Response envelopes are unchanged:
+ * #3657: quality-summary.ts is now a projection of the tests domain (owl-api
+ * V2 /tests collection), async, and carries no api/ui kind — that was a
+ * scanner heuristic the model doesn't declare. The flattened file rows carry
+ * the pyramid layer as `layer`. Response envelopes otherwise unchanged:
  *
- *   /api/chorus/tests         → local scan, flatten pyramid.files
- *   /api/chorus/tests/:domain → local per-domain scan
+ *   /api/chorus/tests         → domain projection, flatten pyramid.files
+ *   /api/chorus/tests/:domain → per-domain filter on the model's `covers`
  *
- * Scanner throws → 500 with error envelope (there is no upstream to pass
- * through anymore).
+ * Projection throws (owl-api unreachable) → 500 with error envelope.
  */
 
 import { getQualityScan, getQualityByDomain } from '../quality-summary';
@@ -26,7 +26,7 @@ export interface ScanLike {
   total?: number;
   pyramid?: Array<{
     name?: string;
-    files?: Array<{ name?: string; kind?: string; domain?: string; count?: number }>;
+    files?: Array<{ name?: string; domain?: string; count?: number }>;
   }>;
 }
 
@@ -37,8 +37,8 @@ export interface DomainScanLike {
 export interface TestsDeps {
   envelope: EnvelopeFn;
   now?: () => number;
-  scanFn?: () => ScanLike;
-  byDomainFn?: (domain: string) => DomainScanLike;
+  scanFn?: () => ScanLike | Promise<ScanLike>;
+  byDomainFn?: (domain: string) => DomainScanLike | Promise<DomainScanLike>;
 }
 
 export interface TestsResult {
@@ -53,7 +53,7 @@ export async function fetchTestsByDomain(
   const start = now();
   const lower = (domain || '').toLowerCase();
   try {
-    const data = byDomainFn(lower);
+    const data = await byDomainFn(lower);
     return {
       status: 200,
       body: envelope('domain-tests', data, now() - start, { count: data.total || 0 }),
@@ -73,11 +73,10 @@ export async function fetchTestsAll({
 }: TestsDeps): Promise<TestsResult> {
   const start = now();
   try {
-    const data = scanFn();
+    const data = await scanFn();
     const allFiles = (data.pyramid || []).flatMap((l) =>
       (l.files || []).map((f) => ({
         path: f.name,
-        type: f.kind,
         domain: f.domain,
         count: f.count,
         layer: l.name,

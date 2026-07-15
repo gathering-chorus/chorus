@@ -80,21 +80,21 @@ describe('fetchTestsByDomain (#3656 /api/chorus/tests/:domain via local scanner)
   });
 });
 
-describe('fetchTestsAll (#3656 /api/chorus/tests via local scanner)', () => {
+describe('fetchTestsAll (#3657 /api/chorus/tests via tests-domain projection)', () => {
   test('flattens pyramid[].files[] into root-level files[]', async () => {
     const env = spyEnvelope();
     const scannerBody = {
       total: 7,
       pyramid: [
-        { name: 'unit', files: [{ name: 'a.test.ts', kind: 'unit', domain: 'music', count: 5 }] },
-        { name: 'integration', files: [{ name: 'b.test.ts', kind: 'integration', domain: 'photos', count: 2 }] },
+        { name: 'unit', files: [{ name: 'a.test.ts', domain: 'music', count: 5 }] },
+        { name: 'integration', files: [{ name: 'b.test.ts', domain: 'photos', count: 2 }] },
       ],
     };
-    await fetchTestsAll(deps({ scanFn: () => scannerBody }, env.fn));
+    await fetchTestsAll(deps({ scanFn: async () => scannerBody }, env.fn));
     const flat = (env.calls[0].data as { files: Array<Record<string, unknown>> }).files;
     expect(flat).toEqual([
-      { path: 'a.test.ts', type: 'unit', domain: 'music', count: 5, layer: 'unit' },
-      { path: 'b.test.ts', type: 'integration', domain: 'photos', count: 2, layer: 'integration' },
+      { path: 'a.test.ts', domain: 'music', count: 5, layer: 'unit' },
+      { path: 'b.test.ts', domain: 'photos', count: 2, layer: 'integration' },
     ]);
     expect(env.calls[0].extra).toEqual({ total: 7 });
   });
