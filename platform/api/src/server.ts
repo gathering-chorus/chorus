@@ -59,6 +59,7 @@ app.use(securityEnvelope({
   nowSecs: () => Math.floor(Date.now() / 1000),
   enabled: process.env.CHORUS_SECURITY_ENVELOPE_ENABLE === '1',
   emit: (event: string, fields: Record<string, string>) => {
+    recordEnvelopeEvent(event, fields); // #3628 — refusals become a scrapeable counter
     const args = [event, 'silas'];
     for (const [k, v] of Object.entries(fields)) args.push(`${k}=${v}`);
     execFile(CHORUS_LOG, args, () => { /* fire-and-forget */ });
@@ -75,7 +76,7 @@ app.use(securityEnvelope({
 
 import { getHooksSummary } from './hooks-summary';
 import { getCostSummary } from './cost-summary';
-import { startMetrics, getMetrics } from './metrics';
+import { startMetrics, getMetrics, recordEnvelopeEvent } from './metrics';
 import { formatAccessLine } from './access-log';
 import { getFitnessSummary } from './fitness-summary';
 import { getQualityScan, getQualityByDomain } from './quality-summary';
