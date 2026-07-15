@@ -51,3 +51,11 @@ chorus:principal-bridge a chorus:Principal ;
 chorus:principal-chorus-sdk a chorus:Principal ;
     rdfs:label "chorus-sdk (service caller principal)" ;
     chorus:webId "http://localhost:3001/chorus-sdk/profile/card#me" .
+
+# #3653 — Jeff joins his own security model. The human is a Principal like every
+# other actor (ADR-052: one identity mechanism for human, agent, service). Root
+# authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is
+# the authority the roles serve.
+chorus:principal-jeff a chorus:Principal ;
+    rdfs:label "jeff (human principal - root authority)" ;
+    chorus:webId "http://localhost:3001/jeff/profile/card#me" .
