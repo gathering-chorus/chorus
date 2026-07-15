@@ -93,6 +93,11 @@ app.use('/docs', express.static(path.join(__dirname, '..', 'public')));
 // Serve Borg shaping surface — #2099
 app.use('/borg', express.static(path.join(__dirname, '..', 'public', 'borg')));
 
+// #3656 — Quality Service reparented borg→werk (Jeff: quality is part of werk —
+// the gates fire in the werk pipeline). Old borg path redirects so links survive.
+app.get(['/borg/quality', '/borg/quality/', '/borg/quality/index.html'], (_req: Request, res: Response) =>
+  res.redirect(301, '/werk/quality/'));
+
 // #2458 — serve migrated chorus artifacts at their new canonical locations
 // (cross-repo moves from jeff-bridwell-personal-site completed in #2458)
 const chorusRepoRoot = path.resolve(__dirname, '..', '..', '..');

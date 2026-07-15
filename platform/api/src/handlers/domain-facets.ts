@@ -13,41 +13,33 @@
 import type { FetchResult } from './sessions';
 import type { SparqlResult } from './athena-health';
 import { resolveDomainIdentity } from './domain-identity';
+import { getQualityByDomain } from '../quality-summary';
 
 export interface DomainFacetDeps {
   sparql: (query: string) => Promise<SparqlResult>;
   resolveSubdomainId: (name: string) => Promise<string>;
   envelope: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
-  fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+  qualityByDomain?: (domain: string) => { files?: Array<{ name: string; kind: string }>; total?: number };
   now?: () => number;
 }
 
-// --- tests: upstream HTTP proxy to /api/quality/domain/:d scanner ---
+// --- tests: local quality scanner (quality-summary.ts) ---
+// #3656: was an HTTP proxy to Gathering's /api/quality/domain/:d — that surface
+// is retired; chorus-api owns the scanner.
 
 export async function fetchDomainTests(
   deps: DomainFacetDeps,
   subdomainName: string,
 ): Promise<FetchResult> {
   const now = deps.now ?? Date.now;
-  const fetcher = deps.fetcher ?? fetch;
+  const qualityByDomain = deps.qualityByDomain ?? getQualityByDomain;
   const start = now();
   try {
-    // #2430: shared resolver. Upstream quality scanner is domain-name-keyed, not
-    // URI-keyed — use resolver.primary for the path. Note: upstream scanner has
-    // no data for loom subdomains regardless of alias; scanner enhancement is a
-    // separate follow-on, not this card.
+    // #2430: shared resolver. The quality scanner is domain-name-keyed, not
+    // URI-keyed — use resolver.primary for the lookup.
     const identity = resolveDomainIdentity(subdomainName);
     const domain = identity.primary;
-    const upstream = await fetcher(`http://localhost:3000/api/quality/domain/${domain}`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!upstream.ok) {
-      return {
-        status: 200,
-        body: deps.envelope('domain-tests', { subdomain: subdomainName, tests: [], byType: {} }, now() - start, { count: 0 }),
-      };
-    }
-    const scanData = (await upstream.json()) as { files?: Array<{ name: string; kind: string }>; total?: number };
+    const scanData = qualityByDomain(domain);
     let tests = (scanData.files || []).map((f) => ({ path: f.name, type: f.kind }));
     let total = scanData.total || 0;
     // #2485 — fall back to chorus:TestCoverage instances graph when upstream

@@ -1,19 +1,18 @@
 /**
  * GET /api/chorus/tests, GET /api/chorus/tests/:domain (#2098, extracted #2189).
  *
- * Thin proxies to Gathering's quality scanner at port 3000. Both return
- * athenaEnvelope-shaped responses (envelope injected for testability).
+ * #3656: rewired from HTTP proxies against Gathering's /api/quality/* (retired
+ * with the quality-service residue) to direct calls into the local scanner
+ * (quality-summary.ts). Response envelopes are unchanged:
  *
- *   /api/chorus/tests         → proxy to /api/quality/scan, flatten pyramid.files
- *   /api/chorus/tests/:domain → proxy to /api/quality/domain/<domain>
+ *   /api/chorus/tests         → local scan, flatten pyramid.files
+ *   /api/chorus/tests/:domain → local per-domain scan
  *
- * Upstream non-2xx → pass status through with minimal error. fetch throws → 502.
+ * Scanner throws → 500 with error envelope (there is no upstream to pass
+ * through anymore).
  */
 
-export type FetchFn = (
-  url: string,
-  init?: { signal?: AbortSignal },
-) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+import { getQualityScan, getQualityByDomain } from '../quality-summary';
 
 export type EnvelopeFn = (
   queryName: string,
@@ -22,11 +21,24 @@ export type EnvelopeFn = (
   extra?: Record<string, unknown>,
 ) => unknown;
 
+// Structural shapes the handler actually consumes — injectable for tests.
+export interface ScanLike {
+  total?: number;
+  pyramid?: Array<{
+    name?: string;
+    files?: Array<{ name?: string; kind?: string; domain?: string; count?: number }>;
+  }>;
+}
+
+export interface DomainScanLike {
+  total?: number;
+}
+
 export interface TestsDeps {
-  fetchFn?: FetchFn;
   envelope: EnvelopeFn;
   now?: () => number;
-  appBaseUrl?: string;
+  scanFn?: () => ScanLike;
+  byDomainFn?: (domain: string) => DomainScanLike;
 }
 
 export interface TestsResult {
@@ -36,48 +48,32 @@ export interface TestsResult {
 
 export async function fetchTestsByDomain(
   domain: string,
-  { fetchFn = globalThis.fetch as FetchFn, envelope, now = Date.now, appBaseUrl = 'http://localhost:3000' }: TestsDeps,
+  { envelope, now = Date.now, byDomainFn = getQualityByDomain }: TestsDeps,
 ): Promise<TestsResult> {
   const start = now();
   const lower = (domain || '').toLowerCase();
   try {
-    const upstream = await fetchFn(`${appBaseUrl}/api/quality/domain/${lower}`, {
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!upstream.ok) {
-      return { status: upstream.status, body: { error: `upstream returned ${upstream.status}` } };
-    }
-    const data = (await upstream.json()) as { total?: number };
+    const data = byDomainFn(lower);
     return {
       status: 200,
       body: envelope('domain-tests', data, now() - start, { count: data.total || 0 }),
     };
   } catch (err) {
     return {
-      status: 502,
+      status: 500,
       body: envelope('domain-tests', { error: (err as Error).message }, now() - start, { error: true }),
     };
   }
 }
 
 export async function fetchTestsAll({
-  fetchFn = globalThis.fetch as FetchFn,
   envelope,
   now = Date.now,
-  appBaseUrl = 'http://localhost:3000',
+  scanFn = getQualityScan,
 }: TestsDeps): Promise<TestsResult> {
   const start = now();
   try {
-    const upstream = await fetchFn(`${appBaseUrl}/api/quality/scan`, {
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!upstream.ok) {
-      return { status: upstream.status, body: { error: `upstream returned ${upstream.status}` } };
-    }
-    const data = (await upstream.json()) as {
-      pyramid?: Array<{ name?: string; files?: Array<{ name?: string; kind?: string; domain?: string; count?: number }> }>;
-      total?: number;
-    };
+    const data = scanFn();
     const allFiles = (data.pyramid || []).flatMap((l) =>
       (l.files || []).map((f) => ({
         path: f.name,
@@ -94,7 +90,7 @@ export async function fetchTestsAll({
     };
   } catch (err) {
     return {
-      status: 502,
+      status: 500,
       body: envelope('quality-scan', { error: (err as Error).message }, now() - start, { error: true }),
     };
   }

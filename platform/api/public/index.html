@@ -84,11 +84,15 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
         { label: 'Domain Detail', href: 'http://localhost:3000/gathering-docs/domain-detail.html' },
         { label: 'Step Detail', href: 'http://localhost:3000/gathering-docs/step-detail.html' },
       ],
-      'Werk': [{ label: 'Werk Dashboard', href: 'http://localhost:3000/werk' }],
+      'Werk': [
+        { label: 'Werk Dashboard', href: 'http://localhost:3000/werk' },
+        // #3656: quality is part of werk (Jeff's call) and served by chorus-api
+        // itself — relative href so it also works through the share tunnel.
+        { label: 'Quality Service', href: '/werk/quality/' },
+      ],
       'The Clearing': [{ label: 'The Clearing', href: 'http://localhost:3470' }],
       'Borg': [
-        { label: 'Quality Service', href: 'http://localhost:3000/quality-service' },
-        { label: 'Hooks Dashboard', href: 'http://localhost:3000/hooks' },
+        { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],
     };
 

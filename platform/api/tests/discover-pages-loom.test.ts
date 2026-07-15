@@ -1,3 +1,4 @@
+// @test-type: unit — pure fs scanner against a tempdir; no services.
 /**
  * #2485 Move 6 — discover-pages scanner extension for chorus/platform/api/public/loom/.
  *

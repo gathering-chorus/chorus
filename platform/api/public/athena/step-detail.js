@@ -105,8 +105,9 @@ function renderDomains() {
     var card = grid.querySelector('[data-domain-id="' + d.id + '"]');
     if (!card) return;
     var statsEl = card.querySelector('.domain-stats');
-    // Fetch test count
-    fetch('/api/quality/domain/' + domainName)
+    // Fetch test count — #3656: chorus-api's own scanner route (the bare
+    // /api/quality path was gathering's; it never existed on this origin).
+    fetch('/api/chorus/quality/domain/' + domainName)
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(data) {
         if (!data || !statsEl) return;
