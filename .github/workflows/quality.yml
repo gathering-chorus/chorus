@@ -220,6 +220,17 @@ jobs:
       - name: Run shape lint
         run: node platform/scripts/mcp-tool-description-lint.js
 
+  cross-product-coupling:
+    name: Cross-product coupling boundary (#3612 / #3564 AC3)
+    runs-on: ubuntu-latest
+    # Jeff's #3564 invariant: the governance program must REDUCE chorus↔gathering
+    # coupling and add NONE. Baseline-ratchet git-grep guard — fails when a commit
+    # ADDS a new gathering runtime reference to platform/ non-test code.
+    steps:
+      - uses: actions/checkout@v6
+      - name: Run coupling guard
+        run: bash platform/scripts/test-cross-product-coupling.sh
+
   catalog-oversize:
     name: Catalog oversize backstop (#2461)
     runs-on: ubuntu-latest
