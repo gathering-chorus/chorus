@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, WriteReq};
+use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, Identity, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -82,7 +82,9 @@ fn run() -> Result<String, String> {
                 Ok(format!("# dry-run — nothing written\n# subject: {}\n{}", subject, turtle))
             } else {
                 let store = FusekiStore::new();
-                let subject = write(&store, &req)?;
+                // #3651 — the identity gate: no verified Principal, no write.
+                let id = Identity::resolve(&store)?;
+                let subject = write(&store, &req, &id)?;
                 Ok(format!("written: {}", subject))
             }
         }
@@ -91,7 +93,8 @@ fn run() -> Result<String, String> {
         Some("delete") => {
             let (req, _) = parse_req(&args[1..])?;
             let store = FusekiStore::new();
-            Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref())?))
+            let id = Identity::resolve(&store)?; // #3651
+            Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref(), &id)?))
         }
         Some(verb @ ("link" | "unlink")) => {
             let (req, _) = parse_req(&args[1..])?;
@@ -100,10 +103,11 @@ fn run() -> Result<String, String> {
                 .first()
                 .ok_or(format!("{} needs --edge prop=kind:name", verb))?;
             let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?; // #3651
             let subject = if verb == "link" {
-                add_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref())?
+                add_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id)?
             } else {
-                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref())?
+                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id)?
             };
             Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
         }
@@ -133,7 +137,8 @@ fn run() -> Result<String, String> {
                 }
             }
             let store = FusekiStore::new();
-            let n = batch(&store, &graph, &deletes, &inserts)?;
+            let id = Identity::resolve(&store)?; // #3651
+            let n = batch(&store, &graph, &deletes, &inserts, &id)?;
             Ok(format!("batch: {} triple(s) applied to <{}>", n, graph))
         }
         _ => Err(usage()),

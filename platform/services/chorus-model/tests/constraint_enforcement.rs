@@ -4,7 +4,7 @@
 //! per-domain rules). Red-first (DEC-1674). This file pins the PURE datatype check;
 //! edge-target-type enforcement is integration-proven (needs the store).
 
-use chorus_model::{datatype_ok, write, Store, WriteReq, R};
+use chorus_model::{datatype_ok, verify_identity, write, Identity, Store, WriteReq, R};
 use std::cell::RefCell;
 
 /// Configurable stub: answers shape SELECTs by query content (minCount→required,
@@ -20,6 +20,9 @@ struct Cfg {
 }
 impl Store for Cfg {
     fn ask(&self, sparql: &str) -> R<bool> {
+        if sparql.contains("urn:chorus:domains:security") {
+            return Ok(true); // identity is not the variable in these tests (see identity_gate.rs)
+        }
         if sparql.contains(" a <") {
             // type ASK — true only if a matching typed assertion is present
             Ok(self.typed.iter().any(|t| sparql.contains(t)))
@@ -43,6 +46,10 @@ impl Store for Cfg {
         Ok(())
     }
 }
+/// #3651 — mutating verbs need a verified Identity; these tests verify one
+/// against the permissive registry route above.
+fn vid(s: &Cfg) -> Identity { verify_identity(Some("kade"), s).unwrap() }
+
 fn cfg() -> Cfg {
     Cfg { required: vec![], datatypes: vec![], edge_classes: vec![], exists: vec![], typed: vec![], updates: RefCell::new(vec![]) }
 }
@@ -56,7 +63,7 @@ fn write_rejects_wrong_datatype_value() {
     s.datatypes = vec![("port".into(), "integer".into())];
     let mut req = WriteReq { kind: "domain".into(), name: "x".into(), ..Default::default() };
     req.fields.insert("port".into(), "not-a-number".into());
-    let e = write(&s, &req).unwrap_err();
+    let e = write(&s, &req, &vid(&s)).unwrap_err();
     assert!(e.starts_with("shape-violation") && e.contains("xsd:integer"), "{}", e);
     assert!(s.updates.borrow().is_empty(), "nothing written on a datatype violation");
 }
@@ -67,7 +74,7 @@ fn write_accepts_valid_datatype_value() {
     s.datatypes = vec![("port".into(), "integer".into())];
     let mut req = WriteReq { kind: "domain".into(), name: "x".into(), ..Default::default() };
     req.fields.insert("port".into(), "8080".into());
-    assert!(write(&s, &req).is_ok(), "a valid integer passes");
+    assert!(write(&s, &req, &vid(&s)).is_ok(), "a valid integer passes");
 }
 
 #[test]
@@ -84,7 +91,7 @@ fn write_rejects_edge_target_of_wrong_type() {
         edges: vec![("partOf".into(), "product".into(), "athena".into())],
         ..Default::default()
     };
-    let e = write(&s, &req).unwrap_err();
+    let e = write(&s, &req, &vid(&s)).unwrap_err();
     assert!(e.starts_with("shape-violation") && e.contains("is not a Product"), "{}", e);
     assert!(s.updates.borrow().is_empty(), "nothing written on edge-target-type violation");
 }
@@ -102,7 +109,7 @@ fn write_accepts_edge_target_of_right_type() {
         edges: vec![("partOf".into(), "product".into(), "athena".into())],
         ..Default::default()
     };
-    assert!(write(&s, &req).is_ok(), "a correctly-typed edge target passes");
+    assert!(write(&s, &req, &vid(&s)).is_ok(), "a correctly-typed edge target passes");
 }
 
 #[test]
