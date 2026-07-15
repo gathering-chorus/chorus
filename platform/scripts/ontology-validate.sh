@@ -26,9 +26,19 @@ VIOLATIONS=0
 PASS_COUNT=0
 
 # Trace hop — convergence call stack (#2103, ADR-024)
+# #3658 — trace is envelope-secured (#3619): mint a scoped token when the realm
+# env is present, else send bare (fail-open, fire-and-forget as always).
+TRACE_AUTH=""
+if [ -f "$HOME/.chorus/secrets/chorus-realm.env" ]; then
+  TRACE_AUTH=$(set -a; . "$HOME/.chorus/secrets/chorus-realm.env" 2>/dev/null; \
+    python3 "$HOME/CascadeProjects/chorus/platform/scripts/chorus-mint-token.py" \
+      --web-id "http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me" \
+      --scope "urn:chorus:ops" 2>/dev/null || true)
+fi
 TRACE_ID="convergence-validate-$(date +%s)"
 curl -s -X POST http://localhost:3340/api/chorus/trace \
   -H 'Content-Type: application/json' \
+  ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
   -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":1,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"git-queue\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"}}" \
   --max-time 3 > /dev/null 2>&1 &
 
@@ -178,11 +188,13 @@ RESULT=$?
 if [ $RESULT -eq 0 ]; then
   curl -s -X POST http://localhost:3340/api/chorus/trace \
     -H 'Content-Type: application/json' \
+    ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
     -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":2,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"},\"destination\":{\"domain\":\"chorus\",\"service\":\"validate-pass\"}}" \
     --max-time 3 > /dev/null 2>&1 &
 else
   curl -s -X POST http://localhost:3340/api/chorus/trace \
     -H 'Content-Type: application/json' \
+    ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
     -d "{\"correlationId\":\"$TRACE_ID\",\"hop\":2,\"callStack\":\"convergence\",\"source\":{\"domain\":\"chorus\",\"service\":\"ontology-validate\"},\"error\":{\"classification\":\"validation\",\"message\":\"ontology validation failed\",\"retryable\":false}}" \
     --max-time 3 > /dev/null 2>&1 &
 fi

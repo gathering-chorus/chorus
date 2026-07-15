@@ -73,10 +73,25 @@ fi
 indexed=0
 errors=0
 
+# #3658 — /api/chorus/trace is envelope-secured (#3619); mint one scoped token
+# per run when the realm env is present, else send bare and let the envelope
+# decide. Fail-open: trace POSTs were always fire-and-forget. Minted once, not
+# per hop — this script fires 4+ hops per domain across 30+ domains per cycle,
+# and the tokenless version was the live refusal source that kept
+# EnvelopeRefusalRegression firing on a real caller.
+TRACE_AUTH=""
+if [ -f "$HOME/.chorus/secrets/chorus-realm.env" ]; then
+  TRACE_AUTH=$(set -a; . "$HOME/.chorus/secrets/chorus-realm.env" 2>/dev/null; \
+    python3 "$HOME/CascadeProjects/chorus/platform/scripts/chorus-mint-token.py" \
+      --web-id "http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me" \
+      --scope "urn:chorus:ops" --ttl 1800 2>/dev/null || true)
+fi
+
 trace_hop() {
   local corr="$1" hop="$2" src="$3" dst="$4" domain="$5" ms="${6:-}"
   curl -s -X POST "$API_URL/api/chorus/trace" \
     -H 'Content-Type: application/json' \
+    ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
     -d "{\"correlationId\":\"$corr\",\"hop\":$hop,\"callStack\":\"batch\",\"source\":{\"domain\":\"$domain\",\"service\":\"$src\"},\"destination\":{\"domain\":\"$domain\",\"service\":\"$dst\"}${ms:+,\"latencyMs\":$ms}}" \
     --max-time 3 > /dev/null 2>&1 &
 }
