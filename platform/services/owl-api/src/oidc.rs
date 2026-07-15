@@ -538,6 +538,23 @@ mod tests {
         assert_eq!(v.verify(&t, NOW), Err(AuthError::WrongAudience));
     }
 
+    // case 5b (#3612 seam DECISION, pinned) — aud=solid is ACCEPTED. CSS
+    // client_credentials tokens carry the issuer's own generic audience
+    // ("solid"); CSS cannot mint a chorus-specific aud on that flow. The
+    // binding controls for this lane are iss==our CSS + JWKS signature +
+    // the Principal allow-set (TTL'd, revocable) — NOT the audience claim.
+    // Residual risk accepted: same-CSS token replay across resource servers
+    // (there is exactly one resource server today); the structural tighten
+    // is DPoP-bound tokens, carded as a follow-on, not a silent TODO.
+    #[test]
+    fn solid_audience_allows_css_client_credentials_lane() {
+        let v = verifier();
+        let t = mint_es256(&css_key(), KID, &payload(ISSUER, "solid", &wren_webid(), NOW + 3600));
+        let c = v.verify(&t, NOW).expect("aud=solid + allow-listed WebID verifies");
+        assert_eq!(c.aud, "solid");
+        assert_eq!(c.agent_id, "wren");
+    }
+
     // case 6 — no-token-401: no anonymous fallback, no DEPLOY_ROLE read.
     #[test]
     fn no_token_401() {
