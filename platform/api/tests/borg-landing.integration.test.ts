@@ -11,7 +11,7 @@
 
 import { startTestApp, type TestApp } from './lib/test-app';
 
-// #3656: Quality Service reparented borg→loom — lives at /loom/quality/ now.
+// #3656: Quality Service reparented borg→werk — lives at /werk/quality/ now.
 const SURFACES = [
   { slug: 'assessment',        title: 'Borg Assessment' },
   { slug: 'instance-explorer', title: 'Instance Explorer' },
@@ -50,10 +50,10 @@ describe('#2099: Borg landing at /borg/', () => {
     }
   });
 
-  test('landing points Quality Service at its loom home, not /borg/quality (#3656)', async () => {
+  test('landing points Quality Service at its werk home, not /borg/quality (#3656)', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/`);
     const html = await res.text();
-    expect(html).toContain('/loom/quality/');
+    expect(html).toContain('/werk/quality/');
     expect(html).not.toContain('/borg/quality');
   });
 });

@@ -75,36 +75,36 @@ describe('#2099: /api/chorus/quality/domain/:domain', () => {
   }, 30_000);
 });
 
-describe('#3656: /loom/quality/ static page (reparented from borg, #2099)', () => {
+describe('#3656: /werk/quality/ static page (reparented borg→werk, #2099)', () => {
 
 
   let harness: TestApp;
 
   beforeAll(async () => { harness = await startTestApp(); });
   afterAll(async () => { if (harness) await harness.close(); });
-  test('GET /loom/quality/ returns 200', async () => {
-    const res = await fetch(`${harness.baseUrl}/loom/quality/`);
+  test('GET /werk/quality/ returns 200', async () => {
+    const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     expect(res.status).toBe(200);
   }, 10_000);
 
   test('page contains Quality heading and summary endpoint', async () => {
-    const res = await fetch(`${harness.baseUrl}/loom/quality/`);
+    const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     const html = await res.text();
     expect(html).toContain('Quality');
     expect(html).toContain('/api/chorus/quality/summary');
   }, 10_000);
 
   test('page has pyramid container', async () => {
-    const res = await fetch(`${harness.baseUrl}/loom/quality/`);
+    const res = await fetch(`${harness.baseUrl}/werk/quality/`);
     const html = await res.text();
     expect(html).toContain('id="pyramid"');
   }, 10_000);
 
-  test('old /borg/quality/ path 301s to /loom/quality/', async () => {
+  test('old /borg/quality/ path 301s to /werk/quality/', async () => {
     for (const oldPath of ['/borg/quality', '/borg/quality/', '/borg/quality/index.html']) {
       const res = await fetch(`${harness.baseUrl}${oldPath}`, { redirect: 'manual' });
       expect(res.status).toBe(301);
-      expect(res.headers.get('location')).toBe('/loom/quality/');
+      expect(res.headers.get('location')).toBe('/werk/quality/');
     }
   }, 10_000);
 });
