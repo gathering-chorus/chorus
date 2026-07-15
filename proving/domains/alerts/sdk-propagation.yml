@@ -1,0 +1,24 @@
+# sdk-propagation.yml — #3628 AC4: deploy-completeness guard for chorus-sdk.
+# A landed chorus-sdk src change that was never built into dist ships nothing:
+# #3619's token-wired emit sat unbuilt for 5 weeks while every consumer kept
+# POSTing tokenless (4354 refusals/24h on /api/chorus/trace, invisible until
+# Jeff asked). This rule makes the stale-dist state a nudge, not a discovery.
+
+name: sdk-propagation
+description: chorus-sdk dist stale or missing modules vs landed src — consumers are running old SDK code
+severity: warning
+schedule: "0 * * * *"
+
+check: |
+  /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/check-sdk-propagation.sh 2>&1
+
+action: |
+  COOLDOWN="/tmp/alert-sdk-propagation-$(date '+%Y-%m-%d')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  DETAIL=$(/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/check-sdk-propagation.sh 2>&1 || true)
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  "$OPS_NUDGE" silas "sdk-propagation: chorus-sdk dist is stale vs landed src — consumers are loading old SDK code. Rebuild (cd platform/chorus-sdk && npm run build), then restart any long-running consumers.
+$DETAIL" 2>/dev/null || true
