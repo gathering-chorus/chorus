@@ -1,0 +1,38 @@
+# ============================================================================
+# #3612 GOVERN — the write-governance vocabulary, declared once (ADR-048 names).
+# Property DECLARATIONS only — per-class ANNOTATIONS live in each domain's own
+# TTL (Silas's OWL-DBA ruling, 2026-07-15). Authored by Wren, vocab blessed by
+# Silas: writeScope/readScope are OBJECT properties ranging over
+# chorus:Principal (the #3613 identity registry — never strings, no second
+# identity vocabulary); dangling scope targets are refused by the DAL's
+# referential (FK) check.
+#
+# Fail-closed-by-omission (the enforcement contract, mirrored in owl-api):
+#   - class WITHOUT chorus:writeScope   → owner-only writes (ownedBy gate)
+#   - class WITHOUT chorus:requiresAuth → open reads (writes ALWAYS authN)
+#   - field WITHOUT chorus:exposure     → hidden (ADR-048 §3, already live)
+# Only divergence from these defaults is ever annotated.
+#
+# Attachment point: the class's NodeShape in urn:chorus:ontology — the same
+# surface generate()/read_shape already project from. Never on instances.
+# ============================================================================
+
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+
+chorus:requiresAuth a owl:DatatypeProperty ;
+    rdfs:label "requires auth" ;
+    rdfs:range xsd:boolean ;
+    rdfs:comment "On a NodeShape: true = this class's READ surfaces demand a verified token (writes always do). Projected by owl-api generate() into the secured route set (#3414 seam). Omission = open reads." .
+
+chorus:writeScope a owl:ObjectProperty ;
+    rdfs:label "write scope" ;
+    rdfs:range chorus:Principal ;
+    rdfs:comment "On a NodeShape: names a Principal allowed to write instances of the target class. Repeatable — one triple per principal. Enforced at the owl-api door before any graph work (#3612); refusal is typed + spined. Omission = owner-only via ownedBy (fail-closed default, only divergence is annotated)." .
+
+chorus:readScope a owl:ObjectProperty ;
+    rdfs:label "read scope" ;
+    rdfs:range chorus:Principal ;
+    rdfs:comment "On a NodeShape: names a Principal allowed to read instances of the target class. DECLARED by #3612 for vocabulary completeness (ADR-048 triad); enforcement is read-side work outside #3612's write-boundary AC — until it lands, requiresAuth (any-valid-token) is the read gate. Do not annotate expecting per-principal read enforcement yet." .

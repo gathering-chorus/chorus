@@ -88,6 +88,13 @@ check('edge write on absent/unowned entity → typed refusal (403 authz fail-clo
 r = await hit('PUT', '/domains/bad%20name%3E', token, '{"label":"x"}');
 check('replace, injection-shaped name → 422 validation', r.status === 422 && r.body.includes('validation'), `${r.status} ${r.body}`);
 
+// 7. /bulk (#3612 incr-2) — same governed primitive, same gate: no token → 401,
+//    valid-but-unscoped token → 403. Refusal-only, nothing can land.
+r = await hit('POST', '/bulk', null, 'INS\t<urn:x>\t<urn:y>\t"z"', { 'x-target-graph': 'urn:chorus:domains:tests' });
+check('bulk, no token → 401 authn-missing', r.status === 401 && r.body.includes('authn-missing'), `${r.status} ${r.body}`);
+r = await hit('POST', '/bulk', token, 'INS\t<urn:x>\t<urn:y>\t"z"', { 'x-target-graph': 'urn:chorus:domains:tests' });
+check('bulk, valid unscoped token → 403 out-of-scope', r.status === 403 && r.body.includes('out-of-scope'), `${r.status} ${r.body}`);
+
 // ---- spine verification: the refusals above must be OBSERVABLE ----
 // owl.write events flow chorus-log → shim → chorus-api spine, so ask Loki (the
 // spine's query surface) for the last 5 minutes of owl.write lines and assert
@@ -111,6 +118,7 @@ if (lr.ok) {
   check('spine: off-model refusal recorded', has('"result":"off-model"', '"op":"create"'), 'owl.write op=create result=off-model');
   check('spine: authz refusal recorded (per-primitive label)', has('"result":"authz"', '"op":"add-edge"'), 'owl.write op=add-edge result=authz');
   check('spine: invalid-name refusal recorded', has('"result":"validation"', '"op":"replace"'), 'owl.write op=replace result=validation');
+  check('spine: bulk refusal recorded with its own op label', has('"result":"out-of-scope"', '"op":"bulk"'), 'owl.write op=bulk result=out-of-scope');
 } else {
   check('spine queryable via Loki', false, `${LOKI} → ${lr.status}`);
 }

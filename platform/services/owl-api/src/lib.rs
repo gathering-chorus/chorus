@@ -276,6 +276,7 @@ pub struct RouteTable {
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
+    pub write_scope: Vec<String>, // #3612/ADR-048 — Principal localnames allowed to write this class, PROJECTED from chorus:writeScope on the NodeShape. Empty = unannotated → defer to ownedBy owner-only (fail-closed by that gate, not open).
 }
 
 /// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
@@ -976,7 +977,17 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let domain_of = select_v(&sparql_json(&dq)?).into_iter().next();
     let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref())?;
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph })
+    // #3612/ADR-048 — PROJECT class-level write governance: chorus:writeScope on
+    // the NodeShape names the Principals (object property, range chorus:Principal —
+    // FK discipline is the DAL's referential check) allowed to write instances.
+    // Read from the SHAPE surface only (never instances). Omission = fail-closed
+    // owner-only via ownedBy — only divergence is annotated.
+    let wsq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:writeScope ?p . FILTER(isIRI(?p)) BIND(REPLACE(STR(?p), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let write_scope: Vec<String> = select_v(&sparql_json(&wsq)?);
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, write_scope })
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -1072,6 +1083,25 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
         ("DELETE", 3) => Some(WriteOp::RemoveEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
         _ => None,
     }
+}
+
+/// #3612/ADR-048 — class-level write governance, MODEL-declared. A caller may
+/// write a class whose shape carries chorus:writeScope only if it names their
+/// Principal — entries are principal localnames (`principal-<role>`, the live
+/// registry shape) or bare role names; both spellings match. An EMPTY scope
+/// means the class is unannotated: the verdict defers to the ownedBy owner-only
+/// gate downstream (fail-closed by that gate, not open here) — only divergence
+/// from owner-only is ever annotated.
+pub fn write_scope_allows(caller_role: &str, write_scope: &[String]) -> bool {
+    if write_scope.is_empty() {
+        return true; // unannotated → ownedBy authz decides (never a silent allow)
+    }
+    if caller_role.is_empty() {
+        return false;
+    }
+    write_scope.iter().any(|p| {
+        p == caller_role || p.strip_prefix("principal-").is_some_and(|r| r == caller_role)
+    })
 }
 
 /// #3612 — the primitive's spine label: ONE vocabulary shared by the door gate
@@ -1537,6 +1567,13 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         None => return write_resp("not-found", "no such write route"),
     };
     let op_label = write_op_label(&op);
+    // #3612/ADR-048 — class-level writeScope, MODEL-declared, checked BEFORE any
+    // graph work: if the shape names write principals, the caller must be one.
+    // Unannotated classes defer to the ownedBy gate below (fail-closed-by-omission).
+    if !write_scope_allows(caller_role, &table.write_scope) {
+        return refuse_write(caller_role, op_label, path, "authz",
+            "caller is not in this class's writeScope (model-declared, ADR-048)");
+    }
     // #3573 (bounds) — cap the structured write body before any graph work. A single
     // entity write is < 1 KiB; an unbounded body is the runaway/oversized vector.
     if body.len() > MAX_WRITE_BYTES {
@@ -2526,7 +2563,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), write_scope: table.write_scope.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -3790,6 +3827,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
+            write_scope: vec![],
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -3826,6 +3864,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
+            write_scope: vec![],
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -3853,6 +3892,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
+            write_scope: vec![],
             routes: vec![
                 "GET /domains".into(),
                 "GET /domains/:name".into(),
@@ -4024,6 +4064,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
+            write_scope: vec![],
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -4088,6 +4129,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
+            write_scope: vec![],
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -4112,7 +4154,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string() };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), write_scope: vec![] };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -4151,6 +4193,7 @@ mod tests {
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: "urn:chorus:domains:tests".to_string(),
+            write_scope: vec![],
         };
         let scope = vec![t.instances_graph.clone()];
         let ts = dal_skeleton_ts(&t, &scope);
@@ -4287,6 +4330,59 @@ mod tests {
         let (code, body) = handle_batch("", "INS\t<urn:x>\t<urn:y>\t\"z\"", "captest-3612", MAX_BULK_BYTES, "bulk");
         assert_eq!(code, 422);
         assert!(body.contains("bulk requires x-target-graph"), "op label reaches the message: {}", body);
+    }
+
+    // === #3612 incr-3 — write governance DECLARED in the model (ADR-048) ======
+    //
+    // chorus:writeScope on a class's NodeShape names the Principals allowed to
+    // write instances (object property, range chorus:Principal — Silas's vocab
+    // blessing 2026-07-15). generate() PROJECTS it into RouteTable.write_scope;
+    // the door enforces it BEFORE any graph work. Omission = fail-closed
+    // owner-only (the existing ownedBy discipline) — only divergence is annotated.
+
+    #[test]
+    fn write_scope_allows_matches_principal_localnames_and_roles() {
+        // principal instances are principal-<name> (live registry shape); the
+        // caller arrives as a bare role. Both spellings must match.
+        let scope = vec!["principal-silas".to_string(), "wren".to_string()];
+        assert!(write_scope_allows("silas", &scope), "principal-<role> matches the bare role");
+        assert!(write_scope_allows("wren", &scope), "bare-name entries match too");
+        assert!(!write_scope_allows("kade", &scope), "outside the declared set → refused");
+        assert!(!write_scope_allows("", &scope), "empty caller never matches");
+        // OMISSION: empty scope = no class-level restriction here — the door
+        // falls through to ownedBy owner-only (fail-closed by a DIFFERENT gate,
+        // not open). This pins that empty means "defer", not "deny-all".
+        assert!(write_scope_allows("anyone", &[]), "unannotated class defers to ownedBy");
+    }
+
+    #[test]
+    fn handle_write_refuses_out_of_write_scope_before_any_graph_work() {
+        let _world = spine_world();
+        // This test brings its OWN world completely: synthetic principals (never a
+        // live role identity), an unreachable store, and a nonexistent DAL binary —
+        // so even the "allowed" path can never touch live Fuseki or write anything.
+        std::env::set_var("CHORUS_FUSEKI", "http://127.0.0.1:9/unreachable");
+        std::env::set_var("CHORUS_MODEL_BIN", "/nonexistent-dal-3612");
+        let t = RouteTable {
+            class: format!("{}Test", NS),
+            fields: vec!["label|datatype:string".into()],
+            routes: vec![],
+            secured: vec![],
+            mandatory: vec![],
+            repo_target: String::new(),
+            exposure: vec![],
+            instances_graph: "urn:chorus:domains:tests".to_string(),
+            write_scope: vec!["principal-captest-a".to_string()],
+        };
+        // create by a caller outside the declared writeScope: typed 403 naming the
+        // model-declared gate, refused BEFORE entity_exists/ownedBy.
+        let (code, body) = handle_write("POST", "/tests", "{\"name\":\"scopetest-3612\",\"label\":\"x\"}", &t, "captest-b");
+        assert_eq!(code, 403, "{}", body);
+        assert!(body.contains("writeScope"), "refusal names the model-declared gate: {}", body);
+        // same table, a declared principal: clears the class gate, then dies at the
+        // unreachable store/DAL as a non-403 — proving the gate, not the write.
+        let (code2, _body2) = handle_write("POST", "/tests", "{\"name\":\"scopetest-3612\",\"label\":\"x\"}", &t, "captest-a");
+        assert_ne!(code2, 403, "declared principal clears the class-level gate");
     }
 }
 
