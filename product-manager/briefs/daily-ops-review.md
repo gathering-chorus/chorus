@@ -1,44 +1,44 @@
-# Daily Ops Review — 2026-07-14
+# Daily Ops Review — 2026-07-15
 
 ## 1. Hooks Health
 **Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 29.46s, 0 errors, 0 warnings.
+`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 28.09s, 0 errors, 0 warnings.
 **Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
-**Status: YELLOW (carry, recount +1 → 18)**
-18 plists reference `/tmp/` (17 in `proving/config/launchagents/`, 1 in `config/launchagents/com.chorus.tmp-reaper.plist` previously undercounted). No new additions.
-**Action:** Silas — 18 is the corrected canonical count; open card to migrate all plist stdout/stderr to `~/Library/Logs/Chorus/`.
+**Status: YELLOW (recount: 17, was 18)**
+17 plist files in `proving/config/launchagents/` reference `/tmp/`. Corrected from yesterday's 18 — `config/launchagents/com.chorus.tmp-reaper.plist` was a double-count. No new additions.
+**Action:** Silas — 17 is today's canonical count; migration card to `~/Library/Logs/Chorus/` still open.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (carry, 11d)**
-All `designing/claudemd/` and `designing/domain-context/` files last committed 2026-07-03 (wren: #3603); now 11 days stale. 30+ cards shipped since; no fragment refresh.
-**Action:** Wren — audit shared fragments for drift vs recent card activity and refresh.
+**Status: YELLOW (carry, 12d)**
+All `designing/claudemd/` fragments last committed 2026-07-03; 12d stale (+1d). No refreshes despite continued card shipping.
+**Action:** Wren — audit for drift; now past 10d, escalating.
 
 ## 4. CSC Compliance
-**Status: RED (carry — count discrepancy flagged)**
-`grep -rl '/tmp/' platform/scripts/` returns 67 unique files today; yesterday's brief states canonical=38. Difference likely includes `.plist` files in `platform/scripts/launchagents-secondary/`. Key script offenders unchanged: `coherence-check`, `look.sh`, `werk-init.sh`, `bridge-subscriber.js`, `crawler-hydrate-graph.sh`.
-**Action:** Silas — re-establish canonical count (scripts-only vs all files); open July card with scope.
+**Status: RED (recount: 36 sh-only)**
+36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Yesterday's 67 included non-.sh files and secondary dirs — sh-only canonical count: 36. Core offenders unchanged: `look.sh`, `bridge-subscriber-watchdog.sh`, `werk-init.sh`, `crawler-hydrate-graph.sh`.
+**Action:** Silas — adopt 36 as canonical sh-only baseline; open July card scoped to `platform/scripts/*.sh`.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo clean — 0 uncommitted changes. HEAD: `53b60dc #3639 (kade) (#760)`.
+Repo clean — 0 uncommitted changes. HEAD: `150f865` (silas: daily quality review 2026-07-15).
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 98d)**
-#1759 "OWL entity model" (Wren, P1) and #1791 "Restore chorus product boundary" (Silas, P1) last updated 2026-04-07 — now 98 days stale. No commits for either in 7-day git log.
-**Action:** Wren — close or re-groom both; >90d WIP is planning debt blocking sprint clarity.
+**Status: RED (carry, 99d)**
+#1759 "OWL entity model" (Wren, P1) and #1791 "Restore chorus product boundary" (Silas, P1) last touched 2026-04-07 — now 99d stale. No commit activity on either this week.
+**Action:** Wren — close or re-groom both; 100d mark tomorrow.
 
 ## 7. Domain Context Freshness
-**Status: RED (carry, 11d)**
-All 5 domain-context files (chorus, infra, music, photos, seeds) last committed 2026-07-03. Music/photos domain active this week: #3624 (kade, sexuality-player). Chorus also shipping (#3635, #3632, #3629). Context lag now 4d past the 7d threshold.
-**Action:** Silas owns chorus/infra; Wren owns music/photos/seeds — both overdue.
+**Status: YELLOW (partial recovery)**
+`domain-context-photos.md` updated today via #3599 — GREEN. Chorus, infra, music, seeds last committed 2026-07-03 (12d); chorus domain shipped 4 cards this week (#3641, #3643, #3646, #3647).
+**Action:** Silas — chorus/infra context most urgent; Wren — music/seeds at 12d.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
 No perf-baseline JSON committed to repo; cross-session delta not computable.
-**Action:** Silas — commit nightly baseline JSON to enable delta tracking.
+**Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
 
 ---
-*Carries: §2 YELLOW (+1 recount), §3 YELLOW (11d), §4 RED (count dispute flagged), §6 RED (98d), §7 RED (11d). No new issues. §1/§5 green.*
+*New: §2 recount −1 (now 17); §4 recount sh-only (now 36); §7 photos GREEN. Carries: §3 YELLOW (12d), §4 RED (sh-36), §6 RED (99d), §7 YELLOW (chorus/infra 12d). §1/§5 green.*
