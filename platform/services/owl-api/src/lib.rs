@@ -18,6 +18,7 @@ use std::process::Command;
 
 /// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
 pub mod auth;
+pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const ONTOLOGY_GRAPH: &str = "urn:chorus:ontology";
@@ -1023,13 +1024,26 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
 // event per write — all in ONE generated path, so a write can't forget to auth,
 // validate, or log. Pure decision/builders are unit-tested; the I/O wraps them.
 
-/// The caller's ROLE from the verified token's webId. The static webid format is
-/// `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids). Returns the
-/// `<role>` segment, or None if the shape doesn't match (→ authZ fail-closed).
+/// The caller's ROLE from the verified token's webId. Two shapes are real:
+/// legacy HS256 `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids,
+/// dies with the HS256 arm at #3611 cutover) and the CSS pod shape #3613 mints:
+/// `<issuer>/<name>/profile/card#me` — CSS is the WebID's source of truth
+/// (ADR-052 §6); this parser RECORDS that shape, it doesn't invent one. Returns
+/// the agent segment, or None if neither shape matches (→ authZ fail-closed).
 pub fn role_from_webid(web_id: &str) -> Option<String> {
-    let after = web_id.split("/_agents/").nth(1)?;
-    let role = after.split('/').next()?;
-    if role.is_empty() { None } else { Some(role.to_string()) }
+    if let Some(after) = web_id.split("/_agents/").nth(1) {
+        let role = after.split('/').next()?;
+        return if role.is_empty() { None } else { Some(role.to_string()) };
+    }
+    // CSS pod shape: scheme://host/<name>/profile/card#me (no _agents, no .ttl)
+    let rest = web_id.split("://").nth(1)?;
+    let mut segs = rest.split('/');
+    let _host = segs.next()?;
+    let name = segs.next()?;
+    if segs.next()? == "profile" && segs.next()?.starts_with("card") && !name.is_empty() {
+        return Some(name.to_string());
+    }
+    None
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -2928,6 +2942,46 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
         eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
     }
+    // #3613 / ADR-052 — the ES256 (Solid-OIDC/CSS) verifier, built ONCE at boot:
+    // issuer from env (deployment config, not per-principal data — §5), the
+    // Principal allow-set resolved from the model in ONE boot query (§5; empty ⇒
+    // ES256 fail-closed while the HS256 dual path keeps existing writers alive),
+    // JWKS fetched via curl with a kid-keyed cache (§2). Warm-fetch warns loudly
+    // on CSS-down-at-boot but never blocks boot.
+    let css_issuer = std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
+    let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+    let oidc_verifier = oidc::OidcVerifier::new(
+        &css_issuer,
+        // allow-set resolver: re-run lazily on the ALLOW_TTL cadence so a model
+        // revocation propagates within one token TTL (no restart, no per-request call)
+        || oidc::resolve_principal_webids(|q| sparql_json(q).ok()),
+        move || {
+        let out = Command::new("curl")
+            .args(["-sf", "--max-time", "3", &jwks_url])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&out.stdout).into_owned())
+        },
+    );
+    let boot_now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let warmed_allow = oidc_verifier.warm_allow(boot_now);
+    if warmed_allow == 0 {
+        eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); ES256 tokens are refused (fail-closed) until the TTL'd re-resolve finds Principals. HS256 legacy path unaffected.");
+    } else {
+        eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved, TTL'd)", warmed_allow);
+    }
+    let warmed = oidc_verifier.warm_fetch(boot_now);
+    if warmed == 0 {
+        eprintln!("owl-api: WARNING — JWKS warm-fetch got 0 keys from {} (CSS down or no keys); ES256 verifies fail-closed until a kid-triggered refetch succeeds.", css_issuer);
+    } else {
+        eprintln!("owl-api: JWKS warm-fetch cached {} key(s) from {}", warmed, css_issuer);
+    }
     // #3494 — composed domain surfaces (the definesVocabulary fan-out): every domain
     // with chorus:repoTarget + definesVocabulary mounts at /<repoTarget>, composing
     // its vocab classes (whose RouteTables are already in `tables` via the serve
@@ -3059,7 +3113,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            let (code, body) = match auth::verify_token(token, &registry, now_secs) {
+            let (code, body) = match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => (
                     401u16,
                     "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
@@ -3116,7 +3170,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            match auth::verify_token(token, &registry, now_secs) {
+            match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
                 Err(_) => {
                     let (c, t) = write_status("authn-missing");
                     ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
@@ -3145,7 +3199,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 }
             }
         } else {
-            match auth::seam_auth(&path, &header("authorization"), &registry, now_secs, &table.secured) {
+            match oidc::seam_auth_any(&path, &header("authorization"), &registry, &oidc_verifier, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
                 None => {
                     let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
@@ -3153,7 +3207,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     // gates `internal`-exposure fields on an exposure-enforced shape.
                     let ah = header("authorization");
                     let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
-                    let authed = auth::verify_token(tok, &registry, now_secs).is_ok();
+                    let authed = oidc::verify_any(tok, &registry, &oidc_verifier, now_secs).is_ok();
                     handle_meta(&hp, table, authed)
                 }
             }
@@ -3801,6 +3855,15 @@ mod tests {
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me").as_deref(), Some("wren"));
         assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me").as_deref(), Some("silas"));
         assert_eq!(role_from_webid("https://example.com/nobody"), None);
+        // #3613 — the CSS pod shape (what seed-css.sh actually minted 2026-07-14:
+        // no _agents, no .ttl, issuer host). CSS is the WebID source of truth.
+        assert_eq!(role_from_webid("http://localhost:3001/wren/profile/card#me").as_deref(), Some("wren"));
+        assert_eq!(role_from_webid("http://localhost:3001/silas/profile/card#me").as_deref(), Some("silas"));
+        assert_eq!(role_from_webid("http://localhost:3001/chorus-sdk/profile/card#me").as_deref(), Some("chorus-sdk"));
+        // near-misses stay None (authZ fail-closed): wrong tail, bare host, jeff's own profile parses as "jeff" — a NAME, membership still gated by the allow-set
+        assert_eq!(role_from_webid("http://localhost:3001/wren/settings/card#me"), None);
+        assert_eq!(role_from_webid("http://localhost:3001/"), None);
+        assert_eq!(role_from_webid("http://localhost:3001/jeff/profile/card#me").as_deref(), Some("jeff"));
     }
 
     #[test]

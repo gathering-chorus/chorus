@@ -27,6 +27,11 @@ pub enum AuthError {
     WrongAudience,   // aud != "chorus"
     Expired,         // exp <= now
     WebIdNotAllowed, // webId not in the chorus-agent set
+    // #3613 / ADR-052 — ES256/OIDC verify reasons (produced by mod oidc; live
+    // here so the seam has ONE error taxonomy across both verify paths).
+    UnknownAlg,      // header alg is neither HS256 nor ES256 territory
+    IssuerMismatch,  // validly signed, but iss != the CSS issuer
+    JwksUnreachable, // kid uncached AND the JWKS endpoint unreachable — fail-closed
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -131,7 +136,7 @@ pub fn verify_token(
 
 /// #3573 — parse a flat JSON string-array (`"scope":["g1","g2"]`). Zero-dep, same
 /// spirit as json_string/json_number. Absent/not-an-array ⇒ empty vec.
-fn json_string_array(json: &str, key: &str) -> Vec<String> {
+pub(crate) fn json_string_array(json: &str, key: &str) -> Vec<String> {
     let needle = format!("\"{}\"", key);
     let Some(i) = json.find(&needle) else { return Vec::new() };
     let after = json[i + needle.len()..].trim_start();
@@ -165,7 +170,7 @@ fn json_string_array(json: &str, key: &str) -> Vec<String> {
 const B64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// base64url decode, no padding (JWT flavour). Returns None on any invalid char.
-fn b64url_decode(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64url_decode(s: &str) -> Option<Vec<u8>> {
     let mut rev = [255u8; 256];
     for (i, &c) in B64URL.iter().enumerate() {
         rev[c as usize] = i as u8;
@@ -215,7 +220,7 @@ pub(crate) fn b64url_encode(data: &[u8]) -> String {
 /// Extract a string field from flat JWT-payload JSON. Minimal but careful: finds
 /// `"key"`, skips `:` and whitespace, requires an opening quote, reads to the next
 /// unescaped quote. Returns None if absent or not a string.
-fn json_string(json: &str, key: &str) -> Option<String> {
+pub(crate) fn json_string(json: &str, key: &str) -> Option<String> {
     let needle = format!("\"{}\"", key);
     let after = &json[json.find(&needle)? + needle.len()..];
     let after = after.trim_start();
@@ -234,7 +239,7 @@ fn json_string(json: &str, key: &str) -> Option<String> {
 }
 
 /// Extract an integer field (e.g. exp) from flat JWT-payload JSON.
-fn json_number(json: &str, key: &str) -> Option<u64> {
+pub(crate) fn json_number(json: &str, key: &str) -> Option<u64> {
     let needle = format!("\"{}\"", key);
     let after = &json[json.find(&needle)? + needle.len()..];
     let after = after.trim_start().strip_prefix(':')?.trim_start();
@@ -316,8 +321,22 @@ pub fn seam_auth(
     }
 }
 
-fn err_body(kind: &str, e: &AuthError) -> String {
+pub(crate) fn err_body(kind: &str, e: &AuthError) -> String {
     format!("{{ \"error\": \"{}\", \"reason\": \"{:?}\" }}", kind, e)
+}
+
+/// Test-only HS256 minter (module-level so mod oidc's dual-verify test — spec
+/// case 9 — mints a REAL legacy token through the same crypto path). Dies with
+/// the HS256 arm at #3611 cutover.
+#[cfg(test)]
+pub(crate) fn mint_hs256_for_tests(secret: &[u8], payload: &str) -> String {
+    let header = b64url_encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+    let p = b64url_encode(payload.as_bytes());
+    let signing = format!("{}.{}", header, p);
+    let mut mac = HmacSha256::new_from_slice(secret).unwrap();
+    mac.update(signing.as_bytes());
+    let sig = b64url_encode(&mac.finalize().into_bytes());
+    format!("{}.{}.{}", header, p, sig)
 }
 
 #[cfg(test)]

@@ -18,6 +18,10 @@ edition = "2021"
 [dependencies]
 hmac = "0.12"
 sha2 = "0.10"
+# #3613 / ADR-052 — the seam verifies CSS's ES256 (ECDSA P-256) tokens with the
+# JWKS public key. Same #3402 exception, asymmetric half: the crypto PRIMITIVE
+# is the vetted RustCrypto crate; JWT/JWKS parsing stays hand-built in src/oidc.rs.
+p256 = { version = "0.13", features = ["ecdsa"] }
 # #3435 — the pure cascade resolver (#3437): decide_effective_value over a scope chain.
 # Path dep on the sibling crate; owl-api stays the I/O half (SPARQL fetch + coerce + serve).
 properties-resolver = { path = "../properties-resolver" }

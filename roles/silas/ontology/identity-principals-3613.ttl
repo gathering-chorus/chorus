@@ -1,0 +1,53 @@
+# ============================================================================
+# #3613 — the AGENT Principal instances: the WHO allow-set, as data.
+#
+# Completes the #3618 identity model. #3618 authored the classes (chorus:Principal,
+# chorus:KeyRegistryEntry — LIVE in urn:chorus:ontology) and the Principal instances
+# for the first secured class's WORKERS (crawler-index / reindex / embed), but NOT
+# the AI-agent principals. This file adds them, so the allow-set owl-api resolves
+# (replacing the hardcoded chorus_agent_webids() in auth.rs) is the four agents +
+# the sdk caller — as model data, where add/revoke is a model edit, not a recompile.
+#
+# HOME graph: urn:chorus:domains:security (chorus:security.instancesGraph). These
+# satisfy the LIVE chorus:PrincipalShape floor: webId (xsd:STRING — not anyURI — per
+# the shape) minCount/maxCount 1, and rdfs:label minCount 1. holdsRole is optional
+# in the shape and points at chorus:Role (Wren's roles domain, the agreed boundary,
+# #3618) — present only where the Role instance exists live (role-silas/wren/kade
+# verified 2026-07-14; role-bridge does NOT exist, so bridge carries no holdsRole).
+#
+# NOT in this file (deliberately, to avoid solo-deciding cross-owner shape):
+#   - KeyRegistryEntry instances — their keyId+permittedScope carry the HS256→CSS
+#     reconciliation (ADR-052 §5) and per-agent scope (#3612). Joint with Wren.
+#   - The credential VALUES — never modeled (write_scrubber boundary); the
+#     credentialRef/keyId is a NAME only, and lands with the KeyRegistryEntry pass.
+#
+# DEPLOY: through the reviewed model-deploy path, NOT a bare model-deploy (the known
+# retire-gap / instances-don't-deploy landmine, #3587). Author + riot-validate here;
+# land deliberately.
+# ============================================================================
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:principal-silas a chorus:Principal ;
+    rdfs:label "silas (agent principal)" ;
+    chorus:webId "http://localhost:3001/silas/profile/card#me" ;
+    chorus:holdsRole chorus:role-silas .
+
+chorus:principal-wren a chorus:Principal ;
+    rdfs:label "wren (agent principal)" ;
+    chorus:webId "http://localhost:3001/wren/profile/card#me" ;
+    chorus:holdsRole chorus:role-wren .
+
+chorus:principal-kade a chorus:Principal ;
+    rdfs:label "kade (agent principal)" ;
+    chorus:webId "http://localhost:3001/kade/profile/card#me" ;
+    chorus:holdsRole chorus:role-kade .
+
+chorus:principal-bridge a chorus:Principal ;
+    rdfs:label "bridge (non-interactive relay principal)" ;
+    chorus:webId "http://localhost:3001/bridge/profile/card#me" .
+
+chorus:principal-chorus-sdk a chorus:Principal ;
+    rdfs:label "chorus-sdk (service caller principal)" ;
+    chorus:webId "http://localhost:3001/chorus-sdk/profile/card#me" .
