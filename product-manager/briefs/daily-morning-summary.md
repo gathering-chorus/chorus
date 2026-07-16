@@ -1,33 +1,34 @@
-# Daily Morning Summary — 2026-07-15
+# Daily Morning Summary — 2026-07-16
 
-**HEADLINE:** Quality tooling enters day 34 with no owner — `npm ci` still the single unblock — while Kade shipped 5 cards yesterday including an abandon verb and a live-caught launchd fix.
+**HEADLINE:** Quality tooling enters day 35 with no owner and no fix — `npm ci` is still the one-step unblock — and #1759/#1791 hit 100d stale tomorrow; both need a decision today.
 
-**OPS:** RED (3 REDs carry, 2 YELLOWs carry)
-- RED: Stale WIP — #1759 (Wren, P1) + #1791 (Silas, P1) now **98d** with no commits; close-or-commit past due
-- RED: Domain context — all 5 files 11d stale (4d past 7d threshold); music/photos active this week; no refresh filed
-- RED: CSC compliance — count dispute: 67 files vs canonical 38 (scripts-only); Silas to reconcile scope and open July card
-- YELLOW (carry): CLAUDE.md fragments — 30+ cards shipped since 2026-07-03; fragments now 11d stale; Wren owes audit
-- YELLOW (recount): LaunchAgent /tmp — **18 plists** (corrected from 17); no migration card yet
+**OPS:** RED (2 REDs carry, 3 YELLOWs)
+- RED: Stale WIP — #1759 (Wren, P1) + #1791 (Silas, P1) now **99d**; 100d mark is tomorrow; close or re-groom today
+- RED: CSC compliance — **36 sh-only** `/tmp/` refs in `platform/scripts/*.sh` (recount reconciled; was disputed 67 vs 38); July card not yet opened
+- YELLOW (carry): CLAUDE.md fragments — 12d stale (+1d); Wren owes audit; escalating past 10d
+- YELLOW: Domain context — chorus/infra/music/seeds still 12d stale (4 cards shipped to chorus this week; no refresh); photos went GREEN (#3599)
+- YELLOW: LaunchAgent /tmp — 17 plists (corrected -1 from yesterday; migration card still open)
 - GREEN: Hooks cargo check clean; git state clean
 
-**QUALITY:** RED — day 34 test blackout, day 36 lint blackout; 154 type errors (day 8, unchanged)
+**QUALITY:** RED — day 35 test blackout, day 37 lint blackout; 154 type errors (day 9, unchanged)
 - 0 tests: 4 suites blocked (clearing, workflow-engine, chorus-sdk, pulse) — ts-jest preset missing
 - 0 lint: @eslint/js not found; same root cause
-- `npm ci` at repo root is still the one-step fix for all of the above
+- No new regressions; 154 type errors held flat
+- `npm ci` at repo root unblocks everything in one step — still has no owner
 
-**YESTERDAY (07-14):** 9 cards shipped — highest-velocity day this week
-- **kade #3541** — launchd-env fix: pinned PATH in sweeper (Jeff caught npx-not-found in live kickstart); 23/23 tests
-- **kade #3542** — chorus-werk abandon verb: explicit reasoned teardown for superseded werks; 11 new hermetic tests
-- **kade #3599** — photo-domain NiFi scripts migrated to gathering (Jeff's convergence-boundary rule)
-- **kade #3644**, **silas #3643**, **silas #3647**, **silas #3641**, **wren #3640**, **wren #3646** also landed
+**YESTERDAY (07-15):** 7 cards shipped across silas and kade
+- **silas #3653** — principal-jeff in security graph: ES256 token auth live, forged token → 401 proven
+- **silas #3658** — chorus-mint-token wired into index-crawler + ontology-validate; 30min TTL per run
+- **silas #3651**, **silas #3628**, **silas #3613** — additional infra/ops cards
+- **kade #3656**, **kade #3644** — platform cards
 
 **TODAY:**
-1. **Assign `npm ci`** — day 34; one command unblocks 4 suites + lint + build; needs an owner *this morning*
-2. **Wren:** Close or re-scope #1759 + #1791 (98d, P1) — hard stop, cannot carry another day
-3. **Silas:** Reconcile CSC /tmp/ count (scripts-only vs all-files); file July migration card with clean scope
-4. **Wren + Silas:** File domain context refresh cards — 11d stale, 4d over threshold
-5. **Wren:** Audit CLAUDE.md fragments for drift vs 30+ cards since 07-03
+1. **Assign `npm ci`** — day 35; one command unblocks tests, lint, build; needs an owner *this morning*
+2. **Wren:** Close or re-scope #1759 + #1791 (99d, P1) — 100d is tomorrow; explicit decision required
+3. **Silas:** Open July migration card for CSC compliance (`platform/scripts/*.sh`, 36 files)
+4. **Wren:** Audit CLAUDE.md fragments for drift (12d, escalated)
+5. **Silas:** File chorus/infra domain context refresh cards (12d stale despite active shipping)
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` unrun **day 34** — tests, lint, build all dark; no owner; has there been a structural blocker (lockfile conflict, access gap)?
-- #1759 + #1791 at **98d WIP, P1** — flatlined; explicit decision needed today
+- `npm ci` unrun **day 35** — 4 test suites, lint, and build all dark; has there been a structural blocker?
+- #1759 + #1791 at **99d WIP, P1** — 100d tomorrow; close or commit?
