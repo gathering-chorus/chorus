@@ -1,3 +1,7 @@
+/* eslint-disable security/detect-non-literal-fs-filename --
+ * fs paths derive from the server-controlled QUALITY_CACHE_PATH env constant
+ * (same justification as the pre-#3657 scanner); no user input reaches them.
+ */
 /**
  * Quality Summary — #3657: a projection of the TESTS DOMAIN.
  *
@@ -188,17 +192,21 @@ function buildScan(rows: DomainTestRow[], generatedFrom: GeneratedFrom | null): 
 function readCache(): QualityScan | null {
   try {
     if (!fs.existsSync(cachePath())) return null;
-    const cached: CachedScan = JSON.parse(fs.readFileSync(cachePath(), 'utf-8')) as CachedScan;
-    if (Date.now() - cached.timestamp > CACHE_TTL_MS) return null;
+    // The on-disk shape is untrusted — an older build (or the pre-#3657
+    // scanner) may have written anything, so every field is optional here.
+    const cached = JSON.parse(fs.readFileSync(cachePath(), 'utf-8')) as Partial<CachedScan> & {
+      data?: Partial<QualityScan>;
+    };
+    if (!cached.timestamp || Date.now() - cached.timestamp > CACHE_TTL_MS) return null;
     // A pre-#3657 scanner cache has no source block — treat as expired.
     if (!cached.data?.source) return null;
     // Presentation is never trusted from cache: a cache written by an older
     // build would keep serving its colors/names past a deploy for a full TTL.
-    for (const layer of cached.data.pyramid || []) {
+    for (const layer of cached.data.pyramid ?? []) {
       const meta = LAYER_ORDER.find((l) => l.key === layer.key);
       if (meta) { layer.color = meta.color; layer.name = meta.name; }
     }
-    return cached.data;
+    return cached.data as QualityScan;
   } catch {
     return null;
   }
