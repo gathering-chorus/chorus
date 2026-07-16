@@ -15,7 +15,7 @@ load test_helper
 # Post-#2231 warm latency should drop well below 400ms.
 
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
-SOCKET="/tmp/chorus-hooks.sock"
+SOCKET="$HOME/.chorus/run/chorus-hooks.sock"  # #3617: daemon serves from ~/.chorus/run since the 7/8 lockout fix
 
 envelope_ms() {
   local prompt="$1" session="${2:-latency-spec}"

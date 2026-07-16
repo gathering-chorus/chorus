@@ -193,13 +193,17 @@ import sys, json, subprocess, datetime
 loki = sys.argv[1]
 now = int(datetime.datetime.now().timestamp())
 start = now - 3600
-cmd = ['curl', '-s', f'{loki}/loki/api/v1/query_range',
-       '--data-urlencode', 'query={job=~".+"} | json',
+# #3617 — scope to the spine-carrying jobs: {job=~".+"} forces Loki to scan
+# every stream (incl. its own request logs) and blows the 5s budget — the
+# recurring false-WARN pair traced to exactly this shape (2026-07-15).
+# subprocess timeout > curl --max-time so curl finishes and rc is meaningful.
+cmd = ['curl', '-s', '--max-time', '8', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~"platform-chorus|chorus-api"} | json',
        '--data-urlencode', 'limit=100',
        '--data-urlencode', f'start={start}000000000',
        '--data-urlencode', f'end={now}000000000']
 try:
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=12).stdout
     d = json.loads(out)
     count = sum(len(s['values']) for s in d.get('data', {}).get('result', []))
     print(count)
@@ -413,13 +417,14 @@ import sys, json, subprocess, datetime
 loki = sys.argv[1]
 now = int(datetime.datetime.now().timestamp())
 start = now - 86400
-cmd = ['curl', '-s', f'{loki}/loki/api/v1/query_range',
-       '--data-urlencode', 'query={job=~".+"} | json | event="session.principles.stale"',
+# #3617 — scoped jobs + aligned timeouts (see spine-event-rate note).
+cmd = ['curl', '-s', '--max-time', '8', f'{loki}/loki/api/v1/query_range',
+       '--data-urlencode', 'query={job=~"platform-chorus|chorus-api"} | json | event="session.principles.stale"',
        '--data-urlencode', 'limit=500',
        '--data-urlencode', f'start={start}000000000',
        '--data-urlencode', f'end={now}000000000']
 try:
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=12).stdout
     d = json.loads(out)
     count = sum(len(s['values']) for s in d.get('data', {}).get('result', []))
     print(count)
@@ -453,13 +458,15 @@ loki = sys.argv[1]
 now = int(datetime.datetime.now().timestamp())
 start = now - 86400 * 2  # 2 days (7d times out)
 REQUIRED = ['card.pulled', 'card.demo.started', 'card.accepted']
+# #3617 — scoped jobs; subprocess timeout must exceed curl --max-time (the old
+# 5s-inside-8s inversion killed curl mid-flight → perpetual false WARN).
 cmd = ['curl', '-s', '--max-time', '8', f'{loki}/loki/api/v1/query_range',
-       '--data-urlencode', 'query={job=~".+"} | json | event=~"card.pulled|card.demo.started|card.accepted"',
+       '--data-urlencode', 'query={job=~"platform-chorus|chorus-api"} | json | event=~"card.pulled|card.demo.started|card.accepted"',
        '--data-urlencode', 'limit=500',
        '--data-urlencode', f'start={start}000000000',
        '--data-urlencode', f'end={now}000000000']
 try:
-    out = subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    out = subprocess.run(cmd, capture_output=True, text=True, timeout=12).stdout
     d = json.loads(out)
     by_card = collections.defaultdict(set)
     for stream in d.get('data', {}).get('result', []):
