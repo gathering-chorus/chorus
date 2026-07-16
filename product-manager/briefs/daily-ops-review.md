@@ -1,44 +1,44 @@
-# Daily Ops Review — 2026-07-15
+# Daily Ops Review — 2026-07-16
 
 ## 1. Hooks Health
 **Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 28.09s, 0 errors, 0 warnings.
+`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 29.43s, 0 errors, 0 warnings.
 **Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
-**Status: YELLOW (recount: 17, was 18)**
-17 plist files in `proving/config/launchagents/` reference `/tmp/`. Corrected from yesterday's 18 — `config/launchagents/com.chorus.tmp-reaper.plist` was a double-count. No new additions.
-**Action:** Silas — 17 is today's canonical count; migration card to `~/Library/Logs/Chorus/` still open.
+**Status: YELLOW (carry, no change)**
+17 plist files in `proving/config/launchagents/` reference `/tmp/`. Count unchanged from yesterday.
+**Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; 17 is canonical.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (carry, 12d)**
-All `designing/claudemd/` fragments last committed 2026-07-03; 12d stale (+1d). No refreshes despite continued card shipping.
-**Action:** Wren — audit for drift; now past 10d, escalating.
+**Status: YELLOW (8d)**
+`designing/claudemd/` last committed 2026-07-08 (8d stale, 1d over threshold). No refreshes despite continued card shipping.
+**Action:** Wren — audit for drift; escalating.
 
 ## 4. CSC Compliance
-**Status: RED (recount: 36 sh-only)**
-36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Yesterday's 67 included non-.sh files and secondary dirs — sh-only canonical count: 36. Core offenders unchanged: `look.sh`, `bridge-subscriber-watchdog.sh`, `werk-init.sh`, `crawler-hydrate-graph.sh`.
-**Action:** Silas — adopt 36 as canonical sh-only baseline; open July card scoped to `platform/scripts/*.sh`.
+**Status: RED (carry, 36 sh-only)**
+36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. `messages/scripts/` and `architect/scripts/` paths do not exist in this repo. Count unchanged.
+**Action:** Silas — July scoped card for `platform/scripts/*.sh` still open.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo clean — 0 uncommitted changes. HEAD: `150f865` (silas: daily quality review 2026-07-15).
+`gathering-team` repo clean — 0 uncommitted. 5 expected role repos (engineer, messages, jeff-bridwell-personal-site, shared-observability, wordpress-blog) not cloned in this environment; only product-manager and architect checked.
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 99d)**
-#1759 "OWL entity model" (Wren, P1) and #1791 "Restore chorus product boundary" (Silas, P1) last touched 2026-04-07 — now 99d stale. No commit activity on either this week.
-**Action:** Wren — close or re-groom both; 100d mark tomorrow.
+**Status: RED (carry, 100d)**
+#1759 "OWL entity model" and #1791 "Restore chorus product boundary" hit 100d stale today — no commit activity on either. No other WIP untouched >48h found in role state.
+**Action:** Wren — close or re-groom both today; milestone crossed.
 
 ## 7. Domain Context Freshness
-**Status: YELLOW (partial recovery)**
-`domain-context-photos.md` updated today via #3599 — GREEN. Chorus, infra, music, seeds last committed 2026-07-03 (12d); chorus domain shipped 4 cards this week (#3641, #3643, #3646, #3647).
-**Action:** Silas — chorus/infra context most urgent; Wren — music/seeds at 12d.
+**Status: YELLOW (8d, 4 domains)**
+`domain-context-photos.md` last updated 2026-07-14 — GREEN. Chorus/infra/music/seeds last committed 2026-07-08 (8d, 1d over threshold). Chorus shipped 5+ cards this week (#3653, #3658, #3628 etc.); infra touched (#3541).
+**Action:** Silas — chorus/infra context most urgent; Wren — music/seeds.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No perf-baseline JSON committed to repo; cross-session delta not computable.
+No perf-baseline JSON in `data/`; cross-session delta not computable.
 **Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
 
 ---
-*New: §2 recount −1 (now 17); §4 recount sh-only (now 36); §7 photos GREEN. Carries: §3 YELLOW (12d), §4 RED (sh-36), §6 RED (99d), §7 YELLOW (chorus/infra 12d). §1/§5 green.*
+*New: §3 date corrected (was 12d/Jul-03, now 8d/Jul-08 per fresh git log); §6 hits 100d milestone. Carries: §2 YELLOW (17), §4 RED (sh-36), §7 YELLOW (4 domains 8d). §1/§5 green.*
