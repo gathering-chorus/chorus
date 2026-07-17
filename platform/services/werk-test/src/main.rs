@@ -10,10 +10,10 @@
 use std::path::Path;
 use std::process::Command;
 use werk_test::{
-    affected_units, cargo_skip_args, check_plan, gate_outcome, is_self_modifying,
+    affected_units, cargo_skip_args, check_plan, gap_report, gate_outcome, is_self_modifying,
     model_units, parse_quarantine_rows, parse_test_rows, plan_source_label,
-    quarantine_report, spine_args, suite_run_payload, CheckKind, Quarantined, TestRow,
-    TestUnit, TS_PACKAGES,
+    plan_units_from_rows, quarantine_report, scope_rows, scoped_requires_model, spine_args,
+    suite_run_payload, undeclared_gaps, CheckKind, Quarantined, TestRow, TestUnit, TS_PACKAGES,
 };
 
 fn main() {
@@ -34,7 +34,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     let card = positional
         .first()
         .map(|s| s.to_string())
-        .ok_or("usage: werk-test <card_id> <role>")?;
+        .ok_or("usage: werk-test <card_id> <role> [--domain=<d>] [--type=<unit|integration|bdd|e2e>]")?;
     let role = positional
         .get(1)
         .map(|s| s.to_string())
@@ -56,9 +56,48 @@ fn run(args: &[String]) -> Result<i32, String> {
     // cover a touched domain — UNION, never smaller (the superset AC). A failed
     // fetch degrades to the legacy plan, loudly (test.plan.degraded), never silently.
     let (rows, plan_source) = fetch_test_rows();
-    let units = model_units(&rows, &legacy_units);
+    // #3661 AC2 — --domain/--type scope the DECLARED set; the scope is a model
+    // predicate, so a scoped run refuses (loudly) when the domain is unreachable
+    // instead of running an unscopable legacy plan. Unscoped keeps the degrade path.
+    let scope_domain = flag_value(args, "--domain");
+    let scope_type = flag_value(args, "--type");
+    let scoped = scope_domain.is_some() || scope_type.is_some();
+    if scoped_requires_model(scoped, plan_source) {
+        emit_spine("test.scope.refused", &role, &card, &trace,
+            &[("reason", "tests-domain-unreachable"),
+              ("scope_domain", scope_domain.as_deref().unwrap_or("")),
+              ("scope_type", scope_type.as_deref().unwrap_or(""))]);
+        return Err("scoped run (--domain/--type) requires the tests domain; fetch failed or empty — refusing, not degrading to legacy lanes".into());
+    }
+    let units = if scoped {
+        // #3661 AC1 — the scoped plan derives from the declared rows, nothing else.
+        let scoped_rows = scope_rows(&rows, scope_domain.as_deref(), scope_type.as_deref());
+        println!(
+            "scope: domain={} type={} → {} declared test(s)",
+            scope_domain.as_deref().unwrap_or("*"),
+            scope_type.as_deref().unwrap_or("*"),
+            scoped_rows.len()
+        );
+        plan_units_from_rows(&scoped_rows)
+    } else {
+        model_units(&rows, &legacy_units)
+    };
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
+
+    // #3661 AC3 — the on-disk-but-undeclared surface: test files in the planned
+    // units that the tests domain does not declare are NAMED (stdout + spine),
+    // never silently run or skipped. Only meaningful when the model answered.
+    if plan_source == "model" {
+        let on_disk = on_disk_test_files(&werk, &units);
+        let gaps = undeclared_gaps(&on_disk, &rows);
+        println!("{}", gap_report(&gaps));
+        if !gaps.is_empty() {
+            let sample = gaps.iter().take(5).cloned().collect::<Vec<_>>().join(";");
+            emit_spine("test.gap.undeclared", &role, &card, &trace,
+                &[("count", &gaps.len().to_string()), ("files", &sample)]);
+        }
+    }
 
     // Quarantined cases (flaky holds) the gate must SKIP — fetched from the tests
     // domain (#2530). A skip is always VISIBLE, never silent (#3443).
@@ -142,6 +181,67 @@ fn unit_name(u: &TestUnit) -> &str {
     match u {
         TestUnit::RustCrate(n) => n,
         TestUnit::TsPackage(p) => p,
+    }
+}
+
+/// #3661 — `--flag=value` extraction (the verb's positional parse filters all
+/// `--` args, so flags carry their value inline; a bare `--flag` is ignored).
+fn flag_value(args: &[String], flag: &str) -> Option<String> {
+    let prefix = format!("{}=", flag);
+    args.iter()
+        .find_map(|a| a.strip_prefix(&prefix))
+        .map(|v| v.to_string())
+        .filter(|v| !v.is_empty())
+}
+
+/// #3661 AC3 — the on-disk test files of the planned units, repo-relative, by
+/// the same conventions the registration crawl uses: `tests/**/*.rs` for a
+/// crate, `tests/**/*.test.ts` for a TS package. node_modules never entered.
+fn on_disk_test_files(werk: &str, units: &[TestUnit]) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for unit in units {
+        let (dir, suffix): (String, &str) = match unit {
+            TestUnit::RustCrate(c) => (format!("platform/services/{}/tests", c), ".rs"),
+            TestUnit::TsPackage(p) => (format!("{}/tests", p), ".test.ts"),
+        };
+        collect_files(werk, &dir, suffix, &mut found);
+    }
+    found
+}
+
+fn collect_files(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<String>) {
+    collect_files_depth(werk, rel_dir, suffix, out, 0);
+}
+
+/// Depth-capped, symlink-blind walk (gather hardening, silas): a symlinked
+/// tests/ subdir can't loop the walker, and 8 levels is far beyond any real
+/// test tree — hitting the cap just stops descending, never errors the gate.
+const MAX_WALK_DEPTH: u32 = 8;
+
+fn collect_files_depth(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<String>, depth: u32) {
+    if depth > MAX_WALK_DEPTH {
+        return;
+    }
+    let abs = format!("{}/{}", werk, rel_dir);
+    let entries = match std::fs::read_dir(&abs) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name == "node_modules" || name.starts_with('.') {
+            continue;
+        }
+        let rel = format!("{}/{}", rel_dir, name);
+        let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
+        if path.is_dir() {
+            collect_files_depth(werk, &rel, suffix, out, depth + 1);
+        } else if name.ends_with(suffix) {
+            out.push(rel);
+        }
     }
 }
 
@@ -317,7 +417,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, &'static str) {
     // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
     // The jq filter emits one TSV row PER covers value, so a multi-valued covers
     // (array in a future TestShape) fans out instead of being dropped silently.
-    let jq_filter = r#".data[] | .filePath as $f | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // "")] | @tsv"#;
     let curl = Command::new("curl")
         .args(["-sf", "--max-time", "10", &endpoint])
         .output();
