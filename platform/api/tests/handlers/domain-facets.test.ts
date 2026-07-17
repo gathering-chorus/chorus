@@ -44,21 +44,27 @@ function deps(overrides: Partial<DomainFacetDeps> = {}): DomainFacetDeps {
 // --- fetchDomainTests ---
 
 describe('fetchDomainTests', () => {
-  test('scanner data shapes files into tests array', async () => {
+  test('projection layers shape into tests array with layer as type (#3657)', async () => {
     const d = deps({
-      qualityByDomain: () => ({ files: [{ name: 'a.test.ts', kind: 'ts' }, { name: 'b.bats', kind: 'bats' }], total: 42 }),
+      qualityByDomain: async () => ({
+        layers: [
+          { key: 'unit', files: [{ name: 'a.test.ts' }] },
+          { key: 'integration', files: [{ name: 'b.bats' }] },
+        ],
+        total: 42,
+      }),
     });
     const r = await fetchDomainTests(d, 'chorus-domain');
     expect(r.status).toBe(200);
     const body = r.body as { data: { tests: Array<{ path: string; type: string }>; byType: Record<string, number>; total: number } };
     expect(body.data.tests.length).toBe(2);
-    expect(body.data.byType.ts).toBe(1);
-    expect(body.data.byType.bats).toBe(1);
+    expect(body.data.byType.unit).toBe(1);
+    expect(body.data.byType.integration).toBe(1);
     expect(body.data.total).toBe(42);
   });
 
   test('scanner throws returns empty envelope (200, no 500)', async () => {
-    const d = deps({ qualityByDomain: () => { throw new Error('scan failed'); } });
+    const d = deps({ qualityByDomain: async () => { throw new Error('scan failed'); } });
     const r = await fetchDomainTests(d, 'chorus-domain');
     expect(r.status).toBe(200);
     const body = r.body as { data: { tests: unknown[] } };
@@ -68,7 +74,7 @@ describe('fetchDomainTests', () => {
   test('strips -domain suffix before calling the scanner (#3656: local, no HTTP)', async () => {
     let seenDomain = '';
     const d = deps({
-      qualityByDomain: (domain: string) => { seenDomain = domain; return { files: [] }; },
+      qualityByDomain: async (domain: string) => { seenDomain = domain; return { layers: [] }; },
     });
     await fetchDomainTests(d, 'chorus-domain');
     expect(seenDomain).toBe('chorus');
@@ -84,7 +90,7 @@ describe('fetchDomainTests', () => {
       },
     };
     const d = deps({
-      qualityByDomain: () => ({ files: [], total: 0 }),
+      qualityByDomain: async () => ({ layers: [], total: 0 }),
       sparql: async () => sparqlResult,
     });
     const r = await fetchDomainTests(d, 'loom-decisions');
@@ -102,7 +108,7 @@ describe('fetchDomainTests', () => {
     // empty against the promoted graph. Assert the query SHAPE so revert → red.
     let q = '';
     const d = deps({
-      qualityByDomain: () => ({ files: [], total: 0 }),
+      qualityByDomain: async () => ({ layers: [], total: 0 }),
       sparql: async (qq: string) => { q = qq; return { results: { bindings: [] } } as SparqlResult; },
     });
     await fetchDomainTests(d, 'loom-decisions');
@@ -117,13 +123,13 @@ describe('fetchDomainTests', () => {
       results: { bindings: [{ testFile: { value: 'chorus/x.test.ts' }, testType: { value: 'unit' } }] },
     };
     const d = deps({
-      qualityByDomain: () => ({ files: [{ name: 'gathering/y.test.ts', kind: 'ts' }], total: 1 }),
+      qualityByDomain: async () => ({ layers: [{ key: 'unit', files: [{ name: 'projected/y.test.ts' }] }], total: 1 }),
       sparql: async () => sparqlResult,
     });
     const r = await fetchDomainTests(d, 'chorus-domain');
     const body = r.body as { data: { tests: Array<{ path: string; type: string }> } };
     expect(body.data.tests.length).toBe(1);
-    expect(body.data.tests[0].path).toBe('gathering/y.test.ts');
+    expect(body.data.tests[0].path).toBe('projected/y.test.ts');
   });
 });
 

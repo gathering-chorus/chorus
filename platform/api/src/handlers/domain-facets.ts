@@ -19,13 +19,17 @@ export interface DomainFacetDeps {
   sparql: (query: string) => Promise<SparqlResult>;
   resolveSubdomainId: (name: string) => Promise<string>;
   envelope: (name: string, data: unknown, durationMs: number, extra?: Record<string, unknown>) => unknown;
-  qualityByDomain?: (domain: string) => { files?: Array<{ name: string; kind: string }>; total?: number };
+  qualityByDomain?: (domain: string) => Promise<{
+    layers?: Array<{ key: string; files?: Array<{ name: string }> }>;
+    total?: number;
+  }>;
   now?: () => number;
 }
 
-// --- tests: local quality scanner (quality-summary.ts) ---
-// #3656: was an HTTP proxy to Gathering's /api/quality/domain/:d — that surface
-// is retired; chorus-api owns the scanner.
+// --- tests: tests-domain projection (quality-summary.ts) ---
+// #3657: quality-summary.ts projects the owl-api /tests collection; per-file
+// `type` here is the model's pyramid layer (api/ui kind was a scanner
+// heuristic the model doesn't declare).
 
 export async function fetchDomainTests(
   deps: DomainFacetDeps,
@@ -35,12 +39,14 @@ export async function fetchDomainTests(
   const qualityByDomain = deps.qualityByDomain ?? getQualityByDomain;
   const start = now();
   try {
-    // #2430: shared resolver. The quality scanner is domain-name-keyed, not
-    // URI-keyed — use resolver.primary for the lookup.
+    // #2430: shared resolver. The projection is domain-name-keyed (model
+    // `covers`), not URI-keyed — use resolver.primary for the lookup.
     const identity = resolveDomainIdentity(subdomainName);
     const domain = identity.primary;
-    const scanData = qualityByDomain(domain);
-    let tests = (scanData.files || []).map((f) => ({ path: f.name, type: f.kind }));
+    const scanData = await qualityByDomain(domain);
+    let tests = (scanData.layers || []).flatMap((l) =>
+      (l.files || []).map((f) => ({ path: f.name, type: l.key })),
+    );
     let total = scanData.total || 0;
     // #2485 — fall back to chorus:TestCoverage instances graph when upstream
     // has nothing (loom-* and other chorus-side subdomains the gathering-app
