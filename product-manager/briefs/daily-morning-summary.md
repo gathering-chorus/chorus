@@ -1,34 +1,31 @@
-# Daily Morning Summary — 2026-07-16
+# Daily Morning Summary — 2026-07-17
 
-**HEADLINE:** Quality tooling enters day 35 with no owner and no fix — `npm ci` is still the one-step unblock — and #1759/#1791 hit 100d stale tomorrow; both need a decision today.
+**HEADLINE:** #1759 and #1791 cross the 100d stale milestone today — close or commit is overdue — and quality tooling hits day 36 dark with `npm ci` still unowned.
 
 **OPS:** RED (2 REDs carry, 3 YELLOWs)
-- RED: Stale WIP — #1759 (Wren, P1) + #1791 (Silas, P1) now **99d**; 100d mark is tomorrow; close or re-groom today
-- RED: CSC compliance — **36 sh-only** `/tmp/` refs in `platform/scripts/*.sh` (recount reconciled; was disputed 67 vs 38); July card not yet opened
-- YELLOW (carry): CLAUDE.md fragments — 12d stale (+1d); Wren owes audit; escalating past 10d
-- YELLOW: Domain context — chorus/infra/music/seeds still 12d stale (4 cards shipped to chorus this week; no refresh); photos went GREEN (#3599)
-- YELLOW: LaunchAgent /tmp — 17 plists (corrected -1 from yesterday; migration card still open)
+- RED: Stale WIP — #1759 (OWL entity model) + #1791 (Restore chorus product boundary) **cross 100d today**; close or re-groom required
+- RED: CSC compliance — 36 sh-only `/tmp/` refs in `platform/scripts/*.sh`; July scoped card open but no progress
+- YELLOW: CLAUDE.md fragments — 8d stale (corrected from yesterday's 12d; still 1d over threshold); Wren audit outstanding
+- YELLOW: Domain context — chorus/infra/music/seeds at 8d (1d over); chorus shipped 5+ cards this week with no refresh
+- YELLOW: LaunchAgent /tmp — 17 plists unchanged; migration card open
 - GREEN: Hooks cargo check clean; git state clean
 
-**QUALITY:** RED — day 35 test blackout, day 37 lint blackout; 154 type errors (day 9, unchanged)
-- 0 tests: 4 suites blocked (clearing, workflow-engine, chorus-sdk, pulse) — ts-jest preset missing
+**QUALITY:** RED — day 36 test blackout, day 38 lint blackout; 154 type errors day 10 (no change)
+- 0 tests: all 4 suites blocked (clearing, workflow-engine, chorus-sdk, pulse) — ts-jest preset missing
 - 0 lint: @eslint/js not found; same root cause
-- No new regressions; 154 type errors held flat
-- `npm ci` at repo root unblocks everything in one step — still has no owner
+- No new regressions; type error count held flat at 154
+- `npm ci` at repo root unblocks everything — still has no owner, now day 36
 
-**YESTERDAY (07-15):** 7 cards shipped across silas and kade
-- **silas #3653** — principal-jeff in security graph: ES256 token auth live, forged token → 401 proven
-- **silas #3658** — chorus-mint-token wired into index-crawler + ontology-validate; 30min TTL per run
-- **silas #3651**, **silas #3628**, **silas #3613** — additional infra/ops cards
-- **kade #3656**, **kade #3644** — platform cards
+**YESTERDAY (07-16):** No cards shipped — only review/summary commits in log
+- No card activity visible in gathering-team; team produced daily reviews only
 
 **TODAY:**
-1. **Assign `npm ci`** — day 35; one command unblocks tests, lint, build; needs an owner *this morning*
-2. **Wren:** Close or re-scope #1759 + #1791 (99d, P1) — 100d is tomorrow; explicit decision required
-3. **Silas:** Open July migration card for CSC compliance (`platform/scripts/*.sh`, 36 files)
-4. **Wren:** Audit CLAUDE.md fragments for drift (12d, escalated)
-5. **Silas:** File chorus/infra domain context refresh cards (12d stale despite active shipping)
+1. **Jeff/Wren:** Decide on #1759 + #1791 — 100d milestone crossed; close them or assign active work
+2. **Assign `npm ci`** — day 36; one command unblocks tests, lint, and build across all packages
+3. **Wren:** Audit CLAUDE.md fragments (`designing/claudemd/`) for drift (8d, escalating)
+4. **Silas:** Refresh chorus/infra domain context (8d stale despite active shipping)
+5. **Wren:** Refresh music/seeds domain context (same 8d threshold breach)
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` unrun **day 35** — 4 test suites, lint, and build all dark; has there been a structural blocker?
-- #1759 + #1791 at **99d WIP, P1** — 100d tomorrow; close or commit?
+- #1759 + #1791 at **100d WIP** — longest-stale cards on the board; close or commit today
+- `npm ci` unrun **day 36** — entire quality signal dark; who owns the fix?
