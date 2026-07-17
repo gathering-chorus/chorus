@@ -210,6 +210,18 @@ fn on_disk_test_files(werk: &str, units: &[TestUnit]) -> Vec<String> {
 }
 
 fn collect_files(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<String>) {
+    collect_files_depth(werk, rel_dir, suffix, out, 0);
+}
+
+/// Depth-capped, symlink-blind walk (gather hardening, silas): a symlinked
+/// tests/ subdir can't loop the walker, and 8 levels is far beyond any real
+/// test tree — hitting the cap just stops descending, never errors the gate.
+const MAX_WALK_DEPTH: u32 = 8;
+
+fn collect_files_depth(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<String>, depth: u32) {
+    if depth > MAX_WALK_DEPTH {
+        return;
+    }
     let abs = format!("{}/{}", werk, rel_dir);
     let entries = match std::fs::read_dir(&abs) {
         Ok(e) => e,
@@ -222,8 +234,11 @@ fn collect_files(werk: &str, rel_dir: &str, suffix: &str, out: &mut Vec<String>)
         }
         let rel = format!("{}/{}", rel_dir, name);
         let path = entry.path();
+        if path.is_symlink() {
+            continue;
+        }
         if path.is_dir() {
-            collect_files(werk, &rel, suffix, out);
+            collect_files_depth(werk, &rel, suffix, out, depth + 1);
         } else if name.ends_with(suffix) {
             out.push(rel);
         }
