@@ -447,3 +447,167 @@ fn parse_test_rows_accepts_fanned_multi_covers_rows() {
     assert_eq!(rows[0].covers, "senses");
     assert_eq!(rows[1].covers, "borg");
 }
+
+// ═══ #3661 — the runner runs what the tests domain declares ═══
+
+// ── AC1/AC2 groundwork: rows carry the model's pyramidLayer (3-col TSV) ──
+#[test]
+fn parse_test_rows_reads_the_three_column_layer_form() {
+    use werk_test::parse_test_rows;
+    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\tunit\n");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].pyramid_layer, "unit");
+}
+
+#[test]
+fn parse_test_rows_two_column_rows_still_parse_with_empty_layer() {
+    use werk_test::parse_test_rows;
+    // back-compat: a 2-col row (pre-#3661 jq) parses; layer is empty, never dropped
+    let rows = parse_test_rows("platform/api/tests/a.test.ts\tsenses\n");
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].pyramid_layer, "");
+}
+
+// ── AC2: --domain / --type scope the declared set ──
+fn row(path: &str, covers: &str, layer: &str) -> werk_test::TestRow {
+    werk_test::TestRow {
+        file_path: path.to_string(),
+        covers: covers.to_string(),
+        pyramid_layer: layer.to_string(),
+    }
+}
+
+#[test]
+fn scope_rows_by_domain_keeps_only_covering_tests() {
+    use werk_test::scope_rows;
+    let rows = vec![
+        row("platform/api/tests/a.test.ts", "senses", "unit"),
+        row("platform/api/tests/b.test.ts", "cicd", "unit"),
+    ];
+    let scoped = scope_rows(&rows, Some("senses"), None);
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].file_path, "platform/api/tests/a.test.ts");
+}
+
+#[test]
+fn scope_rows_by_type_keeps_only_that_layer() {
+    use werk_test::scope_rows;
+    let rows = vec![
+        row("platform/api/tests/a.test.ts", "senses", "unit"),
+        row("platform/api/tests/c.test.ts", "senses", "integration"),
+    ];
+    let scoped = scope_rows(&rows, None, Some("integration"));
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].file_path, "platform/api/tests/c.test.ts");
+}
+
+#[test]
+fn scope_rows_domain_and_type_intersect() {
+    use werk_test::scope_rows;
+    let rows = vec![
+        row("platform/api/tests/a.test.ts", "senses", "unit"),
+        row("platform/api/tests/c.test.ts", "senses", "integration"),
+        row("platform/api/tests/b.test.ts", "cicd", "integration"),
+    ];
+    let scoped = scope_rows(&rows, Some("senses"), Some("integration"));
+    assert_eq!(scoped.len(), 1);
+    assert_eq!(scoped[0].file_path, "platform/api/tests/c.test.ts");
+}
+
+#[test]
+fn scope_rows_unscoped_is_identity() {
+    use werk_test::scope_rows;
+    let rows = vec![row("platform/api/tests/a.test.ts", "senses", "unit")];
+    assert_eq!(scope_rows(&rows, None, None), rows);
+}
+
+// ── AC1: a scoped plan derives its units FROM the declared rows ──
+#[test]
+fn plan_units_from_rows_maps_declared_tests_to_their_units() {
+    use werk_test::plan_units_from_rows;
+    let rows = vec![
+        row("platform/api/tests/a.test.ts", "senses", "unit"),
+        row("platform/services/werk-demo/src/lib.rs", "build-domain", "unit"),
+    ];
+    let units = plan_units_from_rows(&rows);
+    assert_eq!(
+        units,
+        vec![
+            TestUnit::RustCrate("werk-demo".to_string()),
+            TestUnit::TsPackage("platform/api".to_string()),
+        ],
+        "crates sorted before packages, derived from the declared rows only"
+    );
+}
+
+#[test]
+fn plan_units_from_rows_dedupes_many_tests_in_one_unit() {
+    use werk_test::plan_units_from_rows;
+    let rows = vec![
+        row("platform/api/tests/a.test.ts", "senses", "unit"),
+        row("platform/api/tests/b.test.ts", "cicd", "integration"),
+    ];
+    assert_eq!(plan_units_from_rows(&rows).len(), 1);
+}
+
+#[test]
+fn plan_units_from_rows_ignores_paths_outside_known_units() {
+    use werk_test::plan_units_from_rows;
+    let rows = vec![row("designing/docs/some-doc-test.md", "athena", "unit")];
+    assert!(plan_units_from_rows(&rows).is_empty());
+}
+
+// ── AC2 guard: a scoped run REQUIRES the model — no silent legacy fallback ──
+#[test]
+fn scoped_run_requires_model_plan_source() {
+    use werk_test::scoped_requires_model;
+    // scoped + fallback = refuse (the scope IS the model; legacy can't honor it)
+    assert!(scoped_requires_model(true, "fallback"));
+    // scoped + model = fine; unscoped never refuses on source
+    assert!(!scoped_requires_model(true, "model"));
+    assert!(!scoped_requires_model(false, "fallback"));
+    assert!(!scoped_requires_model(false, "model"));
+}
+
+// ── AC3: on-disk-but-undeclared tests surface as a NAMED gap ──
+#[test]
+fn undeclared_gaps_names_disk_files_absent_from_the_domain() {
+    use werk_test::undeclared_gaps;
+    let on_disk = s(&[
+        "platform/api/tests/a.test.ts",
+        "platform/api/tests/new-unregistered.test.ts",
+    ]);
+    let declared = vec![row("platform/api/tests/a.test.ts", "senses", "unit")];
+    let gaps = undeclared_gaps(&on_disk, &declared);
+    assert_eq!(gaps, s(&["platform/api/tests/new-unregistered.test.ts"]));
+}
+
+#[test]
+fn undeclared_gaps_empty_when_domain_declares_everything() {
+    use werk_test::undeclared_gaps;
+    let on_disk = s(&["platform/api/tests/a.test.ts"]);
+    let declared = vec![row("platform/api/tests/a.test.ts", "senses", "unit")];
+    assert!(undeclared_gaps(&on_disk, &declared).is_empty());
+}
+
+#[test]
+fn undeclared_gaps_output_is_sorted_and_deduped() {
+    use werk_test::undeclared_gaps;
+    let on_disk = s(&[
+        "platform/api/tests/z.test.ts",
+        "platform/api/tests/b.test.ts",
+        "platform/api/tests/b.test.ts",
+    ]);
+    let gaps = undeclared_gaps(&on_disk, &[]);
+    assert_eq!(gaps, s(&["platform/api/tests/b.test.ts", "platform/api/tests/z.test.ts"]));
+}
+
+#[test]
+fn gap_report_names_every_gap_and_the_none_case_is_explicit() {
+    use werk_test::gap_report;
+    // visible, never silent — mirrors quarantine_report's explicit-none style
+    assert_eq!(gap_report(&[]), "undeclared: none");
+    let r = gap_report(&s(&["platform/api/tests/x.test.ts"]));
+    assert!(r.contains("undeclared (1"), "count named: {}", r);
+    assert!(r.contains("platform/api/tests/x.test.ts"), "file named: {}", r);
+}

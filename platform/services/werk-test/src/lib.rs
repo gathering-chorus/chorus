@@ -357,21 +357,83 @@ impl GateOutcome {
 pub struct TestRow {
     pub file_path: String,
     pub covers: String,
+    /// #3661 — the model's pyramidLayer (unit/integration/bdd/e2e). Empty on a
+    /// 2-col legacy row; scoping by --type needs the 3-col fetch.
+    pub pyramid_layer: String,
 }
 
-/// Parse `filePath\tcovers` TSV rows; incomplete rows are dropped, never a panic.
+/// Parse `filePath\tcovers[\tpyramidLayer]` TSV rows; incomplete rows are
+/// dropped, never a panic. The layer column is optional (2-col back-compat).
 pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
     tsv.lines()
         .filter_map(|l| {
             let mut it = l.trim().split('\t');
             match (it.next(), it.next()) {
                 (Some(f), Some(c)) if !f.trim().is_empty() && !c.trim().is_empty() => {
-                    Some(TestRow { file_path: f.trim().to_string(), covers: c.trim().to_string() })
+                    Some(TestRow {
+                        file_path: f.trim().to_string(),
+                        covers: c.trim().to_string(),
+                        pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
+                    })
                 }
                 _ => None,
             }
         })
         .collect()
+}
+
+/// #3661 AC2 — filter the declared set by domain (`covers`) and/or type
+/// (`pyramidLayer`). `None` on either axis means no filter on that axis.
+pub fn scope_rows(rows: &[TestRow], domain: Option<&str>, ttype: Option<&str>) -> Vec<TestRow> {
+    rows.iter()
+        .filter(|r| domain.is_none_or(|d| r.covers == d))
+        .filter(|r| ttype.is_none_or(|t| r.pyramid_layer == t))
+        .cloned()
+        .collect()
+}
+
+/// #3661 AC1 — the units a set of DECLARED tests live in: a scoped plan derives
+/// from the model rows, not from filesystem globs. Deterministic order (crates
+/// sorted, then packages), deduped; rows outside any known unit are ignored
+/// (this runner can't run them — the gap surface names such files instead).
+pub fn plan_units_from_rows(rows: &[TestRow]) -> Vec<TestUnit> {
+    let mut units: Vec<TestUnit> = rows.iter().filter_map(|r| unit_of_path(&r.file_path)).collect();
+    units.sort_by_key(|u| match u {
+        TestUnit::RustCrate(n) => (0, n.clone()),
+        TestUnit::TsPackage(p) => (1, p.clone()),
+    });
+    units.dedup();
+    units
+}
+
+/// #3661 AC2 guard — a scoped run (--domain/--type) can only be honored by the
+/// model: the scope is a model predicate, and the legacy lanes can't evaluate
+/// it. Scoped + non-model plan ⇒ refuse loudly; unscoped keeps the degrade path.
+pub fn scoped_requires_model(scoped: bool, plan_source: &str) -> bool {
+    scoped && plan_source != "model"
+}
+
+/// #3661 AC3 — the on-disk-but-undeclared diff: test files present in the werk
+/// that the tests domain does not declare. Sorted + deduped so the report (and
+/// its spine event) is deterministic. Tagging SURFACES gaps, never spawns
+/// structure — these are named, not auto-registered and not silently run.
+pub fn undeclared_gaps(on_disk: &[String], declared: &[TestRow]) -> Vec<String> {
+    let mut gaps: Vec<String> = on_disk
+        .iter()
+        .filter(|f| !declared.iter().any(|r| &r.file_path == *f))
+        .cloned()
+        .collect();
+    gaps.sort();
+    gaps.dedup();
+    gaps
+}
+
+/// #3661 AC3 — visible either way, mirroring `quarantine_report`'s explicit-none.
+pub fn gap_report(gaps: &[String]) -> String {
+    if gaps.is_empty() {
+        return "undeclared: none".to_string();
+    }
+    format!("undeclared ({} on disk, absent from the tests domain): {}", gaps.len(), gaps.join("; "))
 }
 
 /// The unit a test file lives in — same classification rules as `affected_units`.
@@ -401,7 +463,7 @@ pub fn model_units(rows: &[TestRow], legacy: &[TestUnit]) -> Vec<TestUnit> {
     let mut units: Vec<TestUnit> = legacy.to_vec();
     let touched: Vec<&str> = rows
         .iter()
-        .filter(|r| unit_of_path(&r.file_path).map_or(false, |u| legacy.contains(&u)))
+        .filter(|r| unit_of_path(&r.file_path).is_some_and(|u| legacy.contains(&u)))
         .map(|r| r.covers.as_str())
         .collect();
     let mut additions: Vec<TestUnit> = rows
