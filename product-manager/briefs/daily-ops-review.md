@@ -1,8 +1,8 @@
-# Daily Ops Review — 2026-07-17
+# Daily Ops Review — 2026-07-18
 
 ## 1. Hooks Health
 **Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 27.29s, 0 errors, 0 warnings.
+`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 29.13s, 0 errors, 0 warnings.
 **Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
@@ -11,29 +11,29 @@
 **Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; 17 is canonical.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (9d, escalating)**
-`designing/claudemd/` last committed 2026-07-08 (9d stale, 2d over threshold). No refreshes despite Chorus shipping #3653, #3658, #3656, #3628, #3651 this week.
-**Action:** Wren — escalating; audit for drift before next session close.
+**Status: YELLOW (10d, escalating)**
+`designing/claudemd/` last committed 2026-07-08 (10d stale, 3d over threshold). Two more cards shipped today (#3661, #3657 kade). No fragment refresh in 10 days.
+**Action:** Wren — URGENT; audit for drift this session; 2 new kade cards add surface area.
 
 ## 4. CSC Compliance
 **Status: RED (carry, 36 sh-only)**
-36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Count unchanged from yesterday. (`messages/scripts/` and `architect/scripts/` paths don't exist here.)
+36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Count unchanged.
 **Action:** Silas — July scoped card for `platform/scripts/*.sh` still open.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-`gathering-team` repo clean — 0 uncommitted. 5 external role repos not cloned in this environment.
+`gathering-team` repo clean — 0 uncommitted changes.
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 101d + Wren backlog 13d)**
-#1759 and #1791 now 101d with no commits. Wren next-session shows 10 WIP cards last touched 2026-07-04 (13d ago); session note flags #3607 rotation still broken live (chorus.log at 122MB, fix awaiting Jeff approve).
-**Action:** Wren — close or re-groom #1759/#1791; unblock #3607 rotation fix.
+**Status: RED (carry, 102d)**
+#1759 and #1791 now 102d with no commits. Wren backlog WIP cards last touched 2026-07-04 (14d). #3607 log rotation still broken live (chorus.log ~122MB+, awaiting Jeff approve).
+**Action:** Wren — #1759/#1791 must close or archive this session; escalate #3607 to Jeff.
 
 ## 7. Domain Context Freshness
 **Status: YELLOW (9d, 4 domains)**
-chorus/infra/music/seeds domain-context files last committed 2026-07-08 (9d, 2d over threshold). Chorus shipped 5+ cards this week; infra touched. `domain-context-photos.md` still GREEN.
-**Action:** Silas — chorus/infra most urgent; Wren — music/seeds.
+chorus/infra/music/seeds last committed 2026-07-09 (9d, 2d over threshold). Chorus shipped #3661/#3657 today; domain-context-chorus.md not refreshed. `domain-context-photos.md` GREEN (4d).
+**Action:** Silas — domain-context-chorus.md most urgent given today's shipments; Wren — music/seeds.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
@@ -41,4 +41,4 @@ No perf-baseline JSON in `data/`; cross-session delta not computable.
 **Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
 
 ---
-*Carries: §2 YELLOW (17 plists), §4 RED (36 sh), §6 RED (101d), §7 YELLOW (9d/4 domains), §8 N/A. New: §3 escalated to 9d/2d-over; §6 adds Wren 13d backlog + #3607 rotation broken.*
+*Carries: §2 YELLOW (17 plists), §4 RED (36 sh), §6 RED (102d), §7 YELLOW (9d/4 domains), §8 N/A. Escalations: §3 now 10d/3d-over; §6 +1d to 14d Wren backlog; §7 chorus domain stale despite today's kade shipments.*
