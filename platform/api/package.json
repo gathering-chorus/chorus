@@ -16,7 +16,7 @@
     "test:all": "RUN_INTEGRATION=true jest"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.27.2",
+    "@lancedb/lancedb": "^0.30.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "^12.9.0",
     "blocked": "^1.3.0",
