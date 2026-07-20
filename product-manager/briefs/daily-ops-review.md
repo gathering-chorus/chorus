@@ -1,19 +1,19 @@
-# Daily Ops Review — 2026-07-19
+# Daily Ops Review — 2026-07-20
 
 ## 1. Hooks Health
 **Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 28.97s, 0 errors, 0 warnings.
+`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 40.52s, 0 errors, 0 warnings.
 **Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry, no change)**
-17 plist files in `proving/config/launchagents/` reference `/tmp/`. Count unchanged.
-**Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; 17 is canonical.
+17 plist files in `proving/config/launchagents/` reference `/tmp/` (count unchanged). Additional 2 in `platform/scripts/launchagents-secondary/`.
+**Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; 17+2 tracked.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (11d, escalating)**
-`designing/claudemd/` last committed 2026-07-08 (11d stale, 4d over threshold). #3658, #3542 shipped today — no fragment refresh.
-**Action:** Wren — URGENT; drift risk rising daily; audit this session.
+**Status: YELLOW (8d stale)**
+`designing/claudemd/` last committed 2026-07-12 via #3634 — 8d ago, 1d over 7d threshold. Note: yesterday's brief cited Jul 8; git head shows Jul 12.
+**Action:** Wren — refresh claudemd fragments this session; risk rising.
 
 ## 4. CSC Compliance
 **Status: RED (carry, 36 sh-only)**
@@ -26,14 +26,14 @@
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 103d)**
-#1759 and #1791 now 103d with no commits. Wren backlog WIP cards last touched 2026-07-04 (15d). #3607 log rotation still broken live.
+**Status: RED (carry, 104d)**
+No live Vikunja board access; carrying yesterday: #1759/#1791 now 104d without commits. Wren backlog WIP last touched 2026-07-04 (16d).
 **Action:** Wren — #1759/#1791 must close or archive; escalate #3607 to Jeff.
 
 ## 7. Domain Context Freshness
-**Status: YELLOW (10d, 4 domains)**
-chorus/infra/music/seeds all last committed 2026-07-09 (10d, 3d over threshold). #3658 (chorus) shipped today; domain-context-chorus.md not refreshed. Photos GREEN (5d).
-**Action:** Silas — domain-context-chorus.md urgent given #3658 today; Wren — music/seeds.
+**Status: YELLOW (8d, 4 domains)**
+chorus/infra/music/seeds last committed 2026-07-12 (8d, 1d over threshold). #3661/#3657 (kade, 2026-07-17) shipped werk-test+api in chorus domain — domain-context-chorus.md still not refreshed. Photos GREEN (6d, Jul 14).
+**Action:** Silas — domain-context-chorus.md urgent given #3661/#3657; Wren — music/seeds.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
@@ -41,4 +41,4 @@ No perf-baseline JSON in `data/`; cross-session delta not computable.
 **Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
 
 ---
-*Carries: §2 YELLOW (17 plists), §4 RED (36 sh), §6 RED (103d), §7 YELLOW (10d/4 domains), §8 N/A. Escalations: §3 now 11d/4d-over (was 10d); §6 +1d to 103d WIP + 15d Wren backlog; §7 chorus now 10d despite #3658 shipping today.*
+*Carries: §2 YELLOW (17+2 plists), §4 RED (36 sh), §6 RED (104d), §7 YELLOW (8d/4 domains), §8 N/A. Escalations: §3 discrepancy resolved to 8d/Jul 12; §6 +1d to 104d WIP + 16d Wren backlog; §7 chorus 8d despite #3661/#3657 shipping Jul 17.*
