@@ -1,31 +1,30 @@
-# Daily Morning Summary — 2026-07-19
+# Daily Morning Summary — 2026-07-20
 
-**HEADLINE:** `npm ci` is 40 days unresolved (entire quality layer dark) and #3607 log rotation at 122MB still needs your approval.
+**HEADLINE:** Quality layer dark for 41 days straight — `npm ci` is still unowned, every suite and every lint check remains broken.
 
 **OPS:** RED (2 REDs, 3 YELLOWs)
-- RED: #3607 log rotation broken live — chorus.log at ~122MB+, **awaiting Jeff approve** (carry)
-- RED: Stale WIP — #1759/#1791 now 102d no commits; Wren backlog 14d stale; must close or archive
-- RED: CSC compliance — 36 `platform/scripts/*.sh` with `/tmp/` refs; July card open, no movement
-- YELLOW: CLAUDE.md fragments — 10d stale (3d over threshold, escalating); #3661/#3657 add surface area
-- YELLOW: Domain context — chorus domain stale despite yesterday's kade shipments; music/seeds 9d
+- RED: Stale WIP — #1759/#1791 at 103d no commits; Wren backlog 15d; #3607 log rotation still broken live
+- RED: CSC compliance — 36 `platform/scripts/*.sh` with `/tmp/` refs; no movement
+- YELLOW: CLAUDE.md fragments — 11d stale (4d over threshold, escalating); audit overdue
+- YELLOW: Domain context — chorus/infra/music/seeds 10d stale; chorus stale despite #3658 shipping
 - YELLOW: LaunchAgent /tmp — 17 plists, carry
 - GREEN: Hooks cargo check clean; repo dirty state clean
 
-**QUALITY:** RED — day 38 test blackout; day 40 lint blackout; 154 type errors day 12 (no change)
-- 0 tests: all 4 suites blocked (clearing, workflow-engine, chorus-sdk, pulse) — ts-jest preset missing
+**QUALITY:** RED — day 41 lint blackout; day 39 test blackout; 154 type errors day 13 (no change)
+- 0 tests run: all 4 suites (clearing, workflow-engine, chorus-sdk, pulse) blocked; ts-jest preset missing
 - 0 lint: @eslint/js not found; same root cause
-- `npm ci` at repo root unblocks everything in one step — still unowned, now day 40
+- `npm ci` at repo root unblocks everything — 41 days without an owner
 
-**YESTERDAY (07-18):** Kade shipped #3661, #3657 (2 cards); Silas filed ops + quality reviews
-- No quality movement; no ops cards resolved; no new regressions
+**YESTERDAY (07-19):** Zero cards shipped; Silas filed ops + quality reviews only
+- All counters ticked up; no regressions; no resolutions
 
 **TODAY:**
-1. **Jeff → #3607:** Approve log rotation — chorus.log at 122MB and growing, fix is staged
-2. **Assign `npm ci`:** Day 40; one command unblocks tests, lint, build across all packages
-3. **Wren:** Audit `designing/claudemd/` for drift — 10d stale, 3d over threshold, escalating
-4. **Jeff/Wren:** Close or archive #1759/#1791 — 102d WIP adds board noise
-5. **Silas:** Refresh chorus domain context — stale despite back-to-back kade shipments
+1. **Jeff → `npm ci`:** Day 41; one command unblocks all tests, lint, and build — assign an owner
+2. **Jeff → #3607:** Log rotation fix is staged and waiting; chorus.log growing unchecked
+3. **Wren:** Audit `designing/claudemd/` — 11d stale, 4d over threshold, escalating daily
+4. **Jeff/Wren:** Close or archive #1759/#1791 — 103d WIP, no commits, pure board noise
+5. **Silas:** Refresh chorus domain context — stale despite #3658 shipping last week
 
 **BLOCKERS (needs Jeff):**
-- **#3607:** chorus.log at ~122MB, fix staged and waiting — approve to unblock Silas
-- **`npm ci` day 40** — quality layer completely dark; needs an owner assigned today
+- **`npm ci` day 41** — six weeks with the entire quality layer dark; needs an owner today
+- **#3607** — chorus.log log rotation broken live; fix staged, approval pending
