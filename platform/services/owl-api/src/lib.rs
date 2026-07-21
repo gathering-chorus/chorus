@@ -276,6 +276,8 @@ pub struct RouteTable {
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
+    pub tree_edges: Vec<String>, // #3660 — recursive-descent edge localnames, PROJECTED from chorus:treeEdge on the shape. Empty = no /tree read emitted.
+    pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
 }
 
 /// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
@@ -976,7 +978,75 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let domain_of = select_v(&sparql_json(&dq)?).into_iter().next();
     let instances_graph = resolve_instances_graph(declared_ig.as_deref(), domain_of.as_deref())?;
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph })
+    // #3660 — PROJECT the tree read from the shape's declared recursive edges:
+    // chorus:treeEdge (multi-valued, the descent predicates) + chorus:treeOrder
+    // (the sibling rank property). A shape with no treeEdge emits NOTHING —
+    // zero impact on kinds that don't opt in.
+    let teq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:treeEdge ?e BIND(REPLACE(STR(?e), '.*[#/]', '') AS ?v) }} }} ORDER BY ?v",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let mut tree_edges: Vec<String> = select_v(&sparql_json(&teq)?);
+    tree_edges.sort();
+    tree_edges.dedup();
+    let toq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:treeOrder ?o BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let tree_order = select_v(&sparql_json(&toq)?).into_iter().next();
+    routes.extend(tree_routes(&plural, &tree_edges));
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, tree_edges, tree_order })
+}
+
+/// #3660 — route emission for the tree read: ONE route iff the shape declares
+/// at least one recursive-descent edge. No declaration → no phantom route.
+pub fn tree_routes(plural: &str, tree_edges: &[String]) -> Vec<String> {
+    if tree_edges.is_empty() {
+        return Vec::new();
+    }
+    vec![format!("GET /{}/:name/tree", plural)]
+}
+
+/// #3660 — pure recursive tree builder. `edges` are (parent, child) localname
+/// pairs; `ranks` are (node, rank). `depth` bounds descent below the root
+/// (0 = root only). A node that is its own ANCESTOR on the current path is a
+/// cycle → named Err; node REUSE across branches is legal (composition can
+/// revisit — Borg serves two steps).
+pub fn build_tree(root: &str, edges: &[(String, String)], ranks: &[(String, i64)], depth: usize) -> Result<String, String> {
+    let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+    for (p, c) in edges {
+        children.entry(p.as_str()).or_default().push(c.as_str());
+    }
+    let rank: std::collections::HashMap<&str, i64> = ranks.iter().map(|(n, r)| (n.as_str(), *r)).collect();
+    fn rec(
+        node: &str,
+        children: &std::collections::HashMap<&str, Vec<&str>>,
+        rank: &std::collections::HashMap<&str, i64>,
+        depth: usize,
+        path: &mut Vec<String>,
+    ) -> Result<String, String> {
+        if path.iter().any(|a| a == node) {
+            return Err(format!("cycle: '{}' is its own ancestor via [{} → {}]", node, path.join(" → "), node));
+        }
+        path.push(node.to_string());
+        let mut kids: Vec<String> = Vec::new();
+        if depth > 0 {
+            if let Some(cs) = children.get(node) {
+                let mut cs = cs.clone();
+                cs.sort();
+                cs.dedup();
+                // ranked first (ascending), unranked fall to the bottom — visible,
+                // never dropped; name-sort breaks ties deterministically
+                cs.sort_by_key(|c| (rank.get(c).is_none(), rank.get(c).copied().unwrap_or(i64::MAX), c.to_string()));
+                for c in cs {
+                    kids.push(rec(c, children, rank, depth - 1, path)?);
+                }
+            }
+        }
+        path.pop();
+        Ok(format!("{{ \"name\": \"{}\", \"children\": [{}] }}", json_escape(node), kids.join(", ")))
+    }
+    rec(root, &children, &rank, depth, &mut Vec::new())
 }
 
 /// #3454 AC1 — the WRITE routes generated per edge, mirroring the read routes.
@@ -1720,6 +1790,9 @@ pub fn openapi_json(t: &RouteTable) -> String {
         let op = if m == "get" {
             let (resp, params) = if p.ends_with("/{name}") {
                 (format!("#/components/schemas/{}", class_short), NAME_PARAM)
+            } else if p.ends_with("/tree") {
+                // #3660 — the tree read: nested recursion, depth-bounded
+                ("#/components/schemas/Tree".to_string(), TREE_PARAMS)
             } else if p.contains("{name}") {
                 ("#/components/schemas/Fold".to_string(), NAME_PARAM)
             } else if p.starts_with("/schema") {
@@ -1761,7 +1834,7 @@ pub fn openapi_json(t: &RouteTable) -> String {
         )
     };
     format!(
-        "{{\n  \"openapi\": \"3.1.0\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }}{required} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
+        "{{\n  \"openapi\": \"3.1.0\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }}{required} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Tree\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"children\": {{ \"type\": \"array\", \"items\": {{ \"$ref\": \"#/components/schemas/Tree\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
         class_short = class_short,
         required = required,
         class = t.class,
@@ -1773,6 +1846,9 @@ pub fn openapi_json(t: &RouteTable) -> String {
 }
 
 const NAME_PARAM: &str = "\"parameters\": [ { \"name\": \"name\", \"in\": \"path\", \"required\": true, \"schema\": { \"type\": \"string\" } } ], ";
+
+// #3660 — the tree read's parameters: path name + the depth bound (query).
+const TREE_PARAMS: &str = "\"parameters\": [ { \"name\": \"name\", \"in\": \"path\", \"required\": true, \"schema\": { \"type\": \"string\" } }, { \"name\": \"depth\", \"in\": \"query\", \"required\": false, \"schema\": { \"type\": \"integer\" } } ], ";
 
 /// trace mint-when-absent (#3364 AC6, Kade's #3354 finding): a blank/missing
 /// trace header mints a recognizable, joinable id instead of silently logging
@@ -2466,7 +2542,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -2561,6 +2637,66 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         meta.entity = name.to_string();
         meta.route = if parts.len() == 3 { "fold".into() } else { "detail".into() };
         if parts.len() == 3 { meta.fold = parts[2].to_string(); }
+        // #3660 — GET /<plural>/:name/tree?depth=N — the generated recursive tree
+        // read. Descent predicates + sibling rank are PROJECTED from the shape
+        // (chorus:treeEdge / chorus:treeOrder); the whole edge set is fetched in
+        // ONE query and the recursion runs in pure code (build_tree): nested JSON,
+        // rank-ordered siblings, depth-bounded, cycle-refused (node-reuse legal).
+        if parts.len() == 3 && parts[2] == "tree" {
+            if table.tree_edges.is_empty() {
+                // kind did not opt in — no phantom surface
+                return (404, "{ \"error\": \"not-found\" }".to_string());
+            }
+            let depth = query_param(query, "depth")
+                .and_then(|d| d.parse::<usize>().ok())
+                .unwrap_or(32)
+                .min(64);
+            let unions: Vec<String> = table
+                .tree_edges
+                .iter()
+                .map(|e| format!("{{ ?s <{ns}{e}> ?o }}", ns = NS, e = e))
+                .collect();
+            let eq = format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ {u} BIND(CONCAT(REPLACE(STR(?s), '.*[#/]', ''), '|', REPLACE(STR(?o), '.*[#/]', '')) AS ?v) }} }}",
+                g = table.instances_graph, u = unions.join(" UNION ")
+            );
+            let edge_pairs: Vec<(String, String)> = match sparql_json(&eq) {
+                Ok(body) => select_v(&body)
+                    .into_iter()
+                    .filter_map(|row| row.split_once('|').map(|(a, b)| (a.to_string(), b.to_string())))
+                    .collect(),
+                Err(e) => return (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            };
+            let rank_pairs: Vec<(String, i64)> = match &table.tree_order {
+                Some(op) => {
+                    let rq = format!(
+                        "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s <{ns}{op}> ?r BIND(CONCAT(REPLACE(STR(?s), '.*[#/]', ''), '|', STR(?r)) AS ?v) }} }}",
+                        g = table.instances_graph, ns = NS, op = op
+                    );
+                    match sparql_json(&rq) {
+                        Ok(body) => select_v(&body)
+                            .into_iter()
+                            .filter_map(|row| {
+                                row.split_once('|')
+                                    .and_then(|(n, r)| r.parse::<i64>().ok().map(|r| (n.to_string(), r)))
+                            })
+                            .collect(),
+                        Err(e) => return (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+                    }
+                }
+                None => Vec::new(),
+            };
+            return match build_tree(name, &edge_pairs, &rank_pairs, depth) {
+                Ok(tree) => {
+                    meta.result_count = 1;
+                    (200, tree)
+                }
+                Err(e) if e.starts_with("cycle") => {
+                    (409, format!("{{ \"error\": \"cycle\", \"detail\": \"{}\" }}", json_escape(&e)))
+                }
+                Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
+            };
+        }
         if parts.len() == 3 && parts[2] == "contains" {
             // DOWN containment, symmetric with /partof's UNION below: a node "contains"
             // its children via chorus:contains (domain→sub) OR chorus:hasDomain
@@ -3716,7 +3852,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -3752,7 +3888,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -3787,6 +3923,8 @@ mod tests {
                 "GET /schema/domain".into(),
             ],
             secured: vec![],
+            tree_edges: vec![],
+            tree_order: None,
         }
     }
 
@@ -3950,7 +4088,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -4014,7 +4152,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -4039,7 +4177,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string() };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -4077,7 +4215,7 @@ mod tests {
             mandatory: vec!["filePath".into(), "testName".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: "urn:chorus:domains:tests".to_string(),
+            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None,
         };
         let scope = vec![t.instances_graph.clone()];
         let ts = dal_skeleton_ts(&t, &scope);
