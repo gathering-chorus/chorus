@@ -1795,6 +1795,37 @@
         "message": "Turn summary"
       }
     },
+    "test.scope.refused": {
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "A scoped test run (--domain/--type) refused because the tests domain was unreachable — the scope is a model predicate, so refusing loudly beats degrading to an unscopable legacy plan. #3661 AC2 (registration trued up by #3662 after emit-conformance caught the phantom).",
+      "keys": [
+        "reason"
+      ],
+      "fields": {
+        "reason": "Refusal cause (tests-domain-unreachable)",
+        "scope_domain": "Requested --domain scope, if any",
+        "scope_type": "Requested --type scope, if any",
+        "role": "Acting role",
+        "card_id": "Card whose scoped run refused",
+        "trace_id": "Werk trace join key"
+      }
+    },
+    "test.gap.undeclared": {
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "On-disk test files in the planned units that the tests domain does not declare — NAMED, never silently run or skipped. Emitted by werk-test when the model-sourced plan finds undeclared files. #3661 AC3 (registration trued up by #3662 after emit-conformance caught the phantom).",
+      "keys": [
+        "count"
+      ],
+      "fields": {
+        "count": "Number of undeclared test files found",
+        "files": "Semicolon-joined sample of undeclared paths (first 5)",
+        "role": "Acting role",
+        "card_id": "Card whose werk-test run found the gap",
+        "trace_id": "Werk trace join key"
+      }
+    },
     "test.delta": {
       "vertebra": "proving",
       "source": "gate-code-tests",
