@@ -57,6 +57,57 @@ SHELL_T=$(bash "$SCRIPT" --list-shell 2>&1)
 contains "$SHELL_T" "${CHORUS_ROOT}/platform/scripts/test-skip-gates.sh"  && p "finds test-skip-gates"  || f "shell missing test-skip-gates"
 contains "$SHELL_T" "${CHORUS_ROOT}/platform/scripts/test-daily-review.sh" && p "finds test-daily-review" || f "shell missing test-daily-review"
 
+echo "--- per-suite wedge guard (#3662) ---"
+# The Jul 17 wedge: one hung bats suite blocked the runner for 4 nights. Two
+# distinct wedge classes, both must be survivable:
+#   (a) suite EXITS but leaves a background child holding the captured output
+#       fd — command-substitution capture waits for pipe EOF forever
+#   (b) suite itself never exits — needs the NIGHTLY_SUITE_TIMEOUT kill
+# Hermetic: fake suites in mktemp, fail-dir + spine stubbed, tiny timeout.
+TDIR=$(mktemp -d)
+
+# watchdog_run <label> <max-secs> <cmd...> — run cmd in bg, poll for completion;
+# the harness itself must never hang on a regression, so a stuck run is a FAIL.
+watchdog_run() {
+  local label="$1" max="$2"; shift 2
+  "$@" > "$TDIR/$label.out" 2>&1 &
+  local wpid=$! waited=0
+  while [ "$waited" -lt "$max" ]; do
+    kill -0 "$wpid" 2>/dev/null || { wait "$wpid" 2>/dev/null; echo done; return; }
+    sleep 1; waited=$((waited+1))
+  done
+  kill -9 "$wpid" 2>/dev/null; wait "$wpid" 2>/dev/null
+  echo stuck
+}
+
+# (a) exits-but-leaves-fd-holder
+cat > "$TDIR/test-fd-holder.sh" <<EOF
+#!/bin/bash
+sleep 100000 &
+echo \$! > "$TDIR/holder.pid"
+echo "=== Results: 1 passed, 0 failed ==="
+exit 0
+EOF
+chmod +x "$TDIR/test-fd-holder.sh"
+R=$(watchdog_run fdholder 20 env NIGHTLY_SUITE_TIMEOUT=3 NIGHTLY_FAIL_DIR="$TDIR/fails" CHORUS_LOG_BIN=/usr/bin/true \
+      bash "$SCRIPT" --run-one shell "$TDIR/test-fd-holder.sh")
+if [ "$R" = "done" ]; then p "fd-holder suite: runner returns (no EOF-wait wedge)"; else f "fd-holder suite: runner WEDGED >20s (the Jul 17 class)"; fi
+grep -q 'SUITE|shell|.*|pass|' "$TDIR/fdholder.out" && p "fd-holder suite: reported pass" || f "fd-holder suite: no pass line; got: $(cat "$TDIR/fdholder.out")"
+[ -f "$TDIR/holder.pid" ] && kill "$(cat "$TDIR/holder.pid")" 2>/dev/null
+
+# (b) never-exits → timeout kills the suite's whole process group, run continues
+cat > "$TDIR/test-hang-forever.sh" <<'EOF'
+#!/bin/bash
+sleep 100000
+EOF
+chmod +x "$TDIR/test-hang-forever.sh"
+R=$(watchdog_run hang 25 env NIGHTLY_SUITE_TIMEOUT=3 NIGHTLY_FAIL_DIR="$TDIR/fails" CHORUS_LOG_BIN=/usr/bin/true \
+      bash "$SCRIPT" --run-one shell "$TDIR/test-hang-forever.sh")
+if [ "$R" = "done" ]; then p "hanging suite: runner returns within cap"; else f "hanging suite: runner WEDGED >25s despite NIGHTLY_SUITE_TIMEOUT=3"; fi
+grep -q 'SUITE|shell|.*|fail|.*TIMEOUT' "$TDIR/hang.out" && p "hanging suite: reported fail with TIMEOUT reason" || f "hanging suite: no fail+TIMEOUT line; got: $(cat "$TDIR/hang.out")"
+
+rm -rf "$TDIR"
+
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

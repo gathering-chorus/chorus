@@ -293,6 +293,40 @@ _extract_shell_summary() {
   fi
 }
 
+# #3662 — per-suite wedge guard. The Jul 17 03:00 run hung 4 days on one bats
+# suite and no nightly ran 7/18–7/21. Two wedge classes, one guard:
+#   (a) EOF-wait: `out=$(cmd)` waits for pipe EOF, so a suite that exits but
+#       leaves a background child holding stdout wedges the capture forever.
+#       Fixed by capturing to a FILE — the wrapper returns when the suite
+#       process exits, regardless of who still holds the fd.
+#   (b) hung suite: never exits. Fixed by the wall-clock cap — the suite runs
+#       in its own process group (perl setpgrp; macOS has no setsid/timeout)
+#       and the whole group is killed on expiry, recorded as rc=124.
+NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_SUITE_TIMEOUT:-1800}"
+
+# _run_capped <outfile> <cmd...> — run cmd with stdout+stderr → outfile,
+# capped at NIGHTLY_SUITE_TIMEOUT seconds. Returns cmd's rc, or 124 on timeout.
+_run_capped() {
+  local outfile="$1"; shift
+  perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' "$@" \
+    >"$outfile" 2>&1 </dev/null &
+  local pid=$! waited=0 tick=5
+  [ "$NIGHTLY_SUITE_TIMEOUT" -lt 30 ] && tick=1
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$waited" -ge "$NIGHTLY_SUITE_TIMEOUT" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      printf '\nSUITE TIMEOUT: killed after %ss (#3662 wedge guard)\n' \
+        "$NIGHTLY_SUITE_TIMEOUT" >>"$outfile"
+      return 124
+    fi
+    sleep "$tick"; waited=$((waited + tick))
+  done
+  wait "$pid"
+}
+
 # Single attempt — the original run_one body.
 run_one_attempt() {
   local kind="$1" path="$2" owner="$3"
@@ -312,14 +346,16 @@ run_one_attempt() {
       # _npm_jest_env decides the env prefix: api's integration project is only
       # CONSTRUCTED when RUN_INTEGRATION=true, gated on the live stack. Stack down
       # → never built → api hermetic-only, can't false-red. (See _npm_jest_env.)
-      local out rc jest_env
+      local out rc jest_env _cap; _cap=$(mktemp)
       if _npm_package_uses_jest "$path"; then
         jest_env=$(_npm_jest_env "$path")
         # #3606 — --no-install: a package missing its local jest must FAIL LOUD
         # ("jest not found"), never trigger an npx download into the shared cache
         # at 3am (the 07-06 pulse red: canonical node_modules lacked jest → npx
         # downloaded → corrupted-cache ENOTEMPTY → blank-summary fail).
-        out=$(cd "$path" && env $jest_env npx --no-install jest --passWithNoTests --silent 2>&1); rc=$?
+        SUITE_DIR="$path" JEST_ENV="$jest_env" _run_capped "$_cap" \
+          bash -c 'cd "$SUITE_DIR" && env $JEST_ENV npx --no-install jest --passWithNoTests --silent'; rc=$?
+        out=$(cat "$_cap")
         # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
         # failure detail at the source so the saved fail-log held nothing usable).
         summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
@@ -329,7 +365,9 @@ run_one_attempt() {
         # here downloaded jest into the shared npx cache at 3am, died on
         # cache corruption (ENOTEMPTY), and reported a blank-summary fail
         # for weeks while the package's real suite passed.
-        out=$(cd "$path" && npm test --silent 2>&1); rc=$?
+        SUITE_DIR="$path" _run_capped "$_cap" \
+          bash -c 'cd "$SUITE_DIR" && npm test --silent'; rc=$?
+        out=$(cat "$_cap")
         # node test runner summary: "# pass N" / "# fail N"; fall back to
         # the last non-empty line so the summary is never blank again.
         local np nf
@@ -341,6 +379,7 @@ run_one_attempt() {
           summary=$(echo "$out" | grep -v '^\s*$' | tail -1 | tr -d '\n' | cut -c1-160)
         fi
       fi
+      rm -f "$_cap"
       [ "$rc" -ne 0 ] && status="fail"
       ;;
     cargo)
@@ -358,9 +397,11 @@ run_one_attempt() {
       # all "red" while each was green on a standalone run). A dedicated target
       # dir gives the nightly its own build lock — it can never contend with a
       # role build, so the only input is the code. Warm after the first night.
-      local out rc
+      local out rc _cap; _cap=$(mktemp)
       local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
-      out=$(cd "$path" && CARGO_TARGET_DIR="$nt" cargo test --release -- --test-threads=1 2>&1); rc=$?
+      SUITE_DIR="$path" NT="$nt" _run_capped "$_cap" \
+        bash -c 'cd "$SUITE_DIR" && CARGO_TARGET_DIR="$NT" cargo test --release -- --test-threads=1'; rc=$?
+      out=$(cat "$_cap"); rm -f "$_cap"
       local passed failed
       passed=$(echo "$out" | grep -cE '^test result: ok\.' || true)
       failed=$(echo "$out" | grep -cE '^test result: FAILED\.' || true)
@@ -377,8 +418,9 @@ run_one_attempt() {
       fi
       ;;
     shell)
-      local out rc
-      out=$(bash "$path" 2>&1); rc=$?
+      local out rc _cap; _cap=$(mktemp)
+      _run_capped "$_cap" bash "$path"; rc=$?
+      out=$(cat "$_cap"); rm -f "$_cap"
       summary=$(_extract_shell_summary "$out" "$rc")
       [ "$rc" -ne 0 ] && status="fail"
       ;;
@@ -386,8 +428,9 @@ run_one_attempt() {
       # bats reports `ok N <desc>` per test, `not ok N <desc>` per fail,
       # and a 1..N plan line. Last line of TAP output is the final test
       # result. Summary extracts pass/fail counts via grep.
-      local out rc passed failed
-      out=$(bats "$path" 2>&1); rc=$?
+      local out rc passed failed _cap; _cap=$(mktemp)
+      _run_capped "$_cap" bats "$path"; rc=$?
+      out=$(cat "$_cap"); rm -f "$_cap"
       passed=$(echo "$out" | grep -cE '^ok ' || true)
       failed=$(echo "$out" | grep -cE '^not ok ' || true)
       summary="bats: $passed passed, $failed failed"
@@ -397,13 +440,21 @@ run_one_attempt() {
       # cucumber-js's `npm test` exits non-zero on any failed scenario.
       # Summary line is typically `N scenarios (M passed, K failed)` near
       # the end of stdout.
-      local out rc
-      out=$(cd "$path" && npm test --silent 2>&1); rc=$?
+      local out rc _cap; _cap=$(mktemp)
+      SUITE_DIR="$path" _run_capped "$_cap" \
+        bash -c 'cd "$SUITE_DIR" && npm test --silent'; rc=$?
+      out=$(cat "$_cap"); rm -f "$_cap"
       summary=$(echo "$out" | grep -E "scenarios? \(" | tail -1 | tr -d '\n')
       [ -z "$summary" ] && summary=$(echo "$out" | tail -1)
       [ "$rc" -ne 0 ] && status="fail"
       ;;
   esac
+  # #3662 — a timed-out suite is a fail whose summary names the kill, so the
+  # morning read is "X TIMED OUT", never a silent wedge or an unexplained red.
+  if [ "${rc:-0}" -eq 124 ]; then
+    status="fail"
+    summary="${summary:+$summary }(TIMEOUT — killed after ${NIGHTLY_SUITE_TIMEOUT}s, #3662)"
+  fi
   # #3484 — persist the failure output so the red can explain itself; clear it
   # on green so a passing rerun doesn't leave a stale reason. `out` is unset for
   # the lint path (separate fn), so guard on it.

@@ -37,6 +37,18 @@ restore_marker_state() {
   fi
 }
 
+# #3662 — run the shim with bats's inherited fds closed off. session-start
+# spawns background work (context regen); a child that inherits bats's fd3 /
+# output pipe keeps it open after the shim exits, and bats waits on pipe EOF
+# forever. This wedged the Jul 17 03:00 nightly for 4 nights (the runner-side
+# guard is nightly-suites.sh _run_capped; this closes the hole at the source).
+# The redirection must wrap the SHIM child only — putting it on `run` itself
+# closes bats's own fd3 result channel and the test silently vanishes. stdin
+# stays inherited: session-start reads its hook payload from stdin.
+run_shim() {
+  run bash -c '"$0" "$@" 3>&-' "$SHIM" "$@"
+}
+
 setup() {
   snapshot_marker_state
 }
@@ -52,7 +64,7 @@ teardown() {
 }
 
 @test "session-start rejects unknown role with non-zero exit" {
-  run "$SHIM" session-start nonsense-role
+  run_shim session-start nonsense-role
   [ "$status" -ne 0 ]
   [[ "$output" == *"Usage:"* ]]
 }
@@ -60,7 +72,7 @@ teardown() {
 # --- AC: session-start emits hookSpecificOutput.additionalContext ---
 
 @test "session-start for real role returns JSON with additionalContext" {
-  run "$SHIM" session-start silas
+  run_shim session-start silas
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c "
 import sys, json
@@ -76,7 +88,7 @@ print('session-start-ok')
 @test "session-start leaves .pending armed until protocol check passes" {
   # Remove both markers, then run. Post-call, at minimum one of them exists.
   rm -f "$INIT_DIR/silas.pending" "$INIT_DIR/silas.done"
-  run "$SHIM" session-start silas
+  run_shim session-start silas
   [ "$status" -eq 0 ]
   # After a successful protocol check, .done exists. If check fails, .pending stays.
   [ -f "$INIT_DIR/silas.done" ] || [ -f "$INIT_DIR/silas.pending" ]
@@ -120,7 +132,7 @@ print('session-start-ok')
 
 @test "successful session-start writes .done (protocol contract passed)" {
   rm -f "$INIT_DIR/silas.pending" "$INIT_DIR/silas.done"
-  run "$SHIM" session-start silas
+  run_shim session-start silas
   [ "$status" -eq 0 ]
   # If the real CLAUDE.md is coherent with live manifest, .done should be written.
   # This tests the happy-path: no drift → .done lands → gate allows.
