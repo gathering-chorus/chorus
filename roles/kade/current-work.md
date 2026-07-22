@@ -1,27 +1,19 @@
 # Current Work
 
-Last updated: 2026-04-18 11:30 Boston
+Last updated: 2026-07-22 11:05 Boston
 
 ## WIP
-- #2180 server.ts handler extraction — continue AC4 pattern (39 handlers done, ~70-100 remaining)
+- **#3663** cards SDK leaked timeout + nightly coverage red — built, committed (`201ff887`), pipeline running to demo stop.
+  - Fix 1 (the carded diagnosis): `clearTimeout` in `finally` for `sendCardApprovalNudge`'s abort timer — the rejection path stranded a 5s timer, jest force-exited rc≠0.
+  - Fix 2 (found during AC3, baseline-proven pre-existing): `cards-api-permutation.test.ts` never mocked `../src/blast-radius` — move→WIP rows fetched live :3000/:3340 (5s cap per call) and blew the jest budget under coverage instrumentation. Mocked at the module seam like every sibling moveCard suite. Without this, AC4 stays red regardless of the timer fix.
+  - New tests: 3 fake-timer settle-path tests (getTimerCount=0), 1 hermetic move-WIP guard (`move-wip-hermetic.test.ts` — blast-radius mocked, asserts nothing else fetches).
+  - Proofs: `--detectOpenHandles` rc=0 529/529 zero handles; `--coverage` rc=0, 81.22% stmts ≥ floor 80; lint touched files rc=0.
+  - AC4 = tomorrow's nightly grades coverage:cards with a real pct.
 
-## Queue (P1)
-- #2182 Pre-commit coverage gate — Silas-owned (blocks on #2180 progress for jest runtime)
-- #2181 Nightly coverage backstop — Silas-owned
-- #2169 platform/api server.ts → 80% (now a child/parallel of #2180)
-- #2170 chorus-hooks daemon Axum harness — Silas-owned
+## Waiting
+- **#3662** nightly wedge guard — landed pre-crash (fbb4db332), guard harness-proven on canonical, LaunchAgent loaded. Tonight's 03:00 run is the first live proof; read the log tomorrow (see next-session.md).
 
-## Queue (P2)
-- #2118 Scope-aware gates (route tests by commit diff)
-- #2126 Extract shared log-reader for chorus-api summary handlers
-- #2127 Borg page fetch-wrapper with explicit error-rendered state
-
-## Blockers
-- Parallel-state test failures (fitness-summary, instance-explorer, rca POSTs, completeness-perf) — not new, not regressions from extractions, pass in isolation. Resolve as handler extractions remove the shared-state surface.
-
-## Session outcome (2026-04-18)
-- Chorus-wide coverage 40 → 54.8%
-- platform/api 0 → 54.26%, jest 101s → 32s
-- #2167, #2173 accepted
-- 39 handlers extracted, 110 handler unit tests
-- Test-value policy drafted (roles/kade/policies/test-value-draft.md)
+## Context
+- Library mac OOM'd hard ~08:54 7/22 (2nd in 2 weeks) — Silas owns follow-up. 7/7 action items (swap alert 8GB + subagent concurrency budget) never carded.
+- 14 red suites in the 7/22 nightly — full list in next-session.md. Jeff scoped me to #3662/#3663; the red-list burn-down is unowned on the board.
+- Jeff flagged the tests chunk (#1778/#1779) as incomplete — the specific gap: existing nightly reds have no owning cards; those two are new-coverage cards.

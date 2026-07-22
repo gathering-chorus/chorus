@@ -895,9 +895,11 @@ export async function sendCardApprovalNudge(args: {
   if (!fetchImpl) {
     return { delivered: false, error: 'no-fetch-impl', traceId };
   }
+  const ctrl = new AbortController();
+  // #3663 — cleared in finally: a rejection path that skips clearTimeout
+  // strands the timer and holds the jest worker open (nightly coverage red).
+  const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 5000);
   try {
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), args.timeoutMs ?? 5000);
     const resp = await fetchImpl(pulseUrl, {
       method: 'POST',
       headers: {
@@ -908,7 +910,6 @@ export async function sendCardApprovalNudge(args: {
       body: JSON.stringify({ from: args.from, to: args.to, content: args.message, traceId }),
       signal: ctrl.signal,
     });
-    clearTimeout(timeoutId);
     if (!resp.ok) {
       const errText = resp.text ? await resp.text().catch(() => '') : '';
       return { delivered: false, status: resp.status, error: errText.slice(0, 200), traceId };
@@ -916,6 +917,8 @@ export async function sendCardApprovalNudge(args: {
     return { delivered: true, status: resp.status, traceId };
   } catch (err) {
     return { delivered: false, error: err instanceof Error ? err.message : String(err), traceId };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
