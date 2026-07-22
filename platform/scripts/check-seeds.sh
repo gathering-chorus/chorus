@@ -23,16 +23,19 @@ fuseki=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" "${FUSEKI
 fuseki_write="OK"
 if [[ "$fuseki" == "200" ]]; then
   CANARY="urn:jb:seeds/_canary_$(date +%s)"
-  FUSEKI_PW=$(sed -n 's/^FUSEKI_ADMIN_[^=]*=//p' /Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/.env 2>/dev/null | head -1)
+  # #3611 UNTANGLE — credential via the one door (fuseki-auth.sh → shared-infra
+  # fuseki-write.env), not a hand-rolled sed over gathering's .env. The old sed
+  # matched FUSEKI_ADMIN_USER or _PASSWORD, whichever line came first in the file.
+  source "$(dirname "${BASH_SOURCE[0]}")/fuseki-auth.sh"
   INSERT_OK=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
     -X POST "${FUSEKI_URL}/pods/update" \
     -H "Content-Type: application/sparql-update" \
-    -u "admin:${FUSEKI_PW}" \
+    "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
     --data "INSERT DATA { GRAPH <urn:jb:seeds/> { <${CANARY}> <urn:probe> \"canary\" } }" 2>/dev/null || echo "000")
   DELETE_OK=$(curl -sf -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
     -X POST "${FUSEKI_URL}/pods/update" \
     -H "Content-Type: application/sparql-update" \
-    -u "admin:${FUSEKI_PW}" \
+    "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
     --data "DELETE DATA { GRAPH <urn:jb:seeds/> { <${CANARY}> <urn:probe> \"canary\" } }" 2>/dev/null || echo "000")
   if [[ "$INSERT_OK" != "200" && "$INSERT_OK" != "204" ]] || [[ "$DELETE_OK" != "200" && "$DELETE_OK" != "204" ]]; then
     fuseki_write="FAIL"

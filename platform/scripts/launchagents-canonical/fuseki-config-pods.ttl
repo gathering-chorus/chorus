@@ -1,0 +1,31 @@
+# fuseki-config-pods.ttl (#3611 UNTANGLE) — canonical copy of the LIVE Fuseki
+# dataset config, verified against the running server 2026-07-22.
+#
+# DEPLOY TO: ~/.gathering/data/configuration/pods-simple.ttl  (FUSEKI_BASE
+# configuration dir — Fuseki discovers it there; the plist passes no --config).
+# Everything Fuseki-framework lives under the shared-infra runtime home
+# ~/.gathering/data (owner: Silas/ops) — never inside either product's repo
+# tree. The retired gathering-repo config (data/fuseki/configuration/
+# pods-native.ttl) is NOT what runs and must not be redeployed.
+#
+# /pods serves BOTH products (chorus graphs urn:chorus:*, gathering graphs
+# urn:gathering:* / urn:jb:*) from the single TDB2 store — the shared data
+# layer named in the #3611 boundary map.
+@prefix :        <#> .
+@prefix fuseki:  <http://jena.apache.org/fuseki#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ja:      <http://jena.hpl.hp.com/2005/11/Assembler#> .
+@prefix tdb2:    <http://jena.apache.org/2016/tdb#> .
+
+[] rdf:type fuseki:Server .
+
+:service rdf:type fuseki:Service ;
+    fuseki:name "pods" ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ;  fuseki:name "query"  ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ;  fuseki:name "sparql" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data"   ] ;
+    fuseki:dataset :tdbDataset .
+
+:tdbDataset rdf:type tdb2:DatasetTDB2 ;
+    tdb2:location "/Users/jeffbridwell/.gathering/data/fuseki-pods" .

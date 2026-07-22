@@ -20,6 +20,18 @@ if [ -f "$APP_ENV" ]; then
   set +a
 fi
 
+# #3611 UNTANGLE — chorus-api's ~14 Fuseki writers (fusekiWriteAuthFromEnv, #3566)
+# read the write credential from the shared-infra home beside the store, NOT from
+# gathering's .env. The app .env sourcing above remains ONLY for the non-Fuseki
+# residual (Twilio, Cost aggregation) — declared in the #3611 boundary map. The
+# shared-infra file wins over any same-named keys the .env happened to carry.
+FUSEKI_CRED_ENV="${FUSEKI_WRITE_ENV:-$HOME/.gathering/data/fuseki-write.env}"
+if [ -r "$FUSEKI_CRED_ENV" ]; then
+  set -a
+  source "$FUSEKI_CRED_ENV"
+  set +a
+fi
+
 # #3619 step 0 — source the realm secret so chorus-api can VERIFY service tokens
 # at the security envelope's allow path (CHORUS_SERVICE_TOKEN_SECRET; same env
 # file owl-api-launch.sh sources). Reference-only: the gitignored file holds the

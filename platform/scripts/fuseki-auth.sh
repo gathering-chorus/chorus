@@ -18,16 +18,17 @@
 #
 # Reads are NOT affected — only writers source this, and only on their write call.
 
-# #3630 — when the credential isn't already in-env, read it from its EXISTING
-# canonical home: the gathering app .env (the same file chorus-api-wrapper.sh and
-# the fuseki service source — no new secret home, no duplication). Targeted
-# extract of just the two keys (never source the whole .env, never echo the value).
-# Empty (→ anon → current behavior) until reachable, so safe to land ahead of the flip.
+# #3611 UNTANGLE (was #3630) — the credential's home is shared infra beside the
+# store it unlocks: $FUSEKI_BASE/fuseki-write.env (0600, provisioned by
+# fuseki-shiro-deploy.sh, owner: Silas/ops). Chorus's write lane no longer reads
+# gathering's repo tree; gathering's writers keep their own copy in their .env.
+# Targeted extract of just the two keys (never source the whole file, never echo
+# the value). Empty (→ anon → a 401 at the door) only until the file is provisioned.
 if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
-  _appenv="${GATHERING_APP_ENV:-${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/../jeff-bridwell-personal-site/.env}"
-  if [ -r "$_appenv" ]; then
-    FUSEKI_ADMIN_PASSWORD="$(grep -E '^FUSEKI_ADMIN_PASSWORD=' "$_appenv" | head -1 | cut -d= -f2-)"
-    : "${FUSEKI_ADMIN_USER:=$(grep -E '^FUSEKI_ADMIN_USER=' "$_appenv" | head -1 | cut -d= -f2-)}"
+  _credenv="${FUSEKI_WRITE_ENV:-$HOME/.gathering/data/fuseki-write.env}"
+  if [ -r "$_credenv" ]; then
+    FUSEKI_ADMIN_PASSWORD="$(grep -E '^FUSEKI_ADMIN_PASSWORD=' "$_credenv" | head -1 | cut -d= -f2-)"
+    : "${FUSEKI_ADMIN_USER:=$(grep -E '^FUSEKI_ADMIN_USER=' "$_credenv" | head -1 | cut -d= -f2-)}"
   fi
 fi
 
