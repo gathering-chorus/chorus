@@ -53,7 +53,24 @@ Enumeration method: the #3612 ratchet markers (`jeff-bridwell-personal-site`, `:
 
 ## Membrane test (AC2) — gathering serves with chorus fully stopped
 
-Script: `platform/scripts/test-product-membrane.sh` — stops all running `com.chorus.*` LaunchAgents (16 on 2026-07-22), probes gathering as a user (`:3000/health`, `:3000/`, Fuseki ping, `/pods` read), restarts chorus under an EXIT trap (a failure can never strand chorus stopped). Baseline probes green with chorus up; **live stop-run is the demo centerpiece** — run with Jeff watching.
+Script: `platform/scripts/test-product-membrane.sh` — stops all running `com.chorus.*` LaunchAgents, probes gathering as a user, restarts chorus under an EXIT trap.
+
+**Live run 2026-07-22 11:30 (Jeff's go): MEMBRANE FAIL — and the failure is a real finding, not a test defect.**
+
+| Probe (chorus down, 19 services stopped) | Result |
+|---|---|
+| `:3000/health`, `:3000/` (front door) | **DEAD** (no listener) |
+| `:3002/health` (gathering app, direct) | 200 — the product process never blinked |
+| Fuseki ping + `/pods` read | 200 / 200 |
+
+**Root cause:** since #2122, `:3000` — gathering's front door — is **chorus's caddy edge proxy** (`com.chorus.caddy`, `proving/config/caddy/Caddyfile`): `/borg/*` and `/api/chorus/*` → chorus-api `:3340`, everything else → the gathering app at `:3002`. Stop chorus and the product's public surface disappears even though the product itself is healthy. **Invariant #6 is violated in the running topology, by the #2122 design decision.** The Fuseki framework slice (this card's scope) held: store served fine with chorus down.
+
+**Disposition — Jeff's call at demo (options, not a decree):**
+1. **Gathering owns its front door** — a `com.gathering.*` proxy (or the app binding `:3000` again) serves the product; chorus pages reach in via routes it grants. Restores invariant #6 fully; small LAN-topology card.
+2. **Declare the edge proxy shared-infra** with an owner (like Fuseki) — honest label on the as-built, but the product's front door still dies with a chorus-branded service.
+3. **Accept as residual** — documented here, burns down under the umbrella.
+
+**Restore incident (fixed in the script):** the first restore left `com.chorus.hooks` unloaded (transient launchd bootstrap failure post-bootout) → brief team-wide fail-closed hook lockout (#2790), recovered by hand in ~1 min. The script now retries bootstrap 3× per service and names anything still down.
 
 ## Load-path verification (AC3)
 

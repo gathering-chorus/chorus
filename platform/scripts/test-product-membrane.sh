@@ -25,9 +25,13 @@ chorus_running() {
 
 # Gathering's serving surface, probed as a USER of the product (HTTP, not ps).
 # name|url|expect — expect is a grep -E pattern on the HTTP code.
+# 2026-07-22 run finding: :3000 is chorus's caddy edge (#2122) proxying the app's
+# real home :3002 — the front-door probe and the direct-app probe are SEPARATE
+# rows so the test distinguishes "product process dead" from "front door dead".
 PROBES=(
-  "app-health|http://localhost:3000/health|200"
-  "app-page|http://localhost:3000/|200|30[12]"
+  "frontdoor-health|http://localhost:3000/health|200"
+  "frontdoor-page|http://localhost:3000/|200|30[12]"
+  "app-direct|http://localhost:3002/health|200"
   "fuseki-ping|http://localhost:3030/\$/ping|200"
   "fuseki-read|http://localhost:3030/pods/sparql?query=ASK%7B%7D|200"
 )
@@ -37,7 +41,8 @@ probe_gathering() {
   for p in "${PROBES[@]}"; do
     IFS='|' read -r name url e1 e2 <<<"$p"
     local code
-    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$url" 2>/dev/null || echo "000")
+    # -w prints its own 000 on connect failure — no || fallback, or codes double up.
+    code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$url" 2>/dev/null) || true
     local ok="FAIL"
     if [[ "$code" =~ ^(${e1}${e2:+|$e2})$ ]]; then ok="ok"; else all_ok=1; fi
     echo "[$phase] $name $url -> $code $ok" | tee -a "$RESULTS"
@@ -47,11 +52,26 @@ probe_gathering() {
 
 STOPPED=()
 restore_chorus() {
+  # 2026-07-22 run finding: bootstrap right after bootout can fail transiently
+  # (launchd I/O error) — the first run left com.chorus.hooks unloaded, which is
+  # a TEAM-WIDE fail-closed lockout (#2790). Retry each bootstrap up to 3x and
+  # report any service that still refused; kickstart is useless after bootout
+  # (the label no longer exists in the domain), so it is not a fallback.
+  local failed=()
   for label in "${STOPPED[@]+"${STOPPED[@]}"}"; do
-    launchctl bootstrap "gui/$UID_N" "$HOME/Library/LaunchAgents/$label.plist" 2>/dev/null \
-      || launchctl kickstart "gui/$UID_N/$label" 2>/dev/null || true
+    local ok=1
+    for _try in 1 2 3; do
+      if launchctl bootstrap "gui/$UID_N" "$HOME/Library/LaunchAgents/$label.plist" 2>/dev/null; then
+        ok=0; break
+      fi
+      sleep 1
+    done
+    [ "$ok" -eq 0 ] || failed+=("$label")
   done
-  echo "[restore] chorus services restarted: ${#STOPPED[@]}" | tee -a "$RESULTS"
+  echo "[restore] chorus services restarted: $(( ${#STOPPED[@]} - ${#failed[@]} ))/${#STOPPED[@]}" | tee -a "$RESULTS"
+  if [ "${#failed[@]}" -gt 0 ]; then
+    echo "[restore] STILL DOWN — fix by hand NOW (hooks down = team lockout): ${failed[*]}" | tee -a "$RESULTS"
+  fi
 }
 
 main() {
