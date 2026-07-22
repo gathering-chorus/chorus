@@ -16,21 +16,48 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CANONICAL="$SCRIPT_DIR/launchagents-canonical/fuseki-shiro.ini"
 RUNTIME="${FUSEKI_SHIRO_RUNTIME:-$HOME/.gathering/data/shiro.ini}"
-# Credential's canonical home is the gathering app .env (same file the fuseki
-# service + chorus-api-wrapper source) — not a new secrets file.
-APP_ENV="${GATHERING_APP_ENV:-${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/../jeff-bridwell-personal-site/.env}"
+# #3611 UNTANGLE — the credential's canonical home is shared infra beside the
+# store: $FUSEKI_BASE/fuseki-write.env (0600, owner: Silas/ops). This script is
+# its PROVISIONER. Bootstrap (first run, file absent) reads the credential from
+# GATHERING_APP_ENV — an explicit, operator-supplied path, no hardcoded reach
+# into gathering's tree — and writes the shared-infra file. Every later run,
+# and every chorus writer, reads only the shared-infra home.
+CRED_ENV="${FUSEKI_WRITE_ENV:-$HOME/.gathering/data/fuseki-write.env}"
 
 # --- read the credential (fail-closed; targeted, never echo it) ---
-if [ ! -r "$APP_ENV" ]; then
-  echo "fuseki-shiro-deploy: app .env unreadable at $APP_ENV — refusing (fail-closed)" >&2
+# Absent key → empty string, NOT a set -e death: grep exits 1 on no-match and a
+# failing $(...) in an assignment kills the script silently. FUSEKI_ADMIN_USER
+# is legitimately absent (defaults to admin), so tolerate no-match here and let
+# the explicit -z check below own the fail-closed decision.
+read_key() { grep -E "^$2=" "$1" 2>/dev/null | head -1 | cut -d= -f2- || true; }
+if [ -r "$CRED_ENV" ]; then
+  FUSEKI_ADMIN_PASSWORD="$(read_key "$CRED_ENV" FUSEKI_ADMIN_PASSWORD)"
+  FUSEKI_ADMIN_USER="$(read_key "$CRED_ENV" FUSEKI_ADMIN_USER)"
+elif [ -n "${GATHERING_APP_ENV:-}" ] && [ -r "$GATHERING_APP_ENV" ]; then
+  FUSEKI_ADMIN_PASSWORD="$(read_key "$GATHERING_APP_ENV" FUSEKI_ADMIN_PASSWORD)"
+  FUSEKI_ADMIN_USER="$(read_key "$GATHERING_APP_ENV" FUSEKI_ADMIN_USER)"
+else
+  echo "fuseki-shiro-deploy: no credential source — $CRED_ENV absent and GATHERING_APP_ENV not set/readable (bootstrap) — refusing (fail-closed)" >&2
   exit 1
 fi
-FUSEKI_ADMIN_PASSWORD="$(grep -E '^FUSEKI_ADMIN_PASSWORD=' "$APP_ENV" | head -1 | cut -d= -f2-)"
 export FUSEKI_ADMIN_PASSWORD
 if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
-  echo "fuseki-shiro-deploy: FUSEKI_ADMIN_PASSWORD not found in app .env — refusing (fail-closed)" >&2
+  echo "fuseki-shiro-deploy: FUSEKI_ADMIN_PASSWORD not found in credential source — refusing (fail-closed)" >&2
   exit 1
 fi
+
+# --- provision/refresh the shared-infra credential file (0600, atomic) ---
+provision_credenv() {
+  umask 077
+  local tmp
+  tmp="$(mktemp "$(dirname "$CRED_ENV")/.fuseki-write.XXXXXX")" || { echo "provision: mktemp failed" >&2; return 1; }
+  {
+    printf 'FUSEKI_ADMIN_USER=%s\n' "${FUSEKI_ADMIN_USER:-admin}"
+    printf 'FUSEKI_ADMIN_PASSWORD=%s\n' "$FUSEKI_ADMIN_PASSWORD"
+  } > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$CRED_ENV"
+}
 
 # --- substitute ONLY the credential placeholder; write 0600 ATOMICALLY ---
 # (#3630 review, Kade): render to a temp file in the SAME dir, then mv into place.
@@ -65,11 +92,12 @@ case "${1:-deploy}" in
     rm -f "$tmp"
     ;;
   deploy)
+    provision_credenv
     render "$RUNTIME"
     # #3630 review (Wren): witness the flip operation on the spine.
     "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-      fuseki.shiro.deployed "${DEPLOY_ROLE:-silas}" runtime="$RUNTIME" writes=authcBasic 2>/dev/null || true
-    echo "fuseki-shiro-deploy: wrote $RUNTIME (0600). Fuseki must reload to apply —"
+      fuseki.shiro.deployed "${DEPLOY_ROLE:-silas}" runtime="$RUNTIME" writes=authcBasic credenv="$CRED_ENV" 2>/dev/null || true
+    echo "fuseki-shiro-deploy: wrote $RUNTIME (0600) + provisioned $CRED_ENV (0600). Fuseki must reload to apply —"
     echo "  launchctl kickstart -k gui/$(id -u)/com.gathering.fuseki   (run on GO; this is the live flip)"
     ;;
   *)

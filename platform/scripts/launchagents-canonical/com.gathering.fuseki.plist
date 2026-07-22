@@ -2,18 +2,27 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- #3611 UNTANGLE — canonicalized to the LIVE service (verified against the
+         running LaunchAgent 2026-07-22). Fuseki is SHARED INFRA (owner: Silas/ops):
+         server, config, and store all live under the runtime home ~/.gathering/data
+         (FUSEKI_BASE), never inside either product's repo tree. The previous
+         canonical here pointed at homebrew fuseki + a config INSIDE gathering's
+         repo checkout + /tmp logs — none of which is what runs. Dataset config is
+         discovered via FUSEKI_BASE/configuration/ (see fuseki-config-pods.ttl
+         beside this file for the canonical copy). -->
     <key>Label</key>
     <string>com.gathering.fuseki</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/fuseki-server</string>
-        <string>--config=/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/fuseki/configuration/pods-native.ttl</string>
+        <string>/Users/jeffbridwell/.gathering/data/fuseki-5.1.0/fuseki-server</string>
         <string>--port=3030</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
         <key>JAVA_HOME</key>
         <string>/opt/homebrew/opt/openjdk</string>
+        <key>FUSEKI_BASE</key>
+        <string>/Users/jeffbridwell/.gathering/data</string>
         <key>JVM_ARGS</key>
         <string>-Xmx2g</string>
     </dict>
@@ -22,8 +31,8 @@
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/tmp/fuseki.log</string>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/fuseki.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/fuseki.log</string>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/fuseki.log</string>
 </dict>
 </plist>

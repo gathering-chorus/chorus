@@ -1,0 +1,45 @@
+# Gathering edge Caddyfile (#3611 UNTANGLE; was the chorus edge-proxy, #2122).
+#
+# OWNERSHIP FLIP: :3000 is GATHERING'S front door, so the service that binds it
+# is gathering's (com.gathering.edge) — invariant #6: the product serves with
+# chorus fully stopped (proven by test-product-membrane.sh). Chorus pages reach
+# in via routes this file GRANTS (/borg/*, /api/chorus/* → chorus-api :3340);
+# when chorus is down those routes 502 while the product keeps serving. That is
+# the correct failure direction.
+#
+# DEPLOY TO: ~/.gathering/data/caddy/Caddyfile (runtime home — the plist points
+# there, never into a repo checkout; same rule as the fuseki plist, #3611).
+
+{
+	# Disable automatic HTTPS for localhost — keep cleartext for dev loop.
+	auto_https off
+	# Admin API on a non-clashing port so Caddy can be reloaded without touching :3000.
+	admin localhost:2019
+}
+
+:3000 {
+	# Borg pages → chorus-api. Strip the /borg prefix and re-add so chorus-api
+	# sees the same path the upstream expects.
+	handle_path /borg/* {
+		rewrite * /borg{uri}
+		reverse_proxy localhost:3340
+	}
+
+	# Chorus API (#2122 Wren gotcha): /borg/* pages' JS fetches /api/chorus/*
+	# relatively — on :3000 that resolves here, not on :3340. Proxy it through
+	# so data panels hydrate for bookmarked entry via Caddy.
+	handle /api/chorus/* {
+		reverse_proxy localhost:3340
+	}
+
+	# Everything else → Gathering on its app port.
+	reverse_proxy localhost:3002
+
+	log {
+		output file /Users/jeffbridwell/Library/Logs/Gathering/edge-caddy-access.log {
+			roll_size 10mb
+			roll_keep 5
+		}
+		format json
+	}
+}
