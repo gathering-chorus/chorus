@@ -117,10 +117,21 @@ export function clearRun(card: number, dir: string = RUNS_DIR): void {
 }
 
 /** The per-card log a detached act run streams to; its tail carries the WERK_EXIT
- *  sentinel the poll-time reconcile reads (durable, survives an mcp restart). */
+ *  sentinel the poll-time reconcile reads (durable, survives an mcp restart).
+ *  #3664: legacy fallback only — new runs write runLogPath (per-RUN, never shared). */
 export function logPath(card: number, dir: string = RUNS_DIR): string {
   assertCardId(card);
   return path.join(dir, `${card}.log`);
+}
+
+/** #3664 — THIS run's own log (runId-keyed). The shared per-card log meant every
+ *  start truncated the previous run's output, so a relaunch destroyed the failed
+ *  run's evidence (#3660: cause unrecoverable). One file per run; the record's
+ *  `logFile` points at it; a retry can never clobber prior evidence. */
+export function runLogPath(card: number, runId: string, dir: string = RUNS_DIR): string {
+  assertCardId(card);
+  const safe = runId.replace(/[^A-Za-z0-9._-]/g, '_');
+  return path.join(dir, `${card}-${safe}.log`);
 }
 
 /** #3458 — poll-time transition: a detached act run writes its result to the log
@@ -133,13 +144,23 @@ export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun 
   if (!run || run.phase !== 'running') return run;
   let log = '';
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is RUNS_DIR + `${card}.log`; card asserted positive-int (assertCardId)
-    log = readFileSync(logPath(card, dir), 'utf8');
+    // #3664 — read THIS run's own log; legacy records (no logFile) use the per-card path.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- run.logFile was written by us (runLogPath: RUNS_DIR + sanitized runId); legacy path is RUNS_DIR + `${card}.log`, card asserted positive-int
+    log = readFileSync(run.logFile ?? logPath(card, dir), 'utf8');
   } catch {
     return run; // no log yet → still running
   }
   const code = parseExitSentinel(log);
   if (code === null) return run; // act still in flight
+  // #3664 — a go-run can exit 0 while the witness HELD it (go given, demo not proven:
+  // werk.yml gates merge/deploy/accept on `proven`, so they were SKIPPED and the job
+  // still succeeded). Marking that 'landed' is a lie — nothing merged. Surface it as
+  // 'failed' with the held reason so the poll tells the truth and a re-invoke (after
+  // recording the missing gate/gather/go) legitimately retries.
+  if (code === 0 && run.go && /\[HELD\]/.test(log)) {
+    const heldLine = log.split('\n').find((l) => l.includes('[HELD]'))?.trim().slice(0, 300);
+    return markPhase(card, 'failed', { failureReason: heldLine || 'held: GO given but demo not proven' }, dir);
+  }
   // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
   // run (go:false) reached 'presented'. Non-zero → failed with the child reason.
   if (code === 0) return markPhase(card, run.go ? 'landed' : 'presented', {}, dir);

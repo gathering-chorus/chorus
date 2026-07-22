@@ -29,7 +29,7 @@ import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { decideRunAction, patchSuperseded } from './werk-run-state';
-import { readRun, writeRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
+import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -2244,8 +2244,26 @@ async function executeChorusWerk(
   // #3458 — advance a finished DETACHED run to its terminal phase from the on-disk
   // log (the act wrote WERK_EXIT there, not back through this already-returned call)
   // BEFORE deciding, so a poll reflects the true state.
-  reconcileRunning(args.card_id, runsDir);
-  const existingRun = readRun(args.card_id, runsDir);
+  // #3664 — the poll that DISCOVERS a failure must REPORT it, not silently retry.
+  // Before: reconcile marked 'failed' and decideRunAction immediately started a fresh
+  // act, overwriting the record — the failureReason never reached any caller (the
+  // #3660 "bare werk.failed, cause unrecoverable" defect). Now the discovering poll
+  // attaches with the reason; a SUBSEQUENT re-invoke (record already 'failed') retries.
+  const preReconcile = readRun(args.card_id, runsDir);
+  const existingRun = reconcileRunning(args.card_id, runsDir);
+  if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
+          role: args.role, card_id: args.card_id, accepter,
+          failureReason: existingRun.failureReason,
+          note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
+        }),
+      }],
+    };
+  }
   // #3538 — a PRESENTED record for a SUPERSEDED patch must re-demo the new commit.
   // Compare the werk's CURRENT patch-id to the recorded one: if HEAD advanced (the
   // caller committed a fix after the present), headChanged → start a fresh run
@@ -2287,8 +2305,12 @@ async function executeChorusWerk(
   // above reconciles the phase from the log). Interpolated values are controlled
   // (validated card_id:number + role/accepter enums + fixed paths), so the bash -c
   // string carries no injection surface.
-  const runId = `${args.card_id}-${args.role}-${process.pid}`;
-  const log = logPath(args.card_id, runsDir);
+  // #3664 — runId carries a timestamp (process.pid alone collided across starts from
+  // the same server, which is exactly what let a relaunch reuse+truncate the log).
+  const runId = `${args.card_id}-${args.role}-${Date.now()}`;
+  // #3664 — per-RUN log: a relaunch writes its own file and can never truncate the
+  // previous run's evidence (the #3660 unrecoverable-failure-reason defect).
+  const log = runLogPath(args.card_id, runId, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter}`;
@@ -2303,6 +2325,7 @@ async function executeChorusWerk(
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
     patchId: currentPatch, // #3538 — record the patch so a later new-commit re-invoke re-demos
+    logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
   return {
     content: [{
@@ -2340,7 +2363,28 @@ async function executeChorusWerkLand(
   // hurt most (the merge dropped, the accept never ran → WIP-limbo, hand-recovery).
   // A re-invoke reads the run's real phase: a GO after a 'presented' stop starts
   // the land; a land already running/landed/failed ATTACHES — never a second merge.
-  const existingLand = readRun(args.card_id, runsDir);
+  // #3664 — reconcile FIRST (the #3660 spurious-relaunch root): a finished detached
+  // land leaves {phase:'running', pid:dead, WERK_EXIT on disk}. Without reconciling,
+  // that read as stale-running → decideRunAction said START → a doomed third act run
+  // failed "no werk" and OVERWROTE the landed record. Reconciling advances the record
+  // to its true terminal phase ('landed'/'failed') before any decision is made.
+  // And the poll that DISCOVERS the failure reports it (with the reason) instead of
+  // silently retrying; a SUBSEQUENT go re-invoke retries.
+  const preLandReconcile = readRun(args.card_id, runsDir);
+  const existingLand = reconcileRunning(args.card_id, runsDir);
+  if (preLandReconcile?.phase === 'running' && existingLand?.phase === 'failed') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
+          role: args.role, card_id: args.card_id, accepter,
+          failureReason: existingLand.failureReason,
+          note: `Land for #${args.card_id} FAILED — reason: ${existingLand.failureReason || 'unknown'}. Full log: ${existingLand.logFile || 'per-card log'}. Re-invoke chorus_werk go:true to retry.`,
+        }),
+      }],
+    };
+  }
   // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
   const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
   if (landAction.kind === 'attach') {
@@ -2357,13 +2401,32 @@ async function executeChorusWerkLand(
       }],
     };
   }
+  // #3664 — never start a land BLIND: with no werk worktree on disk there is nothing
+  // to land, and the act run is guaranteed to fail "no werk" — worse, its failure
+  // would overwrite the run record (how #3660's landed truth got erased). Refuse typed.
+  const fsMod = require('fs') as typeof import('fs');
+  const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkBase env-config + validated role enum + card_id:number, no untrusted input
+  if (!fsMod.existsSync(werkDir)) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: false, verb: 'chorus_werk', phase: 'no-werk', reason: 'no-werk',
+          role: args.role, card_id: args.card_id,
+          note: `No werk worktree at ${werkDir} — nothing to land for #${args.card_id}. If this card already landed+accepted, that IS the terminal state (check the board/spine); a land is never started blind.`,
+        }),
+      }],
+    };
+  }
   // #3458 — START the land DETACHED, same model as Half A: the wrapper streams the
-  // go-gated land job (merge → ff-sync → deploy-prod → accept) to the per-card log and
+  // go-gated land job (merge → ff-sync → deploy-prod → accept) to the per-run log and
   // appends WERK_EXIT when done. Returns immediately; the caller polls (the attach
   // branch reconciles go:true + exit 0 → 'landed'). No held connection on the land's
   // deploy step → no drop there either.
-  const runId = `${args.card_id}-${args.role}-${process.pid}-land`;
-  const log = logPath(args.card_id, runsDir);
+  // #3664 — timestamped runId + per-run log, same as Half A (evidence survives retries).
+  const runId = `${args.card_id}-${args.role}-${Date.now()}-land`;
+  const log = runLogPath(args.card_id, runId, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter} --input go=true`;
@@ -2377,6 +2440,7 @@ async function executeChorusWerkLand(
   writeRun({
     runId, card: args.card_id, role: args.role, go: true,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
+    logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
   return {
     content: [{

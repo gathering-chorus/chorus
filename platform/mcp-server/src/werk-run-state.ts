@@ -35,6 +35,11 @@ export interface WerkRun {
    *  patch-id: if HEAD advanced (different patch), a 'presented' record is stale and
    *  the new commit must re-demo. Sibling of #3461's gather-gate patch-keying. */
   patchId?: string;
+  /** #3664 — THIS run's own log file (runId-keyed). Before this, every start truncated
+   *  the shared per-card log, so a relaunch destroyed the failed run's evidence (the
+   *  #3660 unrecoverable-reason defect). Reconcile reads the record's own log; absent
+   *  (pre-#3664 records) falls back to the legacy per-card path. */
+  logFile?: string;
 }
 
 export type RunAction =
