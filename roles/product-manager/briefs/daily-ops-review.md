@@ -1,50 +1,49 @@
-# Daily Ops Review — 2026-06-28
+# Daily Ops Review — 2026-07-22
 
 ## 1. Hooks Health
-**Status: YELLOW**
-`cargo check` passes (38s) with 8 warnings (1 duplicate). Warning count grew from 7 → 8 vs last review.
-Dead-code: 5 unused functions (`find_most_recent_pending`, `handle_approval_request`, `is_demo_or_done`, `has_test_run`, `has_production_code_edit`), 1 unused import, 2 unread fields (`chorus_worktree_override`, `at_step` x3).
+**Status: N/A**
+`messages/services/chorus-hooks` not present in this environment (host-local Cargo workspace). Cannot run `cargo check` remotely.
 
-**Action:** File cleanup card. `chorus_worktree_override` and `at_step` may signal abandoned feature paths, not just incidental noise.
+**Action:** Run on host; prior review (2026-06-28) showed 8 warnings — track trend there.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW**
-36 plist files in `proving/config/launchagents/` write stdout/stderr to `/tmp/`. Scope has grown since May review (was 2 named files). Pattern is now structural across all daemon agents.
+18 plist files in `config/launchagents/` + `proving/config/launchagents/` reference `/tmp/`. 33 in proving alone. Unchanged since June review — no remediation shipped.
 
-**Action:** CSC hygiene sweep for plist log paths — redirect to `~/Library/Logs/Chorus/`. Scope is large enough to warrant a card rather than spot fixes.
+**Action:** CSC hygiene card still open. Plist log paths should redirect to `~/Library/Logs/Chorus/`.
 
 ## 3. CLAUDE.md Fragment Staleness
-**Status: N/A**
-`messages/claudemd/` and `designing/claudemd/` directories not present in this repo. Only root `CLAUDE.md` exists.
+**Status: GREEN**
+24 fragments in `designing/claudemd/shared/` all last updated 2026-07-17 (5 days ago). Within threshold.
 
-**Action:** Verify correct path on host; confirm whether claudemd fragments are local-only artifacts excluded from git.
+**Action:** None today. Revisit if no update by 2026-07-24.
 
 ## 4. CSC Compliance
 **Status: RED**
-20+ files in `platform/scripts/` have hardcoded `/tmp/` paths. Unchanged from May review — no remediation has shipped. Top offenders: `bridge-subscriber.js` (runtime inbox), `coherence-check` (pulse/state), `bedroom-heartbeat.sh`, `look.sh`, `index-crawler-snapshots.sh`.
+15+ files in `platform/scripts/` have hardcoded `/tmp/` paths. Unchanged since May 2026 — no remediation has shipped across 6 weekly reviews. Top offenders: `bridge-subscriber.js` (runtime inbox), `coherence-check` (pulse+state), `bedroom-heartbeat.sh`, `look.sh`.
 
-**Action:** CSC sweep card unresolved since 2026-05-15. Assign owner or timebox for 2026-07. `bridge-subscriber.js` is highest risk (runtime, role-scoped paths).
+**Action:** Assign owner or formally accept risk. `bridge-subscriber.js` is highest-risk (runtime, role-scoped paths in production path).
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Repo is clean — 0 uncommitted changes in gathering-team. Peer repos (jeff-bridwell-personal-site, shared-observability, wordpress-blog) not accessible from this environment.
+Repo clean — 0 uncommitted changes. Only 5 role dirs present here (architect, kade, product-manager, silas, wren); engineer/jeff-bridwell-personal-site/shared-observability/wordpress-blog not cloned.
 
-**Action:** Spot-check peer repos locally at standup.
+**Action:** Spot-check absent repos on host at standup.
 
 ## 6. Stale WIP Cards
-**Status: YELLOW**
-`roles/kade/current-work.md` last committed 2026-06-21 (7 days). Still reflects #2180 (server.ts handler extraction, 39/~100 done) as active WIP — but recent commits show #3580–#3596 as the live work. `roles/wren/next-session.md` also stale since 2026-06-21.
+**Status: RED**
+`roles/kade/current-work.md` last updated 2026-04-18 (~95 days stale). Still shows #2180 (server.ts extraction, 39 handlers done) as active WIP — but shipped cards are now in the #3640–3661 range. `roles/wren/next-session.md` last touched 2026-07-17 (5 days).
 
-**Action:** Kade to refresh `current-work.md`; #2180 should be updated with current progress or marked parked. Wren to flag in morning summary.
+**Action:** Kade must refresh `current-work.md` — #2180 status is unknown and board is drifting from file. Wren's file acceptable but should refresh by end of week.
 
 ## 7. Domain Context Freshness
-**Status: RED**
-All 5 domain-context files (`chorus`, `infrastructure`, `music`, `photos`, `seeds`) last committed 2026-06-21 — 7 days ago today, crossing threshold. 7+ cards shipped in chorus/infrastructure/code domains since (#3580, #3581, #3586, #3587, #3590, #3593, #3596).
+**Status: GREEN → WATCH**
+All 5 domain-context files (`chorus`, `infrastructure`, `music`, `photos`, `seeds`) last updated 2026-07-17 — 5 days ago, within 7-day threshold. Kade shipped #3657 and #3661 on 2026-07-17 (code domain). No overrun today.
 
-**Action:** `domain-context-chorus.md` and `domain-context-infrastructure.md` need updates today. Silas (#3593) and Kade (#3596) are the relevant owners.
+**Action:** If no domain-context update by 2026-07-24, flag red. Chorus and infrastructure domains are highest activity.
 
 ## 8. Disk Delta
 **Status: N/A**
-No perf-baseline data available in this environment. LaunchAgent `com.chorus.perf-baseline.plist` exists but runtime snapshots are local-only.
+`data/` contains only `athena/` subdirectory — no perf-baseline snapshots available in this environment. LaunchAgent exists on host only.
 
-**Action:** Run perf-baseline comparison on host machine; no remote data to diff here.
+**Action:** Run perf-baseline comparison on host machine; no remote data to diff.
