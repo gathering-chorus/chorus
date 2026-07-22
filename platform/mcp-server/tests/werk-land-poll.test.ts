@@ -57,6 +57,8 @@ async function withServer(
     if (origBase === undefined) delete process.env.CHORUS_WERK_BASE;
     else process.env.CHORUS_WERK_BASE = origBase;
     fs.rmSync(runsDir, { recursive: true, force: true });
+    // Kade gather: the passed-in werkBase tmpdir is ours too — hermetic-by-default.
+    if (werkBase !== undefined) fs.rmSync(werkBase, { recursive: true, force: true });
   }
 }
 

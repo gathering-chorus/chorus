@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
-import { parseExitSentinel, parseHeldSentinel, extractFailureReason, type WerkRun, type WerkRunPhase } from './werk-run-state';
+import { parseExitSentinel, parseHeldSentinel, extractFailureReason, FAILURE_REASON_MAX, type WerkRun, type WerkRunPhase } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 
@@ -161,7 +161,7 @@ export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun 
   // (Silas gather: free-text [HELD] grep was fragile coupling to GHA log format).
   const held = code === 0 && run.go ? parseHeldSentinel(log) : null;
   if (held) {
-    return markPhase(card, 'failed', { failureReason: held.slice(0, 300) }, dir);
+    return markPhase(card, 'failed', { failureReason: held.slice(0, FAILURE_REASON_MAX) }, dir);
   }
   // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
   // run (go:false) reached 'presented'. Non-zero → failed with the child reason.

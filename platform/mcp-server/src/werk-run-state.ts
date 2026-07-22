@@ -133,6 +133,10 @@ export function decideRunAction(
  *   3. the last non-empty stderr line (the verb's actual message)
  *   4. fall back to the step name if nothing richer is present
  */
+/** #3664 (Kade gather) — cap on a stored failureReason: keeps the run record a small
+ *  readable pointer (full detail lives in the run's own log), not a log dump. */
+export const FAILURE_REASON_MAX = 300;
+
 export function extractFailureReason(stdout: string, stderr: string, step: string): string {
   const combined = `${stdout}\n${stderr}`;
   const jsonReason = combined.match(/"reason"\s*:\s*"([^"]+)"/);
@@ -140,7 +144,7 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
   const kvReason = combined.match(/\breason=([^\s,"]+)/);
   if (kvReason) return kvReason[1];
   const stderrLines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, 300);
+  if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, FAILURE_REASON_MAX);
   return step ? `step=${step} (no child reason surfaced)` : 'unknown';
 }
 

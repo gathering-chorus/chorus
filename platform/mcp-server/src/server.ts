@@ -2223,6 +2223,10 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // cannot happen — we removed the long hold, we did not paper over it with a detach (which
 // cost Jeff his in-session visibility). Jeff sees the presented variant here, in-session;
 // his GO re-invokes chorus_werk with go:true, resuming past the demo stop (#3311).
+// #3664 (Kade gather) — monotonic start counter: makes runId (and so the per-run log
+// path) unique even for two starts inside the same millisecond of the same process.
+let werkRunSeq = 0;
+
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2307,9 +2311,10 @@ async function executeChorusWerk(
   // above reconciles the phase from the log). Interpolated values are controlled
   // (validated card_id:number + role/accepter enums + fixed paths), so the bash -c
   // string carries no injection surface.
-  // #3664 — runId carries a timestamp (process.pid alone collided across starts from
-  // the same server, which is exactly what let a relaunch reuse+truncate the log).
-  const runId = `${args.card_id}-${args.role}-${Date.now()}`;
+  // #3664 — runId = timestamp + monotonic seq (process.pid alone collided across starts
+  // from the same server, which is exactly what let a relaunch reuse+truncate the log;
+  // Kade gather: timestamp alone still had a same-ms window — the seq closes it).
+  const runId = `${args.card_id}-${args.role}-${Date.now()}-${++werkRunSeq}`;
   // #3664 — per-RUN log: a relaunch writes its own file and can never truncate the
   // previous run's evidence (the #3660 unrecoverable-failure-reason defect).
   const log = runLogPath(args.card_id, runId, runsDir);
@@ -2425,8 +2430,8 @@ async function executeChorusWerkLand(
   // appends WERK_EXIT when done. Returns immediately; the caller polls (the attach
   // branch reconciles go:true + exit 0 → 'landed'). No held connection on the land's
   // deploy step → no drop there either.
-  // #3664 — timestamped runId + per-run log, same as Half A (evidence survives retries).
-  const runId = `${args.card_id}-${args.role}-${Date.now()}-land`;
+  // #3664 — timestamp+seq runId + per-run log, same as Half A (evidence survives retries).
+  const runId = `${args.card_id}-${args.role}-${Date.now()}-${++werkRunSeq}-land`;
   const log = runLogPath(args.card_id, runId, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
