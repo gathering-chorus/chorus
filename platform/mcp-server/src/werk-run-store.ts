@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
-import { parseExitSentinel, extractFailureReason, type WerkRun, type WerkRunPhase } from './werk-run-state';
+import { parseExitSentinel, parseHeldSentinel, extractFailureReason, type WerkRun, type WerkRunPhase } from './werk-run-state';
 
 export const RUNS_DIR = path.join(os.homedir(), '.chorus', 'werk-runs');
 
@@ -156,10 +156,12 @@ export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun 
   // werk.yml gates merge/deploy/accept on `proven`, so they were SKIPPED and the job
   // still succeeded). Marking that 'landed' is a lie — nothing merged. Surface it as
   // 'failed' with the held reason so the poll tells the truth and a re-invoke (after
-  // recording the missing gate/gather/go) legitimately retries.
-  if (code === 0 && run.go && /\[HELD\]/.test(log)) {
-    const heldLine = log.split('\n').find((l) => l.includes('[HELD]'))?.trim().slice(0, 300);
-    return markPhase(card, 'failed', { failureReason: heldLine || 'held: GO given but demo not proven' }, dir);
+  // recording the missing gate/gather/go) legitimately retries. Detection is the
+  // STRUCTURED `WERK_HELD=<reason>` sentinel the workflow's outcome step writes
+  // (Silas gather: free-text [HELD] grep was fragile coupling to GHA log format).
+  const held = code === 0 && run.go ? parseHeldSentinel(log) : null;
+  if (held) {
+    return markPhase(card, 'failed', { failureReason: held.slice(0, 300) }, dir);
   }
   // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
   // run (go:false) reached 'presented'. Non-zero → failed with the child reason.

@@ -165,14 +165,25 @@ test('reconcile reads the RECORD\'s own log and extracts the failure reason from
 
 // ── Held truth: exit 0 with a [HELD] witness is not a landed lie ──────────────
 
-test('go-run that exited 0 but was HELD (go given, demo not proven) reports failed+held, not landed', async () => {
+test('go-run that exited 0 but was HELD (structured WERK_HELD sentinel) reports failed+held, not landed', async () => {
   const sink: SpawnCall[] = [];
   await withServer(async (client, runsDir) => {
     seedRun(runsDir, { card: 3662, go: true, phase: 'running', pid: DEAD_PID },
-      '::error ::[HELD] #3662 — GO given but NOT landed. Witness missing: no-gather-reply\nWERK_EXIT=0\n');
+      'merge skipped (not proven)\nWERK_HELD=held: witness missing [no-gather-reply] for this patch\nWERK_EXIT=0\n');
     const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'wren', card_id: 3662 } });
     const text = textOf(res);
     assert.ok(!/"phase":"landed"/.test(text), 'a held run must never read as landed');
     assert.match(text, /held/i, `held state surfaces to the poller, got: ${text}`);
+  }, sink, fs.mkdtempSync(path.join(os.tmpdir(), 'werk-base-empty-')));
+});
+
+test('go-run exit 0 WITHOUT a WERK_HELD sentinel is landed — free-form log text (e.g. a debug line quoting "[HELD]") cannot misclassify', async () => {
+  const sink: SpawnCall[] = [];
+  await withServer(async (client, runsDir) => {
+    seedRun(runsDir, { card: 3663, go: true, phase: 'running', pid: DEAD_PID },
+      'echoing docs that mention [HELD] handling…\nmerge…deploy…accept…\nWERK_EXIT=0\n');
+    const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'wren', card_id: 3663 } });
+    assert.match(textOf(res), /"phase":"landed"/, 'only the structured sentinel means held (Silas gather)');
+    assert.equal(sink.length, 0, 'no spawn');
   }, sink, fs.mkdtempSync(path.join(os.tmpdir(), 'werk-base-empty-')));
 });

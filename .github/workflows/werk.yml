@@ -261,6 +261,9 @@ jobs:
             # prove it. Must NOT read as a green "presented". ::error:: annotates the run loudly;
             # witness-close records werk.held (distinct phase). This is HELD, not landed, not done.
             echo "::error ::[HELD] #${CARD_ID} — GO given but NOT landed. Witness missing: ${{ steps.demo.outputs.held_reason }}. Card STAYS WIP — this is NOT done. Record the missing gate/gather/go for THIS patch, then re-run." >&2
+            # #3664 — STRUCTURED held sentinel (parallel to WERK_EXIT): the poll-time
+            # reconcile keys on this exact machine contract, never on free-form log text.
+            echo "WERK_HELD=held: witness missing ${{ steps.demo.outputs.held_reason }} for this patch (GO given, not proven)"
           else
             echo "[presented] #${CARD_ID} — variant up, present-only (no go). Re-invoke with go to land."
           fi

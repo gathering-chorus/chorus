@@ -155,6 +155,20 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
  *
  * Last match wins (a reused log only ever has one real run, but be defensive).
  */
+/**
+ * #3664 (Silas gather) — structured HELD sentinel, parallel to WERK_EXIT. The act
+ * run's outcome step writes `WERK_HELD=<reason>` explicitly when a GO was given
+ * but the witness did not prove (merge/deploy/accept were SKIPPED, job exits 0).
+ * Matching free-form `[HELD]` log text was fragile coupling to GHA output format;
+ * this is a deliberate machine contract. null → not held. Last match wins.
+ */
+export function parseHeldSentinel(logContent: string): string | null {
+  const matches = logContent.match(/^WERK_HELD=(.*)$/gm);
+  if (!matches || matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  return last.slice('WERK_HELD='.length).trim() || 'held: GO given but demo not proven';
+}
+
 export function parseExitSentinel(logContent: string): number | null {
   const matches = logContent.match(/WERK_EXIT=(\d+)/g);
   if (!matches || matches.length === 0) return null;

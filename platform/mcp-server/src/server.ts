@@ -20,6 +20,8 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { execFile, spawn } from 'child_process';
+// #3664 — top-level (Silas gather: no inline require; consistent with the module's imports)
+import { existsSync } from 'fs';
 import { promisify } from 'util';
 import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
@@ -2404,10 +2406,9 @@ async function executeChorusWerkLand(
   // #3664 — never start a land BLIND: with no werk worktree on disk there is nothing
   // to land, and the act run is guaranteed to fail "no werk" — worse, its failure
   // would overwrite the run record (how #3660's landed truth got erased). Refuse typed.
-  const fsMod = require('fs') as typeof import('fs');
   const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkBase env-config + validated role enum + card_id:number, no untrusted input
-  if (!fsMod.existsSync(werkDir)) {
+  if (!existsSync(werkDir)) {
     return {
       content: [{
         type: 'text' as const,
