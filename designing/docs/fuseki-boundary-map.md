@@ -63,14 +63,13 @@ Script: `platform/scripts/test-product-membrane.sh` — stops all running `com.c
 | `:3002/health` (gathering app, direct) | 200 — the product process never blinked |
 | Fuseki ping + `/pods` read | 200 / 200 |
 
-**Root cause:** since #2122, `:3000` — gathering's front door — is **chorus's caddy edge proxy** (`com.chorus.caddy`, `proving/config/caddy/Caddyfile`): `/borg/*` and `/api/chorus/*` → chorus-api `:3340`, everything else → the gathering app at `:3002`. Stop chorus and the product's public surface disappears even though the product itself is healthy. **Invariant #6 is violated in the running topology, by the #2122 design decision.** The Fuseki framework slice (this card's scope) held: store served fine with chorus down.
+**Root cause:** since #2122, `:3000` — gathering's front door — was **chorus's caddy edge proxy** (`com.chorus.caddy`): `/borg/*` and `/api/chorus/*` → chorus-api `:3340`, everything else → the gathering app at `:3002`. Stop chorus and the product's public surface disappeared even though the product itself was healthy. Invariant #6 violated in the running topology by the #2122 design decision.
 
-**Disposition — Jeff's call at demo (options, not a decree):**
-1. **Gathering owns its front door** — a `com.gathering.*` proxy (or the app binding `:3000` again) serves the product; chorus pages reach in via routes it grants. Restores invariant #6 fully; small LAN-topology card.
-2. **Declare the edge proxy shared-infra** with an owner (like Fuseki) — honest label on the as-built, but the product's front door still dies with a chorus-branded service.
-3. **Accept as residual** — documented here, burns down under the umbrella.
+**Fixed same day (Jeff's direction, 13:05): the edge is now gathering-owned.** `com.chorus.caddy` retired (plist archived); **`com.gathering.edge`** runs the same caddy routes from the runtime home `~/.gathering/data/caddy/Caddyfile` (canonical: `launchagents-canonical/{com.gathering.edge.plist, gathering-edge-Caddyfile}`; old repo-path Caddyfile removed). Chorus pages reach in via routes the product's edge GRANTS; with chorus down those routes 502 while the product serves — the correct failure direction.
 
-**Restore incident (fixed in the script):** the first restore left `com.chorus.hooks` unloaded (transient launchd bootstrap failure post-bootout) → brief team-wide fail-closed hook lockout (#2790), recovered by hand in ~1 min. The script now retries bootstrap 3× per service and names anything still down.
+**Re-run 2026-07-22 13:09 with the fix: MEMBRANE OK.** All five probes 200 with all 15 running chorus services stopped — front door, app-direct, and both Fuseki probes. AC2 holds as written.
+
+**Restore incident from the first run (fixed in the script):** the restore left `com.chorus.hooks` unloaded (transient launchd bootstrap failure post-bootout) → brief team-wide fail-closed hook lockout (#2790), recovered by hand in ~1 min. The script now retries bootstrap 3× per service and NAMES anything still down — on the second run it caught `com.chorus.session-watcher` exactly as designed (restored by hand seconds later).
 
 ## Load-path verification (AC3)
 
