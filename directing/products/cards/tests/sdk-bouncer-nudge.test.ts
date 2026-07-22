@@ -90,6 +90,46 @@ describe('sendCardApprovalNudge (#2924 AC1)', () => {
     expect(result.error).toContain('econnrefused');
   });
 
+  // #3663 — the abort timer must not outlive the call on ANY settle path.
+  // The rejection path leaked it: jest workers stayed alive on the pending
+  // 5s timer, jest force-exited rc≠0, and nightly run_coverage graded
+  // coverage:cards FAIL ("no clean measurement") every morning.
+  describe('abort-timer cleanup (#3663)', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    test('no pending timer after fetch rejects', async () => {
+      jest.useFakeTimers();
+      const fakeFetch: Parameters<typeof sendCardApprovalNudge>[0]['fetchImpl'] =
+        async () => { throw new Error('econnrefused'); };
+
+      await sendCardApprovalNudge({ from: 'wren', to: 'wren', message: 'm', fetchImpl: fakeFetch });
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    test('no pending timer after non-OK response', async () => {
+      jest.useFakeTimers();
+      const fakeFetch: Parameters<typeof sendCardApprovalNudge>[0]['fetchImpl'] =
+        async () => ({ ok: false, status: 503, text: async () => 'pulse down' });
+
+      await sendCardApprovalNudge({ from: 'wren', to: 'wren', message: 'm', fetchImpl: fakeFetch });
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    test('no pending timer after success', async () => {
+      jest.useFakeTimers();
+      const fakeFetch: Parameters<typeof sendCardApprovalNudge>[0]['fetchImpl'] =
+        async () => ({ ok: true, status: 202, text: async () => '' });
+
+      await sendCardApprovalNudge({ from: 'wren', to: 'wren', message: 'm', fetchImpl: fakeFetch });
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+  });
+
   test('returns delivered:false with no-fetch-impl when fetch unavailable', async () => {
     const origFetch = (globalThis as any).fetch;
     (globalThis as any).fetch = undefined;

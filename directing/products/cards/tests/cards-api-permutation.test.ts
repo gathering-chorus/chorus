@@ -1,3 +1,5 @@
+// @test-type: unit — data-driven CLI permutations against FixtureClient;
+// blast-radius mocked at the module seam (#3663), no live socket/session.
 /**
  * Data-driven API permutation tests for cards CLI (#2245).
  *
@@ -7,6 +9,15 @@
  *
  * Hermetic — no real Vikunja connection, no network.
  */
+
+// #3663 — the hermetic claim above was false for move→WIP rows: blast-radius
+// was unmocked, so generateBlastRadius fetched live :3000/:3340 (5s timeout
+// per call) and blew the jest budget under coverage instrumentation. Mock the
+// module seam like every other moveCard suite does.
+jest.mock('../src/blast-radius', () => ({
+  generateBlastRadius: jest.fn(),
+  formatBlastComment: jest.fn(),
+}));
 
 import * as path from 'path';
 import * as fs from 'fs';
