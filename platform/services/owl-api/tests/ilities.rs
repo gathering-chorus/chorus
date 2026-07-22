@@ -29,6 +29,8 @@ fn table() -> RouteTable {
         repo_target: "generated/domain".into(),  // #3488 — repo land location
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-compat)
+        tree_edges: vec![],
+        tree_order: None,
     }
 }
 

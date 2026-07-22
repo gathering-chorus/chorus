@@ -2157,6 +2157,8 @@ chorus:StepShape a sh:NodeShape ;
 # --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
 chorus:ValueStreamShape a sh:NodeShape ;
     sh:targetClass chorus:ValueStream ;
+    chorus:treeEdge chorus:contains, chorus:hasValueStream ;  # #3660 — the generated /tree read descends these (the proven (contains/hasValueStream?)* recursion)
+    chorus:treeOrder chorus:stageOrder ;                      # #3660 — siblings rank by stage order; unranked fall to the bottom
     sh:property [ sh:path rdfs:label     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:trigger ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:outcome ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -3016,6 +3018,17 @@ chorus:bouncedTo a owl:ObjectProperty ;
 chorus:stageOrder a owl:DatatypeProperty ;
     rdfs:domain chorus:Vertebra ;
     rdfs:range xsd:integer .
+
+# #3660 — metamodel annotations for the generated /tree read (placement: Silas 2026-07-21).
+# Kind-level: a shape declaring a tree surface MUST carry treeEdge (minCount 1);
+# treeOrder optional — absent means unordered, generator falls back to label sort.
+chorus:treeEdge a owl:AnnotationProperty ;
+    rdfs:comment "Names the ObjectProperty that forms the recursive tree edge for this kind's generated /tree read." ;
+    rdfs:range owl:ObjectProperty .
+
+chorus:treeOrder a owl:AnnotationProperty ;
+    rdfs:comment "Names the DatatypeProperty that ranks siblings within a tree level." ;
+    rdfs:range owl:DatatypeProperty .
 
 chorus:domain a owl:DatatypeProperty ;
     rdfs:comment "Role's domain label for viz display." ;
