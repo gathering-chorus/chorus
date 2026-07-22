@@ -42,9 +42,13 @@ running_cdhash() {
   pid=$(launchctl list "$label" 2>/dev/null | grep '"PID"' | grep -o '[0-9]*' || true)
   if [ -z "$pid" ]; then echo ""; return; fi
   local bin_path
-  bin_path=$(lsof -p "$pid" 2>/dev/null | awk '$4=="txt" {print $NF; exit}')
+  # #3662 — `|| true`: awk's early `exit` SIGPIPEs lsof when the target holds
+  # more fds than the pipe buffer absorbs (the wedged nightly bash did), and
+  # under set -euo pipefail the whole verb died rc=141 mid-stop with the value
+  # already captured. Size-dependent, so small services never showed it.
+  bin_path=$(lsof -p "$pid" 2>/dev/null | awk '$4=="txt" {print $NF; exit}' || true)
   if [ -z "$bin_path" ] || [ ! -e "$bin_path" ]; then echo ""; return; fi
-  codesign -d --verbose=4 "$bin_path" 2>&1 | awk -F'=' '/^CDHash/{print $2; exit}'
+  codesign -d --verbose=4 "$bin_path" 2>&1 | awk -F'=' '/^CDHash/{print $2; exit}' || true
 }
 
 # Read the cdhash of an installed binary (without running).
