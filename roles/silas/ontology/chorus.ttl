@@ -806,6 +806,12 @@ chorus:product-clearing
     chorus:partOf chorus:chorusProduct ;
     chorus:hasDomain chorus:messages-domain, chorus:messages, chorus:streams .
 
+# The Clearing service (def: designing/data/service-instances.ttl, #3675 — first
+# Service instance). Structural edges live here per the #3603 split. atStep uses
+# the ValueStreamStep instance grammar (value-stream-step-*), not the Vertebra.
+chorus:messages-domain chorus:hosts chorus:service-clearing .
+chorus:service-clearing chorus:atStep chorus:value-stream-step-directing .
+
 # Spine (def: product-instances.ttl). Child product of The Clearing.
 chorus:product-spine
     chorus:atStep chorus:Directing ;
@@ -2198,6 +2204,7 @@ chorus:DomainShape a sh:NodeShape ;
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
     sh:targetClass chorus:Service ;
+    chorus:instancesGraph "urn:chorus:ontology" ;   # #3675: serve Service instances from the ontology graph where they live (ABox-in-ontology per the #3587/#3593 wipe-protection convention) — else the serve read defaults to the empty urn:chorus:instances and /services=0. Mirrors DomainShape's #3581 steward call.
     # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
     # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
     #   public = emitted to everyone · internal = authed callers only · secret = never

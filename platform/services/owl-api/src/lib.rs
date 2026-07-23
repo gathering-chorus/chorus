@@ -293,6 +293,25 @@ pub fn field_exposed(level: Option<&str>, authed: bool) -> bool {
     }
 }
 
+/// #3675 — the collection-side twin of entity_json's exposure gate. Same per-shape
+/// opt-in: a shape with NO exposure annotations passes everything (migration-safe);
+/// an annotated shape keeps only fields whose level passes field_exposed for this
+/// caller. Pure + unit-pinned; applied before the projection is queried.
+pub fn exposed_projection(
+    fields: Vec<(String, bool)>,
+    exposure: &[(String, String)],
+    authed: bool,
+) -> Vec<(String, bool)> {
+    if exposure.is_empty() {
+        return fields;
+    }
+    let level_of = |k: &str| exposure.iter().find(|(f, _)| f == k).map(|(_, l)| l.as_str());
+    fields
+        .into_iter()
+        .filter(|(n, _)| field_exposed(level_of(n), authed))
+        .collect()
+}
+
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
 /// emit routes from non-conformant input — L4 naming law enforced where the
 /// API is born, not audited after. Classes are CamelCase, properties are
@@ -2569,12 +2588,22 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         // direct-path fields (table.fields), ADDITIVELY (extra keys are safe under
         // ADR-047 — name/label/status stay): datatypes as their literal, edges as the
         // target's localname. Pure projection of the shape, so it can't go stale.
-        let extra: Vec<(String, bool)> = table
-            .fields
-            .iter()
-            .map(|f| (f.split('|').next().unwrap_or(f).to_string(), f.contains("|edge:")))
-            .filter(|(n, _)| n != "label" && n != "status")
-            .collect();
+        // #3675 — the ADR-048 §3 exposure gate applies to COLLECTION projection too
+        // (same per-shape opt-in as entity_json): the first exposure-annotated shape
+        // with a live instance (ServiceShape / service-clearing) showed /services
+        // emitting the secret-marked implementationPlan unauth. name/label/status stay
+        // as the row floor (the #3506 proven contract); extra fields pass field_exposed
+        // BEFORE entering the SPARQL projection — ungated fields are never even queried.
+        let extra: Vec<(String, bool)> = exposed_projection(
+            table
+                .fields
+                .iter()
+                .map(|f| (f.split('|').next().unwrap_or(f).to_string(), f.contains("|edge:")))
+                .filter(|(n, _)| n != "label" && n != "status")
+                .collect(),
+            &table.exposure,
+            authed,
+        );
         let opts: String = extra
             .iter()
             .enumerate()
@@ -3530,6 +3559,32 @@ mod tests {
         }
         // an entity carries no `count`
         assert!(!e.contains("\"count\""), "entity envelope must not carry count: {}", e);
+    }
+
+    // #3675 — collection projection honors the exposure gate (the /services leak).
+    #[test]
+    fn collection_projection_gated_by_exposure() {
+        let fields = vec![
+            ("overview".to_string(), false),
+            ("implementationPlan".to_string(), false),
+            ("asIs".to_string(), false),
+            ("hasDesignDoc".to_string(), true),
+        ];
+        let exposure = vec![
+            ("label".to_string(), "public".to_string()),
+            ("overview".to_string(), "internal".to_string()),
+            ("implementationPlan".to_string(), "secret".to_string()),
+        ];
+        // unauth on an annotated shape: everything non-public drops, incl. unmarked.
+        let unauth = exposed_projection(fields.clone(), &exposure, false);
+        assert!(unauth.is_empty(), "unauth must see no extra fields here: {:?}", unauth);
+        // authed: internal shows; secret and unmarked stay hidden.
+        let authed: Vec<String> =
+            exposed_projection(fields.clone(), &exposure, true).into_iter().map(|(n, _)| n).collect();
+        assert_eq!(authed, vec!["overview".to_string()], "authed = internal only: {:?}", authed);
+        // un-annotated shape (opt-in): projection passes through untouched.
+        let open = exposed_projection(fields.clone(), &[], false);
+        assert_eq!(open.len(), fields.len(), "no annotations → fully open (migration-safe)");
     }
 
     // #3506 / ADR-048 §3 — the read-side field-exposure gate, fail-closed.
