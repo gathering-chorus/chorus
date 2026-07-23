@@ -33,6 +33,22 @@ def main() -> int:
 
     secret = os.environ.get("CHORUS_SERVICE_TOKEN_SECRET")
     if not secret:
+        # #3592 — realm-env fallback: the same canonical gitignored file the
+        # service launch wrappers `set -a` source (#3402). Callers spawned
+        # outside a wrapper (werk-test's mint_token) otherwise fail every mint.
+        # Still fail-closed if the file is absent or lacks the key.
+        realm = os.environ.get("CHORUS_REALM_ENV") or os.path.join(
+            os.path.expanduser("~"), ".chorus", "secrets", "chorus-realm.env")
+        try:
+            with open(realm) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("CHORUS_SERVICE_TOKEN_SECRET="):
+                        secret = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except OSError:
+            pass
+    if not secret:
         sys.stderr.write("chorus-mint-token: CHORUS_SERVICE_TOKEN_SECRET unset — refusing to mint (fail-closed)\n")
         return 1
 

@@ -504,12 +504,19 @@ chorus:TestShape a sh:NodeShape ;
 
 chorus:TestSuiteRunShape a sh:NodeShape ;
     sh:targetClass chorus:TestSuiteRun ;
+    # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home so the
+    # serve-read and the DAL write target can never drift. Matches werk-test's
+    # x-target-graph and the tests domain's resolved home.
+    chorus:instancesGraph "urn:chorus:domains:tests" ;
     sh:property [ sh:path chorus:cardId ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:ts ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
 
 chorus:TestResultShape a sh:NodeShape ;
     sh:targetClass chorus:TestResult ;
+    # #3592 (steward MUST-FIX, #3675 pattern) — explicit instance home, matching
+    # the DAL write target. See TestSuiteRunShape note.
+    chorus:instancesGraph "urn:chorus:domains:tests" ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .

@@ -54,6 +54,14 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
+    // #3592 (Kade, Jeff-driven card 2026-07-23) — Test's run-evidence kinds. Same
+    // generate-vs-write drift #3522 named: TestResult/TestSuiteRun are modeled
+    // classes with SHACL shapes and owl-api already generates their write routes,
+    // but the DAL allowlist never grew, so every werk-test wire-back 502'd
+    // unknown-kind. Type-prefixed like the rest. PROVISIONAL pending Silas's
+    // ADR-040/OWL-DBA blessing (nudged 2026-07-23).
+    ("test-result", "TestResult", false),
+    ("test-suite-run", "TestSuiteRun", false),
 ];
 
 fn kind_entry(kind: &str) -> R<(&'static str, &'static str, bool)> {

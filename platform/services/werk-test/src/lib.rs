@@ -499,12 +499,16 @@ pub fn suite_run_payload(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
+    // #3592 — the DAL refuses off-model properties, so the payload is EXACTLY
+    // the deployed TestSuiteRunShape: cardId + ts + result. The richer run
+    // context (role/trace/planSource/checks/duration) stays in the spine events
+    // this verb already emits (test.started/test.completed carry all of it);
+    // growing the shape is a model change, not a payload hack. Signature kept
+    // so call-sites/tests don't churn when the shape grows.
+    let _ = (role, trace, plan_source, checks_planned, checks_failed, duration_ms);
     format!(
-        "{{\"name\":\"testsuiterun-{}-{}\",\"card\":\"{}\",\"role\":\"{}\",\"traceId\":\"{}\",\
-         \"planSource\":\"{}\",\"checksPlanned\":{},\"checksFailed\":{},\"durationMs\":{},\
-         \"verdict\":\"{}\"}}",
-        json_escape(card), ts, json_escape(card), json_escape(role), json_escape(trace),
-        json_escape(plan_source), checks_planned, checks_failed, duration_ms, json_escape(verdict)
+        "{{\"name\":\"testsuiterun-{}-{}\",\"cardId\":\"{}\",\"ts\":{},\"result\":\"{}\"}}",
+        json_escape(card), ts, json_escape(card), ts, json_escape(verdict),
     )
 }
 
@@ -516,6 +520,12 @@ pub fn suite_run_post_args(endpoint: &str, token: &str, payload: &str) -> Vec<St
         "-sf".into(), "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
         "-H".into(), format!("Authorization: Bearer {}", token),
         "-H".into(), "Content-Type: application/json".into(),
+        // #3592 — #3573 scope enforcement: a scoped token may write only graphs
+        // its scope names, and the request must NAME the target graph. Test +
+        // TestResult + TestSuiteRun all resolve (via the tests domain\'s
+        // definesVocabulary) to urn:chorus:domains:tests; mint_token requests
+        // exactly that scope.
+        "-H".into(), "x-target-graph: urn:chorus:domains:tests".into(),
         "-d".into(), payload.into(), endpoint.into(),
     ]
 }
@@ -544,4 +554,203 @@ pub fn json_escape(s: &str) -> String {
 /// witnessed fallback to the legacy lanes.
 pub fn plan_source_label(fetch_ok: bool, rows_len: usize) -> &'static str {
     if fetch_ok && rows_len > 0 { "model" } else { "fallback" }
+}
+
+// ---- #3592 — per-test result capture + reconcile ----
+
+/// One executed test case, keyed to the registered chorus:Test identity
+/// (filePath + testName). `result` is the graph vocab: pass | fail | skip.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct CaseResult {
+    pub file_path: String,
+    pub test_name: String,
+    pub result: String,
+}
+
+/// Parse jq-extracted jest rows (`file\tfullName\tstatus`). Jest statuses map
+/// onto the graph vocab (passed→pass, failed→fail, everything held→skip);
+/// incomplete rows are dropped, never a panic (parse_test_rows discipline).
+pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
+    tsv.lines()
+        .filter_map(|l| {
+            let mut it = l.trim_end().split('\t');
+            match (it.next(), it.next(), it.next()) {
+                (Some(f), Some(n), Some(s)) if !f.is_empty() && !n.is_empty() => Some(CaseResult {
+                    file_path: f.to_string(),
+                    test_name: n.to_string(),
+                    result: match s {
+                        "passed" => "pass",
+                        "failed" => "fail",
+                        _ => "skip",
+                    }
+                    .to_string(),
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Parse `cargo test` human output: `test mod::path::name ... ok|FAILED|ignored`.
+/// The graph registers cargo tests by BARE fn name (last :: segment), so that is
+/// what we key on; the crate dir narrows the join (match_cargo_case).
+pub fn parse_cargo_cases(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let l = l.trim();
+            let rest = l.strip_prefix("test ")?;
+            // "test result: FAILED. ..." summary line is not a case
+            if rest.starts_with("result:") {
+                return None;
+            }
+            let (path, verdict) = rest.rsplit_once(" ... ")?;
+            let bare = path.rsplit("::").next().unwrap_or(path).trim().to_string();
+            let result = match verdict.trim() {
+                "ok" => "pass",
+                "FAILED" => "fail",
+                _ => "skip",
+            };
+            Some((bare, result.to_string()))
+        })
+        .collect()
+}
+
+/// Join a cargo case onto the registered inventory: the UNIQUE row whose
+/// filePath sits inside the crate dir and whose registered testName equals the
+/// bare fn name. Ambiguous (same fn name in two files of one crate) or missing
+/// → None; the caller counts these loudly instead of guessing an identity.
+pub fn match_cargo_case(
+    bare: &str,
+    crate_dir: &str,
+    rows: &[TestRow],
+    names: &[String],
+) -> Option<String> {
+    let hits: Vec<&TestRow> = rows
+        .iter()
+        .zip(names.iter())
+        .filter(|(r, n)| r.file_path.starts_with(crate_dir) && n.as_str() == bare)
+        .map(|(r, _)| r)
+        .collect();
+    match hits.as_slice() {
+        [one] => Some(one.file_path.clone()),
+        _ => None,
+    }
+}
+
+/// Jest reports absolute paths; the registered identity is werk-relative.
+pub fn rel_path(abs: &str, werk_root: &str) -> String {
+    abs.strip_prefix(werk_root)
+        .map(|s| s.trim_start_matches('/'))
+        .unwrap_or(abs)
+        .to_string()
+}
+
+/// chorus:TestResult write payload — identity fields (filePath+testName) + the
+/// verdict + run context. `name` is mint-unique per (card, run-ts, index).
+#[allow(clippy::too_many_arguments)]
+pub fn test_result_payload(
+    file_path: &str,
+    test_name: &str,
+    result: &str,
+    of_test: &str,
+    card: &str,
+    role: &str,
+    trace: &str,
+    ts_millis: u128,
+    idx: usize,
+) -> String {
+    // The DAL refuses off-model props, so ONLY the deployed TestResultShape
+    // fields travel (filePath/testName/result) plus the REQUIRED ofTest edge
+    // (sh:minCount 1) referencing the registered Test entity. The run ts + card
+    // live in the minted `name` (testresult-<card>-<ts>-<idx>) until the model
+    // grows an official runTs (already named by chorus:mintKey — shape follow-up).
+    let _ = (role, trace);
+    format!(
+        "{{\"name\":\"testresult-{}-{}-{}\",\"filePath\":\"{}\",\"testName\":\"{}\",\
+         \"result\":\"{}\",\"ofTest\":\"{}\"}}",
+        json_escape(card), ts_millis, idx,
+        json_escape(file_path), json_escape(test_name), json_escape(result), json_escape(of_test),
+    )
+}
+
+/// registered ∖ executed, keyed (filePath, testName). Order preserved from the
+/// registered side so the report is stable.
+pub fn reconcile_gap(
+    registered: &[(String, String)],
+    executed: &[(String, String)],
+) -> Vec<(String, String)> {
+    let ran: std::collections::HashSet<&(String, String)> = executed.iter().collect();
+    registered.iter().filter(|k| !ran.contains(k)).cloned().collect()
+}
+
+/// Visible, never silent — explicit-none style (quarantine_report/gap_report).
+pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> String {
+    if gap.is_empty() {
+        return format!("reconcile: registered {}, never-run: none", registered_total);
+    }
+    let mut out = format!(
+        "reconcile: registered {}, never-run ({}):",
+        registered_total,
+        gap.len()
+    );
+    for (f, n) in gap.iter().take(20) {
+        out.push_str(&format!("\n  {} :: {}", f, n));
+    }
+    if gap.len() > 20 {
+        out.push_str(&format!("\n  … +{} more", gap.len() - 20));
+    }
+    out
+}
+
+/// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
+/// Returns rows + the PARALLEL testName vec + the PARALLEL minted entity-name
+/// vec (same filter → same length, always aligned). Shorter rows get empty
+/// strings (legacy fetch back-compat). The entity name is what a TestResult's
+/// required ofTest edge must reference.
+pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String>) {
+    let mut rows = Vec::new();
+    let mut names = Vec::new();
+    let mut entities = Vec::new();
+    for l in tsv.lines() {
+        let mut it = l.trim_end().split('\t');
+        if let (Some(f), Some(c)) = (it.next(), it.next()) {
+            if !f.trim().is_empty() && !c.trim().is_empty() {
+                rows.push(TestRow {
+                    file_path: f.trim().to_string(),
+                    covers: c.trim().to_string(),
+                    pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
+                });
+                names.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
+                entities.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
+            }
+        }
+    }
+    (rows, names, entities)
+}
+
+/// #3592 — join executed cases onto the registered inventory by identity
+/// (filePath, testName) → the registered entity name (for the mandatory ofTest
+/// edge). Unjoined cases come back separately — counted loudly, never posted
+/// with a fabricated identity.
+pub fn join_cases(
+    cases: &[CaseResult],
+    rows: &[TestRow],
+    test_names: &[String],
+    entities: &[String],
+) -> (Vec<(CaseResult, String)>, usize) {
+    let mut index: std::collections::HashMap<(&str, &str), &str> = std::collections::HashMap::new();
+    for ((r, n), e) in rows.iter().zip(test_names.iter()).zip(entities.iter()) {
+        if !e.is_empty() {
+            index.insert((r.file_path.as_str(), n.as_str()), e.as_str());
+        }
+    }
+    let mut joined = Vec::new();
+    let mut unjoined = 0usize;
+    for c in cases {
+        match index.get(&(c.file_path.as_str(), c.test_name.as_str())) {
+            Some(e) => joined.push((c.clone(), (*e).to_string())),
+            None => unjoined += 1,
+        }
+    }
+    (joined, unjoined)
 }
