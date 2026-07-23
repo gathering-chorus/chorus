@@ -210,6 +210,56 @@ return "ok""#,
     )
 }
 
+/// #3668 — minimal base64 (RFC 4648, with padding). Dependency-free on purpose:
+/// the crate has zero deps and the encoder is 20 lines. Base64 is how nudge
+/// text crosses the AppleScript + shell quoting boundaries on the tmux path —
+/// no escaping rules, and non-BMP glyphs (🪶) survive intact, unlike the
+/// keystroke path's BMP strip.
+pub fn b64_encode(data: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        out.push(TABLE[(n >> 18) as usize & 63] as char);
+        out.push(TABLE[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { TABLE[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { TABLE[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+/// #3668 — build the osascript for tmux-hosted delivery (the VS Code fix).
+///
+/// Why tmux: VS Code exposes NO app-level text-delivery AppleEvent — the only
+/// osascript reach into it is System Events keystroke (HID), which needs an
+/// unlocked screen + focus and silently no-ops when locked (the 7/22–7/23
+/// dropped-"go" class). A role hosted inside tmux *in the same VS Code
+/// terminal* gets the same app-level property Terminal.app roles have: the
+/// transport writes into the session server, not the display. DEC-107 stands —
+/// this is still one osascript invocation; the inner `do shell script` drives
+/// tmux.
+///
+/// Delivery shape: text travels base64 (no quoting surface), lands via
+/// load-buffer/paste-buffer into the EXACT pane id, then a separate
+/// send-keys Enter submits (#3352's pasted-newline-is-not-submit boundary).
+/// `do shell script` throws on nonzero rc, so a missing pane surfaces as an
+/// osascript error — loud, never a false "ok".
+pub fn build_inject_tmux_script(pane: &str, text: &str) -> String {
+    // Pane ids are tmux-internal (%N). Strip anything shell-meta as defense.
+    let safe_pane: String = pane
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(*c, '%' | '.' | ':' | '-' | '_'))
+        .collect();
+    let b64 = b64_encode(text.as_bytes());
+    format!(
+        r#"do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; printf %s '{b64}' | base64 -D | tmux load-buffer -b chorus-nudge - && tmux paste-buffer -d -b chorus-nudge -t '{pane}' && sleep 0.1 && tmux send-keys -t '{pane}' Enter"
+return "ok""#,
+        b64 = b64,
+        pane = safe_pane
+    )
+}
+
 /// Seam for osascript execution. `RealOsaRunner` shells out; tests use a fake.
 pub trait OsaRunner {
     fn run(&self, script: &str) -> io::Result<Output>;
@@ -309,6 +359,33 @@ pub fn inject_by_tty<R: OsaRunner, W: io::Write>(
     }
 }
 
+/// #3668: inject `text` into the tmux pane `pane` via the osascript
+/// do-shell-script transport. Mirrors `inject_by_tty`'s dry-run + ok/err parse.
+pub fn inject_tmux<R: OsaRunner, W: io::Write>(
+    runner: &R,
+    writer: &mut W,
+    pane: &str,
+    text: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    if dry_run {
+        writeln!(writer, "DRY-RUN inject-tmux pane={} b64={}", pane, b64_encode(text.as_bytes()))
+            .map_err(|e| format!("write failed: {}", e))?;
+        return Ok(());
+    }
+    let script = build_inject_tmux_script(pane, text);
+    let output = runner
+        .run(&script)
+        .map_err(|e| format!("osascript spawn failed: {}", e))?;
+    let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if result == "ok" {
+        Ok(())
+    } else {
+        Err(format!("{} stderr: {}", result, stderr))
+    }
+}
+
 /// #3130: inject `text` into the focused VS Code window. dry_run writes a
 /// DRY-RUN line naming the vscode path. Mirrors `inject_by_tty`'s ok/err parse.
 pub fn inject_vscode<R: OsaRunner, W: io::Write>(
@@ -366,6 +443,18 @@ pub fn dispatch<R: OsaRunner, W: io::Write>(
     if args.len() == 2 && args[0] == "--count-windows" {
         return match count_windows(runner, &args[1]) {
             Ok(s) => Dispatch::PrintOut(s),
+            Err(e) => Dispatch::Err(e),
+        };
+    }
+
+    // #3668: `--tmux <pane> <text...>` — app-level delivery into a tmux-hosted
+    // session (the VS Code locked-screen fix). Routed when the target's
+    // registration carries a tmux pane id.
+    if args.len() >= 2 && args[0] == "--tmux" {
+        let pane = &args[1];
+        let text = args[2..].join(" ");
+        return match inject_tmux(runner, writer, pane, &text, dry_run) {
+            Ok(()) => Dispatch::Ok,
             Err(e) => Dispatch::Err(e),
         };
     }
@@ -603,5 +692,120 @@ mod inject_by_tty_script_tests {
     fn returns_ok_on_delivery() {
         let s = build("ttys003", "msg");
         assert!(s.contains(r#"return "ok""#));
+    }
+}
+
+#[cfg(test)]
+mod tmux_script_tests {
+    use super::{b64_encode, build_inject_tmux_script as build};
+
+    #[test]
+    fn b64_encodes_known_vectors() {
+        assert_eq!(b64_encode(b""), "");
+        assert_eq!(b64_encode(b"f"), "Zg==");
+        assert_eq!(b64_encode(b"fo"), "Zm8=");
+        assert_eq!(b64_encode(b"foo"), "Zm9v");
+        assert_eq!(b64_encode(b"hello world"), "aGVsbG8gd29ybGQ=");
+        assert_eq!(b64_encode("🪶 go".as_bytes()), "8J+qtiBnbw==");
+    }
+
+    #[test]
+    fn script_is_osascript_do_shell_not_keystroke() {
+        // #3668 — the tmux path must be app-level: osascript `do shell script`
+        // driving tmux. NEVER System Events keystroke (HID needs an unlocked
+        // screen + focus — the exact silent-drop class this card kills).
+        let s = build("%3", "go");
+        assert!(s.contains("do shell script"), "osascript do-shell transport: {}", s);
+        assert!(!s.contains("keystroke"), "no HID keystrokes: {}", s);
+        assert!(!s.contains("System Events"), "no focus dependency: {}", s);
+        assert!(!s.contains("activate"), "no focus theft: {}", s);
+    }
+
+    #[test]
+    fn script_targets_the_exact_pane() {
+        let s = build("%7", "hello");
+        assert!(s.contains("'%7'"), "pane id targeted: {}", s);
+    }
+
+    #[test]
+    fn text_travels_as_base64_never_raw() {
+        // Quoting is the historic failure surface (#2078, #3125 non-BMP). The
+        // tmux path sidesteps it: text crosses the AppleScript AND shell
+        // boundaries base64-encoded, decoded only inside the pipe.
+        let s = build("%3", r#"tricky "quotes" & $vars 🪶"#);
+        assert!(!s.contains("tricky"), "raw text must not appear: {}", s);
+        assert!(s.contains("base64"), "decoded via base64: {}", s);
+        // The emoji survives (b64 of the exact utf8), unlike keystroke's BMP strip.
+        assert!(s.contains(&b64_encode(r#"tricky "quotes" & $vars 🪶"#.as_bytes())));
+    }
+
+    #[test]
+    fn submits_with_separate_enter() {
+        // Same boundary as #3352: pasted newline = line-break, not submit.
+        // A separate send-keys Enter is the real submit.
+        let s = build("%3", "msg");
+        assert!(s.contains("send-keys"), "{}", s);
+        assert!(s.contains("Enter"), "{}", s);
+    }
+
+    #[test]
+    fn pane_id_is_shell_sanitized() {
+        let s = build("%3'; rm -rf /", "x");
+        assert!(!s.contains("rm -rf"), "pane id must be sanitized: {}", s);
+    }
+}
+
+#[cfg(test)]
+mod tmux_dispatch_tests {
+    use super::{dispatch, Dispatch, OsaRunner};
+    use std::io;
+    use std::process::{ExitStatus, Output};
+    use std::os::unix::process::ExitStatusExt;
+
+    struct FakeRunner {
+        stdout: &'static str,
+    }
+    impl OsaRunner for FakeRunner {
+        fn run(&self, _script: &str) -> io::Result<Output> {
+            Ok(Output {
+                status: ExitStatus::from_raw(0),
+                stdout: self.stdout.as_bytes().to_vec(),
+                stderr: Vec::new(),
+            })
+        }
+    }
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn tmux_flag_dispatches_ok_on_ok() {
+        let r = FakeRunner { stdout: "ok\n" };
+        let mut w = Vec::new();
+        let d = dispatch(&r, &mut w, &args(&["--tmux", "%3", "hello", "there"]), false);
+        assert_eq!(d, Dispatch::Ok);
+    }
+
+    #[test]
+    fn tmux_flag_errors_loud_on_failure() {
+        // AC4 — a failed delivery must be sender-visible, never "sent".
+        let r = FakeRunner { stdout: "can't find pane: %3" };
+        let mut w = Vec::new();
+        let d = dispatch(&r, &mut w, &args(&["--tmux", "%3", "hello"]), false);
+        match d {
+            Dispatch::Err(e) => assert!(e.contains("can't find pane"), "{}", e),
+            other => panic!("expected Err, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tmux_dry_run_names_the_pane() {
+        let r = FakeRunner { stdout: "" };
+        let mut w = Vec::new();
+        let d = dispatch(&r, &mut w, &args(&["--tmux", "%5", "msg"]), true);
+        assert_eq!(d, Dispatch::Ok);
+        let out = String::from_utf8(w).unwrap();
+        assert!(out.contains("DRY-RUN inject-tmux pane=%5"), "{}", out);
     }
 }

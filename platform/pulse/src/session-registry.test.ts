@@ -75,6 +75,25 @@ describe('planDelivery', () => {
   test('no registration → legacy name-match (as-is preserved)', () => {
     expect(planDelivery(null, 'kade', 'hello')).toEqual({ kind: 'inject', args: ['kade', 'hello'] });
   });
+
+  // #3668 — a registration carrying a tmux pane routes the app-level tmux
+  // transport (locked-screen-safe), beating both the vscode keystroke path
+  // and the Terminal --tty path: the tmux server is the true input surface
+  // wherever the session is displayed.
+  test('#3668 tmux pane on the registration → --tmux exact pane', () => {
+    const t = reg({ role: 'wren', tty: '/dev/ttys006', host: 'tmux', tmux: '%3' });
+    expect(planDelivery(t, 'wren', 'go')).toEqual({ kind: 'inject', args: ['--tmux', '%3', 'go'] });
+  });
+
+  test('#3668 tmux pane wins even if host still says vscode (belt + suspenders)', () => {
+    const t = reg({ role: 'wren', tty: '/dev/ttys006', host: 'vscode', tmux: '%12' });
+    expect(planDelivery(t, 'wren', 'go')).toEqual({ kind: 'inject', args: ['--tmux', '%12', 'go'] });
+  });
+
+  test('#3668 vscode WITHOUT a pane keeps the keystroke path (rollout fallback)', () => {
+    const t = reg({ role: 'wren', tty: '/dev/ttys004', host: 'vscode' });
+    expect(planDelivery(t, 'wren', 'hello')).toEqual({ kind: 'inject', args: ['--vscode', 'hello'] });
+  });
 });
 
 // #3352 final form (Jeff, DEC-107 re-affirmed): delivery is UNCONDITIONAL —

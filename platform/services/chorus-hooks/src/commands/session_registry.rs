@@ -22,7 +22,26 @@ pub fn host_from_term_program(tp: Option<&str>) -> &'static str {
         Some("Apple_Terminal") => "terminal",
         Some("vscode") => "vscode",
         Some("iTerm.app") => "iterm",
+        // #3668 — tmux sets TERM_PROGRAM=tmux for everything inside it. tmux
+        // IS the transport-relevant host: delivery goes through the tmux
+        // server (app-level, locked-screen-safe), whatever emulator displays it.
+        Some("tmux") => "tmux",
         _ => "unknown",
+    }
+}
+
+/// #3668 — the effective host + pane for registration. A session inside tmux
+/// registers host="tmux" with its exact pane id (from $TMUX_PANE), regardless
+/// of the displaying emulator — pulse routes on the pane, chorus-inject
+/// delivers via `tmux load-buffer/paste-buffer` under osascript. Outside tmux,
+/// unchanged. Pure so the rule is unit-tested without env mutation.
+pub fn effective_host<'a>(
+    term_program: Option<&str>,
+    tmux_pane: Option<&'a str>,
+) -> (&'static str, Option<&'a str>) {
+    match tmux_pane {
+        Some(p) if !p.trim().is_empty() => ("tmux", Some(p)),
+        _ => (host_from_term_program(term_program), None),
     }
 }
 
@@ -45,9 +64,34 @@ pub fn parse_tty(ps_out: &str) -> Option<String> {
 /// it lexically to pick the most-recent of two sessions, and equal-width epoch
 /// strings compare in numeric order.
 pub fn registration_json(role: &str, pid: u32, tty: &str, host: &str, epoch_secs: u64) -> String {
+    registration_json_tmux(role, pid, tty, host, None, epoch_secs)
+}
+
+/// #3668 — registration with an optional tmux pane id. When present, pulse's
+/// planDelivery routes `--tmux <pane>` (app-level, locked-screen-safe) instead
+/// of the vscode keystroke path. Pane ids are tmux-internal (`%N`) — sanitized
+/// to the safe charset before embedding.
+pub fn registration_json_tmux(
+    role: &str,
+    pid: u32,
+    tty: &str,
+    host: &str,
+    tmux_pane: Option<&str>,
+    epoch_secs: u64,
+) -> String {
+    let tmux_field = match tmux_pane {
+        Some(p) if !p.trim().is_empty() => {
+            let safe: String = p
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || matches!(*c, '%' | '.' | ':' | '-' | '_'))
+                .collect();
+            format!("\"tmux\":\"{}\",", safe)
+        }
+        _ => String::new(),
+    };
     format!(
-        "{{\"role\":\"{}\",\"pid\":{},\"tty\":\"{}\",\"host\":\"{}\",\"registered_at\":\"{}\"}}",
-        role, pid, tty, host, epoch_secs
+        "{{\"role\":\"{}\",\"pid\":{},\"tty\":\"{}\",\"host\":\"{}\",{}\"registered_at\":\"{}\"}}",
+        role, pid, tty, host, tmux_field, epoch_secs
     )
 }
 
@@ -211,7 +255,12 @@ pub fn register(role: &str) {
         Some(p) => p,
         None => return,
     };
-    let host = host_from_term_program(std::env::var("TERM_PROGRAM").ok().as_deref());
+    // #3668 — inside tmux, register host="tmux" + the exact pane id so pulse
+    // routes the app-level tmux transport (locked-screen-safe) instead of
+    // vscode keystrokes.
+    let term_program = std::env::var("TERM_PROGRAM").ok();
+    let tmux_pane_env = std::env::var("TMUX_PANE").ok();
+    let (host, tmux_pane) = effective_host(term_program.as_deref(), tmux_pane_env.as_deref());
     // #3608 — test isolation seam: suites point this at their own tmpdir so a
     // test run can NEVER touch the live registry (test-brings-its-own-world).
     let dir = match std::env::var("CHORUS_SESSIONS_DIR") {
@@ -229,7 +278,7 @@ pub fn register(role: &str) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let json = registration_json(role, pid, &tty, host, now);
+    let json = registration_json_tmux(role, pid, &tty, host, tmux_pane, now);
     if std::fs::write(dir.join(format!("{}-{}.json", role, pid)), json).is_ok() {
         // #3608 — registrations are visible on the spine (legibility), so a
         // role that never registers (the kade #3605 gap) is diagnosable from
@@ -237,7 +286,13 @@ pub fn register(role: &str) {
         let _ = crate::chorus_log::run_silent(&[
             "session.registered".to_string(),
             role.to_string(),
-            format!("pid={},tty={},host={}", pid, tty, host),
+            format!(
+                "pid={},tty={},host={}{}",
+                pid,
+                tty,
+                host,
+                tmux_pane.map(|p| format!(",tmux={}", p)).unwrap_or_default()
+            ),
         ]);
     }
 }
@@ -268,8 +323,35 @@ mod tests {
         assert_eq!(host_from_term_program(Some("Apple_Terminal")), "terminal");
         assert_eq!(host_from_term_program(Some("vscode")), "vscode");
         assert_eq!(host_from_term_program(Some("iTerm.app")), "iterm");
+        assert_eq!(host_from_term_program(Some("tmux")), "tmux");
         assert_eq!(host_from_term_program(None), "unknown");
         assert_eq!(host_from_term_program(Some("Hyper")), "unknown");
+    }
+
+    #[test]
+    fn tmux_pane_wins_the_host_and_carries_the_pane() {
+        // #3668 — inside tmux (whatever emulator displays it), the transport-
+        // relevant host is tmux + the exact pane id.
+        assert_eq!(effective_host(Some("tmux"), Some("%3")), ("tmux", Some("%3")));
+        assert_eq!(effective_host(Some("vscode"), Some("%12")), ("tmux", Some("%12")));
+        assert_eq!(effective_host(Some("vscode"), None), ("vscode", None));
+        assert_eq!(effective_host(Some("vscode"), Some("  ")), ("vscode", None));
+        assert_eq!(effective_host(None, None), ("unknown", None));
+    }
+
+    #[test]
+    fn registration_json_with_tmux_pane_is_consumable_and_sanitized() {
+        // #3668 — pulse's readRegistry parses this shape; the pane field only
+        // appears when present, and shell-meta chars never survive into it.
+        let j = registration_json_tmux("wren", 54837, "/dev/ttys006", "tmux", Some("%3"), 1784816398);
+        assert!(j.contains(r#""tmux":"%3""#), "{}", j);
+        assert!(j.contains(r#""host":"tmux""#), "{}", j);
+        let no_pane = registration_json_tmux("wren", 1, "/dev/ttys000", "vscode", None, 1);
+        assert!(!no_pane.contains("tmux\":"), "{}", no_pane);
+        // legacy wrapper unchanged shape
+        assert_eq!(no_pane, registration_json("wren", 1, "/dev/ttys000", "vscode", 1));
+        let hostile = registration_json_tmux("wren", 1, "/dev/ttys000", "tmux", Some("%3'; rm -rf /"), 1);
+        assert!(!hostile.contains("rm -rf"), "{}", hostile);
     }
 
     #[test]
