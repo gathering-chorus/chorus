@@ -100,10 +100,23 @@ for rule in "$ALERT_DIR"/*.yml; do
     [[ "$name" == "$RULE_FILTER" ]] || continue
   fi
   # Skip manual-only rules unless explicitly requested via --rule
-  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//')
+  schedule=$(grep '^schedule:' "$rule" | head -1 | sed 's/schedule: *//' | sed 's/ *#.*//' | tr -d '"')
   if [[ "$schedule" == "manual" ]] && [[ -z "$RULE_FILTER" ]]; then
     log "SKIP $name — manual schedule (use --rule $name to run)"
     continue
+  fi
+  # #3617 — honor the rule's cron schedule. Before this, every rule ran on
+  # every runner cycle (schedule was decorative): the 8am-only fuseki-harvest
+  # rule fired at midnight, lance joined the 00:00 battery. --rule bypasses
+  # (explicit invocation = run now). No/malformed schedule fails open.
+  if [[ -n "$schedule" ]] && [[ -z "$RULE_FILTER" ]]; then
+    lastrun_file="$ALERT_STATE_DIR/${name}.lastrun"
+    last=0
+    [[ -f "$lastrun_file" ]] && last=$(cat "$lastrun_file")
+    if ! python3 "${CHORUS_ROOT}/proving/scripts/cron-due.py" "$schedule" "${last:-0}" "$(date +%s)"; then
+      continue
+    fi
+    date +%s > "$lastrun_file"
   fi
   run_check "$rule"
 done

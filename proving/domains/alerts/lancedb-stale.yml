@@ -16,10 +16,12 @@ check: |
     echo "lancedb-missing"
     exit 1
   fi
-  # Check if any file modified in last 24h
-  RECENT=$(find "$LANCE_DIR" -type f -mtime -1 2>/dev/null | head -1)
+  # #3617 — 72h, not 24h: the embed/reindex workers write on new content, not
+  # on a daily clock, so a quiet-but-healthy index tripped the 24h bar most
+  # nights (part of the 00:00 battery). 3 days of zero writes is a real stall.
+  RECENT=$(find "$LANCE_DIR" -type f -mtime -3 2>/dev/null | head -1)
   if [ -z "$RECENT" ]; then
-    echo "lancedb-stale-24h"
+    echo "lancedb-stale-72h"
     exit 1
   fi
   echo "ok"

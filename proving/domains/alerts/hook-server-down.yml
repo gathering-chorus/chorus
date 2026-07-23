@@ -14,8 +14,10 @@ check: |
   # Check if hook server has a PID in launchctl
   PID=$(launchctl list com.chorus.hooks 2>/dev/null | grep '"PID"' | grep -o '[0-9]*')
   if [ -n "$PID" ]; then
-    # Also verify socket exists
-    if [ -S /tmp/chorus-hooks.sock ]; then
+    # Also verify socket exists — #3617: the daemon serves from ~/.chorus/run/
+    # since the 7/8 lockout fix moved runtime state off /tmp; the old /tmp path
+    # false-fired hourly (3x on 2026-07-15 alone) against a healthy daemon.
+    if [ -S "$HOME/.chorus/run/chorus-hooks.sock" ]; then
       echo "ok"
       exit 0
     fi
