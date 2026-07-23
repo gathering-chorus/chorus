@@ -1,24 +1,24 @@
-# Daily Ops Review — 2026-07-21
+# Daily Ops Review — 2026-07-23
 
 ## 1. Hooks Health
 **Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 27.82s, 0 errors, 0 warnings.
+`cargo check` on `platform/services/chorus-hooks` passes clean — Finished dev profile in 28.42s, 0 errors, 0 warnings.
 **Action:** None.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry, 17+2)**
-17 plist files in `proving/config/launchagents/` reference `/tmp/` (count unchanged). Additional 2 in `platform/scripts/launchagents-secondary/`. `platform/scripts/` plists verified clean today.
-**Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; 17+2 tracked.
+17 plists in `proving/config/launchagents/` + 2 in `platform/scripts/launchagents-secondary/` reference `/tmp/`. Count unchanged from Jul 21.
+**Action:** Silas — migration card to `~/Library/Logs/Chorus/` still open; track at 17+2.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (9d stale)**
-`designing/claudemd/` present (build 217); last confirmed commit 2026-07-12 via #3634 — 9d ago. Git history not navigable in cloned session; carrying Jul 12 baseline. Web session shows no fragment update commit since Jul 17 kade cards.
-**Action:** Wren — claudemd refresh urgent; 9d stale, 2d over threshold.
+**Status: YELLOW (11d stale)**
+`designing/claudemd/` last updated Jul 12 per previous baseline; git log confirms no content commit since Jul 14 ops review. 11d stale, 4d over 7d threshold.
+**Action:** Wren — claudemd refresh overdue; escalate if not updated by EOD Jul 23.
 
 ## 4. CSC Compliance
-**Status: RED (carry, 36 sh-only)**
-36 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Count confirmed unchanged today. `messages/scripts/` and `architect/scripts/` do not exist — scoped check clean.
-**Action:** Silas — July scoped card for `platform/scripts/*.sh` still open.
+**Status: RED (carry, 37 sh +1)**
+37 `.sh` files in `platform/scripts/` contain `/tmp/` refs — up from 36 (+1 net new). `messages/scripts/` and `architect/scripts/` paths absent, scoped check clean.
+**Action:** Silas — count grew +1 since Jul 21; identify new file, open targeted card.
 
 ## 5. Git Dirty State
 **Status: GREEN**
@@ -26,19 +26,19 @@ All 7 role directories clean — 0 uncommitted changes across product-manager, a
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 105d)**
-No live Vikunja board access; carrying: #1759/#1791 now 105d without commits (+1d). Wren backlog WIP last touched 2026-07-04 (17d, +1d).
+**Status: RED (carry, 107d)**
+No live Vikunja board access; carrying: #1759/#1791 now 107d without commits (+2d). Wren backlog WIP last touched 2026-07-04 (19d, +2d).
 **Action:** Wren — #1759/#1791 must close or archive; escalate #3607 to Jeff.
 
 ## 7. Domain Context Freshness
-**Status: YELLOW (9d, 4 domains)**
-chorus/infra/music/seeds last confirmed commit 2026-07-12 — 9d ago (file mtime appears 4d from clone; git commit date takes precedence). #3661/#3657 (kade, 2026-07-17) shipped in chorus domain — domain-context-chorus.md still not refreshed per git log.
-**Action:** Silas — domain-context-chorus.md now critical (9d, cards shipped 4d ago); Wren — music/seeds.
+**Status: RED (9d, cards shipped)**
+All 5 domain-context files last committed Jul 14 (9d ago). 7 cards shipped Jul 14–23: #3611 (silas), #3657/#3660/#3661/#3662/#3663 (kade). chorus and infrastructure domains have shipped cards since last refresh; domain-context-chorus.md and domain-context-infrastructure.md now critical.
+**Action:** Silas/Kade — refresh chorus + infra contexts; Wren — music/seeds.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No perf-baseline JSON in `data/`; `proving/data/` absent. Cross-session delta not computable.
+No perf-baseline JSON in `data/`; cross-session delta not computable.
 **Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
 
 ---
-*Carries: §2 YELLOW (17+2 plists), §4 RED (36 sh), §6 RED (105d WIP +1d, backlog 17d), §7 YELLOW (9d/4 domains), §8 N/A. New: §3 escalated to 9d/2d over threshold. §7 chorus now critical — 9d gap with cards shipped Jul 17.*
+*Carries: §2 YELLOW (17+2 plists), §6 RED (107d WIP, backlog 19d). Changes: §4 RED escalated (+1 sh file, 37 total); §7 escalated to RED (9d stale, 7 cards shipped since refresh). §3 now 11d/4d over threshold.*
