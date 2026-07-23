@@ -485,10 +485,19 @@ jobs:
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin gitleaks
           gitleaks version
-      - name: Run bats suite (platform/tests/*.bats)
-        # `bats -r` walks the dir; --tap output for log readability when
-        # things break. Per-test isolation is bats's default.
-        run: bats -r --tap platform/tests/
+      - name: Run bats suite (platform/tests/*.bats, unit tier only)
+        # --tap output for log readability when things break. Per-test
+        # isolation is bats's default.
+        # #3665 — honor the @test-type tier convention (#3528): integration-tier
+        # bats need the live stack (Fuseki :3030, :33xx services). The local
+        # nightly stack-gates them ("skipped — no live stack", #3557); CI has no
+        # stack, so running them here fail-instead-of-skips (the TestEdgesShape /
+        # model-deploy block of the 7/23 red). Same contract as jest's
+        # hermetic/integration split (#3559/#2524): CI runs the unit tier only.
+        run: |
+          grep -rL '@test-type: integration' platform/tests --include='*.bats' | sort > /tmp/unit-bats.txt
+          echo "unit-tier bats: $(wc -l < /tmp/unit-bats.txt) files (integration tier excluded: $(grep -rl '@test-type: integration' platform/tests --include='*.bats' | wc -l))"
+          xargs bats --tap < /tmp/unit-bats.txt
 
   clippy:
     # #2532: Rust lint parity with TS. chorus-inject already clean (-D warnings
