@@ -14,8 +14,13 @@ setup() {
 
 @test "no test file hardcodes an absolute /Users/<name>/ path (use \$CHORUS_ROOT)" {
   cd "$REPO_ROOT"
-  # exclude this guard itself (it names the forbidden pattern in its docs)
-  bad=$(grep -rlE '/Users/[A-Za-z0-9._-]+/' platform/tests/ | grep -v 'features/step_definitions/' 2>/dev/null \
+  # exclude this guard itself (it names the forbidden pattern in its docs) and
+  # node_modules (#3665 — vendored readmes/typings legitimately mention /Users/
+  # paths; the guard governs OUR test files, not dependency docs. This false-fired
+  # the moment platform/tests grew a node_modules for the cucumber tier.)
+  bad=$(grep -rlE '/Users/[A-Za-z0-9._-]+/' platform/tests/ 2>/dev/null \
+          | grep -v 'features/step_definitions/' \
+          | grep -v 'node_modules/' \
           | grep -v 'hardcoded-path-guard.bats' || true)
   if [ -n "$bad" ]; then
     echo "Hardcoded absolute local paths found in:"
