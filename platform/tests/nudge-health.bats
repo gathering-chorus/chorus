@@ -48,6 +48,43 @@ HEALTH_SCRIPT="${CHORUS_ROOT:-${CHORUS_ROOT}}/platform/scripts/nudge-health-chec
   ! ( echo "$output" | grep -i "vscode session" | grep -iq "no.*window" )
 }
 
+# --- #3673: tmux arm — registry host=tmux probes the pane, never Terminal ---
+
+@test "3673: health check has a tmux arm (pane probe, tmux-pane-gone reason)" {
+  grep -q 'host" = "tmux"' "$HEALTH_SCRIPT"
+  grep -q "tmux-pane-gone" "$HEALTH_SCRIPT"
+}
+
+@test "3673: live tmux pane registration reports OK, never no-window" {
+  command -v tmux >/dev/null 2>&1 || skip "tmux not installed"
+  regdir="$(mktemp -d)"
+  sess="hc-test-$$"
+  tmux new-session -d -s "$sess" || skip "cannot start scratch tmux session"
+  pane="$(tmux list-panes -t "$sess" -F '#{pane_id}' | head -1)"
+  printf '{"role":"wren","pid":%s,"tty":"/dev/ttys999","host":"tmux","tmux":"%s","registered_at":"9999999999"}' "$$" "$pane" \
+    > "${regdir}/wren-$$.json"
+  run env CHORUS_SESSIONS_DIR="$regdir" bash "$HEALTH_SCRIPT"
+  echo "output: $output"
+  tmux kill-session -t "$sess" 2>/dev/null || true
+  rm -rf "$regdir"
+  echo "$output" | grep "wren" | grep -q "OK:"
+  ! ( echo "$output" | grep "wren" | grep -q "no.*window" )
+}
+
+@test "3673: dead pane with live registration alerts tmux-pane-gone, not no-window" {
+  command -v tmux >/dev/null 2>&1 || skip "tmux not installed"
+  tmux list-sessions >/dev/null 2>&1 || skip "no tmux server running"
+  regdir="$(mktemp -d)"
+  printf '{"role":"wren","pid":%s,"tty":"/dev/ttys999","host":"tmux","tmux":"%%999","registered_at":"9999999999"}' "$$" \
+    > "${regdir}/wren-$$.json"
+  run env CHORUS_SESSIONS_DIR="$regdir" bash "$HEALTH_SCRIPT"
+  echo "output: $output"
+  rm -rf "$regdir"
+  echo "$output" | grep "wren" | grep -q "tmux"
+  echo "$output" | grep "wren" | grep -qi "ALERT"
+  ! ( echo "$output" | grep "wren" | grep -q "no matching Terminal window" )
+}
+
 @test "health check detects missing role window" {
   # Use a role name that won't match any window
   # Temporarily override ROLES to test with a fake role
