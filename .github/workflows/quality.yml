@@ -76,7 +76,7 @@ jobs:
     # update per the policy clause above — a separate, costed decision.
     if: github.event_name == 'schedule'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -115,7 +115,7 @@ jobs:
           - platform/tests
           - platform/workflow-engine
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -169,7 +169,7 @@ jobs:
           - platform/tests
           - platform/workflow-engine
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -213,7 +213,7 @@ jobs:
     # value when MCP tools change; no minute pressure.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -228,7 +228,7 @@ jobs:
     # not gate merge (#2461 push-bloat protection lives at pre-commit).
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Compute changed files
@@ -252,7 +252,7 @@ jobs:
     # Pre-commit still blocks locally; CI surfaces the signal only.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Compute changed files
@@ -278,7 +278,7 @@ jobs:
     # re-introduces the duplicate-delivery class; this gate fails the
     # build with a message naming #2283 + the offending file.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Run grep-gate
         run: bash platform/scripts/test-chorus-inject-spawn-sites.sh
 
@@ -307,7 +307,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -346,7 +346,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -384,7 +384,7 @@ jobs:
       # axis-4 race the gate protects against doesn't apply here — explicit opt-in.
       RUN_INTEGRATION: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -474,7 +474,7 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install bats + gitleaks
         # #3528 — gitleaks isn't in apt; the gitleaks-baseline bats tests
         # (2709-gitleaks-baseline) need the binary present or they fail
@@ -513,7 +513,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -545,7 +545,7 @@ jobs:
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -580,7 +580,7 @@ jobs:
       FUSEKI_UPDATE_URL: http://localhost:3030/pods/update
       CHORUS_API_PORT: '3340'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
