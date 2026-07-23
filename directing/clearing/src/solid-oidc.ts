@@ -45,8 +45,19 @@ export function signCookie(payload: unknown, secret: string): string {
   return `${body}.${mac}`;
 }
 
-/** Verify + parse a signed cookie; null on any tamper/format/HMAC mismatch. */
-export function verifyCookie<T = unknown>(cookie: string | undefined, secret: string): T | null {
+/**
+ * Verify + parse a signed cookie; null on any tamper/format/HMAC mismatch.
+ * `expectedTyp` (Wren fix 2) closes the login↔session confusion class: both
+ * cookies are `body.mac` under the same secret, so a valid-signature login cookie
+ * could be replayed where a session cookie is read. Requiring `payload.typ ===
+ * expectedTyp` rejects the cross-use with one field instead of relying on caller
+ * field-discipline.
+ */
+export function verifyCookie<T = unknown>(
+  cookie: string | undefined,
+  secret: string,
+  expectedTyp?: 'login' | 'session',
+): T | null {
   if (!cookie || !cookie.includes('.')) return null;
   const [body, mac] = cookie.split('.', 2);
   const expected = b64url(crypto.createHmac('sha256', secret).update(body).digest());
@@ -55,7 +66,11 @@ export function verifyCookie<T = unknown>(cookie: string | undefined, secret: st
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   try {
-    return JSON.parse(Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()) as T;
+    const payload = JSON.parse(
+      Buffer.from(body.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(),
+    );
+    if (expectedTyp && payload?.typ !== expectedTyp) return null;
+    return payload as T;
   } catch {
     return null;
   }
@@ -77,10 +92,16 @@ export function safeReturnPath(raw: string | undefined): string {
 // --- the CSS authorization URL ----------------------------------------------
 
 export interface OidcConfig {
-  issuer: string; // e.g. https://id.lightlifeurbangardens.com
+  issuer: string; // browser-facing issuer, e.g. https://id.lightlifeurbangardens.com
   clientId: string; // the /clientid.jsonld URL
   redirectUri: string; // .../auth/callback
   scope: string; // "openid webid offline_access"
+  // #3669 hardening 3 (Wren) — the SERVER-SIDE token exchange must NOT hairpin the
+  // public issuer through Cloudflare (bot-check 1010; and LAN login would die with
+  // the internet). It targets CSS locally with the Host-override trick; the issuer
+  // stays browser-facing only. tokenEndpoint defaults to issuer/.oidc/token.
+  tokenEndpoint?: string; // e.g. http://localhost:3001/.oidc/token
+  tokenHost?: string; // Host header for the local exchange, e.g. id.lightlifeurbangardens.com
 }
 
 export function buildAuthUrl(cfg: OidcConfig, state: string, codeChallenge: string): string {
@@ -92,7 +113,9 @@ export function buildAuthUrl(cfg: OidcConfig, state: string, codeChallenge: stri
   u.searchParams.set('state', state);
   u.searchParams.set('code_challenge', codeChallenge);
   u.searchParams.set('code_challenge_method', 'S256');
-  u.searchParams.set('prompt', 'consent');
+  // #3669 fix 1 (Wren): NO prompt=consent — that forces the consent screen on
+  // every login. CSS's own 30-day session makes returning logins silent, which is
+  // the point of the long-lived cookie. Consent shows once, at first authorize.
   return u.toString();
 }
 
@@ -117,30 +140,44 @@ export async function exchangeCodeForWebId(
       client_id: cfg.clientId,
       code_verifier: verifier,
     });
-    const res = await fetchImpl(new URL('/.oidc/token', cfg.issuer).toString(), {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: body.toString(),
-    });
+    // #3669 hardening 3 — exchange LOCALLY (no Cloudflare hairpin / bot-check /
+    // internet dependency). Target the local token endpoint with the Host-override
+    // so CSS matches its baseUrl; fall back to the public issuer only if no local
+    // endpoint is configured (e.g. tests / a future off-box deploy).
+    const endpoint = cfg.tokenEndpoint || new URL('/.oidc/token', cfg.issuer).toString();
+    const headers: Record<string, string> = { 'content-type': 'application/x-www-form-urlencoded' };
+    if (cfg.tokenHost) {
+      headers['Host'] = cfg.tokenHost;
+      headers['X-Forwarded-Proto'] = 'https';
+      headers['X-Forwarded-Host'] = cfg.tokenHost;
+    }
+    const res = await fetchImpl(endpoint, { method: 'POST', headers, body: body.toString() });
     if (!res.ok) return null;
     const tok = (await res.json()) as { id_token?: string; access_token?: string };
     const jwt = tok.id_token || tok.access_token;
-    return jwt ? webIdFromJwt(jwt) : null;
+    // #3669 hardening 3 — with skip-verify weakened to loopback, pin the issuer:
+    // the token's iss MUST equal our configured issuer, else reject.
+    return jwt ? webIdFromJwt(jwt, cfg.issuer) : null;
   } catch {
     return null;
   }
 }
 
-/** Pull the `webid` (or `sub` fallback) claim from a JWT without verifying the
- *  signature — the token came straight from CSS over TLS on our own POST, and the
- *  authoritative check is the allow-set membership, not a re-verify here. */
-export function webIdFromJwt(jwt: string): string | null {
+/** Pull the `webid` (or `sub` fallback) claim from a JWT. Signature is not
+ *  re-verified — the token came straight from CSS on our own loopback POST, and
+ *  the authoritative check is allow-set membership. When `expectedIssuer` is given
+ *  (hardening 3), the token's `iss` claim MUST match it or we return null. */
+export function webIdFromJwt(jwt: string, expectedIssuer?: string): string | null {
   const parts = jwt.split('.');
   if (parts.length < 2) return null;
   try {
     const payload = JSON.parse(
       Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(),
     );
+    if (expectedIssuer) {
+      const iss = String(payload.iss || '').replace(/\/$/, '');
+      if (iss !== expectedIssuer.replace(/\/$/, '')) return null;
+    }
     return payload.webid || payload.sub || null;
   } catch {
     return null;

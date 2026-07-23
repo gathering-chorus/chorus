@@ -17,7 +17,12 @@ import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
-import { isLocalConnection } from './connection-auth';
+import { isLocalConnection, isTunneled } from './connection-auth';
+import { isWebIdAllowed } from './solid-auth';
+import {
+  makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
+  exchangeCodeForWebId, type OidcConfig,
+} from './solid-oidc';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -87,6 +92,49 @@ try {
   require('fs').writeFileSync(BRIDGE_TOKEN_FILE, BRIDGE_TOKEN);
 }
 console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
+
+// #3669 lane 3 — human browser login (Solid-OIDC). Persistent HMAC secret for the
+// signed login/session cookies (own secret, not BRIDGE_TOKEN — different lifetime
+// and blast radius). 0600, generated once.
+const SESSION_SECRET_FILE = `${CHORUS_HOME}/clearing-session-secret`;
+let SESSION_SECRET: string;
+try {
+  SESSION_SECRET = require('fs').readFileSync(SESSION_SECRET_FILE, 'utf-8').trim();
+} catch {
+  SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+  require('fs').mkdirSync(CHORUS_HOME, { recursive: true });
+  require('fs').writeFileSync(SESSION_SECRET_FILE, SESSION_SECRET, { mode: 0o600 });
+}
+// The public issuer is browser-facing; the token exchange runs LOCALLY with the
+// Host-override (hardening 3) so it never hairpins Cloudflare or dies with the LAN.
+const CSS_PUBLIC_ISSUER = process.env.CSS_ISSUER || 'https://id.lightlifeurbangardens.com';
+const CSS_LOCAL_TOKEN = process.env.CSS_LOCAL_TOKEN || 'http://localhost:3001/.oidc/token';
+const CSS_TOKEN_HOST = new URL(CSS_PUBLIC_ISSUER).host;
+const CLIENT_ID = 'https://clearing.lightlifeurbangardens.com/clientid.jsonld';
+// #3669 — the flag Wren named the finish line: default OFF ships the login redirect
+// as the default tunneled experience with the bridge token still accepted as the
+// migration fallback; flip ON to retire the token (login required, token refused).
+const REQUIRE_DPOP = process.env.CHORUS_CLEARING_REQUIRE_DPOP === '1';
+// #3669 (Wren) — server-side session lifetime. The signed cookie is otherwise
+// valid forever on signature alone (maxAge is only browser-advisory), so a
+// captured cookie would never die. The gate enforces this against the payload iat.
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Per-request OIDC config — redirect_uri matches the origin the browser is on. */
+function oidcCfg(req: Request): OidcConfig {
+  const onTunnel = isTunneled(req.headers);
+  const redirectUri = onTunnel
+    ? 'https://clearing.lightlifeurbangardens.com/auth/callback'
+    : `http://localhost:${PORT}/auth/callback`;
+  return {
+    issuer: CSS_PUBLIC_ISSUER,
+    clientId: CLIENT_ID,
+    redirectUri,
+    scope: 'openid webid offline_access',
+    tokenEndpoint: CSS_LOCAL_TOKEN,
+    tokenHost: CSS_TOKEN_HOST,
+  };
+}
 
 // #3366: LAN URLs derived at boot, never hardcoded — DHCP moved this machine
 // off 192.168.86.36 and every printed URL died. The .local Bonjour name is
@@ -228,21 +276,132 @@ const CLIENTID_DOC = JSON.stringify({
 }, null, 2);
 
 app.use((req, res, next) => {
+  void gate(req, res, next).catch(() => {
+    if (!res.headersSent) res.status(500).send(errorPage('Something went wrong reaching the room — try again in a moment.'));
+  });
+});
+
+async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
   if (req.path === '/bridge-og.jpg') return next();
   // #3669 — client-id doc is public (CSS fetches it during OIDC); serve pre-gate.
   if (req.path === '/clientid.jsonld') {
-    return res.type('application/ld+json').send(CLIENTID_DOC);
+    res.type('application/ld+json').send(CLIENTID_DOC);
+    return;
   }
+  // #3669 — the login round-trip is pre-auth (the user has no session yet).
+  if (req.path === '/auth/login') return handleAuthLogin(req, res);
+  if (req.path === '/auth/callback') return handleAuthCallback(req, res);
+
   if (handleLocalOnlyGate(req, res)) return;
   if (isLocal(req)) return next();
 
-  const token = extractToken(req);
-  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; this is a tunnel auth gate, not a high-security comparison.
-  if (token === BRIDGE_TOKEN) return handleAuthenticated(req, res, next);
+  // #3669 — the human session cookie (issued after CSS login) is the primary
+  // tunneled auth. Signed (typ:session), WebID re-checked against the live
+  // allow-set every request so a revoked identity loses access within one TTL.
+  const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
+  if (session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now()))) {
+    return handleAuthenticated(req, res, next);
+  }
 
-  if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
-  res.status(401).send(loginPage());
-});
+  // Migration fallback: the static bridge token still works UNTIL the finish-line
+  // flag flips. REQUIRE_DPOP=1 retires it — login required, token refused.
+  if (!REQUIRE_DPOP) {
+    const token = extractToken(req);
+    // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
+    if (token === BRIDGE_TOKEN) return handleAuthenticated(req, res, next);
+    if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
+  }
+
+  // #3669 spec (Wren) — the DEFAULT unauth experience on the public arm is the
+  // clean login interstitial, no token language. Preserve where the user was
+  // heading so the callback lands them in that room.
+  res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
+}
+
+// #3669 — kick off CSS login: PKCE + CSRF state, stashed in a SIGNED short-lived
+// cookie (survives a Clearing restart mid-login), then redirect to CSS.
+function handleAuthLogin(req: Request, res: Response): void {
+  const cfg = oidcCfg(req);
+  const { verifier, challenge } = makePkce();
+  const state = makeState();
+  const returnPath = safeReturnPath((req.query.return as string) || '/');
+  // #3669 (Wren) — carry the redirect_uri in the signed cookie so the exchange
+  // presents the EXACT value the auth request used; re-deriving it on the callback
+  // risks a random 400 if request classification drifts between the two legs.
+  const loginCookie = signCookie(
+    { typ: 'login', verifier, state, returnPath, redirectUri: cfg.redirectUri }, SESSION_SECRET);
+  res.cookie('clearing_login', loginCookie, {
+    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 10 * 60 * 1000, path: '/',
+  });
+  res.redirect(buildAuthUrl(cfg, state, challenge));
+}
+
+// #3669 — CSS redirect-back: verify state (CSRF), exchange the code locally for the
+// WebID, check the allow-set, issue the long-lived session cookie, land in the room.
+async function handleAuthCallback(req: Request, res: Response): Promise<void> {
+  const login = verifyCookie<{ verifier: string; state: string; returnPath: string; redirectUri: string }>(
+    req.cookies?.clearing_login, SESSION_SECRET, 'login');
+  if (req.query.error) {
+    res.status(400).send(errorPage('Login was cancelled or refused. Tap Log in to try again.'));
+    return;
+  }
+  if (!login || !req.query.state || req.query.state !== login.state) {
+    res.status(400).send(errorPage('That login attempt expired or didn’t match — tap Log in to try again.'));
+    return;
+  }
+  const code = String(req.query.code || '');
+  if (!code) {
+    res.status(400).send(errorPage('The login didn’t complete — tap Log in to try again.'));
+    return;
+  }
+  // Exchange with the redirect_uri from the LOGIN leg (cookie), never re-derived.
+  const webid = await exchangeCodeForWebId({ ...oidcCfg(req), redirectUri: login.redirectUri }, code, login.verifier);
+  if (!webid) {
+    res.status(502).send(errorPage('The identity server isn’t answering — the room is fine, try again in a minute.'));
+    return;
+  }
+  if (!(await isWebIdAllowed(webid, Date.now()))) {
+    res.status(403).send(errorPage('This identity isn’t on the team list.'));
+    return;
+  }
+  const sessionCookie = signCookie({ typ: 'session', webid, iat: Date.now() }, SESSION_SECRET);
+  res.cookie('clearing_session', sessionCookie, {
+    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
+  });
+  res.clearCookie('clearing_login', { path: '/' });
+  res.redirect(login.returnPath);
+}
+
+// #3669 — the login interstitial: the DEFAULT unauth experience on the public arm.
+// One button → CSS login. NO token language anywhere (Wren spec item 1). Preserves
+// where the user was heading so the callback lands them in that room (spec item 2).
+function interstitialPage(returnPath: string): string {
+  const q = returnPath && returnPath !== '/' ? `?return=${encodeURIComponent(returnPath)}` : '';
+  return authShell('Where the team gathers.',
+    `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Log in</button></a>`);
+}
+
+// #3669 — errors are sentences, not codes (Wren spec item 4).
+function errorPage(message: string): string {
+  return authShell(message, '<a href="/auth/login" style="text-decoration:none"><button type="button">Log in</button></a>');
+}
+
+// Shared dark shell for the interstitial + error pages — mirrors the namePage look.
+function authShell(sub: string, action: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Clearing — Chorus</title>
+<meta property="og:title" content="The Clearing — Chorus">
+<meta property="og:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;
+background-image:url('/bridge-og.jpg');background-size:cover;background-position:center}
+.login{background:rgba(22,27,34,0.92);padding:2rem;border-radius:12px;border:1px solid #30363d;width:300px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center}
+h2{margin:0 0 0.5rem;font-size:1.2rem}
+p{color:#8b949e;font-size:0.9rem;margin:0 0 1.2rem;line-height:1.4}
+button{width:100%;padding:0.7rem;background:#238636;border:none;color:white;border-radius:6px;font-size:1rem;cursor:pointer}
+button:hover{background:#2ea043}</style></head>
+<body><div class="login"><h2>The Clearing</h2><p>${sub}</p>${action}</div></body></html>`;
+}
 
 function namePage(): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">

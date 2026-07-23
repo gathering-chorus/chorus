@@ -41,6 +41,14 @@ describe('#3669 signed cookies — tamper-evident', () => {
     const c = signCookie({ v: 'verifier', s: 'state', p: '/room' }, SECRET);
     expect(verifyCookie(c, SECRET)).toEqual({ v: 'verifier', s: 'state', p: '/room' });
   });
+  test('typ discrimination: a login cookie is refused where a session is required (Wren fix 2)', () => {
+    const login = signCookie({ typ: 'login', v: 'x' }, SECRET);
+    const session = signCookie({ typ: 'session', webid: WREN }, SECRET);
+    expect(verifyCookie(login, SECRET, 'session')).toBeNull();     // replay refused
+    expect(verifyCookie(session, SECRET, 'login')).toBeNull();     // and the reverse
+    expect(verifyCookie(session, SECRET, 'session')).toEqual({ typ: 'session', webid: WREN });
+    expect(verifyCookie(login, SECRET, 'login')).toEqual({ typ: 'login', v: 'x' });
+  });
   test('a tampered body is rejected', () => {
     const c = signCookie({ webid: WREN }, SECRET);
     const [body, mac] = c.split('.');
@@ -85,6 +93,10 @@ describe('#3669 buildAuthUrl', () => {
     expect(url.searchParams.get('code_challenge_method')).toBe('S256');
     expect(url.searchParams.get('state')).toBe('state123');
   });
+  test('does NOT force prompt=consent (Wren fix 1 — no daily consent ceremony)', () => {
+    const url = new URL(buildAuthUrl(CFG, 's', 'c'));
+    expect(url.searchParams.get('prompt')).toBeNull();
+  });
 });
 
 describe('#3669 webIdFromJwt', () => {
@@ -100,13 +112,19 @@ describe('#3669 webIdFromJwt', () => {
     expect(webIdFromJwt('not-a-jwt')).toBeNull();
     expect(webIdFromJwt('a.!!!.c')).toBeNull();
   });
+  test('issuer pin (hardening 3): a token from the wrong iss is refused', () => {
+    const good = mkJwt({ webid: WREN, iss: 'https://id.lightlifeurbangardens.com/' });
+    const evil = mkJwt({ webid: WREN, iss: 'https://evil-issuer.example/' });
+    expect(webIdFromJwt(good, 'https://id.lightlifeurbangardens.com')).toBe(WREN);
+    expect(webIdFromJwt(evil, 'https://id.lightlifeurbangardens.com')).toBeNull();
+  });
 });
 
 describe('#3669 exchangeCodeForWebId', () => {
   const okFetch = (idToken: string): typeof fetch =>
     (async () => ({ ok: true, json: async () => ({ id_token: idToken }) })) as unknown as typeof fetch;
-  test('returns the WebID from the exchanged token', async () => {
-    const jwt = `h.${Buffer.from(JSON.stringify({ webid: WREN })).toString('base64url')}.s`;
+  test('returns the WebID from the exchanged token (iss matches)', async () => {
+    const jwt = `h.${Buffer.from(JSON.stringify({ webid: WREN, iss: CFG.issuer })).toString('base64url')}.s`;
     expect(await exchangeCodeForWebId(CFG, 'code', 'verifier', okFetch(jwt))).toBe(WREN);
   });
   test('a non-200 token response → null (never throws)', async () => {
