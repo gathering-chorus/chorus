@@ -23,13 +23,15 @@ CANARY_DIR="/tmp/nudge-canary"
 mkdir -p "$CANARY_DIR"
 
 # Resolve a role to its most-recently-registered LIVE session.
-# Prints "host|pid|tty" or "" (no live registration → window-pattern fallback).
+# Prints "host|pid|tty|tmux" or "" (no live registration → window-pattern fallback).
+# CHORUS_SESSIONS_DIR overrides the registry location (tests bring their own world).
 resolve_reg() {
   python3 - "$1" <<'PY'
 import json, os, sys, glob
 role = sys.argv[1]
 best = None
-for f in glob.glob(os.path.expanduser(f"~/.chorus/sessions/{role}-*.json")):
+sessions_dir = os.environ.get("CHORUS_SESSIONS_DIR", os.path.expanduser("~/.chorus/sessions"))
+for f in glob.glob(f"{sessions_dir}/{role}-*.json"):
     try:
         d = json.load(open(f))
     except Exception:
@@ -47,9 +49,9 @@ for f in glob.glob(os.path.expanduser(f"~/.chorus/sessions/{role}-*.json")):
         continue
     at = str(d.get("registered_at", "0"))
     if best is None or at > best[0]:
-        best = (at, d.get("host", "unknown"), pid, d.get("tty", ""))
+        best = (at, d.get("host", "unknown"), pid, d.get("tty", ""), d.get("tmux", ""))
 if best:
-    print(f"{best[1]}|{best[2]}|{best[3]}")
+    print(f"{best[1]}|{best[2]}|{best[3]}|{best[4]}")
 PY
 }
 
@@ -63,7 +65,22 @@ for role in "${ROLES[@]}"; do
   reg="$(resolve_reg "$role" || true)"
   host="${reg%%|*}"
   rpid=""
-  [ -n "$reg" ] && { rest="${reg#*|}"; rpid="${rest%%|*}"; }
+  rpane=""
+  [ -n "$reg" ] && { rest="${reg#*|}"; rpid="${rest%%|*}"; rpane="${reg##*|}"; }
+
+  # --- tmux: delivery is the app-level tmux paste (#3668). Do NOT Terminal-probe;
+  # the pane is the address. no-window stays reserved for terminal hosts (ADR-039). ---
+  if [ -n "$reg" ] && [ "$host" = "tmux" ]; then
+    if [ -n "$rpane" ] && tmux list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qx "$rpane"; then
+      echo "OK: ${role} — tmux session (pid ${rpid}) alive, pane ${rpane} exists → paste-buffer reachable"
+    else
+      echo "ALERT: ${role} — tmux session (pid ${rpid}) registered but pane ${rpane:-<none>} NOT found — tmux delivery cannot land"
+      [ -x "$CHORUS_LOG" ] && "$CHORUS_LOG" "nudge.health.failed" "system" "role=${role},reason=tmux-pane-gone,pid=${rpid},pane=${rpane:-none}" 2>/dev/null || true
+      FAILURES=$((FAILURES + 1))
+    fi
+    echo "$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S') role=${role} host=tmux pid=${rpid} pane=${rpane:-none}" >> "${CANARY_DIR}/health.log"
+    continue
+  fi
 
   # --- vscode: delivery is --vscode (Code app). Do NOT Terminal-probe. ---
   if [ -n "$reg" ] && [ "$host" = "vscode" ]; then
