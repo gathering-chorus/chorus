@@ -204,8 +204,35 @@ function handleLoginPost(req: Request, res: Response) {
   return res.status(401).send(loginPage('Wrong token'));
 }
 
+// #3669 — the Solid-OIDC public client-id document. CSS dereferences this URL
+// (client_id) UNAUTHENTICATED during the auth-code flow, so it must be served
+// before the token gate. Content is Wren's verified draft, verbatim; the
+// client_id/redirect_uris are the tunnel origin + localhost. token_endpoint_auth
+// _method:none = public client (PKCE, no client secret).
+const CLIENTID_DOC = JSON.stringify({
+  '@context': 'https://www.w3.org/ns/solid/oidc-context.jsonld',
+  client_id: 'https://clearing.lightlifeurbangardens.com/clientid.jsonld',
+  client_name: 'The Clearing',
+  redirect_uris: [
+    'http://localhost:3470/auth/callback',
+    'https://clearing.lightlifeurbangardens.com/auth/callback',
+  ],
+  post_logout_redirect_uris: [
+    'http://localhost:3470/',
+    'https://clearing.lightlifeurbangardens.com/',
+  ],
+  grant_types: ['authorization_code', 'refresh_token'],
+  response_types: ['code'],
+  scope: 'openid webid offline_access',
+  token_endpoint_auth_method: 'none',
+}, null, 2);
+
 app.use((req, res, next) => {
   if (req.path === '/bridge-og.jpg') return next();
+  // #3669 — client-id doc is public (CSS fetches it during OIDC); serve pre-gate.
+  if (req.path === '/clientid.jsonld') {
+    return res.type('application/ld+json').send(CLIENTID_DOC);
+  }
   if (handleLocalOnlyGate(req, res)) return;
   if (isLocal(req)) return next();
 
