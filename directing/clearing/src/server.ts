@@ -17,6 +17,7 @@ import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
+import { isLocalConnection } from './connection-auth';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -141,16 +142,13 @@ app.use((req: Request, _res, next) => {
   next();
 });
 
-// Auth middleware — local/LAN requests pass, remote requests need token (#1719)
+// Auth middleware — local/LAN requests pass, remote requests need token (#1719).
+// #3669 — the tunnel + address logic now lives in one classifier shared with the
+// Socket.IO gate below, so the two transports can never drift again (the WS gate
+// had drifted: it skipped the cf-header tunnel check and was bypassable).
 function isLocal(req: express.Request): boolean {
-  // Cloudflare tunnel proxies from localhost — check CF headers to detect tunneled requests
-  if (req.headers['cf-connecting-ip'] || req.headers['cf-ray']) return false;
   const ip = req.ip || req.socket.remoteAddress || '';
-  // Localhost
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
-  // LAN — 192.168.86.x (Jeff's home network)
-  if (ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.')) return true;
-  return false;
+  return isLocalConnection(req.headers, ip);
 }
 
 // Body parsers BEFORE auth — login form needs req.body parsed (#1782)
@@ -785,12 +783,14 @@ app.post('/api/message', (req, res) => {
   res.json({ ok: true });
 });
 
-// Socket.IO auth — remote connections need token (#1719)
+// Socket.IO auth — remote connections need token (#1719).
+// #3669 — was address-only, so a tunneled WS (cloudflared → 127.0.0.1) counted
+// as local and skipped the token: an unauthenticated jeff-message command path
+// over the public tunnel. Now uses the SAME classifier as the HTTP gate, so the
+// cf-* tunnel headers on the WS upgrade demote a tunneled handshake to remote.
 io.use((socket, next) => {
   const ip = socket.handshake.address || '';
-  const isLocalSocket = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
-    || ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.');
-  if (isLocalSocket) return next();
+  if (isLocalConnection(socket.handshake.headers, ip)) return next();
 
   const token = socket.handshake.auth.token || socket.handshake.query.token;
   // Also check cookies from handshake headers
