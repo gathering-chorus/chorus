@@ -271,7 +271,7 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     const senderReg = from ? resolveRoleTarget(from) : null;
     const plan = planDelivery(targetReg, to, content, senderReg);
     const targetDesc = plan.kind === 'inject'
-      ? (plan.args[0] === '--vscode' ? 'vscode-focused' : plan.args[0] === '--tty' ? `tty:${plan.args[1]}` : `name-match:${plan.args[0]}`)
+      ? (plan.args[0] === '--tmux' ? `tmux:${plan.args[1]}` : plan.args[0] === '--vscode' ? 'vscode-focused' : plan.args[0] === '--tty' ? `tty:${plan.args[1]}` : `name-match:${plan.args[0]}`)
       : `deferred:${plan.reason}`;
     if (plan.kind === 'defer') {
       // VS-Code-hosted target: osascript would leak into the focused app.

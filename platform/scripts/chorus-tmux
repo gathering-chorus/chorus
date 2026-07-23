@@ -1,0 +1,39 @@
+#!/bin/bash
+# #3668 — host a role's claude inside tmux (in the VS Code integrated terminal).
+#
+# Why: VS Code offers no app-level osascript delivery surface — nudges to a
+# VS Code-hosted session fell back to HID keystrokes, which silently drop with
+# the screen locked. Running the session inside tmux gives it the same
+# app-level property Terminal.app roles have: chorus-inject delivers through
+# the tmux server (osascript do-shell-script → load-buffer/paste-buffer),
+# which lands with the monitor asleep / screen locked (machine awake).
+#
+# Usage:
+#   chorus-tmux <role>              attach-or-create session chorus-<role>
+#   chorus-tmux <role> <command...> same, running <command> in the new session
+#
+# Launch this INSIDE the VS Code terminal you already use for the role, with
+# the role env (CHORUS_ROLE etc.) already set — the first session creation
+# inherits the launching shell's environment. Then start claude as usual
+# inside; the SessionStart hook sees $TMUX_PANE and registers host=tmux with
+# the exact pane id.
+set -euo pipefail
+
+ROLE="${1:?usage: chorus-tmux <role> [command...]}"
+shift || true
+SESSION="chorus-${ROLE}"
+TMUX_BIN="$(command -v tmux || true)"
+if [ -z "$TMUX_BIN" ]; then
+  for c in /opt/homebrew/bin/tmux /usr/local/bin/tmux; do
+    [ -x "$c" ] && TMUX_BIN="$c" && break
+  done
+fi
+if [ -z "$TMUX_BIN" ]; then
+  echo "chorus-tmux: tmux not found — brew install tmux" >&2
+  exit 1
+fi
+
+if [ "$#" -gt 0 ]; then
+  exec "$TMUX_BIN" new-session -A -s "$SESSION" "$@"
+fi
+exec "$TMUX_BIN" new-session -A -s "$SESSION"
