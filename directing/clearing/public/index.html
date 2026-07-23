@@ -1394,7 +1394,7 @@ function renderCardDetail(el, card) {
   var domainMatch = (card.domains || '').match(/domain:(\w+)/);
   if (domainMatch) {
     var domainName = domainMatch[1];
-    fetch('http://localhost:3340/api/chorus/domain/' + domainName)
+    fetch('/api/domain-detail/' + encodeURIComponent(domainName))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(d) {
         if (!d || !d.sections) return;

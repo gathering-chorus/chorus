@@ -703,11 +703,11 @@ describe('server — HEIC upload path', () => {
 });
 
 describe('server — auth middleware edge cases', () => {
-  test('tunneled /api/stream blocked without token (admin path)', async () => {
+  test('tunneled /api/stream without token → 401 auth-required (#3667: read pair opened to token holders)', async () => {
     const r = await call('/api/stream', {
       headers: { 'cf-connecting-ip': '1.2.3.4', 'cf-ray': 'abc' },
     });
-    expect(r.status).toBe(403);
+    expect(r.status).toBe(401);
   });
 
   test('tunneled /api/commands/kade also blocked', async () => {
