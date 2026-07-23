@@ -549,9 +549,11 @@ pub fn health_weekly(args: &[String]) -> ExitCode {
 mod log_rotate_path_tests {
     use super::repo_root;
 
-    // #3610 — the double-/chorus regression guard: every path health.rs builds
-    // from repo_root() must exist under the real checkout layout. repo_root()
-    // itself ends in /chorus, so appending another /chorus must never happen.
+    // #3610 — the double-/chorus regression guard: paths health.rs builds from
+    // repo_root() must append exactly "/platform/logs", never an extra /chorus
+    // segment. #3665: the guard must inspect only the APPENDED part — the root
+    // itself legitimately contains /chorus/chorus/ on GitHub CI, whose checkout
+    // layout is work/<repo>/<repo> (that substring false-failed this test there).
     #[test]
     fn health_paths_do_not_double_the_chorus_segment() {
         let root = repo_root();
@@ -560,9 +562,15 @@ mod log_rotate_path_tests {
             "repo_root must be a bare path"
         );
         let log_dir = format!("{}/platform/logs", root);
+        let appended = &log_dir[root.len()..];
+        assert_eq!(
+            appended, "/platform/logs",
+            "log dir must be root + /platform/logs, nothing injected: {}",
+            log_dir
+        );
         assert!(
-            !log_dir.contains("/chorus/chorus/"),
-            "log dir must not double /chorus: {}",
+            !appended.contains("/chorus"),
+            "no /chorus segment may be appended to a root that already ends in it: {}",
             log_dir
         );
         // the dir the rotation scans must actually exist in a real checkout
