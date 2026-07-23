@@ -512,8 +512,11 @@ async fn rotate_if_needed(path: &PathBuf, _role: &str) {
 /// Fallback: andon state file (for backwards compat when log is unavailable).
 fn read_role_card(role: &str) -> Option<String> {
     // Primary: check chorus.log for most recent card.pulled by this role
+    // #3670 — tail-bounded (only the last 200 lines are scanned)
     let log_path = format!("{}/platform/logs/chorus.log", chorus_root());
-    if let Ok(content) = std::fs::read_to_string(log_path) {
+    if let Some(content) =
+        crate::shared::log_tail::read_log_tail(std::path::Path::new(&log_path))
+    {
         for line in content.lines().rev().take(200) {
             if line.contains("card.pulled") && line.contains(&format!("\"role\":\"{}\"", role)) {
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(line) {

@@ -379,10 +379,20 @@ pub fn log_rotate() -> ExitCode {
 
     let logs = ["chorus.log", "permission-prompts.log", "command-errors.log", "handoffs.log"];
 
+    // #3670 — the daemon's own console log (launchd stdout redirect). Health-tick
+    // JSON chatter, zero history value; it sat at 1.2GB the morning of the OOM.
+    // The SPINE (~/.chorus/chorus.log) is deliberately NOT in this list — it's the
+    // team's memory layer and is never rotated (Jeff, 2026-07-23). Truncate-in-place
+    // is safe here: launchd opens StandardOutPath O_APPEND, so writes continue at
+    // the new EOF.
+    let home = std::env::var("HOME").unwrap_or_default();
+    let absolute_logs = [format!("{}/Library/Logs/Chorus/chorus-hooks.log", home)];
+
     println!("=== Log rotation {} ===", process::wall_clock().chars().take(16).collect::<String>());
 
-    for name in &logs {
-        let path = format!("{}/{}", log_dir, name);
+    let dir_paths = logs.iter().map(|name| format!("{}/{}", log_dir, name));
+    for path in dir_paths.chain(absolute_logs.iter().cloned()) {
+        let name = path.rsplit('/').next().unwrap_or(&path).to_string();
         let size = fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
         let size_mb = size / 1_048_576;
 

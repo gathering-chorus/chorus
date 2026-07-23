@@ -494,9 +494,11 @@ fn read_pulse_snapshot() -> Option<String> {
 /// a JSON object with timestamp/role/event fields.
 fn query_recent_spine(limit: usize) -> Vec<(String, String, String)> {
     let log_path = crate::shared::state_paths::chorus_log_file();
-    let content = match std::fs::read_to_string(&log_path) {
-        Ok(s) => s,
-        Err(_) => return vec![],
+    // #3670 — tail-bounded: read_to_string of the whole spine log inside the
+    // daemon, once per prompt inject, is what OOM'd the Library mac at 28.5GB.
+    let content = match crate::shared::log_tail::read_log_tail(std::path::Path::new(&log_path)) {
+        Some(s) => s,
+        None => return vec![],
     };
     let mut out = Vec::new();
     for line in content.lines().rev() {
