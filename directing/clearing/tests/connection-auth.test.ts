@@ -9,7 +9,7 @@
  * local, regardless of source address.
  */
 
-import { isTunneled, isLocalAddress, isLocalConnection } from '../src/connection-auth';
+import { isTunneled, isLocalAddress, isLocalConnection, externalRequestUrl } from '../src/connection-auth';
 
 describe('#3669: one connection-locality classifier for both transports', () => {
   describe('isTunneled', () => {
@@ -65,6 +65,43 @@ describe('#3669: one connection-locality classifier for both transports', () => 
     test('tunneled request from a LAN address is still not local', () => {
       // Defense in depth: a tunnel header wins even over a LAN source.
       expect(isLocalConnection({ 'cf-ray': 'x' }, '192.168.86.42')).toBe(false);
+    });
+  });
+
+  describe('externalRequestUrl — DPoP htu reconstruction behind the tunnel', () => {
+    test('THE htu FIX: tunneled request rebuilds the public https URL, not localhost', () => {
+      // Client signed https://clearing.lightlifeurbangardens.com/api/chat/message;
+      // Express sees http://localhost:3470/... . Must reconstruct the signed URL.
+      const headers = {
+        'cf-ray': '8abc-EWR',
+        'cf-connecting-ip': '203.0.113.7',
+        host: 'clearing.lightlifeurbangardens.com',
+        'x-forwarded-proto': 'https',
+      };
+      expect(externalRequestUrl(headers, '/api/chat/message')).toBe(
+        'https://clearing.lightlifeurbangardens.com/api/chat/message',
+      );
+    });
+
+    test('X-Forwarded-Proto wins even if a comma-list', () => {
+      const headers = { host: 'clearing.lightlifeurbangardens.com', 'x-forwarded-proto': 'https,http' };
+      expect(externalRequestUrl(headers, '/x')).toBe('https://clearing.lightlifeurbangardens.com/x');
+    });
+
+    test('tunneled without XFP still forces https (public door is TLS)', () => {
+      const headers = { 'cf-ray': 'x', host: 'clearing.lightlifeurbangardens.com' };
+      expect(externalRequestUrl(headers, '/y')).toBe('https://clearing.lightlifeurbangardens.com/y');
+    });
+
+    test('local non-tunneled keeps the fallback scheme', () => {
+      expect(externalRequestUrl({ host: 'localhost:3470' }, '/z')).toBe('http://localhost:3470/z');
+    });
+
+    test('preserves path; htu comparison ignores the query (verifier normalizes)', () => {
+      const headers = { 'cf-ray': 'x', host: 'clearing.lightlifeurbangardens.com' };
+      expect(externalRequestUrl(headers, '/api/stream?token=abc')).toBe(
+        'https://clearing.lightlifeurbangardens.com/api/stream?token=abc',
+      );
     });
   });
 });
