@@ -11,9 +11,11 @@ use std::path::Path;
 use std::process::Command;
 use werk_test::{
     affected_units, cargo_skip_args, check_plan, gap_report, gate_outcome, is_self_modifying,
-    model_units, parse_quarantine_rows, parse_test_rows, plan_source_label,
-    plan_units_from_rows, quarantine_report, scope_rows, scoped_requires_model, spine_args,
-    suite_run_payload, undeclared_gaps, CheckKind, Quarantined, TestRow, TestUnit, TS_PACKAGES,
+    match_cargo_case, model_units, parse_cargo_cases, parse_case_tsv, parse_quarantine_rows,
+    parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
+    reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
+    suite_run_payload, test_result_payload, undeclared_gaps, CaseResult, CheckKind, Quarantined,
+    TestRow, TestUnit, TS_PACKAGES,
 };
 
 fn main() {
@@ -30,6 +32,11 @@ fn main() {
 /// Parse `card` and `role`, find the card's werk, detect affected units on the
 /// diff, run the planned checks, emit typed failures to the spine, and gate.
 fn run(args: &[String]) -> Result<i32, String> {
+    // #3592 AC3 — `werk-test --reconcile`: registered ∖ executed, visible +
+    // alertable (tests.reconcile spine event), never blocking.
+    if args.iter().any(|a| a == "--reconcile") {
+        return run_reconcile();
+    }
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let card = positional
         .first()
@@ -55,7 +62,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     // covers) widen the legacy path-derived units to every unit holding tests that
     // cover a touched domain — UNION, never smaller (the superset AC). A failed
     // fetch degrades to the legacy plan, loudly (test.plan.degraded), never silently.
-    let (rows, plan_source) = fetch_test_rows();
+    let (rows, row_names, row_entities, plan_source) = fetch_test_rows();
     // #3661 AC2 — --domain/--type scope the DECLARED set; the scope is a model
     // predicate, so a scoped run refuses (loudly) when the domain is unreachable
     // instead of running an unscopable legacy plan. Unscoped keeps the degrade path.
@@ -133,12 +140,34 @@ fn run(args: &[String]) -> Result<i32, String> {
     );
     let mut any_failed = false;
     let mut failed_count: usize = 0;
+    // #3592 — every executed case, keyed to the registered identity, plus the
+    // loud counter for cargo cases that can't be joined unambiguously.
+    let mut all_cases: Vec<CaseResult> = Vec::new();
+    let mut unmatched_cargo: usize = 0;
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let ok = match (&check.kind, &check.unit) {
-            (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => run_cargo(&werk, c, &q_names),
+            (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => {
+                let (ok, cases) = run_cargo(&werk, c, &q_names);
+                let crate_dir = format!("platform/services/{}", c);
+                for (bare, result) in cases {
+                    match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
+                        Some(fp) => all_cases.push(CaseResult {
+                            file_path: fp,
+                            test_name: bare,
+                            result,
+                        }),
+                        None => unmatched_cargo += 1,
+                    }
+                }
+                ok
+            }
             (CheckKind::Tsc, Some(TestUnit::TsPackage(p))) => run_tsc(&werk, p),
-            (CheckKind::Jest, Some(TestUnit::TsPackage(p))) => run_jest(&werk, p),
+            (CheckKind::Jest, Some(TestUnit::TsPackage(p))) => {
+                let (ok, cases) = run_jest(&werk, p);
+                all_cases.extend(cases);
+                ok
+            }
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
@@ -173,6 +202,22 @@ fn run(args: &[String]) -> Result<i32, String> {
     // the write, but a skipped post is a spine event, not a silence.
     post_suite_run(&role, &card, &trace, plan_source, plan.len(), failed_count,
         started_at.elapsed().as_millis(), outcome.label());
+    // #3592 — per-case wire-back. Unjoinable cargo cases are NAMED (spine),
+    // never silently dropped.
+    if unmatched_cargo > 0 {
+        emit_spine("testresult.unmatched", &role, &card, &trace,
+            &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
+    }
+    // #3592 — a TestResult's ofTest edge is mandatory, so only cases that JOIN
+    // to a registered Test are posted; executed-but-unregistered is its own
+    // loud surface (the mirror of the reconcile gap), never a fabricated identity.
+    let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
+    if unregistered > 0 {
+        emit_spine("testresult.unregistered", &role, &card, &trace,
+            &[("count", &unregistered.to_string())]);
+        println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
+    }
+    post_test_results(&role, &card, &trace, &joined);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -273,14 +318,32 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// match without a manifest is skipped = pass; nothing to run). Quarantined case
 /// names are appended as `-- --skip <case>` (#2530) so a flaky hold can't block the
 /// gate; an empty quarantine set leaves the invocation byte-identical.
-fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> bool {
+fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String, String)>) {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
-        return true;
+        return (true, Vec::new());
     }
     let mut args: Vec<String> = vec!["test".into(), "--lib".into(), "--bins".into()];
     args.extend(cargo_skip_args(quarantined));
-    status_ok(Command::new("cargo").args(&args).current_dir(&dir))
+    // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
+    // Failure output is still shown (tail), honest-red stays visible.
+    match Command::new("cargo").args(&args).current_dir(&dir).output() {
+        Ok(o) => {
+            let ok = o.status.success();
+            let text = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+            if !ok {
+                let lines: Vec<&str> = text.lines().collect();
+                let start = lines.len().saturating_sub(60);
+                eprintln!("{}", lines[start..].join("\n"));
+            }
+            (ok, parse_cargo_cases(&text))
+        }
+        Err(_) => (false, Vec::new()),
+    }
 }
 
 /// Fetch the quarantined test cases from the tests domain (owl-api `/tests`), via a
@@ -318,21 +381,63 @@ fn run_tsc(werk: &str, pkg: &str) -> bool {
 }
 
 /// `jest --ci` per TS package, deps guarded the same way (#3397).
-fn run_jest(werk: &str, pkg: &str) -> bool {
+/// #3592 — `--json` capture: stdout is the machine result (per-case identity →
+/// TestResult emit), progress/failures stay on stderr and are echoed on red.
+fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
-        return false;
+        return (false, Vec::new());
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
-        return true;
+        return (true, Vec::new());
     }
-    status_ok(
-        Command::new(&jest)
-            .args(["--ci", "--forceExit", "--passWithNoTests"])
-            .current_dir(&pkg_dir),
-    )
+    match Command::new(&jest)
+        .args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
+        .current_dir(&pkg_dir)
+        .output()
+    {
+        Ok(o) => {
+            let ok = o.status.success();
+            if !ok {
+                eprintln!("{}", String::from_utf8_lossy(&o.stderr));
+            }
+            (ok, jest_cases_via_jq(&o.stdout, werk))
+        }
+        Err(_) => (false, Vec::new()),
+    }
+}
+
+/// jq-extract per-case rows from jest's --json report (curl|jq zero-dep
+/// pattern, ADR-032 §6). Any jq failure yields an EMPTY set — emit is
+/// best-effort, the gate verdict never depends on it.
+fn jest_cases_via_jq(json: &[u8], werk: &str) -> Vec<CaseResult> {
+    let jq_filter =
+        r#".testResults[] | .name as $f | .assertionResults[] | [$f, .fullName, .status] | @tsv"#;
+    let mut jq = match Command::new("jq")
+        .args(["-r", jq_filter])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    if let Some(mut stdin) = jq.stdin.take() {
+        use std::io::Write;
+        if stdin.write_all(json).is_err() {
+            return Vec::new();
+        }
+    }
+    let out = match jq.wait_with_output() {
+        Ok(o) if o.status.success() => o.stdout,
+        _ => return Vec::new(),
+    };
+    parse_case_tsv(&String::from_utf8_lossy(&out))
+        .into_iter()
+        .map(|c| CaseResult { file_path: rel_path(&c.file_path, werk), ..c })
+        .collect()
 }
 
 /// `clippy-ratchet.sh` — workspace-wide per-lint ratchet (counts only decrease).
@@ -410,20 +515,20 @@ fn emit_spine(event: &str, role: &str, card: &str, trace: &str, extras: &[(&str,
 /// curl|jq (the quarantine pattern; zero-dep per ADR-032 §6). Returns the rows
 /// plus the plan-source label: "model" on success, "fallback" on any failure —
 /// the caller witnesses the degradation, the gate still runs on legacy lanes.
-fn fetch_test_rows() -> (Vec<TestRow>, &'static str) {
+fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
     // #3634 gather hardening (silas): NO shell interpolation — curl and jq run as
     // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
     // The jq filter emits one TSV row PER covers value, so a multi-valued covers
     // (array in a future TestShape) fans out instead of being dropped silently.
-    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // "")] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // "")] | @tsv"#;
     let curl = Command::new("curl")
         .args(["-sf", "--max-time", "10", &endpoint])
         .output();
     let body = match curl {
         Ok(o) if o.status.success() => o.stdout,
-        _ => return (Vec::new(), plan_source_label(false, 0)),
+        _ => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
     };
     let mut jq = match Command::new("jq")
         .args(["-r", jq_filter])
@@ -432,21 +537,125 @@ fn fetch_test_rows() -> (Vec<TestRow>, &'static str) {
         .spawn()
     {
         Ok(c) => c,
-        Err(_) => return (Vec::new(), plan_source_label(false, 0)),
+        Err(_) => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
     };
     if let Some(mut stdin) = jq.stdin.take() {
         use std::io::Write;
         if stdin.write_all(&body).is_err() {
-            return (Vec::new(), plan_source_label(false, 0));
+            return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0));
         }
     }
     let out = match jq.wait_with_output() {
         Ok(o) if o.status.success() => o.stdout,
-        _ => return (Vec::new(), plan_source_label(false, 0)),
+        _ => return (Vec::new(), Vec::new(), Vec::new(), plan_source_label(false, 0)),
     };
-    let rows = parse_test_rows(&String::from_utf8_lossy(&out));
+    let (rows, names, entities) = parse_rows_and_names(&String::from_utf8_lossy(&out));
     let label = plan_source_label(true, rows.len());
-    (rows, label)
+    (rows, names, entities, label)
+}
+
+/// #3592 — shared token acquisition: $CHORUS_WRITE_TOKEN, else mint. Pulled out
+/// of post_suite_run so TestResult posts reuse ONE token per run.
+fn write_token(role: &str) -> Option<String> {
+    std::env::var("CHORUS_WRITE_TOKEN")
+        .ok()
+        .filter(|t| !t.is_empty())
+        .or_else(|| mint_token(role))
+}
+
+/// #3592 emit side — every executed case lands as a chorus:TestResult keyed to
+/// the registered identity (filePath+testName). Best-effort + WITNESSED: the
+/// gate verdict never depends on it; skip/truncation is a spine event, not a
+/// silence. Bounded at 2000 posts per run (no silent caps — dropped count named).
+fn post_test_results(
+    role: &str,
+    card: &str,
+    trace: &str,
+    joined: &[(CaseResult, String)],
+) {
+    if joined.is_empty() {
+        return;
+    }
+    let endpoint = std::env::var("OWL_API_TESTRESULTS")
+        .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
+    let Some(token) = write_token(role) else {
+        emit_spine("testresult.post.skipped", role, card, trace,
+            &[("reason", "no-write-token"), ("count", &joined.len().to_string())]);
+        return;
+    };
+    const MAX_POSTS: usize = 2000;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let mut posted = 0usize;
+    let mut failed = 0usize;
+    for (i, (c, of_test)) in joined.iter().take(MAX_POSTS).enumerate() {
+        let payload = test_result_payload(
+            &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, i);
+        let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
+        let ok = Command::new("curl")
+            .args(&args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if ok { posted += 1 } else { failed += 1 }
+    }
+    let mut extras: Vec<(String, String)> = vec![
+        ("count".into(), posted.to_string()),
+        ("failed_posts".into(), failed.to_string()),
+    ];
+    if joined.len() > MAX_POSTS {
+        extras.push(("truncated_dropped".into(), (joined.len() - MAX_POSTS).to_string()));
+    }
+    let refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    emit_spine("testresult.posted", role, card, trace, &refs);
+}
+
+/// #3592 AC3 — registered ∖ executed. Reads BOTH generated collections, prints
+/// the explicit-none report, emits tests.reconcile with the counts. Exit 0 —
+/// the count is alertable (spine/monitors), the command itself never blocks.
+fn run_reconcile() -> Result<i32, String> {
+    let role = std::env::var("ROLE").unwrap_or_else(|_| "kade".to_string());
+    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let (rows, names, _entities, source) = fetch_test_rows();
+    if source != "model" {
+        return Err("reconcile requires the tests domain; fetch failed or empty".into());
+    }
+    let mut registered: Vec<(String, String)> = rows
+        .iter()
+        .zip(names.iter())
+        .map(|(r, n)| (r.file_path.clone(), n.clone()))
+        .collect();
+    registered.sort();
+    registered.dedup(); // covers fan-out duplicates one row per covers value
+    let endpoint = std::env::var("OWL_API_TESTRESULTS")
+        .unwrap_or_else(|_| "http://localhost:3360/testresults?limit=100000".to_string());
+    let jq = r#".data[] | [.filePath, .testName] | @tsv"#;
+    let pipe = format!("curl -sf --max-time 15 '{}' | jq -r '{}'", endpoint, jq);
+    let out = Command::new("bash")
+        .args(["-c", &pipe])
+        .output()
+        .map_err(|e| format!("testresults fetch failed: {}", e))?;
+    let mut executed: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            match (it.next(), it.next()) {
+                (Some(f), Some(n)) if !f.is_empty() => Some((f.to_string(), n.to_string())),
+                _ => None,
+            }
+        })
+        .collect();
+    executed.sort();
+    executed.dedup();
+    let gap = reconcile_gap(&registered, &executed);
+    println!("{}", reconcile_report(registered.len(), &gap));
+    emit_spine("tests.reconcile", &role, "-", &trace,
+        &[("registered", &registered.len().to_string()),
+          ("executed", &executed.len().to_string()),
+          ("never_run", &gap.len().to_string())]);
+    Ok(0)
 }
 
 /// #3634 write side — POST the run's TestSuiteRun through the generated write
@@ -467,8 +676,7 @@ fn post_suite_run(
 ) {
     let endpoint = std::env::var("OWL_API_TESTSUITERUNS")
         .unwrap_or_else(|_| "http://localhost:3360/testsuiteruns".to_string());
-    let token = std::env::var("CHORUS_WRITE_TOKEN").ok().filter(|t| !t.is_empty()).or_else(mint_token);
-    let Some(token) = token else {
+    let Some(token) = write_token(role) else {
         emit_spine("testsuiterun.post.skipped", role, card, trace,
             &[("reason", "no-write-token")]);
         return;
@@ -489,15 +697,22 @@ fn post_suite_run(
 }
 
 /// Mint a write token scoped to the instances graph (#3619 lane). Best-effort.
-fn mint_token() -> Option<String> {
+fn mint_token(role: &str) -> Option<String> {
     let home = std::env::var("CHORUS_HOME").ok()?;
     let script = format!("{}/platform/scripts/chorus-mint-token.py", home);
     if !Path::new(&script).is_file() {
         return None;
     }
+    // #3592 — the CANONICAL agent WebID: owl-api's phase-1 key registry
+    // (auth::chorus_agent_webids) is the allow-set, and it registers exactly
+    // this form. The previous jeffbridwell.com#role-* identity was unknown to
+    // the registry, so every mint verified as WebIdNotAllowed -> 401.
+    let web_id = format!(
+        "http://localhost:3000/pods/chorus/_agents/{}/profile/card.ttl#me",
+        role
+    );
     let out = Command::new("python3")
-        .args([&script, "--web-id", "https://jeffbridwell.com/chorus#role-kade",
-            "--scope", "urn:chorus:instances"])
+        .args([&script, "--web-id", &web_id, "--scope", "urn:chorus:domains:tests"])
         .output()
         .ok()?;
     if !out.status.success() {
