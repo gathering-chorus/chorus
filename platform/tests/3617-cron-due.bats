@@ -9,6 +9,13 @@
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 DUE="$REPO_ROOT/proving/scripts/cron-due.py"
 
+# #3665 — the epochs below are hand-computed in America/New_York, and cron-due.py
+# evaluates cron fields in the process's local TZ (correct for prod: "8am harvest"
+# means 8am Boston, and the runner is launchd-local). The TEST must pin that TZ or
+# it fails on any non-Eastern box — exactly what happened on UTC CI (3 red under
+# TZ=UTC, 0 under America/New_York, verified locally both ways).
+export TZ=America/New_York
+
 # 2026-07-16 08:00:00 EDT = epoch 1784203200
 EIGHT_AM=1784203200
 MIDNIGHT=1784174400   # 2026-07-16 00:00:00 EDT

@@ -5,10 +5,25 @@
 
 setup() { ROOT="$(git rev-parse --show-toplevel)"; HELPER="$ROOT/platform/scripts/fuseki-auth.sh"; }
 
+# #3665 — since #3611 the helper's fallback reads the shared-infra credential
+# file ($FUSEKI_WRITE_ENV, default ~/.gathering/data/fuseki-write.env). On a
+# provisioned box that file EXISTS, so "unset env var" no longer means "no
+# credential" unless the test brings its own world: point FUSEKI_WRITE_ENV at
+# a path that cannot exist. (Test-contract rule: no reads of the live $HOME.)
+
 @test "FUSEKI_AUTH is empty when FUSEKI_ADMIN_PASSWORD is unset (no auth = current behavior)" {
-  run env -u FUSEKI_ADMIN_PASSWORD bash -c "set -uo pipefail; source '$HELPER'; echo \${#FUSEKI_AUTH[@]}"
+  run env -u FUSEKI_ADMIN_PASSWORD FUSEKI_WRITE_ENV="$BATS_TMPDIR/absent-cred.env" \
+    bash -c "set -uo pipefail; source '$HELPER'; echo \${#FUSEKI_AUTH[@]}"
   [ "$status" -eq 0 ]
   [ "$output" = "0" ]
+}
+
+@test "FUSEKI_AUTH loads from the shared-infra credential file when env is unset (#3611)" {
+  printf 'FUSEKI_ADMIN_USER=filewriter\nFUSEKI_ADMIN_PASSWORD=filepw\n' > "$BATS_TMPDIR/cred.env"
+  run env -u FUSEKI_ADMIN_PASSWORD -u FUSEKI_ADMIN_USER FUSEKI_WRITE_ENV="$BATS_TMPDIR/cred.env" \
+    bash -c "set -uo pipefail; source '$HELPER'; echo \"\${FUSEKI_AUTH[1]}\""
+  [ "$status" -eq 0 ]
+  [ "$output" = "filewriter:filepw" ]
 }
 
 @test "FUSEKI_AUTH carries -u admin:<pw> when the password is set" {
@@ -30,7 +45,7 @@ source "$HELPER"
 args=(curl "\${FUSEKI_AUTH[@]+"\${FUSEKI_AUTH[@]}"}" END)
 echo "\${#args[@]}"
 EOF
-  run env -u FUSEKI_ADMIN_PASSWORD bash "$BATS_TMPDIR/probe.sh"
+  run env -u FUSEKI_ADMIN_PASSWORD FUSEKI_WRITE_ENV="$BATS_TMPDIR/absent-cred.env" bash "$BATS_TMPDIR/probe.sh"
   [ "$status" -eq 0 ]
   [ "$output" = "2" ]   # curl + END only — no empty "" arg injected when unauthenticated
 }

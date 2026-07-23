@@ -57,6 +57,23 @@ function fixtureSourceDirs(): SourceDir[] {
   ];
 }
 
+// #3665 — hermeticity rule 5: CI runs jest --randomize (#2532), so describe
+// blocks execute in arbitrary order. Any state a test consumes must be arranged
+// by that test's own describe, idempotently (409-on-duplicate is fine — the
+// fixture may already exist if another describe arranged it first). The 3-day
+// ci-main-red was exactly this file's cross-describe writes shuffling apart.
+function ensureRegisteredDoc(): void {
+  const abs = write(CTMP, 'manual/registered-doc.md', '# Registered Doc\n');
+  const r = registerDoc({ filePath: abs, href: '/manual/registered-doc', group: 'Curated' });
+  if (r.status !== 201 && r.status !== 409) throw new Error(`fixture registerDoc unexpected status ${r.status}`);
+}
+
+function ensurePhotosGovernsLink(): void {
+  ensureRegisteredDoc();
+  const r = linkDocToDomain({ href: '/manual/registered-doc', domain: 'photos', relationship: 'governs' });
+  if (r.status !== 201 && r.status !== 409) throw new Error(`fixture link unexpected status ${r.status}`);
+}
+
 describe('buildDocCatalog (scan + classify + group)', () => {
   beforeAll(() => {
     write(CTMP, 'fixture-docs/design-notes.md', '# Real Markdown Title\n\nbody');
@@ -116,21 +133,24 @@ describe('registerDoc (validation + persistence)', () => {
   });
 
   it('201 registers and persists; 409 on duplicate href', () => {
-    const abs = write(CTMP, 'manual/registered-doc.md', '# Registered Doc\n');
-    const r = registerDoc({ filePath: abs, href: '/manual/registered-doc', group: 'Curated' });
+    // #3665 — a UNIQUE href for the 201 assertion: the shared '/manual/registered-doc'
+    // fixture may already exist if a shuffled-earlier describe arranged it.
+    const abs = write(CTMP, 'manual/fresh-doc.md', '# Fresh Doc\n');
+    const r = registerDoc({ filePath: abs, href: '/manual/fresh-doc', group: 'Curated' });
     expect(r.status).toBe(201);
     const body = r.body as { registered: { href: string }; doc: { title: string; source: string; group: string } };
-    expect(body.doc.title).toBe('Registered Doc');
+    expect(body.doc.title).toBe('Fresh Doc');
     expect(body.doc.source).toBe('manual');
     expect(body.doc.group).toBe('Curated');
     // Persisted to the CHORUS_REPO-relative registry, not the real one.
     const reg = JSON.parse(fs.readFileSync(path.join(CTMP, 'platform/api/data/doc-catalog-registry.json'), 'utf-8'));
-    expect(reg.some((e: { href: string }) => e.href === '/manual/registered-doc')).toBe(true);
+    expect(reg.some((e: { href: string }) => e.href === '/manual/fresh-doc')).toBe(true);
 
-    expect(registerDoc({ filePath: abs, href: '/manual/registered-doc' }).status).toBe(409);
+    expect(registerDoc({ filePath: abs, href: '/manual/fresh-doc' }).status).toBe(409);
   });
 
   it('registered docs appear in the catalog (collectFromRegistry)', () => {
+    ensureRegisteredDoc();
     const all = collectAllDocs(fixtureSourceDirs());
     expect(all.some((d) => d.href === '/manual/registered-doc')).toBe(true);
   });
@@ -143,9 +163,12 @@ describe('linkDocToDomain + getDomainArtifacts', () => {
   });
 
   it('201 creates a link; 409 on exact duplicate', () => {
-    const r = linkDocToDomain({ href: '/manual/registered-doc', domain: 'photos', relationship: 'governs' });
+    // #3665 — a UNIQUE domain for the 201 assertion: the photos link may already
+    // exist if a shuffled-earlier describe arranged ensurePhotosGovernsLink().
+    ensureRegisteredDoc();
+    const r = linkDocToDomain({ href: '/manual/registered-doc', domain: 'music', relationship: 'governs' });
     expect(r.status).toBe(201);
-    expect(linkDocToDomain({ href: '/manual/registered-doc', domain: 'photos', relationship: 'governs' }).status).toBe(409);
+    expect(linkDocToDomain({ href: '/manual/registered-doc', domain: 'music', relationship: 'governs' }).status).toBe(409);
   });
 
   it('400 when domain param missing', () => {
@@ -153,6 +176,7 @@ describe('linkDocToDomain + getDomainArtifacts', () => {
   });
 
   it('returns manual governs links resolved to docs, with health', () => {
+    ensurePhotosGovernsLink();
     const r = getDomainArtifacts('photos');
     expect(r.status).toBe(200);
     const body = r.body as { domain: string; governs: Array<{ title: string }>; health: { total: number; undocumented: boolean } };
@@ -174,6 +198,12 @@ describe('linkDocToDomain + getDomainArtifacts', () => {
 });
 
 describe('express adapters', () => {
+  // #3665 — arrange this describe's own state: listCatalog needs ≥1 registered
+  // doc, linkArtifact's 409 needs the photos governs link to already exist.
+  beforeAll(() => {
+    ensurePhotosGovernsLink();
+  });
+
   function fakeRes(): { res: Response; out: { status: number; json: unknown } } {
     const out = { status: 200, json: undefined as unknown };
     const res = {
