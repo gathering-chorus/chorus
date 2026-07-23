@@ -177,7 +177,9 @@ fn assemble_roles() -> serde_json::Value {
 
 fn assemble_recent_events() -> serde_json::Value {
     let log_path = crate::shared::state_paths::chorus_log_file();
-    let content = fs::read_to_string(&log_path).unwrap_or_default();
+    // #3670 — tail-bounded (only the last 200 lines are used; never read it whole)
+    let content = crate::shared::log_tail::read_log_tail(std::path::Path::new(&log_path))
+        .unwrap_or_default();
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();

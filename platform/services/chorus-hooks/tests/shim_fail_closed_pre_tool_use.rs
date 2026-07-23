@@ -48,8 +48,14 @@ fn run_shim(endpoint: &str, stdin_json: &str) -> (String, String, Option<i32>) {
 
 /// If the shim's socket is reachable on the test host, this test is a no-op.
 /// We only assert the fail-closed property when the connect actually fails.
+/// #3670 — probe the SAME socket the shim resolves (~/.chorus/run, #3631/#3617).
+/// This guard still pointed at the retired /tmp path after the socket moved, so
+/// on any host with a live daemon it failed to skip and the test went red
+/// against a healthy system — the exact false-fire class #3617 closed.
 fn socket_unreachable() -> bool {
-    std::os::unix::net::UnixStream::connect("/tmp/chorus-hooks.sock").is_err()
+    let home = std::env::var("HOME").unwrap_or_default();
+    let sock = format!("{}/.chorus/run/chorus-hooks.sock", home);
+    std::os::unix::net::UnixStream::connect(sock).is_err()
 }
 
 #[test]

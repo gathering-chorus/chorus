@@ -321,8 +321,12 @@ fn sweep_and_demote(verbose: bool) -> usize {
 }
 
 /// Get last spine event timestamp for a role from chorus.log (JSON format, tail search)
+/// #3670 — tail-bounded: an active role emits every few seconds, so its last event
+/// lives in the final KBs. A role absent from the 8MB tail gets None (same as a
+/// role absent from the log), never a whole-file read.
 fn last_spine_emit(role: &str) -> Option<String> {
-    let content = fs::read_to_string(chorus_log_path()).ok()?;
+    let content =
+        crate::shared::log_tail::read_log_tail(std::path::Path::new(&chorus_log_path()))?;
     let role_pattern = format!("\"role\":\"{}\"", role);
     for line in content.lines().rev() {
         if line.contains(&role_pattern) {
