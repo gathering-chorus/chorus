@@ -1165,7 +1165,18 @@ fn wait_for_service_up(svc: &str) -> R<()> {
     );
     wait_for_liveness(svc, timeout)?;
     if svc == "com.chorus.hooks" {
-        let sock = env::var("CHORUS_HOOKS_SOCK").unwrap_or_else(|_| "/tmp/chorus-hooks.sock".to_string());
+        // #3665 — the daemon's socket moved to the durable run dir in #3631
+        // (~/.chorus/run, never /tmp). This verifier kept the retired /tmp
+        // default and FALSE-FAILED every chorus-hooks canonical deploy: the
+        // daemon came up healthy on the real socket while we watched the dead
+        // path, timed out, and rolled back a good deploy (#3665 land, twice).
+        // Same stale-path class #3617 fixed in the alert probe — another site.
+        let sock = env::var("CHORUS_HOOKS_SOCK").unwrap_or_else(|_| {
+            format!(
+                "{}/.chorus/run/chorus-hooks.sock",
+                env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string())
+            )
+        });
         let deadline = Instant::now() + timeout;
         while !Path::new(&sock).exists() {
             if Instant::now() >= deadline {
