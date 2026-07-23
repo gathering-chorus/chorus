@@ -1,0 +1,23 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3675 — first chorus:Service instance (the /services collection was count:0 for
+# every product). Pattern mirrors product-instances.ttl (#3603): this file is the
+# DEFINITION home (ServiceShape floor content); structural edges (hosts / atStep)
+# live in roles/silas/ontology/chorus.ttl. This file is in chorus-model-deploy's
+# MODEL_SET from day one — never live-only (the #3587/#3593 lesson).
+# IRI grammar follows product-clearing: chorus:service-<name>.
+# FK targets verified live 2026-07-23: chorus:wren (AgentRole ⊑ Role),
+# chorus:messages-domain (SubDomain ⊑ Domain), chorus:value-stream-step-directing
+# (ValueStreamStep — NOTE: lives in urn:chorus:instances, cross-graph; Silas
+# review point #1).
+
+chorus:service-clearing a chorus:Service ;
+    rdfs:label "The Clearing service" ; chorus:label "The Clearing service" ;
+    chorus:overview "Browser-based multi-party chat where Jeff and the three agent roles align in real time. Serves the room at :3470 (com.chorus.clearing) and a public door at clearing.lightlifeurbangardens.com via Cloudflare tunnel. Messages persist to the messaging store, transcripts index into the Chorus memory, DECISION: lines are captured to the decision log, and outbound delivery to agent sessions rides pulse through the session registry (tty, vscode, and tmux pane-first transports)." ;
+    chorus:ownedBy chorus:wren ;
+    chorus:status "operating" ;
+    chorus:asIs "Live and proven end-to-end 2026-07-23: phone to clearing.lightlifeurbangardens.com to a locked-screen wren session over the tmux pane transport (#3668). WebSocket bridge token now enforced on tunneled traffic (#3669 lane 1). Remaining as-is gaps: the public door has no per-participant authentication (any holder of the URL reaches the room), share.* export is unreliable, and delivery to agents is terminal injection rather than subscription." ;
+    chorus:toBe "Every participant, human or agent, authenticates through the identity seam (#3613): agents via client-credentials with DPoP, humans via browser OIDC, verified against the seam's JWKS. Delivery moves toward agents subscribing to a signed log rather than terminal injection - substrate decision pending the Buzz spike (#3674, adopt / steal-the-pattern / pass). The service-design page regenerates from this model instead of being hand-maintained HTML." ;
+    chorus:implementationPlan "Sequence: (1) #3669 lanes 2-3 with Silas - replace the static bridge token with Solid-OIDC via the seam; the tunnel breaks DPoP htu unless the verifier reconstructs the external URL, and going public removes the loopback bound that let the seam skip DPoP. (2) #3674 spike readout decides the substrate (self-hosted Nostr relay vs current bespoke path). (3) Regenerate designing/docs/clearing-service-design.html from this instance and retire the hand-authored April version." ;
+    chorus:pathToClose "Closed when the public door requires seam-issued identity for every participant, the substrate decision from #3674 is recorded on this instance, and the service-design page is generated from the graph with the April hand-authored page retired." .

@@ -44,6 +44,9 @@ else
     # below has the FULL domain set in staging (its safety precondition).
     "$CHORUS_ROOT/roles/wren/ontology/domains-wren-silas.ttl"
     "$CHORUS_ROOT/roles/kade/ontology/domains-kade-3581.ttl"
+    # #3675 — service definitions enter the MODEL_SET the day they're authored,
+    # never live-only (the #3587/#3593 wipe class).
+    "$CHORUS_ROOT/designing/data/service-instances.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
