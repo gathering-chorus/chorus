@@ -313,21 +313,68 @@ async fn pre_tool_use_inner(
     // needed. The signal is created_at, NOT delivery_status — osascript flips a
     // nudge to 'delivered' in ~1s, so a pending-based gate never caught a real
     // peer (proven on Silas). Headless = no-op (owes_response_block returns None).
-    if let Some(block) =
-        hooks::nudge_drain::owes_response_block(role.as_str(), &shared::state_paths::messages_db())
+    // #3672 — the gate must never trap. The reply path (MCP tool OR the Bash
+    // chorus-mcp-call.sh transport) always passes, and refusal is bounded: after
+    // PRETOOL_REFUSAL_CAP consecutive refusals of the same debt the gate degrades
+    // to nagging (spine event + the capped Stop nag) instead of holding the
+    // session's hands. 2026-07-23: two roles fully paralyzed by the unbounded
+    // variant — a bare post-crash session has no MCP attach, and blocking its
+    // Bash blocks the very reply the gate demands.
+    if let Some((block, debt_key)) =
+        hooks::nudge_drain::owes_response(role.as_str(), &shared::state_paths::messages_db())
     {
-        if tool != "mcp__chorus-api__chorus_nudge_message" {
-            return (
-                "nudge_drain".into(),
-                HookResponse::block_with_stderr(&format!(
-                    "RESPOND FIRST (#3218): you have unanswered peer nudge(s). Reply via \
-                     chorus_nudge_message BEFORE continuing your card — not later, not at turn \
-                     end. A quick ack (\"got it, looking\") is enough to clear this and resume; \
-                     then investigate and answer substantively. This tool is blocked until you reply.\n{block}"
-                )),
-            );
+        let bash_cmd = if tool == "Bash" {
+            input.get_tool_input_str("command")
+        } else {
+            String::new()
+        };
+        let is_reply = hooks::nudge_drain::is_reply_path(&tool, &bash_cmd);
+        let refusals = if is_reply {
+            0
+        } else {
+            hooks::nudge_drain::note_refusal("pre", role.as_str(), &debt_key)
+        };
+        match hooks::nudge_drain::gate_decision(
+            is_reply,
+            refusals,
+            hooks::nudge_drain::PRETOOL_REFUSAL_CAP,
+        ) {
+            hooks::nudge_drain::GateDecision::Refuse => {
+                return (
+                    "nudge_drain".into(),
+                    HookResponse::block_with_stderr(&format!(
+                        "RESPOND FIRST (#3218): you have unanswered peer nudge(s). Reply via \
+                         chorus_nudge_message BEFORE continuing your card — not later, not at turn \
+                         end. A quick ack (\"got it, looking\") is enough to clear this and resume; \
+                         then investigate and answer substantively. No MCP tool attached? Reply from \
+                         Bash: chorus-mcp-call.sh <role> chorus_nudge_message '{{\"to\":...,\"message\":...}}' \
+                         — the reply path is never blocked. ({} of {} refusals before this gate \
+                         stands down.)\n{block}",
+                        refusals + 1,
+                        hooks::nudge_drain::PRETOOL_REFUSAL_CAP
+                    )),
+                );
+            }
+            hooks::nudge_drain::GateDecision::Degrade => {
+                // Cap spent: the reply visibly isn't happening — free the hands,
+                // keep the debt loud on the spine. Falls through to the other guards.
+                let role_owned = role.as_str().to_string();
+                let dk = debt_key.clone();
+                tokio::spawn(async move {
+                    crate::state::chorus_log(
+                        "nudge.gate.degraded",
+                        &role_owned,
+                        &[("debt", &dk), ("scope", "pre_tool_use")],
+                    )
+                    .await;
+                });
+            }
+            hooks::nudge_drain::GateDecision::Allow => {
+                // This IS the reply — sending it clears the debt.
+            }
         }
-        // else: this IS the reply — allow it through; sending it clears the debt.
+    } else {
+        hooks::nudge_drain::reset_refusals(role.as_str());
     }
 
     // #3625 AC2 — memory-pressure guard on subagent spawns. Refuses Task/Agent
@@ -972,15 +1019,41 @@ async fn stop_hook(
     // continuation clears it, never a trap.
     if response.exit_code == 0 && response.stdout.is_none() {
         let role = format!("{:?}", input.role()).to_lowercase();
-        if let Some(block) =
-            hooks::nudge_drain::owes_response_block(&role, &shared::state_paths::messages_db())
+        if let Some((block, debt_key)) =
+            hooks::nudge_drain::owes_response(&role, &shared::state_paths::messages_db())
         {
-            let resp = HookResponse::block_with_stderr(&format!(
-                "Unanswered peer nudge(s) — reply before going idle (Attention Contract). \
-                 Bounded: replying clears it in ONE continuation (not a loop).\n{block}"
-            ));
-            emit_hook_decision("stop_hook", &input, "nudge_drain", &resp, start).await;
-            return Json(resp);
+            // #3672 — bounded in code, not in a docstring: this block re-fired 125
+            // times on 2026-07-23 against a session whose reply transport was
+            // gate-blocked. STOP_REFUSAL_CAP blocks per debt, then the turn may
+            // end with the debt on the spine instead of a fire loop.
+            let refusals = hooks::nudge_drain::note_refusal("stop", &role, &debt_key);
+            match hooks::nudge_drain::gate_decision(
+                false,
+                refusals,
+                hooks::nudge_drain::STOP_REFUSAL_CAP,
+            ) {
+                hooks::nudge_drain::GateDecision::Refuse => {
+                    let resp = HookResponse::block_with_stderr(&format!(
+                        "Unanswered peer nudge(s) — reply before going idle (Attention Contract). \
+                         Bounded: replying clears it in ONE continuation; this reminder stands down \
+                         after {} blocks. No MCP tool? Reply from Bash via chorus-mcp-call.sh — the \
+                         reply path is never blocked.\n{block}",
+                        hooks::nudge_drain::STOP_REFUSAL_CAP
+                    ));
+                    emit_hook_decision("stop_hook", &input, "nudge_drain", &resp, start).await;
+                    return Json(resp);
+                }
+                _ => {
+                    crate::state::chorus_log(
+                        "nudge.gate.degraded",
+                        &role,
+                        &[("debt", &debt_key), ("scope", "stop")],
+                    )
+                    .await;
+                }
+            }
+        } else {
+            hooks::nudge_drain::reset_refusals(&role);
         }
     }
 
