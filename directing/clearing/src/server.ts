@@ -17,6 +17,7 @@ import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
+import { gateDecision } from './server-auth';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -157,8 +158,6 @@ function isLocal(req: express.Request): boolean {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-const LOCAL_ONLY_PATHS = ['/health', '/metrics', '/api/debug'];
-const ADMIN_PATH_PREFIXES = ['/api/stream', '/api/session/', '/api/commands/', '/api/flow', '/api/restart'];
 const TOKEN_COOKIE_OPTS = {
   maxAge: 365 * 24 * 60 * 60 * 1000,
   httpOnly: true,
@@ -169,20 +168,6 @@ function extractToken(req: Request): string | undefined {
   return (req.query.token as string)
     || req.cookies?.bridge_token
     || req.headers.authorization?.replace('Bearer ', '');
-}
-
-function handleLocalOnlyGate(req: Request, res: Response): boolean {
-  if (LOCAL_ONLY_PATHS.includes(req.path)) {
-    if (isLocal(req)) return false;
-    res.status(403).json({ error: 'forbidden' });
-    return true;
-  }
-  if (ADMIN_PATH_PREFIXES.some((p) => req.path.startsWith(p))) {
-    if (isLocal(req)) return false;
-    res.status(403).json({ error: 'forbidden' });
-    return true;
-  }
-  return false;
 }
 
 function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
@@ -208,13 +193,11 @@ function handleLoginPost(req: Request, res: Response) {
 
 app.use((req, res, next) => {
   if (req.path === '/bridge-og.jpg') return next();
-  if (handleLocalOnlyGate(req, res)) return;
-  if (isLocal(req)) return next();
-
+  const local = isLocal(req);
   const token = extractToken(req);
-  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; this is a tunnel auth gate, not a high-security comparison.
-  if (token === BRIDGE_TOKEN) return handleAuthenticated(req, res, next);
-
+  const outcome = gateDecision(req.path, req.method, local, token === BRIDGE_TOKEN);
+  if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
+  if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
   if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
   res.status(401).send(loginPage());
 });
@@ -670,6 +653,19 @@ app.get('/api/flow', (_req, res) => {
   }
 });
 
+// API: domain-detail proxy (#3667) — the browser must never fetch :3340
+// directly (DEC-093: :3340 stays LAN-only, never exposed through the tunnel).
+// CHORUS_API_URL is read per-request so tests can point it at a stub upstream.
+app.get('/api/domain-detail/:name', async (req, res) => {
+  const upstream = process.env.CHORUS_API_URL || 'http://localhost:3340';
+  try {
+    const r = await fetch(`${upstream}/api/chorus/domain/${encodeURIComponent(req.params.name)}`);
+    res.status(r.status).json(await r.json());
+  } catch {
+    res.status(502).json({ error: 'upstream unreachable' });
+  }
+});
+
 // API: card detail — fetch full card view for inline expansion
 app.get('/api/card/:id', (_req, res) => {
   const { execSync } = require('child_process');
@@ -954,7 +950,7 @@ io.on('connection', (socket) => {
 
 // Export for tests (#2167) — tests import `app` and `server` and spin up
 // on an ephemeral port themselves, so importing the module doesn't bind :3470.
-export { app, server, io, tilePoller, messageRouter, clearingChat };
+export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessionTailer };
 
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
