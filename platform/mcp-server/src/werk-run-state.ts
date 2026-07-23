@@ -35,6 +35,11 @@ export interface WerkRun {
    *  patch-id: if HEAD advanced (different patch), a 'presented' record is stale and
    *  the new commit must re-demo. Sibling of #3461's gather-gate patch-keying. */
   patchId?: string;
+  /** #3664 — THIS run's own log file (runId-keyed). Before this, every start truncated
+   *  the shared per-card log, so a relaunch destroyed the failed run's evidence (the
+   *  #3660 unrecoverable-reason defect). Reconcile reads the record's own log; absent
+   *  (pre-#3664 records) falls back to the legacy per-card path. */
+  logFile?: string;
 }
 
 export type RunAction =
@@ -128,6 +133,10 @@ export function decideRunAction(
  *   3. the last non-empty stderr line (the verb's actual message)
  *   4. fall back to the step name if nothing richer is present
  */
+/** #3664 (Kade gather) — cap on a stored failureReason: keeps the run record a small
+ *  readable pointer (full detail lives in the run's own log), not a log dump. */
+export const FAILURE_REASON_MAX = 300;
+
 export function extractFailureReason(stdout: string, stderr: string, step: string): string {
   const combined = `${stdout}\n${stderr}`;
   const jsonReason = combined.match(/"reason"\s*:\s*"([^"]+)"/);
@@ -135,7 +144,7 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
   const kvReason = combined.match(/\breason=([^\s,"]+)/);
   if (kvReason) return kvReason[1];
   const stderrLines = stderr.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, 300);
+  if (stderrLines.length) return stderrLines[stderrLines.length - 1].slice(0, FAILURE_REASON_MAX);
   return step ? `step=${step} (no child reason surfaced)` : 'unknown';
 }
 
@@ -150,6 +159,20 @@ export function extractFailureReason(stdout: string, stderr: string, step: strin
  *
  * Last match wins (a reused log only ever has one real run, but be defensive).
  */
+/**
+ * #3664 (Silas gather) — structured HELD sentinel, parallel to WERK_EXIT. The act
+ * run's outcome step writes `WERK_HELD=<reason>` explicitly when a GO was given
+ * but the witness did not prove (merge/deploy/accept were SKIPPED, job exits 0).
+ * Matching free-form `[HELD]` log text was fragile coupling to GHA output format;
+ * this is a deliberate machine contract. null → not held. Last match wins.
+ */
+export function parseHeldSentinel(logContent: string): string | null {
+  const matches = logContent.match(/^WERK_HELD=(.*)$/gm);
+  if (!matches || matches.length === 0) return null;
+  const last = matches[matches.length - 1];
+  return last.slice('WERK_HELD='.length).trim() || 'held: GO given but demo not proven';
+}
+
 export function parseExitSentinel(logContent: string): number | null {
   const matches = logContent.match(/WERK_EXIT=(\d+)/g);
   if (!matches || matches.length === 0) return null;

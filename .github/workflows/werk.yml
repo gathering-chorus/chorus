@@ -65,18 +65,22 @@ jobs:
 
       # ═══ prove in the role's slot — never touches main until merge (gated on proven) ═══
       - name: commit
+        id: commit
         # werk-commit, via MCP. Stages add-A in the card's werk + commits. Rebase onto
         # origin/main happens INSIDE commit under flock (#3186) — no separate rebase step.
         run: chorus-mcp-call.sh "${ROLE}" werk-commit "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: push
+        id: push
         run: chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: build
+        id: build
         # target=werk implied: builds the card's werk for the demo slot.
         run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
+        id: test
         # #3190 — werk-test VERB: the BLOCKING test floor (promotes the old inline step into
         # a real verb). Runs the card's AFFECTED units only — cargo per changed crate, tsc+jest
         # per changed TS package, plus workspace clippy-ratchet + doc-coherence (the three the
@@ -110,6 +114,7 @@ jobs:
           exit "$rc"
 
       - name: review
+        id: review
         # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
@@ -123,10 +128,12 @@ jobs:
           echo "review: advisory — floor findings inform the cold-eyes agent + the demo surface"
 
       - name: deploy-werk
+        id: deploy_werk
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
+        id: env_up
         # posts chorus/env-up/<card>; fails the job if the slot doesn't come up.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
@@ -177,6 +184,7 @@ jobs:
 
       # ═══ land to prod — prod is a build of MAIN. Runs ONLY if the demo proved (go==true). ═══
       - name: merge
+        id: merge
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid, squash-merges,
         # content-verifies. #3499: werk-merge no longer reads a demo witness — reaching this step
@@ -192,6 +200,7 @@ jobs:
           [ -n "$LC" ] || echo "   [warn] #3517: could not capture landedCommit from werk-merge output — deploy gate will RED on empty (claimed≠verified)" >&2
 
       - name: sync
+        id: sync
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # canonical ff-sync so SCRIPT-only changes go LIVE; SYNC_OK gates the "live" claim.
         # #3574: bare `merge --ff-only` FAILS on a DIRTY canonical (e.g. generated doc-coherence
@@ -215,6 +224,7 @@ jobs:
           fi
 
       - name: deploy-canonical
+        id: deploy_canonical
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # target=canonical: prod is a build of MAIN. SELF-BUILDS from canonical@origin/main (#3222).
         # #3517 — pass the captured landedCommit so deploy's verify can gate deployed-commit==landedCommit
@@ -230,6 +240,7 @@ jobs:
           chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landedCommit":"%s"}' "${ROLE}" "${CARD_ID}" "${LANDED_COMMIT}")"
 
       - name: accept
+        id: accept
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # #3311 GO=ACCEPT: the GO given at invoke IS the acceptance. werk-accept's DEC-048 authority
         # gate runs INSIDE the verb (ACCEPTER is the authorizing identity; a builder can't self-accept).
@@ -250,6 +261,9 @@ jobs:
             # prove it. Must NOT read as a green "presented". ::error:: annotates the run loudly;
             # witness-close records werk.held (distinct phase). This is HELD, not landed, not done.
             echo "::error ::[HELD] #${CARD_ID} — GO given but NOT landed. Witness missing: ${{ steps.demo.outputs.held_reason }}. Card STAYS WIP — this is NOT done. Record the missing gate/gather/go for THIS patch, then re-run." >&2
+            # #3664 — STRUCTURED held sentinel (parallel to WERK_EXIT): the poll-time
+            # reconcile keys on this exact machine contract, never on free-form log text.
+            echo "WERK_HELD=held: witness missing ${{ steps.demo.outputs.held_reason }} for this patch (GO given, not proven)"
           else
             echo "[presented] #${CARD_ID} — variant up, present-only (no go). Re-invoke with go to land."
           fi
@@ -273,8 +287,24 @@ jobs:
         if: failure()
         run: |
           ts=$(($(date +%s)*1000))  # BSD date has no %3N (#3266)
-          printf '{"ts":%s,"event":"werk.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed"}\n' \
-            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" \
+          # #3664 — never a bare werk.failed again: name the step that failed (only one
+          # can — the job halts on first non-zero exit). The rich child reason lives in
+          # the per-RUN log + run record; this names where to look.
+          step="unknown"
+          [ "${{ steps.commit.outcome }}" = "failure" ] && step="commit"
+          [ "${{ steps.push.outcome }}" = "failure" ] && step="push"
+          [ "${{ steps.build.outcome }}" = "failure" ] && step="build"
+          [ "${{ steps.test.outcome }}" = "failure" ] && step="test"
+          [ "${{ steps.review.outcome }}" = "failure" ] && step="review"
+          [ "${{ steps.deploy_werk.outcome }}" = "failure" ] && step="deploy-werk"
+          [ "${{ steps.env_up.outcome }}" = "failure" ] && step="env-up"
+          [ "${{ steps.demo.outcome }}" = "failure" ] && step="demo"
+          [ "${{ steps.merge.outcome }}" = "failure" ] && step="merge"
+          [ "${{ steps.sync.outcome }}" = "failure" ] && step="sync"
+          [ "${{ steps.deploy_canonical.outcome }}" = "failure" ] && step="deploy-canonical"
+          [ "${{ steps.accept.outcome }}" = "failure" ] && step="accept"
+          printf '{"ts":%s,"event":"werk.failed","card_id":%s,"role":"%s","accepter":"%s","trace_id":"%s","status":"failed","failureReason":"step=%s"}\n' \
+            "$ts" "${CARD_ID}" "${ROLE}" "${ACCEPTER}" "${CHORUS_TRACE_ID}" "$step" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
 # Stop-on-failure: GHA default — steps run in order, the job halts on first non-zero exit.
