@@ -1222,6 +1222,28 @@ pub fn collect_entity_props(body: &str, fields: &[String]) -> Vec<(String, Strin
     out
 }
 
+/// #3680 — the sibling of collect_entity_props for EDGE-typed shape props:
+/// `prop|edge:Class` markers present in the body forward as DAL edges
+/// (property, target_kind, target_name) instead of silently dropping — the
+/// create-with-required-edge gap (TestResult.ofTest: 1226/1226 refused,
+/// 2026-07-24). target_kind = kebab of the edge's sh:class (kind_of_class),
+/// matching the DAL's mint contract.
+pub fn collect_entity_edges(body: &str, fields: &[String]) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for f in fields {
+        if let Some((name, kind)) = f.split_once('|') {
+            if let Some(class_local) = kind.strip_prefix("edge:") {
+                if let Some(v) = json_field(body, name) {
+                    if !v.is_empty() {
+                        out.push((name.to_string(), kind_of_class(class_local), v));
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 /// #3468 — the completeness FLOOR decision: which mandatory sections are ABSENT
 /// from the provided props. An EMPTY value counts as absent (a blank section is
 /// not a present section). Order follows `mandatory` so the 422 message is stable.
@@ -1301,7 +1323,12 @@ pub fn kind_of_class(class_local: &str) -> String {
 /// stamps the creator. #3647: `graph` = the class's MODEL-DECLARED instance home
 /// (RouteTable.instances_graph — the same value every read + the ownedBy authz
 /// resolve), so create and authz agree on where the entity lives (the orphan fix).
-fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)], graph: &str) -> R<()> {
+fn dal_add(
+    kind: &str, name: &str, caller: &str,
+    props: &[(String, String)],
+    edges: &[(String, String, String)],
+    graph: &str,
+) -> R<()> {
     let mut args: Vec<String> = vec![
         "add".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
         "--graph".into(), graph.to_string(),
@@ -1310,6 +1337,13 @@ fn dal_add(kind: &str, name: &str, caller: &str, props: &[(String, String)], gra
     for (f, v) in props {
         args.push("--field".into());
         args.push(format!("{}={}", f, v));
+    }
+    // #3680 — inline edges at create/replace: the DAL's req.edges path (referential
+    // integrity + sh:class target-type) has existed all along; owl-api just never
+    // filled it, making create-with-required-edge impossible via the route.
+    for (p, tk, tn) in edges {
+        args.push("--edge".into());
+        args.push(format!("{}={}:{}", p, tk, tn));
     }
     dal_run(&args, caller)
 }
@@ -1664,6 +1698,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
             }
             let props = collect_entity_props(body, &table.fields);
+            let edges = collect_entity_edges(body, &table.fields);
             // #3468 — DELEGATE THE WRITE TO THE DAL (chorus-model). owl-api is
             // read-only by contract; the DAL is the ONE governed write path. It
             // enforces the completeness FLOOR (sh:minCount, fail-closed), mints the
@@ -1674,7 +1709,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // ownedBy is passed as a field literal (matches owl-api's authZ read) and
             // DEPLOY_ROLE=caller stamps the creator.
             let kind = kind_of_class(class_local);
-            match dal_add(&kind, &name, caller_role, &props, &table.instances_graph) {
+            match dal_add(&kind, &name, caller_role, &props, &edges, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "create", &name, "", "ok");
                     write_resp("created", &format!("created {} via DAL (ownedBy {})", name, caller_role))
@@ -1698,7 +1733,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
             }
             let props = collect_entity_props(body, &table.fields);
-            if props.is_empty() {
+            let edges = collect_entity_edges(body, &table.fields);
+            if props.is_empty() && edges.is_empty() {
                 return write_resp("validation", "replace requires at least one shape property in the body");
             }
             // #3468 — DELEGATE to the DAL `add` (idempotent full upsert). NOTE: the
@@ -1707,7 +1743,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // are not preserved). This unifies replace onto the DAL's one write
             // semantic rather than owl-api's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
-            match dal_add(&kind, name, caller_role, &props, &table.instances_graph) {
+            match dal_add(&kind, name, caller_role, &props, &edges, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
                     write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))
@@ -4115,6 +4151,25 @@ mod tests {
         assert!(props.contains(&("status".to_string(), "active".to_string())));
         // edge fields are NOT written via the entity body (they go through edge endpoints)
         assert!(!props.iter().any(|(f, _)| f == "partOf"));
+    }
+
+    // ── #3680 — create-with-required-edge: edge-typed body props FORWARD, not drop ──
+    #[test]
+    fn collect_entity_edges_forwards_edge_typed_props_with_target_kind() {
+        let fields = vec![
+            "label|datatype:string".to_string(),
+            "ofTest|edge:Test".to_string(),
+            "partOf|edge:Domain".to_string(),
+        ];
+        let body = r#"{"name":"tr-1","label":"x","ofTest":"test-platform-api-a"}"#;
+        let edges = collect_entity_edges(body, &fields);
+        assert_eq!(edges, vec![("ofTest".to_string(), "test".to_string(), "test-platform-api-a".to_string())]);
+    }
+
+    #[test]
+    fn collect_entity_edges_empty_when_no_edge_props_in_body() {
+        let fields = vec!["label|datatype:string".to_string(), "ofTest|edge:Test".to_string()];
+        assert!(collect_entity_edges(r#"{"name":"tr-1","label":"x"}"#, &fields).is_empty());
     }
 
     // (build_create_entity / build_replace_entity / sparql_lit tests retired with
