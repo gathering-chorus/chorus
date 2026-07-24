@@ -194,6 +194,25 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
 /// restores the branch EXACTLY to its pre-rebase state (the card commit is
 /// preserved) before returning a typed `rebase-conflict` refusal — never a
 /// swallowed half-merge. (origin/main must already be fetched-current by the caller.)
+/// #3623 — files whose conflicts carry no human decision: generated artifacts
+/// that the next generation pass recreates. A conflict touching ONLY these
+/// self-resolves to main's side; any source file in the set keeps the #3304 hold.
+const GENERATED_AUTORESOLVE: &[&str] = &["knowledge/doc-coherence.md"];
+
+/// Split conflicted paths into (generated, source). Pure — pinned by units.
+pub fn partition_generated(files: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut generated = Vec::new();
+    let mut source = Vec::new();
+    for f in files {
+        if GENERATED_AUTORESOLVE.contains(&f.as_str()) {
+            generated.push(f.clone());
+        } else {
+            source.push(f.clone());
+        }
+    }
+    (generated, source)
+}
+
 fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, trace: &str) -> R<()> {
     let behind = run_in(werk_s, "git", &["rev-list", "--count", "HEAD..origin/main"])
         .unwrap_or_default()
@@ -211,9 +230,46 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
             Ok(())
         }
         Err(_) => {
-            // #3304 — HOLD, don't abort: leave the conflict markers in the werk for the
-            // human to edit. The resolution is reachable only through the verb
-            // (--continue / --abort); the guard stays whole — no raw git instructed.
+            // #3623 — try to self-resolve GENERATED-only conflicts (bounded: each
+            // replayed commit can conflict again). A source conflict at any round
+            // falls through to the #3304 hold — humans decide source, never machines.
+            for _round in 0..10 {
+                let files: Vec<String> = run_in(werk_s, "git", &["diff", "--name-only", "--diff-filter=U"])
+                    .unwrap_or_default()
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
+                let (generated, source) = partition_generated(&files);
+                if files.is_empty() || !source.is_empty() {
+                    // nothing to resolve, or a human decision is present → HOLD (#3304).
+                    jsonl(home, role, card, trace, "rebase.conflict.held",
+                        &format!(",\"files\":\"{}\"", files.join(",")));
+                    emit_spine(home, "commit.conflict", role, card, trace,
+                        &[("disposition", "held"), ("reason", "rebase-conflict"), ("files", &files.join(","))]);
+                    return Err(conflict_hold_message(card, role, &files));
+                }
+                // generated-only: take main's side (mid-rebase, main = --ours; the
+                // file regenerates on the next pass — #3632 semantics), stage, continue.
+                for f in &generated {
+                    run_in(werk_s, "git", &["checkout", "--ours", "--", f])?;
+                    run_in(werk_s, "git", &["add", "--", f])?;
+                }
+                jsonl(home, role, card, trace, "rebase.conflict.autoresolved",
+                    &format!(",\"files\":\"{}\"", generated.join(",")));
+                emit_spine(home, "commit.conflict", role, card, trace,
+                    &[("disposition", "autoresolved"), ("reason", "generated-only"), ("files", &generated.join(","))]);
+                match run_in_env(werk_s, "git", &["rebase", "--continue"],
+                    &[("_GIT_QUEUE_INTERNAL", "1"), ("GIT_EDITOR", "true")]) {
+                    Ok(_) => {
+                        jsonl(home, role, card, trace, "rebase.done",
+                            ",\"onto\":\"origin/main\",\"autoresolved\":true");
+                        return Ok(());
+                    }
+                    Err(_) => continue, // next round: either more conflicts or a real failure
+                }
+            }
+            // rounds exhausted without completing → hold with whatever is conflicted now.
             let files: Vec<String> = run_in(werk_s, "git", &["diff", "--name-only", "--diff-filter=U"])
                 .unwrap_or_default()
                 .lines()

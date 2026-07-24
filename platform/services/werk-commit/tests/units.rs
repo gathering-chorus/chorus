@@ -167,3 +167,25 @@ fn conflict_hold_message_flags_generated_files() {
     let plain = werk_commit::conflict_hold_message(2588, "kade", &["src/real.rs".to_string()]);
     assert!(!plain.contains("GENERATED"), "no note when nothing is generated: {}", plain);
 }
+
+// ── #3623 — generated-file conflicts self-resolve; source conflicts stay held ──
+#[test]
+fn partition_generated_splits_known_generated_from_source() {
+    use werk_commit::partition_generated;
+    let files = vec![
+        "knowledge/doc-coherence.md".to_string(),
+        "platform/api/src/server.ts".to_string(),
+    ];
+    let (generated, source) = partition_generated(&files);
+    assert_eq!(generated, vec!["knowledge/doc-coherence.md"]);
+    assert_eq!(source, vec!["platform/api/src/server.ts"]);
+}
+
+#[test]
+fn partition_generated_all_generated_means_no_source_hold() {
+    use werk_commit::partition_generated;
+    let (generated, source): (Vec<String>, Vec<String>) =
+        partition_generated(&["knowledge/doc-coherence.md".to_string()]);
+    assert_eq!(generated.len(), 1);
+    assert!(source.is_empty());
+}
