@@ -1,6 +1,6 @@
 # ADR-026: CI architecture + lock-file policy
 
-**Status:** Accepted — 2026-04-25. Wren PM-review APPROVED with 3 edits applied. Kade impl-review APPROVED with 6 §b deltas applied. Jeff final pending repo state (CI workflow lives on `kade/2481-ci-ratchet` branch).
+**Status:** Accepted — 2026-04-25. **Layer 3 (hosted-CI merge-to-main authority) SUPERSEDED by [ADR-053](ADR-053-merge-gate-authority-on-main.md)** — hosted runners cost-killed 2026-04-29 (#2600), per-PR triggers disabled, branch-protection required-checks emptied; the authoritative merge gate is the local werk stack (werk-merge content-verify + act/werk.yml + role gates). Layers 1–2 and the lock-file policy stand. Wren PM-review APPROVED with 3 edits applied. Kade impl-review APPROVED with 6 §b deltas applied. Jeff final pending repo state (CI workflow lives on `kade/2481-ci-ratchet` branch).
 **Card:** unblocks #2481 (CI ratchet enforcement); informed by #2475 (MCP observability).
 **Supersedes:** establishes the rule for the first time.
 
@@ -88,7 +88,7 @@ Implementation:
 
 **Two complementary postures:**
 
-1. **Proactive — branch protection on `main`.** PRs cannot merge if CI is red on the PR. Required reviewers can be 1 (Jeff or any role). Flip the switch in GitHub repo settings — admin task; ADR closure asks Jeff to enable.
+1. **Proactive — branch protection on `main`.** *[SUPERSEDED 2026-07-24, ADR-053 — this switch was flipped OFF in the 2026-04-29 cost-kill and required-checks emptied; retained as the historical design.]* PRs cannot merge if CI is red on the PR. Required reviewers can be 1 (Jeff or any role). Flip the switch in GitHub repo settings — admin task; ADR closure asks Jeff to enable.
 2. **Reactive — alert if main goes red.** New `proving/domains/alerts/ci-main-red.yml` polls the GitHub Actions API for last main run; fires if status is failure. Routes to silas via the existing nudge action pattern. No auto-revert.
 
 **Out of scope:**
