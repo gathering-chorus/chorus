@@ -24,6 +24,7 @@ import {
   exchangeCodeForWebId, type OidcConfig,
 } from './solid-oidc';
 import { gateDecision } from './server-auth';
+import { changePassword } from './account';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -457,6 +458,87 @@ app.use(express.static(path.join(__dirname, '../public'), {
   }
 }));
 // Body parsers moved before auth middleware (#1782)
+
+// #3679 — the session WebID from the SIGNED session cookie (server-verified),
+// never any client-sent value (Silas hardening 1). null when unauthenticated.
+function sessionWebid(req: Request): string | null {
+  const s = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  const fresh = !!s?.iat && Date.now() - s.iat <= SESSION_MAX_AGE_MS;
+  return s?.webid && fresh ? s.webid : null;
+}
+
+// #3679 — the account page: shows the signed-in identity + a change-password form.
+// Reachable only behind the session gate. The form posts to /api/account/password;
+// the browser never touches the CSS admin API (that call is server-side, localhost).
+function accountPage(webid: string): string {
+  const short = webid.replace(/^https?:\/\//, '').replace(/\/profile\/card#me$/, '');
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account — The Clearing</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:1.5rem;box-sizing:border-box}
+.card{background:#161b22;padding:1.6rem;border-radius:12px;border:1px solid #30363d;width:340px;max-width:100%}
+h2{margin:0 0 0.3rem;font-size:1.2rem}
+.who{color:#8b949e;font-size:0.82rem;margin:0 0 1.3rem;word-break:break-all}
+.who b{color:#e6edf3}
+label{display:block;font-size:0.8rem;color:#8b949e;margin:0.7rem 0 0.25rem}
+input{width:100%;padding:0.55rem;background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;font-size:0.95rem;box-sizing:border-box}
+button{width:100%;margin-top:1.2rem;padding:0.65rem;background:#238636;border:none;color:#fff;border-radius:6px;font-size:1rem;cursor:pointer}
+button:hover{background:#2ea043}button:disabled{opacity:0.6;cursor:default}
+.msg{margin-top:0.9rem;font-size:0.85rem;min-height:1.1em;line-height:1.35}
+.ok{color:#3fb950}.err{color:#f85149}
+a.back{display:inline-block;margin-top:1rem;color:#58a6ff;font-size:0.82rem;text-decoration:none}</style></head>
+<body><div class="card">
+<h2>Your account</h2>
+<p class="who">Signed in as <b>${short.replace(/</g, '&lt;')}</b></p>
+<form id="f" autocomplete="off">
+<label>Email</label><input id="email" type="email" autocomplete="username" placeholder="the email you sign in with">
+<label>Current password</label><input id="old" type="password" autocomplete="current-password">
+<label>New password</label><input id="new" type="password" autocomplete="new-password">
+<label>Confirm new password</label><input id="conf" type="password" autocomplete="new-password">
+<button id="b" type="submit">Change password</button>
+</form>
+<div class="msg" id="m"></div>
+<a class="back" href="/">&larr; Back to The Clearing</a>
+</div>
+<script>
+const f=document.getElementById('f'),m=document.getElementById('m'),b=document.getElementById('b');
+f.addEventListener('submit',async e=>{e.preventDefault();m.className='msg';m.textContent='';
+const email=document.getElementById('email').value,oldPassword=document.getElementById('old').value,
+newPassword=document.getElementById('new').value,conf=document.getElementById('conf').value;
+if(newPassword!==conf){m.className='msg err';m.textContent='The new passwords don\\u2019t match.';return;}
+b.disabled=true;b.textContent='Saving\\u2026';
+try{const r=await fetch('/api/account/password',{method:'POST',headers:{'Content-Type':'application/json'},
+body:JSON.stringify({email,oldPassword,newPassword})});const d=await r.json().catch(()=>({}));
+if(r.ok){m.className='msg ok';m.textContent='Password changed. Use it next time you sign in.';f.reset();}
+else{m.className='msg err';m.textContent=d.message||'That didn\\u2019t work \\u2014 try again.';}}
+catch{m.className='msg err';m.textContent='Couldn\\u2019t reach the server \\u2014 try again in a moment.';}
+finally{b.disabled=false;b.textContent='Change password';}});
+</script></body></html>`;
+}
+
+// #3679 — serve the account page (authed only; the gate already enforced a session,
+// re-checked here defense-in-depth).
+app.get('/account', (req: Request, res) => {
+  const webid = sessionWebid(req);
+  if (!webid) return res.status(401).send(interstitialPage('/account'));
+  res.setHeader('Cache-Control', 'no-store');
+  return res.send(accountPage(webid));
+});
+
+// #3679 — the change-password route. Server-side call to localhost CSS with the
+// Host-override; the account is BOUND to the signed session WebID (account.ts asserts
+// ownership). Never logs a password; maps failures to clean copy.
+app.post('/api/account/password', async (req: Request, res) => {
+  const webid = sessionWebid(req);
+  if (!webid) return res.status(401).json({ ok: false, message: 'Please sign in again.' });
+  const { email, oldPassword, newPassword } = (req.body ?? {}) as { email?: string; oldPassword?: string; newPassword?: string };
+  const result = await changePassword({
+    sessionWebid: webid, email: String(email ?? ''), oldPassword: String(oldPassword ?? ''), newPassword: String(newPassword ?? ''),
+  });
+  if (result.ok) return res.json({ ok: true });
+  const status = result.reason === 'bad-credentials' || result.reason === 'not-your-account' ? 403
+    : result.reason === 'weak-password' ? 400 : 502;
+  return res.status(status).json({ ok: false, message: result.message });
+});
 
 // Guest logout (#1719)
 app.get('/logout', (_req, res) => {
