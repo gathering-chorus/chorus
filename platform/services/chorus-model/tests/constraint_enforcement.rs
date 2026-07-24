@@ -16,12 +16,18 @@ struct Cfg {
     edge_classes: Vec<(String, String)>, // path|class rows
     exists: Vec<String>,                 // IRIs that exist
     typed: Vec<String>,                  // "<iri> a <ns#Class>" assertions present
+    unique_within: Vec<(String, String)>, // #3681 — path|partition rows (chorus:uniqueWithin)
+    unique_global: Vec<String>,          // #3681 — paths declared chorus:uniqueGlobal true
+    dup: bool,                           // #3681 — a conflicting sibling exists (uniqueness ASK → this)
     updates: RefCell<Vec<String>>,
 }
 impl Store for Cfg {
     fn ask(&self, sparql: &str) -> R<bool> {
         if sparql.contains("urn:chorus:domains:security") {
             return Ok(true); // identity is not the variable in these tests (see identity_gate.rs)
+        }
+        if sparql.contains("?other") {
+            return Ok(self.dup); // #3681 — the uniqueness ASK (only query using ?other)
         }
         if sparql.contains(" a <") {
             // type ASK — true only if a matching typed assertion is present
@@ -37,6 +43,10 @@ impl Store for Cfg {
             Ok(self.datatypes.iter().map(|(p, d)| format!("{}|{}", p, d)).collect())
         } else if sparql.contains("sh:class") {
             Ok(self.edge_classes.iter().map(|(p, c)| format!("{}|{}", p, c)).collect())
+        } else if sparql.contains("uniqueWithin") {
+            Ok(self.unique_within.iter().map(|(p, q)| format!("{}|{}", p, q)).collect())
+        } else if sparql.contains("uniqueGlobal") {
+            Ok(self.unique_global.clone())
         } else {
             Ok(vec![])
         }
@@ -51,7 +61,7 @@ impl Store for Cfg {
 fn vid(s: &Cfg) -> Identity { verify_identity(Some("kade"), s).unwrap() }
 
 fn cfg() -> Cfg {
-    Cfg { required: vec![], datatypes: vec![], edge_classes: vec![], exists: vec![], typed: vec![], updates: RefCell::new(vec![]) }
+    Cfg { required: vec![], datatypes: vec![], edge_classes: vec![], exists: vec![], typed: vec![], unique_within: vec![], unique_global: vec![], dup: false, updates: RefCell::new(vec![]) }
 }
 
 const NS: &str = "https://jeffbridwell.com/chorus#";
@@ -139,4 +149,66 @@ fn datatype_ok_enforces_numeric_and_boolean_permissive_on_strings() {
     assert!(datatype_ok("http://example/x", "anyURI"));
     assert!(datatype_ok("whatever", ""), "no datatype constraint → permissive");
     assert!(datatype_ok("whatever", "someUnknownType"));
+}
+
+// ── #3681 — uniqueness-within-scope enforcement (uniqueWithin / uniqueGlobal) ──
+
+#[test]
+fn write_refuses_duplicate_value_within_partition() {
+    // shape: `rank` uniqueWithin `inChunk`; a sibling with the same rank in the same
+    // partition already exists (dup=true) → refuse, naming the property, before insert.
+    let mut s = cfg();
+    s.unique_within = vec![("rank".into(), "inChunk".into())];
+    s.dup = true;
+    let mut req = WriteReq {
+        kind: "domain".into(),
+        name: "m1".into(),
+        edges: vec![("inChunk".into(), "domain".into(), "chunkx".into())],
+        ..Default::default()
+    };
+    req.fields.insert("rank".into(), "1".into());
+    let e = write(&s, &req, &vid(&s)).unwrap_err();
+    assert!(e.starts_with("shape-violation") && e.contains("rank") && e.contains("uniqueWithin"), "{}", e);
+    assert!(s.updates.borrow().is_empty(), "nothing written on a uniqueness violation");
+}
+
+#[test]
+fn write_refuses_duplicate_value_globally() {
+    // shape: `loomSequence` uniqueGlobal; another instance already carries the value → refuse.
+    let mut s = cfg();
+    s.unique_global = vec!["loomSequence".into()];
+    s.dup = true;
+    let mut req = WriteReq { kind: "domain".into(), name: "c1".into(), ..Default::default() };
+    req.fields.insert("loomSequence".into(), "1".into());
+    let e = write(&s, &req, &vid(&s)).unwrap_err();
+    assert!(e.starts_with("shape-violation") && e.contains("loomSequence") && e.contains("uniqueGlobal"), "{}", e);
+    assert!(s.updates.borrow().is_empty(), "nothing written on a global uniqueness violation");
+}
+
+#[test]
+fn write_allows_unique_value_when_no_sibling() {
+    // same annotation, but no conflicting sibling (dup=false) → the write proceeds.
+    let mut s = cfg();
+    s.unique_within = vec![("rank".into(), "inChunk".into())];
+    s.dup = false;
+    s.exists = vec![format!("{}chunkx", NS)]; // inChunk target resolves (domain is bare-grain → NS#chunkx)
+    let mut req = WriteReq {
+        kind: "domain".into(),
+        name: "m2".into(),
+        edges: vec![("inChunk".into(), "domain".into(), "chunkx".into())],
+        ..Default::default()
+    };
+    req.fields.insert("rank".into(), "2".into());
+    assert!(write(&s, &req, &vid(&s)).is_ok(), "a unique value with no sibling passes");
+}
+
+#[test]
+fn write_unaffected_when_no_uniqueness_annotation() {
+    // AC5: a shape with no uniqueWithin/uniqueGlobal is not touched — even a would-be
+    // duplicate (dup=true) writes, because nothing declares the value unique.
+    let mut s = cfg();
+    s.dup = true; // a sibling exists, but no annotation consults it
+    let mut req = WriteReq { kind: "domain".into(), name: "d1".into(), ..Default::default() };
+    req.fields.insert("rank".into(), "1".into());
+    assert!(write(&s, &req, &vid(&s)).is_ok(), "no annotation → uniqueness never checked");
 }
