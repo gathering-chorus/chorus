@@ -14,7 +14,7 @@
     "@anthropic-ai/sdk": "^0.92.0",
     "@solid/access-token-verifier": "^2.1.1",
     "express": "^5.2.1",
-    "playwright": "^1.58.2",
+    "playwright": "^1.60.0",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.8.3"
   },
