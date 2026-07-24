@@ -30,7 +30,7 @@ import { resolvePulseSecret } from './pulse-secret';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
-import { decideRunAction, patchSuperseded } from './werk-run-state';
+import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
 import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
@@ -468,6 +468,9 @@ const WerkRunInput = z.object({
   // #3311 — ONE trigger: go=false/absent runs to the demo stop (werk.yml); go=true
   // resumes past it (werk.yml's go-gated `land` job: merge → sync → deploy → accept). GO = accept.
   go: z.boolean().optional().describe('The human GO — resume past the demo stop.'),
+  // #3678 AC3 — the ONE way a caller forces a fresh round on a presented record.
+  // Plain re-invokes are status checks: read-only by construction.
+  represent: z.boolean().optional().describe('Explicitly start a fresh demo round on a presented card. Without this, re-invoking a presented run only reports state.'),
 });
 
 const SERVICE_STATUS_TOOL_DEF = {
@@ -2227,6 +2230,31 @@ function werkRunnerEnv(home: string, werkBase: string, role: string, runnerPath:
 // path) unique even for two starts inside the same millisecond of the same process.
 let werkRunSeq = 0;
 
+/** #3678 AC4 — same patch presenting again inside the window: emit the loud
+ *  spine warning (best-effort, never breaks the poll). The loop is the
+ *  system's finding, not Jeff's. */
+function warnIfRepeatedAnnounce(
+  run: { presentedAt?: string; prevPresentedAt?: string; prevPatchId?: string; patchId?: string },
+  role: string,
+  cardId: number,
+  spawnFn: SpawnFn,
+  scriptsDir: string,
+  pathMod: typeof import('path'),
+): void {
+  const repeated = announceRepeated(
+    { presentedAt: run.prevPresentedAt, patchId: run.prevPatchId },
+    run.presentedAt ?? new Date().toISOString(),
+    run.patchId ?? '',
+    30 * 60_000,
+  );
+  if (!repeated) return;
+  try {
+    spawnFn('bash', [pathMod.join(scriptsDir, 'chorus-log'), 'demo.announce.repeated',
+      role, `card=${cardId}`, `patch=${run.patchId ?? ''}`,
+      'reason=same-patch-re-presented-within-window'], { detached: true, stdio: 'ignore' });
+  } catch { /* best-effort */ }
+}
+
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2256,7 +2284,18 @@ async function executeChorusWerk(
   // #3660 "bare werk.failed, cause unrecoverable" defect). Now the discovering poll
   // attaches with the reason; a SUBSEQUENT re-invoke (record already 'failed') retries.
   const preReconcile = readRun(args.card_id, runsDir);
-  const existingRun = reconcileRunning(args.card_id, runsDir);
+  const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
+  // #3678 AC1 — the presented round re-stamps its patchId at the transition, so
+  // the pipeline's own commits (generated-file churn committed by werk-commit)
+  // are absorbed into the round instead of superseding it. Without this, every
+  // status poll after a present computed headChanged=true and RELAUNCHED the
+  // whole build→demo (the 2026-07-23 #3592 three-round loop).
+  const existingRun = reconcileRunning(args.card_id, runsDir, () => currentWerkPatchId(werkDir));
+  // #3678 AC4 — a repeated announce is the SYSTEM's finding, not Jeff's: same
+  // patch presenting again inside the window emits a loud spine warning.
+  if (preReconcile?.phase === 'running' && existingRun?.phase === 'presented') {
+    warnIfRepeatedAnnounce(existingRun, args.role, args.card_id, spawnFn, scriptsDir, pathMod);
+  }
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
     return {
       content: [{
@@ -2279,13 +2318,12 @@ async function executeChorusWerk(
   // per currentWerkPatchId's never-empty contract) reads as superseded so one fresh
   // run re-keys it. An unknown CURRENT patch (git hiccup) → headChanged=false →
   // attach, never a spurious re-run.
-  const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   const currentPatch = currentWerkPatchId(werkDir);
   const headChanged = patchSuperseded(existingRun?.patchId, currentPatch);
   // #3458 — a dead/stale 'running' record must not be attached-to forever (the
   // stale-running bug); isRunStale probes pid-liveness + TTL so a re-invoke past a
   // dead run starts fresh instead of stranding the card.
-  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged);
+  const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged, args.represent === true);
   if (action.kind === 'attach') {
     const r = action.run;
     const polling = r.phase === 'running';
@@ -2332,6 +2370,10 @@ async function executeChorusWerk(
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
     patchId: currentPatch, // #3538 — record the patch so a later new-commit re-invoke re-demos
+    // #3678 AC4 — carry the PRIOR round's present so the announce-repeat guard
+    // can compare when THIS run presents.
+    prevPresentedAt: existingRun?.presentedAt,
+    prevPatchId: existingRun?.patchId,
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
   return {
@@ -2394,6 +2436,22 @@ async function executeChorusWerkLand(
   }
   // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
   const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
+  // #3678 AC2 — a go against a LIVE run refuses, typed. Yesterday's near-miss:
+  // a go fired mid-flight silently attached, then the runner kept cycling and
+  // the go's authority floated toward rounds the accepter never saw. The
+  // accepter re-issues the go AT the presented stop, for the round announced.
+  if (landAction.kind === 'refuse-go-running') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          ok: false, verb: 'chorus_werk', refusal: 'go-while-running',
+          phase: 'running', role: args.role, card_id: args.card_id, accepter,
+          note: `Refused: #${args.card_id} is mid-pipeline — a go can only accept a PRESENTED round the accepter has seen. Wait for the demo-ready announce, then re-issue go for that round.`,
+        }),
+      }],
+    };
+  }
   if (landAction.kind === 'attach') {
     const r = landAction.run;
     return {

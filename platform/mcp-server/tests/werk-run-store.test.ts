@@ -173,3 +173,22 @@ describe('isRunStale — a dead/old running record is detected (#3458 belt+suspe
     assert.equal(isRunStale(run({ phase: 'presented', pid: 999999 })), false);
   });
 });
+
+describe('reconcileRunning — the presented round OWNS its self-commits (#3678 AC1)', () => {
+  test('running→presented re-stamps patchId from the injected source, so pipeline self-commits never supersede their own round', () => {
+    writeRun(run({ card: 3678, phase: 'running', patchId: 'sha:launch', logFile: path.join(dir, '3678-r1.log') }), dir);
+    writeFileSync(path.join(dir, '3678-r1.log'), 'demo up\nWERK_EXIT=0\n');
+    const r = reconcileRunning(3678, dir, () => 'sha:at-present');
+    assert.equal(r?.phase, 'presented');
+    assert.equal(r?.patchId, 'sha:at-present'); // absorbed the round's own commits
+    assert.equal(readRun(3678, dir)?.patchId, 'sha:at-present'); // persisted
+  });
+
+  test('no patch source → phase advances, recorded patchId untouched (degrades safe)', () => {
+    writeRun(run({ card: 3679, phase: 'running', patchId: 'sha:launch', logFile: path.join(dir, '3679-r1.log') }), dir);
+    writeFileSync(path.join(dir, '3679-r1.log'), 'WERK_EXIT=0\n');
+    const r = reconcileRunning(3679, dir);
+    assert.equal(r?.phase, 'presented');
+    assert.equal(r?.patchId, 'sha:launch');
+  });
+});

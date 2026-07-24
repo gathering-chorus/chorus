@@ -30,6 +30,12 @@ export interface WerkRun {
   pid?: number;
   /** On phase==='failed': the child verb's REAL reason, never "step=X exit=1". */
   failureReason?: string;
+  /** #3678 — stamped at the running→presented transition (announce-repeat guard). */
+  presentedAt?: string;
+  /** #3678 — the PRIOR run's present, carried at launch so a re-presented same
+   *  patch inside the window trips the demo.announce.repeated spine warning. */
+  prevPresentedAt?: string;
+  prevPatchId?: string;
   /** #3538 — the werk's patch-id (git patch-id of merge-base(origin/main,HEAD)..HEAD)
    *  at the time this run was recorded. A re-invoke compares it to the werk's CURRENT
    *  patch-id: if HEAD advanced (different patch), a 'presented' record is stale and
@@ -44,7 +50,11 @@ export interface WerkRun {
 
 export type RunAction =
   | { kind: 'start' } // no live run for this card → spawn act, write run-state
-  | { kind: 'attach'; run: WerkRun }; // a run is already live/terminal → return it, do NOT double-act
+  | { kind: 'attach'; run: WerkRun } // a run is already live/terminal → return it, do NOT double-act
+  // #3678 AC2 — go while the pipeline is mid-flight: the accepter's go can only
+  // attach to a PRESENTED round they actually saw. Queueing it onto whatever
+  // presents next would land unseen work (the 2026-07-23 #3592 near-miss).
+  | { kind: 'refuse-go-running'; run: WerkRun };
 
 /**
  * #3638 — is the recorded patch-id superseded by the werk's current one?
@@ -85,40 +95,41 @@ export function patchSuperseded(recordedPatchId: string | undefined, currentPatc
  * this RE-TRIGGERS when the patch actually CHANGES. A same-patch rebase
  * (headChanged=false) still attaches — no needless re-run.
  */
+/** The go-specific decisions, split out for complexity budget (#3678). */
+function goDecision(existing: WerkRun, isStale: boolean): RunAction | null {
+  // #3678 AC2 — a go against a LIVE running record refuses, typed. (A STALE
+  // running record falls through to the stale→start branch: retrying a dead
+  // run is legitimate; silently attaching a go to a live one is not.)
+  if (existing.phase === 'running' && !isStale) {
+    return { kind: 'refuse-go-running', run: existing };
+  }
+  // A GO after a presented stop is the next legitimate phase (the land).
+  if (!existing.go && existing.phase === 'presented') return { kind: 'start' };
+  return null;
+}
+
 export function decideRunAction(
   existing: WerkRun | null,
   requestedGo: boolean,
   isStale = false,
   headChanged = false,
+  requestedRepresent = false,
 ): RunAction {
   if (!existing) return { kind: 'start' };
-  // #3458 (+ Wren #2) — a 'running' record whose pid is dead or past its TTL is
-  // STALE: act writes its own terminal phase so this is rare, but if even that
-  // durable write was lost (e.g. the mcp-server was churned by a deploy mid-act),
-  // a stale 'running' must NOT be attached-to forever (the stale-running attach
-  // bug Kade/Wren hit). Treat it like 'failed' → start fresh. `isStale` is computed
-  // by the impure caller (pid-liveness + TTL); the core stays pure. A LIVE 'running'
-  // (isStale=false, the default) still attaches — a genuine run is never stranded.
+  if (requestedGo) {
+    const g = goDecision(existing, isStale);
+    if (g) return g;
+  }
+  // #3458 — a stale 'running' (dead pid/TTL) is retried, never attached forever.
   if (existing.phase === 'running' && isStale) return { kind: 'start' };
-  // #3443 (Kade's pre-land catch) — a terminal 'failed' run is RETRYABLE. The act
-  // already finished (no double-act risk) and the failure was already surfaced
-  // (failureReason on record + returned when it happened). Attaching to 'failed'
-  // forever is the INVERSE of WIP-limbo: a transient blip (e.g. a network hiccup
-  // on merge) would strand the card permanently, every re-invoke re-reporting the
-  // old failure even on a GO. A re-invoke means "try again" → start fresh.
+  // #3443 — a terminal 'failed' run is retryable; attaching forever strands the card.
   if (existing.phase === 'failed') return { kind: 'start' };
-  // #3538 — a PRESENTED record whose patch-id is superseded (HEAD advanced past the
-  // recorded patch) is stale: the caller committed a NEW commit after the present, so
-  // re-demo the new HEAD instead of returning the stale 'presented'. headChanged is
-  // computed by the impure caller (current werk patch-id vs the recorded patchId). A
-  // content-identical rebase (same patch-id → headChanged=false) still attaches.
-  if (existing.phase === 'presented' && headChanged) return { kind: 'start' };
-  // A GO after a presented stop is the next legitimate phase (the land), not a
-  // duplicate — only when the prior run actually reached 'presented'.
-  if (requestedGo && !existing.go && existing.phase === 'presented') {
+  // #3538 — a HUMAN commit after the present re-demos (headChanged); #3678 AC3 —
+  // represent is the caller's explicit fresh-round request. Everything else is a
+  // status check: read-only, attaches.
+  if (existing.phase === 'presented' && (headChanged || requestedRepresent)) {
     return { kind: 'start' };
   }
-  // Everything else: attach to what's on record (no second act).
   return { kind: 'attach', run: existing };
 }
 
@@ -179,4 +190,25 @@ export function parseExitSentinel(logContent: string): number | null {
   const last = matches[matches.length - 1];
   const n = Number(last.slice('WERK_EXIT='.length));
   return Number.isNaN(n) ? null : n;
+}
+
+
+/**
+ * #3678 AC4 — the loop becomes the SYSTEM's finding: a round presenting the
+ * SAME patch again within the window means the pipeline announced twice for
+ * one piece of work (2026-07-23: three demo-ready nudges at Jeff in 25 min).
+ * Pure; the caller supplies now + window and emits the spine warning.
+ */
+export function announceRepeated(
+  prev: { presentedAt?: string; patchId?: string } | null,
+  nowIso: string,
+  newPatchId: string,
+  windowMs: number,
+): boolean {
+  if (!prev?.presentedAt || !prev.patchId) return false;
+  if (prev.patchId !== newPatchId) return false;
+  const prevMs = Date.parse(prev.presentedAt);
+  const nowMs = Date.parse(nowIso);
+  if (Number.isNaN(prevMs) || Number.isNaN(nowMs)) return false;
+  return nowMs - prevMs <= windowMs;
 }
