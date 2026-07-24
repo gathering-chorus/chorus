@@ -7,7 +7,7 @@
 // @test-type: unit
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideRunAction, extractFailureReason, parseExitSentinel, patchSuperseded, type WerkRun } from '../src/werk-run-state';
+import { announceRepeated, decideRunAction, extractFailureReason, parseExitSentinel, patchSuperseded, type WerkRun } from '../src/werk-run-state';
 
 const run = (over: Partial<WerkRun> = {}): WerkRun => ({
   runId: 'r1', card: 3443, role: 'wren', go: false, phase: 'running',
@@ -76,9 +76,9 @@ describe('decideRunAction — a re-invoke never double-acts', () => {
     assert.deepEqual(decideRunAction(r, false, false, false), { kind: 'attach', run: r });
   });
 
-  test('GO while still RUNNING -> attach (cannot land what is still presenting)', () => {
+  test('GO while still RUNNING -> typed refusal (#3678 AC2: was attach, which let a go float onto an unseen round)', () => {
     const r = run({ phase: 'running', go: false });
-    assert.deepEqual(decideRunAction(r, true), { kind: 'attach', run: r });
+    assert.deepEqual(decideRunAction(r, true), { kind: 'refuse-go-running', run: r });
   });
 });
 
@@ -149,5 +149,69 @@ describe('extractFailureReason — surface the child reason, never just step=X',
 
   test('falls back to step name only when nothing richer exists', () => {
     assert.equal(extractFailureReason('', '', 'deploy'), 'step=deploy (no child reason surfaced)');
+  });
+});
+
+// ── #3678 — checking on a pipeline must never start new work ──
+
+describe('decideRunAction — go while running refuses, typed (#3678 AC2)', () => {
+  test('go on a RUNNING record → refuse-go-running (never silently queues onto an unseen round)', () => {
+    const r = { runId: 'r', card: 1, role: 'kade', go: false, phase: 'running', startedAt: 't' } as WerkRun;
+    assert.deepEqual(decideRunAction(r, true), { kind: 'refuse-go-running', run: r });
+  });
+
+  test('go on a PRESENTED record still starts the land (unchanged contract)', () => {
+    const r = { runId: 'r', card: 1, role: 'kade', go: false, phase: 'presented', startedAt: 't' } as WerkRun;
+    assert.deepEqual(decideRunAction(r, true), { kind: 'start' });
+  });
+});
+
+describe('decideRunAction — explicit re-present is the only poll-side fresh-round trigger (#3678 AC3)', () => {
+  test('represent on a presented record starts a fresh round', () => {
+    const r = { runId: 'r', card: 1, role: 'kade', go: false, phase: 'presented', startedAt: 't' } as WerkRun;
+    assert.deepEqual(decideRunAction(r, false, false, false, true), { kind: 'start' });
+  });
+
+  test('plain poll on a presented record attaches — N invokes, one round', () => {
+    const r = { runId: 'r', card: 1, role: 'kade', go: false, phase: 'presented', startedAt: 't' } as WerkRun;
+    for (let i = 0; i < 5; i++) {
+      assert.deepEqual(decideRunAction(r, false, false, false, false), { kind: 'attach', run: r });
+    }
+  });
+});
+
+describe('announceRepeated — a repeated demo-ready announce is the SYSTEM\'s finding (#3678 AC4)', () => {
+  test('same patch presented again inside the window → repeated', () => {
+    assert.equal(
+      announceRepeated(
+        { presentedAt: '2026-07-23T16:35:00Z', patchId: 'p1' },
+        '2026-07-23T16:48:00Z', 'p1', 30 * 60_000,
+      ),
+      true,
+    );
+  });
+
+  test('different patch → not repeated (a real new round may announce)', () => {
+    assert.equal(
+      announceRepeated(
+        { presentedAt: '2026-07-23T16:35:00Z', patchId: 'p1' },
+        '2026-07-23T16:48:00Z', 'p2', 30 * 60_000,
+      ),
+      false,
+    );
+  });
+
+  test('outside the window → not repeated', () => {
+    assert.equal(
+      announceRepeated(
+        { presentedAt: '2026-07-23T10:00:00Z', patchId: 'p1' },
+        '2026-07-23T16:48:00Z', 'p1', 30 * 60_000,
+      ),
+      false,
+    );
+  });
+
+  test('no prior present → not repeated', () => {
+    assert.equal(announceRepeated(null, '2026-07-23T16:48:00Z', 'p1', 30 * 60_000), false);
   });
 });

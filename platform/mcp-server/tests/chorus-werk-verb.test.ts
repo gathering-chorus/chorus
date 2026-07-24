@@ -1,3 +1,4 @@
+// @test-type: unit — signal is fixture-data: in-memory MCP transport + captured spawn + tmp runsDir (no live act/werk)
 // #3241 — the werk pipeline as ONE MCP verb (chorus_werk). It wraps the act run of
 // werk.yml so a role triggers the whole pipeline via MCP like every other verb — no
 // raw `act` CLI surface, no PATH/-P/-W wrangling leaked to the caller. The verb
@@ -102,4 +103,56 @@ test('chorus_werk first call returns running + surfaces the go-resume command, n
   // the verb itself must never invoke werk-accept — not in the wrapped act command, not as a spawn.
   const spawned = sink.map((c) => `${c.command} ${c.args.join(' ')}`).join(' | ');
   assert.ok(!/werk-accept/.test(spawned), 'chorus_werk must not exec werk-accept (no self-accept)');
+});
+
+// ── #3678 — checking on a pipeline must never start new work ──
+
+test('#3678 AC1: N polls on a presented run spawn NOTHING — one round, however often you ask', async () => {
+  const sink: SpawnCall[] = [];
+  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'werk-runs-3678-'));
+  const server = buildMcpServer(() => 'kade', { spawnFn: captureSpawn(sink), runsDir, cardsPath: '/fake/cards' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'chorus-werk-test', version: '1.0' });
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  try {
+    // first invoke launches the (fake) detached act
+    await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 4001 } });
+    const launches = sink.length;
+    assert.ok(launches >= 1, 'first invoke launches');
+    // act "finishes": write the run's log with the exit sentinel so reconcile
+    // advances running→presented on the next poll
+    const rec = JSON.parse(fs.readFileSync(path.join(runsDir, '4001.json'), 'utf8'));
+    fs.writeFileSync(rec.logFile ?? path.join(runsDir, '4001.log'), 'demo up\nWERK_EXIT=0\n');
+    // five status polls: every one must attach (phase presented), zero new spawns
+    for (let i = 0; i < 5; i++) {
+      const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 4001 } });
+      const body = JSON.parse((res.content as Array<{ text: string }>)[0].text);
+      assert.equal(body.phase, 'presented', `poll ${i} reports presented`);
+      assert.equal(body.attached, true, `poll ${i} attaches`);
+    }
+    assert.equal(sink.length, launches, 'polling spawned no new act runs');
+  } finally { await client.close(); await server.close(); }
+});
+
+test('#3678 AC2: go while the run is live-running returns a typed refusal, spawns nothing', async () => {
+  const sink: SpawnCall[] = [];
+  const runsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'werk-runs-3678b-'));
+  const server = buildMcpServer(() => 'kade', { spawnFn: captureSpawn(sink), runsDir, cardsPath: '/fake/cards' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'chorus-werk-test', version: '1.0' });
+  await Promise.all([server.connect(st), client.connect(ct)]);
+  try {
+    await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 4002 } });
+    const launches = sink.length;
+    // pin the record to a LIVE pid (this test process) so isRunStale=false —
+    // the refusal must fire for a GENUINELY live run, not ride the stale path
+    const recPath = path.join(runsDir, '4002.json');
+    const rec = JSON.parse(fs.readFileSync(recPath, 'utf8'));
+    fs.writeFileSync(recPath, JSON.stringify({ ...rec, pid: process.pid, startedAt: new Date().toISOString() }));
+    const res = await client.callTool({ name: 'chorus_werk', arguments: { role: 'kade', card_id: 4002, accepter: 'jeff', go: true } });
+    const body = JSON.parse((res.content as Array<{ text: string }>)[0].text);
+    assert.equal(body.ok, false, 'typed refusal, not a silent attach');
+    assert.equal(body.refusal, 'go-while-running');
+    assert.equal(sink.length, launches, 'no land spawned');
+  } finally { await client.close(); await server.close(); }
 });
