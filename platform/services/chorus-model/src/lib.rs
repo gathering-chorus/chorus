@@ -54,6 +54,11 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
+    // #3680 — Test as a REFERENCE kind: TestResult.ofTest must mint the target
+    // IRI, and the 4,617 Test entities are crawler-minted BARE (NS#<name>, names
+    // already test-*-slugged). bare_grain=true reproduces exactly that IRI. The
+    // DAL can now also create tests — governed, harmless; the point is edges.
+    ("test", "Test", true),
     // #3592 (Kade, Jeff-driven card 2026-07-23) — Test's run-evidence kinds. Same
     // generate-vs-write drift #3522 named: TestResult/TestSuiteRun are modeled
     // classes with SHACL shapes and owl-api already generates their write routes,
@@ -81,7 +86,7 @@ fn kind_entry(kind: &str) -> R<(&'static str, &'static str, bool)> {
 /// Deterministic kebab normalization. Lowercases, maps runs of non-alphanumerics
 /// to single dashes, trims dashes. Refuses names that normalize to nothing or
 /// that LOOK like they already carry a type prefix (double-minting guard).
-pub fn normalize_name(kind: &str, name: &str) -> R<String> {
+fn normalize_slug(name: &str) -> R<String> {
     let mut out = String::new();
     let mut last_dash = true; // suppress leading dash
     for c in name.trim().chars() {
@@ -97,6 +102,11 @@ pub fn normalize_name(kind: &str, name: &str) -> R<String> {
     if out.is_empty() {
         return Err(format!("empty-name: '{}' normalizes to nothing", name));
     }
+    Ok(out)
+}
+
+pub fn normalize_name(kind: &str, name: &str) -> R<String> {
+    let out = normalize_slug(name)?;
     let prefix = format!("{}-", kind);
     if out.starts_with(&prefix) {
         return Err(format!(
@@ -110,12 +120,21 @@ pub fn normalize_name(kind: &str, name: &str) -> R<String> {
 /// Rule 0 — the mint. (kind, name) → full IRI per ADR-040 Level 3.
 pub fn mint(kind: &str, name: &str) -> R<String> {
     let (kind, _, bare) = kind_entry(kind)?;
-    let n = normalize_name(kind, name)?;
+    // #3680 — the double-prefix guard (ADR-040 Rule 0) protects PREFIXED mints
+    // from test-result-test-result-x. A BARE mint adds no prefix, so a name that
+    // legitimately starts with the kind word (every crawler-minted Test is
+    // test-*) is not a double-prefix. Guard only the prefixed grain.
+    let n = if bare { normalize_name_bare(name)? } else { normalize_name(kind, name)? };
     Ok(if bare {
         format!("{}{}", NS, n)
     } else {
         format!("{}{}-{}", NS, kind, n)
     })
+}
+
+/// #3680 — bare-grain normalization: slug rules only, no kind-prefix guard.
+pub fn normalize_name_bare(name: &str) -> R<String> {
+    normalize_slug(name)
 }
 
 /// The class IRI for a kind (Level 4: CamelCase, ontology-graph resident).
@@ -716,6 +735,16 @@ pub fn batch(
 
 #[cfg(test)]
 mod tests {
+    // ── #3680 — Test as a bare-grain reference kind ──
+    #[test]
+    fn mint_test_kind_reproduces_crawler_bare_iri() {
+        // the crawler minted NS#test-platform-api-... (bare, pre-slugged names);
+        // edge resolution must produce the IDENTICAL IRI or referential
+        // integrity can never pass for ofTest.
+        let iri = super::mint("test", "test-platform-api-tests-access-log-test-ts-x").unwrap();
+        assert_eq!(iri, format!("{}test-platform-api-tests-access-log-test-ts-x", super::NS));
+    }
+
     use super::*;
 
     // ── Rule 0 / Level 3 — the ADR-040 mint table as regression tests ──────
