@@ -2386,8 +2386,14 @@ mod tests {
         assert_eq!(r, "error");
     }
 
+    // #3623 drive-by hermeticity fix: these two tests mutate the SAME process-wide
+    // env var and cargo runs test threads in parallel — they raced (red under act's
+    // timing, green locally). Serialize them.
+    static CLAUDE_BIN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn claude_bin_honors_explicit_override() {
+        let _g = CLAUDE_BIN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // #3443 live fix — CHORUS_CLAUDE_BIN names the exact binary, so a stripped
         // job PATH (act host-native missing ~/.local/bin) can still resolve claude.
         std::env::set_var("CHORUS_CLAUDE_BIN", "/bin/sh"); // any existing executable
@@ -2398,6 +2404,7 @@ mod tests {
 
     #[test]
     fn claude_bin_ignores_override_that_does_not_exist() {
+        let _g = CLAUDE_BIN_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("CHORUS_CLAUDE_BIN", "/no/such/claude/binary");
         let got = claude_bin();
         std::env::remove_var("CHORUS_CLAUDE_BIN");

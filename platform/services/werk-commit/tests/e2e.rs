@@ -607,3 +607,71 @@ fn clean_werk_with_no_card_work_still_refuses_nothing_to_commit() {
         .expect_err("genuinely-empty werk must still refuse");
     assert!(err.contains("nothing to commit"), "typed refusal preserved: {}", err);
 }
+
+// ── #3623 — a GENERATED-only rebase conflict self-resolves (main's side), never held ──
+#[test]
+fn rebase_autoresolves_generated_only_conflict_taking_mains_side() {
+    let origin = tmp("origin-gen");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::create_dir_all(origin.join("knowledge")).unwrap();
+    fs::write(origin.join("knowledge/doc-coherence.md"), "base").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+
+    let home = tmp("home-gen");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk-gen");
+    let werk = werk_base.join("kade-9102");
+    git(&home, &["worktree", "add", "-b", "kade/9102", werk.to_str().unwrap(), "origin/main"]);
+
+    // werk regenerates the file one way…
+    fs::write(werk.join("knowledge/doc-coherence.md"), "werk-regen").unwrap();
+    fs::write(werk.join("card.txt"), "card-work").unwrap();
+    // …peer lands a DIFFERENT regeneration on main → guaranteed conflict.
+    fs::write(origin.join("knowledge/doc-coherence.md"), "main-regen").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer regen"]);
+
+    let res = commit(9102, "kade", "gen conflict test", &home, &werk_base);
+    assert!(res.is_ok(), "generated-only conflict must self-resolve, got: {:?}", res.err());
+
+    // main's side won (it regenerates next pass anyway — #3632 semantics).
+    let content = fs::read_to_string(werk.join("knowledge/doc-coherence.md")).unwrap();
+    assert_eq!(content, "main-regen");
+    // the card's real work survived the rebase.
+    assert_eq!(fs::read_to_string(werk.join("card.txt")).unwrap(), "card-work");
+}
+
+// source conflicts keep the #3304 hold — humans decide source.
+#[test]
+fn rebase_still_holds_on_source_conflict() {
+    let origin = tmp("origin-src");
+    git(&origin, &["init", "-q", "-b", "main", "."]);
+    fs::write(origin.join("shared.txt"), "base").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "init"]);
+    git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+
+    let home = tmp("home-src");
+    assert!(Command::new("git")
+        .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
+        .status().unwrap().success());
+
+    let werk_base = tmp("werk-src");
+    let werk = werk_base.join("kade-9103");
+    git(&home, &["worktree", "add", "-b", "kade/9103", werk.to_str().unwrap(), "origin/main"]);
+
+    fs::write(werk.join("shared.txt"), "werk-side").unwrap();
+    fs::write(origin.join("shared.txt"), "main-side").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer edit"]);
+
+    let res = commit(9103, "kade", "src conflict test", &home, &werk_base);
+    assert!(res.is_err(), "source conflict must HOLD, not auto-resolve");
+    let msg = res.err().unwrap();
+    assert!(msg.contains("shared.txt"), "hold names the file: {}", msg);
+}
