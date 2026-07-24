@@ -737,6 +737,16 @@ pub fn batch(
 mod tests {
     // ── #3680 — Test as a bare-grain reference kind ──
     #[test]
+    fn normal_bare_mints_unaffected_by_guard_scoping() {
+        // Silas's belt-and-suspenders (bless note, 2026-07-24): the guard
+        // re-scoping must not shift NORMAL bare-grain behavior.
+        assert_eq!(super::mint("product", "chorus").unwrap(), format!("{}chorus", super::NS));
+        assert_eq!(super::mint("domain", "photos").unwrap(), format!("{}photos", super::NS));
+        // and the newly-legitimate kind-word-prefixed bare name mints bare, no doubling
+        assert_eq!(super::mint("product", "product-x").unwrap(), format!("{}product-x", super::NS));
+    }
+
+    #[test]
     fn mint_test_kind_reproduces_crawler_bare_iri() {
         // the crawler minted NS#test-platform-api-... (bare, pre-slugged names);
         // edge resolution must produce the IDENTICAL IRI or referential
