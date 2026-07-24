@@ -23,5 +23,8 @@ h1 { font-size: 1.4em; color: #1a1a1a; border-bottom: 2px solid #6366f1; padding
   <select id="productFilter"><option value="">All Products</option></select>
 </div>
 <div id="diagram"><div class="loading">Loading ontology...</div></div>
-<script src="chorus-er-diagram.js"></script>
+<!-- #2513 — the companion js lives at platform/api/public/ (#2107) and serves
+     at the API root; the old relative src 404'd from the /designing/docs mount.
+     Absolute path = one source, no copy to drift. -->
+<script src="/chorus-er-diagram.js"></script>
 </body></html>
