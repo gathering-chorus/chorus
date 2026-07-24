@@ -1,6 +1,6 @@
 # ADR-053: The merge gate on `main` — hosted-CI authority retired, the local werk stack named
 
-**Status:** Proposed — 2026-07-24. Supersedes ADR-026's layer-3 authority claim (see Supersession). Awaiting Jeff's ratification of the Decision section (card #3480 AC3).
+**Status:** Accepted — 2026-07-24, ratified (b) by Jeff at the #3480 demo GO. Supersedes ADR-026's layer-3 authority claim (see Supersession).
 
 ## Context
 
@@ -52,11 +52,11 @@ witness gates that did not exist in April. The remaining honest gap is nightly
 alerting (#2527), which is already carded — reviving hosted CI would buy
 redundancy, not coverage.
 
-> **PENDING RATIFICATION — Jeff, at the #3480 demo GO.** *(Swapped to RATIFIED
-> with his actual word, and only then. If (a) is chosen, this ADR gains the
-> revived-gate design as an amendment before land. Steward note, Silas
-> 2026-07-24: an ADR that exists to kill false authority claims must not carry
-> a premature one.)*
+> **RATIFIED (b) — Jeff, 2026-07-24, at the #3480 demo GO** ("go on 3480",
+> given against this ADR's standing (b) recommendation, Silas-endorsed with
+> live corroboration from the #3669 land). The local werk stack is the
+> authoritative merge gate on `main`; the nightly is the detector; #2527 is
+> its near-term-P1 alerting completion.
 
 ## Supersession
 
