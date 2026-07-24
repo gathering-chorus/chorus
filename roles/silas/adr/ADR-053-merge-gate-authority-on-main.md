@@ -52,9 +52,11 @@ witness gates that did not exist in April. The remaining honest gap is nightly
 alerting (#2527), which is already carded — reviving hosted CI would buy
 redundancy, not coverage.
 
-> **RATIFIED (b) — Jeff, 2026-07-24** *(placeholder — updated at the demo GO;
-> if (a) is chosen instead, this ADR gains the revived-gate design as an
-> amendment before land).*
+> **PENDING RATIFICATION — Jeff, at the #3480 demo GO.** *(Swapped to RATIFIED
+> with his actual word, and only then. If (a) is chosen, this ADR gains the
+> revived-gate design as an amendment before land. Steward note, Silas
+> 2026-07-24: an ADR that exists to kill false authority claims must not carry
+> a premature one.)*
 
 ## Supersession
 
@@ -71,7 +73,12 @@ redundancy, not coverage.
 - Docs and reality agree on what stands between a commit and `main`. New roles
   and agents reading CLAUDE.md inherit the true model.
 - The cost of the truth: no per-PR from-scratch build exists. A red `main` is
-  caught by the nightly (hours), not at merge (minutes). #2527 closes the
-  alerting half; anything faster is a new decision.
+  caught by the nightly (hours), not at merge (minutes).
+- **The detector is currently ineffective in practice** (Silas, verified
+  2026-07-24): `quality.yml` on `main` has been red for 3 days (run
+  30002676196, 7 jobs) and no one acted — "roles read the red list each
+  morning" demonstrably did not happen. **#2527 (nightly files cards on red) is
+  therefore not deferred polish; it is the thing that makes option (b) safe**,
+  and this ADR recommends it be treated as near-term P1.
 - `quality.yml` remains schedule-only; its file-comment already names itself the
   interim drift lane until #2527.
