@@ -975,18 +975,35 @@ app.post('/api/message', (req, res) => {
 // over the public tunnel. Now uses the SAME classifier as the HTTP gate, so the
 // cf-* tunnel headers on the WS upgrade demote a tunneled handshake to remote.
 io.use((socket, next) => {
-  const ip = socket.handshake.address || '';
-  if (isLocalConnection(socket.handshake.headers, ip)) return next();
-
-  const token = socket.handshake.auth.token || socket.handshake.query.token;
-  // Also check cookies from handshake headers
-  const cookieHeader = socket.handshake.headers.cookie || '';
-  const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
-  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
-
-  if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return next();
-  next(new Error('Authentication required'));
+  void socketAuth(socket).then((ok) => next(ok ? undefined : new Error('Authentication required')))
+    .catch(() => next(new Error('Authentication required')));
 });
+
+// #3669 — the WS gate must accept the SAME auth the HTTP gate does. Before this it
+// only knew the bridge token, so a human logged in via CSS (clearing_session cookie,
+// no bridge token) connected the page but the live socket was refused → "connecting…"
+// forever + no data. Now: local → allow; else the CSS session cookie (verified WebID
+// in the allow-set, fresh) → allow; else the bridge token as migration fallback.
+async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
+  const ip = socket.handshake.address || '';
+  if (isLocalConnection(socket.handshake.headers, ip)) return true;
+
+  const cookieHeader = String(socket.handshake.headers.cookie || '');
+  const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
+  if (sessMatch) {
+    const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
+    const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
+    if (sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now()))) return true;
+  }
+
+  if (!REQUIRE_DPOP) {
+    const token = socket.handshake.auth.token || String(socket.handshake.query.token || '');
+    const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
+    const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+    if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return true;
+  }
+  return false;
+}
 
 // Socket.IO
 io.on('connection', (socket) => {
