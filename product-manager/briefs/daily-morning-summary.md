@@ -1,29 +1,31 @@
-# Daily Morning Summary — 2026-07-23
+# Daily Morning Summary — 2026-07-24
 
-**HEADLINE:** 4 cards shipped yesterday (Fuseki membrane clean, coupling ledger at 100); quality layer enters day 44 dark with `npm ci` still unowned.
+**HEADLINE:** Quality toolchain blocked day 45 + new build regression from yesterday's merge — `npm ci` and a one-liner type fix are the unlock.
 
-**OPS:** RED (carry — last ops review 2026-07-21; no 07-23 update filed)
-- RED: CSC — 36 `platform/scripts/*.sh` /tmp refs; no movement
-- RED: Stale WIP — #1759/#1791 now ~107d; Wren backlog ~19d; #3607 unescalated
-- YELLOW: CLAUDE.md fragments — ~11d stale, 4d over threshold; Wren action item now third day overdue
-- YELLOW: Domain context — chorus/infra/music/seeds ~11d stale; chorus critical (Jul 17 cards shipped)
-- YELLOW: LaunchAgent /tmp — 17+2 plists; carry | GREEN: hooks clean, repo clean
+**OPS:** YELLOW/RED (Silas, 2026-07-23)
+- GREEN: Hooks build clean; all 7 role dirs zero uncommitted changes
+- YELLOW: 17+2 LaunchAgent plists still reference `/tmp/` (carry); CLAUDE.md fragments 11d stale, 4d over threshold (Wren overdue)
+- RED: CSC compliance +1 (now 37 sh files with `/tmp/` refs — new file needs identification); domain-context 9d stale after 7 cards shipped (`domain-context-chorus.md` + `domain-context-infrastructure.md` critical); #1759/#1791 at 107d no commits
 
-**QUALITY:** RED — day 44 lint; day 42 tests; 154 type errors day 16 (no change)
-- All 4 suites (clearing, workflow-engine, chorus-sdk, pulse) blocked; ts-jest + @eslint/js missing
-- `npm ci` at repo root unblocks everything — 44 days unresolved, no owner
+**QUALITY:** RED (Kade, 2026-07-24)
+- All 4 suites blocked: `ts-jest` preset not found — day 43; lint blocked (`@eslint/js`) — day 45
+- **NEW REGRESSION:** Build 154 → 157 type errors (+3) from kade:#3667 (merged Jul 23) — `_res`/`next` implicit `any` in `server.ts:132`; fix is explicit Express types
+- `npm ci` at repo root unblocks everything; 45 days unresolved
 
-**YESTERDAY (07-22):** 4 cards shipped
-- **#3611 (silas):** Fuseki creds untangled; edge ownership flipped to gathering; membrane PASS; coupling 102→100
-- **#3662/#3663 (kade):** nightly wedge guard hardened; sdk clearTimeout fix; hermetic move-WIP tests
-- **#3660 (wren):** owl-api tree_read surface + tests; ontology TTL updated
+**YESTERDAY (07-23):** 11 cards merged
+- **#3617 (silas):** Alert truthfulness — cron schedules now real (cron-due.py), Loki checks scoped, latency spec honest; surfaces warm=556ms vs 400ms spec (real drift, not masked)
+- **#3667 (kade):** Clearing remote tabs — token-authed GET for read pair + domain-detail proxy (introduced +3 TS regression)
+- **#3668 (wren):** Clearing→VS Code delivery via tmux (osascript load-buffer/paste-buffer)
+- **#3676 (wren):** Clearing service-design page refreshed; #3664/#3665/#3670/#3672/#3673/#3675/#3592 also closed
 
 **TODAY:**
-1. **Jeff → `npm ci`:** Day 44; all 4 suites dark; assign owner or close these items permanently
-2. **Wren (this session):** Refresh CLAUDE.md fragments — 11d stale, 4d over threshold, third day flagged
-3. **Silas:** domain-context-chorus.md — ~11d stale, chorus critical; nightly baseline JSON to `data/`
-4. **Jeff/Wren:** Close/archive #1759/#1791 (~107d); escalate #3607 to Jeff
+1. **Kade:** Add explicit Express types to `server.ts:132` — stops regression before it grows
+2. **Jeff → `npm ci`:** Day 45; all 4 suites dark; assign owner or close permanently
+3. **Silas:** Identify new `/tmp/`-referencing sh file (CSC count 36→37)
+4. **Silas/Kade:** Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` (9d stale, multiple cards shipped to both)
+5. **Wren:** CLAUDE.md claudemd refresh — 11d stale, escalation threshold passed
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 44** — quality fully dark, week 7, no owner assigned
-- **#1759/#1791 ~107d** — stale WIP not self-resolving; board noise; must close or archive
+- **`npm ci` day 45** — quality fully dark, no owner; if there's an environmental block, surface it now
+- **#1759/#1791 107d** — must close, archive, or reassign; #3607 escalation still open
+- **Latency drift:** `chorus-hook-shim` warm=556ms vs 400ms spec (#3617 surfaced honestly); not a fire but needs a decision
