@@ -43,7 +43,9 @@ fi
 # --- 2. Hooks shim binary exists (#2020, #2032) ---
 # The shim is invoked per-call by Claude Code, not a persistent daemon.
 # No PID check needed — just verify the binary exists and is executable.
-SHIM_BIN="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# #2478 — resolution via the shared lib (parity-pinned with the TS resolver)
+source "$(dirname "$0")/lib/resolve-shim.sh"
+SHIM_BIN="$(resolve_shim_path)"
 if [ ! -x "$SHIM_BIN" ]; then
   FAILURES+=("chorus-hooks: shim binary missing or not executable")
 fi

@@ -1,7 +1,9 @@
 #!/bin/bash
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# #2478 — resolution via the shared lib (parity-pinned with the TS resolver)
+source "$(dirname "$0")/lib/resolve-shim.sh"
+SHIM="$(resolve_shim_path)"
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 PASS=0; FAIL=0
 
