@@ -154,6 +154,12 @@ pub struct ShapeReq {
     pub datatypes: BTreeMap<String, String>,
     /// #3467 — edge property local name → target class local (sh:class), for edge-target-type enforcement
     pub edge_classes: BTreeMap<String, String>,
+    /// #3681 — property local name → partition property local (chorus:uniqueWithin): the
+    /// value must be unique among instances sharing the same partition-property value.
+    pub unique_within: BTreeMap<String, String>,
+    /// #3681 — property local names declared chorus:uniqueGlobal true: the value must be
+    /// unique across ALL instances of the class (partition = the class itself).
+    pub unique_global: Vec<String>,
 }
 
 /// The store seam — injected so the engine unit-tests hermetically (the
@@ -295,7 +301,24 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
             edge_classes.insert(prop.to_string(), cl.to_string());
         }
     }
-    Ok(ShapeReq { required, enums, datatypes, edge_classes })
+    // #3681 — uniqueness-within-scope annotations on the sh:property node (same
+    // read style as sh:datatype/sh:class). `chorus:uniqueWithin <partitionProp>`
+    // partitions by another property's value; `chorus:uniqueGlobal true` is class-wide.
+    let mut unique_within: BTreeMap<String, String> = BTreeMap::new();
+    for row in store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; chorus:uniqueWithin ?part . FILTER(isIRI(?path)) FILTER(isIRI(?part)) BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', REPLACE(STR(?part), '.*#', '')) AS ?v) }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    ))? {
+        if let Some((prop, part)) = row.split_once('|') {
+            unique_within.insert(prop.to_string(), part.to_string());
+        }
+    }
+    let unique_global: Vec<String> = store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; chorus:uniqueGlobal true . FILTER(isIRI(?path)) BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    ))?;
+
+    Ok(ShapeReq { required, enums, datatypes, edge_classes, unique_within, unique_global })
 }
 
 /// Turtle string-literal escape.
@@ -473,6 +496,49 @@ pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
             if !datatype_ok(v, dt) {
                 witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
                 return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", v, dt, prop));
+            }
+        }
+    }
+
+    // #3681 — UNIQUENESS-within-scope enforcement. A value declared uniqueWithin a
+    // partition property, or uniqueGlobal, must not collide with a sibling in scope.
+    // Fires after the cheap shape checks, before referential integrity (Kade's slot).
+    // Excludes self by IRI, so an idempotent re-write of the same node is NOT a dup.
+    // STR(?v) comparison sidesteps literal-datatype mismatch. Scoped to the write's
+    // home graph `g`. Mirrors the referential-integrity ASK + model.refused witness.
+    for (prop, part) in &shape.unique_within {
+        if let Some(v) = req.fields.get(prop) {
+            // Partition value = the target IRI of the edge named `part`. This REQUIRES
+            // that edge to be present on the write — guaranteed while the shape marks it
+            // minCount>=1 (the DAL is full-replace, so a floor-required edge is always in
+            // req.edges). If a partition edge is ever made optional, a node carrying `prop`
+            // WITHOUT it would skip this check — the None arm below makes that invariant
+            // break LOUD (a witness), never a silent unenforced uniqueness (Kade, #3681).
+            match req.edges.iter().find(|(p, _, _)| p == part) {
+                Some((_, tk, tn)) => {
+                    let part_iri = mint(tk, tn)?;
+                    let dup = store.ask(&format!(
+                        "ASK {{ GRAPH <{g}> {{ ?other <{ns}{prop}> ?v ; <{ns}{part}> <{pi}> . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
+                        g = g, ns = NS, prop = prop, part = part, pi = part_iri, s = subject, val = esc(v)
+                    ))?;
+                    if dup {
+                        witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
+                        return Err(format!("shape-violation: duplicate '{}' within '{}' (chorus:uniqueWithin, from {})", prop, part, ONTOLOGY_GRAPH));
+                    }
+                }
+                None => witness("model.uniqueness.skipped", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("prop", prop), ("missing_partition", part)]),
+            }
+        }
+    }
+    for prop in &shape.unique_global {
+        if let Some(v) = req.fields.get(prop) {
+            let dup = store.ask(&format!(
+                "ASK {{ GRAPH <{g}> {{ ?other a <{cls}> ; <{ns}{prop}> ?v . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
+                g = g, cls = class, ns = NS, prop = prop, s = subject, val = esc(v)
+            ))?;
+            if dup {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
+                return Err(format!("shape-violation: duplicate '{}' across all {} (chorus:uniqueGlobal, from {})", prop, req.kind, ONTOLOGY_GRAPH));
             }
         }
     }
