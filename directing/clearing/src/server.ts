@@ -17,6 +17,12 @@ import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
+import { isLocalConnection, isTunneled } from './connection-auth';
+import { isWebIdAllowed } from './solid-auth';
+import {
+  makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
+  exchangeCodeForWebId, type OidcConfig,
+} from './solid-oidc';
 import { gateDecision } from './server-auth';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
@@ -88,6 +94,49 @@ try {
 }
 console.log(`[clearing] remote access token: ${BRIDGE_TOKEN}`);
 
+// #3669 lane 3 — human browser login (Solid-OIDC). Persistent HMAC secret for the
+// signed login/session cookies (own secret, not BRIDGE_TOKEN — different lifetime
+// and blast radius). 0600, generated once.
+const SESSION_SECRET_FILE = `${CHORUS_HOME}/clearing-session-secret`;
+let SESSION_SECRET: string;
+try {
+  SESSION_SECRET = require('fs').readFileSync(SESSION_SECRET_FILE, 'utf-8').trim();
+} catch {
+  SESSION_SECRET = crypto.randomBytes(32).toString('hex');
+  require('fs').mkdirSync(CHORUS_HOME, { recursive: true });
+  require('fs').writeFileSync(SESSION_SECRET_FILE, SESSION_SECRET, { mode: 0o600 });
+}
+// The public issuer is browser-facing; the token exchange runs LOCALLY with the
+// Host-override (hardening 3) so it never hairpins Cloudflare or dies with the LAN.
+const CSS_PUBLIC_ISSUER = process.env.CSS_ISSUER || 'https://id.lightlifeurbangardens.com';
+const CSS_LOCAL_TOKEN = process.env.CSS_LOCAL_TOKEN || 'http://localhost:3001/.oidc/token';
+const CSS_TOKEN_HOST = new URL(CSS_PUBLIC_ISSUER).host;
+const CLIENT_ID = 'https://clearing.lightlifeurbangardens.com/clientid.jsonld';
+// #3669 — the flag Wren named the finish line: default OFF ships the login redirect
+// as the default tunneled experience with the bridge token still accepted as the
+// migration fallback; flip ON to retire the token (login required, token refused).
+const REQUIRE_DPOP = process.env.CHORUS_CLEARING_REQUIRE_DPOP === '1';
+// #3669 (Wren) — server-side session lifetime. The signed cookie is otherwise
+// valid forever on signature alone (maxAge is only browser-advisory), so a
+// captured cookie would never die. The gate enforces this against the payload iat.
+const SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Per-request OIDC config — redirect_uri matches the origin the browser is on. */
+function oidcCfg(req: Request): OidcConfig {
+  const onTunnel = isTunneled(req.headers);
+  const redirectUri = onTunnel
+    ? 'https://clearing.lightlifeurbangardens.com/auth/callback'
+    : `http://localhost:${PORT}/auth/callback`;
+  return {
+    issuer: CSS_PUBLIC_ISSUER,
+    clientId: CLIENT_ID,
+    redirectUri,
+    scope: 'openid webid offline_access',
+    tokenEndpoint: CSS_LOCAL_TOKEN,
+    tokenHost: CSS_TOKEN_HOST,
+  };
+}
+
 // #3366: LAN URLs derived at boot, never hardcoded — DHCP moved this machine
 // off 192.168.86.36 and every printed URL died. The .local Bonjour name is
 // canonical (IP-proof); the numeric IP is the fallback. A from→to address
@@ -142,16 +191,13 @@ app.use((req: Request, _res, next) => {
   next();
 });
 
-// Auth middleware — local/LAN requests pass, remote requests need token (#1719)
+// Auth middleware — local/LAN requests pass, remote requests need token (#1719).
+// #3669 — the tunnel + address logic now lives in one classifier shared with the
+// Socket.IO gate below, so the two transports can never drift again (the WS gate
+// had drifted: it skipped the cf-header tunnel check and was bypassable).
 function isLocal(req: express.Request): boolean {
-  // Cloudflare tunnel proxies from localhost — check CF headers to detect tunneled requests
-  if (req.headers['cf-connecting-ip'] || req.headers['cf-ray']) return false;
   const ip = req.ip || req.socket.remoteAddress || '';
-  // Localhost
-  if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') return true;
-  // LAN — 192.168.86.x (Jeff's home network)
-  if (ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.')) return true;
-  return false;
+  return isLocalConnection(req.headers, ip);
 }
 
 // Body parsers BEFORE auth — login form needs req.body parsed (#1782)
@@ -191,16 +237,155 @@ function handleLoginPost(req: Request, res: Response) {
   return res.status(401).send(loginPage('Wrong token'));
 }
 
+// #3669 — the Solid-OIDC public client-id document. CSS dereferences this URL
+// (client_id) UNAUTHENTICATED during the auth-code flow, so it must be served
+// before the token gate. Content is Wren's verified draft, verbatim; the
+// client_id/redirect_uris are the tunnel origin + localhost. token_endpoint_auth
+// _method:none = public client (PKCE, no client secret).
+const CLIENTID_DOC = JSON.stringify({
+  '@context': 'https://www.w3.org/ns/solid/oidc-context.jsonld',
+  client_id: 'https://clearing.lightlifeurbangardens.com/clientid.jsonld',
+  client_name: 'The Clearing',
+  redirect_uris: [
+    'http://localhost:3470/auth/callback',
+    'https://clearing.lightlifeurbangardens.com/auth/callback',
+  ],
+  post_logout_redirect_uris: [
+    'http://localhost:3470/',
+    'https://clearing.lightlifeurbangardens.com/',
+  ],
+  grant_types: ['authorization_code', 'refresh_token'],
+  response_types: ['code'],
+  scope: 'openid webid offline_access',
+  token_endpoint_auth_method: 'none',
+}, null, 2);
+
 app.use((req, res, next) => {
+  void gate(req, res, next).catch(() => {
+    if (!res.headersSent) res.status(500).send(errorPage('Something went wrong reaching the room — try again in a moment.'));
+  });
+});
+
+async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
   if (req.path === '/bridge-og.jpg') return next();
+  // #3669 — client-id doc is public (CSS fetches it during OIDC); serve pre-gate.
+  if (req.path === '/clientid.jsonld') {
+    res.type('application/ld+json').send(CLIENTID_DOC);
+    return;
+  }
+  // #3669 — the login round-trip is pre-auth (the user has no session yet).
+  if (req.path === '/auth/login') return handleAuthLogin(req, res);
+  if (req.path === '/auth/callback') return handleAuthCallback(req, res);
+
   const local = isLocal(req);
-  const token = extractToken(req);
-  const outcome = gateDecision(req.path, req.method, local, token === BRIDGE_TOKEN);
+
+  // #3669 — "authenticated" now means EITHER the CSS session cookie (the human's
+  // primary tunneled auth — signed typ:session, WebID re-checked against the live
+  // allow-set every request so a revoked identity loses access within one TTL) OR
+  // the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
+  // Both feed the #3667 gateDecision policy, which owns the admin-forbid + the
+  // read-pair GET-only rules — so those survive the human-login path unchanged.
+  const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
+  const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
+  const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
+
+  const outcome = gateDecision(req.path, req.method, local, sessionAuthed || tokenAuthed);
   if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
   if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
-  if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
-  res.status(401).send(loginPage());
-});
+
+  // auth-required — the migration token login POST still works until the flag flips.
+  if (!REQUIRE_DPOP && req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
+  // #3669 spec (Wren) — the DEFAULT unauth experience on the public arm is the
+  // clean login interstitial, no token language. Preserve where the user was
+  // heading so the callback lands them in that room.
+  res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
+}
+
+// #3669 — kick off CSS login: PKCE + CSRF state, stashed in a SIGNED short-lived
+// cookie (survives a Clearing restart mid-login), then redirect to CSS.
+function handleAuthLogin(req: Request, res: Response): void {
+  const cfg = oidcCfg(req);
+  const { verifier, challenge } = makePkce();
+  const state = makeState();
+  const returnPath = safeReturnPath((req.query.return as string) || '/');
+  // #3669 (Wren) — carry the redirect_uri in the signed cookie so the exchange
+  // presents the EXACT value the auth request used; re-deriving it on the callback
+  // risks a random 400 if request classification drifts between the two legs.
+  const loginCookie = signCookie(
+    { typ: 'login', verifier, state, returnPath, redirectUri: cfg.redirectUri }, SESSION_SECRET);
+  res.cookie('clearing_login', loginCookie, {
+    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 10 * 60 * 1000, path: '/',
+  });
+  res.redirect(buildAuthUrl(cfg, state, challenge));
+}
+
+// #3669 — CSS redirect-back: verify state (CSRF), exchange the code locally for the
+// WebID, check the allow-set, issue the long-lived session cookie, land in the room.
+async function handleAuthCallback(req: Request, res: Response): Promise<void> {
+  const login = verifyCookie<{ verifier: string; state: string; returnPath: string; redirectUri: string }>(
+    req.cookies?.clearing_login, SESSION_SECRET, 'login');
+  if (req.query.error) {
+    res.status(400).send(errorPage('Login was cancelled or refused. Tap Log in to try again.'));
+    return;
+  }
+  if (!login || !req.query.state || req.query.state !== login.state) {
+    res.status(400).send(errorPage('That login attempt expired or didn’t match — tap Log in to try again.'));
+    return;
+  }
+  const code = String(req.query.code || '');
+  if (!code) {
+    res.status(400).send(errorPage('The login didn’t complete — tap Log in to try again.'));
+    return;
+  }
+  // Exchange with the redirect_uri from the LOGIN leg (cookie), never re-derived.
+  const webid = await exchangeCodeForWebId({ ...oidcCfg(req), redirectUri: login.redirectUri }, code, login.verifier);
+  if (!webid) {
+    res.status(502).send(errorPage('The identity server isn’t answering — the room is fine, try again in a minute.'));
+    return;
+  }
+  if (!(await isWebIdAllowed(webid, Date.now()))) {
+    res.status(403).send(errorPage('This identity isn’t on the team list.'));
+    return;
+  }
+  const sessionCookie = signCookie({ typ: 'session', webid, iat: Date.now() }, SESSION_SECRET);
+  res.cookie('clearing_session', sessionCookie, {
+    httpOnly: true, sameSite: 'lax', secure: isTunneled(req.headers), maxAge: 30 * 24 * 60 * 60 * 1000, path: '/',
+  });
+  res.clearCookie('clearing_login', { path: '/' });
+  res.redirect(login.returnPath);
+}
+
+// #3669 — the login interstitial: the DEFAULT unauth experience on the public arm.
+// One button → CSS login. NO token language anywhere (Wren spec item 1). Preserves
+// where the user was heading so the callback lands them in that room (spec item 2).
+function interstitialPage(returnPath: string): string {
+  const q = returnPath && returnPath !== '/' ? `?return=${encodeURIComponent(returnPath)}` : '';
+  return authShell('Where the team gathers.',
+    `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Log in</button></a>`);
+}
+
+// #3669 — errors are sentences, not codes (Wren spec item 4).
+function errorPage(message: string): string {
+  return authShell(message, '<a href="/auth/login" style="text-decoration:none"><button type="button">Log in</button></a>');
+}
+
+// Shared dark shell for the interstitial + error pages — mirrors the namePage look.
+function authShell(sub: string, action: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Clearing — Chorus</title>
+<meta property="og:title" content="The Clearing — Chorus">
+<meta property="og:image" content="https://bridge.lightlifeurbangardens.com/bridge-og.jpg">
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;
+background-image:url('/bridge-og.jpg');background-size:cover;background-position:center}
+.login{background:rgba(22,27,34,0.92);padding:2rem;border-radius:12px;border:1px solid #30363d;width:300px;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center}
+h2{margin:0 0 0.5rem;font-size:1.2rem}
+p{color:#8b949e;font-size:0.9rem;margin:0 0 1.2rem;line-height:1.4}
+button{width:100%;padding:0.7rem;background:#238636;border:none;color:white;border-radius:6px;font-size:1rem;cursor:pointer}
+button:hover{background:#2ea043}</style></head>
+<body><div class="login"><h2>The Clearing</h2><p>${sub}</p>${action}</div></body></html>`;
+}
 
 function namePage(): string {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -781,22 +966,41 @@ app.post('/api/message', (req, res) => {
   res.json({ ok: true });
 });
 
-// Socket.IO auth — remote connections need token (#1719)
+// Socket.IO auth — remote connections need token (#1719).
+// #3669 — was address-only, so a tunneled WS (cloudflared → 127.0.0.1) counted
+// as local and skipped the token: an unauthenticated jeff-message command path
+// over the public tunnel. Now uses the SAME classifier as the HTTP gate, so the
+// cf-* tunnel headers on the WS upgrade demote a tunneled handshake to remote.
 io.use((socket, next) => {
-  const ip = socket.handshake.address || '';
-  const isLocalSocket = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1'
-    || ip.startsWith('192.168.86.') || ip.startsWith('::ffff:192.168.86.');
-  if (isLocalSocket) return next();
-
-  const token = socket.handshake.auth.token || socket.handshake.query.token;
-  // Also check cookies from handshake headers
-  const cookieHeader = socket.handshake.headers.cookie || '';
-  const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
-  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
-
-  if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return next();
-  next(new Error('Authentication required'));
+  void socketAuth(socket).then((ok) => next(ok ? undefined : new Error('Authentication required')))
+    .catch(() => next(new Error('Authentication required')));
 });
+
+// #3669 — the WS gate must accept the SAME auth the HTTP gate does. Before this it
+// only knew the bridge token, so a human logged in via CSS (clearing_session cookie,
+// no bridge token) connected the page but the live socket was refused → "connecting…"
+// forever + no data. Now: local → allow; else the CSS session cookie (verified WebID
+// in the allow-set, fresh) → allow; else the bridge token as migration fallback.
+async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
+  const ip = socket.handshake.address || '';
+  if (isLocalConnection(socket.handshake.headers, ip)) return true;
+
+  const cookieHeader = String(socket.handshake.headers.cookie || '');
+  const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
+  if (sessMatch) {
+    const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
+    const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
+    if (sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now()))) return true;
+  }
+
+  if (!REQUIRE_DPOP) {
+    const token = socket.handshake.auth.token || String(socket.handshake.query.token || '');
+    const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
+    const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+    if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return true;
+  }
+  return false;
+}
 
 // Socket.IO
 io.on('connection', (socket) => {
