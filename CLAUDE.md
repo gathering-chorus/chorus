@@ -83,8 +83,8 @@ Three quality layers, each owns a different question with a different threat mod
 
 1. **Pre-commit hooks** (`platform/hooks/pre-commit`) — "will this commit obviously break something?" Local fast feedback. Skippable via `--no-verify`.
 2. **Role gates** (`/gate-product`, `/gate-code`, `/gate-quality`, `/gate-arch`, `/gate-ops`) — "is this card team-acceptable?" Card-level done. Recorded on the card.
-3. **CI** (`.github/workflows/quality.yml`) — "does main build cleanly from scratch?" Branch-protected on `main`.
+3. **The merge gate** (ADR-053) — "is this land proven?" `werk-merge` content-verify + the local `act` run of `werk.yml` (build → blocking werk-test → deploy-werk → env-up → demo) + role gates, with Jeff's GO as the land authority (DEC-048). There is **no hosted per-PR CI and no branch-protection backstop on `main`** — that lane was cost-killed 2026-04-29 (#2600); ADR-026's layer-3 claim is superseded.
 
-**`--no-verify` is overridden by CI as authoritative on `main`.** A commit that bypasses pre-commit hooks locally will still be checked when its PR runs against `main`. Branch protection blocks merge of red PRs. Pre-commit failure messages reference this; the CI workflow itself is the source of truth.
+**The red-`main` detector is the 03:00 nightly** (`nightly-suites.sh`), not a per-PR check. `--no-verify` bypasses pre-commit only; the werk pipeline's blocking gates still run on every land. Known gap: the nightly does not yet file cards on red (#2527) — roles read its red list each morning (zero-red bar).
 
 Lock files (`package-lock.json` per active TS package + root, plus Cargo locks) are committed for reproducibility. CI uses `npm ci` against the locks; local installs that drift from the lock raise red flags. See ADR-026 for the full architecture and lock-file policy.

@@ -69,7 +69,7 @@ ADR-026's three quality layers keep their roles; the verb model relocates *where
    - **Mechanical cores fold into verbs:** product's AC+experience-present → **pull's entry validation** (#3045 already does this); code + quality (tests green, no `console.*`, scoped lint/sonar) → **build/verify**; arch's namespace/name conventions (ADR-031 name-test) → **build + CI**; ops's health/rollback/disk → **deploy/verify**.
    - **Judgment stays a human role-review** — "is this worth doing" (product), "does this fit the system" (arch) — which no verb can mechanize. The **demo verb (#3046) orchestrates** these review requests (the feedback nudges); it does not automate the judgment. Net: the verbs absorb the mechanical re-checks so the reviews focus on judgment, not re-running tests.
 
-3. **CI (`quality.yml`) is unchanged** — branch-protected, authoritative on `main` ("does main build cleanly from scratch"). Verbs are local fast-feedback (skippable, as pre-commit was); CI is the from-scratch authority that `--no-verify` cannot bypass (ADR-026). Verbs don't replace it.
+3. **CI (`quality.yml`)** — *corrected 2026-07-24 (#3480, ADR-053):* the hosted per-PR lane was cost-killed 2026-04-29; `quality.yml` is schedule-only and NOT the merge authority. The from-scratch "does main build cleanly" question lives in the 03:00 nightly; the authoritative merge gate is werk-merge content-verify + the local `act` run + role gates (ADR-053). Verbs don't replace the nightly.
 
 Resolves #3056's open question (werk-commit inherits the commit-time checks, scoped) and connects to #3046's gate fold.
 
