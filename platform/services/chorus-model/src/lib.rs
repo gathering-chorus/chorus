@@ -67,6 +67,16 @@ const KINDS: &[(&str, &str, bool)] = &[
     // ADR-040/OWL-DBA blessing (nudged 2026-07-23).
     ("test-result", "TestResult", false),
     ("test-suite-run", "TestSuiteRun", false),
+    // #3654 (Wren, Jeff-driven 2026-07-24) — the board domain's kinds. Chunk +
+    // ChunkMembership are board-native; Card is a THIN FK stub (Vikunja SoR until
+    // #2159 — the board mints id+label only so a membership resolves). All three
+    // type-prefixed (bare_grain=false): they are NEW authored kinds, nothing to
+    // reproduce (bare is only for crawler-minted IRIs, #3680). Mints:
+    // card-<vikunja-id>, chunk-<slug>, chunkmembership-<...>. PROVISIONAL pending
+    // Silas's ADR-040/OWL-DBA blessing (paired #3654, ADR-054 seam).
+    ("card", "Card", false),
+    ("chunk", "Chunk", false),
+    ("chunkmembership", "ChunkMembership", false),
 ];
 
 fn kind_entry(kind: &str) -> R<(&'static str, &'static str, bool)> {
