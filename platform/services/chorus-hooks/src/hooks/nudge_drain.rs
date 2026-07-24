@@ -176,6 +176,14 @@ fn cached_conn(db_path: &str) -> Option<&'static Mutex<Connection>> {
 /// no-op — there is no terminal to reply from, so blocking would freeze the
 /// act/werk.yml pipeline team-wide (the #3318 lesson; verified by test).
 pub fn owes_response_block(role: &str, db_path: &str) -> Option<String> {
+    owes_response(role, db_path).map(|(block, _)| block)
+}
+
+/// Structured owes-check: the formatted block PLUS a stable debt key (the oldest
+/// owed nudge's row id) so the refusal-backoff (#3672) can tell "same debt, still
+/// stuck" from "new debt arrived". Same never-block / headless-no-op contract as
+/// `owes_response_block`.
+pub fn owes_response(role: &str, db_path: &str) -> Option<(String, String)> {
     if std::env::var("GITHUB_ACTIONS").is_ok()
         || std::env::var("ACT").is_ok()
         || std::env::var("CHORUS_HEADLESS").is_ok()
@@ -185,7 +193,95 @@ pub fn owes_response_block(role: &str, db_path: &str) -> Option<String> {
     let conn_lock = cached_conn(db_path)?;
     let conn = conn_lock.lock().ok()?;
     let owed = unanswered_inbound(&conn, role);
-    format_drain_block(role, &owed)
+    let debt_key = owed.first().map(|n| n.id.to_string())?;
+    format_drain_block(role, &owed).map(|block| (block, debt_key))
+}
+
+// --- #3672: the gate must never trap ---------------------------------------
+//
+// 2026-07-23, twice in one day: a role owed a reply, its session had no
+// chorus_nudge_message MCP tool attached (the post-crash default), and the gate
+// refused every tool INCLUDING the Bash transport for the very reply it
+// demanded. Kade escaped via Bash (his variant only blocked at Stop); Silas had
+// zero escape — 125 stop fires, freed only by a human. Two invariants fix the
+// class:
+//   1. The cure always passes — a reply attempt is never refused.
+//   2. Refusal is bounded IN CODE — after the cap, the gate degrades to nagging
+//      (debt stays visible via the capped Stop nag + a spine event) so the
+//      session keeps its hands no matter what is broken.
+
+/// Consecutive PreToolUse refusals allowed for one debt before degrading.
+pub const PRETOOL_REFUSAL_CAP: usize = 3;
+/// Consecutive Stop-hook blocks allowed for one debt before the turn may end.
+pub const STOP_REFUSAL_CAP: usize = 2;
+
+/// Is this tool call the reply the gate is demanding? True for the
+/// chorus_nudge_message MCP tool under any server prefix, and for a Bash
+/// invocation that carries the tool name (the chorus-mcp-call.sh transport —
+/// the documented fallback for sessions without the MCP attach).
+pub fn is_reply_path(tool: &str, bash_command: &str) -> bool {
+    if tool.ends_with("chorus_nudge_message") {
+        return true;
+    }
+    tool == "Bash" && bash_command.contains("chorus_nudge_message")
+}
+
+/// What the gate should do for one tool call, given the refusal count so far
+/// for this (scope, role, debt). Pure — the trap regression tests drive this.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GateDecision {
+    /// The reply path, or no debt — never refused.
+    Allow,
+    /// Debt owed, under the cap — refuse with the respond-first message.
+    Refuse,
+    /// Debt owed but the cap is spent: the reply visibly is NOT happening
+    /// (broken transport, missing tool). Let the call through; keep nagging.
+    Degrade,
+}
+
+pub fn gate_decision(is_reply: bool, refusals_so_far: usize, cap: usize) -> GateDecision {
+    if is_reply {
+        return GateDecision::Allow;
+    }
+    if refusals_so_far < cap {
+        GateDecision::Refuse
+    } else {
+        GateDecision::Degrade
+    }
+}
+
+/// Per-(scope, role) refusal counter, keyed to a specific debt. A new debt key
+/// resets the count (fresh nudge → fresh chances to refuse); clearing the debt
+/// resets everything for the role via `reset_refusals`.
+static REFUSALS: OnceLock<Mutex<std::collections::HashMap<String, (String, usize)>>> =
+    OnceLock::new();
+
+fn refusal_map() -> &'static Mutex<std::collections::HashMap<String, (String, usize)>> {
+    REFUSALS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Count of refusals BEFORE this one for (scope, role, debt_key), then
+/// increment. Returns the pre-increment count (what gate_decision consumes).
+pub fn note_refusal(scope: &str, role: &str, debt_key: &str) -> usize {
+    let key = format!("{scope}:{role}");
+    let mut map = match refusal_map().lock() {
+        Ok(m) => m,
+        Err(_) => return 0, // poisoned lock: fail-open (never trap on our own state)
+    };
+    let entry = map.entry(key).or_insert_with(|| (debt_key.to_string(), 0));
+    if entry.0 != debt_key {
+        *entry = (debt_key.to_string(), 0);
+    }
+    let before = entry.1;
+    entry.1 += 1;
+    before
+}
+
+/// Debt cleared for `role` — drop its counters in every scope.
+pub fn reset_refusals(role: &str) {
+    if let Ok(mut map) = refusal_map().lock() {
+        map.retain(|k, _| !k.ends_with(&format!(":{role}")));
+    }
 }
 
 #[cfg(test)]

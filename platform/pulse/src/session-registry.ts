@@ -25,7 +25,11 @@ export interface SessionReg {
   role: string;
   pid: number;
   tty: string;
-  host: string; // 'terminal' | 'iterm' | 'vscode' | 'unknown'
+  host: string; // 'terminal' | 'iterm' | 'vscode' | 'tmux' | 'unknown'
+  // #3668 — exact tmux pane id (%N) when the session runs inside tmux.
+  // Present → delivery routes `--tmux <pane>`: app-level via the tmux server
+  // (locked-screen-safe), instead of vscode HID keystrokes.
+  tmux?: string;
   registered_at?: string;
 }
 
@@ -221,6 +225,14 @@ export function planDelivery(
     // DEC-107/#3352 stands unamended. Poison prevention lives upstream
     // (env-verified registration + resolve-time role check + sweep).
     return { kind: 'inject', args: [role, content] }; // stale reg ignored — name-match delivers
+  }
+  // #3668 — a tmux-hosted session is reached through the tmux server (osascript
+  // do-shell-script → load-buffer/paste-buffer), which lands with the screen
+  // locked / monitor asleep. The pane id is the exact key; it beats host
+  // classification because tmux-in-VS-Code may still register host=vscode
+  // during rollout.
+  if (target && target.tmux) {
+    return { kind: 'inject', args: ['--tmux', target.tmux, content] };
   }
   if (target && target.host === 'vscode') {
     return { kind: 'inject', args: ['--vscode', content] };

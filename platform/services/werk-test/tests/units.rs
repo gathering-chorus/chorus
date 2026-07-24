@@ -386,10 +386,15 @@ fn parse_test_rows_tolerates_garbage_and_missing_fields() {
 fn suite_run_payload_carries_the_run_facts() {
     use werk_test::suite_run_payload;
     let p = suite_run_payload("3634", "kade", "trace-x", "model", 5, 1, 1234, "blocked");
-    for needle in ["\"card\":\"3634\"", "\"role\":\"kade\"", "\"traceId\":\"trace-x\"",
-                   "\"planSource\":\"model\"", "\"checksPlanned\":5", "\"checksFailed\":1",
-                   "\"durationMs\":1234", "\"verdict\":\"blocked\"", "testsuiterun-3634-"] {
+    // #3592 — payload is EXACTLY the deployed TestSuiteRunShape (cardId/ts/result);
+    // off-model props got every prior post 422-refused by the DAL. Run context
+    // lives in the test.started/test.completed spine events.
+    for needle in ["\"cardId\":\"3634\"", "\"result\":\"blocked\"", "\"ts\":", "testsuiterun-3634-"] {
         assert!(p.contains(needle), "payload missing {}: {}", needle, p);
+    }
+    for banned in ["\"card\":", "\"role\":", "\"traceId\":", "\"planSource\":",
+                   "\"checksPlanned\":", "\"durationMs\":", "\"verdict\":"] {
+        assert!(!p.contains(banned), "off-model prop must not be sent {}: {}", banned, p);
     }
 }
 
@@ -401,6 +406,9 @@ fn suite_run_post_args_pin_the_curl_contract() {
     assert!(joined.starts_with("-sf --max-time 10 -X POST"), "fail-fast + bounded: {}", joined);
     assert!(joined.contains("Authorization: Bearer tok"), "{}", joined);
     assert!(joined.contains("Content-Type: application/json"), "{}", joined);
+    // #3592 — scoped tokens (#3573) demand the target graph named per request;
+    // without this header every scoped write 403s out-of-scope.
+    assert!(joined.contains("x-target-graph: urn:chorus:domains:tests"), "{}", joined);
     assert!(joined.ends_with("http://x/testsuiteruns"), "endpoint last: {}", joined);
 }
 
@@ -420,8 +428,8 @@ fn suite_run_payload_escapes_every_string_field() {
     use werk_test::suite_run_payload;
     let p = suite_run_payload(r#"36"34"#, "kade", r#"tr"ace"#, "model", 1, 0, 2, r#"block"ed"#);
     // no RAW interior quotes may survive: every quote inside a value must be escaped
+    // (#3592: trace no longer travels in the payload — shape-exact cardId/ts/result)
     assert!(p.contains(r#"36\"34"#), "card escaped: {}", p);
-    assert!(p.contains(r#"tr\"ace"#), "trace escaped: {}", p);
     assert!(p.contains(r#"block\"ed"#), "verdict escaped: {}", p);
     // structural sanity: after dropping escaped quotes, the raw quotes pair up
     let unescaped = p.replace(r#"\""#, "");
@@ -610,4 +618,145 @@ fn gap_report_names_every_gap_and_the_none_case_is_explicit() {
     let r = gap_report(&s(&["platform/api/tests/x.test.ts"]));
     assert!(r.contains("undeclared (1"), "count named: {}", r);
     assert!(r.contains("platform/api/tests/x.test.ts"), "file named: {}", r);
+}
+
+// ---- #3592 — per-test result capture + reconcile shapes ----
+
+#[test]
+fn parse_case_tsv_maps_jest_statuses_and_drops_incomplete_rows() {
+    use werk_test::parse_case_tsv;
+    let tsv = "platform/api/tests/a.test.ts\tdoes x\tpassed\n\
+               platform/api/tests/a.test.ts\tdoes y\tfailed\n\
+               platform/api/tests/b.test.ts\tskipped one\tpending\n\
+               only-two-cols\tnope\n\
+               \n";
+    let cases = parse_case_tsv(tsv);
+    assert_eq!(cases.len(), 3);
+    assert_eq!(cases[0].result, "pass");
+    assert_eq!(cases[1].result, "fail");
+    assert_eq!(cases[2].result, "skip");
+    assert_eq!(cases[0].file_path, "platform/api/tests/a.test.ts");
+    assert_eq!(cases[0].test_name, "does x");
+}
+
+#[test]
+fn parse_cargo_cases_extracts_bare_name_and_result() {
+    use werk_test::parse_cargo_cases;
+    let out = "running 3 tests\n\
+               test payload::suite_run_payload_escapes ... ok\n\
+               test deep::module::path::fails_hard ... FAILED\n\
+               test held_case ... ignored\n\
+               test result: FAILED. 1 passed; 1 failed; 1 ignored\n";
+    let cases = parse_cargo_cases(out);
+    assert_eq!(cases.len(), 3);
+    assert_eq!(cases[0], ("suite_run_payload_escapes".to_string(), "pass".to_string()));
+    assert_eq!(cases[1], ("fails_hard".to_string(), "fail".to_string()));
+    assert_eq!(cases[2], ("held_case".to_string(), "skip".to_string()));
+}
+
+#[test]
+fn match_cargo_case_requires_unique_match_within_crate() {
+    use werk_test::match_cargo_case;
+    let rows = vec![
+        row("platform/services/werk-test/src/lib.rs", "cicd", "unit"),
+        row("platform/services/werk-test/src/main.rs", "cicd", "unit"),
+        row("platform/services/other/src/lib.rs", "cicd", "unit"),
+    ];
+    // testName lives on the row via a parallel arg — identity = (filePath within crate, bare name)
+    let names = vec!["alpha".to_string(), "alpha".to_string(), "beta".to_string()];
+    // beta: unique within other crate
+    assert_eq!(
+        match_cargo_case("beta", "platform/services/other", &rows, &names),
+        Some("platform/services/other/src/lib.rs".to_string())
+    );
+    // alpha within werk-test: ambiguous (two files) -> None
+    assert_eq!(match_cargo_case("alpha", "platform/services/werk-test", &rows, &names), None);
+    // missing entirely -> None
+    assert_eq!(match_cargo_case("gamma", "platform/services/other", &rows, &names), None);
+}
+
+#[test]
+fn rel_path_strips_werk_root_only() {
+    use werk_test::rel_path;
+    assert_eq!(
+        rel_path("/w/kade-1/platform/api/tests/a.test.ts", "/w/kade-1"),
+        "platform/api/tests/a.test.ts"
+    );
+    assert_eq!(rel_path("platform/api/tests/a.test.ts", "/w/kade-1"), "platform/api/tests/a.test.ts");
+}
+
+#[test]
+fn test_result_payload_carries_identity_and_escapes() {
+    use werk_test::test_result_payload;
+    let p = test_result_payload(
+        "platform/api/tests/a.test.ts", "asserts \"quoted\" thing", "fail",
+        "test-a-asserts-quoted-thing", "3592", "kade", "trace-1", 1700000000123, 7,
+    );
+    assert!(p.contains("\"filePath\":\"platform/api/tests/a.test.ts\""), "{}", p);
+    assert!(p.contains("\"testName\":\"asserts \\\"quoted\\\" thing\""), "{}", p);
+    assert!(p.contains("\"result\":\"fail\""), "{}", p);
+    assert!(p.contains("\"name\":\"testresult-3592-1700000000123-7\""), "{}", p);
+    // DAL refuses off-model props: only the deployed shape fields + the
+    // mandatory ofTest edge travel; the run ts+card stay embedded in `name`.
+    assert!(p.contains("\"ofTest\":\"test-a-asserts-quoted-thing\""), "{}", p);
+    assert!(!p.contains("\"runTs\":"), "off-model prop must not be sent: {}", p);
+    assert!(!p.contains("\"card\":"), "off-model prop must not be sent: {}", p);
+}
+
+#[test]
+fn reconcile_gap_is_registered_minus_executed() {
+    use werk_test::reconcile_gap;
+    let registered = vec![
+        ("a.ts".to_string(), "one".to_string()),
+        ("a.ts".to_string(), "two".to_string()),
+        ("b.rs".to_string(), "three".to_string()),
+    ];
+    let executed = vec![("a.ts".to_string(), "one".to_string())];
+    let gap = reconcile_gap(&registered, &executed);
+    assert_eq!(gap.len(), 2);
+    assert!(gap.contains(&("a.ts".to_string(), "two".to_string())));
+    assert!(gap.contains(&("b.rs".to_string(), "three".to_string())));
+    // executed superset -> empty
+    assert!(reconcile_gap(&registered, &registered).is_empty());
+}
+
+#[test]
+fn reconcile_report_names_counts_and_explicit_none() {
+    use werk_test::reconcile_report;
+    assert_eq!(reconcile_report(3, &[]), "reconcile: registered 3, never-run: none");
+    let gap = vec![("b.rs".to_string(), "three".to_string())];
+    let r = reconcile_report(3, &gap);
+    assert!(r.contains("never-run (1"), "{}", r);
+    assert!(r.contains("b.rs :: three"), "{}", r);
+}
+
+#[test]
+fn parse_rows_and_names_stays_aligned_and_backcompat() {
+    use werk_test::parse_rows_and_names;
+    let tsv = "a.ts\tsenses\tunit\tdoes x\ttest-a-does-x\n\
+               b.rs\tcicd\tunit\n\
+               \tbad\tunit\tnope\n";
+    let (rows, names, entities) = parse_rows_and_names(tsv);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(names.len(), 2);
+    assert_eq!(entities.len(), 2);
+    assert_eq!(names[0], "does x");
+    assert_eq!(entities[0], "test-a-does-x");
+    assert_eq!((names[1].as_str(), entities[1].as_str()), ("", ""));
+}
+
+#[test]
+fn join_cases_maps_identity_to_entity_and_counts_unregistered() {
+    use werk_test::{join_cases, CaseResult};
+    let rows = vec![row("a.ts", "senses", "unit")];
+    let names = vec!["does x".to_string()];
+    let entities = vec!["test-a-does-x".to_string()];
+    let cases = vec![
+        CaseResult { file_path: "a.ts".into(), test_name: "does x".into(), result: "pass".into() },
+        CaseResult { file_path: "a.ts".into(), test_name: "brand new".into(), result: "pass".into() },
+    ];
+    let (joined, unregistered) = join_cases(&cases, &rows, &names, &entities);
+    assert_eq!(joined.len(), 1);
+    assert_eq!(joined[0].1, "test-a-does-x");
+    assert_eq!(unregistered, 1);
 }

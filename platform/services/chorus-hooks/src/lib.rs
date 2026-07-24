@@ -45,6 +45,14 @@ pub use hooks::inject_force::{
     inject_engagement_verdict, last_assistant_text, read_surfaced_in, record_surfaced_in,
     EngagementVerdict,
 };
+// #3672 — the never-trap gate surface, pub for tests/3672_gate_never_traps.rs
+// (the trap replayed as a regression test). Pure decision layer + counter.
+pub mod nudge_gate {
+    pub use crate::hooks::nudge_drain::{
+        gate_decision, is_reply_path, note_refusal, reset_refusals, GateDecision,
+        PRETOOL_REFUSAL_CAP, STOP_REFUSAL_CAP,
+    };
+}
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.
 pub use state::append_log;

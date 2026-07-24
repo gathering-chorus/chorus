@@ -139,10 +139,31 @@ export function runLogPath(card: number, runId: string, dir: string = RUNS_DIR):
  *  re-invoke, advance a 'running' record to its real terminal phase by reading
  *  that log. null log/no-sentinel → still running (leave as-is); 0 → presented;
  *  non-zero → failed with the child reason. Returns the (possibly advanced) run. */
-export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun | null {
+/** #3678 AC1 — what a running→presented transition stamps: presentedAt + the
+ *  re-read patchId (the round owns its self-commits). Degrades to the recorded
+ *  patchId on any source failure. */
+function presentedExtras(patchIdSource?: () => string): Partial<WerkRun> {
+  const extras: Partial<WerkRun> = { presentedAt: new Date().toISOString() };
+  try {
+    const p = patchIdSource?.();
+    if (p) extras.patchId = p;
+  } catch { /* degrade: recorded patchId stands */ }
+  return extras;
+}
+
+export function reconcileRunning(
+  card: number,
+  dir: string = RUNS_DIR,
+  // #3678 AC1 — at the running→presented transition the round RE-STAMPS its
+  // patchId from this source (the werk's head at present time), so the
+  // pipeline's own commits (doc-coherence churn etc.) are absorbed into the
+  // round instead of superseding it — the #3592 poll-relaunch loop's root.
+  // Absent source (legacy callers/tests) → recorded patchId stands.
+  patchIdSource?: () => string,
+): WerkRun | null {
   const run = readRun(card, dir);
   if (!run || run.phase !== 'running') return run;
-  let log = '';
+  let log: string;
   try {
     // #3664 — read THIS run's own log; legacy records (no logFile) use the per-card path.
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- run.logFile was written by us (runLogPath: RUNS_DIR + sanitized runId); legacy path is RUNS_DIR + `${card}.log`, card asserted positive-int
@@ -165,7 +186,10 @@ export function reconcileRunning(card: number, dir: string = RUNS_DIR): WerkRun 
   }
   // exit 0 → terminal success: a land run (go:true) reached 'landed'; a present
   // run (go:false) reached 'presented'. Non-zero → failed with the child reason.
-  if (code === 0) return markPhase(card, run.go ? 'landed' : 'presented', {}, dir);
+  if (code === 0) {
+    const extras = run.go ? {} : presentedExtras(patchIdSource);
+    return markPhase(card, run.go ? 'landed' : 'presented', extras, dir);
+  }
   return markPhase(card, 'failed', { failureReason: extractFailureReason(log, '', 'unknown') }, dir);
 }
 

@@ -23,6 +23,7 @@ import {
   makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
   exchangeCodeForWebId, type OidcConfig,
 } from './solid-oidc';
+import { gateDecision } from './server-auth';
 
 const PORT = parseInt(process.env.COMMAND_CHANNEL_PORT || '3470');
 // #2575: fail-loud on missing CHORUS_ROOT. Earlier silent fallback to
@@ -203,8 +204,6 @@ function isLocal(req: express.Request): boolean {
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-const LOCAL_ONLY_PATHS = ['/health', '/metrics', '/api/debug'];
-const ADMIN_PATH_PREFIXES = ['/api/stream', '/api/session/', '/api/commands/', '/api/flow', '/api/restart'];
 const TOKEN_COOKIE_OPTS = {
   maxAge: 365 * 24 * 60 * 60 * 1000,
   httpOnly: true,
@@ -215,20 +214,6 @@ function extractToken(req: Request): string | undefined {
   return (req.query.token as string)
     || req.cookies?.bridge_token
     || req.headers.authorization?.replace('Bearer ', '');
-}
-
-function handleLocalOnlyGate(req: Request, res: Response): boolean {
-  if (LOCAL_ONLY_PATHS.includes(req.path)) {
-    if (isLocal(req)) return false;
-    res.status(403).json({ error: 'forbidden' });
-    return true;
-  }
-  if (ADMIN_PATH_PREFIXES.some((p) => req.path.startsWith(p))) {
-    if (isLocal(req)) return false;
-    res.status(403).json({ error: 'forbidden' });
-    return true;
-  }
-  return false;
 }
 
 function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
@@ -292,27 +277,26 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   if (req.path === '/auth/login') return handleAuthLogin(req, res);
   if (req.path === '/auth/callback') return handleAuthCallback(req, res);
 
-  if (handleLocalOnlyGate(req, res)) return;
-  if (isLocal(req)) return next();
+  const local = isLocal(req);
 
-  // #3669 — the human session cookie (issued after CSS login) is the primary
-  // tunneled auth. Signed (typ:session), WebID re-checked against the live
-  // allow-set every request so a revoked identity loses access within one TTL.
+  // #3669 — "authenticated" now means EITHER the CSS session cookie (the human's
+  // primary tunneled auth — signed typ:session, WebID re-checked against the live
+  // allow-set every request so a revoked identity loses access within one TTL) OR
+  // the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
+  // Both feed the #3667 gateDecision policy, which owns the admin-forbid + the
+  // read-pair GET-only rules — so those survive the human-login path unchanged.
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
-  if (session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now()))) {
-    return handleAuthenticated(req, res, next);
-  }
+  const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
+  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
+  const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
 
-  // Migration fallback: the static bridge token still works UNTIL the finish-line
-  // flag flips. REQUIRE_DPOP=1 retires it — login required, token refused.
-  if (!REQUIRE_DPOP) {
-    const token = extractToken(req);
-    // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
-    if (token === BRIDGE_TOKEN) return handleAuthenticated(req, res, next);
-    if (req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
-  }
+  const outcome = gateDecision(req.path, req.method, local, sessionAuthed || tokenAuthed);
+  if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
+  if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
 
+  // auth-required — the migration token login POST still works until the flag flips.
+  if (!REQUIRE_DPOP && req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
   // #3669 spec (Wren) — the DEFAULT unauth experience on the public arm is the
   // clean login interstitial, no token language. Preserve where the user was
   // heading so the callback lands them in that room.
@@ -854,6 +838,19 @@ app.get('/api/flow', (_req, res) => {
   }
 });
 
+// API: domain-detail proxy (#3667) — the browser must never fetch :3340
+// directly (DEC-093: :3340 stays LAN-only, never exposed through the tunnel).
+// CHORUS_API_URL is read per-request so tests can point it at a stub upstream.
+app.get('/api/domain-detail/:name', async (req, res) => {
+  const upstream = process.env.CHORUS_API_URL || 'http://localhost:3340';
+  try {
+    const r = await fetch(`${upstream}/api/chorus/domain/${encodeURIComponent(req.params.name)}`);
+    res.status(r.status).json(await r.json());
+  } catch {
+    res.status(502).json({ error: 'upstream unreachable' });
+  }
+});
+
 // API: card detail — fetch full card view for inline expansion
 app.get('/api/card/:id', (_req, res) => {
   const { execSync } = require('child_process');
@@ -1157,7 +1154,7 @@ io.on('connection', (socket) => {
 
 // Export for tests (#2167) — tests import `app` and `server` and spin up
 // on an ephemeral port themselves, so importing the module doesn't bind :3470.
-export { app, server, io, tilePoller, messageRouter, clearingChat };
+export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessionTailer };
 
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
