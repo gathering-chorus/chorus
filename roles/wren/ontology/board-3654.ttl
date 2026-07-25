@@ -1,0 +1,136 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# board domain (#3654) — the team's work board as a projected domain.
+#
+# Boundary (Jeff's cut, 2026-07-24): the board OWNS two native kinds — Chunk and
+# ChunkMembership — and DEPENDS ON two foreign references it does not own:
+#   Card → Vikunja is SoR (its own domain later, #2159); the board materializes a
+#          THIN FK stub (card-<vikunja-id>, id+label only) so a membership resolves.
+#   Role → the roles domain (Silas/Wren seam, ADR-054); Chunk.ownedBy points at it.
+#
+# The point (#3654): run BIGGER committed chunks with DECLARED ordering so roles
+# stop colliding on loose cards. Ordering is OUR data (Vikunja can't express it):
+# roleSequence (chunk order per role), loomSequence (cross-role axis), rank (card
+# order within a chunk) — each governed by a uniqueness-within-scope rule so the
+# walk is deterministic (no ties → no invisible/ambiguous ordering, the #3432 class).
+#
+# Enforcement seam (paired with Silas, ADR-054 declared-by-Wren / enforced-by-Silas):
+# the DAL validator (chorus-model) hand-reads minCount/in/datatype/class — it has NO
+# SHACL-SPARQL engine, so these shapes DECLARE the uniqueness via chorus:uniqueWithin
+# / chorus:uniqueGlobal annotations, and Silas's read_shape+write() ASK primitive
+# ENFORCES them. Without that primitive these annotations are inert — do not ship the
+# TTL alone and claim AC5.
+#
+# LOAD-SET: this file is added to MODEL_SET in chorus-model-deploy.sh the day it is
+# authored (#3675 discipline) — a live-only domain gets wiped by the retire-guard
+# (#3587/#3593 wipe class). read_shape queries urn:chorus:ontology, so the shapes are
+# only visible to the validator once this file is in the merge set.
+# =============================================================================
+
+# ── shape annotations the DAL uniqueness primitive reads (ADR-054, Silas's lane) ──
+chorus:uniqueWithin a owl:AnnotationProperty ;
+  rdfs:label "unique within" ;
+  rdfs:comment "On a sh:property: the value must be unique among nodes sharing the same value of the named PARTITION property (e.g. rank uniqueWithin inChunk). Object is always a property, never a class." .
+
+chorus:uniqueGlobal a owl:AnnotationProperty ;
+  rdfs:label "unique global" ;
+  rdfs:comment "On a sh:property: the value must be unique class-wide (across all instances of the shape's targetClass). Structurally distinct from uniqueWithin — no partition join." .
+
+chorus:immutable a owl:AnnotationProperty ;
+  rdfs:label "immutable" ;
+  rdfs:comment "Declared-intent marker: this value is a stable key and must not change in place (rename = new subject + migrate). Enforcement is future; today it is convention the writer is expected to honor." .
+
+# ── vocabulary (board-native properties) ─────────────────────────────────────
+chorus:slug a owl:DatatypeProperty ;
+  rdfs:label "slug" ; rdfs:domain chorus:Chunk ; rdfs:range xsd:string ;
+  rdfs:comment "The chunk's immutable stable key; the ChunkMembership IRI keys off it." .
+
+chorus:roleSequence a owl:DatatypeProperty ;
+  rdfs:label "role sequence" ; rdfs:domain chorus:Chunk ; rdfs:range xsd:integer ;
+  rdfs:comment "This chunk's ordinal within its owning role's chunks. Unique within ownedBy — deterministic per-role walk." .
+
+chorus:loomSequence a owl:DatatypeProperty ;
+  rdfs:label "loom sequence" ; rdfs:domain chorus:Chunk ; rdfs:range xsd:integer ;
+  rdfs:comment "This chunk's ordinal on the cross-role loom axis. Optional (not every chunk is on the loom); unique class-wide where present." .
+
+chorus:inChunk a owl:ObjectProperty ;
+  rdfs:label "in chunk" ; rdfs:domain chorus:ChunkMembership ; rdfs:range chorus:Chunk .
+
+chorus:hasCard a owl:ObjectProperty ;
+  rdfs:label "has card" ; rdfs:domain chorus:ChunkMembership ; rdfs:range chorus:Card .
+
+chorus:rank a owl:DatatypeProperty ;
+  rdfs:label "rank" ; rdfs:domain chorus:ChunkMembership ; rdfs:range xsd:integer ;
+  rdfs:comment "This card's ordinal within its chunk. Unique within inChunk — deterministic card order." .
+
+# ── classes ──────────────────────────────────────────────────────────────────
+# Card — THIN foreign-reference stub. Vikunja is SoR for core attributes (title,
+# status, owner, priority); the board materializes only id+label so memberships
+# resolve. NOT board-owned; declared here as the FK target type until #2159 gives
+# cards their own domain.
+chorus:Card a owl:Class ;
+  rdfs:label "Card" ;
+  rdfs:comment "A unit of work on the board. Thin FK stub here (id+label); Vikunja is system-of-record until #2159." .
+
+# Chunk — board-native. A committed grouping of cards with a role ordinal (and an
+# optional loom ordinal).
+chorus:Chunk a owl:Class ;
+  rdfs:label "Chunk" ;
+  rdfs:comment "A committed grouping of cards, ordered within a role (roleSequence) and optionally on the loom axis (loomSequence)." .
+
+# ChunkMembership — board-native junction. Reified Card↔Chunk link carrying rank.
+# Minted (NOT a blank node) so re-adding a card to a chunk is an idempotent upsert
+# and the edges are FK-checkable: IRI = membership-<chunkslug>-<cardid>.
+chorus:ChunkMembership a owl:Class ;
+  rdfs:label "Chunk Membership" ;
+  rdfs:comment "The reified membership of a Card in a Chunk, carrying rank (card order within the chunk). Minted deterministically for idempotent upsert." .
+
+# ── shapes ───────────────────────────────────────────────────────────────────
+# Instances of these three are DAL-written → they live in urn:chorus:instances
+# (the serve default), so no instancesGraph override (unlike the punned Domain/
+# Service ABox-in-ontology shapes).
+
+chorus:CardShape a sh:NodeShape ;
+  sh:targetClass chorus:Card ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+chorus:ChunkShape a sh:NodeShape ;
+  sh:targetClass chorus:Chunk ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
+  sh:property [ sh:path chorus:roleSequence ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] ;
+  sh:property [ sh:path chorus:loomSequence ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
+
+chorus:ChunkMembershipShape a sh:NodeShape ;
+  sh:targetClass chorus:ChunkMembership ;
+  sh:property [ sh:path chorus:inChunk ; sh:minCount 1 ; sh:class chorus:Chunk ] ;
+  sh:property [ sh:path chorus:hasCard ; sh:minCount 1 ; sh:class chorus:Card ] ;
+  sh:property [ sh:path chorus:rank ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:inChunk ] .
+
+# ── domain individual ────────────────────────────────────────────────────────
+# Punned owl:Class + chorus:Domain, ABox-in-ontology (served from urn:chorus:ontology
+# per DomainShape's #3581 instancesGraph). Edges FK-verified to resolve (2026-07-24):
+# ownedBy→wren, atStream→chorusStream, atStep→Directing (Vertebra, matching sibling
+# domains' atStep convention), partOf→chorusProduct (coarse valid template).
+# FLAG (honest, not faked): hasDesignDoc omitted — the #3575 spike (cards-as-owl-class)
+# is not yet a registered chorus:Document; registering it is the domain-completeness
+# follow-on, tracked in chorus:gaps. Do not fake an edge to a non-existent Document.
+chorus:board a owl:Class, chorus:Domain ;
+  rdfs:label "board" ;
+  rdfs:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
+  chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
+  chorus:purpose "Group work into committed chunks with deterministic ordering so roles run bigger units without colliding on loose cards." ;
+  chorus:ownedBy chorus:wren ;
+  chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Directing ;
+  chorus:atStream chorus:chorusStream ;
+  chorus:status "building" ;
+  chorus:repoTarget "platform/services/cards" ;
+  chorus:definesVocabulary chorus:Chunk, chorus:ChunkMembership ;
+  chorus:gaps "Card is a thin FK stub (Vikunja SoR until #2159, not board-owned). Uniqueness enforcement (rank/roleSequence/loomSequence) lands via the DAL uniqueWithin/uniqueGlobal primitive paired with Silas (ADR-054) — inert until that ships. hasDesignDoc pending registration of the #3575 spike (cards-as-owl-class) as a chorus:Document." .

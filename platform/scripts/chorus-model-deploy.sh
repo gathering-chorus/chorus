@@ -47,6 +47,11 @@ else
     # #3675 — service definitions enter the MODEL_SET the day they're authored,
     # never live-only (the #3587/#3593 wipe class).
     "$CHORUS_ROOT/designing/data/service-instances.ttl"
+    # #3654 — the board domain (Chunk/ChunkMembership + shapes carrying the
+    # uniqueWithin/uniqueGlobal annotations). Enters MODEL_SET the day authored so
+    # read_shape (which queries urn:chorus:ontology) can see the shapes and the
+    # retire-guard doesn't wipe the live-only domain (#3587/#3593 wipe class).
+    "$CHORUS_ROOT/roles/wren/ontology/board-3654.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
