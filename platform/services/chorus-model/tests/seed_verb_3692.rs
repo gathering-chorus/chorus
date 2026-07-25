@@ -13,7 +13,7 @@
 //! Hermetic: stub store answers shape SELECTs / existence ASKs; no live
 //! Fuseki, no $HOME, no role state (test-isolation contract).
 
-use chorus_model::{parse_ntriples, seed, verify_identity, Identity, Store, R};
+use chorus_model::{delete_iri, parse_ntriples, seed, verify_identity, Identity, Store, R};
 use std::cell::RefCell;
 
 const NS: &str = "https://jeffbridwell.com/chorus#";
@@ -285,6 +285,242 @@ fn seed_batch_internal_edge_satisfies_but_dangling_refuses() {
     assert!(e.starts_with("unknown-target"), "typed refusal: {}", e);
     assert!(e.contains("nowhere-to-be-found"), "refusal names the dangling target: {}", e);
     assert!(store2.updates.borrow().is_empty(), "dangling ref writes nothing");
+}
+
+// ── #3392 — realm-policy table (Silas ruling 2026-07-25) ────────────────────
+// The seed door is a KNOWN-REALMS ALLOWLIST, not chorus-only and not open:
+//   chorus realm    → strict KINDS-convention IRI check + rdf:type-match (unchanged)
+//   gathering realm → NS-membership + well-formed + no-injection ONLY (ICD
+//                     self-types via icd:Domain — not our KINDS vocab, not our
+//                     type vocab; stricter would wrongly reject valid ICD)
+//   anything else   → off-realm refusal (unchanged)
+
+const ICD_G: &str = "urn:gathering:icd/current";
+
+fn icd_triples() -> Vec<(String, String, String)> {
+    vec![
+        // live-store reality (verified 2026-07-25): instance subjects resolved
+        // against base https://jeffbridwell.com/, class defs subject in urn:gathering:icd#
+        (
+            "<https://jeffbridwell.com/icd/domain/photos>".to_string(),
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>".to_string(),
+            "<urn:gathering:icd#Domain>".to_string(),
+        ),
+        (
+            "<https://jeffbridwell.com/icd/domain/photos>".to_string(),
+            "<urn:gathering:icd#domainName>".to_string(),
+            "\"photos\"".to_string(),
+        ),
+        (
+            "<urn:gathering:icd#Domain>".to_string(),
+            "<http://www.w3.org/2000/01/rdf-schema#label>".to_string(),
+            "\"ICD Domain\"".to_string(),
+        ),
+    ]
+}
+
+#[test]
+fn seed_gathering_realm_loads_icd_with_native_iris_and_types() {
+    // The whole point of #3392: ICD loads into ITS graph with ITS IRIs and ITS
+    // type vocab — no chorus kind convention, no rdf:type-match, no re-homing.
+    let store = cfg();
+    let id = vid(&store);
+    let report = seed(&store, "domain", &icd_triples(), "migrated", Some(ICD_G), &id).unwrap();
+    assert_eq!(report.subjects, 2, "both ICD subjects load");
+    let ups = store.updates.borrow();
+    assert_eq!(ups.len(), 1, "one transaction");
+    let s = &ups[0];
+    assert!(s.contains("<https://jeffbridwell.com/icd/domain/photos>"), "native instance IRI preserved");
+    assert!(s.contains("<urn:gathering:icd#Domain>"), "native class IRI preserved");
+    assert!(s.contains(&format!("GRAPH <{}>", ICD_G)), "scoped to the gathering graph");
+    assert!(s.contains("migrated"), "provenance still stamped");
+}
+
+#[test]
+fn seed_gathering_realm_skips_chorus_type_guard() {
+    // icd:Domain != chorus#Domain — under the chorus policy this is the
+    // mixed-kind refusal; under the gathering policy it MUST pass (their
+    // type vocab, not ours). Pinned so a future tightening goes red here.
+    let store = cfg();
+    let id = vid(&store);
+    let typed_foreign = vec![(
+        "<https://jeffbridwell.com/icd/domain/music>".to_string(),
+        "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>".to_string(),
+        "<urn:gathering:icd#Domain>".to_string(),
+    )];
+    assert!(
+        seed(&store, "domain", &typed_foreign, "migrated", Some(ICD_G), &id).is_ok(),
+        "gathering realm must not apply the chorus rdf:type-match guard"
+    );
+}
+
+#[test]
+fn seed_gathering_realm_still_refuses_off_ns_subjects() {
+    // Bounded, not open: a subject outside the gathering ns-set refuses even
+    // when the graph is a gathering graph.
+    let store = cfg();
+    let id = vid(&store);
+    let rogue = vec![(
+        "<https://evil.example.com/icd/domain/photos>".to_string(),
+        "<urn:gathering:icd#domainName>".to_string(),
+        "\"photos\"".to_string(),
+    )];
+    let e = seed(&store, "domain", &rogue, "migrated", Some(ICD_G), &id).unwrap_err();
+    assert!(e.contains("iri"), "typed IRI-guard refusal: {}", e);
+    assert!(store.updates.borrow().is_empty());
+}
+
+#[test]
+fn seed_unknown_realm_graph_still_refused() {
+    // The allowlist is chorus + gathering — nothing else. The off-realm door
+    // #3573 closed stays closed.
+    let store = cfg();
+    let id = vid(&store);
+    for g in ["urn:other:stuff", "https://example.com/graphs/x"] {
+        let e = seed(&store, "domain", &valid_triples(), "migrated", Some(g), &id).unwrap_err();
+        assert!(e.contains("realm") || e.contains("refused"), "unknown realm refused ({}): {}", g, e);
+    }
+    assert!(store.updates.borrow().is_empty());
+}
+
+#[test]
+fn seed_chorus_realm_policy_unchanged_by_the_widening() {
+    // Regression pin: the gathering allowance must not loosen chorus — an
+    // off-convention chorus subject still refuses in a chorus graph.
+    let store = cfg();
+    let id = vid(&store);
+    let rogue = vec![(
+        "<urn:somewhere:else/icd>".to_string(),
+        format!("<{}label>", NS),
+        "\"ICD\"".to_string(),
+    )];
+    assert!(seed(&store, "domain", &rogue, "migrated", Some(G), &id).is_err());
+}
+
+// ── Real-content literals (#3392 live-load finding #2) ──────────────────────
+// ICD carries mermaid diagrams and slug templates: literals containing
+// { } ; and ESCAPED quotes. riot-canonicalized N-Triples guarantees inner
+// quotes arrive backslash-escaped, so those chars are inert in the
+// door-assembled INSERT — refusing them refuses real data (the
+// "photograph" ruling extended to the chars mermaid actually uses).
+
+#[test]
+fn seed_accepts_escaped_real_content_literals() {
+    let store = cfg();
+    let id = vid(&store);
+    let real = vec![
+        (
+            "<https://jeffbridwell.com/icd/section/documents/diagrams>".to_string(),
+            "<urn:gathering:icd#mermaidSource>".to_string(),
+            r#""graph LR\n    H -->|\"streaming\"| RP{PhotoRouter}\n    RP -->|yes| PH[Photos] ;""#.to_string(),
+        ),
+        (
+            "<https://jeffbridwell.com/icd/field/documents/docSlug-1>".to_string(),
+            "<urn:gathering:icd#fieldTypeDescription>".to_string(),
+            r#""{name-slug}-{fileId:8}""#.to_string(),
+        ),
+    ];
+    let report = seed(&store, "domain", &real, "migrated", Some(ICD_G), &id).unwrap();
+    assert_eq!(report.subjects, 2, "mermaid + slug-template literals must load");
+    assert!(store.updates.borrow()[0].contains("PhotoRouter"), "content preserved");
+}
+
+#[test]
+fn seed_still_refuses_unescaped_quote_breakout() {
+    // The actual injection vector: an UNESCAPED quote closing the literal
+    // early. NT never produces this; a hand-crafted input trying it refuses.
+    let store = cfg();
+    let id = vid(&store);
+    let evil = vec![(
+        "<https://jeffbridwell.com/icd/field/x>".to_string(),
+        "<urn:gathering:icd#fieldTypeDescription>".to_string(),
+        "\"broken\" } ; INSERT DATA { GRAPH <urn:x> { <a> <b> \"c\" \"".to_string(),
+    )];
+    let e = seed(&store, "domain", &evil, "migrated", Some(ICD_G), &id).unwrap_err();
+    assert!(e.contains("slot"), "breakout-shaped literal refused: {}", e);
+    assert!(store.updates.borrow().is_empty());
+}
+
+#[test]
+fn seed_refuses_backslash_parity_breakout() {
+    // Silas's hole (ruling 2026-07-25): `foo\\"` — the \\ is an ESCAPED
+    // BACKSLASH, so the following quote is UNESCAPED and closes the literal
+    // early. A quote is escaped only when preceded by an ODD run of
+    // backslashes; an even run before a quote = real delimiter = refuse.
+    let store = cfg();
+    let id = vid(&store);
+    let evil = vec![(
+        "<https://jeffbridwell.com/icd/field/z>".to_string(),
+        "<urn:gathering:icd#fieldTypeDescription>".to_string(),
+        // literal body: foo\\" } ; INSERT ... — even backslash run then quote
+        "\"foo\\\\\" } ; INSERT DATA { GRAPH <urn:x> { <a> <b> \"c\" } } \"".to_string(),
+    )];
+    let e = seed(&store, "domain", &evil, "migrated", Some(ICD_G), &id).unwrap_err();
+    assert!(e.contains("slot"), "even-backslash-run quote breakout refused: {}", e);
+    assert!(store.updates.borrow().is_empty());
+
+    // And the legit sibling: an odd run (escaped backslash + escaped quote)
+    // is real content and must load.
+    let legit = vec![(
+        "<https://jeffbridwell.com/icd/field/z2>".to_string(),
+        "<urn:gathering:icd#fieldTypeDescription>".to_string(),
+        r#""path \\ then \" quote""#.to_string(),
+    )];
+    let store2 = cfg();
+    let id2 = vid(&store2);
+    assert!(seed(&store2, "domain", &legit, "migrated", Some(ICD_G), &id2).is_ok());
+}
+
+#[test]
+fn seed_still_refuses_raw_control_chars_in_literals() {
+    let store = cfg();
+    let id = vid(&store);
+    let raw_newline = vec![(
+        "<https://jeffbridwell.com/icd/field/y>".to_string(),
+        "<urn:gathering:icd#fieldTypeDescription>".to_string(),
+        "\"line one\nline two\"".to_string(), // RAW newline — NT would emit \n escaped
+    )];
+    let e = seed(&store, "domain", &raw_newline, "migrated", Some(ICD_G), &id).unwrap_err();
+    assert!(e.contains("slot"), "raw control char refused: {}", e);
+}
+
+// ── delete_iri (#3392 — governed foreign-realm delete, Silas ruling) ────────
+// The migration-cleanup path: a live-only junk subject in a gathering graph
+// has no chorus (kind,name) — delete_entity can't address it. delete_iri is
+// the DAL door for by-IRI deletion: realm-policy gated, dba-graph refused,
+// subject + inbound references in ONE transaction, model.deleted witnessed.
+
+#[test]
+fn delete_iri_removes_subject_and_inbound_refs_one_tx() {
+    let store = cfg();
+    let id = vid(&store);
+    let iri = "https://jeffbridwell.com/icd/field/photos/test-automation-field";
+    delete_iri(&store, iri, ICD_G, &id).unwrap();
+    let ups = store.updates.borrow();
+    assert_eq!(ups.len(), 1, "one transaction");
+    let s = &ups[0];
+    assert!(s.contains(&format!("<{}> ?p ?o", iri)), "subject triples deleted: {}", s);
+    assert!(s.contains(&format!("?s ?p2 <{}>", iri)), "inbound references deleted: {}", s);
+    assert!(s.contains(&format!("GRAPH <{}>", ICD_G)), "graph-scoped");
+}
+
+#[test]
+fn delete_iri_refuses_off_realm_and_dba_graphs() {
+    let store = cfg();
+    let id = vid(&store);
+    let iri = "https://jeffbridwell.com/icd/field/photos/test-automation-field";
+    assert!(delete_iri(&store, iri, "urn:other:stuff", &id).is_err(), "unknown realm refused");
+    assert!(delete_iri(&store, iri, "urn:chorus:ontology", &id).is_err(), "dba graph refused");
+    assert!(store.updates.borrow().is_empty());
+}
+
+#[test]
+fn delete_iri_refuses_subject_outside_realm_ns() {
+    let store = cfg();
+    let id = vid(&store);
+    let e = delete_iri(&store, "https://evil.example.com/x", ICD_G, &id).unwrap_err();
+    assert!(e.contains("iri"), "off-ns subject refused: {}", e);
+    assert!(store.updates.borrow().is_empty());
 }
 
 // ── N-Triples parsing (the CLI feeds seed via riot --output=ntriples) ───────

@@ -197,10 +197,22 @@ impl FusekiStore {
         // the one-door names the bash writers (fuseki-auth.sh) and services already
         // use. Absent/empty → no -u → anonymous, i.e. current behavior on an
         // un-flipped store, so this is safe whether or not the lock is on.
+        // #3392 — body via @file, never argv: a bulk seed (6.4K triples) blows
+        // the OS ARG_MAX ceiling as an argument. curl reads + urlencodes the
+        // file contents; behavior identical for small bodies.
+        let body_file = std::env::temp_dir().join(format!(
+            "chorus-model-body-{}-{}.rq",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::write(&body_file, body).map_err(|e| format!("curl-bodyfile: {}", e))?;
         let mut args: Vec<String> = vec![
-            "-sf".into(), "--max-time".into(), "20".into(),
+            "-sf".into(), "--max-time".into(), "60".into(),
             "-H".into(), "Accept: application/sparql-results+json".into(),
-            "--data-urlencode".into(), format!("{}={}", data_param, body),
+            "--data-urlencode".into(), format!("{}@{}", data_param, body_file.display()),
         ];
         if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
             if !pw.is_empty() {
@@ -214,7 +226,9 @@ impl FusekiStore {
         let out = Command::new("curl")
             .args(&args)
             .output()
-            .map_err(|e| format!("curl-spawn: {}", e))?;
+            .map_err(|e| format!("curl-spawn: {}", e));
+        let _ = std::fs::remove_file(&body_file);
+        let out = out?;
         if !out.status.success() {
             return Err(format!(
                 "fuseki-{}: HTTP failure — {}",
@@ -1041,6 +1055,46 @@ fn obj_ok(t: &str, allow_wildcard: bool) -> bool {
     (allow_wildcard && t == "?o") || is_iri_term(t) || is_literal_term(t)
 }
 
+/// #3392 — literal check for riot-CANONICALIZED N-Triples input (seed's
+/// contract; batch() keeps the stricter `is_literal_term` for hand-assembled
+/// slots — different input contract, not a competing validator). NT guarantees
+/// inner quotes arrive backslash-escaped, so `{ } ;` inside a properly-escaped
+/// literal are inert in the door-assembled INSERT; refusing them refuses real
+/// data (ICD mermaid diagrams, `{artist}/{album}` slug templates — the
+/// "photograph" ruling extended). What still refuses, escape-aware:
+///   - any UNESCAPED inner quote (the actual breakout vector)
+///   - raw control chars (\n \r \t as characters — NT emits them escaped)
+///   - a trailing dangling backslash
+fn is_nt_literal(t: &str) -> bool {
+    fn body_ok(inner: &str) -> bool {
+        let mut esc = false;
+        for c in inner.chars() {
+            if matches!(c, '\n' | '\r' | '\t') {
+                return false;
+            }
+            if esc {
+                esc = false;
+                continue;
+            }
+            match c {
+                '\\' => esc = true,
+                '"' => return false, // unescaped quote — breakout-shaped
+                _ => {}
+            }
+        }
+        !esc
+    }
+    fn quoted_ok(q: &str) -> bool {
+        q.len() >= 2 && q.starts_with('"') && q.ends_with('"') && body_ok(&q[1..q.len() - 1])
+    }
+    if let Some(pos) = t.rfind("\"^^<") {
+        let quoted = &t[..pos + 1];
+        let datatype = &t[pos + 3..];
+        return quoted_ok(quoted) && is_iri_term(datatype);
+    }
+    quoted_ok(t)
+}
+
 /// Governed batch write — structural single-graph, typed-slot only, one transaction.
 /// `deletes`: (s,p,o) patterns, o may be "?o" (delete all matching) → DELETE WHERE.
 /// `inserts`: (s,p,o) ground triples → INSERT DATA. Returns count of triples touched.
@@ -1199,6 +1253,35 @@ fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
 /// triples verbatim plus the audit envelope (created preserved via the write()
 /// pattern) and the provenance stamp. Any failure before that point leaves the
 /// store untouched.
+/// #3392 — the seed door's realm policy (Silas ruling 2026-07-25): a
+/// KNOWN-REALMS ALLOWLIST, not chorus-only and not open.
+///   - chorus realm: strict — KINDS-convention IRI check, rdf:type-match,
+///     SHACL shape checks, referential integrity (unchanged from #3692).
+///   - gathering realm: NS-membership + well-formed + no-injection ONLY.
+///     ICD is GATHERING-owned (convergence boundary): it self-types via
+///     icd:Domain and follows its own IRI scheme — a chorus kind/type check
+///     would wrongly reject valid ICD. NS-set verified against the live
+///     store 2026-07-25: instance subjects resolved against base
+///     https://jeffbridwell.com/, class defs subject in urn:gathering:icd#.
+///   - anything else: off-realm refusal (the #3573 door stays closed).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RealmPolicy {
+    ChorusStrict,
+    ForeignNs(&'static [&'static str]),
+}
+
+const GATHERING_NS_SET: &[&str] = &["https://jeffbridwell.com/icd/", "urn:gathering:icd#"];
+
+fn realm_policy(graph: &str) -> Option<RealmPolicy> {
+    if graph.starts_with("urn:chorus:") {
+        Some(RealmPolicy::ChorusStrict)
+    } else if graph.starts_with("urn:gathering:") {
+        Some(RealmPolicy::ForeignNs(GATHERING_NS_SET))
+    } else {
+        None
+    }
+}
+
 pub fn seed(
     store: &dyn Store,
     kind: &str,
@@ -1207,12 +1290,15 @@ pub fn seed(
     graph: Option<&str>,
     id: &Identity,
 ) -> R<SeedReport> {
-    let class = class_iri(kind)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH);
-    if !g.starts_with("urn:chorus:") || g.contains(['<', '>', '{', '}', ' ', ';']) {
-        witness("model.seed.refused", &[("graph", g), ("reason", "off-realm-graph")]);
-        return Err(format!("seed: graph '{}' is outside urn:chorus:* or malformed (refused)", g));
+    if g.contains(['<', '>', '{', '}', ' ', ';']) {
+        witness("model.seed.refused", &[("graph", g), ("reason", "malformed-graph")]);
+        return Err(format!("seed: graph '{}' is malformed (refused)", g));
     }
+    let policy = realm_policy(g).ok_or_else(|| {
+        witness("model.seed.refused", &[("graph", g), ("reason", "off-realm-graph")]);
+        format!("seed: graph '{}' is outside the known realms (urn:chorus:*, urn:gathering:*) — refused", g)
+    })?;
     assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
     if triples.is_empty() {
         return Err("seed: no triples to load".into());
@@ -1223,7 +1309,10 @@ pub fn seed(
     let mut by_subject: std::collections::HashMap<String, Vec<(String, String)>> =
         std::collections::HashMap::new();
     for (s, p, o) in triples {
-        if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, false) {
+        // Object check is the NT-contract one (escape-aware) — seed's input is
+        // riot-canonicalized N-Triples, where real content legitimately carries
+        // { } ; and escaped quotes (mermaid, slug templates). See is_nt_literal.
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !(is_iri_term(o) || is_nt_literal(o)) {
             witness("model.seed.refused", &[("reason", "bad-slot")]);
             return Err("seed: a triple has an invalid/injection-shaped slot".into());
         }
@@ -1234,13 +1323,38 @@ pub fn seed(
     }
 
     // ── Validate ALL subjects first — fail-closed, nothing written on error ──
-    let shape = read_shape(store, &class)?;
+    // Chorus realm: the full #3692 battery. Gathering realm: NS-membership +
+    // well-formed + no-injection ONLY (Silas ruling — their vocab, not ours;
+    // slot shapes were already checked at grouping).
     let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
     let batch_iris: std::collections::HashSet<String> = order
         .iter()
         .map(|s| s[1..s.len() - 1].to_string())
         .collect();
 
+    if let RealmPolicy::ForeignNs(ns_set) = policy {
+        for subject_term in &order {
+            let iri = &subject_term[1..subject_term.len() - 1];
+            if !ns_set.iter().any(|ns| iri.starts_with(ns)) {
+                witness("model.seed.refused", &[("iri", iri), ("reason", "iri-off-realm-ns")]);
+                return Err(format!(
+                    "seed: iri-guard — <{}> is outside the realm's namespace set {:?} (refused)",
+                    iri, ns_set
+                ));
+            }
+        }
+    }
+
+    let class_and_shape = if policy == RealmPolicy::ChorusStrict {
+        let class = class_iri(kind)?;
+        let shape = read_shape(store, &class)?;
+        Some((class, shape))
+    } else {
+        None
+    };
+
+    if let Some((class, shape)) = &class_and_shape {
+        let class = class.as_str();
     for subject_term in &order {
         let iri = seed_iri_ok(kind, subject_term)?;
         let props = &by_subject[subject_term];
@@ -1306,6 +1420,7 @@ pub fn seed(
             }
         }
     }
+    } // end chorus-strict validation
 
     // ── Assemble the single transaction ─────────────────────────────────────
     const DCT: &str = "http://purl.org/dc/terms/";
@@ -1330,12 +1445,19 @@ pub fn seed(
             body.push_str(&format!("{} {} {} . ", subject_term, p, o));
             triple_count += 1;
         }
-        if !has_type {
-            body.push_str(&format!("{} a <{}> . ", subject_term, class));
-        }
-        if !has_label {
-            let local = iri.strip_prefix(NS).unwrap_or(iri);
-            body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+        // Autofill (type + label) is chorus-vocab — chorus realm only. A
+        // foreign-realm subject keeps exactly its own triples (its vocab,
+        // not ours) plus the audit/provenance envelope below.
+        if let Some((class, _)) = &class_and_shape {
+            if !has_type {
+                body.push_str(&format!("{} a <{}> . ", subject_term, class));
+            }
+            if !has_label {
+                let local = iri.strip_prefix(NS).unwrap_or(iri);
+                body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+            }
+        } else {
+            let _ = (has_type, has_label);
         }
         // created preserved (write() pattern), modified bumped, creator = the
         // verified identity, provenance = the migration stamp.
@@ -1359,6 +1481,38 @@ pub fn seed(
     let (ns_, nt_) = (order.len().to_string(), triple_count.to_string());
     witness("model.seed", &[("kind", kind), ("graph", g), ("subjects", ns_.as_str()), ("triples", nt_.as_str()), ("provenance", provenance)]);
     Ok(SeedReport { subjects: order.len(), triples: triple_count })
+}
+
+/// #3392 — governed by-IRI delete (Silas ruling 2026-07-25): the migration-
+/// cleanup path for a live-only subject in a foreign-realm graph, which has
+/// no chorus (kind,name) for delete_entity to address. Same doors as seed:
+/// realm-policy allowlist, dba-graph refusal, verified Identity. Deletes the
+/// subject's triples AND inbound references in ONE transaction, witnessed as
+/// model.deleted — auditable/reversible from the spine.
+pub fn delete_iri(store: &dyn Store, iri: &str, graph: &str, id: &Identity) -> R<String> {
+    let policy = realm_policy(graph).ok_or_else(|| {
+        witness("model.delete.refused", &[("graph", graph), ("reason", "off-realm-graph")]);
+        format!("delete-iri: graph '{}' is outside the known realms — refused", graph)
+    })?;
+    assert_dal_writable(graph)?; // ontology/security stay DBA-path-only
+    let term = format!("<{}>", iri);
+    if !is_iri_term(&term) {
+        return Err(format!("delete-iri: iri-guard — '{}' is not a well-formed IRI", iri));
+    }
+    let ns_ok = match policy {
+        RealmPolicy::ChorusStrict => iri.starts_with(NS),
+        RealmPolicy::ForeignNs(ns_set) => ns_set.iter().any(|ns| iri.starts_with(ns)),
+    };
+    if !ns_ok {
+        witness("model.delete.refused", &[("iri", iri), ("reason", "iri-off-realm-ns")]);
+        return Err(format!("delete-iri: iri-guard — <{}> is outside the realm's namespace set", iri));
+    }
+    store.update(&format!(
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ ?s ?p2 <{s}> }} }}",
+        g = graph, s = iri
+    ))?;
+    witness("model.deleted", &[("iri", iri), ("graph", graph), ("creator", id.role())]);
+    Ok(iri.to_string())
 }
 
 #[cfg(test)]

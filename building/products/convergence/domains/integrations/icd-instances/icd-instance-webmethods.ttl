@@ -1,0 +1,1003 @@
+@base <https://jeffbridwell.com/> .
+@prefix icd: <urn:gathering:icd#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# ICD Instance — webMethods Integration Domain
+# Source: J&J MU118 platform packages (May 2008)
+# 20 packages · 1,267 doc types · 834 flow services · 722 unique fields
+# Demo: 2026-03-26 — agent-driven schema inference from unknown source
+
+<icd/domain/webmethods> a icd:Domain ;
+    icd:domainName "webMethods Integration" ;
+    icd:versionNumber "2" ;
+    icd:domainId "domain-webmethods" ;
+    icd:domainCount "20 packages, 1267 doc types, 834 flow services" ;
+    icd:domainMeta "J&J MU118 platform — OAGIS canonical model + EDI + LENG inbound/outbound\nReverse-engineered from offline packages, no runtime required" ;
+    icd:hasProvider <icd/provider/webmethods/mu118-canonicals> ;
+    icd:hasProvider <icd/provider/webmethods/mu118-ucs875-inbound> ;
+    icd:hasConsumerType <icd/type/webmethods-salesorder> ;
+    icd:valueStreamStage "designing" ;
+    icd:product "chorus" .
+
+# =============================================================================
+# Provider 1: Canonicals (OAGIS BOD model)
+# 161 doc types, 0 flow services — pure schema, no logic
+# =============================================================================
+
+<icd/provider/webmethods/mu118-canonicals> a icd:Provider ;
+    icd:providerName "MU118_Canonicals_v1" ;
+    icd:providerMeta "161 doc types · 722 unique fields · 18 BODs · 100+ supporting nouns" ;
+    icd:providerColor "#e94560" ;
+    icd:direction "bidirectional" ;
+    icd:integrationPattern icd:RequestReply ;
+    icd:interfaceRole icd:GatewayRole ;
+    icd:providerPurpose "OAGIS-style canonical model for J&J MU118 platform. Business Object Documents (Sync/Get/Show/Update) with shared noun library." ;
+    icd:providerScope "18 BOD message types: SyncSalesOrder, SyncInvoice, SyncShipment, SyncItemMaster, SyncParty, GetCredit, GetQuote, GetProductAvailability, GetAddressVerification, ShowCredit, ShowQuote, ShowProductAvailability, ShowAddressVerification, ShowShipment, LoadPayable, UpdateCredit, CreateCNHServiceRequest, ConfirmCNHServiceRequest" ;
+    icd:providerVolume "161 document types" ;
+    icd:hasSection <icd/section/webmethods/canonicals-purpose-scope> ;
+    icd:hasSection <icd/section/webmethods/canonicals-structure> ;
+    icd:hasSection <icd/section/webmethods/canonicals-interface> ;
+    icd:hasSection <icd/section/webmethods/canonicals-diagrams> ;
+    # BOD-level mappings (top-level message types)
+    icd:hasMapping <icd/mapping/webmethods/canonicals-syncsalesorder> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-syncinvoice> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-syncshipment> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-syncitemmaster> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-syncparty> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-getcredit> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-getquote> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-getproductavailability> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-getaddressverification> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-showcredit> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-showquote> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-showproductavailability> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-showaddressverification> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-showshipment> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-loadpayable> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-updatecredit> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-createcnhservicerequest> ;
+    icd:hasMapping <icd/mapping/webmethods/canonicals-confirmcnhservicerequest>  ;
+    icd:hasSection <icd/section/webmethods/mu118-canonicals-integration-contract> .
+
+<icd/section/webmethods/canonicals-purpose-scope> a icd:Section ;
+    icd:sectionTitle "Purpose & Scope" ;
+    icd:sectionType "purpose" ;
+    icd:sectionOrder 1 ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-purpose-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-purpose-p2> ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-purpose-p3> .
+
+<icd/paragraph/webmethods/canonicals-purpose-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Purpose" ;
+    icd:paragraphText "OAGIS-based canonical model for J&J MU118 integration platform. Defines shared business object schemas used across all integration flows." .
+
+<icd/paragraph/webmethods/canonicals-purpose-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Scope" ;
+    icd:paragraphText "18 Business Object Documents (BODs), 100+ supporting nouns (Address, Party, OrderHeader, Invoice, Shipment, etc.), 722 unique field names. OAGIS verb pattern: Sync (bidirectional), Get (request), Show (response), Update, Load, Create, Confirm." .
+
+<icd/paragraph/webmethods/canonicals-purpose-p3> a icd:Paragraph ;
+    icd:paragraphOrder 3 ;
+    icd:paragraphLabel "Source" ;
+    icd:paragraphText "/tmp/wm-packages/extracted/MU118_Canonicals_v1/ — offline package, no runtime. Schema in ns/*/node.ndf (IData XML)." .
+
+<icd/section/webmethods/canonicals-structure> a icd:Section ;
+    icd:sectionTitle "Package Structure" ;
+    icd:sectionType "architecture" ;
+    icd:sectionOrder 2 ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-structure-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-structure-p2> .
+
+<icd/paragraph/webmethods/canonicals-structure-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Directory layout" ;
+    icd:paragraphText "ns/MU118_Canonicals_v1/{BOD}/node.ndf — top-level message types. ns/MU118_Canonicals_v1/supporting/noun/{Noun}/node.ndf — shared nouns. ns/MU118_Canonicals_v1/supporting/{DataArea}/node.ndf — BOD data areas. ns/MU118_Canonicals_v1/supporting/verbs/{Verb}/node.ndf — OAGIS verbs." .
+
+<icd/paragraph/webmethods/canonicals-structure-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Key nouns" ;
+    icd:paragraphText "SalesOrder (Header + Line), Invoice (Header + Line), Shipment (Header + ShipUnit + ShipItem), ItemMaster (Header + Details), Party (Person + Address + Contact), Credit, Quote, ProductAvailability, AddressVerification. JNJ custom fields: JNJCustomerDelivery{Day}, JNJReferenceInvoiceNumber, JNJOverrideFreightCharge, JNJEtchNotes, JNJHierarchy, JNJPerformanceTracking." .
+
+<icd/section/webmethods/canonicals-interface> a icd:Section ;
+    icd:sectionTitle "Interface" ;
+    icd:sectionType "interface" ;
+    icd:sectionOrder 3 ;
+    icd:hasParagraph <icd/paragraph/webmethods/canonicals-interface-p1> .
+
+<icd/paragraph/webmethods/canonicals-interface-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Extraction" ;
+    icd:paragraphText "XML (IData serialization). Field schema in rec_fields arrays: field_name, field_type (string/record/recref/object), field_dim (0=scalar, 1=array), rec_ref (cross-document references). Type codes in paths: 1=string, 2=object, 3/3.5=numeric, 4=record." .
+
+<icd/section/webmethods/canonicals-diagrams> a icd:Section ;
+    icd:sectionTitle "Diagrams" ;
+    icd:sectionType "diagrams" ;
+    icd:sectionOrder 4 ;
+    icd:mermaidSource """graph TD
+    BOD["18 Business Object Documents"] --> SYNC["Sync (bidirectional)<br/>SalesOrder, Invoice,<br/>Shipment, ItemMaster, Party"]
+    BOD --> GET["Get (request)<br/>Credit, Quote,<br/>ProductAvailability,<br/>AddressVerification"]
+    BOD --> SHOW["Show (response)<br/>mirrors Get verbs"]
+    BOD --> OTHER["Update, Load,<br/>Create, Confirm<br/>(CNHServiceRequest)"]
+    SYNC --> NOUNS["100+ Shared Nouns<br/>Address, Party, OrderHeader,<br/>Invoice, Shipment, Credit,<br/>Quote, ItemMaster"]
+    GET --> NOUNS
+    SHOW --> NOUNS
+    OTHER --> NOUNS
+    style BOD fill:#e94560,color:#fff
+    style NOUNS fill:#3498db,color:#fff""" .
+
+# --- BOD Mappings (source field → canonical concept) ---
+
+<icd/mapping/webmethods/canonicals-syncsalesorder> a icd:FieldMapping ;
+    icd:mappingOrder 1 ;
+    icd:sourceField "SyncSalesOrder" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "ApplicationArea + DataArea → SalesOrder (Header + Line[]). Header refs: OrderHeader, DistributionCenter, SalesInformation/Salesperson, UserArea/Credit. JNJ custom: delivery day flags, reference invoice, freight override, etch notes." .
+
+<icd/mapping/webmethods/canonicals-syncinvoice> a icd:FieldMapping ;
+    icd:mappingOrder 2 ;
+    icd:sourceField "SyncInvoice" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "ApplicationArea + DataArea → Invoice (InvoiceHeader + InvoiceLine[]). Charges, Tax, PaymentTerm, DocumentReferences." .
+
+<icd/mapping/webmethods/canonicals-syncshipment> a icd:FieldMapping ;
+    icd:mappingOrder 3 ;
+    icd:sourceField "SyncShipment" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "ApplicationArea + DataArea → Shipment (ShipmentHeader + ShipUnit[] + ShipItem[]). Carrier, SCAC, ShippingDates, CommonShipInformation." .
+
+<icd/mapping/webmethods/canonicals-syncitemmaster> a icd:FieldMapping ;
+    icd:mappingOrder 4 ;
+    icd:sourceField "SyncItemMaster" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "ApplicationArea + DataArea → ItemMaster (ItemHeader + ItemDetails + ItemLocation). Lot, LotProperties, LotNumberSpecification." .
+
+<icd/mapping/webmethods/canonicals-syncparty> a icd:FieldMapping ;
+    icd:mappingOrder 5 ;
+    icd:sourceField "SyncParty" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "ApplicationArea + SyncPartyDataArea → Party (Person + PostalAddress + Contact + AlternatePartyIds). OrganizationalUnit, JNJHierarchy." .
+
+<icd/mapping/webmethods/canonicals-getcredit> a icd:FieldMapping ;
+    icd:mappingOrder 6 ;
+    icd:sourceField "GetCredit" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Request pattern: ApplicationArea + DataArea. Credit check request." .
+
+<icd/mapping/webmethods/canonicals-getquote> a icd:FieldMapping ;
+    icd:mappingOrder 7 ;
+    icd:sourceField "GetQuote" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Request pattern: ApplicationArea + DataArea. Quote request." .
+
+<icd/mapping/webmethods/canonicals-getproductavailability> a icd:FieldMapping ;
+    icd:mappingOrder 8 ;
+    icd:sourceField "GetProductAvailability" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Request pattern: ApplicationArea + DataArea. ATP/inventory check." .
+
+<icd/mapping/webmethods/canonicals-getaddressverification> a icd:FieldMapping ;
+    icd:mappingOrder 9 ;
+    icd:sourceField "GetAddressVerification" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Request pattern: ApplicationArea + DataArea. Address validation." .
+
+<icd/mapping/webmethods/canonicals-showcredit> a icd:FieldMapping ;
+    icd:mappingOrder 10 ;
+    icd:sourceField "ShowCredit" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Response pattern: ApplicationArea + DataArea. Credit check result." .
+
+<icd/mapping/webmethods/canonicals-showquote> a icd:FieldMapping ;
+    icd:mappingOrder 11 ;
+    icd:sourceField "ShowQuote" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Response pattern: QuoteHeader + QuoteLine[]." .
+
+<icd/mapping/webmethods/canonicals-showproductavailability> a icd:FieldMapping ;
+    icd:mappingOrder 12 ;
+    icd:sourceField "ShowProductAvailability" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Response pattern: ProductAvailabilityHeader + ProductAvailabilityLine[]." .
+
+<icd/mapping/webmethods/canonicals-showaddressverification> a icd:FieldMapping ;
+    icd:mappingOrder 13 ;
+    icd:sourceField "ShowAddressVerification" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Response pattern: verified address with confidence." .
+
+<icd/mapping/webmethods/canonicals-showshipment> a icd:FieldMapping ;
+    icd:mappingOrder 14 ;
+    icd:sourceField "ShowShipment" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Response pattern: Shipment detail with tracking." .
+
+<icd/mapping/webmethods/canonicals-loadpayable> a icd:FieldMapping ;
+    icd:mappingOrder 15 ;
+    icd:sourceField "LoadPayable" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "One-way load: accounts payable record." .
+
+<icd/mapping/webmethods/canonicals-updatecredit> a icd:FieldMapping ;
+    icd:mappingOrder 16 ;
+    icd:sourceField "UpdateCredit" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Update pattern: modify existing credit record." .
+
+<icd/mapping/webmethods/canonicals-createcnhservicerequest> a icd:FieldMapping ;
+    icd:mappingOrder 17 ;
+    icd:sourceField "CreateCNHServiceRequest" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Create pattern: CNH (Case/Notification/Hold) service request." .
+
+<icd/mapping/webmethods/canonicals-confirmcnhservicerequest> a icd:FieldMapping ;
+    icd:mappingOrder 18 ;
+    icd:sourceField "ConfirmCNHServiceRequest" ;
+    icd:mapsToName "BusinessObjectDocument" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Confirm pattern: acknowledge CNH service request processing." .
+
+# =============================================================================
+# Provider 2: UCS 875 Grocery PO Inbound (EDI source endpoint)
+# Single flow: EDI 875 → parse → E1EDI850 flat file record
+# =============================================================================
+
+<icd/provider/webmethods/mu118-ucs875-inbound> a icd:Provider ;
+    icd:providerName "UCS 4010 875 — Grocery Purchase Order" ;
+    icd:providerMeta "EDI source · UCS 4010 · 875 transaction · ~300 fields across H01/H02/L01/L02/L03/L04/S01" ;
+    icd:providerColor "#3498db" ;
+    icd:direction "inbound" ;
+    icd:integrationPattern icd:StreamCapture ;
+    icd:interfaceRole icd:SourceRole ;
+    icd:providerPurpose "Inbound grocery purchase order from trading partners. UCS (Uniform Communication Standard) 4010 version, transaction set 875. Parsed by LENG_Inbound map into E1EDI850 flat file record for downstream canonical transformation." ;
+    icd:providerScope "Single endpoint: MU118_LENG_Inbound.maps:MU118_LENG_UCS_4010_875_IN. Source format: EDI UCS segments (ST, G50, N1, N9, G68, G72, G76, G23, G62, NTE). Target: E1EDI850 flat file document with 6 record types." ;
+    icd:providerVolume "~300 fields across 6 record types" ;
+    icd:hasSection <icd/section/webmethods/ucs875-purpose-scope> ;
+    icd:hasSection <icd/section/webmethods/ucs875-non-functionals> ;
+    icd:hasSection <icd/section/webmethods/ucs875-interface> ;
+    icd:hasSection <icd/section/webmethods/ucs875-risks> ;
+    icd:hasSection <icd/section/webmethods/ucs875-diagrams> ;
+    # H01 — Order Header (envelope + PO identification)
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-sender-id> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-recvr-id> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-po-no> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-po-date> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-po-type> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-doc-no> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-ordered-by> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h01-dept-no> ;
+    # H02 — Extended Header (ship-to, terms, dates, parties)
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-ship-on-dt> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-del-on-dt> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-can-af-dt> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-name-1> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-addr-1> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-city-1> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-state-1> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-zip-1> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-itd-type-cd> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-disc-pct> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-h02-net-dy> ;
+    # L01 — Line Item (product, quantity, price)
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-qty-ord> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-uom> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-unit-price> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-ua-prod> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-up-prod> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-ui-prod> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-pid-desc> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-pack> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-l01-size> ;
+    # S01 — Summary (totals)
+    icd:hasMapping <icd/mapping/webmethods/ucs875-s01-no-lines> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-s01-tot-dol-amt> ;
+    icd:hasMapping <icd/mapping/webmethods/ucs875-s01-weight-tot>  ;
+    icd:hasSection <icd/section/webmethods/mu118-ucs875-inbound-integration-contract> .
+
+<icd/section/webmethods/ucs875-purpose-scope> a icd:Section ;
+    icd:sectionTitle "Purpose & Scope" ;
+    icd:sectionType "purpose" ;
+    icd:sectionOrder 1 ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-purpose-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-purpose-p2> .
+
+<icd/paragraph/webmethods/ucs875-purpose-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Purpose" ;
+    icd:paragraphText "Grocery purchase order received from J&J trading partners via EDI. UCS 4010 standard, transaction set 875. This is the primary inbound order channel for the MU118 platform." .
+
+<icd/paragraph/webmethods/ucs875-purpose-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Flow" ;
+    icd:paragraphText "EDI 875 → MU118_LENG_UCS_4010_875_IN (parse + segment mapping) → E1EDI850 flat file record → canonical SyncSalesOrder BOD. Segment-level parsers: G50 (PO header), N1 (party), N9 (reference), G68 (line item), G72 (allowance/charge), G76 (quantity), G23 (terms), G62 (date), NTE (notes)." .
+
+<icd/section/webmethods/ucs875-non-functionals> a icd:Section ;
+    icd:sectionTitle "Non-Functionals" ;
+    icd:sectionType "non-functionals" ;
+    icd:sectionOrder 2 ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-nf-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-nf-p2> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-nf-p3> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-nf-p4> .
+
+<icd/paragraph/webmethods/ucs875-nf-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Transaction Guarantee" ;
+    icd:paragraphText "Atomic parse: SEQUENCE EXIT-ON=FAILURE wraps the full EDI→flat-file transformation. If any segment fails, the entire transaction routes to error reporting — no partial parses. Dedup keys: H01-INT-CNTL-NO (interchange) + H01-TRN-CNTL-NO (transaction)." .
+
+<icd/paragraph/webmethods/ucs875-nf-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Guaranteed Delivery" ;
+    icd:paragraphText "Broker storageType=guaranteed. Messages persist until acknowledged by the consumer. Transfer control logging (LENG_Logging 4-package system) tracks start/stop/error for every transaction." .
+
+<icd/paragraph/webmethods/ucs875-nf-p3> a icd:Paragraph ;
+    icd:paragraphOrder 3 ;
+    icd:paragraphLabel "NiFi Equivalent" ;
+    icd:paragraphText "NiFi provenance tracking replaces LENG logging. Back-pressure replaces Broker guaranteed delivery. FlowFile attributes carry H01-INT-CNTL-NO and H01-TRN-CNTL-NO for dedup. ConvertRecord processor handles EDI→JSON→RDF transformation governed by this ICD." .
+
+<icd/paragraph/webmethods/ucs875-nf-p4> a icd:Paragraph ;
+    icd:paragraphOrder 4 ;
+    icd:paragraphLabel "Error Handling" ;
+    icd:paragraphText "No silent failures. Parse errors, mapping failures, and Fuseki write errors are all logged as business events (jb:eventType=edi.error) with full error context: failed segment, field name, exception message, source event reference. NiFi RouteOnAttribute routes failures to error graph (urn:gathering:webmethods/errors). Original message preserved for replay." .
+
+<icd/section/webmethods/ucs875-interface> a icd:Section ;
+    icd:sectionTitle "Interface" ;
+    icd:sectionType "interface" ;
+    icd:sectionOrder 2 ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-interface-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-interface-p2> ;
+    icd:hasParagraph <icd/paragraph/webmethods/ucs875-interface-p3> .
+
+<icd/paragraph/webmethods/ucs875-interface-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Record H01 — Order Header" ;
+    icd:paragraphText "H01-SENDER-ID, H01-RECVR-ID, H01-PO-NO, H01-PO-DATE, H01-PO-TYPE, H01-DOC-NO, H01-ORDERED-BY, H01-RELEASE-NO, H01-CONTRACT-NO, H01-DEPT-NO-1, H01-DEPT-DESC-1, H01-NTE-CD-1..10, H01-NTE-NOTE-1..10, H01-AL-CHRG-IND, H01-AL-CHRG-AMT, H01-GHX-ORDER-NO. ~80 fields." .
+
+<icd/paragraph/webmethods/ucs875-interface-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Record H02 — Extended Header" ;
+    icd:paragraphText "H02-ITD-TYPE-CD (payment terms), H02-DISC-PCT, H02-NET-DY, H02-SHP-ON-DT (ship date), H02-DEL-ON-DT (delivery date), H02-CAN-AF-DT (cancel-after date), H02-NAME-1..5 (5 party slots), H02-ADDR-1-1, H02-CITY-1, H02-STATE-1, H02-ZIP-1, H02-COUNTRY-CD, H02-MABD-DT-8 (must-arrive-by). ~160 fields." .
+
+<icd/paragraph/webmethods/ucs875-interface-p3> a icd:Paragraph ;
+    icd:paragraphOrder 3 ;
+    icd:paragraphLabel "Records L01-L04, S01" ;
+    icd:paragraphText "L01: QTY-ORD, PO1-UOM, UNIT-PRICE, UA-PROD (UPC-A), UP-PROD (UPC), UI-PROD (UPC case), PID-DESC, PACK, SIZE, SIZE-UOM, GRS-WT-PACK, COLOR. L02: line allowances/charges. L03: SDQ store-level distribution (LOC-1..10 + QTY-1..10). L04: sub-line items. S01: NO-LINES, HASH-TOT, WEIGHT-TOT, TOT-DOL-AMT. ~60 fields." .
+
+<icd/section/webmethods/ucs875-risks> a icd:Section ;
+    icd:sectionTitle "Risks" ;
+    icd:sectionType "risks" ;
+    icd:sectionOrder 3 ;
+    icd:hasRiskItem <icd/risk/webmethods/ucs875-risks-r1> .
+
+<icd/risk/webmethods/ucs875-risks-r1> a icd:RiskItem ;
+    icd:riskOrder 1 ;
+    icd:riskStatus "info" ;
+    icd:riskText "E1EDI850 flat file format is J&J-specific — not a standard. Record layout (H01/H02/L01/L02/L03/L04/S01) was designed for the MU118 platform's internal processing. Field naming follows SENDER-ID convention, not EDI element names." .
+
+<icd/section/webmethods/ucs875-diagrams> a icd:Section ;
+    icd:sectionTitle "Diagrams" ;
+    icd:sectionType "diagrams" ;
+    icd:sectionOrder 5 ;
+    icd:mermaidSource """graph TD
+    EDI["EDI UCS 4010 875 — Grocery PO"] -->|"LENG segment parsers<br/>G50, N1, N9, G68, G72, G76"| FF["E1EDI850 — J&J Flat File<br/>H01 Header / H02 Extended / L01 Line / S01 Summary"]
+    FF -->|"ICD field mappings — 31 fields"| BOD["SyncSalesOrder — OAGIS BOD<br/>ApplicationArea + DataArea → Header + Line[]"]
+    BOD -->|"NiFi ExecuteGroovyScript"| RDF["RDF/Turtle — jb:SalesOrder + jb:OrderLine[]"]
+    RDF -->|"InvokeHTTP → Fuseki GSP"| FUSEKI["urn:gathering:webmethods/orders"]
+    style EDI fill:#3498db,color:#fff
+    style FF fill:#e67e22,color:#fff
+    style BOD fill:#e94560,color:#fff
+    style RDF fill:#2ecc71,color:#fff
+    style FUSEKI fill:#9b59b6,color:#fff""" .
+
+# --- H01 Order Header mappings ---
+
+<icd/mapping/webmethods/ucs875-h01-sender-id> a icd:FieldMapping ;
+    icd:mappingOrder 1 ;
+    icd:sourceField "H01-SENDER-ID" ;
+    icd:mapsToName "SyncSalesOrder/ApplicationArea/Sender/Id" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Trading partner identifier from ISA envelope" .
+
+<icd/mapping/webmethods/ucs875-h01-recvr-id> a icd:FieldMapping ;
+    icd:mappingOrder 2 ;
+    icd:sourceField "H01-RECVR-ID" ;
+    icd:mapsToName "SyncSalesOrder/ApplicationArea/Sender/ReceiverId" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "J&J receiver identifier from ISA envelope" .
+
+<icd/mapping/webmethods/ucs875-h01-po-no> a icd:FieldMapping ;
+    icd:mappingOrder 3 ;
+    icd:sourceField "H01-PO-NO" ;
+    icd:mapsToName "SalesOrder/Header/OrderHeader/DocumentIds/DocumentId" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Purchase order number — primary business key" .
+
+<icd/mapping/webmethods/ucs875-h01-po-date> a icd:FieldMapping ;
+    icd:mappingOrder 4 ;
+    icd:sourceField "H01-PO-DATE" ;
+    icd:mapsToName "SalesOrder/Header/OrderHeader/DocumentDateTime" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "PO date in YYMMDD format" .
+
+<icd/mapping/webmethods/ucs875-h01-po-type> a icd:FieldMapping ;
+    icd:mappingOrder 5 ;
+    icd:sourceField "H01-PO-TYPE" ;
+    icd:mapsToName "SalesOrder/Header/OrderHeader/OrderStatus/Code" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "PO type code: NE=new, RO=replacement, CF=confirmation" .
+
+<icd/mapping/webmethods/ucs875-h01-doc-no> a icd:FieldMapping ;
+    icd:mappingOrder 6 ;
+    icd:sourceField "H01-DOC-NO" ;
+    icd:mapsToName "SalesOrder/Header/OrderHeader/DocumentIds/AlternateDocumentId" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Internal document number for tracking" .
+
+<icd/mapping/webmethods/ucs875-h01-ordered-by> a icd:FieldMapping ;
+    icd:mappingOrder 7 ;
+    icd:sourceField "H01-ORDERED-BY" ;
+    icd:mapsToName "SalesOrder/Header/Parties/BuyerParty/Name" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ordering party name" .
+
+<icd/mapping/webmethods/ucs875-h01-dept-no> a icd:FieldMapping ;
+    icd:mappingOrder 8 ;
+    icd:sourceField "H01-DEPT-NO-1" ;
+    icd:mapsToName "SalesOrder/Header/OrderHeader/References/DepartmentId" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Buyer department number for routing" .
+
+# --- H02 Extended Header mappings ---
+
+<icd/mapping/webmethods/ucs875-h02-ship-on-dt> a icd:FieldMapping ;
+    icd:mappingOrder 9 ;
+    icd:sourceField "H02-SHP-ON-DT" ;
+    icd:mapsToName "SalesOrder/Header/ShippingDates/RequestedShipDate" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Requested ship date" .
+
+<icd/mapping/webmethods/ucs875-h02-del-on-dt> a icd:FieldMapping ;
+    icd:mappingOrder 10 ;
+    icd:sourceField "H02-DEL-ON-DT" ;
+    icd:mapsToName "SalesOrder/Header/ShippingDates/RequestedDeliveryDate" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Requested delivery date" .
+
+<icd/mapping/webmethods/ucs875-h02-can-af-dt> a icd:FieldMapping ;
+    icd:mappingOrder 11 ;
+    icd:sourceField "H02-CAN-AF-DT" ;
+    icd:mapsToName "SalesOrder/Header/ShippingDates/CancelAfterDate" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Cancel-after date — order expires if not shipped by this date" .
+
+<icd/mapping/webmethods/ucs875-h02-name-1> a icd:FieldMapping ;
+    icd:mappingOrder 12 ;
+    icd:sourceField "H02-NAME-1" ;
+    icd:mapsToName "SalesOrder/Header/Parties/ShipToParty/Name" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ship-to party name (Entity ID 1 = ship-to)" .
+
+<icd/mapping/webmethods/ucs875-h02-addr-1> a icd:FieldMapping ;
+    icd:mappingOrder 13 ;
+    icd:sourceField "H02-ADDR-1-1" ;
+    icd:mapsToName "SalesOrder/Header/Parties/ShipToParty/Address/AddressLine" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ship-to street address" .
+
+<icd/mapping/webmethods/ucs875-h02-city-1> a icd:FieldMapping ;
+    icd:mappingOrder 14 ;
+    icd:sourceField "H02-CITY-1" ;
+    icd:mapsToName "SalesOrder/Header/Parties/ShipToParty/Address/City" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ship-to city" .
+
+<icd/mapping/webmethods/ucs875-h02-state-1> a icd:FieldMapping ;
+    icd:mappingOrder 15 ;
+    icd:sourceField "H02-STATE-1" ;
+    icd:mapsToName "SalesOrder/Header/Parties/ShipToParty/Address/State" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ship-to state/province" .
+
+<icd/mapping/webmethods/ucs875-h02-zip-1> a icd:FieldMapping ;
+    icd:mappingOrder 16 ;
+    icd:sourceField "H02-ZIP-1" ;
+    icd:mapsToName "SalesOrder/Header/Parties/ShipToParty/Address/PostalCode" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ship-to postal code" .
+
+<icd/mapping/webmethods/ucs875-h02-itd-type-cd> a icd:FieldMapping ;
+    icd:mappingOrder 17 ;
+    icd:sourceField "H02-ITD-TYPE-CD" ;
+    icd:mapsToName "SalesOrder/Header/PaymentTerm/TermsType" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Payment terms type code" .
+
+<icd/mapping/webmethods/ucs875-h02-disc-pct> a icd:FieldMapping ;
+    icd:mappingOrder 18 ;
+    icd:sourceField "H02-DISC-PCT" ;
+    icd:mapsToName "SalesOrder/Header/PaymentTerm/DiscountPercent" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Early payment discount percentage" .
+
+<icd/mapping/webmethods/ucs875-h02-net-dy> a icd:FieldMapping ;
+    icd:mappingOrder 19 ;
+    icd:sourceField "H02-NET-DY" ;
+    icd:mapsToName "SalesOrder/Header/PaymentTerm/NetDays" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Net payment due in N days" .
+
+# --- L01 Line Item mappings ---
+
+<icd/mapping/webmethods/ucs875-l01-qty-ord> a icd:FieldMapping ;
+    icd:mappingOrder 20 ;
+    icd:sourceField "L01-QTY-ORD" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/Quantity/Value" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Ordered quantity" .
+
+<icd/mapping/webmethods/ucs875-l01-uom> a icd:FieldMapping ;
+    icd:mappingOrder 21 ;
+    icd:sourceField "L01-PO1-UOM" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/Quantity/UnitOfMeasure" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Unit of measure: CA=case, EA=each, PK=pack" .
+
+<icd/mapping/webmethods/ucs875-l01-unit-price> a icd:FieldMapping ;
+    icd:mappingOrder 22 ;
+    icd:sourceField "L01-UNIT-PRICE" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/Amount/UnitPrice" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Unit price" .
+
+<icd/mapping/webmethods/ucs875-l01-ua-prod> a icd:FieldMapping ;
+    icd:mappingOrder 23 ;
+    icd:sourceField "L01-UA-PROD" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemHeader/ItemId/UPC-A" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "UPC-A product code (qualifier UA)" .
+
+<icd/mapping/webmethods/ucs875-l01-up-prod> a icd:FieldMapping ;
+    icd:mappingOrder 24 ;
+    icd:sourceField "L01-UP-PROD" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemHeader/ItemId/UPC" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "UPC product code (qualifier UP)" .
+
+<icd/mapping/webmethods/ucs875-l01-ui-prod> a icd:FieldMapping ;
+    icd:mappingOrder 25 ;
+    icd:sourceField "L01-UI-PROD" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemHeader/ItemId/UPC-Case" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "UPC case code (qualifier UI)" .
+
+<icd/mapping/webmethods/ucs875-l01-pid-desc> a icd:FieldMapping ;
+    icd:mappingOrder 26 ;
+    icd:sourceField "L01-PID-DESC" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemHeader/Description" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Product description text" .
+
+<icd/mapping/webmethods/ucs875-l01-pack> a icd:FieldMapping ;
+    icd:mappingOrder 27 ;
+    icd:sourceField "L01-PACK" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemDetails/PackCount" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Pack count per case" .
+
+<icd/mapping/webmethods/ucs875-l01-size> a icd:FieldMapping ;
+    icd:mappingOrder 28 ;
+    icd:sourceField "L01-SIZE" ;
+    icd:mapsToName "SalesOrder/Line/OrderItem/ItemDetails/Size" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Product size" .
+
+# --- S01 Summary mappings ---
+
+<icd/mapping/webmethods/ucs875-s01-no-lines> a icd:FieldMapping ;
+    icd:mappingOrder 29 ;
+    icd:sourceField "S01-NO-LINES" ;
+    icd:mapsToName "SalesOrder/Summary/LineCount" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Total line item count" .
+
+<icd/mapping/webmethods/ucs875-s01-tot-dol-amt> a icd:FieldMapping ;
+    icd:mappingOrder 30 ;
+    icd:sourceField "S01-TOT-DOL-AMT" ;
+    icd:mapsToName "SalesOrder/Summary/TotalAmount" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Total dollar amount" .
+
+<icd/mapping/webmethods/ucs875-s01-weight-tot> a icd:FieldMapping ;
+    icd:mappingOrder 31 ;
+    icd:sourceField "S01-WEIGHT-TOT" ;
+    icd:mapsToName "SalesOrder/Summary/TotalWeight" ;
+    icd:confidence "direct" ;
+    icd:fieldDescription "Total weight for shipment planning" .
+
+# =============================================================================
+# Consumer Type — SyncSalesOrder (OAGIS canonical target)
+# =============================================================================
+
+<icd/type/webmethods-salesorder> a icd:ConsumerType ;
+    icd:typeName "jb:SalesOrder" ;
+    icd:typeDescription "OAGIS SyncSalesOrder BOD — canonical purchase order. Header (OrderHeader, Parties, ShippingDates, PaymentTerm) + Line[] (OrderItem with quantity, price, UPC codes, description). Shared nouns from MU118_Canonicals_v1." ;
+    icd:hasSection <icd/section/webmethods/consumer-purpose> ;
+    icd:hasSection <icd/section/webmethods/consumer-risks> ;
+    icd:hasSection <icd/section/webmethods/consumer-non-functionals> ;
+    icd:hasSection <icd/section/webmethods/consumer-context-diagram> ;
+    icd:hasCanonicalField <icd/field/webmethods/poNumber-1> ;
+    icd:hasCanonicalField <icd/field/webmethods/poDate-2> ;
+    icd:hasCanonicalField <icd/field/webmethods/poType-3> ;
+    icd:hasCanonicalField <icd/field/webmethods/senderId-4> ;
+    icd:hasCanonicalField <icd/field/webmethods/receiverId-5> ;
+    icd:hasCanonicalField <icd/field/webmethods/shipToName-6> ;
+    icd:hasCanonicalField <icd/field/webmethods/shipToAddress-7> ;
+    icd:hasCanonicalField <icd/field/webmethods/buyerName-8> ;
+    icd:hasCanonicalField <icd/field/webmethods/paymentTerms-9> ;
+    icd:hasCanonicalField <icd/field/webmethods/requestedShipDate-10> ;
+    icd:hasCanonicalField <icd/field/webmethods/requestedDeliveryDate-11> ;
+    icd:hasCanonicalField <icd/field/webmethods/cancelAfterDate-12> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineQuantity-13> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineUom-14> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineUnitPrice-15> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineUpcA-16> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineDescription-17> ;
+    icd:hasCanonicalField <icd/field/webmethods/lineCount-18> ;
+    icd:hasCanonicalField <icd/field/webmethods/totalAmount-19> ;
+    icd:hasCanonicalField <icd/field/webmethods/totalWeight-20> .
+
+# --- Consumer Sections ---
+
+<icd/section/webmethods/consumer-purpose> a icd:Section ;
+    icd:sectionTitle "Purpose" ;
+    icd:sectionType "purpose" ;
+    icd:sectionOrder 1 ;
+    icd:hasParagraph <icd/paragraph/webmethods/consumer-purpose-p1> ;
+    icd:hasParagraph <icd/paragraph/webmethods/consumer-purpose-p2> .
+
+<icd/paragraph/webmethods/consumer-purpose-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Canonical" ;
+    icd:paragraphText "jb:SalesOrder is the canonical purchase order representation. Maps from OAGIS SyncSalesOrder BOD. One order = one jb:SalesOrder with N jb:OrderLine children. Stored in urn:gathering:webmethods/orders." .
+
+<icd/paragraph/webmethods/consumer-purpose-p2> a icd:Paragraph ;
+    icd:paragraphOrder 2 ;
+    icd:paragraphLabel "Structure" ;
+    icd:paragraphText "Header: poNumber (business key), poDate, poType, sender/receiver IDs, ship-to party (name + address), buyer party, payment terms, shipping dates (requested ship, delivery, cancel-after). Lines: quantity, UOM, unit price, UPC codes (A/case/standard), product description, pack/size. Summary: line count, total amount, total weight." .
+
+<icd/section/webmethods/consumer-risks> a icd:Section ;
+    icd:sectionTitle "Risks" ;
+    icd:sectionType "risks" ;
+    icd:sectionOrder 2 ;
+    icd:hasRiskItem <icd/risk/webmethods/consumer-risks-r1> ;
+    icd:hasRiskItem <icd/risk/webmethods/consumer-risks-r2> .
+
+<icd/risk/webmethods/consumer-risks-r1> a icd:RiskItem ;
+    icd:riskOrder 1 ;
+    icd:riskStatus "risk" ;
+    icd:riskText "JNJ custom fields (JNJCustomerDelivery{Day}, JNJOverrideFreightCharge, JNJEtchNotes) are not yet mapped to canonical. 100+ flow.xml fields unmapped — intentionally scoped to business-critical subset." .
+
+<icd/risk/webmethods/consumer-risks-r2> a icd:RiskItem ;
+    icd:riskOrder 2 ;
+    icd:riskStatus "info" ;
+    icd:riskText "L02 (allowances/charges), L03 (store distribution), L04 (sub-line items) record types exist in source but are not mapped to canonical fields. These represent pricing and distribution complexity that can be added incrementally." .
+
+<icd/section/webmethods/consumer-non-functionals> a icd:Section ;
+    icd:sectionTitle "Non-Functionals" ;
+    icd:sectionType "non-functionals" ;
+    icd:sectionOrder 3 ;
+    icd:hasParagraph <icd/paragraph/webmethods/consumer-nf-p1> .
+
+<icd/paragraph/webmethods/consumer-nf-p1> a icd:Paragraph ;
+    icd:paragraphOrder 1 ;
+    icd:paragraphLabel "Storage" ;
+    icd:paragraphText "Named graph: urn:gathering:webmethods/orders. One jb:SalesOrder + N jb:OrderLine per PO. Dedup on poNumber. Provenance via prov:wasDerivedFrom linking back to source EDI event." .
+
+<icd/section/webmethods/consumer-context-diagram> a icd:Section ;
+    icd:sectionTitle "Context Diagram" ;
+    icd:sectionType "diagrams" ;
+    icd:sectionOrder 4 ;
+    icd:mermaidSource """graph TD
+    UCS["UCS 4010 875<br/>Grocery PO"] -->|"31 field mappings"| SO["jb:SalesOrder"]
+    SO --> H["Header<br/>poNumber, poDate, poType<br/>shipTo, buyer, terms, dates"]
+    SO --> L["Line[] — jb:OrderLine<br/>quantity, UOM, unitPrice<br/>UPC-A, description, pack, size"]
+    SO --> S["Summary<br/>lineCount, totalAmount,<br/>totalWeight"]
+    SO -->|"prov:wasDerivedFrom"| EVT["Source EDI Event"]
+    style SO fill:#9b59b6,color:#fff
+    style UCS fill:#3498db,color:#fff
+    style H fill:#e94560,color:#fff
+    style L fill:#e94560,color:#fff
+    style S fill:#e94560,color:#fff""" .
+
+# --- Canonical Fields ---
+
+<icd/field/webmethods/poNumber-1> a icd:CanonicalField ;
+    icd:fieldOrder 1 ;
+    icd:canonicalName "poNumber" ;
+    icd:displayName "PO Number" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Primary business key — unique purchase order identifier" ;
+    icd:bestSource "UCS 875 H01-PO-NO" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/poDate-2> a icd:CanonicalField ;
+    icd:fieldOrder 2 ;
+    icd:canonicalName "poDate" ;
+    icd:displayName "PO Date" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Purchase order date (YYMMDD)" ;
+    icd:bestSource "UCS 875 H01-PO-DATE" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/poType-3> a icd:CanonicalField ;
+    icd:fieldOrder 3 ;
+    icd:canonicalName "poType" ;
+    icd:displayName "PO Type" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "NE=new, RO=replacement, CF=confirmation" ;
+    icd:bestSource "UCS 875 H01-PO-TYPE" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/senderId-4> a icd:CanonicalField ;
+    icd:fieldOrder 4 ;
+    icd:canonicalName "senderId" ;
+    icd:displayName "Sender ID" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Trading partner identifier from ISA envelope" ;
+    icd:bestSource "UCS 875 H01-SENDER-ID" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/receiverId-5> a icd:CanonicalField ;
+    icd:fieldOrder 5 ;
+    icd:canonicalName "receiverId" ;
+    icd:displayName "Receiver ID" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "J&J receiver identifier" ;
+    icd:bestSource "UCS 875 H01-RECVR-ID" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/shipToName-6> a icd:CanonicalField ;
+    icd:fieldOrder 6 ;
+    icd:canonicalName "shipToName" ;
+    icd:displayName "Ship-To Name" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Destination party name" ;
+    icd:bestSource "UCS 875 H02-NAME-1" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/shipToAddress-7> a icd:CanonicalField ;
+    icd:fieldOrder 7 ;
+    icd:canonicalName "shipToAddress" ;
+    icd:displayName "Ship-To Address" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Composite: ADDR-1-1, CITY-1, STATE-1, ZIP-1" ;
+    icd:bestSource "UCS 875 H02-ADDR/CITY/STATE/ZIP" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/buyerName-8> a icd:CanonicalField ;
+    icd:fieldOrder 8 ;
+    icd:canonicalName "buyerName" ;
+    icd:displayName "Buyer Name" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Ordering organization" ;
+    icd:bestSource "UCS 875 H01-ORDERED-BY" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/paymentTerms-9> a icd:CanonicalField ;
+    icd:fieldOrder 9 ;
+    icd:canonicalName "paymentTerms" ;
+    icd:displayName "Payment Terms" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Terms type code + discount% + net days" ;
+    icd:bestSource "UCS 875 H02-ITD-TYPE-CD" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/requestedShipDate-10> a icd:CanonicalField ;
+    icd:fieldOrder 10 ;
+    icd:canonicalName "requestedShipDate" ;
+    icd:displayName "Requested Ship Date" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "When the buyer wants it shipped" ;
+    icd:bestSource "UCS 875 H02-SHP-ON-DT" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/requestedDeliveryDate-11> a icd:CanonicalField ;
+    icd:fieldOrder 11 ;
+    icd:canonicalName "requestedDeliveryDate" ;
+    icd:displayName "Requested Delivery Date" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "When the buyer wants it delivered" ;
+    icd:bestSource "UCS 875 H02-DEL-ON-DT" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/cancelAfterDate-12> a icd:CanonicalField ;
+    icd:fieldOrder 12 ;
+    icd:canonicalName "cancelAfterDate" ;
+    icd:displayName "Cancel After Date" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Order expires if not shipped by this date" ;
+    icd:bestSource "UCS 875 H02-CAN-AF-DT" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineQuantity-13> a icd:CanonicalField ;
+    icd:fieldOrder 13 ;
+    icd:canonicalName "quantity" ;
+    icd:displayName "Line Quantity" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:integer" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Ordered quantity per line item" ;
+    icd:bestSource "UCS 875 L01-QTY-ORD" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineUom-14> a icd:CanonicalField ;
+    icd:fieldOrder 14 ;
+    icd:canonicalName "unitOfMeasure" ;
+    icd:displayName "Unit of Measure" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "CA=case, EA=each, PK=pack" ;
+    icd:bestSource "UCS 875 L01-PO1-UOM" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineUnitPrice-15> a icd:CanonicalField ;
+    icd:fieldOrder 15 ;
+    icd:canonicalName "unitPrice" ;
+    icd:displayName "Unit Price" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:decimal" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Price per unit" ;
+    icd:bestSource "UCS 875 L01-UNIT-PRICE" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineUpcA-16> a icd:CanonicalField ;
+    icd:fieldOrder 16 ;
+    icd:canonicalName "upcA" ;
+    icd:displayName "UPC-A Code" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Universal Product Code (qualifier UA)" ;
+    icd:bestSource "UCS 875 L01-UA-PROD" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineDescription-17> a icd:CanonicalField ;
+    icd:fieldOrder 17 ;
+    icd:canonicalName "productDescription" ;
+    icd:displayName "Product Description" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:string" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Human-readable product name" ;
+    icd:bestSource "UCS 875 L01-PID-DESC" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/lineCount-18> a icd:CanonicalField ;
+    icd:fieldOrder 18 ;
+    icd:canonicalName "lineCount" ;
+    icd:displayName "Line Count" ;
+    icd:severity icd:Violation ;
+    icd:datatype "xsd:integer" ;
+    icd:cardinality "1" ;
+    icd:fieldDescription "Total number of line items in the order" ;
+    icd:bestSource "UCS 875 S01-NO-LINES" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/totalAmount-19> a icd:CanonicalField ;
+    icd:fieldOrder 19 ;
+    icd:canonicalName "totalAmount" ;
+    icd:displayName "Total Amount" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:decimal" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Total dollar amount for the order" ;
+    icd:bestSource "UCS 875 S01-TOT-DOL-AMT" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+<icd/field/webmethods/totalWeight-20> a icd:CanonicalField ;
+    icd:fieldOrder 20 ;
+    icd:canonicalName "totalWeight" ;
+    icd:displayName "Total Weight" ;
+    icd:severity icd:Warning ;
+    icd:datatype "xsd:decimal" ;
+    icd:cardinality "0..1" ;
+    icd:fieldDescription "Total weight for shipment planning" ;
+    icd:bestSource "UCS 875 S01-WEIGHT-TOT" ;
+    icd:bestSourceColor "#3498db" ;
+    icd:inDomain <icd/domain/webmethods> ;
+    icd:inConsumerType <icd/type/webmethods-salesorder> .
+
+# --- Integration Contract Sections (#1891) ---
+
+<icd/section/webmethods/mu118-canonicals-integration-contract> a icd:Section ;
+    icd:sectionTitle "Integration Contract" ;
+    icd:sectionType "integration-contract" ;
+    icd:sectionOrder 0 ;
+    icd:sectionContent "Direction: bidirectional. Pattern: Request Reply. Role: Gateway." .
+
+<icd/section/webmethods/mu118-ucs875-inbound-integration-contract> a icd:Section ;
+    icd:sectionTitle "Integration Contract" ;
+    icd:sectionType "integration-contract" ;
+    icd:sectionOrder 0 ;
+    icd:sectionContent "Direction: inbound. Pattern: Stream Capture. Role: Source." .
