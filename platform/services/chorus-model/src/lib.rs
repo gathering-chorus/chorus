@@ -472,6 +472,59 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
     Ok(Identity(claim.to_string()))
 }
 
+/// #3356 step 1 — verify a real CSS identity **token** (ES256/JWKS), not a
+/// self-declared env string. The concrete verifier is the SHARED oidc crate
+/// reused from owl-api's door (NOT a second implementation — principle:
+/// no-competing-implementations); this trait is the seam so the DAL's identity
+/// BINDING logic is built + tested independently of the crate/transport wiring.
+pub trait TokenVerifier {
+    /// Verify signature + claims (iss/exp/aud); return the token's verified WebID,
+    /// or an error string. Anything unverifiable MUST error (fail-closed).
+    fn verify_webid(&self, token: &str, now_secs: u64) -> Result<String, String>;
+}
+
+/// #3356 step 1 — the identity TOKEN path (additive; `verify_identity`'s
+/// DEPLOY_ROLE path is untouched and stays the fallback until the migration flip,
+/// step 3). Verify the token, then bind its **verified** WebID to the Principal
+/// that owns it via `chorus:webId` in the security graph — a graph lookup, not a
+/// string. Forging a writer now requires the credential, not `export DEPLOY_ROLE=`.
+pub fn verify_identity_token(
+    token: &str,
+    verifier: &dyn TokenVerifier,
+    store: &dyn Store,
+    now_secs: u64,
+) -> R<Identity> {
+    let webid = match verifier.verify_webid(token, now_secs) {
+        Ok(w) => w,
+        Err(e) => {
+            witness("model.refused", &[("reason", "identity-token-invalid")]);
+            return Err(format!(
+                "identity-token-invalid: {} — the CSS token did not verify (fail closed, #3356)",
+                e
+            ));
+        }
+    };
+    // Bind the VERIFIED WebID → its Principal (graph, not a self-declared string).
+    let claim = store
+        .select_v(&format!(
+            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId <{w}> . BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
+            ns = NS, g = SECURITY_GRAPH, w = webid
+        ))?
+        .into_iter()
+        .next();
+    match claim {
+        // Reuse the existing syntax + registry gate — one identity door, two entrances.
+        Some(c) => verify_identity(Some(&c), store),
+        None => {
+            witness("model.refused", &[("reason", "identity-webid-unregistered"), ("webid", &webid)]);
+            Err(format!(
+                "identity-webid-unregistered: verified WebID <{}> owns no chorus:Principal in <{}> — writes refuse (fail closed, #3356)",
+                webid, SECURITY_GRAPH
+            ))
+        }
+    }
+}
+
 /// Full governed write: identity → shape check → referential integrity → idempotent UPDATE.
 pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let class = class_iri(&req.kind)?;
