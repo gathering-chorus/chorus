@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
+    "@noble/curves": "^1.9.7",
+    "@noble/hashes": "^1.8.0",
     "@solid/access-token-verifier": "^2.1.1",
     "express": "^5.2.1",
     "playwright": "^1.60.0",
