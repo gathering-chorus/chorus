@@ -747,6 +747,35 @@ const PRIORITIES_READOUT_TOOL_DEF = {
   },
 } as const;
 
+// #3683 — /wip: one MCP call answering "what is this role building right now."
+const WIP_TOOL_DEF = {
+  name: 'chorus_wip',
+  description:
+    "Get a role's current WIP card(s) — one call, one answer, no board-scraping. Backs the /wip skill. Reads chorus-api /api/chorus/context/board/wip. In focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose WIP to fetch. Defaults to the calling role (X-Chorus-Role).' },
+    },
+  },
+} as const;
+
+// #3683 — /sup: the role's priorities WALK from the #3654 board domain (graph),
+// NOT the tagged-only label readout (chorus_priorities_readout, which this
+// supersedes where they overlap). Chunks in roleSequence order, cards in rank
+// order, unsequenced open cards listed after — labeled, never hidden.
+const SUP_TOOL_DEF = {
+  name: 'chorus_sup',
+  description:
+    "Show a role's priorities sorted by the #3654 board-domain order: chunks in roleSequence order (loomSequence shown where declared), cards in rank order within each chunk — read from the graph (urn:chorus:instances), not a label-scrape. Open cards in no chunk are listed after as 'unsequenced' with their source scope. Backs the /sup skill. In focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Role whose walk to show. Defaults to the calling role (X-Chorus-Role).' },
+    },
+  },
+} as const;
+
 // #3594 — the V1→V2 Athena migration readout, REBUILT as a per-DOMAIN stage matrix.
 // The per-kind counter it started as answered the wrong question (Jeff 2026-07-01:
 // "there were 5+ attributes to track for each domain"). For each V2 domain it tracks
@@ -1008,6 +1037,58 @@ async function executePrioritiesReadout(
       text: renderPrioritiesReadout(view),
     }],
   };
+}
+
+// #3683 — /wip executor: one GET to chorus-api's WIP context endpoint, rendered
+// as the one-line answer "what is <role> building right now."
+async function executeWip(
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  role: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const url = `${apiBase}/api/chorus/context/board/wip?role=${encodeURIComponent(role)}`;
+  const resp = await fetchImpl(url);
+  if (!resp.ok) throw new Error(`chorus_wip: chorus-api ${resp.status ?? '?'} on ${url}`);
+  const body = (await resp.json()) as { data?: { cards?: Array<{ id: number; title: string; priority?: string }> } };
+  const cards = body.data?.cards ?? [];
+  const text = cards.length === 0
+    ? `${role}: no WIP card`
+    : cards.map((c) => `${role} WIP: #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`).join('\n');
+  return { content: [{ type: 'text' as const, text }] };
+}
+
+// #3683 — /sup executor: one GET to the #3654-backed priorities endpoint,
+// rendered as the walk: chunks in roleSequence order (loom position shown where
+// declared), cards in rank order, unsequenced block last with its scope label.
+async function executeSup(
+  fetchImpl: FetchImpl,
+  apiBase: string,
+  role: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const url = `${apiBase}/api/chorus/context/priorities?role=${encodeURIComponent(role)}`;
+  const resp = await fetchImpl(url);
+  if (!resp.ok) throw new Error(`chorus_sup: chorus-api ${resp.status ?? '?'} on ${url}`);
+  const body = (await resp.json()) as {
+    data?: {
+      chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
+      unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
+    };
+  };
+  const chunks = body.data?.chunks ?? [];
+  const unseq = body.data?.unsequenced;
+  const lines: string[] = [`${role} priorities (graph order — #3654):`];
+  if (chunks.length === 0) lines.push('  (no sequenced chunks in the graph)');
+  for (const ch of chunks) {
+    lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);
+    for (const c of ch.cards) lines.push(`     ${c.rank}. #${c.id} — ${c.title}`);
+    if (ch.cards.length === 0) lines.push('     (no cards ranked yet)');
+  }
+  if (unseq) {
+    lines.push(`  unsequenced — ${unseq.scope}:`);
+    if (unseq.cards.length === 0) lines.push('     (none)');
+    for (const c of unseq.cards) lines.push(`     #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`);
+  }
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 }
 
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
@@ -2861,6 +2942,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       CARDS_SET_TOOL_DEF,
       CARDS_VIEW_TOOL_DEF,
       PRIORITIES_READOUT_TOOL_DEF,
+      WIP_TOOL_DEF,
+      SUP_TOOL_DEF,
       MIGRATION_READOUT_TOOL_DEF,
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
@@ -3075,6 +3158,17 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const a = (req.params.arguments ?? {}) as { role?: string };
         const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : undefined;
         return executePrioritiesReadout(execFileAsync, role);
+      }
+      case 'chorus_wip': {
+        // #3683 — role arg wins; else the caller's own role (X-Chorus-Role).
+        const a = (req.params.arguments ?? {}) as { role?: string };
+        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : from;
+        return executeWip(fetchImpl, apiBase, role);
+      }
+      case 'chorus_sup': {
+        const a = (req.params.arguments ?? {}) as { role?: string };
+        const role = a.role && ['kade', 'wren', 'silas'].includes(a.role) ? a.role : from;
+        return executeSup(fetchImpl, apiBase, role);
       }
       case 'chorus_migration_readout': {
         return executeMigrationReadout(execFileAsync);
