@@ -15,6 +15,7 @@ import { MessageRouter } from './router';
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
+import { buildBuzzWiring } from './buzz-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
@@ -1134,9 +1135,17 @@ setInterval(() => {
   io.emit('tiles', tilePoller.getTiles());
 }, 5000).unref();
 
+// #3696 — Clearing→Buzz mirror (Leg A), flag-gated OFF by default. Best-effort:
+// the bridge's onMessageSafe swallows every failure so a relay outage or missing
+// key can never break the room. Signs visible coordination types as kind:9.
+const buzz = buildBuzzWiring(process.env, (level, event, fields) =>
+  process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
+);
+
 // Broadcast new messages as they arrive
 messageRouter.on('message', (msg) => {
   io.emit('message', msg);
+  buzz.mirror(msg); // #3696 — mirror to Buzz relay (dark unless BUZZ_BRIDGE_ENABLED=1)
 });
 
 // Start tailing chorus log for spine events (demos, accepts, blocks)
