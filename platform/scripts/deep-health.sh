@@ -265,6 +265,10 @@ HEALTH_ENDPOINTS=(
   # Bedroom
   "http://Jeffs-Mac-mini.local:3001/|images-api-http|Bedroom photos"
   "http://Jeffs-Mac-mini.local:11434/api/tags|ollama-http|semantic search"
+  # Bedroom — Buzz relay (#3695). Probe the LAN IP: the relay is HOST-ROUTED
+  # (the BUZZ_DOMAIN host selects the community; localhost/127.0.0.1 404s by
+  # design), so the IP is the correct health surface, not a fragile shortcut.
+  "http://192.168.86.242:3000/_liveness|buzz-relay-http|Buzz relay (team messaging substrate)"
 )
 
 # --- 11b. LanceDB sync drift (#1920 — replaces mtime check) ---
