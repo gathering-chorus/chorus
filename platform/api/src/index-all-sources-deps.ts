@@ -153,8 +153,12 @@ async function fetchBuzzEvents(relayHost: string, composeDir: string): Promise<B
   }
 
   // 2. events from the relay's own Postgres (tab-separated; content base64 so
-  //    newlines/tabs inside a message can't break row framing)
-  const sql = "SELECT id, pubkey, to_char(created_at, 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), kind, encode(convert_to(content,'UTF8'),'base64') FROM events WHERE kind = 9 ORDER BY created_at DESC LIMIT 5000";
+  //    newlines/tabs inside a message can't break row framing). Schema verified
+  //    LIVE 2026-07-25 (not assumed): id/pubkey are BYTEA → hex-encode;
+  //    channel_id is a uuid column; deleted_at soft-deletes. base64 is
+  //    newline-STRIPPED — pg encode() wraps at 76 chars, which would break
+  //    one-row-per-line framing (caught live, not in review).
+  const sql = "SELECT encode(id,'hex'), encode(pubkey,'hex'), to_char(created_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), kind, coalesce(channel_id::text,'team'), replace(encode(convert_to(content,'UTF8'),'base64'), chr(10), '') FROM events WHERE kind = 9 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5000";
   const { stdout } = await run('ssh', ['-o', 'ConnectTimeout=10', relayHost,
     `cd ${composeDir} && /usr/local/bin/docker compose exec -T postgres psql -U buzz -d buzz -tA -F '\t' -c "${sql}"`,
   ], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
@@ -162,12 +166,12 @@ async function fetchBuzzEvents(relayHost: string, composeDir: string): Promise<B
   const rows: BuzzRow[] = [];
   for (const line of stdout.split('\n')) {
     const parts = line.split('\t');
-    if (parts.length < 5 || !/^[0-9a-f]{64}$/.test(parts[0])) continue;
-    const [id, pubkey, created_at, kindStr, b64] = parts;
+    if (parts.length < 6 || !/^[0-9a-f]{64}$/.test(parts[0])) continue;
+    const [id, pubkey, created_at, kindStr, channel, b64] = parts;
     rows.push({
       id, pubkey,
       author: byPubkey.get(pubkey) ?? '',
-      created_at, kind: Number(kindStr) || 0, channel: 'team',
+      created_at, kind: Number(kindStr) || 0, channel,
       content: Buffer.from(b64, 'base64').toString('utf8'),
     });
   }
