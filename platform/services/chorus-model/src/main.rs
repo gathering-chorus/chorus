@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
+use chorus_model::{add_edge, batch, delete_entity, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -18,6 +18,7 @@ fn usage() -> String {
        chorus-model set    --kind <kind> --name <name> --field k=v [--graph <g>]\n\
        chorus-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
+       chorus-model seed   --kind <kind> --ttl <file> [--graph <g>] [--provenance migrated]\n\
        chorus-model mint   --kind <kind> --name <name>\n\
        chorus-model kinds"
         .to_string()
@@ -96,6 +97,55 @@ fn run() -> Result<String, String> {
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651
             Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref(), &id)?))
+        }
+        // #3692 — seed: bulk TTL ingest (the 5th DAL verb). Pre-minted IRIs
+        // preserved, SHACL-validated fail-closed, provenance-stamped, idempotent.
+        // TTL is normalized to N-Triples via riot (the same toolchain
+        // model-deploy validates with) — fail-loud if riot is absent.
+        Some("seed") => {
+            let mut kind = String::new();
+            let mut ttl_path = String::new();
+            let mut graph: Option<String> = None;
+            let mut provenance = "migrated".to_string();
+            let rest = &args[1..];
+            let mut i = 0;
+            while i < rest.len() {
+                match rest[i].as_str() {
+                    "--kind" => { i += 1; kind = rest.get(i).cloned().unwrap_or_default(); }
+                    "--ttl" => { i += 1; ttl_path = rest.get(i).cloned().unwrap_or_default(); }
+                    "--graph" => { i += 1; graph = rest.get(i).cloned(); }
+                    "--provenance" => { i += 1; provenance = rest.get(i).cloned().unwrap_or_default(); }
+                    other => return Err(format!("seed: unknown arg '{}'\n{}", other, usage())),
+                }
+                i += 1;
+            }
+            if kind.is_empty() || ttl_path.is_empty() {
+                return Err(format!("seed needs --kind <K> and --ttl <file>\n{}", usage()));
+            }
+            let nt = if ttl_path.ends_with(".nt") {
+                std::fs::read_to_string(&ttl_path).map_err(|e| format!("seed: read {}: {}", ttl_path, e))?
+            } else {
+                let out = std::process::Command::new("riot")
+                    .args(["--output=ntriples", &ttl_path])
+                    .output()
+                    .map_err(|e| format!("seed: riot not runnable ({}) — TTL→N-Triples needs riot on PATH", e))?;
+                if !out.status.success() {
+                    return Err(format!(
+                        "seed: riot failed on {} — fix the TTL first:\n{}",
+                        ttl_path,
+                        String::from_utf8_lossy(&out.stderr)
+                    ));
+                }
+                String::from_utf8_lossy(&out.stdout).to_string()
+            };
+            let triples = parse_ntriples(&nt)?;
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?; // #3651 — same gate as every verb
+            let report = seed(&store, &kind, &triples, &provenance, graph.as_deref(), &id)?;
+            Ok(format!(
+                "seeded: {} subjects / {} triples (kind={}, provenance={})",
+                report.subjects, report.triples, kind, provenance
+            ))
         }
         // #3686 — set: field-level single-predicate update, the datatype-prop
         // sibling of link/unlink. Exactly ONE --field k=v; edges stay link/unlink.
