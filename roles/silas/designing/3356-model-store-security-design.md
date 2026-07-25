@@ -36,3 +36,30 @@ Steps 1–2 are reversible and non-breaking; step 3 is the one gated flip; step 
 ## Open for your steer
 - **Token transport to the DAL:** env var (`CHORUS_IDENTITY_TOKEN`, matches the CLI shape) vs the DAL going HTTP-only behind owl-api's already-verified door (collapses two doors into one — arguably cleaner, bigger change). My lean: env-var token for step 1 (smallest slice), converge on the HTTP door later.
 - **Dependency #3355** (shared-security exists) — the audit confirms the substrate is live (OidcVerifier + allow-set + CSS), so I read #3355 as satisfied; confirm.
+
+---
+
+## SHIPPED — 2026-07-25 (all AC, one card, landed whole)
+
+The token transport steer resolved to **env-var (`CHORUS_IDENTITY_TOKEN`)** — the smallest slice, verified-token-preferred with `DEPLOY_ROLE` as the non-breaking fallback. Built in four commits on `silas/3356`:
+
+1. **`chorus-oidc` shared crate** (stage 1) — the CSS ES256/JWKS verifier extracted from owl-api into one crate. 39 tests. *No second verifier* — the whole reason for the extraction (no-competing-implementations).
+2. **owl-api → shim** (stage 2) — `auth.rs`/`oidc.rs` become re-export shims to `chorus-oidc`. Behavior-preserving: owl-api's full suite green, zero call-site changes.
+3. **DAL consumes the verifier** (stage 3) — `OidcTokenVerifier` adapts the shared verifier to the DAL's `TokenVerifier` seam; `Identity::resolve` prefers a verified `CHORUS_IDENTITY_TOKEN` (binds verified WebID → Principal → stamps `creator`), env-path fallback, present-but-invalid token fails closed.
+4. **Per-graph authz, DAL side** (AC4) — `assert_dal_writable` at every mutation choke point refuses `urn:chorus:ontology` (schema = owl-api/DBA) and `urn:chorus:domains:security` (the Principal registry — the priv-esc this design named). Instance + domain graphs unaffected.
+
+### How each AC is met (verified, not assumed)
+
+| AC | Status | Evidence |
+|---|---|---|
+| 1 — design pass | ✓ | this doc, Jeff-reviewed |
+| 2 — Fuseki writes require auth; DAL+DBA hold creds; else read-only | ✓ | live probe 2026-07-25: anon `POST /pods/update` → **401**, anon query → **200**. Store-side landed by the shiro flip (#3630/#3641); this card layers verified attribution on top |
+| 3 — verified identity; creator from the identity, not an env var | ✓ | `verify_identity_token` + `OidcTokenVerifier` (shared crate); forging a writer now needs the CSS credential. Tests: forged token refuses, verified-WebID→Principal binding stamps creator |
+| 4 — per-graph authz (ontology=DBA-only, instances=DAL-only) | ✓ | owl-api is **read-only + delegates every write to the chorus-model DAL** (the one write path); the DAL refuses ontology + security. owl-api's `scope_allows` (#3567) adds per-product token→graph scope on the door |
+| 5 — depends #3355 | ✓ | substrate live (OidcVerifier + allow-set + CSS), audit-confirmed |
+
+### Deliberately deferred to #3564 (Jeff's sequenced next card, not skipped)
+- **Wire `scope_allows` into the LIVE verify path** — the pure function exists (#3567 spike); enforcing per-product graph scope at the door (403 on miss) is the #3564 "lock leg" Jeff sequenced after this card.
+- **Split the one shared shiro write credential into DAL-cred vs DBA-cred** — needs the write-DAL migration (the shiro-spike DAL-first plan); flipping now would break the ~19 writers on the shared credential. #3564 territory.
+
+Net: the DAL is now the single governed write path, it authenticates a real credential and stamps an unforgeable `creator`, and neither it nor the read-only owl-api door can rewrite the schema or the Principal registry. Test totals: chorus-oidc 39, owl-api full suite, chorus-model 29/5/15 — all green.
