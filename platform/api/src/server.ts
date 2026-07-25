@@ -1060,6 +1060,7 @@ app.get('/api/chorus/pulse/latest', (_req: Request, res: Response) => {
 // Three endpoints for the proof-of-shape: board/wip, roles, health.
 
 import { fetchContextBoardWip } from './handlers/context-board-wip';
+import { fetchContextPriorities } from './handlers/context-priorities';
 import { fetchContextSpine } from './handlers/context-spine';
 import { fetchContextAlerts } from './handlers/context-alerts';
 import { fetchContextQualitySummary } from './handlers/context-quality-summary';
@@ -1163,6 +1164,18 @@ app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => 
     { sparql: _athena, readPulse: readPulseFile },
     req.originalUrl,
     roleFilter,
+  );
+  res.status(r.status).json(r.body);
+});
+
+// #3683 — the /sup data source: the role's priorities walk from the #3654
+// board domain (chunks by roleSequence, cards by rank), unsequenced listed.
+app.get('/api/chorus/context/priorities', async (req: Request, res: Response) => {
+  const role = typeof req.query.role === 'string' ? req.query.role : '';
+  const r = await fetchContextPriorities(
+    { sparql: _athena, readPulse: readPulseFile },
+    req.originalUrl,
+    role,
   );
   res.status(r.status).json(r.body);
 });
