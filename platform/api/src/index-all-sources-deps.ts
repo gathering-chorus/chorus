@@ -157,8 +157,12 @@ async function fetchBuzzEvents(relayHost: string, composeDir: string): Promise<B
   //    LIVE 2026-07-25 (not assumed): id/pubkey are BYTEA → hex-encode;
   //    channel_id is a uuid column; deleted_at soft-deletes. base64 is
   //    newline-STRIPPED — pg encode() wraps at 76 chars, which would break
-  //    one-row-per-line framing (caught live, not in review).
-  const sql = "SELECT encode(id,'hex'), encode(pubkey,'hex'), to_char(created_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), kind, coalesce(channel_id::text,'team'), replace(encode(convert_to(content,'UTF8'),'base64'), chr(10), '') FROM events WHERE kind = 9 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5000";
+  //    one-row-per-line framing (caught live, not in review). Timestamp is
+  //    CONCATENATED (no quoted literals in the to_char format): the ssh remote
+  //    shell eats double quotes, and pg then reads DD+"TH" as an ordinal
+  //    pattern, corrupting the hour — caught when deep-health flagged
+  //    2026-07-25THH24:46:59Z as 495838h stale.
+  const sql = "SELECT encode(id,'hex'), encode(pubkey,'hex'), to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') || 'T' || to_char(created_at at time zone 'UTC', 'HH24:MI:SS') || 'Z', kind, coalesce(channel_id::text,'team'), replace(encode(convert_to(content,'UTF8'),'base64'), chr(10), '') FROM events WHERE kind = 9 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5000";
   const { stdout } = await run('ssh', ['-o', 'ConnectTimeout=10', relayHost,
     `cd ${composeDir} && /usr/local/bin/docker compose exec -T postgres psql -U buzz -d buzz -tA -F '\t' -c "${sql}"`,
   ], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
