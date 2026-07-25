@@ -4,11 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 # The governed RDF/OWL writer (#3257, model-2) — the ONLY sanctioned write path
-# to the model store. Zero dependencies (ADR-032 §1): std only; Fuseki via
-# `curl` subprocess; chorus-log via subprocess. Implements ADR-040 Rule 0:
-# callers pass (kind, name, fields) — the DAL mints the IRI; a non-conformant
-# IRI is unwritable by construction.
+# to the model store. Near-zero dependencies (ADR-032 §1): std only, save the one
+# below; Fuseki via `curl` subprocess; chorus-log via subprocess. Implements
+# ADR-040 Rule 0: callers pass (kind, name, fields) — the DAL mints the IRI; a
+# non-conformant IRI is unwritable by construction.
 [dependencies]
+# #3356 — the shared CSS-token verifier (ES256/JWKS). ONE verifier backs both the
+# owl-api door and this DAL — no second crypto implementation (the extraction's
+# whole purpose). Pulls the crypto (p256/sha2/hmac) transitively; nothing else.
+chorus-oidc = { path = "../chorus-oidc" }
 
 [[bin]]
 name = "chorus-model"

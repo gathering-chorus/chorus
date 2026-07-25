@@ -30,6 +30,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chorus-oidc"
+version = "0.1.0"
+dependencies = [
+ "hmac",
+ "p256",
+ "sha2",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -185,6 +194,7 @@ checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
 name = "owl-api"
 version = "0.1.0"
 dependencies = [
+ "chorus-oidc",
  "hmac",
  "p256",
  "properties-resolver",

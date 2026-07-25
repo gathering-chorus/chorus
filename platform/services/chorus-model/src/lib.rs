@@ -425,8 +425,21 @@ impl Identity {
     pub fn role(&self) -> &str {
         &self.0
     }
-    /// Resolve from the process env (DEPLOY_ROLE) — the CLI boundary.
+    /// Resolve at the CLI boundary. #3356 — a real CSS identity **token**
+    /// (`CHORUS_IDENTITY_TOKEN`) takes precedence over the `DEPLOY_ROLE` env
+    /// string; the env path stays the fallback until the migration flip (design
+    /// step 3), so this is additive and breaks no existing writer. A token that
+    /// is PRESENT but does not verify fails closed HERE — it never silently
+    /// degrades to the weaker env path (that would let a bad token buy the old
+    /// forgery). Absent token → the DEPLOY_ROLE path, exactly as before.
     pub fn resolve(store: &dyn Store) -> R<Identity> {
+        if let Ok(token) = std::env::var("CHORUS_IDENTITY_TOKEN") {
+            if !token.trim().is_empty() {
+                let now = now_secs();
+                let verifier = OidcTokenVerifier::new(now);
+                return verify_identity_token(&token, &verifier, store, now);
+            }
+        }
         verify_identity(std::env::var("DEPLOY_ROLE").ok().as_deref(), store)
     }
 }
@@ -472,13 +485,190 @@ pub fn verify_identity(claim: Option<&str>, store: &dyn Store) -> R<Identity> {
     Ok(Identity(claim.to_string()))
 }
 
-/// Full governed write: identity → shape check → referential integrity → idempotent UPDATE.
+/// #3356 step 1 — verify a real CSS identity **token** (ES256/JWKS), not a
+/// self-declared env string. The concrete verifier is the SHARED oidc crate
+/// reused from owl-api's door (NOT a second implementation — principle:
+/// no-competing-implementations); this trait is the seam so the DAL's identity
+/// BINDING logic is built + tested independently of the crate/transport wiring.
+pub trait TokenVerifier {
+    /// Verify signature + claims (iss/exp/aud); return the token's verified WebID,
+    /// or an error string. Anything unverifiable MUST error (fail-closed).
+    fn verify_webid(&self, token: &str, now_secs: u64) -> Result<String, String>;
+}
+
+/// #3356 step 1 — the identity TOKEN path (additive; `verify_identity`'s
+/// DEPLOY_ROLE path is untouched and stays the fallback until the migration flip,
+/// step 3). Verify the token, then bind its **verified** WebID to the Principal
+/// that owns it via `chorus:webId` in the security graph — a graph lookup, not a
+/// string. Forging a writer now requires the credential, not `export DEPLOY_ROLE=`.
+pub fn verify_identity_token(
+    token: &str,
+    verifier: &dyn TokenVerifier,
+    store: &dyn Store,
+    now_secs: u64,
+) -> R<Identity> {
+    let webid = match verifier.verify_webid(token, now_secs) {
+        Ok(w) => w,
+        Err(e) => {
+            witness("model.refused", &[("reason", "identity-token-invalid")]);
+            return Err(format!(
+                "identity-token-invalid: {} — the CSS token did not verify (fail closed, #3356)",
+                e
+            ));
+        }
+    };
+    // Bind the VERIFIED WebID → its Principal (graph, not a self-declared string).
+    let claim = store
+        .select_v(&format!(
+            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId <{w}> . BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
+            ns = NS, g = SECURITY_GRAPH, w = webid
+        ))?
+        .into_iter()
+        .next();
+    match claim {
+        // Reuse the existing syntax + registry gate — one identity door, two entrances.
+        Some(c) => verify_identity(Some(&c), store),
+        None => {
+            witness("model.refused", &[("reason", "identity-webid-unregistered"), ("webid", &webid)]);
+            Err(format!(
+                "identity-webid-unregistered: verified WebID <{}> owns no chorus:Principal in <{}> — writes refuse (fail closed, #3356)",
+                webid, SECURITY_GRAPH
+            ))
+        }
+    }
+}
+
+/// #3356 stage 3 — the CONCRETE `TokenVerifier`: the shared chorus-oidc
+/// `OidcVerifier` (the exact ES256/JWKS path owl-api's door runs) adapted to the
+/// DAL's seam. One verifier, two consumers — the whole point of the extraction.
+/// Boot wiring mirrors owl-api: issuer from `CSS_ISSUER`, the Principal allow-set
+/// resolved from the model on the ALLOW_TTL cadence, JWKS fetched via curl with a
+/// kid-keyed cache. `StubVerifier` in the tests pins the BINDING logic; this pins
+/// the real crypto path against the live store.
+pub struct OidcTokenVerifier {
+    inner: chorus_oidc::oidc::OidcVerifier,
+}
+
+impl OidcTokenVerifier {
+    /// Build against the deployment's CSS issuer (JWKS source) and Fuseki endpoint
+    /// (allow-set source). Warms both caches; never blocks (a cold CSS just means
+    /// the first verify fetches). The endpoint is env-derived, same as `FusekiStore`.
+    pub fn new(now_secs: u64) -> Self {
+        let css_issuer =
+            std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
+        let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+        let allow_endpoint =
+            std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
+        let inner = chorus_oidc::oidc::OidcVerifier::new(
+            &css_issuer,
+            // allow-set: re-resolve lazily on the ALLOW_TTL cadence so a model
+            // revocation propagates within one token TTL (owl-api §5 parity).
+            move || {
+                chorus_oidc::oidc::resolve_principal_webids(|q| {
+                    fuseki_query_json(&allow_endpoint, q).ok()
+                })
+            },
+            move || {
+                let out = Command::new("curl")
+                    .args(["-sf", "--max-time", "3", &jwks_url])
+                    .output()
+                    .ok()?;
+                if !out.status.success() {
+                    return None;
+                }
+                Some(String::from_utf8_lossy(&out.stdout).into_owned())
+            },
+        );
+        inner.warm_allow(now_secs);
+        inner.warm_fetch(now_secs);
+        Self { inner }
+    }
+}
+
+impl TokenVerifier for OidcTokenVerifier {
+    fn verify_webid(&self, token: &str, now_secs: u64) -> Result<String, String> {
+        self.inner
+            .verify(token, now_secs)
+            .map(|claims| claims.web_id)
+            .map_err(|e| format!("{:?}", e))
+    }
+}
+
+/// Epoch seconds (zero-dep; the `now_iso` sibling for the subprocess-free path).
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Raw SPARQL-JSON GET against Fuseki `/query` — the allow-set resolver's source
+/// (`Store::select_v` parses to values; the resolver needs the raw JSON body).
+/// Carries `FUSEKI_ADMIN_*` like `FusekiStore::curl`; anonymous when unset.
+fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
+    let mut args: Vec<String> = vec![
+        "-sf".into(),
+        "--max-time".into(),
+        "20".into(),
+        "-H".into(),
+        "Accept: application/sparql-results+json".into(),
+        "--data-urlencode".into(),
+        format!("query={}", sparql),
+    ];
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+            args.push("-u".into());
+            args.push(format!("{}:{}", user, pw));
+        }
+    }
+    args.push(format!("{}/query", endpoint));
+    let out = Command::new("curl")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("curl-spawn: {}", e))?;
+    if !out.status.success() {
+        return Err(format!(
+            "fuseki-query: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
+}
+
+/// #3356 AC4 — per-graph authz, the DAL side. This module is the INSTANCES
+/// writer by contract (line 3); two graphs are reserved for the DBA path and MUST
+/// be unwritable from here regardless of a verified identity:
+///   - `ONTOLOGY_GRAPH` — the schema is owl-api's (the DBA path). A DAL write
+///     would let an instance writer mutate the very shapes that validate it.
+///   - `SECURITY_GRAPH` — the Principal registry. A DAL write is the exact
+///     priv-esc the design names (a writer minting itself a Principal, or
+///     rewriting the allow-set that authenticates it). Bootstrap/DBA only.
+/// Every other `urn:chorus:*` (instances + domain graphs) stays writable. This is
+/// the DOOR-LAYER half of per-graph authz — shiro stays binary auth (#3630
+/// scope-note / ADR-050): Fuseki answers "authenticated writer?", the DAL answers
+/// "which graph?". Applied at every mutation choke point (write/delete/edges/batch)
+/// so the guard can't be bypassed by picking a different verb.
+fn assert_dal_writable(graph: &str) -> R<()> {
+    if graph == ONTOLOGY_GRAPH || graph == SECURITY_GRAPH {
+        witness("model.refused", &[("graph", graph), ("reason", "graph-dba-only")]);
+        return Err(format!(
+            "graph-dba-only: <{}> is a DBA-path graph — the instances DAL is refused write \
+             (per-graph authz, fail closed, #3356 AC4)",
+            graph
+        ));
+    }
+    Ok(())
+}
+
+/// Full governed write: identity → per-graph authz → shape check → referential integrity → idempotent UPDATE.
 pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let class = class_iri(&req.kind)?;
     let (subject, turtle) = to_turtle(req)?;
     // #3647 — write the class's model-declared home (or the legacy default). This
     // is the same graph owl-api authz reads ownedBy from; a mismatch mints an orphan.
     let g = req.graph.as_deref().unwrap_or(INSTANCES_GRAPH);
+    assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
 
     // SHACL requirements from the ontology graph — fail-closed on missing required.
     let shape = read_shape(store, &class)?;
@@ -648,6 +838,7 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
     }
     // #3647 — delete from the class's declared home (or legacy default).
     let g = graph.unwrap_or(INSTANCES_GRAPH);
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
         g = g, s = subject
@@ -672,6 +863,7 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
         }
     }
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
@@ -688,6 +880,7 @@ pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind:
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
@@ -773,6 +966,7 @@ pub fn batch(
         witness("model.batch.refused", &[("graph", graph), ("reason", "off-realm-graph")]);
         return Err(format!("batch: graph '{}' is outside urn:chorus:* or malformed (refused)", graph));
     }
+    assert_dal_writable(graph)?; // #3356 AC4 — batch cannot reach ontology/security either
     for (s, p, o) in deletes {
         if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, true) {
             witness("model.batch.refused", &[("graph", graph), ("reason", "bad-delete-slot")]);
@@ -1092,7 +1286,7 @@ mod tests {
         // reads ownedBy from the declared home, so create must write the same graph.
         let target = format!("{}value-stream-step-proving", NS);
         let store = stub(&[target.as_str()], &[]);
-        let home = "urn:chorus:domains:security";
+        let home = "urn:chorus:domains:tests"; // a real domain home (NOT the reserved security graph — #3356 AC4)
         let req = WriteReq {
             kind: "domain".into(),
             name: "tests".into(),
@@ -1112,9 +1306,9 @@ mod tests {
         // must target the same graph the create wrote, else it fail-closed 403s).
         let subj = format!("{}gate-x", NS);
         let store = stub(&[subj.as_str()], &[]);
-        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:security"), &tid()).unwrap();
+        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:tests"), &tid()).unwrap();
         let ups = store.updates.borrow();
-        assert!(ups[0].contains("urn:chorus:domains:security"), "delete targets the declared home");
+        assert!(ups[0].contains("urn:chorus:domains:tests"), "delete targets the declared home");
         assert!(!ups[0].contains(INSTANCES_GRAPH), "delete must not target the legacy bucket when a home is given");
     }
 
