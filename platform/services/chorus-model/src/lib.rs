@@ -1099,6 +1099,268 @@ pub fn batch(
     Ok(deletes.len() + inserts.len())
 }
 
+// ── #3692 — the `seed` verb: bulk TTL ingest (5th DAL verb) ─────────────────
+//
+// The migration path (#3392 and every future TTL move): load a TTL whose IRIs
+// were already minted, PRESERVING them. `add` mints an IRI from (kind,name);
+// `seed` inverts that — the TTL is the authority on identity, the DAL is the
+// authority on validity. Silas design (2026-07-25): IRI-guard per subject,
+// SHACL via read_shape (REUSED, no parallel validator), fail-closed whole-batch,
+// created-preserve + provenance stamp, idempotent, same identity + graph doors.
+
+/// What seed() did — for the CLI line and the spine witness.
+#[derive(Debug)]
+pub struct SeedReport {
+    pub subjects: usize,
+    pub triples: usize,
+}
+
+/// Parse N-Triples text (the CLI feeds seed via `riot --output=ntriples`, so
+/// prefixes/multi-line Turtle are already normalized away). Strict subset:
+/// `<s> <p> <o|"literal"> .` per line; comments/blank lines skipped; blank
+/// nodes REFUSED — a blank node has no preservable IRI, and preserving IRIs
+/// is seed's whole contract.
+pub fn parse_ntriples(nt: &str) -> R<Vec<(String, String, String)>> {
+    let mut out = Vec::new();
+    for (i, raw) in nt.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let body = line
+            .strip_suffix('.')
+            .ok_or_else(|| format!("nt-parse: line {} has no terminal '.'", i + 1))?
+            .trim_end();
+        if body.starts_with("_:") {
+            return Err(format!("nt-parse: line {} has a blank-node subject — no preservable IRI (refused)", i + 1));
+        }
+        let s_end = body
+            .find('>')
+            .ok_or_else(|| format!("nt-parse: line {} subject is not an IRI", i + 1))?;
+        let subject = &body[..=s_end];
+        let rest = body[s_end + 1..].trim_start();
+        if !rest.starts_with('<') {
+            return Err(format!("nt-parse: line {} predicate is not an IRI", i + 1));
+        }
+        let p_end = rest
+            .find('>')
+            .ok_or_else(|| format!("nt-parse: line {} predicate is not an IRI", i + 1))?;
+        let predicate = &rest[..=p_end];
+        let object = rest[p_end + 1..].trim();
+        if object.starts_with("_:") {
+            return Err(format!("nt-parse: line {} has a blank-node object — no preservable IRI (refused)", i + 1));
+        }
+        if object.is_empty() {
+            return Err(format!("nt-parse: line {} has no object", i + 1));
+        }
+        out.push((subject.to_string(), predicate.to_string(), object.to_string()));
+    }
+    Ok(out)
+}
+
+/// The IRI guard: a seeded subject must live in the chorus namespace and its
+/// local name must satisfy the kind's minting convention (bare kinds: the bare
+/// slug; prefixed kinds: `<kind>-slug`). The mint table stays the single
+/// authority — a subject the mint could never produce is refused.
+fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
+    if !is_iri_term(subject_term) {
+        return Err(format!("seed: iri-guard — '{}' is not a well-formed IRI term", subject_term));
+    }
+    let iri = &subject_term[1..subject_term.len() - 1];
+    let local = iri
+        .strip_prefix(NS)
+        .ok_or_else(|| format!("seed: iri-guard — <{}> is outside the chorus namespace {}", iri, NS))?;
+    let (_, _, bare) = KINDS
+        .iter()
+        .find(|(k, _, _)| *k == kind)
+        .ok_or_else(|| format!("unknown-kind: '{}'", kind))?;
+    let convention_ok = if *bare {
+        !local.is_empty()
+            && local.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+    } else {
+        local
+            .strip_prefix(&format!("{}-", kind))
+            .map(|rest| !rest.is_empty())
+            .unwrap_or(false)
+    };
+    if !convention_ok {
+        return Err(format!(
+            "seed: iri-guard — <{}> does not match the '{}' kind convention (ADR-040 mint table)",
+            iri, kind
+        ));
+    }
+    Ok(iri.to_string())
+}
+
+/// Governed bulk ingest. Validates EVERY subject first (IRI guard, term shapes,
+/// SHACL required/enums/datatypes via read_shape, referential integrity for
+/// edges — batch-internal targets count), then issues ONE transaction:
+/// per-subject DELETE WHERE + a single INSERT DATA carrying the original
+/// triples verbatim plus the audit envelope (created preserved via the write()
+/// pattern) and the provenance stamp. Any failure before that point leaves the
+/// store untouched.
+pub fn seed(
+    store: &dyn Store,
+    kind: &str,
+    triples: &[(String, String, String)],
+    provenance: &str,
+    graph: Option<&str>,
+    id: &Identity,
+) -> R<SeedReport> {
+    let class = class_iri(kind)?;
+    let g = graph.unwrap_or(INSTANCES_GRAPH);
+    if !g.starts_with("urn:chorus:") || g.contains(['<', '>', '{', '}', ' ', ';']) {
+        witness("model.seed.refused", &[("graph", g), ("reason", "off-realm-graph")]);
+        return Err(format!("seed: graph '{}' is outside urn:chorus:* or malformed (refused)", g));
+    }
+    assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
+    if triples.is_empty() {
+        return Err("seed: no triples to load".into());
+    }
+
+    // Group triples by subject, preserving first-seen order (deterministic tx).
+    let mut order: Vec<String> = Vec::new();
+    let mut by_subject: std::collections::HashMap<String, Vec<(String, String)>> =
+        std::collections::HashMap::new();
+    for (s, p, o) in triples {
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, false) {
+            witness("model.seed.refused", &[("reason", "bad-slot")]);
+            return Err("seed: a triple has an invalid/injection-shaped slot".into());
+        }
+        if !by_subject.contains_key(s) {
+            order.push(s.clone());
+        }
+        by_subject.entry(s.clone()).or_default().push((p.clone(), o.clone()));
+    }
+
+    // ── Validate ALL subjects first — fail-closed, nothing written on error ──
+    let shape = read_shape(store, &class)?;
+    let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    let batch_iris: std::collections::HashSet<String> = order
+        .iter()
+        .map(|s| s[1..s.len() - 1].to_string())
+        .collect();
+
+    for subject_term in &order {
+        let iri = seed_iri_ok(kind, subject_term)?;
+        let props = &by_subject[subject_term];
+
+        // rdf:type, when carried, must be the seed kind's class — a mixed-kind
+        // TTL is two seed runs, not one blind one.
+        for (p, o) in props {
+            if p == rdf_type && o != &format!("<{}>", class) {
+                witness("model.seed.refused", &[("iri", iri.as_str()), ("reason", "type-mismatch")]);
+                return Err(format!(
+                    "shape-violation: <{}> declares type {} but seed kind '{}' is <{}>",
+                    iri, o, kind, class
+                ));
+            }
+        }
+
+        // Field view of the subject's NS-local properties.
+        let field_of = |p: &str| -> Option<String> {
+            p.strip_prefix(&format!("<{}", NS))
+                .and_then(|r| r.strip_suffix('>'))
+                .map(|s| s.to_string())
+        };
+        let has_prop = |name: &str| props.iter().any(|(p, _)| field_of(p).as_deref() == Some(name));
+
+        for need in &shape.required {
+            if !has_prop(need) && need != "label" {
+                witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", need)]);
+                return Err(format!(
+                    "shape-violation: {} requires '{}' (sh:minCount 1, from {}) — subject <{}>",
+                    class, need, ONTOLOGY_GRAPH, iri
+                ));
+            }
+        }
+        for (p, o) in props {
+            let Some(local) = field_of(p) else { continue };
+            if o.starts_with('"') {
+                let val = o.trim_matches('"');
+                if let Some(allowed) = shape.enums.get(&local) {
+                    if !allowed.iter().any(|a| a == val) {
+                        return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", val, allowed, local));
+                    }
+                }
+                if let Some(dt) = shape.datatypes.get(&local) {
+                    if !datatype_ok(val, dt) {
+                        witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", local.as_str())]);
+                        return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", val, dt, local));
+                    }
+                }
+            } else if is_iri_term(o) && p != rdf_type {
+                // Edge — referential integrity, fail-closed. A target inside
+                // THIS batch counts (migration TTLs are internally referential).
+                let target = &o[1..o.len() - 1];
+                if !batch_iris.contains(target) {
+                    let exists = store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", target))?;
+                    if !exists {
+                        witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "unknown-target"), ("edge", local.as_str())]);
+                        return Err(format!(
+                            "unknown-target: {} → <{}> exists neither in the store nor in this batch (referential integrity, fail-closed)",
+                            local, target
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Assemble the single transaction ─────────────────────────────────────
+    const DCT: &str = "http://purl.org/dc/terms/";
+    let now = now_iso();
+    let creator = id.role().to_string();
+    let mut sparql = String::new();
+    let mut body = String::new();
+    let mut triple_count = 0usize;
+
+    for subject_term in &order {
+        let iri = &subject_term[1..subject_term.len() - 1];
+        sparql.push_str(&format!(
+            "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\n",
+            g = g, s = iri
+        ));
+        let props = &by_subject[subject_term];
+        let mut has_label = false;
+        let mut has_type = false;
+        for (p, o) in props {
+            if p == rdf_type { has_type = true; }
+            if p == &format!("<{}label>", NS) { has_label = true; }
+            body.push_str(&format!("{} {} {} . ", subject_term, p, o));
+            triple_count += 1;
+        }
+        if !has_type {
+            body.push_str(&format!("{} a <{}> . ", subject_term, class));
+        }
+        if !has_label {
+            let local = iri.strip_prefix(NS).unwrap_or(iri);
+            body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+        }
+        // created preserved (write() pattern), modified bumped, creator = the
+        // verified identity, provenance = the migration stamp.
+        let existing_created = store
+            .select_v(&format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
+                g = g, s = iri, d = DCT
+            ))?
+            .into_iter()
+            .next();
+        let created = existing_created.unwrap_or_else(|| now.clone());
+        body.push_str(&format!(
+            "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . ",
+            st = subject_term, d = DCT, c = esc(&created), m = esc(&now),
+            cr = esc(&creator), ns = NS, pv = esc(provenance)
+        ));
+    }
+    sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = g, b = body));
+    store.update(&sparql)?;
+
+    let (ns_, nt_) = (order.len().to_string(), triple_count.to_string());
+    witness("model.seed", &[("kind", kind), ("graph", g), ("subjects", ns_.as_str()), ("triples", nt_.as_str()), ("provenance", provenance)]);
+    Ok(SeedReport { subjects: order.len(), triples: triple_count })
+}
+
 #[cfg(test)]
 mod tests {
     // ── #3680 — Test as a bare-grain reference kind ──
