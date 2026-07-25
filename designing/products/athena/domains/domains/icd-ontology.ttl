@@ -1,0 +1,432 @@
+@base <https://jeffbridwell.com/> .
+@prefix jb:    <https://jeffbridwell.com/ontology#> .
+@prefix icd:   <urn:gathering:icd#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:    <http://www.w3.org/ns/shacl#> .
+
+# =============================================================================
+# ICD Meta-Model Ontology — Athena Pattern (#1530)
+#
+# Models the ICD structure as OWL classes so that:
+# 1. Schema (domains, providers, fields, mappings) lives in Fuseki as RDF
+# 2. Instance data (counts, coverage) is served via live SPARQL queries
+# 3. Version history via named graphs enables semantic diff
+# 4. HTML view renders FROM this RDF, not the other way around
+# 5. generate-from-icd.py reads SPARQL instead of parsing HTML DOM
+#
+# Prior art: Staples Athena/Anzo, Bridwell patent US9552400B2
+# ADR: ADR-018 (XSD severity model), ADR-019 (this migration)
+# =============================================================================
+
+# --- Core Classes ---
+
+icd:Domain a owl:Class ;
+    rdfs:label "Domain" ;
+    rdfs:comment "A data domain (Photos, Music, Stories, People, Documents, Notes, Social)" .
+
+icd:Provider a owl:Class ;
+    rdfs:label "Provider" ;
+    rdfs:comment "A data source within a domain (Apple Photos, Google Drive, LinkedIn, etc.)" .
+
+icd:CanonicalField a owl:Class ;
+    rdfs:label "Canonical Field" ;
+    rdfs:comment "A field in the consumer canonical type. Has severity, datatype, cardinality." .
+
+icd:FieldMapping a owl:Class ;
+    rdfs:label "Field Mapping" ;
+    rdfs:comment "Maps a provider source field to a canonical field. Has transform, confidence, gate." .
+
+icd:ConsumerType a owl:Class ;
+    rdfs:label "Consumer Type" ;
+    rdfs:comment "The canonical RDF type (jb:Photo, jb:Person, jb:SocialPost, etc.)" .
+
+# --- Severity Tier (XSD Model — ADR-018) ---
+
+icd:SeverityTier a owl:Class ;
+    rdfs:label "Severity Tier" ;
+    rdfs:comment "XSD model: violation (Required) or enrichment only. No middle tier." .
+
+icd:Violation a icd:SeverityTier ;
+    rdfs:label "Required" ;
+    rdfs:comment "Record rejected without this field. At least one provider maps to it." .
+
+icd:Enrichment a icd:SeverityTier ;
+    rdfs:label "Enrichment" ;
+    rdfs:comment "No source wired yet. Future capability. Moves to Required when source added." .
+
+icd:Warning a icd:SeverityTier ;
+    rdfs:label "Warning (DEPRECATED)" ;
+    owl:deprecated true ;
+    rdfs:comment "Legacy tier. Migrate to Violation or Enrichment per ADR-018." .
+
+icd:Info a icd:SeverityTier ;
+    rdfs:label "Info (DEPRECATED)" ;
+    owl:deprecated true ;
+    rdfs:comment "Legacy tier. Migrate to Enrichment per ADR-018." .
+
+# --- Integration Layer Classes (#1690) ---
+
+icd:IntegrationPattern a owl:Class ;
+    rdfs:label "Integration Pattern" ;
+    rdfs:comment "How data moves: batch-rebuild, triggered-extraction, streaming, request-reply. Maps to OAGIS verbs." .
+
+icd:InterfaceRole a owl:Class ;
+    rdfs:label "Interface Role" ;
+    rdfs:comment "Role a system plays in an integration: source, sink, transform, gateway." .
+
+icd:Endpoint a owl:Class ;
+    rdfs:label "Endpoint" ;
+    rdfs:comment "A concrete interface point: API route, SQLite path, file path, SPARQL graph." .
+
+# --- Integration Pattern Instances ---
+
+icd:BatchRebuild a icd:IntegrationPattern ;
+    rdfs:label "Batch Rebuild" ;
+    rdfs:comment "Full extract → transform → load. Replaces target graph entirely. OAGIS: SyncDocument." .
+
+icd:TriggeredExtraction a icd:IntegrationPattern ;
+    rdfs:label "Triggered Extraction" ;
+    rdfs:comment "On-demand pull from source. Delta or full. OAGIS: GetDocument." .
+
+icd:StreamCapture a icd:IntegrationPattern ;
+    rdfs:label "Stream Capture" ;
+    rdfs:comment "Continuous ingest from webhook or event stream. OAGIS: ProcessDocument." .
+
+icd:RequestReply a icd:IntegrationPattern ;
+    rdfs:label "Request Reply" ;
+    rdfs:comment "Synchronous query at read time. No persistence. OAGIS: GetDocument (sync)." .
+
+# --- Interface Role Instances ---
+
+icd:SourceRole a icd:InterfaceRole ;
+    rdfs:label "Source" ;
+    rdfs:comment "System that owns the data. Read from." .
+
+icd:SinkRole a icd:InterfaceRole ;
+    rdfs:label "Sink" ;
+    rdfs:comment "System that receives the data. Written to." .
+
+icd:TransformRole a icd:InterfaceRole ;
+    rdfs:label "Transform" ;
+    rdfs:comment "System that transforms data in flight." .
+
+icd:GatewayRole a icd:InterfaceRole ;
+    rdfs:label "Gateway" ;
+    rdfs:comment "System that mediates access (auth, rate limit, routing)." .
+
+# --- Domain Properties ---
+
+icd:domainName a owl:DatatypeProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range xsd:string ;
+    rdfs:label "Domain name" .
+
+icd:versionNumber a owl:DatatypeProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range xsd:string ;
+    rdfs:comment "ICD document version. Incremented when structure or mappings change." .
+
+icd:domainId a owl:DatatypeProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Matches HTML id (e.g. 'domain-photos')" .
+
+icd:hasProvider a owl:ObjectProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range icd:Provider ;
+    rdfs:label "Has provider" .
+
+icd:hasConsumerType a owl:ObjectProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range icd:ConsumerType ;
+    rdfs:label "Has consumer type" .
+
+# --- Provider Properties ---
+
+icd:providerName a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string .
+
+icd:providerPurpose a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Purpose & Scope section content" .
+
+icd:providerVolume a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Non-Functionals: volume" .
+
+icd:providerFreshness a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Non-Functionals: freshness" .
+
+icd:providerLatency a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Non-Functionals: latency" .
+
+icd:providerAuth a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Non-Functionals: auth" .
+
+icd:hasMapping a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:FieldMapping .
+
+icd:hasRisk a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Risk item (one triple per risk)" .
+
+# --- Integration Layer Properties (#1690) ---
+
+icd:direction a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Data flow direction: inbound, outbound, bidirectional" .
+
+icd:integrationPattern a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:IntegrationPattern ;
+    rdfs:comment "How data moves for this provider" .
+
+icd:interfaceRole a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:InterfaceRole ;
+    rdfs:comment "Role the provider plays in the integration" .
+
+icd:hasEndpoint a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:Endpoint ;
+    rdfs:comment "Concrete interface point for this provider" .
+
+icd:endpointType a owl:DatatypeProperty ;
+    rdfs:domain icd:Endpoint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Type: api, sqlite, file, sparql-graph, webhook" .
+
+icd:endpointPath a owl:DatatypeProperty ;
+    rdfs:domain icd:Endpoint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Path or URI of the endpoint" .
+
+icd:endpointDescription a owl:DatatypeProperty ;
+    rdfs:domain icd:Endpoint ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Human-readable description" .
+
+icd:nifiFlowId a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "NiFi process group UUID. Links provider to its data pipeline flow." .
+
+icd:nifiFlowName a owl:DatatypeProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range xsd:string ;
+    rdfs:comment "NiFi flow display name for UI rendering when NiFi is offline." .
+
+# --- Consumer Type Properties ---
+
+icd:typeName a owl:DatatypeProperty ;
+    rdfs:domain icd:ConsumerType ;
+    rdfs:range xsd:string ;
+    rdfs:comment "e.g. 'jb:Photo', 'jb:Person'" .
+
+icd:hasCanonicalField a owl:ObjectProperty ;
+    rdfs:domain icd:ConsumerType ;
+    rdfs:range icd:CanonicalField .
+
+# --- Canonical Field Properties (Query 1: consumer fields) ---
+# SELECT ?canonical ?severity ?datatype ?constraint ?cardinality
+# WHERE { ?field a icd:CanonicalField ; icd:inDomain <domain-X> ; ... }
+
+icd:canonicalName a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Field name in the canonical type (e.g. 'slug', 'dateTaken')" .
+
+icd:severity a owl:ObjectProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range icd:SeverityTier ;
+    rdfs:comment "violation or enrichment (XSD model)" .
+
+icd:datatype a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "XSD datatype (xsd:string, xsd:dateTime, xsd:integer, etc.)" .
+
+icd:constraint a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "SHACL constraint (e.g. 'minCount 1')" .
+
+icd:cardinality a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "'1' or 'n' — single-valued or multi-valued" .
+
+icd:bestSource a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Authoritative source for this field (cf-best)" .
+
+icd:inDomain a owl:ObjectProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range icd:Domain .
+
+icd:inConsumerType a owl:ObjectProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range icd:ConsumerType .
+
+# --- Tier Change Audit (#1550) ---
+
+icd:tierChangedFrom a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Previous severity tier before change (e.g. 'Enrichment'). Set when severity is reclassified." .
+
+icd:tierChangedAt a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:date ;
+    rdfs:comment "Date of severity tier change (ISO date). Audit trail for downstream impact." .
+
+# --- Field Mapping Properties (Query 2: provider mappings) ---
+# SELECT ?source ?sourceField ?mapsTo ?confidence ?transform ?gate
+# WHERE { ?mapping a icd:FieldMapping ; icd:fromProvider <provider-X> ; ... }
+
+icd:sourceTable a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Source system/table (e.g. 'ZABCDRECORD', 'facebook', 'itunes')" .
+
+icd:sourceField a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Source field name (e.g. 'ZFIRSTNAME', 'timestamp')" .
+
+icd:mapsTo a owl:ObjectProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range icd:CanonicalField ;
+    rdfs:comment "Target canonical field" .
+
+icd:mapsToName a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Target canonical field name (denormalized for query convenience)" .
+
+icd:confidence a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "'direct', 'transform', 'computed', 'constant'" .
+
+icd:transform a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Transform description (e.g. 'Unix epoch → ISO8601')" .
+
+icd:gate a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Gate condition (e.g. 'Streaming-only = no location'). OPTIONAL — not all mappings have gates." .
+
+icd:transformType a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Machine-readable transform type: copy, slugify, timestamp, enum, regex, concat, join-1N, constant, computed" .
+
+icd:coverage a owl:DatatypeProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Source coverage percentage (e.g. '100%', '~85%')" .
+
+icd:fromProvider a owl:ObjectProperty ;
+    rdfs:domain icd:FieldMapping ;
+    rdfs:range icd:Provider .
+
+# --- Document Structure (Section-level rendering) ---
+
+icd:Section a owl:Class ;
+    rdfs:label "Section" ;
+    rdfs:comment "A document section within a provider or consumer ICD. Renders as an accordion." .
+
+icd:sectionTitle a owl:DatatypeProperty ;
+    rdfs:domain icd:Section ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Section heading (e.g. 'Purpose & Scope', 'Risks', 'Diagrams')" .
+
+icd:sectionContent a owl:DatatypeProperty ;
+    rdfs:domain icd:Section ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Section body content (HTML or mermaid source)" .
+
+icd:sectionOrder a owl:DatatypeProperty ;
+    rdfs:domain icd:Section ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Display order within the provider/consumer" .
+
+icd:sectionType a owl:DatatypeProperty ;
+    rdfs:domain icd:Section ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Section type: purpose, risks, non-functionals, interface, diagrams, compliance, dedup" .
+
+icd:hasSection a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:Section ;
+    rdfs:comment "Provider has ordered document sections" .
+
+# --- Live Instance Counts ---
+
+icd:LiveCount a owl:Class ;
+    rdfs:label "Live Count" ;
+    rdfs:comment "Runtime instance count from harvest graphs — not persisted, queried on demand." .
+
+icd:recordCount a owl:DatatypeProperty ;
+    rdfs:domain icd:Domain ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Total records in Fuseki for this domain — live SPARQL count" .
+
+icd:fieldCoverage a owl:DatatypeProperty ;
+    rdfs:domain icd:CanonicalField ;
+    rdfs:range xsd:decimal ;
+    rdfs:comment "Coverage percentage from live graph data — 0.0 to 1.0" .
+
+# --- Harvest Run History ---
+
+icd:HarvestRun a owl:Class ;
+    rdfs:label "Harvest Run" ;
+    rdfs:comment "A single harvest execution against a provider. Tracks when, how many, pass/fail." .
+
+icd:harvestDate a owl:DatatypeProperty ;
+    rdfs:domain icd:HarvestRun ;
+    rdfs:range xsd:dateTime ;
+    rdfs:comment "When the harvest ran" .
+
+icd:harvestRecordCount a owl:DatatypeProperty ;
+    rdfs:domain icd:HarvestRun ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Records harvested in this run" .
+
+icd:harvestStatus a owl:DatatypeProperty ;
+    rdfs:domain icd:HarvestRun ;
+    rdfs:range xsd:string ;
+    rdfs:comment "complete, partial, failed" .
+
+icd:harvestDedupCount a owl:DatatypeProperty ;
+    rdfs:domain icd:HarvestRun ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Records deduped/skipped" .
+
+icd:harvestViolationCount a owl:DatatypeProperty ;
+    rdfs:domain icd:HarvestRun ;
+    rdfs:range xsd:integer ;
+    rdfs:comment "Records rejected by ICD gate" .
+
+icd:hasHarvestRun a owl:ObjectProperty ;
+    rdfs:domain icd:Provider ;
+    rdfs:range icd:HarvestRun ;
+    rdfs:comment "Provider has harvest run history" .

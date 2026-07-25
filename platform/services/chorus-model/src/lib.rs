@@ -1199,6 +1199,35 @@ fn seed_iri_ok(kind: &str, subject_term: &str) -> R<String> {
 /// triples verbatim plus the audit envelope (created preserved via the write()
 /// pattern) and the provenance stamp. Any failure before that point leaves the
 /// store untouched.
+/// #3392 — the seed door's realm policy (Silas ruling 2026-07-25): a
+/// KNOWN-REALMS ALLOWLIST, not chorus-only and not open.
+///   - chorus realm: strict — KINDS-convention IRI check, rdf:type-match,
+///     SHACL shape checks, referential integrity (unchanged from #3692).
+///   - gathering realm: NS-membership + well-formed + no-injection ONLY.
+///     ICD is GATHERING-owned (convergence boundary): it self-types via
+///     icd:Domain and follows its own IRI scheme — a chorus kind/type check
+///     would wrongly reject valid ICD. NS-set verified against the live
+///     store 2026-07-25: instance subjects resolved against base
+///     https://jeffbridwell.com/, class defs subject in urn:gathering:icd#.
+///   - anything else: off-realm refusal (the #3573 door stays closed).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RealmPolicy {
+    ChorusStrict,
+    ForeignNs(&'static [&'static str]),
+}
+
+const GATHERING_NS_SET: &[&str] = &["https://jeffbridwell.com/icd/", "urn:gathering:icd#"];
+
+fn realm_policy(graph: &str) -> Option<RealmPolicy> {
+    if graph.starts_with("urn:chorus:") {
+        Some(RealmPolicy::ChorusStrict)
+    } else if graph.starts_with("urn:gathering:") {
+        Some(RealmPolicy::ForeignNs(GATHERING_NS_SET))
+    } else {
+        None
+    }
+}
+
 pub fn seed(
     store: &dyn Store,
     kind: &str,
@@ -1207,12 +1236,15 @@ pub fn seed(
     graph: Option<&str>,
     id: &Identity,
 ) -> R<SeedReport> {
-    let class = class_iri(kind)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH);
-    if !g.starts_with("urn:chorus:") || g.contains(['<', '>', '{', '}', ' ', ';']) {
-        witness("model.seed.refused", &[("graph", g), ("reason", "off-realm-graph")]);
-        return Err(format!("seed: graph '{}' is outside urn:chorus:* or malformed (refused)", g));
+    if g.contains(['<', '>', '{', '}', ' ', ';']) {
+        witness("model.seed.refused", &[("graph", g), ("reason", "malformed-graph")]);
+        return Err(format!("seed: graph '{}' is malformed (refused)", g));
     }
+    let policy = realm_policy(g).ok_or_else(|| {
+        witness("model.seed.refused", &[("graph", g), ("reason", "off-realm-graph")]);
+        format!("seed: graph '{}' is outside the known realms (urn:chorus:*, urn:gathering:*) — refused", g)
+    })?;
     assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
     if triples.is_empty() {
         return Err("seed: no triples to load".into());
@@ -1234,13 +1266,38 @@ pub fn seed(
     }
 
     // ── Validate ALL subjects first — fail-closed, nothing written on error ──
-    let shape = read_shape(store, &class)?;
+    // Chorus realm: the full #3692 battery. Gathering realm: NS-membership +
+    // well-formed + no-injection ONLY (Silas ruling — their vocab, not ours;
+    // slot shapes were already checked at grouping).
     let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
     let batch_iris: std::collections::HashSet<String> = order
         .iter()
         .map(|s| s[1..s.len() - 1].to_string())
         .collect();
 
+    if let RealmPolicy::ForeignNs(ns_set) = policy {
+        for subject_term in &order {
+            let iri = &subject_term[1..subject_term.len() - 1];
+            if !ns_set.iter().any(|ns| iri.starts_with(ns)) {
+                witness("model.seed.refused", &[("iri", iri), ("reason", "iri-off-realm-ns")]);
+                return Err(format!(
+                    "seed: iri-guard — <{}> is outside the realm's namespace set {:?} (refused)",
+                    iri, ns_set
+                ));
+            }
+        }
+    }
+
+    let class_and_shape = if policy == RealmPolicy::ChorusStrict {
+        let class = class_iri(kind)?;
+        let shape = read_shape(store, &class)?;
+        Some((class, shape))
+    } else {
+        None
+    };
+
+    if let Some((class, shape)) = &class_and_shape {
+        let class = class.as_str();
     for subject_term in &order {
         let iri = seed_iri_ok(kind, subject_term)?;
         let props = &by_subject[subject_term];
@@ -1306,6 +1363,7 @@ pub fn seed(
             }
         }
     }
+    } // end chorus-strict validation
 
     // ── Assemble the single transaction ─────────────────────────────────────
     const DCT: &str = "http://purl.org/dc/terms/";
@@ -1330,12 +1388,19 @@ pub fn seed(
             body.push_str(&format!("{} {} {} . ", subject_term, p, o));
             triple_count += 1;
         }
-        if !has_type {
-            body.push_str(&format!("{} a <{}> . ", subject_term, class));
-        }
-        if !has_label {
-            let local = iri.strip_prefix(NS).unwrap_or(iri);
-            body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+        // Autofill (type + label) is chorus-vocab — chorus realm only. A
+        // foreign-realm subject keeps exactly its own triples (its vocab,
+        // not ours) plus the audit/provenance envelope below.
+        if let Some((class, _)) = &class_and_shape {
+            if !has_type {
+                body.push_str(&format!("{} a <{}> . ", subject_term, class));
+            }
+            if !has_label {
+                let local = iri.strip_prefix(NS).unwrap_or(iri);
+                body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+            }
+        } else {
+            let _ = (has_type, has_label);
         }
         // created preserved (write() pattern), modified bumped, creator = the
         // verified identity, provenance = the migration stamp.

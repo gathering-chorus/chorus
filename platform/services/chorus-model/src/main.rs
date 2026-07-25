@@ -18,7 +18,7 @@ fn usage() -> String {
        chorus-model set    --kind <kind> --name <name> --field k=v [--graph <g>]\n\
        chorus-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
-       chorus-model seed   --kind <kind> --ttl <file> [--graph <g>] [--provenance migrated]\n\
+       chorus-model seed   --kind <kind> --ttl <file> [--graph <g>] [--provenance migrated] [--base <iri>]\n\
        chorus-model mint   --kind <kind> --name <name>\n\
        chorus-model kinds"
         .to_string()
@@ -107,6 +107,7 @@ fn run() -> Result<String, String> {
             let mut ttl_path = String::new();
             let mut graph: Option<String> = None;
             let mut provenance = "migrated".to_string();
+            let mut base: Option<String> = None;
             let rest = &args[1..];
             let mut i = 0;
             while i < rest.len() {
@@ -115,6 +116,10 @@ fn run() -> Result<String, String> {
                     "--ttl" => { i += 1; ttl_path = rest.get(i).cloned().unwrap_or_default(); }
                     "--graph" => { i += 1; graph = rest.get(i).cloned(); }
                     "--provenance" => { i += 1; provenance = rest.get(i).cloned().unwrap_or_default(); }
+                    // #3392 — resolve relative TTL IRIs against this base so a
+                    // migration reproduces the live store's IRIs byte-identically
+                    // (the gathering ICD set resolved against https://jeffbridwell.com/).
+                    "--base" => { i += 1; base = rest.get(i).cloned(); }
                     other => return Err(format!("seed: unknown arg '{}'\n{}", other, usage())),
                 }
                 i += 1;
@@ -125,8 +130,13 @@ fn run() -> Result<String, String> {
             let nt = if ttl_path.ends_with(".nt") {
                 std::fs::read_to_string(&ttl_path).map_err(|e| format!("seed: read {}: {}", ttl_path, e))?
             } else {
+                let mut riot_args: Vec<String> = vec!["--output=ntriples".to_string()];
+                if let Some(b) = &base {
+                    riot_args.push(format!("--base={}", b));
+                }
+                riot_args.push(ttl_path.clone());
                 let out = std::process::Command::new("riot")
-                    .args(["--output=ntriples", &ttl_path])
+                    .args(&riot_args)
                     .output()
                     .map_err(|e| format!("seed: riot not runnable ({}) — TTL→N-Triples needs riot on PATH", e))?;
                 if !out.status.success() {
