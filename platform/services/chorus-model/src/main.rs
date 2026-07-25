@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, to_turtle, write, FusekiStore, Identity, WriteReq};
+use chorus_model::{add_edge, batch, delete_entity, mint, remove_edge, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -15,6 +15,7 @@ fn usage() -> String {
      usage:\n\
        chorus-model add    --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
        chorus-model delete --kind <kind> --name <name>\n\
+       chorus-model set    --kind <kind> --name <name> --field k=v [--graph <g>]\n\
        chorus-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model mint   --kind <kind> --name <name>\n\
@@ -95,6 +96,19 @@ fn run() -> Result<String, String> {
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651
             Ok(format!("deleted: {}", delete_entity(&store, &req.kind, &req.name, req.graph.as_deref(), &id)?))
+        }
+        // #3686 — set: field-level single-predicate update, the datatype-prop
+        // sibling of link/unlink. Exactly ONE --field k=v; edges stay link/unlink.
+        Some("set") => {
+            let (req, _) = parse_req(&args[1..])?;
+            if req.fields.len() != 1 || !req.edges.is_empty() {
+                return Err("set needs exactly one --field k=v (and no --edge — edges are link/unlink)".into());
+            }
+            let (prop, value) = req.fields.iter().next().map(|(k, v)| (k.clone(), v.clone())).unwrap();
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?; // #3651
+            let subject = set_field(&store, &req.kind, &req.name, &prop, &value, req.graph.as_deref(), &id)?;
+            Ok(format!("set: {} {}={}", subject, prop, value))
         }
         Some(verb @ ("link" | "unlink")) => {
             let (req, _) = parse_req(&args[1..])?;

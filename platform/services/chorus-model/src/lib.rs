@@ -826,6 +826,102 @@ fn check_edge_prop(prop: &str) -> R<()> {
     Ok(())
 }
 
+/// #3686 — SET one datatype field INCREMENTALLY (governed). The datatype-prop
+/// sibling of link/unlink: touches ONLY the named predicate (DELETE that
+/// predicate + INSERT the value, one tx) so re-sequencing a rich subject
+/// ("security first") never wipes its other authored props — `add`'s
+/// full-subject replace is the #3587 wipe class in miniature for this use.
+///
+/// Same gates as add (Silas's bless, 2026-07-25): identity (#3651, caller passes
+/// the verified Identity), sh:datatype / sh:in from the shape, and the #3681
+/// uniqueness ASK — which self-excludes, so re-setting the same value is not a
+/// false dup. ONE designed difference from add: the uniqueWithin partition value
+/// is read FROM THE STORE (the subject's existing partition edge) since a set
+/// carries no edges; a subject missing its partition edge is refused rather than
+/// checked unscoped. Datatype props only — edges stay link/unlink.
+pub fn set_field(
+    store: &dyn Store,
+    kind: &str,
+    name: &str,
+    prop: &str,
+    value: &str,
+    graph: Option<&str>,
+    _id: &Identity,
+) -> R<String> {
+    check_edge_prop(prop)?; // same camelCase law (ADR-040 Level 4) for field local-names
+    let subject = mint(kind, name)?;
+    if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
+        witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found"), ("field", prop)]);
+        return Err(format!(
+            "not-found: <{}> does not exist — set updates existing subjects only (create with add)",
+            subject
+        ));
+    }
+    let class = class_iri(kind)?;
+    let shape = read_shape(store, &class)?;
+    if let Some(dt) = shape.datatypes.get(prop) {
+        if !datatype_ok(value, dt) {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "shape-violation"), ("field", prop)]);
+            return Err(format!("shape-violation: '{}' is not a valid xsd:{} for {} (sh:datatype)", value, dt, prop));
+        }
+    }
+    if let Some(allowed) = shape.enums.get(prop) {
+        if !allowed.iter().any(|a| a == value) {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "shape-violation"), ("field", prop)]);
+            return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", value, allowed, prop));
+        }
+    }
+    let g = graph.unwrap_or(INSTANCES_GRAPH);
+    // Uniqueness (#3681 idiom, self-excluding). Partition value comes from the
+    // subject's OWN partition edge in the store — fail-closed if absent.
+    if let Some(part) = shape.unique_within.get(prop) {
+        let part_iri = store
+            .select_v(&format!(
+                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?t }} BIND(STR(?t) AS ?v) }}",
+                g = g, s = subject, ns = NS, p = part
+            ))?
+            .into_iter()
+            .next();
+        let part_iri = match part_iri {
+            Some(t) => t,
+            None => {
+                witness("model.uniqueness.skipped", &[("kind", kind), ("name", name), ("field", prop), ("missing", part.as_str())]);
+                return Err(format!(
+                    "missing-partition: <{}> has no {} edge — cannot scope uniqueness for {} (set the {} edge first via link)",
+                    subject, part, prop, part
+                ));
+            }
+        };
+        let dup = store.ask(&format!(
+            "ASK {{ GRAPH <{g}> {{ ?other <{ns}{prop}> ?v ; <{ns}{part}> <{pi}> . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
+            g = g, ns = NS, prop = prop, part = part, pi = part_iri, s = subject, val = esc(value)
+        ))?;
+        if dup {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "uniqueness-violation"), ("field", prop)]);
+            return Err(format!("shape-violation: duplicate '{}' within '{}' (chorus:uniqueWithin, from {})", prop, part, ONTOLOGY_GRAPH));
+        }
+    }
+    if shape.unique_global.iter().any(|p| p == prop) {
+        let dup = store.ask(&format!(
+            "ASK {{ GRAPH <{g}> {{ ?other a <{cls}> ; <{ns}{prop}> ?v . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
+            g = g, cls = class, ns = NS, prop = prop, s = subject, val = esc(value)
+        ))?;
+        if dup {
+            witness("model.refused", &[("kind", kind), ("name", name), ("reason", "uniqueness-violation"), ("field", prop)]);
+            return Err(format!("shape-violation: duplicate '{}' across all {} (chorus:uniqueGlobal, from {})", prop, kind, ONTOLOGY_GRAPH));
+        }
+    }
+    // Single-predicate replace + the modified stamp — never `?p ?o` on the subject.
+    const DCT: &str = "http://purl.org/dc/terms/";
+    let now = now_iso();
+    store.update(&format!(
+        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> ?o }} }} ;\nDELETE WHERE {{ GRAPH <{g}> {{ <{s}> <{d}modified> ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> \"{v}\" . <{s}> <{d}modified> \"{m}\" }} }}",
+        g = g, s = subject, ns = NS, p = prop, v = esc(value), d = DCT, m = esc(&now)
+    ))?;
+    witness("model.set", &[("kind", kind), ("name", name), ("iri", subject.as_str()), ("field", prop), ("value", value)]);
+    Ok(subject)
+}
+
 /// #3468 — DELETE an entity wholesale (governed). Fail-closed: refuses a subject
 /// that does not exist (so a typo can't be a silent no-op). Witnesses the delete.
 /// owl-api's DELETE delegates here instead of a raw SPARQL DELETE — one governed

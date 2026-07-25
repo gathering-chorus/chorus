@@ -1,0 +1,55 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# Role-level hard priorities (#3686) — ordinals at every ownership level, so the
+# whole walk (role → products → domains → chunks → cards) is declared data.
+# Extends #3654 (chunks: roleSequence/loomSequence/rank) UP the containment tree.
+#
+# Jeff's cut (2026-07-25): "each role has hard priorities for their own products
+# and domains and chunks — then i can ask u to chunk and prioritize your whole
+# card set."
+#
+# All three ordinals are OPTIONAL (no sh:minCount) — purely additive; no existing
+# write gains a new requirement. Uniqueness rides the #3681 DAL primitive via the
+# same two annotations #3654 proved: chorus:uniqueWithin (partitioned) and
+# chorus:uniqueGlobal (class-wide). Declared here (Wren), enforced at the door
+# (Silas's reader+ASK) — the ADR-054 seam.
+#
+# These are ADDITIVE NodeShapes targeting classes whose primary shapes live in
+# chorus.ttl (ProductShape/DomainShape, Silas's file) — SHACL semantics AND
+# read_shape's SELECT both union sh:property across all shapes with the same
+# sh:targetClass, so no cross-file edit of Silas's shapes is needed.
+#
+# rolePriority forward-note: the Role SHAPE home is held open by ADR-054 for the
+# roles-domain consolidation card (Wren). This shape is that home's first piece —
+# it migrates INTO the roles domain graph with that card, not a fork of it.
+#
+# LOAD-SET: enters MODEL_SET in chorus-model-deploy.sh the day authored
+# (#3675/#3587 wipe-class discipline); read_shape sees only urn:chorus:ontology.
+# =============================================================================
+
+# ── vocabulary ───────────────────────────────────────────────────────────────
+chorus:rolePriority a owl:DatatypeProperty ;
+  rdfs:label "role priority" ; rdfs:domain chorus:Role ; rdfs:range xsd:integer ;
+  rdfs:comment "The role's hard rank vs the other roles (1 = leads). Class-wide unique — no two roles share a rank. The June-2026 hard-rank, finally data." .
+
+chorus:ownerSequence a owl:DatatypeProperty ;
+  rdfs:range xsd:integer ;
+  rdfs:comment "The owning role's ordinal over this thing among the things of the same kind they own (1 = first). Unique within ownedBy per kind. Applied to Product and Domain (#3686); Chunk uses roleSequence (#3654)." .
+
+# ── additive shapes (ordinals only — primary shapes unchanged in chorus.ttl) ──
+chorus:RolePriorityShape a sh:NodeShape ;
+  sh:targetClass chorus:Role ;
+  sh:property [ sh:path chorus:rolePriority ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
+
+chorus:ProductOrderShape a sh:NodeShape ;
+  sh:targetClass chorus:Product ;
+  sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
+
+chorus:DomainOrderShape a sh:NodeShape ;
+  sh:targetClass chorus:Domain ;
+  sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
