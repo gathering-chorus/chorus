@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, batch, delete_entity, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
+use chorus_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -93,6 +93,28 @@ fn run() -> Result<String, String> {
         // #3468 — delete / link / unlink: the governed verbs owl-api delegates to,
         // so every entity-delete and edge-mutation rides ONE audited write path.
         Some("delete") => {
+            // #3392 — by-IRI form for foreign-realm subjects (no chorus
+            // (kind,name) to address): delete --iri <iri> --graph <g>.
+            if args[1..].iter().any(|a| a == "--iri") {
+                let rest = &args[1..];
+                let mut iri = String::new();
+                let mut graph = String::new();
+                let mut i = 0;
+                while i < rest.len() {
+                    match rest[i].as_str() {
+                        "--iri" => { i += 1; iri = rest.get(i).cloned().unwrap_or_default(); }
+                        "--graph" => { i += 1; graph = rest.get(i).cloned().unwrap_or_default(); }
+                        other => return Err(format!("delete --iri: unknown arg '{}'", other)),
+                    }
+                    i += 1;
+                }
+                if iri.is_empty() || graph.is_empty() {
+                    return Err("delete --iri needs --iri <iri> and --graph <g>".into());
+                }
+                let store = FusekiStore::new();
+                let id = Identity::resolve(&store)?; // #3651
+                return Ok(format!("deleted: {}", delete_iri(&store, &iri, &graph, &id)?));
+            }
             let (req, _) = parse_req(&args[1..])?;
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651

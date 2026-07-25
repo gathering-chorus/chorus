@@ -24,7 +24,9 @@ GRAPH="urn:gathering:icd/current"
 BASE="https://jeffbridwell.com/"
 ONTOLOGY="$CHORUS_ROOT/designing/products/athena/domains/domains/icd-ontology.ttl"
 INSTANCES_DIR="$CHORUS_ROOT/building/products/convergence/domains/integrations/icd-instances"
-CHORUS_MODEL="$(command -v chorus-model || echo "$CHORUS_ROOT/platform/services/chorus-model/target/release/chorus-model")"
+# CHORUS_MODEL override lets a werk run its own freshly-built binary before
+# the deployed one has the seed/--base surface (deploy lags the land).
+CHORUS_MODEL="${CHORUS_MODEL:-$(command -v chorus-model || echo "$CHORUS_ROOT/platform/services/chorus-model/target/release/chorus-model")}"
 
 count_triples() {
   curl -sf --max-time 15 -H "Accept: application/sparql-results+json" \
@@ -48,11 +50,22 @@ fi
 [ -f "$ONTOLOGY" ] || { echo "FATAL: ontology TTL missing at $ONTOLOGY" >&2; exit 1; }
 [ -d "$INSTANCES_DIR" ] || { echo "FATAL: instances dir missing at $INSTANCES_DIR" >&2; exit 1; }
 
-# Ontology first (class defs), then the 9 instance files — deterministic order.
-"$CHORUS_MODEL" seed --kind domain --ttl "$ONTOLOGY" --graph "$GRAPH" --provenance migrated --base "$BASE"
-for f in "$INSTANCES_DIR"/icd-instance-*.ttl; do
-  "$CHORUS_MODEL" seed --kind domain --ttl "$f" --graph "$GRAPH" --provenance migrated --base "$BASE"
-done
+# ONE batch across all 10 files. Subjects span files (icd/domain/notes and
+# its provider live in both notes and notes-v2) — per-file seeding would let
+# the later file's replace-subject wipe the earlier file's edges (12 triples
+# lost in the first live run, caught by the zero-regression diff). Concatenate
+# to canonical N-Triples first so seed groups each subject across ALL files
+# and the union loads in one all-or-nothing transaction.
+COMBINED="$(mktemp -t icd-combined).nt"
+trap 'rm -f "$COMBINED"' EXIT
+{
+  riot --base="$BASE" --output=ntriples "$ONTOLOGY"
+  for f in "$INSTANCES_DIR"/icd-instance-*.ttl; do
+    riot --base="$BASE" --output=ntriples "$f"
+  done
+} | sort -u > "$COMBINED"
+echo "== combined: $(wc -l < "$COMBINED" | tr -d ' ') distinct triples from 10 files"
+"$CHORUS_MODEL" seed --kind domain --ttl "$COMBINED" --graph "$GRAPH" --provenance migrated
 
 echo "== after: $(count_triples) triples in <$GRAPH>"
 echo "== domains:"
