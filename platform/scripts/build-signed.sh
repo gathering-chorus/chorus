@@ -132,16 +132,25 @@ if [ ! -f "$binary" ]; then
   exit 1
 fi
 
-echo "build-signed: codesign --force --sign $SIGNING_IDENTITY --identifier $identifier"
-codesign --force --sign "$SIGNING_IDENTITY" --identifier "$identifier" "$binary"
+# #3684 — codesign is macOS-only (TCC binds AppleEvents perms to the cdhash). On a
+# Linux CI runner there is no `codesign`, so the old unconditional call hard-failed
+# with "codesign: command not found" and broke the whole build (quality.yml RC1).
+# Signing is a macOS *runtime* concern, not a build gate: skip it off-macOS so the
+# binary still builds + hashes + deploys; CI verifies compilation, not the cdhash.
+if [ "$(uname -s)" = "Darwin" ] && command -v codesign >/dev/null 2>&1; then
+  echo "build-signed: codesign --force --sign $SIGNING_IDENTITY --identifier $identifier"
+  codesign --force --sign "$SIGNING_IDENTITY" --identifier "$identifier" "$binary"
 
-# chorus-hooks shortcut: also sign the second crate binary (chorus-hooks)
-if [ "${1:-}" = "chorus-hooks" ]; then
-  HOOKS_BIN="$crate_dir/target/release/chorus-hooks"
-  if [ -f "$HOOKS_BIN" ]; then
-    codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.chorus.hooks" "$HOOKS_BIN"
-    echo "build-signed: $(basename "$HOOKS_BIN") signed identifier=com.chorus.hooks"
+  # chorus-hooks shortcut: also sign the second crate binary (chorus-hooks)
+  if [ "${1:-}" = "chorus-hooks" ]; then
+    HOOKS_BIN="$crate_dir/target/release/chorus-hooks"
+    if [ -f "$HOOKS_BIN" ]; then
+      codesign --force --sign "$SIGNING_IDENTITY" --identifier "com.chorus.hooks" "$HOOKS_BIN"
+      echo "build-signed: $(basename "$HOOKS_BIN") signed identifier=com.chorus.hooks"
+    fi
   fi
+else
+  echo "build-signed: codesign SKIPPED (non-macOS or codesign absent — $(uname -s)); binary unsigned, build continues (#3684)"
 fi
 
 # Per-binary post-codesign work: hash, emit spine event, add manifest entry.
