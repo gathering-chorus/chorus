@@ -1,4 +1,3 @@
-use crate::shared::protocol_contract;
 use crate::shared::state_paths::chorus_root;
 use crate::state::AppState;
 use crate::types::{permission_deny_json, HookInput, HookResponse};
@@ -41,10 +40,11 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
 
     // Read is always allowed. Additionally, Reading the role's own
     // /tmp/session-start-<role>.md when .pending is armed and .done is
-    // missing is the in-session recovery path (#2311): re-runs the same
-    // protocol_contract::check that SessionStart runs, writing .done on
-    // pass. Same one entry point as SessionStart — just reachable from
-    // Read for roles whose boot did not complete under an older binary.
+    // missing is the in-session recovery path (#2311): boot didn't complete
+    // under an older binary, and reading the boot context IS completion.
+    // #3288: the stamp-compare that used to gate this write is retired —
+    // CLAUDE.md is regenerated from live fragments at SessionStart, so there
+    // is no drift for a runtime check to detect.
     if tool == "Read" {
         let file_path = input.get_tool_input_str("file_path");
         let expected = format!("/tmp/session-start-{}.md", role_str);
@@ -52,22 +52,14 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
             && Path::new(&pending).exists()
             && !Path::new(&done).exists()
         {
-            match protocol_contract::check(role_str) {
-                Ok(()) => {
-                    let _ = tokio::fs::create_dir_all(init_dir).await;
-                    let _ = tokio::fs::write(&done, "").await;
-                    state.mark_session_init_done(role_str).await;
-                    info!(
-                        gate = "session-init",
-                        role = role_str,
-                        "In-session recovery: protocol pass → .done written via Read handler."
-                    );
-                }
-                Err(v) => {
-                    write_protocol_violation_banner(role_str, &v).await;
-                    log_protocol_violation(role_str, &v);
-                }
-            }
+            let _ = tokio::fs::create_dir_all(init_dir).await;
+            let _ = tokio::fs::write(&done, "").await;
+            state.mark_session_init_done(role_str).await;
+            info!(
+                gate = "session-init",
+                role = role_str,
+                "In-session recovery: .done written via Read handler."
+            );
         }
         return HookResponse::allow();
     }
@@ -87,95 +79,31 @@ pub async fn check_with_dir(input: &HookInput, state: &AppState, init_dir: &str)
         // Gate active — deny. No exemptions.
         return HookResponse::deny(&permission_deny_json(&format!(
             "Session init gate: SessionStart boot did not complete for role '{}'. \
-             Check {}/{}.done — if missing, SessionStart \
-             hook did not fire or protocol_contract check failed (see \
-             session.protocol.violation spine events). This is a binary gate: \
-             no Bash exemptions.",
-            role_str, init_dir, role_str
+             Check {}/{}.done — if missing, the SessionStart \
+             hook did not fire (see session.bootstrap.* spine events), or read \
+             /tmp/session-start-{}.md to complete boot in-session. This is a \
+             binary gate: no Bash exemptions.",
+            role_str, init_dir, role_str, role_str
         )));
     }
 
     HookResponse::allow()
 }
 
-/// #2311 rescope: formerly ran on Read of session-start.md. Now unused by
-/// the PreToolUse handler — SessionStart owns the protocol-check fire
-/// point. Kept as a library function in case future maintenance wants to
-/// re-enable a Read-triggered re-check; not reachable from `check()`.
-#[allow(dead_code)]
-async fn retired_read_handler_protocol_check(role_str: &str, state: &AppState) {
-    let pending = format!("{}/{}.pending", INIT_DIR, role_str);
-    let done = format!("{}/{}.done", INIT_DIR, role_str);
-    if !Path::new(&pending).exists() { return; }
-    let smoke_ok = run_gate_smoke(role_str, state);
-    let protocol_ok = match protocol_contract::check(role_str) {
-        Ok(()) => true,
-        Err(v) => {
-            write_protocol_violation_banner(role_str, &v).await;
-            log_protocol_violation(role_str, &v);
-            false
-        }
-    };
-    if smoke_ok && protocol_ok {
-        let _ = tokio::fs::create_dir_all(INIT_DIR).await;
-        let _ = tokio::fs::write(&done, "").await;
-        state.mark_session_init_done(role_str).await;
-    } else {
-        error!(
-            gate = "session-init",
-            role = role_str,
-            smoke_ok,
-            protocol_ok,
-            "Session boot blocked: gate smoke or protocol contract check failed."
-        );
-    }
-}
+// #3288: retired_read_handler_protocol_check, write_protocol_violation_banner,
+// and log_protocol_violation removed with the stamp-compare layer — CLAUDE.md
+// regenerates from live fragments at SessionStart, so there is no runtime
+// drift class left to banner. Committed-state coherence is CI's job
+// (`claudemd-gen check-version`).
 
-/// #2311: Write the PROTOCOL VIOLATION / STALE banner into the role's session-start
-/// file so the model sees the failure the next time it reads the context. We prepend
-/// to a companion file `/tmp/session-start-<role>-PROTOCOL_VIOLATION.md` AND prepend
-/// into the primary session-start file if present.
-async fn write_protocol_violation_banner(role: &str, v: &protocol_contract::Violation) {
-    let banner = protocol_contract::banner(role, v);
-    let companion = format!("/tmp/session-start-{}-PROTOCOL_VIOLATION.md", role);
-    let primary = format!("/tmp/session-start-{}.md", role);
-    let _ = tokio::fs::write(&companion, &banner).await;
-    if let Ok(existing) = tokio::fs::read_to_string(&primary).await {
-        // Only prepend if banner isn't already there — idempotent per session.
-        if !existing.starts_with("## 🛑 PROTOCOL VIOLATION") && !existing.starts_with("## ⚠ STALE CLAUDE.md") {
-            let merged = format!("{}\n{}", banner, existing);
-            let _ = tokio::fs::write(&primary, merged).await;
-        }
-    }
-}
-
-/// #2311: Emit a spine event for the protocol violation so fleet-wide drift is observable.
-fn log_protocol_violation(role: &str, v: &protocol_contract::Violation) {
-    let fields = protocol_contract::event_fields(role, v);
-    // #2731: "stale" reason is gone — only missing_stamp / version_mismatch
-    // can fire here under the derived-artifact model.
-    let event = "session.protocol.violation";
-    let mut cmd = std::process::Command::new(
-        format!("{}/platform/scripts/chorus-log", chorus_root())
-    );
-    cmd.arg(event).arg(role);
-    for (k, val) in fields {
-        if k == "role" { continue; } // already positional
-        cmd.arg(format!("{}={}", k, val));
-    }
-    let _ = cmd.output();
-    error!(
-        gate = "protocol-contract",
-        role = role,
-        reason = v.reason(),
-        "Session boot blocked: protocol contract failed."
-    );
-}
-
-/// Gate smoke check (#1929): on session boot, verify critical gates block when they should.
+/// Gate smoke check (#1929): verify critical gates block when they should.
 /// Sets temporary fix-card state, sends a synthetic Edit, confirms gates deny.
-/// Returns true if all gates pass smoke, false if any gate is broken.
-/// If false, the session init gate will NOT mark done — blocking all work.
+/// NOTE (#3288): this has had no production caller since the #2311 rescope —
+/// its only call site was the already-dead retired Read handler, so it never
+/// actually ran at boot. Kept (unit-tested) rather than deleted because
+/// re-wiring #1929's boot smoke is its own decision, not a version-card
+/// drive-by.
+#[allow(dead_code)]
 fn run_gate_smoke(role: &str, state: &AppState) -> bool {
     use crate::hooks::{log_first_gate, memory_gate};
 

@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "version": "1.4.0",
+      "constituent_hash": "ed85079f9e0e762a3e5a4e8835f1548c5b73178d95d8983cb2ace5cb579e788d",
+      "core_hash": "bbc2ecd7607b7f7ded2fe487ce5583e82725832d0b165668d0ae09855a483460",
+      "bump": "seed",
+      "date": "2026-07-25",
+      "card": "#3288"
+    },
+    {
+      "version": "1.5.0",
+      "constituent_hash": "747805d5acc91d5f675ef8b58e122c872a72be3d65d2b6873646386b2ca8fc40",
+      "core_hash": "0b98ffcbb4e913b5b416bdd19e189eaeed118b085430cade1c23246dc7f6b38e",
+      "bump": "minor",
+      "date": "2026-07-25",
+      "card": "#3288"
+    }
+  ]
+}

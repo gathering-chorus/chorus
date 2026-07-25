@@ -5,9 +5,10 @@ load test_helper
 #
 # What Jeff sees: a role boot that completes *all* SessionStart orchestration
 # steps in one pass — cache rebuilt if stale, next-session.md merged, pulse
-# regenerated, protocol banner injected on drift, .done written on pass,
-# Bridge subscriber alive. These tests prove the deployed binary does the
-# whole orchestration end-to-end, not just individual pieces.
+# regenerated, CLAUDE.md defensively regenerated (#3288: regen replaced the
+# stamp-compare), .done written, Bridge subscriber alive. These tests prove
+# the deployed binary does the whole orchestration end-to-end, not just
+# individual pieces.
 #
 # Hygiene: snapshot/restore /tmp/claude-session-init/silas.{pending,done}
 # and the pulse timestamp so a test cannot strand a live Silas session.
@@ -124,7 +125,7 @@ assert 'additionalContext' in d['hookSpecificOutput']
 
 # --- AC: Source-shape — orchestration sequence is present in session.rs ---
 
-@test "session.rs orchestrates: cache → next-session merge → pulse → protocol check" {
+@test "session.rs orchestrates: cache → next-session merge → pulse → defensive regen" {
   [ -f "$SESSION_RS" ]
   # Cache rebuild branch
   grep -q "cache_stale" "$SESSION_RS"
@@ -134,8 +135,8 @@ assert 'additionalContext' in d['hookSpecificOutput']
   grep -q 'next-session.md.consumed' "$SESSION_RS"
   # Pulse regen
   grep -q "pulse::assemble" "$SESSION_RS"
-  # Protocol check
-  grep -q "protocol_contract::check" "$SESSION_RS"
+  # #3288: defensive regen is the coherence mechanism (stamp-compare retired)
+  grep -q "claudemd-gen" "$SESSION_RS"
 }
 
 # --- AC: Crash recovery path is documented and wired ---
@@ -161,11 +162,13 @@ assert 'silas' in ctx.lower() or 'Silas' in ctx
 "
 }
 
-# --- AC: Silent-partial-boot is not possible — protocol violation surfaces in banner ---
+# --- AC: Silent-partial-boot is not possible — regen failure surfaces in banner ---
+# (#3288: the PROTOCOL VIOLATION stamp-compare banner is retired; the remaining
+# runtime failure class is "claudemd-gen did not complete", surfaced loudly.)
 
-@test "protocol_contract violation surfaces in additionalContext banner (not silently swallowed)" {
-  grep -q "PROTOCOL VIOLATION" "$SESSION_RS"
-  grep -q "additionalContext" "$SESSION_RS" || grep -q "prepend" "$SESSION_RS"
+@test "regen failure surfaces in additionalContext banner (not silently swallowed)" {
+  grep -q "regen failed at boot" "$SESSION_RS"
+  grep -q "session.bootstrap.regen_failed" "$SESSION_RS"
 }
 
 # --- AC: Existing Rust orchestration tests remain (no regression) ---

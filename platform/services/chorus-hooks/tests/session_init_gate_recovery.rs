@@ -8,10 +8,11 @@
 //! reboot.
 //!
 //! Design (per navigator jenga rule — no new CLI): Reading the role's
-//! own session-start file with .pending armed and .done missing
-//! re-runs the same protocol_contract::check that SessionStart runs,
-//! writing .done on pass. Same one entry point, reachable from Read
-//! as well as SessionStart.
+//! own session-start file with .pending armed and .done missing writes
+//! .done — reading the boot context IS boot completion. (#3288: the
+//! stamp-compare that used to gate this write is retired; CLAUDE.md is
+//! regenerated from live fragments at SessionStart, so there is no
+//! runtime drift class left to check.)
 
 use std::fs;
 use std::path::PathBuf;
@@ -88,9 +89,9 @@ fn post_via_socket(endpoint: &str, body: &str) -> String {
 }
 
 /// Core recovery test: locked role reads its own session-start.md and
-/// the gate writes .done on protocol pass.
+/// the gate writes .done.
 #[test]
-fn read_session_start_unlocks_role_on_protocol_pass() {
+fn read_session_start_unlocks_role() {
     if skip_unless_integration("connects to /tmp/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
     let g = MarkerGuard::new(TEST_ROLE);
     g.arm_locked();
@@ -113,19 +114,11 @@ fn read_session_start_unlocks_role_on_protocol_pass() {
     // Give the async hook a beat to flush the file write.
     std::thread::sleep(std::time::Duration::from_millis(100));
 
-    // If kade's CLAUDE.md passes protocol check (normal on clean tree),
-    // .done is now written. If it fails, .done stays missing — but then
-    // the banner file should exist. Cover both.
-    let done_exists = g.done.exists();
-    let banner_exists = std::path::Path::new(
-        &format!("/tmp/session-start-{}-PROTOCOL_VIOLATION.md", TEST_ROLE)
-    ).exists();
-
+    // #3288: no stamp-compare gates the write anymore — the Read IS boot
+    // completion, so .done must exist unconditionally.
     assert!(
-        done_exists || banner_exists,
-        "After Read of session-start file with .pending armed, \
-         either .done must be written (protocol pass) or a PROTOCOL \
-         VIOLATION banner must exist (protocol fail). Neither happened."
+        g.done.exists(),
+        "After Read of session-start file with .pending armed, .done must be written."
     );
 }
 

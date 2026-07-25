@@ -100,10 +100,12 @@ fn session_start_additional_context_contains_boot_payload() {
     );
 }
 
-/// AC binary-gate (rescope): on successful boot (protocol check pass),
-/// .done marker written; .pending present only if protocol check fails.
+/// AC binary-gate (rescope, #3288): boot completion writes .done. The
+/// stamp-compare that could withhold .done is retired — the only remaining
+/// boot-time failure surface is a regen failure, which banners loudly but
+/// still completes boot (fail-open per #2731).
 #[test]
-fn session_start_writes_done_on_protocol_pass() {
+fn session_start_writes_done() {
     if skip_unless_integration("writes /tmp/session-context-<role>.md via session-start") { return; }
     let init_dir = "/tmp/claude-session-init";
     let done = format!("{}/silas.done", init_dir);
@@ -116,30 +118,16 @@ fn session_start_writes_done_on_protocol_pass() {
 
     assert!(output.status.success());
 
-    // If silas CLAUDE.md matches live protocol (the normal case on a clean tree),
-    // session-start should have written .done. If protocol check fails, the
-    // test can't assert .done exists — but can assert the banner landed in
-    // additionalContext. Cover both.
     let stdout = String::from_utf8_lossy(&output.stdout);
     let v: serde_json::Value = serde_json::from_str(stdout.trim())
         .expect("stdout must be JSON");
-    let ctx = v.get("hookSpecificOutput")
+    let _ctx = v.get("hookSpecificOutput")
         .and_then(|h| h.get("additionalContext"))
         .and_then(|x| x.as_str())
         .unwrap_or("");
 
-    let is_violation = ctx.contains("PROTOCOL VIOLATION") || ctx.contains("STALE CLAUDE.md");
-
-    if is_violation {
-        assert!(
-            !Path::new(&done).exists(),
-            "when protocol violation, .done must NOT be written"
-        );
-    } else {
-        assert!(
-            Path::new(&done).exists(),
-            "when protocol check passes, .done must be written by session-start, \
-             not by a later Read handler"
-        );
-    }
+    assert!(
+        Path::new(&done).exists(),
+        ".done must be written by session-start, not by a later Read handler"
+    );
 }
