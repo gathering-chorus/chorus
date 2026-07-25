@@ -1,44 +1,49 @@
-# Daily Ops Review — 2026-07-24
+# Daily Ops Review — 2026-07-25
 
 ## 1. Hooks Health
-**Status: YELLOW (2 dead-code warnings, was 0)**
-`cargo check` finishes clean (44.63s, 0 errors) but 2 new dead-code warnings: `registration_json` in `session_registry.rs:66` and `owes_response_block` in `nudge_drain.rs:178`. Yesterday: 0 warnings.
-**Action:** Silas — suppress or remove dead-code; regression vs yesterday's clean pass.
+**Status: YELLOW (carry, 2 dead-code warnings)**
+`cargo check` passes clean (0 errors). Same 2 dead-code warnings as Jul 24: `owes_response_block` and `registration_json` (each fires on both `chorus-hooks` + `chorus-hook-shim` binaries = 4 warning lines). No regression, no remediation.
+**Action:** Silas — suppress or remove dead-code; carry from yesterday.
 
 ## 2. LaunchAgent /tmp Refs
-**Status: YELLOW (carry, 17+2+14)**
-17 plists in `proving/config/launchagents/` + 2 in `platform/scripts/launchagents-secondary/` + 14 in `launchagents-canonical/` reference `/tmp/`. proving+secondary count unchanged from Jul 23; canonical 14 not previously tallied.
-**Action:** Silas — migration card still open; add canonical-14 to tracking scope.
+**Status: YELLOW (carry, 17+2 plists)**
+17 plists in `proving/config/launchagents/` + 2 in `platform/scripts/launchagents-secondary/` reference `/tmp/`. Count unchanged from Jul 24.
+**Action:** Silas — migration card still open; no movement.
 
 ## 3. CLAUDE.md Fragments
-**Status: YELLOW (12d stale, +1d)**
-`designing/claudemd/` last committed Jul 12. Now 12d stale, 5d over threshold. Wren was asked to refresh by EOD Jul 23 — no commit found.
-**Action:** Wren — claudemd refresh overdue; escalate to Jeff if not landed today.
+**Status: YELLOW (13d stale, +1d)**
+`designing/claudemd/` last committed Jul 12. Now 13d stale, 6d over threshold. Wren missed EOD Jul 23 deadline; no refresh landed Jul 24 either.
+**Action:** Wren — claudemd refresh now 2 days overdue; escalate to Jeff today.
 
 ## 4. CSC Compliance
-**Status: RED (carry, 37 sh — unchanged)**
-37 `.sh` files in `platform/scripts/` contain `/tmp/` refs. Count unchanged from Jul 23 — no new additions, but no remediation either. Note: #3617 fixed `/tmp` false-fire in hook-server health checks (runtime fix only; scripts still reference `/tmp`).
-**Action:** Silas — count static at 37; no regression but no progress. Targeted card still needed.
+**Status: RED (carry, 37 .sh files — unchanged)**
+37 `.sh` files in `platform/scripts/` contain `/tmp/` refs (51 total including .py/.js). Count static vs Jul 24 — no regressions, no progress.
+**Action:** Silas — no movement; targeted remediation card still needed.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-`git status` clean — 0 uncommitted changes across all role directories.
+`git status` clean — 0 uncommitted changes. HEAD detached on main as expected in remote session. 9 cards merged Jul 25.
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry, 108d, backlog 20d)**
-No live Vikunja board access; carrying: #1759/#1791 now 108d without commits (+1d). Wren backlog WIP last touched 2026-07-04 (20d). 5 cards merged today (#3676, #3675, #3672, #3670, #3592) — active velocity, WIP staleness contrast notable.
-**Action:** Wren — #1759/#1791 must close or archive; escalate #3607 to Jeff.
+**Status: RED (carry, board snapshots 109d stale)**
+Board snapshots in `platform/logs/` dated 2026-04-07 (109d old) — live WIP not assessable. Carrying: #1759/#1791 at 109d without commits (+1d). 9 cards merged today, active velocity continues.
+**Action:** Wren — #1759/#1791 must close or archive; board snapshot refresh needed for accurate WIP count.
 
 ## 7. Domain Context Freshness
-**Status: RED (9d stale, 5 new cards today)**
-All 5 domain-context files last committed Jul 15 (#3613, silas). 5 cards landed Jul 24: #3676 (wren, clearing), #3675 (wren), #3672 (silas), #3670 (silas), #3592 (kade). chorus and infra contexts remain critical. Music/photos/seeds also untouched.
-**Action:** Silas/Kade — refresh chorus + infra today; Wren — music/seeds. Silas: quality review also flagged +3 TS errors today (#3617 latency drift 556ms vs 400ms spec).
+**Status: RED (all 5 files, 97–122d stale)**
+- `chorus`: 97d (2026-04-19, Silas #2234)
+- `seeds`: 115d (2026-04-01, Wren #1942)
+- `infrastructure`: 122d (2026-03-25, Silas #1688)
+- `music` / `photos`: 121d (2026-03-26, Wren #1688)
+
+9 cards landed Jul 25 span chorus, infra, app, and clearing domains — context files still untouched after yesterday's ask.
+**Action:** Silas — chorus + infra critical; Wren — seeds/music/photos. All contexts dramatically past threshold.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No perf-baseline JSON in `data/`; cross-session delta not computable. `platform/scripts/perf-baseline.sh` exists but no output in repo.
-**Action:** Silas — land nightly baseline JSON to `data/` to enable tracking.
+No `perf-baseline-*.json` output present in repo or `proving/logs/`. Cross-session delta not computable.
+**Action:** Silas — land nightly baseline JSON to `proving/logs/` to enable tracking.
 
 ---
-*Carries: §2 YELLOW (17+2+14 plists), §6 RED (108d WIP, backlog 20d). New: §1 YELLOW (2 dead-code warnings). Changes: §3 escalated (12d, Wren missed EOD deadline); §7 RED widens (5 cards today, no context refresh). §4 static at 37.*
+*Carries: §1 YELLOW (2 dead-code warnings), §2 YELLOW (17+2 plists), §4 RED (37 sh), §6 RED (109d WIP). Escalations: §3 +1d (13d stale, 2nd missed deadline — escalate to Jeff); §7 unchanged RED (97–122d, 9 more cards landed today).*
