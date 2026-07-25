@@ -636,13 +636,39 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
-/// Full governed write: identity → shape check → referential integrity → idempotent UPDATE.
+/// #3356 AC4 — per-graph authz, the DAL side. This module is the INSTANCES
+/// writer by contract (line 3); two graphs are reserved for the DBA path and MUST
+/// be unwritable from here regardless of a verified identity:
+///   - `ONTOLOGY_GRAPH` — the schema is owl-api's (the DBA path). A DAL write
+///     would let an instance writer mutate the very shapes that validate it.
+///   - `SECURITY_GRAPH` — the Principal registry. A DAL write is the exact
+///     priv-esc the design names (a writer minting itself a Principal, or
+///     rewriting the allow-set that authenticates it). Bootstrap/DBA only.
+/// Every other `urn:chorus:*` (instances + domain graphs) stays writable. This is
+/// the DOOR-LAYER half of per-graph authz — shiro stays binary auth (#3630
+/// scope-note / ADR-050): Fuseki answers "authenticated writer?", the DAL answers
+/// "which graph?". Applied at every mutation choke point (write/delete/edges/batch)
+/// so the guard can't be bypassed by picking a different verb.
+fn assert_dal_writable(graph: &str) -> R<()> {
+    if graph == ONTOLOGY_GRAPH || graph == SECURITY_GRAPH {
+        witness("model.refused", &[("graph", graph), ("reason", "graph-dba-only")]);
+        return Err(format!(
+            "graph-dba-only: <{}> is a DBA-path graph — the instances DAL is refused write \
+             (per-graph authz, fail closed, #3356 AC4)",
+            graph
+        ));
+    }
+    Ok(())
+}
+
+/// Full governed write: identity → per-graph authz → shape check → referential integrity → idempotent UPDATE.
 pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let class = class_iri(&req.kind)?;
     let (subject, turtle) = to_turtle(req)?;
     // #3647 — write the class's model-declared home (or the legacy default). This
     // is the same graph owl-api authz reads ownedBy from; a mismatch mints an orphan.
     let g = req.graph.as_deref().unwrap_or(INSTANCES_GRAPH);
+    assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
 
     // SHACL requirements from the ontology graph — fail-closed on missing required.
     let shape = read_shape(store, &class)?;
@@ -812,6 +838,7 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
     }
     // #3647 — delete from the class's declared home (or legacy default).
     let g = graph.unwrap_or(INSTANCES_GRAPH);
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }}",
         g = g, s = subject
@@ -836,6 +863,7 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
         }
     }
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
@@ -852,6 +880,7 @@ pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind:
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
+    assert_dal_writable(g)?; // #3356 AC4
     store.update(&format!(
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
@@ -937,6 +966,7 @@ pub fn batch(
         witness("model.batch.refused", &[("graph", graph), ("reason", "off-realm-graph")]);
         return Err(format!("batch: graph '{}' is outside urn:chorus:* or malformed (refused)", graph));
     }
+    assert_dal_writable(graph)?; // #3356 AC4 — batch cannot reach ontology/security either
     for (s, p, o) in deletes {
         if !subj_pred_ok(s) || !subj_pred_ok(p) || !obj_ok(o, true) {
             witness("model.batch.refused", &[("graph", graph), ("reason", "bad-delete-slot")]);
@@ -1256,7 +1286,7 @@ mod tests {
         // reads ownedBy from the declared home, so create must write the same graph.
         let target = format!("{}value-stream-step-proving", NS);
         let store = stub(&[target.as_str()], &[]);
-        let home = "urn:chorus:domains:security";
+        let home = "urn:chorus:domains:tests"; // a real domain home (NOT the reserved security graph — #3356 AC4)
         let req = WriteReq {
             kind: "domain".into(),
             name: "tests".into(),
@@ -1276,9 +1306,9 @@ mod tests {
         // must target the same graph the create wrote, else it fail-closed 403s).
         let subj = format!("{}gate-x", NS);
         let store = stub(&[subj.as_str()], &[]);
-        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:security"), &tid()).unwrap();
+        delete_entity(&store, "gate", "x", Some("urn:chorus:domains:tests"), &tid()).unwrap();
         let ups = store.updates.borrow();
-        assert!(ups[0].contains("urn:chorus:domains:security"), "delete targets the declared home");
+        assert!(ups[0].contains("urn:chorus:domains:tests"), "delete targets the declared home");
         assert!(!ups[0].contains(INSTANCES_GRAPH), "delete must not target the legacy bucket when a home is given");
     }
 

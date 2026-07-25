@@ -205,3 +205,63 @@ fn deploy_role_path_unchanged_by_token_addition() {
     assert_eq!(verify_identity(Some("wren"), &s).unwrap().role(), "wren");
     assert!(verify_identity(Some("noone"), &s).unwrap_err().starts_with("identity-unknown"));
 }
+
+// ── #3356 AC4 — per-graph authz (DAL side): a VERIFIED writer still cannot ────
+// reach the DBA-path graphs. The DAL writes instances + domain graphs; the
+// ontology (schema) and security (Principal registry) graphs are refused even
+// with a good identity — closing the priv-esc the design names (an instance
+// writer minting itself a Principal or rewriting the shapes that validate it).
+
+#[test]
+fn dal_refuses_write_to_the_ontology_graph() {
+    let s = IdStore::with(&["kade"]);
+    let id = verify_identity(Some("kade"), &s).unwrap();
+    let req = WriteReq {
+        kind: "domain".into(),
+        name: "x".into(),
+        graph: Some("urn:chorus:ontology".into()),
+        ..Default::default()
+    };
+    let e = write(&s, &req, &id).unwrap_err();
+    assert!(e.starts_with("graph-dba-only"), "{}", e);
+    assert!(s.updates.borrow().is_empty(), "nothing written to the ontology graph");
+}
+
+#[test]
+fn dal_refuses_write_to_the_security_graph() {
+    // The priv-esc case: a verified role trying to write the Principal registry.
+    let s = IdStore::with(&["kade"]);
+    let id = verify_identity(Some("kade"), &s).unwrap();
+    let req = WriteReq {
+        kind: "domain".into(),
+        name: "x".into(),
+        graph: Some("urn:chorus:domains:security".into()),
+        ..Default::default()
+    };
+    let e = write(&s, &req, &id).unwrap_err();
+    assert!(e.starts_with("graph-dba-only"), "{}", e);
+    assert!(s.updates.borrow().is_empty(), "a writer cannot mint itself a Principal");
+}
+
+#[test]
+fn dal_allows_instance_and_domain_graphs() {
+    // The DAL's actual lane: the default instances graph and any domain graph.
+    let s = IdStore::with(&["kade"]);
+    let id = verify_identity(Some("kade"), &s).unwrap();
+    // default (None → urn:chorus:instances)
+    write(&s, &WriteReq { kind: "domain".into(), name: "a".into(), ..Default::default() }, &id)
+        .expect("instances graph writes");
+    // an explicit domain graph
+    write(
+        &s,
+        &WriteReq {
+            kind: "domain".into(),
+            name: "b".into(),
+            graph: Some("urn:chorus:domains:photos".into()),
+            ..Default::default()
+        },
+        &id,
+    )
+    .expect("a domain graph writes");
+    assert_eq!(s.updates.borrow().len(), 2, "both in-lane writes went through");
+}
