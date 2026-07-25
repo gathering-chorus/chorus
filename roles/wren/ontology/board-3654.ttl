@@ -97,10 +97,12 @@ chorus:ChunkMembership a owl:Class ;
 
 chorus:CardShape a sh:NodeShape ;
   sh:targetClass chorus:Card ;
+  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: serve reads need the DAL home DECLARED — without it the generated route reads the wrong graph and serves 0 rows (the #3581/#3675 /domains=0 class)
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] .
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;
+  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
   sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
@@ -109,6 +111,7 @@ chorus:ChunkShape a sh:NodeShape ;
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
   sh:targetClass chorus:ChunkMembership ;
+  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
   sh:property [ sh:path chorus:inChunk ; sh:minCount 1 ; sh:class chorus:Chunk ] ;
   sh:property [ sh:path chorus:hasCard ; sh:minCount 1 ; sh:class chorus:Card ] ;
   sh:property [ sh:path chorus:rank ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:inChunk ] .

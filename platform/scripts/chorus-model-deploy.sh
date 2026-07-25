@@ -52,6 +52,10 @@ else
     # read_shape (which queries urn:chorus:ontology) can see the shapes and the
     # retire-guard doesn't wipe the live-only domain (#3587/#3593 wipe class).
     "$CHORUS_ROOT/roles/wren/ontology/board-3654.ttl"
+    # #3686 — role-level hard priorities: rolePriority (Role, uniqueGlobal) +
+    # ownerSequence (Product/Domain, uniqueWithin ownedBy) as ADDITIVE shapes.
+    # Same day-authored MODEL_SET discipline as #3654.
+    "$CHORUS_ROOT/roles/wren/ontology/priorities-3686.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"

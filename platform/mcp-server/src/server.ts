@@ -1070,13 +1070,31 @@ async function executeSup(
   if (!resp.ok) throw new Error(`chorus_sup: chorus-api ${resp.status ?? '?'} on ${url}`);
   const body = (await resp.json()) as {
     data?: {
+      rolePriority?: { ranks: Array<{ role: string; rolePriority: number }>; note?: string };
+      products?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
+      domains?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
       chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
       unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
     };
   };
-  const chunks = body.data?.chunks ?? [];
-  const unseq = body.data?.unsequenced;
-  const lines: string[] = [`${role} priorities (graph order — #3654):`];
+  const d = body.data ?? {};
+  const chunks = d.chunks ?? [];
+  const unseq = d.unsequenced;
+  const lines: string[] = [`${role} priorities (graph order — #3654/#3686):`];
+  // #3686 — the full walk: role hard-rank → products → domains → chunks → cards.
+  if (d.rolePriority) {
+    const rp = d.rolePriority;
+    const rankLine = rp.ranks.map((x) => `${x.rolePriority}:${x.role}`).join('  ');
+    lines.push(`  role hard-rank: ${rankLine || `(${rp.note ?? 'none set'})`}`);
+  }
+  const level = (label: string, lv?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string }) => {
+    if (!lv) return;
+    const parts = lv.ordered.map((x) => `${x.ownerSequence}. ${x.name}`);
+    lines.push(`  ${label}: ${parts.join('  ') || `(${lv.note ?? 'none ordered'})`}`);
+    if (lv.unordered.length > 0) lines.push(`     unordered ${label}: ${lv.unordered.join(', ')}`);
+  };
+  level('products', d.products);
+  level('domains', d.domains);
   if (chunks.length === 0) lines.push('  (no sequenced chunks in the graph)');
   for (const ch of chunks) {
     lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);

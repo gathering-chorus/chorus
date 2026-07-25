@@ -1170,10 +1170,21 @@ app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => 
 
 // #3683 — the /sup data source: the role's priorities walk from the #3654
 // board domain (chunks by roleSequence, cards by rank), unsequenced listed.
+// #3686 — extended to the full walk (rolePriority → products → domains →
+// chunks → cards); products/domains read the GENERATED owl-api routes.
 app.get('/api/chorus/context/priorities', async (req: Request, res: Response) => {
   const role = typeof req.query.role === 'string' ? req.query.role : '';
+  const owlBase = process.env.OWL_API_URL || 'http://localhost:3360';
   const r = await fetchContextPriorities(
-    { sparql: _athena, readPulse: readPulseFile },
+    {
+      sparql: _athena,
+      readPulse: readPulseFile,
+      owl: async (path: string) => {
+        const resp = await fetch(`${owlBase}${path}`);
+        if (!resp.ok) throw new Error(`owl-api ${resp.status} on ${path}`);
+        return resp.json();
+      },
+    },
     req.originalUrl,
     role,
   );

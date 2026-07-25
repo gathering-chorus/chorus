@@ -33,7 +33,22 @@ source "$SCRIPT_DIR/fuseki-auth.sh"
 listing="$("$CARDS" list 2>/dev/null)" || { echo "FATAL: cards list failed" >&2; exit 1; }
 [ -n "$listing" ] || { echo "FATAL: empty board listing" >&2; exit 1; }
 
-plan="$(BOARD_LISTING="$listing" python3 - <<'PY'
+# #3686 — PRESERVE mode (default): existing graph state is the ordering TRUTH.
+# Existing chunks keep their (possibly hand-`set`) roleSequence/loomSequence and
+# are NOT rewritten; existing memberships keep their rank and are NOT rewritten;
+# NEW cards entering a chunk APPEND after the chunk's max rank (deterministic
+# status→priority→id order among the newcomers). RESEED=1 restores the original
+# recompute-everything behavior (first-seed / explicit re-baseline only).
+existing=""
+if [ "${RESEED:-0}" != "1" ]; then
+  # anon read (query endpoint is open; only updates need the cred). Query built
+  # in a var + apostrophe-free (STRAFTER not REPLACE) — the $() parser chokes on
+  # nested quotes (same class as the Won-t-Do heredoc break).
+  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rseq WHERE { GRAPH <urn:chorus:instances> { { ?ch a chorus:Chunk ; chorus:slug ?slug ; chorus:roleSequence ?rseq } UNION { ?m a chorus:ChunkMembership ; chorus:inChunk ?c2 ; chorus:rank ?rank ; chorus:hasCard ?card . ?c2 chorus:slug ?slug . BIND(STRAFTER(STR(?card), "card-") AS ?cid) } } }'
+  existing="$(curl -s "http://localhost:3030/pods/query" --data-urlencode "query=$Q" -H "Accept: text/csv" 2>/dev/null | tail -n +2)"
+fi
+
+plan="$(BOARD_LISTING="$listing" EXISTING="$existing" python3 - <<'PY'
 import sys, os, re, html
 from collections import defaultdict
 
@@ -51,6 +66,18 @@ for line in os.environ["BOARD_LISTING"].splitlines():
     for ch in re.findall(r'chunk:([a-z-]+)', line):
         chunks[ch].append((STATUS_W[sec], prio, int(cid), cid, owner))
 
+# graph truth (preserve mode): chunk → set(card ids) + max rank; chunk → roleSequence
+known_members, max_rank, known_chunks = defaultdict(set), defaultdict(int), {}
+for row in os.environ.get("EXISTING", "").splitlines():
+    parts = row.split(",")
+    if len(parts) < 4: continue
+    slug, cid, rank, rseq = parts[0], parts[1], parts[2], parts[3]
+    if rseq:
+        known_chunks[slug] = rseq
+    if cid and rank:
+        known_members[slug].add(cid)
+        max_rank[slug] = max(max_rank[slug], int(rank))
+
 # dominant owner per chunk (open cards), ties broken alphabetically for determinism
 owner_of = {}
 for ch, members in chunks.items():
@@ -58,24 +85,33 @@ for ch, members in chunks.items():
     for *_, o in members: tally[o] += 1
     owner_of[ch] = sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
 
-# roleSequence: security pinned #1 for its owner (AC4); rest by size desc, name asc
+# roleSequence for NEW chunks only (existing keep theirs): append after the
+# the role current max, sized desc / name asc among the newcomers.
 by_role = defaultdict(list)
-for ch in chunks: by_role[owner_of[ch]].append(ch)
+for ch in chunks:
+    if ch not in known_chunks: by_role[owner_of[ch]].append(ch)
+role_max = defaultdict(int)
+for slug, rseq in known_chunks.items():
+    # owner of an existing chunk may not be recomputable if it has no open cards; skip those
+    if slug in owner_of:
+        role_max[owner_of[slug]] = max(role_max[owner_of[slug]], int(rseq))
 role_seq = {}
 for role, chs in by_role.items():
     ordered = sorted(chs, key=lambda c: (0 if c == "security" else 1, -len(chunks[c]), c))
-    for i, c in enumerate(ordered, 1): role_seq[c] = i
+    for i, c in enumerate(ordered, role_max[role] + 1): role_seq[c] = i
 
 for ch in sorted(chunks):
+    if ch in known_chunks: continue  # preserve: existing chunk ordinals are truth
     loom = "\tloom=1" if ch == "security" else ""
     print(f"CHUNK\t{ch}\t{owner_of[ch]}\t{role_seq[ch]}{loom}")
 emitted = set()
 for ch in sorted(chunks):
-    for rank, (_, _, _, cid, _) in enumerate(sorted(chunks[ch]), 1):
+    newcomers = [t for t in sorted(chunks[ch]) if t[3] not in known_members[ch]]
+    for i, (_, _, _, cid, _) in enumerate(newcomers, max_rank[ch] + 1):
         if cid not in emitted:
             emitted.add(cid)
             print(f"CARD\t{cid}\t{cards[cid]}")
-        print(f"MEMBER\t{ch}\t{cid}\t{rank}")
+        print(f"MEMBER\t{ch}\t{cid}\t{i}")
 PY
 )" || { echo "FATAL: board parse failed" >&2; exit 1; }
 

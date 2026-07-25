@@ -30,6 +30,11 @@ export interface ContextPrioritiesDeps {
   sparql: StampSparqlClient;
   /** Returns the raw pulse-latest.json file contents, or null if missing. */
   readPulse: () => string | null;
+  /** #3686 — governed read path: fetch an owl-api GENERATED route (e.g.
+   *  '/domains?limit=500') and return its parsed JSON. Levels with a generated
+   *  route read through it (Jeff's governed-paths steer); levels without one
+   *  (Role — route collision; Card — thin-shape skip) stay SPARQL, labeled. */
+  owl: (path: string) => Promise<unknown>;
 }
 
 export interface RankedCard {
@@ -51,8 +56,28 @@ export interface UnsequencedBlock {
   cards: Array<{ id: number; title: string; priority?: string }>;
 }
 
+/** #3686 — an ownership level of the walk (products / domains): the role's
+ *  things with ordinals first, things WITHOUT an ordinal listed after —
+ *  visible, never hidden. `source` names the read path honestly. */
+export interface OwnedLevel {
+  source: string;
+  ordered: Array<{ name: string; ownerSequence: number }>;
+  unordered: string[];
+  note?: string;
+}
+
+export interface RolePriorityLevel {
+  source: string;
+  /** All roles' hard ranks (rank asc) so the level reads as the team order. */
+  ranks: Array<{ role: string; rolePriority: number }>;
+  note?: string;
+}
+
 export interface PrioritiesData {
   role: string;
+  rolePriority: RolePriorityLevel;
+  products: OwnedLevel;
+  domains: OwnedLevel;
   chunks: PriorityChunk[];
   unsequenced: UnsequencedBlock;
 }
@@ -111,9 +136,85 @@ export async function fetchContextPriorities(
 
   const unsequenced = readUnsequenced(deps.readPulse(), r, sequencedIds);
 
+  // #3686 — the upper walk levels. products/domains via the GENERATED owl-api
+  // routes; rolePriority via SPARQL until the Role route collision is fixed.
+  const [products, domains, rolePriority] = await Promise.all([
+    readOwnedLevel(deps, '/products?limit=500', r),
+    readOwnedLevel(deps, '/domains?limit=500', r),
+    readRolePriority(deps),
+  ]);
+
   const header = await stampHeader(deps.sparql, 'chorus');
-  const envelope = buildEnvelope(header, sourceUrl, { role: r, chunks, unsequenced });
+  const envelope = buildEnvelope(header, sourceUrl, {
+    role: r,
+    rolePriority,
+    products,
+    domains,
+    chunks,
+    unsequenced,
+  });
   return { status: 200, body: envelope };
+}
+
+/** #3686 — one ownership level (products/domains) read from a GENERATED
+ *  owl-api collection route. Filters to the role's things (ownedBy carries
+ *  either the bare or role- prefixed form in the live data — match both),
+ *  ordinals first (asc), the rest listed unordered. Read failure degrades the
+ *  level with a note — the walk itself never 500s on a level source. */
+async function readOwnedLevel(
+  deps: ContextPrioritiesDeps,
+  path: string,
+  role: string,
+): Promise<OwnedLevel> {
+  const source = `owl-api:${path}`;
+  let rows: Array<Record<string, unknown>>;
+  try {
+    const body = (await deps.owl(path)) as { data?: unknown };
+    rows = Array.isArray(body.data)
+      ? (body.data as unknown[]).filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+      : [];
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { source, ordered: [], unordered: [], note: `generated route unavailable: ${message}` };
+  }
+  const mine = rows.filter((row) => {
+    const o = typeof row.ownedBy === 'string' ? (row.ownedBy as string).toLowerCase() : '';
+    return o === role || o === `role-${role}`;
+  });
+  const named = (row: Record<string, unknown>): string =>
+    (typeof row.label === 'string' && row.label) || (typeof row.name === 'string' && row.name) || '';
+  const ordered = mine
+    .filter((row) => row.ownerSequence !== undefined && row.ownerSequence !== '')
+    .map((row) => ({ name: named(row), ownerSequence: Number(row.ownerSequence) }))
+    .sort((a, b) => a.ownerSequence - b.ownerSequence);
+  const unordered = mine
+    .filter((row) => row.ownerSequence === undefined || row.ownerSequence === '')
+    .map(named)
+    .sort();
+  const note = rows.length === 0 ? 'route serves no data (instancesGraph decl pending on the shape)' : undefined;
+  return { source, ordered, unordered, ...(note && { note }) };
+}
+
+/** #3686 — the role-vs-role hard rank. SPARQL residual: the Role class
+ *  collection is shadowed by the roles DOMAIN vocab page (route collision), so
+ *  there is no generated read for rolePriority yet — labeled, not hidden. */
+async function readRolePriority(deps: ContextPrioritiesDeps): Promise<RolePriorityLevel> {
+  const source = 'sparql (residual — Role collection route shadowed by the roles domain page collision)';
+  const q = `PREFIX chorus: <${NS}> SELECT ?role ?pri WHERE { GRAPH <urn:chorus:instances> { ?s chorus:rolePriority ?pri . BIND(REPLACE(STR(?s), ".*#role-", "") AS ?role) } }`;
+  try {
+    const res = await deps.sparql.query(q);
+    const ranks = (res.results?.bindings ?? [])
+      .map((b) => {
+        const row = b as Record<string, { value?: string } | undefined>;
+        return { role: row.role?.value ?? '', rolePriority: Number(row.pri?.value ?? 0) };
+      })
+      .filter((x) => x.role)
+      .sort((a, b) => a.rolePriority - b.rolePriority);
+    return { source, ranks, ...(ranks.length === 0 && { note: 'no rolePriority set yet' }) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { source, ranks: [], note: `read failed: ${message}` };
+  }
 }
 
 /** card IRI `<NS>card-<vikunja-id>` → numeric id, or null if non-conformant. */
