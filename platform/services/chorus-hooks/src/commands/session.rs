@@ -5,7 +5,6 @@ use std::process::ExitCode;
 
 use crate::chorus_log;
 use crate::shared::state_paths::{self, repo_root};
-use crate::shared::protocol_contract;
 
 use super::context_cache;
 use super::pulse;
@@ -61,12 +60,13 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     // corrupt our hookSpecificOutput JSON envelope below.
     let _ = pulse::assemble();
 
-    // #2731 AC4: defensive regen before protocol_contract::check. Under the
-    // derived-artifact model, CLAUDE.md is rebuilt from fragments at the
-    // moment of need. Running claudemd-gen here guarantees the file the
-    // protocol check (and the harness) will read reflects the live fragment
-    // set. Failures emit a spine event but do not block boot — protocol
-    // contract is the existing safety net. Cost: ~1s per session start.
+    // #2731 AC4: defensive regen. CLAUDE.md is rebuilt from live fragments at
+    // the moment of need, so the file the harness reads is current by
+    // construction. #3288: that made the runtime stamp-compare redundant —
+    // regen success IS the coherence proof; the committed-state proof lives
+    // in CI (`claudemd-gen check-version`). Regen runs in plain generate
+    // mode, which never writes version state (ledger/PROTOCOL_VERSION), so a
+    // session start cannot float a version bump in canonical.
     let regen_started = std::time::Instant::now();
     let regen_status = std::process::Command::new(
         format!("{}/platform/scripts/claudemd-gen", repo_root())
@@ -74,6 +74,19 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status();
+    // #3288: boot completion = regen outcome. The .pending/.done gate stays
+    // (PreToolUse blocks work between SessionStart firing and completion),
+    // but the stamp-compare that used to sit here is retired — there is no
+    // second version home left to compare against. Regen failure still
+    // completes boot (fail-open per #2731's decision) with a loud banner so
+    // the role knows its CLAUDE.md may be stale.
+    let _ = fs::create_dir_all(init_dir);
+    let done_path = format!("{}/{}.done", init_dir, role);
+    let pending_path = format!("{}/{}.pending", init_dir, role);
+    let _ = fs::remove_file(&done_path);
+    let _ = fs::write(&pending_path, "");
+
+    let regen_ok = matches!(&regen_status, Ok(s) if s.success());
     match regen_status {
         Ok(s) if s.success() => {
             let _ = chorus_log::run_silent(&[
@@ -97,31 +110,16 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
             ]);
         }
     }
-
-    // #2311 rescope: run protocol contract check inline at boot. On pass,
-    // write .done so PreToolUse gate allows work. On fail, keep .pending
-    // armed and prepend PROTOCOL VIOLATION banner to content so the model
-    // sees it in additionalContext (no more "please read the file" prose).
-    let _ = fs::create_dir_all(init_dir);
-    let done_path = format!("{}/{}.done", init_dir, role);
-    let pending_path = format!("{}/{}.pending", init_dir, role);
-    let _ = fs::remove_file(&done_path);
-    let _ = fs::write(&pending_path, "");
-
-    match protocol_contract::check(role) {
-        Ok(()) => {
-            let _ = fs::write(&done_path, "");
-        }
-        Err(v) => {
-            let banner = protocol_contract::banner(role, &v);
-            content = format!("{}\n{}", banner, content);
-            let _ = chorus_log::run_silent(&[
-                "session.protocol.violation".to_string(),
-                role.to_string(),
-                format!("reason={}", v.reason()),
-            ]);
-        }
+    if !regen_ok {
+        content = format!(
+            "## ⚠ CLAUDE.md regen failed at boot\n\n\
+             claudemd-gen did not complete — your CLAUDE.md may not reflect \
+             the live fragment set. Fix: run `platform/scripts/claudemd-gen` \
+             and check the session.bootstrap.regen_failed spine event.\n---\n{}",
+            content
+        );
     }
+    let _ = fs::write(&done_path, "");
 
     // #2450 — inject live principles from /api/loom/principles. Emit a
     // sibling principles-hash for cross-role drift detection. Degrades

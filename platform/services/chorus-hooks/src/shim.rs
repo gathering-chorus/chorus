@@ -566,6 +566,11 @@ fn claudemd_gen_cmd() -> ExitCode {
             "--compat" => mode = "compat",
             "--history" => mode = "history",
             "--pipeline" => mode = "pipeline",
+            // #3288: version ledger — `bump` records a new version (the only
+            // mode that writes version state), `check-version` is the CI
+            // coherence gate replacing the runtime stamp-compare.
+            "bump" | "--bump" => mode = "bump",
+            "check-version" | "--check-version" => mode = "check-version",
             "--card" => { i += 1; if i < user_args.len() { card_ref = user_args[i]; } }
             "wren" | "silas" | "kade" => role_filter = user_args[i],
             _ => {}
