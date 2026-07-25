@@ -425,8 +425,21 @@ impl Identity {
     pub fn role(&self) -> &str {
         &self.0
     }
-    /// Resolve from the process env (DEPLOY_ROLE) — the CLI boundary.
+    /// Resolve at the CLI boundary. #3356 — a real CSS identity **token**
+    /// (`CHORUS_IDENTITY_TOKEN`) takes precedence over the `DEPLOY_ROLE` env
+    /// string; the env path stays the fallback until the migration flip (design
+    /// step 3), so this is additive and breaks no existing writer. A token that
+    /// is PRESENT but does not verify fails closed HERE — it never silently
+    /// degrades to the weaker env path (that would let a bad token buy the old
+    /// forgery). Absent token → the DEPLOY_ROLE path, exactly as before.
     pub fn resolve(store: &dyn Store) -> R<Identity> {
+        if let Ok(token) = std::env::var("CHORUS_IDENTITY_TOKEN") {
+            if !token.trim().is_empty() {
+                let now = now_secs();
+                let verifier = OidcTokenVerifier::new(now);
+                return verify_identity_token(&token, &verifier, store, now);
+            }
+        }
         verify_identity(std::env::var("DEPLOY_ROLE").ok().as_deref(), store)
     }
 }
@@ -523,6 +536,104 @@ pub fn verify_identity_token(
             ))
         }
     }
+}
+
+/// #3356 stage 3 — the CONCRETE `TokenVerifier`: the shared chorus-oidc
+/// `OidcVerifier` (the exact ES256/JWKS path owl-api's door runs) adapted to the
+/// DAL's seam. One verifier, two consumers — the whole point of the extraction.
+/// Boot wiring mirrors owl-api: issuer from `CSS_ISSUER`, the Principal allow-set
+/// resolved from the model on the ALLOW_TTL cadence, JWKS fetched via curl with a
+/// kid-keyed cache. `StubVerifier` in the tests pins the BINDING logic; this pins
+/// the real crypto path against the live store.
+pub struct OidcTokenVerifier {
+    inner: chorus_oidc::oidc::OidcVerifier,
+}
+
+impl OidcTokenVerifier {
+    /// Build against the deployment's CSS issuer (JWKS source) and Fuseki endpoint
+    /// (allow-set source). Warms both caches; never blocks (a cold CSS just means
+    /// the first verify fetches). The endpoint is env-derived, same as `FusekiStore`.
+    pub fn new(now_secs: u64) -> Self {
+        let css_issuer =
+            std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
+        let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+        let allow_endpoint =
+            std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
+        let inner = chorus_oidc::oidc::OidcVerifier::new(
+            &css_issuer,
+            // allow-set: re-resolve lazily on the ALLOW_TTL cadence so a model
+            // revocation propagates within one token TTL (owl-api §5 parity).
+            move || {
+                chorus_oidc::oidc::resolve_principal_webids(|q| {
+                    fuseki_query_json(&allow_endpoint, q).ok()
+                })
+            },
+            move || {
+                let out = Command::new("curl")
+                    .args(["-sf", "--max-time", "3", &jwks_url])
+                    .output()
+                    .ok()?;
+                if !out.status.success() {
+                    return None;
+                }
+                Some(String::from_utf8_lossy(&out.stdout).into_owned())
+            },
+        );
+        inner.warm_allow(now_secs);
+        inner.warm_fetch(now_secs);
+        Self { inner }
+    }
+}
+
+impl TokenVerifier for OidcTokenVerifier {
+    fn verify_webid(&self, token: &str, now_secs: u64) -> Result<String, String> {
+        self.inner
+            .verify(token, now_secs)
+            .map(|claims| claims.web_id)
+            .map_err(|e| format!("{:?}", e))
+    }
+}
+
+/// Epoch seconds (zero-dep; the `now_iso` sibling for the subprocess-free path).
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Raw SPARQL-JSON GET against Fuseki `/query` — the allow-set resolver's source
+/// (`Store::select_v` parses to values; the resolver needs the raw JSON body).
+/// Carries `FUSEKI_ADMIN_*` like `FusekiStore::curl`; anonymous when unset.
+fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
+    let mut args: Vec<String> = vec![
+        "-sf".into(),
+        "--max-time".into(),
+        "20".into(),
+        "-H".into(),
+        "Accept: application/sparql-results+json".into(),
+        "--data-urlencode".into(),
+        format!("query={}", sparql),
+    ];
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+            args.push("-u".into());
+            args.push(format!("{}:{}", user, pw));
+        }
+    }
+    args.push(format!("{}/query", endpoint));
+    let out = Command::new("curl")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("curl-spawn: {}", e))?;
+    if !out.status.success() {
+        return Err(format!(
+            "fuseki-query: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).to_string())
 }
 
 /// Full governed write: identity → shape check → referential integrity → idempotent UPDATE.
