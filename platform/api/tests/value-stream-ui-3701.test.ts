@@ -8,30 +8,41 @@
  * stageOrder). No browser runtime in this suite (testEnvironment: node, no jsdom dep —
  * a branch-only dep reds werk-build), so this test proves the same thing at the seam
  * the page rides: the served HTML wires those fetches, and the page's own row
- * derivation, applied to the live proxy data, yields > 0 rendered rows. Empty data =
- * FAIL, never skip (#3190: a test that passes on zero rows is the bug).
+ * derivation, applied to the live proxy data, yields > 0 rendered rows.
  *
- * Integration — requires RUN_INTEGRATION=true + chorus-api on 3340 (proxying owl-api).
+ * Gating (#3701 anti-false-green, the #3190 rule): NO env flag. A probe at module
+ * load decides — chorus-api UNREACHABLE → skip (env absence, #3528 contract);
+ * chorus-api REACHABLE with empty data → FAIL. The suite's RUN_INTEGRATION
+ * convention is deliberately not used here: the werk pipeline doesn't set it, so
+ * an env-gated version silently skips exactly where this card promises red
+ * (gate:code + gate:arch findings, round 1fc11eaa3c70).
  */
+import { execSync } from 'child_process';
 
-const INTEGRATION_ENABLED = process.env.RUN_INTEGRATION === 'true';
 const API = process.env.CHORUS_API || 'http://localhost:3340';
 
-let apiUp = false;
-
-beforeAll(async () => {
-  if (!INTEGRATION_ENABLED) return;
+// Synchronous reachability probe at module load — jest needs the describe/skip
+// decision before any async runs. curl matches the repo's zero-dep probe idiom.
+function apiReachable(): boolean {
   try {
-    const res = await fetch(`${API}/api/athena/health`);
-    apiUp = res.ok;
+    const code = execSync(
+      `curl -s -o /dev/null -w '%{http_code}' --max-time 3 ${API}/api/athena/health`,
+      { encoding: 'utf8', timeout: 5000 }
+    ).trim();
+    return code === '200';
   } catch {
-    apiUp = false;
+    return false;
   }
-});
+}
 
-const describeIntegration = INTEGRATION_ENABLED ? describe : describe.skip;
+const up = apiReachable();
+const describeLive = up ? describe : describe.skip;
+if (!up) {
+  // visible skip reason — absence of the service, never absence of rows
+  console.warn(`value-stream-ui-3701: chorus-api not reachable at ${API} — skipping (env absence)`);
+}
 
-describeIntegration('value-stream.html renders rows from the live /owl proxy (#3701)', () => {
+describeLive('value-stream.html renders rows from the live /owl proxy (#3701)', () => {
   test('the page is served and wires the /owl fetches it renders from', async () => {
     const res = await fetch(`${API}/athena/value-stream.html`);
     expect(res.status).toBe(200);

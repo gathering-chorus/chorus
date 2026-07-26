@@ -34,6 +34,10 @@ fn sparql_rows(vals: &[String]) -> String {
     )
 }
 
+// urldecode + rows_for have a TRIMMED mirror in src/main.rs cli_tests (bin unit
+// tests can't import from tests/ — separate compilation units). If a query shape
+// changes here, check the mirror; the fixtures are kept deliberately small so a
+// drift shows as a test failure, not silent divergence.
 fn urldecode(s: &str) -> String {
     let mut out = Vec::with_capacity(s.len());
     let b = s.as_bytes();
