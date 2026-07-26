@@ -114,9 +114,72 @@ export function buildIndexAllSourcesDeps(env: IndexAllSourcesEnv): IndexAllSourc
     },
     // #3136 REFINE — graph knowledge, prefetched once per reindex cycle.
     fetchGraph: () => fetchGraphKnowledge(env.repoRoot),
+    // #3695 AC3 — only when a relay is configured for this deployment.
+    ...(process.env.BUZZ_RELAY_HOST
+      ? { fetchBuzz: () => fetchBuzzEvents(process.env.BUZZ_RELAY_HOST!, process.env.BUZZ_COMPOSE_DIR ?? '~/CascadeProjects/buzz/deploy/compose') }
+      : {}),
     // #3136 REFINE — the full doc catalog (all ~402 docs via the SOURCE_DIRS scan).
     listDocs: () => collectAllDocs().map((d) => ({ href: d.href, title: d.title, group: d.group, absPath: d.absPath })),
   };
+}
+
+
+// ── #3695 AC3 — Buzz relay events (our self-hosted Nostr relay on Bedroom) ────
+// Transport: ssh → docker compose exec postgres (the cross-machine read pattern;
+// read-is-free per ADR-012). Attribution: pubkey → owning chorus:Principal via
+// the SAME security-graph projection buzz-allowlist-project uses — one truth.
+// Env-gated: BUZZ_RELAY_HOST unset → dep omitted → source absent (no relay, no
+// change). Any failure throws; the core marks source=error and the loop survives.
+type BuzzRow = { id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string };
+
+const BUZZ_PRINCIPALS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?p ?k WHERE { GRAPH <urn:chorus:domains:security> {
+  ?c a chorus:KeyRegistryEntry ; chorus:keyType "nostr-secp256k1" ;
+     chorus:forPrincipal ?p ; chorus:nostrPubkey ?k } }`;
+
+async function fetchBuzzEvents(relayHost: string, composeDir: string): Promise<BuzzRow[]> {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+
+  // 1. pubkey → principal map (security graph — the allowlist projection's source)
+  const athena = createAthenaSparqlClient({ sparqlUrl: FUSEKI_SPARQL, updateUrl: FUSEKI_UPDATE, auth: fusekiWriteAuthFromEnv() });
+  const res = (await athena.query(BUZZ_PRINCIPALS_QUERY)) as
+    { results?: { bindings?: Array<{ p?: { value: string }; k?: { value: string } }> } };
+  const byPubkey = new Map<string, string>();
+  for (const b of res.results?.bindings ?? []) {
+    const iri = b.p?.value; const key = b.k?.value;
+    if (iri && key) byPubkey.set(key, iri.replace(/.*#principal-/, ''));
+  }
+
+  // 2. events from the relay's own Postgres (tab-separated; content base64 so
+  //    newlines/tabs inside a message can't break row framing). Schema verified
+  //    LIVE 2026-07-25 (not assumed): id/pubkey are BYTEA → hex-encode;
+  //    channel_id is a uuid column; deleted_at soft-deletes. base64 is
+  //    newline-STRIPPED — pg encode() wraps at 76 chars, which would break
+  //    one-row-per-line framing (caught live, not in review). Timestamp is
+  //    CONCATENATED (no quoted literals in the to_char format): the ssh remote
+  //    shell eats double quotes, and pg then reads DD+"TH" as an ordinal
+  //    pattern, corrupting the hour — caught when deep-health flagged
+  //    2026-07-25THH24:46:59Z as 495838h stale.
+  const sql = "SELECT encode(id,'hex'), encode(pubkey,'hex'), to_char(created_at at time zone 'UTC', 'YYYY-MM-DD') || 'T' || to_char(created_at at time zone 'UTC', 'HH24:MI:SS') || 'Z', kind, coalesce(channel_id::text,'team'), replace(encode(convert_to(content,'UTF8'),'base64'), chr(10), '') FROM events WHERE kind = 9 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 5000";
+  const { stdout } = await run('ssh', ['-o', 'ConnectTimeout=10', relayHost,
+    `cd ${composeDir} && /usr/local/bin/docker compose exec -T postgres psql -U buzz -d buzz -tA -F '\t' -c "${sql}"`,
+  ], { timeout: 30000, maxBuffer: 32 * 1024 * 1024 });
+
+  const rows: BuzzRow[] = [];
+  for (const line of stdout.split('\n')) {
+    const parts = line.split('\t');
+    if (parts.length < 6 || !/^[0-9a-f]{64}$/.test(parts[0])) continue;
+    const [id, pubkey, created_at, kindStr, channel, b64] = parts;
+    rows.push({
+      id, pubkey,
+      author: byPubkey.get(pubkey) ?? '',
+      created_at, kind: Number(kindStr) || 0, channel,
+      content: Buffer.from(b64, 'base64').toString('utf8'),
+    });
+  }
+  return rows;
 }
 
 /** Convenience: a ready-to-run indexAllSources bound to the given env. */

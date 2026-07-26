@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# buzz-allowlist-project — #3695 AC2: the Buzz relay membership IS a projection
+# of our Principal allow-set. One direction only: graph → relay. Adding a
+# chorus:nostrPubkey credential edge admits the Principal; dropping it revokes.
+# Nobody hand-runs add-member — this is the mechanism (revoke = drop edge → run).
+#
+# Reads:  SELECT ?pubkey over KeyRegistryEntry(nostr-secp256k1) in the security graph
+# Diffs:  against `buzz-admin list-members` on the relay (via ssh → docker compose)
+# Acts:   add-member for graph-not-relay; remove-member for relay-not-graph
+#         (the relay's own server/owner key is exempt — it is infrastructure,
+#          not a Principal; identified as the sole 'owner'-role row)
+# Emits:  buzz.allowlist.projected spine event with added/removed counts (witnessed)
+#
+# Idempotent: a second run is a no-op. DRY=1 prints the plan without acting.
+set -euo pipefail
+
+FUSEKI="${CHORUS_FUSEKI:-http://localhost:3030/pods}"
+RELAY_HOST="${BUZZ_RELAY_HOST:-192.168.86.242}"
+COMPOSE_DIR="${BUZZ_COMPOSE_DIR:-~/CascadeProjects/buzz/deploy/compose}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+DRY="${DRY:-0}"
+
+# 1. graph truth: every nostr pubkey a Principal owns
+Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> {
+  ?c a chorus:KeyRegistryEntry ; chorus:keyType "nostr-secp256k1" ; chorus:nostrPubkey ?v } }'
+graph_keys="$(curl -sf --max-time 15 "$FUSEKI/query" \
+  -H 'Accept: text/csv' --data-urlencode "query=$Q" | tail -n +2 | tr -d '\r' | sort -u)"
+[ -n "$graph_keys" ] || { echo "REFUSE: projection query returned zero pubkeys — not wiping the relay from an empty read (fail-closed)" >&2; exit 1; }
+
+# 2. relay truth: current members (pubkey<TAB>role rows; skip header/rule lines)
+members_raw="$(ssh -o ConnectTimeout=10 "$RELAY_HOST" \
+  "cd $COMPOSE_DIR && /usr/local/bin/docker compose exec -T relay /usr/local/bin/buzz-admin list-members" 2>/dev/null)"
+relay_keys="$(echo "$members_raw" | awk '/^[0-9a-f]{64}/ && $2 != "owner" {print $1}' | sort -u)"
+
+# 3. diff
+to_add="$(comm -23 <(echo "$graph_keys") <(echo "$relay_keys") | sed '/^$/d')"
+to_remove="$(comm -13 <(echo "$graph_keys") <(echo "$relay_keys") | sed '/^$/d')"
+
+added=0; removed=0
+run_admin() { ssh -o ConnectTimeout=10 "$RELAY_HOST" "cd $COMPOSE_DIR && /usr/local/bin/docker compose exec -T relay /usr/local/bin/buzz-admin $*"; }
+
+for k in $to_add; do
+  if [ "$DRY" = "1" ]; then echo "DRY add-member $k"; else
+    run_admin add-member --pubkey "$k" --role member >/dev/null && { echo "added $k"; added=$((added+1)); sleep 1; }
+  fi
+done
+for k in $to_remove; do
+  if [ "$DRY" = "1" ]; then echo "DRY remove-member $k"; else
+    run_admin remove-member --pubkey "$k" >/dev/null && { echo "removed $k (revoked: edge gone from graph)"; removed=$((removed+1)); sleep 1; }
+  fi
+done
+
+# 4. witness (best-effort — a logging failure never changes the projection outcome;
+#    DRY runs plan only and leave no spine trace)
+if [ "$DRY" != "1" ]; then
+  "$CHORUS_ROOT/platform/scripts/chorus-log" buzz.allowlist.projected "${DEPLOY_ROLE:-silas}" \
+    "added=$added" "removed=$removed" "graph_keys=$(echo "$graph_keys" | grep -c .)" 2>/dev/null || true
+fi
+
+echo "projected: graph=$(echo "$graph_keys" | grep -c .) keys, +$added -$removed (relay allowlist = allow-set projection)"

@@ -55,6 +55,12 @@ export interface IndexAllSourcesDeps {
   // Prefetched ONCE (async) before the sync per-source loop, so the Fuseki round-trip
   // never runs inside runSource. Optional — omitted in tests → graph sources skip.
   fetchGraph?: () => Promise<Array<{ source: string; id: string; content: string }>>;
+  // #3695 AC3 — Buzz events from OUR self-hosted relay, prefetched async like
+  // fetchGraph (relay round-trip never inside the sync loop). `author` is the
+  // Principal slug the deps layer resolved from the pubkey via the security
+  // graph — empty string when no Principal owns the key (indexer renders it
+  // unattributed:<pubkey8>, visible + auditable, never fabricated).
+  fetchBuzz?: () => Promise<Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }>>;
   // #3136 REFINE — full doc catalog (all ~402 docs from the SOURCE_DIRS scan, not the
   // 33-entry curated registry). Returns path-bearing entries; indexDocsFrom reads each
   // absPath's content. Injected so the indexer stays hermetic; tests stub it.
@@ -341,6 +347,24 @@ function indexGraphRows(ctx: IndexCtx, rows: Array<{ source: string; id: string;
   return `${subset.length} ${source} indexed`;
 }
 
+// #3695 AC3 — Buzz events → the index. Attribution is the point: role/author =
+// the Principal that OWNS the signing key (resolved upstream from the security
+// graph); an unowned pubkey stays visible as unattributed:<prefix> so a stray
+// writer is an alarm, not a silent row. This is the no-amputation half of the
+// nudge-retire condition: relay messages must be as searchable as messages.db.
+function indexBuzz(
+  ctx: IndexCtx,
+  rows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }>,
+): string {
+  let n = 0;
+  for (const ev of rows) {
+    const who = ev.author && ev.author.length > 0 ? ev.author : `unattributed:${ev.pubkey.slice(0, 8)}`;
+    ctx.insert.run!('buzz', `buzz:${ev.id}`, `buzz:${ev.channel || 'team'}`, who, who, ev.content, ev.created_at);
+    n++;
+  }
+  return `${n} buzz events indexed`;
+}
+
 // #3136 — coverage signal. The failure this card exists to prevent is a knowledge
 // source silently ingesting nothing (the invisible-canon bug). After every reindex,
 // flag any source that SHOULD be present but came back absent or zero. Minimal: the
@@ -444,6 +468,16 @@ export function createIndexAllSources(deps: IndexAllSourcesDeps): () => Promise<
     runSource('principles', results, () => indexGraphRows(ctx, graphRows, 'principle'));
     runSource('policies', results, () => indexGraphRows(ctx, graphRows, 'policy'));
     runSource('practices', results, () => indexGraphRows(ctx, graphRows, 'practice'));
+    // #3695 AC3 — buzz prefetch + index; relay-down = this source errors, loop survives.
+    if (deps.fetchBuzz) {
+      let buzzRows: Array<{ id: string; pubkey: string; author: string; created_at: string; kind: number; channel: string; content: string }> = [];
+      try {
+        buzzRows = await deps.fetchBuzz();
+        runSource('buzz', results, () => indexBuzz(ctx, buzzRows));
+      } catch (err: unknown) {
+        results.buzz = `error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
     clearSlackWatermarks(db, results);
 
     // #3136 coverage signal — flag any knowledge source that came back empty.
