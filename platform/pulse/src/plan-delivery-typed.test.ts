@@ -20,7 +20,10 @@ describe('#3700 planDeliveryTyped — the four outcomes', () => {
   });
 
   test('busy live target → queue (typed; drained at the target turn boundary, no spray)', () => {
-    const p = planDeliveryTyped([reg({})], 'wren', 'hello', () => true, () => busy);
+    // clock PINNED — an unpinned Date.now let this test rot past the 30-min
+    // staleness bound 70 minutes after it was written (caught 2026-07-26).
+    const p = planDeliveryTyped([reg({})], 'wren', 'hello', () => true, () => busy,
+      () => Date.parse('2026-07-26T14:00:00Z'));
     expect(p.kind).toBe('queue');
     expect(p.kind === 'queue' && p.reason).toContain('busy');
   });
