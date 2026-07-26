@@ -532,9 +532,16 @@ pub fn verify_identity_token(
         }
     };
     // Bind the VERIFIED WebID → its Principal (graph, not a self-declared string).
+    // #3690 — chorus:webId is an xsd:string LITERAL (per NostrCredentialShape /
+    // the seeded principals), so the object is "{w}", NOT <{w}>. The IRI form
+    // silently matched nothing and every real minted token reported
+    // identity-webid-unregistered — the #3356 identity_gate stub matched on a
+    // substring so this never surfaced until the first live client-credentials
+    // token ran end-to-end (#3690). STR-compare so a stray typed literal still
+    // matches on value.
     let claim = store
         .select_v(&format!(
-            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId <{w}> . BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
+            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(REPLACE(STR(?p), '.*#principal-', '') AS ?v) }} }}",
             ns = NS, g = SECURITY_GRAPH, w = webid
         ))?
         .into_iter()
@@ -570,7 +577,20 @@ impl OidcTokenVerifier {
     pub fn new(now_secs: u64) -> Self {
         let css_issuer =
             std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
-        let jwks_url = format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/'));
+        // #3690 — the JWKS hairpin. The token's `iss` is the LOGICAL issuer
+        // (https://id.…, browser-facing), which `css_issuer` must equal for the
+        // iss-check. But that origin is behind Cloudflare — a server-side curl
+        // to its /.oidc/jwks gets 1010-blocked. So the JWKS FETCH targets CSS
+        // locally (CHORUS_JWKS_URL, e.g. http://localhost:3001/.oidc/jwks) with
+        // the trusted-proxy headers CSS honors on loopback (Host +
+        // X-Forwarded-Proto/Host) so it serves keys AS the logical issuer — the
+        // same Host-override the Clearing's #3669 exchange uses. Absent the
+        // override, fall back to {issuer}/.oidc/jwks (off-box deploys).
+        let jwks_url = std::env::var("CHORUS_JWKS_URL")
+            .unwrap_or_else(|_| format!("{}/.oidc/jwks", css_issuer.trim_end_matches('/')));
+        let issuer_host = css_issuer
+            .split("://").nth(1).unwrap_or(&css_issuer)
+            .trim_end_matches('/').to_string();
         let allow_endpoint =
             std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
         let inner = chorus_oidc::oidc::OidcVerifier::new(
@@ -583,8 +603,16 @@ impl OidcTokenVerifier {
                 })
             },
             move || {
+                // forwarded headers matter for the local hairpin; harmless
+                // (ignored) when jwks_url is the real off-box issuer.
                 let out = Command::new("curl")
-                    .args(["-sf", "--max-time", "3", &jwks_url])
+                    .args([
+                        "-sf", "--max-time", "3",
+                        "-H", &format!("Host: {}", issuer_host),
+                        "-H", "X-Forwarded-Proto: https",
+                        "-H", &format!("X-Forwarded-Host: {}", issuer_host),
+                        &jwks_url,
+                    ])
                     .output()
                     .ok()?;
                 if !out.status.success() {
