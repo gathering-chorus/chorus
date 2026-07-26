@@ -401,6 +401,14 @@ fn main() -> ExitCode {
 
     log_debug(&format!("stdin={}bytes", input.len()));
 
+    // #3700 — self-healing registration + turn-state, on EVERY proxied hook
+    // dispatch. The shim is a child of the claude session (pid-walk works
+    // here; the daemon can't resolve the session pid). Heals a missing/dead
+    // registry entry regardless of how it went dark (boot, compaction,
+    // sweep, hand-rm); marks busy at user-prompt-submit, clears + drains the
+    // role's queued nudges at stop. Best-effort — never blocks the tool call.
+    commands::session_registry::heal_and_mark(&endpoint, &input);
+
     // #2790 — in-process canonical_write_guard. The behavioral bug Jeff
     // named: "i default to wherever I was last cd'd, not to my werk by
     // intent. that is the bug i need u to fix." Linking the guard into

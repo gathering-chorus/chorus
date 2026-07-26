@@ -297,6 +297,91 @@ pub fn register(role: &str) {
     }
 }
 
+/// #3700 — the sessions dir with its #3608 test-isolation seam, shared by
+/// register() above and the shim-side heal wiring below.
+pub fn sessions_dir() -> Option<PathBuf> {
+    match std::env::var("CHORUS_SESSIONS_DIR") {
+        Ok(d) if !d.is_empty() => Some(PathBuf::from(d)),
+        _ => std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join(".chorus").join("sessions")),
+    }
+}
+
+/// #3700 (kade half) — shim-side self-heal + turn-state wiring, called on
+/// every proxied hook dispatch. The shim is a child of the claude session,
+/// so the find_claude pid-walk works here (the daemon can't resolve it).
+///
+///   any endpoint        → heal a missing/dead registration (idempotent —
+///                         covers boot, compaction, sweep, hand-rm in one
+///                         mechanism, no lifecycle-event chasing)
+///   user-prompt-submit  → mark the role busy (queue-on-busy input)
+///   stop                → clear the turn marker + drain the role's queued
+///                         nudges (the drain rides the exact turn boundary)
+///
+/// Best-effort throughout: a registry problem must never block a tool call.
+pub fn heal_and_mark(endpoint: &str, input_json: &str) {
+    use crate::shared::session_health;
+    let Some(role) = session_health::derive_role(input_json) else {
+        return; // undeterminable — never guess a role into the registry
+    };
+    let Some(dir) = sessions_dir() else { return };
+    if !session_health::has_live_entry(&dir, &role) {
+        register(&role); // full pipeline: #3608 permission check, pid-walk, tmux host, prune
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    match endpoint {
+        "user-prompt-submit" => {
+            if let Some((pid, _)) = find_claude(std::process::id()) {
+                session_health::mark_busy(&dir, &role, pid, now);
+            }
+        }
+        "stop" => {
+            session_health::clear_busy(&dir, &role);
+            drain_own_queue(&role);
+        }
+        _ => {}
+    }
+}
+
+/// #3700 — pair drain contract (Silas's pulse side: POST /drain flips the
+/// role's `queued` rows back to pending; the worker redelivers in order,
+/// idempotent). Called at the role's OWN turn boundaries (stop + session
+/// start), so queued nudges land exactly when the session can consume them.
+/// Auth: the same pulse secret the MCP uses (env, then
+/// ~/.chorus/pulse-nudge.secret). Best-effort, bounded — never blocks.
+pub fn drain_own_queue(role: &str) {
+    let secret = std::env::var("CHORUS_PULSE_SECRET").ok().or_else(|| {
+        let p = std::env::var("CHORUS_PULSE_SECRET_FILE").unwrap_or_else(|_| {
+            format!(
+                "{}/.chorus/pulse-nudge.secret",
+                std::env::var("HOME").unwrap_or_default()
+            )
+        });
+        std::fs::read_to_string(p).ok().map(|s| s.trim().to_string())
+    });
+    let Some(secret) = secret.filter(|s| !s.is_empty()) else { return };
+    let _ = Command::new("curl")
+        .args([
+            "-sf",
+            "--max-time",
+            "3",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-H",
+            &format!("X-Chorus-Pulse-Secret: {}", secret),
+            "-d",
+            &format!(r#"{{"role":"{}"}}"#, role),
+            "http://localhost:3475/drain",
+        ])
+        .output();
+}
+
 /// Remove this session's registration (best-effort, called at session close).
 /// Liveness (pid-alive) already prevents a dead session from being resolved;
 /// this just keeps the directory tidy.
