@@ -98,6 +98,34 @@ export function resolveTarget(
   return live[0] ?? null;
 }
 
+/**
+ * #3700 (fallback taxonomy) — typed resolution. A miss SAYS WHY:
+ *  - resolved:     a live, unpoisoned session for the role (delivery proceeds)
+ *  - dead:         entries exist for the role but none is a live, honest pid
+ *                  (includes poisoned entries — a pid whose actual role
+ *                  disagrees is NOT a live session of this role)
+ *  - unregistered: no entry for the role at all
+ * Callers must map dead/unregistered to a TYPED undelivered outcome — never
+ * fall through to legacy name-match (the 2026-07-26 cross-role spray).
+ */
+export type TypedResolution =
+  | { kind: 'resolved'; session: SessionReg }
+  | { kind: 'dead' }
+  | { kind: 'unregistered' };
+
+export function resolveTargetTyped(
+  regs: SessionReg[],
+  role: string,
+  isAlive: IsAlive,
+  roleOf?: RoleOfPid,
+): TypedResolution {
+  const session = resolveTarget(regs, role, isAlive, roleOf);
+  if (session) return { kind: 'resolved', session };
+  // truth-telling miss: an entry for the role existing at all means the role
+  // WAS here — that is dead (or poisoned), not unregistered.
+  return regs.some((r) => r.role === role) ? { kind: 'dead' } : { kind: 'unregistered' };
+}
+
 /** Read all registration files from `dir`. Best-effort: a malformed or
  * vanished file is skipped, never throws (registry reads must not break
  * delivery). Returns [] if the dir doesn't exist yet. */
@@ -250,6 +278,55 @@ export function planDelivery(
  * delivery falls back to legacy name-match (named explicitly here rather than
  * hidden). Pure, so it's unit-tested without the registry/fs.
  */
+/**
+ * #3700 — the target's turn state, read from <role>.turn.json beside the
+ * registry (written by the chorus-hooks shim: user-prompt-submit marks busy,
+ * stop + session-start clear). File seam, no IPC — the Rust and TS halves
+ * meet on disk.
+ */
+export interface TurnState { busy: boolean; since?: string }
+
+/** Staleness bound (ms) — a busy marker older than this decays to idle: a
+ * crash mid-turn must not queue the role's traffic forever. 30 min covers the
+ * longest observed real turns (wren's 10-min herds) with margin. */
+export const BUSY_STALENESS_MS = 30 * 60 * 1000;
+
+export type TypedDeliveryPlan =
+  | { kind: 'inject'; args: string[] }
+  | { kind: 'queue'; reason: string }
+  | { kind: 'undelivered'; reason: 'dead' | 'unregistered' };
+
+/**
+ * #3700 (Silas half) — the typed delivery decision, replacing null→name-match:
+ *  - resolved + idle → inject NOW (nudge-as-wake preserved; transport args
+ *    delegated to planDelivery so tmux/vscode/tty routing stays single-sourced)
+ *  - resolved + busy (fresh marker) → queue; the target's own turn-boundary
+ *    hook drains it — pull-based last mile, re-spray impossible by construction
+ *  - dead/unregistered → typed undelivered. NEVER name-match. Jeff's 07-04
+ *    "I want to see it" ruling is honored by VISIBILITY, not misdelivery: the
+ *    caller must report the typed reason to the sender + emit a spine alarm
+ *    (amendment approved with #3700, 2026-07-26 — the busy-spray incident).
+ */
+export function planDeliveryTyped(
+  regs: SessionReg[],
+  role: string,
+  content: string,
+  isAlive: IsAlive,
+  turnStateOf: (role: string) => TurnState,
+  now: () => number = Date.now,
+  roleOf?: RoleOfPid,
+): TypedDeliveryPlan {
+  const res = resolveTargetTyped(regs, role, isAlive, roleOf);
+  if (res.kind !== 'resolved') return { kind: 'undelivered', reason: res.kind };
+  const turn = turnStateOf(role);
+  const fresh = turn.busy && (!turn.since || now() - Date.parse(turn.since) < BUSY_STALENESS_MS);
+  if (fresh) return { kind: 'queue', reason: `target busy since ${turn.since ?? 'unknown'}` };
+  // transport routing delegated so tmux/vscode/tty stay single-sourced; a
+  // defer plan (sender-collision path) maps to queue — same typed surface.
+  const plan = planDelivery(res.session, role, content);
+  return plan.kind === 'inject' ? plan : { kind: 'queue', reason: plan.reason };
+}
+
 export function describeTarget(role: string, target: SessionReg | null): string {
   if (!target) return `${role} [no live session — name-match fallback]`;
   return `${role} @ ${target.tty || '?'} (${target.host || 'unknown'}, pid ${target.pid})`;
