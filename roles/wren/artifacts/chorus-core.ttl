@@ -1,3 +1,10 @@
+# SUPERSEDED (v1 draft, #3697 · 2026-07-26) — this sketch's Phase/chorus:Phase value-stream
+#   grammar is a THIRD, never-deployed draft. The canonical value-stream grammar is
+#   ValueStreamStep / inStream / stageOrder (ratified 2026-07-15, live in urn:chorus:instances,
+#   authored in designing/data/value-stream-instances.ttl). This file is NOT in MODEL_SET and
+#   has zero live instances; it is retained as historical design context only. Do not revive
+#   the Phase grammar — model value-stream steps as chorus:ValueStreamStep.
+#
 # chorus-core.ttl — the importable CORE SPINE (extraction proposal, #3184 / #1771)
 #
 # Wren · 2026-06-02 · a SKETCH of the core's SHAPE, aligned to roles/wren/artifacts/

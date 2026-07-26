@@ -91,7 +91,9 @@ chorus:kade a chorus:AgentRole ;
 
 chorus:Vertebra a owl:Class ;
     rdfs:label "Vertebra" ;
-    rdfs:comment "A stage in the value stream — the Werk. Work flows through vertebrae sequentially, with feedback loops. The spine is the ordered set of all vertebrae." .
+    rdfs:comment "DEPRECATED (v1, #3697) — the value-stream grammar is now ValueStreamStep/inStream/stageOrder (ratified 2026-07-15, live in urn:chorus:instances). Vertebra/belongsTo/nextStage is the retired v1 spine model. Superseded by chorus:ValueStreamStep. Physical ABox deletion + reader retirement bundled in #3702 (after #3698 serves the v2 surface and #3705 migrates the gathering/life streams). Do not add new Vertebra instances." ;
+    owl:deprecated true ;
+    rdfs:seeAlso chorus:ValueStreamStep .
 
 chorus:Shaping a chorus:Vertebra ;
     rdfs:label "Shaping" ;
@@ -183,7 +185,8 @@ chorus:Reflecting a chorus:Vertebra ;
 
 chorus:lifeStream a chorus:ValueStream ;
     rdfs:label "Life" ;
-    rdfs:comment "The flow of living well — health, relationships, home, values. Steps to be defined by Jeff." .
+    rdfs:comment "DEPRECATED (v1, #3697). The Life stream + its Tending step migrate to the ValueStreamStep grammar in #3705. Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .
 
 chorus:Tending a chorus:Vertebra ;
     rdfs:label "Tending" ;
@@ -213,11 +216,13 @@ chorus:ValueStream a owl:Class ;
 
 chorus:gatheringStream a chorus:ValueStream ;
     rdfs:label "Gathering (Stream)" ;
-    rdfs:comment "The flow of meaning: Spark → Capture → Triage → Settle → Revisit → Transform → Connect → Reflect." .
+    rdfs:comment "DEPRECATED (v1, #3697). The v1 comment 'Spark → Capture → …' never matched its actual Vertebra steps (Sowing/Growing/Practicing/Harvesting/Reflecting) — drift (b). Superseded by the gathering ValueStream authored in the ValueStreamStep grammar by #3705 (which fixes the comment there). Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .
 
 chorus:chorusStream a chorus:ValueStream ;
     rdfs:label "Chorus" ;
-    rdfs:comment "The flow of coordination: Shaping → Directing → Designing → Building → Proving." .
+    rdfs:comment "DEPRECATED (v1, #3697). Superseded by chorus:value-stream-chorus (ValueStreamStep grammar, live in urn:chorus:instances) — which correctly runs Shaping → Directing → Designing → Building → Proving → Reflecting (6 steps; v1 stopped at Proving). Retired with the Vertebra ABox in #3702." ;
+    owl:deprecated true .
 
 # =============================================================================
 # 2c. DOMAINS (three types — from #1845 chat insight)
