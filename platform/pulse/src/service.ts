@@ -9,7 +9,7 @@
 import express, { Express } from 'express';
 import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
-import { planDelivery, resolveRoleTarget, describeTarget } from './session-registry';
+import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
@@ -146,6 +146,20 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     log('info', 'nudge.resolved', { id, from, to, resolved, trace_id: traceId || undefined });
     res.json({ ok: true, id, traceId, resolved });
   });
+
+  // #3700 — the drain: the target role's own turn-boundary hook (stop /
+  // session-start) POSTs here after clear_busy; its queued rows go back to
+  // pending and the worker redelivers in order. Pull-based last mile — the
+  // re-spray is impossible by construction. Same secret gate as delivery.
+  app.post('/drain', (req, res) => {
+    const secretHeader = req.headers['x-chorus-pulse-secret'];
+    if (!callerIsAuthorized(typeof secretHeader === 'string' ? secretHeader : undefined)) { res.status(403).json({ error: 'unauthorized' }); return; }
+    const role = typeof req.body?.role === 'string' ? req.body.role.trim() : '';
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(role)) { res.status(400).json({ error: 'bad role' }); return; }
+    const released = store.drainQueued(role);
+    if (released > 0) void worker?.scanAndRequeue();
+    res.json({ ok: true, role, released });
+  });
   // #2664: GET /api/nudge/:role/pending retired. Pending count comes from
   // the spine fold (nudge.emitted minus nudge.surfaced) via
   // chorus-hooks/nudge_poll, not from messages.db. The pulse JSON shape
@@ -269,6 +283,20 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // instead of keystroking the sender (the 2026-06-11 misdelivery).
     const targetReg = resolveRoleTarget(to);
     const senderReg = from ? resolveRoleTarget(from) : null;
+    // #3700 — the TYPED decision replaces null→name-match: busy targets queue
+    // (drained at their own turn boundary), dead/unregistered report typed to
+    // the sender + spine — never a keystroke into another role's terminal.
+    // The sender-collision stale-data rule (#3352) stays: that path still
+    // routes through planDelivery below.
+    const typed = planDeliveryTyped(readRegistry(SESSIONS_DIR), to, content, pidAlive, (r) => readTurnState(r), Date.now, actualRoleOfPid);
+    if (typed.kind === 'queue') {
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: `target-busy`, target: `queued:${to}` });
+      return;
+    }
+    if (typed.kind === 'undelivered') {
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: `undelivered-${typed.reason}`, target: `undelivered:${to}:${typed.reason}` });
+      return;
+    }
     const plan = planDelivery(targetReg, to, content, senderReg);
     const targetDesc = plan.kind === 'inject'
       ? (plan.args[0] === '--tmux' ? `tmux:${plan.args[1]}` : plan.args[0] === '--vscode' ? 'vscode-focused' : plan.args[0] === '--tty' ? `tty:${plan.args[1]}` : `name-match:${plan.args[0]}`)

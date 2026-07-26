@@ -233,6 +233,15 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
     // clean). Empty registry → pulse falls back to name-match (as-is).
     super::session_registry::register(role);
 
+    // #3700 — a fresh boot (incl. compact resume) is by definition not
+    // mid-turn: a compact can eat the Stop hook and leave the busy marker
+    // stuck, so clear it here (staleness decay is the backstop, not the
+    // primary), then drain any nudges queued while this role was busy/dark.
+    if let Some(dir) = super::session_registry::sessions_dir() {
+        crate::shared::session_health::clear_busy(&dir, role);
+    }
+    super::session_registry::drain_own_queue(role);
+
     // #2311 rescope: emit Claude Code SessionStart hookSpecificOutput JSON.
     // The harness reads `hookSpecificOutput.additionalContext` and appends it
     // to the model's system view — no "please read /tmp/session-start-<role>.md"
