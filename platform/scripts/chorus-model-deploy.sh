@@ -205,4 +205,80 @@ fi
 
 echo "chorus-model-deploy: deployed ${#MODEL_SET[@]} model file(s) -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
 "$CHORUS_LOG" model.deployed "$ROLE" graph="$ONTOLOGY_GRAPH" triples="$n" 2>/dev/null || true
+
+# =============================================================================
+# INSTANCE_SET (#3698, Silas-ruled) — hydrate PURE-ABox instances into
+# urn:chorus:instances. SEPARATE from and AFTER the ontology transaction above.
+#
+# The two sections use the SAME per-subject additive merge (#3550: DELETE only the
+# staged subjects' triples, then INSERT staging — NEVER a whole-graph COPY/replace).
+# The ONE deliberate difference: this section carries NO retire-clause. The ontology
+# section owns the RETIRE_ABSENT domain-retirement leg (#3593 — destructively DELETEs
+# Domain/SubDomain subjects absent from staging); that destructive leg stays
+# QUARANTINED to urn:chorus:ontology and must NEVER be expressed against the instances
+# graph (it would delete every co-tenant — cards/steps/files — not in the one TTL).
+# Here: purely additive, so a co-tenant can never be deleted by construction.
+#
+# WHY a separate graph at all: value-stream instances are PURE ABox (ADR-025 →
+# urn:chorus:instances), unlike the PUNNED Domain/Service individuals (owl:Class +
+# chorus:Domain, ABox-in-ontology → urn:chorus:ontology). #3705's gathering/life
+# migration rides this same INSTANCE_SET, making that migration self-testing.
+# Full deploys only (a TTL= partial/test deploy skips instance hydration).
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  INSTANCE_GRAPH="${INSTANCE_GRAPH:-urn:chorus:instances}"
+  INSTANCE_STAGING="${INSTANCE_GRAPH}-staging-deploy"
+  INSTANCE_SET=(
+    "$CHORUS_ROOT/designing/data/value-stream-instances.ttl"
+  )
+  for ttl in "${INSTANCE_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "chorus-model-deploy: riot validate FAILED for INSTANCE_SET $ttl — NOT deploying instances" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="riot-invalid-instance" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  # Stage the INSTANCE_SET into a FRESH staging graph (GSP POST merges into staging).
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${INSTANCE_SET[@]}"; do
+    icode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-inst-resp.txt -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$INSTANCE_STAGING" 2>/dev/null) || icode="000"
+    if [ "$icode" != "200" ] && [ "$icode" != "201" ] && [ "$icode" != "204" ]; then
+      echo "chorus-model-deploy: INSTANCE_SET staging load failed for $ttl (http $icode)" >&2
+      head -3 /tmp/chorus-model-inst-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-staging-http-$icode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  # Per-subject additive merge into the instances graph — NO retire clause.
+  INSTANCE_MERGE="DELETE { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?sp ?so } GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?p ?o } }"
+  imcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-inst-merge.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$INSTANCE_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || imcode="000"
+  if [ "$imcode" != "200" ] && [ "$imcode" != "204" ]; then
+    echo "chorus-model-deploy: INSTANCE_SET merge staging->instances failed (http $imcode)" >&2
+    head -3 /tmp/chorus-model-inst-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-merge-http-$imcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  # Output-verify: every staged instance subject actually landed (catches a lying-2xx).
+  _imissing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$INSTANCE_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
+  if [ "${_imissing:-0}" -ne 0 ] 2>/dev/null; then
+    echo "chorus-model-deploy: INSTANCE-VERIFY FAILED — ${_imissing} staged subject(s) absent from <$INSTANCE_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-missing" missing="${_imissing}" 2>/dev/null || true
+    exit 1
+  fi
+  _in=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _in="?"
+  echo "chorus-model-deploy: hydrated ${#INSTANCE_SET[@]} instance file(s) -> <$INSTANCE_GRAPH> (http $imcode, $_in triples live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$INSTANCE_GRAPH" triples="${_in}" 2>/dev/null || true
+fi
+
 exit 0

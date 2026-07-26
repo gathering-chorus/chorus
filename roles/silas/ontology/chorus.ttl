@@ -2161,6 +2161,7 @@ chorus:inStream a owl:ObjectProperty ; rdfs:label "in stream" ; rdfs:domain chor
 
 chorus:StepShape a sh:NodeShape ;
     sh:targetClass chorus:ValueStreamStep ;
+    chorus:instancesGraph "urn:chorus:instances" ;  # #3698 — pure-ABox (48 steps) live in urn:chorus:instances via athena-deploy (NOT punned like Domain/Service → NOT ontology; ADR-025 pure-ABox→instances). Without it the serve read defaults to urn:chorus:ontology (0 steps).
     sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:inStream   ; sh:minCount 1 ; sh:class chorus:ValueStream ] ;
     sh:property [ sh:path chorus:stageOrder ; sh:minCount 1 ; sh:datatype xsd:integer ] .
@@ -2168,6 +2169,7 @@ chorus:StepShape a sh:NodeShape ;
 # --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
 chorus:ValueStreamShape a sh:NodeShape ;
     sh:targetClass chorus:ValueStream ;
+    chorus:instancesGraph "urn:chorus:instances" ;  # #3698 — the fix for /valuestreams=0. The 7 well-formed streams (label+trigger+outcome+steps) live in urn:chorus:instances via athena-deploy; the ontology graph holds only the 3 DEPRECATED streams (#3697, no trigger/outcome → fail this shape). Pure-ABox → instances (ADR-025), unlike punned Domain/Service (urn:chorus:ontology).
     chorus:treeEdge chorus:contains, chorus:hasValueStream ;  # #3660 — the generated /tree read descends these (the proven (contains/hasValueStream?)* recursion)
     chorus:treeOrder chorus:stageOrder ;                      # #3660 — siblings rank by stage order; unranked fall to the bottom
     sh:property [ sh:path rdfs:label     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
