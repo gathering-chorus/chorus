@@ -220,6 +220,14 @@ export class DeliveryWorker {
       // match), so a focus-gate-miss stderr can no longer occur. Nudges deliver,
       // they don't defer behind a focus check.
       if (result.deferred) {
+        // #3700 — three deferred families now:
+        //  target-busy      → row PARKS as queued; the target's own turn-boundary
+        //                     hook POSTs /drain and the row comes back pending.
+        //  undelivered-*    → typed terminal miss (dead/unregistered): the row
+        //                     stays persisted (DEC-107 leg 1), spine alarms, and
+        //                     the sender saw the typed reason in the MCP reply.
+        //                     NEVER a name-match keystroke into another role.
+        //  everything else  → the legacy fold path (vscode defer), delivered.
         await this.emitSpine(`${prefix}.deferred`, {
           ...traceFields,
           id: row.id,
@@ -228,7 +236,13 @@ export class DeliveryWorker {
           attempt,
           reason: result.deferReason || 'inbox',
         });
-        this.store.markDelivered(row.id);
+        if (result.deferReason === 'target-busy') {
+          this.store.markQueued(row.id, 'target-busy');
+        } else if (result.deferReason?.startsWith('undelivered-')) {
+          this.store.markFailed(row.id, result.deferReason);
+        } else {
+          this.store.markDelivered(row.id);
+        }
         return;
       }
 

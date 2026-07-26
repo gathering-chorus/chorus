@@ -291,6 +291,16 @@ export interface TurnState { busy: boolean; since?: string }
  * longest observed real turns (wren's 10-min herds) with margin. */
 export const BUSY_STALENESS_MS = 30 * 60 * 1000;
 
+/** #3700 — read <role>.turn.json (written by the chorus-hooks shim). Missing
+ * or malformed file = idle: delivery must never be blocked by a bad marker. */
+export function readTurnState(role: string, dir: string = SESSIONS_DIR): TurnState {
+  try {
+    const raw = readFileSync(path.join(dir, `${role}.turn.json`), 'utf8');
+    const obj = JSON.parse(raw) as TurnState | null;
+    return obj && typeof obj.busy === 'boolean' ? obj : { busy: false };
+  } catch { return { busy: false }; }
+}
+
 export type TypedDeliveryPlan =
   | { kind: 'inject'; args: string[] }
   | { kind: 'queue'; reason: string }

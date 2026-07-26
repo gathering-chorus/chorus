@@ -175,6 +175,7 @@ export class MessageStore {
     }
 
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type)');
+    this.migrateQueuedState(); // #3700
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_messages_trace_id ON messages(trace_id) WHERE trace_id IS NOT NULL');
   }
 
@@ -218,6 +219,48 @@ export class MessageStore {
   // #2727 AC1: delivery state surface. Worker drives transitions via
   // markDelivered / markFailed; pulse boot scans getPendingDeliveries
   // for restart-requeue. getDeliveryRecord exposes failure detail.
+
+  // ── #3700 — 'queued' delivery state (queue-on-busy). CHECK constraints are
+  // baked into DDL, so widening needs a table rebuild — derived from the LIVE
+  // schema (sqlite_master + PRAGMA), never a hand-copied DDL: a copied DDL
+  // silently drops columns added by later migrations (caught red: the first
+  // cut dropped #3403's nudge_class). Idempotent via constraint-text probe.
+  private migrateQueuedState(): void {
+    const ddl = (this.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'").get() as { sql?: string } | undefined)?.sql ?? '';
+    if (!ddl || ddl.includes("'queued'")) return; // absent or already migrated
+    const marker = "CHECK(delivery_status IN ('pending','delivered','failed'))";
+    if (!ddl.includes(marker)) return; // unexpected shape — do nothing rather than guess
+    const newDdl = ddl
+      .replace(marker, "CHECK(delivery_status IN ('pending','delivered','failed','queued'))")
+      .replace(/CREATE TABLE "?messages"?/, 'CREATE TABLE messages_3700_new');
+    const cols = (this.db.prepare('PRAGMA table_info(messages)').all() as Array<{ name: string }>)
+      .map((c) => `"${c.name}"`).join(', ');
+    this.db.exec(`
+      BEGIN;
+      ${newDdl};
+      INSERT INTO messages_3700_new (${cols}) SELECT ${cols} FROM messages;
+      DROP TABLE messages;
+      ALTER TABLE messages_3700_new RENAME TO messages;
+      CREATE INDEX IF NOT EXISTS idx_messages_delivery ON messages(delivery_status, type);
+      COMMIT;
+    `);
+  }
+
+  /** #3700 — park a row for a live-but-busy target; /drain flips it back. */
+  markQueued(id: number, reason: string): void {
+    this.db.prepare(
+      'UPDATE messages SET delivery_status = \'queued\', last_delivery_error = ? WHERE id = ?'
+    ).run(reason, id);
+  }
+
+  /** #3700 — the drain: a role's queued rows become pending again (in order);
+   * the worker's scan redelivers. Returns how many were released. */
+  drainQueued(role: string): number {
+    const r = this.db.prepare(
+      'UPDATE messages SET delivery_status = \'pending\' WHERE delivery_status = \'queued\' AND "to" = ?'
+    ).run(role);
+    return r.changes;
+  }
 
   markDelivered(id: number): void {
     this.db.prepare(
