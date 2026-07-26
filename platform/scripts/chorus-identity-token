@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# chorus-identity-token — #3690: the cred-reader rung. Turns an agent's
+# per-agent credential (~/.chorus/identity/<role>/cred.json, seeded by #3613)
+# into a short-lived, VERIFIABLE CSS access token and prints it on stdout.
+# Wire it into a session's env:  export CHORUS_IDENTITY_TOKEN="$(chorus-identity-token silas)"
+# and the DAL's verified-token path (#3356) fires automatically — no human
+# exports a role string, so #3687 can retire DEPLOY_ROLE on top of this.
+#
+# Grant: OAuth2 client_credentials against CSS's /.oidc/token (id+secret from the
+# cred file — the browserless server-to-server flow). The token is ES256 at+jwt,
+# webid=<role>'s WebID, ~600s TTL, verifiable by chorus-oidc (owl-api door AND
+# the DAL — one verifier).
+#
+# THE HAIRPIN (why this isn't a one-line curl): the token's issuer is the LOGICAL
+# public origin (behind Cloudflare); a server-side call to it is 1010-blocked.
+# So we mint LOCALLY (localhost CSS) with the trusted-proxy headers CSS honors on
+# loopback (Host + X-Forwarded-Proto/Host) so it issues AS the logical issuer.
+# Same trick the Clearing's #3669 exchange uses. The token then verifies with
+# CSS_ISSUER=<logical> + CHORUS_JWKS_URL=<local> (see chorus-env-setup.sh).
+#
+# TTL cache: the token is cached 0600 and re-minted only when missing or within
+# a refresh margin of expiry — one cheap local POST amortized across a session's
+# many short-lived DAL calls. FAIL-CLOSED: a missing cred, unreachable CSS, or a
+# malformed token exits non-zero with NO token on stdout — never a stale/empty
+# token that would silently strand a write.
+set -euo pipefail
+
+ROLE="${1:-${DEPLOY_ROLE:-${CHORUS_ROLE:-}}}"
+[ -n "$ROLE" ] || { echo "chorus-identity-token: no role (arg or DEPLOY_ROLE/CHORUS_ROLE)" >&2; exit 2; }
+
+IDENTITY_DIR="${CHORUS_IDENTITY_DIR:-$HOME/.chorus/identity}"
+CRED="$IDENTITY_DIR/$ROLE/cred.json"
+CACHE="$IDENTITY_DIR/$ROLE/token.cache"
+LOCAL_CSS="${CHORUS_CSS_LOCAL:-http://localhost:3001}"   # where CSS actually listens
+REFRESH_MARGIN_S="${CHORUS_TOKEN_REFRESH_MARGIN_S:-120}" # re-mint this long before exp
+
+[ -f "$CRED" ] || { echo "chorus-identity-token: no credential for '$ROLE' at $CRED (seed via #3613 seed-css.sh)" >&2; exit 3; }
+
+# ── cache hit? valid iff present, non-empty, and exp - now > margin ──
+if [ -f "$CACHE" ]; then
+  cached="$(cat "$CACHE" 2>/dev/null || true)"
+  if [ -n "$cached" ]; then
+    still_fresh="$(CACHED="$cached" MARGIN="$REFRESH_MARGIN_S" python3 - <<'PY' 2>/dev/null || true
+import os, json, base64, time
+tok = os.environ["CACHED"].strip()
+try:
+    p = tok.split(".")[1]
+    payload = json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))
+    if payload.get("exp", 0) - time.time() > int(os.environ["MARGIN"]):
+        print("fresh")
+except Exception:
+    pass
+PY
+)"
+    if [ "$still_fresh" = "fresh" ]; then printf '%s' "$cached"; exit 0; fi
+  fi
+fi
+
+# ── mint fresh (fail-closed: any failure → non-zero, no stdout token) ──
+TOKEN="$(CRED="$CRED" LOCAL_CSS="$LOCAL_CSS" python3 - <<'PY'
+import os, sys, json, base64, urllib.request, urllib.parse
+try:
+    c = json.load(open(os.environ["CRED"]))
+    host = c["issuer"].split("://", 1)[1].strip("/")           # logical issuer host
+    endpoint = os.environ["LOCAL_CSS"].rstrip("/") + "/.oidc/token"
+    data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
+    auth = base64.b64encode(f'{c["id"]}:{c["secret"]}'.encode()).decode()
+    req = urllib.request.Request(endpoint, data=data, method="POST", headers={
+        "Authorization": f"Basic {auth}",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Host": host, "X-Forwarded-Proto": "https", "X-Forwarded-Host": host,
+    })
+    body = json.load(urllib.request.urlopen(req, timeout=6))
+    tok = body.get("access_token", "")
+    # sanity: it must be a 3-part JWT whose webid matches the cred (never emit junk)
+    payload = json.loads(base64.urlsafe_b64decode(tok.split(".")[1] + "=="))
+    if payload.get("webid") != c["webId"]:
+        sys.stderr.write("chorus-identity-token: minted token webid != cred webId\n"); sys.exit(4)
+    sys.stdout.write(tok)
+except Exception as e:
+    sys.stderr.write(f"chorus-identity-token: mint failed ({type(e).__name__}: {e})\n"); sys.exit(5)
+PY
+)" || exit $?
+
+umask 077
+printf '%s' "$TOKEN" > "$CACHE"
+printf '%s' "$TOKEN"

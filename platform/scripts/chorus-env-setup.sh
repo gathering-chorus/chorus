@@ -187,5 +187,26 @@ fi
 export OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
 export OLLAMA_BULK_URL="${OLLAMA_BULK_URL:-http://192.168.86.242:11434}"
 
+# --- #3690: verified role identity for the DAL ------------------------------
+# CSS token verification config (the JWKS hairpin, see chorus-identity-token):
+# the token's iss is the LOGICAL issuer (for the iss-check); JWKS is fetched
+# LOCALLY because the logical origin is Cloudflare-blocked server-side. Same
+# values owl-api's door runs with. Deployment config — override per box.
+export CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}"
+export CHORUS_JWKS_URL="${CHORUS_JWKS_URL:-http://localhost:3001/.oidc/jwks}"
+# A shell-invoked DAL call presents a fresh VERIFIED token instead of trusting
+# the DEPLOY_ROLE string: the wrapper mints (cached ~8min) per call so a
+# session's later calls never carry an expired token. Non-breaking — a failed
+# mint (no cred / CSS down) leaves CHORUS_IDENTITY_TOKEN empty and the DAL falls
+# back to DEPLOY_ROLE (#3356 additive path). #3687 removes that fallback.
+# Only real role sessions (cred exists); bootstrap/generic shells skip.
+if [ -n "${CHORUS_ROLE:-}" ] && [ -f "$HOME/.chorus/identity/${CHORUS_ROLE}/cred.json" ]; then
+  chorus-model() {
+    local __tok
+    __tok="$(command chorus-identity-token "${DEPLOY_ROLE:-$CHORUS_ROLE}" 2>/dev/null || true)"
+    CHORUS_IDENTITY_TOKEN="$__tok" command chorus-model "$@"
+  }
+fi
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root
