@@ -193,8 +193,11 @@ mod cli_tests {
     use std::io::Write;
     use std::net::TcpListener;
 
-    #[test]
-    fn arg_parses_flag_value_and_defaults() {
+    // arg() assertions live INSIDE the one #[test] below — a second test fn,
+    // even a pure one, would make the test binary multi-threaded while it
+    // set_vars (gate:code finding, run 2687d8401bf3). One test = single-
+    // threaded by construction.
+    fn assert_arg_parses_flag_value_and_defaults() {
         let args: Vec<String> = vec!["generate".into(), "--class".into(), "Product".into()];
         assert_eq!(arg(&args, "--class", "Domain"), "Product");
         assert_eq!(arg(&args, "--port", "3360"), "3360");
@@ -315,6 +318,9 @@ mod cli_tests {
 
     #[test]
     fn run_covers_every_subcommand_branch() {
+        // ---- pure arg() parsing (no env) ----
+        assert_arg_parses_flag_value_and_defaults();
+
         // ---- usage (no / unknown subcommand) ----
         assert_eq!(run(vec![]), 1);
         assert_eq!(run(vec!["frobnicate".into()]), 1);
