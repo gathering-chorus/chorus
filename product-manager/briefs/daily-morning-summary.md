@@ -1,32 +1,32 @@
-# Daily Morning Summary — 2026-07-25
+# Daily Morning Summary — 2026-07-26
 
-**HEADLINE:** TS build regression hit +17 in one day (now 174 errors) — wren:#3679 and silas:#3669 both need type fixes before errors compound further.
+**HEADLINE:** TS build is on a two-day regression streak (157→174→181, +24 errors) and Buzz Leg A shipped clean yesterday — fix the type rot before it hits 200.
 
-**OPS:** YELLOW/RED (Silas, 2026-07-24)
-- GREEN: Git clean across all role dirs
-- YELLOW: 2 new dead-code warnings in cargo check (regression vs yesterday's clean pass); 17+2+14 LaunchAgent plists still referencing `/tmp/`; CLAUDE.md fragments 12d stale — Wren missed EOD Jul 23 deadline
-- RED: CSC compliance static at 37 sh files with `/tmp/` refs — no progress, no regression; domain-context 9d stale after 5 more cards landed yesterday; #1759/#1791 now 108d without commits
+**OPS:** YELLOW/RED (Silas, 2026-07-25)
+- GREEN: Git clean; 9 cards merged Jul 25 — active velocity
+- YELLOW: Dead-code warnings carry (4 lines, both binaries); 19 plists still referencing `/tmp/`; CLAUDE.md fragments **13d stale, 2nd missed deadline — Wren escalates to Jeff today**
+- RED: CSC compliance static (37 sh files, no progress); WIP cards #1759/#1791 at 109d without commits; all 5 domain context files 97–122d stale despite 9 more cards landing yesterday
 
-**QUALITY:** RED (Kade, 2026-07-25)
-- All 4 suites blocked: `ts-jest` preset not found — day 44; lint blocked (`@eslint/js`) — day 46
-- **NEW REGRESSION:** Build 157 → 174 type errors (+17, largest single-day jump in 2 weeks) — implicit `any` params from wren:#3679 (account/change-password routes) and silas:#3669 (CSS-OIDC, WS session auth); fix is `import { Request, Response, NextFunction } from 'express'` in `server.ts`, `account.ts`, `solid-auth.ts`, `solid-oidc.ts`, `connection-auth.ts`
-- `npm ci` at repo root unblocks everything; 46 days unresolved
+**QUALITY:** RED (Kade, 2026-07-26)
+- All 4 suites blocked: `ts-jest` preset not found — day 45; lint blocked (`@eslint/js`) — day 47
+- **Build: 181 type errors (+7 today, second consecutive regression day — two-day: 157→174→181)**
+- `npm ci` at repo root unblocks everything; **47 days unresolved**
 
-**YESTERDAY (07-24):** 10 cards merged — strong velocity
-- **#3679 (wren):** Account page + change-password route over CSS API; 8 security tests green — but introduced +17 TS errors
-- **#3681 (silas):** DAL uniqueness-within-scope enforcement (uniqueWithin/uniqueGlobal)
-- **#3669 (silas):** Clearing CSS-OIDC edge: human login + WS session auth, static token retiring
-- **#3678 (kade):** Checking on a pipeline never starts new work
-- **#3654 (wren), #3623 (kade), #2478 (kade), #3680 (kade), #2513 (kade), #3480 (kade)** also closed
+**YESTERDAY (07-25):** 9 cards shipped
+- **#3696 (wren):** Clearing speaks Buzz (Leg A) — signed kind:9 mirror, 21 unit tests, full suite 426 green, live relay verified
+- **#3674 (wren):** DECISION — steal-the-pattern (self-host relay, root in our identity; NOT Block's hosted app)
+- **#3686 (wren):** Role-level hard priorities, set verb (9 tests, /sup walk green)
+- **#3684 (silas):** build-signed.sh non-macOS guard (quality.yml RC1)
+- **#3695, #3356 (silas); #3692, #3392, #3288, #3683 (kade/wren)** — also closed
 
 **TODAY:**
-1. **Wren + Silas:** Add explicit Express types to new route files — stop TS regression before it hits 200
-2. **Jeff → `npm ci`:** Day 46; 4 suites fully dark; this needs an owner or a permanent decision
-3. **Wren:** CLAUDE.md claudemd refresh — 12d stale, deadline missed, escalating now
-4. **Silas/Kade:** Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` (9d stale)
-5. **Silas:** Suppress/remove 2 dead-code warnings; add canonical-14 plists to `/tmp/` tracking scope
+1. **Wren + Silas:** Audit commits since Jul 25 for today's +7 TS errors — stop before 200
+2. **Jeff → `npm ci`:** Day 47; all 4 suites dark; needs a decision or an owner
+3. **Wren:** CLAUDE.md claudemd refresh — 2nd missed deadline; escalate to Jeff now
+4. **Silas:** Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` (97–122d stale)
+5. **Silas/Wren:** Close or archive #1759/#1791 (109d without commits)
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 46** — quality fully dark; if there's an environmental block, it needs to surface now
-- **#1759/#1791 108d** — must close, archive, or reassign; #3607 escalation still open
-- **CLAUDE.md refresh** — 12d stale, Wren missed deadline; if not landed today, needs Jeff's call on scope
+- **`npm ci` day 47** — quality fully dark; 4 suites blind; surface the block or make the call
+- **CLAUDE.md refresh** — 13d stale, 2nd missed deadline; Wren escalating today
+- **#1759/#1791 109d** — must close, archive, or reassign
