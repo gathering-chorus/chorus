@@ -554,6 +554,20 @@ chorus:hasValueStreamStep a owl:ObjectProperty ;
     rdfs:domain chorus:Document ;
     rdfs:range chorus:Vertebra .
 
+# #3699 — recursive composition (ratified 2026-07-15): a value-stream STEP composes a
+# CHILD ValueStream — the fractal value-stream-of-value-streams. E.g. Chorus's Shaping
+# step hasValueStream loom; Directing hasValueStream clearing. owl-api's ValueStreamShape
+# treeEdge descends this (the proven (contains/hasValueStream?)* recursion, #3660), so
+# GET /valuestreams/:name/tree returns the nested tree. Was REFERENCED (treeEdge + the
+# composition edges in value-stream-instances.ttl) but only DECLARED in the superseded
+# chorus-core.ttl draft (#3697) — defined here in the live model so the property the
+# recursion rides is no longer a dangling reference.
+chorus:hasValueStream a owl:ObjectProperty ;
+    rdfs:label "has value stream" ;
+    rdfs:comment "A value-stream step composes a child value stream (recursive composition; ratified 2026-07-15)." ;
+    rdfs:domain chorus:ValueStreamStep ;
+    rdfs:range chorus:ValueStream .
+
 chorus:hasDomain a owl:ObjectProperty ;
     rdfs:label "has domain" ;
     rdfs:comment "This document relates to this domain. 1:N — a cross-cutting doc may tag multiple domains." ;
