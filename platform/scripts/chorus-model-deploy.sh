@@ -5,15 +5,22 @@
 # changes never reached urn:chorus:ontology, so the live schema went stale (merged != live;
 # discovered #3509 when the live graph was found sourced from deleted v2-draft files).
 #
-# This is the SCHEMA deployer (urn:chorus:ontology) — DISTINCT from crawler-hydrate-graph.sh,
-# which hydrates INSTANCES (urn:chorus:instances) from the filesystem. Two graphs, two
-# deployers; this one was missing.
+# This is the SCHEMA deployer (urn:chorus:ontology). Since #3698 it ALSO hydrates the
+# value-stream PURE-ABox instances into urn:chorus:instances via the INSTANCE_SET section
+# at the tail (a SEPARATE transaction, after this one). crawler-hydrate-graph.sh hydrates
+# the OTHER, filesystem-crawled instances. Two graphs — ontology (schema + punned ABox) and
+# instances (authored pure ABox) — deployed by their own transactions in this script.
 #
-# Mechanism (avoids #3496, needs NO Fuseki restart): POST the Turtle into a fresh staging
-# graph, then a single SPARQL COPY (one transaction = atomic, no empty-read window on the
-# live graph) replaces the ontology graph; DROP staging. GSP PUT-replace is NOT used — it
-# 500s (NodeTableTRDF/Read) on any existing graph in this Fuseki (#3496). A restart is NOT
-# used — a schema deploy must never disrupt the shared DB (Jeff 2026-06-19).
+# Mechanism (#3550 — CORRECTED here: the pre-#3550 header wrongly said "single SPARQL COPY"
+# and that stale line produced a false architect wipe-warning on #3698). NOT a whole-graph
+# COPY/replace. Avoids #3496, needs NO Fuseki restart: POST the Turtle into a fresh staging
+# graph, then ONE atomic SPARQL transaction that is a PER-SUBJECT ADDITIVE MERGE — DELETE
+# from the live graph only the triples whose SUBJECT is (re)defined in staging, then INSERT
+# staging; DROP staging. Co-tenants NOT in the deployed set survive by construction (the old
+# blind COPY clobbered them — #3496). The ONLY destructive leg is the ontology-only
+# RETIRE_ABSENT clause (default 0, gated off on TTL= partials); it is NEVER in the instances
+# section. GSP PUT-replace is NOT used — it 500s (NodeTableTRDF/Read) on any existing graph
+# (#3496). A restart is NOT used — a schema deploy must never disrupt the shared DB (Jeff 2026-06-19).
 # Idempotent: same chorus.ttl -> same graph. Fail-loud on any non-2xx (the model did NOT deploy).
 #
 # Spine: model.deployed {graph, triples} on success; model.deploy.failed {graph, reason/http}.
