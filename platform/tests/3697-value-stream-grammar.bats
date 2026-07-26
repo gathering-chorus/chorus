@@ -35,6 +35,13 @@ q() {
   [ -f "$CT" ]
 }
 
+# The suite's world is arq (a JVM SPARQL engine). Name the boundary: if arq is
+# absent, FAIL LOUD here rather than let every downstream q() return empty and
+# let a negative ASK pass vacuously (the false-green Kade's #3697 gate flagged).
+@test "arq SPARQL engine is present (no false-green from a missing binary)" {
+  command -v arq
+}
+
 # ── AC2: Shaping has exactly one stageOrder, and it is 1 ──
 @test "AC2 canonical Shaping has exactly one stageOrder" {
   run q "$VSI" 'SELECT (COUNT(?o) AS ?n) WHERE { c:value-stream-step-shaping c:stageOrder ?o }'
@@ -64,8 +71,13 @@ q() {
   run q "$VSI" 'ASK { c:value-stream-step-reflecting c:inStream c:value-stream-chorus ; c:stageOrder 6 }'
   echo "$output" | grep -qi 'yes'
 }
-@test "AC3 Reflecting is NOT parented to any gathering stream" {
-  run q "$VSI" 'ASK { c:value-stream-step-reflecting c:inStream c:gatheringStream }'
+# Reflecting has EXACTLY ONE inStream, and it is chorus. This guards any
+# mis-parent — the retired c:gatheringStream AND a future c:value-stream-gathering
+# (#3705) alike — rather than blacklisting one known-bad target.
+@test "AC3 Reflecting has exactly one inStream and it is chorus (guards any mis-parent)" {
+  run q "$VSI" 'SELECT (COUNT(?s) AS ?n) WHERE { c:value-stream-step-reflecting c:inStream ?s }'
+  echo "$output" | grep -qE '\|[[:space:]]*1[[:space:]]*\|'
+  run q "$VSI" 'ASK { c:value-stream-step-reflecting c:inStream ?s . FILTER(?s != c:value-stream-chorus) }'
   echo "$output" | grep -qi 'no'
 }
 
@@ -73,6 +85,14 @@ q() {
 @test "AC1 every ValueStreamStep inStream resolves to a declared ValueStream" {
   run q "$VSI" 'SELECT (COUNT(*) AS ?dangling) WHERE { ?s a c:ValueStreamStep ; c:inStream ?vs . FILTER NOT EXISTS { ?vs a c:ValueStream } }'
   echo "$output" | grep -qE '\|[[:space:]]*0[[:space:]]*\|'
+}
+
+# Positive: the canonical grammar predicates are ACTUALLY declared and in use
+# (not merely "nothing dangling"). A step typed ValueStreamStep, carrying both
+# inStream and stageOrder, proves the grammar exists — direct, not indirect.
+@test "AC1 canonical grammar predicates are declared (ValueStreamStep + inStream + stageOrder in use)" {
+  run q "$VSI" 'ASK { c:value-stream-step-shaping a c:ValueStreamStep ; c:inStream ?vs ; c:stageOrder ?o }'
+  echo "$output" | grep -qi 'yes'
 }
 
 # ── AC1: the v1 Vertebra grammar is deprecated (removal is #3702) ──
