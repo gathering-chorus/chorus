@@ -29,6 +29,7 @@ ts:
 rust:
   platform/services/chorus-hooks: 45
   platform/services/chorus-inject: 80
+  platform/services/owl-api: 85       # set by #3701 (the clearing bar; delivered with the #3701 hermetic test lift)
 
 # When this file changes:
 # - The enforcing automation (#2207 nightly-coverage.sh) must be updated in

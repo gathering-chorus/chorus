@@ -100,7 +100,12 @@ jobs:
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/test/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-} (werk-test #3190 — blocking floor)" >/dev/null 2>&1 || true; }
           post pending
           set +e
-          PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
+          # #3701 — pin CHORUS_ROOT to the werk: clippy-ratchet.py prefers $CHORUS_ROOT,
+          # which the session env points at CANONICAL — so the ratchet measured main
+          # instead of this card's werk (a lint landed on main blocks every later card,
+          # and the card fixing it can never green). Same class as run_doc_coherence's
+          # CHORUS_REPO pin; werk-test's run_clippy_ratchet gets the same pin in source.
+          CHORUS_ROOT="$WERK" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
           rc=$?
           set -e
           if [ "$rc" = 0 ]; then post success; else post failure; fi

@@ -14,11 +14,11 @@
 //! 2. TURN STATE — the daemon marks a role busy at prompt-submit and clears
 //!    at Stop (`<role>.turn.json` beside the registry entries). `busy_state`
 //!    is the delivery decision table pulse consumes:
-//!      Busy → queue (drain at the target's own turn boundary)
-//!      Idle → inject now (nudge-as-wake preserved — a queued nudge for an
-//!             idle session must never sleep forever)
-//!      Dead → typed undelivered; the null→name-match fallback entry point
-//!             closes (the #3700 spray class)
+//!    Busy → queue (drain at the target's own turn boundary)
+//!    Idle → inject now (nudge-as-wake preserved — a queued nudge for an
+//!    idle session must never sleep forever)
+//!    Dead → typed undelivered; the null→name-match fallback entry point
+//!    closes (the #3700 spray class)
 //!    Guards (Silas navigation 2026-07-26): busy older than BUSY_STALE_SECS
 //!    with no activity decays to Idle (a crash mid-turn cannot queue
 //!    forever); a dead pid beats the busy flag always.
@@ -65,7 +65,7 @@ fn live_entry(dir: &Path, role: &str) -> Option<(std::path::PathBuf, u32)> {
         if !name.starts_with(&prefix) || !name.ends_with(".json") {
             continue;
         }
-        if let Some(pid) = name[prefix.len()..name.len() - 5].parse::<u32>().ok() {
+        if let Ok(pid) = name[prefix.len()..name.len() - 5].parse::<u32>() {
             if pid_alive(pid) {
                 return Some((e.path(), pid));
             }

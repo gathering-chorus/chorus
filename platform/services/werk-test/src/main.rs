@@ -446,7 +446,10 @@ fn run_clippy_ratchet(werk: &str) -> bool {
     if !Path::new(&script).is_file() {
         return true;
     }
-    status_ok(Command::new("bash").arg(&script).current_dir(werk))
+    // #3701 — pin CHORUS_ROOT to the werk: clippy-ratchet.py prefers $CHORUS_ROOT,
+    // which the session env points at canonical, so the ratchet measured main
+    // instead of this card's diff. Same pin run_doc_coherence carries (CHORUS_REPO).
+    status_ok(Command::new("bash").arg(&script).current_dir(werk).env("CHORUS_ROOT", werk))
 }
 
 /// `doc-coherence-ratchet.test.sh` — the repo-wide doc-inventory floor, run with

@@ -11,67 +11,73 @@ fn arg(args: &[String], flag: &str, default: &str) -> String {
 }
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    ExitCode::from(run(std::env::args().skip(1).collect()))
+}
+
+/// #3701 — the CLI body, extracted behavior-preserving from main() so the
+/// subcommand dispatch is unit-testable (main() is a one-line shim; 0=success,
+/// 1=failure, mapped to ExitCode there — ExitCode itself has no PartialEq).
+fn run(args: Vec<String>) -> u8 {
     let class = arg(&args, "--class", "Domain");
     match args.first().map(String::as_str) {
         Some("generate") => match generate(&class) {
             Ok(t) => {
                 print!("{}", routes_json(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         Some("generate-openapi") => match generate(&class) {
             Ok(t) => {
                 print!("{}", openapi_json(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         Some("generate-dashboard") => match generate(&class) {
             Ok(t) => {
                 print!("{}", dashboards_json(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         Some("generate-page") => match generate(&class) {
             Ok(t) => {
                 print!("{}", page_html(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         Some("generate-tests") => match generate(&class) {
             Ok(t) => {
                 print!("{}", tests_manifest(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         Some("generate-mcp") => match generate(&class) {
             Ok(t) => {
                 print!("{}", mcp_binding(&t));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         // #3551 — the `verb` make-target: read a VerbShape instance from the graph and
@@ -82,11 +88,11 @@ fn main() -> ExitCode {
             match generate_verb(&verb) {
                 Ok(code) => {
                     print!("{}", code);
-                    ExitCode::SUCCESS
+                    0
                 }
                 Err(e) => {
                     eprintln!("owl-api: {}", e);
-                    ExitCode::FAILURE
+                    1
                 }
             }
         }
@@ -99,11 +105,11 @@ fn main() -> ExitCode {
             Ok(t) => {
                 let scope = vec![t.instances_graph.clone()];
                 print!("{}", dal_skeleton_ts(&t, &scope));
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         // #3488 — print the resolved repo land location (chorus:repoTarget or
@@ -112,11 +118,11 @@ fn main() -> ExitCode {
         Some("generate-target") => match generate(&class) {
             Ok(t) => {
                 println!("{}", t.repo_target);
-                ExitCode::SUCCESS
+                0
             }
             Err(e) => {
                 eprintln!("owl-api: {}", e);
-                ExitCode::FAILURE
+                1
             }
         },
         // #3488 — the PRODUCT API index: the aggregate of the product's domains,
@@ -127,11 +133,11 @@ fn main() -> ExitCode {
             match generate_product_index(&product) {
                 Ok(idx) => {
                     println!("{}", idx);
-                    ExitCode::SUCCESS
+                    0
                 }
                 Err(e) => {
                     eprintln!("owl-api: {}", e);
-                    ExitCode::FAILURE
+                    1
                 }
             }
         }
@@ -160,19 +166,219 @@ fn main() -> ExitCode {
             }
             if tables.is_empty() {
                 eprintln!("owl-api: no classes generated — nothing to serve");
-                return ExitCode::FAILURE;
+                return 1;
             }
             match serve(port, &tables) {
-                Ok(()) => ExitCode::SUCCESS,
+                Ok(()) => 0,
                 Err(e) => {
                     eprintln!("owl-api: {}", e);
-                    ExitCode::FAILURE
+                    1
                 }
             }
         }
         _ => {
             eprintln!("usage: owl-api generate|generate-dashboard|generate-openapi|generate-page|generate-tests|generate-mcp|generate-target [--class Domain] | owl-api generate-product [--product athena] | owl-api serve [--class Domain] [--port 3360]");
-            ExitCode::FAILURE
+            1
         }
+    }
+}
+
+// #3701 — hermetic CLI tests: an in-test SPARQL stub (std TcpListener, port 0)
+// stands in for Fuseki; CHORUS_FUSEKI env selects it. ALL env mutation happens
+// inside the ONE #[test] fn below (cargo runs tests in parallel threads; a
+// single fn serializes by construction — the only other test here is pure).
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use std::io::Write;
+    use std::net::TcpListener;
+
+    // arg() assertions live INSIDE the one #[test] below — a second test fn,
+    // even a pure one, would make the test binary multi-threaded while it
+    // set_vars (gate:code finding, run 2687d8401bf3). One test = single-
+    // threaded by construction.
+    fn assert_arg_parses_flag_value_and_defaults() {
+        let args: Vec<String> = vec!["generate".into(), "--class".into(), "Product".into()];
+        assert_eq!(arg(&args, "--class", "Domain"), "Product");
+        assert_eq!(arg(&args, "--port", "3360"), "3360");
+        // flag present but value missing → default
+        let dangling: Vec<String> = vec!["generate".into(), "--class".into()];
+        assert_eq!(arg(&dangling, "--class", "Domain"), "Domain");
+    }
+
+    /// Just enough model for generate("Domain") / generate-verb / generate-product
+    /// to succeed (mirrors the tests/coverage_3701_hermetic.rs fixture, trimmed).
+    fn rows_for(q: &str) -> Vec<String> {
+        let s = |v: &str| v.to_string();
+        if q.contains("FILTER(isIRI(?path)) OPTIONAL") {
+            return if q.contains("#Domain>") {
+                vec![s("comment|datatype:string"), s("label|plain"), s("ownedBy|edge:Role")]
+            } else {
+                vec![]
+            };
+        }
+        if q.contains("chorus:requiresAuth") || q.contains("chorus:exposure") || q.contains("chorus:treeEdge") || q.contains("chorus:treeOrder") || q.contains("chorus:repoTarget") || q.contains("#repoTarget>") {
+            return vec![];
+        }
+        if q.contains("sh:minCount") {
+            return vec![s("comment")];
+        }
+        if q.contains("chorus:atStep") {
+            return vec![s("value-stream-step-designing")];
+        }
+        if q.contains("chorus:partOf ?t") {
+            return vec![s("loom")];
+        }
+        if q.contains("chorus:instancesGraph") {
+            return vec![s("urn:test:instances")];
+        }
+        if q.contains("SELECT DISTINCT ?v") && q.contains("definesVocabulary ?c") {
+            return vec![s("Domain"), s("Nope")]; // Nope has no shape → serve's refuse arm
+        }
+        if q.contains("definesVocabulary <") {
+            return vec![s("athena")];
+        }
+        if q.contains("#verbFamily>") {
+            return vec![s("athena")];
+        }
+        if q.contains("#invocability>") {
+            return vec![s("invoked")];
+        }
+        if q.contains("#verbInput>") {
+            return vec![s("card|datatype:integer")];
+        }
+        if q.contains("#verbOutput>") || q.contains("#verbEdge>") {
+            return vec![];
+        }
+        if q.contains("chorus:hasDomain ?d") {
+            return vec![s("borg")];
+        }
+        vec![]
+    }
+
+    fn urldecode(s: &str) -> String {
+        let mut out = Vec::new();
+        let b = s.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            match b[i] {
+                b'+' => {
+                    out.push(b' ');
+                    i += 1;
+                }
+                b'%' if i + 2 < b.len() => {
+                    if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16) {
+                        out.push(v);
+                        i += 3;
+                    } else {
+                        out.push(b[i]);
+                        i += 1;
+                    }
+                }
+                c => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    fn start_stub() -> u16 {
+        let l = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for c in l.incoming() {
+                let Ok(mut c) = c else { continue };
+                std::thread::spawn(move || {
+                    let _ = c.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                    let req = owl_api::read_http_request(&mut c, 1 << 20);
+                    let body = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                    let rows = body
+                        .find("query=")
+                        .map(|i| rows_for(&urldecode(&body[i + 6..])))
+                        .unwrap_or_default();
+                    let bindings = rows
+                        .iter()
+                        .map(|v| format!("{{\"v\":{{\"value\":\"{}\"}}}}", v))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let rb = format!("{{\"results\":{{\"bindings\":[{}]}}}}", bindings);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        rb.len(),
+                        rb
+                    );
+                    let _ = c.write_all(resp.as_bytes());
+                });
+            }
+        });
+        port
+    }
+
+    #[test]
+    fn run_covers_every_subcommand_branch() {
+        // ---- pure arg() parsing (no env) ----
+        assert_arg_parses_flag_value_and_defaults();
+
+        // ---- usage (no / unknown subcommand) ----
+        assert_eq!(run(vec![]), 1);
+        assert_eq!(run(vec!["frobnicate".into()]), 1);
+
+        // ---- Err arms: point CHORUS_FUSEKI at a dead port (curl -f fails fast) ----
+        let dead = {
+            // bind-then-drop: the OS port is closed → connection refused, deterministic
+            let l = TcpListener::bind("127.0.0.1:0").unwrap();
+            let p = l.local_addr().unwrap().port();
+            drop(l);
+            p
+        };
+        std::env::set_var("CHORUS_FUSEKI", format!("http://127.0.0.1:{}", dead));
+        for sub in [
+            "generate",
+            "generate-openapi",
+            "generate-dashboard",
+            "generate-page",
+            "generate-tests",
+            "generate-mcp",
+            "generate-verb",
+            "generate-dal",
+            "generate-target",
+            "generate-product",
+        ] {
+            assert_eq!(run(vec![sub.to_string()]), 1, "{} errs on dead Fuseki", sub);
+        }
+        // serve: vocabulary read fails → zero tables → refuse to serve
+        assert_eq!(run(vec!["serve".into()]), 1);
+
+        // ---- Ok arms: the in-test stub answers the shape queries ----
+        let port = start_stub();
+        std::env::set_var("CHORUS_FUSEKI", format!("http://127.0.0.1:{}", port));
+        for sub in [
+            "generate",
+            "generate-openapi",
+            "generate-dashboard",
+            "generate-page",
+            "generate-tests",
+            "generate-mcp",
+            "generate-dal",
+            "generate-target",
+        ] {
+            assert_eq!(
+                run(vec![sub.to_string(), "--class".into(), "Domain".into()]),
+                0,
+                "{} succeeds against the stub model",
+                sub
+            );
+        }
+        assert_eq!(run(vec!["generate-verb".into(), "--verb".into(), "athena-deploy".into()]), 0);
+        assert_eq!(run(vec!["generate-product".into(), "--product".into(), "athena".into()]), 0);
+        // serve: tables generate (Domain ok, Nope refused → the refuse arm), then
+        // the privileged port 1 refuses to bind as non-root → serve() Err arm.
+        assert_eq!(run(vec!["serve".into(), "--port".into(), "1".into()]), 1);
+        // bad --port falls back to 3360 via unwrap_or; prove the parse-fallback
+        // WITHOUT binding 3360 by making generation fail first (dead Fuseki again).
+        std::env::set_var("CHORUS_FUSEKI", format!("http://127.0.0.1:{}", dead));
+        assert_eq!(run(vec!["serve".into(), "--port".into(), "notaport".into()]), 1);
     }
 }

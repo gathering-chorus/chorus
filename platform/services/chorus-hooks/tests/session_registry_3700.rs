@@ -9,10 +9,10 @@
 //!     Stop; STALENESS BOUND (30 min, no subsequent activity) so a crash
 //!     mid-turn cannot queue nudges forever; pid-dead beats busy always
 //!   - decision table for delivery (consumed by pulse via the state file):
-//!       BUSY  → queue (drain at the target's own turn boundary)
-//!       IDLE  → inject now (nudge-as-wake is the point — pull-only would
-//!               let a queued nudge for an idle session sleep forever)
-//!       DEAD  → typed undelivered, never name-match
+//!     BUSY  → queue (drain at the target's own turn boundary)
+//!     IDLE  → inject now (nudge-as-wake is the point — pull-only would
+//!     let a queued nudge for an idle session sleep forever)
+//!     DEAD  → typed undelivered, never name-match
 //!
 //! Hermetic: every test gets its own tmp dir for registry + turn-state; no
 //! live ~/.chorus, no live role identifiers (test-role names only).
