@@ -28,16 +28,6 @@ function getEventVertebra(event: string): string | null {
   return eventVertebra[event] ?? null;
 }
 
-// ── Vertebra → value stream name ──
-
-const STREAM_NAME: Record<string, string> = {
-  capturing: 'Capturing',
-  directing: 'Directing',
-  designing: 'Designing',
-  building: 'Building',
-  proving: 'Proving',
-};
-
 // ── Product name mapping (AC2: appName → product) ──
 
 const PRODUCT_MAP: Record<string, string> = {
@@ -197,7 +187,10 @@ function buildSpineEntry(
   const ctx = options.context;
   const caller = extractCallerInfo();
   const level = typeof extra.level === 'string' ? extra.level : 'info';
-  const stage = STREAM_NAME[getEventVertebra(event) ?? ''] ?? null;
+  // #3702 — stage is the capitalized vertebra straight from spine-events.json;
+  // the v1 stream-name allowlist is retired (same output, no hardcoded step list).
+  const vertebra = getEventVertebra(event);
+  const stage = vertebra ? vertebra.charAt(0).toUpperCase() + vertebra.slice(1) : null;
 
   // #3023 — env-fallback for the two cross-process observability keys, the TS
   // twin of the shim-wrapper bridge (#2857). Precedence: explicit extra > env >

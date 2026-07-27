@@ -1944,7 +1944,6 @@ const ATHENA_QUERIES = [
   // :3360/products (generated from chorus:ProductShape) is the product API.
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
-  { name: 'steps', path: '/api/athena/steps', description: 'Value stream steps with sub-domains at each step' },
   { name: 'owners', path: '/api/athena/owners', description: 'Owners with sub-domain counts' },
   { name: 'machines', path: '/api/athena/machines', description: 'Machines with running services' },
 ];
@@ -1980,7 +1979,6 @@ const loadSparql = createSparqlLoader({ fs, sparqlDir: SPARQL_DIR });
 // loader are injected so unit tests run without Fuseki.
 import { fetchAthenaHealth } from './handlers/athena-health';
 import { fetchAthenaValidate } from './handlers/athena-validate';
-import { fetchAthenaSteps } from './handlers/athena-steps';
 import { fetchAthenaOwners } from './handlers/athena-owners';
 import { fetchAthenaMachines } from './handlers/athena-machines';
 import { fetchLoomPolicies } from './handlers/loom-policies';
@@ -2077,10 +2075,10 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// GET /api/athena/steps — value stream steps with sub-domains at each step
-app.get('/api/athena/steps', async (_req: Request, res: Response) => {
-  const r = await fetchAthenaSteps({ sparql: athenaSparqlQuery, loadQuery: loadSparql, envelope: athenaEnvelope });
-  res.status(r.status).json(r.body);
+// #3702 — v1 value-stream surface retired. The Vertebra/primaryStep spine model is
+// gone; owl-api :3360/valuestreams (proxied at /owl/valuestreams) is the only path.
+app.get('/api/athena/steps', (_req: Request, res: Response) => {
+  res.status(410).json({ error: 'gone', message: 'v1 retired by #3702 — use /owl/valuestreams (owl-api :3360)' });
 });
 
 // GET /api/athena/owners — owners with sub-domain counts

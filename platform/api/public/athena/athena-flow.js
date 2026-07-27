@@ -6,7 +6,6 @@
 // #3644 — same-origin via the chorus-api /owl proxy: one base that works on the
 // LAN and through any share/tunnel origin (the old `hostname:3360` broke off-LAN).
 const OWL = '/owl';
-const STEPS_RULED = ['shaping', 'directing', 'designing', 'building', 'proving', 'reflecting'];
 
 async function fetchJSON(path) {
   const r = await fetch(OWL + path);
@@ -44,7 +43,9 @@ function ownerDot(owner) {
 
 function stepBadge(step) {
   const s = stepLocal(step);
-  const cls = STEPS_RULED.includes(s) ? s : '';
+  // #3702 — no hardcoded step list: the class IS the model's step name (CSS styles
+  // the stages it knows; an unknown stage renders as a plain badge, never breaks).
+  const cls = /^[a-z][a-z-]*$/.test(s) ? s : '';
   return s ? `<span class="badge ${cls}">${esc(s[0].toUpperCase() + s.slice(1))}</span>` : '<span class="empty">no step</span>';
 }
 

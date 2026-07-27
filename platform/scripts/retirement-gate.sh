@@ -31,8 +31,15 @@ for f in "${deleted[@]:-}"; do
     *) continue ;;
   esac
   # any test file (.bats / test-*.sh) still naming the deleted surface?
+  # #3702 — EXCEPT declared absence-guards: a retirement card's own test must name
+  # the deleted surface to assert it stays gone (the domain-detail-retired.bats
+  # convention, which never collided here only because it guards non-code files).
+  # The marker is an explicit opt-in, visible in the test header.
   while IFS= read -r tf; do
     [ -n "$tf" ] || continue
+    if head -20 "$tf" | grep -q 'retirement-gate: absence-guard'; then
+      continue
+    fi
     echo "  RETIREMENT-GATE: $tf still references deleted surface $f" >&2
     violations=$(( violations + 1 ))
   done < <(grep -rlF "$base" "$CHORUS_ROOT" --include='*.bats' --include='test-*.sh' 2>/dev/null)

@@ -96,16 +96,12 @@ describeIntegration('GET /api/athena/subdomains/:id/blast-radius', () => {
   });
 });
 
-describeIntegration('GET /api/athena/steps', () => {
-  test('returns value stream steps with subdomains', async () => {
+describeIntegration('GET /api/athena/steps (retired #3702)', () => {
+  test('v1 steps endpoint is gone — 410 pointing at /owl/valuestreams', async () => {
     const res = await fetch(`${API}/api/athena/steps`);
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(410);
     const body = await res.json();
-    expect(body.data.length).toBeGreaterThan(0);
-    for (const step of body.data) {
-      expect(step.label).toBeDefined();
-      expect(Array.isArray(step.subdomains)).toBe(true);
-    }
+    expect(body.message).toContain('valuestreams');
   });
 });
 
@@ -253,7 +249,7 @@ describeIntegration('GET /api/athena/machines', () => {
 
 describeIntegration('_meta envelope', () => {
   test('all endpoints include query_name, duration_ms, cached', async () => {
-    const endpoints = ['health', 'subdomains', 'steps', 'owners', 'machines']; // products/subproducts retired #3603
+    const endpoints = ['health', 'subdomains', 'owners', 'machines']; // products/subproducts retired #3603; steps retired #3702
     for (const ep of endpoints) {
       const res = await fetch(`${API}/api/athena/${ep}`);
       const body = await res.json();

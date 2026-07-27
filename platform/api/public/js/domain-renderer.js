@@ -157,7 +157,7 @@
     $('domain-title').textContent = d.label || id;
     $('domain-subtitle').textContent = d.subtitle || (d.type || 'Domain');
     $('bc-step').textContent = d.step || '—';
-    if (d.step) $('bc-step').setAttribute('href', 'step-detail.html?step=' + encodeURIComponent(d.step));
+    if (d.step) $('bc-step').setAttribute('href', 'athena/value-stream.html'); // #3702 — v1 per-step page retired; the stream page shows every step
     $('bc-domain').textContent = d.label || id;
     var actions = $('content-actions'); if (actions) { actions.setAttribute('data-title', (d.label || id) + ' — Athena'); actions.setAttribute('data-url', location.href); }
     var owner = d.owner || '?', rc = ROLE_CLASS[(owner || '').toLowerCase()] || '';
