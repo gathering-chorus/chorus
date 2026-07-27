@@ -18,10 +18,6 @@ import {
   type AthenaSubdomainsDeps,
 } from '../../src/handlers/athena-subdomains';
 import {
-  fetchAthenaSteps,
-  type AthenaStepsDeps,
-} from '../../src/handlers/athena-steps';
-import {
   fetchAthenaOwners,
   type AthenaOwnersDeps,
 } from '../../src/handlers/athena-owners';
@@ -131,22 +127,7 @@ describe('fetchAthenaSubdomains', () => {
 
 // fetchAthenaProducts RETIRED (#3603) — owl-api :3360/products is the product API.
 
-// ── fetchAthenaSteps ──
-
-describe('fetchAthenaSteps', () => {
-  test('returns 200 with array data', async () => {
-    const deps: AthenaStepsDeps = { sparql: emptySparql, loadQuery };
-    const r = await fetchAthenaSteps(deps);
-    expect(r.status).toBe(200);
-    expect(Array.isArray((r.body as any).data)).toBe(true);
-  });
-
-  test('returns 500 when SPARQL throws', async () => {
-    const deps: AthenaStepsDeps = { sparql: throwingSparql, loadQuery };
-    const r = await fetchAthenaSteps(deps);
-    expect(r.status).toBe(500);
-  });
-});
+// fetchAthenaSteps RETIRED (#3702) — owl-api /valuestreams is the value-stream API.
 
 // ── fetchAthenaOwners ──
 
