@@ -187,8 +187,11 @@ function buildSpineEntry(
   const ctx = options.context;
   const caller = extractCallerInfo();
   const level = typeof extra.level === 'string' ? extra.level : 'info';
-  // #3702 — stage is the capitalized vertebra straight from spine-events.json;
-  // the v1 stream-name allowlist is retired (same output, no hardcoded step list).
+  // #3702 — stage is the capitalized vertebra straight from spine-events.json; the
+  // v1 five-name allowlist is retired. Deliberate widening: vertebras outside the
+  // old five (shaping, reflecting) now emit their stage instead of silent null.
+  // Verified at retirement: no consumer filters on the old five-value set — the
+  // only reader (server.ts pulse projection) passes stage through untyped.
   const vertebra = getEventVertebra(event);
   const stage = vertebra ? vertebra.charAt(0).toUpperCase() + vertebra.slice(1) : null;
 
