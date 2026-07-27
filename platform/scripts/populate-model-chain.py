@@ -25,7 +25,17 @@ BIN = (
     if "--bin" in sys.argv
     else os.path.expanduser("~/.chorus/bin/chorus-model")
 )
-ENV = {**os.environ, "DEPLOY_ROLE": os.environ.get("DEPLOY_ROLE", "silas")}
+# #3687 — the DAL retired DEPLOY_ROLE env-trust; mint a verified CSS token
+# (the #3690 cred-reader) for the role so writes attribute end-to-end. A failed
+# mint leaves the token absent and the DAL fails closed (refuse, never forge).
+_ROLE = os.environ.get("DEPLOY_ROLE", os.environ.get("CHORUS_ROLE", "silas"))
+_TOK = subprocess.run(
+    [os.path.expanduser("~/.chorus/bin/chorus-identity-token"), _ROLE]
+    if os.path.exists(os.path.expanduser("~/.chorus/bin/chorus-identity-token"))
+    else [f"{ROOT}/platform/scripts/chorus-identity-token", _ROLE],
+    capture_output=True, text=True,
+).stdout.strip()
+ENV = {**os.environ, "DEPLOY_ROLE": _ROLE, "CHORUS_IDENTITY_TOKEN": _TOK}
 
 
 def add(kind, name, fields, edges=()):

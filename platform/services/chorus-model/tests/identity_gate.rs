@@ -122,16 +122,20 @@ fn registered_claim_verifies_and_stamps_creator() {
 
 #[test]
 fn cli_write_without_deploy_role_is_refused_before_store_contact() {
+    // #3651 pinned "no default identity ever forms, refusal precedes store". #3687
+    // flipped the gate to token-first, so an env-less caller now refuses with
+    // identity-token-required (not identity-missing) — same guarantee, new cause.
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
         .args(["add", "--kind", "domain", "--name", "bypass-probe"])
         .env_remove("DEPLOY_ROLE")
+        .env_remove("CHORUS_IDENTITY_TOKEN")
         .env("CHORUS_FUSEKI", "http://127.0.0.1:1") // dead — must never be reached
         .output()
         .expect("binary runs");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success(), "bypass write must refuse");
-    assert!(err.contains("identity-missing"), "refusal names the cause: {}", err);
-    assert!(!err.contains("fuseki"), "refusal precedes store contact: {}", err);
+    assert!(err.contains("identity-token-required"), "refusal names the cause: {}", err);
+    assert!(!err.to_lowercase().contains("fuseki"), "refusal precedes store contact: {}", err);
 }
 
 #[test]
@@ -146,6 +150,33 @@ fn cli_write_with_unregistered_identity_is_refused() {
         .expect("binary runs");
     assert!(!out.status.success(), "unverifiable identity must refuse");
     assert!(!String::from_utf8_lossy(&out.stdout).contains("written:"));
+}
+
+// ── #3687 — the flip: DEPLOY_ROLE env-trust is retired. A write with a
+// DEPLOY_ROLE set but NO verified token must refuse, fail-closed, BEFORE any
+// store contact — the env string was as forgeable as `export DEPLOY_ROLE=`.
+// This is the behavior that was allowed (the fallback path) until step 3.
+
+#[test]
+fn cli_write_with_deploy_role_but_no_token_is_refused() {
+    // Pre-#3687 this SUCCEEDED (resolve fell back to verify_identity(DEPLOY_ROLE)).
+    // Post-flip: no CHORUS_IDENTITY_TOKEN → refuse, and the refusal fires before
+    // the registry ASK (dead store must never be reached).
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
+        .args(["add", "--kind", "domain", "--name", "flip-probe"])
+        .env("DEPLOY_ROLE", "kade") // a REGISTERED role — still refused without a token
+        .env_remove("CHORUS_IDENTITY_TOKEN")
+        .env("CHORUS_FUSEKI", "http://127.0.0.1:1") // dead — must never be reached
+        .output()
+        .expect("binary runs");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "a DEPLOY_ROLE-only write must refuse post-flip: {}", err);
+    assert!(
+        err.contains("identity-token-required"),
+        "refusal names the retired-env cause: {}",
+        err
+    );
+    assert!(!err.to_lowercase().contains("fuseki"), "refusal precedes store contact: {}", err);
 }
 
 #[test]

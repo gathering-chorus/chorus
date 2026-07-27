@@ -30,6 +30,12 @@ DRY="${DRY_RUN:-0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/fuseki-auth.sh"
 
+# #3687 — the DAL retired DEPLOY_ROLE env-trust; the governed writes below ($CM
+# via run()) now require a verified CSS token. Mint one (the #3690 cred-reader)
+# for the running role; a failed mint leaves it empty and the DAL fails closed.
+_ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-silas}}"
+export CHORUS_IDENTITY_TOKEN="$("$SCRIPT_DIR/chorus-identity-token" "$_ROLE" 2>/dev/null || true)"
+
 listing="$("$CARDS" list 2>/dev/null)" || { echo "FATAL: cards list failed" >&2; exit 1; }
 [ -n "$listing" ] || { echo "FATAL: empty board listing" >&2; exit 1; }
 

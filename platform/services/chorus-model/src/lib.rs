@@ -457,22 +457,34 @@ impl Identity {
     pub fn role(&self) -> &str {
         &self.0
     }
-    /// Resolve at the CLI boundary. #3356 — a real CSS identity **token**
-    /// (`CHORUS_IDENTITY_TOKEN`) takes precedence over the `DEPLOY_ROLE` env
-    /// string; the env path stays the fallback until the migration flip (design
-    /// step 3), so this is additive and breaks no existing writer. A token that
-    /// is PRESENT but does not verify fails closed HERE — it never silently
-    /// degrades to the weaker env path (that would let a bad token buy the old
-    /// forgery). Absent token → the DEPLOY_ROLE path, exactly as before.
+    /// Resolve at the CLI boundary. #3687 — the migration flip (#3356 design
+    /// step 3): a verified CSS identity **token** (`CHORUS_IDENTITY_TOKEN`) is
+    /// now the ONLY attribution path. `DEPLOY_ROLE` env-trust is retired — the
+    /// env string was as forgeable as `export DEPLOY_ROLE=<any registered
+    /// principal>`, the exact hole this closes. A token that is PRESENT but does
+    /// not verify fails closed in `verify_identity_token` (never degrades). A
+    /// token that is ABSENT/blank now REFUSES here, before any store contact —
+    /// where it used to fall back to the env path.
+    ///
+    /// Callers mint a token with `chorus-identity-token <role>` (the #3690
+    /// cred-reader); the sourced `chorus-model()` wrapper does this transparently
+    /// for role sessions. `--dry-run` needs no identity (handled upstream in
+    /// main.rs — it writes nothing).
     pub fn resolve(store: &dyn Store) -> R<Identity> {
-        if let Ok(token) = std::env::var("CHORUS_IDENTITY_TOKEN") {
-            if !token.trim().is_empty() {
+        match std::env::var("CHORUS_IDENTITY_TOKEN") {
+            Ok(token) if !token.trim().is_empty() => {
                 let now = now_secs();
                 let verifier = OidcTokenVerifier::new(now);
-                return verify_identity_token(&token, &verifier, store, now);
+                verify_identity_token(&token, &verifier, store, now)
+            }
+            _ => {
+                witness("model.refused", &[("reason", "identity-token-required")]);
+                Err("identity-token-required: no verified CHORUS_IDENTITY_TOKEN — the DAL \
+                     no longer accepts DEPLOY_ROLE env-trust (retired #3687, fail closed). \
+                     Mint one: export CHORUS_IDENTITY_TOKEN=\"$(chorus-identity-token <role>)\"."
+                    .into())
             }
         }
-        verify_identity(std::env::var("DEPLOY_ROLE").ok().as_deref(), store)
     }
 }
 
