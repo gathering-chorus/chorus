@@ -74,7 +74,7 @@ fn rows_for(q: &str) -> Vec<String> {
     // role from. One row per edge, "<webid> <role>". Answered FIRST so no later
     // shape branch can claim it.
     if q.contains("chorus:holdsRole") {
-        return vec![format!("{} wren", WREN_WEBID)];
+        return vec![format!("{} {}role-wren", WREN_WEBID, NS)];
     }
     // ---- generate()-time shape queries ----
     if q.contains("FILTER(isIRI(?path)) OPTIONAL") {

@@ -374,15 +374,28 @@ pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Optio
 
 /// ADR-054 §3.3 — resolve webId→role from `chorus:holdsRole`, the edge that
 /// makes role assignment GOVERNED DATA rather than a WebID naming convention.
-/// Emitted as one `?v` row per edge (`"<webid> <role>"`) so the DAL's proven
+/// Emitted as one `?v` row per edge (`"<webid> <role-iri>"`) so the DAL's proven
 /// single-var extractor parses it — a WebID can carry no space, so the first
-/// one is an unambiguous separator. Principals with no `holdsRole` are simply
-/// absent: allowed to authenticate, holding no role.
-pub const PRINCIPAL_ROLE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r } BIND(CONCAT(STR(?w), \" \", STRAFTER(STR(?r), \"#role-\")) AS ?v) }";
+/// one is an unambiguous separator. The role IRI travels WHOLE: naming it here
+/// would trade the WebID convention this card retires for an IRI convention.
+/// Principals with no `holdsRole` are simply absent: allowed to authenticate,
+/// holding no role.
+pub const PRINCIPAL_ROLE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r } BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }";
+
+/// A role IRI's name: the local part after the last `#`, `/` or `:`, minus a
+/// `role-` prefix if the IRI uses one. Convention-TOLERANT by construction —
+/// `…#role-wren`, `…#wren`, `…/roles/wren` and `urn:chorus:roles:wren` all name
+/// `wren` — so no edge is silently dropped for not matching a fragment shape.
+fn role_name(role_iri: &str) -> Option<&str> {
+    let local = role_iri.rsplit(['#', '/', ':']).next()?;
+    let name = local.strip_prefix("role-").unwrap_or(local);
+    (!name.is_empty()).then_some(name)
+}
 
 /// None = graph unreachable (caller fails closed); Some(empty) = reachable and
-/// genuinely no role assignments. Rows that don't split cleanly are dropped
-/// rather than yielding a half-parsed role.
+/// genuinely no role assignments. A row this cannot read is DROPPED and SAID —
+/// fail-closed is right, but a silently vanishing role assignment would be a
+/// authZ refusal with no stated cause.
 pub fn resolve_principal_roles(
     query: impl Fn(&str) -> Option<String>,
 ) -> Option<Vec<(String, String)>> {
@@ -390,9 +403,18 @@ pub fn resolve_principal_roles(
         crate::select_v(&body)
             .into_iter()
             .filter_map(|row| {
-                let (w, r) = row.split_once(' ')?;
-                (!w.is_empty() && !r.is_empty())
-                    .then(|| (w.to_string(), r.to_string()))
+                let unreadable = || {
+                    eprintln!(
+                        "chorus-oidc: WARNING — unreadable holdsRole row {:?}; that Principal carries NO role until the edge is fixed (#3688)",
+                        row
+                    );
+                    None
+                };
+                let Some((w, r)) = row.split_once(' ') else { return unreadable() };
+                match role_name(r) {
+                    Some(name) if !w.is_empty() => Some((w.to_string(), name.to_string())),
+                    _ => unreadable(),
+                }
             })
             .collect()
     })
@@ -968,7 +990,7 @@ mod tests {
     #[test]
     fn principal_role_query_asks_the_holds_role_edge() {
         let body = format!(
-            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} wren"}}}},{{"v":{{"type":"literal","value":"{} silas"}}}},{{"v":{{"type":"literal","value":"malformed-no-separator"}}}}]}}}}"#,
+            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#role-wren"}}}},{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#role-silas"}}}},{{"v":{{"type":"literal","value":"malformed-no-separator"}}}}]}}}}"#,
             wren_webid(),
             silas_webid()
         );
@@ -983,6 +1005,39 @@ mod tests {
             "pairs parse; a row without a separator is dropped, never half-parsed"
         );
         assert_eq!(resolve_principal_roles(|_| None), None, "unreachable is DISTINCT from empty");
+    }
+
+    /// The role IRI's SHAPE is not a second naming convention: whatever the
+    /// roles domain mints — `#role-wren`, a bare `#wren`, a path IRI — names
+    /// the same role. This is the residual coupling Kade and Wren both flagged
+    /// on the first present; a fragment-prefix assumption would have dropped
+    /// these rows silently, which is a refusal with no stated cause.
+    #[test]
+    fn role_iri_shape_is_not_a_naming_convention() {
+        for iri in [
+            "https://jeffbridwell.com/chorus#role-wren",
+            "https://jeffbridwell.com/chorus#wren",
+            "https://jeffbridwell.com/chorus/roles/wren",
+            "urn:chorus:roles:role-wren",
+        ] {
+            let body = format!(
+                r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} {}"}}}}]}}}}"#,
+                wren_webid(),
+                iri
+            );
+            assert_eq!(
+                resolve_principal_roles(|_| Some(body.clone())),
+                Some(vec![(wren_webid(), "wren".to_string())]),
+                "{} names role wren",
+                iri
+            );
+        }
+        // an edge that names nothing is dropped (and warned), not half-read
+        let empty = format!(
+            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#"}}}}]}}}}"#,
+            wren_webid()
+        );
+        assert_eq!(resolve_principal_roles(|_| Some(empty.clone())), Some(vec![]));
     }
 
     /// The legacy HS256 arm's self-declared `agentId` claim does not decide the
