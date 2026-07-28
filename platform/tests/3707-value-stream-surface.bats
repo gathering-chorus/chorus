@@ -53,6 +53,22 @@ print(d)'"
   [[ "$output" == *"valuestreams"* ]]
 }
 
+@test "tree.html stays retired — redirect stub only, no Move-0 hand-render (Wren's call, #3707)" {
+  # Static source check (hermetic): the page must be the redirect stub and the
+  # hand-authored renderer must not resurrect. tree.JSON itself is NOT retired.
+  page="$CHORUS_ROOT/platform/api/public/athena/tree.html"
+  [ -f "$page" ]
+  grep -q 'url=/athena/value-stream.html' "$page"
+  ! grep -qi 'Move 0 hand-authored' "$page"
+  ! grep -q 'data/athena/tree.json' "$page"
+}
+
+@test "product layer serves at each step (pending: ProductShape instancesGraph decl — Wren follow-on)" {
+  # /products serves count:0 until the shape decl lands (#3697-3703 scope cut).
+  # This pin flips from skip to assert when that follow-on card lands.
+  skip "pending Wren's ProductShape instancesGraph follow-on — /products count:0 is the known gap, not a #3707 regression"
+}
+
 @test "athena-health catalog does not advertise a retired endpoint" {
   api_up || skip "chorus-api :3340 unreachable"
   run bash -c "curl -sf '$API/api/athena/health' | python3 -c '
