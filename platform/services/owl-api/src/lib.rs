@@ -278,6 +278,7 @@ pub struct RouteTable {
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
     pub tree_edges: Vec<String>, // #3660 — recursive-descent edge localnames, PROJECTED from chorus:treeEdge on the shape. Empty = no /tree read emitted.
     pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
+    pub model_version: String,   // #3704 — the class's strangler-fig version, PROJECTED from chorus:modelVersion on the class ("v1"=superseded, "v2"=canonical). Born-v2 default: absent → "v2".
 }
 
 /// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
@@ -1013,8 +1014,16 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     );
     let tree_order = select_v(&sparql_json(&toq)?).into_iter().next();
+    // #3704 — PROJECT the class's model-version from chorus:modelVersion. Absent → "v2"
+    // (born-v2 default): an unmarked class is current/canonical; only superseded classes
+    // carry "v1". Read off the CLASS itself, not the shape's targetClass.
+    let mvq = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> chorus:modelVersion ?v }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "v2".to_string());
     routes.extend(tree_routes(&plural, &tree_edges));
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, tree_edges, tree_order })
+    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -2321,10 +2330,14 @@ pub fn envelope(
     data_json: &str,
     links_json: &str,
     count: Option<i64>,
+    model_version: &str,
 ) -> String {
     let mut p: Vec<String> = Vec::new();
     p.push(format!("\"apiVersion\": \"{}\"", API_VERSION));
     p.push(format!("\"kind\": \"{}\"", json_escape(kind)));
+    // #3704 — the class's model-version, PROJECTED from chorus:modelVersion (born-v2
+    // default when absent). Makes the strangler-fig legible on every generated surface.
+    p.push(format!("\"modelVersion\": \"{}\"", json_escape(model_version)));
     if let Some(i) = id {
         p.push(format!("\"id\": \"{}\"", json_escape(i)));
     }
@@ -2417,7 +2430,7 @@ pub fn error_envelope(
         "{{ \"type\": \"/errors/{}\", \"title\": \"{}\", \"status\": {}, \"detail\": \"{}\", \"instance\": \"{}\"{} }}",
         json_escape(type_slug), title, status, json_escape(detail), json_escape(&instance), errs
     );
-    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None)
+    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None, "v2")
 }
 
 /// #3506 / ADR-047 §7 — read one query param from a `&`-joined query string.
@@ -2581,7 +2594,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -2667,7 +2680,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                         Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, plural, n, limit),
                         None => "{}".to_string(),
                     };
-                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, !table.secured.is_empty(), &data, &links, Some(total)))
+                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
                 }
             }
             Err(e) => (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
@@ -2852,7 +2865,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 let id = format!("chorus:{}", name);
                 let body = envelope(
                     kind, Some(&id), &self_url, &shape, &shape_version, &commit,
-                    !table.secured.is_empty(), &data, &links, None,
+                    !table.secured.is_empty(), &data, &links, None, &table.model_version,
                 );
                 (200, body)
             }
@@ -3570,9 +3583,11 @@ mod tests {
             "{ \"purpose\": \"config-as-data\" }",
             "{ \"partOf\": \"/v1/products/borg\" }",
             None,
+            "v2",
         );
         for needle in [
             "\"apiVersion\": \"v1\"",
+            "\"modelVersion\": \"v2\"",   // #3704 — every envelope carries the class version (born-v2 default)
             "\"kind\": \"Domain\"",
             "\"id\": \"chorus:properties\"",
             "\"self\": \"/v1/domains/properties\"",
@@ -3751,7 +3766,7 @@ mod tests {
     fn envelope_collection_omits_id_and_carries_count() {
         let c = envelope(
             "Domain", None, "/v1/domains", "chorus:DomainShape",
-            "2026-06-19", "534805b9", false, "[]", "{}", Some(35),
+            "2026-06-19", "534805b9", false, "[]", "{}", Some(35), "v2",
         );
         assert!(c.contains("\"count\": 35"), "collection carries count: {}", c);
         assert!(!c.contains("\"id\":"), "collection omits id: {}", c);
@@ -3938,7 +3953,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -3974,7 +3989,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -4010,7 +4025,7 @@ mod tests {
             ],
             secured: vec![],
             tree_edges: vec![],
-            tree_order: None,
+            tree_order: None, model_version: "v2".to_string(),
         }
     }
 
@@ -4184,7 +4199,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -4248,7 +4263,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None,
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -4273,7 +4288,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -4311,7 +4326,7 @@ mod tests {
             mandatory: vec!["filePath".into(), "testName".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None,
+            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
         };
         let scope = vec![t.instances_graph.clone()];
         let ts = dal_skeleton_ts(&t, &scope);

@@ -33,7 +33,7 @@ fn fixture_with_tree() -> RouteTable {
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),
         tree_edges: vec!["contains".into(), "hasValueStream".into()],
-        tree_order: Some("stageOrder".into()),
+        tree_order: Some("stageOrder".into()), model_version: "v2".to_string(),
     }
 }
 

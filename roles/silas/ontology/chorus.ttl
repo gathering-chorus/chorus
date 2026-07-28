@@ -86,6 +86,23 @@ chorus:kade a chorus:AgentRole ;
     chorus:channelName "#kade" .
 
 # =============================================================================
+# MODEL-VERSION CONVENTION (#3704) — v1/v2 as DECLARED DATA, not tribal knowledge.
+# Every strangler-fig migration (Vertebra→ValueStreamStep, v1→v2 products/domains)
+# is legible model-wide: ask a class "canonical or superseded?" and get an answer.
+# RULE: a class with NO chorus:modelVersion is v2/canonical (born-v2 default). A
+# superseded class carries chorus:modelVersion "v1" + chorus:supersededBy <successor>
+# (and owl:deprecated true). owl-api projects modelVersion per class (#3704 part 2);
+# the retire-guard reads supersededBy to know what to remove once the successor serves.
+# =============================================================================
+chorus:modelVersion a owl:AnnotationProperty ;
+    rdfs:label "model version" ;
+    rdfs:comment "The class's version in a strangler-fig migration: \"v1\" = superseded/deprecated, \"v2\" = current canonical. ABSENT = v2 by default (born-v2). Machine-readable so agents, pages, and the retire-guard stop guessing which grammar is current." .
+
+chorus:supersededBy a owl:AnnotationProperty ;
+    rdfs:label "superseded by" ;
+    rdfs:comment "On a v1 (deprecated) class: points at the v2 class that replaces it. The retire-guard reads this to know a v1 class is safe to remove once its successor serves. Object is a class, never an instance." .
+
+# =============================================================================
 # 2. VERTEBRAE (The Spine / Value Stream)
 # =============================================================================
 
@@ -93,6 +110,8 @@ chorus:Vertebra a owl:Class ;
     rdfs:label "Vertebra" ;
     rdfs:comment "DEPRECATED (v1, #3697) — the value-stream grammar is now ValueStreamStep/inStream/stageOrder (ratified 2026-07-15, live in urn:chorus:instances). Vertebra/belongsTo/nextStage is the retired v1 spine model. Superseded by chorus:ValueStreamStep. Physical ABox deletion + reader retirement bundled in #3702 (after #3698 serves the v2 surface and #3705 migrates the gathering/life streams). Do not add new Vertebra instances." ;
     owl:deprecated true ;
+    chorus:modelVersion "v1" ;
+    chorus:supersededBy chorus:ValueStreamStep ;
     rdfs:seeAlso chorus:ValueStreamStep .
 
 chorus:Shaping a chorus:Vertebra ;

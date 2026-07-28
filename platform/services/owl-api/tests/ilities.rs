@@ -30,7 +30,7 @@ fn table() -> RouteTable {
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-compat)
         tree_edges: vec![],
-        tree_order: None,
+        tree_order: None, model_version: "v2".to_string(),
     }
 }
 
