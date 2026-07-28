@@ -1113,27 +1113,11 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
 // event per write — all in ONE generated path, so a write can't forget to auth,
 // validate, or log. Pure decision/builders are unit-tested; the I/O wraps them.
 
-/// The caller's ROLE from the verified token's webId. Two shapes are real:
-/// legacy HS256 `…/_agents/<role>/profile/card.ttl#me` (auth::chorus_agent_webids,
-/// dies with the HS256 arm at #3611 cutover) and the CSS pod shape #3613 mints:
-/// `<issuer>/<name>/profile/card#me` — CSS is the WebID's source of truth
-/// (ADR-052 §6); this parser RECORDS that shape, it doesn't invent one. Returns
-/// the agent segment, or None if neither shape matches (→ authZ fail-closed).
-pub fn role_from_webid(web_id: &str) -> Option<String> {
-    if let Some(after) = web_id.split("/_agents/").nth(1) {
-        let role = after.split('/').next()?;
-        return if role.is_empty() { None } else { Some(role.to_string()) };
-    }
-    // CSS pod shape: scheme://host/<name>/profile/card#me (no _agents, no .ttl)
-    let rest = web_id.split("://").nth(1)?;
-    let mut segs = rest.split('/');
-    let _host = segs.next()?;
-    let name = segs.next()?;
-    if segs.next()? == "profile" && segs.next()?.starts_with("card") && !name.is_empty() {
-        return Some(name.to_string());
-    }
-    None
-}
+// #3688 / ADR-054 §3.3 — the webid→role STRING parser is retired. The role now
+// arrives on `Claims.agent_id`, resolved by the shared verifier from
+// `chorus:holdsRole` (chorus_oidc::oidc::PRINCIPAL_ROLE_QUERY). Role assignment
+// is governed data; a WebID naming convention that can disagree with the model
+// is not an authZ input.
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum WriteOp {
@@ -3156,6 +3140,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // allow-set resolver: re-run lazily on the ALLOW_TTL cadence so a model
         // revocation propagates within one token TTL (no restart, no per-request call)
         || oidc::resolve_principal_webids(|q| sparql_json(q).ok()),
+        // #3688 / ADR-054 §3.3 — the role resolver over chorus:holdsRole, on the
+        // same cadence: a role REASSIGNMENT is a model edit and lands within one TTL.
+        || oidc::resolve_principal_roles(|q| sparql_json(q).ok()),
         move || {
         let out = Command::new("curl")
             .args(["-sf", "--max-time", "3", &jwks_url])
@@ -3176,6 +3163,14 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); ES256 tokens are refused (fail-closed) until the TTL'd re-resolve finds Principals. HS256 legacy path unaffected.");
     } else {
         eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved, TTL'd)", warmed_allow);
+    }
+    // #3688 — the role map. EMPTY is loud: every verified caller would carry no
+    // role, and ownedBy authZ would refuse every write (fail-closed, not silent).
+    let warmed_roles = oidc_verifier.warm_roles(boot_now);
+    if warmed_roles == 0 {
+        eprintln!("owl-api: WARNING — holdsRole map is EMPTY (no chorus:holdsRole in urn:chorus:domains:security, or Fuseki unreachable); verified callers carry NO role, so ownedBy authZ refuses every write until the TTL'd re-resolve finds edges.");
+    } else {
+        eprintln!("owl-api: role map = {} holdsRole edge(s) (model-resolved, TTL'd)", warmed_roles);
     }
     let warmed = oidc_verifier.warm_fetch(boot_now);
     if warmed == 0 {
@@ -3330,7 +3325,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
                         )
                     } else {
-                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                        let role = claims.agent_id.clone();
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                         handle_batch(&target_graph, body_str, &role)
                     }
@@ -3390,7 +3385,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573)\" }}", json_escape(&target_graph))),
                          ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                     } else {
-                        let role = role_from_webid(&claims.web_id).unwrap_or_default();
+                        let role = claims.agent_id.clone();
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                         // (POST /batch is handled by the cross-class pre-table block above,
                         // which `continue`s — it can't reach here. One site, no drift.)
@@ -4079,21 +4074,12 @@ mod tests {
         assert!(write_routes("properties").contains(&"POST /properties".to_string()));
     }
 
-    #[test]
-    fn role_from_webid_extracts_role_or_none() {
-        assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me").as_deref(), Some("wren"));
-        assert_eq!(role_from_webid("http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me").as_deref(), Some("silas"));
-        assert_eq!(role_from_webid("https://example.com/nobody"), None);
-        // #3613 — the CSS pod shape (what seed-css.sh actually minted 2026-07-14:
-        // no _agents, no .ttl, issuer host). CSS is the WebID source of truth.
-        assert_eq!(role_from_webid("http://localhost:3001/wren/profile/card#me").as_deref(), Some("wren"));
-        assert_eq!(role_from_webid("http://localhost:3001/silas/profile/card#me").as_deref(), Some("silas"));
-        assert_eq!(role_from_webid("http://localhost:3001/chorus-sdk/profile/card#me").as_deref(), Some("chorus-sdk"));
-        // near-misses stay None (authZ fail-closed): wrong tail, bare host, jeff's own profile parses as "jeff" — a NAME, membership still gated by the allow-set
-        assert_eq!(role_from_webid("http://localhost:3001/wren/settings/card#me"), None);
-        assert_eq!(role_from_webid("http://localhost:3001/"), None);
-        assert_eq!(role_from_webid("http://localhost:3001/jeff/profile/card#me").as_deref(), Some("jeff"));
-    }
+    // #3688 — `role_from_webid_extracts_role_or_none` is DELETED with the parser
+    // it pinned. Its replacements live in chorus-oidc (role_comes_from_holds_role_
+    // not_the_webid_string, opaque_webid_still_resolves_a_role,
+    // principal_without_holds_role_carries_no_role, role_reassignment_lands_
+    // within_one_ttl) — the role is asked of the graph, so there is no string
+    // shape left to pin.
 
     #[test]
     fn kind_of_class_maps_camelcase_to_adr040_kebab() {

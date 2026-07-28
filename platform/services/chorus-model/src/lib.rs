@@ -623,6 +623,7 @@ impl OidcTokenVerifier {
             .trim_end_matches('/').to_string();
         let allow_endpoint =
             std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
+        let role_endpoint = allow_endpoint.clone();
         let inner = chorus_oidc::oidc::OidcVerifier::new(
             &css_issuer,
             // allow-set: re-resolve lazily on the ALLOW_TTL cadence so a model
@@ -630,6 +631,15 @@ impl OidcTokenVerifier {
             move || {
                 chorus_oidc::oidc::resolve_principal_webids(|q| {
                     fuseki_query_json(&allow_endpoint, q).ok()
+                })
+            },
+            // #3688 — the holdsRole map (ADR-054 §3.3). The DAL binds its own
+            // attribution through the Principal lookup in `verify_identity_token`,
+            // so it doesn't read Claims.agent_id; the resolver is wired anyway so
+            // the shared verifier runs ONE configuration in both consumers.
+            move || {
+                chorus_oidc::oidc::resolve_principal_roles(|q| {
+                    fuseki_query_json(&role_endpoint, q).ok()
                 })
             },
             move || {

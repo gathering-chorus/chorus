@@ -70,6 +70,12 @@ fn urldecode(s: &str) -> String {
 /// The model fixture: dispatch a decoded SPARQL query to its canned rows.
 fn rows_for(q: &str) -> Vec<String> {
     let s = |v: &str| v.to_string();
+    // #3688 / ADR-054 §3.3 — the holdsRole map the door resolves the caller's
+    // role from. One row per edge, "<webid> <role>". Answered FIRST so no later
+    // shape branch can claim it.
+    if q.contains("chorus:holdsRole") {
+        return vec![format!("{} {}role-wren", WREN_WEBID, NS)];
+    }
     // ---- generate()-time shape queries ----
     if q.contains("FILTER(isIRI(?path)) OPTIONAL") {
         return if q.contains("#Domain>") {

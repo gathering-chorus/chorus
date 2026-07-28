@@ -62,6 +62,15 @@ struct AllowState {
     last_attempt: u64,
 }
 
+/// webId → role, resolved from `chorus:holdsRole` (ADR-054 §3.3). Same TTL
+/// discipline as the allow-set: a role REASSIGNMENT is a model edit and must
+/// take effect within one token TTL, no restart.
+struct RoleState {
+    pairs: Vec<(String, String)>,
+    fetched_at: u64,
+    last_attempt: u64,
+}
+
 /// The ES256 verifier: expected issuer, the Principal allow-set (boot-resolved
 /// from the model, ADR-052 §5), the kid-keyed JWKS cache, and an injected
 /// fetcher (prod: curl to CSS; tests: a stub — cases 7/8 toggle reachability
@@ -71,23 +80,30 @@ pub struct OidcVerifier {
     /// Principal allow-set resolver (prod: the model query; tests: a stub).
     /// None = graph unreachable — DISTINCT from Some(empty) = nobody allowed.
     resolve_allow: Box<dyn Fn() -> Option<Vec<String>>>,
+    /// webId → role resolver over `chorus:holdsRole` (ADR-054 §3.3). Same
+    /// None-vs-Some(empty) split as the allow-set.
+    resolve_roles: Box<dyn Fn() -> Option<Vec<(String, String)>>>,
     fetch: Box<dyn Fn() -> Option<String>>,
     state: RefCell<JwksState>,
     allow: RefCell<AllowState>,
+    roles: RefCell<RoleState>,
 }
 
 impl OidcVerifier {
     pub fn new(
         issuer: &str,
         resolve_allow: impl Fn() -> Option<Vec<String>> + 'static,
+        resolve_roles: impl Fn() -> Option<Vec<(String, String)>> + 'static,
         fetch: impl Fn() -> Option<String> + 'static,
     ) -> Self {
         Self {
             issuer: norm_iss(issuer),
             resolve_allow: Box::new(resolve_allow),
+            resolve_roles: Box::new(resolve_roles),
             fetch: Box::new(fetch),
             state: RefCell::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
             allow: RefCell::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            roles: RefCell::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
         }
     }
 
@@ -125,6 +141,40 @@ impl OidcVerifier {
             }
         }
         al.webids.iter().any(|w| w == web_id)
+    }
+
+    /// Boot-prime the webId→role map. Returns how many holdsRole edges cached.
+    pub fn warm_roles(&self, now_secs: u64) -> usize {
+        let mut rl = self.roles.borrow_mut();
+        rl.last_attempt = now_secs;
+        if let Some(v) = (self.resolve_roles)() {
+            rl.pairs = v;
+            rl.fetched_at = now_secs;
+        }
+        rl.pairs.len()
+    }
+
+    /// ADR-054 §3.3 — the caller's role, ASKED of the graph. A WebID with no
+    /// `holdsRole` edge has NO role (None), which is the honest answer for a
+    /// service or guest Principal: it is a real, allowed identity that holds no
+    /// role, and downstream authZ compares against `ownedBy` and fails closed.
+    /// Resolve failure empties the map (fail-closed), same posture as `allowed`.
+    pub fn role_for(&self, web_id: &str, now_secs: u64) -> Option<String> {
+        let mut rl = self.roles.borrow_mut();
+        let stale = now_secs.saturating_sub(rl.fetched_at) >= ALLOW_TTL_SECS;
+        let can_retry = now_secs.saturating_sub(rl.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
+            || rl.last_attempt == 0;
+        if stale && can_retry {
+            rl.last_attempt = now_secs;
+            match (self.resolve_roles)() {
+                Some(v) => {
+                    rl.pairs = v;
+                    rl.fetched_at = now_secs;
+                }
+                None => rl.pairs.clear(),
+            }
+        }
+        rl.pairs.iter().find(|(w, _)| w == web_id).map(|(_, r)| r.clone())
     }
 
     /// Boot warm-fetch (ADR-052 §2a): populate the cache so a CSS blip after
@@ -232,8 +282,12 @@ impl OidcVerifier {
             return Err(AuthError::WebIdNotAllowed);
         }
 
+        // 6. Role — ASKED of the graph (`?principal chorus:holdsRole ?role`),
+        //    never parsed out of the WebID string (ADR-054 §3.3). Renaming an
+        //    agent's WebID, or a WebID whose string encodes no role, now
+        //    resolves correctly; a Principal that holds no role gets none.
         let scope = auth::json_string_array(payload, "scope");
-        let agent_id = crate::role_from_webid(&web_id).unwrap_or_default();
+        let agent_id = self.role_for(&web_id, now_secs).unwrap_or_default();
         Ok(Claims { agent_id, web_id, aud, exp, scope })
     }
 }
@@ -264,7 +318,13 @@ pub fn verify_any(
         // HS256 and everything else (including alg=none) goes to the legacy
         // verifier, which refuses anything that isn't a validly HMAC-signed
         // chorus token — alg=none dies on BadSignature, not on a bypass.
-        _ => auth::verify_token(t, registry, now_secs),
+        // ADR-054 §3.3: the legacy path's `agentId` is a SELF-DECLARED claim,
+        // so the role it carries is re-resolved from the graph here too. One
+        // door, one role source — the HS256 arm dies at #3689 with its claim.
+        _ => auth::verify_token(t, registry, now_secs).map(|mut c| {
+            c.agent_id = oidc.role_for(&c.web_id, now_secs).unwrap_or_default();
+            c
+        }),
     }
 }
 
@@ -310,6 +370,54 @@ pub const PRINCIPAL_ALLOW_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.co
 /// Some(empty) = reachable and genuinely nobody allowed.
 pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
     query(PRINCIPAL_ALLOW_QUERY).map(|body| crate::select_v(&body))
+}
+
+/// ADR-054 §3.3 — resolve webId→role from `chorus:holdsRole`, the edge that
+/// makes role assignment GOVERNED DATA rather than a WebID naming convention.
+/// Emitted as one `?v` row per edge (`"<webid> <role-iri>"`) so the DAL's proven
+/// single-var extractor parses it — a WebID can carry no space, so the first
+/// one is an unambiguous separator. The role IRI travels WHOLE: naming it here
+/// would trade the WebID convention this card retires for an IRI convention.
+/// Principals with no `holdsRole` are simply absent: allowed to authenticate,
+/// holding no role.
+pub const PRINCIPAL_ROLE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r } BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }";
+
+/// A role IRI's name: the local part after the last `#`, `/` or `:`, minus a
+/// `role-` prefix if the IRI uses one. Convention-TOLERANT by construction —
+/// `…#role-wren`, `…#wren`, `…/roles/wren` and `urn:chorus:roles:wren` all name
+/// `wren` — so no edge is silently dropped for not matching a fragment shape.
+fn role_name(role_iri: &str) -> Option<&str> {
+    let local = role_iri.rsplit(['#', '/', ':']).next()?;
+    let name = local.strip_prefix("role-").unwrap_or(local);
+    (!name.is_empty()).then_some(name)
+}
+
+/// None = graph unreachable (caller fails closed); Some(empty) = reachable and
+/// genuinely no role assignments. A row this cannot read is DROPPED and SAID —
+/// fail-closed is right, but a silently vanishing role assignment would be a
+/// authZ refusal with no stated cause.
+pub fn resolve_principal_roles(
+    query: impl Fn(&str) -> Option<String>,
+) -> Option<Vec<(String, String)>> {
+    query(PRINCIPAL_ROLE_QUERY).map(|body| {
+        crate::select_v(&body)
+            .into_iter()
+            .filter_map(|row| {
+                let unreadable = || {
+                    eprintln!(
+                        "chorus-oidc: WARNING — unreadable holdsRole row {:?}; that Principal carries NO role until the edge is fixed (#3688)",
+                        row
+                    );
+                    None
+                };
+                let Some((w, r)) = row.split_once(' ') else { return unreadable() };
+                match role_name(r) {
+                    Some(name) if !w.is_empty() => Some((w.to_string(), name.to_string())),
+                    _ => unreadable(),
+                }
+            })
+            .collect()
+    })
 }
 
 /// Issuer equality with trailing-slash tolerance — `http://localhost:3001`
@@ -431,6 +539,10 @@ mod tests {
     fn allow() -> Vec<String> {
         vec![wren_webid(), silas_webid()]
     }
+    /// The graph's holdsRole edges for the stub allow-set (ADR-054 §3.3).
+    fn roles() -> Vec<(String, String)> {
+        vec![(wren_webid(), "wren".to_string()), (silas_webid(), "silas".to_string())]
+    }
 
     /// The stub CSS keypair — deterministic, tests-only. Its VERIFYING half is
     /// published through the stub JWKS exactly the way CSS publishes its key.
@@ -471,7 +583,7 @@ mod tests {
 
     fn verifier() -> OidcVerifier {
         let jwks = jwks_json(&css_key(), KID);
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || Some(jwks.clone()));
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || Some(jwks.clone()));
         v.warm_allow(NOW);
         v
     }
@@ -487,7 +599,7 @@ mod tests {
         let v = verifier();
         let c = v.verify(&token_valid(), NOW).expect("valid CSS token verifies");
         assert_eq!(c.web_id, wren_webid());
-        assert_eq!(c.agent_id, "wren", "agent derived from the WebID, not any env stamp");
+        assert_eq!(c.agent_id, "wren", "role resolved from the graph, not any env stamp");
     }
 
     // case 2 — forged-401: signature byte-tampered → refused, reason signature.
@@ -552,7 +664,7 @@ mod tests {
     // ⇒ 401, never allow-on-error.
     #[test]
     fn jwks_unreachable_failclosed() {
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), || None); // CSS down, JWKS cache empty
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || None); // CSS down, JWKS cache empty
         v.warm_allow(NOW);
         assert_eq!(v.verify(&token_valid(), NOW), Err(AuthError::JwksUnreachable));
     }
@@ -564,7 +676,7 @@ mod tests {
         let up = Rc::new(Cell::new(true));
         let up_c = up.clone();
         let jwks = jwks_json(&css_key(), KID);
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || {
             if up_c.get() { Some(jwks.clone()) } else { None }
         });
         v.warm_allow(NOW);
@@ -582,7 +694,7 @@ mod tests {
         let jwks = jwks_json(&css_key(), KID);
         let calls = Rc::new(Cell::new(0u32));
         let calls_c = calls.clone();
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || {
             calls_c.set(calls_c.get() + 1);
             Some(jwks.clone())
         });
@@ -637,7 +749,7 @@ mod tests {
     // the verified WebID; there is no claim an agent can add to act as another.
     #[test]
     fn webid_outside_allow_set_403s() {
-        let v = OidcVerifier::new(ISSUER, || Some(vec![silas_webid()]), {
+        let v = OidcVerifier::new(ISSUER, || Some(vec![silas_webid()]), || Some(roles()), {
             let jwks = jwks_json(&css_key(), KID);
             move || Some(jwks.clone())
         });
@@ -667,6 +779,7 @@ mod tests {
         let v = OidcVerifier::new(
             ISSUER,
             move || Some(if revoked_c.get() { vec![] } else { vec![wren_webid(), silas_webid()] }),
+            || Some(roles()),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -692,6 +805,7 @@ mod tests {
         let v = OidcVerifier::new(
             ISSUER,
             move || if up_c.get() { Some(vec![wren_webid()]) } else { None },
+            || Some(roles()),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -737,6 +851,228 @@ mod tests {
         });
         assert_eq!(got, Some(vec![wren_webid(), silas_webid()]));
         assert_eq!(resolve_principal_webids(|_| None), None, "unreachable is DISTINCT from empty");
+    }
+
+    // -----------------------------------------------------------------------
+    // #3688 / ADR-054 §3.3 — role is ASKED of the graph (chorus:holdsRole),
+    // never parsed out of the WebID string.
+    // -----------------------------------------------------------------------
+
+    /// A WebID whose STRING says one thing and whose holdsRole edge says
+    /// another: the graph wins. This is the case the retired parser got wrong —
+    /// it read the path segment and never consulted the model. Renaming an
+    /// agent's WebID, or a WebID that encodes no role at all, resolves here.
+    #[test]
+    fn role_comes_from_holds_role_not_the_webid_string() {
+        let jwks = jwks_json(&css_key(), KID);
+        // the pod segment reads "wren"; the model says this Principal holds silas
+        let v = OidcVerifier::new(
+            ISSUER,
+            || Some(allow()),
+            || Some(vec![(wren_webid(), "silas".to_string())]),
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        let c = v.verify(&token_valid(), NOW).expect("token verifies");
+        assert_eq!(
+            c.agent_id, "silas",
+            "role came from holdsRole; the string parser would have said wren"
+        );
+    }
+
+    /// An opaque WebID — nothing in the string to parse — still resolves,
+    /// because the edge carries the role. The parser returned None here.
+    #[test]
+    fn opaque_webid_still_resolves_a_role() {
+        let opaque = "https://id.lightlifeurbangardens.com/a7f3e1c9".to_string();
+        let jwks = jwks_json(&css_key(), KID);
+        let o2 = opaque.clone();
+        let v = OidcVerifier::new(
+            ISSUER,
+            move || Some(vec![o2.clone()]),
+            {
+                let o = opaque.clone();
+                move || Some(vec![(o.clone(), "kade".to_string())])
+            },
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        let t = mint_es256(&css_key(), KID, &payload(ISSUER, "chorus", &opaque, NOW + 3600));
+        assert_eq!(v.verify(&t, NOW).expect("verifies").agent_id, "kade");
+    }
+
+    /// A Principal that holds NO role — a service or a guest — authenticates
+    /// but carries no role, so downstream ownedBy authZ fails closed. The
+    /// parser handed such a caller a role-shaped string from its own WebID
+    /// (`marknakib`), which is exactly the guest-authorization surface #3682
+    /// closes at the door.
+    #[test]
+    fn principal_without_holds_role_carries_no_role() {
+        let guest = "https://id.lightlifeurbangardens.com/marknakib/profile/card#me".to_string();
+        let jwks = jwks_json(&css_key(), KID);
+        let g2 = guest.clone();
+        let v = OidcVerifier::new(
+            ISSUER,
+            move || Some(vec![g2.clone()]),
+            || Some(roles()), // guest is allowed, but holds no role
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        let t = mint_es256(&css_key(), KID, &payload(ISSUER, "chorus", &guest, NOW + 3600));
+        let c = v.verify(&t, NOW).expect("a guest still authenticates");
+        assert_eq!(c.web_id, guest);
+        assert_eq!(c.agent_id, "", "no holdsRole edge ⇒ no role, not a parsed one");
+    }
+
+    /// Reassignment drill, the role twin of the revocation drill: editing the
+    /// holdsRole edge in the model takes effect within ONE TTL, no restart.
+    #[test]
+    fn role_reassignment_lands_within_one_ttl() {
+        let jwks = jwks_json(&css_key(), KID);
+        let reassigned = Rc::new(Cell::new(false));
+        let rc = Rc::clone(&reassigned);
+        let v = OidcVerifier::new(
+            ISSUER,
+            || Some(allow()),
+            move || {
+                Some(vec![(
+                    wren_webid(),
+                    if rc.get() { "kade".to_string() } else { "wren".to_string() },
+                )])
+            },
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        assert_eq!(v.verify(&token_valid(), NOW).unwrap().agent_id, "wren");
+        reassigned.set(true); // the model edit
+        assert_eq!(
+            v.verify(&token_valid(), NOW + 10).unwrap().agent_id,
+            "wren",
+            "within TTL: the stale map may still answer — the accepted bound"
+        );
+        assert_eq!(
+            v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().agent_id,
+            "kade",
+            "past one TTL: the reassignment is live, no restart"
+        );
+    }
+
+    /// Graph unreachable ⇒ no role (fail-closed), matching the allow-set's
+    /// posture: a write needs the store anyway.
+    #[test]
+    fn role_map_fails_closed_when_graph_unreachable() {
+        let jwks = jwks_json(&css_key(), KID);
+        let up = Rc::new(Cell::new(true));
+        let uc = Rc::clone(&up);
+        let v = OidcVerifier::new(
+            ISSUER,
+            || Some(allow()),
+            move || if uc.get() { Some(roles()) } else { None },
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        assert_eq!(v.verify(&token_valid(), NOW).unwrap().agent_id, "wren");
+        up.set(false);
+        assert_eq!(
+            v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().agent_id,
+            "",
+            "graph unreachable ⇒ no role rather than a stale or guessed one"
+        );
+    }
+
+    /// The query asks the holdsRole EDGE in the security graph, and unreachable
+    /// stays distinct from empty.
+    #[test]
+    fn principal_role_query_asks_the_holds_role_edge() {
+        let body = format!(
+            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#role-wren"}}}},{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#role-silas"}}}},{{"v":{{"type":"literal","value":"malformed-no-separator"}}}}]}}}}"#,
+            wren_webid(),
+            silas_webid()
+        );
+        let got = resolve_principal_roles(|q| {
+            assert!(q.contains("chorus:holdsRole"), "asks the holdsRole edge");
+            assert!(q.contains("urn:chorus:domains:security"), "scoped to the security graph");
+            Some(body.clone())
+        });
+        assert_eq!(
+            got,
+            Some(roles()),
+            "pairs parse; a row without a separator is dropped, never half-parsed"
+        );
+        assert_eq!(resolve_principal_roles(|_| None), None, "unreachable is DISTINCT from empty");
+    }
+
+    /// The role IRI's SHAPE is not a second naming convention: whatever the
+    /// roles domain mints — `#role-wren`, a bare `#wren`, a path IRI — names
+    /// the same role. This is the residual coupling Kade and Wren both flagged
+    /// on the first present; a fragment-prefix assumption would have dropped
+    /// these rows silently, which is a refusal with no stated cause.
+    #[test]
+    fn role_iri_shape_is_not_a_naming_convention() {
+        for iri in [
+            "https://jeffbridwell.com/chorus#role-wren",
+            "https://jeffbridwell.com/chorus#wren",
+            "https://jeffbridwell.com/chorus/roles/wren",
+            "urn:chorus:roles:role-wren",
+        ] {
+            let body = format!(
+                r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} {}"}}}}]}}}}"#,
+                wren_webid(),
+                iri
+            );
+            assert_eq!(
+                resolve_principal_roles(|_| Some(body.clone())),
+                Some(vec![(wren_webid(), "wren".to_string())]),
+                "{} names role wren",
+                iri
+            );
+        }
+        // an edge that names nothing is dropped (and warned), not half-read
+        let empty = format!(
+            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} https://jeffbridwell.com/chorus#"}}}}]}}}}"#,
+            wren_webid()
+        );
+        assert_eq!(resolve_principal_roles(|_| Some(empty.clone())), Some(vec![]));
+    }
+
+    /// The legacy HS256 arm's self-declared `agentId` claim does not decide the
+    /// role either — verify_any re-resolves it from the graph, so there is ONE
+    /// role source at the door while the dual path lives (#3689 deletes the arm).
+    #[test]
+    fn legacy_arm_role_also_comes_from_the_graph() {
+        let jwks = jwks_json(&css_key(), KID);
+        let v = OidcVerifier::new(
+            ISSUER,
+            || Some(allow()),
+            // the model says this WebID holds kade, the token will claim wren
+            || Some(vec![(wren_webid(), "kade".to_string())]),
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        v.warm_roles(NOW);
+        let secret: &[u8] = b"test-chorus-service-token-secret";
+        let reg = KeyRegistry::resolve(
+            &[(wren_webid(), "chorus".to_string(), "K".to_string())],
+            |_| Some(secret.to_vec()),
+        );
+        let t = crate::auth::mint_hs256_for_tests(
+            secret,
+            &format!(
+                r#"{{"agentId":"wren","webId":"{}","aud":"chorus","exp":{}}}"#,
+                wren_webid(),
+                NOW + 3600
+            ),
+        );
+        let c = verify_any(&t, &reg, &v, NOW).expect("legacy token verifies");
+        assert_eq!(
+            c.agent_id, "kade",
+            "the graph decides the role; the self-declared agentId claim does not"
+        );
     }
 
     // JWKS parse hardening: multiple keys, non-EC keys skipped, fields never

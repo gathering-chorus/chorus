@@ -1,7 +1,8 @@
 //! #3356 — query/webid helpers the verifier uses, RELOCATED verbatim from owl-api
 //! lib.rs (behavior-preserving; owl-api re-exports these). select_v = SPARQL-JSON
-//! single-var parser; role_from_webid = the webid→role string parse (ADR-054 will
-//! later swap the CONSUMER to a graph query — this move changes NO logic).
+//! single-var parser. The webid→role string parse that lived beside it is GONE
+//! as of #3688 — ADR-054 §3.3 swapped the consumer to a `chorus:holdsRole`
+//! graph query (see `oidc::PRINCIPAL_ROLE_QUERY`).
 
 pub fn select_v(body: &str) -> Vec<String> {
     let mut vals = Vec::new();
@@ -89,18 +90,8 @@ fn json_unescape(s: &str) -> String {
     out
 }
 
-pub fn role_from_webid(web_id: &str) -> Option<String> {
-    if let Some(after) = web_id.split("/_agents/").nth(1) {
-        let role = after.split('/').next()?;
-        return if role.is_empty() { None } else { Some(role.to_string()) };
-    }
-    // CSS pod shape: scheme://host/<name>/profile/card#me (no _agents, no .ttl)
-    let rest = web_id.split("://").nth(1)?;
-    let mut segs = rest.split('/');
-    let _host = segs.next()?;
-    let name = segs.next()?;
-    if segs.next()? == "profile" && segs.next()?.starts_with("card") && !name.is_empty() {
-        return Some(name.to_string());
-    }
-    None
-}
+// #3688 — `role_from_webid` (the webid→role STRING parse) is retired here.
+// ADR-054 §3.3: role is now ASKED of the graph via `chorus:holdsRole`
+// (oidc::PRINCIPAL_ROLE_QUERY / OidcVerifier::role_for). There is no fallback
+// parser: a naming convention that can disagree with the model is exactly the
+// thing the edge query replaces.

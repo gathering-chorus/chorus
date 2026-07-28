@@ -6,4 +6,4 @@
 pub mod auth;
 pub mod oidc;
 pub mod query;
-pub use query::{role_from_webid, select_v};
+pub use query::select_v;

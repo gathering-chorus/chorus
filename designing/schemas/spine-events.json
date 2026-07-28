@@ -1811,6 +1811,61 @@
         "trace_id": "Werk trace join key"
       }
     },
+    "testresult.post.skipped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-test wire-back (#3592): the per-case TestResult POST was SKIPPED — `reason` names why (e.g. no-write-token). Registered by #3688.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "reason": "Why the post was skipped",
+        "count": "Joined cases that went unposted"
+      }
+    },
+    "testresult.posted": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-test wire-back (#3592): per-case TestResults POSTed to owl-api. Registered by #3688.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "count": "Cases posted",
+        "truncated_dropped": "Cases dropped past the MAX_POSTS cap, when truncated"
+      }
+    },
+    "testresult.unmatched": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-test wire-back (#3592): executed cargo cases that could not JOIN to a registered Test are NAMED here rather than silently dropped. Registered by #3688.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "count": "Unjoinable cases",
+        "kind": "Why they could not join"
+      }
+    },
+    "testresult.unregistered": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-test wire-back (#3592): cases that executed but hold no registered Test identity — the mirror of the reconcile gap; never posted under a fabricated identity. Registered by #3688.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "count": "Executed-but-unregistered cases"
+      }
+    },
+    "tests.reconcile": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-test (#3592 AC3): registered ∖ executed — the never-run gap, alertable but never blocking. Registered by #3688.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "registered": "Registered Test count",
+        "executed": "Executed case count",
+        "never_run": "Registered tests never executed"
+      }
+    },
     "test.gap.undeclared": {
       "vertebra": "proving",
       "source": "werk-test",
@@ -2989,6 +3044,16 @@
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
+      }
+    },
+    "rebase.conflict.autoresolved": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk verb-substep — `rebase` mechanical step under `commit/merge`: a GENERATED-only conflict taken from main's side and continued (#3632 semantics; the file regenerates on the next pass). Emitted since #3632, registered by #3688 — it was the phantom the emit-conformance gate reported.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "files": "The generated files auto-resolved"
       }
     },
     "rebase.conflict.held": {
