@@ -9,6 +9,10 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 PASS=0
 FAIL=0
 SERVER="${CHORUS_ROOT}/directing/clearing/src/server.ts"
+# #3646 extracted the jeff-message ack orchestration out of server.ts into
+# jeff-input.ts (processJeffInput, so the ack contract is unit-pinned). The ack
+# callback shape now lives HERE, not in server.ts — Test 2 asserts against it.
+JEFF_INPUT="${CHORUS_ROOT}/directing/clearing/src/jeff-input.ts"
 CLIENT="${CHORUS_ROOT}/directing/clearing/public/index.html"
 
 assert_contains() {
@@ -29,16 +33,16 @@ echo ""
 echo "Test 1: Server handler accepts ack callback"
 assert_contains "ack callback in handler signature" "callback\|ack" "$SERVER"
 
-# --- Test 2: Server calls callback with delivery result ---
-# Current shape (#1934): ack?.({ ok: boolean, error?: string }). Older fixture
-# asserted "status: sent|delivered" — that API shape changed but the test
-# wasn't updated.
-echo "Test 2: Server calls callback with delivery result"
-if grep -E "ack\??\.\(\{.*ok:" "$SERVER" 2>/dev/null | grep -q .; then
+# --- Test 2: jeff-input orchestrator calls the ack callback with delivery result ---
+# Shape (#1934): ack?.({ ok: boolean, error?: string }). The contract moved from
+# server.ts to jeff-input.ts in #3646 (extraction to unit-pin it) — so assert
+# against jeff-input.ts, not server.ts (the pre-#3646 location = a false red).
+echo "Test 2: jeff-input calls the ack callback with delivery result"
+if grep -E "ack\??\.\(\{.*ok:" "$JEFF_INPUT" 2>/dev/null | grep -q .; then
   echo "  PASS: callback invoked with { ok: ... }"
   ((PASS++))
 else
-  echo "  FAIL: callback called with { ok: ... } (expected in server.ts)"
+  echo "  FAIL: callback called with { ok: ... } (expected in jeff-input.ts)"
   ((FAIL++))
 fi
 
