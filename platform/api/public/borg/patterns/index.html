@@ -44,6 +44,8 @@ th { background: #f9fafb; font-weight: 500; font-size: 0.78rem; text-transform: 
 </div>
 
 <div class="panel">
+  <!-- #3711 — says when the counts below are unknown rather than zero. -->
+  <div id="sourcebanner" style="display:none;margin-bottom:10px;font-size:0.85rem"></div>
   <h2>Distribution (<span id="total">0</span> events)</h2>
   <div class="pattern-bar" id="bar"></div>
   <div class="bar-legend" id="legend"></div>
@@ -97,6 +99,31 @@ async function load(days) {
 }
 
 function render(d) {
+  // #3711 — the API now says WHERE its answer came from; the page has to read it.
+  // Without this, source==='unavailable' still renders "0 events", which is the
+  // exact lie this card removed one layer down: a log-store outage shown to Jeff
+  // as the fact that he had no interaction patterns. (Kade, #3711 review.)
+  const banner = document.getElementById('sourcebanner');
+  if (d.source === 'unavailable') {
+    document.getElementById('total').textContent = '—';
+    banner.style.display = 'block';
+    banner.style.color = '#dc2626';
+    banner.textContent = 'Could not reach the log store — these counts are unknown, not zero.'
+      + (d.reason ? ' (' + d.reason + ')' : '');
+    document.getElementById('bar').innerHTML = '';
+    document.getElementById('legend').innerHTML = '';
+    document.getElementById('insight').textContent = '';
+    return;
+  }
+  if (d.stale) {
+    banner.style.display = 'block';
+    banner.style.color = '#b45309';
+    banner.textContent = 'Showing the last good data — a refresh failed'
+      + (d.reason ? ' (' + d.reason + ')' : '') + '.';
+  } else {
+    banner.style.display = 'none';
+  }
+
   document.getElementById('total').textContent = d.total;
 
   const bar = document.getElementById('bar');
