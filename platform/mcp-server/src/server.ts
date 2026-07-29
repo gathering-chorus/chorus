@@ -2382,6 +2382,11 @@ function warnIfRepeatedAnnounce(
   } catch { /* best-effort */ }
 }
 
+/** The MCP text envelope every werk verb returns — one JSON payload as text. */
+function mcpJson(payload: unknown): { content: Array<{ type: 'text'; text: string }> } {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] };
+}
+
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2424,17 +2429,12 @@ async function executeChorusWerk(
     warnIfRepeatedAnnounce(existingRun, args.role, args.card_id, spawnFn, scriptsDir, pathMod);
   }
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
-          role: args.role, card_id: args.card_id, accepter,
-          failureReason: existingRun.failureReason,
-          note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
-        }),
-      }],
-    };
+    return mcpJson({
+      ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
+      role: args.role, card_id: args.card_id, accepter,
+      failureReason: existingRun.failureReason,
+      note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
+    });
   }
   // #3538 — a PRESENTED record for a SUPERSEDED patch must re-demo the new commit.
   // Compare the werk's CURRENT patch-id to the recorded one: if HEAD advanced (the
@@ -2454,19 +2454,14 @@ async function executeChorusWerk(
   if (action.kind === 'attach') {
     const r = action.run;
     const polling = r.phase === 'running';
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
-          role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
-          failureReason: r.failureReason,
-          note: polling
-            ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
-            : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
-        }),
-      }],
-    };
+    return mcpJson({
+      ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
+      role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+      failureReason: r.failureReason,
+      note: polling
+        ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
+        : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
+    });
   }
   // #3458 — START: launch act DETACHED and return immediately. A bash wrapper streams
   // act's output to the per-card log and appends WERK_EXIT=<code> when it finishes — a
@@ -2503,16 +2498,11 @@ async function executeChorusWerk(
     prevPatchId: existingRun?.patchId,
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
-  return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
-        ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
-        run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
-        note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
-      }),
-    }],
-  };
+  return mcpJson({
+    ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
+    run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+    note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
+  });
 }
 
 // #3279/#3193 — Half B: THE GO. Runs werk.yml's go-gated `land` job synchronously (merge → ff-sync →
