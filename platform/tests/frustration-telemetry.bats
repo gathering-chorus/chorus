@@ -8,12 +8,39 @@ load test_helper
 TELEMETRY="${CHORUS_ROOT}/platform/scripts/frustration-telemetry.sh"
 RENDERER="${CHORUS_ROOT}/platform/scripts/frustration-telemetry-render.py"
 
+# #3710 — this suite read Jeff's live ~/.chorus/index.db. With no database the
+# script died before printing anything, so every case failed on a JSON parse of
+# empty output — which reads as "the renderer is broken" when the truth was
+# "there is no index.db here". The script already exposes CHORUS_DB; the test
+# just never used it. It now builds its own database, so these assertions are
+# about the RENDERER's output, which is what they claim to be about.
+# (memory_writes needs no fixture: its source dirs are absent here and the
+# script already degrades to {} — a dict, which is all the test asserts.)
 setup() {
   OUT="$(mktemp)"
+  export CHORUS_DB="${BATS_TEST_TMPDIR:-/tmp}/frustration-fixture-$$.db"
+  python3 - "$CHORUS_DB" <<'PY'
+import sqlite3, sys, datetime
+db = sqlite3.connect(sys.argv[1])
+db.execute("""CREATE TABLE messages (
+  timestamp TEXT, role TEXT, content TEXT,
+  source TEXT, is_bridge INTEGER, author TEXT)""")
+# Rows carrying frustration vocabulary, attributed the way the queries expect
+# (source='claude', not bridge), dated today so they land inside --days 30
+# whenever this runs.
+today = datetime.date.today().isoformat()
+db.executemany(
+    "INSERT INTO messages VALUES (?,?,?,?,?,?)",
+    [(f"{today} 10:00:00", "kade", "this is broken and stuck again", "claude", 0, "jeff"),
+     (f"{today} 11:00:00", "kade", "still broken, why is it stuck", "claude", 0, "jeff")],
+)
+db.commit()
+PY
 }
 
 teardown() {
-  rm -f "$OUT"
+  rm -f "$OUT" "$CHORUS_DB"
+  unset CHORUS_DB
 }
 
 # --- AC: 3 vocab panels + memory-writes overlay + top-bad-days table ---
