@@ -37,12 +37,12 @@ ERROR_MSG=$(echo "$RESULT" | python3 -c "
 import sys,json
 d=json.load(sys.stdin)
 for r in d.get('data',{}).get('result',[]):
-for ts,msg in r.get('values',[]):
-  try:
-    j=json.loads(msg)
-    print(j.get('error',j.get('message','unknown error'))[:150])
-  except: print(msg[:150])
-  sys.exit(0)
+  for ts,msg in r.get('values',[]):
+    try:
+      j=json.loads(msg)
+      print(j.get('error',j.get('message','unknown error'))[:150])
+    except: print(msg[:150])
+    sys.exit(0)
 print('unknown')
 " 2>/dev/null || echo "unknown")
 echo "failed:fuseki_down+sync_error:$ERROR_MSG"

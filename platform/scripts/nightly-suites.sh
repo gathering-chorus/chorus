@@ -737,13 +737,14 @@ release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
 persist_run_results() {
   local _out="$1"
   local _log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
-  # Same file via a different fd? Then the redirect is doing the job already.
-  local _a _b
-  _a=$(stat -f '%d:%i' /dev/stdout 2>/dev/null || echo a)
-  _b=$(stat -f '%d:%i' "$_log" 2>/dev/null || echo b)
-  if [ "$_a" = "$_b" ]; then
-    return 0
-  fi
+  # No "is fd 1 already this file?" test here, deliberately. Two attempts at one
+  # both failed on macOS: `$(stat … /dev/stdout)` reads the command
+  # substitution's PIPE rather than the caller's fd 1, and `[ /dev/fd/1 -ef … ]`
+  # is false under bash even when fd 1 IS the file, because /dev/fd reports a
+  # synthetic st_dev and bash's -ef compares device AND inode. Rather than carry
+  # a clever test that silently does nothing, the CALLER simply does not echo the
+  # results when it hands them here — so this function is the single writer and
+  # duplication is structurally impossible. Fewer moving parts, no fd forensics.
   mkdir -p "$(dirname "$_log")" 2>/dev/null
   if ! printf '%s\n' "$_out" >> "$_log" 2>/dev/null; then
     echo "nightly-suites: WARNING — could not persist results to $_log; this run's results reach NOBODY (daily-review reads only this file)" >&2
@@ -826,8 +827,13 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
-    out=$(run_all); printf '%s\n' "$out"
-    persist_run_results "$out"   # #3709 — not dependent on launchd's redirect
+    out=$(run_all)
+    # #3709 — persist_run_results is the SINGLE writer of the aggregate log, so
+    # a working launchd redirect cannot double-write it. Echo to stdout only for
+    # a human at a terminal; under launchd fd 1 IS the log and printing here is
+    # exactly the duplication we are avoiding.
+    [ -t 1 ] && printf '%s\n' "$out"
+    persist_run_results "$out"
     emit_suite_results "$out"; notify_results "$out"
     ;;
   *)

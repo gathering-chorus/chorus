@@ -55,13 +55,20 @@ OUT=$(NIGHTLY_LOG_PATH="$LOG" bash "$NIGHTLY" --last-run 2>&1)
   && ok "--last-run reads back exactly one run's worth of results" \
   || no "--last-run could not read what persist wrote: $(printf '%s' "$OUT" | head -2)"
 
-# 4. No double-write when the redirect DOES work: if stdout already IS the log
-#    (the launchd case), writing again would duplicate every run in the file.
-LOG2="$TMP/working-redirect.log"
-NIGHTLY_LOG_PATH="$LOG2" persist_run_results "$FIXTURE" >> "$LOG2" 2>/dev/null
-[ "$(grep -c '^SUITE|' "$LOG2")" -eq 2 ] \
-  && ok "no duplicate when stdout already is the log (launchd redirect working)" \
-  || no "duplicated the run — $(grep -c '^SUITE|' "$LOG2") lines, want 2"
+# 4. Exactly one copy per run, even when the launchd redirect IS working.
+#    persist_run_results is the SINGLE writer: --run-all only echoes to stdout
+#    when fd 1 is a terminal, so under launchd (fd 1 = the log) nothing is
+#    written twice. Assert the invariant at its source — the dispatch must not
+#    unconditionally print the results it is also persisting.
+DISPATCH=$(sed -n '/--run-all)/,/;;/p' "$NIGHTLY")
+if printf '%s' "$DISPATCH" | grep -qE '^\s*printf .*"\$out"' ; then
+  no "dispatch prints the results unconditionally AND persists them — duplicates under a working redirect"
+else
+  ok "dispatch does not unconditionally echo results it also persists"
+fi
+printf '%s' "$DISPATCH" | grep -q 'persist_run_results' \
+  && ok "--run-all persists its results" \
+  || no "--run-all does not call persist_run_results"
 
 # 5. An unwritable log is LOUD. Silence here is what cost a week.
 RO="$TMP/readonly"; mkdir -p "$RO"; chmod 500 "$RO"

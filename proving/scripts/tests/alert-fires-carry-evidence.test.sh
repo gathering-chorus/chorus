@@ -165,6 +165,72 @@ for yml in "$ALERTS"/*.yml; do
   fi
 done
 
+echo "=== the ACTION must receive the check's verdict ==="
+# alert-runner.sh runs the action with a bare `bash -c "$action_script"` — a
+# fresh shell with no environment. Four alerts interpolate $STATUS into their
+# nudge text, so every one of those nudges has been sending an EMPTY verdict.
+# The 2026-07-29 00:00 nudge arrived as "ci-main-red:  (quality.yml on main --
+# red:<url> means ... unverifiable:GH_TOKEN-absent means ...)" — note the double
+# space. Silas read the explanatory legend as if it were the verdict and spent
+# two days reasoning from a value the alarm never actually sent. An action that
+# cannot see its own check is the purest case of this card's defect class.
+RUNNER="$(cd "$(dirname "$0")/../.." && pwd)/scripts/alert-runner.sh"
+if grep -qE 'STATUS="?\$(result|\{result)' "$RUNNER"; then
+  pass "alert-runner passes the check result into the action as \$STATUS"
+else
+  fail "alert-runner runs the action with no environment — every \$STATUS nudge sends an empty verdict"
+fi
+# End-to-end: a check that prints a verdict, an action that echoes $STATUS.
+RT=$(mktemp -d)
+cat > "$RT/probe.yml" <<'YML'
+name: probe-status-passthrough
+description: fixture
+severity: warning
+schedule: "0 0 * * *"
+
+check: |
+  echo "verdict-token-42"
+  exit 1
+
+action: |
+  echo "ACTION_SAW:$STATUS"
+YML
+# Drive the runner's own extraction + invocation shape rather than re-implementing it.
+chk=$(awk '/^check: \|/{f=1;next} /^[a-z]/{if(f)exit} f{print}' "$RT/probe.yml")
+act=$(awk '/^action: \|/{f=1;next} /^[a-z]/{if(f)exit} f{print}' "$RT/probe.yml")
+result=$(bash -c "$chk" 2>&1) || true
+seen=$(STATUS="$result" bash -c "$act" 2>&1)
+case "$seen" in
+  *verdict-token-42*) pass "an action invoked with STATUS in env sees the verdict" ;;
+  *) fail "action could not see the verdict even when passed: '$seen'" ;;
+esac
+rm -rf "$RT"
+
+echo "=== extracted checks must be valid PYTHON too, not just valid bash ==="
+# bash -n cannot see inside a python heredoc. The ci-main-red/startup-sync
+# extraction dedented python that had been at a different indent level inside
+# the yml, producing an IndentationError that 2>/dev/null swallowed — the check
+# still returned the right verdict but its error detail silently became
+# 'unknown'. A degraded message is exactly what this card is about.
+for sh in "$ALERTS"/*.check.sh; do
+  [ -f "$sh" ] || continue
+  n=$(basename "$sh")
+  # pull each python3 -c "..." body and compile it
+  bad=0
+  python3 - "$sh" <<'PY' || bad=1
+import re, sys, ast
+src = open(sys.argv[1]).read()
+for m in re.finditer(r'python3 -c "\n(.*?)\n" ', src, re.S):
+    body = m.group(1).replace('\\"', '"')
+    try:
+        ast.parse(body)
+    except SyntaxError as e:
+        print(f"  python syntax error at line {e.lineno}: {e.msg}", file=sys.stderr)
+        raise SystemExit(1)
+PY
+  [ "$bad" -eq 0 ] && pass "$n: embedded python compiles" || fail "$n: embedded python has a syntax error (message detail silently degrades)"
+done
+
 echo
 [ "$FAIL" -eq 0 ] && { echo "PASS: fires carry evidence"; exit 0; }
 echo "RED: at least one alarm fires without saying what it saw"; exit 1

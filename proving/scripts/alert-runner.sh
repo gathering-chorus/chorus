@@ -77,7 +77,16 @@ run_check() {
   action_script=$(awk '/^action: \|/{found=1; next} /^[a-z]/{if(found) exit} found{print}' "$rule_file")
 
   if [[ -n "$action_script" ]]; then
-    bash -c "$action_script" >> "$LOG" 2>&1 || true
+    # #3709 — HAND THE ACTION THE VERDICT. This was a bare `bash -c`: a fresh
+    # shell with no environment, while four alerts (ci-main-red, lancedb-stale,
+    # crawler-domain-failure, tunnel-down) interpolate $STATUS into their nudge
+    # text. Every one of those nudges has been sending an EMPTY verdict — the
+    # 2026-07-29 00:00 alarm arrived as "ci-main-red:  (quality.yml on main --
+    # red:<url> means ... unverifiable:GH_TOKEN-absent means ...)", where the
+    # double space is the missing value. The reader then fills the blank from
+    # the legend and reasons about a state the alarm never actually reported.
+    # An action that cannot see its own check is the root of this defect class.
+    STATUS="$result" bash -c "$action_script" >> "$LOG" 2>&1 || true
     date +%s > "$fire_file"
     log "  ACTION $name fired — cooldown ${COOLDOWN_SECONDS}s started"
   fi

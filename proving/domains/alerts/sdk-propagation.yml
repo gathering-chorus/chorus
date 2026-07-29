@@ -18,7 +18,11 @@ action: |
     exit 0
   fi
   touch "$COOLDOWN"
-  DETAIL=$(/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/check-sdk-propagation.sh 2>&1 || true)
+  # #3709 — report the OBSERVATION (#3519 contract). The old text asserted a
+  # consequence the check never measured ("consumers are loading old SDK code")
+  # and prescribed a fix ("Rebuild … then restart any long-running consumers"),
+  # which is the reader's call to make from the data. It also re-ran the check to
+  # get detail; $STATUS already carries the check's own output now that
+  # alert-runner passes it (it previously arrived empty in every alert).
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "sdk-propagation: chorus-sdk dist is stale vs landed src — consumers are loading old SDK code. Rebuild (cd platform/chorus-sdk && npm run build), then restart any long-running consumers.
-$DETAIL" 2>/dev/null || true
+  "$OPS_NUDGE" silas "sdk-propagation: $STATUS" 2>/dev/null || true
