@@ -1,24 +1,24 @@
-# Daily Ops Review — 2026-07-28
+# Daily Ops Review — 2026-07-29
 
 ## 1. Hooks Health
-**Status: YELLOW→IMPROVING**
-`cargo check` passes. Down to **1** dead-code warning: `owes_response_block` (nudge_drain.rs:178). `registration_json` warning from Jul 27 is resolved.
-**Action:** Silas — suppress or remove `owes_response_block`; good progress, one item remaining.
+**Status: YELLOW (regression)**
+`cargo check` passes with **2** dead-code warnings: `registration_json` (session_registry.rs:66) and `owes_response_block` (nudge_drain.rs:178). Jul 28 brief said `registration_json` resolved — it is back in the Jul 24 snapshot tree.
+**Action:** Silas — verify whether fix landed after Jul 24; suppress or remove both dead-code paths.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-34 plists across repo reference `/tmp/` (17 in `proving/config/launchagents/`, remainder in `platform/scripts/launchagents-*`). Count unchanged from Jul 27.
-**Action:** Silas — migration card still open; no movement.
+Plists in `proving/config/launchagents/` and `platform/scripts/launchagents-*` reference `/tmp/` for stdout/stderr. Count unchanged.
+**Action:** Silas — migration card open; no movement.
 
 ## 3. CLAUDE.md Fragments
 **Status: YELLOW (carry)**
-Shared fragments in `designing/claudemd/shared/` last committed 2026-07-23 (5d). Root `CLAUDE.md` updated today. Fragment sync lag unresolved; `chorus-prompt.md` is the only current file.
-**Action:** Wren + Kade — role fragments still need content refresh post Jul 27 cards.
+Shared fragments in `designing/claudemd/shared/` last committed 2026-07-24 (5d). Manifest at build 217, last changelog 2026-04-17. Fragment sync lag unresolved.
+**Action:** Wren + Kade — role fragments need content refresh.
 
 ## 4. CSC Compliance
 **Status: RED (carry)**
-`messages/scripts/` and `architect/scripts/` paths do not exist. `platform/scripts/` has **37 .sh files** with `/tmp/` refs — count unchanged from Jul 26.
-**Action:** Silas — remediation card still needed; check-path mismatch is a separate tracking gap.
+Check-paths `messages/scripts/` and `architect/scripts/` do not exist. `platform/scripts/` has **142** `/tmp/` occurrences across operational scripts — up from Jul 28 estimate of 37 files.
+**Action:** Silas — remediation card needed; update prompt check-paths to `platform/scripts/`.
 
 ## 5. Git Dirty State
 **Status: GREEN**
@@ -26,19 +26,19 @@ Shared fragments in `designing/claudemd/shared/` last committed 2026-07-23 (5d).
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry +1d)**
-2 WIP cards last updated 2026-04-07 — now **112d** stale (was 111d). Cards: "Framework service design — OWL entity model" and "Restore chorus product boundary". Appear in all 3 role board snapshots.
-**Action:** Jeff/Wren — close or archive #1759/#1791; 112d in WIP is a board-health blocker.
+**Status: YELLOW**
+No open GitHub issues. 2 aged Dependabot PRs (chorus repo, 56d open): **#449** (`@cucumber/cucumber` 12→13) and **#443** (`ureq` 2→3), both major breaking; #443 auto-rebase disabled.
+**Action:** Jeff/Silas — review and merge or close; #443 needs rebase re-enabled.
 
 ## 7. Domain Context Freshness
 **Status: RED (carry)**
-All 5 domain-context files at 2026-07-23 (5d old). Cannot determine cards shipped today without live Vikunja access; Jul 27 showed 4 chorus/infra cards shipped, making chorus context ~100d stale.
-**Action:** Silas — chorus context critical; Wren — all 5 files overdue for refresh.
+All 5 domain-context files last committed 2026-07-24 (5d, threshold 7d). Chorus content ~100d stale per Jul 28; 4 chorus/infra cards shipped Jul 27 with no context update.
+**Action:** Silas — chorus context critical; all 5 files expire Jul 31.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No `perf-baseline-*.json` in `proving/logs/`. Scripts exist but no prior run data to diff against. Repo total: 664 MB.
+No `perf-baseline-*.json` in `proving/logs/`. Script targets macOS `diskutil`; not runnable in this env.
 **Action:** Silas — land nightly baseline JSON to `proving/logs/` to enable delta tracking.
 
 ---
-*Jul 28 delta: §1 improved (2→1 warning, `registration_json` resolved). §6 escalated to 112d. All other items carry from Jul 27. Escalation: §7 chorus context ~100d stale; §6 WIP cards 112d dead.*
+*Jul 29 delta: §1 regression (1→2 warnings, `registration_json` returned). §4 count corrected to 142 occurrences. §6 switched to GitHub PRs (no open issues found). Watch: domain context hits 7d threshold Jul 31.*
