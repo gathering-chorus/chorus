@@ -494,9 +494,19 @@ jobs:
         # stack, so running them here fail-instead-of-skips (the TestEdgesShape /
         # model-deploy block of the 7/23 red). Same contract as jest's
         # hermetic/integration split (#3559/#2524): CI runs the unit tier only.
+        # #3710 — SELECT the unit tier, don't just exclude integration. The old
+        # `grep -rL 'integration'` swept in everything that merely wasn't tagged
+        # integration: 4 e2e files (not hermetic BY DEFINITION) and 27 files with
+        # no @test-type header at all. That is 31 of 76 files never declared unit,
+        # and it was most of this job's red. Undeclared is now excluded — but
+        # LOUDLY, listed in the log, because a silently-dropped test reads as
+        # coverage when it isn't.
         run: |
-          grep -rL '@test-type: integration' platform/tests --include='*.bats' | sort > /tmp/unit-bats.txt
-          echo "unit-tier bats: $(wc -l < /tmp/unit-bats.txt) files (integration tier excluded: $(grep -rl '@test-type: integration' platform/tests --include='*.bats' | wc -l))"
+          grep -rl '@test-type: unit' platform/tests --include='*.bats' | sort > /tmp/unit-bats.txt
+          grep -rL '@test-type:' platform/tests --include='*.bats' | sort > /tmp/undeclared-bats.txt
+          echo "unit-tier bats: $(wc -l < /tmp/unit-bats.txt) files"
+          echo "NOT RUN — undeclared tier ($(wc -l < /tmp/undeclared-bats.txt) files, each needs a '# @test-type:' header per #3442):"
+          sed 's/^/  /' /tmp/undeclared-bats.txt
           xargs bats --tap < /tmp/unit-bats.txt
 
   clippy:

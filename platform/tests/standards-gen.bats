@@ -9,7 +9,10 @@ load test_helper
 # counts from the three data sources.
 
 GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
-DECISIONS_MD="${CHORUS_ROOT}/product-manager/decisions.md"
+# #3710 — read the SAME source the generator reads. product-manager/decisions.md
+# was deleted by #2328 (split-brain role dirs merged into roles/), so this test
+# had been asserting against a path that no longer exists.
+DECISIONS_MD="${CHORUS_ROOT}/roles/wren/decisions.md"
 HOOKS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 OUTPUT_DIR="/tmp/standards-gen-test"

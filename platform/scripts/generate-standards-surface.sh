@@ -37,11 +37,17 @@ mkdir -p "$OUTPUT_DIR"
 DECISION_COUNT=$(grep -c "^## DEC-" "$DECISIONS_MD" 2>/dev/null || echo 0)
 
 # 2. Hook module count (exclude mod.rs)
-HOOK_COUNT=$(ls "$HOOKS_DIR"/*.rs 2>/dev/null | grep -v mod.rs | wc -l | tr -d ' ')
+# #3710 — `2>/dev/null` silences the message but NOT the exit code: under
+# `set -euo pipefail` an empty glob still aborts the whole script. On any
+# machine without Jeff's ~/.claude memory dir (CI, a fresh checkout) this
+# killed the generator at line 43. `|| true` is what makes an absent source
+# read as zero, which is what the counts already mean elsewhere (see
+# DECISION_COUNT's `|| echo 0` above).
+HOOK_COUNT=$( { ls "$HOOKS_DIR"/*.rs 2>/dev/null || true; } | grep -v mod.rs | wc -l | tr -d ' ')
 
 # 3. Feedback and story counts from memory files
-FEEDBACK_COUNT=$(ls "$MEMORY_DIR"/feedback_*.md 2>/dev/null | wc -l | tr -d ' ')
-STORY_COUNT=$(ls "$MEMORY_DIR"/story_*.md 2>/dev/null | wc -l | tr -d ' ')
+FEEDBACK_COUNT=$( { ls "$MEMORY_DIR"/feedback_*.md 2>/dev/null || true; } | wc -l | tr -d ' ')
+STORY_COUNT=$( { ls "$MEMORY_DIR"/story_*.md 2>/dev/null || true; } | wc -l | tr -d ' ')
 
 # 4. Gate enforcement rates from hooks metrics API (#2277)
 # Replaces direct awk parsing of pulse log — API has 60s cache and structured JSON
