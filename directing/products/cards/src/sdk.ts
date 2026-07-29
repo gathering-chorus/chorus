@@ -639,12 +639,9 @@ async function collectRequiredFieldErrors(opts: AddOpts): Promise<string[]> {
 // Validates description: the Experience + AC floor (universal) + the six
 // articulated sections (agent-only, the bouncer's substance gate). #3293.
 // #2895: Experience promoted from WARN to ERROR — caller no longer needs title/board for the warn-event emit.
-function validateDescription(
-  opts: AddOpts, _title: string, _boardName: string, errors: string[],
-): void {
-  // #3293: --quick removed. The Experience + AC floor is UNIVERSAL — every card,
-  // including Jeff-initiated, carries its substance. There is no escape hatch.
-  const desc = (opts.description || '').trim();
+/** The UNIVERSAL floor (#3293): every card, Jeff's included, carries Experience + AC. */
+function validateFloor(description: string, errors: string[]): void {
+  const desc = description.trim();
   if (!desc) {
     errors.push('Missing --desc (every card needs a description with ## Experience + AC). Use --desc-file <path> or --desc - for stdin.');
   } else {
@@ -655,10 +652,16 @@ function validateDescription(
       /\d+\.\s+\S/m.test(desc);
     if (!hasAC) errors.push('Description missing acceptance criteria (need ## AC heading, checkboxes, or numbered items).');
   }
-  const hasExperience = /##\s*experience/i.test(opts.description || '');
-  if (!hasExperience) {
+  if (!/##\s*experience/i.test(description)) {
     errors.push('Description missing "## Experience" section — name the user impact (what changes for Jeff/roles after this lands).');
   }
+}
+
+function validateDescription(
+  opts: AddOpts, _title: string, _boardName: string, errors: string[],
+): void {
+  const description = opts.description || '';
+  validateFloor(description, errors);
   // #3293: the six articulated sections below are the AGENT bouncer's substance
   // gate — required ONLY for agent-initiated cards. Jeff-initiated cards
   // (DEPLOY_ROLE=jeff or unset) file at the Experience + AC floor above.
@@ -678,7 +681,7 @@ function validateDescription(
     { heading: 'Scope of impact', pattern: /##\s*scope\s+of\s+impact\b/i, minWords: 20, purpose: 'what surfaces this touches, who is affected when it lands, what could break elsewhere' },
   ];
   for (const sec of REQUIRED_SECTIONS) {
-    const m = (opts.description || '').match(new RegExp(sec.pattern.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
+    const m = description.match(new RegExp(sec.pattern.source + '([\\s\\S]*?)(?=\\n##\\s|\\n*$)', 'i'));
     if (!m) {
       errors.push(`Description missing "## ${sec.heading}" section — ${sec.purpose}. The bouncer refuses proposals without a substantive answer to each of the six questions.`);
     } else {
@@ -1655,19 +1658,21 @@ function buildFieldChanges(
 ): Array<{ field: string; old_value: string; new_value: string }> {
   const out: Array<{ field: string; old_value: string; new_value: string }> = [];
   const tagCategories = ['domain', 'chunk', 'sequence', 'type', 'origin'];
-  const beforeLabels = before.domains || [];
+  // parseTask (client.ts) is the only BoardTask constructor and always fills
+  // these — hence no ?? guards: the type's non-nullability is real, not assumed.
+  const beforeLabels = before.domains;
   for (const [key, value] of Object.entries(pairs)) {
     if (tagCategories.includes(key)) {
       const prior = beforeLabels.find((l) => l.startsWith(`${key}:`));
       out.push({ field: key, old_value: prior ? prior.slice(key.length + 1) : '', new_value: value });
     } else if (key === 'owner') {
-      out.push({ field: 'owner', old_value: before.owner ?? '', new_value: value });
+      out.push({ field: 'owner', old_value: before.owner, new_value: value });
     } else if (key === 'priority') {
-      out.push({ field: 'priority', old_value: before.priority ?? '', new_value: value });
+      out.push({ field: 'priority', old_value: before.priority, new_value: value });
     } else if (key === 'title') {
-      out.push({ field: 'title', old_value: before.title ?? '', new_value: value });
+      out.push({ field: 'title', old_value: before.title, new_value: value });
     } else if (key === 'status') {
-      out.push({ field: 'status', old_value: before.status ?? '', new_value: value });
+      out.push({ field: 'status', old_value: before.status, new_value: value });
     } else if (key === 'desc' || key === 'description') {
       // Don't include full desc text in spine payload; just signal length delta.
       out.push({ field: 'description', old_value: '(omitted)', new_value: `(${value.length} chars)` });
