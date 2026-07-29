@@ -54,7 +54,14 @@ classify_suite() {
         s_total=$((s_passed + s_failed))
       fi
       ;;
-    shell|lint|coverage)
+    shell|lint|coverage|meta)
+      # #3709 — `meta` joins for exactly the reason coverage did. It is the nightly
+      # reporting on ITSELF: --last-run emits SUITE|meta|<log>|silas|fail|0 pass, 1 fail
+      # (nightly log STALE/MISSING …) when it cannot read a run. With no arm here
+      # s_failed stayed 0 and the verdict fell through to `broke`, so the precise
+      # "the 03:00 run did not write" reached Jeff as "BUILD BROKE (rc≠0, no test
+      # output)" on 07-19, 07-21 and 07-29 — a build failure that never happened,
+      # masking a week in which the suites ran but no results were written anywhere.
       # #3600 — coverage emits the same "N pass, N fail (coverage % vs floor)" shape as
       # shell/lint. Without `coverage` here a coverage-floor MISS fell through to the broke
       # verdict → mislabeled "BUILD BROKE (rc≠0, no test output)" though coverage ran fine.

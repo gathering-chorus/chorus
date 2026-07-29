@@ -721,6 +721,37 @@ acquire_single_flight_lock() {
 }
 release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
 
+# #3709 — OWN THE RESULTS FILE. Until now --run-all only printed to stdout and
+# the aggregate log existed solely because launchd redirected StandardOutPath
+# into it. That redirect stopped landing on 2026-07-22: the suites still ran
+# nightly and still wrote per-suite failure files, but nothing reached the
+# aggregate, and daily-review-quality.sh reads only the aggregate. Seven days of
+# red went unreported while --last-run said, accurately, "the 03:00 run did not
+# write". A results file that exists only when an external redirect happens to
+# work is a single point of failure for the whole reporting chain.
+#
+# Appends (never truncates): --last-run walks backward through concatenated runs
+# to find the block boundary, so history must survive. Skips the write when
+# stdout already IS the log — under a working launchd redirect that would
+# duplicate every run. Failure to persist is LOUD; silence is what cost the week.
+persist_run_results() {
+  local _out="$1"
+  local _log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+  # Same file via a different fd? Then the redirect is doing the job already.
+  local _a _b
+  _a=$(stat -f '%d:%i' /dev/stdout 2>/dev/null || echo a)
+  _b=$(stat -f '%d:%i' "$_log" 2>/dev/null || echo b)
+  if [ "$_a" = "$_b" ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$_log")" 2>/dev/null
+  if ! printf '%s\n' "$_out" >> "$_log" 2>/dev/null; then
+    echo "nightly-suites: WARNING — could not persist results to $_log; this run's results reach NOBODY (daily-review reads only this file)" >&2
+    return 1
+  fi
+  return 0
+}
+
 # --- Dispatch ---
 # Below = dispatch-only (CLI entry, exits on unknown arg).
 # Above = sourceable (function definitions safe for unit tests to import).
@@ -795,7 +826,9 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
-    out=$(run_all); printf '%s\n' "$out"; emit_suite_results "$out"; notify_results "$out"
+    out=$(run_all); printf '%s\n' "$out"
+    persist_run_results "$out"   # #3709 — not dependent on launchd's redirect
+    emit_suite_results "$out"; notify_results "$out"
     ;;
   *)
     echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all|--last-run|--run-one <kind> <path>}" >&2
