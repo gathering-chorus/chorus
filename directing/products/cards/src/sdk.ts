@@ -704,33 +704,38 @@ function reportErrorsAndExit(errors: string[], title: string, boardName: string)
   process.exit(1);
 }
 
-// Applies post-add tags (sequence, origin) and triggers workflow if status is Now.
-// cog-override: applyPostAddTags: per-axis tag-application chain (#2652 added subdomain+subproduct branches; pre-existing for sequence/origin/workflow). Sequential branches, intentional.
+/**
+ * Every post-add step is best-effort: a tag that fails must not fail the card
+ * that already exists. One place to say that, instead of six try/catch blocks.
+ */
+async function bestEffort(label: string, fn: () => Promise<void>): Promise<void> {
+  try { await fn(); }
+  catch (err: unknown) { console.error(`  (${label}: ${err instanceof Error ? err.message : err})`); }
+}
+
+// Applies post-add tags (sequence, origin, subproduct, subdomain — the #2652
+// axes) and triggers workflow if status is Now. Each axis is independent and
+// applied in order; none of them can block the others.
 async function applyPostAddTags(
   client: BoardClient, task: BoardTask, opts: AddOpts,
 ): Promise<void> {
   if (opts.sequence) {
-    try { await client.tag(task.index, 'sequence', opts.sequence); }
-    catch (err: unknown) { console.error(`  (sequence tag: ${err instanceof Error ? err.message : err})`); }
+    await bestEffort('sequence tag', () => client.tag(task.index, 'sequence', opts.sequence as string));
   }
   if (opts.origin) {
-    try { await client.tag(task.index, 'origin', opts.origin.toLowerCase()); }
-    catch (err: unknown) { console.error(`  (origin tag: ${err instanceof Error ? err.message : err})`); }
+    await bestEffort('origin tag', () => client.tag(task.index, 'origin', (opts.origin as string).toLowerCase()));
   }
   // #2652 AC1+AC2 — apply new tag axes (already validated refuse-at-source).
   // Labels auto-create on first use; subdomain/subproduct categories not in
   // LABELS config so use direct label add via client.applyLabelByName helper.
   if (opts.subproduct) {
-    try { await applyDynamicLabel(client, task.index, `subproduct:${opts.subproduct.toLowerCase()}`); }
-    catch (err: unknown) { console.error(`  (subproduct tag: ${err instanceof Error ? err.message : err})`); }
+    await bestEffort('subproduct tag', () => applyDynamicLabel(client, task.index, `subproduct:${(opts.subproduct as string).toLowerCase()}`));
   }
   if (opts.subdomain) {
-    try { await applyDynamicLabel(client, task.index, `subdomain:${opts.subdomain}`); }
-    catch (err: unknown) { console.error(`  (subdomain tag: ${err instanceof Error ? err.message : err})`); }
+    await bestEffort('subdomain tag', () => applyDynamicLabel(client, task.index, `subdomain:${opts.subdomain as string}`));
   }
   if (task.status.toLowerCase() === 'now') {
-    try { await triggerWorkflow(client, task.index); }
-    catch (err: unknown) { console.error(`  (workflow: ${err instanceof Error ? err.message : err})`); }
+    await bestEffort('workflow', () => triggerWorkflow(client, task.index));
   }
 }
 
