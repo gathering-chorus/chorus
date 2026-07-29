@@ -558,7 +558,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      # #3710: rust-cache runs `cargo metadata` in the workspace root to decide
+      # what to cache, and this repo has no root Cargo.toml — without an explicit
+      # `workspaces` it exits 101 ("could not find Cargo.toml") BEFORE the ratchet
+      # script runs. Every other rust job here already passes it. These are the two
+      # crates clippy-ratchet.py lints (its CRATES list).
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            platform/services/chorus-hooks
+            platform/services/chorus-inject
       - name: Run clippy ratchet
         run: bash platform/scripts/clippy-ratchet.sh
 
