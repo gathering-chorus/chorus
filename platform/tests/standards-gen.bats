@@ -15,14 +15,46 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
 DECISIONS_MD="${CHORUS_ROOT}/roles/wren/decisions.md"
 HOOKS_DIR="${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
-OUTPUT_DIR="/tmp/standards-gen-test"
+OUTPUT_DIR="${BATS_TEST_TMPDIR:-/tmp}/standards-gen-test"
+# #3710 — the templates the generator rewrites. These USED to be read from the
+# live personal-site checkout, so this suite only passed on Jeff's machine. The
+# test now brings its own world: a minimal template carrying exactly the markers
+# the generator substitutes, so the assertions below prove the SUBSTITUTION,
+# which is what the script is for — not that Jeff has a website checked out.
+TEMPLATE_DIR="${BATS_TEST_TMPDIR:-/tmp}/standards-gen-template"
 
 setup() {
-  mkdir -p "$OUTPUT_DIR"
+  mkdir -p "$OUTPUT_DIR" "$TEMPLATE_DIR"
+  cat > "$TEMPLATE_DIR/chorus-standards.html" <<'HTML'
+<!DOCTYPE html><html><body>
+<div class="date">PLACEHOLDER — regenerated on each run</div>
+<div class="card"><div class="number">0</div><div class="label">Decisions</div></div>
+<div class="card"><div class="number">0</div><div class="label">Feedback Rules</div></div>
+<div class="card"><div class="number">0</div><div class="label">Stories</div></div>
+<div class="bar"><span class="bar-instrumented" style="width: 0%"></span>
+<span class="bar-partial" style="width: 0%"></span>
+<span class="bar-documented" style="width: 0%"></span></div>
+<ul class="legend"><li>gate-enforced 0%</li><li>partial 0%</li><li>doc-only 0%</li></ul>
+<div class="standard"><h3>TDD Discipline</h3></div>
+<div class="standard"><h3>Simplest solution first</h3></div>
+</body></html>
+HTML
+  cat > "$TEMPLATE_DIR/chorus-hook-architecture.html" <<'HTML'
+<!DOCTYPE html><html><body>
+<div class="date">PLACEHOLDER — regenerated on each run</div>
+<p>0 hook modules</p>
+</body></html>
+HTML
 }
 
 teardown() {
-  rm -rf "$OUTPUT_DIR"
+  rm -rf "$OUTPUT_DIR" "$TEMPLATE_DIR"
+}
+
+# Every case runs the generator the same way: against the fixture template,
+# into the test's own output dir. Nothing outside BATS_TEST_TMPDIR is touched.
+run_gen() {
+  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR" --template-dir "$TEMPLATE_DIR"
 }
 
 # --- AC 1: Script reads decisions.md and produces accurate decision count ---
@@ -32,7 +64,7 @@ teardown() {
 }
 
 @test "produces accurate decision count from decisions.md" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
 
   # Count actual decisions in source
@@ -45,7 +77,7 @@ teardown() {
 # --- AC 2: Script counts hook modules from Rust source ---
 
 @test "produces accurate hook module count" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
 
   # Count actual Rust hook modules (exclude mod.rs)
@@ -57,7 +89,7 @@ teardown() {
 # --- AC 3: Script parses pulse log for gate enforcement rates ---
 
 @test "produces gate enforcement rates from pulse log" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
 
   # The HTML should contain at least one percentage for gate enforcement
@@ -65,7 +97,7 @@ teardown() {
 }
 
 @test "enforcement rates reflect real block and deny counts" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
 
   # Should have gate-enforced category (modules with block/deny in trailing 7 days)
@@ -75,13 +107,13 @@ teardown() {
 # --- AC 4: Output is regenerated HTML with real counts ---
 
 @test "generates chorus-standards.html" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
   [ -f "$OUTPUT_DIR/chorus-standards.html" ]
 }
 
 @test "generates chorus-hook-architecture.html" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
   [ -f "$OUTPUT_DIR/chorus-hook-architecture.html" ]
 }
@@ -89,17 +121,17 @@ teardown() {
 # --- AC 6: Runs cleanly from command line ---
 
 @test "exits zero on success" {
-  run bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  run_gen
   [ "$status" -eq 0 ]
 }
 
 # --- AC 7: Idempotent — running twice produces same output ---
 
 @test "idempotent — second run produces identical output" {
-  bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR" --template-dir "$TEMPLATE_DIR"
   cp "$OUTPUT_DIR/chorus-standards.html" "$OUTPUT_DIR/first-run.html"
 
-  bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR"
+  bash "$GEN_SCRIPT" --output-dir "$OUTPUT_DIR" --template-dir "$TEMPLATE_DIR"
 
   diff "$OUTPUT_DIR/first-run.html" "$OUTPUT_DIR/chorus-standards.html"
 }

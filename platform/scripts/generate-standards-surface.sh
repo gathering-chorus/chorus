@@ -18,16 +18,34 @@ DECISIONS_MD="$REPO_ROOT/roles/wren/decisions.md"
 HOOKS_DIR="$REPO_ROOT/platform/services/chorus-hooks/src/hooks"
 PULSE_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 MEMORY_DIR="$HOME/.claude/projects/-Users-jeffbridwell-CascadeProjects/memory"
-APP_DOCS="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs"
+# #3710 — both pages moved into the chorus repo (designing/docs/); the old
+# personal-site path has held neither file for some time, so every run warned,
+# skipped both pages, and still exited 0 — the generator has been a no-op in
+# production, silently. Default to where the pages actually live.
+APP_DOCS="$REPO_ROOT/designing/docs"
 
-# Allow override for testing
+# Allow override for testing.
+# #3710 — --output-dir only ever redirected the WRITE; the page templates were
+# still read from the hardcoded APP_DOCS, so on any machine without the
+# personal-site checkout (CI, a fresh clone) the generator found no template,
+# skipped both pages, and produced nothing — while still exiting 0. Templates
+# now come from --template-dir, defaulting to APP_DOCS so live runs are
+# unchanged; a test can point both at a fixture it brings itself.
 OUTPUT_DIR="${APP_DOCS}"
+TEMPLATE_DIR="${APP_DOCS}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
+    --template-dir) TEMPLATE_DIR="$2"; shift 2 ;;
+    # #3710 — the metrics seam. The deny-count/tag substitution is this script's
+    # actual logic, but it was only reachable with the hooks API live on :3340,
+    # so the tests that cover it could never run off Jeff's box. A file source
+    # makes the substitution testable without pretending the API is up.
+    --metrics-file) METRICS_FILE="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
+METRICS_FILE="${METRICS_FILE:-}"
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -51,7 +69,11 @@ STORY_COUNT=$( { ls "$MEMORY_DIR"/story_*.md 2>/dev/null || true; } | wc -l | tr
 
 # 4. Gate enforcement rates from hooks metrics API (#2277)
 # Replaces direct awk parsing of pulse log — API has 60s cache and structured JSON
-METRICS_JSON=$(curl -sf --max-time 5 "http://localhost:3340/api/chorus/hooks/metrics" 2>/dev/null || echo "")
+if [ -n "$METRICS_FILE" ]; then
+  METRICS_JSON=$(cat "$METRICS_FILE")
+else
+  METRICS_JSON=$(curl -sf --max-time 5 "http://localhost:3340/api/chorus/hooks/metrics" 2>/dev/null || echo "")
+fi
 
 if [ -n "$METRICS_JSON" ]; then
   eval "$(echo "$METRICS_JSON" | python3 -c "
@@ -105,7 +127,7 @@ GENERATED_DATE=$(TZ=America/New_York date '+%Y-%m-%d %H:%M')
 # Strategy: read the existing curated HTML, replace the data-driven sections
 # (header counts, instrumentation bar, and per-standard deny count tooltips).
 
-EXISTING_STANDARDS="$APP_DOCS/chorus-standards.html"
+EXISTING_STANDARDS="$TEMPLATE_DIR/chorus-standards.html"
 if [ -f "$EXISTING_STANDARDS" ]; then
   python3 - "$EXISTING_STANDARDS" "$OUTPUT_DIR/chorus-standards.html" \
     "$DECISION_COUNT" "$FEEDBACK_COUNT" "$STORY_COUNT" \
@@ -199,7 +221,7 @@ fi
 # --- Generate chorus-hook-architecture.html ---
 # Replace the header counts, gap status, and per-module deny stats
 
-EXISTING_HOOKS="$APP_DOCS/chorus-hook-architecture.html"
+EXISTING_HOOKS="$TEMPLATE_DIR/chorus-hook-architecture.html"
 if [ -f "$EXISTING_HOOKS" ]; then
   python3 - "$EXISTING_HOOKS" "$OUTPUT_DIR/chorus-hook-architecture.html" \
     "$HOOK_COUNT" "$GENERATED_DATE" \
