@@ -151,9 +151,9 @@ describe('getPatternsSummary', () => {
  * had been dismissing it as alarm-battery noise.
  */
 describe('#3711 — unavailable is not zero', () => {
-  let harness: TestApp;
-  beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); });
+  // No startTestApp() here: these exercise getPatternsSummary directly against a
+  // mocked fetch. Standing up the HTTP app would be scaffolding the tests never
+  // touch (Kade, #3711 review).
   beforeEach(() => { resetPatternsCache(); });
 
   test('genuine zero reports source=loki — Loki answered, there is simply nothing', async () => {
