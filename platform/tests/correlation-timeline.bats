@@ -1,71 +1,31 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic source guard
+# @test-type: unit — retirement guard
 load test_helper
-# correlation-timeline.bats — Tests for event correlation timeline (#2280)
-# What Jeff sees: "what happened around this alert?" — a merged timeline from all event sources.
+# correlation-timeline.bats — RETIREMENT GUARD (#3710)
+#
+# #2280 shipped platform/scripts/correlation-timeline.sh ("what happened around
+# this alert?" — a merged timeline across spine/hooks/git/alerts). #2035's dead
+# code sweep (Wren, accepted) deleted it as an orphan: nothing called it.
+#
+# The deletion was right; leaving these tests behind was not. Seven cases went
+# on asserting `[ -x "$SCRIPT" ]` against a file that no longer existed, so this
+# file has been red on every run since — noise that trained everyone to ignore
+# the suite, which is exactly what #3710 is cleaning up.
+#
+# Per the retirement-gate convention: when a surface is retired, the test
+# asserts its ABSENCE. That keeps the removal deliberate — if the script ever
+# comes back it should come back through a card that also restores real
+# coverage, not silently reappear under tests that only checked it existed.
 
-SCRIPT="${CHORUS_ROOT}/platform/scripts/correlation-timeline.sh"
+RETIRED_SCRIPT="${CHORUS_ROOT}/platform/scripts/correlation-timeline.sh"
 
-# --- AC1: Script exists and takes a time range ---
-
-@test "AC1: correlation-timeline.sh exists and is executable" {
-  [ -x "$SCRIPT" ]
+@test "correlation-timeline.sh stays retired (#2035 dead-code sweep)" {
+  [ ! -e "$RETIRED_SCRIPT" ]
 }
 
-@test "AC1: script accepts --from and --to flags" {
-  run bash "$SCRIPT" --help
-  [[ "$output" == *"--from"* ]]
-  [[ "$output" == *"--to"* ]]
-}
-
-# --- AC2: Events sorted by timestamp, labeled by source ---
-
-@test "AC2: output includes source labels" {
-  run bash "$SCRIPT" --from "2026-04-06 18:00" --to "2026-04-06 19:00"
-  # Should contain at least one source label
-  [[ "$output" == *"[spine]"* ]] || [[ "$output" == *"[hooks]"* ]] || [[ "$output" == *"[git]"* ]] || [[ "$output" == *"[alerts]"* ]]
-}
-
-@test "AC2: events are sorted chronologically" {
-  # Extract timestamps, verify they're non-decreasing
-  output=$(bash "$SCRIPT" --from "2026-04-06 18:00" --to "2026-04-06 19:00" 2>/dev/null)
-  if [ -z "$output" ]; then
-    skip "No events in test window"
-  fi
-  # Extract timestamps (first field) and check sort order
-  timestamps=$(echo "$output" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}' | head -20)
-  sorted=$(echo "$timestamps" | sort)
-  [ "$timestamps" = "$sorted" ]
-}
-
-# --- AC3: Merged timeline from spine, hooks, alerts, deploys ---
-
-@test "AC3: queries spine events (chorus.log)" {
-  run bash "$SCRIPT" --from "2026-04-06 18:00" --to "2026-04-06 19:00"
-  # Should find spine events in a recent window
-  [[ "$output" == *"[spine]"* ]] || [[ "$output" == *"spine"* ]]
-}
-
-# --- AC4: Usable from CLI with human-readable flags ---
-
-@test "AC4: accepts human-readable datetime format" {
-  run bash "$SCRIPT" --from "2026-04-06 18:00" --to "2026-04-06 19:00"
-  [ "$status" -eq 0 ]
-}
-
-@test "AC4: supports relative time shorthand" {
-  run bash "$SCRIPT" --last 1h
-  [ "$status" -eq 0 ]
-}
-
-# --- AC5: Output is human-readable, one line per event ---
-
-@test "AC5: each line has timestamp, source, and description" {
-  output=$(bash "$SCRIPT" --from "2026-04-06 18:00" --to "2026-04-06 19:00" 2>/dev/null | head -5)
-  if [ -z "$output" ]; then
-    skip "No events in test window"
-  fi
-  # Each line should start with a timestamp
-  first_line=$(echo "$output" | head -1)
-  [[ "$first_line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2} ]]
+@test "nothing in the tree calls correlation-timeline.sh" {
+  # A caller appearing without the script is the failure mode worth catching:
+  # it would mean someone wired up a command that cannot run.
+  run bash -c "grep -rl 'correlation-timeline' '${CHORUS_ROOT}/platform/scripts' '${CHORUS_ROOT}/.github' 2>/dev/null || true"
+  [ -z "$output" ]
 }
