@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Census — Athena</title>
+<!-- #3706 — the LIVE model census. Every collection owl-api serves, its live row
+     count, and its modelVersion (#3704), fetched from the running model on each load
+     so it can NEVER go stale (the static-snapshot problem). This is "what is our model,
+     right now" — populated vs empty is the cleanup worklist. Hand-authored on the
+     athena-flow runtime pending the generator emitting it (teach page_html this shape). -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script>
+<style>
+  .census-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:18px 0 26px}
+  .cs{border:1px solid var(--line,#e2e6ec);border-radius:10px;padding:14px 16px;background:var(--panel,#fff)}
+  .cs .n{font-size:28px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .cs .l{font-size:12px;color:var(--muted,#5b6472);margin-top:2px}
+  table.census{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  table.census th,table.census td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line,#e2e6ec);font-size:14px}
+  table.census th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#5b6472);font-weight:600}
+  table.census td.num{text-align:right;font-weight:600}
+  .cn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
+  .p-good{background:#e7f6ec;color:#1a8a4a}.p-bad{background:#fbe9ea;color:#c5303a}.p-warn{background:#fbf3e2;color:#b7791f}
+  .grp{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#5b6472);font-weight:600;padding-top:16px}
+  @media (prefers-color-scheme:dark){.p-good{background:#12301f;color:#43c07a}.p-bad{background:#33161a;color:#f0616b}.p-warn{background:#332713;color:#e0a94a}}
+</style>
+</head>
+<body><div class="wrap wide">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a> &rarr; model census</div>
+<h1>Model Census <span class="kind">&mdash; live from the graph</span></h1>
+<div id="main"><p class="empty">loading every collection live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  // The collections owl-api serves, grouped by concern so the census reads as a map.
+  const GROUPS = [
+    ['Core model', ['products','domains','services','valuestreams','valuestreamsteps']],
+    ['Board',       ['chunks','chunkmemberships']],
+    ['Roles & identity', ['roles','principals','credentials','keyregistryentries','authboundaries','permissions','securityprobes']],
+    ['Model vocabulary', ['properties','propertykeys','emitcontracts','metrics']],
+    ['Tests',       ['tests','testresults','testsuiteruns']],
+  ];
+  const all = GROUPS.flatMap(g => g[1]);
+  try {
+    // Fetch every collection live, in parallel. A failed one is recorded, not fatal.
+    const results = {};
+    await Promise.all(all.map(async r => {
+      try { const env = await fetchJSON('/' + r); results[r] = { count: env.count, mv: env.modelVersion || '—' }; }
+      catch (e) { results[r] = { count: null, mv: '—', err: true }; }
+    }));
+
+    const served = all.length;
+    const populated = all.filter(r => (results[r].count || 0) > 0).length;
+    const empty = all.filter(r => results[r].count === 0).length;
+    const errored = all.filter(r => results[r].err).length;
+
+    function statusPill(r) {
+      const c = results[r];
+      if (c.err) return '<span class="pill p-bad">error</span>';
+      if (c.count === 0) return '<span class="pill p-warn">empty</span>';
+      return '<span class="pill p-good">serving</span>';
+    }
+    function row(r) {
+      const c = results[r];
+      return `<tr><td class="cn">/${esc(r)}</td>` +
+        `<td class="num">${c.count === null ? '—' : c.count}</td>` +
+        `<td>${esc(c.mv)}</td><td>${statusPill(r)}</td></tr>`;
+    }
+    const sections = GROUPS.map(([label, rs]) =>
+      `<tr><td class="grp" colspan="4">${esc(label)}</td></tr>` + rs.map(row).join('')).join('');
+
+    main.innerHTML = `
+<div class="promise">Every collection the model serves, its live row count, and its version (#3704) — read from the running graph on this page load. Populated is real; empty is the worklist.</div>
+<div class="census-stats">
+  <div class="cs"><div class="n">${served}</div><div class="l">collections served</div></div>
+  <div class="cs"><div class="n">${populated}</div><div class="l">populated</div></div>
+  <div class="cs"><div class="n">${empty}</div><div class="l">empty</div></div>
+  <div class="cs"><div class="n">${errored}</div><div class="l">erroring</div></div>
+</div>
+<table class="census">
+  <tr><th>Collection</th><th style="text-align:right">Rows</th><th>Version</th><th>Status</th></tr>
+  ${sections}
+</table>
+${srcNote('GET /{collection} — owl-api :3360, live')}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>
