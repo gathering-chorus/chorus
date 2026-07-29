@@ -268,32 +268,47 @@ app.use((req, res, next) => {
   });
 });
 
-async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
-  if (req.path === '/bridge-og.jpg') return next();
-  // #3669 — client-id doc is public (CSS fetches it during OIDC); serve pre-gate.
+/**
+ * #3669 — routes that must answer BEFORE any auth check: the OG image, the
+ * public client-id doc CSS fetches during OIDC, and the two login legs (the
+ * user has no session yet). Returns a handler when the path is pre-auth.
+ */
+function preAuthRoute(
+  req: Request, res: Response, next: NextFunction,
+): (() => unknown) | null {
+  if (req.path === '/bridge-og.jpg') return () => next();
   if (req.path === '/clientid.jsonld') {
-    res.type('application/ld+json').send(CLIENTID_DOC);
-    return;
+    return () => { res.type('application/ld+json').send(CLIENTID_DOC); };
   }
-  // #3669 — the login round-trip is pre-auth (the user has no session yet).
-  if (req.path === '/auth/login') return handleAuthLogin(req, res);
-  if (req.path === '/auth/callback') return handleAuthCallback(req, res);
+  if (req.path === '/auth/login') return () => handleAuthLogin(req, res);
+  if (req.path === '/auth/callback') return () => handleAuthCallback(req, res);
+  return null;
+}
 
-  const local = isLocal(req);
-
-  // #3669 — "authenticated" now means EITHER the CSS session cookie (the human's
-  // primary tunneled auth — signed typ:session, WebID re-checked against the live
-  // allow-set every request so a revoked identity loses access within one TTL) OR
-  // the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
-  // Both feed the #3667 gateDecision policy, which owns the admin-forbid + the
-  // read-pair GET-only rules — so those survive the human-login path unchanged.
+/**
+ * #3669 — "authenticated" means EITHER the CSS session cookie (the human's
+ * primary tunneled auth — signed typ:session, WebID re-checked against the live
+ * allow-set every request so a revoked identity loses access within one TTL) OR
+ * the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
+ */
+async function isAuthed(req: Request): Promise<boolean> {
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
   const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
   // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
   const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
+  return sessionAuthed || tokenAuthed;
+}
 
-  const outcome = gateDecision(req.path, req.method, local, sessionAuthed || tokenAuthed);
+async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
+  const preAuth = preAuthRoute(req, res, next);
+  if (preAuth) return preAuth();
+
+  const local = isLocal(req);
+  // Both auth paths feed the #3667 gateDecision policy, which owns the
+  // admin-forbid + read-pair GET-only rules — so those survive the human-login
+  // path unchanged.
+  const outcome = gateDecision(req.path, req.method, local, await isAuthed(req));
   if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
   if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
 
