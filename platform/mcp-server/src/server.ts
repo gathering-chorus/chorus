@@ -1060,6 +1060,71 @@ async function executeWip(
 // #3683 — /sup executor: one GET to the #3654-backed priorities endpoint,
 // rendered as the walk: chunks in roleSequence order (loom position shown where
 // declared), cards in rank order, unsequenced block last with its scope label.
+/** One ordered level of the #3686 walk (products, domains). */
+type SupLevel = { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
+
+type SupData = {
+  rolePriority?: { ranks: Array<{ role: string; rolePriority: number }>; note?: string };
+  products?: SupLevel;
+  domains?: SupLevel;
+  chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
+  unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
+};
+
+/**
+ * #3686 — the full walk, rendered: role hard-rank → products → domains →
+ * chunks → cards → unsequenced. Pure formatting over already-fetched data, so
+ * the order the graph decided is the order printed (the /sup contract).
+ */
+function renderSupWalk(d: SupData, role: string): string[] {
+  return [
+    `${role} priorities (graph order — #3654/#3686):`,
+    ...renderSupHeader(d),
+    ...renderSupChunks(d),
+  ];
+}
+
+/** Role hard-rank, then each ordered level (products, domains). */
+function renderSupHeader(d: SupData): string[] {
+  const lines: string[] = [];
+  if (d.rolePriority) {
+    const rankLine = d.rolePriority.ranks.map((x) => `${x.rolePriority}:${x.role}`).join('  ');
+    lines.push(`  role hard-rank: ${rankLine || `(${d.rolePriority.note ?? 'none set'})`}`);
+  }
+  const levels: Array<[string, SupLevel | undefined]> = [['products', d.products], ['domains', d.domains]];
+  for (const [label, lv] of levels) {
+    if (!lv) continue;
+    const parts = lv.ordered.map((x) => `${x.ownerSequence}. ${x.name}`);
+    lines.push(`  ${label}: ${parts.join('  ') || `(${lv.note ?? 'none ordered'})`}`);
+    if (lv.unordered.length > 0) lines.push(`     unordered ${label}: ${lv.unordered.join(', ')}`);
+  }
+  return lines;
+}
+
+/** Chunks in roleSequence order with their ranked cards, then the unsequenced block. */
+function renderSupChunks(d: SupData): string[] {
+  return [...renderChunkList(d.chunks ?? []), ...renderUnsequenced(d.unsequenced)];
+}
+
+function renderChunkList(chunks: NonNullable<SupData['chunks']>): string[] {
+  if (chunks.length === 0) return ['  (no sequenced chunks in the graph)'];
+  const lines: string[] = [];
+  for (const ch of chunks) {
+    lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);
+    if (ch.cards.length === 0) lines.push('     (no cards ranked yet)');
+    for (const c of ch.cards) lines.push(`     ${c.rank}. #${c.id} — ${c.title}`);
+  }
+  return lines;
+}
+
+function renderUnsequenced(unseq: SupData['unsequenced']): string[] {
+  if (!unseq) return [];
+  const lines = [`  unsequenced — ${unseq.scope}:`];
+  if (unseq.cards.length === 0) lines.push('     (none)');
+  for (const c of unseq.cards) lines.push(`     #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`);
+  return lines;
+}
+
 async function executeSup(
   fetchImpl: FetchImpl,
   apiBase: string,
@@ -1068,45 +1133,8 @@ async function executeSup(
   const url = `${apiBase}/api/chorus/context/priorities?role=${encodeURIComponent(role)}`;
   const resp = await fetchImpl(url);
   if (!resp.ok) throw new Error(`chorus_sup: chorus-api ${resp.status ?? '?'} on ${url}`);
-  const body = (await resp.json()) as {
-    data?: {
-      rolePriority?: { ranks: Array<{ role: string; rolePriority: number }>; note?: string };
-      products?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
-      domains?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
-      chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
-      unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
-    };
-  };
-  const d = body.data ?? {};
-  const chunks = d.chunks ?? [];
-  const unseq = d.unsequenced;
-  const lines: string[] = [`${role} priorities (graph order — #3654/#3686):`];
-  // #3686 — the full walk: role hard-rank → products → domains → chunks → cards.
-  if (d.rolePriority) {
-    const rp = d.rolePriority;
-    const rankLine = rp.ranks.map((x) => `${x.rolePriority}:${x.role}`).join('  ');
-    lines.push(`  role hard-rank: ${rankLine || `(${rp.note ?? 'none set'})`}`);
-  }
-  const level = (label: string, lv?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string }) => {
-    if (!lv) return;
-    const parts = lv.ordered.map((x) => `${x.ownerSequence}. ${x.name}`);
-    lines.push(`  ${label}: ${parts.join('  ') || `(${lv.note ?? 'none ordered'})`}`);
-    if (lv.unordered.length > 0) lines.push(`     unordered ${label}: ${lv.unordered.join(', ')}`);
-  };
-  level('products', d.products);
-  level('domains', d.domains);
-  if (chunks.length === 0) lines.push('  (no sequenced chunks in the graph)');
-  for (const ch of chunks) {
-    lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);
-    for (const c of ch.cards) lines.push(`     ${c.rank}. #${c.id} — ${c.title}`);
-    if (ch.cards.length === 0) lines.push('     (no cards ranked yet)');
-  }
-  if (unseq) {
-    lines.push(`  unsequenced — ${unseq.scope}:`);
-    if (unseq.cards.length === 0) lines.push('     (none)');
-    for (const c of unseq.cards) lines.push(`     #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`);
-  }
-  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  const body = (await resp.json()) as { data?: SupData };
+  return { content: [{ type: 'text' as const, text: renderSupWalk(body.data ?? {}, role).join('\n') }] };
 }
 
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
