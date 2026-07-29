@@ -1,18 +1,18 @@
 {
-  "_comment": "Contract for Borg page deep-health probes (#2124). Each entry probes the backing API, not the HTML (200 means nothing — pages render with empty panels). Assertion is a python expression evaluated against the parsed JSON response, bound as `d`.",
+  "_comment": "Contract for Borg page deep-health probes (#2124). Each entry probes the backing API, not the HTML (200 means nothing \u2014 pages render with empty panels). Assertion is a python expression evaluated against the parsed JSON response, bound as `d`.",
   "_version": 1,
   "probes": [
     {
       "page": "/borg/cost/",
       "api": "/api/chorus/cost/summary",
       "assert": "isinstance(d.get('summary'), dict) and float(d['summary'].get('totalCost', 0)) > 0",
-      "why": "Cost page renders empty if any of claude/twilio/clearing aggregators error — summary.totalCost sums all four"
+      "why": "Cost page renders empty if any of claude/twilio/clearing aggregators error \u2014 summary.totalCost sums all four"
     },
     {
       "page": "/borg/hooks/",
       "api": "/api/chorus/hooks/summary",
       "assert": "isinstance(d.get('summaries'), list) and len(d['summaries']) >= 10",
-      "why": "13 active hook scripts at last count; allow ±3 for natural churn. Empty list = summary handler broken"
+      "why": "13 active hook scripts at last count; allow \u00b13 for natural churn. Empty list = summary handler broken"
     },
     {
       "page": "/borg/fitness/",
@@ -29,8 +29,8 @@
     {
       "page": "/borg/patterns/",
       "api": "/api/chorus/patterns/summary",
-      "assert": "isinstance(d.get('patterns'), dict) and len(d['patterns']) > 0",
-      "why": "Patterns is a dict keyed by pattern type; empty means the pattern-detection job never ran or indexer is broken"
+      "assert": "d.get('source') != 'unavailable' and isinstance(d.get('patterns'), dict) and len(d['patterns']) > 0",
+      "why": "Patterns is a dict keyed by pattern type. #3711: source=='unavailable' means Loki could not be reached/read, which is NOT the same fact as zero patterns \u2014 the old assertion conflated them and reported a 5s query timeout as a data outage for a month (2026-07-06 onward). Empty WITH source=='loki' is the real 'detection never ran' case."
     },
     {
       "page": "/borg/replay/",

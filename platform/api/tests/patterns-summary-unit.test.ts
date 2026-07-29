@@ -9,7 +9,7 @@
 
 import { startTestApp, type TestApp } from './lib/test-app';
 
-import { getPatternsSummary } from '../src/patterns-summary';
+import { getPatternsSummary, resetPatternsCache } from '../src/patterns-summary';
 
 const realFetch = global.fetch;
 
@@ -27,6 +27,10 @@ function makeLokiResponse(streams: Array<Array<[string, string]>>): Response {
 afterEach(() => {
   (global as any).fetch = realFetch;
   jest.clearAllMocks();
+  // #3711 — the TTL cache is module state. Without this, a canned Loki response
+  // from one test answers the next test's request and its mock never fires. A
+  // test brings its own world; it also takes it away.
+  resetPatternsCache();
 });
 
 describe('getPatternsSummary', () => {
@@ -132,5 +136,84 @@ describe('getPatternsSummary', () => {
     );
     const r = await getPatternsSummary(1);
     expect(r.total).toBe(0);
+  });
+});
+
+/**
+ * #3711 — a dependency failure must not be reported as a fact.
+ *
+ * The defect: the Loki query genuinely takes ~3.5-3.9s against a 5s
+ * AbortSignal.timeout, so it tipped over under any load, and `catch { }`
+ * returned {patterns:{}, total:0} — HTTP 200, well-formed, and indistinguishable
+ * from "there are genuinely no patterns". Five consecutive live calls on
+ * 2026-07-29 went 500/0/0/0/0, each failure landing on exactly 5.00s. The
+ * borg-health probe had been correctly reporting this since 2026-07-06 and I
+ * had been dismissing it as alarm-battery noise.
+ */
+describe('#3711 — unavailable is not zero', () => {
+  let harness: TestApp;
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+  beforeEach(() => { resetPatternsCache(); });
+
+  test('genuine zero reports source=loki — Loki answered, there is simply nothing', async () => {
+    mockFetch(() => makeLokiResponse([]));
+    const r = await getPatternsSummary(7);
+    expect(r.total).toBe(0);
+    expect(r.source).toBe('loki');
+  });
+
+  test('a timeout is NOT reported as zero patterns', async () => {
+    mockFetch(() => Promise.reject(new DOMException('The operation was aborted.', 'TimeoutError')));
+    const r = await getPatternsSummary(7);
+    expect(r.source).toBe('unavailable');
+    expect(r.reason).toBeTruthy();
+    // and it is distinguishable from the genuine-zero case above
+    expect(r.source).not.toBe('loki');
+  });
+
+  test('a non-ok Loki response is unavailable, not zero', async () => {
+    mockFetch(() => new Response('boom', { status: 503 }));
+    const r = await getPatternsSummary(7);
+    expect(r.source).toBe('unavailable');
+    expect(r.reason).toContain('503');
+  });
+
+  test('the slow query is paid once, not per request (TTL cache)', async () => {
+    const line = JSON.stringify({ pattern: 'demo', timestamp: '2026-07-29T10:00:00Z' });
+    const spy = jest.fn(() => Promise.resolve(makeLokiResponse([[['ts', line]]])));
+    (global as any).fetch = spy;
+    const a = await getPatternsSummary(30);
+    const b = await getPatternsSummary(30);
+    const c = await getPatternsSummary(30);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(a.source).toBe('loki');
+    expect(b.source).toBe('cache');
+    expect(c.total).toBe(a.total);
+  });
+
+  test('a refresh failure serves the last good value marked stale, never a false zero', async () => {
+    const line = JSON.stringify({ pattern: 'reflection', timestamp: '2026-07-29T10:00:00Z' });
+    let fail = false;
+    (global as any).fetch = jest.fn(() =>
+      fail ? Promise.reject(new Error('loki down'))
+           : Promise.resolve(makeLokiResponse([[['ts', line]]])));
+    const good = await getPatternsSummary(30);
+    expect(good.total).toBe(1);
+    resetPatternsCache({ keepValue: true });  // cache present but stale
+    fail = true;
+    const after = await getPatternsSummary(30);
+    expect(after.total).toBe(1);          // the last good value, not 0
+    expect(after.source).toBe('cache');
+    expect(after.stale).toBe(true);
+  });
+
+  test('different day-windows are cached separately', async () => {
+    const line = JSON.stringify({ pattern: 'demo', timestamp: '2026-07-29T10:00:00Z' });
+    const spy = jest.fn(() => Promise.resolve(makeLokiResponse([[['ts', line]]])));
+    (global as any).fetch = spy;
+    await getPatternsSummary(7);
+    await getPatternsSummary(30);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 });
