@@ -295,7 +295,7 @@ async function isAuthed(req: Request): Promise<boolean> {
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
   const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
-  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
+  // BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
   const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
   return sessionAuthed || tokenAuthed;
 }
@@ -1079,25 +1079,30 @@ io.use((socket, next) => {
 // no bridge token) connected the page but the live socket was refused → "connecting…"
 // forever + no data. Now: local → allow; else the CSS session cookie (verified WebID
 // in the allow-set, fresh) → allow; else the bridge token as migration fallback.
-async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
-  const ip = socket.handshake.address || '';
-  if (isLocalConnection(socket.handshake.headers, ip)) return true;
-
-  const cookieHeader = String(socket.handshake.headers.cookie || '');
+/** The CSS session cookie leg of socket auth — same contract as the HTTP gate. */
+async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
   const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
-  if (sessMatch) {
-    const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
-    const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
-    if (sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now()))) return true;
-  }
+  if (!sessMatch) return false;
+  const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
+  const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
+  return !!(sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now())));
+}
 
-  if (!REQUIRE_DPOP) {
-    const token = socket.handshake.auth.token || String(socket.handshake.query.token || '');
-    const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
-    const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
-    if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return true;
-  }
-  return false;
+/** The static bridge-token leg — migration fallback, gone when REQUIRE_DPOP flips. */
+function socketTokenAuthed(cookieHeader: string, authToken?: string, queryToken?: unknown): boolean {
+  if (REQUIRE_DPOP) return false;
+  const token = authToken || String(queryToken || '');
+  const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
+  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+  return token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN;
+}
+
+async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
+  const { address, headers, auth, query } = socket.handshake;
+  if (isLocalConnection(headers, address || '')) return true;
+  const cookieHeader = String(headers.cookie || '');
+  if (await socketSessionAuthed(cookieHeader)) return true;
+  return socketTokenAuthed(cookieHeader, auth.token, query.token);
 }
 
 // Socket.IO

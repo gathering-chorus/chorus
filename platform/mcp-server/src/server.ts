@@ -2539,17 +2539,12 @@ async function executeChorusWerkLand(
   const preLandReconcile = readRun(args.card_id, runsDir);
   const existingLand = reconcileRunning(args.card_id, runsDir);
   if (preLandReconcile?.phase === 'running' && existingLand?.phase === 'failed') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
           role: args.role, card_id: args.card_id, accepter,
           failureReason: existingLand.failureReason,
           note: `Land for #${args.card_id} FAILED — reason: ${existingLand.failureReason || 'unknown'}. Full log: ${existingLand.logFile || 'per-card log'}. Re-invoke chorus_werk go:true to retry.`,
-        }),
-      }],
-    };
+        });
   }
   // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
   const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
@@ -2558,30 +2553,20 @@ async function executeChorusWerkLand(
   // the go's authority floated toward rounds the accepter never saw. The
   // accepter re-issues the go AT the presented stop, for the round announced.
   if (landAction.kind === 'refuse-go-running') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: false, verb: 'chorus_werk', refusal: 'go-while-running',
           phase: 'running', role: args.role, card_id: args.card_id, accepter,
           note: `Refused: #${args.card_id} is mid-pipeline — a go can only accept a PRESENTED round the accepter has seen. Wait for the demo-ready announce, then re-issue go for that round.`,
-        }),
-      }],
-    };
+        });
   }
   if (landAction.kind === 'attach') {
     const r = landAction.run;
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
           role: args.role, card_id: args.card_id, accepter,
           failureReason: r.failureReason,
           note: `Attached to the run on record for #${args.card_id} (phase=${r.phase}) — idempotent re-invoke, no second merge/land. A dropped land is a non-event: this IS the true state.`,
-        }),
-      }],
-    };
+        });
   }
   // #3664 — never start a land BLIND: with no werk worktree on disk there is nothing
   // to land, and the act run is guaranteed to fail "no werk" — worse, its failure
@@ -2589,16 +2574,11 @@ async function executeChorusWerkLand(
   const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkBase env-config + validated role enum + card_id:number, no untrusted input
   if (!existsSync(werkDir)) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: false, verb: 'chorus_werk', phase: 'no-werk', reason: 'no-werk',
           role: args.role, card_id: args.card_id,
           note: `No werk worktree at ${werkDir} — nothing to land for #${args.card_id}. If this card already landed+accepted, that IS the terminal state (check the board/spine); a land is never started blind.`,
-        }),
-      }],
-    };
+        });
   }
   // #3458 — START the land DETACHED, same model as Half A: the wrapper streams the
   // go-gated land job (merge → ff-sync → deploy-prod → accept) to the per-run log and
@@ -2623,16 +2603,11 @@ async function executeChorusWerkLand(
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
-  return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
+  return mcpJson({
         ok: true, verb: 'chorus_werk', phase: 'running', launched: true, go: true,
         run_id: runId, role: args.role, card_id: args.card_id, accepter,
         note: `Landing (#${args.card_id}) — merge → ff-sync → deploy-prod → accept runs DETACHED; nothing held. Re-invoke chorus_werk go:true to poll: 'running' until done, then 'landed' (live + accepted) or 'failed' (with the reason).`,
-      }),
-    }],
-  };
+      });
 }
 
 // #3485 — exported so the plain-HTTP POST /nudge route (main.ts) routes
