@@ -57,6 +57,21 @@ check "coverage FAIL (under floor) → FAILED, not the false BUILD BROKE (#3600)
 check "smoke pass → GREEN" \
   "$(bucket smoke pass 'smoke-check: all endpoints 200')" "GREEN:0"
 
+# ── #3709: the `meta` kind — the nightly telling us it could not read itself ──
+# nightly-suites.sh --last-run emits SUITE|meta|<log>|silas|fail|0 pass, 1 fail
+# (nightly log STALE …) when the aggregate log is missing or >26h old. `meta`
+# was absent from the parse case, so s_failed stayed 0 and the verdict fell
+# through to `broke` — rendering a precise "the 03:00 run did not write" as
+# "BUILD BROKE (rc≠0, no test output)". Jeff was told a build had failed on
+# 07-19, 07-21 and 07-29; what had actually happened is that no results were
+# written for a week. Identical to the #3600 coverage bug, never extended here.
+check "meta STALE-log → FAILED (the log did not write), not the false BUILD BROKE" \
+  "$(bucket meta fail '0 pass, 1 fail (nightly log STALE — 614776s old > 26h; the 03:00 run did not write)')" "FAILED:1/1"
+check "meta MISSING-log → FAILED, not BUILD BROKE" \
+  "$(bucket meta fail '0 pass, 1 fail (nightly log MISSING — no run to read, run the 03:00 nightly)')" "FAILED:1/1"
+check "meta pass → GREEN (log fresh, results readable)" \
+  "$(bucket meta pass '1 pass, 0 fail (nightly log fresh)')" "GREEN:1"
+
 # ── status=fail is RED even when unparseable — never hidden as DID-NOT-RUN ──
 check "cargo compile-fail (rc≠0, no test-result line) → BROKE, distinct from test-fail" \
   "$(bucket cargo fail 'error[E0432]: unresolved import / error: could not compile foo')" "BROKE"

@@ -41,7 +41,18 @@ if [ -z "${COUNT:-}" ]; then
 fi
 
 if [ "$COUNT" -eq 0 ]; then
-  echo "fuseki-harvest-empty: 0 photos in urn:gathering:photos* graphs"
+  # #3709 — RECORD THE FIRE. Both skip paths above have always written evidence;
+  # the one path that actually wakes a human wrote none. So a recurring zero was
+  # undiagnosable: by the time anyone looked the query answered non-zero and
+  # there was nothing to compare against, and the alarm got dismissed as noise
+  # for months. Log the observation and the raw response.
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ -n "${FUSEKI_SKIP_LOG:-}" ]; then
+    printf '%s fuseki-harvest-empty: count=0 url=%s response=%s\n' \
+      "$ts" "$FUSEKI_URL" \
+      "$(printf '%s' "$RESULT" | tr -d '\n' | cut -c1-400)" >> "$FUSEKI_SKIP_LOG"
+  fi
+  echo "fuseki-harvest-empty: 0 photos in urn:gathering:photos* graphs (url=${FUSEKI_URL} observed=${ts})"
   exit 1
 fi
 

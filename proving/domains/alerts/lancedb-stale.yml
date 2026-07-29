@@ -11,20 +11,34 @@ severity: warning
 schedule: "0 */6 * * *"  # every 6 hours
 
 check: |
-  LANCE_DIR="/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site/data/lance"
+  # #3709 — this watches the GATHERING app's document index, the one the alert
+  # has always meant (the original April text said "data/lance in the app dir");
+  # semantic-search.service.ts connects to <app>/data/lance. It is NOT
+  # ~/.chorus/lance, which is Chorus's own message index. Naming the directory
+  # in the output is what keeps those two from being confused again.
+  LANCE_DIR="${LANCE_DIR:-$HOME/CascadeProjects/jeff-bridwell-personal-site/data/lance}"
   if [ ! -d "$LANCE_DIR" ]; then
-    echo "lancedb-missing"
+    echo "lancedb-missing dir=$LANCE_DIR"
     exit 1
   fi
   # #3617 — 72h, not 24h: the embed/reindex workers write on new content, not
   # on a daily clock, so a quiet-but-healthy index tripped the 24h bar most
   # nights (part of the 00:00 battery). 3 days of zero writes is a real stall.
-  RECENT=$(find "$LANCE_DIR" -type f -mtime -3 2>/dev/null | head -1)
-  if [ -z "$RECENT" ]; then
-    echo "lancedb-stale-72h"
+  STALE_HOURS=72
+  # #3709 — report the OBSERVATION (which index, how old, against what bar), not
+  # just the verdict. A fire that carries no measurement cannot be diagnosed
+  # after the fact, which is how this one recurred for months unexamined.
+  NEWEST=$(find "$LANCE_DIR" -type f -exec stat -f '%m' {} \; 2>/dev/null | sort -rn | head -1)
+  if [ -n "$NEWEST" ]; then
+    AGE_H=$(( ( $(date +%s) - NEWEST ) / 3600 ))
+  else
+    AGE_H=unknown
+  fi
+  if [ -z "$(find "$LANCE_DIR" -type f -mtime -3 2>/dev/null | head -1)" ]; then
+    echo "lancedb-stale dir=$LANCE_DIR newest_age_h=$AGE_H threshold_h=$STALE_HOURS"
     exit 1
   fi
-  echo "ok"
+  echo "ok dir=$LANCE_DIR newest_age_h=$AGE_H threshold_h=$STALE_HOURS"
   exit 0
 
 action: |
@@ -34,4 +48,8 @@ action: |
   fi
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" silas "lancedb: newest file under data/lance has mtime > 24h (no index write in last 24h)" 2>/dev/null || true
+  # #3709 — carry the CHECK's own observation ($STATUS), never a hand-written
+  # sentence that can drift from it. The old text claimed "mtime > 24h (no index
+  # write in last 24h)" while the check had used 72h since #3617 — an alarm
+  # misreporting its own threshold to the only person who acts on it.
+  "$OPS_NUDGE" silas "lancedb-stale: $STATUS — gathering app document index (semantic search)" 2>/dev/null || true
