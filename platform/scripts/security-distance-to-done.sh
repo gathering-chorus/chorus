@@ -16,19 +16,33 @@ C="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 API="${CHORUS_API_BASE:-http://localhost:3340}"
 PROM_OUT="${SECURITY_LEDGER_PROM:-/Users/jeffbridwell/CascadeProjects/shared-observability/data/textfile_collector/security_distance.prom}"
 
+
+# grep's exit codes carry three meanings and conflating them is this script's own
+# disease: 0=matches, 1=ZERO MATCHES (a valid measurement!), >=2=grep itself failed
+# (unknown, never zero). count_or_unknown echoes the count or "unknown".
+count_or_unknown() {
+  local out rc
+  out=$("$@" 2>/dev/null); rc=$?
+  if [ $rc -le 1 ]; then printf '%s' "${out:-0}"; else printf 'unknown'; fi
+}
+
 declare -a NAMES VALUES NOTES
 item(){ NAMES+=("$1"); VALUES+=("$2"); NOTES+=("${3:-}"); }
 
 # ── hs256_minters: live code paths that MINT HS256 tokens ────────────────────
 # chorus-mint-token.py callers (scripts + rust) plus the two envelope-door
 # TS minters. Counted from the tree, tests excluded.
-minters=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
-            "chorus-mint-token" "$C/platform/scripts" "$C/platform/services" 2>/dev/null \
-          | grep -v test | wc -l | tr -d ' ')
-ts_minters=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
-             "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null \
-             | grep -v test | wc -l | tr -d ' ')
-item hs256_minters $((minters + ts_minters)) "files minting HS256 (goal 0)"
+minters_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
+            "chorus-mint-token" "$C/platform/scripts" "$C/platform/services" 2>/dev/null); m_rc=$?
+if [ $m_rc -ge 2 ]; then minters=unknown; else minters=$(printf '%s\n' "$minters_files" | grep -v test | grep -c . || true); fi
+ts_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
+             "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); t_rc=$?
+if [ $t_rc -ge 2 ]; then ts_minters=unknown; else ts_minters=$(printf '%s\n' "$ts_files" | grep -v test | grep -c . || true); fi
+if [ "$minters" = unknown ] || [ "$ts_minters" = unknown ]; then
+  item hs256_minters unknown "grep failed — NOT measured"
+else
+  item hs256_minters $((minters + ts_minters)) "files minting HS256 (goal 0)"
+fi
 
 # ── shared_secret_refs: non-test live code reading the shared secret ─────────
 refs=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
@@ -37,11 +51,16 @@ refs=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=di
 item shared_secret_refs "$refs" "files reading CHORUS_SERVICE_TOKEN_SECRET (goal 0)"
 
 # ── hs256_verify_branch: the dual-verify arm still present? ──────────────────
-if grep -q "verify_token(t, registry, now_secs)" \
-     "$C/platform/services/chorus-oidc/src/oidc.rs" 2>/dev/null; then
+# Matches the legacy entry-point NAME (auth::verify_token), not a full signature —
+# a renamed argument must not silently flip this to 0 (Wren, #3716 review). An
+# unreadable file is unknown, never a claimed-deleted arm.
+OIDC_RS="$C/platform/services/chorus-oidc/src/oidc.rs"
+if [ ! -r "$OIDC_RS" ]; then
+  item hs256_verify_branch unknown "oidc.rs unreadable — NOT measured"
+elif grep -q "auth::verify_token" "$OIDC_RS"; then
   item hs256_verify_branch 1 "verify_any still dual-verifies (goal 0)"
 else
-  item hs256_verify_branch 0 "legacy arm deleted"
+  item hs256_verify_branch 0 "legacy arm deleted (no auth::verify_token call remains)"
 fi
 
 # ── scoped_es256_missing: can chorus-identity-token mint a scoped token? ─────
@@ -88,11 +107,15 @@ esac
 # ── open_security_chunk_cards: the board's remaining ladder ──────────────────
 board=$(curl -s -m 10 "$API/api/chorus/context/board/wip" 2>/dev/null)
 listing=$(curl -s -m 10 "$API/api/chorus/knowledge/search?q=chunk:security" 2>/dev/null)
-cards=$("$C/platform/scripts/cards" chunk security 2>/dev/null | grep -cE "^  [0-9]{3,4} ") || cards=""
-if [ -n "$cards" ] && curl -s -m 5 -o /dev/null "$API/api/chorus/context/health" 2>/dev/null; then
-  item open_security_chunk_cards "$cards" "open cards tagged chunk:security (goal 0)"
+# grep -c exits 1 on ZERO matches — which is the GOAL STATE. Only a failed cards
+# CLI or unreachable board is unknown (Kade, #3716 review: the ledger must be able
+# to report its own success).
+board_listing=$("$C/platform/scripts/cards" chunk security 2>/dev/null); cli_rc=$?
+if [ $cli_rc -ne 0 ] || ! curl -s -m 5 -o /dev/null "$API/api/chorus/context/health" 2>/dev/null; then
+  item open_security_chunk_cards unknown "board/cards CLI unreachable — NOT measured"
 else
-  item open_security_chunk_cards unknown "board unreachable — NOT measured"
+  cards=$(printf '%s\n' "$board_listing" | grep -cE "^  [0-9]{3,4} " || true)
+  item open_security_chunk_cards "$cards" "open cards tagged chunk:security (goal 0)"
 fi
 
 # ── render ───────────────────────────────────────────────────────────────────
