@@ -1,24 +1,24 @@
-# Daily Ops Review — 2026-07-29
+# Daily Ops Review — 2026-07-30
 
 ## 1. Hooks Health
-**Status: YELLOW (regression)**
-`cargo check` passes with **2** dead-code warnings: `registration_json` (session_registry.rs:66) and `owes_response_block` (nudge_drain.rs:178). Jul 28 brief said `registration_json` resolved — it is back in the Jul 24 snapshot tree.
-**Action:** Silas — verify whether fix landed after Jul 24; suppress or remove both dead-code paths.
+**Status: YELLOW (carry)**
+`cargo check` passes; 2 dead-code warnings unchanged: `registration_json` (session_registry.rs:66), `owes_response_block` (nudge_drain.rs:178). No regression, no fix.
+**Action:** Silas — suppress or remove both dead-code paths; open if no card exists.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-Plists in `proving/config/launchagents/` and `platform/scripts/launchagents-*` reference `/tmp/` for stdout/stderr. Count unchanged.
+33 `/tmp/` refs across 17 plist files in `proving/config/launchagents/`. Count unchanged.
 **Action:** Silas — migration card open; no movement.
 
 ## 3. CLAUDE.md Fragments
 **Status: YELLOW (carry)**
-Shared fragments in `designing/claudemd/shared/` last committed 2026-07-24 (5d). Manifest at build 217, last changelog 2026-04-17. Fragment sync lag unresolved.
-**Action:** Wren + Kade — role fragments need content refresh.
+All fragments last committed 2026-07-24 (6d). Manifest build 217; changelog last 2026-04-17.
+**Action:** Wren + Kade — role content refresh overdue; crossing 7d tomorrow.
 
 ## 4. CSC Compliance
 **Status: RED (carry)**
-Check-paths `messages/scripts/` and `architect/scripts/` do not exist. `platform/scripts/` has **142** `/tmp/` occurrences across operational scripts — up from Jul 28 estimate of 37 files.
-**Action:** Silas — remediation card needed; update prompt check-paths to `platform/scripts/`.
+`messages/scripts/` and `architect/scripts/` do not exist. `platform/scripts/` has **149 `/tmp/`** occurrences across 67 files — up 7 from Jul 29 (142).
+**Action:** Silas — new occurrences added; remediation card needed; update prompt check-paths to `platform/scripts/`.
 
 ## 5. Git Dirty State
 **Status: GREEN**
@@ -26,19 +26,19 @@ Check-paths `messages/scripts/` and `architect/scripts/` do not exist. `platform
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: YELLOW**
-No open GitHub issues. 2 aged Dependabot PRs (chorus repo, 56d open): **#449** (`@cucumber/cucumber` 12→13) and **#443** (`ureq` 2→3), both major breaking; #443 auto-rebase disabled.
-**Action:** Jeff/Silas — review and merge or close; #443 needs rebase re-enabled.
+**Status: YELLOW (carry)**
+2 Dependabot PRs in chorus repo at **57d open**: #449 (`@cucumber/cucumber` 12→13), #443 (`ureq` 2→3, auto-rebase disabled). Out of scope for gathering-team MCP; status unverifiable here.
+**Action:** Jeff/Silas — review and close or merge; #443 needs rebase re-enabled.
 
 ## 7. Domain Context Freshness
-**Status: RED (carry)**
-All 5 domain-context files last committed 2026-07-24 (5d, threshold 7d). Chorus content ~100d stale per Jul 28; 4 chorus/infra cards shipped Jul 27 with no context update.
-**Action:** Silas — chorus context critical; all 5 files expire Jul 31.
+**Status: RED (escalating → expires tomorrow)**
+All 5 domain-context files last committed 2026-07-24 — now **6d old**, threshold 7d. Files expire **2026-07-31**. Chorus context ~100d stale; 2 Silas cards shipped Jul 29 with no context update.
+**Action:** Silas — update `domain-context-chorus.md` today before threshold breach.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No `perf-baseline-*.json` in `proving/logs/`. Script targets macOS `diskutil`; not runnable in this env.
-**Action:** Silas — land nightly baseline JSON to `proving/logs/` to enable delta tracking.
+No `perf-baseline-*.json` in `proving/logs/`; script targets macOS `diskutil`, not runnable in this env.
+**Action:** Silas — land nightly baseline JSON to enable delta tracking.
 
 ---
-*Jul 29 delta: §1 regression (1→2 warnings, `registration_json` returned). §4 count corrected to 142 occurrences. §6 switched to GitHub PRs (no open issues found). Watch: domain context hits 7d threshold Jul 31.*
+*Jul 30 delta: §4 /tmp count up to 149 (+7 from 142 Jul 29). §7 escalating — all context files expire tomorrow (Jul 31). §3 fragments at 6d, cross 7d tomorrow. All other items carry unchanged.*
