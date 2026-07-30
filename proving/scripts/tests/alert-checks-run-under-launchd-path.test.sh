@@ -60,7 +60,10 @@ for f in "$ALERTS"/*.check.sh; do
   [ -f "$f" ] || continue
   n=$(basename "$f")
   err=$(env -i PATH="$LAUNCHD_PATH" HOME="$HOME" bash "$f" 2>&1 >/dev/null)
-  if printf '%s' "$err" | grep -qE "command not found|: not found|No such file or directory"; then
+  # #3713 review round 2 (Kade): match ONLY the shell's missing-command wording.
+  # "No such file or directory" also fires when a check does legitimate filesystem
+  # work that fails — a false positive, which is the same dishonesty as a false zero.
+  if printf '%s' "$err" | grep -qE "command not found|: not found"; then
     # name WHAT was missing — a failure that does not say which binary is the
     # same undiagnosable alarm this whole card sequence has been about.
     detail=$(printf '%s' "$err" | grep -E "command not found|: not found" | head -2 | tr '\n' '; ')
