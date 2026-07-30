@@ -80,6 +80,9 @@ echo "$OUT3" | grep -qE "open_security_chunk_cards +0 " \
 #    unknown, not 0. Prove by making $C/platform unreadable to the grep via a
 #    fake root whose platform/ is a dangling path for the refs walk only.
 OUT4=$(CHORUS_ROOT="/nonexistent-3716-probe" bash "$SCRIPT" 2>&1)
+echo "$OUT4" | grep -qE "scoped_es256_missing +unknown" \
+  && ok "absent minter script reports unknown, not a claimed-missing feature" \
+  || no "scoped_es256_missing fabricates a verdict for an unreadable script: $(echo "$OUT4" | grep scoped_es256)"
 echo "$OUT4" | grep -qE "shared_secret_refs +unknown" \
   && ok "refs grep against a missing tree reports unknown, not 0" \
   || no "refs still reports a number against a MISSING tree: $(echo "$OUT4" | grep shared_secret_refs)"

@@ -17,14 +17,6 @@ API="${CHORUS_API_BASE:-http://localhost:3340}"
 PROM_OUT="${SECURITY_LEDGER_PROM:-/Users/jeffbridwell/CascadeProjects/shared-observability/data/textfile_collector/security_distance.prom}"
 
 
-# grep's exit codes carry three meanings and conflating them is this script's own
-# disease: 0=matches, 1=ZERO MATCHES (a valid measurement!), >=2=grep itself failed
-# (unknown, never zero). count_or_unknown echoes the count or "unknown".
-count_or_unknown() {
-  local out rc
-  out=$("$@" 2>/dev/null); rc=$?
-  if [ $rc -le 1 ]; then printf '%s' "${out:-0}"; else printf 'unknown'; fi
-}
 
 declare -a NAMES VALUES NOTES
 item(){ NAMES+=("$1"); VALUES+=("$2"); NOTES+=("${3:-}"); }
@@ -68,7 +60,10 @@ else
 fi
 
 # ── scoped_es256_missing: can chorus-identity-token mint a scoped token? ─────
-if grep -q '\-\-scope' "$C/platform/scripts/chorus-identity-token" 2>/dev/null; then
+CIT="$C/platform/scripts/chorus-identity-token"
+if [ ! -r "$CIT" ]; then
+  item scoped_es256_missing unknown "chorus-identity-token unreadable — NOT measured"
+elif grep -q '\-\-scope' "$CIT"; then
   item scoped_es256_missing 0 "scoped mint exists"
 else
   item scoped_es256_missing 1 "chorus-identity-token has no --scope (the #3689 rung)"
