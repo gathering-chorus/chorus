@@ -22,20 +22,31 @@ declare -a NAMES VALUES NOTES
 item(){ NAMES+=("$1"); VALUES+=("$2"); NOTES+=("${3:-}"); }
 
 # ── hs256_minters: live code paths that MINT HS256 tokens ────────────────────
-# chorus-mint-token.py callers (scripts + rust) plus the two envelope-door
-# TS minters. Counted from the tree, tests excluded.
-minters_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
-            "chorus-mint-token" "$C/platform/scripts" "$C/platform/services" 2>/dev/null); m_rc=$?
-if [ $m_rc -ge 2 ]; then minters=unknown; else minters=$(printf '%s\n' "$minters_files" | grep -v test | grep -c . || true); fi
-ts_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
-             "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); t_rc=$?
-if [ $t_rc -ge 2 ]; then ts_minters=unknown; else ts_minters=$(printf '%s\n' "$ts_files" | grep -v test | grep -c . || true); fi
-if [ "$minters" = unknown ] || [ "$ts_minters" = unknown ]; then
+# UNION of (files referencing the chorus-mint-token minter) and (TS HS256
+# minters), DEDUPED — token.ts references the py minter in a comment and must
+# count once (Kade/Wren round 4-5 lineage). The test filter matches TEST FILES
+# (test-*.sh, *.test.ts, /tests/ dirs), NOT any path containing "test" — the
+# naive filter silently excluded werk-test/src/main.rs, a REAL minter, for the
+# entire life of this script. chorus-mint-token.py itself counts: it is the
+# artifact whose deletion the goal state requires.
+a_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
+          "chorus-mint-token" "$C/platform" 2>/dev/null); a_rc=$?
+b_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
+          "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); b_rc=$?
+if [ $a_rc -ge 2 ] || [ $b_rc -ge 2 ]; then
   item hs256_minters unknown "grep failed — NOT measured"
 else
-  item hs256_minters $((minters + ts_minters)) "files minting HS256 (goal 0)"
+  # SOURCE FILES ONLY: a minter is code. The unrestricted walk swept
+  # platform/logs/*.log and pulse/messages.db — runtime artifacts that MENTION
+  # the minter in logged command lines. (Found because the interactive shell's
+  # grep is ugrep with --ignore-files, which skipped them, while this script's
+  # plain grep did not — the verify environment differed from the runtime one,
+  # the #3713 lesson again.)
+  minter_list=$(printf '%s\n%s\n' "$a_files" "$b_files" | sort -u \
+    | grep -E '\.(sh|py|rs|ts|js)$' \
+    | grep -vE '(^|/)(tests?)/|/test-[^/]*$|\.test\.[a-z]+$|\.bats$' | grep -c . || true)
+  item hs256_minters "$minter_list" "deduped union incl. werk-test + the mint script itself (goal 0)"
 fi
-
 # ── shared_secret_refs: non-test live code reading the shared secret ─────────
 ref_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
        "CHORUS_SERVICE_TOKEN_SECRET" "$C/platform" 2>/dev/null); r_rc=$?
@@ -73,12 +84,19 @@ fi
 # services + guests + jeff hold no role BY DESIGN (#3653/#3688); anything else
 # without a role is drift. unknown if the store can't answer.
 BYDESIGN="bridge chorus-sdk jeff marknakib crawler-index reindex-worker embed-worker"
-rows=$(curl -s -m 15 "http://localhost:3030/pods/query" \
+# SINGLE-REQUEST TRUTH (Kade, round 4): the answer's own CSV header is the proof
+# the store answered THIS query. A separate liveness probe races — the rows query
+# can fail while the probe succeeds a moment later, and empty-rows would read as
+# drift=0: a false zero through a timing gap. Same family as verify-against-git-
+# never-a-pin. FUSEKI_QUERY_URL override exists for tests.
+FQ="${FUSEKI_QUERY_URL:-http://localhost:3030/pods/query}"
+resp=$(curl -s -m 15 "$FQ" \
   --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH ?g { ?p a chorus:Principal . FILTER NOT EXISTS { ?p chorus:holdsRole ?r } BIND(STRAFTER(STR(?p),"#principal-") AS ?v) } }' \
-  -H "Accept: text/csv" 2>/dev/null | tail -n +2)
-if [ -z "$rows" ] && ! curl -s -m 5 -o /dev/null "http://localhost:3030/pods/query" --data-urlencode 'query=ASK{}' 2>/dev/null; then
-  item principals_without_holdsrole unknown "store unreachable — NOT measured"
+  -H "Accept: text/csv" 2>/dev/null)
+if ! printf '%s' "$resp" | head -1 | grep -q '^v'; then
+  item principals_without_holdsrole unknown "no CSV header in response — THIS query was not answered"
 else
+  rows=$(printf '%s\n' "$resp" | tail -n +2)
   drift=0; names=""
   while read -r p; do
     p="${p%$'\r'}"   # curl CSV rows end \r\n; unstripped, every name misses the match
@@ -131,6 +149,11 @@ echo "distance: $total (+ $unknowns unmeasured)"
 
 # ── metrics: gauges for measured items; UNKNOWN IS OMITTED (absence is the
 #    honest encoding — a fake number in a gauge is the disease) ───────────────
+# security.ledger.run — the ledger's own execution is observable (Wren, round 4).
+# Best-effort: a missing chorus-log must never break a measurement run.
+command -v chorus-log >/dev/null 2>&1 && \
+  chorus-log security.ledger.run silas distance="$total" unmeasured="$unknowns" >/dev/null 2>&1 || true
+
 TMP="${PROM_OUT}.tmp"
 mkdir -p "$(dirname "$PROM_OUT")"
 {

@@ -87,6 +87,13 @@ echo "$OUT4" | grep -qE "shared_secret_refs +unknown" \
   && ok "refs grep against a missing tree reports unknown, not 0" \
   || no "refs still reports a number against a MISSING tree: $(echo "$OUT4" | grep shared_secret_refs)"
 
+# 5c. SINGLE-REQUEST TRUTH (Kade r4): principals must be unknown when THIS query
+#     goes unanswered — no separate liveness probe may vouch for it.
+OUT5=$(FUSEKI_QUERY_URL="http://localhost:1/pods/query" bash "$SCRIPT" 2>&1)
+echo "$OUT5" | grep -qE "principals_without_holdsrole +unknown" \
+  && ok "unanswered principals query reports unknown (no probe races it)" \
+  || no "principals fabricated a verdict without an answer: $(echo "$OUT5" | grep principals)"
+
 # 6. Refactor-safety (Wren, round 1): the verify-branch check must key on the
 #    stable API name, and an unreadable file must be unknown, not 0.
 grep -q 'auth::verify_token' "$SCRIPT" && ok "verify-branch keys on the API name, not a signature" || no "verify-branch still matches a full signature"
