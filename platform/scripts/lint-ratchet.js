@@ -117,6 +117,16 @@ function main() {
     if (count < limit) drops.push({ rule, count, limit, delta: limit - count });
   }
 
+  // #3710 — ORDER MATTERS here, and it misleads if you don't know it. Climbed
+  // counts are reported FIRST and exit 1, so the newRules branch below only runs
+  // once every tracked count is at or under baseline. A rule can therefore fire
+  // for months while staying invisible: absent from the baseline, but the ratchet
+  // never reaches the check that would say so. When you finally pay the counts
+  // down and a batch of "new rule IDs" appears, that is FIRST ACTIVATION — those
+  // rules were already firing; they are not suppressions being aggregated.
+  // Don't assume either reading: run eslint on main and compare per-rule counts.
+  // (Silas's review question on #3710 — three rules surfaced exactly this way,
+  // and all three were confirmed already firing on main.)
   if (violations.length > 0) {
     process.stderr.write('lint-ratchet: FAIL — rule counts climbed above baseline:\n');
     for (const v of violations) {
