@@ -268,32 +268,47 @@ app.use((req, res, next) => {
   });
 });
 
-async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
-  if (req.path === '/bridge-og.jpg') return next();
-  // #3669 — client-id doc is public (CSS fetches it during OIDC); serve pre-gate.
+/**
+ * #3669 — routes that must answer BEFORE any auth check: the OG image, the
+ * public client-id doc CSS fetches during OIDC, and the two login legs (the
+ * user has no session yet). Returns a handler when the path is pre-auth.
+ */
+function preAuthRoute(
+  req: Request, res: Response, next: NextFunction,
+): (() => unknown) | null {
+  if (req.path === '/bridge-og.jpg') return () => next();
   if (req.path === '/clientid.jsonld') {
-    res.type('application/ld+json').send(CLIENTID_DOC);
-    return;
+    return () => { res.type('application/ld+json').send(CLIENTID_DOC); };
   }
-  // #3669 — the login round-trip is pre-auth (the user has no session yet).
-  if (req.path === '/auth/login') return handleAuthLogin(req, res);
-  if (req.path === '/auth/callback') return handleAuthCallback(req, res);
+  if (req.path === '/auth/login') return () => handleAuthLogin(req, res);
+  if (req.path === '/auth/callback') return () => handleAuthCallback(req, res);
+  return null;
+}
 
-  const local = isLocal(req);
-
-  // #3669 — "authenticated" now means EITHER the CSS session cookie (the human's
-  // primary tunneled auth — signed typ:session, WebID re-checked against the live
-  // allow-set every request so a revoked identity loses access within one TTL) OR
-  // the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
-  // Both feed the #3667 gateDecision policy, which owns the admin-forbid + the
-  // read-pair GET-only rules — so those survive the human-login path unchanged.
+/**
+ * #3669 — "authenticated" means EITHER the CSS session cookie (the human's
+ * primary tunneled auth — signed typ:session, WebID re-checked against the live
+ * allow-set every request so a revoked identity loses access within one TTL) OR
+ * the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
+ */
+async function isAuthed(req: Request): Promise<boolean> {
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
   const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
-  // eslint-disable-next-line security/detect-possible-timing-attacks -- BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
+  // BRIDGE_TOKEN is a long random value; tunnel auth gate, migration fallback only.
   const tokenAuthed = !REQUIRE_DPOP && extractToken(req) === BRIDGE_TOKEN;
+  return sessionAuthed || tokenAuthed;
+}
 
-  const outcome = gateDecision(req.path, req.method, local, sessionAuthed || tokenAuthed);
+async function gate(req: Request, res: Response, next: NextFunction): Promise<unknown> {
+  const preAuth = preAuthRoute(req, res, next);
+  if (preAuth) return preAuth();
+
+  const local = isLocal(req);
+  // Both auth paths feed the #3667 gateDecision policy, which owns the
+  // admin-forbid + read-pair GET-only rules — so those survive the human-login
+  // path unchanged.
+  const outcome = gateDecision(req.path, req.method, local, await isAuthed(req));
   if (outcome === 'forbid') return res.status(403).json({ error: 'forbidden' });
   if (outcome === 'pass') return local ? next() : handleAuthenticated(req, res, next);
 
@@ -1064,25 +1079,35 @@ io.use((socket, next) => {
 // no bridge token) connected the page but the live socket was refused → "connecting…"
 // forever + no data. Now: local → allow; else the CSS session cookie (verified WebID
 // in the allow-set, fresh) → allow; else the bridge token as migration fallback.
-async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
-  const ip = socket.handshake.address || '';
-  if (isLocalConnection(socket.handshake.headers, ip)) return true;
-
-  const cookieHeader = String(socket.handshake.headers.cookie || '');
+/** The CSS session cookie leg of socket auth — same contract as the HTTP gate. */
+async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
   const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
-  if (sessMatch) {
-    const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
-    const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
-    if (sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now()))) return true;
-  }
+  if (!sessMatch) return false;
+  const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
+  const fresh = !!sess?.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS;
+  return !!(sess?.webid && fresh && (await isWebIdAllowed(sess.webid, Date.now())));
+}
 
-  if (!REQUIRE_DPOP) {
-    const token = socket.handshake.auth.token || String(socket.handshake.query.token || '');
-    const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
-    const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
-    if (token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN) return true;
-  }
-  return false;
+/** The static bridge-token leg — migration fallback, gone when REQUIRE_DPOP flips. */
+function socketTokenAuthed(cookieHeader: string, authToken?: string, queryToken?: unknown): boolean {
+  if (REQUIRE_DPOP) return false;
+  // #3710 — narrow instead of String()-ing an `unknown`. socket.io hands back
+  // string | string[] | undefined; a non-string would stringify to "a,b" or
+  // "[object Object]" and then be compared against the bridge token — never a
+  // match, but never an honest comparison either.
+  const token = authToken || (typeof queryToken === 'string' ? queryToken : '');
+  const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
+  const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
+  return token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN;
+}
+
+async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
+  const { address, headers, auth, query } = socket.handshake;
+  if (isLocalConnection(headers, address || '')) return true;
+  // #3710 — headers is Record<string, unknown>; narrow rather than stringify.
+  const cookieHeader = typeof headers.cookie === 'string' ? headers.cookie : '';
+  if (await socketSessionAuthed(cookieHeader)) return true;
+  return socketTokenAuthed(cookieHeader, auth.token, query.token);
 }
 
 // Socket.IO

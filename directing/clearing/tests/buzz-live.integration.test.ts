@@ -37,7 +37,6 @@ const LIVE = process.env.BUZZ_LIVE === '1' && fs.existsSync(KEY_FILE);
       { relayUrl: RELAY, signer, connect: (url) => new WebSocket(url) as unknown as RelaySocket, nowSec: () => Math.floor(Date.now() / 1000) },
       ev,
     );
-    // eslint-disable-next-line no-console
     console.log(`RELAY VERDICT: ok=${result.ok} pubkey=${signer.pubkey.slice(0, 12)}… msg="${result.message}"`);
     expect(result.ok).toBe(true);
   }, 15000);

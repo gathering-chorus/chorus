@@ -1,5 +1,13 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic source guard
+# @test-type: integration — needs ~/.chorus/scripts/chorus-index.sh (not in-repo)
+# #3710 — retiered. Everything else here IS hermetic (it builds its own DB and
+# projects dir), but the script under test lives ONLY at
+# ~/.chorus/scripts/chorus-index.sh — 34KB, executable, and not under version
+# control anywhere in this repo. So the suite can never pass on a fresh checkout
+# or a CI runner, and it was failing with exit 127 rather than saying why.
+# The real gap is that the indexer has no in-repo source of truth; that is a
+# bigger call than a CI cleanup card should make unilaterally, so it is named
+# here rather than papered over.
 load test_helper
 # session-indexer-incremental.bats — #2455
 # Tests that active sessions (jsonl being appended to) continue to accumulate

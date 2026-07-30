@@ -164,40 +164,82 @@ export class DeliveryWorker {
    * Deliver a single row with backoff retry. Permanent reasons skip retry.
    * Emits nudge.surfaced or nudge.surface.failed; updates row terminal state.
    */
-  private async deliverOne(row: DeliveryRow): Promise<void> {
-    const maxAttempts = this.backoffMs.length + 1;
-    // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
-    const prefix = eventPrefix(row.kind);
-
-    // #3357 — the announce boundary. jeff-input rows bypass (Jeff's own input
-    // is never noise); everything else is typed and policed here.
-    if (row.kind !== 'jeff-input') {
-      const d = decide(row.from, row.to, row.content, Date.now(), this.announce);
-      const traceF = row.trace_id ? { trace_id: row.trace_id } : {};
-      if (!d.deliver) {
-        await this.emitSpine('terminal.suppressed', {
-          ...traceF,
-          id: row.id,
-          from: row.from,
-          to: row.to,
-          lane: d.lane,
-          class: d.cls,
-          reason: d.suppressReason,
-          ...(d.suppressedCount !== undefined ? { suppressed_count: d.suppressedCount } : {}),
-        });
-        this.store.markDelivered(row.id); // handled, not failed — keeps fold honest
-        return;
-      }
-      await this.emitSpine('terminal.announced', {
+  /**
+   * #3357 — the announce boundary. jeff-input rows bypass (Jeff's own input is
+   * never noise); everything else is typed and policed here. Returns false when
+   * the row was suppressed — it is already terminal and must not be delivered.
+   */
+  private async announceOrSuppress(row: DeliveryRow): Promise<boolean> {
+    if (row.kind === 'jeff-input') return true;
+    const d = decide(row.from, row.to, row.content, Date.now(), this.announce);
+    const traceF = row.trace_id ? { trace_id: row.trace_id } : {};
+    if (!d.deliver) {
+      await this.emitSpine('terminal.suppressed', {
         ...traceF,
         id: row.id,
         from: row.from,
         to: row.to,
         lane: d.lane,
         class: d.cls,
-        ...(d.suppressedSinceLast ? { suppressed_since_last: d.suppressedSinceLast } : {}),
+        reason: d.suppressReason,
+        ...(d.suppressedCount !== undefined ? { suppressed_count: d.suppressedCount } : {}),
       });
+      this.store.markDelivered(row.id); // handled, not failed — keeps fold honest
+      return false;
     }
+    await this.emitSpine('terminal.announced', {
+      ...traceF,
+      id: row.id,
+      from: row.from,
+      to: row.to,
+      lane: d.lane,
+      class: d.cls,
+      ...(d.suppressedSinceLast ? { suppressed_since_last: d.suppressedSinceLast } : {}),
+    });
+    return true;
+  }
+
+  /**
+   * #3700 — three deferred families, each with its own terminal state:
+   *  target-busy      → row PARKS as queued; the target's own turn-boundary hook
+   *                     POSTs /drain and the row comes back pending.
+   *  undelivered-*    → typed terminal miss (dead/unregistered): the row stays
+   *                     persisted (DEC-107 leg 1), spine alarms, and the sender
+   *                     saw the typed reason in the MCP reply. NEVER a name-match
+   *                     keystroke into another role.
+   *  everything else  → the legacy fold path (vscode defer), delivered.
+   */
+  private async settleDeferred(
+    row: DeliveryRow,
+    prefix: string,
+    attempt: number,
+    result: InjectResult,
+    traceFields: Record<string, unknown>,
+  ): Promise<void> {
+    await this.emitSpine(`${prefix}.deferred`, {
+      ...traceFields,
+      id: row.id,
+      from: row.from,
+      to: row.to,
+      attempt,
+      reason: result.deferReason || 'inbox',
+    });
+    if (result.deferReason === 'target-busy') {
+      this.store.markQueued(row.id, 'target-busy');
+    } else if (result.deferReason?.startsWith('undelivered-')) {
+      this.store.markFailed(row.id, result.deferReason);
+    } else {
+      this.store.markDelivered(row.id);
+    }
+  }
+
+  private async deliverOne(row: DeliveryRow): Promise<void> {
+    const maxAttempts = this.backoffMs.length + 1;
+    // #3343 — event family follows the delivery kind (jeff.input.* vs nudge.*).
+    const prefix = eventPrefix(row.kind);
+
+    if (!(await this.announceOrSuppress(row))) return;
+
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const result = await this.runInject(row.to, row.content, row.from);
       const classified = classifyInjectResult(result);
@@ -220,48 +262,22 @@ export class DeliveryWorker {
       // match), so a focus-gate-miss stderr can no longer occur. Nudges deliver,
       // they don't defer behind a focus check.
       if (result.deferred) {
-        // #3700 — three deferred families now:
-        //  target-busy      → row PARKS as queued; the target's own turn-boundary
-        //                     hook POSTs /drain and the row comes back pending.
-        //  undelivered-*    → typed terminal miss (dead/unregistered): the row
-        //                     stays persisted (DEC-107 leg 1), spine alarms, and
-        //                     the sender saw the typed reason in the MCP reply.
-        //                     NEVER a name-match keystroke into another role.
-        //  everything else  → the legacy fold path (vscode defer), delivered.
-        await this.emitSpine(`${prefix}.deferred`, {
+        await this.settleDeferred(row, prefix, attempt, result, traceFields);
+        return;
+      }
+
+      if (classified.kind === 'success') {
+        await this.emitSpine(`${prefix}.surfaced`, {
           ...traceFields,
           id: row.id,
           from: row.from,
           to: row.to,
           attempt,
-          reason: result.deferReason || 'inbox',
+          // #3352 — the witness names WHICH session received the keystroke,
+          // so misdelivery is observable instead of a silent true-green.
+          target: result.target || 'unknown',
         });
-        if (result.deferReason === 'target-busy') {
-          this.store.markQueued(row.id, 'target-busy');
-        } else if (result.deferReason?.startsWith('undelivered-')) {
-          this.store.markFailed(row.id, result.deferReason);
-        } else {
-          this.store.markDelivered(row.id);
-        }
-        return;
-      }
-
-      if (classified.kind === 'success') {
-        try {
-          await this.emitSpine(`${prefix}.surfaced`, {
-            ...traceFields,
-            id: row.id,
-            from: row.from,
-            to: row.to,
-            attempt,
-            // #3352 — the witness names WHICH session received the keystroke,
-            // so misdelivery is observable instead of a silent true-green.
-            target: result.target || 'unknown',
-          });
-          this.store.markDelivered(row.id);
-        } catch (e) {
-          throw e;
-        }
+        this.store.markDelivered(row.id);
         return;
       }
 

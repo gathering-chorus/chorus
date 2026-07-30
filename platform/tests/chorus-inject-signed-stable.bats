@@ -1,5 +1,13 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic source guard
+# @test-type: integration — runs a real cargo build + codesign
+# #3710 — retiered from "unit — hermetic source guard", which it never was: each
+# case shells out to build-signed.sh, which compiles the crate and codesigns the
+# result. That needs a Rust toolchain and, for the assertion to MEAN anything, a
+# macOS keychain identity — cdhash stability under ad-hoc signing proves nothing
+# about the TCC grant this exists to protect. #3684 already taught
+# build-signed.sh to skip codesign off macOS, so on a Linux runner these cases
+# burned minutes asserting a signature nobody applied. Integration tier keeps
+# them in the local nightly, on the machine where the answer is real.
 # chorus-inject-signed-stable.bats — #2548 AC1.
 #
 # Asserts that build-signed.sh produces a chorus-inject binary whose cdhash

@@ -27,6 +27,20 @@ const recentNudges = new Map<string, number>();
 const DEDUP_WINDOW_MS = 10_000;
 
 /**
+ * #3710 — drop the dedup memory. Module-level state outlives any individual
+ * app, so a test that builds a fresh store + app still inherits the PREVIOUS
+ * app's dedup window. That made service.test.ts intermittently fail: the key is
+ * `from|to|marked-content` and markNudge stamps the content to the MINUTE, so
+ * two same-sender/same-content posts collided only when they happened to land
+ * in the same wall-clock minute. The loser came back {deduped:true} with no id,
+ * and the assertion then read a row that was never created. Callers that own an
+ * app's lifetime reset with it; production never calls this.
+ */
+export function resetNudgeDedup(): void {
+  recentNudges.clear();
+}
+
+/**
  * Build an Express app bound to the given MessageStore. Factored out of the
  * top-level listener so tests can run against an in-memory store without
  * opening a port. `app.listen()` is called only when this module is the
@@ -89,6 +103,45 @@ function registerHealthMetricsRoutes(app: Express, store: MessageStore, metrics:
   });
 }
 
+/**
+ * #2765 AC3 — prefer the X-Chorus-Trace-Id header (canonical UUIDv7); fall back
+ * to body.traceId for senders that haven't migrated.
+ */
+function resolveTraceId(header: unknown, bodyTraceId: unknown): string | undefined {
+  return (typeof header === 'string' ? header : undefined) || (bodyTraceId as string | undefined) || undefined;
+}
+
+/**
+ * #3032 — mark teammate nudges so the receiving session can tell them from
+ * Jeff's own typed prompts (input_classifier recognizes/strips the "[nudge from"
+ * prefix; nothing re-added it after the #2804 refactor). Idempotent — never
+ * double-prefixes.
+ */
+function markNudge(from: string, content: string): string {
+  if (content.startsWith('[nudge from')) return content;
+  const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
+  return `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
+}
+
+/**
+ * #3403 envelope. class = who's talking — the caller may declare it, else it's
+ * inferred from the sender (peer → r2r, machine/alert → a2r). expects = what's
+ * needed back, declared by the sender, default 'none'. The gate only ever traps
+ * r2r + expects in (reply|decision|action), so an alert or a forgotten expects
+ * can never trap — that's the safe-by-default Jeff chose.
+ */
+function readEnvelope(body: { class?: unknown; expects?: unknown }, from: string): {
+  nudgeClass: 'r2r' | 'a2r';
+  expects: 'none' | 'reply' | 'decision' | 'action';
+} {
+  return {
+    nudgeClass: body.class === 'r2r' || body.class === 'a2r' ? body.class : inferNudgeClass(from),
+    expects: ['reply', 'decision', 'action', 'none'].includes(body.expects as string)
+      ? (body.expects as 'none' | 'reply' | 'decision' | 'action')
+      : 'none',
+  };
+}
+
 function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics, worker?: DeliveryWorker): void {
   app.post('/api/nudge', (req, res) => {
     // #3485 — only the MCP server is the canonical caller. The pre-#3485 gate
@@ -105,18 +158,8 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     }
     const { from, to, content, traceId: bodyTraceId } = req.body;
     if (!from || !to || !content) return res.status(400).json({ error: 'from, to, content required' });
-    // #2765 AC3: prefer X-Chorus-Trace-Id header (canonical UUIDv7); fall back
-    // to body.traceId for backward-compat with senders that haven't migrated.
-    const headerTrace = req.headers['x-chorus-trace-id'];
-    const traceId = (typeof headerTrace === 'string' ? headerTrace : undefined) || bodyTraceId || undefined;
-    // #3032: mark teammate nudges so the receiving session can distinguish them
-    // from Jeff's own typed prompts (input_classifier already recognizes/strips
-    // the "[nudge from" prefix; nothing re-added it after the #2804 refactor).
-    // Idempotent — never double-prefix.
-    const tsBoston = new Date().toLocaleString('sv-SE', { timeZone: 'America/New_York' }).slice(0, 16);
-    const marked = content.startsWith('[nudge from')
-      ? content
-      : `[nudge from ${from} | ${tsBoston} Boston] ${content}`;
+    const traceId = resolveTraceId(req.headers['x-chorus-trace-id'], bodyTraceId);
+    const marked = markNudge(from, content);
     // #3335 Pattern 7 — drop an identical nudge re-posted within the dedup window.
     // The spine/store is not touched for a dup; the caller gets ok so a retry isn't an error.
     if (seenRecently(dedupeKey(from, to, marked), Date.now(), recentNudges, DEDUP_WINDOW_MS)) {
@@ -128,10 +171,7 @@ function registerNudgeRoutes(app: Express, store: MessageStore, metrics: Metrics
     // needed back, declared by the sender, default 'none'. The gate only ever traps
     // r2r + expects in (reply|decision|action), so an alert or a forgotten expects
     // can never trap — that's the safe-by-default Jeff chose.
-    const nudgeClass: 'r2r' | 'a2r' =
-      req.body.class === 'r2r' || req.body.class === 'a2r' ? req.body.class : inferNudgeClass(from);
-    const expects: 'none' | 'reply' | 'decision' | 'action' =
-      ['reply', 'decision', 'action', 'none'].includes(req.body.expects) ? req.body.expects : 'none';
+    const { nudgeClass, expects } = readEnvelope(req.body, from);
     const id = store.sendNudge(from, to, marked, traceId, nudgeClass, expects);
     metrics.nudgesReceived.labels(from, to).inc();
     log('info', 'nudge.stored', { id, from, to, chars: marked.length, trace_id: traceId || undefined });

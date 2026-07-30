@@ -1060,6 +1060,71 @@ async function executeWip(
 // #3683 — /sup executor: one GET to the #3654-backed priorities endpoint,
 // rendered as the walk: chunks in roleSequence order (loom position shown where
 // declared), cards in rank order, unsequenced block last with its scope label.
+/** One ordered level of the #3686 walk (products, domains). */
+type SupLevel = { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
+
+type SupData = {
+  rolePriority?: { ranks: Array<{ role: string; rolePriority: number }>; note?: string };
+  products?: SupLevel;
+  domains?: SupLevel;
+  chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
+  unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
+};
+
+/**
+ * #3686 — the full walk, rendered: role hard-rank → products → domains →
+ * chunks → cards → unsequenced. Pure formatting over already-fetched data, so
+ * the order the graph decided is the order printed (the /sup contract).
+ */
+function renderSupWalk(d: SupData, role: string): string[] {
+  return [
+    `${role} priorities (graph order — #3654/#3686):`,
+    ...renderSupHeader(d),
+    ...renderSupChunks(d),
+  ];
+}
+
+/** Role hard-rank, then each ordered level (products, domains). */
+function renderSupHeader(d: SupData): string[] {
+  const lines: string[] = [];
+  if (d.rolePriority) {
+    const rankLine = d.rolePriority.ranks.map((x) => `${x.rolePriority}:${x.role}`).join('  ');
+    lines.push(`  role hard-rank: ${rankLine || `(${d.rolePriority.note ?? 'none set'})`}`);
+  }
+  const levels: Array<[string, SupLevel | undefined]> = [['products', d.products], ['domains', d.domains]];
+  for (const [label, lv] of levels) {
+    if (!lv) continue;
+    const parts = lv.ordered.map((x) => `${x.ownerSequence}. ${x.name}`);
+    lines.push(`  ${label}: ${parts.join('  ') || `(${lv.note ?? 'none ordered'})`}`);
+    if (lv.unordered.length > 0) lines.push(`     unordered ${label}: ${lv.unordered.join(', ')}`);
+  }
+  return lines;
+}
+
+/** Chunks in roleSequence order with their ranked cards, then the unsequenced block. */
+function renderSupChunks(d: SupData): string[] {
+  return [...renderChunkList(d.chunks ?? []), ...renderUnsequenced(d.unsequenced)];
+}
+
+function renderChunkList(chunks: NonNullable<SupData['chunks']>): string[] {
+  if (chunks.length === 0) return ['  (no sequenced chunks in the graph)'];
+  const lines: string[] = [];
+  for (const ch of chunks) {
+    lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);
+    if (ch.cards.length === 0) lines.push('     (no cards ranked yet)');
+    for (const c of ch.cards) lines.push(`     ${c.rank}. #${c.id} — ${c.title}`);
+  }
+  return lines;
+}
+
+function renderUnsequenced(unseq: SupData['unsequenced']): string[] {
+  if (!unseq) return [];
+  const lines = [`  unsequenced — ${unseq.scope}:`];
+  if (unseq.cards.length === 0) lines.push('     (none)');
+  for (const c of unseq.cards) lines.push(`     #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`);
+  return lines;
+}
+
 async function executeSup(
   fetchImpl: FetchImpl,
   apiBase: string,
@@ -1068,45 +1133,8 @@ async function executeSup(
   const url = `${apiBase}/api/chorus/context/priorities?role=${encodeURIComponent(role)}`;
   const resp = await fetchImpl(url);
   if (!resp.ok) throw new Error(`chorus_sup: chorus-api ${resp.status ?? '?'} on ${url}`);
-  const body = (await resp.json()) as {
-    data?: {
-      rolePriority?: { ranks: Array<{ role: string; rolePriority: number }>; note?: string };
-      products?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
-      domains?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string };
-      chunks?: Array<{ chunk: string; roleSequence: number; loomSequence?: number; cards: Array<{ id: number; title: string; rank: number }> }>;
-      unsequenced?: { scope: string; cards: Array<{ id: number; title: string; priority?: string }> };
-    };
-  };
-  const d = body.data ?? {};
-  const chunks = d.chunks ?? [];
-  const unseq = d.unsequenced;
-  const lines: string[] = [`${role} priorities (graph order — #3654/#3686):`];
-  // #3686 — the full walk: role hard-rank → products → domains → chunks → cards.
-  if (d.rolePriority) {
-    const rp = d.rolePriority;
-    const rankLine = rp.ranks.map((x) => `${x.rolePriority}:${x.role}`).join('  ');
-    lines.push(`  role hard-rank: ${rankLine || `(${rp.note ?? 'none set'})`}`);
-  }
-  const level = (label: string, lv?: { ordered: Array<{ name: string; ownerSequence: number }>; unordered: string[]; note?: string }) => {
-    if (!lv) return;
-    const parts = lv.ordered.map((x) => `${x.ownerSequence}. ${x.name}`);
-    lines.push(`  ${label}: ${parts.join('  ') || `(${lv.note ?? 'none ordered'})`}`);
-    if (lv.unordered.length > 0) lines.push(`     unordered ${label}: ${lv.unordered.join(', ')}`);
-  };
-  level('products', d.products);
-  level('domains', d.domains);
-  if (chunks.length === 0) lines.push('  (no sequenced chunks in the graph)');
-  for (const ch of chunks) {
-    lines.push(`  ${ch.roleSequence}. ${ch.chunk}${ch.loomSequence !== undefined ? ` (loom #${ch.loomSequence})` : ''}`);
-    for (const c of ch.cards) lines.push(`     ${c.rank}. #${c.id} — ${c.title}`);
-    if (ch.cards.length === 0) lines.push('     (no cards ranked yet)');
-  }
-  if (unseq) {
-    lines.push(`  unsequenced — ${unseq.scope}:`);
-    if (unseq.cards.length === 0) lines.push('     (none)');
-    for (const c of unseq.cards) lines.push(`     #${c.id} — ${c.title}${c.priority ? ` [${c.priority}]` : ''}`);
-  }
-  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  const body = (await resp.json()) as { data?: SupData };
+  return { content: [{ type: 'text' as const, text: renderSupWalk(body.data ?? {}, role).join('\n') }] };
 }
 
 function logEvent(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
@@ -2354,6 +2382,11 @@ function warnIfRepeatedAnnounce(
   } catch { /* best-effort */ }
 }
 
+/** The MCP text envelope every werk verb returns — one JSON payload as text. */
+function mcpJson(payload: unknown): { content: Array<{ type: 'text'; text: string }> } {
+  return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] };
+}
+
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2396,17 +2429,12 @@ async function executeChorusWerk(
     warnIfRepeatedAnnounce(existingRun, args.role, args.card_id, spawnFn, scriptsDir, pathMod);
   }
   if (preReconcile?.phase === 'running' && existingRun?.phase === 'failed') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
-          role: args.role, card_id: args.card_id, accepter,
-          failureReason: existingRun.failureReason,
-          note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
-        }),
-      }],
-    };
+    return mcpJson({
+      ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
+      role: args.role, card_id: args.card_id, accepter,
+      failureReason: existingRun.failureReason,
+      note: `Run for #${args.card_id} FAILED — reason: ${existingRun.failureReason || 'unknown'}. Full log: ${existingRun.logFile || 'per-card log'}. Re-invoke chorus_werk to retry.`,
+    });
   }
   // #3538 — a PRESENTED record for a SUPERSEDED patch must re-demo the new commit.
   // Compare the werk's CURRENT patch-id to the recorded one: if HEAD advanced (the
@@ -2426,19 +2454,14 @@ async function executeChorusWerk(
   if (action.kind === 'attach') {
     const r = action.run;
     const polling = r.phase === 'running';
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
-          ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
-          role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
-          failureReason: r.failureReason,
-          note: polling
-            ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
-            : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
-        }),
-      }],
-    };
+    return mcpJson({
+      ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
+      role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+      failureReason: r.failureReason,
+      note: polling
+        ? `Still running (#${args.card_id}) — the detached pipeline is in flight. Re-invoke chorus_werk to poll; it advances to presented/failed when act finishes. Nothing held, no transport drop.`
+        : `Run on record for #${args.card_id} (phase=${r.phase}). ${r.phase === 'presented' ? 'On your GO, re-invoke with go:true to land.' : 'A re-invoke retries.'}`,
+    });
   }
   // #3458 — START: launch act DETACHED and return immediately. A bash wrapper streams
   // act's output to the per-card log and appends WERK_EXIT=<code> when it finishes — a
@@ -2475,16 +2498,11 @@ async function executeChorusWerk(
     prevPatchId: existingRun?.patchId,
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
-  return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
-        ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
-        run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
-        note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
-      }),
-    }],
-  };
+  return mcpJson({
+    ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
+    run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+    note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
+  });
 }
 
 // #3279/#3193 — Half B: THE GO. Runs werk.yml's go-gated `land` job synchronously (merge → ff-sync →
@@ -2521,17 +2539,12 @@ async function executeChorusWerkLand(
   const preLandReconcile = readRun(args.card_id, runsDir);
   const existingLand = reconcileRunning(args.card_id, runsDir);
   if (preLandReconcile?.phase === 'running' && existingLand?.phase === 'failed') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: true, verb: 'chorus_werk', phase: 'failed', attached: true,
           role: args.role, card_id: args.card_id, accepter,
           failureReason: existingLand.failureReason,
           note: `Land for #${args.card_id} FAILED — reason: ${existingLand.failureReason || 'unknown'}. Full log: ${existingLand.logFile || 'per-card log'}. Re-invoke chorus_werk go:true to retry.`,
-        }),
-      }],
-    };
+        });
   }
   // #3458 — same stale-guard on the land path: a dead 'running' land record is retried, not attached forever.
   const landAction = decideRunAction(existingLand, true, existingLand ? isRunStale(existingLand) : false);
@@ -2540,30 +2553,20 @@ async function executeChorusWerkLand(
   // the go's authority floated toward rounds the accepter never saw. The
   // accepter re-issues the go AT the presented stop, for the round announced.
   if (landAction.kind === 'refuse-go-running') {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: false, verb: 'chorus_werk', refusal: 'go-while-running',
           phase: 'running', role: args.role, card_id: args.card_id, accepter,
           note: `Refused: #${args.card_id} is mid-pipeline — a go can only accept a PRESENTED round the accepter has seen. Wait for the demo-ready announce, then re-issue go for that round.`,
-        }),
-      }],
-    };
+        });
   }
   if (landAction.kind === 'attach') {
     const r = landAction.run;
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
           role: args.role, card_id: args.card_id, accepter,
           failureReason: r.failureReason,
           note: `Attached to the run on record for #${args.card_id} (phase=${r.phase}) — idempotent re-invoke, no second merge/land. A dropped land is a non-event: this IS the true state.`,
-        }),
-      }],
-    };
+        });
   }
   // #3664 — never start a land BLIND: with no werk worktree on disk there is nothing
   // to land, and the act run is guaranteed to fail "no werk" — worse, its failure
@@ -2571,16 +2574,11 @@ async function executeChorusWerkLand(
   const werkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkBase env-config + validated role enum + card_id:number, no untrusted input
   if (!existsSync(werkDir)) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: JSON.stringify({
+    return mcpJson({
           ok: false, verb: 'chorus_werk', phase: 'no-werk', reason: 'no-werk',
           role: args.role, card_id: args.card_id,
           note: `No werk worktree at ${werkDir} — nothing to land for #${args.card_id}. If this card already landed+accepted, that IS the terminal state (check the board/spine); a land is never started blind.`,
-        }),
-      }],
-    };
+        });
   }
   // #3458 — START the land DETACHED, same model as Half A: the wrapper streams the
   // go-gated land job (merge → ff-sync → deploy-prod → accept) to the per-run log and
@@ -2605,16 +2603,11 @@ async function executeChorusWerkLand(
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
-  return {
-    content: [{
-      type: 'text' as const,
-      text: JSON.stringify({
+  return mcpJson({
         ok: true, verb: 'chorus_werk', phase: 'running', launched: true, go: true,
         run_id: runId, role: args.role, card_id: args.card_id, accepter,
         note: `Landing (#${args.card_id}) — merge → ff-sync → deploy-prod → accept runs DETACHED; nothing held. Re-invoke chorus_werk go:true to poll: 'running' until done, then 'landed' (live + accepted) or 'failed' (with the reason).`,
-      }),
-    }],
-  };
+      });
 }
 
 // #3485 — exported so the plain-HTTP POST /nudge route (main.ts) routes

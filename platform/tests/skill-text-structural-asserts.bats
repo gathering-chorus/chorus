@@ -40,34 +40,45 @@ setup() {
   fi
 }
 
-@test "/demo skill markdown contains card.demo.started spine-emit step" {
+# #3710 — these three demanded a literal `chorus-log <event>` line in the skill
+# markdown. That was the right assertion when the SKILL told a human which
+# command to run; #3443/#3116 moved emission INTO the verbs (werk-demo presents
+# and emits; werk-pull emits card.pulled), so the skills now DECLARE the event
+# instead of instructing it. The contract worth guarding is that the skill still
+# names the spine event it is responsible for — a reader must be able to learn
+# what lands on the spine — not which binary types it.
+
+@test "/demo skill markdown declares the card.demo.started spine event" {
   DEMO_MD="$SKILLS_DIR/demo/SKILL.md"
   [ -f "$DEMO_MD" ] || skip "/demo/SKILL.md not present at $DEMO_MD"
 
-  if ! grep -q "chorus-log.*card\.demo\.started" "$DEMO_MD"; then
-    echo "/demo skill is missing the chorus-log card.demo.started step."
+  if ! grep -q "card\.demo\.started" "$DEMO_MD"; then
+    echo "/demo skill no longer names the card.demo.started spine event."
     false
   fi
 }
 
-@test "/demo skill markdown declares step 5 [feedback] nudge as mandatory" {
+@test "/demo skill markdown declares the feedback gather as part of the ceremony" {
   DEMO_MD="$SKILLS_DIR/demo/SKILL.md"
   [ -f "$DEMO_MD" ] || skip "/demo/SKILL.md not present"
 
-  # Must reference [feedback] nudge in step 5 (Jeff's mandatory framing)
-  if ! grep -qE "\[feedback\]" "$DEMO_MD"; then
-    echo "/demo skill markdown is missing the [feedback] nudge step."
-    echo "  Step 5 [feedback] is mandatory per Jeff (2026-04-30)."
+  # Jeff made the feedback gather mandatory (2026-04-30). The old assertion
+  # required the literal "[feedback]" nudge-prefix from when the demoer sent it
+  # by hand; werk-demo now fires the verbatim gather itself, so the skill
+  # describes it in prose. Guard that the ceremony still includes it at all.
+  if ! grep -qi "feedback" "$DEMO_MD"; then
+    echo "/demo skill markdown no longer mentions the feedback gather."
+    echo "  The feedback step is mandatory per Jeff (2026-04-30)."
     false
   fi
 }
 
-@test "/pull skill markdown contains card.pulled spine-emit step" {
+@test "/pull skill markdown declares the card.pulled spine event" {
   PULL_MD="$SKILLS_DIR/pull/SKILL.md"
   [ -f "$PULL_MD" ] || skip "/pull/SKILL.md not present"
 
-  if ! grep -q "chorus-log.*card\.pulled" "$PULL_MD"; then
-    echo "/pull skill is missing the chorus-log card.pulled step."
+  if ! grep -q "card\.pulled" "$PULL_MD"; then
+    echo "/pull skill no longer names the card.pulled spine event."
     false
   fi
 }

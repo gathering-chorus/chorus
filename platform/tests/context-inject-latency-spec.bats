@@ -1,5 +1,12 @@
 #!/usr/bin/env bats
-# @test-type: unit — static source/shape guard, hermetic
+# @test-type: integration — measures live latency against the running daemon
+# #3710 — retiered. This spec times real requests through the chorus-hooks unix
+# socket at ~/.chorus/run/chorus-hooks.sock and compares warm-vs-cold latency.
+# That needs the daemon RUNNING; it was declared a "static source/shape guard,
+# hermetic", which it has never been — on any box without the socket it failed
+# at [ -S "$SOCKET" ] rather than reporting that there was nothing to measure.
+# Latency numbers are also meaningless on a shared CI runner. The local nightly
+# runs it where the daemon exists and the timings mean something.
 load test_helper
 # context-inject-latency-spec.bats (#2231)
 #

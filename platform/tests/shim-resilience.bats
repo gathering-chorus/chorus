@@ -28,11 +28,22 @@ WRAPPER="$SCRIPTS/shim-wrapper.sh"
   echo "$result" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
 }
 
+# #3710 — both cases set CHORUS_ROOT=/nonexistent and expected the not-found
+# branch. That stopped working when #2734 moved the deploy location to
+# ~/.chorus/bin: the wrapper resolves `command -v chorus-hook-shim` FIRST and
+# only falls back to $CHORUS_ROOT, so on any machine with the binary on PATH it
+# found the real shim and never reached the error branch. Clearing PATH too is
+# what actually exercises "binary missing" now.
 @test "wrapper emits clear error when binary missing" {
-  CHORUS_ROOT=/nonexistent "$WRAPPER" 2>&1 | grep -q "chorus-hook-shim not found"
+  run env CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
+  [[ "$output" == *"chorus-hook-shim not found"* ]]
 }
 
 @test "wrapper logs failure to shim-wrapper.log" {
-  CHORUS_ROOT=/nonexistent "$WRAPPER" 2>/dev/null || true
-  grep -q "FATAL.*not found" ~/Library/Logs/Chorus/shim-wrapper.log
+  # The wrapper appends to $HOME/Library/Logs/Chorus/ and does not create that
+  # directory, so the test supplies it instead of assuming this machine has one.
+  local home="${BATS_TEST_TMPDIR:-/tmp}/shim-home-$$"
+  mkdir -p "$home/Library/Logs/Chorus"
+  run env HOME="$home" CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
+  grep -q "FATAL.*not found" "$home/Library/Logs/Chorus/shim-wrapper.log"
 }
