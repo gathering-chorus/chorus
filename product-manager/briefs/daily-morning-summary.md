@@ -1,28 +1,30 @@
-# Daily Morning Summary — 2026-07-29
+# Daily Morning Summary — 2026-07-30
 
-**HEADLINE:** 3 cards landed yesterday (model-version, value-stream contracts, chorus-oidc); `npm ci` hits day 50 and WIP cards rot at 112d — both need decisions today.
+**HEADLINE:** Domain context files expire **tomorrow (Jul 31)** — Silas must update chorus context today; `npm ci` hits day 51 with quality fully dark.
 
-**OPS:** YELLOW/RED (Silas, 2026-07-28)
+**OPS:** YELLOW/RED (Silas, 2026-07-29)
 - GREEN: Git clean (0 uncommitted changes)
-- YELLOW: Dead-code warnings at 1 (improving); 34 plists with `/tmp/` refs (no movement); CLAUDE.md role fragments still unrefreshed (5d lag)
-- RED: CSC compliance static — 37 sh files with `/tmp/` refs, check-path mismatch unresolved; WIP cards #1759/#1791 at **112d** — escalating daily; all 5 domain context files **5d stale**, chorus context ~**100d** with 3 cards shipped yesterday into it
+- YELLOW: Dead-code warnings **back to 2** (regression — `registration_json` returned); 2 Dependabot PRs at 56d open (#449 cucumber 12→13, #443 ureq 2→3, auto-rebase disabled); CLAUDE.md fragment sync lag (5d+)
+- RED: CSC compliance — check-paths still wrong; `/tmp/` refs in `platform/scripts/` corrected to **142 occurrences** (was 37); **all 5 domain context files expire Jul 31** — chorus context ~100d stale, 4 infra cards shipped with no update
 
-**QUALITY:** RED (Kade, 2026-07-29)
-- All 4 suites blocked: `ts-jest` preset not found — **day 48**; lint blocked (`@eslint/js`) — **day 50**
-- Build: **181 type errors (+0)** — stable, third consecutive day; no new regression
-- Primary fix: `npm ci` at repo root — **50 days unresolved**
+**QUALITY:** RED (Kade, 2026-07-30)
+- All 4 suites blocked: `ts-jest` preset not found — **day 49**; lint blocked (`@eslint/js`) — **day 51**
+- Build: **181 type errors (+0)** — sixth consecutive stable day, no regression
+- Primary fix: `npm ci` at repo root — **51 days unresolved**
 
-**YESTERDAY (07-28):** 3 cards shipped
-- **#3704 (wren):** Model-version convention — `chorus:modelVersion` + `supersededBy` properties, Vertebra tagged v1→ValueStreamStep, owl-api projects modelVersion on every envelope
-- **#3707 (kade):** Value-stream chunk contracts — stageOrder 1–6 pinned, tree depth≥4, v1 410 stays retired; athena-health catalog cleaned up
-- **#3688 (silas):** chorus-oidc expansion + owl-api integration (+459 lines); spine events schema update
+**YESTERDAY (07-29):** 3 cards shipped
+- **#3708 (wren):** Re-pointed test-clearing-ack Test 2 to `jeff-input.ts`; 7/7 green — kills nightly false-red
+- **#3709 (silas):** Silas card (details in commit)
+- **#3711 (silas):** Silas card (details in commit)
 
 **TODAY:**
-1. **Jeff → `npm ci`:** Day 50 milestone; quality fully dark for 7+ weeks — needs owner or go/no-go
-2. **Jeff → #1759/#1791:** 112d in WIP; close or archive — board noise blocks backlog reads
-3. **Silas:** `domain-context-chorus.md` critical at ~100d; 3 Chorus cards landed yesterday — update now
-4. **Wren + Kade:** Role fragment refresh in CLAUDE.md — 5d since last touch
+1. **Silas → domain context:** All 5 files expire tomorrow — `domain-context-chorus.md` critical at ~100d; update today or set expiry extension
+2. **Jeff → `npm ci`:** Day 51; quality blind since early June — owner or go/no-go needed
+3. **Jeff/Silas → Dependabot #449/#443:** 56d open; #443 needs rebase re-enabled; major breaking upgrades need a decision
+4. **Silas → dead-code regression:** `registration_json` returned; verify whether Jul 24 fix actually landed
+5. **Wren + Kade → CLAUDE.md fragments:** Role content refresh overdue (5d+ lag)
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 50** — all test suites and lint blind since early June; coverage unknown
-- **#1759/#1791 at 112d** — longest-stale WIP on the board; must decide today
+- **Domain context expiry Jul 31** — chorus content ~100d stale; goes red tomorrow if not updated
+- **`npm ci` day 51** — all suites and lint dark; coverage unknown for 7+ weeks
+- **Dependabot #449/#443 at 56d** — major breaking upgrades stalled; #443 auto-rebase disabled
