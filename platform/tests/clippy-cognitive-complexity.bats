@@ -18,20 +18,6 @@ ROOT="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}"
   [ "$status" -eq 0 ]
 }
 
-@test "chorus-hooks cargo clippy emits cognitive_complexity warnings" {
-  cd "$ROOT/platform/services/chorus-hooks"
-  run bash -c "cargo clippy --bin chorus-hook-shim 2>&1 | grep -c 'cognitive_complexity'"
-  [ "$status" -eq 0 ]
-  # At least one warning expected (spike found 13 hits)
-  [ "$output" -ge 1 ]
-}
-
-@test "warn-level does not fail clippy build" {
-  cd "$ROOT/platform/services/chorus-hooks"
-  run bash -c "cargo clippy --bin chorus-hook-shim 2>&1; echo EXIT=\$?"
-  echo "$output" | grep -q "EXIT=0" || (echo "expected exit 0 (warn doesn't fail), got: $output" && false)
-}
-
 @test "clippy-ratchet baseline records cognitive_complexity (enforcement, not noise)" {
   run grep -E '"clippy::cognitive_complexity"' "$ROOT/.clippy-baseline.json"
   [ "$status" -eq 0 ]

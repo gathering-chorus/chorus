@@ -7,7 +7,9 @@ load test_helper
 # Fix: revert to keystroke + key code 36.
 # This is a structural test — the real test is Jeff watching the terminal.
 
-INJECT_SRC="${CHORUS_ROOT}/platform/services/chorus-inject/src/main.rs"
+# #3710 — the osascript keystroke path moved main.rs -> lib.rs; the test kept
+# grepping main.rs and failed on a file that no longer owns the behaviour.
+INJECT_SRC="${CHORUS_ROOT}/platform/services/chorus-inject/src/lib.rs"
 
 @test "inject source uses keystroke (not do script)" {
   grep -q 'keystroke' "$INJECT_SRC"

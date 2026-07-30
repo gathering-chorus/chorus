@@ -30,6 +30,28 @@ if ! CHORUS_ROOT="$REPO" "$REPO/platform/scripts/retirement-gate.sh"; then
   exit 1
 fi
 
+# #3710 — clippy ratchet on staged Rust. The ratchet script's own header says
+# "Ratchet runs in pre-commit (Check 4.65)" and the CI job's comment calls
+# pre-commit the opportunistic layer — but the wiring was not here, so Rust lint
+# regressions had NO commit-time guard at all. That is how #3700 put 40 new
+# lints on main in one land, which is the incident this card came from.
+# Diff-scoped: only when .rs files are staged. Fail-open on a missing toolchain
+# (a dev-setup gap must not block work); block only on a real ratchet verdict.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '\.rs$'; then
+  if command -v cargo >/dev/null 2>&1; then
+    if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/clippy-ratchet.sh" >/tmp/clippy-ratchet-precommit.out 2>&1; then
+      echo "" >&2
+      echo "📎 pre-commit BLOCKED: the clippy per-lint ratchet refused your staged Rust (#2532/#3710)." >&2
+      tail -12 /tmp/clippy-ratchet-precommit.out >&2
+      echo "   Counts may only DECREASE. Fix the lints, or regenerate the baseline only on a real drop:" >&2
+      echo "   platform/scripts/clippy-ratchet.sh --regenerate" >&2
+      exit 1
+    fi
+  else
+    echo "pre-commit: cargo not found — clippy ratchet SKIPPED (dev-setup gap, not a pass)" >&2
+  fi
+fi
+
 if ! command -v gitleaks >/dev/null 2>&1; then
   echo "pre-commit: gitleaks not installed (brew install gitleaks) — secret scan SKIPPED" >&2
   exit 0  # fail-open on missing tool: don't block work on a dev-setup gap; CI gates hard

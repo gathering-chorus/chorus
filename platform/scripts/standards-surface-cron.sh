@@ -11,7 +11,12 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 GEN_SCRIPT="$SCRIPT_DIR/generate-standards-surface.sh"
-STATE_FILE="$HOME/.chorus/standards-surface-checksums.json"
+# #3710 — env-overridable so a test can exercise the first-run path against its
+# own state instead of whatever this machine has cached. The cron test always
+# MEANT to do this ("Override STATE_FILE via env", per its own comment) — the
+# seam just never existed, so it deleted an unrelated file and then asserted
+# against the real cached state, which correctly said "unchanged".
+STATE_FILE="${STANDARDS_STATE_FILE:-$HOME/.chorus/standards-surface-checksums.json}"
 LOG_TAG="standards-surface-cron"
 
 # Sources to monitor for changes

@@ -13,11 +13,14 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
 }
 
 @test "AC2: dry-run detects source changes on first run (no prior checksums)" {
-  # Remove any existing state file so it looks like first run
-  local state="/tmp/test-standards-checksums.json"
+  # #3710 — this now does what the comment always claimed. It used to delete
+  # /tmp/test-standards-checksums.json, a path the script never reads, then run
+  # against the machine's REAL cached state — which correctly reported
+  # "unchanged", so a first-run assertion could not pass on any box that had run
+  # the cron before. STANDARDS_STATE_FILE is the seam.
+  local state="${BATS_TEST_TMPDIR:-/tmp}/first-run-checksums-$$.json"
   rm -f "$state"
-  # Override STATE_FILE via env — script should detect "first run" = changes
-  run bash "$SCRIPT" --dry-run
+  run env STANDARDS_STATE_FILE="$state" bash "$SCRIPT" --dry-run
   [ "$status" -eq 0 ]
   [[ "$output" == *"first run"* ]] || [[ "$output" == *"would regenerate"* ]]
 }
