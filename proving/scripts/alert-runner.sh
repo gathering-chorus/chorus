@@ -35,11 +35,20 @@ run_check() {
     return
   fi
 
-  local result
-  result=$(bash -c "$check_script" 2>&1) || true
+  # #3714 — THE VERDICT IS THE EXIT CODE, not the output string.
+  # This was `if [[ "$result" == "ok" ]]`, comparing the check's OUTPUT to the
+  # literal word "ok". Any check that said anything else on success fired
+  # forever: fuseki-harvest-stale printed "ok: 38074 photos in Fuseki" and was
+  # logged FIRE 112,310 consecutive times — 78 days — while succeeding every
+  # single run. Two more were one edit away from the same fate (lancedb-stale
+  # prints "ok dir=... newest_age_h=...", ci-main-red prints nothing on green).
+  # #3571 settled this for test suites: exit-code-is-verdict. Alerts never got it.
+  # Output is now EVIDENCE carried into the message; it decides nothing.
+  local result rc
+  result=$(bash -c "$check_script" 2>&1); rc=$?
 
-  if [[ "$result" == "ok" ]]; then
-    log "OK $name"
+  if [[ $rc -eq 0 ]]; then
+    log "OK $name${result:+ — $result}"
     # Reset consecutive failure count on success
     rm -f "$ALERT_STATE_DIR/${name}.consecutive"
     return
