@@ -35,7 +35,7 @@ esac
 
 echo "=== the #3519 contract still holds: genuinely blind is still unverifiable ==="
 # No env token AND a gh that cannot answer ⇒ unverifiable is CORRECT, not a false ok.
-NOGH=$(mktemp -d)
+NOGH=$(mktemp -d); trap 'rm -rf "$NOGH"' EXIT   # #3713 review (Kade): trap, do not leak on early exit
 printf '#!/usr/bin/env bash\nexit 1\n' > "$NOGH/gh"; chmod +x "$NOGH/gh"
 out=$(env -i PATH="$NOGH:$LAUNCHD_PATH" HOME="$HOME" GH_TOKEN="" bash "$ALERTS/ci-main-red.check.sh" 2>&1); rc=$?
 echo "  check said: '$out' (rc=$rc)"
@@ -44,27 +44,29 @@ case "$out" in
   *unverifiable*) pass "still says unverifiable when it genuinely cannot see" ;;
   *) fail "neither verdict nor unverifiable: '$out'" ;;
 esac
-rm -rf "$NOGH"
 
-echo "=== no other check assumes a non-system binary is on PATH ==="
-# Enumerate rather than assume: every external command each check invokes, checked
-# for existence on the launchd PATH. A Homebrew tool here is the same latent bug.
+echo "=== no check hits a missing binary under the launchd PATH ==="
+# Two earlier attempts at this were both worse than running the thing:
+#   1. a HARDCODED binary list — could not see a tool nobody added to it (Kade's
+#      review nit), i.e. a check blind to what it claims to check;
+#   2. deriving command names by PARSING the script — picked up python identifiers
+#      inside heredocs (import, print, try, d, msg) and cried wolf on all three
+#      files. False positives are their own dishonesty.
+# So: RUN each check under the launchd PATH and look for the shell telling us a
+# command was missing. No list to maintain, no parser to fool. A check may
+# legitimately fail for its own reasons here — we assert only that nothing it
+# invokes was unresolvable.
 for f in "$ALERTS"/*.check.sh; do
   [ -f "$f" ] || continue
   n=$(basename "$f")
-  missing=""
-  for cmd in $(grep -oE '\b(gh|jq|python3|curl|sqlite3|rg|node|npm|docker|launchctl|osascript)\b' "$f" | sort -u); do
-    env -i PATH="$LAUNCHD_PATH" sh -c "command -v $cmd >/dev/null 2>&1" || missing="$missing $cmd"
-  done
-  # a check may legitimately resolve a tool by absolute path — only flag bare use
-  for m in $missing; do
-    grep -qE "(/opt/homebrew/bin/$m|/usr/local/bin/$m|command -v $m)" "$f" \
-      && missing="${missing/ $m/}"
-  done
-  if [ -n "${missing// /}" ]; then
-    fail "$n invokes${missing} which is absent on the launchd PATH and not resolved absolutely"
+  err=$(env -i PATH="$LAUNCHD_PATH" HOME="$HOME" bash "$f" 2>&1 >/dev/null)
+  if printf '%s' "$err" | grep -qE "command not found|: not found|No such file or directory"; then
+    # name WHAT was missing — a failure that does not say which binary is the
+    # same undiagnosable alarm this whole card sequence has been about.
+    detail=$(printf '%s' "$err" | grep -E "command not found|: not found" | head -2 | tr '\n' '; ')
+    fail "$n hits a missing binary under launchd: ${detail:-$(printf '%s' "$err" | head -1)}"
   else
-    pass "$n: every external command it uses is reachable under launchd"
+    pass "$n: no missing-binary error under the launchd PATH"
   fi
 done
 
