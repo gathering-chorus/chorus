@@ -1091,7 +1091,11 @@ async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
 /** The static bridge-token leg — migration fallback, gone when REQUIRE_DPOP flips. */
 function socketTokenAuthed(cookieHeader: string, authToken?: string, queryToken?: unknown): boolean {
   if (REQUIRE_DPOP) return false;
-  const token = authToken || String(queryToken || '');
+  // #3710 — narrow instead of String()-ing an `unknown`. socket.io hands back
+  // string | string[] | undefined; a non-string would stringify to "a,b" or
+  // "[object Object]" and then be compared against the bridge token — never a
+  // match, but never an honest comparison either.
+  const token = authToken || (typeof queryToken === 'string' ? queryToken : '');
   const cookieMatch = cookieHeader.match(/bridge_token=([^;]+)/);
   const cookieToken = cookieMatch ? decodeURIComponent(cookieMatch[1]) : '';
   return token === BRIDGE_TOKEN || cookieToken === BRIDGE_TOKEN;
@@ -1100,7 +1104,8 @@ function socketTokenAuthed(cookieHeader: string, authToken?: string, queryToken?
 async function socketAuth(socket: { handshake: { address?: string; headers: Record<string, unknown>; auth: { token?: string }; query: { token?: unknown } } }): Promise<boolean> {
   const { address, headers, auth, query } = socket.handshake;
   if (isLocalConnection(headers, address || '')) return true;
-  const cookieHeader = String(headers.cookie || '');
+  // #3710 — headers is Record<string, unknown>; narrow rather than stringify.
+  const cookieHeader = typeof headers.cookie === 'string' ? headers.cookie : '';
   if (await socketSessionAuthed(cookieHeader)) return true;
   return socketTokenAuthed(cookieHeader, auth.token, query.token);
 }

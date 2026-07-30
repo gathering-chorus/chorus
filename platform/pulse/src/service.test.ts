@@ -10,7 +10,7 @@
 
 import request from 'supertest';
 import { MessageStore } from './store';
-import { createApp } from './service';
+import { createApp, resetNudgeDedup } from './service';
 
 const CHAT_START = '/api/chat/start';
 
@@ -275,6 +275,12 @@ describe('pulse service — queries and dead letter', () => {
 import { DeliveryWorker, type InjectResult } from './delivery-worker';
 
 function freshWithWorker(injectResponses: InjectResult[]) {
+  // #3710 — a fresh app must not inherit the previous app's dedup window.
+  // Without this, two same-sender/same-content posts landing in the same
+  // wall-clock minute deduped, the second returned no id, and the assertion
+  // read a row that was never created — an intermittent that only showed up
+  // when the suite straddled a minute boundary the wrong way.
+  resetNudgeDedup();
   const store = new MessageStore(':memory:');
   let injectIdx = 0;
   const events: Array<{ event: string; fields: Record<string, unknown> }> = [];

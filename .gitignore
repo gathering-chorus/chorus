@@ -3,6 +3,11 @@ node_modules
 node_modules/
 dist/
 dist.*/
+# #3279 / #3710 — `dist/` matches a DIRECTORY. A SYMLINK named dist is a FILE,
+# so it slips past the rule and gets committed by a `git add -A` — that is the
+# self-loop symlink Wren untracked in #3279 as a recurring board-outage cause,
+# and #3710 reintroduced it exactly that way. Match the symlink form too.
+platform/workflow-engine/dist
 target/
 coverage/
 *.js.map

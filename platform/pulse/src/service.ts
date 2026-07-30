@@ -27,6 +27,20 @@ const recentNudges = new Map<string, number>();
 const DEDUP_WINDOW_MS = 10_000;
 
 /**
+ * #3710 — drop the dedup memory. Module-level state outlives any individual
+ * app, so a test that builds a fresh store + app still inherits the PREVIOUS
+ * app's dedup window. That made service.test.ts intermittently fail: the key is
+ * `from|to|marked-content` and markNudge stamps the content to the MINUTE, so
+ * two same-sender/same-content posts collided only when they happened to land
+ * in the same wall-clock minute. The loser came back {deduped:true} with no id,
+ * and the assertion then read a row that was never created. Callers that own an
+ * app's lifetime reset with it; production never calls this.
+ */
+export function resetNudgeDedup(): void {
+  recentNudges.clear();
+}
+
+/**
  * Build an Express app bound to the given MessageStore. Factored out of the
  * top-level listener so tests can run against an in-memory store without
  * opening a port. `app.listen()` is called only when this module is the
