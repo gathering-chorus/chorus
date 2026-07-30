@@ -97,11 +97,18 @@ echo "=== ci-main-red: exhaust the ways to see before reporting blind ==="
 # `gh` is authenticated on this machine and holds a token in the keyring; a
 # check that gives up without asking it is not unverifiable, it is unasked.
 CI_SH="$ALERTS/ci-main-red.check.sh"
-if grep -q "gh auth token" "$CI_SH"; then
-  pass "falls back to the gh keyring when GH_TOKEN is unset"
-else
-  fail "gives up at an unset GH_TOKEN without asking gh for its token"
-fi
+# #3713 — this assertion used to be `grep -q "gh auth token" "$CI_SH"`: it checked
+# that a STRING was present in the file. That proves the author typed it, nothing
+# about whether it runs — and it did not run, because the bare `gh` was unresolvable
+# under launchd's PATH. The check shipped dead and this test said PASS. Run the
+# thing instead. (Env-specific coverage lives in
+# alert-checks-run-under-launchd-path.test.sh; here we assert it ASKS at all.)
+out=$(env -u GH_TOKEN bash "$CI_SH" 2>&1)
+case "$out" in
+  red:*|ok) pass "obtains a token without GH_TOKEN in env and reports a verdict: ${out%%:*}" ;;
+  *unverifiable*) fail "does not obtain a token when GH_TOKEN is unset — reports '$out'" ;;
+  *) fail "unrecognised output with GH_TOKEN unset: '$out'" ;;
+esac
 
 # With no env token AND gh unable to produce one, unverifiable is the honest
 # answer. Shadow gh with a failing stub rather than emptying PATH (that would

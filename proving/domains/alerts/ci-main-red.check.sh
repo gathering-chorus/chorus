@@ -27,8 +27,25 @@ WORKFLOW="${CI_MAIN_RED_WORKFLOW:-quality.yml}"
 # alarm reported its own blindness rather than CI's state and that read as
 # noise. `gh` is authenticated on this host and holds a token in its keyring;
 # a check that never asks it is not unverifiable, it is unasked.
+#
+# #3713 — RESOLVE gh ABSOLUTELY. This was a bare `gh auth token`, which worked
+# from an interactive shell and was DEAD under launchd: gh lives at
+# /opt/homebrew/bin/gh, com.chorus.alert-runner.plist sets no PATH, so the runner
+# inherits /usr/bin:/bin:/usr/sbin:/sbin where gh does not exist. The failure was
+# swallowed by `2>/dev/null || true`, GH_TOKEN stayed empty, and #3709 shipped a
+# fix that could never fire in production — the 00:00 nudge on 07-30 still read
+# unverifiable:GH_TOKEN-absent. Never assume PATH in a launchd-invoked script.
+# command -v first (so a PATH that HAS gh keeps working), then the known install
+# locations. Only invoke if something resolved, so #3519's unverifiable branch
+# still fires when there genuinely is no gh.
 if [ -z "${GH_TOKEN:-}" ]; then
-  GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+  _gh="$(command -v gh 2>/dev/null || true)"
+  if [ -z "$_gh" ]; then
+    for _c in /opt/homebrew/bin/gh /usr/local/bin/gh /usr/bin/gh; do
+      if [ -x "$_c" ]; then _gh="$_c"; break; fi
+    done
+  fi
+  [ -n "$_gh" ] && GH_TOKEN="$("$_gh" auth token 2>/dev/null || true)"
 fi
 
 if [ -z "${GH_TOKEN:-}" ]; then
