@@ -48,24 +48,41 @@ else
 fi
 
 
-# 5. THE GOAL STATE IS REPORTABLE (Kade, round 1): zero matches from grep is a
-#    valid measurement, not unknown. Feed a cards CLI whose chunk listing has no
-#    card rows; the item must read 0.
-FAKEBIN=$(mktemp -d); trap 'rm -rf "$FAKEBIN"' EXIT
-mkdir -p "$FAKEBIN/platform/scripts"
-printf '#!/usr/bin/env bash\necho "  No context doc yet"\necho "Next (0):"\nexit 0\n' > "$FAKEBIN/platform/scripts/cards"
-chmod +x "$FAKEBIN/platform/scripts/cards"
-cp -r "$(dirname "$SCRIPT")/../.." /dev/null 2>/dev/null || true
-OUT3=$(CHORUS_ROOT_CARDS_OVERRIDE="$FAKEBIN" bash -c '
-  C_ORIG="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-  # run with a CHORUS_ROOT whose cards CLI returns an empty chunk but everything else intact
-  ln -sf "$C_ORIG/platform/services" "$CHORUS_ROOT_CARDS_OVERRIDE/platform/services" 2>/dev/null
-  ln -sf "$C_ORIG/platform/chorus-sdk" "$CHORUS_ROOT_CARDS_OVERRIDE/platform/chorus-sdk" 2>/dev/null
-  ln -sf "$C_ORIG/platform/mcp-server" "$CHORUS_ROOT_CARDS_OVERRIDE/platform/mcp-server" 2>/dev/null
-  CHORUS_ROOT="$CHORUS_ROOT_CARDS_OVERRIDE" bash "'"$SCRIPT"'"' 2>&1)
+# 5. THE GOAL STATE IS REPORTABLE (Kade r1) — and PROVEN NON-VACUOUSLY (Kade r2):
+#    the stub cards CLI writes an invocation marker, so a passing assertion cannot
+#    come from the stub never running. Stub returns a chunk listing with ZERO card
+#    rows; the item must read exactly 0.
+FAKEROOT=$(mktemp -d); trap 'rm -rf "$FAKEROOT"' EXIT
+mkdir -p "$FAKEROOT/platform/scripts"
+C_REAL="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+for d in services chorus-sdk mcp-server; do ln -s "$C_REAL/platform/$d" "$FAKEROOT/platform/$d"; done
+cat > "$FAKEROOT/platform/scripts/cards" <<'STUB'
+#!/usr/bin/env bash
+touch "$(dirname "$0")/.stub-invoked"
+echo "  No context doc yet for chunk:security."
+echo ""
+echo "Next (0):"
+exit 0
+STUB
+chmod +x "$FAKEROOT/platform/scripts/cards"
+ln -s "$C_REAL/platform/scripts/chorus-env-setup.sh" "$FAKEROOT/platform/scripts/chorus-env-setup.sh" 2>/dev/null || true
+OUT3=$(CHORUS_ROOT="$FAKEROOT" bash "$SCRIPT" 2>&1)
+if [ -f "$FAKEROOT/platform/scripts/.stub-invoked" ]; then
+  ok "stub cards CLI was actually invoked (non-vacuous)"
+else
+  no "stub cards CLI never ran — the goal-state assertion below proves nothing"
+fi
 echo "$OUT3" | grep -qE "open_security_chunk_cards +0 " \
   && ok "an empty chunk reports 0 — the goal state is reachable" \
-  || no "zero cards still cannot be reported: $(echo "$OUT3" | grep open_security_chunk_cards)"
+  || no "zero cards not reported as 0: $(echo "$OUT3" | grep open_security_chunk_cards)"
+
+# 5b (r2, both peers): shared_secret_refs honors the invariant — grep failure is
+#    unknown, not 0. Prove by making $C/platform unreadable to the grep via a
+#    fake root whose platform/ is a dangling path for the refs walk only.
+OUT4=$(CHORUS_ROOT="/nonexistent-3716-probe" bash "$SCRIPT" 2>&1)
+echo "$OUT4" | grep -qE "shared_secret_refs +unknown" \
+  && ok "refs grep against a missing tree reports unknown, not 0" \
+  || no "refs still reports a number against a MISSING tree: $(echo "$OUT4" | grep shared_secret_refs)"
 
 # 6. Refactor-safety (Wren, round 1): the verify-branch check must key on the
 #    stable API name, and an unreadable file must be unknown, not 0.

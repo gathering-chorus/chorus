@@ -45,10 +45,14 @@ else
 fi
 
 # ── shared_secret_refs: non-test live code reading the shared secret ─────────
-refs=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
-       "CHORUS_SERVICE_TOKEN_SECRET" "$C/platform" 2>/dev/null \
-       | grep -vE "test|\.md$" | wc -l | tr -d ' ')
-item shared_secret_refs "$refs" "files reading CHORUS_SERVICE_TOKEN_SECRET (goal 0)"
+ref_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
+       "CHORUS_SERVICE_TOKEN_SECRET" "$C/platform" 2>/dev/null); r_rc=$?
+if [ $r_rc -ge 2 ]; then
+  item shared_secret_refs unknown "grep failed — NOT measured"
+else
+  refs=$(printf '%s\n' "$ref_files" | grep -vE "test|\.md$" | grep -c . || true)
+  item shared_secret_refs "$refs" "files reading CHORUS_SERVICE_TOKEN_SECRET (goal 0)"
+fi
 
 # ── hs256_verify_branch: the dual-verify arm still present? ──────────────────
 # Matches the legacy entry-point NAME (auth::verify_token), not a full signature —
@@ -105,8 +109,6 @@ case "$code" in
 esac
 
 # ── open_security_chunk_cards: the board's remaining ladder ──────────────────
-board=$(curl -s -m 10 "$API/api/chorus/context/board/wip" 2>/dev/null)
-listing=$(curl -s -m 10 "$API/api/chorus/knowledge/search?q=chunk:security" 2>/dev/null)
 # grep -c exits 1 on ZERO matches — which is the GOAL STATE. Only a failed cards
 # CLI or unreachable board is unknown (Kade, #3716 review: the ledger must be able
 # to report its own success).
