@@ -1,0 +1,31 @@
+# host-pressure.yml — #3714: ONE alarm for "the machine cannot serve", so
+# dependent services stop each blaming themselves.
+#
+# 2026-07-30 09:37–09:50 Jeff got four alarms in thirteen minutes —
+# clearing-http, gathering-app, cloudflare-tunnel, clearing-external. Nothing was
+# broken. 494MB free, 13.2GB swapped; every service accepted its connection then
+# never answered. Freeing one 1.1GB runaway restored all of them. Four accusations
+# of innocent subsystems, zero mentions of memory.
+
+name: host-pressure
+description: Host cannot serve — memory exhausted; dependent service checks will fail as a symptom
+severity: critical
+schedule: "*/5 * * * *"
+
+check: |
+  /Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/host-pressure.check.sh
+
+action: |
+  COOLDOWN="/tmp/alert-host-pressure-$(date '+%Y-%m-%d-%H')"
+  if [ -f "$COOLDOWN" ]; then
+    exit 0
+  fi
+  touch "$COOLDOWN"
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  # Observation only. My first draft appended "service checks failing right now
+  # are likely SYMPTOMS, not faults" — an inference about OTHER checks that this
+  # check never measured. The #3519 contract caught it, which is the contract
+  # doing its job on its own author. $STATUS already carries free_pct,
+  # swap_used_pct, the thresholds, and the largest resident process; the reader
+  # draws the conclusion.
+  "$OPS_NUDGE" silas "host-pressure: $STATUS" 2>/dev/null || true

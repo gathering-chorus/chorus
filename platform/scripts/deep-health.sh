@@ -119,9 +119,22 @@ for log in "$LOG_DIR"/*.log; do
 done
 
 # --- 4. Loki reachability from Bedroom (direct LAN, no tunnel — #1988) ---
-bedroom_loki=$(ssh -o ConnectTimeout=5 bedroom "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" || true)
-if [ "$bedroom_loki" != "ready" ]; then
-  FAILURES+=("loki-bedroom: Bedroom cannot reach Loki at Jeffs-Mac-Mini-M1-3.local:3102")
+# #3714 — three states, not one. This was a single string compare with `|| true`
+# swallowing ssh's result, so an unreachable/asleep Bedroom, a slow SSH, and a
+# genuinely unreachable Loki all reported the SAME sentence: "Bedroom cannot
+# reach Loki" — a cause the probe never measured. Verified 2026-07-30: Bedroom
+# fetches /ready by that exact mDNS name in 60ms while this probe was failing.
+# Exit-code-is-verdict (#3571), applied here too.
+bedroom_loki=$(ssh -o ConnectTimeout=5 -o BatchMode=yes bedroom \
+  "curl -sf --max-time 3 http://Jeffs-Mac-Mini-M1-3.local:3102/ready 2>/dev/null" 2>/dev/null)
+ssh_rc=$?
+if [ "$ssh_rc" -eq 255 ]; then
+  # 255 is ssh's own transport failure — says nothing about Loki.
+  WARNINGS+=("loki-bedroom-unknown: ssh to bedroom failed (rc=255) — Loki reachability NOT measured")
+elif [ "$ssh_rc" -ne 0 ]; then
+  FAILURES+=("loki-bedroom: ssh ok, curl to Jeffs-Mac-Mini-M1-3.local:3102/ready failed (rc=$ssh_rc)")
+elif [ "$bedroom_loki" != "ready" ]; then
+  FAILURES+=("loki-bedroom: /ready answered '${bedroom_loki:-<empty>}', expected 'ready'")
 fi
 
 # --- 5. Session index freshness (#2270) ---
