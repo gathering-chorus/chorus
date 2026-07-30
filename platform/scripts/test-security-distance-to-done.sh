@@ -29,11 +29,20 @@ echo "$OUT" | grep -qE "fuseki_anon_write +(0|1) +\(http [0-9]{3}\)|fuseki_anon_
   && ok "anon-write item is behavioral (carries the observed http code) or honest-unknown" \
   || no "anon-write item is neither measured nor honest: $(echo "$OUT" | grep fuseki_anon_write)"
 
-# 3. Unknown-not-zero: point the board query somewhere dead; the item must not report 0.
-OUT2=$(CHORUS_API_BASE="http://localhost:1" bash "$SCRIPT" 2>&1)
+# 3. Unknown-not-zero for the cards item — under single-request truth (round 6)
+#    the CLI's own failure is the only unknown path, so fail the CLI itself.
+FAILROOT=$(mktemp -d)
+mkdir -p "$FAILROOT/platform/scripts"
+C_R="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+for d in services chorus-sdk mcp-server; do ln -s "$C_R/platform/$d" "$FAILROOT/platform/$d"; done
+ln -s "$C_R/platform/scripts/chorus-identity-token" "$FAILROOT/platform/scripts/chorus-identity-token" 2>/dev/null || true
+printf '#!/usr/bin/env bash\nexit 7\n' > "$FAILROOT/platform/scripts/cards"
+chmod +x "$FAILROOT/platform/scripts/cards"
+OUT2=$(CHORUS_ROOT="$FAILROOT" bash "$SCRIPT" 2>&1)
+rm -rf "$FAILROOT"
 echo "$OUT2" | grep -qE "open_security_chunk_cards +unknown" \
-  && ok "unreachable board reports unknown, not zero" \
-  || no "unreachable board reported a number: $(echo "$OUT2" | grep open_security_chunk_cards)"
+  && ok "a failing cards CLI reports unknown, not zero" \
+  || no "failing CLI reported a number: $(echo "$OUT2" | grep open_security_chunk_cards)"
 
 # 4. Metric file written and parseable
 PROM="${SECURITY_LEDGER_PROM:-/Users/jeffbridwell/CascadeProjects/shared-observability/data/textfile_collector/security_distance.prom}"

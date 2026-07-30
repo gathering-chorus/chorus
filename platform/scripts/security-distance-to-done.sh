@@ -125,9 +125,13 @@ esac
 # grep -c exits 1 on ZERO matches — which is the GOAL STATE. Only a failed cards
 # CLI or unreachable board is unknown (Kade, #3716 review: the ledger must be able
 # to report its own success).
+# Single-request truth, symmetric case (Kade, round 6): the cards CLI's own exit
+# code is the only witness. The curl health-check that used to sit here could
+# drop a VALID measurement to unknown on an unrelated transient — the round-4
+# timing-gap race, mirrored.
 board_listing=$("$C/platform/scripts/cards" chunk security 2>/dev/null); cli_rc=$?
-if [ $cli_rc -ne 0 ] || ! curl -s -m 5 -o /dev/null "$API/api/chorus/context/health" 2>/dev/null; then
-  item open_security_chunk_cards unknown "board/cards CLI unreachable — NOT measured"
+if [ $cli_rc -ne 0 ]; then
+  item open_security_chunk_cards unknown "cards CLI failed (rc=$cli_rc) — NOT measured"
 else
   cards=$(printf '%s\n' "$board_listing" | grep -cE "^  [0-9]{3,4} " || true)
   item open_security_chunk_cards "$cards" "open cards tagged chunk:security (goal 0)"
