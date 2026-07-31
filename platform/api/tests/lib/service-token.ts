@@ -1,57 +1,34 @@
 /**
- * #3619 — service auth for integration tests that hit the LIVE chorus-api.
+ * #3619/#3719 — service auth for integration tests that hit the LIVE chorus-api.
  *
  * Every mutation endpoint is behind the security envelope; these suites are
  * real consumers (the nightly 03:0x write bursts in Loki were exactly them),
  * so they carry credentials like any other caller — deploy-before-require.
  *
- * withServiceAuth() wraps global fetch for the suite: any mutating request
- * (POST/PUT/DELETE/PATCH) gets a scoped Bearer minted from the local realm
- * secret. Fail-open: no secret → requests go bare and the envelope decides
- * (suites then fail visibly with 401s, naming exactly what's missing).
+ * #3719: the credential is a CSS ES256 identity token via chorus-identity-token
+ * (the same minter every live caller uses). No scope claim — what the identity
+ * may write is chorus:hasScope grants in the model (#3689); chorus-sdk's
+ * Principal carries the ops grant. Fail-open: no credential → requests go bare
+ * and the envelope decides (suites then fail visibly with 401s, naming exactly
+ * what's missing).
  */
-import * as crypto from 'crypto';
-import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 
-const SCOPES = [
-  'urn:chorus:ops',
-  'urn:chorus:index',
-  'urn:chorus:icd',
-  'urn:chorus:cards',
-  'urn:chorus:domains:code',
-];
-
-function resolveSecret(): string | null {
-  if (process.env.CHORUS_SERVICE_TOKEN_SECRET) return process.env.CHORUS_SERVICE_TOKEN_SECRET;
-  try {
-    const raw = fs.readFileSync(
-      process.env.CHORUS_REALM_ENV_PATH ||
-        path.join(os.homedir(), '.chorus', 'secrets', 'chorus-realm.env'),
-      'utf8'
-    );
-    for (const line of raw.split('\n')) {
-      const m = /^(?:export\s+)?CHORUS_SERVICE_TOKEN_SECRET=(.+)$/.exec(line.trim());
-      if (m) return m[1].replace(/^["']|["']$/g, '');
-    }
-  } catch { /* fail open */ }
-  return null;
-}
-
 export function mintTestToken(): string | null {
-  const secret = resolveSecret();
-  if (!secret) return null;
-  const b64 = (s: Buffer | string) => Buffer.from(s).toString('base64url');
-  const header = b64(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const claims = b64(JSON.stringify({
-    webId: 'http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me',
-    aud: 'chorus',
-    exp: Math.floor(Date.now() / 1000) + 3600,
-    scope: SCOPES,
-  }));
-  const sig = b64(crypto.createHmac('sha256', secret).update(`${header}.${claims}`).digest());
-  return `${header}.${claims}.${sig}`;
+  const role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || 'chorus-sdk';
+  const bin =
+    process.env.CHORUS_IDENTITY_TOKEN_BIN ||
+    path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'scripts', 'chorus-identity-token');
+  try {
+    const out = execFileSync(bin, [role], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString('utf-8')
+      .trim();
+    return out.split('.').length === 3 ? out : null;
+  } catch {
+    return null;
+  }
 }
 
 const WRITE = new Set(['POST', 'PUT', 'DELETE', 'PATCH']);

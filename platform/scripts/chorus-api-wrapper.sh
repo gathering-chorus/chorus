@@ -32,17 +32,10 @@ if [ -r "$FUSEKI_CRED_ENV" ]; then
   set +a
 fi
 
-# #3619 step 0 — source the realm secret so chorus-api can VERIFY service tokens
-# at the security envelope's allow path (CHORUS_SERVICE_TOKEN_SECRET; same env
-# file owl-api-launch.sh sources). Reference-only: the gitignored file holds the
-# value, never this script. Without it the envelope 401s every token (refuse
-# path works; allow path can't verify). Optional so non-realm boxes still boot.
-REALM_ENV="$HOME/.chorus/secrets/chorus-realm.env"
-if [ -f "$REALM_ENV" ]; then
-  set -a
-  source "$REALM_ENV"
-  set +a
-fi
+# #3719 — the security envelope verifies CSS ES256 identity tokens (scope from
+# the model's chorus:hasScope). No shared secret: the verify input is the
+# issuer (JWKS derives from it; CHORUS_JWKS_URL overrides).
+export CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}"
 
 cd "$API_DIR"
 

@@ -663,7 +663,7 @@ fn run_reconcile() -> Result<i32, String> {
 
 /// #3634 write side — POST the run's TestSuiteRun through the generated write
 /// surface with a #3619-scoped token. Token: $CHORUS_WRITE_TOKEN if the runner
-/// provides it, else minted via chorus-mint-token.py (secret sourced from the
+/// provides it, else minted via chorus-identity-token (ES256 identity from the
 /// realm env inside the script — never echoed here). Every outcome is witnessed:
 /// testsuiterun.posted / testsuiterun.post.skipped with the reason.
 #[allow(clippy::too_many_arguments)]
@@ -701,7 +701,7 @@ fn post_suite_run(
 
 /// Mint a write token — #3689: ES256 CSS IDENTITY, no scope in the token.
 /// Scope is model data now (chorus:hasScope on the Principal, resolved at the
-/// owl-api door per TTL). The HS256 chorus-mint-token.py path this replaces
+/// owl-api door per TTL). The HS256 mint script this replaced (#3689/#3719)
 /// carried a SELF-DECLARED scope claim — the caller authorized itself, which
 /// is the class #3689 retires. Best-effort, same contract as before.
 fn mint_token(role: &str) -> Option<String> {

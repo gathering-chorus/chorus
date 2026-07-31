@@ -1,19 +1,20 @@
 // @test-type: unit
 /**
- * #3618 — the security envelope (hermetic tier).
+ * #3618/#3719 — the security envelope (hermetic tier).
  *
  * Core under test: decideEnvelope(request, deps) — the pure decision function
- * behind the Express adapter. Gates MODEL-DECLARED surfaces (the generated
- * table from the graph's APISurface instances). Deps injected: surface table,
- * signing secret, clock — this test brings its own world (#3528): no live
- * stack, no $HOME, no real spine, fixture secret.
+ * behind the Express adapter — composed with createIdentityVerifier. This test
+ * brings its own world (#3528): a generated EC keypair standing in for CSS, a
+ * stub fetch serving its JWKS, a stub sparql serving chorus:hasScope rows.
+ * No live stack, no $HOME, no shared secret (there is none any more).
  *
- * Contract (mirrors the door's semantics, #3573):
+ * Contract (mirrors the owl-api door, #3689):
  *   - request matches a secured surface + no/invalid Bearer      → refuse 401
- *   - valid token, scope claim missing the surface requiresScope → refuse 403
- *   - valid token + scope                                        → pass
+ *   - HS256 token                                                → refuse 401 hs256-retired (typed)
+ *   - valid ES256 identity, Principal not granted the scope      → refuse 403
+ *   - valid ES256 identity + model grant                         → pass
+ *   - scope comes from the MODEL, never from a token claim
  *   - request matches no secured surface                         → pass, no events
- *   - every decision on a secured surface emits attempt + refuse/allow
  */
 import * as crypto from 'crypto';
 import {
@@ -22,23 +23,37 @@ import {
   type EnvelopeDeps,
   type SecuredSurface,
 } from '../src/security-envelope';
+import { createIdentityVerifier, scopeQueryFor } from '../src/es256-identity';
 
-const SECRET = 'test-secret-3618';
 const NOW = 1_800_000_000; // fixed clock (secs)
+const ISSUER = 'https://id.test.example/';
+const KID = 'test-css-key-1';
+const GRANTED_WEBID = 'http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me';
+const NOBODY_WEBID = 'http://localhost:3000/pods/chorus/_agents/nobody/profile/card.ttl#me';
+
+const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+const JWKS = { keys: [{ ...publicKey.export({ format: 'jwk' }), kid: KID, alg: 'ES256', use: 'sig' }] };
 
 function b64url(buf: Buffer | string): string {
   return Buffer.from(buf).toString('base64url');
 }
 
-function mintToken(opts: { scope?: string[]; expAt?: number; aud?: string } = {}): string {
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+function mintEs256(opts: { webid?: string; expAt?: number; iss?: string; kid?: string } = {}): string {
+  const header = b64url(JSON.stringify({ alg: 'ES256', typ: 'at+jwt', kid: opts.kid ?? KID }));
   const claims = b64url(JSON.stringify({
-    webId: 'http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me',
-    aud: opts.aud ?? 'chorus',
+    iss: opts.iss ?? ISSUER,
+    webid: opts.webid ?? GRANTED_WEBID,
     exp: opts.expAt ?? NOW + 300,
-    scope: opts.scope ?? ['urn:chorus:index'],
+    // NO scope claim — identity only. Scope is model data (#3689).
   }));
-  const sig = b64url(crypto.createHmac('sha256', SECRET).update(`${header}.${claims}`).digest());
+  const sig = crypto.sign('sha256', Buffer.from(`${header}.${claims}`), { key: privateKey, dsaEncoding: 'ieee-p1363' });
+  return `${header}.${claims}.${b64url(sig)}`;
+}
+
+function mintHs256(): string {
+  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const claims = b64url(JSON.stringify({ webId: GRANTED_WEBID, aud: 'chorus', exp: NOW + 300, scope: ['urn:chorus:index'] }));
+  const sig = b64url(crypto.createHmac('sha256', 'the-retired-secret').update(`${header}.${claims}`).digest());
   return `${header}.${claims}.${sig}`;
 }
 
@@ -47,17 +62,35 @@ const SURFACES: SecuredSurface[] = [
   { method: 'POST', pathPrefix: '/api/athena/discover-', requiresScope: 'urn:chorus:domains:code', surface: 'surface-discover-writes' },
 ];
 
+// stub model: reindex-worker is granted urn:chorus:index; nobody has nothing
+function stubSparql(query: string): Promise<unknown> {
+  const rows = query === scopeQueryFor(GRANTED_WEBID) ? [{ s: { value: 'urn:chorus:index' } }] : [];
+  return Promise.resolve({ results: { bindings: rows } });
+}
+
+const stubFetch = (async () => ({ ok: true, json: async () => JWKS })) as unknown as typeof fetch;
+
+function makeVerify(overrides: { sparql?: (q: string) => Promise<unknown> } = {}) {
+  return createIdentityVerifier({
+    issuer: ISSUER,
+    jwksUrl: 'http://css.test/.oidc/jwks',
+    sparql: overrides.sparql ?? stubSparql,
+    nowSecs: () => NOW,
+    fetchFn: stubFetch,
+  });
+}
+
 function deps(overrides: Partial<EnvelopeDeps> = {}): EnvelopeDeps {
-  return { surfaces: SURFACES, secret: SECRET, nowSecs: () => NOW, ...overrides };
+  return { surfaces: SURFACES, verify: makeVerify(), ...overrides };
 }
 
 function req(overrides: Partial<EnvelopeRequest> = {}): EnvelopeRequest {
   return { method: 'POST', path: '/api/chorus/reindex', authorization: '', ...overrides };
 }
 
-describe('decideEnvelope (#3618)', () => {
-  test('secured surface without Bearer → refuse 401 authn-missing + attempt/refused events', () => {
-    const d = decideEnvelope(req(), deps());
+describe('decideEnvelope (#3618/#3719)', () => {
+  test('secured surface without Bearer → refuse 401 authn-missing + attempt/refused events', async () => {
+    const d = await decideEnvelope(req(), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
     expect(d.body?.error).toBe('authn-missing');
@@ -66,72 +99,95 @@ describe('decideEnvelope (#3618)', () => {
     expect(d.events[1].fields.surface).toBe('surface-index-writes');
   });
 
-  test('valid token + right scope → pass + allowed event carries webId', () => {
-    const d = decideEnvelope(req({ authorization: `Bearer ${mintToken()}` }), deps());
+  test('valid ES256 identity + model grant → pass + allowed event carries webId', async () => {
+    const d = await decideEnvelope(req({ authorization: `Bearer ${mintEs256()}` }), deps());
     expect(d.action).toBe('pass');
-    expect(d.events.map(e => e.event)).toContain('security.envelope.allowed');
     const allowed = d.events.find(e => e.event === 'security.envelope.allowed');
     expect(allowed?.fields.webId).toContain('reindex-worker');
   });
 
-  test('valid token, wrong scope → refuse 403 out-of-scope', () => {
-    const d = decideEnvelope(
-      req({ authorization: `Bearer ${mintToken({ scope: ['urn:chorus:domains:tests'] })}` }),
+  test('scope comes from the MODEL: grant does not cover the discover surface → 403', async () => {
+    const d = await decideEnvelope(
+      req({ path: '/api/athena/discover-code', authorization: `Bearer ${mintEs256()}` }),
       deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(403);
     expect(d.body?.error).toBe('out-of-scope');
   });
 
-  test('empty scope claim → refuse 403 (no legacy allow-all through the envelope)', () => {
-    const d = decideEnvelope(req({ authorization: `Bearer ${mintToken({ scope: [] })}` }), deps());
+  test('grantless Principal → refuse 403 (absence of hasScope is absence of authorization)', async () => {
+    const d = await decideEnvelope(
+      req({ authorization: `Bearer ${mintEs256({ webid: NOBODY_WEBID })}` }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(403);
   });
 
-  test('expired token → refuse 401', () => {
-    const d = decideEnvelope(
-      req({ authorization: `Bearer ${mintToken({ expAt: NOW - 10 })}` }), deps());
+  test('HS256 token → refuse 401 with the TYPED hs256-retired reason, never verified', async () => {
+    const d = await decideEnvelope(req({ authorization: `Bearer ${mintHs256()}` }), deps());
+    expect(d.action).toBe('refuse');
+    expect(d.status).toBe(401);
+    expect(d.body?.error).toBe('hs256-retired');
+    expect(d.events[1].fields.reason).toBe('hs256-retired');
+  });
+
+  test('expired token → refuse 401', async () => {
+    const d = await decideEnvelope(
+      req({ authorization: `Bearer ${mintEs256({ expAt: NOW - 10 })}` }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
   });
 
-  test('forged signature → refuse 401', () => {
-    const good = mintToken();
+  test('forged signature → refuse 401', async () => {
+    const good = mintEs256();
     const forged = good.slice(0, good.lastIndexOf('.') + 1) + b64url('not-a-real-sig');
-    const d = decideEnvelope(req({ authorization: `Bearer ${forged}` }), deps());
+    const d = await decideEnvelope(req({ authorization: `Bearer ${forged}` }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
   });
 
-  test('wrong audience → refuse 401', () => {
-    const d = decideEnvelope(
-      req({ authorization: `Bearer ${mintToken({ aud: 'gathering' })}` }), deps());
+  test('wrong issuer → refuse 401', async () => {
+    const d = await decideEnvelope(
+      req({ authorization: `Bearer ${mintEs256({ iss: 'https://evil.example/' })}` }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
   });
 
-  test('prefix match secures the whole discover class', () => {
-    const d = decideEnvelope(req({ path: '/api/athena/discover-code' }), deps());
+  test('unknown kid → refuse 401 (no key, no verify)', async () => {
+    const d = await decideEnvelope(
+      req({ authorization: `Bearer ${mintEs256({ kid: 'not-in-jwks' })}` }), deps());
+    expect(d.action).toBe('refuse');
+    expect(d.status).toBe(401);
+  });
+
+  test('unanswerable scope query fails CLOSED → 403, not a pass', async () => {
+    const d = await decideEnvelope(
+      req({ authorization: `Bearer ${mintEs256()}` }),
+      deps({ verify: makeVerify({ sparql: () => Promise.reject(new Error('fuseki down')) }) }));
+    expect(d.action).toBe('refuse');
+    expect(d.status).toBe(403);
+  });
+
+  test('prefix match secures the whole discover class', async () => {
+    const d = await decideEnvelope(req({ path: '/api/athena/discover-code' }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
     expect(d.events[0].fields.surface).toBe('surface-discover-writes');
   });
 
-  test('unsecured surface passes untouched with zero events — mixed-state by construction', () => {
-    const d = decideEnvelope(req({ path: '/api/cards/add' }), deps());
+  test('unsecured surface passes untouched with zero events — mixed-state by construction', async () => {
+    const d = await decideEnvelope(req({ path: '/api/cards/add' }), deps());
     expect(d.action).toBe('pass');
     expect(d.events).toHaveLength(0);
   });
 
-  test('GET on a secured path prefix is not gated (mutation-only envelope, reads stay open)', () => {
-    const d = decideEnvelope(req({ method: 'GET' }), deps());
+  test('GET on a secured path prefix is not gated (mutation-only envelope, reads stay open)', async () => {
+    const d = await decideEnvelope(req({ method: 'GET' }), deps());
     expect(d.action).toBe('pass');
     expect(d.events).toHaveLength(0);
   });
 
-  test('empty surface table gates nothing (pre-generation boot safety)', () => {
-    const d = decideEnvelope(req(), deps({ surfaces: [] }));
+  test('empty surface table gates nothing (pre-generation boot safety)', async () => {
+    const d = await decideEnvelope(req(), deps({ surfaces: [] }));
     expect(d.action).toBe('pass');
     expect(d.events).toHaveLength(0);
   });

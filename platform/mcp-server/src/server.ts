@@ -1896,7 +1896,7 @@ async function executeDocCatalogAdd(
   if (args.group) body.group = args.group;
   // #3619 — the endpoint is envelope-secured; carry a scoped token when
   // mintable, else send bare and let the envelope decide (fail-open).
-  const svcToken = mintServiceToken(['urn:chorus:ops']);
+  const svcToken = mintServiceToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (svcToken) headers['Authorization'] = `Bearer ${svcToken}`;
   const resp = await fetchImpl(url, {

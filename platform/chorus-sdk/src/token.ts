@@ -1,67 +1,40 @@
 /**
- * #3619 — scoped service-token mint for SDK callers.
+ * #3719 — ES256 identity mint for SDK callers (retires the #3619 HS256 mint).
  *
- * Same token shape as platform/scripts/chorus-mint-token.py (the one realm):
- * HS256, claims {webId, aud:"chorus", exp, scope:[...]}, signed with
- * CHORUS_SERVICE_TOKEN_SECRET. The chorus-api security envelope (#3618)
- * verifies signature + exp + scope on secured surfaces.
+ * The token is a CSS-issued identity token minted via chorus-identity-token
+ * (the #3690 cred-reader: per-agent credential → client_credentials → ES256
+ * at+jwt, TTL-cached on disk). It carries NO scope claim — what the identity
+ * may write is chorus:hasScope grants in the model, resolved at the verifying
+ * door (#3689). chorus-sdk's Principal is granted urn:chorus:ops.
  *
- * Secret resolution: env CHORUS_SERVICE_TOKEN_SECRET, else the realm env file
- * (~/.chorus/secrets/chorus-realm.env; CHORUS_REALM_ENV_PATH overrides for
- * tests). Fail-OPEN: no secret → null — the caller sends unauthenticated and
- * the envelope decides. emit's fire-and-forget contract must never break on
- * a missing local secret.
+ * Fail-OPEN contract unchanged: no credential / CSS down → null — the caller
+ * sends unauthenticated and the envelope decides. emit's fire-and-forget
+ * contract must never break on a missing local identity.
  */
-import * as crypto from 'crypto';
-import * as fs from 'fs';
+import { execFileSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 
-const DEFAULT_WEBID =
-  'http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me';
-const TTL_SECS = 300;
+const DEFAULT_ROLE = 'chorus-sdk';
 
-function realmPath(): string {
+function mintBin(): string {
   return (
-    process.env.CHORUS_REALM_ENV_PATH ||
-    path.join(os.homedir(), '.chorus', 'secrets', 'chorus-realm.env')
+    process.env.CHORUS_IDENTITY_TOKEN_BIN ||
+    path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'scripts', 'chorus-identity-token')
   );
 }
 
-function resolveSecret(): string | null {
-  const fromEnv = process.env.CHORUS_SERVICE_TOKEN_SECRET;
-  if (fromEnv) return fromEnv;
+/** Mint an ES256 identity token for this process's role, or null when no
+ *  credential is resolvable (fail open — the envelope decides). */
+export function mintServiceToken(): string | null {
+  const role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || DEFAULT_ROLE;
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- realmPath() is env CHORUS_REALM_ENV_PATH (operator-set) or the fixed ~/.chorus/secrets/chorus-realm.env; no user input (#3639)
-    const raw = fs.readFileSync(realmPath(), 'utf8');
-    for (const line of raw.split('\n')) {
-      // eslint-disable-next-line security/detect-unsafe-regex -- anchored single-line matcher over trimmed env lines; linear, no nested quantifier backtracking (#3639)
-      const m = /^(?:export\s+)?CHORUS_SERVICE_TOKEN_SECRET=(.+)$/.exec(line.trim());
-      if (m) return m[1].replace(/^["']|["']$/g, '');
-    }
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- mintBin() is env CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the fixed repo script path; no user input
+    const out = execFileSync(mintBin(), [role], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString('utf-8')
+      .trim();
+    return out.split('.').length === 3 ? out : null;
   } catch {
-    /* fail open */
+    return null;
   }
-  return null;
-}
-
-function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString('base64url');
-}
-
-/** Mint a scoped HS256 service token, or null when no secret is resolvable. */
-export function mintServiceToken(scopes: string[]): string | null {
-  const secret = resolveSecret();
-  if (!secret) return null;
-  const header = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const claims = b64url(
-    JSON.stringify({
-      webId: process.env.CHORUS_AGENT_WEBID || DEFAULT_WEBID,
-      aud: 'chorus',
-      exp: Math.floor(Date.now() / 1000) + TTL_SECS,
-      scope: scopes,
-    })
-  );
-  const sig = b64url(crypto.createHmac('sha256', secret).update(`${header}.${claims}`).digest());
-  return `${header}.${claims}.${sig}`;
 }

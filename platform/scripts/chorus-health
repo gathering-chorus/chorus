@@ -352,13 +352,15 @@ fi
 # polling overhead, and routes to the role that owns the failure class.
 
 # Clearing external reachability (from network perspective — bind check)
-clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
-if [ "$clearing_result" = "200" ] || [ "$clearing_result" = "301" ] || [ "$clearing_result" = "302" ]; then
-  pass "clearing-external" "http://192.168.86.36:${CLEARING_PORT}/ → ${clearing_result}"
+# #3719 rider — probe /health, not / : the clearing stopped serving its root
+# path (404) while /health stays 200, and the / probe false-fired 2026-07-31.
+clearing_result=$(curl -s --max-time 5 "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+if [ "$clearing_result" = "200" ]; then
+  pass "clearing-external" "http://${CHORUS_HOME_IP:-192.168.86.36}:${CLEARING_PORT}/health → ${clearing_result}"
 else
   # try localhost as fallback to distinguish "down" vs "not externally bound"
-  local_result=$(curl -s --max-time 5 "http://localhost:${CLEARING_PORT}/" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
-  if [ "$local_result" = "200" ] || [ "$local_result" = "301" ] || [ "$local_result" = "302" ]; then
+  local_result=$(curl -s --max-time 5 "http://localhost:${CLEARING_PORT}/health" -o /dev/null -w "%{http_code}" 2>/dev/null || echo "000")
+  if [ "$local_result" = "200" ]; then
     fail "clearing-external" "reachable on localhost:${CLEARING_PORT} but NOT on network IP — bound to 127.0.0.1 only"
   else
     fail "clearing-external" "not reachable on localhost or network IP (status=${clearing_result})"
