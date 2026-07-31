@@ -71,6 +71,18 @@ struct RoleState {
     last_attempt: u64,
 }
 
+/// webId → scopes, resolved from `chorus:hasScope` (#3689). Scope was a
+/// SELF-DECLARED claim on the HS256 tokens — the caller chose its own
+/// authorization at mint. CSS cannot issue scoped client_credentials (spiked
+/// live 2026-07-30: the scope param is silently ignored), so scope becomes
+/// governed model data with the same TTL discipline as the allow-set and the
+/// role map: grant/revoke is a model edit, live within one token TTL.
+struct ScopeState {
+    grants: Vec<(String, Vec<String>)>,
+    fetched_at: u64,
+    last_attempt: u64,
+}
+
 /// The ES256 verifier: expected issuer, the Principal allow-set (boot-resolved
 /// from the model, ADR-052 §5), the kid-keyed JWKS cache, and an injected
 /// fetcher (prod: curl to CSS; tests: a stub — cases 7/8 toggle reachability
@@ -83,10 +95,13 @@ pub struct OidcVerifier {
     /// webId → role resolver over `chorus:holdsRole` (ADR-054 §3.3). Same
     /// None-vs-Some(empty) split as the allow-set.
     resolve_roles: Box<dyn Fn() -> Option<Vec<(String, String)>>>,
+    /// webId → scopes resolver over `chorus:hasScope` (#3689). Same split.
+    resolve_scopes: Box<dyn Fn() -> Option<Vec<(String, Vec<String>)>>>,
     fetch: Box<dyn Fn() -> Option<String>>,
     state: RefCell<JwksState>,
     allow: RefCell<AllowState>,
     roles: RefCell<RoleState>,
+    scopes: RefCell<ScopeState>,
 }
 
 impl OidcVerifier {
@@ -94,16 +109,19 @@ impl OidcVerifier {
         issuer: &str,
         resolve_allow: impl Fn() -> Option<Vec<String>> + 'static,
         resolve_roles: impl Fn() -> Option<Vec<(String, String)>> + 'static,
+        resolve_scopes: impl Fn() -> Option<Vec<(String, Vec<String>)>> + 'static,
         fetch: impl Fn() -> Option<String> + 'static,
     ) -> Self {
         Self {
             issuer: norm_iss(issuer),
             resolve_allow: Box::new(resolve_allow),
             resolve_roles: Box::new(resolve_roles),
+            resolve_scopes: Box::new(resolve_scopes),
             fetch: Box::new(fetch),
             state: RefCell::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
             allow: RefCell::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
             roles: RefCell::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            scopes: RefCell::new(ScopeState { grants: Vec::new(), fetched_at: 0, last_attempt: 0 }),
         }
     }
 
@@ -175,6 +193,32 @@ impl OidcVerifier {
             }
         }
         rl.pairs.iter().find(|(w, _)| w == web_id).map(|(_, r)| r.clone())
+    }
+
+    /// #3689 — the caller's scopes, ASKED of the graph. No edge ⇒ no scopes
+    /// (a scoped write refuses); resolve failure empties the map (fail closed,
+    /// never stale grants); refresh on the ALLOW_TTL cadence so revocation is
+    /// a model edit that lands within one token TTL.
+    pub fn scopes_for(&self, web_id: &str, now_secs: u64) -> Vec<String> {
+        let mut sc = self.scopes.borrow_mut();
+        let stale = now_secs.saturating_sub(sc.fetched_at) >= ALLOW_TTL_SECS;
+        let can_retry = now_secs.saturating_sub(sc.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
+            || sc.last_attempt == 0;
+        if stale && can_retry {
+            sc.last_attempt = now_secs;
+            match (self.resolve_scopes)() {
+                Some(v) => {
+                    sc.grants = v;
+                    sc.fetched_at = now_secs;
+                }
+                None => sc.grants.clear(),
+            }
+        }
+        sc.grants
+            .iter()
+            .find(|(w, _)| w == web_id)
+            .map(|(_, g)| g.clone())
+            .unwrap_or_default()
     }
 
     /// Boot warm-fetch (ADR-052 §2a): populate the cache so a CSS blip after
@@ -286,7 +330,12 @@ impl OidcVerifier {
         //    never parsed out of the WebID string (ADR-054 §3.3). Renaming an
         //    agent's WebID, or a WebID whose string encodes no role, now
         //    resolves correctly; a Principal that holds no role gets none.
-        let scope = auth::json_string_array(payload, "scope");
+        // #3689 — scope comes FROM THE MODEL (chorus:hasScope), never from a
+        // claim. A claim was self-declared at mint; CSS cannot mint scoped
+        // client_credentials anyway (spiked live 2026-07-30). The HS256 arm in
+        // verify_any keeps its claim scope until #3689 deletes it — migration
+        // bridge only.
+        let scope = self.scopes_for(&web_id, now_secs);
         let agent_id = self.role_for(&web_id, now_secs).unwrap_or_default();
         Ok(Claims { agent_id, web_id, aud, exp, scope })
     }
@@ -313,18 +362,19 @@ pub fn verify_any(
         .and_then(auth::b64url_decode)
         .and_then(|b| String::from_utf8(b).ok())
         .and_then(|h| auth::json_string(&h, "alg"));
+    // #3689 — THE CUTOVER. The HS256 arm is DELETED: one verify path, one key
+    // model. Every caller migrated (werk-test + the four ops scripts) mints
+    // ES256 identity via chorus-identity-token; scope is model data
+    // (chorus:hasScope). A stale HS256 token — or alg=none, or anything that
+    // is not ES256 — gets a TYPED refusal naming the retirement, never a
+    // silent accept and never a fallback. `registry` stays in the signature
+    // until the chorus-api envelope door migrates (its own card); it is unused
+    // here by design.
+    let _ = registry;
     match alg.as_deref() {
         Some("ES256") => oidc.verify(t, now_secs),
-        // HS256 and everything else (including alg=none) goes to the legacy
-        // verifier, which refuses anything that isn't a validly HMAC-signed
-        // chorus token — alg=none dies on BadSignature, not on a bypass.
-        // ADR-054 §3.3: the legacy path's `agentId` is a SELF-DECLARED claim,
-        // so the role it carries is re-resolved from the graph here too. One
-        // door, one role source — the HS256 arm dies at #3689 with its claim.
-        _ => auth::verify_token(t, registry, now_secs).map(|mut c| {
-            c.agent_id = oidc.role_for(&c.web_id, now_secs).unwrap_or_default();
-            c
-        }),
+        Some("HS256") => Err(AuthError::Hs256Retired),
+        _ => Err(AuthError::UnknownAlg),
     }
 }
 
@@ -417,6 +467,35 @@ pub fn resolve_principal_roles(
                 }
             })
             .collect()
+    })
+}
+
+/// #3689 — resolve webId→scopes from `chorus:hasScope`: the graphs a Principal
+/// may write, as GOVERNED DATA. One `?v` row per edge ("<webid> <scope-uri>");
+/// a webid carries no space so the first is the separator; multiple edges per
+/// Principal are grouped by the resolver. Principals with no edge are simply
+/// absent: they authenticate, and any scoped write refuses.
+pub const PRINCIPAL_SCOPE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:hasScope ?s } BIND(CONCAT(STR(?w), \" \", STR(?s)) AS ?v) }";
+
+/// None = graph unreachable (caller fails closed); Some(empty) = reachable and
+/// no grants exist. Rows without a separator are dropped and said.
+pub fn resolve_principal_scopes(
+    query: impl Fn(&str) -> Option<String>,
+) -> Option<Vec<(String, Vec<String>)>> {
+    query(PRINCIPAL_SCOPE_QUERY).map(|body| {
+        let mut grants: Vec<(String, Vec<String>)> = Vec::new();
+        for row in crate::select_v(&body) {
+            let Some((w, sc)) = row.split_once(' ') else {
+                eprintln!("chorus-oidc: WARNING — unreadable hasScope row {:?}; that grant is INERT until the edge is fixed (#3689)", row);
+                continue;
+            };
+            if w.is_empty() || sc.is_empty() { continue; }
+            match grants.iter_mut().find(|(gw, _)| gw == w) {
+                Some((_, list)) => list.push(sc.to_string()),
+                None => grants.push((w.to_string(), vec![sc.to_string()])),
+            }
+        }
+        grants
     })
 }
 
@@ -583,7 +662,7 @@ mod tests {
 
     fn verifier() -> OidcVerifier {
         let jwks = jwks_json(&css_key(), KID);
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || Some(jwks.clone()));
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), move || Some(jwks.clone()));
         v.warm_allow(NOW);
         v
     }
@@ -664,7 +743,7 @@ mod tests {
     // ⇒ 401, never allow-on-error.
     #[test]
     fn jwks_unreachable_failclosed() {
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || None); // CSS down, JWKS cache empty
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), || None); // CSS down, JWKS cache empty
         v.warm_allow(NOW);
         assert_eq!(v.verify(&token_valid(), NOW), Err(AuthError::JwksUnreachable));
     }
@@ -676,7 +755,7 @@ mod tests {
         let up = Rc::new(Cell::new(true));
         let up_c = up.clone();
         let jwks = jwks_json(&css_key(), KID);
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), move || {
             if up_c.get() { Some(jwks.clone()) } else { None }
         });
         v.warm_allow(NOW);
@@ -694,7 +773,7 @@ mod tests {
         let jwks = jwks_json(&css_key(), KID);
         let calls = Rc::new(Cell::new(0u32));
         let calls_c = calls.clone();
-        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), move || {
+        let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), move || {
             calls_c.set(calls_c.get() + 1);
             Some(jwks.clone())
         });
@@ -710,10 +789,12 @@ mod tests {
         assert_eq!(calls.get(), 2, "post-cooldown verify refetched the JWKS");
     }
 
-    // case 9 — hs256-legacy-allows (migration only; DELETE this test when
-    // #3611 retires the last HS256 writer — its deletion asserts the cutover).
+    // case 9 — #3689 CUTOVER: the deletion this test's predecessor promised.
+    // (hs256_legacy_allows said "DELETE this test when the last HS256 writer
+    // migrates — its deletion asserts the cutover." This is that assertion.)
+    // A validly-signed HS256 token is REFUSED with the typed retirement error.
     #[test]
-    fn hs256_legacy_allows() {
+    fn hs256_is_refused_with_a_typed_error() {
         let secret: &[u8] = b"test-chorus-service-token-secret";
         let reg = KeyRegistry::resolve(
             &[(wren_webid(), "chorus".to_string(), "K".to_string())],
@@ -724,11 +805,10 @@ mod tests {
             &format!(r#"{{"agentId":"wren","webId":"{}","aud":"chorus","exp":{}}}"#, wren_webid(), NOW + 3600),
         );
         let v = verifier();
-        let c = verify_any(&hs, &reg, &v, NOW).expect("legacy HS256 accepted during rollout");
-        assert_eq!(c.web_id, wren_webid());
-        // and the ES256 lane works through the SAME entry — dual-verify, one seam.
-        let c2 = verify_any(&token_valid(), &reg, &v, NOW).expect("ES256 accepted");
-        assert_eq!(c2.web_id, wren_webid());
+        assert_eq!(verify_any(&hs, &reg, &v, NOW), Err(AuthError::Hs256Retired),
+            "a valid HS256 signature is refused BY POLICY, with the reason named");
+        // ES256 still verifies through the same single entry.
+        assert!(verify_any(&token_valid(), &reg, &v, NOW).is_ok());
     }
 
     // case 10 — attribution-is-webid: the actor is the VERIFIED WebID; nothing
@@ -749,7 +829,7 @@ mod tests {
     // the verified WebID; there is no claim an agent can add to act as another.
     #[test]
     fn webid_outside_allow_set_403s() {
-        let v = OidcVerifier::new(ISSUER, || Some(vec![silas_webid()]), || Some(roles()), {
+        let v = OidcVerifier::new(ISSUER, || Some(vec![silas_webid()]), || Some(roles()), || Some(vec![]), {
             let jwks = jwks_json(&css_key(), KID);
             move || Some(jwks.clone())
         });
@@ -780,6 +860,7 @@ mod tests {
             ISSUER,
             move || Some(if revoked_c.get() { vec![] } else { vec![wren_webid(), silas_webid()] }),
             || Some(roles()),
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -806,6 +887,7 @@ mod tests {
             ISSUER,
             move || if up_c.get() { Some(vec![wren_webid()]) } else { None },
             || Some(roles()),
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -870,6 +952,7 @@ mod tests {
             ISSUER,
             || Some(allow()),
             || Some(vec![(wren_webid(), "silas".to_string())]),
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -895,6 +978,7 @@ mod tests {
                 let o = opaque.clone();
                 move || Some(vec![(o.clone(), "kade".to_string())])
             },
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -917,6 +1001,7 @@ mod tests {
             ISSUER,
             move || Some(vec![g2.clone()]),
             || Some(roles()), // guest is allowed, but holds no role
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -943,6 +1028,7 @@ mod tests {
                     if rc.get() { "kade".to_string() } else { "wren".to_string() },
                 )])
             },
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -972,6 +1058,7 @@ mod tests {
             ISSUER,
             || Some(allow()),
             move || if uc.get() { Some(roles()) } else { None },
+            || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
@@ -1040,40 +1127,104 @@ mod tests {
         assert_eq!(resolve_principal_roles(|_| Some(empty.clone())), Some(vec![]));
     }
 
-    /// The legacy HS256 arm's self-declared `agentId` claim does not decide the
-    /// role either — verify_any re-resolves it from the graph, so there is ONE
-    /// role source at the door while the dual path lives (#3689 deletes the arm).
+
+    // -----------------------------------------------------------------------
+    // #3689 — scope is MODEL DATA, not a token claim. CSS cannot issue scoped
+    // client_credentials (spiked live 2026-07-30: scope param silently
+    // ignored), and the HS256 scope claim was self-declared at mint — the
+    // caller chose its own authorization. chorus:hasScope edges on the
+    // Principal replace both: governance-chosen, TTL'd, revocable by model
+    // edit, resolved at the door exactly like holdsRole.
+    // -----------------------------------------------------------------------
+
+    /// An ES256 token with NO scope claim gets its scopes FROM THE MODEL.
     #[test]
-    fn legacy_arm_role_also_comes_from_the_graph() {
+    fn es256_scopes_come_from_the_model() {
         let jwks = jwks_json(&css_key(), KID);
         let v = OidcVerifier::new(
             ISSUER,
             || Some(allow()),
-            // the model says this WebID holds kade, the token will claim wren
-            || Some(vec![(wren_webid(), "kade".to_string())]),
+            || Some(roles()),
+            || Some(vec![(wren_webid(), vec!["urn:chorus:domains:tests".to_string()])]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
-        v.warm_roles(NOW);
-        let secret: &[u8] = b"test-chorus-service-token-secret";
-        let reg = KeyRegistry::resolve(
-            &[(wren_webid(), "chorus".to_string(), "K".to_string())],
-            |_| Some(secret.to_vec()),
-        );
-        let t = crate::auth::mint_hs256_for_tests(
-            secret,
-            &format!(
-                r#"{{"agentId":"wren","webId":"{}","aud":"chorus","exp":{}}}"#,
-                wren_webid(),
-                NOW + 3600
-            ),
-        );
-        let c = verify_any(&t, &reg, &v, NOW).expect("legacy token verifies");
-        assert_eq!(
-            c.agent_id, "kade",
-            "the graph decides the role; the self-declared agentId claim does not"
-        );
+        let c = v.verify(&token_valid(), NOW).expect("verifies");
+        assert_eq!(c.scope, vec!["urn:chorus:domains:tests"],
+            "scope resolved from chorus:hasScope, not from any claim");
     }
+
+    /// A Principal with no hasScope edge gets NO scopes — it can authenticate
+    /// but a scoped write refuses. Absence is absence, never a default.
+    #[test]
+    fn principal_without_has_scope_carries_no_scope() {
+        let jwks = jwks_json(&css_key(), KID);
+        let v = OidcVerifier::new(
+            ISSUER, || Some(allow()), || Some(roles()),
+            || Some(vec![]),
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        let c = v.verify(&token_valid(), NOW).expect("verifies");
+        assert!(c.scope.is_empty(), "no edge ⇒ no scope, not a default");
+    }
+
+    /// Scope revocation is a model edit and lands within one TTL, no restart —
+    /// the same drill as the allow-set and holdsRole.
+    #[test]
+    fn scope_revocation_lands_within_one_ttl() {
+        let jwks = jwks_json(&css_key(), KID);
+        let revoked = Rc::new(Cell::new(false));
+        let rc = Rc::clone(&revoked);
+        let v = OidcVerifier::new(
+            ISSUER, || Some(allow()), || Some(roles()),
+            move || Some(if rc.get() { vec![] } else {
+                vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])] }),
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        assert!(!v.verify(&token_valid(), NOW).unwrap().scope.is_empty());
+        revoked.set(true);
+        assert!(v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().scope.is_empty(),
+            "past one TTL the revocation is live");
+    }
+
+    /// Graph unreachable ⇒ NO scopes (fail closed), matching allowed()/role_for().
+    #[test]
+    fn scope_map_fails_closed_when_graph_unreachable() {
+        let jwks = jwks_json(&css_key(), KID);
+        let up = Rc::new(Cell::new(true));
+        let uc = Rc::clone(&up);
+        let v = OidcVerifier::new(
+            ISSUER, || Some(allow()), || Some(roles()),
+            move || if uc.get() { Some(vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])]) } else { None },
+            move || Some(jwks.clone()),
+        );
+        v.warm_allow(NOW);
+        assert!(!v.verify(&token_valid(), NOW).unwrap().scope.is_empty());
+        up.set(false);
+        assert!(v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().scope.is_empty(),
+            "unreachable graph ⇒ no scopes, never stale grants");
+    }
+
+    /// The query asks the hasScope edge in the security graph; unreachable is
+    /// distinct from empty; rows without a separator are dropped and said.
+    #[test]
+    fn principal_scope_query_asks_the_has_scope_edge() {
+        let body = format!(
+            r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} urn:chorus:domains:tests"}}}},{{"v":{{"type":"literal","value":"{} urn:chorus:ontology"}}}}]}}}}"#,
+            wren_webid(), wren_webid()
+        );
+        let got = resolve_principal_scopes(|q| {
+            assert!(q.contains("chorus:hasScope"), "asks the hasScope edge");
+            assert!(q.contains("urn:chorus:domains:security"), "scoped to the security graph");
+            Some(body.clone())
+        });
+        let m = got.expect("reachable");
+        assert_eq!(m, vec![(wren_webid(), vec!["urn:chorus:domains:tests".to_string(), "urn:chorus:ontology".to_string()])]);
+        assert_eq!(resolve_principal_scopes(|_| None), None, "unreachable is DISTINCT from empty");
+    }
+
 
     // JWKS parse hardening: multiple keys, non-EC keys skipped, fields never
     // bleed across key objects.

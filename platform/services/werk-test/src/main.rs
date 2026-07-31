@@ -699,23 +699,19 @@ fn post_suite_run(
     }
 }
 
-/// Mint a write token scoped to the instances graph (#3619 lane). Best-effort.
+/// Mint a write token — #3689: ES256 CSS IDENTITY, no scope in the token.
+/// Scope is model data now (chorus:hasScope on the Principal, resolved at the
+/// owl-api door per TTL). The HS256 chorus-mint-token.py path this replaces
+/// carried a SELF-DECLARED scope claim — the caller authorized itself, which
+/// is the class #3689 retires. Best-effort, same contract as before.
 fn mint_token(role: &str) -> Option<String> {
     let home = std::env::var("CHORUS_HOME").ok()?;
-    let script = format!("{}/platform/scripts/chorus-mint-token.py", home);
+    let script = format!("{}/platform/scripts/chorus-identity-token", home);
     if !Path::new(&script).is_file() {
         return None;
     }
-    // #3592 — the CANONICAL agent WebID: owl-api's phase-1 key registry
-    // (auth::chorus_agent_webids) is the allow-set, and it registers exactly
-    // this form. The previous jeffbridwell.com#role-* identity was unknown to
-    // the registry, so every mint verified as WebIdNotAllowed -> 401.
-    let web_id = format!(
-        "http://localhost:3000/pods/chorus/_agents/{}/profile/card.ttl#me",
-        role
-    );
-    let out = Command::new("python3")
-        .args([&script, "--web-id", &web_id, "--scope", "urn:chorus:domains:tests"])
+    let out = Command::new(&script)
+        .arg(role)
         .output()
         .ok()?;
     if !out.status.success() {

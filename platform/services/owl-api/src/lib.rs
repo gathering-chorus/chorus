@@ -3156,6 +3156,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // #3688 / ADR-054 §3.3 — the role resolver over chorus:holdsRole, on the
         // same cadence: a role REASSIGNMENT is a model edit and lands within one TTL.
         || oidc::resolve_principal_roles(|q| sparql_json(q).ok()),
+        // #3689 — the scope resolver over chorus:hasScope: what a Principal may
+        // WRITE is model data too. ES256 tokens carry no scope claim (CSS cannot
+        // mint one — spiked 2026-07-30); the door resolves grants from the graph
+        // and feeds the SAME scope_allows check the HS256 claims fed.
+        || oidc::resolve_principal_scopes(|q| sparql_json(q).ok()),
         move || {
         let out = Command::new("curl")
             .args(["-sf", "--max-time", "3", &jwks_url])
@@ -3394,8 +3399,17 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     // by construction (#3414 philosophy): existing writers don't break before
                     // they migrate to the scoped lane (#3573 incr-2). scope_allows is #3567 (landed).
                     let target_graph = header("x-target-graph");
-                    if !claims.scope.is_empty() && !scope_allows(&target_graph, &claims.scope) {
-                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573)\" }}", json_escape(&target_graph))),
+                    // #3689 — an entity write's REAL target is the table's own
+                    // instances graph when no x-target-graph is sent; the scope
+                    // check validates against that, not against ''. (Under the
+                    // legacy claim-scope regime an empty header skipped into the
+                    // unscoped lane; with model-resolved scope every verified
+                    // Principal has its grants, so the check runs against what
+                    // the write actually touches.)
+                    let effective_target: &str =
+                        if target_graph.is_empty() { &table.instances_graph } else { &target_graph };
+                    if !claims.scope.is_empty() && !scope_allows(effective_target, &claims.scope) {
+                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573/#3689)\" }}", json_escape(effective_target))),
                          ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                     } else {
                         let role = claims.agent_id.clone();

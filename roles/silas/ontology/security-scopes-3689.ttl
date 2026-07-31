@@ -1,0 +1,57 @@
+# security-scopes-3689.ttl — #3689: write scope as GOVERNED MODEL DATA.
+#
+# WHY (so nobody re-derives this): the HS256 tokens carried a self-declared
+# scope claim — the caller chose its own authorization at mint. CSS cannot issue
+# scoped client_credentials (spiked live 2026-07-30: the scope parameter is
+# silently ignored, three probes, decoded payloads on card #3689). So scope
+# moves out of the token entirely: chorus:hasScope edges on the Principal,
+# resolved at the owl-api door on the same TTL cadence as the allow-set and
+# holdsRole (#3688). Grant/revoke = a model edit, live within one token TTL.
+# The CSS token stays pure identity — one issuer, one key.
+#
+# HOME graph: urn:chorus:domains:security (with the Principals it annotates).
+# hasScope is OPTIONAL on PrincipalShape — a Principal without grants
+# authenticates and any scoped write refuses. Absence is absence.
+#
+# GRANTS below mirror what the HS256 minters actually requested (audited on
+# card #3689): the three agent roles run werk-test (urn:chorus:domains:tests),
+# the ops scripts (urn:chorus:ops), ontology validation/migration
+# (urn:chorus:ontology), and enrichment hydration (urn:chorus:instances).
+# Service principals (bridge, chorus-sdk) and jeff get NO grants here — the
+# envelope door's migration is a separate step and grants follow its audit.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:hasScope a owl:DatatypeProperty ;
+    rdfs:label "has scope" ;
+    rdfs:domain chorus:Principal ;
+    rdfs:comment "A graph URI this Principal may write through the governed door. Resolved at verify time from the security graph (TTL'd, fail-closed); never carried in a token. Grant/revoke is a model edit. #3689." ;
+    rdfs:range xsd:anyURI .
+
+chorus:principal-silas
+    chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
+                    "urn:chorus:ops"^^xsd:anyURI ,
+                    "urn:chorus:ontology"^^xsd:anyURI ,
+                    "urn:chorus:instances"^^xsd:anyURI .
+
+chorus:principal-wren
+    chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
+                    "urn:chorus:ops"^^xsd:anyURI ,
+                    "urn:chorus:ontology"^^xsd:anyURI ,
+                    "urn:chorus:instances"^^xsd:anyURI .
+
+chorus:principal-kade
+    chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
+                    "urn:chorus:ops"^^xsd:anyURI ,
+                    "urn:chorus:ontology"^^xsd:anyURI ,
+                    "urn:chorus:instances"^^xsd:anyURI .
+
+# chorus-sdk: the three TRACE_AUTH ops scripts (ontology-validate,
+# index-crawler-snapshots, shim-wrapper) have always written ops as this
+# service principal — the grant makes governance-declared what the HS256 claim
+# self-declared.
+chorus:principal-chorus-sdk
+    chorus:hasScope "urn:chorus:ops"^^xsd:anyURI .
