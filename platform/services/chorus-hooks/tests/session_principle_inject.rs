@@ -48,7 +48,7 @@ fn run_session_start(role: &str, env: &[(&str, &str)]) -> std::process::Output {
 fn read_additional_context(out: &std::process::Output) -> String {
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let v: serde_json::Value = serde_json::from_str(stdout.trim())
-        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {}\nGot: {}", e, &stdout));
+        .unwrap_or_else(|e| panic!("stdout must be valid JSON: {}\nGot: {}", e, stdout));
     v["hookSpecificOutput"]["additionalContext"].as_str().unwrap_or("").to_string()
 }
 

@@ -675,7 +675,7 @@ fn role_checkpoint_cmd(args: &[String]) -> ExitCode {
     match action {
         "write" => {
             // Get WIP card
-            let mine_out = Cmd::new("zsh").arg("-lc").arg(format!("{} mine {}", &board_ts, role))
+            let mine_out = Cmd::new("zsh").arg("-lc").arg(format!("{} mine {}", board_ts, role))
                 .output().ok().and_then(|o| String::from_utf8(o.stdout).ok()).unwrap_or_default();
             let wip_line = mine_out.lines().find(|l| l.to_lowercase().contains("[wip]")).unwrap_or("");
             let card_id = wip_line.split_whitespace()

@@ -15,8 +15,6 @@
 //! surface unread via the same primitive — a single read path for the single
 //! write path established by `nudge.rs` wedge 1.
 
-#[cfg(test)]
-use std::fs;
 use std::path::Path;
 
 /// One pending nudge that has been emitted but not yet surfaced to its target.

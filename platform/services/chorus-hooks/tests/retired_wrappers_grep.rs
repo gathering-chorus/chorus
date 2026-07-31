@@ -113,7 +113,7 @@ fn session_start_script_file_does_not_exist() {
         "messages/scripts/session-start.sh",
     ];
     for c in candidates {
-        let p = format!("{}/{}", &repo_root(), c);
+        let p = format!("{}/{}", repo_root(), c);
         assert!(
             !Path::new(&p).exists(),
             "session-start.sh must be retired (#2311 AC#6): {}",
@@ -129,7 +129,7 @@ fn chorus_prompt_script_file_does_not_exist() {
         "messages/scripts/chorus-prompt.sh",
     ];
     for c in candidates {
-        let p = format!("{}/{}", &repo_root(), c);
+        let p = format!("{}/{}", repo_root(), c);
         assert!(
             !Path::new(&p).exists(),
             "chorus-prompt.sh must be retired (#2311 AC#6): {}",

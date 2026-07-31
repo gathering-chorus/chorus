@@ -159,7 +159,7 @@ pub fn run(args: &[String]) -> ExitCode {
         .unwrap_or_else(|| "missing".to_string());
 
     // Capitalize role name
-    let role_cap = format!("{}{}", &role[..1].to_uppercase(), &role[1..]);
+    let role_cap = format!("{}{}", role[..1].to_uppercase(), &role[1..]);
     let clock = process::wall_clock();
     let clock_short: String = clock.chars().take(16).collect();
 

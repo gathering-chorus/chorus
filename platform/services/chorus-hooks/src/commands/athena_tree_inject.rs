@@ -215,7 +215,7 @@ pub fn render_for_role(role: &str) -> String {
         let sc = active_score_status(&s.status);
         active_scored.push((sc, s.iri.clone(), s.label.clone(), s.status.clone()));
     }
-    active_scored.sort_by(|a, b| b.0.cmp(&a.0));
+    active_scored.sort_by_key(|x| std::cmp::Reverse(x.0));
     out.push_str("### Most active (top 5)\n\n");
     if active_scored.is_empty() {
         out.push_str("_(no owned units to rank)_\n\n");
@@ -240,7 +240,7 @@ pub fn render_for_role(role: &str) -> String {
         let sc = needs_work_score(&s.status, s.gaps.len() + s.not_in_scope.len(), !s.has_design_doc.is_empty());
         needs_scored.push((sc, s.iri.clone(), s.label.clone(), s.gaps.len()));
     }
-    needs_scored.sort_by(|a, b| b.0.cmp(&a.0));
+    needs_scored.sort_by_key(|x| std::cmp::Reverse(x.0));
     out.push_str("### Needs more work (top 5)\n\n");
     if needs_scored.is_empty() {
         out.push_str("_(no owned units to rank)_\n\n");
