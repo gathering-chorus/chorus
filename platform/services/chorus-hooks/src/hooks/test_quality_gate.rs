@@ -671,15 +671,13 @@ fn resolve_test_file_change(input: &HookInput) -> Option<(String, String, String
             // Apply the edit. Single replacement — matches Edit tool semantics
             // (the Edit tool errors on non-unique old_string, so the first
             // occurrence is the only one).
-            let incoming = if let Some(pos) = existing.find(&old_s) {
+            let incoming = {
+                let pos = existing.find(&old_s)?;
                 let mut buf = String::with_capacity(existing.len() - old_s.len() + new_s.len());
                 buf.push_str(&existing[..pos]);
                 buf.push_str(&new_s);
                 buf.push_str(&existing[pos + old_s.len()..]);
                 buf
-            } else {
-                // Edit wouldn't apply — let the Edit tool report it; don't gate.
-                return None;
             };
             Some((file_path, existing, incoming))
         }

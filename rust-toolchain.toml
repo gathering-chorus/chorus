@@ -1,0 +1,20 @@
+# #3717 — pin the Rust toolchain.
+#
+# Why: CI installs `dtolnay/rust-toolchain@stable`, which tracks whatever stable
+# is that day (1.97.1 on 2026-07-31). Dev machines sit wherever they last
+# updated (1.94 here, 2026-03-02). clippy gains lints between releases, so the
+# SAME source produced PASS locally and FAIL on CI — three lints
+# (question_mark, useless_borrows_in_formatting, unnecessary_sort_by) with zero
+# local hits and 15 hits on the runner. No code changed; a compiler release
+# reddened the nightly.
+#
+# That also silently weakened the #3710 pre-commit clippy gate: its whole
+# premise is that what blocks locally blocks in CI. Unpinned, the two gates
+# disagree about what a lint even is.
+#
+# rustup reads this file automatically, so `cargo clippy` here and in CI resolve
+# the same compiler. Bumping it is now a deliberate, reviewable commit instead
+# of an ambient surprise on release day.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
