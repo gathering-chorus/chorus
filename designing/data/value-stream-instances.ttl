@@ -176,3 +176,63 @@ chorus:value-stream-step-merge  a chorus:ValueStreamStep ; rdfs:label "Merge" ; 
     chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 8 .
 chorus:value-stream-step-accept a chorus:ValueStreamStep ; rdfs:label "Accept" ; chorus:label "Accept" ;
     chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 9 .
+
+# ═══════════════════════════════════════════════════════════════════════════
+# #3706 — THE GATHERING VALUE STREAM (Wren, 2026-07-30)
+#
+# Until today the model held seven streams and every one was a Chorus
+# sub-product (athena/borg/chorus/clearing/convergence/loom/werk). Gathering —
+# the other product — had no stream at all, while its steps lived on:
+#   - the board's live `Streams:` vocabulary (cards fields, gathering board):
+#     sowing, growing, practicing, harvesting, reflecting, connecting
+#   - 229 chorus:hasValueStreamStep tags in urn:chorus:documents
+#   - eleven chorus:Vertebra individuals in the live store, five of which
+#     (Sowing/Growing/Practicing/Harvesting/Tending) had no v2 equivalent and
+#     were mistaken for retired v1 spine.
+#
+# Jeff confirmed 2026-07-30: these ARE the Gathering stream's steps — a sibling
+# of the Chorus stream under the recursive architecture (#3613/2026-07-15), not
+# a predecessor of it. So the 229 document tags are CORRECT tags on another
+# stream, and the migration is a retype, not a per-tag judgment.
+#
+# Step set = SEVEN. The board's `Streams:` vocabulary lists six (sowing, growing,
+# practicing, harvesting, reflecting, connecting) — `Tending` is MISSING FROM THE
+# BOARD, not from the stream. Jeff ruled 2026-07-30: Tending IS part of the
+# Gathering value stream. Nothing here is legacy; the board's stream list is the
+# thing that's incomplete, and it should gain `tending`.
+# `connecting` gets a step for the first time.
+# stageOrder places Tending at 4, between Practicing and Harvesting — Jeff's
+# placement, 2026-07-30.
+# `reflecting` appears in BOTH this stream and the Chorus stream; under
+# recursion those are two distinct individuals scoped by inStream, not a
+# collision (precedent: map/surface already recur across streams).
+#
+# IRI form follows the sub-stream precedent — value-stream-step-<stream>-<name>.
+# The Chorus stream's own steps remain unprefixed as the top-level stream.
+# Instance migration of the ~450 live triples is Silas's (OWL-DBA); this file
+# authors the target only.
+# ═══════════════════════════════════════════════════════════════════════════
+
+chorus:value-stream-gathering a chorus:ValueStream ;
+    rdfs:label "Gathering" ; chorus:label "Gathering" ;
+    chorus:outcome "A thing of Jeff's life — a plant, a photo, a practice, a person, a note — carried Sowing → Growing → Practicing → Tending → Harvesting → Reflecting → Connecting, and returned to him as something he can see and use" ;
+    chorus:trigger "continuous" ;
+    chorus:contains chorus:value-stream-step-gathering-sowing, chorus:value-stream-step-gathering-growing,
+        chorus:value-stream-step-gathering-practicing, chorus:value-stream-step-gathering-tending,
+        chorus:value-stream-step-gathering-harvesting, chorus:value-stream-step-gathering-reflecting,
+        chorus:value-stream-step-gathering-connecting .
+
+chorus:value-stream-step-gathering-sowing     a chorus:ValueStreamStep ; rdfs:label "Sowing" ; chorus:label "Sowing" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 1 .
+chorus:value-stream-step-gathering-growing    a chorus:ValueStreamStep ; rdfs:label "Growing" ; chorus:label "Growing" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 2 .
+chorus:value-stream-step-gathering-practicing a chorus:ValueStreamStep ; rdfs:label "Practicing" ; chorus:label "Practicing" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 3 .
+chorus:value-stream-step-gathering-tending    a chorus:ValueStreamStep ; rdfs:label "Tending" ; chorus:label "Tending" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 4 .
+chorus:value-stream-step-gathering-harvesting a chorus:ValueStreamStep ; rdfs:label "Harvesting" ; chorus:label "Harvesting" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 5 .
+chorus:value-stream-step-gathering-reflecting a chorus:ValueStreamStep ; rdfs:label "Reflecting" ; chorus:label "Reflecting" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 6 .
+chorus:value-stream-step-gathering-connecting a chorus:ValueStreamStep ; rdfs:label "Connecting" ; chorus:label "Connecting" ;
+    chorus:inStream chorus:value-stream-gathering ; chorus:stageOrder 7 .

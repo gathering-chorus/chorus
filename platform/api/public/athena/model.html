@@ -1,88 +1,262 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Model Census — Athena</title>
-<!-- #3706 — the LIVE model census. Every collection owl-api serves, its live row
-     count, and its modelVersion (#3704), fetched from the running model on each load
-     so it can NEVER go stale (the static-snapshot problem). This is "what is our model,
-     right now" — populated vs empty is the cleanup worklist. Hand-authored on the
-     athena-flow runtime pending the generator emitting it (teach page_html this shape). -->
+<title>Model — Athena</title>
+<!-- #3706 — the class-model view. Wireframe agreed with Jeff 2026-07-31: pick a class
+     from the list (left), see it and its one-hop associations as UML boxes with elbow
+     connectors (centre), full attribute table + provenance (right).
+     PROJECTED live from owl-api on every load — GET / (Discovery: the shaped primitives)
+     + GET /schema/<class> per class. No hand-maintained class list; if the model
+     changes this page changes. Supersedes the census shape (rejected 2026-07-30 —
+     counts answer "how many", not "what are the classes and what is in them").
+     Legacy is filtered OUT by default. What the page cannot draw, it says. -->
 <script>window.OWL_PORT = 3360;</script>
 <link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script>
 <style>
-  .census-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:18px 0 26px}
-  .cs{border:1px solid var(--line,#e2e6ec);border-radius:10px;padding:14px 16px;background:var(--panel,#fff)}
-  .cs .n{font-size:28px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-  .cs .l{font-size:12px;color:var(--muted,#5b6472);margin-top:2px}
-  table.census{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
-  table.census th,table.census td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line,#e2e6ec);font-size:14px}
-  table.census th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#5b6472);font-weight:600}
-  table.census td.num{text-align:right;font-weight:600}
-  .cn{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
-  .pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
-  .p-good{background:#e7f6ec;color:#1a8a4a}.p-bad{background:#fbe9ea;color:#c5303a}.p-warn{background:#fbf3e2;color:#b7791f}
-  .grp{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted,#5b6472);font-weight:600;padding-top:16px}
-  @media (prefers-color-scheme:dark){.p-good{background:#12301f;color:#43c07a}.p-bad{background:#33161a;color:#f0616b}.p-warn{background:#332713;color:#e0a94a}}
+  .mwrap{display:grid;grid-template-columns:218px minmax(0,1fr) 300px;
+         border:1px solid var(--line,#d8dee6);border-radius:4px;overflow:hidden;
+         min-height:560px;background:var(--panel,#fff)}
+  @media (max-width:1000px){.mwrap{grid-template-columns:1fr}}
+  .mcol{padding:12px 13px;min-width:0}
+  .mcol+.mcol{border-left:1px solid var(--line,#e6eaef)}
+  @media (max-width:1000px){.mcol+.mcol{border-left:0;border-top:1px solid var(--line,#e6eaef)}}
+  .mlab{font:600 9.5px system-ui,sans-serif;letter-spacing:.13em;text-transform:uppercase;
+        color:var(--muted,#8a94a3);margin-bottom:7px;display:block}
+  .mchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+  .mchip{font:500 11.5px system-ui,sans-serif;padding:5px 9px;border:1px solid var(--line,#cdd5de);
+         background:var(--panel,#fff);color:var(--muted,#5b6675);border-radius:2px;cursor:pointer}
+  .mchip:hover{border-color:#0d6a89}
+  .mchip[aria-pressed="true"]{background:#16202b;border-color:#16202b;color:#fff;font-weight:600}
+  #mq{width:100%;padding:6px 8px;border:1px solid var(--line,#cdd5de);border-radius:2px;
+      font:400 12px ui-monospace,Menlo,monospace;margin-bottom:9px;background:var(--panel,#fff);color:inherit}
+  .mlist{max-height:440px;overflow-y:auto;display:flex;flex-direction:column;gap:1px}
+  .mli{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:2px;
+       font:500 12px ui-monospace,Menlo,monospace;color:inherit;background:none;
+       border:1px solid transparent;cursor:pointer;text-align:left;width:100%}
+  .mli:hover{background:var(--hover,#f4f7fa)}
+  .mli[aria-current="true"]{background:var(--hover,#f4f7fa);border-color:#0d6a89}
+  .mli small{margin-left:auto;color:var(--muted,#a8b0bb);font:400 10px ui-monospace,monospace}
+  .mstage{position:relative;overflow-x:auto;
+          background:radial-gradient(circle,var(--line,#e9edf2) 1px,transparent 1px) 0 0/22px 22px}
+  .mplane{position:relative}
+  .mplane svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .mlink{stroke:#0d6a89;stroke-width:1.4;fill:none}
+  .mlbl{font:500 10px ui-monospace,monospace;fill:#0d6a89}
+  .mbox{position:absolute;width:158px;background:var(--panel,#fff);border:1px solid var(--line,#c3ccd6);
+        border-radius:2px;box-shadow:0 1px 2px rgba(20,25,34,.06);cursor:pointer}
+  .mbox.main{width:190px;border:2px solid #0d6a89}
+  .mbox:hover{border-color:#0d6a89}
+  .mbh{padding:5px 8px;border-bottom:1px solid var(--line,#e6eaef);background:var(--hover,#f6f8fa);
+       font:600 12px ui-monospace,monospace;display:flex;align-items:center;gap:5px}
+  .mtag{margin-left:auto;font:600 8px system-ui,sans-serif;letter-spacing:.06em;
+        padding:1px 4px;border-radius:2px;background:#fbe6f0;color:#a8226b}
+  .mtag.legacy{background:#f9efdb;color:#8f5f0d}
+  .mtag.target{background:#e2f3ec;color:#177a56}
+  .mbb{padding:4px 0}
+  .mat{display:flex;gap:6px;padding:1.5px 8px;font:400 10px ui-monospace,monospace;
+       color:var(--muted,#5b6675);white-space:nowrap}
+  .mat .mn{overflow:hidden;text-overflow:ellipsis}
+  .mat .mv{margin-left:auto;color:var(--muted,#98a2af)}
+  .mat.edge .mv{color:#0d6a89}
+  .mat .req{color:#a8226b;font-weight:600}
+  .mbb .none{padding:5px 8px;font:italic 10px system-ui,sans-serif;color:var(--muted,#a8b0bb)}
+  .mbb .more{padding:3px 8px;font:400 10px system-ui,sans-serif;color:var(--muted,#a8b0bb)}
+  .minsp h2{margin:0 0 8px;font:600 16px ui-monospace,monospace;word-break:break-word}
+  .minsp table{width:100%;border-collapse:collapse;font:400 11px ui-monospace,monospace}
+  .minsp th{font:600 9px system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;
+            color:var(--muted,#8a94a3);text-align:left;padding-bottom:3px;border-bottom:1px solid var(--line,#d8dee6)}
+  .minsp td{padding:3px 0;border-bottom:1px solid var(--line,#eef1f5);vertical-align:top}
+  .minsp td.tn{padding-right:6px}
+  .minsp td.tv{color:var(--muted,#98a2af);text-align:right;white-space:nowrap}
+  .minsp td.tv.edge{color:#0d6a89}
+  .mrel{font:400 11px ui-monospace,monospace;color:var(--muted,#5b6675);padding:2px 0}
+  .mrel em{font-style:normal;color:#0d6a89}
+  .mrel button{font:600 11px ui-monospace,monospace;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+  .mrel button:hover{text-decoration:underline}
+  .msect{margin-bottom:15px}
+  .mempty{color:var(--muted,#a8b0bb);font:italic 11.5px system-ui,sans-serif;margin:0;line-height:1.5}
+  .mstrip{display:flex;gap:20px;flex-wrap:wrap;padding:11px 14px;
+          border:1px solid var(--line,#d8dee6);border-top:0;background:var(--hover,#f6f8fa);
+          border-radius:0 0 4px 4px;font:400 10.5px system-ui,sans-serif;color:var(--muted,#5b6675)}
+  .mtally{display:flex;gap:16px;flex-wrap:wrap;margin:8px 0 14px;font-variant-numeric:tabular-nums}
+  .mtally b{font:600 16px ui-monospace,monospace}
+  .mtally span{font-size:11px;color:var(--muted,#5b6675);margin-left:5px}
 </style>
 </head>
 <body><div class="wrap wide">
-<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a> &rarr; model census</div>
-<h1>Model Census <span class="kind">&mdash; live from the graph</span></h1>
-<div id="main"><p class="empty">loading every collection live from the model&hellip;</p></div>
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; model</div>
+<h1>Model <span class="kind">&mdash; classes &amp; relations</span></h1>
+<div class="mtally" id="tally"></div>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
 </div>
+
 <script>
 (async function () {
   const main = document.getElementById('main');
-  // The collections owl-api serves, grouped by concern so the census reads as a map.
-  const GROUPS = [
-    ['Core model', ['products','domains','services','valuestreams','valuestreamsteps']],
-    ['Board',       ['chunks','chunkmemberships']],
-    ['Roles & identity', ['roles','principals','credentials','keyregistryentries','authboundaries','permissions','securityprobes']],
-    ['Model vocabulary', ['properties','propertykeys','emitcontracts','metrics']],
-    ['Tests',       ['tests','testresults','testsuiteruns']],
-  ];
-  const all = GROUPS.flatMap(g => g[1]);
+  let CLASSES = {}, EDGES = [], focus = null, q = '';
+  let fState = { target: 1, legacy: 0, unclassified: 1 };
+
+  const stateOf = k => {
+    const s = (CLASSES[k] || {}).state;
+    if (s === 'target' || s === 'v2') return 'target';
+    if (s === 'legacy' || s === 'v1') return 'legacy';
+    return 'unclassified';
+  };
+  const pass = k => !!fState[stateOf(k)] && (!q || k.toLowerCase().includes(q));
+  const W = k => (k === focus ? 190 : 158);
+  const H = k => {
+    const n = CLASSES[k].attrs.length;
+    return 30 + Math.min(n, 8) * 16 + (n > 8 ? 15 : 0) + (n ? 9 : 20);
+  };
+
   try {
-    // Fetch every collection live, in parallel. A failed one is recorded, not fatal.
-    const results = {};
-    await Promise.all(all.map(async r => {
-      try { const env = await fetchJSON('/' + r); results[r] = { count: env.count, mv: env.modelVersion || '—' }; }
-      catch (e) { results[r] = { count: null, mv: '—', err: true }; }
+    const disc = await fetchJSON('/');
+    const prims = disc.primitives || [];
+    const loaded = await Promise.all(prims.map(async p => {
+      const coll = String(p.collection || '').replace(/^\/v1/, '');
+      let schema = null, ver = null;
+      try { schema = await fetchJSON('/schema/' + p.kind.toLowerCase()); } catch (e) { /* unshaped */ }
+      try { ver = (await fetchJSON(coll)).modelVersion; } catch (e) { /* keep null */ }
+      return { kind: p.kind, schema, ver };
     }));
 
-    const served = all.length;
-    const populated = all.filter(r => (results[r].count || 0) > 0).length;
-    const empty = all.filter(r => results[r].count === 0).length;
-    const errored = all.filter(r => results[r].err).length;
-
-    function statusPill(r) {
-      const c = results[r];
-      if (c.err) return '<span class="pill p-bad">error</span>';
-      if (c.count === 0) return '<span class="pill p-warn">empty</span>';
-      return '<span class="pill p-good">serving</span>';
+    for (const { kind, schema, ver } of loaded) {
+      if (!schema) continue;
+      const mand = new Set(schema.mandatory || []);
+      const attrs = (schema.fields || []).map(f => {
+        const i = f.indexOf('|');
+        const n = i < 0 ? f : f.slice(0, i);
+        const kindStr = i < 0 ? '' : f.slice(i + 1);
+        const edge = kindStr.startsWith('edge:');
+        const t = edge ? kindStr.slice(5)
+          : kindStr.startsWith('datatype:') ? kindStr.slice(9) : 'untyped';
+        return { n, t, edge, req: mand.has(n) };
+      });
+      CLASSES[kind] = { attrs, state: ver || 'unclassified' };
     }
-    function row(r) {
-      const c = results[r];
-      return `<tr><td class="cn">/${esc(r)}</td>` +
-        `<td class="num">${c.count === null ? '—' : c.count}</td>` +
-        `<td>${esc(c.mv)}</td><td>${statusPill(r)}</td></tr>`;
-    }
-    const sections = GROUPS.map(([label, rs]) =>
-      `<tr><td class="grp" colspan="4">${esc(label)}</td></tr>` + rs.map(row).join('')).join('');
+    Object.keys(CLASSES).forEach(k =>
+      CLASSES[k].attrs.filter(a => a.edge).forEach(a => EDGES.push([k, a.n, a.t])));
 
-    main.innerHTML = `
-<div class="promise">Every collection the model serves, its live row count, and its version (#3704) — read from the running graph on this page load. Populated is real; empty is the worklist.</div>
-<div class="census-stats">
-  <div class="cs"><div class="n">${served}</div><div class="l">collections served</div></div>
-  <div class="cs"><div class="n">${populated}</div><div class="l">populated</div></div>
-  <div class="cs"><div class="n">${empty}</div><div class="l">empty</div></div>
-  <div class="cs"><div class="n">${errored}</div><div class="l">erroring</div></div>
-</div>
-<table class="census">
-  <tr><th>Collection</th><th style="text-align:right">Rows</th><th>Version</th><th>Status</th></tr>
-  ${sections}
-</table>
-${srcNote('GET /{collection} — owl-api :3360, live')}`;
-  } catch (e) { fetchFailed(main, e); }
+    if (!Object.keys(CLASSES).length) {
+      main.innerHTML = '<div class="err">The model API served no shaped classes — that is the graph\'s answer, not a fetch failure.</div>';
+      return;
+    }
+    focus = CLASSES.Domain ? 'Domain' : Object.keys(CLASSES).sort()[0];
+    render();
+  } catch (e) { fetchFailed(main, e); return; }
+
+  function render() {
+    const keys = Object.keys(CLASSES).filter(pass).sort();
+    if (keys.length && !keys.includes(focus)) focus = keys[0];
+
+    const out = [], inc = [], so = new Set(), si = new Set();
+    EDGES.forEach(([a, p, b]) => {
+      if (a === focus && b !== focus && CLASSES[b] && !so.has(b)) { so.add(b); out.push({ k: b, p }); }
+      if (b === focus && a !== focus && CLASSES[a] && !si.has(a)) { si.add(a); inc.push({ k: a, p }); }
+    });
+
+    // column pitch adapts to the stage width so the outgoing column is never
+    // clipped off the right edge on a narrow window (the boxes still scroll if
+    // the viewport is genuinely too small, but the default fits).
+    const stageW = (document.querySelector('.mstage') || {}).clientWidth || 700;
+    const COL = Math.max(196, Math.min(268, Math.floor((stageW - 190) / 2)));
+    const GAP = 20, X0 = 14, TOP = 26;
+    const stack = a => a.length ? a.reduce((s, i) => s + H(i.k) + GAP, -GAP) : 0;
+    const hF = H(focus);
+    const tall = Math.max(hF, stack(inc), stack(out), 230);
+    const pos = { [focus]: [X0 + COL, TOP + (tall - hF) / 2] };
+    let y = TOP + (tall - stack(inc)) / 2;
+    inc.forEach(i => { pos[i.k] = [X0, y]; y += H(i.k) + GAP; });
+    y = TOP + (tall - stack(out)) / 2;
+    out.forEach(i => { pos[i.k] = [X0 + COL * 2, y]; y += H(i.k) + GAP; });
+
+    let wires = '<defs><marker id="mar" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" ' +
+      'orient="auto"><path d="M0 0 L8 4 L0 8" fill="none" stroke="#0d6a89" stroke-width="1.3"/></marker></defs>';
+    const wire = (a, b, p) => {
+      const A = pos[a], B = pos[b]; if (!A || !B) return;
+      const x1 = A[0] + W(a), y1 = A[1] + H(a) / 2;
+      const x2 = B[0], y2 = B[1] + H(b) / 2, mx = (x1 + x2) / 2;
+      wires += '<path class="mlink" marker-end="url(#mar)" d="M' + x1 + ' ' + y1 + ' H' + mx +
+        ' V' + y2 + ' H' + x2 + '"/><text class="mlbl" x="' + mx + '" y="' + ((y1 + y2) / 2 - 5) +
+        '" text-anchor="middle">' + esc(p) + '</text>';
+    };
+    inc.forEach(i => wire(i.k, focus, i.p));
+    out.forEach(i => wire(focus, i.k, i.p));
+
+    const boxes = Object.keys(pos).map(k => {
+      const c = CLASSES[k], st = stateOf(k);
+      const rows = c.attrs.length
+        ? c.attrs.slice(0, 8).map(a =>
+            '<div class="mat' + (a.edge ? ' edge' : '') + '"><span class="mn">' + esc(a.n) +
+            (a.req ? '<span class="req"> *</span>' : '') + '</span><span class="mv">' + esc(a.t) + '</span></div>'
+          ).join('') + (c.attrs.length > 8 ? '<div class="more">+ ' + (c.attrs.length - 8) + ' more</div>' : '')
+        : '<div class="none">no shape attributes</div>';
+      return '<div class="mbox' + (k === focus ? ' main' : '') + '" data-go="' + esc(k) +
+        '" style="left:' + pos[k][0] + 'px;top:' + pos[k][1] + 'px"><div class="mbh">' + esc(k) +
+        '<span class="mtag ' + st + '">' + (st === 'unclassified' ? 'UNCL' : st.toUpperCase()) +
+        '</span></div><div class="mbb">' + rows + '</div></div>';
+    }).join('');
+
+    const c = CLASSES[focus];
+    const insp =
+      '<div class="msect"><span class="mlab">Class</span><h2>' + esc(focus) + '</h2>' +
+        '<span class="mtag ' + stateOf(focus) + '">' + stateOf(focus).toUpperCase() + '</span></div>' +
+      '<div class="msect"><span class="mlab">Attributes — ' + c.attrs.length + '</span>' +
+      (c.attrs.length
+        ? '<table><tr><th>name</th><th style="text-align:right">type</th></tr>' +
+          c.attrs.map(a => '<tr><td class="tn">' + esc(a.n) +
+            (a.req ? ' <span style="color:#a8226b">*</span>' : '') + '</td><td class="tv' +
+            (a.edge ? ' edge' : '') + '">' + esc(a.t) + '</td></tr>').join('') + '</table>' +
+          '<p class="mempty" style="margin-top:5px">* required — the shape\'s sh:minCount &ge; 1 floor.</p>'
+        : '<p class="mempty">This class has a shape but no direct-path attributes.</p>') + '</div>' +
+      '<div class="msect"><span class="mlab">Associations out — ' + out.length + '</span>' +
+      (out.length ? out.map(i => '<div class="mrel"><em>' + esc(i.p) + '</em> &rarr; <button data-go="' +
+          esc(i.k) + '">' + esc(i.k) + '</button></div>').join('') : '<p class="mempty">none</p>') + '</div>' +
+      '<div class="msect"><span class="mlab">Associations in — ' + inc.length + '</span>' +
+      (inc.length ? inc.map(i => '<div class="mrel"><button data-go="' + esc(i.k) + '">' + esc(i.k) +
+          '</button> <em>' + esc(i.p) + '</em> &rarr; this</div>').join('') : '<p class="mempty">none</p>') + '</div>' +
+      '<div class="msect"><span class="mlab">Provenance</span><div class="mrel">urn:chorus:ontology</div>' +
+      '<div class="mrel">shape: chorus:' + esc(focus) + 'Shape</div>' +
+      '<p class="mempty" style="margin-top:4px">Projected from the shape on every load — never a stored copy.</p></div>';
+
+    main.innerHTML =
+      '<div class="mwrap"><div class="mcol"><span class="mlab">State</span>' +
+        '<div class="mchips" id="fst"></div><span class="mlab">Classes — ' + keys.length + '</span>' +
+        '<input id="mq" type="search" placeholder="find a class…" aria-label="Find a class" value="' + esc(q) + '">' +
+        '<div class="mlist">' + keys.map(k => '<button class="mli" data-go="' + esc(k) + '" aria-current="' +
+          (k === focus) + '">' + esc(k) + '<small>' + CLASSES[k].attrs.length + '</small></button>').join('') +
+        '</div></div>' +
+      '<div class="mcol mstage"><div class="mplane" style="height:' + Math.max(tall + TOP + 50, 560) +
+        'px;width:' + (X0 + COL * 2 + 220) + 'px"><svg>' + wires + '</svg>' + boxes + '</div></div>' +
+      '<div class="mcol minsp">' + insp + '</div></div>' +
+      '<div class="mstrip">' +
+        '<div><b>' + Object.keys(CLASSES).length + '</b> classes are SERVED — a class is served only if it has a SHACL shape.</div>' +
+        '<div>Shapeless classes cannot appear here. Their retirement is measured in the graph, not served (the API serves the target model).</div>' +
+        '<div>Attribute <b>source</b> (rdfs:domain vs shape) is not projected yet — this page shows the shape.</div>' +
+      '</div>';
+
+    const cnt = s => Object.keys(CLASSES).filter(k => stateOf(k) === s).length;
+    document.getElementById('tally').innerHTML =
+      '<div><b style="color:#177a56">' + cnt('target') + '</b><span>target</span></div>' +
+      '<div><b style="color:#8f5f0d">' + cnt('legacy') + '</b><span>legacy</span></div>' +
+      '<div><b style="color:#a8226b">' + cnt('unclassified') + '</b><span>unclassified</span></div>' +
+      '<div><b>' + keys.length + '</b><span>in filter</span></div>';
+
+    const fst = document.getElementById('fst');
+    [['target', 'Target'], ['legacy', 'Legacy'], ['unclassified', 'Unclassified']].forEach(function (p) {
+      const b = document.createElement('button');
+      b.className = 'mchip'; b.textContent = p[1];
+      b.setAttribute('aria-pressed', !!fState[p[0]]);
+      b.onclick = function () { fState[p[0]] = !fState[p[0]]; render(); };
+      fst.appendChild(b);
+    });
+    document.getElementById('mq').oninput = function (e) { q = e.target.value.toLowerCase().trim(); render(); };
+    Array.prototype.forEach.call(main.querySelectorAll('[data-go]'), function (el) {
+      el.onclick = function () {
+        const k = el.getAttribute('data-go');
+        if (CLASSES[k]) { focus = k; render(); }
+      };
+    });
+  }
 })();
 </script>
 </body></html>

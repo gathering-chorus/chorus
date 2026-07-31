@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Athena as a Modeling Platform</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  .quote { font-style: italic; color: #333; border-left: 3px solid #999; padding-left: 14px; margin: 12px 0; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .yes { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .no  { background: #fee2e2; color: #991b1b; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .part{ background: #fef9c3; color: #854d0e; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; padding: 10px 14px; font-size: 0.8em; overflow-x: auto; margin: 10px 0; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+</head>
+<body>
+
+<h1>Athena as a Modeling Platform <span>— vision &amp; context</span></h1>
+<p class="date">Wren · 2026-07-31 · a summary of Jeff's framing in session, captured so #3706 is built against the vision rather than against a page request. Not a design doc — the design lives in <code>athena-product-design.html</code>; this records <em>why</em> and <em>where it goes</em>.</p>
+
+<h2>1 · The frame Jeff drew</h2>
+
+<div class="frame">
+A <strong>product</strong> — Gathering, Chorus, or something new we build for a customer — <strong>has</strong>:
+<ul style="margin-bottom:0">
+  <li>a <strong>model</strong> (the OWL)</li>
+  <li>an <strong>OWL generator</strong> (owl-api)</li>
+  <li>a way to <strong>observe the graph as a function of the OWL</strong></li>
+  <li><strong>views</strong> over its value streams, products, domains, services, and domain instances</li>
+</ul>
+</div>
+
+<p>That makes Athena a <em>product template</em>, not a one-off. The generator is shared; the model is per-product. It also reframes what Chorus is: not internal infrastructure, but <strong>a method plus the tooling to run it</strong>.</p>
+
+<h2>2 · The consultant workflow</h2>
+
+<p class="quote">"So Athena allows me as a consultant to start with customer — define a small value stream quickly — define associated domains for the value stream quickly — same for services and products — see the whole OWL model filterable by VS, domain, product, service … then we can generate APIs from the model."</p>
+
+<pre>model the customer's value stream   →   athena-model    (#3718, to build)
+        ↓
+generate their APIs                →   owl-api         WORKS TODAY
+        ↓
+see it, filterable                 →   model view      (#3706, in flight)</pre>
+
+<p>The deliverable at the end of a modeling session is a <strong>queryable system</strong>, not a slide deck. That is the differentiating claim, and the API-generation leg of it is not speculative — see §4.</p>
+
+<h2>3 · Where the surfaces stand</h2>
+
+<p>Checked live 2026-07-31, chorus-api :3340 and owl-api :3360.</p>
+
+<table>
+<tr><th>Page</th><th>State</th><th>Note</th></tr>
+<tr><td><code>/athena/value-stream.html</code></td><td><span class="yes">SERVES</span></td><td>streams + steps</td></tr>
+<tr><td><code>/athena/domains.html</code></td><td><span class="yes">SERVES</span></td><td>index, grouped by claiming product</td></tr>
+<tr><td><code>/athena/domain.html?d=&lt;name&gt;</code></td><td><span class="yes">SERVES</span></td><td>the domain <em>instance</em> page (#3635) — instances are shown here</td></tr>
+<tr><td><code>/athena/products.html</code> · <code>product.html</code></td><td><span class="part">EMPTY</span></td><td>serves, but <code>/products</code> returns 0 — see §5</td></tr>
+<tr><td><code>/athena/services.html</code> · <code>service.html</code></td><td><span class="no">404</span></td><td>API is live (<code>/services</code>=1, #3675) — page is the only gap</td></tr>
+<tr><td><code>/athena/model.html</code></td><td><span class="no">404</span></td><td><strong>#3706</strong> — classes and relations, filterable</td></tr>
+<tr><td>generator view</td><td><span class="no">NONE</span></td><td>what owl-api generates; committed == generated?</td></tr>
+</table>
+
+<div class="finding">
+<strong>The sizing number:</strong> owl-api serves <span class="num">21</span> generated collections — authboundaries, chunks, credentials, domains, emitcontracts, keyregistryentries, metrics, permissions, principals, products, properties, propertykeys, roles, securityprobes, services, tests, testresults, testsuiteruns, valuestreams, valuestreamsteps, chunkmemberships. <strong>Five have pages.</strong> Sixteen are served and invisible.
+</div>
+
+<h2>4 · What already works</h2>
+
+<ul>
+  <li><strong>API generation from the model.</strong> All 21 collections above are generated — no hand-written routes. The last leg of the consultant loop is the one that already runs.</li>
+  <li><strong>A governed writer, for instances.</strong> <code>platform/services/chorus-model</code> (Rust, #3257): <code>add</code> / <code>mint</code>, callers never pass IRIs, <code>--dry-run</code> prints the Turtle. This is the deterministic core — it just stops at the ABox.</li>
+  <li><strong>The Service layer opened.</strong> <code>chorus:service-clearing</code> is the first Service instance in the graph (#3675); the Clearing service design now derives from it and states the rule that should govern every page: <em>"The model is the source of truth; this page is its narrative view and must not contradict it."</em></li>
+  <li><strong>The Gathering value stream exists</strong> as of 2026-07-31 — seven steps (Sowing · Growing · Practicing · Tending · Harvesting · Reflecting · Connecting), authored on #3706. It is the first non-Chorus stream in the model.</li>
+</ul>
+
+<h2>5 · The gaps that matter, in order</h2>
+
+<div class="gap"><strong>ONE MODEL, NOT N.</strong> Single <code>chorus:</code> namespace, single ontology graph, single <code>MODEL_SET</code>. A consultant needs one model per customer, isolated. This primitive does not exist — and it is the <em>same</em> defect that has <code>/products</code> returning 0 today: one ontology serving both Chorus and Gathering, so "which product owns this class" has no answer. <code>athena-product-design.html</code> already ruled the split ("Gathering's data domains belong to Gathering's ontology") and it was never executed.</div>
+
+<div class="gap"><strong>THE SCHEMA LAYER IS UNGOVERNED.</strong> Classes, properties and shapes are hand-typed into <code>.ttl</code>. Consequences measured 2026-07-30: 186 classes across 13 files and 6 namespaces; 69 classes (38%) declare themselves and bind nothing (outside <code>MODEL_SET</code>); 11 properties with no <code>rdfs:domain</code> and/or <code>rdfs:range</code>; 12 classes with no SHACL shape, which owl-api refuses to serve; <code>DomainShape</code> and the ontology disagreeing about what a Domain is (8 attributes each, only 4 overlapping). <strong>#3718</strong> is the fix: extend the governed writer to the TBox and close the hand-edit back door.</div>
+
+<div class="gap"><strong>THE GENERATOR EMITS APIs, NOT PAGES.</strong> 21 collections, 5 pages. A customer sees JSON unless someone hand-writes HTML — and hand-written pages are how we got fifteen competing "show me the model" surfaces.</div>
+
+<h2>6 · Rulings taken in this discussion</h2>
+
+<ul>
+  <li><strong>Absence is never canonical.</strong> Born-v2 removed (2026-07-30, Jeff): an untagged class is <code>unclassified</code> — nobody has reviewed it — not <code>v2</code>. Reviewed classes carry <code>target</code> or <code>legacy</code>. Removed from both the ontology and owl-api; proven on a running binary.</li>
+  <li><strong>The shape is the source of truth</strong> (Silas, OWL-DBA): <code>rdfs:domain</code> infers rather than constrains, and we run no reasoner, so those declarations do nothing operationally. SHACL is what refuses. <code>rdfs:domain</code>/<code>range</code> derive from the shape, never hand-maintained beside it — <em>with</em> the caveat that shape edits are therefore model edits, validated against live instance conformance before deploy.</li>
+  <li><strong>The API serves the target model; the ledger watches the dying one</strong> (Silas): a class mid-retirement does not get a shape to make it observable — that expands the surface of something we are removing. Retirement is measured by SPARQL, not served.</li>
+  <li><strong>Retiring things are not structure.</strong> Do not cite a class we are retiring as if it were core. Legacy is filtered out of the model view by default.</li>
+  <li><strong>Sequence is already set</strong> by <code>athena-product-design.html</code>: <em>"Service type-migration first (smaller, isolated), then recursive-Domain collapse."</em> The SubDomain retirement <em>is</em> the recursive-Domain collapse — step two, gated on the Service migration. Not a drive-by edit.</li>
+</ul>
+
+<h2>7 · The open question</h2>
+
+<div class="caveat">
+<strong>Is the pitch speed or legibility?</strong> "Define a value stream quickly" and "the customer can see and trust it" pull the tooling in opposite directions — one wants defaults and inference, the other wants refusals and honest gaps. Two days of evidence say inference invents judgments nobody made (born-v2 stamped ~120 unreviewed classes canonical). Unresolved, and it decides how <code>athena-model</code> behaves when a field is missing.
+</div>
+
+<h2>8 · Recommended next move</h2>
+
+<p><strong>Make Gathering the pilot customer.</strong> Not as cleanup — as the proof. Stand Gathering up as an independent model with its own namespace, value stream (now authored), domains, services and product. If that works, "model a customer's value stream quickly" has been demonstrated once, on a real subject, before anyone pays for it. It also fixes <code>/products</code>=0 as a side effect, because a second real model is what makes the product axis mean anything.</p>
+
+<h2>9 · Cards</h2>
+
+<table>
+<tr><th>Card</th><th>What</th><th>State</th></tr>
+<tr><td>#3706</td><td>One legible OWL model — manifest, dedupe, kill born-v2; then the model view</td><td>WIP (Wren)</td></tr>
+<tr><td>#3718</td><td>Rename <code>chorus-model</code> → <code>athena-model</code>; extend the governed writer to the schema layer</td><td>Later (Wren)</td></tr>
+<tr><td>#1772</td><td>Namespace convergence — one IRI scheme</td><td>Next (Silas) — sequenced <em>after</em> consolidation</td></tr>
+<tr><td>—</td><td><code>services.html</code> / <code>service.html</code> (API already live)</td><td>unfiled</td></tr>
+<tr><td>—</td><td>Generator view: committed == generated</td><td>unfiled</td></tr>
+</table>
+
+<div class="footer">Athena as a Modeling Platform · Wren · 2026-07-31 · captured from session so #3706 is built against the vision. Numbers verified live against :3340 and :3360 on the date shown; re-verify before citing.</div>
+
+</body>
+</html>

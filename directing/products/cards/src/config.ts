@@ -54,7 +54,11 @@ export const LABELS = {
     reflective: 87, reactive: 88,
   } as Record<string, number>,
   stream: {
-    sowing: 90, growing: 91, practicing: 92,
+    // #3706 — the Gathering value stream's steps, in stageOrder. `tending` was
+    // missing here while living in the ontology as a chorus:Vertebra individual;
+    // Jeff ruled 2026-07-30 that Tending IS part of the stream, between
+    // Practicing and Harvesting. The board was the incomplete surface, not the model.
+    sowing: 90, growing: 91, practicing: 92, tending: 233,
     harvesting: 93, reflecting: 94, connecting: 95,
   } as Record<string, number>,
 };

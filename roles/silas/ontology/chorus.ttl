@@ -89,14 +89,24 @@ chorus:kade a chorus:AgentRole ;
 # MODEL-VERSION CONVENTION (#3704) — v1/v2 as DECLARED DATA, not tribal knowledge.
 # Every strangler-fig migration (Vertebra→ValueStreamStep, v1→v2 products/domains)
 # is legible model-wide: ask a class "canonical or superseded?" and get an answer.
-# RULE: a class with NO chorus:modelVersion is v2/canonical (born-v2 default). A
-# superseded class carries chorus:modelVersion "v1" + chorus:supersededBy <successor>
-# (and owl:deprecated true). owl-api projects modelVersion per class (#3704 part 2);
-# the retire-guard reads supersededBy to know what to remove once the successor serves.
+# RULE (#3706, Jeff 2026-07-30 — SUPERSEDES the born-v2 default): absence of
+# chorus:modelVersion means UNCLASSIFIED — nobody has reviewed this class. It is
+# NOT canonical and must never be rendered or reasoned over as such. A reviewed
+# class carries "target" (reviewed: this is the model we are building toward) or
+# "legacy" (reviewed: being strangled, + chorus:supersededBy <successor> and
+# owl:deprecated true). Born-v2 was removed because it stamped ~120 unreviewed
+# classes as confirmed-current — a judgment nobody made.
+# TRANSITIONAL: "v1"/"v2" literals still exist in the store until the review pass
+# runs. Read v1 as legacy-with-known-successor and v2 as claimed-current-but-
+# unreviewed. They render honestly as mid-migration states, not as errors.
+# owl-api projects modelVersion per class (#3704 part 2) and MUST project absent
+# as "unclassified", never "v2" — the TTL rule and the projection land together.
+# The retire-guard reads SUBJECT PRESENCE in staging, never this literal (verified
+# 2026-07-30), so the v1→legacy change does not touch it.
 # =============================================================================
 chorus:modelVersion a owl:AnnotationProperty ;
     rdfs:label "model version" ;
-    rdfs:comment "The class's version in a strangler-fig migration: \"v1\" = superseded/deprecated, \"v2\" = current canonical. ABSENT = v2 by default (born-v2). Machine-readable so agents, pages, and the retire-guard stop guessing which grammar is current." .
+    rdfs:comment "Whether a human has REVIEWED this class and ruled on it. \"target\" = reviewed, this is the model we are building toward. \"legacy\" = reviewed, being strangled, names its successor via chorus:supersededBy. ABSENT = UNCLASSIFIED — nobody has looked; absence is never promoted to canonical (the born-v2 default was removed 2026-07-30, #3706, because it stamped ~120 unreviewed classes as confirmed-current). TRANSITIONAL: \"v1\" and \"v2\" literals persist in the store until the review pass — read v1 as legacy-with-known-successor, v2 as claimed-current-but-unreviewed. Machine-readable so agents, pages, and the retire-guard stop guessing which grammar is current." .
 
 chorus:supersededBy a owl:AnnotationProperty ;
     rdfs:label "superseded by" ;
@@ -110,7 +120,7 @@ chorus:Vertebra a owl:Class ;
     rdfs:label "Vertebra" ;
     rdfs:comment "DEPRECATED (v1, #3697) — the value-stream grammar is now ValueStreamStep/inStream/stageOrder (ratified 2026-07-15, live in urn:chorus:instances). Vertebra/belongsTo/nextStage is the retired v1 spine model. Superseded by chorus:ValueStreamStep. Physical ABox deletion + reader retirement bundled in #3702 (after #3698 serves the v2 surface and #3705 migrates the gathering/life streams). Do not add new Vertebra instances." ;
     owl:deprecated true ;
-    chorus:modelVersion "v1" ;
+    chorus:modelVersion "legacy" ;
     chorus:supersededBy chorus:ValueStreamStep ;
     rdfs:seeAlso chorus:ValueStreamStep .
 
