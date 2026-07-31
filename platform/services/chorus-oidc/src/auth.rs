@@ -22,6 +22,7 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Debug, PartialEq, Eq)]
 pub enum AuthError {
     Missing,         // no token presented
+    Hs256Retired,    // #3689 — valid-looking HS256 presented after the cutover; mint ES256 via chorus-identity-token
     Malformed,       // not a 3-part JWT / undecodable / missing claim
     BadSignature,    // HMAC mismatch
     WrongAudience,   // aud != "chorus"

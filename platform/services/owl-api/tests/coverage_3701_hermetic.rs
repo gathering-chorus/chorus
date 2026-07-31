@@ -13,6 +13,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::OnceLock;
 
 const NS: &str = "https://jeffbridwell.com/chorus#";
+const NOBODY_WEBID: &str = "http://localhost:3000/pods/chorus/_agents/nobody/profile/card.ttl#me";
 const WREN_WEBID: &str = "http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me";
 
 // ───────────────────────── the SPARQL fixture stub ─────────────────────────
@@ -73,8 +74,25 @@ fn rows_for(q: &str) -> Vec<String> {
     // #3688 / ADR-054 §3.3 — the holdsRole map the door resolves the caller's
     // role from. One row per edge, "<webid> <role>". Answered FIRST so no later
     // shape branch can claim it.
+    // #3689 — the ES256 door needs the allow-set (HS256 used the KeyRegistry
+    // and never asked). The fixture registers wren as a Principal.
+    if q.contains("chorus:Principal") && q.contains("chorus:webId") && !q.contains("chorus:holdsRole") && !q.contains("chorus:hasScope") {
+        return vec![WREN_WEBID.to_string(), NOBODY_WEBID.to_string()];
+    }
     if q.contains("chorus:holdsRole") {
         return vec![format!("{} {}role-wren", WREN_WEBID, NS)];
+    }
+    // #3689 — hasScope: the door resolves write grants from the model. The
+    // fixture grants wren the graphs the write tests exercise.
+    if q.contains("chorus:hasScope") {
+        // wren: the entity tables' instances graph + the batch test graph.
+        // NOBODY_WEBID is deliberately absent — allowed to authenticate, zero
+        // grants: the model-scope replacement for "unscoped token".
+        return vec![
+            format!("{} urn:chorus:instances", WREN_WEBID),
+            format!("{} urn:test:instances", WREN_WEBID),
+            format!("{} urn:chorus:ontology", WREN_WEBID),
+        ];
     }
     // ---- generate()-time shape queries ----
     if q.contains("FILTER(isIRI(?path)) OPTIONAL") {
@@ -266,8 +284,11 @@ fn stub_handle(stream: &mut TcpStream) {
     let resp_body = if let Some(idx) = body.find("query=") {
         let q = urldecode(&body[idx + 6..]);
         sparql_rows(&rows_for(&q))
+    } else if req.contains("/.oidc/jwks") {
+        // #3689 — the fixture CSS publishes the test key: ES256 replaced the
+        // HS256 fixtures when the legacy arm was deleted.
+        test_jwks_json()
     } else {
-        // GET /.oidc/jwks and friends — valid-but-empty JSON
         "{}".to_string()
     };
     let resp = format!(
@@ -291,9 +312,16 @@ fn start_stub() -> u16 {
     port
 }
 
-// ───────────────────────── token minting (HS256, zero extra deps) ──────────
+// ──────────────── token minting — #3689: ES256, the only family the door
+// accepts since the HS256 arm was deleted. Deterministic P-256 test key; the
+// stub CSS publishes its public half at /.oidc/jwks exactly as CSS would.
+// The `scope` parameter is retained in the signature but UNUSED: scope is
+// model data (chorus:hasScope fixture rows), not a claim — passing a claim
+// scope here would test a mechanism that no longer exists.
+use p256::ecdsa::signature::Signer as _;
 
 fn b64url(data: &[u8]) -> String {
+    // RFC 4648 §5, unpadded — same table the real minters use.
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::new();
     for chunk in data.chunks(3) {
@@ -301,38 +329,38 @@ fn b64url(data: &[u8]) -> String {
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(T[(n >> 18) as usize & 63] as char);
         out.push(T[(n >> 12) as usize & 63] as char);
-        if chunk.len() > 1 {
-            out.push(T[(n >> 6) as usize & 63] as char);
-        }
-        if chunk.len() > 2 {
-            out.push(T[n as usize & 63] as char);
-        }
+        if chunk.len() > 1 { out.push(T[(n >> 6) as usize & 63] as char); }
+        if chunk.len() > 2 { out.push(T[n as usize & 63] as char); }
     }
     out
 }
 
-fn mint_token(web_id: &str, scope: Option<&[&str]>) -> String {
-    use hmac::{Hmac, Mac};
-    type H = Hmac<sha2::Sha256>;
-    let header = b64url(br#"{"alg":"HS256","typ":"JWT"}"#);
-    let scope_j = scope
-        .map(|s| {
-            format!(
-                ",\"scope\":[{}]",
-                s.iter().map(|g| format!("\"{}\"", g)).collect::<Vec<_>>().join(",")
-            )
-        })
-        .unwrap_or_default();
-    let payload = format!(
-        "{{\"agentId\":\"wren\",\"webId\":\"{}\",\"aud\":\"chorus\",\"exp\":4102444800{}}}",
-        web_id, scope_j
-    );
-    let p = b64url(payload.as_bytes());
-    let signing = format!("{}.{}", header, p);
-    let mut mac = H::new_from_slice(b"test-secret-3701").unwrap();
-    mac.update(signing.as_bytes());
-    let sig = b64url(&mac.finalize().into_bytes());
-    format!("{}.{}.{}", header, p, sig)
+const TEST_KID: &str = "hermetic-css-key-1";
+
+fn test_signing_key() -> p256::ecdsa::SigningKey {
+    p256::ecdsa::SigningKey::from_slice(&[7u8; 32]).expect("valid scalar")
+}
+
+fn test_jwks_json() -> String {
+    let point = test_signing_key().verifying_key().to_encoded_point(false);
+    format!(
+        r#"{{"keys":[{{"kty":"EC","crv":"P-256","alg":"ES256","kid":"{}","x":"{}","y":"{}"}}]}}"#,
+        TEST_KID, b64url(point.x().unwrap()), b64url(point.y().unwrap()),
+    )
+}
+
+fn mint_token(web_id: &str, _scope: Option<&[&str]>) -> String {
+    let header = b64url(format!(r#"{{"alg":"ES256","typ":"JWT","kid":"{}"}}"#, TEST_KID).as_bytes());
+    // iss must equal the CSS_ISSUER the World pinned (the stub base) — verify
+    // checks issuer before anything else.
+    let iss = std::env::var("CSS_ISSUER").expect("World sets CSS_ISSUER before minting");
+    let payload = b64url(format!(
+        "{{\"iss\":\"{}\",\"webid\":\"{}\",\"aud\":\"solid\",\"exp\":4102444800}}",
+        iss, web_id
+    ).as_bytes());
+    let signing_input = format!("{}.{}", header, payload);
+    let sig: p256::ecdsa::Signature = test_signing_key().sign(signing_input.as_bytes());
+    format!("{}.{}.{}", header, payload, b64url(&sig.to_bytes()))
 }
 
 // ───────────────────────── the world (env set ONCE) ────────────────────────
@@ -682,12 +710,14 @@ fn writes_require_authn_and_respect_scope() {
     let (c, _, b) = http("POST", "/domains", &[], "{\"name\":\"x\"}");
     assert_eq!(c, 401);
     assert!(b.contains("authn-missing"), "{}", b);
-    // scoped token, out-of-scope target graph → 403
-    let tok = mint_token(WREN_WEBID, Some(&["urn:other:graph"]));
+    // #3689 — out-of-scope target → 403. Scope is the Principal's hasScope
+    // grants; wren is granted urn:{chorus,test}:instances + urn:chorus:ontology,
+    // and urn:other:graph is not among them. (The mint's scope param is inert.)
+    let tok = mint_token(WREN_WEBID, None);
     let (c, _, b) = http(
         "POST",
         "/domains",
-        &[("Authorization", &bearer(&tok)), ("x-target-graph", "urn:test:instances")],
+        &[("Authorization", &bearer(&tok)), ("x-target-graph", "urn:other:graph")],
         "{\"name\":\"x\"}",
     );
     assert_eq!(c, 403);
@@ -774,8 +804,9 @@ fn batch_route_is_gated_and_delegates_typed_slots() {
     let (c, _, b) = http("POST", "/batch", &[], "INS\turn:s\turn:p\to");
     assert_eq!(c, 401);
     assert!(b.contains("authn-missing"), "{}", b);
-    // unscoped token → 403 (batch REQUIRES scope)
-    let tok = mint_token(WREN_WEBID, None);
+    // #3689 — a principal with NO hasScope grants → 403 (batch REQUIRES scope;
+    // scope is model data, so "unscoped" means "granted nothing").
+    let tok = mint_token(NOBODY_WEBID, None);
     let (c, _, b) = http(
         "POST",
         "/batch",

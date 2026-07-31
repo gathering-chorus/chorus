@@ -71,11 +71,11 @@ files=0; edges=0; failures=0; batch_body=""
 # (Wren's gated-fallback floor, 2026-07-03).
 USE_DOOR="${CHORUS_WRITE_DOOR:-0}"
 DOOR_BASE="${OWL_API_BASE:-http://localhost:3360}"
-MINT_BIN="${CHORUS_ROOT}/platform/scripts/chorus-mint-token.py"
+MINT_BIN="${CHORUS_ROOT}/platform/scripts/chorus-identity-token"   # #3689: ES256 identity; scope=urn:chorus:instances is a model grant
 DOOR_WEBID="${CHORUS_AGENT_WEBID:-http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me}"
 door_body=""; BEARER=""
 if [ "$USE_DOOR" = "1" ]; then
-  BEARER=$(python3 "$MINT_BIN" --web-id "$DOOR_WEBID" --scope "$HYDRATION_GRAPH" 2>/dev/null)
+  BEARER=$("$MINT_BIN" "${CHORUS_ROLE:-silas}" 2>/dev/null)
   if [ -z "$BEARER" ]; then
     echo "enrichment-write-fileInDomain: door mint failed — falling back to raw path" >&2
     USE_DOOR=0

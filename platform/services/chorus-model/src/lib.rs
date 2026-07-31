@@ -624,6 +624,7 @@ impl OidcTokenVerifier {
         let allow_endpoint =
             std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| FUSEKI.to_string());
         let role_endpoint = allow_endpoint.clone();
+        let scope_endpoint = allow_endpoint.clone();
         let inner = chorus_oidc::oidc::OidcVerifier::new(
             &css_issuer,
             // allow-set: re-resolve lazily on the ALLOW_TTL cadence so a model
@@ -640,6 +641,12 @@ impl OidcTokenVerifier {
             move || {
                 chorus_oidc::oidc::resolve_principal_roles(|q| {
                     fuseki_query_json(&role_endpoint, q).ok()
+                })
+            },
+            // #3689 — hasScope resolver, same one-configuration rule as roles.
+            move || {
+                chorus_oidc::oidc::resolve_principal_scopes(|q| {
+                    fuseki_query_json(&scope_endpoint, q).ok()
                 })
             },
             move || {

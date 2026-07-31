@@ -81,10 +81,9 @@ errors=0
 # EnvelopeRefusalRegression firing on a real caller.
 TRACE_AUTH=""
 if [ -f "$HOME/.chorus/secrets/chorus-realm.env" ]; then
-  TRACE_AUTH=$(set -a; . "$HOME/.chorus/secrets/chorus-realm.env" 2>/dev/null; \
-    python3 "$HOME/CascadeProjects/chorus/platform/scripts/chorus-mint-token.py" \
-      --web-id "http://localhost:3000/pods/chorus/_agents/chorus-sdk/profile/card.ttl#me" \
-      --scope "urn:chorus:ops" --ttl 1800 2>/dev/null || true)
+  # #3689 — ES256 identity; scope (urn:chorus:ops) is a chorus:hasScope grant
+  # on principal-chorus-sdk in the model, not a claim.
+  TRACE_AUTH=$("$HOME/CascadeProjects/chorus/platform/scripts/chorus-identity-token" chorus-sdk 2>/dev/null || true)
 fi
 
 trace_hop() {
