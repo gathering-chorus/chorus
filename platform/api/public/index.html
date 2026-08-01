@@ -63,8 +63,14 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 (async function() {
   try {
     // #3603: /api/chorus/products retired with the SubProduct layer — owl-api
-    // :3360/products (generated from chorus:ProductShape) is the product API.
-    const res = await fetch('http://localhost:3360/products');
+    // /products (generated from chorus:ProductShape) is the product API.
+    // #3706 — SAME-ORIGIN via the chorus-api /owl proxy, the same base
+    // athena-flow.js uses (#3644: "the old hostname:3360 broke off-LAN").
+    // This page still hardcoded http://localhost:3360, so from any device that
+    // is not this machine the fetch resolved to the VIEWER's localhost and the
+    // product tiles silently never rendered — Jeff hit exactly that on his phone
+    // over wifi, 2026-08-01 ("Failed to load: Load failed").
+    const res = await fetch('/owl/products');
     const data = await res.json();
     const container = document.getElementById('products');
 
@@ -78,18 +84,25 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       'Gathering': 'Personal knowledge graph — 13 content domains. What Jeff collects and cultivates.',
     };
 
+    // #3706 — hrefs are host-relative wherever chorus-api serves them, and
+    // built from location.hostname where they point at another service on the
+    // same box. Hardcoded localhost is dead on every device except this one.
+    const HOST = location.hostname;
+    const app = p => `${location.protocol}//${HOST}:3000${p}`;
     const pageLinks = {
-      'Loom': [{ label: 'Loom Dashboard', href: 'http://localhost:3000/loom' }],
+      'Loom': [{ label: 'Loom Dashboard', href: app('/loom') }],
       'Athena': [
-        { label: 'Domain Detail', href: 'http://localhost:3000/gathering-docs/domain-detail.html' },
+        { label: 'Model', href: '/athena/model.html' },
+        { label: 'Domains', href: '/athena/domains.html' },
+        { label: 'Value Stream', href: '/athena/value-stream.html' },
       ],
       'Werk': [
-        { label: 'Werk Dashboard', href: 'http://localhost:3000/werk' },
+        { label: 'Werk Dashboard', href: app('/werk') },
         // #3656: quality is part of werk (Jeff's call) and served by chorus-api
         // itself — relative href so it also works through the share tunnel.
         { label: 'Quality Service', href: '/werk/quality/' },
       ],
-      'The Clearing': [{ label: 'The Clearing', href: 'http://localhost:3470' }],
+      'The Clearing': [{ label: 'The Clearing', href: `${location.protocol}//${HOST}:3470` }],
       'Borg': [
         { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],
