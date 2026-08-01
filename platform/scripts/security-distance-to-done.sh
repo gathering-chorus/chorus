@@ -5,8 +5,14 @@
 # DONE means, in full (Jeff's arc: model-driven + automated so we can retire):
 #   ONE verify path (ES256/CSS only — no HS256 arm),
 #   ONE key model (no shared secret anywhere in live code),
-#   identity AND scope resolved from the model (allow-set, holdsRole, scoped
-#   ES256 tokens), and the store refusing unauthenticated writes.
+#   identity AND scope resolved from the model (allow-set, holdsRole,
+#   chorus:hasScope grants — #3689 decided scope is MODEL DATA, not a token
+#   claim), and the store refusing unauthenticated writes.
+#
+# INSTRUMENT EXCLUSION (#3719): this script and its test measure the system —
+# they are not part of it. Their own occurrences of the measured strings are
+# excluded, else the ledger counts itself and the distance can never reach 0
+# (the observer effect Jeff caught at 42).
 # Every item below measures one gap. 0 = closed. A measurement that CANNOT run
 # reports "unknown" — never zero. Zero you didn't measure is how fuseki-harvest
 # lied for 78 days.
@@ -30,6 +36,7 @@ item(){ NAMES+=("$1"); VALUES+=("$2"); NOTES+=("${3:-}"); }
 # entire life of this script. chorus-mint-token.py itself counts: it is the
 # artifact whose deletion the goal state requires.
 a_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist \
+          --exclude=security-distance-to-done.sh --exclude=test-security-distance-to-done.sh \
           "chorus-mint-token" "$C/platform" 2>/dev/null); a_rc=$?
 b_files=$(grep -rlE 'alg.*HS256|createHmac.*sha256' \
           "$C/platform/chorus-sdk/src" "$C/platform/mcp-server/src" 2>/dev/null); b_rc=$?
@@ -49,6 +56,7 @@ else
 fi
 # ── shared_secret_refs: non-test live code reading the shared secret ─────────
 ref_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=dist.prev \
+       --exclude=security-distance-to-done.sh --exclude=test-security-distance-to-done.sh \
        "CHORUS_SERVICE_TOKEN_SECRET" "$C/platform" 2>/dev/null); r_rc=$?
 if [ $r_rc -ge 2 ]; then
   item shared_secret_refs unknown "grep failed — NOT measured"
@@ -70,14 +78,32 @@ else
   item hs256_verify_branch 0 "legacy arm deleted (no auth::verify_token call remains)"
 fi
 
-# ── scoped_es256_missing: can chorus-identity-token mint a scoped token? ─────
-CIT="$C/platform/scripts/chorus-identity-token"
-if [ ! -r "$CIT" ]; then
-  item scoped_es256_missing unknown "chorus-identity-token unreadable — NOT measured"
-elif grep -q '\-\-scope' "$CIT"; then
-  item scoped_es256_missing 0 "scoped mint exists"
+# ── model_scope_missing: does the door resolve scope from the MODEL? ─────────
+# REDEFINED by #3689/#3719: the old item measured a --scope mint flag we decided
+# NEVER to build (CSS can't issue scoped client_credentials — spiked live; a
+# self-declared scope claim was the disease). The decided mechanism is
+# chorus:hasScope grants resolved at the door. Two legs, both required:
+# the resolver in the verify path (code) AND live grant edges (model).
+OIDC_RS="$C/platform/services/chorus-oidc/src/oidc.rs"
+if [ ! -r "$OIDC_RS" ]; then
+  item model_scope_missing unknown "oidc.rs unreadable — NOT measured"
+elif ! grep -q "resolve_principal_scopes" "$OIDC_RS"; then
+  item model_scope_missing 1 "door has no chorus:hasScope resolver (the #3689 mechanism)"
 else
-  item scoped_es256_missing 1 "chorus-identity-token has no --scope (the #3689 rung)"
+  # single-request truth: the CSV header proves THIS query was answered
+  sresp=$(curl -s -m 15 "${FUSEKI_QUERY_URL:-http://localhost:3030/pods/query}" \
+    --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?s) AS ?n) WHERE { GRAPH <urn:chorus:domains:security> { ?p chorus:hasScope ?s } }' \
+    -H "Accept: text/csv" 2>/dev/null)
+  if ! printf '%s' "$sresp" | head -1 | grep -q '^n'; then
+    item model_scope_missing unknown "no CSV header — grant query not answered"
+  else
+    edges=$(printf '%s\n' "$sresp" | sed -n '2p' | tr -dc '0-9')
+    if [ "${edges:-0}" -gt 0 ]; then
+      item model_scope_missing 0 "door resolves chorus:hasScope; $edges live grant edges"
+    else
+      item model_scope_missing 1 "resolver present but ZERO grant edges in the security graph"
+    fi
+  fi
 fi
 
 # ── principals_without_holdsrole: measured live, by-design set NAMED ─────────

@@ -3126,24 +3126,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
     eprintln!("owl-api: serving {} generated API(s) on :{} [{}] (read-only; writes go through chorus-model)", tables.len(), port, classes.join(", "));
     let mut req_counter: u64 = 0;
-    // #3402/#3573 — seam auth config, loaded ONCE (no per-request env read, no graph
-    // call). #3573 (b): the single shared secret is now a per-product KeyRegistry,
-    // resolved from phase-1 static rows + an env-reader (key_id → bytes). Phase-1 maps
-    // the 3 chorus agents → "chorus" → CHORUS_SERVICE_TOKEN_SECRET, so this is a strict
-    // superset of #3402 (nothing regresses); phase-2 swaps the row SOURCE to the model
-    // projection without touching this call-site (the KeyRegistry/verify_token contract).
-    let registry = auth::KeyRegistry::resolve(
-        &auth::phase1_registry_rows(),
-        |kid| std::env::var(kid).ok().map(|s| s.into_bytes()),
-    );
-    if std::env::var("CHORUS_SERVICE_TOKEN_SECRET").unwrap_or_default().is_empty() {
-        // fail-closed (verify rejects), but say so loudly — secured surfaces will 401.
-        eprintln!("owl-api: WARNING — CHORUS_SERVICE_TOKEN_SECRET unset; secured surfaces will reject ALL requests (fail-closed).");
-    }
+    // #3402→#3719 — the HS256 KeyRegistry/shared-secret seam config that loaded
+    // here was DELETED with the machinery: the ES256/CSS verifier below is the
+    // ONE verify path (identity from the token, scope from the model).
     // #3613 / ADR-052 — the ES256 (Solid-OIDC/CSS) verifier, built ONCE at boot:
     // issuer from env (deployment config, not per-principal data — §5), the
     // Principal allow-set resolved from the model in ONE boot query (§5; empty ⇒
-    // ES256 fail-closed while the HS256 dual path keeps existing writers alive),
+    // fail-closed),
     // JWKS fetched via curl with a kid-keyed cache (§2). Warm-fetch warns loudly
     // on CSS-down-at-boot but never blocks boot.
     let css_issuer = std::env::var("CSS_ISSUER").unwrap_or_else(|_| "http://localhost:3001/".to_string());
@@ -3327,7 +3316,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            let (code, body) = match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
+            let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
                 Err(_) => (
                     401u16,
                     "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
@@ -3384,7 +3373,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 .strip_prefix("Bearer ")
                 .or_else(|| auth_hdr.strip_prefix("bearer "))
                 .unwrap_or(&auth_hdr);
-            match oidc::verify_any(token, &registry, &oidc_verifier, now_secs) {
+            match oidc::verify_any(token, &oidc_verifier, now_secs) {
                 Err(_) => {
                     let (c, t) = write_status("authn-missing");
                     ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
@@ -3422,7 +3411,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 }
             }
         } else {
-            match oidc::seam_auth_any(&path, &header("authorization"), &registry, &oidc_verifier, now_secs, &table.secured) {
+            match oidc::seam_auth_any(&path, &header("authorization"), &oidc_verifier, now_secs, &table.secured) {
                 Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
                 None => {
                     let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
@@ -3430,7 +3419,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     // gates `internal`-exposure fields on an exposure-enforced shape.
                     let ah = header("authorization");
                     let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
-                    let authed = oidc::verify_any(tok, &registry, &oidc_verifier, now_secs).is_ok();
+                    let authed = oidc::verify_any(tok, &oidc_verifier, now_secs).is_ok();
                     handle_meta(&hp, table, authed)
                 }
             }

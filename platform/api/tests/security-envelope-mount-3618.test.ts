@@ -8,23 +8,38 @@
  * only when enabled + a surface matches.
  *
  * Own world (#3528): in-process express app on an ephemeral port, injected
- * secret/clock/emit — no live stack.
+ * verifier (generated EC key + stub JWKS/sparql, #3719)/emit — no live stack.
  */
 import express from 'express';
 import * as crypto from 'crypto';
 import { AddressInfo } from 'net';
 import { securityEnvelope, type SecuredSurface } from '../src/security-envelope';
+import { createIdentityVerifier } from '../src/es256-identity';
 
-const SECRET = 'test-secret-3618';
 const NOW = 1_800_000_000;
+const ISSUER = 'https://id.test.example/';
+const KID = 'mount-test-key';
+const WEBID = 'http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me';
+const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
 function b64url(s: Buffer | string): string { return Buffer.from(s).toString('base64url'); }
-function token(scope: string[] = ['urn:chorus:index']): string {
-  const h = b64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const c = b64url(JSON.stringify({ webId: 'x', aud: 'chorus', exp: NOW + 300, scope }));
-  const s = b64url(crypto.createHmac('sha256', SECRET).update(`${h}.${c}`).digest());
-  return `${h}.${c}.${s}`;
+function token(): string {
+  const h = b64url(JSON.stringify({ alg: 'ES256', typ: 'at+jwt', kid: KID }));
+  const c = b64url(JSON.stringify({ iss: ISSUER, webid: WEBID, exp: NOW + 300 }));
+  const sig = crypto.sign('sha256', Buffer.from(`${h}.${c}`), { key: privateKey, dsaEncoding: 'ieee-p1363' });
+  return `${h}.${c}.${b64url(sig)}`;
 }
+
+const verify = createIdentityVerifier({
+  issuer: ISSUER,
+  jwksUrl: 'http://css.test/.oidc/jwks',
+  sparql: () => Promise.resolve({ results: { bindings: [{ s: { value: 'urn:chorus:index' } }] } }),
+  nowSecs: () => NOW,
+  fetchFn: (async () => ({
+    ok: true,
+    json: async () => ({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: KID, alg: 'ES256', use: 'sig' }] }),
+  })) as unknown as typeof fetch,
+});
 
 const SURFACE: SecuredSurface = {
   method: 'POST', pathPrefix: '/api/chorus/reindex', requiresScope: 'urn:chorus:index', surface: 'surface-index-writes',
@@ -36,8 +51,7 @@ function makeApp(opts: { enabled: boolean; surfaces: SecuredSurface[] }) {
   const events: string[] = [];
   app.use(securityEnvelope({
     getSurfaces: () => state.surfaces,
-    secret: SECRET,
-    nowSecs: () => NOW,
+    verify,
     emit: (e) => events.push(e),
     enabled: state.enabled,
   }));
@@ -66,7 +80,7 @@ describe('securityEnvelope mount (#3618)', () => {
     await new Promise<void>((r) => server.close(() => r()));
   });
 
-  test('enabled + valid scoped token → 200', async () => {
+  test('enabled + valid ES256 identity token (model-granted) → 200', async () => {
     const { app } = makeApp({ enabled: true, surfaces: [SURFACE] });
     const server = app.listen(0);
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

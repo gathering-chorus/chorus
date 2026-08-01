@@ -267,7 +267,7 @@ function maybeFireTrace(entry: SpineEvent, extra: Partial<Record<string, string 
   // #3619 — /api/chorus/trace is behind the security envelope; carry a scoped
   // token when a secret is resolvable, else send bare (fail-open — the emit
   // contract is fire-and-forget, a missing local secret never breaks it).
-  const token = mintServiceToken(['urn:chorus:ops']);
+  const token = mintServiceToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   fetch('http://localhost:3340/api/chorus/trace', {

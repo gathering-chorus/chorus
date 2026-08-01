@@ -15,8 +15,8 @@
  * surface with no table entry passes untouched — the graph shows what's gated
  * (securedBy edge) and what isn't, so #3619 can query its own remaining work.
  */
-import * as crypto from 'crypto';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { VerifyResult } from './es256-identity';
 
 export interface SecuredSurface {
   method: string;       // mutation verb: POST | PUT | DELETE | PATCH
@@ -33,8 +33,9 @@ export interface EnvelopeRequest {
 
 export interface EnvelopeDeps {
   surfaces: SecuredSurface[];
-  secret: string;
-  nowSecs: () => number;
+  /** #3719 — the ES256 identity verifier (es256-identity.ts). Owns JWKS,
+   *  issuer, exp, and model-resolved scope; the envelope only decides. */
+  verify: (token: string) => Promise<VerifyResult>;
 }
 
 export interface EnvelopeEvent {
@@ -49,40 +50,8 @@ export interface EnvelopeDecision {
   events: EnvelopeEvent[];
 }
 
-interface Claims {
-  webId: string;
-  aud: string;
-  exp: number;
-  scope: string[];
-}
-
-function b64urlDecode(s: string): Buffer {
-  return Buffer.from(s, 'base64url');
-}
-
-/** Verify an HS256 service token; null on ANY failure (fail closed, no reasons leaked). */
-function verifyToken(token: string, secret: string, nowSecs: number): Claims | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const [header, payload, sig] = parts;
-  const expected = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest();
-  const got = b64urlDecode(sig);
-  if (got.length !== expected.length || !crypto.timingSafeEqual(got, expected)) return null;
-  let claims: Partial<Claims>;
-  try {
-    claims = JSON.parse(b64urlDecode(payload).toString('utf-8'));
-  } catch {
-    return null;
-  }
-  if (claims.aud !== 'chorus') return null;
-  if (typeof claims.exp !== 'number' || claims.exp <= nowSecs) return null;
-  if (typeof claims.webId !== 'string' || claims.webId.length === 0) return null;
-  const scope = Array.isArray(claims.scope) ? claims.scope.filter((s) => typeof s === 'string') : [];
-  return { webId: claims.webId, aud: claims.aud, exp: claims.exp, scope };
-}
-
 /** The pure decision core — no Express, no I/O, fully injectable. */
-export function decideEnvelope(req: EnvelopeRequest, deps: EnvelopeDeps): EnvelopeDecision {
+export async function decideEnvelope(req: EnvelopeRequest, deps: EnvelopeDeps): Promise<EnvelopeDecision> {
   const match = deps.surfaces.find(
     (s) => s.method === req.method && req.path.startsWith(s.pathPrefix),
   );
@@ -97,23 +66,29 @@ export function decideEnvelope(req: EnvelopeRequest, deps: EnvelopeDeps): Envelo
     : req.authorization.startsWith('bearer ')
       ? req.authorization.slice(7)
       : '';
-  const claims = token ? verifyToken(token, deps.secret, deps.nowSecs()) : null;
+  const result = token ? await deps.verify(token) : null;
 
-  if (!claims) {
+  if (!result || !result.ok) {
+    const retired = result?.reason === 'hs256-retired';
+    const reason = retired ? 'hs256-retired' : 'authn-missing';
     events.push({
       event: 'security.envelope.refused',
-      fields: { surface: match.surface, path: req.path, reason: 'authn-missing' },
+      fields: { surface: match.surface, path: req.path, reason },
     });
     return {
       action: 'refuse',
       status: 401,
-      body: { error: 'authn-missing', message: 'a valid Bearer service-token is required for this surface' },
+      body: retired
+        ? { error: 'hs256-retired', message: 'HS256 service tokens are retired (#3719) — present a CSS ES256 identity token' }
+        : { error: 'authn-missing', message: 'a valid Bearer identity token is required for this surface' },
       events,
     };
   }
+  const claims = result;
 
-  // The envelope never honors a legacy/unscoped token (same Wren gate as /batch):
-  // empty scope = refuse, and the scope set must name this surface's requirement.
+  // Scope is the Principal's chorus:hasScope GRANTS from the model, not a
+  // token claim (#3689/#3719): no grant = refuse, and the grant set must name
+  // this surface's requirement.
   if (claims.scope.length === 0 || !claims.scope.includes(match.requiresScope)) {
     events.push({
       event: 'security.envelope.refused',
@@ -122,7 +97,7 @@ export function decideEnvelope(req: EnvelopeRequest, deps: EnvelopeDeps): Envelo
     return {
       action: 'refuse',
       status: 403,
-      body: { error: 'out-of-scope', message: `this surface requires a token scoped to '${match.requiresScope}'` },
+      body: { error: 'out-of-scope', message: `this surface requires a Principal granted scope '${match.requiresScope}'` },
       events,
     };
   }
@@ -138,8 +113,7 @@ export interface EnvelopeAdapterDeps {
   // The surface table is read per-request via a getter so the server can load
   // it asynchronously at boot and swap it in without re-mounting the middleware.
   getSurfaces: () => SecuredSurface[];
-  secret: string;
-  nowSecs: () => number;
+  verify: (token: string) => Promise<VerifyResult>;
   emit: (event: string, fields: Record<string, string>) => void;
   // Deploy-before-require: default OFF. The gate goes live only when the flip
   // step sets this true, AFTER the surface's consumers carry credentials.
@@ -151,15 +125,20 @@ export interface EnvelopeAdapterDeps {
 export function securityEnvelope(deps: EnvelopeAdapterDeps): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!deps.enabled) { next(); return; }
-    const decision = decideEnvelope(
-      { method: req.method, path: req.path, authorization: req.headers.authorization ?? '' },
-      { surfaces: deps.getSurfaces(), secret: deps.secret, nowSecs: deps.nowSecs },
-    );
-    for (const e of decision.events) deps.emit(e.event, e.fields);
-    if (decision.action === 'refuse') {
-      res.status(decision.status ?? 401).json(decision.body);
-      return;
-    }
-    next();
+    void (async () => {
+      const decision = await decideEnvelope(
+        { method: req.method, path: req.path, authorization: req.headers.authorization ?? '' },
+        { surfaces: deps.getSurfaces(), verify: deps.verify },
+      );
+      for (const e of decision.events) deps.emit(e.event, e.fields);
+      if (decision.action === 'refuse') {
+        res.status(decision.status ?? 401).json(decision.body);
+        return;
+      }
+      next();
+    })().catch(() => {
+      // a verifier crash must fail CLOSED on a secured surface, not hang the request
+      res.status(401).json({ error: 'authn-error', message: 'identity verification failed' });
+    });
   };
 }

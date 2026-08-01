@@ -27,7 +27,7 @@
 //! RustCrypto crate — hand-rolling ECDSA is a security anti-pattern, exactly
 //! the #3402 exception extended to the asymmetric upgrade.
 
-use crate::auth::{self, AuthError, Claims, KeyRegistry};
+use crate::auth::{self, AuthError, Claims};
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
 use std::cell::RefCell;
@@ -341,14 +341,11 @@ impl OidcVerifier {
     }
 }
 
-/// ADR-052 §8 dual-verify: ONE entry the seam calls for every token. The
-/// header `alg` (untrusted) selects the verify path; each path then proves the
-/// token cryptographically or refuses. Either valid identity is accepted
-/// during rollout; the HS256 arm is deleted when #3611 migrates the last
-/// writer.
+/// THE one verify entry the seam calls for every token. The header `alg`
+/// (untrusted) is read only to produce a PRECISE refusal for legacy tokens —
+/// there is one verify path: ES256 against the CSS JWKS (#3689/#3719).
 pub fn verify_any(
     token: &str,
-    registry: &KeyRegistry,
     oidc: &OidcVerifier,
     now_secs: u64,
 ) -> Result<Claims, AuthError> {
@@ -362,15 +359,12 @@ pub fn verify_any(
         .and_then(auth::b64url_decode)
         .and_then(|b| String::from_utf8(b).ok())
         .and_then(|h| auth::json_string(&h, "alg"));
-    // #3689 — THE CUTOVER. The HS256 arm is DELETED: one verify path, one key
-    // model. Every caller migrated (werk-test + the four ops scripts) mints
-    // ES256 identity via chorus-identity-token; scope is model data
+    // #3689 — THE CUTOVER (completed by #3719: the envelope door + sdk/mcp
+    // minters migrated too, KeyRegistry deleted). One verify path, one key
+    // model: ES256 identity via chorus-identity-token; scope is model data
     // (chorus:hasScope). A stale HS256 token — or alg=none, or anything that
     // is not ES256 — gets a TYPED refusal naming the retirement, never a
-    // silent accept and never a fallback. `registry` stays in the signature
-    // until the chorus-api envelope door migrates (its own card); it is unused
-    // here by design.
-    let _ = registry;
+    // silent accept and never a fallback.
     match alg.as_deref() {
         Some("ES256") => oidc.verify(t, now_secs),
         Some("HS256") => Err(AuthError::Hs256Retired),
@@ -378,14 +372,12 @@ pub fn verify_any(
     }
 }
 
-/// The GET-seam gate, dual-verify edition — same contract as auth::seam_auth
-/// (None = proceed; Some((code, body)) = short-circuit), same 401/403 split,
-/// but every token goes through verify_any. auth::seam_auth stays untouched as
-/// the legacy-only reference and dies with the HS256 arm.
+/// The GET-seam gate (None = proceed; Some((code, body)) = short-circuit),
+/// 401/403 split; every token goes through verify_any. (auth::seam_auth, the
+/// HS256 reference it once mirrored, died with the machinery — #3719.)
 pub fn seam_auth_any(
     path: &str,
     authorization: &str,
-    registry: &KeyRegistry,
     oidc: &OidcVerifier,
     now_secs: u64,
     secured: &[String],
@@ -397,7 +389,7 @@ pub fn seam_auth_any(
         .strip_prefix("Bearer ")
         .or_else(|| authorization.strip_prefix("bearer "))
         .unwrap_or("");
-    match verify_any(token, registry, oidc, now_secs) {
+    match verify_any(token, oidc, now_secs) {
         Ok(_) => None,
         Err(AuthError::WebIdNotAllowed) => {
             Some((403, auth::err_body("forbidden", &AuthError::WebIdNotAllowed)))
@@ -734,8 +726,7 @@ mod tests {
     fn no_token_401() {
         let v = verifier();
         assert_eq!(v.verify("", NOW), Err(AuthError::Missing));
-        let reg = KeyRegistry::resolve(&[], |_| None);
-        let r = seam_auth_any("/schema/domain", "", &reg, &v, NOW, &["/schema/domain".to_string()]);
+        let r = seam_auth_any("/schema/domain", "", &v, NOW, &["/schema/domain".to_string()]);
         assert_eq!(r.map(|(c, _)| c), Some(401));
     }
 
@@ -796,19 +787,15 @@ mod tests {
     #[test]
     fn hs256_is_refused_with_a_typed_error() {
         let secret: &[u8] = b"test-chorus-service-token-secret";
-        let reg = KeyRegistry::resolve(
-            &[(wren_webid(), "chorus".to_string(), "K".to_string())],
-            |_| Some(secret.to_vec()),
-        );
         let hs = crate::auth::mint_hs256_for_tests(
             secret,
             &format!(r#"{{"agentId":"wren","webId":"{}","aud":"chorus","exp":{}}}"#, wren_webid(), NOW + 3600),
         );
         let v = verifier();
-        assert_eq!(verify_any(&hs, &reg, &v, NOW), Err(AuthError::Hs256Retired),
+        assert_eq!(verify_any(&hs, &v, NOW), Err(AuthError::Hs256Retired),
             "a valid HS256 signature is refused BY POLICY, with the reason named");
         // ES256 still verifies through the same single entry.
-        assert!(verify_any(&token_valid(), &reg, &v, NOW).is_ok());
+        assert!(verify_any(&token_valid(), &v, NOW).is_ok());
     }
 
     // case 10 — attribution-is-webid: the actor is the VERIFIED WebID; nothing
@@ -836,11 +823,9 @@ mod tests {
         v.warm_allow(NOW);
         // wren's (valid, CSS-signed) token against a silas-only allow-set
         assert_eq!(v.verify(&token_valid(), NOW), Err(AuthError::WebIdNotAllowed));
-        let reg = KeyRegistry::resolve(&[], |_| None);
         let r = seam_auth_any(
             "/schema/domain",
             &format!("Bearer {}", token_valid()),
-            &reg,
             &v,
             NOW,
             &["/schema/domain".to_string()],
@@ -908,12 +893,8 @@ mod tests {
         let header = b64url_encode(br#"{"alg":"none","typ":"JWT"}"#);
         let p = b64url_encode(payload(ISSUER, "chorus", &wren_webid(), NOW + 3600).as_bytes());
         let t = format!("{}.{}.", header, p);
-        let reg = KeyRegistry::resolve(
-            &[(wren_webid(), "chorus".to_string(), "K".to_string())],
-            |_| Some(b"secret".to_vec()),
-        );
         let v = verifier();
-        assert!(verify_any(&t, &reg, &v, NOW).is_err(), "alg=none must never verify");
+        assert!(verify_any(&t, &v, NOW).is_err(), "alg=none must never verify");
     }
 
     // model-resolved allow-set (ADR-052 §5): resolves Principal.webId rows;

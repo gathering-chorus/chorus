@@ -3,7 +3,7 @@
 //! (CHORUS_MODEL_BIN) absorbs writes, and a REAL serve() loop runs on a scratch
 //! port. No live Fuseki, no $HOME/~/.chorus state, no live owl-api — the test
 //! brings its own world (CHORUS_FUSEKI / CHORUS_HOME / CHORUS_MODEL_BIN /
-//! CHORUS_SERVICE_TOKEN_SECRET / CSS_ISSUER are all set ONCE in the OnceLock
+//! CSS_ISSUER etc. are all set ONCE in the OnceLock
 //! world() init, before any test logic runs — env mutation is serialized by
 //! construction; no test changes env afterwards).
 
@@ -395,7 +395,6 @@ fn world() -> &'static World {
         std::env::set_var("CHORUS_FUSEKI", &stub_base);
         std::env::set_var("CHORUS_HOME", home.to_str().unwrap());
         std::env::set_var("CHORUS_MODEL_BIN", dal.to_str().unwrap());
-        std::env::set_var("CHORUS_SERVICE_TOKEN_SECRET", "test-secret-3701");
         std::env::set_var("CSS_ISSUER", &stub_base);
         // generate() against the stub — the same tables serve() mounts
         let domain = generate("Domain").expect("generate Domain");

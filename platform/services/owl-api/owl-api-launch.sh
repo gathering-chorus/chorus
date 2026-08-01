@@ -2,10 +2,9 @@
 # owl-api launch wrapper — canonical source (#3446).
 #
 # Two jobs:
-#   1. (#3402) Source the gitignored realm secret so CHORUS_SERVICE_TOKEN_SECRET
-#      reaches owl-api's env WITHOUT the value landing in a checked-in file or the
-#      plist. Shared HS256 now; asymmetric public-key verify is the open-source-gate
-#      end-state (ADR-042).
+#   1. (#3719) Export the identity-door env (CSS issuer + local JWKS URL). The
+#      HS256 realm secret this wrapper used to source is RETIRED — the door
+#      verifies CSS ES256 identity tokens; scope is model data (chorus:hasScope).
 #   2. (#3446) Wait for Fuseki to be ready before exec. owl-api queries Fuseki
 #      (CHORUS_FUSEKI, default localhost:3030) at startup; at boot it races ahead of
 #      Fuseki, the query fails, owl-api exits, and KeepAlive crash-loops it (4 runs
@@ -35,9 +34,9 @@ until curl -sf -o /dev/null --max-time 3 "$FUSEKI_PING"; do
   wait_secs=$((wait_secs + 2))
 done
 
-# --- secret sourcing (#3402) ---
+# --- identity-door env (#3719; JWKS derives from the issuer in-process) ---
 set -a
-[ -f "$HOME/.chorus/secrets/chorus-realm.env" ] && . "$HOME/.chorus/secrets/chorus-realm.env"
+export CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}"
 
 # #3611 UNTANGLE (was #3641) — carry the Fuseki write credential into owl-api's env
 # so its chorus-model spawns can -u their :3030 writes. The credential's home is the

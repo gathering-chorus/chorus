@@ -9,7 +9,7 @@
 #               human review exactly what the migration will do.
 #   apply     — POST the generated body to the door (owl-api /batch) with a
 #               scoped Bearer token. REFUSES unless CHORUS_WRITE_DOOR_TOKEN is
-#               set (mint via chorus-mint-token.py, scope urn:chorus:ontology).
+#               set (mint via chorus-identity-token — #3719; scope is model data now scope urn:chorus:ontology).
 #               Never writes to Fuseki directly — the door is the only write path.
 #
 # What it migrates (source of truth: roles/silas/ontology/chorus.ttl +
@@ -89,7 +89,7 @@ generate() {
 case "${1:-generate}" in
   generate) generate ;;
   apply)
-    : "${CHORUS_WRITE_DOOR_TOKEN:?refusing: mint a scoped token first (chorus-mint-token.py --scope $GRAPH)}"
+    : "${CHORUS_WRITE_DOOR_TOKEN:?refusing: mint a scoped token first (chorus-identity-token — #3719; scope is model data now --scope $GRAPH)}"
     body="$(generate)"
     [ -n "$body" ] || { echo "refusing: generated empty batch" >&2; exit 1; }
     printf '%s' "$body" | curl -sf -X POST "$DOOR" \

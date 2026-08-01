@@ -52,11 +52,24 @@ app.use(makeRequestOpMiddleware());
 // this mutable ref without re-mounting; empty until loaded = gates nothing.
 import { securityEnvelope, type SecuredSurface } from './security-envelope';
 import { projectSecuredSurfaces } from './security-surfaces-emit';
+import { createIdentityVerifier } from './es256-identity';
 let SECURED_SURFACES: SecuredSurface[] = [];
+// #3719 — ES256 identity + model-resolved scope (chorus:hasScope) replaces the
+// HS256 shared secret. sparql is lazy-bound to athenaSparqlQuery (declared
+// below; calls only happen post-boot — same pattern as resolveSubdomainId).
+// JWKS default derives from the ISSUER (a bare fetch to localhost:3001 500s —
+// CSS requires the trusted-proxy hairpin headers; the logical origin serves
+// /.oidc/jwks plainly, verified 2026-07-31). CHORUS_JWKS_URL overrides.
+const CSS_ISSUER = process.env.CSS_ISSUER ?? 'https://id.lightlifeurbangardens.com/';
+const verifyIdentity = createIdentityVerifier({
+  issuer: CSS_ISSUER,
+  jwksUrl: process.env.CHORUS_JWKS_URL ?? `${CSS_ISSUER.replace(/\/+$/, '')}/.oidc/jwks`,
+  sparql: (q: string) => athenaSparqlQuery(q),
+  nowSecs: () => Math.floor(Date.now() / 1000),
+});
 app.use(securityEnvelope({
   getSurfaces: () => SECURED_SURFACES,
-  secret: process.env.CHORUS_SERVICE_TOKEN_SECRET ?? '',
-  nowSecs: () => Math.floor(Date.now() / 1000),
+  verify: verifyIdentity,
   enabled: process.env.CHORUS_SECURITY_ENVELOPE_ENABLE === '1',
   emit: (event: string, fields: Record<string, string>) => {
     recordEnvelopeEvent(event, fields); // #3628 — refusals become a scrapeable counter

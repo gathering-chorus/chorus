@@ -3,13 +3,19 @@
 #
 # Every number the ledger emits is either computed from the live system/code or
 # reported as unknown. Nothing hardcoded, nothing asserted. This test pins:
-#  1. the known 2026-07-30 state (hs256 minters exist, secret exists, legacy arm
-#     present, --scope absent) — the ledger must FIND these, not be told them;
+#  1. the post-#3719 state (minters deleted, secret refs gone, legacy arm
+#     deleted, door resolves model scope) — the ledger must MEASURE these
+#     against ITS OWN tree (CHORUS_ROOT pinned below, the #3701 lesson:
+#     measure the tree under test, not canonical);
 #  2. the unknown-not-zero rule: when a measurement source is unreachable the
 #     item reports -1/unknown, never a comforting 0;
 #  3. the metric write: gauges land in the textfile collector and parse.
 set -uo pipefail
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/security-distance-to-done.sh"
+# the instrument measures the tree it ships in — FORCE CHORUS_ROOT to that tree
+# (an inherited canonical CHORUS_ROOT from the session env is exactly the #3701
+# measure-the-wrong-tree bug; no :-default here)
+export CHORUS_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 FAIL=0
 ok(){ echo "  PASS: $1"; }
 no(){ echo "  FAIL: $1"; FAIL=1; }
@@ -17,11 +23,11 @@ no(){ echo "  FAIL: $1"; FAIL=1; }
 OUT=$(bash "$SCRIPT" 2>&1); RC=$?
 echo "$OUT" | sed 's/^/    | /'
 
-# 1. Known-state pins (this week's audited facts — the ledger must discover them)
-echo "$OUT" | grep -qE "hs256_minters +[1-9]"            && ok "finds live HS256 minters (audited: 9)"        || no "did not find the known HS256 minters"
-echo "$OUT" | grep -qE "shared_secret_refs +[1-9]"       && ok "finds live shared-secret readers"             || no "did not find CHORUS_SERVICE_TOKEN_SECRET readers"
-echo "$OUT" | grep -qE "hs256_verify_branch +1"          && ok "sees the legacy verify arm"                   || no "missed the verify_any HS256 arm"
-echo "$OUT" | grep -qE "scoped_es256_missing +1"         && ok "knows scoped ES256 does not exist yet"        || no "claims scoped ES256 exists (it does not)"
+# 1. Known-state pins (the post-#3719 audited facts — the ledger must discover them)
+echo "$OUT" | grep -qE "hs256_minters +0 "               && ok "no HS256 minters remain (mint script deleted, TS minters migrated)" || no "still counts HS256 minters (or self-counts): $(echo "$OUT" | grep hs256_minters)"
+echo "$OUT" | grep -qE "shared_secret_refs +0 "          && ok "no live shared-secret readers remain"         || no "still counts secret refs (or self-counts): $(echo "$OUT" | grep shared_secret_refs)"
+echo "$OUT" | grep -qE "hs256_verify_branch +0 "         && ok "legacy verify arm confirmed deleted"          || no "verify arm item wrong: $(echo "$OUT" | grep hs256_verify_branch)"
+echo "$OUT" | grep -qE "model_scope_missing +(0|unknown)" && ok "model-scope item measures the DECIDED mechanism (hasScope at the door)" || no "model_scope_missing wrong: $(echo "$OUT" | grep model_scope_missing)"
 
 # 2. Behavioral check ran (not a config grep): the anon-write item must carry
 #    evidence of an actual attempt (http code) or say unknown.
@@ -89,9 +95,9 @@ echo "$OUT3" | grep -qE "open_security_chunk_cards +0 " \
 #    unknown, not 0. Prove by making $C/platform unreadable to the grep via a
 #    fake root whose platform/ is a dangling path for the refs walk only.
 OUT4=$(CHORUS_ROOT="/nonexistent-3716-probe" bash "$SCRIPT" 2>&1)
-echo "$OUT4" | grep -qE "scoped_es256_missing +unknown" \
-  && ok "absent minter script reports unknown, not a claimed-missing feature" \
-  || no "scoped_es256_missing fabricates a verdict for an unreadable script: $(echo "$OUT4" | grep scoped_es256)"
+echo "$OUT4" | grep -qE "model_scope_missing +unknown" \
+  && ok "unreadable oidc.rs reports unknown, not a claimed-missing mechanism" \
+  || no "model_scope_missing fabricates a verdict for an unreadable tree: $(echo "$OUT4" | grep model_scope_missing)"
 echo "$OUT4" | grep -qE "shared_secret_refs +unknown" \
   && ok "refs grep against a missing tree reports unknown, not 0" \
   || no "refs still reports a number against a MISSING tree: $(echo "$OUT4" | grep shared_secret_refs)"
