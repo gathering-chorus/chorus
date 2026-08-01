@@ -55,7 +55,9 @@ pub mod nudge_gate {
 }
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.
-pub use state::append_log;
+// #3721 — and append_log_result, so that test can assert on WHY an append failed
+// instead of inferring it from a line count.
+pub use state::{append_log, append_log_result};
 pub use types::HookInput;
 // #2790 — chorus-hook-shim invokes canonical_write_guard in-process on every
 // Edit/Write/MultiEdit BEFORE forwarding to daemon. HookResponse is the return

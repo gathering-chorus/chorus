@@ -29,12 +29,30 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         .and_then(|m| m.modified().ok())
         .map(|t| t.elapsed().unwrap_or_default().as_secs() > 600)
         .unwrap_or(true);
-    if cache_stale {
+    // #3721 — an EMPTY cache counts as needing a rebuild, not just an old one.
+    // Staleness was measured purely by mtime, so a freshly-written empty (or
+    // truncated) cache looked current and was handed to the role as-is: the role
+    // booted with no context, silently. Emptiness is the strongest possible
+    // signal that the last build failed, and it is cheap to act on.
+    let cache_empty = std::path::Path::new(&cache).metadata().ok()
+        .map(|m| m.len() == 0)
+        .unwrap_or(true);
+    if cache_stale || cache_empty {
         let _ = context_cache::run(&[role.to_string()]);
     }
 
     // Copy cache to session-start
     let mut content = fs::read_to_string(&cache).unwrap_or_default();
+    // #3721 — measure THE CACHE, here, before anything is appended to `content`.
+    // The #1846 empty-cache alarm below used content.lines() at the END of this
+    // function, by which point `content` also carries next-session notes, crash
+    // recovery, the regen banner, the live principles section and the Athena
+    // tree. Those alone clear the 10-line threshold, so the alarm could not fire
+    // however empty the cache was — verified by booting against a zero-byte
+    // cache: no session.context.error, no repair, no banner. The detector for
+    // "role booting with partial context" had been dead, and being dead is why
+    // nothing ever reported it.
+    let cache_lines = content.lines().count();
 
     // Append next-session.md if exists
     let next_session = format!("{}/next-session.md", role_path);
@@ -215,16 +233,18 @@ pub fn session_start_cmd(args: &[String]) -> ExitCode {
         }
     }
 
-    let lines = content.lines().count();
-    if lines < 10 {
+    // #3721 — keyed on cache_lines (captured at read time) rather than
+    // content.lines(), which by here includes every appended section and can
+    // never be under 10. See the note at the capture site.
+    if cache_lines < 10 {
         // Empty or near-empty cache = something failed (#1846)
         let _ = chorus_log::run_silent(&[
             "session.context.error".to_string(),
             role.to_string(),
             "error_type=cache_empty".to_string(),
-            format!("lines={}", lines),
+            format!("lines={}", cache_lines),
         ]);
-        eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", lines);
+        eprintln!("⚠ Context cache empty or failed ({} lines) — role booting with partial context", cache_lines);
     }
 
     // #3125: register this session's {role, pid, tty, host} so nudge delivery

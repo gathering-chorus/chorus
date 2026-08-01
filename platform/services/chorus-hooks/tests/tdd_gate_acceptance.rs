@@ -74,6 +74,30 @@ fn set_role_state(role: &str, state: &str, card: Option<u64>, card_type: Option<
 /// Falls back to "wren" since the test harness checks real paths.
 const TEST_ROLE: &str = "wren";
 
+/// #3721 — a path the CANONICAL WRITE GUARD will not intercept.
+///
+/// These tests edited `<chorus_root>/platform/api/src/server.ts`, i.e. a path
+/// inside canonical. #2908 retired the CHORUS_WERK_ENABLE flag, so
+/// canonical_write_guard now fires for any determinable role — and it runs
+/// BEFORE the TDD gate. Both tests were therefore measuring the canonical guard,
+/// not the gate they name:
+///
+///   - `building_role_code_edit_still_blocked_without_tests` FAILED, because the
+///     deny it got said "canonical is read-only during sessions" instead of
+///     anything about TDD.
+///   - `idle_role_code_edit_not_blocked` PASSED for the wrong reason: it asserts
+///     the result does NOT mention "TDD gate", and a canonical-guard denial
+///     never does. It would have passed with the TDD gate deleted entirely.
+///
+/// Pointing both at the role's werk lets the request reach the gate under test.
+fn werk_code_path() -> String {
+    format!(
+        "{}/CascadeProjects/chorus-werk/{}/platform/api/src/server.ts",
+        std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()),
+        TEST_ROLE
+    )
+}
+
 // === AC item 2: Role not building → demo allowed without tests ===
 
 #[test]
@@ -108,7 +132,7 @@ fn idle_role_code_edit_allowed_without_tests() {
 
     let result = hook_check_with_role(
         "Edit",
-        json!({"file_path": &format!("{}/platform/api/src/server.ts", chorus_root()), "old_string": "foo", "new_string": "bar"}),
+        json!({"file_path": werk_code_path(), "old_string": "foo", "new_string": "bar"}),
         TEST_ROLE,
     );
 
@@ -137,7 +161,7 @@ fn building_role_code_edit_still_blocked_without_tests() {
 
     let result = hook_check_with_role(
         "Edit",
-        json!({"file_path": &format!("{}/platform/api/src/server.ts", chorus_root()), "old_string": "foo", "new_string": "bar"}),
+        json!({"file_path": werk_code_path(), "old_string": "foo", "new_string": "bar"}),
         TEST_ROLE,
     );
 

@@ -1,112 +1,25 @@
-//! Test: preflight.sh needs PATH to run the cards CLI.
+//! #3721 — RETIRED. This file tested `skills/demo/gates/preflight.sh`, which no
+//! longer exists: Wren's #3046 ("demo v2: werk-demo crate + retire v1
+//! gates/hooks") deleted the v1 gate scripts and moved demo preflight into the
+//! werk-demo crate. The tests outlived the mechanism by design-drift, not intent.
 //!
-//! Bug: demo_preflight.rs spawns preflight.sh with only CHORUS_ROOT in env.
-//! The cards CLI is a bash wrapper around TypeScript — needs node in PATH.
-//! Without PATH, `cards view` fails, preflight reads failure as "card not found",
-//! and blocks every /demo invocation. 31 consecutive false denials on real cards.
+//! Both tests were broken, in the two different ways this card keeps finding:
 //!
-//! Fix: add .env("PATH", ...) to the Command spawn, matching search_hierarchy.rs.
-
-use std::process::Command;
-use chorus_hooks::shared::state_paths::chorus_root;
-
-
-fn home() -> String {
-    std::env::var("HOME").expect("HOME must be set")
-}
-
-fn full_path() -> String {
-    format!(
-        "{}/CascadeProjects/chorus/platform/scripts:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
-        home()
-    )
-}
-
-/// #2614: returns true (and prints a skip line) when RUN_INTEGRATION is unset.
-/// Tests in this file read live Vikunja state via `cards list --status WIP`
-/// and run preflight.sh against the resulting card — fully axis-4 dependent
-/// on which cards are currently in WIP and what their content/comments are.
-fn skip_unless_integration(reason: &str) -> bool {
-    if std::env::var("RUN_INTEGRATION").is_err() {
-        eprintln!("SKIP: axis-4 — {reason} (set RUN_INTEGRATION=1 to run)");
-        return true;
-    }
-    false
-}
-
-/// Pick the first currently-WIP card id dynamically (#2130 fix).
-/// Hardcoded card ids go stale the moment their card accepts — the old
-/// test blocked on "#1995 is in Done". Calling the cards CLI here is
-/// slow but deterministic and never ages out.
-fn first_wip_card_id() -> Option<String> {
-    let output = Command::new("bash")
-        .args([&format!("{}/platform/scripts/cards", chorus_root()), "list", "--status", "WIP"])
-        .env("HOME", home())
-        .env("PATH", full_path())
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // Lines look like "  2149  Clear all errors..." — grab the first numeric token.
-    for line in stdout.lines() {
-        let trimmed = line.trim_start();
-        if let Some(first_tok) = trimmed.split_whitespace().next() {
-            if first_tok.chars().all(|c| c.is_ascii_digit()) && first_tok.len() >= 3 {
-                return Some(first_tok.to_string());
-            }
-        }
-    }
-    None
-}
-
-#[test]
-fn preflight_fails_without_path() {
-    if skip_unless_integration("reads live Vikunja WIP state, runs preflight.sh against real card") { return; }
-    let wip = match first_wip_card_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("SKIP: no WIP card available — cannot run preflight against a moving target");
-            return;
-        }
-    };
-    let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
-    let output = Command::new("bash")
-        .args([&script, &wip])
-        .env("CHORUS_ROOT", chorus_root())
-        .env_remove("PATH")
-        .output()
-        .expect("failed to run preflight.sh");
-
-    // Without PATH, this should fail — proving the bug
-    assert!(
-        !output.status.success(),
-        "preflight.sh should fail without PATH — this proves the bug. stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[test]
-fn preflight_passes_with_path() {
-    if skip_unless_integration("reads live Vikunja WIP state, runs preflight.sh against real card") { return; }
-    let wip = match first_wip_card_id() {
-        Some(id) => id,
-        None => {
-            eprintln!("SKIP: no WIP card available — cannot run preflight against a moving target");
-            return;
-        }
-    };
-    let script = format!("{}/skills/demo/gates/preflight.sh", chorus_root());
-    let output = Command::new("bash")
-        .args([&script, &wip])
-        .env("CHORUS_ROOT", chorus_root())
-        .env("HOME", home())
-        .env("PATH", full_path())
-        .output()
-        .expect("failed to run preflight.sh");
-
-    assert!(
-        output.status.success(),
-        "preflight.sh should pass with PATH set for WIP card #{}. stderr: {}",
-        wip,
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
+//!   - `preflight_passes_with_path` FAILED locally with "No such file or
+//!     directory". It was invisible on CI because it needs RUN_INTEGRATION *and*
+//!     a live Vikunja WIP card; CI has the first and not the second, so it took
+//!     the "no WIP card available" early return and reported success. Broken in
+//!     one environment, skipped in the other — Wren's line for this shape is that
+//!     it isn't a test, it's decoration that reads green.
+//!
+//!   - `preflight_fails_without_path` PASSED, for entirely the wrong reason. It
+//!     asserted the script FAILS when PATH is stripped. A script that does not
+//!     exist also fails, so it has been green on a deleted file since #3046 —
+//!     proving nothing about PATH at all.
+//!
+//! Not replaced here: the concern (a spawned gate needs PATH to reach the cards
+//! CLI, whose absence caused 31 consecutive false demo denials) belongs to
+//! whatever spawns the gate, and that is now werk-demo — see
+//! platform/services/werk-demo/tests/e2e.rs. Re-adding a chorus-hooks test for a
+//! script chorus-hooks no longer owns or invokes would recreate exactly the
+//! orphaning that produced this file.

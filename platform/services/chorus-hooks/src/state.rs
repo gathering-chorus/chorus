@@ -268,26 +268,79 @@ impl AppState {
     }
 }
 
-/// Append a JSONL line to a log file (async, best-effort)
-pub async fn append_log(path: &std::path::Path, line: &str) {
+/// Append a JSONL line to a log file, returning the io error instead of eating it.
+///
+/// #3721 — this used to be the whole of `append_log`, with `if let Ok(f) = open`
+/// and `let _ = write_all`. Both arms discarded their error, so a failed open and
+/// a failed write each DROPPED the line with no signal anywhere. That is the
+/// wrong default for this file specifically: chorus.log is the spine, the team's
+/// memory layer, and an event that silently never lands is indistinguishable from
+/// one that never happened. It surfaced as #3278's atomicity test getting 199 of
+/// 200 lines on CI with zero corrupt lines — nothing interleaved, one append just
+/// vanished, and neither the function nor the test could say why.
+///
+/// Transient failures are retried rather than lost. 200 concurrent appends can
+/// hit the process fd ceiling (EMFILE/ENFILE) or a signal-interrupted syscall on
+/// a small runner; those are momentary and a short backoff clears them. A
+/// persistent error (bad path, permissions, full disk) still returns Err after
+/// the retries so the caller — and the test — can name it.
+pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::Result<()> {
     use tokio::fs::OpenOptions;
     use tokio::io::AsyncWriteExt;
 
-    if let Ok(mut f) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .await
-    {
-        // #3278 — ONE write of line+newline. Writing the line and the '\n' as two
-        // separate write_all calls let another process's append land between them,
-        // fusing two JSON events onto one corrupt line (~6% of chorus.log, measured
-        // 2026-06-07; the test reproduced 25/63 corrupt under load). O_APPEND makes a
-        // single write() atomic at EOF, so one buffer is one uninterruptible append.
-        let mut buf = Vec::with_capacity(line.len() + 1);
-        buf.extend_from_slice(line.as_bytes());
-        buf.push(b'\n');
-        let _ = f.write_all(&buf).await;
+    // #3278 — ONE write of line+newline. Writing the line and the '\n' as two
+    // separate write_all calls let another process's append land between them,
+    // fusing two JSON events onto one corrupt line (~6% of chorus.log, measured
+    // 2026-06-07; the test reproduced 25/63 corrupt under load). O_APPEND makes a
+    // single write() atomic at EOF, so one buffer is one uninterruptible append.
+    let mut buf = Vec::with_capacity(line.len() + 1);
+    buf.extend_from_slice(line.as_bytes());
+    buf.push(b'\n');
+
+    let mut last: Option<std::io::Error> = None;
+    for attempt in 0..RETRYABLE_APPEND_ATTEMPTS {
+        if attempt > 0 {
+            // Linear backoff: 2ms, 4ms, 6ms... Enough for peers to close fds,
+            // short enough that a hook never visibly stalls on it.
+            tokio::time::sleep(std::time::Duration::from_millis(2 * attempt as u64)).await;
+        }
+        let attempted = async {
+            let mut f = OpenOptions::new().create(true).append(true).open(path).await?;
+            f.write_all(&buf).await
+        }
+        .await;
+        match attempted {
+            Ok(()) => return Ok(()),
+            Err(e) if is_transient_append_error(&e) => last = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("append retries exhausted")))
+}
+
+const RETRYABLE_APPEND_ATTEMPTS: usize = 5;
+
+/// Momentary conditions worth retrying: the fd table is full right now, or the
+/// syscall was interrupted. Neither says anything is wrong with the write.
+fn is_transient_append_error(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    if matches!(e.kind(), ErrorKind::Interrupted | ErrorKind::WouldBlock) {
+        return true;
+    }
+    // EMFILE (24) = per-process fd limit, ENFILE (23) = system-wide. No stable
+    // ErrorKind for these on the Rust versions we pin, so match the raw errno.
+    matches!(e.raw_os_error(), Some(23) | Some(24))
+}
+
+/// Append a JSONL line to a log file (async, best-effort at the call site).
+///
+/// Call sites are hooks that must never fail a user's action over a log write, so
+/// this still returns `()`. What changed in #3721 is that a dropped line is no
+/// longer SILENT — it goes to stderr naming the path and the error. Best-effort
+/// is a promise about what we do next, not a licence to lose the event quietly.
+pub async fn append_log(path: &std::path::Path, line: &str) {
+    if let Err(e) = append_log_result(path, line).await {
+        eprintln!("chorus-hooks: DROPPED log append to {} — {e}", path.display());
     }
 }
 
@@ -313,3 +366,52 @@ pub async fn chorus_log(event: &str, role: &str, kvs: &[(&str, &str)]) {
     append_log(&log_path, &obj.to_string()).await;
 }
 
+
+#[cfg(test)]
+mod append_log_tests {
+    use super::*;
+
+    /// #3721 — a persistent error must SURFACE, not be swallowed. This is the
+    /// regression guard for the original defect: `if let Ok(f) = open(...)` meant
+    /// an unopenable path dropped the line and returned as if it had written.
+    #[tokio::test]
+    async fn persistent_open_failure_returns_err_instead_of_dropping() {
+        // A path whose parent is a FILE, not a directory — open can never succeed.
+        let parent = std::env::temp_dir().join(format!("chorus-3721-notadir-{}", std::process::id()));
+        std::fs::write(&parent, b"x").expect("seed file");
+        let path = parent.join("child.log");
+
+        let err = append_log_result(&path, "{}").await.expect_err("must not report success");
+        assert!(
+            !is_transient_append_error(&err),
+            "a non-directory parent is permanent, not transient: {err:?}"
+        );
+
+        let _ = std::fs::remove_file(&parent);
+    }
+
+    /// A good path still writes exactly the line plus one newline.
+    #[tokio::test]
+    async fn successful_append_writes_line_and_single_newline() {
+        let path = std::env::temp_dir().join(format!("chorus-3721-ok-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+
+        append_log_result(&path, "{\"a\":1}").await.expect("append should succeed");
+        append_log_result(&path, "{\"a\":2}").await.expect("append should succeed");
+
+        let content = std::fs::read_to_string(&path).expect("log readable");
+        assert_eq!(content, "{\"a\":1}\n{\"a\":2}\n");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// The retry classifier must catch the fd-exhaustion errnos it exists for —
+    /// EMFILE (24) and ENFILE (23) — and must NOT retry a permanent one.
+    #[test]
+    fn transient_classifier_covers_fd_exhaustion_only() {
+        assert!(is_transient_append_error(&std::io::Error::from_raw_os_error(24)), "EMFILE");
+        assert!(is_transient_append_error(&std::io::Error::from_raw_os_error(23)), "ENFILE");
+        assert!(is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::Interrupted)));
+        assert!(!is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::PermissionDenied)));
+        assert!(!is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::NotFound)));
+    }
+}

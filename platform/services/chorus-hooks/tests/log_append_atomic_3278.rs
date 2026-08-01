@@ -7,7 +7,14 @@
 //! makes the race fire reliably.
 
 // AC1: chorus.log appends are atomic — concurrent writers never interleave.
-use chorus_hooks::append_log;
+//
+// #3721 — this test used `append_log` and `let _ = h.await`, discarding both the
+// write's outcome and the task's. When CI reported "expected 200 clean lines, got
+// 199" with ZERO corrupt lines, the result was undiagnosable: a dropped write, a
+// panicked task, and a silently-failed open all produced the identical message.
+// It now collects the io::Result of every append and joins every task, so a miss
+// names its own cause instead of leaving a count to be guessed at.
+use chorus_hooks::append_log_result;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn concurrent_appends_never_interleave() {
@@ -20,11 +27,17 @@ async fn concurrent_appends_never_interleave() {
         let p = path.clone();
         handles.push(tokio::spawn(async move {
             let line = serde_json::json!({ "i": i, "pad": "x".repeat(300) }).to_string();
-            append_log(&p, &line).await;
+            append_log_result(&p, &line).await.map_err(|e| format!("append {i}: {e}"))
         }));
     }
-    for h in handles {
-        let _ = h.await;
+
+    let mut append_errors: Vec<String> = Vec::new();
+    for (i, h) in handles.into_iter().enumerate() {
+        match h.await {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => append_errors.push(e),
+            Err(join) => append_errors.push(format!("task {i} did not finish: {join}")),
+        }
     }
 
     let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -35,6 +48,15 @@ async fn concurrent_appends_never_interleave() {
         .count();
     let _ = std::fs::remove_file(&path);
 
+    // Reported before the count, because it explains the count.
+    assert!(
+        append_errors.is_empty(),
+        "{} append(s) failed after retries: {:?}",
+        append_errors.len(),
+        append_errors
+    );
     assert_eq!(bad, 0, "{} of {} lines were corrupted (fused/truncated by interleaving)", bad, lines.len());
+    // If this fires with no append errors above, every write reported success and
+    // a line still went missing — that is an atomicity failure, not fd pressure.
     assert_eq!(lines.len(), n, "expected {} clean lines, got {}", n, lines.len());
 }
