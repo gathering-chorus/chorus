@@ -2,16 +2,51 @@
 # test-hook-daemon.sh — AC6 tests for Hook Daemon
 # Tests: health check, crash-to-shim fallback, socket-unavailable detection
 #
-# Tests the live daemon at /tmp/chorus-hooks.sock and the shim's fallback behavior.
+# Tests the live daemon on its control socket and the shim's fallback behavior.
+#
+# #3721 — this file was reporting 0 pass / 1 fail while testing almost nothing.
+# Three independent faults, all of the same family: the check had drifted from
+# the thing it checks.
+#
+#   1. STALE SOCKET PATH. SOCKET was /tmp/chorus-hooks.sock, retired by
+#      #3617/#3631 in favour of ~/.chorus/run/. Tests 1-3 all guard on
+#      `[ -S "$SOCKET" ]`, so all three silently SKIPPED against a daemon that
+#      was up and serving.
+#   2. `timeout` DOES NOT EXIST ON THIS MAC. It is GNU coreutils; neither
+#      timeout nor gtimeout is installed. `run_bounded 5 "$SHIM" ...` therefore
+#      exited 127 (command not found), and test 4 asserted that exit code was 0
+#      — so the one test that "ran" was measuring a missing binary, not the
+#      shim's fail-open behaviour at all.
+#   3. A SKIP THAT COUNTED AS A PASS. The "shim binary not found" branch did
+#      ((PASS++)). A file that cannot find the thing it tests reported success.
+#
+# Fixes: resolve the socket from HOME, resolve the shim via `command -v` per CSC
+# #2734 (target/release is the BUILD artifact, ~/.chorus/bin the DEPLOY one) with
+# the build path only as fallback, degrade gracefully when timeout is absent, and
+# stop counting skips as passes.
 
 set -uo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
-SOCKET="/tmp/chorus-hooks.sock"
+# Deploy artifact first (CSC #2734), build artifact as fallback for pre-deploy.
+SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
+[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+SOCKET="${CHORUS_HOOK_SOCKET:-$HOME/.chorus/run/chorus-hooks.sock}"
 PASS=0
 FAIL=0
+SKIP=0
+
+# Portable bounded run: use timeout/gtimeout when present, otherwise run bare.
+# Running bare is the right degradation — losing the time bound is far better
+# than every invocation exiting 127 and being read as the command's own verdict.
+if command -v timeout >/dev/null 2>&1; then
+  run_bounded() { timeout "$@"; }
+elif command -v gtimeout >/dev/null 2>&1; then
+  run_bounded() { gtimeout "$@"; }
+else
+  run_bounded() { shift; "$@"; }
+fi
 
 assert_eq() {
   local label="$1" expected="$2" actual="$3"
@@ -45,7 +80,7 @@ if [ -S "$SOCKET" ]; then
   assert_eq "health returns ok" "ok" "$health_out"
 else
   echo "  SKIP: daemon socket not found at $SOCKET"
-  ((PASS++))  # Not a failure — daemon may not be running
+  ((SKIP++))  # Not a failure — daemon may not be running
 fi
 
 # --- Test 2: PreToolUse dispatch via socket ---
@@ -62,7 +97,7 @@ if [ -S "$SOCKET" ]; then
   assert_eq "PreToolUse allows safe bash" "0" "$exit_code"
 else
   echo "  SKIP: daemon socket not found"
-  ((PASS++))
+  ((SKIP++))
 fi
 
 # --- Test 3: PreToolUse blocks dangerous commands ---
@@ -84,7 +119,7 @@ if [ -S "$SOCKET" ]; then
   fi
 else
   echo "  SKIP: daemon socket not found"
-  ((PASS++))
+  ((SKIP++))
 fi
 
 # --- Test 4: shim fail-open when socket unavailable ---
@@ -98,7 +133,7 @@ if [ -x "$SHIM" ]; then
     # The shim uses hardcoded SOCKET_PATH, so we test with the real socket removed
     # Instead, just verify the shim returns 0 for non-socket-dependent commands
     result=$(echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"/tmp"}' | \
-      timeout 5 "$SHIM" pre-tool-use 2>/dev/null) || true
+      run_bounded 5 "$SHIM" pre-tool-use 2>/dev/null) || true
     # Shim should succeed (it talks to the running daemon)
     echo "  PASS: shim handles live socket"
     ((PASS++))
@@ -106,14 +141,16 @@ if [ -x "$SHIM" ]; then
     # Socket is already missing — test fail-open directly
     set +e
     echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"/tmp"}' | \
-      timeout 5 "$SHIM" pre-tool-use >/dev/null 2>&1
+      run_bounded 5 "$SHIM" pre-tool-use >/dev/null 2>&1
     exit_code=$?
     set -e
     assert_eq "shim returns 0 when socket missing (fail-open)" "0" "$exit_code"
   fi
 else
+  # #3721 — was ((PASS++)). A run that cannot locate the binary under test has
+  # not passed anything; count it as a skip so the summary stays honest.
   echo "  SKIP: shim binary not found at $SHIM"
-  ((PASS++))
+  ((SKIP++))
 fi
 
 # --- Test 5: shim CLI subcommands work without socket ---
@@ -136,9 +173,9 @@ if [ -x "$SHIM" ]; then
   assert_eq "role-state query returns 0" "0" "$exit_code"
 else
   echo "  SKIP: shim binary not found"
-  ((PASS++))
-  ((PASS++))
-  ((PASS++))
+  ((SKIP++))
+  ((SKIP++))
+  ((SKIP++))
 fi
 
 # --- Test 6: shim no-args returns error ---
@@ -152,7 +189,7 @@ if [ -x "$SHIM" ]; then
   assert_eq "no args returns 1" "1" "$exit_code"
 else
   echo "  SKIP: shim not found"
-  ((PASS++))
+  ((SKIP++))
 fi
 
 # --- Test 7: PostToolUse endpoint responds ---
@@ -167,12 +204,13 @@ if [ -S "$SOCKET" ]; then
   assert_eq "PostToolUse returns 0" "0" "$exit_code"
 else
   echo "  SKIP: daemon socket not found"
-  ((PASS++))
+  ((SKIP++))
 fi
 
 # --- Summary ---
 echo ""
-echo "=== Results: $PASS passed, $FAIL failed ==="
+# #3721 — skips are reported separately instead of being counted as passes.
+echo "=== Results: $PASS passed, $FAIL failed, $SKIP skipped ==="
 if [ "$FAIL" -gt 0 ]; then
   exit 1
 fi
