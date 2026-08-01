@@ -84,25 +84,28 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       'Gathering': 'Personal knowledge graph — 13 content domains. What Jeff collects and cultivates.',
     };
 
-    // #3706 — hrefs are host-relative wherever chorus-api serves them, and
-    // built from location.hostname where they point at another service on the
-    // same box. Hardcoded localhost is dead on every device except this one.
-    const HOST = location.hostname;
-    const app = p => `${location.protocol}//${HOST}:3000${p}`;
+    // #3706 — NO DEPENDENCY ON :3000. That port is the GATHERING app; this is
+    // the Chorus landing page and it must stand on chorus-api alone (Jeff,
+    // 2026-08-01). Every href below is host-relative, served by this same
+    // origin — so the page works identically on localhost, over wifi by IP,
+    // and through any tunnel. Hardcoded localhost hrefs are dead on every
+    // device except this machine, which is how the tiles broke on Jeff's phone.
+    // The Clearing is a separate service (:3470) with no chorus-api route, so
+    // it is derived from location.hostname rather than hardcoded.
     const pageLinks = {
-      'Loom': [{ label: 'Loom Dashboard', href: app('/loom') }],
+      'Loom': [{ label: 'Loom', href: '/loom/' }],
       'Athena': [
         { label: 'Model', href: '/athena/model.html' },
         { label: 'Domains', href: '/athena/domains.html' },
         { label: 'Value Stream', href: '/athena/value-stream.html' },
       ],
       'Werk': [
-        { label: 'Werk Dashboard', href: app('/werk') },
+        { label: 'Werk', href: '/werk/' },
         // #3656: quality is part of werk (Jeff's call) and served by chorus-api
         // itself — relative href so it also works through the share tunnel.
         { label: 'Quality Service', href: '/werk/quality/' },
       ],
-      'The Clearing': [{ label: 'The Clearing', href: `${location.protocol}//${HOST}:3470` }],
+      'The Clearing': [{ label: 'The Clearing', href: `${location.protocol}//${location.hostname}:3470` }],
       'Borg': [
         { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],

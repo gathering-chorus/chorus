@@ -3272,6 +3272,41 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
+        // #3706 — BULK SCHEMA: GET /schema returns every shaped class's schema in
+        // ONE document (kind, fields, mandatory, modelVersion). The per-class
+        // /schema/<class> route stays; this exists because a consumer that wants
+        // the WHOLE model — the model view — otherwise pays one round-trip per
+        // class. The class view was making 42 requests to draw one screen, which
+        // is fine on loopback and hangs over wifi through the /owl proxy. Same
+        // projection, same source, one response. No new data, no second
+        // implementation — it reads the identical RouteTables the per-class route
+        // reads, so the two can never disagree.
+        if path == "/schema" {
+            let items: Vec<String> = tables
+                .iter()
+                .map(|t| {
+                    let local = t.class.rsplit('#').next().unwrap_or("");
+                    let fields: Vec<String> =
+                        t.fields.iter().map(|f| format!("\"{}\"", json_escape(f))).collect();
+                    let mandatory: Vec<String> =
+                        t.mandatory.iter().map(|m| format!("\"{}\"", json_escape(m))).collect();
+                    format!(
+                        "{{ \"kind\": \"{}\", \"fields\": [{}], \"mandatory\": [{}], \"modelVersion\": \"{}\" }}",
+                        json_escape(local),
+                        fields.join(", "),
+                        mandatory.join(", "),
+                        json_escape(&t.model_version)
+                    )
+                })
+                .collect();
+            let doc = format!(
+                "{{ \"apiVersion\": \"{}\", \"service\": \"owl-api\", \"kind\": \"SchemaSet\", \"graph\": \"{}\", \"count\": {}, \"classes\": [{}] }}",
+                API_VERSION, ONTOLOGY_GRAPH, tables.len(), items.join(", ")
+            );
+            let resp = http_response_ct(status_line(200), &doc, "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
         // #3506 / ADR-047 §7 — served OpenAPI for EVERY surface: /<plural>/openapi.json
         // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
         // every primitive documents itself, found via the discovery root above.

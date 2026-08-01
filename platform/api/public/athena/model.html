@@ -109,18 +109,16 @@
   };
 
   try {
-    const disc = await fetchJSON('/');
-    const prims = disc.primitives || [];
-    const loaded = await Promise.all(prims.map(async p => {
-      const coll = String(p.collection || '').replace(/^\/v1/, '');
-      let schema = null, ver = null;
-      try { schema = await fetchJSON('/schema/' + p.kind.toLowerCase()); } catch (e) { /* unshaped */ }
-      try { ver = (await fetchJSON(coll)).modelVersion; } catch (e) { /* keep null */ }
-      return { kind: p.kind, schema, ver };
-    }));
-
-    for (const { kind, schema, ver } of loaded) {
-      if (!schema) continue;
+    // #3706 — ONE request. GET /schema is the bulk SchemaSet: every shaped class
+    // with its fields, mandatory floor and modelVersion, from the same
+    // RouteTables the per-class /schema/<class> route reads. The first cut of
+    // this page fetched Discovery + a schema + a collection PER CLASS — 42
+    // round-trips to draw one screen. Milliseconds on loopback; it hung on
+    // Jeff's phone over wifi through the /owl proxy. A view of the model should
+    // cost one call.
+    const set = await fetchJSON('/schema');
+    for (const c of (set.classes || [])) {
+      const kind = c.kind, schema = c, ver = c.modelVersion;
       const mand = new Set(schema.mandatory || []);
       const attrs = (schema.fields || []).map(f => {
         const i = f.indexOf('|');
