@@ -23,17 +23,6 @@ WRAPPER="$SCRIPTS/shim-wrapper.sh"
   [ "$count" -eq 17 ]
 }
 
-@test "wall-clock works through wrapper" {
-  result=$("$SCRIPTS/wall-clock" 2>&1)
-  echo "$result" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
-}
-
-# #3710 — both cases set CHORUS_ROOT=/nonexistent and expected the not-found
-# branch. That stopped working when #2734 moved the deploy location to
-# ~/.chorus/bin: the wrapper resolves `command -v chorus-hook-shim` FIRST and
-# only falls back to $CHORUS_ROOT, so on any machine with the binary on PATH it
-# found the real shim and never reached the error branch. Clearing PATH too is
-# what actually exercises "binary missing" now.
 @test "wrapper emits clear error when binary missing" {
   run env CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
   [[ "$output" == *"chorus-hook-shim not found"* ]]

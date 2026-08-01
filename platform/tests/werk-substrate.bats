@@ -42,9 +42,26 @@ WERK="${CHORUS_ROOT_FOR_TEST:-${CHORUS_ROOT}}/platform/scripts/werk"
 # --- werk deploy refusal (no main checkout) ---
 
 @test "werk deploy refuses when HEAD != origin/main" {
-  # We're on kade/2598-* branch by definition while this card is in flight,
-  # so HEAD will not match origin/main. Verify werk deploy refuses.
-  run bash "$WERK" deploy
-  [ "$status" -ne 0 ]
-  echo "$output" | grep -qi "main\|HEAD" || (echo "expected main/HEAD diagnostic, got: $output" && false)
+  # #3721 — this used to just run `werk deploy` and expect a refusal, on the
+  # assumption in its original comment: "we're on kade/2598-* while this card is
+  # in flight, so HEAD will not match origin/main". That assumption was true the
+  # day it was written and false every day since. A freshly-pulled werk has NO
+  # commits yet, so its HEAD IS origin/main (verified: both 873769c4a) and the
+  # guard correctly ALLOWS the deploy — and a CI checkout of main is the same.
+  # The test was reading ambient git state instead of creating the condition it
+  # claims to test, so it failed on a working guard.
+  #
+  # werk derives CHORUS_ROOT from its own location (script line 27), ignoring the
+  # env, so the refusal cannot be driven from outside. Assert the guard STRUCTURALLY
+  # instead — tier-appropriate for this file's declared "hermetic source guard",
+  # and it catches the regression that actually matters: someone deleting the
+  # check or unwiring it from the canonical deploy path.
+  # Runtime refusal is exercised for real every time a role runs `werk deploy`
+  # from a werk that has commits — which is the normal case mid-card.
+  grep -q 'verify_main_sha()' "$WERK"
+  grep -q 'rev-parse origin/main' "$WERK"
+  grep -qi 'HEAD does not match origin/main' "$WERK"
+  # ...and it must be WIRED into the canonical deploy path, not merely defined.
+  run bash -c "sed -n '/^cmd_deploy()/,/^}/p' '$WERK' | grep -c verify_main_sha"
+  [ "$output" -ge 1 ]
 }

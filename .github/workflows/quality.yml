@@ -483,16 +483,33 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v7
-      - name: Install bats + gitleaks
+      - name: Install bats + gitleaks + arq
         # #3528 — gitleaks isn't in apt; the gitleaks-baseline bats tests
         # (2709-gitleaks-baseline) need the binary present or they fail
         # `command -v gitleaks`. Install the release binary to /usr/local/bin.
+        #
+        # #3721 — same class, different tool: 14 unit-tier tests live in
+        # 3697-value-stream-grammar.bats, which parses the COMMITTED TTL with
+        # arq (Jena's SPARQL CLI). It is genuinely hermetic — no live service —
+        # but its first test is `command -v arq`, deliberately failing loud so a
+        # missing engine cannot make every downstream query return empty and let
+        # negative ASKs pass vacuously. That guard was doing its job; the runner
+        # just never learned Jena. arq ships in apache-jena, NOT in
+        # apache-jena-fuseki (which the MCP round-trip job installs — that's the
+        # server, not the CLI).
+        #
+        # Version PINNED, per the #3717 lesson: an unpinned tool means CI and the
+        # dev box can measure differently and nobody notices until a release day.
         run: |
           sudo apt-get update -y && sudo apt-get install -y bats
           GL_VER=8.21.2
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin gitleaks
           gitleaks version
+          JENA_VER=5.0.0
+          curl -sSL "https://archive.apache.org/dist/jena/binaries/apache-jena-${JENA_VER}.tar.gz" | tar xz
+          echo "${GITHUB_WORKSPACE}/apache-jena-${JENA_VER}/bin" >> "$GITHUB_PATH"
+          "./apache-jena-${JENA_VER}/bin/arq" --version
       - name: Run bats suite (platform/tests/*.bats, unit tier only)
         # --tap output for log readability when things break. Per-test
         # isolation is bats's default.
