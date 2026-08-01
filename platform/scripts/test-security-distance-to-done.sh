@@ -98,6 +98,21 @@ OUT4=$(CHORUS_ROOT="/nonexistent-3716-probe" bash "$SCRIPT" 2>&1)
 echo "$OUT4" | grep -qE "model_scope_missing +unknown" \
   && ok "unreadable oidc.rs reports unknown, not a claimed-missing mechanism" \
   || no "model_scope_missing fabricates a verdict for an unreadable tree: $(echo "$OUT4" | grep model_scope_missing)"
+# #3720 — a runtime artifact (log/db) that MENTIONS the secret's name must not
+# count as a reader. Plant one in a scratch tree beside a real source reader:
+# the count must be exactly 1 (the .sh), not 2.
+MENTION_ROOT=$(mktemp -d)
+mkdir -p "$MENTION_ROOT/platform/scripts" "$MENTION_ROOT/platform/logs" "$MENTION_ROOT/platform/services/chorus-oidc/src"
+printf 'echo "$CHORUS_SERVICE_TOKEN_SECRET"\n' > "$MENTION_ROOT/platform/scripts/reader.sh"
+printf 'logged: CHORUS_SERVICE_TOKEN_SECRET was read at 03:00\n' > "$MENTION_ROOT/platform/logs/old.log"
+printf 'CHORUS_SERVICE_TOKEN_SECRET' > "$MENTION_ROOT/platform/pulse.db"
+cp "$(dirname "$SCRIPT")/../services/chorus-oidc/src/oidc.rs" "$MENTION_ROOT/platform/services/chorus-oidc/src/oidc.rs" 2>/dev/null || true
+printf '#!/usr/bin/env bash\necho "Next (0):"\n' > "$MENTION_ROOT/platform/scripts/cards"; chmod +x "$MENTION_ROOT/platform/scripts/cards"
+OUT6=$(CHORUS_ROOT="$MENTION_ROOT" bash "$SCRIPT" 2>&1); rm -rf "$MENTION_ROOT"
+echo "$OUT6" | grep -qE "shared_secret_refs +1 " \
+  && ok "runtime artifacts that mention the secret are not counted as readers" \
+  || no "mention-only artifacts counted as readers: $(echo "$OUT6" | grep shared_secret_refs)"
+
 echo "$OUT4" | grep -qE "shared_secret_refs +unknown" \
   && ok "refs grep against a missing tree reports unknown, not 0" \
   || no "refs still reports a number against a MISSING tree: $(echo "$OUT4" | grep shared_secret_refs)"

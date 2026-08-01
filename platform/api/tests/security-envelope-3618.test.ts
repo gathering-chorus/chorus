@@ -70,6 +70,39 @@ function stubSparql(query: string): Promise<unknown> {
 
 const stubFetch = (async () => ({ ok: true, json: async () => JWKS })) as unknown as typeof fetch;
 
+// #3720 — hairpin pin: when the JWKS host differs from the issuer host, the
+// fetch must carry Host + X-Forwarded-* naming the ISSUER (CSS refuses bare
+// loopback .oidc fetches); same-host fetches stay plain.
+test('JWKS fetch hairpins when jwks host differs from issuer host (#3720)', async () => {
+  const seen: Array<Record<string, string>> = [];
+  const spyFetch = (async (_url: unknown, init?: { headers?: Record<string, string> }) => {
+    seen.push(init?.headers ?? {});
+    return { ok: true, json: async () => JWKS };
+  }) as unknown as typeof fetch;
+  const v = createIdentityVerifier({
+    issuer: ISSUER, jwksUrl: 'http://localhost:3001/.oidc/jwks',
+    sparql: stubSparql, nowSecs: () => NOW, fetchFn: spyFetch,
+  });
+  await v(mintEs256());
+  expect(seen[0]).toMatchObject({
+    Host: 'id.test.example',
+    'X-Forwarded-Proto': 'https',
+    'X-Forwarded-Host': 'id.test.example',
+  });
+
+  const seenPlain: Array<Record<string, string>> = [];
+  const plainFetch = (async (_url: unknown, init?: { headers?: Record<string, string> }) => {
+    seenPlain.push(init?.headers ?? {});
+    return { ok: true, json: async () => JWKS };
+  }) as unknown as typeof fetch;
+  const v2 = createIdentityVerifier({
+    issuer: ISSUER, jwksUrl: 'https://id.test.example/.oidc/jwks',
+    sparql: stubSparql, nowSecs: () => NOW, fetchFn: plainFetch,
+  });
+  await v2(mintEs256());
+  expect(seenPlain[0]).toEqual({});
+});
+
 function makeVerify(overrides: { sparql?: (q: string) => Promise<unknown> } = {}) {
   return createIdentityVerifier({
     issuer: ISSUER,

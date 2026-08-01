@@ -731,9 +731,10 @@ release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
 # work is a single point of failure for the whole reporting chain.
 #
 # Appends (never truncates): --last-run walks backward through concatenated runs
-# to find the block boundary, so history must survive. Skips the write when
-# stdout already IS the log — under a working launchd redirect that would
-# duplicate every run. Failure to persist is LOUD; silence is what cost the week.
+# to find the block boundary, so history must survive. #3720: this buffered
+# writer is now the FALLBACK for an unappendable log only — the primary path
+# streams per-suite via tee, so a killed run persists everything it finished.
+# Failure to persist is LOUD; silence is what cost the week.
 persist_run_results() {
   local _out="$1"
   local _log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
@@ -827,13 +828,29 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
-    out=$(run_all)
-    # #3709 — persist_run_results is the SINGLE writer of the aggregate log, so
-    # a working launchd redirect cannot double-write it. Echo to stdout only for
-    # a human at a terminal; under launchd fd 1 IS the log and printing here is
-    # exactly the duplication we are avoiding.
+    # #3720 — INCREMENTAL persistence: every SUITE line lands in the log AS IT
+    # COMPLETES (tee is the single writer), so a killed run leaves its partial
+    # evidence — the suite in flight at death is the last line's successor.
+    # The buffered persist_run_results path (#3709) proved worthless against
+    # the recurring mid-run killer: `out=$(run_all)` holds everything in
+    # memory, and a SIGKILL 13 minutes in left the log untouched since Jul 22.
+    # RUN|start / RUN|complete markers bracket the block: start-without-
+    # complete = the run was killed (forensics for free); SUITE parsers
+    # (--last-run, daily-review) ignore non-SUITE lines by construction.
+    _run_log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+    mkdir -p "$(dirname "$_run_log")" 2>/dev/null
+    if printf 'RUN|start|%s|pid=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$$" >> "$_run_log" 2>/dev/null; then
+      out=$(run_all | tee -a "$_run_log")
+      printf 'RUN|complete|%s|suites=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$(printf '%s\n' "$out" | grep -c '^SUITE|' | tr -d ' ')" >> "$_run_log"
+    else
+      # log unappendable: run anyway, fall back to the buffered writer, say so
+      echo "nightly-suites: WARNING — cannot append to $_run_log; no incremental persistence this run" >&2
+      out=$(run_all)
+      persist_run_results "$out"
+    fi
+    # Echo to stdout only for a human at a terminal; under launchd fd 1 IS the
+    # log and printing here would duplicate what tee already wrote.
     [ -t 1 ] && printf '%s\n' "$out"
-    persist_run_results "$out"
     emit_suite_results "$out"; notify_results "$out"
     ;;
   *)

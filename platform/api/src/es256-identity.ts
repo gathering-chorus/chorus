@@ -30,7 +30,8 @@ export type VerifyResult =
 export interface IdentityVerifierDeps {
   /** Logical CSS issuer the token's iss must equal (env CSS_ISSUER). */
   issuer: string;
-  /** Where the JWKS is actually fetchable (env CHORUS_JWKS_URL — local CSS). */
+  /** Where the JWKS is actually fetchable (env CHORUS_JWKS_URL — local CSS;
+   *  a host differing from the issuer's gets the hairpin headers, #3720). */
   jwksUrl: string;
   /** SPARQL query against the pods dataset (security graph lives there). */
   sparql: (query: string) => Promise<unknown>;
@@ -57,6 +58,26 @@ function sameIssuer(a: string, b: string): boolean {
   return a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
 }
 
+/** #3720 — THE HAIRPIN. chorus-env-setup points CHORUS_JWKS_URL at the LOCAL
+ * CSS (localhost:3001), which 500s a bare fetch: CSS only serves .oidc routes
+ * as the logical issuer, so loopback callers must present the trusted-proxy
+ * headers (Host + X-Forwarded-Proto/Host) — the same trick chorus-identity-
+ * token and the #3669 Clearing exchange use. Without this, the door came up
+ * refusing every valid token after the 2026-08-01 deploy and needed a
+ * non-durable launchctl setenv to limp — dead on reboot. Headers are added
+ * only when the JWKS host differs from the issuer host; a direct fetch to the
+ * logical origin stays plain. */
+function hairpinHeaders(jwksUrl: string, issuer: string): Record<string, string> {
+  try {
+    const jwksHost = new URL(jwksUrl).host;
+    const iss = new URL(issuer);
+    if (jwksHost === iss.host) return {};
+    return { Host: iss.host, 'X-Forwarded-Proto': iss.protocol.replace(':', ''), 'X-Forwarded-Host': iss.host };
+  } catch {
+    return {};
+  }
+}
+
 export function scopeQueryFor(webId: string): string {
   // The grant subject is the Principal INDIVIDUAL, joined to the token's
   // identity via its chorus:webId property (same join as the owl-api door's
@@ -80,7 +101,7 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
     const now = deps.nowSecs();
     if (!jwks || jwks.expires <= now || !jwks.keys.has(kid)) {
       try {
-        const res = await fetchFn(deps.jwksUrl);
+        const res = await fetchFn(deps.jwksUrl, { headers: hairpinHeaders(deps.jwksUrl, deps.issuer) });
         if (!res.ok) return jwks?.keys.get(kid) ?? null;
         const body = (await res.json()) as { keys?: Array<Record<string, string>> };
         const keys = new Map<string, crypto.KeyObject>();

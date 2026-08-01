@@ -61,8 +61,11 @@ ref_files=$(grep -rl --exclude-dir=target --exclude-dir=node_modules --exclude-d
 if [ $r_rc -ge 2 ]; then
   item shared_secret_refs unknown "grep failed — NOT measured"
 else
-  refs=$(printf '%s\n' "$ref_files" | grep -vE "test|\.md$" | grep -c . || true)
-  item shared_secret_refs "$refs" "files reading CHORUS_SERVICE_TOKEN_SECRET (goal 0)"
+  # #3720 — SOURCE FILES ONLY (the same rule hs256_minters carries): the plain
+  # grep sweeps runtime artifacts (pulse/messages.db, logs) that merely MENTION
+  # the string in recorded history. Mentions are not readers.
+  refs=$(printf '%s\n' "$ref_files" | grep -E '\.(sh|py|rs|ts|js|plist|yml)$' | grep -vE "test|\.md$" | grep -c . || true)
+  item shared_secret_refs "$refs" "source files reading CHORUS_SERVICE_TOKEN_SECRET (goal 0)"
 fi
 
 # ── hs256_verify_branch: the dual-verify arm still present? ──────────────────
