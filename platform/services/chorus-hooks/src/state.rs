@@ -279,11 +279,24 @@ impl AppState {
 /// 200 lines on CI with zero corrupt lines — nothing interleaved, one append just
 /// vanished, and neither the function nor the test could say why.
 ///
-/// Transient failures are retried rather than lost. 200 concurrent appends can
+/// The lost event turned out to have TWO causes, and the swallowed error hid
+/// both:
+///
+///   1. THE MISSING FLUSH (the actual one — see the comment at the flush call).
+///      `tokio::fs::File` buffers and does not flush on drop, so `write_all`
+///      could report success while the bytes never reached the OS.
+///   2. Unreported io errors. Even with the flush, an open or write that genuinely
+///      fails must not vanish silently on this file.
+///
+/// Transient failures are retried rather than lost — 200 concurrent appends can
 /// hit the process fd ceiling (EMFILE/ENFILE) or a signal-interrupted syscall on
-/// a small runner; those are momentary and a short backoff clears them. A
-/// persistent error (bad path, permissions, full disk) still returns Err after
-/// the retries so the caller — and the test — can name it.
+/// a small runner, and a short backoff clears those. Worth being precise about
+/// what that retry is and isn't: I could not reproduce the CI loss through fd
+/// pressure (0/25 locally, clean at `ulimit -n 96`), and the flush is what
+/// actually explains it. The retry is defence for a condition that has not been
+/// observed here; the flush is the fix. A persistent error (bad path,
+/// permissions, full disk) still returns Err after the retries so the caller —
+/// and the test — can name it.
 pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::Result<()> {
     use tokio::fs::OpenOptions;
     use tokio::io::AsyncWriteExt;
@@ -306,7 +319,18 @@ pub async fn append_log_result(path: &std::path::Path, line: &str) -> std::io::R
         }
         let attempted = async {
             let mut f = OpenOptions::new().create(true).append(true).open(path).await?;
-            f.write_all(&buf).await
+            f.write_all(&buf).await?;
+            // #3721 — THE FLUSH IS LOAD-BEARING, and its absence was the actual
+            // bug. `tokio::fs::File` is not a thin wrapper around the syscall: it
+            // buffers, and dropping it does NOT flush. The old code did
+            // `write_all(...).await` and let the file drop at end of scope, so a
+            // write could report success and still never reach the OS. That is
+            // the missing spine event — #3278's atomicity test seeing 199 of 200
+            // lines with zero corrupt ones, and my own two-append unit test
+            // reading back only the first line on CI. Nothing was interleaved and
+            // no fd was exhausted; the bytes were simply still in a buffer that
+            // got dropped.
+            f.flush().await
         }
         .await;
         match attempted {
