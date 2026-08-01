@@ -74,7 +74,12 @@ jobs:
     # in the only form the cost-stop allows. Promoting to a branch-protection
     # required check (blocks PR merge) needs per-PR CI revived + a DEC-2525
     # update per the policy clause above — a separate, costed decision.
-    if: github.event_name == 'schedule'
+    # #3721 — was schedule-only, so a workflow_dispatch validation run SKIPPED
+    # this job and the run still reported success. Four jobs (ESLint ratchet, tsc,
+    # clippy, clippy ratchet) were invisible to every dispatch — you could not
+    # validate a fix to them without waiting for 03:00. Matches the gate the
+    # integration jobs already use.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
@@ -101,7 +106,12 @@ jobs:
     runs-on: ubuntu-latest
     # DEC-2525: non-required, signal-only post-disconnect (#2526).
     # Wave 3: schedule-only — 7-runner matrix is a top burner.
-    if: github.event_name == 'schedule'
+    # #3721 — was schedule-only, so a workflow_dispatch validation run SKIPPED
+    # this job and the run still reported success. Four jobs (ESLint ratchet, tsc,
+    # clippy, clippy ratchet) were invisible to every dispatch — you could not
+    # validate a fix to them without waiting for 03:00. Matches the gate the
+    # integration jobs already use.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -546,7 +556,12 @@ jobs:
     # DEC-2525: non-required for both crates post-disconnect (#2526).
     # Wave 3: schedule-only — runs nightly. Per-PR clippy via local
     # pre-commit; CI nightly catches anything that bypassed.
-    if: github.event_name == 'schedule'
+    # #3721 — was schedule-only, so a workflow_dispatch validation run SKIPPED
+    # this job and the run still reported success. Four jobs (ESLint ratchet, tsc,
+    # clippy, clippy ratchet) were invisible to every dispatch — you could not
+    # validate a fix to them without waiting for 03:00. Matches the gate the
+    # integration jobs already use.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -585,7 +600,12 @@ jobs:
     # alert routes to Silas for triage.
     name: clippy ratchet (per-lint count)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
+    # #3721 — was schedule-only, so a workflow_dispatch validation run SKIPPED
+    # this job and the run still reported success. Four jobs (ESLint ratchet, tsc,
+    # clippy, clippy ratchet) were invisible to every dispatch — you could not
+    # validate a fix to them without waiting for 03:00. Matches the gate the
+    # integration jobs already use.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     env:
       CHORUS_ROOT: ${{ github.workspace }}
     steps:
