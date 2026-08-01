@@ -278,7 +278,7 @@ pub struct RouteTable {
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
     pub tree_edges: Vec<String>, // #3660 — recursive-descent edge localnames, PROJECTED from chorus:treeEdge on the shape. Empty = no /tree read emitted.
     pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
-    pub model_version: String,   // #3704 — the class's strangler-fig version, PROJECTED from chorus:modelVersion on the class ("v1"=superseded, "v2"=canonical). Born-v2 default: absent → "v2".
+    pub model_version: String,   // #3704/#3706 — PROJECTED from chorus:modelVersion on the class. "target"=reviewed-canonical, "legacy"=reviewed-strangled; transitional literals "v1"/"v2" persist until the review pass (v1≈legacy, v2≈claimed-current-unreviewed). ABSENT → "unclassified": nobody has reviewed the class, and it must never render as current (born-v2 removed 2026-07-30, Jeff's ruling).
 }
 
 /// #3506 / ADR-048 §3 — the read-side field-exposure gate (fail-closed). A field's
@@ -1014,14 +1014,17 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     );
     let tree_order = select_v(&sparql_json(&toq)?).into_iter().next();
-    // #3704 — PROJECT the class's model-version from chorus:modelVersion. Absent → "v2"
-    // (born-v2 default): an unmarked class is current/canonical; only superseded classes
-    // carry "v1". Read off the CLASS itself, not the shape's targetClass.
+    // #3706 — PROJECT the class's model-version from chorus:modelVersion. ABSENT →
+    // "unclassified": no human has reviewed the class, and absence is never promoted
+    // to canonical. (The born-v2 default that lived here stamped ~120 unreviewed
+    // classes "v2" in every envelope — the rule survived in this code after Jeff
+    // rejected it in the ontology, which is exactly the model/serving incoherence
+    // #3706 exists to end.) Read off the CLASS itself, not the shape's targetClass.
     let mvq = format!(
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> chorus:modelVersion ?v }} }} LIMIT 1",
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     );
-    let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "v2".to_string());
+    let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "unclassified".to_string());
     routes.extend(tree_routes(&plural, &tree_edges));
     Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
 }
@@ -2430,7 +2433,8 @@ pub fn error_envelope(
         "{{ \"type\": \"/errors/{}\", \"title\": \"{}\", \"status\": {}, \"detail\": \"{}\", \"instance\": \"{}\"{} }}",
         json_escape(type_slug), title, status, json_escape(detail), json_escape(&instance), errs
     );
-    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None, "v2")
+    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None, "unclassified")
+    // #3706 — an error envelope has no reviewed class behind it; it must not claim "v2".
 }
 
 /// #3506 / ADR-047 §7 — read one query param from a `&`-joined query string.
@@ -3268,6 +3272,41 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
+        // #3706 — BULK SCHEMA: GET /schema returns every shaped class's schema in
+        // ONE document (kind, fields, mandatory, modelVersion). The per-class
+        // /schema/<class> route stays; this exists because a consumer that wants
+        // the WHOLE model — the model view — otherwise pays one round-trip per
+        // class. The class view was making 42 requests to draw one screen, which
+        // is fine on loopback and hangs over wifi through the /owl proxy. Same
+        // projection, same source, one response. No new data, no second
+        // implementation — it reads the identical RouteTables the per-class route
+        // reads, so the two can never disagree.
+        if path == "/schema" {
+            let items: Vec<String> = tables
+                .iter()
+                .map(|t| {
+                    let local = t.class.rsplit('#').next().unwrap_or("");
+                    let fields: Vec<String> =
+                        t.fields.iter().map(|f| format!("\"{}\"", json_escape(f))).collect();
+                    let mandatory: Vec<String> =
+                        t.mandatory.iter().map(|m| format!("\"{}\"", json_escape(m))).collect();
+                    format!(
+                        "{{ \"kind\": \"{}\", \"fields\": [{}], \"mandatory\": [{}], \"modelVersion\": \"{}\" }}",
+                        json_escape(local),
+                        fields.join(", "),
+                        mandatory.join(", "),
+                        json_escape(&t.model_version)
+                    )
+                })
+                .collect();
+            let doc = format!(
+                "{{ \"apiVersion\": \"{}\", \"service\": \"owl-api\", \"kind\": \"SchemaSet\", \"graph\": \"{}\", \"count\": {}, \"classes\": [{}] }}",
+                API_VERSION, ONTOLOGY_GRAPH, tables.len(), items.join(", ")
+            );
+            let resp = http_response_ct(status_line(200), &doc, "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
         // #3506 / ADR-047 §7 — served OpenAPI for EVERY surface: /<plural>/openapi.json
         // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
         // every primitive documents itself, found via the discovery root above.
@@ -3956,7 +3995,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
         };
         let h = page_html(&t);
         // projection doctrine — the generated marker says regenerate, never hand-edit
@@ -3992,7 +4031,7 @@ mod tests {
             mandatory: vec![],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
         });
         assert!(svc.contains("id=\"bc-domain\">Service</span>"), "breadcrumb projects the class (Service)");
         assert!(!svc.contains(">Domain</span>"), "a Service page never hardcodes Domain in the breadcrumb");
@@ -4028,7 +4067,7 @@ mod tests {
             ],
             secured: vec![],
             tree_edges: vec![],
-            tree_order: None, model_version: "v2".to_string(),
+            tree_order: None, model_version: "unclassified".to_string(),
         }
     }
 
@@ -4202,7 +4241,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
         };
         assert_eq!(routes_json(&t), routes_json(&t));
         assert!(routes_json(&t).contains("\"generatedFrom\""));
@@ -4266,7 +4305,7 @@ mod tests {
             mandatory: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
+            instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
         };
         let j = routes_json(&t);
         assert!(j.contains("\"mandatory\": [\"label\", \"comment\"]"),
@@ -4291,7 +4330,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string() };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -4329,7 +4368,7 @@ mod tests {
             mandatory: vec!["filePath".into(), "testName".into()],
             repo_target: String::new(),
             exposure: vec![],
-            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, model_version: "v2".to_string(),
+            instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
         };
         let scope = vec![t.instances_graph.clone()];
         let ts = dal_skeleton_ts(&t, &scope);
