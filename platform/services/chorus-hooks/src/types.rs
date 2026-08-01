@@ -313,7 +313,14 @@ pub fn is_fix_card() -> bool {
         let forced = v == "1" || v.eq_ignore_ascii_case("true");
         let role = caller_role_for_event();
         // Best-effort spine emit; failures must not affect gate behavior.
-        let _ = std::process::Command::new("/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log")
+        // #3721 — this used to hardcode /Users/jeffbridwell/.../chorus-log, so
+        // off Jeff's machine Command::new failed, `let _ =` swallowed it by
+        // design, and the ADR-028 audit event NEVER FIRED — silently, everywhere
+        // else. #2505 already fixed this exact class ("was a hardcoded Mac path
+        // which broke on Linux CI") and added chorus_log_script(); this call site
+        // just never adopted it. Use the resolver so the audit trail exists
+        // wherever CHORUS_ROOT points.
+        let _ = std::process::Command::new(crate::shared::state_paths::chorus_log_script())
             .args(["gate.test_override.checked", &role,
                    &format!("forced={} value={}", forced, v)])
             .output();
