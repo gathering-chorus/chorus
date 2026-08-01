@@ -29,7 +29,14 @@ function mintBin(): string {
 export function mintServiceToken(): string | null {
   const role = process.env.CHORUS_ROLE || process.env.DEPLOY_ROLE || DEFAULT_ROLE;
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- mintBin() is env CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the fixed repo script path; no user input
+    // #3721 — dropped the eslint-disable for security/detect-non-literal-fs-filename:
+    // that rule targets fs.* calls and never fired on this execFileSync, so the
+    // suppression was dead. A dead suppression is worse than none — it reads as
+    // "a real finding was reviewed and accepted here", and it would silently
+    // swallow the rule if it ever DID start matching. Its rationale is worth
+    // keeping, so it stays as a plain comment: mintBin() resolves to env
+    // CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the fixed repo script path —
+    // no user input reaches it.
     const out = execFileSync(mintBin(), [role], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
       .toString('utf-8')
       .trim();

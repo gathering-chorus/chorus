@@ -42,7 +42,12 @@ export interface IdentityVerifierDeps {
 }
 
 interface SparqlBindings {
-  results?: { bindings?: Array<Record<string, { value?: string }>> };
+  // #3721 — the cell type is `| undefined` deliberately. SPARQL omits a
+  // variable entirely from a row when it is unbound, so `b.s` really can be
+  // absent; the old `Record<string, {value?: string}>` claimed otherwise and
+  // made the `b.s?.value` guard below look redundant to the linter. The guard
+  // was right and the type was wrong — fixed the type, kept the guard.
+  results?: { bindings?: Array<Record<string, { value?: string } | undefined>> };
 }
 
 function b64urlJson(part: string): Record<string, unknown> | null {
@@ -78,6 +83,64 @@ function hairpinHeaders(jwksUrl: string, issuer: string): Record<string, string>
   }
 }
 
+/** #3721 — extracted from keyFor. Fetches the JWKS and parses it into usable EC
+ *  keys, distinguishing the two failure modes the cache policy treats
+ *  differently (see keyFor): 'refused' = the endpoint answered non-2xx,
+ *  'unreachable' = the fetch itself threw. A JWK that will not parse is skipped
+ *  rather than failing the batch — one bad key must not blind the door to the
+ *  rest. */
+async function fetchJwks(
+  fetchFn: typeof fetch,
+  jwksUrl: string,
+  issuer: string,
+): Promise<Map<string, crypto.KeyObject> | 'refused' | 'unreachable'> {
+  try {
+    const res = await fetchFn(jwksUrl, { headers: hairpinHeaders(jwksUrl, issuer) });
+    if (!res.ok) return 'refused';
+    const body = (await res.json()) as { keys?: Array<Record<string, string>> };
+    const keys = new Map<string, crypto.KeyObject>();
+    for (const jwk of body.keys ?? []) {
+      if (jwk.kty !== 'EC' || !jwk.kid) continue;
+      try {
+        keys.set(jwk.kid, crypto.createPublicKey({ key: jwk, format: 'jwk' }));
+      } catch {
+        /* skip unparseable keys; the rest may still verify */
+      }
+    }
+    return keys;
+  } catch {
+    return 'unreachable';
+  }
+}
+
+/** #3721 — extracted from verify. The header decides three outcomes, and the
+ *  HS256 one must stay DISTINCT: #3618 retired the shared-secret path, and a
+ *  caller has to be able to tell "you presented a retired algorithm" from
+ *  "this token is malformed" — collapsing them would hide a live misconfigured
+ *  client behind generic invalidity. */
+function kidFromHeader(
+  header: Record<string, unknown> | null,
+): { kid: string } | { reason: 'hs256-retired' | 'invalid' } {
+  if (!header) return { reason: 'invalid' };
+  if (header.alg === 'HS256') return { reason: 'hs256-retired' };
+  if (header.alg !== 'ES256') return { reason: 'invalid' };
+  return { kid: typeof header.kid === 'string' ? header.kid : '' };
+}
+
+/** #3721 — extracted from verify. Every claim check is fail-closed and returns
+ *  the same refusal, so they collapse to one predicate: the token names an
+ *  issuer we trust, has not expired, and carries a WebID. */
+function webIdFromClaims(
+  claims: Record<string, unknown> | null,
+  issuer: string,
+  nowSecs: number,
+): string | null {
+  if (!claims) return null;
+  if (typeof claims.iss !== 'string' || !sameIssuer(claims.iss, issuer)) return null;
+  if (typeof claims.exp !== 'number' || claims.exp <= nowSecs) return null;
+  return typeof claims.webid === 'string' && claims.webid ? claims.webid : null;
+}
+
 export function scopeQueryFor(webId: string): string {
   // The grant subject is the Principal INDIVIDUAL, joined to the token's
   // identity via its chorus:webId property (same join as the owl-api door's
@@ -97,28 +160,33 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
   let jwks: { keys: Map<string, crypto.KeyObject>; expires: number } | null = null;
   const scopeCache = new Map<string, { scope: string[]; expires: number }>();
 
+  // #3721 — keyFor was one function carrying fetch + parse + two distinct
+  // failure policies, over both the complexity and cognitive-complexity limits.
+  // Split into fetch-and-parse (below, module scope) and the cache policy here.
+  // Behaviour is unchanged, including the deliberate asymmetry between the two
+  // failure modes, which is easy to lose in a rewrite and is named explicitly:
+  //   - JWKS answered non-2xx  → serve a cached key EVEN IF EXPIRED. The
+  //     endpoint is up and told us no; the key we hold is the best evidence
+  //     available and refusing every request is the worse failure.
+  //   - JWKS unreachable/threw → serve a cached key ONLY while unexpired. We
+  //     cannot distinguish "down" from "rotated away", so an expired key is
+  //     not evidence and we fail closed.
   async function keyFor(kid: string): Promise<crypto.KeyObject | null> {
     const now = deps.nowSecs();
-    if (!jwks || jwks.expires <= now || !jwks.keys.has(kid)) {
-      try {
-        const res = await fetchFn(deps.jwksUrl, { headers: hairpinHeaders(deps.jwksUrl, deps.issuer) });
-        if (!res.ok) return jwks?.keys.get(kid) ?? null;
-        const body = (await res.json()) as { keys?: Array<Record<string, string>> };
-        const keys = new Map<string, crypto.KeyObject>();
-        for (const jwk of body.keys ?? []) {
-          if (jwk.kty !== 'EC' || !jwk.kid) continue;
-          try {
-            keys.set(jwk.kid, crypto.createPublicKey({ key: jwk, format: 'jwk' }));
-          } catch {
-            /* skip unparseable keys; the rest may still verify */
-          }
-        }
-        jwks = { keys, expires: now + ttl };
-      } catch {
-        // unreachable JWKS: keep any still-cached keys until expiry, else fail
-        return jwks && jwks.expires > now ? (jwks.keys.get(kid) ?? null) : null;
-      }
+    const cached = jwks;
+    const cachedIsFresh = cached !== null && cached.expires > now;
+    if (cachedIsFresh && cached.keys.has(kid)) return cached.keys.get(kid) ?? null;
+
+    const refreshed = await fetchJwks(fetchFn, deps.jwksUrl, deps.issuer);
+    if (refreshed === 'unreachable') {
+      // No `?.` on cached here: cachedIsFresh narrows it to non-null (TS
+      // narrows through the const boolean alias), unlike the 'refused' branch
+      // below where it can still be null.
+      return cachedIsFresh ? (cached.keys.get(kid) ?? null) : null;
     }
+    if (refreshed === 'refused') return cached?.keys.get(kid) ?? null;
+
+    jwks = { keys: refreshed, expires: now + ttl };
     return jwks.keys.get(kid) ?? null;
   }
 
@@ -143,12 +211,9 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
   return async function verify(token: string): Promise<VerifyResult> {
     const parts = token.split('.');
     if (parts.length !== 3) return { ok: false, reason: 'invalid' };
-    const header = b64urlJson(parts[0]);
-    if (!header) return { ok: false, reason: 'invalid' };
-    if (header.alg === 'HS256') return { ok: false, reason: 'hs256-retired' };
-    if (header.alg !== 'ES256') return { ok: false, reason: 'invalid' };
-    const kid = typeof header.kid === 'string' ? header.kid : '';
-    const key = kid ? await keyFor(kid) : null;
+    const head = kidFromHeader(b64urlJson(parts[0]));
+    if ('reason' in head) return { ok: false, reason: head.reason };
+    const key = head.kid ? await keyFor(head.kid) : null;
     if (!key) return { ok: false, reason: 'invalid' };
 
     const sigOk = crypto.verify(
@@ -159,15 +224,7 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
     );
     if (!sigOk) return { ok: false, reason: 'invalid' };
 
-    const claims = b64urlJson(parts[1]);
-    if (!claims) return { ok: false, reason: 'invalid' };
-    if (typeof claims.iss !== 'string' || !sameIssuer(claims.iss, deps.issuer)) {
-      return { ok: false, reason: 'invalid' };
-    }
-    if (typeof claims.exp !== 'number' || claims.exp <= deps.nowSecs()) {
-      return { ok: false, reason: 'invalid' };
-    }
-    const webId = typeof claims.webid === 'string' ? claims.webid : '';
+    const webId = webIdFromClaims(b64urlJson(parts[1]), deps.issuer, deps.nowSecs());
     if (!webId) return { ok: false, reason: 'invalid' };
 
     return { ok: true, webId, scope: await scopesFor(webId) };
