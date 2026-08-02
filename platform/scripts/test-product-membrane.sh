@@ -14,12 +14,32 @@
 #   --dry-run  list what would be stopped/probed, touch nothing
 set -uo pipefail
 
+# #3722 — SELF-GUARD: this test bootouts every com.chorus.* agent. If it is
+# ITSELF running under one (e.g. the nightly-suites LaunchAgent invoked it), it
+# would kill its own runner mid-loop — the ~13-min "untrappable" nightly killer
+# (Jul 22–Aug 2). Refuse in that case; this belongs to an ops/CI run with full
+# restore authority, not inside an agent it will stop. Walk the ancestry via ps.
+if [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
+  _pid=$PPID
+  while [ "${_pid:-0}" -gt 1 ]; do
+    _cmd="$(ps -o command= -p "$_pid" 2>/dev/null || true)"
+    case "$_cmd" in
+      *com.chorus.*|*nightly-suites.sh*)
+        echo "REFUSED — test-product-membrane runs under a chorus agent ancestor (pid $_pid: ${_cmd%% *}); it would bootout its own runner. Run from an ops shell, or set MEMBRANE_ALLOW_UNDER_AGENT=1 if you own the restore. (#3722)" >&2
+        exit 3 ;;
+    esac
+    _pid="$(ps -o ppid= -p "$_pid" 2>/dev/null | tr -d ' ')"
+  done
+fi
+
 UID_N="$(id -u)"
 RESULTS="${MEMBRANE_RESULTS:-/tmp/membrane-test-$(date +%Y%m%d-%H%M%S).txt}"
 
 # Every loaded com.chorus.* agent with a live PID (running services only —
 # periodic jobs without a PID have nothing to stop).
 chorus_running() {
+  # #3722 — never list com.chorus.session-watcher/nightly-suites as stoppable if
+  # this run somehow descends from one (defense-in-depth behind the self-guard).
   launchctl list | awk '$1 ~ /^[0-9]+$/ && $3 ~ /^com\.chorus\./ {print $3}'
 }
 
