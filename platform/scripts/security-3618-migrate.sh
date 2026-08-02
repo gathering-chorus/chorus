@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# #3726 SUPERSEDED — the security substrate now deploys via chorus-model-deploy.sh
+# (MODEL_SET security schema/surfaces → ontology; SECURITY_SET identity/scopes →
+# urn:chorus:domains:security). A fresh load reproduces it; this one-time migration
+# is kept for history only. Do NOT hand-run — the deploy set is the source of truth.
 # #3618 — live-graph migration: chorus:security-trust → chorus:security + the
 # security-family model (identity child, Principal, KeyRegistryEntry, APISurface,
 # first-class instances, shapes). Same two-mode pattern as products-3603-migrate.sh:
