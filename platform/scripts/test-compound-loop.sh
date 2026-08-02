@@ -73,9 +73,18 @@ assert_contains "UserPromptSubmit registered" "UserPromptSubmit" "$output"
 
 # --- Test 3: Hook shim binary exists ---
 echo "Test 3: Hook shim binary exists"
-SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# #3725 — was hardcoded to ${CHORUS_ROOT}/platform/services/chorus-hooks/target/release.
+# Per CSC #2734 that is the BUILD artifact; the DEPLOY artifact lives in
+# ~/.chorus/bin (that split exists so macOS TCC grants survive rebuilds). The
+# hardcoded path made this FAIL in any freshly-pulled werk — no release build
+# there yet — while the shim was deployed and serving the whole time. A false red
+# about a binary that exists, which is the same stale-path class as the retired
+# /tmp socket fixed in #3721. Resolve the way the operational scripts do:
+# `command -v` first, build path only as the pre-deploy fallback.
+SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
+[ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 if [ -x "$SHIM" ]; then
-  echo "  PASS: shim binary exists and is executable"
+  echo "  PASS: shim binary exists and is executable ($SHIM)"
   ((PASS++))
 else
   echo "  FAIL: shim binary not found at $SHIM"

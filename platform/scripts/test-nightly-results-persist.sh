@@ -71,7 +71,19 @@ OUT=$(NIGHTLY_LOG_PATH="$LOG" bash "$NIGHTLY" --last-run 2>&1)
 #    Now anchored to a BARE, whole-line print of the results: a tty-guarded line
 #    cannot match (it starts with `[`), and a RUN| marker cannot match (its
 #    format string is not '%s\n').
-DISPATCH=$(sed -n '/--run-all)/,/;;/p' "$NIGHTLY")
+# #3725 — the extraction stopped at the FIRST `;;` after `--run-all)`. Silas's
+# #3722 then added a NESTED `case "$CHORUS_ROOT" in ... fi ;;` inside that arm
+# (werk log-isolation), so the range now truncated there and never reached
+# `persist_run_results` 60 lines further down. Result: "--run-all does not call
+# persist_run_results" — a FALSE RED on correct code, currently failing on
+# canonical main too. Exactly the failure this file already suffered once: in
+# #3721 its sibling check false-fired when #3720 added a printf the pattern
+# didn't anticipate. A crude extractor breaks every time the code it reads over
+# grows a new construct.
+# Now terminate on a line that is ONLY whitespace + `;;` — the arm terminator at
+# its own indent level. A nested `fi ;;` / `esac ;;` has content before the `;;`
+# and no longer ends the range.
+DISPATCH=$(awk '/--run-all\)/{f=1} f{print} f && /^[[:space:]]*;;[[:space:]]*$/{exit}' "$NIGHTLY")
 if printf '%s' "$DISPATCH" | grep -qE "^[[:space:]]*printf[[:space:]]+'%s\\\\n'[[:space:]]+\"\\\$out\"[[:space:]]*$" ; then
   no "dispatch prints the results unconditionally AND persists them — duplicates under a working redirect"
 else
