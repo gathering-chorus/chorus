@@ -25,17 +25,37 @@ GEN_SCRIPT="${CHORUS_ROOT}/platform/scripts/generate-standards-surface.sh"
   [[ "$output" == *"first run"* ]] || [[ "$output" == *"would regenerate"* ]]
 }
 
+# #3725 AC6 — these two declared "@test-type: unit — hermetic source guard" and
+# were neither. Both ran `--force` with no seam set, so they wrote the REAL
+# ~/.chorus/standards-surface-checksums.json and regenerated the REAL standards
+# HTML into the repo from whatever sources the running machine could see. That is
+# where hollow chorus-standards.html rebuilds (0 feedback rules, 0 stories) kept
+# coming from. #3710 fixed exactly this in the sibling AC2 dry-run test above and
+# these two were never migrated — the pattern existed, nothing made them adopt it.
+#
+# Both seams are now used: STANDARDS_STATE_FILE (#3710) for the checksum state,
+# STANDARDS_OUTPUT_DIR (#3725) for the generated output. The tests assert against
+# their own paths, so they finally test what they claim without touching the
+# machine they run on.
+
 @test "AC2: skip when sources unchanged — checksum file persists after force run" {
-  # Force run creates the checksum file
-  bash "$SCRIPT" --force 2>/dev/null || true
-  # Verify state file was written
-  [ -f "$HOME/.chorus/standards-surface-checksums.json" ]
-  # State file should contain JSON with source hashes
-  [[ "$(cat "$HOME/.chorus/standards-surface-checksums.json")" == *"decisions"* ]]
+  local state="${BATS_TEST_TMPDIR}/checksums-$$.json"
+  local outdir="${BATS_TEST_TMPDIR}/out-$$"
+  mkdir -p "$outdir"
+  rm -f "$state"
+  env STANDARDS_STATE_FILE="$state" STANDARDS_OUTPUT_DIR="$outdir" \
+    bash "$SCRIPT" --force 2>/dev/null || true
+  # The state file the RUN was told to use is the one that must exist.
+  [ -f "$state" ]
+  [[ "$(cat "$state")" == *"decisions"* ]]
 }
 
 @test "AC1: force flag always regenerates" {
-  run bash "$SCRIPT" --force
+  local state="${BATS_TEST_TMPDIR}/force-checksums-$$.json"
+  local outdir="${BATS_TEST_TMPDIR}/force-out-$$"
+  mkdir -p "$outdir"
+  run env STANDARDS_STATE_FILE="$state" STANDARDS_OUTPUT_DIR="$outdir" \
+    bash "$SCRIPT" --force
   [ "$status" -eq 0 ]
   [[ "$output" == *"Forced regeneration"* ]]
   [[ "$output" == *"complete"* ]]

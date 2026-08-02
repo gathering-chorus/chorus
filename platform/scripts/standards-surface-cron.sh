@@ -17,6 +17,17 @@ GEN_SCRIPT="$SCRIPT_DIR/generate-standards-surface.sh"
 # seam just never existed, so it deleted an unrelated file and then asserted
 # against the real cached state, which correctly said "unchanged".
 STATE_FILE="${STANDARDS_STATE_FILE:-$HOME/.chorus/standards-surface-checksums.json}"
+# #3725 AC6 — the seam was only half-built. #3710 added STANDARDS_STATE_FILE so a
+# test could own its checksum state, but --force also REGENERATES the real
+# standards HTML into the repo, which no env could redirect. Two tests in
+# standards-surface-cron.bats call --force while declaring themselves
+# "@test-type: unit — hermetic", so running that file rewrote committed docs from
+# whatever sources the machine happened to have. That is where the hollow
+# chorus-standards.html (0 feedback rules, 0 stories) kept coming from — a
+# generated artifact rebuilt in an environment that cannot see its own inputs.
+# STANDARDS_OUTPUT_DIR completes the seam so a test can own its output as well as
+# its state; unset, behaviour is exactly as before.
+STANDARDS_OUTPUT_DIR="${STANDARDS_OUTPUT_DIR:-}"
 LOG_TAG="standards-surface-cron"
 
 # Sources to monitor for changes
@@ -108,7 +119,12 @@ main() {
 
   # Regenerate
   log "Sources changed — regenerating standards surface"
-  if bash "$GEN_SCRIPT" 2>&1; then
+  if [ -n "$STANDARDS_OUTPUT_DIR" ]; then
+    _gen_args=(--output-dir "$STANDARDS_OUTPUT_DIR")
+  else
+    _gen_args=()
+  fi
+  if bash "$GEN_SCRIPT" "${_gen_args[@]}" 2>&1; then
     log "Regeneration complete"
     mkdir -p "$(dirname "$STATE_FILE")"
     echo "$current_checksums" > "$STATE_FILE"
