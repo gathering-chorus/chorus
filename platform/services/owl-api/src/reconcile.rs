@@ -115,6 +115,22 @@ pub fn chorus_root() -> String {
 }
 
 /// Fixture, test and staging graphs. Never merged into live counts.
+///
+/// THIS IS A NAME HEURISTIC AND IT CANNOT BE ANYTHING ELSE TODAY — nothing in
+/// the model declares which graphs are fixtures, so the only available signal is
+/// what someone happened to call them. It catches the current bats series, and
+/// it caught them correctly (verified live 2026-08-02: all six bats graphs
+/// labelled fixture, none merged into live counts).
+///
+/// What it does NOT catch is the point. `urn:chorus:verbs-sandbox`,
+/// `urn:chorus:instances-enrichtest`, `urn:chorus:instances-bt5`,
+/// `urn:chorus:instances-batchdoor-test2` and the typo'd
+/// `urn:chorus:domain:tests` (SINGULAR, 58 triples, sitting beside the real
+/// plural one) are all test detritus this predicate reads as live. A heuristic
+/// that silently defaults the unrecognized to "live" is the same
+/// cannot-distinguish-two-states shape as everything else found this week —
+/// so `classify_graph` below refuses to default, and says "unclassified"
+/// out loud instead.
 pub fn is_fixture_graph(g: &str) -> bool {
     g.contains("-test-")
         || g.contains("bats")
@@ -122,6 +138,24 @@ pub fn is_fixture_graph(g: &str) -> bool {
         || g.ends_with("-empty")
         || g.ends_with("-bad")
         || g.ends_with("-proving")
+}
+
+/// The graphs the model actually sanctions. Anything outside this and outside
+/// `is_fixture_graph` is UNCLASSIFIED — counted live (conservative: never hide
+/// data), but named as unclassified so a stray graph cannot pass as model
+/// content by being unrecognized.
+pub fn is_sanctioned_graph(g: &str) -> bool {
+    g == "urn:chorus:ontology"
+        || g == "urn:chorus:instances"
+        || g == "urn:chorus:documents"
+        || g == "urn:chorus:skills"
+        || g == "urn:chorus:gates"
+        || g == "urn:chorus:shapes"
+        || g == "urn:chorus:framework"
+        // Per-domain graphs — the end-state placement scheme. Plural `domains`
+        // only: `urn:chorus:domain:tests` is a typo, not a domain graph, and
+        // matching it here would launder the typo into sanctioned.
+        || g.starts_with("urn:chorus:domains:")
 }
 
 /// A punned class keeps its "instances" (subclasses) in the ontology graph —
@@ -443,6 +477,19 @@ pub fn reconcile_json(tables: &[RouteTable]) -> String {
         // instances sit somewhere its kind forbids is a finding; a class whose
         // instances sit in the current, sanctioned ABox home is not.
         //
+        // A graph that is neither sanctioned nor a recognized fixture gets
+        // NAMED, not silently absorbed into the live count.
+        for (g, n) in live.iter() {
+            if g != DEFAULT_GRAPH_LABEL && !is_sanctioned_graph(g) {
+                findings.push(format!(
+                    "{} instance(s) in UNCLASSIFIED graph {} — not a sanctioned model graph \
+                     and not a recognized fixture; counted live because hiding data is worse, \
+                     but it needs a ruling",
+                    n, g
+                ));
+            }
+        }
+
         // Residency in the UNNAMED default graph is always a finding, whatever
         // else is true. It is not a sanctioned home, no deploy manifest targets
         // it, and it is the one graph an unscoped query reads EXCLUSIVELY — so a
@@ -607,6 +654,27 @@ mod tests {
     // not at boot. Narrower, not closed — Fuseki restarts, auth expiry, and the
     // 15-21s event-loop blocks observed 2026-08-01 all land in that window.
     // Stated rather than claiming a live demo I could not get.
+    #[test]
+    fn the_typo_graph_is_not_laundered_into_sanctioned() {
+        // urn:chorus:domain:tests (SINGULAR) holds 58 triples beside the real
+        // plural graph. A `starts_with("urn:chorus:domain")` prefix would have
+        // swallowed it and made a typo look like a domain graph — which is how
+        // strays become permanent. Pin the boundary.
+        assert!(is_sanctioned_graph("urn:chorus:domains:tests"));
+        assert!(!is_sanctioned_graph("urn:chorus:domain:tests"), "the singular typo is NOT a domain graph");
+
+        // And the strays the name heuristic misses must land as unclassified —
+        // not fixture (the heuristic can't see them) and not sanctioned.
+        for g in [
+            "urn:chorus:verbs-sandbox",
+            "urn:chorus:instances-enrichtest",
+            "urn:chorus:instances-bt5",
+            "urn:chorus:instances-batchdoor-test2",
+        ] {
+            assert!(!is_sanctioned_graph(g), "{} is not sanctioned", g);
+        }
+    }
+
     #[test]
     fn the_default_graph_label_is_not_a_targetable_iri() {
         // Regression guard for the audit finding: this module was blind to the

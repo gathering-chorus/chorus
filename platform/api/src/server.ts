@@ -151,6 +151,29 @@ app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { ext
 const chorusPageDir = path.join(__dirname, '..', 'public', 'chorus-pages');
 const sendChorusPage = (file: string) =>
   (_req: Request, res: Response) => res.sendFile(path.join(chorusPageDir, file));
+// ── #3724: path-routed domain navigation ─────────────────────────
+// THREE ROUTES, ONE FILE. /domains, /domains/<domain>, /domains/<domain>/<instance>
+// all serve the same template; it reads its own path and asks the model what
+// that domain defines. Adding a domain to the model adds its pages with no code
+// change here — that is the AC, and it is why there is no per-domain route.
+//
+// Path form, not ?d=<name>: Jeff pastes these URLs to his phone. A query param
+// survives neither a paste nor a bookmark as legibly, and the path matches the
+// graph IRI scheme so "where does this live" and "where do I click" have one
+// answer.
+const domainsView = (_req: Request, res: Response) =>
+  res.sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
+app.get('/domains', domainsView);
+app.get('/domains/:domain', domainsView);
+app.get('/domains/:domain/:instance', domainsView);
+// The old query-param form redirects rather than lingering as a competing
+// surface — AC item, and the fifteen-competing-model-pages problem (#3706) is
+// exactly what leaving both alive produces.
+app.get('/athena/domain.html', (req: Request, res: Response) => {
+  const d = typeof req.query.d === 'string' ? req.query.d : '';
+  res.redirect(301, d ? '/domains/' + encodeURIComponent(d) : '/domains');
+});
+
 app.get('/chorus', sendChorusPage('chorus.html'));
 app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
 app.get('/chorus-model-data', sendChorusPage('chorus-model-data.html'));

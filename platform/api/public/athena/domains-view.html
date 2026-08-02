@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Domains — Chorus model</title>
+<!--
+  #3724 — ONE template, three levels, all 40 domains.
+
+    /domains                        the catalog
+    /domains/<domain>               that domain's vocabulary + instances
+    /domains/<domain>/<instance>    one instance, its edges walkable
+
+  There is no per-domain code. The page reads its own path, asks the model what
+  that domain defines, and renders whatever comes back. Adding a domain to the
+  model adds its pages — that is the AC, and it is why this is a template and
+  not forty files.
+
+  ALL FETCHES ARE SAME-ORIGIN (/owl/...). A hardcoded localhost:3360 is what
+  broke the LAN view on 2026-08-02 — the page loaded fine and every fetch failed,
+  which reads as "the server is down" from the couch. Never reintroduce it.
+-->
+<style>
+  :root {
+    --ink: #14161a;
+    --ink-soft: #565c66;
+    --ink-faint: #878d97;
+    --ground: #fbfaf8;
+    --panel: #ffffff;
+    --rule: #e4e2dd;
+    --accent: #1f5f4f;
+    --accent-soft: #e8f0ed;
+    --warn: #8a5a00;
+    --warn-soft: #fdf3e0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8e6e1; --ink-soft: #a6aab2; --ink-faint: #767b84;
+      --ground: #15171a; --panel: #1c1f23; --rule: #2c3037;
+      --accent: #6fc0a6; --accent-soft: #1b2b27;
+      --warn: #e0aa5a; --warn-soft: #2a2318;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8e6e1; --ink-soft: #a6aab2; --ink-faint: #767b84;
+    --ground: #15171a; --panel: #1c1f23; --rule: #2c3037;
+    --accent: #6fc0a6; --accent-soft: #1b2b27;
+    --warn: #e0aa5a; --warn-soft: #2a2318;
+  }
+  :root[data-theme="light"] {
+    --ink: #14161a; --ink-soft: #565c66; --ink-faint: #878d97;
+    --ground: #fbfaf8; --panel: #ffffff; --rule: #e4e2dd;
+    --accent: #1f5f4f; --accent-soft: #e8f0ed;
+    --warn: #8a5a00; --warn-soft: #fdf3e0;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 62rem; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+
+  nav.crumbs { font-size: .8125rem; letter-spacing: .02em; margin-bottom: .75rem; }
+  nav.crumbs a { color: var(--accent); text-decoration: none; }
+  nav.crumbs a:hover { text-decoration: underline; }
+  nav.crumbs span { color: var(--ink-faint); }
+
+  h1 { font-size: 1.9rem; line-height: 1.15; margin: 0 0 .35rem; text-wrap: balance; }
+  h1 code { font: inherit; }
+  .sub { color: var(--ink-soft); margin: 0 0 1.75rem; max-width: 46rem; }
+
+  .kind {
+    display: inline-block; font-size: .6875rem; text-transform: uppercase;
+    letter-spacing: .09em; padding: .2rem .5rem; border-radius: 3px;
+    background: var(--accent-soft); color: var(--accent); vertical-align: .28em;
+    margin-left: .6rem; font-weight: 600;
+  }
+
+  .grid { display: grid; gap: .625rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
+  .card {
+    display: block; padding: .8rem .9rem; background: var(--panel);
+    border: 1px solid var(--rule); border-radius: 6px;
+    text-decoration: none; color: inherit;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .n { font-weight: 600; display: block; }
+  .card .m { color: var(--ink-faint); font-size: .8125rem; display: block; margin-top: .15rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+  .scroll { overflow-x: auto; }
+  th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); font-weight: 600; }
+  td.k { color: var(--ink-soft); white-space: nowrap; width: 1%; }
+  a.ref { color: var(--accent); text-decoration: none; }
+  a.ref:hover { text-decoration: underline; }
+
+  h2 { font-size: .8125rem; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--ink-faint); margin: 2.25rem 0 .7rem; font-weight: 600; }
+
+  .note {
+    background: var(--warn-soft); border-left: 3px solid var(--warn);
+    padding: .8rem .95rem; border-radius: 0 4px 4px 0; color: var(--ink);
+    font-size: .9375rem;
+  }
+  .note strong { color: var(--warn); }
+  .empty { color: var(--ink-soft); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em; }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"><p class="empty">Loading the model…</p></div>
+
+<script>
+const OWL = '/owl';
+const app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// The path IS the query. No ?d= — an AC item, and the reason is that Jeff
+// pastes these to his phone.
+const seg = location.pathname.replace(/^\/domains\/?/, '').split('/').filter(Boolean).map(decodeURIComponent);
+
+async function get(p) {
+  const r = await fetch(OWL + p, { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error(p + ' → HTTP ' + r.status);
+  return r.json();
+}
+
+function crumbs(parts) {
+  const out = ['<a href="/domains">domains</a>'];
+  let acc = '/domains';
+  parts.forEach((p, i) => {
+    acc += '/' + encodeURIComponent(p);
+    out.push(i === parts.length - 1
+      ? '<span>' + esc(p) + '</span>'
+      : '<a href="' + acc + '">' + esc(p) + '</a>');
+  });
+  return '<nav class="crumbs">' + out.join(' <span>/</span> ') + '</nav>';
+}
+
+// kind → collection path, from the model's own discovery document. Never a
+// hardcoded map: a hardcoded one goes stale silently the first time a kind is
+// added, which is the whole failure mode this card exists to stop.
+let _disc = null;
+async function collectionFor(kind) {
+  _disc ??= await get('/');
+  const hit = (_disc.primitives || []).find(p => p.kind === kind);
+  return hit ? hit.collection : null;
+}
+
+function fail(e) {
+  app.innerHTML = crumbs(seg) +
+    '<h1>Could not read the model</h1>' +
+    '<div class="note"><strong>' + esc(e.message) + '</strong><br>' +
+    'This page only ever fetches same-origin <code>/owl/…</code>. A failure here means ' +
+    'owl-api is unreachable <em>through the proxy</em> — not that this domain is empty. ' +
+    'The difference matters: an empty render would be a fabricated answer.</div>';
+}
+
+async function renderCatalog() {
+  const d = await get('/domains');
+  const rows = (d.data || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  app.innerHTML = crumbs([]) +
+    '<h1>Domains<span class="kind">' + rows.length + ' live</span></h1>' +
+    '<p class="sub">Every domain in the model, generated from <code>' +
+      esc(d.generatedFrom?.graph || 'the model') + '</code>. A domain owns the vocabulary it is about — ' +
+      '<code>products</code> is a domain whose vocabulary is <code>Product</code>, which is why ' +
+      '<code>/domains/products</code> is the right shape and not a nesting mistake.</p>' +
+    '<div class="grid">' + rows.map(r => {
+      const v = [].concat(r.definesVocabulary || []).filter(Boolean);
+      return '<a class="card" href="/domains/' + encodeURIComponent(r.name) + '">' +
+        '<span class="n">' + esc(r.name) + '</span>' +
+        '<span class="m">' + (v.length ? esc(v.join(', ')) : 'declares no vocabulary') + '</span></a>';
+    }).join('') + '</div>';
+}
+
+async function renderDomain(name) {
+  const d = await get('/domains');
+  const dom = (d.data || []).find(r => r.name === name);
+  if (!dom) {
+    app.innerHTML = crumbs([name]) + '<h1>' + esc(name) + '</h1>' +
+      '<div class="note"><strong>No such domain in the model.</strong> ' +
+      'The catalog at <a class="ref" href="/domains">/domains</a> is the live list.</div>';
+    return;
+  }
+  const vocab = [].concat(dom.definesVocabulary || []).filter(Boolean);
+  let head = crumbs([name]) +
+    '<h1>' + esc(name) + '</h1>' +
+    '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') + '</p>';
+
+  // An honest empty state that names the reason — AC item. There are three
+  // different reasons a domain shows nothing, and collapsing them into one
+  // blank list is the exact failure this whole week has been about.
+  if (!vocab.length) {
+    app.innerHTML = head +
+      '<div class="note"><strong>This domain declares no vocabulary.</strong> ' +
+      'That is a fact about the model, not an empty page: with no <code>definesVocabulary</code> ' +
+      'edge there is no class to list instances of. 16 of 40 domains are in this state ' +
+      '(measured 2026-08-02), so the missing edge — not the missing data — is the thing to fix.</div>';
+    return;
+  }
+
+  const sections = [];
+  for (const kind of vocab) {
+    const coll = await collectionFor(kind);
+    if (!coll) {
+      sections.push('<h2>' + esc(kind) + '</h2><div class="note"><strong>Not served.</strong> ' +
+        '<code>' + esc(kind) + '</code> is declared as this domain\'s vocabulary but no collection ' +
+        'is generated for it — it has no shape, so the API cannot serve it. 96 of 117 classes ' +
+        'are in this state.</div>');
+      continue;
+    }
+    let body;
+    try {
+      const r = await get(coll.replace(/^\/v1/, ''));
+      const items = (r.data || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      body = items.length
+        ? '<div class="grid">' + items.map(i =>
+            '<a class="card" href="/domains/' + encodeURIComponent(name) + '/' + encodeURIComponent(i.name) + '">' +
+            '<span class="n">' + esc(i.label || i.name) + '</span>' +
+            '<span class="m">' + esc(i.name) + '</span></a>').join('') + '</div>'
+        : '<div class="note"><strong>Served, but zero instances live.</strong> ' +
+          'The collection exists and answered — the model genuinely holds none of these. ' +
+          'That is different from unreachable and different from unserved.</div>';
+    } catch (e) {
+      body = '<div class="note"><strong>' + esc(e.message) + '</strong> — could not read this collection. ' +
+             'Reported rather than rendered as empty.</div>';
+    }
+    sections.push('<h2>' + esc(kind) + '</h2>' + body);
+  }
+  app.innerHTML = head + sections.join('');
+}
+
+async function renderInstance(domainName, instName) {
+  const d = await get('/domains');
+  const dom = (d.data || []).find(r => r.name === domainName);
+  const vocab = dom ? [].concat(dom.definesVocabulary || []).filter(Boolean) : [];
+
+  let found = null, foundKind = null;
+  for (const kind of vocab) {
+    const coll = await collectionFor(kind);
+    if (!coll) continue;
+    try {
+      const r = await get(coll.replace(/^\/v1/, ''));
+      const hit = (r.data || []).find(i => i.name === instName);
+      if (hit) { found = hit; foundKind = kind; break; }
+    } catch { /* reported below if nothing is found at all */ }
+  }
+
+  const head = crumbs([domainName, instName]);
+  if (!found) {
+    app.innerHTML = head + '<h1>' + esc(instName) + '</h1>' +
+      '<div class="note"><strong>Not found in this domain\'s vocabulary.</strong> ' +
+      'Searched ' + (vocab.length ? '<code>' + vocab.map(esc).join('</code>, <code>') + '</code>' : 'nothing — the domain declares no vocabulary') +
+      '. The instance may live under a different domain, or not be served at all.</div>';
+    return;
+  }
+
+  // Edges render as links to the target's own path — the graph is walkable by
+  // clicking, which is the AC item that makes this a navigation surface rather
+  // than a viewer.
+  const rows = Object.entries(found)
+    .filter(([k]) => k !== 'name')
+    .map(([k, v]) => {
+      const vals = [].concat(v).filter(x => x !== '' && x != null);
+      const cell = vals.length
+        ? vals.map(x => /^[a-z][\w-]*$/i.test(String(x)) && String(x) !== String(found.label)
+            ? '<a class="ref" href="/domains/' + encodeURIComponent(domainName) + '/' + encodeURIComponent(x) + '">' + esc(x) + '</a>'
+            : esc(x)).join(', ')
+        : '<span class="empty">—</span>';
+      return '<tr><td class="k">' + esc(k) + '</td><td>' + cell + '</td></tr>';
+    }).join('');
+
+  app.innerHTML = head +
+    '<h1>' + esc(found.label || found.name) + '<span class="kind">' + esc(foundKind) + '</span></h1>' +
+    '<p class="sub"><code>' + esc(found.name) + '</code> — in the <a class="ref" href="/domains/' +
+      encodeURIComponent(domainName) + '">' + esc(domainName) + '</a> domain.</p>' +
+    '<div class="scroll"><table><thead><tr><th>Property</th><th>Value</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div>';
+}
+
+(async () => {
+  try {
+    if (seg.length === 0) await renderCatalog();
+    else if (seg.length === 1) await renderDomain(seg[0]);
+    else await renderInstance(seg[0], seg[1]);
+  } catch (e) { fail(e); }
+})();
+</script>
+</body>
+</html>
