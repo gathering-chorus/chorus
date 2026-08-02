@@ -18,6 +18,7 @@ use std::process::Command;
 
 /// #3402 — seam auth: local HS256 service-token verification (ADR-042 / #3401).
 pub mod auth;
+pub mod reconcile; // #3723 — the model reconciliation readout
 pub mod oidc; // #3613 / ADR-052 — ES256/JWKS (Solid-OIDC via CSS) verify at the seam
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
@@ -3284,6 +3285,16 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         // projection, same source, one response. No new data, no second
         // implementation — it reads the identical RouteTables the per-class route
         // reads, so the two can never disagree.
+        // #3723 — GET /reconcile: where each class lives and whether it serves.
+        // Four independent sources (repo, deploy script, shapes, store); the
+        // DISAGREEMENT between them is the output. See reconcile.rs for the
+        // partition rule and Silas's ADR-051 x 025 ruling that shapes it.
+        if path == "/reconcile" {
+            let doc = crate::reconcile::reconcile_json(tables);
+            let resp = http_response_ct(status_line(200), &doc, "application/json");
+            let _ = stream.write_all(resp.as_bytes());
+            continue;
+        }
         if path == "/schema" {
             let items: Vec<String> = tables
                 .iter()
