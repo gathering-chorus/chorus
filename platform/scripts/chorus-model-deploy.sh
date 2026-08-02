@@ -63,6 +63,21 @@ else
     # ownerSequence (Product/Domain, uniqueWithin ownedBy) as ADDITIVE shapes.
     # Same day-authored MODEL_SET discipline as #3654.
     "$CHORUS_ROOT/roles/wren/ontology/priorities-3686.ttl"
+    # #3726 — the security SCHEMA + surfaces enter MODEL_SET so a fresh load
+    # rebuilds them instead of leaving them live-only (the #3587 wipe class, and
+    # why the envelope surface-table must survive a reload). security-model-3618
+    # carries the Principal/APISurface/Credential class defs + shapes + the three
+    # worker Principal individuals (ABox-in-ontology, faithful to live). The five
+    # surface files carry the APISurface instances the envelope reads from
+    # urn:chorus:ontology. All ontology-graph resident; the Principal/scope
+    # INSTANCES load into the security domain graph in the SECURITY_SET section
+    # below. (The nostr credential shape+instances ride #3691.)
+    "$CHORUS_ROOT/roles/silas/ontology/security-model-3618.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-cards.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-jobs.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-wave2.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-final.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
@@ -286,6 +301,91 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _in="?"
   echo "chorus-model-deploy: hydrated ${#INSTANCE_SET[@]} instance file(s) -> <$INSTANCE_GRAPH> (http $imcode, $_in triples live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$INSTANCE_GRAPH" triples="${_in}" 2>/dev/null || true
+fi
+
+# =============================================================================
+# SECURITY_SET (#3726) — the identity substrate: Principal instances + hasScope
+# grants into urn:chorus:domains:security, the graph the owl-api door resolves
+# the allow-set / holdsRole / hasScope from. Its OWN domain graph, distinct from
+# both the ontology (schema) and the value-stream instances graph.
+#
+# WHY this section exists: before #3726 these reached the live graph ONLY via a
+# one-time hand-run migration (security-3618-migrate.sh → /batch). A fresh Fuseki
+# load came up with NO identity — every door then refused every request, locking
+# out all three roles until someone re-ran the migration by hand. Binding the
+# TTLs here makes a reload reproduce the allow-set automatically.
+#
+# SAFE BY CONSTRUCTION: same per-subject ADDITIVE merge as INSTANCE_SET (DELETE
+# only the staged subjects' triples, then INSERT staging). NO retire clause — a
+# co-tenant of the security graph can never be deleted. Full deploys only.
+# The security SCHEMA (class defs, shapes, surfaces, worker principals) rides
+# MODEL_SET into urn:chorus:ontology above; this section is the ABox identity
+# instances only. (Nostr credential shape+instances ride #3691.)
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  SECURITY_GRAPH="${SECURITY_GRAPH:-urn:chorus:domains:security}"
+  SECURITY_STAGING="${SECURITY_GRAPH}-staging-deploy"
+  SECURITY_SET=(
+    "$CHORUS_ROOT/roles/silas/ontology/identity-principals-3613.ttl"
+    "$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"
+  )
+  for ttl in "${SECURITY_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "chorus-model-deploy: SECURITY_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "chorus-model-deploy: riot validate FAILED for SECURITY_SET $ttl — NOT deploying identity" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="riot-invalid-security" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${SECURITY_SET[@]}"; do
+    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-resp.txt -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SECURITY_STAGING" 2>/dev/null) || scode="000"
+    if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
+      echo "chorus-model-deploy: SECURITY_SET staging load failed for $ttl (http $scode)" >&2
+      head -3 /tmp/chorus-model-sec-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-staging-http-$scode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  SECURITY_MERGE="DELETE { GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SECURITY_STAGING> { ?s ?sp ?so } GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SECURITY_STAGING> { ?s ?p ?o } }"
+  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-merge.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$SECURITY_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
+  if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
+    echo "chorus-model-deploy: SECURITY_SET merge staging->security failed (http $smcode)" >&2
+    head -3 /tmp/chorus-model-sec-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-merge-http-$smcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  # #3726 — SINGLE-REQUEST TRUTH: the verify must distinguish "0 subjects missing"
+  # from "could not ask". A bare `| tr -dc 0-9` with `:-0` makes an empty/failed
+  # response read as 0-missing = PASS — the could-not-ask-reads-as-success class
+  # (the same defect as the #3536 guard at :174/:274, carded separately). We
+  # require the CSV to carry its header (?n) AND a numeric row; absent either, the
+  # store did not answer THIS query and we fail-closed rather than pass blind.
+  _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SECURITY_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SECURITY_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
+    echo "chorus-model-deploy: SECURITY-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _smissing=$(printf '%s\n' "$_sresp" | tail -1 | tr -dc '0-9')
+  if [ "${_smissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "chorus-model-deploy: SECURITY-VERIFY FAILED — ${_smissing:-?} staged subject(s) absent from <$SECURITY_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-missing" missing="${_smissing:-unknown}" 2>/dev/null || true
+    exit 1
+  fi
+  _sn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <$SECURITY_GRAPH> { ?p a c:Principal } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
+  echo "chorus-model-deploy: hydrated ${#SECURITY_SET[@]} security file(s) -> <$SECURITY_GRAPH> (http $smcode, $_sn principals live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$SECURITY_GRAPH" principals="${_sn}" 2>/dev/null || true
 fi
 
 exit 0
