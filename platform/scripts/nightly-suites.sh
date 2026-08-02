@@ -117,8 +117,20 @@ list_cargo() {
   done
 }
 
+# #3722 — DESTRUCTIVE suites the nightly must NEVER run: they mutate live
+# LaunchAgents (bootout/bootstrap). test-product-membrane.sh (#3611) stops EVERY
+# com.chorus.* agent — INCLUDING com.chorus.nightly-suites, the agent running
+# this — to prove gathering serves with chorus down. Run under the nightly it
+# kills its own runner mid-loop: the process group dies, EXIT trap never fires,
+# every agent it stopped stays down. That IS the ~13-min "untrappable" killer
+# that took the nightly out from Jul 22 (membrane landed) to Aug 2 (the #3720
+# black box named it). These belong to ops-run/CI-with-full-restore, not the
+# in-agent nightly. Belt-and-suspenders: the suites also self-refuse under a
+# com.chorus ancestor (#3722), so a stray invocation is safe too.
+NIGHTLY_DESTRUCTIVE_SUITES="test-product-membrane.sh"
 list_shell() {
-  find "$CHORUS_ROOT/platform/scripts" -maxdepth 1 -name "test-*.sh" -type f 2>/dev/null | sort
+  find "$CHORUS_ROOT/platform/scripts" -maxdepth 1 -name "test-*.sh" -type f 2>/dev/null | sort \
+    | grep -vFf <(printf '%s\n' $NIGHTLY_DESTRUCTIVE_SUITES)
 }
 
 # #2806: bats discovery — find every *.bats file under chorus that isn't in
@@ -828,6 +840,20 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
+    # #3722 — WERK ISOLATION: a run launched from a card's werk must NOT write
+    # the canonical nightly log or fire the team red alert (Kade's kade-3721 run
+    # did exactly that Aug 1: 34-red paged Jeff, and daily-review --last-run would
+    # read a werk snapshot as the canonical record). If CHORUS_ROOT is a werk
+    # path and no explicit NIGHTLY_LOG_PATH was set, auto-isolate to a werk-local
+    # log and skip the team nudge.
+    case "$CHORUS_ROOT" in
+      *"/chorus-werk/"*)
+        if [ -z "${NIGHTLY_LOG_PATH:-}" ]; then
+          export NIGHTLY_LOG_PATH="/tmp/nightly-$(basename "$CHORUS_ROOT").log"
+          export NIGHTLY_NO_NUDGE=1
+          echo "nightly-suites: WERK RUN — isolated to $NIGHTLY_LOG_PATH, team nudge suppressed (#3722)" >&2
+        fi ;;
+    esac
     # #3720 — INCREMENTAL persistence: every SUITE line lands in the log AS IT
     # COMPLETES (tee is the single writer), so a killed run leaves its partial
     # evidence — the suite in flight at death is the last line's successor.
@@ -851,7 +877,7 @@ PYEOF
     # Echo to stdout only for a human at a terminal; under launchd fd 1 IS the
     # log and printing here would duplicate what tee already wrote.
     [ -t 1 ] && printf '%s\n' "$out"
-    emit_suite_results "$out"; notify_results "$out"
+    emit_suite_results "$out"; [ "${NIGHTLY_NO_NUDGE:-0}" = "1" ] || notify_results "$out"
     ;;
   *)
     echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all|--last-run|--run-one <kind> <path>}" >&2
