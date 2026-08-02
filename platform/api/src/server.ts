@@ -107,6 +107,19 @@ import { getPostureStrip, getWerkActivity } from './jeff-summary';
 import { listSessions, getSession, getSessionLog, isValidSessionId } from './session-replay';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
+// #3724: the old query-param model page redirects to the path form rather than
+// lingering as a competing surface — leaving both alive is how fifteen
+// "show me the model" pages accumulated (#3706).
+//
+// REGISTERED BEFORE express.static ON PURPOSE. public/athena/domain.html is a
+// real file, so static at the line below answers it first and the redirect
+// never runs — verified: it returned 200-with-the-old-page, not 301. Order is
+// the mechanism here, and moving this line down silently restores the old page.
+app.get('/athena/domain.html', (req: Request, res: Response) => {
+  const d = typeof req.query.d === 'string' ? req.query.d : '';
+  res.redirect(301, d ? '/domains/' + encodeURIComponent(d) : '/domains');
+});
+
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
 
 // Legacy alias — /docs predates the landing's promotion to / (#2108). Remove once clients migrated.
@@ -166,14 +179,6 @@ const domainsView = (_req: Request, res: Response) =>
 app.get('/domains', domainsView);
 app.get('/domains/:domain', domainsView);
 app.get('/domains/:domain/:instance', domainsView);
-// The old query-param form redirects rather than lingering as a competing
-// surface — AC item, and the fifteen-competing-model-pages problem (#3706) is
-// exactly what leaving both alive produces.
-app.get('/athena/domain.html', (req: Request, res: Response) => {
-  const d = typeof req.query.d === 'string' ? req.query.d : '';
-  res.redirect(301, d ? '/domains/' + encodeURIComponent(d) : '/domains');
-});
-
 app.get('/chorus', sendChorusPage('chorus.html'));
 app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
 app.get('/chorus-model-data', sendChorusPage('chorus-model-data.html'));
