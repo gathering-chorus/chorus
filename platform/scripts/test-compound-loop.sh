@@ -114,8 +114,14 @@ if [ -n "$health" ]; then
   echo "  PASS: hook server health endpoint responds"
   ((PASS++))
 else
-  # Try the socket path
-  socket="/tmp/chorus-hooks.sock"
+  # #3721 — the control socket moved out of /tmp to ~/.chorus/run/ (#3617/#3631).
+  # This still probed the retired path, so it reported "hook server not
+  # reachable" against a daemon that was up and serving on the new one: a FALSE
+  # RED, and the mirror image of the false greens elsewhere on this card — same
+  # root cause, opposite symptom. Same repoint already applied to the chorus-hooks
+  # Rust tests here. Derived from HOME rather than a second hardcoded literal, so
+  # it tracks the daemon instead of pinning a path that can drift again.
+  socket="${CHORUS_HOOK_SOCKET:-$HOME/.chorus/run/chorus-hooks.sock}"
   if [ -S "$socket" ]; then
     echo "  PASS: hook server socket exists at $socket"
     ((PASS++))

@@ -5,7 +5,19 @@ use werk_build::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// #3721 — CHORUS_TRACE_ID is PROCESS-WIDE and cargo runs tests on parallel
+// threads, so the two trace tests raced: one sets the var while the other
+// expects it absent, and resolve_trace() reads env BEFORE the file (lib.rs:53).
+// When the interleaving landed wrong the persist test saw "env-trace-xyz" back
+// instead of its minted value and failed on `t1 == t2`. Passed 6/6 locally and
+// 3 consecutive CI runs, then failed once — the signature of a race, not a
+// regression, and it was blamed on whichever branch happened to be running
+// (this one). Serialise the pair so the env is only ever mutated by one of them
+// at a time. Fixes it at the cause; a retry would only widen the window.
+static TRACE_ENV: Mutex<()> = Mutex::new(());
 
 /// Unique temp dir for a fixture (no tempfile dep; std-only, per ADR-032 §1).
 fn fixture(tag: &str) -> PathBuf {
@@ -95,6 +107,7 @@ fn extract_cdhash_parses_build_signed_line() {
 
 #[test]
 fn resolve_trace_prefers_env_over_file() {
+    let _guard = TRACE_ENV.lock().unwrap_or_else(|e| e.into_inner());
     std::env::set_var("CHORUS_TRACE_ID", "env-trace-xyz");
     assert_eq!(resolve_trace(999001), "env-trace-xyz");
     std::env::remove_var("CHORUS_TRACE_ID");
@@ -102,6 +115,7 @@ fn resolve_trace_prefers_env_over_file() {
 
 #[test]
 fn resolve_trace_mints_and_persists_when_absent() {
+    let _guard = TRACE_ENV.lock().unwrap_or_else(|e| e.into_inner());
     std::env::remove_var("CHORUS_TRACE_ID");
     let card = 999002u64;
     let p = format!("/tmp/{}-trace", card);

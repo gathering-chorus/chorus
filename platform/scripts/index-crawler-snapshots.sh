@@ -29,7 +29,15 @@ TRIGGER="polling"
 if [ -f "$LAST_RUN_FILE" ]; then
   for watched in "$CHORUS_ROOT/designing" "$CHORUS_ROOT/platform" "$CHORUS_ROOT/roles" "$CHORUS_ROOT/skills" "$CHORUS_ROOT/directing" "$CHORUS_ROOT/proving"; do
     [ -d "$watched" ] || continue
-    newest=$(find "$watched" -type f -newer "$LAST_RUN_FILE" -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/dist/*" 2>/dev/null | head -1)
+    # #3721 — `find ... | head -1` under `set -euo pipefail` is a SIGPIPE trap:
+    # head closes the pipe after the first match, find dies with 141, pipefail
+    # propagates it and set -e kills the whole script — BEFORE the status file
+    # is written at the end. That is why all four crawler-error-tracking tests
+    # failed on a missing file: the crawler was exiting 141 on SUCCESS. It only
+    # fires when find is still producing when head exits, so it reproduces on a
+    # big tree and hides on a small one. `-quit` stops find itself after the
+    # first hit — no pipe to break, same answer, no early exit.
+    newest=$(find "$watched" -type f -newer "$LAST_RUN_FILE" -not -path "*/node_modules/*" -not -path "*/target/*" -not -path "*/dist/*" -print -quit 2>/dev/null)
     if [ -n "$newest" ]; then TRIGGER="file-watch"; break; fi
   done
 fi

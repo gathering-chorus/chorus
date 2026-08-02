@@ -127,16 +127,21 @@ function main() {
   // Don't assume either reading: run eslint on main and compare per-rule counts.
   // (Silas's review question on #3710 — three rules surfaced exactly this way,
   // and all three were confirmed already firing on main.)
+  // #3721 — REPORT BOTH CLASSES, THEN EXIT. Each block used to exit
+  // immediately, so the new-rules check was unreachable while any count was over
+  // — the masking the #3710 note above describes. It is not only a reading
+  // hazard: it costs a full fix-and-rerun cycle per layer. On this card three
+  // count violations were paid down, and only THEN did `__syntax__: 2` appear,
+  // having fired the whole time (confirmed on main, per the note's own advice).
+  // A run should say everything wrong with it in one pass. Exit codes keep their
+  // meanings — 1 = counts climbed, which dominates; 2 = new rules only — so
+  // callers keying on them are unaffected, and #3428's parseable summary is
+  // still the last stdout line, now emitted exactly once.
   if (violations.length > 0) {
     process.stderr.write('lint-ratchet: FAIL — rule counts climbed above baseline:\n');
     for (const v of violations) {
       process.stderr.write(`  ${v.rule}: ${v.count} (baseline ${v.limit}, +${v.delta})\n`);
     }
-    const over = violations.reduce((a, v) => a + v.delta, 0);
-    // #3428 — parseable summary LAST (stdout), so `tail -1` in the nightly
-    // sees a real `N pass, N fail` and reports the honest red, not DID NOT RUN.
-    process.stdout.write(`lint-ratchet summary: 0 pass, ${violations.length} fail (${violations.length} rules over baseline, +${over} violations)\n`);
-    process.exit(1);
   }
 
   if (newRules.length > 0) {
@@ -145,9 +150,17 @@ function main() {
       process.stderr.write(`  ${n.rule}: ${n.count}\n`);
     }
     process.stderr.write('Run `npm run lint:baseline` after review to adopt new rules.\n');
-    // #3428 — parseable summary LAST (stdout) for the nightly suite parser.
-    process.stdout.write(`lint-ratchet summary: 0 pass, ${newRules.length} fail (${newRules.length} new rules not in baseline)\n`);
-    process.exit(2);
+  }
+
+  if (violations.length > 0 || newRules.length > 0) {
+    const over = violations.reduce((a, v) => a + v.delta, 0);
+    const parts = [];
+    if (violations.length > 0) parts.push(`${violations.length} rules over baseline, +${over} violations`);
+    if (newRules.length > 0) parts.push(`${newRules.length} new rules not in baseline`);
+    process.stdout.write(
+      `lint-ratchet summary: 0 pass, ${violations.length + newRules.length} fail (${parts.join('; ')})\n`,
+    );
+    process.exit(violations.length > 0 ? 1 : 2);
   }
 
   process.stdout.write(`lint-ratchet: PASS (${totalCurrent} violations, ${Object.keys(current).length} rules).\n`);

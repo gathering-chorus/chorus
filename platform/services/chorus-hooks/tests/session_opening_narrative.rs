@@ -1,3 +1,16 @@
+//! @test-type: integration — reads /tmp/session-context-<role>.md, written at
+//! session start by the LIVE hook (commands/session.rs, csc_guard.rs). Those
+//! files are runtime artifacts: nothing in the repo generates them (git
+//! ls-files: 0 matches), so on a CI runner they do not exist and every case
+//! panics "<role> should exist" or reads an empty boot section. It passes
+//! locally only because this machine has three live sessions that wrote them.
+//!
+//! #3721 — this ran for the first time when the socket-path fix let the job
+//! reach the test step. Asserting on live session output is a real check —
+//! it is how we know the boot template still guides narrative synthesis — but
+//! it belongs where sessions exist, which is the local nightly, not a runner
+//! with no roles booted.
+//!
 //! #1902 — Reflective session opening
 //! Boot template should guide narrative synthesis, not dashboard readout.
 //! AC:
@@ -31,27 +44,21 @@ fn build_silas_cache() {
     assert!(output.status.success(), "context-cache should succeed");
 }
 
-/// Boot instruction explicitly discourages dashboard readout patterns
-#[test]
-fn boot_instruction_discourages_readout() {
-    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
-    build_silas_cache();
-    let content = fs::read_to_string("/tmp/session-context-silas.md")
-        .expect("session-context-silas.md should exist");
+// #3721 — RETIRED (content call: Wren, 2026-08-01), replaced by
+// boot_requires_transcript_reconstruction below.
+//
+// This asserted the boot literally contains "No card lists" and "not a status
+// report" — anti-patterns spelled out as prohibitions. The 2026-07-29 rewrite
+// dropped that framing on purpose: it states the POSITIVE contract instead
+// ("reconstruct where you and Jeff actually left off — from primary source"),
+// on the same reasoning that retired thesis-first. Asserting the prohibitions
+// would pin wording the rewrite deliberately removed.
+//
+// Retired, not loosened: the discipline it guarded — the opening is a
+// reconstruction, not a dashboard readout — is now guarded positively by
+// boot_requires_transcript_reconstruction, which reads the SOURCE rather than
+// the rendered /tmp copy this one depended on.
 
-    // AC1+AC3: template must explicitly say no card lists, no metric bullet points
-    let boot = extract_boot_section(&content);
-    assert!(
-        boot.contains("No card lists") || boot.contains("no card lists"),
-        "boot instruction must explicitly discourage card list readout — got: {}",
-        boot
-    );
-    assert!(
-        boot.contains("not a status report") || boot.contains("No health metric") || boot.contains("no health metric"),
-        "boot instruction must discourage status report / health metric readout — got: {}",
-        boot
-    );
-}
 
 /// Boot instruction requires positions on problems, not bare facts
 #[test]
@@ -85,71 +92,72 @@ fn boot_header_not_mechanical() {
     );
 }
 
-/// #2114 — Boot prompt includes 5-beat shape (thesis, reframe, friction-with-position, flinch, single-question close)
-#[test]
-fn boot_includes_five_beat_shape() {
-    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
-    build_silas_cache();
-    let content = fs::read_to_string("/tmp/session-context-silas.md")
-        .expect("session-context-silas.md should exist");
-    let boot = extract_boot_section(&content);
+// ── #3721 — RETIRED + REPLACED (content call: Wren, 2026-08-01) ─────────────
+//
+// RETIRED: boot_includes_five_beat_shape, boot_includes_inline_example,
+// boot_instruction_discourages_readout, and the "thesis" beat assert.
+//
+// WHY, so nobody reads this as caving to a red: #1902/#2114 guarded a
+// five-beat, thesis-first opening WITH a worked example. That opening was
+// deliberately REPLACED on 2026-07-29. The live boot now says, verbatim,
+// "Don't manufacture a thesis to sound synthesized", and its Rules record that
+// it "replaced a thesis-first opening precisely because that one rewarded
+// sounding synthesized over being accurate, and produced fabricated openings."
+// Restoring an example and five beats to turn these green would re-introduce
+// the exact behaviour that rewrite removed. The shape is superseded; the
+// discipline is not.
+//
+// The sharpest one was not even failing. `boot.contains("thesis")` PASSED —
+// because the boot contains "not a thesis" and "manufacture a thesis". A
+// substring assert cannot tell "include a thesis beat" from "never manufacture
+// a thesis", so it read green while the content meant the OPPOSITE of what it
+// guarded. A check that cannot distinguish the two states it exists to separate
+// is not a weak check; it is not a check.
+//
+// WHERE THESE READ FROM: the boot text is built as inline string literals in
+// commands/context_cache.rs — NOT a designing/claudemd fragment. That file is
+// the source of truth and it is committed, so these are hermetic source guards:
+// no live session, no /tmp, no RUN_INTEGRATION. The retired versions read the
+// RENDERED /tmp copy, which is exactly why they were skipped locally and
+// unreachable on CI — two layers of green over a file nobody opened.
 
-    for beat in ["thesis", "reframe", "flinch"] {
-        assert!(
-            boot.to_lowercase().contains(beat),
-            "boot must name the '{}' beat — got: {}", beat, boot
-        );
-    }
+fn boot_source() -> String {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/commands/context_cache.rs");
+    fs::read_to_string(&src)
+        .unwrap_or_else(|e| panic!("boot source unreadable at {}: {e}", src.display()))
+}
+
+/// The opening must be rebuilt from primary source, not from memory.
+#[test]
+fn boot_requires_transcript_reconstruction() {
+    let s = boot_source();
+    assert!(s.contains("transcript"), "boot must direct reconstruction from the transcript");
+    assert!(s.contains("pulse-latest.json"), "boot must name the durable pulse source");
+}
+
+/// The rule that replaced thesis-first — the single most load-bearing line.
+#[test]
+fn boot_requires_verify_before_asserting() {
+    let s = boot_source();
     assert!(
-        boot.to_lowercase().contains("one question") || boot.to_lowercase().contains("single question") || boot.to_lowercase().contains("one-question"),
-        "boot must describe the single-question close — got: {}", boot
+        s.contains("Verify before asserting"),
+        "boot must carry the verify-before-asserting rule that replaced thesis-first"
     );
 }
 
-/// #2114 — Boot prompt includes an inline example opening so agent has concrete pattern
+/// A position is optional and earned, never manufactured.
 #[test]
-fn boot_includes_inline_example() {
-    if skip_unless_integration("writes /tmp/session-context-silas.md via context-cache, races live silas session") { return; }
-    build_silas_cache();
-    let content = fs::read_to_string("/tmp/session-context-silas.md")
-        .expect("session-context-silas.md should exist");
-    let boot = extract_boot_section(&content);
-
-    assert!(
-        boot.to_lowercase().contains("example"),
-        "boot must include a labeled example opening — got: {}", boot
-    );
-    assert!(
-        boot.contains("Example") || boot.contains("example opening") || boot.contains("example:"),
-        "boot must present a concrete example opening — got: {}", boot
-    );
+fn boot_makes_the_position_optional() {
+    let s = boot_source();
+    assert!(s.contains("only if earned"), "boot must make the position optional and earned");
 }
 
-/// #2114 — All three roles render the new prompt
+/// The close is one question, not a menu.
 #[test]
-fn all_three_roles_render_shape_and_example() {
-    if skip_unless_integration("writes /tmp/session-context-{wren,silas,kade}.md via context-cache, races all live sessions") { return; }
-    for role in ["wren", "silas", "kade"] {
-        let output = std::process::Command::new(SHIM)
-            .args(["context-cache", role])
-            .output()
-            .expect("context-cache should execute");
-        assert!(output.status.success(), "context-cache should succeed for {}", role);
-
-        let path = format!("/tmp/session-context-{}.md", role);
-        let content = fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("{} should exist", path));
-        let boot = extract_boot_section(&content);
-
-        assert!(
-            boot.to_lowercase().contains("thesis"),
-            "{}: boot must include thesis beat", role
-        );
-        assert!(
-            boot.to_lowercase().contains("example"),
-            "{}: boot must include inline example", role
-        );
-    }
+fn boot_requires_one_question_close() {
+    let s = boot_source();
+    assert!(s.contains("One-question close"), "boot must require the one-question close");
 }
 
 /// Extract the boot instruction section from session context

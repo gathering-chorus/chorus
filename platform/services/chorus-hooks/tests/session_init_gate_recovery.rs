@@ -74,8 +74,18 @@ impl Drop for MarkerGuard {
 fn post_via_socket(endpoint: &str, body: &str) -> String {
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
-    let mut stream = UnixStream::connect("/tmp/chorus-hooks.sock")
-        .expect("chorus-hooks socket up");
+    // #3721 — the daemon stopped binding /tmp. #3631/#3617 moved the control
+    // socket to ~/.chorus/run/chorus-hooks.sock (state_paths::hook_socket_durable)
+    // because /tmp is OS-evicted and world-writable — a real hole on a 0o777
+    // control socket. #3710 repointed the CI wait-path; these tests never
+    // followed, so they connected to a path nothing binds and failed
+    // "chorus-hooks socket up: NotFound". Resolve the same way the binary does.
+    let sock = format!(
+        "{}/.chorus/run/chorus-hooks.sock",
+        std::env::var("HOME").expect("HOME set")
+    );
+    let mut stream = UnixStream::connect(&sock)
+        .unwrap_or_else(|e| panic!("chorus-hooks socket up at {sock}: {e}"));
     let req = format!(
         "POST /{} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         endpoint, body.len(), body
@@ -92,7 +102,7 @@ fn post_via_socket(endpoint: &str, body: &str) -> String {
 /// the gate writes .done.
 #[test]
 fn read_session_start_unlocks_role() {
-    if skip_unless_integration("connects to /tmp/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
+    if skip_unless_integration("connects to ~/.chorus/run/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
     let g = MarkerGuard::new(TEST_ROLE);
     g.arm_locked();
     assert!(g.pending.exists(), "precondition: .pending armed");
@@ -126,7 +136,7 @@ fn read_session_start_unlocks_role() {
 /// session-start.md is the recovery signal.
 #[test]
 fn read_other_file_does_not_unlock() {
-    if skip_unless_integration("connects to /tmp/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
+    if skip_unless_integration("connects to ~/.chorus/run/chorus-hooks.sock + writes /tmp/session-start-<role>.md") { return; }
     let g = MarkerGuard::new(TEST_ROLE);
     g.arm_locked();
 

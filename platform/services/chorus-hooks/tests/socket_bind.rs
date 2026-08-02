@@ -4,7 +4,16 @@
 use std::fs;
 use std::path::Path;
 
-const SOCKET_PATH: &str = "/tmp/chorus-hooks.sock";
+// #3721 — was hardcoded "/tmp/chorus-hooks.sock". #3631/#3617 moved the socket
+// to ~/.chorus/run/; /tmp is OS-evicted and world-writable. Same reasoning the
+// PID-file note below already records — the socket followed the pid file, this
+// const did not.
+fn socket_path() -> String {
+    format!(
+        "{}/.chorus/run/chorus-hooks.sock",
+        std::env::var("HOME").expect("HOME set")
+    )
+}
 
 // #3606 — the PID file's durable home is ~/.chorus/run/ (see state_paths).
 // macOS periodically evicts /tmp files not accessed for ~3 days, so a
@@ -23,7 +32,7 @@ fn pid_path() -> String {
 #[test]
 fn pid_file_exists_when_hooks_running() {
     // If chorus-hooks is running, it should have a durable PID file
-    if Path::new(SOCKET_PATH).exists() {
+    if Path::new(&socket_path()).exists() {
         assert!(
             Path::new(&pid_path()).exists(),
             "Socket exists but no durable PID file — orphan detection won't work"

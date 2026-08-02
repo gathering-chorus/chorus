@@ -1,6 +1,6 @@
 # Technical Debt Register
 
-Last updated: 2026-03-21
+Last updated: 2026-08-02
 
 Debt spotted during implementation. Each item includes context, cost of deferral, and suggested resolution.
 
@@ -274,3 +274,68 @@ Running `migrate-icd-tree.py` (with or without `--publish`) regenerates all TTL 
 **Resolution:** Rebuild canonical from scratch using Jeff-confirmed 4-era authority model (Apple primary through 2019, iPhone 2020+). Depends on #1642 (era-scoped ICD).
 
 <!-- #3013 integration probe 2026-05-19: exercising post-#3012 /acp chain end-to-end. This line is the throwaway edit. -->
+
+---
+
+## TD-024: Signals That Cannot Distinguish Success From Failure — the #3721 family
+
+**Severity:** High
+**Found:** 2026-08-01/02 (#3721)
+**Location:** across chorus, cards, personal-site, and CI config
+
+Wren's formulation, after five instances in one week: **a check that cannot distinguish the two states it exists to separate is not a weak check, it is zero check.** #3721 hit these one after another, each repair exposing the next. Recording the *shape* here because the individual fixes are landed but the pattern will recur.
+
+Instances found and fixed:
+- `quality.yml` gated four jobs (ESLint ratchet, tsc, clippy, clippy ratchet) on `schedule` only. A `workflow_dispatch` skipped all four and still reported the run **success** — a third of static analysis never ran, invisibly. Hid a real ratchet breach on main.
+- `boot.contains("thesis")` PASSED because the boot says "not a thesis" / "manufacture a thesis". A substring assert cannot separate "include a thesis beat" from "never manufacture a thesis"; it read green while the content meant the opposite.
+- The #1846 empty-context alarm counted the assembled envelope (principles + Athena tree + notes), which clears its 10-line threshold unaided. Unreachable by construction — decorative from the day it shipped.
+- `append_log` used `write_all` on a `tokio::fs::File` with no flush. Buffered, dropped on drop; `Ok` returned for bytes that never reached the OS.
+- `test-hook-daemon.sh`: eight skip branches did `((PASS++))`. A run that could not find the daemon or the binary reported success.
+- `demo_preflight_env.rs`: asserted a script FAILS without PATH. The script had been deleted by #3046 — a deleted script fails too, so it passed on nothing.
+- `spine_events.rs` read `platform/logs/chorus.log` while the shim writes `~/.chorus/chorus.log`; could only ever pass via its `|| stdout` half.
+- `tdd_gate_acceptance.rs` edited a canonical path, so `canonical_write_guard` denied first. The idle-role test asserted the result lacks "TDD gate" — true of a canonical denial, so it would pass with the gate deleted.
+- `client-3600.test.ts` (cards) stubbed one level too shallow (`.api` instead of `fetchAllTasks`), fell through to the live disk cache. Cache-cold it PASSED **and wrote fake tasks into the live shared cache**.
+
+**Cost of deferral:** each one converts "we tested that" into a false belief, and several actively hid real defects for months. The cards one could put fake data in front of the real CLI.
+
+**Resolution / rule going forward:** when a check goes green, ask what state it would have to be in to go red, and confirm that state is reachable. When a check goes red, do not widen the assertion — find which of the two states it can no longer tell apart. Every fix on #3721 that touched a guard proved the guard still fires on a synthetic violation before being called done.
+
+---
+
+## TD-025: Nightly persists only SUITE summary lines — a failure is unattributable
+
+**Severity:** Medium
+**Found:** 2026-08-02 (#3721)
+**Location:** `platform/scripts/nightly-suites.sh` (Silas's)
+
+The nightly writes `SUITE|<kind>|<path>|<owner>|<status>|<counts>` and nothing else. When the 03:00 canonical run reported `npm:cards 1/529 failed`, there was no way to learn *which* test failed — I had to reproduce it locally (4 of 6 runs) to find out, and it turned out to be a live-cache hazard worth knowing about immediately.
+
+**Cost of deferral:** every intermittent nightly failure costs a reproduction cycle before diagnosis can even start, and an intermittent that does not reproduce on demand is effectively undiagnosable. It also biases toward "re-run and shrug", which is exactly how the cards hazard survived.
+
+**Resolution:** retain per-suite failure detail (failing test names at minimum) for red suites. Silas's file — raised to him, not carded, per Jeff's "no more new cards".
+
+---
+
+## TD-026: clearing `src/server.ts` below coverage floor
+
+**Severity:** Medium
+**Found:** 2026-08-02 (#3721)
+**Location:** `directing/clearing/src/server.ts`
+
+All 426 clearing tests pass. `server.ts` sits at 73.04% stmts / 56.72% branches / 71.66% funcs / 74.91% lines against floors of 80/60/75/80, so `coverage:clearing` is red in the nightly.
+
+**Cost of deferral:** a standing red in the nightly trains the team to read past it, which is how the other items in TD-024 survived.
+**Resolution:** real tests for the uncovered ranges. Explicitly NOT lowering the floor — left red on #3721 rather than faked green.
+
+---
+
+## TD-027: 83 API endpoints undocumented in swagger (personal-site)
+
+**Severity:** Medium
+**Found:** 2026-08-02 (#3721)
+**Location:** `jeff-bridwell-personal-site` — `src/app.ts` `#swagger.tags` annotations
+
+`tests/unit/swagger-coverage.test.ts` ratchets untagged endpoints at 116; the spec now has 150 untagged, of which 83 are real `/api` routes (the rest are page routes). Two nightly test failures.
+
+**Cost of deferral:** the API surface is undiscoverable from its own spec, and the ratchet is red so it no longer protects the endpoints that *are* documented.
+**Resolution:** annotate the 83 with real tags + summaries. Explicitly NOT auto-generating summaries to satisfy the ratchet — that is documentation theater and would make the check meaningless (see TD-024).

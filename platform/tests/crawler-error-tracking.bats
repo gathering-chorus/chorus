@@ -1,5 +1,21 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic source guard
+# @test-type: integration — needs chorus-api live on :3340
+# #3721 — retiered from "unit — hermetic source guard", which it was not. Every
+# case here EXECUTES index-crawler-snapshots.sh, and that script health-gates on
+# $API_URL/health (chorus-api, :3340). With no API it prints "chorus-api
+# unavailable — skipping run" and exits 0 WITHOUT writing the status file — the
+# right behaviour, since a crawler must not invent status for a run it never
+# made, but it means `[ -f "$STATUS_FILE" ]` can never hold on a runner that
+# boots no API. The bats job doesn't; the MCP round-trip job does.
+#
+# Note the OTHER defect these tests were hiding, fixed in this same card: the
+# script ALSO died with SIGPIPE (141) on a successful run, because
+# `find ... | head -1` under `set -euo pipefail` let head close the pipe and kill
+# the script BEFORE it wrote the status file. That one WAS a real bug, reproduced
+# locally, and these four pass now on a machine with chorus-api up. Two causes
+# stacked behind one symptom — the missing file — which is why fixing the first
+# left them still red on the runner.
+#
 # #1885 — Per-domain error tracking for crawler failures
 
 CRAWLER="$BATS_TEST_DIRNAME/../scripts/index-crawler-snapshots.sh"

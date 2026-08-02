@@ -20,7 +20,11 @@ export function mintServiceToken(): string | null {
     process.env.CHORUS_IDENTITY_TOKEN_BIN ||
     path.join(os.homedir(), 'CascadeProjects', 'chorus', 'platform', 'scripts', 'chorus-identity-token');
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- bin is env CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the fixed repo script path; no user input
+    // #3721 — dropped the eslint-disable for security/detect-non-literal-fs-filename
+    // (same dead-suppression fix as chorus-sdk/src/token.ts): the rule targets
+    // fs.* calls and never fired on this execFileSync. Rationale kept as a plain
+    // comment — `bin` is env CHORUS_IDENTITY_TOKEN_BIN (operator-set) or the
+    // fixed repo script path; no user input reaches it.
     const out = execFileSync(bin, [role], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
       .toString('utf-8')
       .trim();

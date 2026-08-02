@@ -11,7 +11,7 @@
 //! session-init markers and calls `session_init_gate::check_with_dir()`
 //! directly — no socket round-trip, no shared filesystem with the live
 //! chorus-hook-shim daemon. The earlier integration shape (post to
-//! /tmp/chorus-hooks.sock with markers in /tmp/claude-session-init) raced
+//! ~/.chorus/run/chorus-hooks.sock with markers in /tmp/claude-session-init) raced
 //! against the daemon's own state writes whenever a same-role Claude
 //! session was live on the test machine. Per-test tmpdir eliminates the
 //! race by construction; tmpdir is cleaned up automatically on drop.

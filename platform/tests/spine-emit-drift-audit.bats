@@ -33,6 +33,28 @@ setup() {
   if [ ! -f "$CHORUS_LOG" ]; then
     skip "chorus.log missing at $CHORUS_LOG — audit cannot run"
   fi
+  # #3721 — the missing-file guard was not enough. This audit CORRELATES two
+  # sources: done-briefs committed in the repo, and card.accepted events in the
+  # spine. That correlation only means something when both come from the same
+  # world, and on CI they do not.
+  #
+  # platform/logs/chorus.log is NOT committed (only .gitignore and the board
+  # snapshots are), so the file CHORUS_LOG points at there is CREATED DURING
+  # THE RUN by the services the job boots (CHORUS_LOG_FILE on
+  # chorus-api/mcp/pulse). It holds that run's own events and no accept history
+  # — while the briefs are weeks of committed history. Every brief then reads as
+  # "missing its accept", which is a FALSE red: nothing drifted, the log just
+  # does not reach back that far.
+  #
+  # A spine log with zero card.accepted events anywhere is not an accept
+  # history, so there is nothing to correlate against. Skip loudly instead of
+  # asserting across a boundary the data cannot cross. Where the log IS a real
+  # spine — the local nightly, which is where this audit does its work — the
+  # check runs and still fails hard on a done-brief with no accept, which is
+  # the drift it exists to catch.
+  if ! grep -q '"event":"card\.accepted"' "$CHORUS_LOG" 2>/dev/null; then
+    skip "no card.accepted events in $CHORUS_LOG — not an accept history (fresh CI-created log), nothing to correlate"
+  fi
 }
 
 @test "every recent done-brief has a card.accepted spine event" {

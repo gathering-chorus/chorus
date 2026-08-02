@@ -118,6 +118,40 @@ describe('BoardClient verb contracts (#3600 coverage)', () => {
   });
 
   describe('paginated + mapper wrappers (#3600)', () => {
+    // #3721 — fetchAllTasks reached the LIVE board and the LIVE shared cache.
+    //
+    // It consults the #3625 short-TTL DISK cache
+    // (~/.chorus/cards-cache/tasks-<projectId>.json) BEFORE it ever calls
+    // this.api, so stubbing .api alone does not isolate it. That left two
+    // outcomes, decided by ambient state no test controls:
+    //
+    //   cache WARM -> returns the real board and the assertion fails. That is
+    //     the nightly's 1/529 — it got 3662 real Vikunja tasks, not 2.
+    //   cache COLD -> falls through to the stub, passes, and then
+    //     `cache.write(all)` writes the stub's TWO FAKE TASKS into the live
+    //     shared cache. For the rest of the TTL window every real `cards`
+    //     invocation on this machine would see a 2-task board. A green test
+    //     that mutates production is an incident, not a pass.
+    //
+    // It also explains the pass/fail alternation precisely: the outcome tracked
+    // whatever last wrote that file, which is why it read as a flake.
+    //
+    // CARDS_CACHE_DISABLE is the seam the code already provides — client.ts
+    // notes sweepCache() is lazy specifically so tests can override via env.
+    // read() then returns null (so the pagination path below is really
+    // exercised) and write() is a no-op (so nothing escapes into the live
+    // cache). Restored after: leaking the var into the other 528 tests would
+    // relocate the contamination rather than remove it.
+    let prevCacheDisable: string | undefined;
+    beforeEach(() => {
+      prevCacheDisable = process.env.CARDS_CACHE_DISABLE;
+      process.env.CARDS_CACHE_DISABLE = '1';
+    });
+    afterEach(() => {
+      if (prevCacheDisable === undefined) delete process.env.CARDS_CACHE_DISABLE;
+      else process.env.CARDS_CACHE_DISABLE = prevCacheDisable;
+    });
+
     it('fetchAllTasks paginates until an empty page', async () => {
       const { client } = make();
       (client as any).api = jest.fn(async (_m: string, ep: string) =>

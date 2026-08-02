@@ -60,8 +60,19 @@ OUT=$(NIGHTLY_LOG_PATH="$LOG" bash "$NIGHTLY" --last-run 2>&1)
 #    when fd 1 is a terminal, so under launchd (fd 1 = the log) nothing is
 #    written twice. Assert the invariant at its source — the dispatch must not
 #    unconditionally print the results it is also persisting.
+#    #3721 — this pattern was `^\s*printf .*"\$out"`, and it went FALSE RED when
+#    #3720 added the incremental-persistence markers. That commit introduced
+#      printf 'RUN|complete|%s|suites=%s\n' ... "$(printf '%s\n' "$out" | grep -c ...)"
+#    which begins with printf and contains "$out" inside a command substitution,
+#    so `.*` happily spanned into the subshell and flagged it. The guarded echo
+#    it actually exists to catch — `[ -t 1 ] && printf '%s\n' "$out"` — does not
+#    start with printf and never matched either way. The invariant held the whole
+#    time; only the pattern was wrong, and it failed the suite on correct code.
+#    Now anchored to a BARE, whole-line print of the results: a tty-guarded line
+#    cannot match (it starts with `[`), and a RUN| marker cannot match (its
+#    format string is not '%s\n').
 DISPATCH=$(sed -n '/--run-all)/,/;;/p' "$NIGHTLY")
-if printf '%s' "$DISPATCH" | grep -qE '^\s*printf .*"\$out"' ; then
+if printf '%s' "$DISPATCH" | grep -qE "^[[:space:]]*printf[[:space:]]+'%s\\\\n'[[:space:]]+\"\\\$out\"[[:space:]]*$" ; then
   no "dispatch prints the results unconditionally AND persists them — duplicates under a working redirect"
 else
   ok "dispatch does not unconditionally echo results it also persists"
