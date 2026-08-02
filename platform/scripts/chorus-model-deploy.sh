@@ -359,13 +359,25 @@ if [ -z "${TTL:-}" ]; then
     curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
-  _smissing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+  # #3726 — SINGLE-REQUEST TRUTH: the verify must distinguish "0 subjects missing"
+  # from "could not ask". A bare `| tr -dc 0-9` with `:-0` makes an empty/failed
+  # response read as 0-missing = PASS — the could-not-ask-reads-as-success class
+  # (the same defect as the #3536 guard at :174/:274, carded separately). We
+  # require the CSV to carry its header (?n) AND a numeric row; absent either, the
+  # store did not answer THIS query and we fail-closed rather than pass blind.
+  _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SECURITY_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SECURITY_GRAPH> { ?s ?q ?r } } }" \
-    -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+    -H 'Accept: text/csv' 2>/dev/null)
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
-  if [ "${_smissing:-0}" -ne 0 ] 2>/dev/null; then
-    echo "chorus-model-deploy: SECURITY-VERIFY FAILED — ${_smissing} staged subject(s) absent from <$SECURITY_GRAPH> post-merge" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-missing" missing="${_smissing}" 2>/dev/null || true
+  if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
+    echo "chorus-model-deploy: SECURITY-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _smissing=$(printf '%s\n' "$_sresp" | tail -1 | tr -dc '0-9')
+  if [ "${_smissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "chorus-model-deploy: SECURITY-VERIFY FAILED — ${_smissing:-?} staged subject(s) absent from <$SECURITY_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-missing" missing="${_smissing:-unknown}" 2>/dev/null || true
     exit 1
   fi
   _sn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
