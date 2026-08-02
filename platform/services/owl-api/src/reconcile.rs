@@ -68,6 +68,35 @@
 //! Per absence-stays-absent: this endpoint NEVER auto-populates. A latent class
 //! stays honestly empty until someone deliberately models it.
 //!
+//! ## The naming invariant (Jeff + Silas, 2026-08-02) — read this first
+//!
+//! Jeff: *"instances and ontology do not say anything about the underlying
+//! semantics."* He is right, and it is the root cause beneath every finding
+//! this module reports.
+//!
+//! `urn:chorus:instances` and `urn:chorus:ontology` are named for RDF
+//! MECHANICS (ABox vs TBox), not for what they hold. A graph name that carries
+//! no placement information means placement decisions have no natural home:
+//! everything lands in one of two buckets by mechanism, "which graph" tells you
+//! nothing about what SHOULD be there, and drift is undetectable by inspection.
+//! That is why ten classes are multi-graph and nobody noticed for months — the
+//! names could not have told us.
+//!
+//! Silas's ruling (OWL-DBA, same day): **a graph is named for WHAT IT HOLDS —
+//! its domain — never for its RDF layer.** Everything about a domain (class
+//! definitions, SHACL shapes, AND instances) lives in
+//! `urn:chorus:domains:<domain>`. The ABox/TBox distinction is a property of
+//! the TRIPLE, not of the graph; it was never supposed to be a graph name.
+//! `instances` and `ontology` are legacy mechanism-buckets that drain.
+//!
+//! Two consequences, both encoded here:
+//!   - ADR-051 becomes a DERIVATION — expected placement is the graph of the
+//!     class's domain; a per-shape `instancesGraph` is the exception, not the
+//!     rule.
+//!   - The ten multi-graph classes are ONE migration (mechanism-named graphs
+//!     draining into domain-named ones), not ten unrelated problems. That is
+//!     the honest framing; this module reports it as such.
+//!
 //! ## Two honesty rules, both learned the hard way
 //!
 //! Fixture/staging graphs are LABELLED, never folded into live counts — they
@@ -98,11 +127,29 @@ pub fn is_fixture_graph(g: &str) -> bool {
 /// A punned class keeps its "instances" (subclasses) in the ontology graph —
 /// ADR-045/025. Placement consistency is judged against this, never against a
 /// blanket "must be an ABox graph" (which would refuse the correct ones).
+/// VERIFIED AGAINST THE STORE, not assumed (2026-08-02). Product is NOT punned:
+/// its three ontology-graph individuals carry `a chorus:Product` and nothing
+/// else — one rdf:type each, no `owl:Class`. I had copied Domain/Service's
+/// pattern into this list without checking, and the readout then emitted
+/// "placement inconsistent with punned kind" for Product, which was BACKWARDS.
+/// Product's declared placement (`urn:chorus:domains:products`) is CORRECT for
+/// a pure-ABox class under ADR-025/051 — the instances are in the wrong graphs.
+/// Jeff got there from taste ("i'm not much of a fan of either instances or
+/// ontology as an iri, products/product makes sense to me") before the code did.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(
-        class_local,
-        "Domain" | "SubDomain" | "CollectionDomain" | "Service" | "Product"
-    )
+    matches!(class_local, "Domain" | "SubDomain" | "CollectionDomain" | "Service")
+}
+
+/// A class whose instances are NOT in the graph its own shape declares. This is
+/// the real /products defect: placement says `urn:chorus:domains:products`
+/// (correct, per-domain, pure-ABox), that graph holds ZERO triples, and the 11
+/// products sit in `urn:chorus:instances` (8) + `urn:chorus:ontology` (3).
+/// The API reads exactly where it was told to; nobody put the data there.
+pub fn instances_outside_placement(placement: Option<&str>, live: &[(String, u64)]) -> bool {
+    match placement {
+        None => false,
+        Some(p) => !live.is_empty() && !live.iter().any(|(g, n)| g == p && *n > 0),
+    }
 }
 
 /// The `.ttl` files the deploy script actually loads — PARSED FROM THE SCRIPT,
@@ -283,6 +330,22 @@ pub fn reconcile_json(tables: &[RouteTable]) -> String {
         if has_placement && is_punned(name) && placement.as_deref() != Some("urn:chorus:ontology") {
             findings.push("placement inconsistent with punned kind (ADR-051 x 025)".into());
         }
+        // The one migration, made countable: residency in a mechanism-named
+        // graph is itself the finding, whatever else is true of the class.
+        for (g, n) in live.iter() {
+            if g == "urn:chorus:instances" || g == "urn:chorus:ontology" {
+                findings.push(format!(
+                    "{} instance(s) in the legacy mechanism-named graph {} — drains to a domain graph",
+                    n, g
+                ));
+            }
+        }
+        if instances_outside_placement(placement.as_deref(), &live) {
+            findings.push(format!(
+                "instances live OUTSIDE the declared placement {} (which is empty) — the API reads where it was told",
+                placement.clone().unwrap_or_default()
+            ));
+        }
 
         let graphs = |v: &Vec<(String, u64)>| {
             v.iter()
@@ -366,12 +429,32 @@ mod tests {
     // three that are right.
     #[test]
     fn punned_classes_live_in_the_ontology_graph() {
-        for c in ["Domain", "Service", "Product", "SubDomain"] {
+        for c in ["Domain", "Service", "SubDomain"] {
             assert!(is_punned(c), "{} is punned", c);
         }
-        for c in ["ValueStreamStep", "Test", "Principal"] {
+        // Product is NOT punned — verified in the store: its individuals carry
+        // `a chorus:Product` only. Listing it here was my error and it made the
+        // readout blame the placement instead of the data.
+        for c in ["Product", "ValueStreamStep", "Test", "Principal"] {
             assert!(!is_punned(c), "{} is pure ABox", c);
         }
+    }
+
+    // The real /products defect: placement correct, graph empty, data elsewhere.
+    #[test]
+    fn instances_outside_the_declared_placement_is_the_product_case() {
+        let live = vec![
+            ("urn:chorus:instances".to_string(), 8u64),
+            ("urn:chorus:ontology".to_string(), 3),
+        ];
+        assert!(instances_outside_placement(Some("urn:chorus:domains:products"), &live));
+        // data where the shape says: not a finding
+        let ok = vec![("urn:chorus:domains:tests".to_string(), 4617u64)];
+        assert!(!instances_outside_placement(Some("urn:chorus:domains:tests"), &ok));
+        // no placement declared: a different finding, not this one
+        assert!(!instances_outside_placement(None, &live));
+        // no instances at all: latent, not misplaced
+        assert!(!instances_outside_placement(Some("urn:chorus:domains:security"), &[]));
     }
 
     // Silas's addendum invariant #2: one served class, one live graph. The
