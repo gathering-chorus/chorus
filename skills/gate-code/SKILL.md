@@ -162,7 +162,13 @@ KF_CARDS=$(bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/know
 echo "  Known fails:       ${KF_COUNT} entries (cards: ${KF_CARDS:-none})"
 ```
 
-Display only — does not affect the verdict (CI is authoritative).
+Display only — does not affect the verdict.
+
+> **#3725 AC7:** this line used to read "(CI is authoritative)". It has not been
+> true since #2600 cost-killed hosted per-PR CI, and ADR-053 (#3480) moved merge
+> authority to the local werk stack. Nothing downstream re-checks the known-fails
+> count, so treating it as someone else's problem is how a known-fail becomes
+> permanent. The verdict is this gate's, and the land gate is werk-test.
 
 ## On Pass
 

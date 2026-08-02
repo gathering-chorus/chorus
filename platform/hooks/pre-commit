@@ -1,7 +1,18 @@
 #!/bin/bash
 # pre-commit — secret scan on staged changes (#2709 AC1)
 # Fails the commit on any NEW secret (beyond the accepted baseline). Skippable
-# with --no-verify locally, but CI is authoritative on main (ADR-026 quality layers).
+# with --no-verify locally.
+#
+# #3725 AC7 — this used to end "but CI is authoritative on main (ADR-026 quality
+# layers)". That has been untrue since 2026-04-29: hosted per-PR CI was cost-killed
+# (#2600) and ADR-026's layer-3 claim was formally superseded by ADR-053 (#3480),
+# which puts merge authority on the LOCAL werk stack — werk-merge content-verify +
+# the act run of werk.yml (blocking werk-test) + role gates + Jeff's GO. Hosted CI
+# is schedule-only drift detection and blocks nothing.
+#
+# It mattered here more than in a design doc: this line is what an engineer reads
+# at the moment they are deciding whether --no-verify is safe. It told them a
+# backstop would catch it. Nothing would have.
 set -euo pipefail
 REPO="$(git rev-parse --show-toplevel)"
 
