@@ -9,8 +9,11 @@
 #   3. GitHub rulesets required_status_checks
 #
 # This script extracts canonical (1) and (2,3) and reports drift.
-# CI is authoritative on `main`; this drift detector runs in pre-commit
-# (warning, doc-coherence-ratchet wires it) and on schedule for visibility.
+# #3725 AC7 — was "CI is authoritative on `main`". Superseded: hosted per-PR CI
+# was cost-killed (#2600) and ADR-053 (#3480) put merge authority on the local
+# werk stack. This detector still earns its keep — it guards the 2 required-check
+# contexts against drift if that lane is ever revived — but it is not the gate.
+# Runs in pre-commit (warning, doc-coherence-ratchet wires it) and on schedule.
 #
 # Subcommands:
 #   list-canonical                 print canonical required-check names

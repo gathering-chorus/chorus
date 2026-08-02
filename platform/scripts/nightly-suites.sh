@@ -806,14 +806,61 @@ case "${1:-}" in
       exit 1
     fi
     python3 - "$_log" <<'PYEOF'
+# #3725 AC2/AC3 — scope to ONE run using the RUN|start marker, and say so when a
+# run never finished.
+#
+# AC2: the old boundary heuristic was "walk backward, stop at the first repeated
+# (kind,path) key" (#3606/#3272), written before #3720 added RUN| markers. It
+# assumes consecutive runs cover the SAME suite set. Both halves of that broke on
+# 2026-08-02: the 03:00 run died partway (81 of ~229 suites), and the lines before
+# it came from a werk root (chorus-werk/kade-3721/...) whose paths differ from
+# canonical — so no key ever repeated, no boundary was found, and --last-run
+# returned 289 suites / 41 fail spanning TWO runs. The real answer was 81 suites,
+# 68 pass / 10 fail / 3 skip. Jeff was given the blended number twice.
+#
+# The marker is authoritative and already written; use it instead of guessing.
+#
+# AC3: RUN|start with no RUN|complete means the run was KILLED (#3720 put the
+# markers there for exactly this forensic). Nothing read them, so a run that died
+# at suite 81 looked like a normal short night. That is now a loud meta line — a
+# partial red list must never be mistaken for a full one.
 import sys
-lines=[l for l in open(sys.argv[1],errors='replace').read().splitlines() if l.startswith('SUITE|')]
-seen=set(); run=[]
-for l in reversed(lines):
-    p=l.split('|'); key=(p[1],p[2])
-    if key in seen: break
-    seen.add(key); run.append(l)
-for l in reversed(run): print(l)
+raw = open(sys.argv[1], errors='replace').read().splitlines()
+
+start_idx = None
+for i in range(len(raw) - 1, -1, -1):
+    if raw[i].startswith('RUN|start|'):
+        start_idx = i
+        break
+
+if start_idx is None:
+    # Legacy log with no markers — fall back to the old heuristic rather than
+    # returning nothing. Fidelity is lower; that is why the markers exist.
+    lines = [l for l in raw if l.startswith('SUITE|')]
+    seen = set(); run = []
+    for l in reversed(lines):
+        p = l.split('|'); key = (p[1], p[2])
+        if key in seen:
+            break
+        seen.add(key); run.append(l)
+    for l in reversed(run):
+        print(l)
+    sys.exit(0)
+
+block = raw[start_idx:]
+completed = any(l.startswith('RUN|complete|') for l in block)
+suites = [l for l in block if l.startswith('SUITE|')]
+
+if not completed:
+    started = raw[start_idx].split('|')[2] if len(raw[start_idx].split('|')) > 2 else '?'
+    print(
+        'SUITE|meta|nightly-run-incomplete|silas|fail|0 pass, 1 fail '
+        '(run started %s and never wrote RUN|complete — KILLED after %d suite(s); '
+        'the results below are PARTIAL, not a full night)' % (started, len(suites))
+    )
+
+for l in suites:
+    print(l)
 PYEOF
     ;;
   --run-one)
