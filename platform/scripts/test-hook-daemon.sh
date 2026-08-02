@@ -18,7 +18,7 @@
 #      — so the one test that "ran" was measuring a missing binary, not the
 #      shim's fail-open behaviour at all.
 #   3. A SKIP THAT COUNTED AS A PASS. The "shim binary not found" branch did
-#      ((PASS++)). A file that cannot find the thing it tests reported success.
+#      PASS=$((PASS+1)). A file that cannot find the thing it tests reported success.
 #
 # Fixes: resolve the socket from HOME, resolve the shim via `command -v` per CSC
 # #2734 (target/release is the BUILD artifact, ~/.chorus/bin the DEPLOY one) with
@@ -26,6 +26,29 @@
 # stop counting skips as passes.
 
 set -uo pipefail
+
+# #3725 AC1 — TWO fixes, both mine to own.
+#
+# (a) COUNTERS. `((PASS++))` is post-increment: bash returns the value BEFORE the
+#     increment as the exit status, so when PASS is 0 it returns 1 — a "failure".
+#     Harmless while -e is off; fatal the moment it isn't. Now `PASS=$((PASS+1))`,
+#     which always returns 0.
+#
+# (b) THE `set -e` LEAK. This file's header is `set -uo pipefail` — -e is NEVER on.
+#     Four `set +e ... set -e` pairs therefore didn't RESTORE -e, they TURNED IT ON
+#     and left it on for the rest of the run. Combined with (a) that killed the
+#     script: with the daemon down, tests 1-3 take SKIP branches, PASS stays 0,
+#     test 4 switches -e on, assert_eq does ((PASS++)) -> status 1 -> abort. Tests
+#     5-7 never ran and no `=== Results: ===` line was printed, so nightly-suites
+#     fell through to rc-synthesis and reported "0 pass, 1 fail (synthesized rc=1,
+#     no parseable line)" — an unexplained red on any night the daemon is down.
+#
+#     I CAUSED THE LIVE HALF OF THIS in #3721. Before that change the skip branches
+#     did ((PASS++)), so PASS was 3 by test 4 and the increment returned success by
+#     accident. Making skips stop counting as passes was right; it removed the
+#     accident that was masking a latent bug, and I shipped the result. Restores are
+#     now `set +e`, matching the header.
+
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
@@ -52,10 +75,10 @@ assert_eq() {
   local label="$1" expected="$2" actual="$3"
   if [ "$expected" = "$actual" ]; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected '$expected', got '$actual')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -63,10 +86,10 @@ assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if echo "$haystack" | grep -q "$needle"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected to contain '$needle')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -80,7 +103,7 @@ if [ -S "$SOCKET" ]; then
   assert_eq "health returns ok" "ok" "$health_out"
 else
   echo "  SKIP: daemon socket not found at $SOCKET"
-  ((SKIP++))  # Not a failure — daemon may not be running
+  SKIP=$((SKIP+1))  # Not a failure — daemon may not be running
 fi
 
 # --- Test 2: PreToolUse dispatch via socket ---
@@ -97,7 +120,7 @@ if [ -S "$SOCKET" ]; then
   assert_eq "PreToolUse allows safe bash" "0" "$exit_code"
 else
   echo "  SKIP: daemon socket not found"
-  ((SKIP++))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Test 3: PreToolUse blocks dangerous commands ---
@@ -112,14 +135,14 @@ if [ -S "$SOCKET" ]; then
   has_deny=$(echo "$response" | grep -c "deny" 2>/dev/null) || has_deny=0
   if [ "$has_deny" -gt 0 ]; then
     echo "  PASS: PreToolUse blocks kill -9"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: PreToolUse should block kill -9 (response: $response)"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 else
   echo "  SKIP: daemon socket not found"
-  ((SKIP++))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Test 4: shim fail-open when socket unavailable ---
@@ -136,21 +159,21 @@ if [ -x "$SHIM" ]; then
       run_bounded 5 "$SHIM" pre-tool-use 2>/dev/null) || true
     # Shim should succeed (it talks to the running daemon)
     echo "  PASS: shim handles live socket"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     # Socket is already missing — test fail-open directly
     set +e
     echo '{"tool_name":"Bash","tool_input":{"command":"ls"},"cwd":"/tmp"}' | \
       run_bounded 5 "$SHIM" pre-tool-use >/dev/null 2>&1
     exit_code=$?
-    set -e
+    set +e
     assert_eq "shim returns 0 when socket missing (fail-open)" "0" "$exit_code"
   fi
 else
-  # #3721 — was ((PASS++)). A run that cannot locate the binary under test has
+  # #3721 — was PASS=$((PASS+1)). A run that cannot locate the binary under test has
   # not passed anything; count it as a skip so the summary stays honest.
   echo "  SKIP: shim binary not found at $SHIM"
-  ((SKIP++))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Test 5: shim CLI subcommands work without socket ---
@@ -161,7 +184,7 @@ if [ -x "$SHIM" ]; then
   set +e
   clock_out=$("$SHIM" wall-clock 2>/dev/null)
   exit_code=$?
-  set -e
+  set +e
   assert_eq "wall-clock returns 0" "0" "$exit_code"
   assert_contains "wall-clock returns timestamp" "20" "$clock_out"
 
@@ -169,13 +192,13 @@ if [ -x "$SHIM" ]; then
   set +e
   state_out=$("$SHIM" role-state query kade 2>/dev/null)
   exit_code=$?
-  set -e
+  set +e
   assert_eq "role-state query returns 0" "0" "$exit_code"
 else
   echo "  SKIP: shim binary not found"
-  ((SKIP++))
-  ((SKIP++))
-  ((SKIP++))
+  SKIP=$((SKIP+1))
+  SKIP=$((SKIP+1))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Test 6: shim no-args returns error ---
@@ -185,11 +208,11 @@ if [ -x "$SHIM" ]; then
   set +e
   "$SHIM" >/dev/null 2>&1
   exit_code=$?
-  set -e
+  set +e
   assert_eq "no args returns 1" "1" "$exit_code"
 else
   echo "  SKIP: shim not found"
-  ((SKIP++))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Test 7: PostToolUse endpoint responds ---
@@ -204,7 +227,7 @@ if [ -S "$SOCKET" ]; then
   assert_eq "PostToolUse returns 0" "0" "$exit_code"
 else
   echo "  SKIP: daemon socket not found"
-  ((SKIP++))
+  SKIP=$((SKIP+1))
 fi
 
 # --- Summary ---
