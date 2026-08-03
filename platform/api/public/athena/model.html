@@ -9,8 +9,15 @@
      changes this page changes. Supersedes the census shape (rejected 2026-07-30 —
      counts answer "how many", not "what are the classes and what is in them").
      Legacy is filtered OUT by default. What the page cannot draw, it says. -->
+<!-- #3739 — the DOMAIN layer, default view. Nodes are domains, edges are induced
+     by definesVocabulary + rdfs:domain/range via /api/athena/model-relationships —
+     generated from the live graph on every load, no hand-maintained node or edge
+     list. Isolated domains render dashed and are NAMED: an unconnected domain is
+     a finding about the model, not something to hide. Click a domain to drill to
+     its classes and their typed edges; every edge links to its target. -->
 <script>window.OWL_PORT = 3360;</script>
 <link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script>
+<script src="/js/vendor/mermaid.min.js"></script>
 <style>
   .mwrap{display:grid;grid-template-columns:218px minmax(0,1fr) 300px;
          border:1px solid var(--line,#d8dee6);border-radius:4px;overflow:hidden;
@@ -94,6 +101,9 @@
   const main = document.getElementById('main');
   let CLASSES = {}, EDGES = [], focus = null, q = '';
   let fState = { target: 1, legacy: 0, unclassified: 1 };
+  // #3739 — the domain layer. REL is the induced model from the live graph;
+  // layer is 'domains' (default), 'drill' (one domain's classes) or 'classes'.
+  let REL = null, layer = 'domains', drillDomain = null;
 
   const stateOf = k => {
     const s = (CLASSES[k] || {}).state;
@@ -139,8 +149,133 @@
       return;
     }
     focus = CLASSES.Domain ? 'Domain' : Object.keys(CLASSES).sort()[0];
-    render();
   } catch (e) { fetchFailed(main, e); return; }
+
+  // #3739 — the relationships endpoint is chorus-api itself (same origin), not
+  // the owl proxy. A failed fetch falls back to the class layer with the domain
+  // layer reporting WHY — never an empty diagram read as "no relationships".
+  try {
+    const r = await fetch('/api/athena/model-relationships');
+    REL = r.ok ? await r.json() : { storeReachable: false, http: r.status };
+  } catch (e) { REL = { storeReachable: false, err: String(e) }; }
+  if (typeof mermaid !== 'undefined') mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' });
+  route();
+
+  function route() {
+    if (layer === 'domains') renderDomains();
+    else if (layer === 'drill') renderDrill();
+    else render();
+  }
+
+  function layerBar(active) {
+    const b = (id, txt) => '<button class="mchip" aria-pressed="' + (active === id) +
+      '" data-layer="' + id + '">' + txt + '</button>';
+    return '<div class="mchips" style="margin-bottom:10px">' + b('domains', 'Domains') +
+      (active === 'drill' && drillDomain ? b('drill', esc(drillDomain)) : '') +
+      b('classes', 'Classes') + '</div>';
+  }
+
+  function bindLayer() {
+    Array.prototype.forEach.call(main.querySelectorAll('[data-layer]'), function (el) {
+      el.onclick = function () { layer = el.getAttribute('data-layer'); route(); };
+    });
+  }
+
+  async function renderDomains() {
+    if (!REL || !REL.storeReachable) {
+      main.innerHTML = layerBar('domains') +
+        '<div class="err">The domain layer could not be read from the store' +
+        (REL && REL.http ? ' (HTTP ' + esc(String(REL.http)) + ')' : '') +
+        ' — this is NOT an empty model. The class layer below still serves.</div>';
+      bindLayer(); return;
+    }
+    const edges = REL.domainEdges || [], iso = REL.isolatedDomains || [];
+    const ids = {}, names = [];
+    (REL.domains || []).forEach(function (d, i) { ids[d] = 'd' + i; names.push(d); });
+    const nCls = d => ((REL.vocabulary || {})[d] || []).length;
+    let src = 'graph LR\n';
+    const inGraph = new Set();
+    edges.forEach(function (e) { inGraph.add(e.from); inGraph.add(e.to); });
+    inGraph.forEach(function (d) {
+      src += '  ' + ids[d] + '["' + d + ' (' + nCls(d) + ')"]\n';
+    });
+    edges.forEach(function (e) {
+      src += '  ' + ids[e.from] + ' -->|' + e.count + '| ' + ids[e.to] + '\n';
+    });
+    let svg = '';
+    try {
+      const out = await mermaid.render('erd3739', src);
+      svg = out.svg;
+    } catch (e) {
+      main.innerHTML = layerBar('domains') + '<div class="err">mermaid could not lay out the domain graph: ' +
+        esc(String(e)) + '</div>'; bindLayer(); return;
+    }
+    const total = edges.reduce(function (s, e) { return s + e.count; }, 0);
+    main.innerHTML = layerBar('domains') +
+      '<div class="mwrap" style="display:block"><div class="mcol mstage" id="erdstage" style="overflow:auto">' + svg + '</div></div>' +
+      '<div class="mstrip">' +
+        '<div><b>' + inGraph.size + '</b> connected domains, <b>' + edges.length + '</b> domain&rarr;domain edges, ' +
+          '<b>' + total + '</b> class-level properties behind them &mdash; induced from the live graph on this load.</div>' +
+        '<div><b>' + iso.length + '</b> isolated (vocabulary, zero relationships): ' +
+          (iso.length ? iso.map(function (d) { return '<button class="mchip" data-drill="' + esc(d) + '" style="padding:1px 6px">' + esc(d) + '</button>'; }).join(' ')
+                      : 'none') +
+          ' &mdash; an isolated domain is a real finding about the model.</div>' +
+        '<div>Click a domain to drill to its classes and edges.</div>' +
+      '</div>';
+    document.getElementById('tally').innerHTML =
+      '<div><b>' + (REL.domains || []).length + '</b><span>domains</span></div>' +
+      '<div><b>' + edges.length + '</b><span>edges</span></div>' +
+      '<div><b style="color:#a8226b">' + iso.length + '</b><span>isolated</span></div>';
+    bindLayer();
+    // every rendered node is a drill link — mermaid ids embed ours (flowchart-dN-…)
+    names.forEach(function (d) {
+      Array.prototype.forEach.call(
+        main.querySelectorAll('[id*="flowchart-' + ids[d] + '-"]'),
+        function (node) { node.style.cursor = 'pointer';
+          node.onclick = function () { drillDomain = d; layer = 'drill'; route(); }; });
+    });
+    Array.prototype.forEach.call(main.querySelectorAll('[data-drill]'), function (el) {
+      el.onclick = function () { drillDomain = el.getAttribute('data-drill'); layer = 'drill'; route(); };
+    });
+  }
+
+  function renderDrill() {
+    const d = drillDomain;
+    if (!REL || !REL.storeReachable || !d) { layer = 'domains'; return renderDomains(); }
+    const owned = (REL.vocabulary || {})[d] || [];
+    const ce = (REL.classEdges || []);
+    const rows = owned.map(function (cls) {
+      const out = ce.filter(function (e) { return e.fromClass === cls; });
+      const inc = ce.filter(function (e) { return e.toClass === cls && e.fromClass !== cls; });
+      const lin = function (e, dir) {
+        const target = dir === 'out' ? e.toClass : e.fromClass;
+        const tDom = dir === 'out' ? e.toDomain : e.fromDomain;
+        const jump = tDom && tDom !== d
+          ? '<button data-drill="' + esc(tDom) + '">' + esc(target) + ' &middot; ' + esc(tDom) + '</button>'
+          : (CLASSES[target] ? '<button data-class="' + esc(target) + '">' + esc(target) + '</button>' : esc(target));
+        return '<div class="mrel">' + (dir === 'out'
+          ? '<em>' + esc(e.property) + '</em> &rarr; ' + jump
+          : jump + ' <em>' + esc(e.property) + '</em> &rarr; this') + '</div>';
+      };
+      return '<div class="msect"><span class="mlab">' + esc(cls) +
+        (CLASSES[cls] ? ' &mdash; <button data-class="' + esc(cls) + '" style="font:inherit">class diagram</button>' : ' <small>(no shape &mdash; not served)</small>') + '</span>' +
+        (out.length || inc.length
+          ? out.map(function (e) { return lin(e, 'out'); }).join('') + inc.map(function (e) { return lin(e, 'in'); }).join('')
+          : '<p class="mempty">no typed edges — isolated class</p>') + '</div>';
+    }).join('');
+    main.innerHTML = layerBar('drill') +
+      '<div class="mwrap" style="display:block"><div class="mcol">' +
+      '<h2 style="font:600 16px ui-monospace,monospace;margin:0 0 10px">' + esc(d) +
+      ' <small style="color:var(--muted,#8a94a3)">' + owned.length + ' classes</small></h2>' +
+      (rows || '<p class="mempty">This domain declares no vocabulary.</p>') + '</div></div>';
+    bindLayer();
+    Array.prototype.forEach.call(main.querySelectorAll('[data-drill]'), function (el) {
+      el.onclick = function () { drillDomain = el.getAttribute('data-drill'); route(); };
+    });
+    Array.prototype.forEach.call(main.querySelectorAll('[data-class]'), function (el) {
+      el.onclick = function () { focus = el.getAttribute('data-class'); layer = 'classes'; route(); };
+    });
+  }
 
   function render() {
     const keys = Object.keys(CLASSES).filter(pass).sort();
@@ -216,7 +351,7 @@
       '<div class="mrel">shape: chorus:' + esc(focus) + 'Shape</div>' +
       '<p class="mempty" style="margin-top:4px">Projected from the shape on every load — never a stored copy.</p></div>';
 
-    main.innerHTML =
+    main.innerHTML = layerBar('classes') +
       '<div class="mwrap"><div class="mcol"><span class="mlab">State</span>' +
         '<div class="mchips" id="fst"></div><span class="mlab">Classes — ' + keys.length + '</span>' +
         '<input id="mq" type="search" placeholder="find a class…" aria-label="Find a class" value="' + esc(q) + '">' +
@@ -254,6 +389,7 @@
         if (CLASSES[k]) { focus = k; render(); }
       };
     });
+    bindLayer();
   }
 })();
 </script>

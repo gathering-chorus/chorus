@@ -26,6 +26,7 @@ const execAsync = promisify(exec);
 // `${ROOT}/chorus/...` and `${ROOT}/shared-observability` branches are dead and
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
+import { modelRelationshipsHandler } from './handlers/athena-model-relationships';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -246,6 +247,11 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
     res.status(502).json({ error: 'store-unreachable', storeReachable: false });
   }
 });
+
+// #3739 — the model's relationships: class-level edges (rdfs:domain × rdfs:range,
+// chorus ranges only) joined through definesVocabulary into domain-level edges.
+// Isolated domains are served by name — an ERD that hides them hides the finding.
+app.get('/api/athena/model-relationships', modelRelationshipsHandler());
 
 // #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
 // see the owl for each domain."
