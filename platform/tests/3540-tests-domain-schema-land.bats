@@ -19,6 +19,15 @@
 # Invariant #1 (a test brings its own world): derive the repo root from THIS test's
 # own location, never an ambient CHORUS_ROOT that may point at a different checkout.
 # (#3540's whole point — a test that honors a foreign CHORUS_ROOT tests the wrong files.)
+
+# #3606 — SOURCE FUSEKI AUTH. Fuseki refuses unauthenticated writes (401, verified
+# live). The two mint-then-query tests below POST their fixtures with a bare curl
+# and `-o /dev/null 2>/dev/null`, so the 401 was swallowed whole: the INSERT never
+# landed, the follow-up SELECT found nothing, and the assertion failed as though
+# the SCHEMA were wrong. The schema was fine — the write was refused and nobody
+# heard it. Auth arrived after these tests were written.
+# shellcheck source=/dev/null
+. "${CHORUS_ROOT}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 SCRIPT="$ROOT/platform/scripts/chorus-model-deploy.sh"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
@@ -62,7 +71,7 @@ teardown() {
 
 @test "pyramidLayer and testConcern are ORTHOGONAL — a Test carries both (e2e + security)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
-  curl -s -X POST "http://localhost:3030/pods/update" --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -o /dev/null 2>/dev/null
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "http://localhost:3030/pods/update" --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:test-3540-ortho a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -o /dev/null 2>/dev/null
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t chorus:pyramidLayer \"e2e\" ; chorus:testConcern \"security\" } }" -H "Accept: application/sparql-results+json"
   [[ "$output" == *'test-3540-ortho'* ]]
 }
@@ -70,7 +79,7 @@ teardown() {
 @test "a minted Test instance is queryable BY its covers edge (the #3190 contract)" {
   env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
   # mint a Test instance covering a known SubDomain, the way the #2818 tagging will
-  curl -s -X POST "http://localhost:3030/pods/update" --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"integration\" ; chorus:hermeticity \"needs-stack\" } }" -o /dev/null 2>/dev/null
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST "http://localhost:3030/pods/update" --data-urlencode "update=$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:test-3540-probe a chorus:Test ; chorus:covers chorus:subdomain-tests-domain ; chorus:pyramidLayer \"integration\" ; chorus:hermeticity \"needs-stack\" } }" -o /dev/null 2>/dev/null
   # query the way werk-test will: which Tests cover this SubDomain?
   run curl -s "$Q" --data-urlencode "query=$PFX SELECT ?t WHERE { GRAPH <$TEST_GRAPH> { ?t a chorus:Test ; chorus:covers chorus:subdomain-tests-domain } }" -H "Accept: application/sparql-results+json"
   [[ "$output" == *'test-3540-probe'* ]]

@@ -1,5 +1,12 @@
 #!/usr/bin/env bats
 # @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
+
+# #3606 — source Fuseki auth. Fuseki refuses unauthenticated writes (401) and
+# the setup writes below discard stderr, so a refused INSERT looked exactly like
+# a successful one — the later assertion then failed on absent data and read as a
+# logic bug. Same swallowed-401 as 3540.
+# shellcheck source=/dev/null
+. "${CHORUS_ROOT}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 load test_helper
 # Tests for platform/scripts/write-story.sh (#2321)
 # What it does: capture a Jeff-told story as a TTL instance in Fuseki,

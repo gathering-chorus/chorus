@@ -9,6 +9,13 @@
 # Invariant #1 (a test brings its own world): root derives from this test's
 # location; throwaway graph; never the live ontology.
 
+
+# #3606 — source Fuseki auth. Fuseki refuses unauthenticated writes (401) and
+# the setup writes below discard stderr, so a refused INSERT looked exactly like
+# a successful one — the later assertion then failed on absent data and read as a
+# logic bug. Same swallowed-401 as 3540.
+# shellcheck source=/dev/null
+. "${CHORUS_ROOT}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 SCRIPT="$ROOT/platform/scripts/chorus-model-deploy.sh"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
@@ -19,11 +26,11 @@ UPD="http://localhost:3030/pods/update"
 PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#>'
 SHPFX='PREFIX sh: <http://www.w3.org/ns/shacl#>'
 
-teardown() { curl -s -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null || true; }
+teardown() { curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null || true; }
 
 plant_sibling() {
   # mimic #3529: value-stream wiring loaded LIVE into the graph, NOT in any deployed TTL
-  curl -s -X POST -H 'Content-Type: application/sparql-update' --data-binary \
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data-binary \
     "$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:vs-step-sibling-3550 a chorus:ValueStreamStep ; chorus:stepOrder 7 ; chorus:inStream chorus:vs-werk } }" "$UPD" -o /dev/null 2>/dev/null
 }
 
