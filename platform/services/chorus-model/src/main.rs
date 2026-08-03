@@ -7,11 +7,11 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use chorus_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
+use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
-    "chorus-model — the governed RDF/OWL writer (ADR-040 Rule 0; #3257)\n\
+    "athena-model — the governed RDF/OWL writer (ADR-040 Rule 0; #3257)\n\
      usage:\n\
        chorus-model add    --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
        chorus-model delete --kind <kind> --name <name>\n\
@@ -72,6 +72,168 @@ fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
 fn run() -> Result<String, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
+        // #3718 — SCHEMA VERBS. The instance verbs (mint/add) have governed the
+        // ABox since #3257; the TBox — classes, properties, shapes — has been
+        // hand-typed into .ttl, which is where every failure of 2026-07-30/31
+        // came from: 186 classes over 13 files and 6 namespaces, 69 binding
+        // nothing, 11 properties with no domain/range, a shape and an ontology
+        // disagreeing about what a Domain is.
+        //
+        // These verbs DESCRIBE the write, run the ADR checks, and print what
+        // would land. They do not write yet — the placement gate arms after the
+        // definesVocabulary backfill (Silas). Describing before writing is
+        // deliberate: it makes the refusals reviewable while the model catches up.
+        Some("check") => {
+            let rest = &args[1..];
+            let get = |flag: &str| -> Option<String> {
+                rest.iter().position(|a| a == flag).and_then(|i| rest.get(i + 1)).cloned()
+            };
+            let class = get("--class").ok_or("check: --class <ClassLocal> is required")?;
+            let file = get("--file").unwrap_or_default();
+            let is_def = rest.iter().any(|a| a == "--definition");
+            let declared = get("--graph");
+            let reason = get("--reason");
+            let claimed = get("--claimed-by");
+            let required: Vec<String> = get("--required")
+                .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
+                .unwrap_or_default();
+            let supplied: std::collections::BTreeSet<String> = get("--supplied")
+                .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
+                .unwrap_or_default();
+            let deploy_set: std::collections::BTreeSet<String> =
+                athena_model::adr::deploy_set_from_script();
+
+            let layer = athena_model::adr::layer_of(&class, is_def);
+            let facts = athena_model::adr::WriteFacts {
+                layer,
+                kind: &get("--kind").unwrap_or_else(|| "class".into()),
+                class_local: &class,
+                target_file: &file,
+                declared_types: &[],
+                defining_domain: claimed.as_deref(),
+                declared_placement: declared.as_deref(),
+                override_reason: reason.as_deref(),
+                has_shape: !rest.iter().any(|a| a == "--no-shape"),
+                required: &required,
+                supplied: &supplied,
+                deploy_set: &deploy_set,
+            };
+            let refusals = athena_model::adr::check_all(&facts);
+            if refusals.is_empty() {
+                // Print the graph that governs FOR THIS LAYER. Showing the
+                // instance derivation on a Schema-layer check would tell the
+                // caller the wrong home — the exact class of quiet wrongness
+                // this whole card exists to remove.
+                let placement = match layer {
+                    athena_model::adr::Layer::Schema =>
+                        athena_model::adr::SCHEMA_GRAPH.to_string(),
+                    athena_model::adr::Layer::Instance =>
+                        athena_model::adr::derived_placement(&class, claimed.as_deref())
+                            .unwrap_or_else(|| "(underivable)".into()),
+                };
+                return Ok(format!(
+                    "OK — {} passes every decidable ADR check.\n  layer:     {:?}\n  placement: {}  (derived)",
+                    class, layer, placement
+                ));
+            }
+            // ALL refusals, never just the first — one-problem-per-attempt makes
+            // the human iterate, which is the opposite of legibility.
+            let body = refusals
+                .iter()
+                .map(|r| format!("  [{}] {}", r.code(), r.message()))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(format!("REFUSED — {} ADR violation(s) for {}:\n{}", refusals.len(), class, body))
+        }
+        // #3718 — the TBox verbs. Same refusal-first shape as the instance verbs:
+        // check EVERYTHING, refuse with every violation named, and only then
+        // emit. Nothing is defaulted — Jeff's legibility ruling is enforced by
+        // tbox::check_*, which has no default branch to fall through to.
+        //
+        // These EMIT turtle for a manifest file rather than POSTing to the
+        // store. The schema graph is DBA-path-only by design (#3356), so a
+        // writer that wrote schema straight to Fuseki would be bypassing the
+        // very governance this card exists to add. The deploy is still the
+        // deploy; what changes is that what it deploys was minted, not typed.
+        Some(v @ ("class" | "property" | "shape")) => {
+            let rest = &args[1..];
+            let get = |flag: &str| -> Option<String> {
+                rest.iter().position(|a| a == flag).and_then(|i| rest.get(i + 1)).cloned()
+            };
+            let file = get("--file").unwrap_or_default();
+            let deploy_set = athena_model::adr::deploy_set_from_script();
+            let dry = rest.iter().any(|a| a == "--dry-run");
+
+            let (refusals, turtle) = match v {
+                "class" => {
+                    let name = get("--name").ok_or("class: --name <ClassLocal> is required")?;
+                    let comment = get("--comment");
+                    let claimed = get("--claimed-by");
+                    let spec = athena_model::tbox::ClassSpec {
+                        name: &name,
+                        comment: comment.as_deref(),
+                        claimed_by: claimed.as_deref(),
+                        target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_class(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::class_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+                "property" => {
+                    let name = get("--name").ok_or("property: --name <localName> is required")?;
+                    let dom = get("--domain");
+                    let rng = get("--range");
+                    let comment = get("--comment");
+                    let spec = athena_model::tbox::PropertySpec {
+                        name: &name,
+                        domain: dom.as_deref(),
+                        range: rng.as_deref(),
+                        comment: comment.as_deref(),
+                        target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_property(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::property_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+                _ => {
+                    let class = get("--class").ok_or("shape: --class <ClassLocal> is required")?;
+                    let required: Vec<String> = get("--required")
+                        .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
+                        .unwrap_or_default();
+                    let spec = athena_model::tbox::ShapeSpec {
+                        class: &class, required: &required, target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_shape(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::shape_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+            };
+
+            if !refusals.is_empty() {
+                let body = refusals.iter()
+                    .map(|r| format!("  [{}] {}", r.code(), r))
+                    .collect::<Vec<_>>().join("
+");
+                return Err(format!("REFUSED — {} violation(s):
+{}", refusals.len(), body));
+            }
+            if dry {
+                return Ok(format!("# dry-run — nothing written
+{}", turtle));
+            }
+            // APPEND, never rewrite. A governed writer that rewrites a
+            // hand-curated file would destroy comments and ordering that carry
+            // real reasoning — and silently, which is the failure mode we spent
+            // the week removing.
+            use std::io::Write;
+            let path = format!("{}/{}", std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string()), file);
+            let mut f = std::fs::OpenOptions::new().append(true).open(&path)
+                .map_err(|e| format!("cannot append to {}: {}", path, e))?;
+            write!(f, "
+{}", turtle).map_err(|e| format!("write failed: {}", e))?;
+            Ok(format!("appended to {}:
+{}", file, turtle))
+        }
         Some("kinds") => Ok("product domain role value-stream value-stream-step service principle practice policy skill gate decision document".into()),
         Some("mint") => {
             let (req, _) = parse_req(&args[1..])?;
@@ -248,7 +410,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            eprintln!("chorus-model: {}", e);
+            eprintln!("athena-model: {}", e);
             ExitCode::FAILURE
         }
     }

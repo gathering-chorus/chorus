@@ -9,7 +9,7 @@
 //! AC-facing behavior only: what a caller sees (refusal vs write), what the store
 //! receives (creator stamp), never internals.
 
-use chorus_model::{verify_identity, verify_identity_token, write, Store, TokenVerifier, WriteReq, R};
+use athena_model::{verify_identity, verify_identity_token, write, Store, TokenVerifier, WriteReq, R};
 use std::cell::RefCell;
 
 /// Hermetic stub (the constraint_enforcement.rs pattern): Principal-registry
@@ -116,7 +116,11 @@ fn registered_claim_verifies_and_stamps_creator() {
 }
 
 // ── AC 4 — the bypass path itself: shelling the binary cannot self-attribute ─
-// Spawn the REAL chorus-model binary. DEPLOY_ROLE is removed from its env and
+// #3718 — the binary is `athena-model` now; `chorus-model` is a fail-loud stub
+// that exits 2. These three tests caught the rename by failing, which is the
+// stub doing its job: a silent alias would have let them keep passing against
+// the old name forever.
+// Spawn the REAL athena-model binary. DEPLOY_ROLE is removed from its env and
 // the store points at a dead port: the refusal must be identity-missing, i.e.
 // it fires BEFORE any store/network contact — no default identity ever forms.
 
@@ -125,7 +129,7 @@ fn cli_write_without_deploy_role_is_refused_before_store_contact() {
     // #3651 pinned "no default identity ever forms, refusal precedes store". #3687
     // flipped the gate to token-first, so an env-less caller now refuses with
     // identity-token-required (not identity-missing) — same guarantee, new cause.
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_athena-model"))
         .args(["add", "--kind", "domain", "--name", "bypass-probe"])
         .env_remove("DEPLOY_ROLE")
         .env_remove("CHORUS_IDENTITY_TOKEN")
@@ -142,7 +146,7 @@ fn cli_write_without_deploy_role_is_refused_before_store_contact() {
 fn cli_write_with_unregistered_identity_is_refused() {
     // With a claim present the registry must answer; a dead store = fail closed,
     // never fail open. Either way: no write, non-zero exit.
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_athena-model"))
         .args(["add", "--kind", "domain", "--name", "bypass-probe"])
         .env("DEPLOY_ROLE", "intruder")
         .env("CHORUS_FUSEKI", "http://127.0.0.1:1")
@@ -162,7 +166,7 @@ fn cli_write_with_deploy_role_but_no_token_is_refused() {
     // Pre-#3687 this SUCCEEDED (resolve fell back to verify_identity(DEPLOY_ROLE)).
     // Post-flip: no CHORUS_IDENTITY_TOKEN → refuse, and the refusal fires before
     // the registry ASK (dead store must never be reached).
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_athena-model"))
         .args(["add", "--kind", "domain", "--name", "flip-probe"])
         .env("DEPLOY_ROLE", "kade") // a REGISTERED role — still refused without a token
         .env_remove("CHORUS_IDENTITY_TOKEN")
@@ -182,7 +186,7 @@ fn cli_write_with_deploy_role_but_no_token_is_refused() {
 #[test]
 fn cli_dry_run_needs_no_identity() {
     // --dry-run writes nothing — it stays usable without an identity (sketch surface).
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_chorus-model"))
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_athena-model"))
         .args(["add", "--kind", "domain", "--name", "sketch", "--dry-run"])
         .env_remove("DEPLOY_ROLE")
         .output()

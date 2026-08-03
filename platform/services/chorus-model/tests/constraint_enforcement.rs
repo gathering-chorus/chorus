@@ -4,7 +4,7 @@
 //! per-domain rules). Red-first (DEC-1674). This file pins the PURE datatype check;
 //! edge-target-type enforcement is integration-proven (needs the store).
 
-use chorus_model::{datatype_ok, verify_identity, write, Identity, Store, WriteReq, R};
+use athena_model::{datatype_ok, verify_identity, write, Identity, Store, WriteReq, R};
 use std::cell::RefCell;
 
 /// Configurable stub: answers shape SELECTs by query content (minCount→required,

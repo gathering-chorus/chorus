@@ -201,10 +201,12 @@ export CHORUS_JWKS_URL="${CHORUS_JWKS_URL:-http://localhost:3001/.oidc/jwks}"
 # back to DEPLOY_ROLE (#3356 additive path). #3687 removes that fallback.
 # Only real role sessions (cred exists); bootstrap/generic shells skip.
 if [ -n "${CHORUS_ROLE:-}" ] && [ -f "$HOME/.chorus/identity/${CHORUS_ROLE}/cred.json" ]; then
-  chorus-model() {
+  # #3718 — renamed to athena-model (the model is Athena's, as werk-* is code's).
+  # The wrapper follows the binary; `chorus-model` is a fail-loud stub that exits 2.
+  athena-model() {
     local __tok
     __tok="$(command chorus-identity-token "${DEPLOY_ROLE:-$CHORUS_ROLE}" 2>/dev/null || true)"
-    CHORUS_IDENTITY_TOKEN="$__tok" command chorus-model "$@"
+    CHORUS_IDENTITY_TOKEN="$__tok" command athena-model "$@"
   }
 fi
 
