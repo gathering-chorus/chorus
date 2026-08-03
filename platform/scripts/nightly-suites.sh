@@ -538,14 +538,33 @@ run_coverage() {
     if [ "$lang" = "ts" ]; then
       if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/coverage/coverage-summary.json"
       elif [ -d "$dir" ]; then
+        # #3734 AC2 — jest writes coverage/coverage-summary.json itself, so there is
+        # no redirect to truncate here; snapshot the prior artifact and restore it if
+        # the run fails, so a broken package keeps its last good baseline too.
+        _cov_prev=""
+        if [ -f "$dir/coverage/coverage-summary.json" ]; then
+          _cov_prev="$dir/coverage/.coverage-summary.prev.$$"
+          cp -p "$dir/coverage/coverage-summary.json" "$_cov_prev" 2>/dev/null || _cov_prev=""
+        fi
         (cd "$dir" && npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1); rc=$?  # #3606 --no-install: fail loud, never download
+        if [ "$rc" -ne 0 ] && [ -n "$_cov_prev" ] && [ -s "$_cov_prev" ]; then
+          mv -f "$_cov_prev" "$dir/coverage/coverage-summary.json"
+        fi
+        [ -n "$_cov_prev" ] && rm -f "$_cov_prev"
         sj="$dir/coverage/coverage-summary.json"
       else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['total']['statements']['pct'])" 2>/dev/null || true)
     elif [ "$lang" = "rust" ]; then
       if [ -n "$dry" ] && [ -n "$fix" ]; then sj="$fix/$rel/llvm-cov-summary.json"
       elif [ -d "$dir" ]; then
-        (cd "$dir" && cargo llvm-cov --summary-only --json >"$dir/llvm-cov-summary.json" 2>/dev/null); rc=$?
+        # #3734 AC2 — write to a TEMP file and move into place only on success.
+        # `>"$dir/llvm-cov-summary.json"` truncated the artifact BEFORE cargo ran,
+        # so a crate that stopped compiling destroyed its own last good summary and
+        # the next run had no baseline either — the failure erased its evidence.
+        _cov_tmp="$dir/.llvm-cov-summary.$$.tmp"
+        (cd "$dir" && cargo llvm-cov --summary-only --json >"$_cov_tmp" 2>/dev/null); rc=$?
+        if [ "$rc" -eq 0 ] && [ -s "$_cov_tmp" ]; then mv -f "$_cov_tmp" "$dir/llvm-cov-summary.json"; fi
+        rm -f "$_cov_tmp"
         sj="$dir/llvm-cov-summary.json"
       else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['data'][0]['totals']['lines']['percent'])" 2>/dev/null || true)
@@ -574,6 +593,36 @@ for line in text.splitlines():
     elif me and section: print(f"{section} {me.group(1).strip()} {me.group(2)}")
 PYEOF
 )
+
+  # #3734 AC4 — REPORT THE DENOMINATOR. Until now the coverage tier could only
+  # enumerate what it COVERS; a component absent from coverage-floors.yml was
+  # invisible, not unmeasured-and-named. 3 of 25 Rust crates carry a floor and
+  # nothing said so — including werk-test, the verb that gates every land.
+  # The finding is the missing denominator, not the missing entries: adding one
+  # crate would leave the same hole. Naming the unconfigured ones is the point,
+  # because a bare ratio still hides WHICH components are unmeasured.
+  _cov_denominator "$floors"
+}
+
+_cov_denominator() {
+  local floors="$1"
+  [ -d "$CHORUS_ROOT/platform/services" ] || return 0
+  local configured present unconfigured=""
+  configured=$(grep -c '^  platform/services/' "$floors" 2>/dev/null | tr -d ' ')
+  present=0
+  for d in "$CHORUS_ROOT"/platform/services/*/; do
+    [ -f "$d/Cargo.toml" ] || continue
+    present=$((present + 1))
+    local rel="platform/services/$(basename "$d")"
+    grep -q "^  ${rel}:" "$floors" 2>/dev/null || unconfigured="$unconfigured $(basename "$d")"
+  done
+  [ "$present" -gt 0 ] || return 0
+  local n_un; n_un=$(printf '%s' "$unconfigured" | wc -w | tr -d ' ')
+  if [ "$n_un" -eq 0 ]; then
+    echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (all ${present} rust crates carry a coverage floor)"
+  else
+    echo "SUITE|coverage-denominator|platform/services|kade|fail|0 pass, 1 fail (${configured} of ${present} rust crates have a coverage floor — ${n_un} unconfigured:${unconfigured})"
+  fi
 }
 
 # #3527 — smoke tier, FOLDED from daily-review-quality.sh. Broad app-health (smoke-check.sh
