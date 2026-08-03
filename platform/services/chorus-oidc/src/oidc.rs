@@ -467,7 +467,16 @@ pub fn resolve_principal_roles(
 /// a webid carries no space so the first is the separator; multiple edges per
 /// Principal are grouped by the resolver. Principals with no edge are simply
 /// absent: they authenticate, and any scoped write refuses.
-pub const PRINCIPAL_SCOPE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:hasScope ?s } BIND(CONCAT(STR(?w), \" \", STR(?s)) AS ?v) }";
+///
+/// #3728 — ONE source of truth. The query text is bound here via `include_str!`
+/// from `platform/api/src/sparql/principal-scope.rq`, the SAME file the
+/// chorus-api TS door reads at runtime. Two doors, one query, cannot drift; a
+/// move or delete of that file breaks THIS build loud (compile-time embed).
+/// The file lives in the api tree because that is the one package whose build
+/// copies `src/sparql → dist/sparql`, giving the TS door a runtime-resolvable
+/// path; Rust binds from anywhere at compile.
+pub const PRINCIPAL_SCOPE_QUERY: &str =
+    include_str!("../../../api/src/sparql/principal-scope.rq");
 
 /// None = graph unreachable (caller fails closed); Some(empty) = reachable and
 /// no grants exist. Rows without a separator are dropped and said.
