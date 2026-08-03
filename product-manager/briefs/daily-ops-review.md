@@ -1,24 +1,24 @@
-# Daily Ops Review — 2026-08-02
+# Daily Ops Review — 2026-08-03
 
 ## 1. Hooks Health
-**Status: YELLOW (improving)**
-`cargo check` passes. Dead-code warnings down 2→1: `owes_response_block` (nudge_drain.rs:178) remains; `registration_json` resolved since Aug 1.
-**Action:** Silas — remove or suppress remaining dead-code path.
+**Status: YELLOW (regression)**
+`cargo check` passes but warns on 2 dead-code paths — **up from 1 yesterday**. `registration_json` (session_registry.rs:66) returned after 6-card merge batch; `owes_response_block` (nudge_drain.rs:178) still unresolved.
+**Action:** Silas — remove both dead-code paths; `registration_json` is the new regression from yesterday's land.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-33 `/tmp/` refs across 17 plist files in `proving/config/launchagents/`. Count unchanged from Jul 30–Aug 1.
+33 `/tmp/` refs across 17 plist files in `proving/config/launchagents/`. Count unchanged from Jul 30–Aug 2.
 **Action:** Silas — migration card open; no movement.
 
 ## 3. CLAUDE.md Fragments
-**Status: RED (day 3)**
-`designing/claudemd/` last committed 2026-07-25 — now **9d stale** (threshold 7d). No refresh in today's commits (#3706, #3720, quality review).
-**Action:** Wren + Kade — role content refresh required today.
+**Status: RED (day 4)**
+`designing/claudemd/` last committed 2026-07-25 — **9d stale** (threshold 7d). No refresh after 6 cards merged yesterday.
+**Action:** Wren + Kade — fragment refresh escalated; overdue since day 3.
 
 ## 4. CSC Compliance
-**Status: RED (carry)**
-`platform/scripts/` has **149 `/tmp/`** occurrences — count unchanged from Jul 30–Aug 1. Prompt paths `messages/scripts/` / `architect/scripts/` still don't exist.
-**Action:** Silas — no movement; update prompt paths to `platform/scripts/`.
+**Status: RED (worsening)**
+`platform/scripts/` has **152 `/tmp/`** occurrences — up **+3 from 149 yesterday**. Regression introduced by yesterday's card merges.
+**Action:** Silas — identify which of yesterday's 6 cards added new `/tmp/` paths and fix or offset.
 
 ## 5. Git Dirty State
 **Status: GREEN**
@@ -26,19 +26,19 @@
 **Action:** None.
 
 ## 6. Stale WIP Cards
-**Status: RED (carry)**
-Board snapshot stale (Apr 2026). Dependabot PRs #449 and #443 now at **60d open** (up from 59d Aug 1).
-**Action:** Jeff/Silas — close or merge Dependabot PRs; refresh board snapshot.
+**Status: YELLOW**
+Kade #3721 WIP, last updated 2026-08-02 (~1d) — not yet >48h. Dependabot #449/#443 now **61d open** (up from 60d). Board snapshot stale (Apr 2026).
+**Action:** Jeff — call on Dependabot PRs (61d, merge or close); Silas — refresh board snapshot.
 
 ## 7. Domain Context Freshness
-**Status: RED (day 3)**
-All 5 domain-context files last committed 2026-07-25 — **9d stale**. 4 cards shipped this week in Chorus domain (#3706, #3719, #3720 wren/silas; #3717 kade) with no context refresh.
-**Action:** Silas — update `domain-context-chorus.md`; Wren to assess others.
+**Status: RED (day 4)**
+All 5 domain-context files last committed 2026-07-26 — **8d stale**. Cards #3722, #3723, #3735 landed yesterday in chorus/wren domain with no context refresh.
+**Action:** Silas — update `domain-context-chorus.md`; Wren — assess `domain-context-seeds.md` and others.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No `perf-baseline-*.json` in repo; script targets macOS `diskutil`, not runnable in remote env.
+No `perf-baseline-*.json` in repo; macOS `diskutil` not runnable in remote env.
 **Action:** Silas — land nightly baseline JSON to enable delta tracking.
 
 ---
-*Aug 2 delta: §1 hooks improved (2→1 warning, `registration_json` resolved). §3 fragments now 9d (day 3 RED). §7 domain context 9d stale, 4 cards shipped in Chorus this week with no update (day 3 RED). §6 Dependabot PRs tick to 60d. All /tmp counts held.*
+*Aug 3 delta vs Aug 2: §1 hooks regressed 1→2 warnings (`registration_json` back after 6-card land); §3 fragments day 4 RED (no refresh); §4 CSC +3 occurrences (152 from 149); §7 domain context day 4 RED, 3 more chorus cards landed with no update; §6 Dependabot ticks to 61d. Git clean.*
