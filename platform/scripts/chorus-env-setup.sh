@@ -76,7 +76,16 @@ unset __chorus_env_parent
 if [ -n "${CHORUS_ROLE:-}" ]; then
   # `find` exits 1 if CHORUS_WERK_BASE doesn't exist yet (fresh role, no werks
   # ever created); `|| true` keeps that from aborting callers under `set -e`.
-  __chorus_env_werk_dir="$(find "$CHORUS_WERK_BASE" -maxdepth 1 -type d -name "$CHORUS_ROLE-*" 2>/dev/null || true)"
+    # #3606 — EXCLUDE the -bin directory from the werk glob. env-setup itself
+    # provisions "$CHORUS_WERK_BASE/<role>-bin" (WERK_<ROLE>_BIN, below), so
+    # -name "<role>-*" matched BOTH the real werk AND that bin dir. The count then
+    # came to 2, the `= "1"` guard silently declined, and <ROLE>_WERK was never
+    # exported — leaving #3016's per-role CHORUS_MCP_PORT resolution permanently
+    # inert on any machine where the bin dir exists, which is all of them.
+    # Silent because count!=1 is ALSO the legitimate no-werk and two-werks case
+    # (both asserted below), so nothing distinguished "no werk" from "the glob
+    # matched its own scaffolding".
+  __chorus_env_werk_dir="$(find "$CHORUS_WERK_BASE" -maxdepth 1 -type d -name "$CHORUS_ROLE-*" ! -name "$CHORUS_ROLE-bin" 2>/dev/null || true)"
   # `grep -c .` exits 1 on empty input (zero werks); `|| true` keeps the
   # count at "0" instead of aborting callers that run `set -e` (#3012).
   __chorus_env_werk_count="$(printf '%s' "$__chorus_env_werk_dir" | grep -c . || true)"

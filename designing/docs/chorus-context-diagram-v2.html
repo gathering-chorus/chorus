@@ -147,7 +147,12 @@ graph LR
   <p style="font-size:0.78em; margin:4px 0;"><strong>The dashed line matters.</strong> OWL/RDF is the only dashed layer — it's a horizontal capability that spans all layers, not a service you call. It's the schema that gives structure to everything above and below.</p>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<!-- #3606 — self-hosted, not CDN. reference-model.bats has required this since
+     #2300; the doc reverted to jsdelivr at some point and the test aimed at the
+     pre-#2458 path so nobody saw it fail. mermaid.min.js is already vendored at
+     public/gathering-docs/ where this doc deploys. A design doc that cannot
+     render without reaching the internet is a doc that stops working offline. -->
+<script src="/gathering-docs/mermaid.min.js"></script>
 <script>
 mermaid.initialize({startOnLoad: true, theme: 'neutral', flowchart: { nodeSpacing: 12, rankSpacing: 16, padding: 8 }});
 window.addEventListener('load', function() {
