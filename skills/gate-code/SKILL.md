@@ -131,6 +131,31 @@ fi
 **Pass:** No execSync in src/handlers/, src/services/, src/middleware/.
 **Fail:** execSync found in request-path code — blocks the event loop.
 
+### 6. Negative proof for every new gate (#3734)
+
+If the diff ADDS or MODIFIES a check that gates anything — an assertion, a guard, a ratchet, a pre-commit hook, a CI job, a structural bats test — it must ship with a **negative proof**: a fixture in which the guarded condition is VIOLATED and the check is shown to FAIL.
+
+```bash
+# Surface checks touched by this diff that may need a negative proof.
+git diff "$DIFF_BASE" --name-only -- '*.bats' '*.sh' '*.rs' '*.ts' 2>/dev/null \
+  | while read -r f; do
+      [ -f "$f" ] || continue
+      # a "check" is anything that can refuse: assert / exit 1 / false / grep -q guard
+      if git diff "$DIFF_BASE" -- "$f" | grep -qE '^\+.*(assert|\bexit 1\b|\|\| false|grep -q)'; then
+        echo "  CHECK TOUCHED: $f"
+      fi
+    done
+```
+
+**Pass:** every touched check has a corresponding test that fails when the guarded condition is violated — a planted violation, a doctored baseline, a fixture with the bad shape.
+**Fail:** a check was added or changed with no demonstration that it can go red.
+
+Stricter than red-green, deliberately. Red-green shows a test failing against *missing code*; this shows a check failing against *a violation*. A gate can go red because a feature is absent and still be unable to go red once the feature exists.
+
+When reviewing, **read the fixture, not just its result** — on #3725 a negative-proof fixture was itself bogus: the comment marking the omission contained the very string being grepped, so it passed for the wrong reason.
+
+**Not in scope:** wrong assumptions about a dependency's semantics (e.g. a buffered write with no flush). Different failure, different defence.
+
 ## No Manual Confirms
 
 All code checks are automated.

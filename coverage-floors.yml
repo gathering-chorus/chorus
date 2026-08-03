@@ -32,7 +32,9 @@ rust:
   platform/services/owl-api: 85       # set by #3701 (the clearing bar; delivered with the #3701 hermetic test lift)
 
 # When this file changes:
-# - The enforcing automation (#2207 nightly-coverage.sh) must be updated in
+# - The enforcing automation (run_coverage() in platform/scripts/nightly-suites.sh —
+#   folded there from the retired nightly-coverage.sh by #3527, orphan removed #3734)
+#   must be updated in
 #   the same PR if the schema shape changes. Value edits alone don't require
 #   a script change.
 # - If a floor is lowered, an accompanying commit message must state why

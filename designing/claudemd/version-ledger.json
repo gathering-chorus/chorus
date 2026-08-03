@@ -15,6 +15,14 @@
       "bump": "minor",
       "date": "2026-07-25",
       "card": "#3288"
+    },
+    {
+      "version": "1.6.0",
+      "constituent_hash": "e13630d41f6e2b6ac20d78a0b25ea52369fda762ead2c1c27f5bb412f258dc74",
+      "core_hash": "38469dc9f107a736b36d2ac9a2bf4a90bb0e068535abaa72634bab619692534a",
+      "bump": "minor",
+      "date": "2026-08-03",
+      "card": "unattributed"
     }
   ]
 }

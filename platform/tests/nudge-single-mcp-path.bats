@@ -41,9 +41,17 @@ setup() {
   [ "$output" -gt 0 ]
 }
 
-@test "nightly-coverage does not POST pulse directly" {
+@test "the nightly coverage tier does not POST pulse directly" {
   cd "$REPO"
-  run grep -cE "3475/api/nudge" platform/scripts/nightly-coverage.sh
+  # #3734 — retargeted off the standalone nightly-coverage script, which was RETIRED
+  # as an orphan (nothing invoked it; #3527 folded the coverage tier into
+  # nightly-suites.sh and left the original standing). Note the failure mode this
+  # test had: `grep -c` against a DELETED file exits 2 with empty output, so
+  # `[ "$output" -eq 0 ]` errors rather than passing — but a variant that compared
+  # differently would have gone GREEN on a file that no longer exists, which is
+  # the same can't-tell-two-states shape this card is about. Point it at the live
+  # implementation so it guards something real.
+  run grep -cE "3475/api/nudge" platform/scripts/nightly-suites.sh
   [ "$output" -eq 0 ]
 }
 
