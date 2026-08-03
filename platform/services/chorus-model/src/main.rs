@@ -145,6 +145,95 @@ fn run() -> Result<String, String> {
                 .join("\n");
             Err(format!("REFUSED — {} ADR violation(s) for {}:\n{}", refusals.len(), class, body))
         }
+        // #3718 — the TBox verbs. Same refusal-first shape as the instance verbs:
+        // check EVERYTHING, refuse with every violation named, and only then
+        // emit. Nothing is defaulted — Jeff's legibility ruling is enforced by
+        // tbox::check_*, which has no default branch to fall through to.
+        //
+        // These EMIT turtle for a manifest file rather than POSTing to the
+        // store. The schema graph is DBA-path-only by design (#3356), so a
+        // writer that wrote schema straight to Fuseki would be bypassing the
+        // very governance this card exists to add. The deploy is still the
+        // deploy; what changes is that what it deploys was minted, not typed.
+        Some(v @ ("class" | "property" | "shape")) => {
+            let rest = &args[1..];
+            let get = |flag: &str| -> Option<String> {
+                rest.iter().position(|a| a == flag).and_then(|i| rest.get(i + 1)).cloned()
+            };
+            let file = get("--file").unwrap_or_default();
+            let deploy_set = athena_model::adr::deploy_set_from_script();
+            let dry = rest.iter().any(|a| a == "--dry-run");
+
+            let (refusals, turtle) = match v {
+                "class" => {
+                    let name = get("--name").ok_or("class: --name <ClassLocal> is required")?;
+                    let comment = get("--comment");
+                    let claimed = get("--claimed-by");
+                    let spec = athena_model::tbox::ClassSpec {
+                        name: &name,
+                        comment: comment.as_deref(),
+                        claimed_by: claimed.as_deref(),
+                        target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_class(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::class_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+                "property" => {
+                    let name = get("--name").ok_or("property: --name <localName> is required")?;
+                    let dom = get("--domain");
+                    let rng = get("--range");
+                    let comment = get("--comment");
+                    let spec = athena_model::tbox::PropertySpec {
+                        name: &name,
+                        domain: dom.as_deref(),
+                        range: rng.as_deref(),
+                        comment: comment.as_deref(),
+                        target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_property(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::property_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+                _ => {
+                    let class = get("--class").ok_or("shape: --class <ClassLocal> is required")?;
+                    let required: Vec<String> = get("--required")
+                        .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
+                        .unwrap_or_default();
+                    let spec = athena_model::tbox::ShapeSpec {
+                        class: &class, required: &required, target_file: &file,
+                    };
+                    let r = athena_model::tbox::check_shape(&spec, &deploy_set);
+                    let ttl = if r.is_empty() { athena_model::tbox::shape_turtle(&spec) } else { String::new() };
+                    (r, ttl)
+                }
+            };
+
+            if !refusals.is_empty() {
+                let body = refusals.iter()
+                    .map(|r| format!("  [{}] {}", r.code(), r))
+                    .collect::<Vec<_>>().join("
+");
+                return Err(format!("REFUSED — {} violation(s):
+{}", refusals.len(), body));
+            }
+            if dry {
+                return Ok(format!("# dry-run — nothing written
+{}", turtle));
+            }
+            // APPEND, never rewrite. A governed writer that rewrites a
+            // hand-curated file would destroy comments and ordering that carry
+            // real reasoning — and silently, which is the failure mode we spent
+            // the week removing.
+            use std::io::Write;
+            let path = format!("{}/{}", std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string()), file);
+            let mut f = std::fs::OpenOptions::new().append(true).open(&path)
+                .map_err(|e| format!("cannot append to {}: {}", path, e))?;
+            write!(f, "
+{}", turtle).map_err(|e| format!("write failed: {}", e))?;
+            Ok(format!("appended to {}:
+{}", file, turtle))
+        }
         Some("kinds") => Ok("product domain role value-stream value-stream-step service principle practice policy skill gate decision document".into()),
         Some("mint") => {
             let (req, _) = parse_req(&args[1..])?;

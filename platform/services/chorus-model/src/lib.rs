@@ -34,6 +34,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod adr; // #3718 — the ADR refusal core (pure; no store, no fs)
+pub mod tbox; // #3718 — the TBox half: class/property/shape, refusal-first, no defaults
 
 use std::collections::BTreeMap;
 use std::process::Command;
