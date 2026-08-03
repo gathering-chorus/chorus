@@ -261,12 +261,13 @@ pub fn register(role: &str) {
     let term_program = std::env::var("TERM_PROGRAM").ok();
     let tmux_pane_env = std::env::var("TMUX_PANE").ok();
     let (host, tmux_pane) = effective_host(term_program.as_deref(), tmux_pane_env.as_deref());
-    // #3608 — test isolation seam: suites point this at their own tmpdir so a
-    // test run can NEVER touch the live registry (test-brings-its-own-world).
-    let dir = match std::env::var("CHORUS_SESSIONS_DIR") {
-        Ok(d) if !d.is_empty() => PathBuf::from(d),
-        _ => PathBuf::from(&home).join(".chorus").join("sessions"),
-    };
+    // #3608 seam, #3615 membrane: CHORUS_SESSIONS_DIR is the test's own world;
+    // without it a test/build context is REFUSED instead of silently poisoning
+    // the live registry (the exact #3608 incident, now structural).
+    let dir = PathBuf::from(crate::shared::membrane::resolve(
+        crate::shared::membrane::Surface::SessionsRegistry,
+        &format!("{}/.chorus/sessions", home),
+    ));
     if std::fs::create_dir_all(&dir).is_err() {
         return;
     }

@@ -39,28 +39,20 @@ fn override_true_string_forces_true() {
 }
 
 /// #2899 — spine emit uses the renamed event and attributes the caller's role
-/// from CHORUS_ROLE env, not a hardcoded "kade". Verifies end-to-end by
-/// reading the fresh tail of ~/.chorus/chorus.log after firing the override
-/// and asserting the new event name + role both appear, with a unique
-/// CHORUS_ROLE marker to avoid races with other concurrent emits.
+/// from CHORUS_ROLE env, not a hardcoded "kade". #3615: pre-membrane this test
+/// asserted on the LIVE ~/.chorus/chorus.log — writing a test event onto the
+/// production spine every run, the exact class the membrane refuses. It now
+/// brings its own world (#3528): CHORUS_LOG_FILE → a per-test tempdir spine.
 #[test]
 fn override_emits_renamed_event_with_real_role() {
-    let log_path: PathBuf = dirs_home()
-        .join(".chorus")
-        .join("chorus.log");
-
-    // If chorus.log doesn't exist locally (fresh checkout, never run), skip
-    // — the emit is best-effort and the runtime path doesn't require the file
-    // to pre-exist; we only assert the contents when we can observe them.
-    if !log_path.exists() {
-        eprintln!("skip: {:?} not present — emit-attribution check requires live spine log", log_path);
-        return;
-    }
-
-    let len_before = fs::metadata(&log_path).map(|m| m.len()).unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("is_fix_card_2899_{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("create test spine dir");
+    let log_path: PathBuf = dir.join("spine.log");
     let unique_role = format!("test_attr_role_2899_{}", std::process::id());
 
+    // SAFETY: this binary runs single-threaded (RUST_TEST_THREADS=1).
     unsafe {
+        std::env::set_var("CHORUS_LOG_FILE", &log_path);
         std::env::set_var("CHORUS_ROLE", &unique_role);
         std::env::set_var("CHORUS_TEST_FORCE_FIX_CARD", "1");
     }
@@ -68,11 +60,11 @@ fn override_emits_renamed_event_with_real_role() {
     unsafe {
         std::env::remove_var("CHORUS_TEST_FORCE_FIX_CARD");
         std::env::remove_var("CHORUS_ROLE");
+        std::env::remove_var("CHORUS_LOG_FILE");
     }
 
-    // Read only the tail beyond len_before to scope the search.
-    let bytes = fs::read(&log_path).expect("read chorus.log");
-    let tail: String = String::from_utf8_lossy(&bytes[len_before as usize..]).to_string();
+    let tail = fs::read_to_string(&log_path).expect("read test spine");
+    let _ = fs::remove_dir_all(&dir);
 
     assert!(
         tail.contains("gate.test_override.checked"),
@@ -86,8 +78,4 @@ fn override_emits_renamed_event_with_real_role() {
         !tail.contains("gate.bypass.fix_card_override"),
         "old event name must not be re-emitted after #2899; got: {}", tail
     );
-}
-
-fn dirs_home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME env required for chorus.log path"))
 }

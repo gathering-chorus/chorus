@@ -36,8 +36,10 @@ fn observing_decayed(state: &str, ts: u64, now: u64, ttl_secs: u64) -> bool {
     state == "observing" && now.saturating_sub(ts) > ttl_secs
 }
 
+// #3615 — writes resolve through the membrane; the read at the bottom of this
+// file uses the plain (read-side) resolver.
 fn chorus_log_path() -> String {
-    crate::shared::state_paths::chorus_log_file()
+    crate::shared::state_paths::chorus_log_file_for_write()
 }
 
 pub fn run(args: &[String]) -> ExitCode {
@@ -325,8 +327,9 @@ fn sweep_and_demote(verbose: bool) -> usize {
 /// lives in the final KBs. A role absent from the 8MB tail gets None (same as a
 /// role absent from the log), never a whole-file read.
 fn last_spine_emit(role: &str) -> Option<String> {
-    let content =
-        crate::shared::log_tail::read_log_tail(std::path::Path::new(&chorus_log_path()))?;
+    let content = crate::shared::log_tail::read_log_tail(std::path::Path::new(
+        &crate::shared::state_paths::chorus_log_file(),
+    ))?;
     let role_pattern = format!("\"role\":\"{}\"", role);
     for line in content.lines().rev() {
         if line.contains(&role_pattern) {

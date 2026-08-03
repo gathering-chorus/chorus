@@ -8,7 +8,25 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
-const DB_PATH = path.join(__dirname, '..', 'messages.db');
+// #3615 — CHORUS_MESSAGES_DB is the messages-db world-seam (see
+// designing/schemas/membrane-surfaces.json). This module is the WRITE owner
+// of messages.db, so the membrane is enforced here: a test/build context that
+// neither injects a dbPath nor sets the seam is refused, typed.
+// Resolved per-construction, not at import — a seam set after module load
+// must still win (the import-time freeze silently opened the prod path).
+function defaultDbPath(): string {
+  return process.env.CHORUS_MESSAGES_DB || path.join(__dirname, '..', 'messages.db');
+}
+
+/** #3615 — ambient non-prod markers, mirroring chorus-hooks shared/membrane.rs. */
+function membraneContext(): 'prod' | 'test' | 'build' {
+  const explicit = process.env.CHORUS_CONTEXT;
+  if (explicit === 'test' || explicit === 'build') return explicit;
+  if (explicit) return 'prod'; // explicit prod declaration wins over ambient
+  if (process.env.BATS_TEST_TMPDIR || process.env.NODE_ENV === 'test') return 'test';
+  if (process.env.CARGO || process.env.CI || process.env.GITHUB_ACTIONS) return 'build';
+  return 'prod';
+}
 
 /** The four repliable peers — the only senders whose nudge can owe a response. */
 const NUDGE_PEERS = ['wren', 'silas', 'kade', 'jeff'];
@@ -43,7 +61,15 @@ export class MessageStore {
   private db: Database.Database;
 
   constructor(dbPath?: string) {
-    this.db = new Database(dbPath || DB_PATH);
+    const ctx = membraneContext();
+    if (!dbPath && !process.env.CHORUS_MESSAGES_DB && ctx !== 'prod') {
+      throw new Error(
+        `MEMBRANE REFUSED (#3615): ${ctx} context attempted to open production surface ` +
+        `'messages-db' (${defaultDbPath()}) — a test brings its own world (#3528). ` +
+        `Pass an explicit dbPath or set CHORUS_MESSAGES_DB to a path inside the test's tempdir.`
+      );
+    }
+    this.db = new Database(dbPath || defaultDbPath());
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this.init();

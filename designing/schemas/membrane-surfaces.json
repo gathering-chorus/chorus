@@ -1,0 +1,107 @@
+{
+  "title": "Production-state surface list \u2014 the test/prod membrane (#3615)",
+  "description": "The committed, single-place list of production state surfaces a test or build context must never write. Each surface names its production path, the env override a test sets to bring its own world (#3528), and where the membrane is enforced. Consumed by chorus-hooks src/shared/membrane.rs (a drift-guard test asserts the Rust Surface enum matches this file 1:1) and mirrored by the TS seams listed per surface. A surface with enforcement 'documented' has no runtime resolver choke point yet \u2014 it is listed so the gap is visible, not to claim coverage it doesn't have.",
+  "version": 1,
+  "context_contract": {
+    "description": "How a process declares (or betrays) that it is not production. CHORUS_CONTEXT is the explicit contract; the rest are ambient markers already emitted by the runners we use.",
+    "explicit": {
+      "CHORUS_CONTEXT": "prod | test | build \u2014 explicit wins over all ambient markers"
+    },
+    "ambient_test": [
+      "BATS_TEST_TMPDIR",
+      "NODE_ENV=test"
+    ],
+    "ambient_build": [
+      "CARGO (cargo test/run child env)",
+      "CI",
+      "GITHUB_ACTIONS"
+    ]
+  },
+  "surfaces": {
+    "spine": {
+      "path": "~/.chorus/chorus.log",
+      "override": "CHORUS_LOG_FILE",
+      "enforced_by": [
+        "chorus-hooks state_paths::chorus_log_file_for_write()"
+      ],
+      "mirrors": [
+        "platform/pulse/src/service.ts",
+        "platform/mcp-server/src/server.ts"
+      ],
+      "incident": "#2491 \u2014 DRY_RUN didn't dry up spine events; test events on the live spine"
+    },
+    "sessions-registry": {
+      "path": "~/.chorus/sessions/",
+      "override": "CHORUS_SESSIONS_DIR",
+      "enforced_by": [
+        "chorus-hooks session_registry::register()"
+      ],
+      "mirrors": [
+        "platform/pulse/src/session-registry.ts"
+      ],
+      "incident": "#3608 \u2014 test poisoned the nudge registry; nudges misrouted to dead PIDs"
+    },
+    "index-db": {
+      "path": "~/.chorus/index.db",
+      "override": "CHORUS_DB_PATH",
+      "enforced_by": [
+        "documented"
+      ],
+      "mirrors": [
+        "platform/api/src/server.ts",
+        "platform/api/src/fts-worker.ts",
+        "platform/api/src/search-worker.ts"
+      ],
+      "incident": "#3381 \u2014 three api processes sharing index.db+lance was the day's wedge root"
+    },
+    "lance": {
+      "path": "~/.chorus/lance/",
+      "override": "CHORUS_LANCE_DIR",
+      "enforced_by": [
+        "documented"
+      ],
+      "mirrors": [
+        "platform/api/src/lance-maintain-worker.ts"
+      ],
+      "incident": "#3381"
+    },
+    "messages-db": {
+      "path": "<CHORUS_ROOT>/platform/pulse/messages.db",
+      "override": "CHORUS_MESSAGES_DB",
+      "enforced_by": [
+        "platform/pulse/src/store.ts"
+      ],
+      "mirrors": [
+        "platform/pulse/src/store.ts"
+      ],
+      "incident": "DEC-107 persist path; nudge drain reads it PreToolUse \u2014 poisoning is team-visible"
+    },
+    "fuseki": {
+      "path": "http://localhost:3030",
+      "override": "FUSEKI_URL",
+      "enforced_by": [
+        "documented"
+      ],
+      "mirrors": [],
+      "incident": "shared 62GB store runs anon LAN writes (#3564)"
+    },
+    "role-state": {
+      "path": "/tmp/claude-team-scan, ~/.chorus/run",
+      "override": null,
+      "enforced_by": [
+        "documented"
+      ],
+      "mirrors": [],
+      "incident": "live role identifiers in tests (feedback_no_live_role_identifiers_in_tests)"
+    },
+    "chorus-home": {
+      "path": "~/.chorus",
+      "override": "CHORUS_HOME",
+      "enforced_by": [
+        "documented"
+      ],
+      "mirrors": [],
+      "incident": "#3528 \u2014 a test brings its own world; no $HOME reach-through"
+    }
+  }
+}

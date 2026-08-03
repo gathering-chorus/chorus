@@ -311,7 +311,10 @@ export function createApp(store: MessageStore, worker?: DeliveryWorker): Express
 /* istanbul ignore next */
 function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfTest: SelfTest } {
   const injectBin = process.env.CHORUS_INJECT_BIN || path.join(os.homedir(), '.chorus', 'bin', 'chorus-inject');
-  const chorusLog = process.env.CHORUS_LOG || path.join(os.homedir(), '.chorus', 'chorus.log');
+  // #3615 — CHORUS_LOG_FILE is the canonical spine seam (membrane-surfaces.json);
+  // CHORUS_LOG kept as a legacy alias so nothing deployed breaks mid-cutover.
+  const chorusLog = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
+    || path.join(os.homedir(), '.chorus', 'chorus.log');
 
   const runInject: RunInject = (to, content, from) => new Promise(resolve => {
     // #3125: route by tty when the target role has a LIVE registration.

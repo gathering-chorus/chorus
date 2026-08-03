@@ -8,6 +8,16 @@ use std::fs;
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
+/// #3615 — session-start registers a session; pre-membrane these tests were
+/// writing live-role entries into the production ~/.chorus/sessions/ registry
+/// (the exact #3608 poisoning class; the membrane now refuses it in the spawned
+/// shim). Every shim spawn gets its own sessions world.
+fn test_sessions_dir() -> String {
+    let dir = std::env::temp_dir().join(format!("session_start_pulse_{}", std::process::id()));
+    fs::create_dir_all(&dir).expect("create test sessions dir");
+    dir.to_string_lossy().into_owned()
+}
+
 /// Session-start regenerates pulse-latest.json with fresh data
 #[test]
 fn session_start_regenerates_pulse() {
@@ -18,6 +28,7 @@ fn session_start_regenerates_pulse() {
     // Run session-start
     let output = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
+        .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
         .output()
         .expect("session-start should execute");
 
@@ -39,6 +50,7 @@ fn session_start_pulse_has_fresh_freshness() {
     // Run session-start
     let _ = std::process::Command::new(SHIM)
         .args(["session-start", "silas"])
+        .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
         .output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json")
@@ -69,6 +81,7 @@ fn pulse_no_stale_freshness_alerts_when_index_fresh() {
     // Run pulse to get current state
     let _ = std::process::Command::new(SHIM)
         .arg("pulse")
+        .env("CHORUS_SESSIONS_DIR", test_sessions_dir())
         .output();
 
     let content = fs::read_to_string("/tmp/pulse-latest.json")

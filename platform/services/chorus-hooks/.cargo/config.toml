@@ -13,3 +13,12 @@ RUST_TEST_THREADS = "1"
 # from script location (chorus-env-setup.sh) and ignore caller env, so this
 # only affects cargo invocations.
 CHORUS_ROOT = { value = "../../..", relative = true, force = false }
+# #3615 — the test/prod membrane. Cargo contexts (test/run) may never write the
+# live spine; without this the deny-path unit tests (write_scrubber,
+# infra_guardrails, ...) had been appending their test events to
+# ~/.chorus/chorus.log on every `cargo test` — the exact #2491 leak class,
+# invisible until the membrane refused it. This is the crate-level "own world"
+# (#3528): spine writes land in a throwaway sink under target/. Tests that
+# assert on spine content still bring their own path (force = false — caller
+# env wins).
+CHORUS_LOG_FILE = { value = "target/test-spine.log", relative = true, force = false }
