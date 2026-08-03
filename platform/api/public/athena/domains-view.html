@@ -107,6 +107,26 @@
   .note strong { color: var(--warn); }
   .empty { color: var(--ink-soft); }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .875em; }
+
+  /* #3724 — the OWL escape hatch. Jeff: "i want to be able to see the owl for
+     each domain." Every other view here is a PROJECTION of the model; this is
+     the model in its own notation. When a rendering looks wrong, you read the
+     triples instead of trusting the renderer. */
+  details.owl { margin-top: 2rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
+  details.owl > summary {
+    cursor: pointer; padding: .7rem .9rem; font-size: .8125rem; font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint);
+    list-style: none;
+  }
+  details.owl > summary::-webkit-details-marker { display: none; }
+  details.owl > summary::before { content: "▸ "; color: var(--accent); }
+  details.owl[open] > summary::before { content: "▾ "; }
+  details.owl > summary:hover { color: var(--accent); }
+  details.owl pre {
+    margin: 0; padding: .9rem; border-top: 1px solid var(--rule);
+    overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .8125rem; line-height: 1.5; white-space: pre;
+  }
 </style>
 </head>
 <body>
@@ -229,7 +249,40 @@ async function renderDomain(name) {
     }
     sections.push('<h2>' + esc(kind) + '</h2>' + body);
   }
-  app.innerHTML = head + sections.join('');
+  app.innerHTML = head + sections.join('') + owlBlock(name);
+  wireOwl(name);
+}
+
+// Lazy: the turtle is only fetched when the reader opens it. A domain's OWL is
+// small, but fetching it on every page load would make the common case pay for
+// the rare one.
+function owlBlock(name) {
+  return '<details class="owl" id="owlbox"><summary>The OWL for this domain</summary>' +
+         '<pre id="owltext">…</pre></details>';
+}
+
+function wireOwl(name) {
+  const box = document.getElementById('owlbox');
+  if (!box) return;
+  let loaded = false;
+  box.addEventListener('toggle', async () => {
+    if (!box.open || loaded) return;
+    loaded = true;
+    const pre = document.getElementById('owltext');
+    try {
+      const r = await fetch('/api/athena/domain-owl/' + encodeURIComponent(name));
+      const body = await r.text();
+      // A failure is REPORTED, never rendered as an empty ontology — an empty
+      // domain and an unreachable store must not look identical.
+      pre.textContent = r.ok
+        ? (body.trim() || '# no triples. This domain declares no vocabulary, so there is\n# nothing to show — not an error, and not hidden.')
+        : body;
+    } catch (e) {
+      loaded = false;
+      pre.textContent = '# could not reach the model: ' + e.message +
+                        '\n# This is NOT an empty domain.';
+    }
+  });
 }
 
 async function renderInstance(domainName, instName) {

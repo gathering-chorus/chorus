@@ -174,6 +174,56 @@ const sendChorusPage = (file: string) =>
 // survives neither a paste nor a bookmark as legibly, and the path matches the
 // graph IRI scheme so "where does this live" and "where do I click" have one
 // answer.
+// #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
+// see the owl for each domain."
+//
+// Everything else we serve is a PROJECTION of the model — JSON shaped by the
+// generator. This is the model, in its own notation: the domain subject, the
+// classes it declares as its vocabulary, the properties typed over those
+// classes, and the SHACL shapes that constrain them. Four UNIONs, one CONSTRUCT,
+// scoped to the schema graph.
+//
+// Why turtle and not more JSON: a projection can be faithful and still hide the
+// thing you are checking. Reading the triples is how you verify the projection
+// rather than trust it — which is the whole reason this was asked for.
+app.get('/api/athena/domain-owl/:domain', async (req: Request, res: Response) => {
+  const d = String(req.params.domain || '');
+  // Local names only. A caller-supplied IRI is how injection gets in, and the
+  // model's own rule is that callers pass local names and the system forms IRIs.
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(d)) {
+    return res.status(400).type('text/plain')
+      .send('domain must be a local name (letters, digits, _ and - only)');
+  }
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <urn:chorus:ontology> {
+  { VALUES ?s { chorus:${d} } ?s ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?s . ?s ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s rdfs:domain ?c ; ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s sh:targetClass ?c ; ?p ?o }
+} }`;
+  const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/turtle' },
+      body: 'query=' + encodeURIComponent(query),
+    });
+    if (!r.ok) {
+      // A store error must never render as an empty ontology — an empty result
+      // and an unreachable store are different answers and this endpoint says so.
+      return res.status(502).type('text/plain')
+        .send(`# the store answered ${r.status}. This is NOT an empty domain —\n` +
+              `# it means the model could not be read.`);
+    }
+    res.type('text/turtle').send(await r.text());
+  } catch {
+    res.status(502).type('text/plain')
+      .send('# the store is unreachable. This is NOT an empty domain.');
+  }
+});
+
 const domainsView = (_req: Request, res: Response) =>
   res.sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
 app.get('/domains', domainsView);
