@@ -2223,6 +2223,17 @@ chorus:ValueStreamShape a sh:NodeShape ;
 # --- ProductShape ---
 chorus:ProductShape a sh:NodeShape ;
     sh:targetClass chorus:Product ;
+    # 2026-08-02 — /products served 0 while EIGHT complete products (athena, borg,
+    # chorus, clearing, convergence, loom, pulse, werk) sat in urn:chorus:instances,
+    # each with a real hasDesignDoc. Without this line the generated route falls
+    # back to urn:chorus:ontology, which holds only the three V1 leftovers
+    # (chorusProduct, borgProduct, gathering) — those DO lack hasDesignDoc, which
+    # is why the zero kept getting diagnosed as a shape failure. It was placement.
+    # IDENTICAL to the fix #3686 already made for CardShape/ChunkShape
+    # (board-3654.ttl:100, "without it the generated route reads the wrong graph
+    # and serves 0 rows"). Same defect class, diagnosed and fixed there, never
+    # applied here.
+    chorus:instancesGraph "urn:chorus:instances" ;
     sh:property [ sh:path rdfs:label              ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path rdfs:comment            ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:ownedBy          ; sh:minCount 1 ; sh:class chorus:Role ] ;

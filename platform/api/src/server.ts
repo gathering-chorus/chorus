@@ -107,6 +107,19 @@ import { getPostureStrip, getWerkActivity } from './jeff-summary';
 import { listSessions, getSession, getSessionLog, isValidSessionId } from './session-replay';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
+// #3724: the old query-param model page redirects to the path form rather than
+// lingering as a competing surface — leaving both alive is how fifteen
+// "show me the model" pages accumulated (#3706).
+//
+// REGISTERED BEFORE express.static ON PURPOSE. public/athena/domain.html is a
+// real file, so static at the line below answers it first and the redirect
+// never runs — verified: it returned 200-with-the-old-page, not 301. Order is
+// the mechanism here, and moving this line down silently restores the old page.
+app.get('/athena/domain.html', (req: Request, res: Response) => {
+  const d = typeof req.query.d === 'string' ? req.query.d : '';
+  res.redirect(301, d ? '/domains/' + encodeURIComponent(d) : '/domains');
+});
+
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
 
 // Legacy alias — /docs predates the landing's promotion to / (#2108). Remove once clients migrated.
@@ -151,6 +164,144 @@ app.use('/building', express.static(path.join(chorusRepoRoot, 'building'), { ext
 const chorusPageDir = path.join(__dirname, '..', 'public', 'chorus-pages');
 const sendChorusPage = (file: string) =>
   (_req: Request, res: Response) => res.sendFile(path.join(chorusPageDir, file));
+// ── #3724: path-routed domain navigation ─────────────────────────
+// THREE ROUTES, ONE FILE. /domains, /domains/<domain>, /domains/<domain>/<instance>
+// all serve the same template; it reads its own path and asks the model what
+// that domain defines. Adding a domain to the model adds its pages with no code
+// change here — that is the AC, and it is why there is no per-domain route.
+//
+// Path form, not ?d=<name>: Jeff pastes these URLs to his phone. A query param
+// survives neither a paste nor a bookmark as legibly, and the path matches the
+// graph IRI scheme so "where does this live" and "where do I click" have one
+// answer.
+// #3724 — THE MODEL AS A TABLE SCHEMA, per domain. Jeff, 2026-08-03: "the owl
+// fold is literally the owl can we show that like a table schema?"
+//
+// Turtle is the ground truth and stays available below; this is the readable
+// form. Per class: one row per property, with its type, whether it is required,
+// and — the column that earns its place — WHERE THE FACT COMES FROM.
+//
+// A property can be declared by the ontology (rdfs:domain/range), required by
+// the SHACL shape, or both. When those two disagree, the model is telling you
+// something: DomainShape and the ontology were found declaring 8 attributes
+// each with only 4 in common. A table that merged them silently would hide the
+// exact incoherence we keep coming back to, so `source` is a column, not a
+// footnote.
+app.get('/api/athena/domain-schema/:domain', async (req: Request, res: Response) => {
+  const d = String(req.params.domain || '');
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(d)) {
+    return res.status(400).json({ error: 'bad-name', message: 'domain must be a local name' });
+  }
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
+  chorus:${d} chorus:definesVocabulary ?class .
+  { ?prop rdfs:domain ?class . OPTIONAL { ?prop rdfs:range ?range } BIND("ontology" AS ?src) }
+  UNION
+  { ?sh sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
+    OPTIONAL { ?b sh:minCount ?req } OPTIONAL { ?b sh:datatype ?range } BIND("shape" AS ?src) }
+} } ORDER BY ?class ?prop`;
+  const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
+      body: 'query=' + encodeURIComponent(query),
+    });
+    if (!r.ok) {
+      // storeReachable is explicit so a caller can never read an empty table as
+      // "this class has no properties" when the truth is "we could not ask".
+      return res.status(502).json({ error: 'store-unreachable', storeReachable: false, http: r.status });
+    }
+    const body: any = await r.json();
+    const local = (v: string) => String(v || '').split(/[#/]/).pop() || '';
+    const classes: Record<string, Record<string, any>> = {};
+    for (const row of body?.results?.bindings || []) {
+      const cls = local(row.class?.value);
+      // A blank-node path is an inverse-path constraint (^hasDomain). It is a
+      // real requirement and unsatisfiable by authoring, so it is SHOWN and
+      // labelled rather than dropped — dropping it is how a floor nobody can
+      // meet stays invisible.
+      const isBlank = row.prop?.type === 'bnode';
+      const prop = isBlank ? '(inverse path)' : local(row.prop?.value);
+      if (!cls || !prop) continue;
+      classes[cls] ||= {};
+      const cur = classes[cls][prop] ||= { property: prop, type: '', required: false, source: [] as string[] };
+      if (row.range?.value && !cur.type) cur.type = local(row.range.value);
+      if (row.req?.value && Number(row.req.value) >= 1) cur.required = true;
+      const src = row.src?.value;
+      if (src && !cur.source.includes(src)) cur.source.push(src);
+    }
+    res.json({
+      domain: d,
+      storeReachable: true,
+      classes: Object.entries(classes).map(([name, props]) => ({
+        name,
+        properties: Object.values(props).sort((a: any, b: any) =>
+          Number(b.required) - Number(a.required) || a.property.localeCompare(b.property)),
+      })).sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  } catch {
+    res.status(502).json({ error: 'store-unreachable', storeReachable: false });
+  }
+});
+
+// #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
+// see the owl for each domain."
+//
+// Everything else we serve is a PROJECTION of the model — JSON shaped by the
+// generator. This is the model, in its own notation: the domain subject, the
+// classes it declares as its vocabulary, the properties typed over those
+// classes, and the SHACL shapes that constrain them. Four UNIONs, one CONSTRUCT,
+// scoped to the schema graph.
+//
+// Why turtle and not more JSON: a projection can be faithful and still hide the
+// thing you are checking. Reading the triples is how you verify the projection
+// rather than trust it — which is the whole reason this was asked for.
+app.get('/api/athena/domain-owl/:domain', async (req: Request, res: Response) => {
+  const d = String(req.params.domain || '');
+  // Local names only. A caller-supplied IRI is how injection gets in, and the
+  // model's own rule is that callers pass local names and the system forms IRIs.
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(d)) {
+    return res.status(400).type('text/plain')
+      .send('domain must be a local name (letters, digits, _ and - only)');
+  }
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <urn:chorus:ontology> {
+  { VALUES ?s { chorus:${d} } ?s ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?s . ?s ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s rdfs:domain ?c ; ?p ?o }
+  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s sh:targetClass ?c ; ?p ?o }
+} }`;
+  const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/turtle' },
+      body: 'query=' + encodeURIComponent(query),
+    });
+    if (!r.ok) {
+      // A store error must never render as an empty ontology — an empty result
+      // and an unreachable store are different answers and this endpoint says so.
+      return res.status(502).type('text/plain')
+        .send(`# the store answered ${r.status}. This is NOT an empty domain —\n` +
+              `# it means the model could not be read.`);
+    }
+    res.type('text/turtle').send(await r.text());
+  } catch {
+    res.status(502).type('text/plain')
+      .send('# the store is unreachable. This is NOT an empty domain.');
+  }
+});
+
+const domainsView = (_req: Request, res: Response) =>
+  res.sendFile(path.join(__dirname, '..', 'public', 'athena', 'domains-view.html'));
+app.get('/domains', domainsView);
+app.get('/domains/:domain', domainsView);
+app.get('/domains/:domain/:instance', domainsView);
 app.get('/chorus', sendChorusPage('chorus.html'));
 app.get('/chorus/system', (_req: Request, res: Response) => res.redirect(301, '/chorus'));
 app.get('/chorus-model-data', sendChorusPage('chorus-model-data.html'));

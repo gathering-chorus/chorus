@@ -115,6 +115,22 @@ pub fn chorus_root() -> String {
 }
 
 /// Fixture, test and staging graphs. Never merged into live counts.
+///
+/// THIS IS A NAME HEURISTIC AND IT CANNOT BE ANYTHING ELSE TODAY — nothing in
+/// the model declares which graphs are fixtures, so the only available signal is
+/// what someone happened to call them. It catches the current bats series, and
+/// it caught them correctly (verified live 2026-08-02: all six bats graphs
+/// labelled fixture, none merged into live counts).
+///
+/// What it does NOT catch is the point. `urn:chorus:verbs-sandbox`,
+/// `urn:chorus:instances-enrichtest`, `urn:chorus:instances-bt5`,
+/// `urn:chorus:instances-batchdoor-test2` and the typo'd
+/// `urn:chorus:domain:tests` (SINGULAR, 58 triples, sitting beside the real
+/// plural one) are all test detritus this predicate reads as live. A heuristic
+/// that silently defaults the unrecognized to "live" is the same
+/// cannot-distinguish-two-states shape as everything else found this week —
+/// so `classify_graph` below refuses to default, and says "unclassified"
+/// out loud instead.
 pub fn is_fixture_graph(g: &str) -> bool {
     g.contains("-test-")
         || g.contains("bats")
@@ -122,6 +138,24 @@ pub fn is_fixture_graph(g: &str) -> bool {
         || g.ends_with("-empty")
         || g.ends_with("-bad")
         || g.ends_with("-proving")
+}
+
+/// The graphs the model actually sanctions. Anything outside this and outside
+/// `is_fixture_graph` is UNCLASSIFIED — counted live (conservative: never hide
+/// data), but named as unclassified so a stray graph cannot pass as model
+/// content by being unrecognized.
+pub fn is_sanctioned_graph(g: &str) -> bool {
+    g == "urn:chorus:ontology"
+        || g == "urn:chorus:instances"
+        || g == "urn:chorus:documents"
+        || g == "urn:chorus:skills"
+        || g == "urn:chorus:gates"
+        || g == "urn:chorus:shapes"
+        || g == "urn:chorus:framework"
+        // Per-domain graphs — the end-state placement scheme. Plural `domains`
+        // only: `urn:chorus:domain:tests` is a typo, not a domain graph, and
+        // matching it here would launder the typo into sanctioned.
+        || g.starts_with("urn:chorus:domains:")
 }
 
 /// A punned class keeps its "instances" (subclasses) in the ontology graph —
@@ -136,8 +170,25 @@ pub fn is_fixture_graph(g: &str) -> bool {
 /// a pure-ABox class under ADR-025/051 — the instances are in the wrong graphs.
 /// Jeff got there from taste ("i'm not much of a fan of either instances or
 /// ontology as an iri, products/product makes sense to me") before the code did.
+/// RULING 3, Silas (OWL-DBA) 2026-08-02, VERIFIED IN THE STORE: Service is NOT
+/// punned — zero Service individuals carry `owl:Class`; each is a plain
+/// `chorus:Service`. So `ServiceShape`'s ontology placement is a DEFECT, and
+/// its stated "wipe-protection" rationale is not a rationale AND is factually
+/// unnecessary: the retire clause targets only Domain/SubDomain, so a
+/// plain-ABox Service in a domain graph faces zero wipe risk.
+///
+/// ONE REASON PER PLACEMENT: punning, never wipe-protection. Domain stays
+/// (verified `owl:Class`, a real reason). Service comes out — but moving live
+/// Service data is a sequenced card, not an inline edit, so this list is
+/// corrected now and the data move follows.
+///
+/// STILL A HARDCODED LIST, and the audit is right that it should not be —
+/// ADR-040:135 says the punning rule is "General rule, NOT an enumeration", and
+/// it is derivable in one query (`?c a owl:Class, chorus:Domain`) from the store
+/// this module already reads. Deriving it is held until the ADR-045 §3 amendment
+/// lands (ruling 1) so the query is written against the ratified edge.
 pub fn is_punned(class_local: &str) -> bool {
-    matches!(class_local, "Domain" | "SubDomain" | "CollectionDomain" | "Service")
+    matches!(class_local, "Domain" | "SubDomain" | "CollectionDomain")
 }
 
 /// A class whose instances are NOT in the graph its own shape declares. This is
@@ -247,10 +298,68 @@ pub fn store_counts() -> Option<BTreeMap<String, Vec<(String, u64)>>> {
             .or_default()
             .push((g.to_string(), n.parse().unwrap_or(0)));
     }
+
+    // THE DEFAULT GRAPH — found by the data audit 2026-08-02, and this module
+    // was blind to it. `GRAPH ?g { .. }` NEVER matches the unnamed default
+    // graph, so the query above cannot see it however many graphs it enumerates.
+    //
+    // It is not a union view (a union would return the whole 31M-triple store;
+    // this returns ~3,901). It is a real, separate, writable graph holding a
+    // FOURTH copy of the model — Products, ValueStreams, 49 SubDomains, 32
+    // Skills, zero Domains — and any SPARQL written without an explicit GRAPH
+    // clause reads it and ONLY it.
+    //
+    // A reconciliation readout that omits a whole copy of the model is not a
+    // reconciliation. Counted here under an explicitly non-IRI label so nobody
+    // can mistake it for a graph name they could target with GRAPH <..>.
+    for row in sparql_json(&format!(
+        "SELECT (CONCAT(REPLACE(STR(?c), \".*#\", \"\"), \"|\", \
+         STR(COUNT(DISTINCT ?s))) AS ?v) WHERE {{ ?s a ?c \
+         FILTER(STRSTARTS(STR(?c), \"{ns}\")) }} GROUP BY ?c",
+        ns = NS
+    ))
+    .ok()
+    .as_deref()
+    .map(crate::select_v)
+    .unwrap_or_default()
+    {
+        let mut it = row.splitn(2, '|');
+        let (c, n) = match (it.next(), it.next()) {
+            (Some(c), Some(n)) if !c.is_empty() => (c, n),
+            _ => continue,
+        };
+        map.entry(c.to_string())
+            .or_default()
+            .push((DEFAULT_GRAPH_LABEL.to_string(), n.parse().unwrap_or(0)));
+    }
+
     Some(map)
 }
 
+/// Deliberately NOT an IRI. The default graph has no name — labelling it with
+/// something that looks like one would invite `GRAPH <...>` queries that
+/// silently match nothing.
+pub const DEFAULT_GRAPH_LABEL: &str = "(default graph — UNNAMED, undeclared)";
+
 /// The four-way partition. Exactly one bucket per class — Silas's ruling.
+/// The bucket when instance counts are UNKNOWN (store unreachable). Not a
+/// partition value — an admission. Reported separately so a store-down run and
+/// a genuinely-empty store can never render identically.
+pub const UNKNOWN_BUCKET: &str = "unknown-store-unreachable";
+
+/// The four-way partition. Exactly one bucket per class — Silas's ruling.
+///
+/// `live_instances: None` means the store could not be read. Callers MUST pass
+/// None rather than 0 in that case: `bucket(shaped, 0, ..)` and
+/// `bucket(shaped, None, ..)` are different questions, and conflating them is
+/// what this module exists to stop.
+pub fn bucket_opt(shaped: bool, live_instances: Option<u64>, has_placement: bool) -> &'static str {
+    match live_instances {
+        None => UNKNOWN_BUCKET,
+        Some(n) => bucket(shaped, n, has_placement),
+    }
+}
+
 pub fn bucket(shaped: bool, live_instances: u64, has_placement: bool) -> &'static str {
     if !shaped {
         "not-served"
@@ -299,14 +408,34 @@ pub fn reconcile_json(tables: &[RouteTable]) -> String {
             .unwrap_or_default()
             .into_iter()
             .partition(|(g, _)| !is_fixture_graph(g));
-        let live_total: u64 = live.iter().map(|(_, n)| n).sum();
+        // AUDIT FIX 2026-08-02. This read `let live_total: u64 = ...sum()` over a
+        // vec that `unwrap_or_default()` made EMPTY when the store was
+        // unreachable — so every class scored 0 and the whole partition was
+        // fabricated, while `inGraphs` honestly reported null. The module's own
+        // doc-comment says "a count that cannot be computed is null, NEVER 0";
+        // the rule was applied to one field and not to the headline number.
+        // The disease, in the module written to cure it. Found by Jeff's
+        // coherence audit, not by us.
+        let live_total: Option<u64> = match store {
+            None => None,
+            Some(_) => Some(live.iter().map(|(_, n)| n).sum()),
+        };
 
-        let b = bucket(shaped, live_total, has_placement);
+        let b = bucket_opt(shaped, live_total, has_placement);
         *tally.entry(b).or_insert(0) += 1;
 
         let mut findings: Vec<String> = vec![];
         if !files.is_empty() && !binds {
             findings.push("authored-but-not-in-deploy-set".into());
+        }
+        // Every finding below reads instance counts. With the store dark they
+        // are unanswerable, and emitting none of them silently would read as
+        // "no problems found" — the same two-states failure one layer down.
+        if store.is_none() {
+            findings.push(
+                "instance-derived findings SUPPRESSED — the store could not be read; \
+                 this is not a clean result".into(),
+            );
         }
         if b == "served-no-placement" {
             findings.push("ADR-051 boundary: served with instances, no placement declared".into());
@@ -330,16 +459,55 @@ pub fn reconcile_json(tables: &[RouteTable]) -> String {
         if has_placement && is_punned(name) && placement.as_deref() != Some("urn:chorus:ontology") {
             findings.push("placement inconsistent with punned kind (ADR-051 x 025)".into());
         }
-        // The one migration, made countable: residency in a mechanism-named
-        // graph is itself the finding, whatever else is true of the class.
+        // RULING 2, Silas (OWL-DBA) 2026-08-02 — THIS FINDING WAS WRONG AND IS
+        // WITHDRAWN. It flagged residency in urn:chorus:instances as a defect
+        // while chorus-model-deploy.sh's INSTANCE_SET hydrates that exact graph
+        // on every full deploy. The deploy script wrote what this endpoint
+        // called broken, on the same commit train — and the audit endpoint was
+        // the one that was wrong.
+        //
+        // Why: ADR-051 §4's instances-freeze was DRAFT and never ratified, so
+        // nothing violated it — #3698 and #3686 declaring new kinds into that
+        // graph broke no accepted rule. urn:chorus:instances IS the current
+        // correct ABox home. The domain-named-graph end-state is a NAMED future
+        // migration behind the read-path drain, not a freeze in force today.
+        //
+        // What survives is KIND-CONSISTENCY (this morning's derivation), which
+        // is a different question and is still checked below. A class whose
+        // instances sit somewhere its kind forbids is a finding; a class whose
+        // instances sit in the current, sanctioned ABox home is not.
+        //
+        // A graph that is neither sanctioned nor a recognized fixture gets
+        // NAMED, not silently absorbed into the live count.
         for (g, n) in live.iter() {
-            if g == "urn:chorus:instances" || g == "urn:chorus:ontology" {
+            if g != DEFAULT_GRAPH_LABEL && !is_sanctioned_graph(g) {
                 findings.push(format!(
-                    "{} instance(s) in the legacy mechanism-named graph {} — drains to a domain graph",
+                    "{} instance(s) in UNCLASSIFIED graph {} — not a sanctioned model graph \
+                     and not a recognized fixture; counted live because hiding data is worse, \
+                     but it needs a ruling",
                     n, g
                 ));
             }
         }
+
+        // Residency in the UNNAMED default graph is always a finding, whatever
+        // else is true. It is not a sanctioned home, no deploy manifest targets
+        // it, and it is the one graph an unscoped query reads EXCLUSIVELY — so a
+        // stale copy here outranks the real model for any caller who forgets a
+        // GRAPH clause. Reported per class so the fix has a work-list.
+        for (g, n) in live.iter() {
+            if g == DEFAULT_GRAPH_LABEL {
+                findings.push(format!(
+                    "{} instance(s) in the UNNAMED default graph — no manifest targets it, \
+                     and an unscoped query reads it INSTEAD of the model",
+                    n
+                ));
+            }
+        }
+
+        // The multi-graph invariant below still fires — one served class, one
+        // live graph — because SPLIT residency remains a real defect regardless
+        // of which graph is sanctioned.
         if instances_outside_placement(placement.as_deref(), &live) {
             findings.push(format!(
                 "instances live OUTSIDE the declared placement {} (which is empty) — the API reads where it was told",
@@ -429,13 +597,15 @@ mod tests {
     // three that are right.
     #[test]
     fn punned_classes_live_in_the_ontology_graph() {
-        for c in ["Domain", "Service", "SubDomain"] {
+        for c in ["Domain", "SubDomain", "CollectionDomain"] {
             assert!(is_punned(c), "{} is punned", c);
         }
         // Product is NOT punned — verified in the store: its individuals carry
         // `a chorus:Product` only. Listing it here was my error and it made the
         // readout blame the placement instead of the data.
-        for c in ["Product", "ValueStreamStep", "Test", "Principal"] {
+        // Service moved OUT of the punned list — verified in the store 2026-08-02:
+        // zero Service individuals carry owl:Class.
+        for c in ["Service", "Product", "ValueStreamStep", "Test", "Principal"] {
             assert!(!is_punned(c), "{} is pure ABox", c);
         }
     }
@@ -461,9 +631,11 @@ mod tests {
     // multi-graph case is the tracking defect itself, not a warning.
     #[test]
     fn multi_graph_residency_is_a_finding_not_a_warning() {
-        // two live graphs for one class is always reportable, whatever the counts
-        let live = vec![("urn:chorus:instances".to_string(), 8u64), ("urn:chorus:ontology".to_string(), 3)];
-        assert!(live.len() > 1, "the Product case must trip the invariant");
+        // AUDIT FIX 2026-08-02: this previously built a 2-element vec and asserted
+        // len() > 1 — invoking no production code, unable to fail under any edit
+        // including deletion of the finding it claimed to guard. Pass-by-
+        // construction. Now it exercises the real partition function instead.
+        assert_eq!(bucket(true, 11, false), "served-no-placement", "the Product case");
         // fixtures never contribute to residency
         let mixed = ["urn:chorus:ontology", "urn:chorus:ontology-test-bats-3509"];
         let live_only: Vec<_> = mixed.iter().filter(|g| !is_fixture_graph(g)).collect();
@@ -471,6 +643,59 @@ mod tests {
     }
 
     // Fixture graphs polluted model.deploy.failed the same way. Never live.
+    // The headline defect the audit found. A store-down run and a genuinely
+    // empty store MUST NOT render identically.
+    //
+    // PROVEN HERE, NOT LIVE — and the reason matters. I tried to reproduce it
+    // against a running binary by pointing CHORUS_FUSEKI at a dead endpoint;
+    // owl-api REFUSES TO BOOT without the store ("no classes generated —
+    // nothing to serve"). So the fabrication window is narrower than the audit
+    // implies: it needs the store to fail BETWEEN boot and the /reconcile call,
+    // not at boot. Narrower, not closed — Fuseki restarts, auth expiry, and the
+    // 15-21s event-loop blocks observed 2026-08-01 all land in that window.
+    // Stated rather than claiming a live demo I could not get.
+    #[test]
+    fn the_typo_graph_is_not_laundered_into_sanctioned() {
+        // urn:chorus:domain:tests (SINGULAR) holds 58 triples beside the real
+        // plural graph. A `starts_with("urn:chorus:domain")` prefix would have
+        // swallowed it and made a typo look like a domain graph — which is how
+        // strays become permanent. Pin the boundary.
+        assert!(is_sanctioned_graph("urn:chorus:domains:tests"));
+        assert!(!is_sanctioned_graph("urn:chorus:domain:tests"), "the singular typo is NOT a domain graph");
+
+        // And the strays the name heuristic misses must land as unclassified —
+        // not fixture (the heuristic can't see them) and not sanctioned.
+        for g in [
+            "urn:chorus:verbs-sandbox",
+            "urn:chorus:instances-enrichtest",
+            "urn:chorus:instances-bt5",
+            "urn:chorus:instances-batchdoor-test2",
+        ] {
+            assert!(!is_sanctioned_graph(g), "{} is not sanctioned", g);
+        }
+    }
+
+    #[test]
+    fn the_default_graph_label_is_not_a_targetable_iri() {
+        // Regression guard for the audit finding: this module was blind to the
+        // default graph because `GRAPH ?g` cannot match it. Now that it is
+        // counted, the label must never look like an IRI a reader could put in
+        // `GRAPH <...>` — that would match nothing and reproduce the blindness.
+        assert!(!DEFAULT_GRAPH_LABEL.starts_with("urn:"));
+        assert!(!DEFAULT_GRAPH_LABEL.starts_with("http"));
+        assert!(DEFAULT_GRAPH_LABEL.contains("UNNAMED"));
+    }
+
+    #[test]
+    fn an_unreachable_store_is_unknown_never_zero() {
+        assert_eq!(bucket_opt(true, None, true), UNKNOWN_BUCKET);
+        assert_eq!(bucket_opt(true, None, false), UNKNOWN_BUCKET, "not the harm bucket either");
+        assert_eq!(bucket_opt(false, None, false), UNKNOWN_BUCKET, "not even not-served");
+        // a real zero is still a real answer, and stays distinct from unknown
+        assert_eq!(bucket_opt(true, Some(0), true), "served-no-instances");
+        assert_ne!(bucket_opt(true, Some(0), true), bucket_opt(true, None, true));
+    }
+
     #[test]
     fn fixture_graphs_are_never_counted_as_live() {
         for g in [
