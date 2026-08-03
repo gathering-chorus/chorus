@@ -1,0 +1,24 @@
+# identity-refusal-rate.yml — #3737: the alarm that would have caught the
+# 2026-07-27→08-02 identity outage on day one instead of day seven.
+#
+# The DAL fail-closes writes without a verified token (#3687). When mints failed
+# intermittently, 21,764 governed writes were refused over a week — every one
+# logged to the spine, none alerted. Silence is the worse defect: a fail-closed
+# writer refusing everything looks identical to a writer nobody used.
+
+name: identity-refusal-rate
+description: Governed model writes are being refused for lack of identity — the DAL is fail-closing and real writes are being lost
+severity: critical
+schedule: "*/5 * * * *"
+
+check: |
+  /Users/jeffbridwell/CascadeProjects/chorus/proving/domains/alerts/identity-refusal-rate.check.sh
+
+action: |
+  COOLDOWN="/tmp/alert-identity-refusal-$(date '+%Y-%m-%d-%H')"
+  [ -f "$COOLDOWN" ] && exit 0
+  touch "$COOLDOWN"
+  OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
+  # $STATUS carries the count, window, floor, and top-affected role. The reader
+  # draws the conclusion; this action states only what was measured (#3519).
+  "$OPS_NUDGE" --force silas "$STATUS" 2>/dev/null || true

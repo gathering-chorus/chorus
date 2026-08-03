@@ -57,28 +57,49 @@ PY
 fi
 
 # ── mint fresh (fail-closed: any failure → non-zero, no stdout token) ──
-TOKEN="$(CRED="$CRED" LOCAL_CSS="$LOCAL_CSS" python3 - <<'PY'
-import os, sys, json, base64, urllib.request, urllib.parse
-try:
-    c = json.load(open(os.environ["CRED"]))
-    host = c["issuer"].split("://", 1)[1].strip("/")           # logical issuer host
-    endpoint = os.environ["LOCAL_CSS"].rstrip("/") + "/.oidc/token"
-    data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
-    auth = base64.b64encode(f'{c["id"]}:{c["secret"]}'.encode()).decode()
+# #3737 — RETRY transient mint failures. One slow or 5xx mint used to fail-closed
+# a role until its NEXT call, so an intermittent CSS blip locked writers out
+# session-by-session (the 2026-07-27→08-02 outage). A transient failure (timeout,
+# connection error, 5xx) is retried with backoff; a 4xx (bad cred / bad request)
+# is NOT transient and fails fast. Fail-closed only after retries are exhausted.
+MINT_RETRIES="${CHORUS_MINT_RETRIES:-3}"
+TOKEN="$(CRED="$CRED" LOCAL_CSS="$LOCAL_CSS" MINT_RETRIES="$MINT_RETRIES" python3 - <<'PY'
+import os, sys, json, base64, time, urllib.request, urllib.parse, urllib.error
+c = json.load(open(os.environ["CRED"]))
+host = c["issuer"].split("://", 1)[1].strip("/")               # logical issuer host
+endpoint = os.environ["LOCAL_CSS"].rstrip("/") + "/.oidc/token"
+data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
+auth = base64.b64encode(f'{c["id"]}:{c["secret"]}'.encode()).decode()
+retries = int(os.environ.get("MINT_RETRIES", "3"))
+
+def mint_once():
     req = urllib.request.Request(endpoint, data=data, method="POST", headers={
         "Authorization": f"Basic {auth}",
         "Content-Type": "application/x-www-form-urlencoded",
         "Host": host, "X-Forwarded-Proto": "https", "X-Forwarded-Host": host,
     })
-    body = json.load(urllib.request.urlopen(req, timeout=6))
-    tok = body.get("access_token", "")
-    # sanity: it must be a 3-part JWT whose webid matches the cred (never emit junk)
-    payload = json.loads(base64.urlsafe_b64decode(tok.split(".")[1] + "=="))
-    if payload.get("webid") != c["webId"]:
-        sys.stderr.write("chorus-identity-token: minted token webid != cred webId\n"); sys.exit(4)
-    sys.stdout.write(tok)
-except Exception as e:
-    sys.stderr.write(f"chorus-identity-token: mint failed ({type(e).__name__}: {e})\n"); sys.exit(5)
+    return json.load(urllib.request.urlopen(req, timeout=6))
+
+last = None
+for attempt in range(retries):
+    try:
+        body = mint_once()
+        tok = body.get("access_token", "")
+        payload = json.loads(base64.urlsafe_b64decode(tok.split(".")[1] + "=="))
+        if payload.get("webid") != c["webId"]:
+            sys.stderr.write("chorus-identity-token: minted token webid != cred webId\n"); sys.exit(4)
+        sys.stdout.write(tok); sys.exit(0)
+    except urllib.error.HTTPError as e:
+        # 4xx = bad cred / bad request — not transient, fail fast (no retry)
+        if 400 <= e.code < 500:
+            sys.stderr.write(f"chorus-identity-token: mint refused (HTTP {e.code}) — not retrying\n"); sys.exit(5)
+        last = e   # 5xx — transient, retry
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as e:
+        last = e   # timeout / connection / malformed — transient, retry
+    if attempt < retries - 1:
+        time.sleep(0.4 * (2 ** attempt))   # 0.4s, 0.8s, 1.6s backoff
+sys.stderr.write(f"chorus-identity-token: mint failed after {retries} attempts ({type(last).__name__}: {last})\n")
+sys.exit(5)
 PY
 )" || exit $?
 
