@@ -61,9 +61,18 @@ let SECURED_SURFACES: SecuredSurface[] = [];
 // CSS requires the trusted-proxy hairpin headers; the logical origin serves
 // /.oidc/jwks plainly, verified 2026-07-31). CHORUS_JWKS_URL overrides.
 const CSS_ISSUER = process.env.CSS_ISSUER ?? 'https://id.lightlifeurbangardens.com/';
+// #3728 — the scope query comes from ONE source: src/sparql/principal-scope.rq,
+// the same canonical text the Rust door binds via include_str!. Read once at
+// boot (the build copies src/sparql → dist/sparql, so __dirname resolves it in
+// both dev and prod). A missing file fails LOUD here at startup rather than
+// silently degrading every scoped write to fail-closed at runtime.
+const PRINCIPAL_SCOPE_QUERY = fs
+  .readFileSync(path.resolve(__dirname, 'sparql', 'principal-scope.rq'), 'utf-8')
+  .trim();
 const verifyIdentity = createIdentityVerifier({
   issuer: CSS_ISSUER,
   jwksUrl: process.env.CHORUS_JWKS_URL ?? `${CSS_ISSUER.replace(/\/+$/, '')}/.oidc/jwks`,
+  scopeQuery: PRINCIPAL_SCOPE_QUERY,
   sparql: (q: string) => athenaSparqlQuery(q),
   nowSecs: () => Math.floor(Date.now() / 1000),
 });

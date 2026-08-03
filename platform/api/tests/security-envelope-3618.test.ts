@@ -17,19 +17,26 @@
  *   - request matches no secured surface                         → pass, no events
  */
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   decideEnvelope,
   type EnvelopeRequest,
   type EnvelopeDeps,
   type SecuredSurface,
 } from '../src/security-envelope';
-import { createIdentityVerifier, scopeQueryFor } from '../src/es256-identity';
+import { createIdentityVerifier } from '../src/es256-identity';
 
 const NOW = 1_800_000_000; // fixed clock (secs)
 const ISSUER = 'https://id.test.example/';
 const KID = 'test-css-key-1';
 const GRANTED_WEBID = 'http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me';
 const NOBODY_WEBID = 'http://localhost:3000/pods/chorus/_agents/nobody/profile/card.ttl#me';
+
+// #3728 — the canonical BULK scope query, from the ONE source both doors bind to.
+const SCOPE_QUERY = fs
+  .readFileSync(path.resolve(__dirname, '..', 'src', 'sparql', 'principal-scope.rq'), 'utf-8')
+  .trim();
 
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const JWKS = { keys: [{ ...publicKey.export({ format: 'jwk' }), kid: KID, alg: 'ES256', use: 'sig' }] };
@@ -62,9 +69,13 @@ const SURFACES: SecuredSurface[] = [
   { method: 'POST', pathPrefix: '/api/athena/discover-', requiresScope: 'urn:chorus:domains:code', surface: 'surface-discover-writes' },
 ];
 
-// stub model: reindex-worker is granted urn:chorus:index; nobody has nothing
+// stub model (bulk allow-set, #3728): reindex-worker is granted urn:chorus:index;
+// nobody has nothing. One `?v` row per (webid, scope) edge — the shape the
+// canonical PRINCIPAL_SCOPE_QUERY emits.
 function stubSparql(query: string): Promise<unknown> {
-  const rows = query === scopeQueryFor(GRANTED_WEBID) ? [{ s: { value: 'urn:chorus:index' } }] : [];
+  const rows = query.trim() === SCOPE_QUERY
+    ? [{ v: { value: `${GRANTED_WEBID} urn:chorus:index` } }]
+    : [];
   return Promise.resolve({ results: { bindings: rows } });
 }
 
@@ -81,7 +92,7 @@ test('JWKS fetch hairpins when jwks host differs from issuer host (#3720)', asyn
   }) as unknown as typeof fetch;
   const v = createIdentityVerifier({
     issuer: ISSUER, jwksUrl: 'http://localhost:3001/.oidc/jwks',
-    sparql: stubSparql, nowSecs: () => NOW, fetchFn: spyFetch,
+    scopeQuery: SCOPE_QUERY, sparql: stubSparql, nowSecs: () => NOW, fetchFn: spyFetch,
   });
   await v(mintEs256());
   expect(seen[0]).toMatchObject({
@@ -97,7 +108,7 @@ test('JWKS fetch hairpins when jwks host differs from issuer host (#3720)', asyn
   }) as unknown as typeof fetch;
   const v2 = createIdentityVerifier({
     issuer: ISSUER, jwksUrl: 'https://id.test.example/.oidc/jwks',
-    sparql: stubSparql, nowSecs: () => NOW, fetchFn: plainFetch,
+    scopeQuery: SCOPE_QUERY, sparql: stubSparql, nowSecs: () => NOW, fetchFn: plainFetch,
   });
   await v2(mintEs256());
   expect(seenPlain[0]).toEqual({});
@@ -107,6 +118,7 @@ function makeVerify(overrides: { sparql?: (q: string) => Promise<unknown> } = {}
   return createIdentityVerifier({
     issuer: ISSUER,
     jwksUrl: 'http://css.test/.oidc/jwks',
+    scopeQuery: SCOPE_QUERY,
     sparql: overrides.sparql ?? stubSparql,
     nowSecs: () => NOW,
     fetchFn: stubFetch,

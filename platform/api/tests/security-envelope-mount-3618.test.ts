@@ -12,6 +12,8 @@
  */
 import express from 'express';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 import { AddressInfo } from 'net';
 import { securityEnvelope, type SecuredSurface } from '../src/security-envelope';
 import { createIdentityVerifier } from '../src/es256-identity';
@@ -20,6 +22,10 @@ const NOW = 1_800_000_000;
 const ISSUER = 'https://id.test.example/';
 const KID = 'mount-test-key';
 const WEBID = 'http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me';
+// #3728 — canonical bulk scope query, one source both doors bind to.
+const SCOPE_QUERY = fs
+  .readFileSync(path.resolve(__dirname, '..', 'src', 'sparql', 'principal-scope.rq'), 'utf-8')
+  .trim();
 const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 
 function b64url(s: Buffer | string): string { return Buffer.from(s).toString('base64url'); }
@@ -33,7 +39,8 @@ function token(): string {
 const verify = createIdentityVerifier({
   issuer: ISSUER,
   jwksUrl: 'http://css.test/.oidc/jwks',
-  sparql: () => Promise.resolve({ results: { bindings: [{ s: { value: 'urn:chorus:index' } }] } }),
+  scopeQuery: SCOPE_QUERY,
+  sparql: () => Promise.resolve({ results: { bindings: [{ v: { value: `${WEBID} urn:chorus:index` } }] } }),
   nowSecs: () => NOW,
   fetchFn: (async () => ({
     ok: true,

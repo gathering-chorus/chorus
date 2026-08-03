@@ -20,8 +20,9 @@
  */
 import * as crypto from 'crypto';
 
-const CHORUS_NS = 'https://jeffbridwell.com/chorus#';
-const SECURITY_GRAPH = 'urn:chorus:domains:security';
+// #3728 — the scope query's namespace/graph constants moved to the ONE source
+// (src/sparql/principal-scope.rq); this module no longer builds query text, it
+// runs the injected canonical query, so the local copies are gone.
 
 export type VerifyResult =
   | { ok: true; webId: string; scope: string[] }
@@ -33,6 +34,13 @@ export interface IdentityVerifierDeps {
   /** Where the JWKS is actually fetchable (env CHORUS_JWKS_URL — local CSS;
    *  a host differing from the issuer's gets the hairpin headers, #3720). */
   jwksUrl: string;
+  /** #3728 — the canonical BULK scope query, injected from ONE source
+   *  (src/sparql/principal-scope.rq — the same text the Rust door's
+   *  PRINCIPAL_SCOPE_QUERY binds via include_str!). Resolves the whole
+   *  webId→scopes allow-set in one query, exactly like the Rust door's
+   *  resolve_principal_scopes; no per-webId query is hand-written here any more,
+   *  so the two doors cannot drift. */
+  scopeQuery: string;
   /** SPARQL query against the pods dataset (security graph lives there). */
   sparql: (query: string) => Promise<unknown>;
   nowSecs: () => number;
@@ -43,10 +51,10 @@ export interface IdentityVerifierDeps {
 
 interface SparqlBindings {
   // #3721 — the cell type is `| undefined` deliberately. SPARQL omits a
-  // variable entirely from a row when it is unbound, so `b.s` really can be
+  // variable entirely from a row when it is unbound, so `b.v` really can be
   // absent; the old `Record<string, {value?: string}>` claimed otherwise and
-  // made the `b.s?.value` guard below look redundant to the linter. The guard
-  // was right and the type was wrong — fixed the type, kept the guard.
+  // made the `b.v?.value` guard in parseAllowSet look redundant to the linter.
+  // The guard was right and the type was wrong — fixed the type, kept the guard.
   results?: { bindings?: Array<Record<string, { value?: string } | undefined>> };
 }
 
@@ -141,16 +149,27 @@ function webIdFromClaims(
   return typeof claims.webid === 'string' && claims.webid ? claims.webid : null;
 }
 
-export function scopeQueryFor(webId: string): string {
-  // The grant subject is the Principal INDIVIDUAL, joined to the token's
-  // identity via its chorus:webId property (same join as the owl-api door's
-  // PRINCIPAL_SCOPE_QUERY, #3689) — never the WebID IRI as subject.
-  const lit = webId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return (
-    `PREFIX chorus: <${CHORUS_NS}> ` +
-    `SELECT ?s WHERE { GRAPH <${SECURITY_GRAPH}> { ?p a chorus:Principal ; ` +
-    `chorus:webId "${lit}" ; chorus:hasScope ?s } }`
-  );
+/** #3728 — parse the canonical BULK scope query's `?v` rows ("<webid> <scope>")
+ *  into the webId→scopes allow-set, the SAME grouping as the Rust door's
+ *  resolve_principal_scopes: split on the FIRST space (a WebID carries none, so
+ *  it is an unambiguous separator), drop a row with no separator or an empty
+ *  side, and collect multiple edges per Principal. There is no second query
+ *  shape to drift from — this reads exactly what PRINCIPAL_SCOPE_QUERY emits. */
+function parseAllowSet(res: SparqlBindings): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const b of res.results?.bindings ?? []) {
+    const v = b?.v?.value;
+    if (typeof v !== 'string') continue;
+    const sp = v.indexOf(' ');
+    if (sp <= 0) continue; // no separator or empty webid — unreadable row, dropped
+    const webId = v.slice(0, sp);
+    const scope = v.slice(sp + 1);
+    if (!scope) continue;
+    const list = map.get(webId);
+    if (list) list.push(scope);
+    else map.set(webId, [scope]);
+  }
+  return map;
 }
 
 export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: string) => Promise<VerifyResult> {
@@ -158,19 +177,21 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
   const ttl = deps.ttlSecs ?? 300;
 
   let jwks: { keys: Map<string, crypto.KeyObject>; expires: number } | null = null;
-  const scopeCache = new Map<string, { scope: string[]; expires: number }>();
+  let allow: { map: Map<string, string[]>; expires: number } | null = null;
 
   // #3721 — keyFor was one function carrying fetch + parse + two distinct
   // failure policies, over both the complexity and cognitive-complexity limits.
   // Split into fetch-and-parse (below, module scope) and the cache policy here.
-  // Behaviour is unchanged, including the deliberate asymmetry between the two
-  // failure modes, which is easy to lose in a rewrite and is named explicitly:
-  //   - JWKS answered non-2xx  → serve a cached key EVEN IF EXPIRED. The
-  //     endpoint is up and told us no; the key we hold is the best evidence
-  //     available and refusing every request is the worse failure.
-  //   - JWKS unreachable/threw → serve a cached key ONLY while unexpired. We
-  //     cannot distinguish "down" from "rotated away", so an expired key is
-  //     not evidence and we fail closed.
+  //
+  // #3728 — the two failure modes are now SYMMETRIC (they were not, and the
+  // asymmetry could serve an EXPIRED key). Both a non-2xx answer and an
+  // unreachable/thrown fetch mean the same thing: we hold NO fresh keys. A
+  // non-2xx status is no more evidence that a cached key is still valid than a
+  // dead socket is — CSS may have rotated the key away and be answering 5xx
+  // meanwhile. So in BOTH cases we serve a cached key ONLY while unexpired, and
+  // otherwise fail closed. This matches the Rust door (chorus-oidc), where a
+  // failed fetch of an uncached kid collapses to JwksUnreachable regardless of
+  // whether the endpoint answered or the socket died.
   async function keyFor(kid: string): Promise<crypto.KeyObject | null> {
     const now = deps.nowSecs();
     const cached = jwks;
@@ -178,34 +199,33 @@ export function createIdentityVerifier(deps: IdentityVerifierDeps): (token: stri
     if (cachedIsFresh && cached.keys.has(kid)) return cached.keys.get(kid) ?? null;
 
     const refreshed = await fetchJwks(fetchFn, deps.jwksUrl, deps.issuer);
-    if (refreshed === 'unreachable') {
-      // No `?.` on cached here: cachedIsFresh narrows it to non-null (TS
-      // narrows through the const boolean alias), unlike the 'refused' branch
-      // below where it can still be null.
+    if (refreshed === 'unreachable' || refreshed === 'refused') {
+      // No fresh keys either way — serve a cached key only while unexpired.
+      // cachedIsFresh narrows `cached` to non-null through the const alias.
       return cachedIsFresh ? (cached.keys.get(kid) ?? null) : null;
     }
-    if (refreshed === 'refused') return cached?.keys.get(kid) ?? null;
 
     jwks = { keys: refreshed, expires: now + ttl };
     return jwks.keys.get(kid) ?? null;
   }
 
+  // #3728 — resolve the WHOLE allow-set in one bulk query (deps.scopeQuery, the
+  // canonical text), cached on the TTL cadence, then answer per-webId from the
+  // cached map. One query shape, shared with the Rust door; grant/revoke is a
+  // model edit live within one TTL.
   async function scopesFor(webId: string): Promise<string[]> {
     const now = deps.nowSecs();
-    const hit = scopeCache.get(webId);
-    if (hit && hit.expires > now) return hit.scope;
-    try {
-      const res = (await deps.sparql(scopeQueryFor(webId))) as SparqlBindings;
-      const scope = (res.results?.bindings ?? [])
-        .map((b) => b.s?.value)
-        .filter((v): v is string => typeof v === 'string' && v.length > 0);
-      scopeCache.set(webId, { scope, expires: now + ttl });
-      return scope;
-    } catch {
-      // fail closed: an unanswerable model is NO grants, and the failure is
-      // not cached — the next request re-asks.
-      return [];
+    if (!allow || allow.expires <= now) {
+      try {
+        const res = (await deps.sparql(deps.scopeQuery)) as SparqlBindings;
+        allow = { map: parseAllowSet(res), expires: now + ttl };
+      } catch {
+        // fail closed: an unanswerable model is NO grants, and the failure is
+        // not cached — the next request re-asks.
+        return [];
+      }
     }
+    return allow.map.get(webId) ?? [];
   }
 
   return async function verify(token: string): Promise<VerifyResult> {
