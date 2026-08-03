@@ -122,6 +122,20 @@
   details.owl > summary::before { content: "▸ "; color: var(--accent); }
   details.owl[open] > summary::before { content: "▾ "; }
   details.owl > summary:hover { color: var(--accent); }
+  /* the model as a table schema — the readable form of the same triples */
+  .schema { margin-top: 2rem; }
+  .schema h3 {
+    font-size: 1rem; margin: 1.4rem 0 .5rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .schema table td.req { color: var(--accent); font-weight: 600; }
+  .schema table td.opt { color: var(--ink-faint); }
+  .src {
+    font-size: .6875rem; letter-spacing: .05em; text-transform: uppercase;
+    padding: .1rem .35rem; border-radius: 3px; font-weight: 600;
+  }
+  .src-both { background: var(--accent-soft); color: var(--accent); }
+  .src-shape, .src-ontology { background: var(--warn-soft); color: var(--warn); }
+
   details.owl pre {
     margin: 0; padding: .9rem; border-top: 1px solid var(--rule);
     overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -249,8 +263,54 @@ async function renderDomain(name) {
     }
     sections.push('<h2>' + esc(kind) + '</h2>' + body);
   }
-  app.innerHTML = head + sections.join('') + owlBlock(name);
+  app.innerHTML = head + sections.join('') +
+    '<div class="schema" id="schemabox"><h2>Schema — what the model says each class has</h2>' +
+    '<p class="empty">Reading the model…</p></div>' +
+    owlBlock(name);
   wireOwl(name);
+  renderSchema(name);
+}
+
+// The table form of the same triples the OWL fold shows raw. `source` is a
+// column because ontology-vs-shape disagreement is the incoherence we keep
+// rediscovering — merging the two silently would hide it.
+async function renderSchema(name) {
+  const box = document.getElementById('schemabox');
+  if (!box) return;
+  let d;
+  try {
+    const r = await fetch('/api/athena/domain-schema/' + encodeURIComponent(name));
+    d = await r.json();
+    if (!r.ok || d.storeReachable === false) throw new Error(d.error || 'store unreachable');
+  } catch (e) {
+    box.innerHTML = '<h2>Schema</h2><div class="note"><strong>Could not read the model — ' +
+      esc(e.message) + '.</strong> This is NOT an empty schema; the difference matters.</div>';
+    return;
+  }
+  if (!d.classes.length) {
+    box.innerHTML = '<h2>Schema</h2><div class="note"><strong>No classes.</strong> ' +
+      'This domain declares no vocabulary, so there is nothing to describe — a fact ' +
+      'about the model, not a missing page.</div>';
+    return;
+  }
+  box.innerHTML = '<h2>Schema — what the model says each class has</h2>' +
+    d.classes.map(c =>
+      '<h3>' + esc(c.name) + '</h3>' +
+      (c.properties.length
+        ? '<div class="scroll"><table><thead><tr><th>Property</th><th>Type</th>' +
+          '<th>Required</th><th>Declared in</th></tr></thead><tbody>' +
+          c.properties.map(p => {
+            const both = p.source.length > 1;
+            return '<tr><td><code>' + esc(p.property) + '</code></td>' +
+              '<td>' + (p.type ? esc(p.type) : '<span class="empty">—</span>') + '</td>' +
+              '<td class="' + (p.required ? 'req' : 'opt') + '">' + (p.required ? 'required' : 'optional') + '</td>' +
+              '<td><span class="src src-' + (both ? 'both' : esc(p.source[0] || 'shape')) + '">' +
+              esc(both ? 'both' : (p.source[0] || '?')) + '</span></td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div class="note"><strong>No properties.</strong> Nothing in the ontology types ' +
+          'a property over this class and no shape constrains it — so nothing can be said ' +
+          'about an instance of it.</div>')
+    ).join('');
 }
 
 // Lazy: the turtle is only fetched when the reader opens it. A domain's OWL is

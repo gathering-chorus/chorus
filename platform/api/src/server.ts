@@ -174,6 +174,79 @@ const sendChorusPage = (file: string) =>
 // survives neither a paste nor a bookmark as legibly, and the path matches the
 // graph IRI scheme so "where does this live" and "where do I click" have one
 // answer.
+// #3724 — THE MODEL AS A TABLE SCHEMA, per domain. Jeff, 2026-08-03: "the owl
+// fold is literally the owl can we show that like a table schema?"
+//
+// Turtle is the ground truth and stays available below; this is the readable
+// form. Per class: one row per property, with its type, whether it is required,
+// and — the column that earns its place — WHERE THE FACT COMES FROM.
+//
+// A property can be declared by the ontology (rdfs:domain/range), required by
+// the SHACL shape, or both. When those two disagree, the model is telling you
+// something: DomainShape and the ontology were found declaring 8 attributes
+// each with only 4 in common. A table that merged them silently would hide the
+// exact incoherence we keep coming back to, so `source` is a column, not a
+// footnote.
+app.get('/api/athena/domain-schema/:domain', async (req: Request, res: Response) => {
+  const d = String(req.params.domain || '');
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(d)) {
+    return res.status(400).json({ error: 'bad-name', message: 'domain must be a local name' });
+  }
+  const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
+  chorus:${d} chorus:definesVocabulary ?class .
+  { ?prop rdfs:domain ?class . OPTIONAL { ?prop rdfs:range ?range } BIND("ontology" AS ?src) }
+  UNION
+  { ?sh sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
+    OPTIONAL { ?b sh:minCount ?req } OPTIONAL { ?b sh:datatype ?range } BIND("shape" AS ?src) }
+} } ORDER BY ?class ?prop`;
+  const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
+  try {
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/sparql-results+json' },
+      body: 'query=' + encodeURIComponent(query),
+    });
+    if (!r.ok) {
+      // storeReachable is explicit so a caller can never read an empty table as
+      // "this class has no properties" when the truth is "we could not ask".
+      return res.status(502).json({ error: 'store-unreachable', storeReachable: false, http: r.status });
+    }
+    const body: any = await r.json();
+    const local = (v: string) => String(v || '').split(/[#/]/).pop() || '';
+    const classes: Record<string, Record<string, any>> = {};
+    for (const row of body?.results?.bindings || []) {
+      const cls = local(row.class?.value);
+      // A blank-node path is an inverse-path constraint (^hasDomain). It is a
+      // real requirement and unsatisfiable by authoring, so it is SHOWN and
+      // labelled rather than dropped — dropping it is how a floor nobody can
+      // meet stays invisible.
+      const isBlank = row.prop?.type === 'bnode';
+      const prop = isBlank ? '(inverse path)' : local(row.prop?.value);
+      if (!cls || !prop) continue;
+      classes[cls] ||= {};
+      const cur = classes[cls][prop] ||= { property: prop, type: '', required: false, source: [] as string[] };
+      if (row.range?.value && !cur.type) cur.type = local(row.range.value);
+      if (row.req?.value && Number(row.req.value) >= 1) cur.required = true;
+      const src = row.src?.value;
+      if (src && !cur.source.includes(src)) cur.source.push(src);
+    }
+    res.json({
+      domain: d,
+      storeReachable: true,
+      classes: Object.entries(classes).map(([name, props]) => ({
+        name,
+        properties: Object.values(props).sort((a: any, b: any) =>
+          Number(b.required) - Number(a.required) || a.property.localeCompare(b.property)),
+      })).sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  } catch {
+    res.status(502).json({ error: 'store-unreachable', storeReachable: false });
+  }
+});
+
 // #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
 // see the owl for each domain."
 //
