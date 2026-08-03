@@ -8,7 +8,7 @@
 //! edges; a subject missing its partition edge is refused, not unscoped.
 //! Hermetic: the Cfg stub answers shape SELECTs / ASKs / the partition read.
 
-use chorus_model::{set_field, verify_identity, Identity, Store, R};
+use athena_model::{set_field, verify_identity, Identity, Store, R};
 use std::cell::RefCell;
 
 struct Cfg {

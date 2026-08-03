@@ -1,5 +1,5 @@
 [package]
-name = "chorus-model"
+name = "athena-model"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,10 +14,23 @@ edition = "2021"
 # whole purpose). Pulls the crypto (p256/sha2/hmac) transitively; nothing else.
 chorus-oidc = { path = "../chorus-oidc" }
 
+# #3718 — RENAMED chorus-model -> athena-model (Jeff, 2026-07-31): "i feel we
+# rename chorus-model to athena-model - to me the model part is a strong analog
+# to coding - why i mention werk-code". werk-* is the governed writer for CODE;
+# athena-model is the governed writer for the MODEL. The name carries the product
+# it serves — the model is Athena's.
 [[bin]]
-name = "chorus-model"
+name = "athena-model"
 path = "src/main.rs"
 
 [lib]
-name = "chorus_model"
+name = "athena_model"
 path = "src/lib.rs"
+
+# #3718 — the old name survives ONLY as a fail-loud stub, never as an alias.
+# A silent alias lets callers drift indefinitely; a stub that exits non-zero
+# with the new name in the message migrates them once. Same treatment the bash
+# `nudge` got when it was retired (#2804).
+[[bin]]
+name = "chorus-model"
+path = "src/bin/chorus_model_retired.rs"

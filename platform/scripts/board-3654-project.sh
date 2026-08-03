@@ -22,7 +22,8 @@
 set -u
 
 CARDS="${CARDS_CLI:-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards}"
-CM="${CHORUS_MODEL_BIN:-$(command -v chorus-model 2>/dev/null || echo target/release/chorus-model)}"
+# #3718 — athena-model; CHORUS_MODEL_BIN kept as the override env var for back-compat.
+CM="${CHORUS_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo target/release/athena-model)}"
 DRY="${DRY_RUN:-0}"
 
 # Fuseki writes require the write credential (#3630) — same sourcing as

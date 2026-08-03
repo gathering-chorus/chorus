@@ -13,7 +13,7 @@
 //! Hermetic: stub store answers shape SELECTs / existence ASKs; no live
 //! Fuseki, no $HOME, no role state (test-isolation contract).
 
-use chorus_model::{delete_iri, parse_ntriples, seed, verify_identity, Identity, Store, R};
+use athena_model::{delete_iri, parse_ntriples, seed, verify_identity, Identity, Store, R};
 use std::cell::RefCell;
 
 const NS: &str = "https://jeffbridwell.com/chorus#";

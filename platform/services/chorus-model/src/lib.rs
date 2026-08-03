@@ -33,6 +33,8 @@
 #![allow(clippy::doc_lazy_continuation)]
 #![allow(clippy::too_many_arguments)]
 
+pub mod adr; // #3718 — the ADR refusal core (pure; no store, no fs)
+
 use std::collections::BTreeMap;
 use std::process::Command;
 
@@ -374,6 +376,11 @@ fn esc(s: &str) -> String {
 /// mint resolves — callers never pass IRIs anywhere.
 #[derive(Debug, Default)]
 pub struct WriteReq {
+    /// #3718 — a stated reason for writing outside the DERIVED placement.
+    /// ADR-051 x 025 allows an override, never a silent one: an unexplained
+    /// override is how a placement stops matching the model without anyone
+    /// noticing (11 Product instances in two wrong graphs, months unseen).
+    pub placement_override_reason: Option<String>,
     pub kind: String,
     pub name: String,
     pub fields: BTreeMap<String, String>,
@@ -750,6 +757,20 @@ fn assert_dal_writable(graph: &str) -> R<()> {
     Ok(())
 }
 
+/// #3718 — which domain CLAIMS this class in `definesVocabulary`. The meta-model
+/// is self-describing (Jeff, 2026-08-02): the `products` domain's
+/// `definesVocabulary` IS `chorus:Product`. So a class's instance placement is
+/// DERIVED from the domain that claims it — no per-shape annotation needed.
+/// Read from the schema graph, which is where `definesVocabulary` lives.
+pub fn defining_domain_of(store: &dyn Store, class_iri: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d a chorus:Domain ; \
+         chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*#', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class_iri
+    );
+    store.select_v(&q).ok()?.into_iter().next()
+}
+
 /// Full governed write: identity → per-graph authz → shape check → referential integrity → idempotent UPDATE.
 pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let class = class_iri(&req.kind)?;
@@ -759,6 +780,47 @@ pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let g = req.graph.as_deref().unwrap_or(INSTANCES_GRAPH);
     assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
 
+    // #3718 — ADR-051 x 025 PLACEMENT GATE: BUILT, TESTED, NOT YET ARMED.
+    //
+    // RESOLVED 2026-08-02 (Silas, OWL-DBA): the conflict below was MY
+    // misclassification, not a contradiction. A PUNNED INDIVIDUAL IS
+    // SCHEMA-LAYER — a Domain individual IS a class (ADR-045), so it belongs in
+    // urn:chorus:ontology, and the store's 40 Domains there are correct.
+    // #3647's principle survives intact ("write the entity's home, never the
+    // legacy bucket; authz reads ownedBy from that home") — the derivation just
+    // supplies ontology as that home for punned kinds. Two layers, not three;
+    // see adr::layer_of. The #3647 test's assertion is wrong-as-written and
+    // updates with that reason when the gate arms.
+    //
+    // REMAINING PREREQUISITE, and the only one: the definesVocabulary backfill.
+    // The gate refuses a write to any class no domain claims — the correct
+    // refusal (it is how APISurface got 25 orphan instances) — but arming it
+    // before every served class is claimed would refuse legitimate writes.
+    // Silas owns the backfill audit as a security-chunk Phase-B foundation item;
+    // this gate arms after it lands. Claims are added DELIBERATELY per class,
+    // never auto-defaulted (Jeff's legibility ruling).
+    //
+    // The pure core is green (adr.rs, 10 tests). Wiring it here refused 4
+    // EXISTING write tests, and the refusals are not test bugs — they surface a
+    // real behavioural disagreement I will not settle unilaterally:
+    //
+    //   #3647 routes a write to its DECLARED home graph (domain.graph=Some(..)),
+    //   which is why `write_routes_to_declared_home_when_provided` writes a
+    //   chorus:Domain individual to urn:chorus:domains:tests.
+    //   ADR-051 x 025 says Domain is PUNNED, so its individuals derive to
+    //   urn:chorus:ontology — and the store agrees: all 40 live Domains are there.
+    //
+    // Both cannot be right. Arming the gate now would break a landed behaviour
+    // on my own reading of an ADR; that is the move Silas's Q1/Q3 rulings already
+    // caught me making twice. It goes to the OWL-DBA, then it arms.
+    //
+    // Also unresolved and load-bearing: the gate refuses writes to a class no
+    // domain claims in definesVocabulary. That is the RIGHT refusal (it is how
+    // APISurface got 25 live instances from an unbound file) but it needs the
+    // definesVocabulary backfill first, or it refuses legitimate writes today.
+    //
+    // To arm: restore the block below, decide the punned-Domain question, and
+    // update the 4 fixtures to bring their own definesVocabulary world.
     // SHACL requirements from the ontology graph — fail-closed on missing required.
     let shape = read_shape(store, &class)?;
     for need in &shape.required {
