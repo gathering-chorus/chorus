@@ -280,11 +280,25 @@ async function renderSchema(name) {
   let d;
   try {
     const r = await fetch('/api/athena/domain-schema/' + encodeURIComponent(name));
+    // THREE failures, three messages. Found the hard way 2026-08-03: this page
+    // is served from disk and updates instantly, while the endpoints behind it
+    // need a build + deploy. On a server running an older build the route
+    // 404s — and the first version of this code reported that as "store
+    // unreachable," which is the same cannot-distinguish-two-states defect the
+    // whole page exists to expose. It named the wrong cause on its own bug.
+    if (r.status === 404) {
+      box.innerHTML = '<h2>Schema</h2><div class="note"><strong>This endpoint is not on ' +
+        'this server.</strong> The page is served from disk and is current; the API behind it ' +
+        'is from an older build. Nothing is wrong with the model — deploy the API to see the ' +
+        'schema here.</div>';
+      return;
+    }
     d = await r.json();
-    if (!r.ok || d.storeReachable === false) throw new Error(d.error || 'store unreachable');
+    if (!r.ok || d.storeReachable === false) throw new Error(d.error || 'the store did not answer');
   } catch (e) {
     box.innerHTML = '<h2>Schema</h2><div class="note"><strong>Could not read the model — ' +
-      esc(e.message) + '.</strong> This is NOT an empty schema; the difference matters.</div>';
+      esc(e.message) + '.</strong> The endpoint answered but the STORE did not. ' +
+      'This is NOT an empty schema.</div>';
     return;
   }
   if (!d.classes.length) {
@@ -332,6 +346,17 @@ function wireOwl(name) {
     try {
       const r = await fetch('/api/athena/domain-owl/' + encodeURIComponent(name));
       const body = await r.text();
+      if (r.status === 404 || body.startsWith('{')) {
+        // A JSON body here means the request fell through to a different
+        // handler — this route does not exist on this server. Say THAT, rather
+        // than rendering someone else's envelope as if it were the ontology.
+        pre.textContent =
+          '# This endpoint is not on this server.\n' +
+          '# The page is served from disk and is current; the API behind it is from an\n' +
+          '# older build, so the request fell through to another handler. The response\n' +
+          '# below is NOT this domain\'s OWL:\n#\n' + body.slice(0, 300);
+        return;
+      }
       // A failure is REPORTED, never rendered as an empty ontology — an empty
       // domain and an unreachable store must not look identical.
       pre.textContent = r.ok
