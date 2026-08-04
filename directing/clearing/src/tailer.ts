@@ -92,7 +92,10 @@ export class ChorusLogTailer extends EventEmitter {
   private handleCardAccepted(parsed: SpineEntry, role: string): void {
     const card = parsed.card_id || parsed.card || '';
     const title = parsed.title || '';
-    const acceptor = parsed.acceptor || 'jeff';
+    // #3743: an ABSENT acceptor is a refusal to attribute, not a default to the
+    // highest authority in the system. 'unattributed' renders honestly and can
+    // never satisfy a jeff-authority predicate.
+    const acceptor = parsed.acceptor || 'unattributed';
     this.router.ingest({
       from: acceptor,
       text: `Accepted #${card}${title ? ` — ${title}` : ''}`,

@@ -19,7 +19,8 @@ import { buildBuzzWiring } from './buzz-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
-import { isWebIdAllowed } from './solid-auth';
+import { isWebIdAllowed, principalForWebId } from './solid-auth';
+import { resolveSenderIdentity } from './sender-identity';
 import {
   makePkce, makeState, signCookie, verifyCookie, safeReturnPath, buildAuthUrl,
   exchangeCodeForWebId, type OidcConfig,
@@ -218,13 +219,16 @@ function extractToken(req: Request): string | undefined {
     || req.headers.authorization?.replace('Bearer ', '');
 }
 
-function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
+async function handleAuthenticated(req: Request, res: Response, next: NextFunction) {
   if (req.query.token && !req.cookies?.bridge_token) {
     res.cookie('bridge_token', BRIDGE_TOKEN, TOKEN_COOKIE_OPTS);
   }
+  // #3743 — a CSS-authenticated session already told us who this is; the name
+  // page fires ONLY for token/guest flows with no identity at all.
   const hasName = req.cookies?.bridge_name;
   if (!hasName && req.path !== '/set-name' && req.path !== '/bridge-og.jpg'
       && (req.path === '/' || req.path === '/index.html')) {
+    if (await sessionPrincipal(req)) return next();
     return res.send(namePage());
   }
   return next();
@@ -291,6 +295,18 @@ function preAuthRoute(
  * allow-set every request so a revoked identity loses access within one TTL) OR
  * the static bridge token (migration fallback, retired when REQUIRE_DPOP flips).
  */
+/**
+ * #3743 — the Principal behind the request's verified CSS session, or null.
+ * The login already established who this is; asking again (the name page) or
+ * trusting a hand-set cookie over it is the hole Mark fell through.
+ */
+async function sessionPrincipal(req: Request): Promise<{ id: string; name: string } | null> {
+  const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
+  const fresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
+  if (!session?.webid || !fresh) return null;
+  return principalForWebId(session.webid, Date.now());
+}
+
 async function isAuthed(req: Request): Promise<boolean> {
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
@@ -453,13 +469,16 @@ ${error ? `<div class="error">${error}</div>` : ''}
 }
 
 // Static files — no cache, plus rewrite index.html to bust browser cache
-app.get('/', (req: Request, res) => {
+app.get('/', async (req: Request, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf-8');
-  // Inject guest name for remote users (#1719)
+  // #3743 — the verified session's Principal wins over every fallback: Mark's
+  // login shows marknakib, Jeff's shows jeff, no hand-set name consulted.
+  // Guest/local fallbacks (#1719) apply only when there is no session identity.
+  const principal = await sessionPrincipal(req);
   const guestName = req.cookies?.bridge_name || '';
   const isLocalReq = isLocal(req);
-  const userName = isLocalReq ? 'jeff' : (guestName || 'guest');
+  const userName = principal ? principal.name : (isLocalReq ? 'jeff' : (guestName || 'guest'));
   html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html');
@@ -1134,9 +1153,33 @@ io.on('connection', (socket) => {
   // sends showed "Failed" + restored the text for messages that had actually landed.
   // Now: ingest → ack ok → parallel hand-offs, each outcome pushed to the client as a
   // 'delivery-status' event the UI renders visibly.
-  socket.on('jeff-message', (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
-    const senderName = resolveJeffMessageSender(socket.handshake.headers.cookie || '', data.from);
+  socket.on('jeff-message', async (data: { text: string; from?: string }, ack?: (result: { ok: boolean; error?: string }) => void) => {
+    // #3743 — identity from the session the login already verified: WebID →
+    // Principal. A client-supplied `from` can no longer override it, and
+    // jeff-authority (the /api/jeff-input path) binds to the jeff principal,
+    // not to whatever the sender called themselves.
+    const hdrs = socket.handshake.headers as Record<string, unknown>;
+    const identity = await resolveSenderIdentity({
+      cookieHeader: typeof hdrs.cookie === 'string' ? hdrs.cookie : '',
+      fromField: data.from,
+      isLocal: isLocalConnection(hdrs, socket.handshake.address || ''),
+      verifySession: (cookieHeader) => {
+        const m = cookieHeader.match(/clearing_session=([^;]+)/);
+        if (!m) return null;
+        const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(m[1]), SESSION_SECRET, 'session');
+        return sess ? { webid: sess.webid, fresh: !!sess.iat && Date.now() - sess.iat <= SESSION_MAX_AGE_MS } : null;
+      },
+      principalFor: (webid) => principalForWebId(webid, Date.now()),
+    });
     const cleanText = (data.text || '').replace(/@(wren|silas|kade)\s*/gi, '').trim();
+    if (!identity.jeffAuthority) {
+      // The message stays in the room under the sender's real name; the
+      // jeff-authority delivery path is REFUSED, visibly — never silently as Jeff.
+      messageRouter.ingest({ from: identity.name, text: data.text || '', ts: new Date().toISOString(), type: 'role-response' });
+      socket.emit('delivery-status', { target: '*', ok: false, error: `not-authorized-as-jeff (you are ${identity.name})` });
+      if (ack) ack({ ok: true });
+      return;
+    }
     const finalText = cleanText.replace(/\[img:(\/uploads\/[^\]]+)\]/g, `[img:http://localhost:${PORT}$1]`);
     const safeMsg = finalText.replace(/"/g, '\\"');
     void processJeffInput(
@@ -1147,7 +1190,7 @@ io.on('connection', (socket) => {
         now: () => new Date().toISOString(),
         onDeliveryStatus: (status) => socket.emit('delivery-status', status),
       },
-      { text: data.text || '', from: senderName },
+      { text: data.text || '', from: identity.name },
       ack,
     );
   });
@@ -1312,11 +1355,9 @@ function parseTarget(text: string): string {
   return 'wren'; // No @ = Wren gets it
 }
 
-function resolveJeffMessageSender(cookieHeader: string, fromField?: string): string {
-  const nameMatch = cookieHeader.match(/bridge_name=([^;]+)/);
-  const guestName = nameMatch ? decodeURIComponent(nameMatch[1]) : '';
-  return fromField || guestName || 'jeff';
-}
+// #3743 — resolveJeffMessageSender is RETIRED: identity comes from the session
+// WebID via resolveSenderIdentity (sender-identity.ts); the hand-set cookie /
+// client field / 'jeff' default chain is exactly the hole Mark fell through.
 
 function pickJeffMessageTargets(text: string): string[] {
   const mentions = text.match(/@(wren|silas|kade)/gi) || [];

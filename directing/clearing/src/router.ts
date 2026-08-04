@@ -97,7 +97,7 @@ const classificationRules: ClassificationRule[] = [
     : null,
   // Accept request / acceptance — Jeff or accept-request type (#2049)
   (r) => {
-    const fromJeff = r.from === 'jeff' || r.from.toLowerCase().startsWith('jeff');
+    const fromJeff = r.from.toLowerCase() === 'jeff'; // #3743: exact identity, never a prefix ('jeffrey' is not Jeff)
     const isAccept = r.type === 'accept-request' || (fromJeff && /^Accepted #\d+/.test(r.text));
     if (!isAccept) return null;
     return { type: 'accept-request', visible: true, text: fromJeff ? stripSpineMetadata(r.text) : r.text };
@@ -105,7 +105,7 @@ const classificationRules: ClassificationRule[] = [
   // Clearing input — tagged jeff-input (#1934)
   (r) => r.type === 'jeff-input' ? { type: 'jeff-input', visible: true, text: stripSpineMetadata(r.text) } : null,
   // Jeff's input — always visible, strip spine metadata
-  (r) => (r.from === 'jeff' || r.from.toLowerCase().startsWith('jeff'))
+  (r) => (r.from.toLowerCase() === 'jeff') // #3743: exact identity, never a prefix
     ? { type: 'jeff-input', visible: true, text: stripSpineMetadata(r.text) }
     : null,
   // System errors

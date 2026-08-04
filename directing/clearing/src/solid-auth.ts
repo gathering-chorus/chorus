@@ -76,9 +76,60 @@ export async function isWebIdAllowed(
   return allowCache.set.has(webid);
 }
 
+// --- principal map: WebID → Principal, same graph, same TTL (#3743) ----------
+
+/**
+ * #3743 — display identity and authority come from the Principal the verified
+ * WebID belongs to, same security graph the allow-set reads (and only that
+ * graph, for the #3669 reason above). `name` is the principal's local id minus
+ * the `principal-` prefix (principal-marknakib → marknakib).
+ */
+export const PRINCIPAL_MAP_QUERY =
+  'PREFIX chorus: <https://jeffbridwell.com/chorus#> ' +
+  'SELECT ?p ?webid WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?webid } }';
+
+let principalCache: { at: number; map: Map<string, { id: string; name: string }> } | null = null;
+
+async function fetchPrincipalMap(fetchImpl: typeof fetch = fetch): Promise<Map<string, { id: string; name: string }>> {
+  const url = `${FUSEKI_QUERY}?query=${encodeURIComponent(PRINCIPAL_MAP_QUERY)}`;
+  const res = await fetchImpl(url, { headers: { Accept: 'application/sparql-results+json' } });
+  if (!res.ok) throw new Error(`principal-map query ${res.status}`);
+  const body = (await res.json()) as {
+    results: { bindings: Array<{ p: { value: string }; webid: { value: string } }> };
+  };
+  const map = new Map<string, { id: string; name: string }>();
+  for (const b of body.results.bindings) {
+    const id = b.p.value.split(/[#/]/).pop() || '';
+    if (!id) continue;
+    map.set(b.webid.value, { id, name: id.replace(/^principal-/, '') });
+  }
+  return map;
+}
+
+/**
+ * Principal for a verified WebID, or null. Cache semantics mirror
+ * isWebIdAllowed: TTL'd, stale-served on fetch error, fail-closed (null) on a
+ * cold miss — an unresolvable principal must never resolve to an identity.
+ */
+export async function principalForWebId(
+  webid: string,
+  now: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ id: string; name: string } | null> {
+  if (!principalCache || now - principalCache.at >= ALLOW_TTL_MS) {
+    try {
+      principalCache = { at: now, map: await fetchPrincipalMap(fetchImpl) };
+    } catch {
+      if (!principalCache) return null; // cold-miss + seam down → no identity
+    }
+  }
+  return principalCache.map.get(webid) || null;
+}
+
 /** Test seam — reset the module cache. */
 export function _resetAllowCache(): void {
   allowCache = null;
+  principalCache = null;
 }
 
 // --- request authentication --------------------------------------------------
