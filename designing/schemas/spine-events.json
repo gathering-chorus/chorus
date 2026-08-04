@@ -3437,6 +3437,16 @@
         "storeStamp": "Store's deployedFromCommit",
         "stampVerified": "true|false — stamp == landedCommit"
       }
+    },
+    "process.scratch.killed": {
+      "vertebra": "operations",
+      "source": "chorus-scratch-kill",
+      "description": "Owner-sanctioned SIGTERM of an UNMANAGED scratch process (#3750) — the witnessed path the kill-guard allows. The script refuses managed com.chorus.*/com.gathering.* pids (those go through agent-state.sh/app-state.sh). Witness emitted BEFORE the signal.",
+      "fields": {
+        "pid": "Target pid",
+        "reason": "Caller-supplied reason",
+        "command": "Target's ps command line (truncated 120)"
+      }
     }
   }
 }

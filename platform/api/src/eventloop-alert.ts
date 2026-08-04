@@ -156,19 +156,37 @@ export function startEventloopAlert(deps: EventloopAlertDeps): void {
   };
 
   const start = () => {
-    if (deps.captureStacks) {
-      // #3610 diagnostic mode — blocked-at names the call site. The library's
-      // callback is (time, stack, {type, resource}); adapt to (ms, stack).
-      const blockedAtFn = deps.blockedAtFn ?? ((cb: (ms: number, stack: string[]) => void, opts: { threshold: number }) => {
-
-        const blockedAt = require('blocked-at');
-        blockedAt((time: number, stack: string[]) => cb(time, stack), opts);
-      });
-      blockedAtFn((ms, stack) => fire(ms, stack), { threshold });
-      return;
+    // #3750 — the watchdog must NEVER take down the process it watches. On
+    // 2026-08-04 10:42 the lazy require('blocked-at') threw (module state
+    // churned under the live process) INSIDE this start path, wedging
+    // chorus-api half-dead: port open, nothing answering. A broken or missing
+    // instrumentation dep now logs once and DISABLES the watchdog — degraded
+    // observability, never a dead API.
+    try {
+      if (deps.captureStacks) {
+        // #3610 diagnostic mode — blocked-at names the call site. The library's
+        // callback is (time, stack, {type, resource}); adapt to (ms, stack).
+        const blockedAtFn = deps.blockedAtFn ?? ((cb: (ms: number, stack: string[]) => void, opts: { threshold: number }) => {
+          const blockedAt = require('blocked-at');
+          blockedAt((time: number, stack: string[]) => cb(time, stack), opts);
+        });
+        blockedAtFn((ms, stack) => {
+          // A throw inside the periodic callback must also degrade, not kill.
+          try { fire(ms, stack); } catch (e) {
+            console.error(`[chorus-api] eventloop-alert fire failed (degraded, watchdog continues): ${e}`);
+          }
+        }, { threshold });
+        return;
+      }
+      const blockedFn = deps.blockedFn ?? require('blocked');
+      blockedFn((ms: number) => {
+        try { fire(ms); } catch (e) {
+          console.error(`[chorus-api] eventloop-alert fire failed (degraded, watchdog continues): ${e}`);
+        }
+      }, { threshold });
+    } catch (e) {
+      console.error(`[chorus-api] eventloop-alert DISABLED — instrumentation dep unavailable (${e instanceof Error ? e.message : e}). API keeps serving; loop-block visibility is degraded until the dep is fixed.`);
     }
-    const blockedFn = deps.blockedFn ?? require('blocked');
-    blockedFn((ms: number) => fire(ms), { threshold });
   };
 
   const t = setTimeout(start, bootDelayMs);
