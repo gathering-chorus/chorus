@@ -3381,6 +3381,22 @@
         "marker": "The env marker that classified the context (e.g. BATS_TEST_TMPDIR set, NODE_ENV=test)",
         "override_var": "The env var the offending context should have set to bring its own world"
       }
+    },
+    "nightly.run.summary": {
+      "vertebra": "proving",
+      "source": "nightly-suites",
+      "description": "Board-level totals for ONE nightly run — the aggregate #3484 left implicit. Per-suite results and per-owner nudges are both correctly scoped to a slice, so no signal carried the run's own number: on 2026-08-04 the board was 31 red (silas 25, kade 6) and each owner's accurate nudge could read as 'nearly fine'. Emitted for GREEN runs too, because zero-red is the bar and a bar you only hear about when it breaks cannot be shown held. #3606.",
+      "keys": [
+        "zero_red"
+      ],
+      "fields": {
+        "suites": "Total SUITE lines in the run.",
+        "passed": "Suites with status=pass.",
+        "failed": "Suites with status=fail — the board-level red count.",
+        "skipped": "Suites skipped for no live stack (#3557); not failures.",
+        "red_by_owner": "Semicolon-separated owner=count of red suites, or 'none'.",
+        "zero_red": "true when failed==0 — the measurement against Jeff's zero-red bar."
+      }
     }
   }
 }

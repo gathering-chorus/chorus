@@ -32,7 +32,11 @@ export function asyncRoute(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,
 ): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
-    fn(req, res, next).catch(next);
+    // #3606 — `void` marks the promise deliberately unconsumed. The rejection IS
+    // handled (.catch(next) forwards to Express); what no-floating-promises flags
+    // is that the promise .catch() itself returns was left dangling. Behaviour is
+    // identical — the intent is now stated instead of inferred.
+    void fn(req, res, next).catch(next);
   };
 }
 

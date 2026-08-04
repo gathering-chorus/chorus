@@ -618,10 +618,39 @@ _cov_denominator() {
   done
   [ "$present" -gt 0 ] || return 0
   local n_un; n_un=$(printf '%s' "$unconfigured" | wc -w | tr -d ' ')
+
+  # #3606 — RATCHET, not a binary gate. As first shipped (#3734, mine) this
+  # failed unless EVERY crate carried a floor. 20 of 23 do not, so it was red the
+  # night it landed and every night after: a permanent red teaches the team to
+  # skim past red, which is precisely what a zero-red bar cannot survive. The gap
+  # is real and worth surfacing — it is just not a per-RUN failure.
+  #
+  # Ratchet semantics, matching .clippy-baseline.json / .eslint-baseline.json:
+  # the unconfigured count may only DECREASE. A new crate shipped without a floor
+  # reds the nightly — the thing actually worth catching — while the standing 20
+  # do not. A decrease rewrites the baseline so the gain is locked in.
+  local baseline_file="${NIGHTLY_COV_DENOM_BASELINE:-$CHORUS_ROOT/.coverage-denominator-baseline}"
+  local baseline
+  # `< "$file"` fails in the SHELL before tr can swallow it, so a missing baseline
+  # printed a spurious "No such file or directory" on every seed run. cat-then-tr
+  # keeps the absent case silent, which is the normal first-run path.
+  baseline=$(cat "$baseline_file" 2>/dev/null | tr -dc '0-9')
+  if [ -z "$baseline" ]; then
+    # First run seeds at the current count and reports the gap WITHOUT passing it
+    # off as an achievement — seeding is not progress.
+    printf '%s\n' "$n_un" > "$baseline_file" 2>/dev/null || true
+    echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (ratchet seeded at ${n_un} unconfigured of ${present} — gap recorded, may only decrease)"
+    return 0
+  fi
+
   if [ "$n_un" -eq 0 ]; then
+    printf '0\n' > "$baseline_file" 2>/dev/null || true
     echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (all ${present} rust crates carry a coverage floor)"
+  elif [ "$n_un" -gt "$baseline" ]; then
+    echo "SUITE|coverage-denominator|platform/services|kade|fail|0 pass, 1 fail (coverage-floor RATCHET DRIFTED: ${n_un} unconfigured vs baseline ${baseline} — a crate shipped without a coverage floor:${unconfigured})"
   else
-    echo "SUITE|coverage-denominator|platform/services|kade|fail|0 pass, 1 fail (${configured} of ${present} rust crates have a coverage floor — ${n_un} unconfigured:${unconfigured})"
+    if [ "$n_un" -lt "$baseline" ]; then printf '%s\n' "$n_un" > "$baseline_file" 2>/dev/null || true; fi
+    echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (${configured} of ${present} crates have a floor; ${n_un} unconfigured vs baseline ${baseline} — standing gap, not drift)"
   fi
 }
 
@@ -721,6 +750,49 @@ notify_results() {
     n=$(printf '%s\n' "$results" | awk -F'|' -v o="$owner" '$1=="SUITE" && $5=="fail" && $4==o' | grep -c .)
     "$ops_nudge" "$owner" "nightly: $n suite(s) red — $reds" system >/dev/null 2>&1 || true
   done <<< "$owners"
+
+  # #3606 — THE AGGREGATE. Everything above is correctly scoped to ONE owner, and
+  # that scoping is the gap: each role is told their slice and nobody is told the
+  # run. On 2026-08-04 the board was 31 red (silas 25, kade 6). My nudge said
+  # "6 suite(s) red" and it was CORRECT — I read my own slice as the total and
+  # reported a 5x undercount that did not exist. That misread is the tell: two
+  # roles can each receive an accurate nudge and both conclude the nightly is
+  # nearly fine while main is 31 red.
+  #
+  # Jeff's bar is ZERO RED ACROSS THE BOARD. Nothing measured against that bar
+  # because no signal carried a board-level number. This does.
+  local total per_owner
+  total=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="fail"' | grep -c . | tr -d ' ')
+  per_owner=$(printf '%s\n' "$results" \
+    | awk -F'|' '$1=="SUITE" && $5=="fail" {c[$4]++} END {for (o in c) printf "%s %d, ", o, c[o]}' \
+    | sed 's/, $//')
+  "$ops_nudge" kade "nightly TOTAL: $total red across the board ($per_owner) — bar is zero$skipmsg" system >/dev/null 2>&1 || true
+}
+
+# #3606 — the DURABLE half of the aggregate. notify_results pushes a nudge, which
+# is read once and gone; this emits ONE queryable event per run carrying the
+# board-level totals, so the zero-red bar has something a dashboard, the daily
+# review, or a future consumer can read without re-aggregating 231 per-suite
+# events or parsing the log.
+#
+# Mirrors #3484's reasoning one level up: that card made per-SUITE results
+# queryable instead of stdout-only; the run itself was still only ever a count in
+# a nudge. Emitted for GREEN runs too — "0 red" is the measurement that proves the
+# bar was met, and a bar you only hear about when it breaks cannot be shown held.
+emit_run_summary() {
+  local results="$1" total suites passed failed skipped owners_csv zero_red
+  suites=$(printf '%s\n' "$results" | grep -c '^SUITE|' | tr -d ' ')
+  total=$(printf '%s\n'  "$results" | awk -F'|' '$1=="SUITE" && $5=="fail"' | grep -c . | tr -d ' ')
+  passed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="pass"' | grep -c . | tr -d ' ')
+  skipped=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="skip"' | grep -c . | tr -d ' ')
+  failed="$total"
+  owners_csv=$(printf '%s\n' "$results" \
+    | awk -F'|' '$1=="SUITE" && $5=="fail" {c[$4]++} END {for (o in c) printf "%s=%d;", o, c[o]}' \
+    | sed 's/;$//')
+  [ "${total:-0}" -eq 0 ] && zero_red=true || zero_red=false
+  spine_emit nightly.run.summary \
+    "suites=$suites" "passed=$passed" "failed=$failed" "skipped=$skipped" \
+    "red_by_owner=${owners_csv:-none}" "zero_red=$zero_red"
 }
 
 # #3484 — emit ONE structured `test.suite.result` per suite (green AND red) so
@@ -973,6 +1045,7 @@ PYEOF
     # Echo to stdout only for a human at a terminal; under launchd fd 1 IS the
     # log and printing here would duplicate what tee already wrote.
     [ -t 1 ] && printf '%s\n' "$out"
+    emit_run_summary "$out"
     emit_suite_results "$out"; [ "${NIGHTLY_NO_NUDGE:-0}" = "1" ] || notify_results "$out"
     ;;
   *)
