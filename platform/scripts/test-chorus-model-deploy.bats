@@ -15,13 +15,79 @@ TEST_GRAPH="urn:chorus:ontology-test-bats-3509"
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 
+# #3606 — this teardown was UNAUTHENTICATED. Post-#3564 every one of these DELETEs
+# 401'd and `|| true` swallowed it, so the suite has never cleaned up: 25,996
+# triples were still resident live across -3509 (17,994), -proving (7,998),
+# -partial and -retire.
+#
+# Residue is not just clutter here. Each test deploys into a graph and then asserts
+# shapes are queryable in it. With last run's triples already present, those
+# assertions pass whether or not this run's deploy did anything — the suite cannot
+# distinguish "the model deployed" from "the graph was never emptied". A drop that
+# cannot be verified is not a drop.
+# shellcheck source=/dev/null
+. "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+
+_drop_graph() {
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$1" -o /dev/null 2>/dev/null || true
+}
+
+_all_test_graphs() {
+  printf '%s\n' "$TEST_GRAPH" "${TEST_GRAPH}-bad" "${TEST_GRAPH}-retire" \
+    "${TEST_GRAPH}-partial" "${TEST_GRAPH}-empty" "${TEST_GRAPH}-proving"
+}
+
+_residue_triples() {
+  local g total=0 n
+  while IFS= read -r g; do
+    n="$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$Q" -H "Accept: text/csv" \
+      --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$g> { ?s ?p ?o } }" \
+      2>/dev/null | tail -1 | tr -d '[:space:]')"
+    total=$(( total + ${n:-0} ))
+  done <<< "$(_all_test_graphs)"
+  echo "$total"
+}
+
+_clear_all() {
+  local g
+  while IFS= read -r g; do _drop_graph "$g"; done <<< "$(_all_test_graphs)"
+}
+
+# #3606 — SEAM THE SPINE. Two tests here drive chorus-model-deploy.sh into its
+# refusal paths on purpose ("invalid TTL is refused fail-loud", "empty-staging
+# guard REFUSES"). Passing correctly, they each emit a real
+# `model.deploy.failed` to the LIVE spine, where the health surface reads it back
+# as a production incident.
+#
+# Measured, not assumed: every model.deploy.failed in Loki over the last 7 days —
+# 16 of 16 — came from these two test graphs (-3509-bad / riot-invalid and
+# -3509-empty / retire-guard-empty-staging). There were no real deploy failures at
+# all. The recurring "nightly model-deploy failing" alarm has been this suite
+# reporting its own successful refusals.
+#
+# CHORUS_LOG_FILE is the #3615 membrane seam; chorus-log routes through
+# chorus-hook-shim, which honors it (verified live: emission landed in the tmp
+# seam, zero occurrences in the live spine). Seam in the suite — never
+# CHORUS_CONTEXT=prod, which would only re-point the same writes at production.
+setup_file() {
+  export CHORUS_LOG_FILE="${CHORUS_LOG_FILE:-$BATS_RUN_TMPDIR/membrane-spine.log}"
+  _clear_all
+  local left
+  left="$(_residue_triples)"
+  if [ "${left:-0}" != "0" ]; then
+    echo "FATAL: ${left} triples survived the pre-run clear of the #3509 test graphs." >&2
+    echo "Every assertion here queries those graphs; residue makes them pass off the" >&2
+    echo "last run instead of this deploy. Refusing to report a green we did not earn." >&2
+    exit 1
+  fi
+}
+
 teardown() {
-  curl -s -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null || true
-  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-bad" -o /dev/null 2>/dev/null || true
-  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-retire" -o /dev/null 2>/dev/null || true
-  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-partial" -o /dev/null 2>/dev/null || true
-  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-empty" -o /dev/null 2>/dev/null || true
-  curl -s -X DELETE "$GSP?graph=${TEST_GRAPH}-proving" -o /dev/null 2>/dev/null || true
+  _clear_all
+}
+
+teardown_file() {
+  _clear_all
 }
 
 @test "chorus-model-deploy loads chorus.ttl into the ontology graph (exit 0)" {

@@ -7,7 +7,12 @@ load test_helper
 # This file proves the shell wrapper wires curl + validator + spine event correctly
 # against the actual Clearing service.
 
-SCRIPT="${HOME}/CascadeProjects/chorus-werk/silas/platform/scripts/clearing-post-restart-smoke.sh"
+# #3606 — repointed out of another role's werk. This hardcoded
+# chorus-werk/silas/platform/scripts/... — a canonical test reaching into SILAS'S
+# WERK, and specifically the PERSISTENT per-role werk that #2913 retired. Once
+# that directory went away the test asserted `[ -x "$SCRIPT" ]` against a path
+# that cannot exist. The script has been in canonical the whole time.
+SCRIPT="${CHORUS_ROOT}/platform/scripts/clearing-post-restart-smoke.sh"
 
 @test "smoke script exists and is executable" {
   [ -x "$SCRIPT" ]

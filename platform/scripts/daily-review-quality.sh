@@ -54,7 +54,17 @@ classify_suite() {
         s_total=$((s_passed + s_failed))
       fi
       ;;
-    shell|lint|coverage|meta)
+    # #3606 — was a CLOSED list `shell|lint|coverage|meta)`, and any new SUITE kind
+    # falling outside it was mislabeled BUILD BROKE. That has now happened THREE
+    # times in this one case statement: #3600 added `coverage` for it, #3709 added
+    # `meta` for it, and #3734's `coverage-denominator` hit it again on 2026-08-04 —
+    # a coverage GAP reported to Jeff as a build failure that never happened.
+    #
+    # Registering the third name would just leave the fourth to find it. Any kind
+    # whose summary carries the "N pass, N fail" shape now parses here, so a new
+    # emitter reports honestly by default and only a genuinely unparseable summary
+    # reaches the broke verdict.
+    *)
       # #3709 — `meta` joins for exactly the reason coverage did. It is the nightly
       # reporting on ITSELF: --last-run emits SUITE|meta|<log>|silas|fail|0 pass, 1 fail
       # (nightly log STALE/MISSING …) when it cannot read a run. With no arm here

@@ -23,11 +23,24 @@ setup() {
   grep -q "fetchFailed" "$PAGE"   # honest failure state, not a blank page
 }
 
-# It must census the real served set — assert the core model collections are queried.
-@test "page censuses the core model collections" {
-  for c in products domains services valuestreams valuestreamsteps chunks roles tests; do
-    grep -q "'$c'" "$PAGE"
-  done
+# #3606 — REWRITTEN. This asserted the page contained the literal strings
+# 'products' 'domains' 'services' ... i.e. a HARDCODED collection list — in a page
+# whose own header (six lines up) says it "must render LIVE via the runtime, not
+# embed a static snapshot". The test required exactly the thing the page exists to
+# avoid, so it could only pass if someone broke the design.
+#
+# The page derives its collections from ONE call to /schema and iterates
+# set.classes (model.html:119) — deliberately, because the previous version made
+# 42 round-trips and hung on Jeff's phone over wifi. Asserting hardcoded names
+# would have forced that back.
+#
+# So assert the PROPERTY the census needs: it enumerates from the served schema
+# rather than from a list baked into the page.
+@test "page censuses the served set dynamically, not from a baked-in list" {
+  grep -q "fetchJSON('/schema')" "$PAGE"
+  grep -qE "set\.classes|\(set\.classes \|\| \[\]\)" "$PAGE"
+  # and must NOT reintroduce a hardcoded roster
+  ! grep -qE "\['products',|\[\"products\"," "$PAGE"
 }
 
 # It surfaces version (the #3704 axis) and the populated-vs-empty worklist.

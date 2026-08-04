@@ -24,7 +24,17 @@ WRAPPER="$SCRIPTS/shim-wrapper.sh"
 }
 
 @test "wrapper emits clear error when binary missing" {
-  run env CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
+  # #3606 — this could not reach the state it tests. It cleared PATH and
+  # CHORUS_ROOT but not the wrapper's SECOND fallback,
+  # $HOME/.chorus/bin/chorus-hook-shim (#2734's deploy location), which exists on
+  # every machine where the binary has been deployed. So the wrapper found the
+  # shim, ran it, exited 0 with no output — and the assertion failed against a
+  # working wrapper. It could only have passed on a box with nothing deployed.
+  # Supply a HOME with no .chorus/bin, the way the sibling test below already
+  # supplies one for the log path.
+  local home="${BATS_TEST_TMPDIR:-/tmp}/shim-nobin-$$"
+  mkdir -p "$home/Library/Logs/Chorus"
+  run env HOME="$home" CHORUS_ROOT=/nonexistent PATH=/usr/bin:/bin "$WRAPPER"
   [[ "$output" == *"chorus-hook-shim not found"* ]]
 }
 

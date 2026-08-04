@@ -5,7 +5,10 @@ load test_helper
 # What Jeff sees: a view of every domain, its services, ownership, gates,
 # and migration readiness — so he can decide what to migrate next.
 
-ARTIFACT="platform/roles/wren/artifacts/operating-model.html"
+# #3606 — repointed. `platform/roles/` is not where roles live (they are at
+# roles/), and this artifact exists only as the DEPLOYED copy in the app's
+# gathering-docs. Assert against the copy that actually exists.
+ARTIFACT=""
 DEPLOYED="public/gathering-docs/operating-model.html"
 CHORUS_ROOT="${CHORUS_ROOT}"
 APP_ROOT="${HOME}/CascadeProjects/jeff-bridwell-personal-site"

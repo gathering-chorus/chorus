@@ -5,7 +5,9 @@ load test_helper
 # What Jeff sees: a service design page like Pulse and Loom, showing the Clearing's
 # domain dependencies, components, consumers/producers, and infrastructure.
 
-ARTIFACT="product-manager/artifacts/clearing-service-design.html"
+# #3606 — repointed. `product-manager/` is the pre-rename role directory and
+# design docs now live in designing/docs/. The artifact exists; only the aim was stale.
+ARTIFACT="designing/docs/clearing-service-design.html"
 DEPLOYED="public/gathering-docs/clearing-service-design.html"
 CHORUS_ROOT="${CHORUS_ROOT}"
 APP_ROOT="${HOME}/CascadeProjects/jeff-bridwell-personal-site"

@@ -4,7 +4,11 @@ load test_helper
 # Tests for #2300: Reference model page
 # What Jeff sees: the context diagram is THE reference model — renders, has narrative, layers described.
 
-DIAGRAM="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.html"
+# #3606 — repointed. Wren's #2458 ("KM op 1: wrong-cabinet moves") relocated this
+# doc OUT of the personal-site public dir and INTO chorus designing/docs/. The
+# test kept aiming at the pre-move path, so every assertion failed on a file that
+# exists and is fine.
+DIAGRAM="${CHORUS_ROOT}/designing/docs/chorus-context-diagram-v2.html"
 DIAGRAM_JS="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering-docs/chorus-context-diagram-v2.js"
 
 @test "context diagram HTML exists" {
@@ -38,9 +42,13 @@ DIAGRAM_JS="${HOME}/CascadeProjects/jeff-bridwell-personal-site/public/gathering
   ! grep -q "cdn.jsdelivr.net" "$DIAGRAM"
 }
 
-@test "mermaid init JS exists" {
-  [ -f "$DIAGRAM_JS" ]
-}
+# #3606 — RETIRED. chorus-context-diagram-v2.js has NO git history in this repo:
+# it never existed here. The diagram was authored in the personal-site public dir
+# with a companion init file and relocated into chorus by #2458; the init is now a
+# single inline <script> block in the HTML itself. This asserted the existence of
+# a packaging that does not exist and never did on this side, so it could only
+# ever fail. Retired rather than recreated — the thing it guarded (mermaid gets
+# initialised) is covered by the self-hosted assertion above plus the doc rendering.
 
 @test "ownership table includes Quality and Services horizontals" {
   grep -q "Quality" "$DIAGRAM"
