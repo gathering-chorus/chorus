@@ -618,10 +618,39 @@ _cov_denominator() {
   done
   [ "$present" -gt 0 ] || return 0
   local n_un; n_un=$(printf '%s' "$unconfigured" | wc -w | tr -d ' ')
+
+  # #3606 — RATCHET, not a binary gate. As first shipped (#3734, mine) this
+  # failed unless EVERY crate carried a floor. 20 of 23 do not, so it was red the
+  # night it landed and every night after: a permanent red teaches the team to
+  # skim past red, which is precisely what a zero-red bar cannot survive. The gap
+  # is real and worth surfacing — it is just not a per-RUN failure.
+  #
+  # Ratchet semantics, matching .clippy-baseline.json / .eslint-baseline.json:
+  # the unconfigured count may only DECREASE. A new crate shipped without a floor
+  # reds the nightly — the thing actually worth catching — while the standing 20
+  # do not. A decrease rewrites the baseline so the gain is locked in.
+  local baseline_file="${NIGHTLY_COV_DENOM_BASELINE:-$CHORUS_ROOT/.coverage-denominator-baseline}"
+  local baseline
+  # `< "$file"` fails in the SHELL before tr can swallow it, so a missing baseline
+  # printed a spurious "No such file or directory" on every seed run. cat-then-tr
+  # keeps the absent case silent, which is the normal first-run path.
+  baseline=$(cat "$baseline_file" 2>/dev/null | tr -dc '0-9')
+  if [ -z "$baseline" ]; then
+    # First run seeds at the current count and reports the gap WITHOUT passing it
+    # off as an achievement — seeding is not progress.
+    printf '%s\n' "$n_un" > "$baseline_file" 2>/dev/null || true
+    echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (ratchet seeded at ${n_un} unconfigured of ${present} — gap recorded, may only decrease)"
+    return 0
+  fi
+
   if [ "$n_un" -eq 0 ]; then
+    printf '0\n' > "$baseline_file" 2>/dev/null || true
     echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (all ${present} rust crates carry a coverage floor)"
+  elif [ "$n_un" -gt "$baseline" ]; then
+    echo "SUITE|coverage-denominator|platform/services|kade|fail|0 pass, 1 fail (coverage-floor RATCHET DRIFTED: ${n_un} unconfigured vs baseline ${baseline} — a crate shipped without a coverage floor:${unconfigured})"
   else
-    echo "SUITE|coverage-denominator|platform/services|kade|fail|0 pass, 1 fail (${configured} of ${present} rust crates have a coverage floor — ${n_un} unconfigured:${unconfigured})"
+    if [ "$n_un" -lt "$baseline" ]; then printf '%s\n' "$n_un" > "$baseline_file" 2>/dev/null || true; fi
+    echo "SUITE|coverage-denominator|platform/services|kade|pass|1 pass, 0 fail (${configured} of ${present} crates have a floor; ${n_un} unconfigured vs baseline ${baseline} — standing gap, not drift)"
   fi
 }
 
