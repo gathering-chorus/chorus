@@ -80,5 +80,49 @@
     return trees;
   }
 
-  return { classifyNode: classifyNode, buildPromptTrees: buildPromptTrees };
+  var AGENT_ROLES = { wren: true, silas: true, kade: true };
+
+  /**
+   * #3746 — role filter (Mark's case). Prunes tree children whose sender is an
+   * UNSELECTED agent role; empty selection = full room. Prompts, human senders
+   * and system/error lines are never pruned — the filter narrows which agents
+   * you're listening to, it can never hide what was said to you or by you.
+   * Pure: returns new trees, never mutates the input (rendering only).
+   */
+  function filterTrees(trees, selected) {
+    if (!selected || selected.size === 0) return trees;
+    return (trees || []).map(function (tree) {
+      return {
+        prompt: tree.prompt,
+        children: tree.children.filter(function (child) {
+          var from = child.msg.from || '';
+          if (!AGENT_ROLES[from]) return true; // humans, system, guests — never pruned
+          if (child.cls === 'error') return true;
+          return selected.has(from);
+        }),
+      };
+    });
+  }
+
+  /**
+   * #3746 — chrome compaction. Jeff: "the werk-demo styling and length of
+   * messages is a lot." Werk/system traffic renders as ONE line: first
+   * sentence-ish fragment, hard-capped — the full text lives behind the
+   * tree's expander, never in the collapsed view.
+   */
+  var CHROME_MAX = 120;
+  function chromeLabel(msg) {
+    var text = String(msg.text || '').split('\n')[0];
+    var cut = text.search(/\.\s/);
+    if (cut > 0 && cut < CHROME_MAX) text = text.slice(0, cut);
+    if (text.length > CHROME_MAX) text = text.slice(0, CHROME_MAX - 1) + '…';
+    return text;
+  }
+
+  return {
+    classifyNode: classifyNode,
+    buildPromptTrees: buildPromptTrees,
+    filterTrees: filterTrees,
+    chromeLabel: chromeLabel,
+  };
 });
