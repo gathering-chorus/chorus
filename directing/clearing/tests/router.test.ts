@@ -1,3 +1,4 @@
+// @test-type: unit — in-memory router/tailer, no live services.
 /**
  * MessageRouter — unit tests (#2167 phase 2).
  *
@@ -205,10 +206,11 @@ describe('MessageRouter — classify: jeff input and visibility', () => {
     expect(r.getRecent(10)[0].text).toBe('raw input');
   });
 
-  test('from=jeff-guest (startsWith jeff) is jeff-input', () => {
+  test('NEGATIVE (#3743): from=jeff-guest must NOT be jeff-input — jeff is an exact identity, not a prefix', () => {
     const r = new MessageRouter();
     r.ingest(mk('jeff-guest', 'hi from lan'));
-    expect(r.getRecent(10)[0].type).toBe('jeff-input');
+    const visible = r.getRecent(10);
+    expect(visible.find((m) => m.type === 'jeff-input')).toBeUndefined();
   });
 });
 

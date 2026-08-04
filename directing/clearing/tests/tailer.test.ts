@@ -1,3 +1,4 @@
+// @test-type: unit — in-memory router/tailer, no live services.
 /**
  * ChorusLogTailer — unit tests for the event-dispatch surface (#2167).
  *
@@ -93,10 +94,10 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     });
   });
 
-  test('card.accepted defaults acceptor to jeff', () => {
+  test('card.accepted with NO acceptor refuses attribution (#3743 — was: defaults to jeff)', () => {
     fire(JSON.stringify({ event: 'card.accepted', role: 'kade', card: '100' }));
     const arg = (router.ingest as jest.Mock).mock.calls[0][0];
-    expect(arg.from).toBe('jeff');
+    expect(arg.from).toBe('unattributed'); // #3743: absent acceptor must never resolve to the top of the authority ladder
   });
 
   test('card.pulled emits board-event, no surface', () => {
