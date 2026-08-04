@@ -40,8 +40,32 @@ pub const VOICE_INBOX_DIR: &str = "/tmp/voice-inbox";
 /// Was platform/logs/chorus.log (in working tree, set by #2505); moved
 /// 2026-05-04 after branch checkouts clobbered the unstaged file mid-write.
 pub fn chorus_log_file() -> String {
+    // #3615 — honor the CHORUS_LOG_FILE world-seam for READS too, so a test
+    // context reads the same world it writes. (#2475 put the override only in
+    // the shim's log subcommand; internal resolvers bypassed it.)
+    if let Ok(p) = std::env::var("CHORUS_LOG_FILE") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
+    chorus_log_file_prod()
+}
+
+fn chorus_log_file_prod() -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     format!("{}/.chorus/chorus.log", home)
+}
+
+/// #3615 — WRITE resolution for the spine, membrane-guarded. Every spine
+/// writer in this crate resolves through here: override honored (the test's
+/// own world), prod context gets the live path, a test/build context with no
+/// override is REFUSED with a typed error. Reads use chorus_log_file() —
+/// the membrane blocks writes, not reads.
+pub fn chorus_log_file_for_write() -> String {
+    crate::shared::membrane::resolve(
+        crate::shared::membrane::Surface::Spine,
+        &chorus_log_file_prod(),
+    )
 }
 
 /// Chorus log script — emits spine events (the CLI tool)
@@ -54,6 +78,14 @@ pub fn chorus_log_script() -> String {
 /// chorus-messaging owns writes. NEVER reach it via the :3475 API per tool call
 /// (it wedges under load) — local rusqlite only.
 pub fn messages_db() -> String {
+    // #3615 — CHORUS_MESSAGES_DB world-seam. This crate only READS messages.db
+    // (nudge drain); the write-side membrane lives with the writer,
+    // platform/pulse/src/store.ts.
+    if let Ok(p) = std::env::var("CHORUS_MESSAGES_DB") {
+        if !p.is_empty() {
+            return p;
+        }
+    }
     format!("{}/platform/pulse/messages.db", chorus_root())
 }
 

@@ -1,3 +1,4 @@
+// @test-type: unit — real sqlite against per-test tempfiles; no live services. #3615 membrane suite included; signal words are fixture-data (the refusal message is the subject under test).
 /* eslint-disable @typescript-eslint/no-explicit-any -- test reads dynamic sqlite row shapes; `any[]` casts keep the assertions terse (#3429) */
 /**
  * Messaging Store Tests (#1755, migrated to jest in #2154)
@@ -268,5 +269,35 @@ describe('#3343 CHECK-constraint rebuild migration', () => {
     const reopened = new MessageStore(OLD_DB);
     expect(reopened.getPendingDeliveries().find(r => r.id === id)!.content).toBe('post-migration jeff words');
     reopened.close();
+  });
+});
+
+describe('#3615 test/prod membrane — messages-db write surface', () => {
+  // NEGATIVE PROOF (#3734): the violated state — a test context opening the
+  // production messages.db by default path — must REFUSE, typed. Jest sets
+  // NODE_ENV=test, so this test process IS the offending context.
+  it('refuses the default production path from a test context', () => {
+    expect(() => new MessageStore()).toThrow(/MEMBRANE REFUSED/);
+    expect(() => new MessageStore()).toThrow(/messages-db/);
+    expect(() => new MessageStore()).toThrow(/CHORUS_MESSAGES_DB/);
+  });
+
+  it('an explicit dbPath is the test bringing its own world — allowed', () => {
+    const s = new MessageStore(TEST_DB + '.membrane');
+    s.close();
+    fs.unlinkSync(TEST_DB + '.membrane');
+  });
+
+  it('CHORUS_MESSAGES_DB seam is honored', () => {
+    const seam = TEST_DB + '.seam';
+    process.env.CHORUS_MESSAGES_DB = seam;
+    try {
+      const s = new MessageStore();
+      s.close();
+      expect(fs.existsSync(seam)).toBe(true);
+    } finally {
+      delete process.env.CHORUS_MESSAGES_DB;
+      if (fs.existsSync(seam)) fs.unlinkSync(seam);
+    }
   });
 });

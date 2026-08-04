@@ -8,12 +8,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn log_file() -> String {
-    // #2475 — CHORUS_LOG_FILE override for hermetic tests. Production never
-    // sets it; tests point at a tempdir to isolate spine writes.
-    if let Ok(p) = std::env::var("CHORUS_LOG_FILE") {
-        return p;
-    }
-    crate::shared::state_paths::chorus_log_file()
+    // #2475 CHORUS_LOG_FILE override, now enforced through the #3615 membrane:
+    // override honored, prod context gets the live spine, a test/build context
+    // with no override is refused (a test brings its own world, #3528).
+    crate::shared::state_paths::chorus_log_file_for_write()
 }
 fn schema_file() -> String { format!("{}/designing/schemas/spine-events.json", crate::shared::state_paths::chorus_root()) }
 

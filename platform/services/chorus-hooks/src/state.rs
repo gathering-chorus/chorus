@@ -370,7 +370,7 @@ pub async fn append_log(path: &std::path::Path, line: &str) {
 
 /// Emit a chorus-log event (replaces bash chorus-log.sh)
 pub async fn chorus_log(event: &str, role: &str, kvs: &[(&str, &str)]) {
-    let log_path = PathBuf::from(crate::shared::state_paths::chorus_log_file());
+    let log_path = PathBuf::from(crate::shared::state_paths::chorus_log_file_for_write());
     let ts = Utc::now().with_timezone(&crate::hooks::clock_sync::boston_offset_pub()).format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
 
     let mut obj = serde_json::json!({

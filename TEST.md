@@ -97,6 +97,32 @@ This document does not change when:
 - A project adopts the pattern — the mode contract already applies by default.
 - Someone wants to "quarantine" something temporarily. That path is not available; fix or delete.
 
+## The Membrane (#3615)
+
+"A test brings its own world" (#3528) is now enforced, not just expected. The
+production-state surface list lives in `designing/schemas/membrane-surfaces.json`
+— one committed place. A test/build context (ambient markers: `BATS_TEST_TMPDIR`,
+`NODE_ENV=test`, `CARGO`, `CI`; explicit: `CHORUS_CONTEXT`) that resolves a
+listed surface for writing WITHOUT that surface's world-seam env var is refused
+with a typed `MEMBRANE REFUSED` error, and the refusal emits a
+`membrane.violation` spine event.
+
+What this means when your test dies with `MEMBRANE REFUSED`:
+- **Do not** unset the ambient marker or export `CHORUS_CONTEXT=prod` in a test.
+  That is defeating the guard, not fixing the test.
+- **Do** set the named seam (`CHORUS_LOG_FILE`, `CHORUS_SESSIONS_DIR`,
+  `CHORUS_MESSAGES_DB`, …) to a path inside your test's tempdir.
+- `CHORUS_CONTEXT=prod` exists for prod-adjacent *runners* (nightly-suites,
+  werk verbs) that inherit CI-ish env but legitimately write the live spine.
+
+Enforcement choke points: `chorus-hooks src/shared/membrane.rs` (spine,
+sessions registry — all Rust writers resolve through `state_paths`) and
+`platform/pulse/src/store.ts` (messages.db). Surfaces marked `documented` in
+the schema (index.db, lance, fuseki, role-state) have seams but no enforcing
+resolver yet — the gap is listed, not hidden. Negative proofs:
+`platform/tests/membrane-guard.bats` (the #3608 and #2491 incident repros,
+shown to REFUSE) and the drift-guard test `enum_matches_schema` in membrane.rs.
+
 ## Drift Prevention
 
 **When the binary rule or quality-gate rules in this document change, the corresponding hook (`test_quality_gate.rs`, `tdd_gate.rs`) and its unit tests must change in the same PR.** The human contract and the machine enforcement are two surfaces of the same rule; they stay in sync by landing together at merge time, not by the gate reading the doc at runtime (which would make prose executable and brittle).

@@ -2295,7 +2295,7 @@
     "card.branch.closed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk teardown (#3431, registered by #3638's emit-sweep): the card's branch lifecycle closed \u2014 worktree pruned, local + remote branch deleted after the two-tier merge proof (or via orphan-propagate #3498). Emitted by werk-accept/werk-unpull through the shared werk-teardown lib.",
+      "description": "Werk teardown (#3431, registered by #3638's emit-sweep): the card's branch lifecycle closed — worktree pruned, local + remote branch deleted after the two-tier merge proof (or via orphan-propagate #3498). Emitted by werk-accept/werk-unpull through the shared werk-teardown lib.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -2306,7 +2306,7 @@
     "teardown.generated.discarded": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk teardown (#3638): the werk's only dirt at accept/unpull was pipeline-regenerated files (knowledge/doc-coherence.md class \u2014 the run's own gate steps rewrite them after werk-commit); the churn was discarded (checkout --) and teardown proceeded. Witnessed, never silent; any REAL dirt still refuses.",
+      "description": "Werk teardown (#3638): the werk's only dirt at accept/unpull was pipeline-regenerated files (knowledge/doc-coherence.md class — the run's own gate steps rewrite them after werk-commit); the churn was discarded (checkout --) and teardown proceeded. Witnessed, never silent; any REAL dirt still refuses.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -2316,7 +2316,7 @@
     "testsuiterun.posted": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 TestSuiteRun write-back succeeded (#3634): the run's suite-level result was POSTed to owl-api /testsuiteruns (declare\u2192consume\u2192record\u2192reflect loop closed). Verb-phase event (#3513 naming law).",
+      "description": "Werk `test` verb — TestSuiteRun write-back succeeded (#3634): the run's suite-level result was POSTed to owl-api /testsuiteruns (declare→consume→record→reflect loop closed). Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role"
@@ -2325,7 +2325,7 @@
     "testsuiterun.post.skipped": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 TestSuiteRun write-back skipped, witnessed fail-open (#3634): no write token (until #3619 provisioning) or POST failed; the test verdict still stands, the reflection leg is what was skipped \u2014 loud, never silent. Verb-phase event (#3513 naming law).",
+      "description": "Werk `test` verb — TestSuiteRun write-back skipped, witnessed fail-open (#3634): no write token (until #3619 provisioning) or POST failed; the test verdict still stands, the reflection leg is what was skipped — loud, never silent. Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -2335,7 +2335,7 @@
     "test.plan.degraded": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 `plan.degraded` phase (#3634): the tests-domain fetch (owl-api /tests) failed or returned zero rows, so the run plan fell back to the legacy hardcoded unit list \u2014 loud, never silent. Verb-phase event (#3513 naming law).",
+      "description": "Werk `test` verb — `plan.degraded` phase (#3634): the tests-domain fetch (owl-api /tests) failed or returned zero rows, so the run plan fell back to the legacy hardcoded unit list — loud, never silent. Verb-phase event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -3369,6 +3369,17 @@
         "card": "Card id",
         "round": "Demo round key",
         "waited_s": "Seconds waited before timeout"
+      }
+    },
+    "membrane.violation": {
+      "vertebra": "proving",
+      "source": "chorus-hooks",
+      "description": "The test/prod membrane (#3615) refused a write: a test/build context resolved a production surface without its world-seam override. Emitted by shared/membrane.rs as its one sanctioned crossing before the typed MEMBRANE REFUSED panic, so drift is visible on the spine, never silent. Surface list: designing/schemas/membrane-surfaces.json.",
+      "fields": {
+        "surface": "Surface key from membrane-surfaces.json (spine | sessions-registry | messages-db | ...)",
+        "context": "Classified context — test | build",
+        "marker": "The env marker that classified the context (e.g. BATS_TEST_TMPDIR set, NODE_ENV=test)",
+        "override_var": "The env var the offending context should have set to bring its own world"
       }
     }
   }
