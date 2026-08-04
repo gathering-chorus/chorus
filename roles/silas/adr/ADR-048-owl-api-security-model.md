@@ -1,6 +1,6 @@
 # ADR-048: owl-api Security Model — authz-as-data, generator-enforced
 
-**Status:** Proposed
+**Status:** Accepted — 2026-08-04 (#3730). Shipped by #3506 (Wren), conformance-tested by #3507 (Kade); requiresAuth projection live on the generated surfaces, envelope door migrated onto it (#3618 family), two-verifier debt collapsed by #3728.
 **Date:** 2026-06-19
 **Author:** Silas
 **Card:** #3505 (spec) · implemented by #3506 (Wren) · conformance-tested by #3507 (Kade)

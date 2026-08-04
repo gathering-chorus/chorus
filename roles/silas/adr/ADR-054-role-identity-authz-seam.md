@@ -1,6 +1,6 @@
 # ADR-054: The authN / authZ seam — role *identity* (Silas) vs role *authorization* (Wren), and giving the roles domain its own home
 
-**Status:** Proposed — 2026-07-24
+**Status:** Accepted — 2026-08-04 (#3730; first stated 2026-07-24). Shipped incrementally: identity substrate reproducible (#3726, landed 2026-08-02), DAL identity flip refusing env-trust (#3687 path, exercised live 2026-08-04), seam honored in practice on the 08-04 CLI-identity thread (Kade trace → Silas authN read → Wren authz half).
 **Author:** Silas (SA / OWL-DBA), with Wren (roles/authz domain) input
 **Card:** #3356 (identity + holdsRole-extraction, Silas) — pairs with a **fresh** roles-domain consolidation card (Wren, to be filed when Jeff points; **not** a reanimation of #1904, which is closed — see "Why this is the fourth attempt").
 **Extends:** ADR-052 (Identity via Solid-OIDC / CSS). The prior roles-domain cards — #1904 (Done), #921 (Done), #2320 (Won't Do) — are all **closed**; the domain was validly scoped then and has since **drifted** past the model's current standards (see "Why the roles domain is thin today"). This ADR states the decision fresh against current standards rather than reanimating them.
