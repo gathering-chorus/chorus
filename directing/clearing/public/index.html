@@ -321,6 +321,25 @@
     display: none;
   }
   .msg-guest .msg-bubble { background: rgba(210,168,255,0.12); border-left: 2px solid #d2a8ff; }
+  /* #3747 — prompt trees: fold toggle, compact werk/system chrome, dimmed
+     thoughts, one visual system driven by the shared classifier. */
+  .msg-tree { margin-bottom: 0.4rem; }
+  .tree-toggle {
+    display: block; background: none; border: none; cursor: pointer;
+    font-size: 0.7rem; color: #86868b; padding: 0.15rem 0.4rem; margin: 0.1rem 0;
+    text-align: left; font-family: inherit;
+  }
+  .tree-toggle:hover { color: #c9d1d9; }
+  .msg-chrome {
+    font-size: 0.72rem; color: #86868b; padding: 0.1rem 0.5rem; margin: 0.1rem 0;
+    border-left: 2px solid #30363d; line-height: 1.5;
+  }
+  .msg-chrome .chrome-who { font-weight: 600; color: #a8b0bb; }
+  .msg-chrome.msg-chrome-demo-ready { border-left-color: var(--orange, #d29922); }
+  .msg-chrome.msg-chrome-accept-request { border-left-color: var(--green, #3fb950); }
+  .msg-chrome.msg-chrome-blocked { border-left-color: var(--red, #f85149); }
+  .node-thought { opacity: 0.75; }
+  .node-thought .msg-bubble { font-size: 0.78rem; }
   .msg-muted { opacity: 0.4; }
   .msg-muted .msg-bubble { font-size: 0.8rem; padding: 0.35rem 0.7rem; }
   .msg-hidden-count {
@@ -538,6 +557,7 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/clearing-tree.js"></script>
 <script>
 // Pass auth token to Socket.IO for remote connections (#1719)
 const bridgeCookie = document.cookie.match(/bridge_token=([^;]+)/);
@@ -602,16 +622,22 @@ socket.io.on('reconnect', () => {
 // Tiles
 socket.on('tiles', (tiles) => renderTiles(tiles));
 
+// #3747 — the transcript renders as PROMPT TREES (view-model in
+// clearing-tree.js; rendering only — capture, routing and persistence are
+// untouched). The client keeps the full visible stream and re-derives trees.
+let allMessages = [];
+
 // Initial messages
 socket.on('messages', (msgs) => {
-  msgContainer.innerHTML = '';
-  msgs.forEach(msg => appendMessage(msg));
+  allMessages = (msgs || []).slice();
+  renderTranscript();
   scrollToBottom();
 });
 
 // New message
 socket.on('message', (msg) => {
-  appendMessage(msg);
+  allMessages.push(msg);
+  renderTranscript();
   scrollToBottom();
 });
 
@@ -620,12 +646,14 @@ socket.on('message', (msg) => {
 // a failed delivery is information, never a silent drop.
 socket.on('delivery-status', (status) => {
   if (status && status.ok === false) {
-    appendMessage({
+    allMessages.push({
       from: 'system',
       text: 'delivery to ' + status.target + ' failed: ' + (status.error || 'unknown') + ' — the message is saved; the room has it, ' + status.target + "'s terminal didn't get the nudge",
       ts: new Date().toISOString(),
       type: 'system',
+      visible: true,
     });
+    renderTranscript();
     scrollToBottom();
   }
 });
@@ -933,36 +961,81 @@ async function loadFold(role) {
   } catch {}
 }
 
-let lastMsgTime = '';
-let lastMsgFrom = '';
+// #3747 — timestamp runs replaced by per-tree prompt timestamps.
 
-function appendMessage(msg) {
-  if (!msg.visible) return;
+// #3747 — expanded/collapsed state per tree, keyed by the prompt's ts so a
+// re-render (every new message) preserves what the human opened.
+const expandedTrees = new Set();
 
+/** #3747 — full transcript re-render as prompt trees. Rendering only. */
+function renderTranscript() {
+  const trees = ClearingTree.buildPromptTrees(allMessages);
+  msgContainer.innerHTML = '';
+  trees.forEach((tree) => {
+    const key = tree.prompt ? String(tree.prompt.ts) : 'root';
+    const treeDiv = document.createElement('div');
+    treeDiv.className = 'msg-tree';
+
+    if (tree.prompt) {
+      const time = new Date(tree.prompt.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      const tsDiv = document.createElement('div');
+      tsDiv.className = 'msg-timestamp';
+      tsDiv.textContent = time;
+      treeDiv.appendChild(tsDiv);
+      treeDiv.appendChild(buildMessageEl(tree.prompt));
+    }
+
+    const folded = tree.children.filter((c) => !c.closing);
+    const closing = tree.children.filter((c) => c.closing);
+    const isOpen = expandedTrees.has(key);
+
+    if (folded.length > 0) {
+      const toggle = document.createElement('button');
+      toggle.className = 'tree-toggle';
+      toggle.textContent = isOpen
+        ? '▾ hide ' + folded.length + ' step' + (folded.length === 1 ? '' : 's')
+        : '▸ +' + folded.length + ' step' + (folded.length === 1 ? '' : 's');
+      toggle.onclick = () => {
+        if (expandedTrees.has(key)) expandedTrees.delete(key); else expandedTrees.add(key);
+        renderTranscript();
+      };
+      treeDiv.appendChild(toggle);
+    }
+
+    // Expanded: everything in captured order. Collapsed: closing announces only.
+    (isOpen ? tree.children : closing).forEach((child) => {
+      treeDiv.appendChild(buildMessageEl(child.msg, child.cls, child.closing));
+    });
+    msgContainer.appendChild(treeDiv);
+  });
+}
+
+function buildMessageEl(msg, cls, isClosing) {
   const roles = ['wren', 'silas', 'kade'];
   const isJeff = msg.from === 'jeff';
   const isRole = roles.includes(msg.from);
   const isGuest = !isJeff && !isRole;
-  const time = new Date(msg.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const nodeClass = cls || ClearingTree.classifyNode(msg);
 
-  // Show timestamp if time changed or sender switched
-  if (time !== lastMsgTime || (isJeff !== (lastMsgFrom === 'jeff'))) {
-    const tsDiv = document.createElement('div');
-    tsDiv.className = 'msg-timestamp';
-    tsDiv.textContent = time;
-    msgContainer.appendChild(tsDiv);
-    lastMsgTime = time;
+  // #3747 — werk/system traffic renders as compact chrome, one consistent
+  // treatment, visually distinct from conversation.
+  if (nodeClass === 'chrome') {
+    const line = document.createElement('div');
+    line.className = 'msg-chrome' + (msg.type ? ' msg-chrome-' + msg.type : '');
+    const who = msg.from ? msg.from.charAt(0).toUpperCase() + msg.from.slice(1) : 'system';
+    line.innerHTML = '<span class="chrome-who">' + escapeHtml(who) + '</span> ' + linkify(escapeHtml(msg.text || ''));
+    return line;
   }
-  lastMsgFrom = msg.from;
 
   const div = document.createElement('div');
   div.className = `msg ${(isJeff || isGuest) ? 'msg-jeff' : 'msg-role'}`;
   if (isGuest) div.className += ' msg-guest';
   if (!isJeff && !isGuest && msg.from) div.className += ` msg-from-${msg.from}`;
-  if (msg.type === 'demo-ready') div.className += ' msg-demo';
-  if (msg.type === 'accept-request') div.className += ' msg-accept';
-  if (msg.type === 'blocked') div.className += ' msg-blocked';
-  if (msg.type === 'pm-thinking') div.className += ' msg-thinking';
+  // #3747 — class comes from the shared classifier (one treatment per class),
+  // not per-emitter markup. Thoughts dim; the closing announce stands.
+  if (nodeClass === 'thought') div.className += ' msg-thinking node-thought';
+  if (nodeClass === 'error') div.className += ' msg-blocked';
+  if (isClosing) div.className += ' node-closing';
 
   // Pulse level highlighting (#1897) — detect level from content or type
   const msgText = (msg.text || '').toLowerCase();
@@ -1021,7 +1094,7 @@ function appendMessage(msg) {
     }
     div.innerHTML = `<div class="msg-bubble">${sender}${rendered}</div>`;
   }
-  msgContainer.appendChild(div);
+  return div;
 }
 
 function scrollToBottom() {
