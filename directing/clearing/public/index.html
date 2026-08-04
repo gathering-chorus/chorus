@@ -620,7 +620,14 @@ socket.io.on('reconnect', () => {
 });
 
 // Tiles
-socket.on('tiles', (tiles) => renderTiles(tiles));
+socket.on('tiles', (tiles) => {
+  renderTiles(tiles);
+  // #3746 — reflect the restored filter on the tiles after each render
+  document.querySelectorAll('.tile').forEach(el => {
+    const tileRole = (el.className.match(/tile-(wren|silas|kade)/) || [])[1];
+    if (tileRole && selectedRoles.has(tileRole)) el.classList.add('tile-locked');
+  });
+});
 
 // #3747 — the transcript renders as PROMPT TREES (view-model in
 // clearing-tree.js; rendering only — capture, routing and persistence are
@@ -670,6 +677,11 @@ document.addEventListener('visibilitychange', () => {
 // Tile lock — click to target role(s)
 let lockedRole = null; // kept for backward compat
 const selectedRoles = new Set();
+// #3746 — restore the persisted filter; tiles re-lock on first render below.
+try {
+  (JSON.parse(localStorage.getItem('clearing_role_filter') || '[]') || [])
+    .forEach((r) => { if (['wren', 'silas', 'kade'].includes(r)) selectedRoles.add(r); });
+} catch { /* corrupt state = full room */ }
 
 function updateInputHint() {
   const hint = document.querySelector('.input-hint');
@@ -889,6 +901,10 @@ function toggleLock(role) {
   } else {
     selectedRoles.add(role);
   }
+  // #3746 — the selection IS the room filter now: prune trees, persist across
+  // reload. Empty selection = full room.
+  try { localStorage.setItem('clearing_role_filter', JSON.stringify([...selectedRoles])); } catch { /* private mode */ }
+  renderTranscript();
   updateInputHint();
   document.querySelectorAll('.tile').forEach(el => {
     const tileRole = el.className.match(/tile-(wren|silas|kade)/)?.[1];
@@ -969,7 +985,8 @@ const expandedTrees = new Set();
 
 /** #3747 — full transcript re-render as prompt trees. Rendering only. */
 function renderTranscript() {
-  const trees = ClearingTree.buildPromptTrees(allMessages);
+  // #3746 — the role filter prunes trees; threading (#3747) is untouched.
+  const trees = ClearingTree.filterTrees(ClearingTree.buildPromptTrees(allMessages), selectedRoles);
   msgContainer.innerHTML = '';
   trees.forEach((tree) => {
     const key = tree.prompt ? String(tree.prompt.ts) : 'root';
@@ -1023,7 +1040,8 @@ function buildMessageEl(msg, cls, isClosing) {
     const line = document.createElement('div');
     line.className = 'msg-chrome' + (msg.type ? ' msg-chrome-' + msg.type : '');
     const who = msg.from ? msg.from.charAt(0).toUpperCase() + msg.from.slice(1) : 'system';
-    line.innerHTML = '<span class="chrome-who">' + escapeHtml(who) + '</span> ' + linkify(escapeHtml(msg.text || ''));
+    // #3746 — one line, hard-capped; the full text is behind the expander.
+    line.innerHTML = '<span class="chrome-who">' + escapeHtml(who) + '</span> ' + linkify(escapeHtml(ClearingTree.chromeLabel(msg)));
     return line;
   }
 
@@ -1059,9 +1077,7 @@ function buildMessageEl(msg, cls, isClosing) {
     : isGuest ? `<strong style="color:#d2a8ff">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`
     : `<strong style="color:var(--${msg.from})">${msg.from.charAt(0).toUpperCase() + msg.from.slice(1)}</strong><br>`;
 
-  // Mute messages from unselected roles when tiles are selected
-  const isMuted = selectedRoles.size > 0 && !isJeff && !selectedRoles.has(msg.from);
-  if (isMuted) div.classList.add('msg-muted');
+  // #3746 — muting retired: the role filter PRUNES unselected roles' messages at the tree level.
 
   // Render images — check raw text BEFORE escaping
   const rawText = msg.text || '';

@@ -901,12 +901,12 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// message + Bridge post. The announce CONTENT is Jeff's to shape — this is the slot.
 fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round: &str) {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
-    let msg = format!(
-        "Demo ready for your GO — #{} (round {}). Peers reviewed; variant: {}. Look at it, then run \
-         `werk-demo go {}` to land it, or no/more to hold. Take however long you need — the demo \
-         presented and exited; nothing is spinning, your go lands it whenever.",
-        card, round, url, card
-    );
+    // #3746 — Jeff, reviewing the tree-rendered room: "the werk-demo styling and
+    // length of messages is a lot." One line: card, round (the stale-present
+    // discipline), where to look, the three answers. The reassurance prose said
+    // the same thing on every demo and taught nothing; `werk-demo go` stays
+    // discoverable in docs, not in every announce.
+    let msg = format!("Demo ready — #{} · round {} · {} · go / no / more", card, round, url);
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
     // #3544 — the announce must DELIVER (osascript-inject) into the demoer's session,
