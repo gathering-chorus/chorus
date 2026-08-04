@@ -53,7 +53,24 @@ _clear_all() {
   while IFS= read -r g; do _drop_graph "$g"; done <<< "$(_all_test_graphs)"
 }
 
+# #3606 — SEAM THE SPINE. Two tests here drive chorus-model-deploy.sh into its
+# refusal paths on purpose ("invalid TTL is refused fail-loud", "empty-staging
+# guard REFUSES"). Passing correctly, they each emit a real
+# `model.deploy.failed` to the LIVE spine, where the health surface reads it back
+# as a production incident.
+#
+# Measured, not assumed: every model.deploy.failed in Loki over the last 7 days —
+# 16 of 16 — came from these two test graphs (-3509-bad / riot-invalid and
+# -3509-empty / retire-guard-empty-staging). There were no real deploy failures at
+# all. The recurring "nightly model-deploy failing" alarm has been this suite
+# reporting its own successful refusals.
+#
+# CHORUS_LOG_FILE is the #3615 membrane seam; chorus-log routes through
+# chorus-hook-shim, which honors it (verified live: emission landed in the tmp
+# seam, zero occurrences in the live spine). Seam in the suite — never
+# CHORUS_CONTEXT=prod, which would only re-point the same writes at production.
 setup_file() {
+  export CHORUS_LOG_FILE="${CHORUS_LOG_FILE:-$BATS_RUN_TMPDIR/membrane-spine.log}"
   _clear_all
   local left
   left="$(_residue_triples)"
