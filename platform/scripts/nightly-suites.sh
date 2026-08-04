@@ -546,7 +546,37 @@ run_coverage() {
           _cov_prev="$dir/coverage/.coverage-summary.prev.$$"
           cp -p "$dir/coverage/coverage-summary.json" "$_cov_prev" 2>/dev/null || _cov_prev=""
         fi
-        (cd "$dir" && npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent >/dev/null 2>&1); rc=$?  # #3606 --no-install: fail loud, never download
+        # #3606 — --forceExit + a hard per-package timeout. WITHOUT THESE A SINGLE
+        # LEAKY SUITE STALLS THE WHOLE NIGHTLY, and a stalled nightly yields NO data
+        # at all — strictly worse than red data.
+        #
+        # Observed 2026-08-04: clearing's coverage step hung 97+ MINUTES; the run
+        # never advanced past suite 1 of ~232. Cause: clearing's tests import
+        # src/server.ts, which really starts the server (LAN listener, message
+        # restore, buzz bridge), leaving open handles. jest waits on them forever
+        # unless told otherwise — the same file run by hand with --forceExit
+        # finishes in 2.6s, 16/16, printing "Force exiting Jest".
+        #
+        # Previously MASKED: clearing coverage used to fail fast on the `const m`
+        # compile collision, so the hang was unreachable. Fixing that collision
+        # correctly exposed the defect underneath.
+        #
+        # --forceExit unblocks THIS leak; the timeout bounds EVERY future one, so a
+        # leaky suite costs its own slot and never the night. Neither fixes the
+        # leaked handles in clearing — that is a separate teardown fix, and this
+        # comment exists so "unblocked" is never misread as "resolved".
+        _cov_timeout="${NIGHTLY_COVERAGE_TIMEOUT_S:-600}"
+        (cd "$dir" && _t0=$(date +%s)
+         npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent --forceExit >/dev/null 2>&1 &
+         _jp=$!
+         while kill -0 "$_jp" 2>/dev/null; do
+           if [ $(( $(date +%s) - _t0 )) -ge "$_cov_timeout" ]; then
+             kill -TERM "$_jp" 2>/dev/null; sleep 2; kill -KILL "$_jp" 2>/dev/null
+             exit 124   # conventional timeout code; surfaces as a coverage failure, never a hang
+           fi
+           sleep 2
+         done
+         wait "$_jp"); rc=$?  # #3606 --no-install: fail loud, never download
         if [ "$rc" -ne 0 ] && [ -n "$_cov_prev" ] && [ -s "$_cov_prev" ]; then
           mv -f "$_cov_prev" "$dir/coverage/coverage-summary.json"
         fi

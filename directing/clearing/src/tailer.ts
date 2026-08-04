@@ -47,7 +47,20 @@ export class ChorusLogTailer extends EventEmitter {
       this.lastSize = 0;
     }
 
+    // #3606 — unref. This poll timer is the handle that hung the nightly: with it
+    // holding Node's loop open, `jest --coverage` (which the nightly runs WITHOUT
+    // --forceExit) waited forever, and clearing's coverage step stalled 97+ minutes
+    // at suite 1 of ~232 — the whole run produced no data.
+    //
+    // The timer is background log-tailing: it should never be the reason a process
+    // stays alive. `unref()` says exactly that — keep polling while something else
+    // holds the loop, never hold it open alone. stop() below remains the explicit
+    // teardown for callers that own the lifecycle.
+    //
+    // Sibling unrefs landed in #3604 for the save/broadcast intervals in server.ts;
+    // this one was missed because tailer.ts is started indirectly.
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL);
+    this.timer.unref();
   }
 
   stop(): void {

@@ -63,7 +63,12 @@ export class SessionTailer {
       }
     }
     // Fallback poll for missed events and new session detection
+    // #3606 — unref, same as ChorusLogTailer. These two tailers are the pair of
+    // open handles that hung the nightly's clearing coverage step for 97+ minutes
+    // (jest --coverage runs without --forceExit, so it waited on them forever).
+    // A background fallback poll must never be the reason a process stays alive.
     this.timer = setInterval(() => this.poll(), POLL_INTERVAL);
+    this.timer.unref();
   }
 
   getSessionCount(): number {
