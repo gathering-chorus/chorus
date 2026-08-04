@@ -26,7 +26,7 @@ const execAsync = promisify(exec);
 // `${ROOT}/chorus/...` and `${ROOT}/shared-observability` branches are dead and
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
-import { modelRelationshipsHandler } from './handlers/athena-model-relationships';
+import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -215,9 +215,12 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
       // "this class has no properties" when the truth is "we could not ask".
       return res.status(502).json({ error: 'store-unreachable', storeReachable: false, http: r.status });
     }
-    const body: any = await r.json();
-    const local = (v: string) => String(v || '').split(/[#/]/).pop() || '';
-    const classes: Record<string, Record<string, any>> = {};
+    // #3606 — typed bindings + Map accumulators (was `any` + Record-with-
+    // dynamic-keys; same treatment as athena-model-relationships).
+    const body = (await r.json()) as SparqlSelectResponse;
+    const local = (v: string | undefined) => String(v || '').split(/[#/]/).pop() || '';
+    interface PropRow { property: string; type: string; required: boolean; source: string[] }
+    const classes = new Map<string, Map<string, PropRow>>();
     for (const row of body?.results?.bindings || []) {
       const cls = local(row.class?.value);
       // A blank-node path is an inverse-path constraint (^hasDomain). It is a
@@ -227,19 +230,21 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
       const isBlank = row.prop?.type === 'bnode';
       const prop = isBlank ? '(inverse path)' : local(row.prop?.value);
       if (!cls || !prop) continue;
-      classes[cls] ||= {};
-      const cur = classes[cls][prop] ||= { property: prop, type: '', required: false, source: [] as string[] };
+      const props = classes.get(cls) || new Map<string, PropRow>();
+      const cur = props.get(prop) || { property: prop, type: '', required: false, source: [] };
       if (row.range?.value && !cur.type) cur.type = local(row.range.value);
       if (row.req?.value && Number(row.req.value) >= 1) cur.required = true;
       const src = row.src?.value;
       if (src && !cur.source.includes(src)) cur.source.push(src);
+      props.set(prop, cur);
+      classes.set(cls, props);
     }
     res.json({
       domain: d,
       storeReachable: true,
-      classes: Object.entries(classes).map(([name, props]) => ({
+      classes: [...classes.entries()].map(([name, props]) => ({
         name,
-        properties: Object.values(props).sort((a: any, b: any) =>
+        properties: [...props.values()].sort((a, b) =>
           Number(b.required) - Number(a.required) || a.property.localeCompare(b.property)),
       })).sort((a, b) => a.name.localeCompare(b.name)),
     });
