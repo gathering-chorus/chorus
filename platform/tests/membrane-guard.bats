@@ -14,7 +14,12 @@ load test_helper
 # membrane's own violation emit (which goes to $HOME/.chorus/chorus.log by
 # design — AC5) lands in the test's world, never the live spine.
 
-SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/debug/chorus-hook-shim"
+# #3750 — resolve the DEPLOYED shim first (the binary that actually runs),
+# never a stale target/debug leftover: on 2026-08-04 this suite red-flagged
+# against a 06:04 pre-membrane debug build while the deployed binary was
+# correct. The shared resolver honors CHORUS_SHIM_BIN for special cases.
+source "$CHORUS_ROOT/platform/scripts/lib/resolve-shim.sh"
+SHIM="$(resolve_shim_path)"
 
 setup() {
   export TEST_HOME="$BATS_TEST_TMPDIR/home"
