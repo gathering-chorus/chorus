@@ -2201,6 +2201,49 @@ pub fn status_line(code: u16) -> &'static str {
     }
 }
 
+/// #3739 — the /schema projection as a PURE FUNCTION (was inline in the serve
+/// loop), extended to carry the model's LINES: every `field|edge:Target`
+/// annotation becomes a typed relationship {property, range}. A class with no
+/// edges serves an explicit empty array — "no relationships" is a served
+/// finding (an isolated class is real information), distinct from "not served".
+pub fn schema_set_json(tables: &[RouteTable]) -> String {
+    let items: Vec<String> = tables
+        .iter()
+        .map(|t| {
+            let local = t.class.rsplit('#').next().unwrap_or("");
+            let fields: Vec<String> =
+                t.fields.iter().map(|f| format!("\"{}\"", json_escape(f))).collect();
+            let mandatory: Vec<String> =
+                t.mandatory.iter().map(|m| format!("\"{}\"", json_escape(m))).collect();
+            let relationships: Vec<String> = t
+                .fields
+                .iter()
+                .filter_map(|f| {
+                    let (prop, ann) = f.split_once('|')?;
+                    let range = ann.strip_prefix("edge:")?;
+                    Some(format!(
+                        "{{ \"property\": \"{}\", \"range\": \"{}\" }}",
+                        json_escape(prop),
+                        json_escape(range)
+                    ))
+                })
+                .collect();
+            format!(
+                "{{ \"kind\": \"{}\", \"fields\": [{}], \"mandatory\": [{}], \"relationships\": [{}], \"modelVersion\": \"{}\" }}",
+                json_escape(local),
+                fields.join(", "),
+                mandatory.join(", "),
+                relationships.join(", "),
+                json_escape(&t.model_version)
+            )
+        })
+        .collect();
+    format!(
+        "{{ \"apiVersion\": \"{}\", \"service\": \"owl-api\", \"kind\": \"SchemaSet\", \"graph\": \"{}\", \"count\": {}, \"classes\": [{}] }}",
+        API_VERSION, ONTOLOGY_GRAPH, tables.len(), items.join(", ")
+    )
+}
+
 /// #3420 — GENERATE the Athena domain page as a PROJECTION on the #3415 design system,
 /// replacing the hand-built domain-detail page. page_html emits the STATIC SHELL — the
 /// real anatomy (breadcrumb → identity → stats → promise → completeness → facet sections)
@@ -3296,27 +3339,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             continue;
         }
         if path == "/schema" {
-            let items: Vec<String> = tables
-                .iter()
-                .map(|t| {
-                    let local = t.class.rsplit('#').next().unwrap_or("");
-                    let fields: Vec<String> =
-                        t.fields.iter().map(|f| format!("\"{}\"", json_escape(f))).collect();
-                    let mandatory: Vec<String> =
-                        t.mandatory.iter().map(|m| format!("\"{}\"", json_escape(m))).collect();
-                    format!(
-                        "{{ \"kind\": \"{}\", \"fields\": [{}], \"mandatory\": [{}], \"modelVersion\": \"{}\" }}",
-                        json_escape(local),
-                        fields.join(", "),
-                        mandatory.join(", "),
-                        json_escape(&t.model_version)
-                    )
-                })
-                .collect();
-            let doc = format!(
-                "{{ \"apiVersion\": \"{}\", \"service\": \"owl-api\", \"kind\": \"SchemaSet\", \"graph\": \"{}\", \"count\": {}, \"classes\": [{}] }}",
-                API_VERSION, ONTOLOGY_GRAPH, tables.len(), items.join(", ")
-            );
+            let doc = schema_set_json(tables);
             let resp = http_response_ct(status_line(200), &doc, "application/json");
             let _ = stream.write_all(resp.as_bytes());
             continue;
