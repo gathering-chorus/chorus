@@ -228,6 +228,26 @@ fi
 echo "chorus-model-deploy: deployed ${#MODEL_SET[@]} model file(s) -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
 "$CHORUS_LOG" model.deployed "$ROLE" graph="$ONTOLOGY_GRAPH" triples="$n" 2>/dev/null || true
 
+# #3736 — single-request truth: stamp WHICH commit this model deploy came from into the
+# graph itself, so "is the live model the landed model?" is one SPARQL request against the
+# STORE (the landed≠live class: #3735 merged clean + board Done, live graph unchanged).
+# werk-deploy's canonical leg verifies stamp == landedCommit after invoking this script.
+# Fail-loud: a deploy whose stamp can't be written is NOT verified (same bar as verify-empty).
+_stamp_sha="$(git -C "$CHORUS_ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+_stamp_ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+_stamp_update="DELETE WHERE { GRAPH <$ONTOLOGY_GRAPH> { <urn:chorus:model-deploy> ?p ?o } };
+INSERT DATA { GRAPH <$ONTOLOGY_GRAPH> {
+  <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> \"$_stamp_sha\" ;
+                            <urn:chorus:vocab#deployedAt> \"$_stamp_ts\" . } }"
+_scode=$(curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
+  -H 'Content-Type: application/sparql-update' --data-binary "$_stamp_update" "$FUSEKI_UPDATE" 2>/dev/null) || _scode="000"
+case "$_scode" in
+  2*) echo "chorus-model-deploy: stamped deployedFromCommit=$_stamp_sha" ;;
+  *)  echo "chorus-model-deploy: STAMP WRITE FAILED (http $_scode) — deploy applied but unverifiable by commit; failing loud (#3736)" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="stamp-write-failed" http="$_scode" 2>/dev/null || true
+      exit 1 ;;
+esac
+
 # =============================================================================
 # INSTANCE_SET (#3698, Silas-ruled) — hydrate PURE-ABox instances into
 # urn:chorus:instances. SEPARATE from and AFTER the ontology transaction above.
