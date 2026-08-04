@@ -1,6 +1,6 @@
 # ADR-051: Instance placement — per-domain named graphs, declared on the shape, no default
 
-**Status:** Draft — 2026-07-09 (Wren, at Jeff's direction; Silas review pending — coherence/OWL-DBA lane; Jeff final).
+**Status:** Accepted — 2026-08-04 (#3730; Silas OWL-DBA review complete, mechanical addendum below; Jeff's ratification at the #3730 land). Originally Draft 2026-07-09 (Wren, at Jeff's direction).
 **Card:** #3558 (recovery that exposed the gap) · #3630 (Fuseki lock, complementary) · #3583/#3593 (V1 retirement, consumers of this rule).
 **Supersedes:** ADR-025 *placement clause only* — its schema/content separation rule (ontology graph carries schema, never instances) **survives and is restated here**. ADR-025's "all content lives in `urn:chorus:instances`" is retired.
 
@@ -74,3 +74,45 @@ The #3558 pair's Q2 ruling (load where owl-api resolves today) was the correct i
 this ADR makes the declared per-domain home the rule and Q2's room a migration source. Consistent
 progression, not a reversal. Companion security work: #3630 closes the anonymous write door that let
 non-conformant data exist at all; ADR-050's DAL-only write path is assumed throughout.
+
+## Placement addendum (2026-08-04, #3730 — the mechanical forms athena-model enforces)
+
+Drafted 2026-08-02 during the DECLARED⊃CLAIMED⊃SERVED audit; these are the rules the governed
+writer (chorus-model/athena-model, #3718 family) enforces in code — recorded here so the ADR and
+the linter cannot drift. Each rule names its enforcement point.
+
+1. **definesVocabulary-derivation.** A class's instance graph = the graph of the domain whose
+   `chorus:definesVocabulary` contains it (Jeff 2026-08-02: the meta-model is self-describing, so
+   placement is DERIVED, not declared). An explicit `instancesGraph` is an OVERRIDE with a stated
+   reason, never the mechanism. *Enforced:* adr.rs `Refusal::Placement` / `Refusal::UnclaimedClass`.
+
+2. **Schema stays in the ontology graph — for now, and legitimately.** SCHEMA triples (SHACL
+   shapes, class definitions, `definesVocabulary`) live in `urn:chorus:ontology` because owl-api's
+   read path hard-requires it (~10 schema reads against `ONTOLOGY_GRAPH`, no union across domain
+   graphs). A schema write landing there is CORRECT and must never be refused. *Enforced:* the
+   writer's schema/instance split.
+
+3. **Punned individual = schema layer.** A Domain is an `owl:Class` and also an individual; its
+   punned-individual triples live in the ontology graph deliberately. The predicate is *placement
+   consistent with kind*, not "no individuals in ontology."
+
+4. **One class, one graph — and one claiming domain.** The derivation in (1) is only a function if
+   `definesVocabulary` is: a served class claimed by two domains has no derivable home. Proven live
+   2026-08-04 — the chorus:events live-only relic double-claimed EmitContract (a #3587-class
+   landmine, no source file); retired by bounded admin-delete (spine-recorded exception, Wren
+   concurrence + Jeff's hands). *Enforced:* `vocab-claim-authority.bats` (integration regression
+   lock: no served class >1 claiming domain; served ⊆ claimed verified against the store).
+
+5. **The fifth source — intent — is the named gap.** Placement derives from four mechanical
+   sources (claim, shape, kind, override). A class with no claim and no shape has no derivable
+   home; the writer REFUSES rather than defaults (legibility ruling: a missing judgment is
+   surfaced to the owner, never invented). The 2026-08-04 disposition ledger on #3727 (21 classes,
+   serve/retire/defer, each decided by its owning role) is what supplying intent looks like.
+
+**Prerequisite migration (read-path drain).** The everything-in-one-domain-graph end-state requires
+owl-api to union shapes across domain graphs; until that drain lands, rule (2) stands and any
+"move schema out of ontology" proposal is premature. Silas owns the drain as a named migration.
+
+**TBox retirement gap (named 2026-08-04).** The governed writer's schema verbs are append-only;
+retirement of schema triples currently requires the bounded-exception path. Wren's TBox-retire-verb
+card (proposed) closes it — the next relic retirement must be writer-first.

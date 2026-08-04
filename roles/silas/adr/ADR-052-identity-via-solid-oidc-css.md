@@ -1,6 +1,6 @@
 # ADR-052: Identity via Solid-OIDC (CSS) — asymmetric service + human auth verified at the owl-api door, retiring HS256 + self-declared DEPLOY_ROLE
 
-**Status:** Proposed
+**Status:** Accepted — 2026-08-04 (#3730). Shipped by #3613 (seam live 2026-07-15) and hardened through #3719/#3720/#3722/#3726/#3728; the door verified live 2026-08-03 (#3728 post-land: bare POST → 401 authn-missing) and the DAL's fail-closed refusal exercised live 2026-08-04 (tokenless governed write → identity-token-required).
 **Date:** 2026-07-14
 **Author:** Silas
 **Card:** #3613 (implements) · grounded by spike #3643 (landed 2026-07-14, proven live)
