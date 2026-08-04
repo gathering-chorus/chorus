@@ -86,5 +86,26 @@ output=$("$AGENT_STATE" health 2>&1 || true)
 assert_contains "duplicate section" "Duplicates" "$output"
 
 echo ""
+
+# --- Test 15 (#3750): resolve finds an UNLOADED agent via its plist ---
+echo "Test 15 (#3750): resolve falls back to plist for unloaded agents"
+FAKE_HOME=$(mktemp -d)
+mkdir -p "$FAKE_HOME/Library/LaunchAgents"
+touch "$FAKE_HOME/Library/LaunchAgents/com.chorus.test-3750-fixture.plist"
+output=$(HOME="$FAKE_HOME" "$AGENT_STATE" resolve test-3750-fixture 2>&1 || true)
+assert_contains "unloaded agent resolves via plist" "com.chorus.test-3750-fixture" "$output"
+
+# --- Test 16 (#3750 negative proof): no plist + not loaded = resolve FAILS ---
+echo "Test 16 (#3750): resolve refuses when neither loaded nor plist exists"
+if HOME="$FAKE_HOME" "$AGENT_STATE" resolve does-not-exist-anywhere >/dev/null 2>&1; then
+  echo "  FAIL: resolve should exit 1 for an unresolvable name"
+  ((FAIL++))
+else
+  echo "  PASS: unresolvable name exits non-zero"
+  ((PASS++))
+fi
+rm -rf "$FAKE_HOME"
+
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 exit $FAIL

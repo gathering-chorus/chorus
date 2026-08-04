@@ -115,6 +115,19 @@ resolve_label() {
       return
     fi
   done
+  # #3750 — an UNLOADED agent is invisible to `launchctl list`, so every check
+  # above fails right after a bootout: `restart` could stop but never start
+  # (2026-08-04 chorus-api outage — recovery needed a hand-run bootstrap).
+  # Fall back to the plist files on disk: they name every agent we own,
+  # loaded or not.
+  local plist_dir="$HOME/Library/LaunchAgents"
+  for candidate in "$name" "com.chorus.$name" "com.gathering.$name" \
+                   "com.chorus.${name#chorus-}" "com.gathering.${name#gathering-}"; do
+    if [[ -f "$plist_dir/$candidate.plist" ]]; then
+      echo "$candidate"
+      return
+    fi
+  done
   echo ""
 }
 
@@ -188,7 +201,21 @@ cmd_start() {
   echo "Starting $label..."
   # Clear suppress markers immediately — a failed start should not leave alerts dark
   rm -f "/tmp/deploy-in-progress-${label}.marker" "/tmp/chorus-alert-suppress"
-  launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1
+  # #3750 — kickstart only works on a LOADED agent. After a stop (bootout) the
+  # agent is unloaded, so start must BOOTSTRAP the plist; kickstart remains the
+  # path for a loaded-but-dead agent.
+  if launchctl list "$label" &>/dev/null; then
+    launchctl kickstart -k "gui/$UID_NUM/$label" 2>&1
+  else
+    local plist
+    plist=$(find "$HOME/Library/LaunchAgents" -name "${label}.plist" 2>/dev/null | head -1)
+    if [[ -z "$plist" ]]; then
+      echo "ERROR: $label is not loaded and no plist found — cannot start"
+      spine_emit service.start.failed "service=$label" "reason=no-plist-for-unloaded-agent"
+      return 1
+    fi
+    launchctl bootstrap "gui/$UID_NUM" "$plist" 2>&1
+  fi
   sleep 1
   local info
   info=$(launchctl list "$label" 2>/dev/null)
@@ -493,6 +520,11 @@ done
 cmd="${ARGS[0]:-}"
 
 case "$cmd" in
+  # #3750 — expose label resolution for scripts + tests (and humans checking
+  # what a short name maps to). Prints the label, or exits 1 if unresolvable.
+  resolve)  [[ -z "${ARGS[1]:-}" ]] && usage
+            _r=$(resolve_label "${ARGS[1]}")
+            [[ -n "$_r" ]] && echo "$_r" || exit 1 ;;
   status)   cmd_status "${ARGS[1]:-}" ;;
   start)    [[ -z "${ARGS[1]:-}" ]] && usage; cmd_start "${ARGS[1]}" ;;
   stop)     [[ -z "${ARGS[1]:-}" ]] && usage; cmd_stop "${ARGS[1]}" ;;

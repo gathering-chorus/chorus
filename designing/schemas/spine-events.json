@@ -3397,6 +3397,46 @@
         "red_by_owner": "Semicolon-separated owner=count of red suites, or 'none'.",
         "zero_red": "true when failed==0 — the measurement against Jeff's zero-red bar."
       }
+    },
+    "model.deployed": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "chorus-model-deploy.sh: a MODEL_SET/INSTANCE_SET/SECURITY_SET section merged and verified into its graph (#3509 family; emitting unregistered since July — registered by #3750 ride-along).",
+      "fields": {
+        "graph": "Target named graph",
+        "triples": "Post-merge triple count (ontology/instances sections)",
+        "principals": "Post-merge principal count (security section)"
+      }
+    },
+    "model.deploy.failed": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "chorus-model-deploy.sh: a deploy leg refused or failed fail-loud (riot-invalid, retire-guard-empty-staging, verify-empty, stamp-write-failed …). NOTE: passing tests drive these paths on purpose — readers MUST key on graph/context, never the name alone (the 16-of-16 phantom, 2026-08-04).",
+      "fields": {
+        "graph": "Target named graph (test graphs carry the -test- infix)",
+        "reason": "Typed refusal reason",
+        "http": "HTTP status when transport-level"
+      }
+    },
+    "model.deploy.started": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "werk-deploy canonical leg (#3736): the landed diff touched model sources; the governed model deploy is being invoked as part of the land.",
+      "fields": {
+        "target": "Always canonical",
+        "files": "Comma-joined changed model source paths"
+      }
+    },
+    "model.deploy.completed": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "werk-deploy canonical leg (#3736): model deploy finished; storeStamp is the store-attested deployedFromCommit, stampVerified gates it against landedCommit (single-request truth).",
+      "fields": {
+        "target": "Always canonical",
+        "files": "Changed model sources",
+        "storeStamp": "Store's deployedFromCommit",
+        "stampVerified": "true|false — stamp == landedCommit"
+      }
     }
   }
 }
