@@ -1564,6 +1564,37 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
     out
 }
 
+/// #3736 — model sources whose landed change requires the governed model deploy.
+/// The MODEL_SET/SECURITY_SET homes are `roles/<role>/ontology/*.ttl` (chorus.ttl,
+/// security-model-3618.ttl, domains-*.ttl, board-3654.ttl, werk-domains.ttl, …).
+/// A .ttl elsewhere (e.g. platform/api/src/sparql/shapes.ttl) is NOT a model source
+/// and must not trigger a deploy. PURE — unit-tested, negative-proven.
+pub fn changed_model_sources(diff: &str) -> Vec<String> {
+    diff.lines()
+        .map(str::trim)
+        .filter(|l| {
+            l.ends_with(".ttl")
+                && l.starts_with("roles/")
+                && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/"))
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// #3736 — read the store's model stamp (single-request truth): which commit the live
+/// ontology graph's model was deployed from. Empty string = no stamp / store unreachable
+/// (both fail the gate via landed_commit_ok's non-empty rule on pipeline lands).
+fn read_model_stamp(root: &str) -> String {
+    let query = "SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }";
+    run_env(Some(root), &[], "curl",
+        &["-s", "-m", "10", "http://localhost:3030/pods/query",
+          "--data-urlencode", &format!("query={}", query),
+          "-H", "Accept: text/csv"])
+        .ok()
+        .and_then(|csv| csv.lines().nth(1).map(|l| l.trim().trim_matches('"').to_string()))
+        .unwrap_or_default()
+}
+
 /// #3222 — target=canonical: build the card's crate(s) from CANONICAL ff-synced to
 /// origin/main (werk-build --target canonical --only), then install/verify/kickstart each
 /// via the native engine (deploy_crate_canonical, #3317). The werk is read ONLY to
@@ -1592,12 +1623,17 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // in place by the native TS-daemon path (#3317), WITHOUT a werk-build step.
     let ts = changed_ts_services(&diff);
 
-    if crates.is_empty() && ts.is_empty() {
-        // Docs/config/graph-only card — no service to build for prod. Clean no-op so
-        // the acp chain proceeds (mirrors werk-build's no-build-units case).
+    // #3736 — the land deploys the MODEL, not just code. A model-only card used to fall
+    // into the no-op branch below ("no-service-crates") and land green-but-inert: #3735
+    // merged clean, board Done, live chorus:security unchanged until a HAND-RUN deploy.
+    let model_files = changed_model_sources(&diff);
+
+    if crates.is_empty() && ts.is_empty() && model_files.is_empty() {
+        // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
+        // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
             ",\"target\":\"canonical\",\"deployed\":\"\",\"reason\":\"no-service-crates\"");
-        return Ok("nothing to deploy (no service crates changed) target=canonical".to_string());
+        return Ok("nothing to deploy (no service crates or model sources changed) target=canonical".to_string());
     }
 
     // Build the card's RUST crate(s) from canonical@origin/main — the one structural build
@@ -1669,6 +1705,40 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         // #3320 — a detached unit is in flight, not deployed; label it honestly in the
         // whole-deploy envelope (its own deploy.completed comes from the child).
         labels.push(if is_detached_ack(&out) { format!("{}(detached)", c) } else { c.clone() });
+    }
+
+    // #3736 — model leg: the landed diff touched MODEL_SET-home sources, so run the
+    // governed model deploy from synced canonical (ff-sync above / werk-build already
+    // synced), then verify the STORE's stamp — never the file (the landed≠live class).
+    if !model_files.is_empty() {
+        let root_m = canonical_root_path(home);
+        jsonl(home, role, card, trace, "model.deploy.started",
+            &format!(",\"target\":\"canonical\",\"files\":\"{}\"", model_files.join(",")));
+        run_env(
+            Some(root_m.as_str()),
+            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
+            "bash",
+            &[&format!("{}/platform/scripts/chorus-model-deploy.sh", root_m)],
+        )
+        .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
+            format!("chorus-model-deploy.sh failed — model changes are landed but NOT live: {}", e)))?;
+        // Single-request truth: the store attests which commit its model came from
+        // (#3736 stamp, written by the script). Gate stamp == landedCommit on pipeline lands.
+        let stamp = read_model_stamp(root_m.as_str());
+        let stamp_ok = match landed_commit {
+            None => true, // manual/recovery deploy — ungated, mirrors the one-sha gate
+            Some(landed) => landed_commit_ok(&stamp, landed),
+        };
+        jsonl(home, role, card, trace, "model.deploy.completed",
+            &format!(",\"target\":\"canonical\",\"files\":\"{}\",\"storeStamp\":\"{}\",\"stampVerified\":{}",
+                model_files.join(","), stamp, stamp_ok));
+        labels.push(format!("model[{}]", model_files.len()));
+        if !stamp_ok {
+            return Err(format!(
+                "model-stamp gate RED: store deployedFromCommit '{}' != landedCommit '{}' — model deploy ran but the store does not attest the landed sha",
+                stamp, landed_commit.unwrap_or("")
+            ));
+        }
     }
 
     let only = labels.join(",");
@@ -2653,6 +2723,37 @@ fn rollback(home: &Path, werk_s: &str, role: &str, card: u64, trace: &str, targe
     if target == "canonical" {
         let svc = service_for_crate(bin);
         let _ = run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)]);
+    }
+}
+
+#[cfg(test)]
+mod model_source_tests {
+    use super::changed_model_sources;
+
+    #[test]
+    fn ontology_ttls_trigger() {
+        let diff = "roles/silas/ontology/chorus.ttl\nroles/wren/ontology/board-3654.ttl\nplatform/api/src/server.ts";
+        assert_eq!(
+            changed_model_sources(diff),
+            vec!["roles/silas/ontology/chorus.ttl", "roles/wren/ontology/board-3654.ttl"]
+        );
+    }
+
+    /// NEGATIVE PROOF (#3734): the states this classifier must NOT fire on — a .ttl
+    /// outside the ontology homes, an ADR markdown, a code file. If it fired on
+    /// shapes.ttl every api card would run a pointless (and guard-risky) model deploy.
+    #[test]
+    fn non_model_ttls_and_code_do_not_trigger() {
+        let diff = "platform/api/src/sparql/shapes.ttl\nroles/silas/adr/ADR-055-harness-dependency-boundary.md\nroles/silas/next-session.md\nplatform/services/werk-deploy/src/lib.rs";
+        assert!(changed_model_sources(diff).is_empty());
+    }
+
+    #[test]
+    fn model_only_diff_is_not_a_noop() {
+        // The exact #3735 shape: a card whose ONLY change is a model TTL. Pre-#3736 this
+        // fell through deploy_canonical's no-op branch; the classifier must catch it.
+        let diff = "roles/silas/ontology/security-model-3618.ttl";
+        assert_eq!(changed_model_sources(diff).len(), 1);
     }
 }
 

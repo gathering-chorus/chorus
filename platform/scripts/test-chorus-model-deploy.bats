@@ -107,6 +107,25 @@ teardown_file() {
   [[ "${output// /}" == *'"boolean":true'* ]]
 }
 
+@test "#3736 a successful deploy stamps deployedFromCommit == repo HEAD (single-request truth)" {
+  env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" bash "$SCRIPT" >/dev/null 2>&1
+  head_sha="$(git -C "$CHORUS_ROOT" rev-parse HEAD)"
+  run curl -s "$Q" --data-urlencode "query=SELECT ?c WHERE { GRAPH <$TEST_GRAPH> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }" -H "Accept: text/csv"
+  echo "stamp query: $output"
+  [[ "$output" == *"$head_sha"* ]]
+}
+
+@test "#3736 negative proof: a graph deployed WITHOUT the stamp fails the stamp query (check can go red)" {
+  # Simulate the pre-#3736 world: load valid TTL via GSP directly (no script, no stamp).
+  # The stamp SELECT must return NO rows — proving the werk-deploy gate that reads it
+  # can distinguish stamped-by-the-deployer from merely-has-triples.
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' \
+    --data-binary @"$TTL" "$GSP?graph=${TEST_GRAPH}-proving" -o /dev/null
+  run curl -s "$Q" --data-urlencode "query=SELECT ?c WHERE { GRAPH <${TEST_GRAPH}-proving> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }" -H "Accept: text/csv"
+  # header line only, no value row
+  [ "$(echo "$output" | grep -c .)" -le 1 ]
+}
+
 @test "an invalid TTL is refused fail-loud (exit 1, no deploy)" {
   badttl="$(mktemp)"; printf 'this is not @@ valid turtle .\n' > "$badttl"
   run env ONTOLOGY_GRAPH="${TEST_GRAPH}-bad" TTL="$badttl" bash "$SCRIPT"
