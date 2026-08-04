@@ -66,15 +66,19 @@
       current.children.push({ msg: msg, cls: cls, closing: false });
     }
 
-    // Per tree, per role: the LAST announce is the closing announce; every
-    // earlier node folds. 1..n thoughts + 1 closing announce (Jeff's shape).
+    // Per tree, per role: the LAST substantive message — announce OR thought —
+    // is the closing announce; everything earlier folds. Jeff's spec verbatim
+    // was "just show the latest response/thought": when a role's final word
+    // arrives typed as thinking (wren's replies do), it is still the reply,
+    // and folding it hid the conversation from the person having it
+    // (live-demo catch, 2026-08-04).
     for (var t = 0; t < trees.length; t++) {
-      var lastAnnounceByRole = {};
+      var lastByRole = {};
       trees[t].children.forEach(function (child) {
-        if (child.cls === 'announce') lastAnnounceByRole[child.msg.from] = child;
+        if (child.cls === 'announce' || child.cls === 'thought') lastByRole[child.msg.from] = child;
       });
-      Object.keys(lastAnnounceByRole).forEach(function (role) {
-        lastAnnounceByRole[role].closing = true;
+      Object.keys(lastByRole).forEach(function (role) {
+        lastByRole[role].closing = true;
       });
     }
     return trees;
@@ -91,7 +95,18 @@
    */
   function filterTrees(trees, selected) {
     if (!selected || selected.size === 0) return trees;
-    return (trees || []).map(function (tree) {
+    return (trees || []).filter(function (tree) {
+      // Jeff's live-demo catch: a prompt @-addressed ONLY to unselected roles
+      // is pruned WHOLE — otherwise the filtered view shows orphaned questions
+      // whose answers were pruned. An @-less prompt survives any filter: its
+      // send-time target is not recorded on the message, so hiding it would be
+      // guessing, and the filter must never guess a human's words away.
+      if (!tree.prompt) return true;
+      var mentions = (String(tree.prompt.text || '').match(/@(wren|silas|kade)/gi) || [])
+        .map(function (mn) { return mn.slice(1).toLowerCase(); });
+      if (mentions.length === 0) return true;
+      return mentions.some(function (r) { return selected.has(r); });
+    }).map(function (tree) {
       return {
         prompt: tree.prompt,
         children: tree.children.filter(function (child) {

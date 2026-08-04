@@ -67,3 +67,39 @@ describe('#3746 chromeLabel — werk traffic compacts to one line', () => {
     expect(chromeLabel(m('jeff', 'accept-request', 'Accepted #3747', 't'))).toBe('Accepted #3747');
   });
 });
+
+describe('#3746 filterTrees — prompt targeting (Jeff live-demo catch)', () => {
+  const targeted = [
+    m('jeff', 'jeff-input', '@silas is 3745 done', '2026-08-04T11:00:00Z'),
+    m('silas', 'role-response', 'silas reply', '2026-08-04T11:00:10Z'),
+    m('jeff', 'jeff-input', '@wren status', '2026-08-04T11:01:00Z'),
+    m('wren', 'role-response', 'wren reply', '2026-08-04T11:01:10Z'),
+    m('jeff', 'jeff-input', 'untargeted thought', '2026-08-04T11:02:00Z'),
+  ];
+
+  test('NEGATIVE PROOF: a prompt @-addressed only to an unselected role is pruned WHOLE — no orphaned questions', () => {
+    const trees = filterTrees(buildPromptTrees(targeted), new Set(['wren']));
+    const prompts = trees.map((t: any) => t.prompt && t.prompt.text);
+    expect(prompts).not.toContain('@silas is 3745 done');
+    expect(prompts).toContain('@wren status');
+  });
+
+  test('an @-less prompt survives any filter (its target is unknowable after the fact)', () => {
+    const trees = filterTrees(buildPromptTrees(targeted), new Set(['wren']));
+    expect(trees.map((t: any) => t.prompt && t.prompt.text)).toContain('untargeted thought');
+  });
+});
+
+describe('#3746 closing = last substantive message, thought or announce (Jeff JX catch)', () => {
+  test('a role whose final word is a THOUGHT still shows it as the closing node', () => {
+    const stream2 = [
+      m('jeff', 'jeff-input', 'talk to me', '2026-08-04T12:00:00Z'),
+      m('wren', 'pm-thinking', 'working on it', '2026-08-04T12:00:10Z'),
+      m('wren', 'pm-thinking', 'here is the answer', '2026-08-04T12:00:20Z'),
+    ];
+    const [tree] = buildPromptTrees(stream2);
+    const closing = tree.children.filter((c: any) => c.closing);
+    expect(closing).toHaveLength(1);
+    expect(closing[0].msg.text).toBe('here is the answer');
+  });
+});
