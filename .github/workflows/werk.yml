@@ -48,6 +48,13 @@ jobs:
       ROLE: ${{ inputs.role }}
       GO: ${{ inputs.go }}
       ACCEPTER: ${{ inputs.accepter }}
+      # #3745 — act sets CI=true, which the #3615 membrane classifies as a build
+      # context and refuses live-spine writes. This pipeline is a prod-adjacent
+      # RUNNER (its verbs legitimately emit real spine events), so it declares
+      # the explicit prod contract (membrane-surfaces.json context_contract).
+      # Suites the pipeline RUNS still get test seams from test_helper/jest env
+      # — declaring prod here does not leak into their own-world overrides.
+      CHORUS_CONTEXT: prod
 
     steps:
       - name: shared-trace
@@ -105,7 +112,11 @@ jobs:
           # instead of this card's werk (a lint landed on main blocks every later card,
           # and the card fixing it can never green). Same class as run_doc_coherence's
           # CHORUS_REPO pin; werk-test's run_clippy_ratchet gets the same pin in source.
-          CHORUS_ROOT="$WERK" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
+          # #3745 — revert the job-level CHORUS_CONTEXT=prod for the SUITES this verb
+          # runs: empty = unset to the membrane, so suites classify ambient (BATS/CARGO/
+          # NODE_ENV) and test_helper's default seams apply. The prod declaration is the
+          # RUNNER's identity, never the tests'.
+          CHORUS_CONTEXT= CHORUS_ROOT="$WERK" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
           rc=$?
           set -e
           if [ "$rc" = 0 ]; then post success; else post failure; fi

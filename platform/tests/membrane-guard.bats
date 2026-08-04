@@ -17,14 +17,20 @@ load test_helper
 SHIM="$CHORUS_ROOT/platform/services/chorus-hooks/target/debug/chorus-hook-shim"
 
 setup() {
-  [ -x "$SHIM" ] || skip "shim not built (cargo build in chorus-hooks first)"
   export TEST_HOME="$BATS_TEST_TMPDIR/home"
   mkdir -p "$TEST_HOME/.chorus"
+}
+
+# Shim-dependent tests call this; the #3745 static asserts below do NOT — a
+# missing build must never vacuous-skip a text-level guard (#3734).
+require_shim() {
+  [ -x "$SHIM" ] || skip "shim not built (cargo build in chorus-hooks first)"
 }
 
 # --- AC4 negative proof: the #3608 poisoning shape REFUSES post-fix ---
 
 @test "membrane refuses session-start without CHORUS_SESSIONS_DIR (the #3608 repro)" {
+  require_shim
   # BATS_TEST_TMPDIR is exported by bats itself → the shim classifies this a
   # test context. Spine seam provided, sessions seam deliberately ABSENT.
   run env HOME="$TEST_HOME" \
@@ -42,6 +48,7 @@ setup() {
 }
 
 @test "membrane refuses spine write without CHORUS_LOG_FILE (the #2491 repro)" {
+  require_shim
   run env HOME="$TEST_HOME" \
       CHORUS_LOG_FILE= \
       CHORUS_SESSIONS_DIR="$BATS_TEST_TMPDIR/sessions" \
@@ -57,6 +64,7 @@ setup() {
 # --- AC5: a violation is visible on the spine, never silent ---
 
 @test "membrane violation emits membrane.violation to the (redirected) spine" {
+  require_shim
   run env HOME="$TEST_HOME" \
       CHORUS_LOG_FILE= \
       CHORUS_SESSIONS_DIR="$BATS_TEST_TMPDIR/sessions" \
@@ -70,6 +78,7 @@ setup() {
 # --- The permitted crossings: overrides and prod context still work ---
 
 @test "with both seams set, session-start succeeds and registers in the test world only" {
+  require_shim
   run env HOME="$TEST_HOME" \
       CHORUS_LOG_FILE="$BATS_TEST_TMPDIR/spine.log" \
       CHORUS_SESSIONS_DIR="$BATS_TEST_TMPDIR/sessions" \
@@ -80,6 +89,7 @@ setup() {
 }
 
 @test "explicit CHORUS_CONTEXT=prod is the escape hatch for prod-adjacent runners" {
+  require_shim
   # Same test-marker env, but the runner declares itself prod — the membrane
   # honors the explicit contract and resolves the (redirected-HOME) prod path.
   run env HOME="$TEST_HOME" \
@@ -91,4 +101,20 @@ setup() {
   echo "output: $output"
   [ "$status" -eq 0 ]
   grep -q "test.membrane.probe" "$TEST_HOME/.chorus/chorus.log"
+}
+
+# --- #3745: the pipeline runner declares prod; its test step reverts it ---
+# First live drift after #3615 deployed: 3 wren membrane.violation events
+# (context=build, marker=CI set) — act sets CI=true and werk.yml never declared
+# the runner's prod identity, so pipeline spine emits were refused.
+
+@test "werk.yml declares CHORUS_CONTEXT=prod at job env (#3745 — act sets CI, runner is prod-adjacent)" {
+  grep -qE '^[[:space:]]+CHORUS_CONTEXT:[[:space:]]*prod[[:space:]]*$' "$CHORUS_ROOT/.github/workflows/werk.yml"
+}
+
+@test "werk.yml test step reverts CHORUS_CONTEXT for the suites it runs (#3745)" {
+  # The runner's prod identity must not leak into the suites: the werk-test
+  # invocation line explicitly empties the var so ambient classification and
+  # test_helper's default seams apply inside the suites.
+  grep -qE 'CHORUS_CONTEXT= .*werk-test' "$CHORUS_ROOT/.github/workflows/werk.yml"
 }
