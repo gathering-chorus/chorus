@@ -133,6 +133,45 @@ teardown_file() {
   [ "$status" -eq 1 ]
 }
 
+# --- #3731: could-not-ask must never read as success (three fail-open guards) ---
+
+@test "#3731 NEGATIVE PROOF: verify against a dead query endpoint FAILS CLOSED (was: 0-missing blank-pass)" {
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" FUSEKI_QUERY="http://localhost:9/dead" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "could not ask"
+}
+
+@test "#3731 NEGATIVE PROOF: SHACL validator crash reports UNKNOWN, never 0 violations (non-gating)" {
+  fake="$BATS_TEST_TMPDIR/bin"; mkdir -p "$fake"
+  printf '#!/bin/sh\nexit 3\n' > "$fake/shacl-crash"; chmod +x "$fake/shacl-crash"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="$fake/shacl-crash" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 0 ]   # report stays non-gating — the deploy itself is fine
+  echo "$output" | grep -q "CRASHED — violations UNKNOWN"
+  ! echo "$output" | grep -q "0 violation(s)"
+}
+
+@test "#3731 NEGATIVE PROOF: absent shacl is an explicit skip, not a clean-run lookalike" {
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" SHACL_REPORT=1 SHACL_BIN="/nonexistent-shacl-3731" bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "SHACL report SKIPPED"
+}
+
+@test "#3731 NEGATIVE PROOF: absent riot REFUSES the deploy (was: silent unvalidated deploy)" {
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "REFUSING — riot"
+}
+
+@test "#3731 absent riot + explicit ALLOW_UNVALIDATED=1 proceeds LOUDLY (not a clean run)" {
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RIOT_BIN="/nonexistent-riot-3731" ALLOW_UNVALIDATED=1 bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "deploying UNVALIDATED TTL"
+}
+
 # --- #3593: retire-subject (gap #2) + its safety gate ---
 
 @test "#3593 retire-subject deletes a Domain absent from staging; keeps present + non-domain" {

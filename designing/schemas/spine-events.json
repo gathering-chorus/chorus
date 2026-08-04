@@ -3447,6 +3447,26 @@
         "reason": "Caller-supplied reason",
         "command": "Target's ps command line (truncated 120)"
       }
+    },
+    "model.deploy.shacl": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "chorus-model-deploy.sh SHACL report (non-gating, Wren's 2026-07-02 ruling). #3731 made its three states distinguishable: status=ran (violations numeric), crashed (violations=unknown — validator died, NEVER reported as 0), absent (validator not installed).",
+      "fields": {
+        "graph": "Target named graph",
+        "violations": "Numeric count when status=ran; 'unknown' otherwise",
+        "gating": "Always false",
+        "status": "ran | crashed | absent"
+      }
+    },
+    "model.deploy.unvalidated": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "#3731: riot is absent AND the operator explicitly set ALLOW_UNVALIDATED=1 — the deploy proceeded WITHOUT TTL validation, loudly. Without the flag, riot-absent refuses (model.deploy.failed reason=riot-absent).",
+      "fields": {
+        "graph": "Target named graph",
+        "reason": "riot-absent-allowed"
+      }
     }
   }
 }
