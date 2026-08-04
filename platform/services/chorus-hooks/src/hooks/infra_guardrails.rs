@@ -107,7 +107,12 @@ pub async fn check(input: &HookInput) -> HookResponse {
 
     // Allow service-lifecycle.sh (absorbed from app_state_guard #1862)
     // Allow agent-state.sh for LaunchAgent lifecycle (#2009)
-    if cmd.contains("service-lifecycle.sh") || cmd.contains("app-state.sh") || cmd.contains("agent-state.sh") {
+    // Allow chorus-scratch-kill (#3750) — the owner-sanctioned, spine-witnessed
+    // path for UNMANAGED scratch processes. It refuses managed-service pids
+    // itself (typed, tested), so this is not a kill bypass: raw kill/pkill
+    // stays blocked below.
+    if cmd.contains("service-lifecycle.sh") || cmd.contains("app-state.sh") || cmd.contains("agent-state.sh")
+        || cmd.contains("chorus-scratch-kill") {
         return HookResponse::allow();
     }
 
@@ -404,6 +409,18 @@ mod tests {
         let input = silas_bash("kill -0 12345");
         let r = check(&input).await;
         assert!(r.stdout.is_none(), "kill -0 should be allowed (liveness check)");
+        assert_eq!(r.exit_code, 0);
+    }
+
+    /// #3750 — the sanctioned scratch-kill path is allowed (the script itself
+    /// refuses managed pids, typed + bats-proven). The negative side of this
+    /// pair is test_deny_kill_9_still_blocked below: raw kill stays BLOCKED,
+    /// so this allowlist entry is a path, not a hole.
+    #[tokio::test]
+    async fn test_allow_chorus_scratch_kill() {
+        let input = silas_bash("chorus-scratch-kill 18044 leftover demo viewer");
+        let r = check(&input).await;
+        assert!(r.stdout.is_none(), "chorus-scratch-kill should be allowed (#3750)");
         assert_eq!(r.exit_code, 0);
     }
 

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# chorus-scratch-kill (#3750) — the owner-sanctioned path for stopping an
+# UNMANAGED scratch process (nohup demo viewers, orphaned werk variants).
+#
+# Why this exists: the kill-guard rightly blocks raw kill/pkill for everyone —
+# but on 2026-08-04 that meant a leftover demo viewer (pid 18044, plain nohup,
+# managed by nothing) could not be stopped by ANY role: Wren was blocked, Silas
+# was blocked, Jeff had to run the SIGTERM by hand. Scratch processes need a
+# sanctioned, witnessed exit — not a guard bypass.
+#
+# Contract:
+#   chorus-scratch-kill <pid> [reason...]
+#   - REFUSES a pid belonging to a launchd-managed com.chorus.*/com.gathering.*
+#     service (those go through agent-state.sh / app-state.sh) — typed, exit 2
+#   - REFUSES pid <= 1, self, and non-existent pids — typed, exit 2
+#   - otherwise: emits process.scratch.killed to the spine (witness BEFORE the
+#     signal, so even a dying shell leaves the record), then plain SIGTERM.
+#     No -9: a scratch process gets a clean shutdown or a human escalates.
+set -uo pipefail
+
+PID="${1:-}"
+shift || true
+REASON="${*:-unspecified}"
+
+die() { echo "chorus-scratch-kill REFUSED: $1" >&2; exit 2; }
+
+[ -n "$PID" ] || die "usage: chorus-scratch-kill <pid> [reason]"
+case "$PID" in (*[!0-9]*) die "pid must be numeric (got '$PID')";; esac
+[ "$PID" -gt 1 ] || die "refusing pid $PID (init/kernel)"
+[ "$PID" -ne $$ ] || die "refusing to kill self"
+kill -0 "$PID" 2>/dev/null || die "pid $PID does not exist (already gone?)"
+
+# Managed-service check: every loaded com.chorus.*/com.gathering.* pid is
+# off-limits here — agent-state.sh/app-state.sh own those lifecycles.
+# LAUNCHCTL is overridable for tests (negative proof drives a fake managed pid).
+LAUNCHCTL="${LAUNCHCTL:-launchctl}"
+managed=$("$LAUNCHCTL" list 2>/dev/null | awk '/com\.(chorus|gathering)\./ && $1 ~ /^[0-9]+$/ {print $1}')
+for m in $managed; do
+  if [ "$m" = "$PID" ]; then
+    label=$("$LAUNCHCTL" list 2>/dev/null | awk -v p="$PID" '$1==p {print $3}')
+    die "pid $PID is the MANAGED service ${label:-com.chorus/gathering.*} — use agent-state.sh/app-state.sh, never a scratch kill"
+  fi
+done
+
+CMD=$(ps -o command= -p "$PID" 2>/dev/null | head -1)
+ROLE="${CHORUS_ROLE:-${DEPLOY_ROLE:-unknown}}"
+
+# Witness BEFORE the signal — the record must exist even if we die with it.
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$HOME/.chorus/bin/chorus-hook-shim}"
+"$CHORUS_LOG_BIN" log process.scratch.killed "$ROLE" \
+  "pid=$PID" "reason=$REASON" "command=$(printf '%s' "$CMD" | head -c 120)" 2>/dev/null \
+  || echo "chorus-scratch-kill: WARN spine witness failed (proceeding — the kill was sanctioned)" >&2
+
+kill -TERM "$PID" 2>/dev/null || die "SIGTERM to $PID failed (permission? already exiting?)"
+echo "chorus-scratch-kill: SIGTERM sent to $PID ($CMD) reason=$REASON by=$ROLE"

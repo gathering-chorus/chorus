@@ -1,3 +1,4 @@
+// @test-type: unit — constructed fakeRes/fakeDb fixtures, no live services
 import { createWithDb } from '../src/with-db';
 import { DbNotFoundError } from '../src/server-helpers';
 
@@ -47,14 +48,22 @@ describe('createWithDb', () => {
     expect(work).not.toHaveBeenCalled();
   });
 
-  it('still closes the db when work throws', async () => {
+  it('still closes the db when work throws — and DEGRADES instead of rethrowing (#3750)', async () => {
+    // Contract change (#3750): pre-fix this asserted `.rejects.toThrow('work
+    // failed')` — that rethrow was the process-killer (Express 4 async void →
+    // unhandledRejection → FATAL exit; the 2026-08-04 10:47 outage). withDb
+    // now settles every failure as a typed per-request response.
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     const db = fakeDb();
     const openDb = jest.fn(() => db);
     const withDb = createWithDb(openDb as any);
     const res = fakeRes();
     const work = jest.fn(async () => { throw new Error('work failed'); });
-    await expect(withDb(res, work)).rejects.toThrow('work failed');
+    await expect(withDb(res, work)).resolves.toBeUndefined();
+    expect(res.status_).toBe(500);
+    expect(res.body_).toEqual({ error: 'work failed', degraded: true });
     expect(db.closed).toBe(true);
+    errSpy.mockRestore();
   });
 
   it('awaits async work before closing the db', async () => {
