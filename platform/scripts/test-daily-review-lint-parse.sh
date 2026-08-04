@@ -49,6 +49,22 @@ check "npm pass + no jest-summary line → GREEN (was false DID-NOT-RUN)" \
   "$(bucket npm pass 'ran, produced no parseable Tests: line')" "GREEN:0"
 check "coverage pass (real nightly format: 'N pass, N fail (coverage % >= floor)') → GREEN" \
   "$(bucket coverage pass '1 pass, 0 fail (coverage 82% >= floor 70%)')" "GREEN:1"
+# #3606 — THE CLASS, not the instance. The kind list used to be closed
+# (shell|lint|coverage|meta) and any kind outside it fell through to `broke`.
+# That bug has now been fixed three times for three different names: #3600 added
+# `coverage`, #3709 added `meta`, and #3734's `coverage-denominator` reached Jeff
+# as "BUILD BROKE (rc≠0, no test output)" on 2026-08-04 — a coverage GAP reported
+# as a build failure that never happened. These assert the FALLBACK, so the fourth
+# new kind is honest without anyone remembering to register it.
+check "UNKNOWN kind + parseable N pass, N fail → FAILED not BUILD BROKE (#3606)" \
+  "$(bucket coverage-denominator fail '0 pass, 1 fail (3 of 23 rust crates have a coverage floor)')" "FAILED:1/1"
+check "a kind nobody has invented yet parses the same way (#3606)" \
+  "$(bucket some-future-kind fail '2 pass, 3 fail (whatever it measures)')" "FAILED:3/5"
+# NEGATIVE PROOF: genuinely unparseable output must STILL read BROKE, or the
+# fallback would launder real build breaks into soft fails.
+check "unknown kind + unparseable summary → still BROKE (#3606 negative proof)" \
+  "$(bucket some-future-kind fail 'linker died before any test ran')" "BROKE"
+
 # #3600 — a coverage-floor MISS is a real fail, NOT 'BUILD BROKE (rc≠0, no test output)'.
 # Before: coverage kind had no parse branch → fell through to the broke verdict, mislabeling
 # a measured-but-under-floor result as a broken build. Now it reads its honest count.
