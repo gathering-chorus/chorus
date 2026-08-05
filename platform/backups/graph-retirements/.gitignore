@@ -1,0 +1,3 @@
+# Test fixtures write here too (bats drives the real code path). Their dumps are
+# throwaway; real retirement backups are committed.
+urn_chorus_ontology-test-bats-*.nt

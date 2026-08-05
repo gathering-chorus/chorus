@@ -1,0 +1,60 @@
+_:B294de0944825af7b046ae00900aaf5bf <http://www.w3.org/ns/shacl#message> "SubProduct has no services (incomplete)" .
+_:B294de0944825af7b046ae00900aaf5bf <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Warning> .
+_:B294de0944825af7b046ae00900aaf5bf <http://www.w3.org/ns/shacl#path> <https://jeffbridwell.com/chorus#contains> .
+<https://jeffbridwell.com/chorus#SubProductServicesShape> <http://www.w3.org/ns/shacl#property> _:B294de0944825af7b046ae00900aaf5bf .
+<https://jeffbridwell.com/chorus#SubProductServicesShape> <http://www.w3.org/ns/shacl#targetClass> <https://jeffbridwell.com/chorus#SubProduct> .
+<https://jeffbridwell.com/chorus#SubProductServicesShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .
+_:B01e30a9b88334bc101dedda20bc8fdc1 <http://www.w3.org/ns/shacl#message> "SubDomain has no services or instances (incomplete)" .
+_:B01e30a9b88334bc101dedda20bc8fdc1 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Warning> .
+_:B01e30a9b88334bc101dedda20bc8fdc1 <http://www.w3.org/ns/shacl#path> <https://jeffbridwell.com/chorus#contains> .
+<https://jeffbridwell.com/chorus#SubDomainServicesShape> <http://www.w3.org/ns/shacl#property> _:B01e30a9b88334bc101dedda20bc8fdc1 .
+<https://jeffbridwell.com/chorus#SubDomainServicesShape> <http://www.w3.org/ns/shacl#targetClass> <https://jeffbridwell.com/chorus#SubDomain> .
+<https://jeffbridwell.com/chorus#SubDomainServicesShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .
+_:Bb5ad8c7128456c5164c9a06644ce35a2 <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#string> .
+_:Bb5ad8c7128456c5164c9a06644ce35a2 <http://www.w3.org/ns/shacl#message> "SubDomain must have a label" .
+_:Bb5ad8c7128456c5164c9a06644ce35a2 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:Bb5ad8c7128456c5164c9a06644ce35a2 <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label> .
+_:B08666cd87503a107976b62c24b0a3c14 <http://www.w3.org/ns/shacl#message> "SubDomain must have at least one parent (Product or Domain)" .
+_:B08666cd87503a107976b62c24b0a3c14 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Violation> .
+_:B08666cd87503a107976b62c24b0a3c14 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B08666cd87503a107976b62c24b0a3c14 <http://www.w3.org/ns/shacl#path> _:B2876985bc3f268cb576c7a99325e7c10 .
+_:B2876985bc3f268cb576c7a99325e7c10 <http://www.w3.org/ns/shacl#inversePath> <https://jeffbridwell.com/chorus#hasDomain> .
+<https://jeffbridwell.com/chorus#SubDomainShape> <http://www.w3.org/ns/shacl#property> _:Bb5ad8c7128456c5164c9a06644ce35a2 .
+<https://jeffbridwell.com/chorus#SubDomainShape> <http://www.w3.org/ns/shacl#property> _:B08666cd87503a107976b62c24b0a3c14 .
+<https://jeffbridwell.com/chorus#SubDomainShape> <http://www.w3.org/ns/shacl#targetClass> <https://jeffbridwell.com/chorus#SubDomain> .
+<https://jeffbridwell.com/chorus#SubDomainShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .
+_:B5c59eb7152ccbd160fbc838be8d68245 <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#string> .
+_:B5c59eb7152ccbd160fbc838be8d68245 <http://www.w3.org/ns/shacl#message> "SubProduct must have a label" .
+_:B5c59eb7152ccbd160fbc838be8d68245 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B5c59eb7152ccbd160fbc838be8d68245 <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label> .
+_:B409c540085f37191543e4bed63bd62d7 <http://www.w3.org/ns/shacl#message> "SubProduct must have at least one SubDomain" .
+_:B409c540085f37191543e4bed63bd62d7 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Violation> .
+_:B409c540085f37191543e4bed63bd62d7 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B409c540085f37191543e4bed63bd62d7 <http://www.w3.org/ns/shacl#path> <https://jeffbridwell.com/chorus#hasDomain> .
+_:B3aeb3bca4195ff75d9e6e8383a3a8d10 <http://www.w3.org/ns/shacl#message> "SubProduct must have at least one parent Product" .
+_:B3aeb3bca4195ff75d9e6e8383a3a8d10 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Violation> .
+_:B3aeb3bca4195ff75d9e6e8383a3a8d10 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B3aeb3bca4195ff75d9e6e8383a3a8d10 <http://www.w3.org/ns/shacl#path> _:B65ed24d4b66064b96d32df66a5c7c434 .
+_:B65ed24d4b66064b96d32df66a5c7c434 <http://www.w3.org/ns/shacl#inversePath> <https://jeffbridwell.com/chorus#hasSubProduct> .
+<https://jeffbridwell.com/chorus#SubProductShape> <http://www.w3.org/ns/shacl#property> _:B5c59eb7152ccbd160fbc838be8d68245 .
+<https://jeffbridwell.com/chorus#SubProductShape> <http://www.w3.org/ns/shacl#property> _:B409c540085f37191543e4bed63bd62d7 .
+<https://jeffbridwell.com/chorus#SubProductShape> <http://www.w3.org/ns/shacl#property> _:B3aeb3bca4195ff75d9e6e8383a3a8d10 .
+<https://jeffbridwell.com/chorus#SubProductShape> <http://www.w3.org/ns/shacl#targetClass> <https://jeffbridwell.com/chorus#SubProduct> .
+<https://jeffbridwell.com/chorus#SubProductShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .
+_:B280df1713fd9385f5dd8c6858cb8b3d5 <http://www.w3.org/ns/shacl#datatype> <http://www.w3.org/2001/XMLSchema#string> .
+_:B280df1713fd9385f5dd8c6858cb8b3d5 <http://www.w3.org/ns/shacl#message> "Product must have a label" .
+_:B280df1713fd9385f5dd8c6858cb8b3d5 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B280df1713fd9385f5dd8c6858cb8b3d5 <http://www.w3.org/ns/shacl#path> <http://www.w3.org/2000/01/rdf-schema#label> .
+_:B400229123bdc9f2ccf6d930f55bacb06 <http://www.w3.org/ns/shacl#message> "Product must have at least one ServiceDesign" .
+_:B400229123bdc9f2ccf6d930f55bacb06 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Violation> .
+_:B400229123bdc9f2ccf6d930f55bacb06 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:B400229123bdc9f2ccf6d930f55bacb06 <http://www.w3.org/ns/shacl#path> <https://jeffbridwell.com/chorus#hasServiceDesign> .
+_:Bd44a77293dd5d65fa873c39d3b80c362 <http://www.w3.org/ns/shacl#message> "Product must have at least one Domain" .
+_:Bd44a77293dd5d65fa873c39d3b80c362 <http://www.w3.org/ns/shacl#severity> <http://www.w3.org/ns/shacl#Violation> .
+_:Bd44a77293dd5d65fa873c39d3b80c362 <http://www.w3.org/ns/shacl#minCount> "1"^^<http://www.w3.org/2001/XMLSchema#integer> .
+_:Bd44a77293dd5d65fa873c39d3b80c362 <http://www.w3.org/ns/shacl#path> <https://jeffbridwell.com/chorus#hasDomain> .
+<https://jeffbridwell.com/chorus#ProductShape> <http://www.w3.org/ns/shacl#property> _:B280df1713fd9385f5dd8c6858cb8b3d5 .
+<https://jeffbridwell.com/chorus#ProductShape> <http://www.w3.org/ns/shacl#property> _:B400229123bdc9f2ccf6d930f55bacb06 .
+<https://jeffbridwell.com/chorus#ProductShape> <http://www.w3.org/ns/shacl#property> _:Bd44a77293dd5d65fa873c39d3b80c362 .
+<https://jeffbridwell.com/chorus#ProductShape> <http://www.w3.org/ns/shacl#targetClass> <https://jeffbridwell.com/chorus#Product> .
+<https://jeffbridwell.com/chorus#ProductShape> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/shacl#NodeShape> .

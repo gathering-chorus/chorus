@@ -150,7 +150,11 @@ pub fn is_sanctioned_graph(g: &str) -> bool {
         || g == "urn:chorus:documents"
         || g == "urn:chorus:skills"
         || g == "urn:chorus:gates"
-        || g == "urn:chorus:shapes"
+        // #3732 — urn:chorus:shapes RETIRED 2026-08-05 (ADR-051 Addendum II,
+        // source exclusivity). It held a stale duplicate ProductShape (3
+        // sh:property against the live 11) plus 4 V1-only shapes serving no
+        // route. A sanctioned-but-absent graph is a vacuous pass, so the
+        // sanction is removed in the same change that retires the data.
         || g == "urn:chorus:framework"
         // Per-domain graphs — the end-state placement scheme. Plural `domains`
         // only: `urn:chorus:domain:tests` is a typo, not a domain graph, and

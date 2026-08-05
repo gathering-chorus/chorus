@@ -116,3 +116,37 @@ owl-api to union shapes across domain graphs; until that drain lands, rule (2) s
 **TBox retirement gap (named 2026-08-04).** The governed writer's schema verbs are append-only;
 retirement of schema triples currently requires the bounded-exception path. Wren's TBox-retire-verb
 card (proposed) closes it — the next relic retirement must be writer-first.
+
+## Addendum II — Source exclusivity (2026-08-05, #3732)
+
+Derived from Kade's re-verify synthesis on #3749, endorsed by Wren, authored here as the rule
+the enforcing check implements. **Kade's framing is the whole argument: dual tenancy was never a
+wrong answer — it was an UNANSWERABLE QUESTION.** A class whose instances live in two graphs is a
+system with no fact of the matter about where its data came from; every diagnosis built on it is a
+coin flip dressed as an inference (four wrong /products diagnoses in eight weeks, each internally
+consistent, all reading a different tenancy).
+
+**(a) Single tenancy.** An instance class's instances live in EXACTLY the graph its shape declares
+(Addendum I rule 1: derived from `definesVocabulary`, or the explicit `instancesGraph` override).
+Copies elsewhere are DEFECTS TO RETIRE, never redundancy, never a cache, never "also over there."
+The same rule binds one level up: a SHAPE defined in two graphs is the identical disease at the
+schema layer — #3732's first enforcement is `urn:chorus:shapes` holding a stale 3-property
+`ProductShape` against `urn:chorus:ontology`'s live 11-property one. Union those and an unscoped
+read receives a contradictory 14-property hybrid: the hazard is not stale data, it is data with no
+single source.
+
+**(b) Surfaces report their source.** Every generated read surface carries `servedFrom` in its
+envelope (owl-api, landed with #3749). A surface that cannot say which graph answered it cannot be
+audited, and "which tenancy did I just read?" must never again require reading the generator.
+
+**(c) Exclusivity is a verifiable invariant, not a convention.** For each class: COUNT of its
+instances OUTSIDE its declared graph MUST be 0 (Kade's B3 check pattern). Same shape for schema:
+COUNT of graphs defining a given shape MUST be 1. A convention nobody can query is a convention
+that drifts — this arc's whole lesson (#3734: no gate without a negative proof; the check ships
+with a fixture where two tenancies exist and the check is shown to FAIL).
+
+**Consequence for the union-default-graph migration (#3732).** Union is only safe once exclusivity
+holds: it is a *merge* of named graphs, so any surviving dual tenancy becomes a silent contradiction
+at read time rather than a discoverable one. Sequence is therefore load-bearing: prove exclusivity
+(retire duplicates) → union the default graph → quarantine the pre-separation shadow. Receipts:
+#3749 (instance-layer finding), #3732 (schema-layer finding + the enforcing check).

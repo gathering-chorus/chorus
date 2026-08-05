@@ -1,0 +1,27 @@
+@prefix :        <#> .
+@prefix fuseki:  <http://jena.apache.org/fuseki#> .
+@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix ja:      <http://jena.hpl.hp.com/2005/11/Assembler#> .
+@prefix tdb2:    <http://jena.apache.org/2016/tdb#> .
+
+[] rdf:type fuseki:Server .
+
+:service rdf:type fuseki:Service ;
+    fuseki:name "pods" ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ;  fuseki:name "query"  ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:query ;  fuseki:name "sparql" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:update ; fuseki:name "update" ] ;
+    fuseki:endpoint [ fuseki:operation fuseki:gsp-rw ; fuseki:name "data"   ] ;
+    fuseki:dataset :tdbDataset .
+
+:tdbDataset rdf:type tdb2:DatasetTDB2 ;
+    tdb2:location "/Users/jeffbridwell/.gathering/data/fuseki-pods" ;
+    # #3732 — the default (unnamed) graph is the UNION of the named graphs.
+    # Before this, a GRAPH-less query read a real, separate default graph
+    # holding a 3901-triple pre-ADR-025 V1 snapshot, so a forgotten GRAPH
+    # clause silently outranked the live model. Union makes an unscoped read
+    # return truth instead of a stale corner. Safe ONLY once no two graphs
+    # disagree about a shape (ADR-051 Addendum II, enforced by
+    # platform/tests/source-exclusivity-3732.bats): union MERGES, so a
+    # surviving duplicate becomes a silent contradiction at read time.
+    tdb2:unionDefaultGraph true .
