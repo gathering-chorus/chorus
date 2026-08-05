@@ -55,6 +55,13 @@ pub enum TboxRefusal {
     /// A shape with no required properties declares no floor, so it can refuse
     /// nothing. That is not a shape; it is the appearance of one.
     ShapeWithNoFloor { class: String },
+    /// #3752 — the claim being retired is SERVING a live route. Retiring it
+    /// would rip an API surface out from under its consumers in one motion;
+    /// the sanctioned path is two steps (unserve, then retire).
+    ClaimServed { class: String, route: String },
+    /// #3752 — no such claim exists in the LIVE store. A retire that exits 0
+    /// on nothing would be the could-not-ask class in verb form.
+    ClaimNotFound { domain: String, class: String },
 }
 
 impl TboxRefusal {
@@ -67,6 +74,8 @@ impl TboxRefusal {
             Self::CallerPassedIri { .. } => "caller-passed-iri",
             Self::NotInManifest { .. } => "manifest-membership",
             Self::ShapeWithNoFloor { .. } => "shape-with-no-floor",
+            Self::ClaimServed { .. } => "claim-served",
+            Self::ClaimNotFound { .. } => "claim-not-found",
         }
     }
 }
@@ -112,6 +121,19 @@ impl fmt::Display for TboxRefusal {
                 "shape for '{class}' declares no required properties. A shape with no floor \
                  refuses nothing — it is the appearance of validation, not validation."
             ),
+            Self::ClaimServed { class, route } => write!(
+                f,
+                "class '{class}' is SERVED at /{route} — retiring its claim would unmount a \
+                 live API surface in one motion. Unserve first (retire the shape / stop \
+                 generation), verify /{route} is gone, then retire the claim (#3752)."
+            ),
+            Self::ClaimNotFound { domain, class } => write!(
+                f,
+                "no live claim '{domain} definesVocabulary {class}' exists in the store — \
+                 nothing to retire. This verb refuses rather than exiting 0 on nothing; if \
+                 you expected the claim, check the store (not the files): DECLARED, CLAIMED \
+                 and SERVED are three different sets."
+            ),
         }
     }
 }
@@ -152,6 +174,12 @@ pub struct ShapeSpec<'a> {
     pub class: &'a str,
     pub required: &'a [String],
     pub target_file: &'a str,
+    /// #3752 rider (Wren, ADR-051 "declared on the shape, no default"): the
+    /// named graph this class's INSTANCES live in. Optional — a shape without
+    /// it relies on the definesVocabulary derivation; a shape WITH it is the
+    /// explicit declaration ADR-051's title demands (the #3724 lesson: the
+    /// wrong default graph served 0 rows for a day).
+    pub instances_graph: Option<&'a str>,
 }
 
 fn manifest_check(file: &str, deploy_set: &BTreeSet<String>, out: &mut Vec<TboxRefusal>) {
@@ -302,12 +330,116 @@ pub fn shape_turtle(spec: &ShapeSpec) -> String {
             format!("    sh:property [ sh:path {path} ; sh:minCount 1 ] ;\n")
         })
         .collect::<String>();
+    let ig = spec.instances_graph
+        .map(|g| format!("    chorus:instancesGraph \"{g}\" ;\n"))
+        .unwrap_or_default();
     format!(
         "chorus:{class}Shape a sh:NodeShape ;\n    \
-         sh:targetClass chorus:{class} ;\n{props}    \
+         sh:targetClass chorus:{class} ;\n{props}{ig}    \
          chorus:generatedBy \"athena-model\" .\n",
         class = spec.class,
         props = props,
+        ig = ig,
+    )
+}
+
+// ============================================================================
+// #3752 — TBox RETIREMENT. The mint verbs above END IN APPEND-TO-FILE; this
+// one ends in EMIT-TO-STAGING (designing/schemas/model-retirements.json) and
+// chorus-model-deploy's retirement section executes the staged delete. Same
+// refusal-first shape, shared check machinery, DIVERGENT write boundary — a
+// retire that appended turtle would be minting a tombstone, and one that wrote
+// the store directly would bypass the very governance it exists to add (the
+// 2026-08-04 events-relic bounded-exception is the incident this closes).
+// ============================================================================
+
+/// A staged retirement of one `definesVocabulary` claim.
+pub struct RetireSpec<'a> {
+    pub domain: &'a str,
+    pub class: &'a str,
+    /// NEVER defaulted — a retirement without a recorded why is an unrecorded
+    /// judgment, the exact class the module header forbids.
+    pub reason: &'a str,
+}
+
+/// owl-api's name→route derivation (lower + plural, with its irregulars).
+/// Kept in sync by the served-refusal test against the live envelope.
+pub fn class_route(class: &str) -> String {
+    let lower = class.to_lowercase();
+    match lower.as_str() {
+        "property" => "properties".into(),
+        "propertykey" => "propertykeys".into(),
+        _ if lower.ends_with('y') => format!("{}ies", &lower[..lower.len() - 1]),
+        _ => format!("{}s", lower),
+    }
+}
+
+/// Pure check. `live_claims` = (domain, class) pairs read from the STORE
+/// (never a file — DECLARED⊃CLAIMED⊃SERVED); `served_routes` = owl-api's live
+/// route set. Both injected so every refusal is drivable in a unit test.
+pub fn check_retire(
+    spec: &RetireSpec,
+    live_claims: &BTreeSet<(String, String)>,
+    served_routes: &BTreeSet<String>,
+) -> Vec<TboxRefusal> {
+    let mut r = Vec::new();
+    if looks_like_iri(spec.class) {
+        r.push(TboxRefusal::CallerPassedIri { value: spec.class.to_string() });
+    }
+    if looks_like_iri(spec.domain) {
+        r.push(TboxRefusal::CallerPassedIri { value: spec.domain.to_string() });
+    }
+    if spec.reason.trim().is_empty() {
+        r.push(TboxRefusal::RequiredFieldMissing {
+            subject: format!("{}→{}", spec.domain, spec.class),
+            field: "reason",
+        });
+    }
+    if !r.is_empty() {
+        return r; // malformed input — the store checks below would be noise
+    }
+    let key = (spec.domain.to_string(), spec.class.to_string());
+    if !live_claims.contains(&key) {
+        r.push(TboxRefusal::ClaimNotFound {
+            domain: spec.domain.to_string(),
+            class: spec.class.to_string(),
+        });
+    }
+    let route = class_route(spec.class);
+    if served_routes.contains(&route) {
+        r.push(TboxRefusal::ClaimServed { class: spec.class.to_string(), route });
+    }
+    r
+}
+
+/// Minimal JSON string escape — this crate is deliberately dependency-lean
+/// (no serde); the entry fields are flat strings and this covers them.
+fn json_escape(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| match c {
+            '"' => "\\\"".chars().collect::<Vec<_>>(),
+            '\\' => "\\\\".chars().collect(),
+            '\n' => "\\n".chars().collect(),
+            '\t' => "\\t".chars().collect(),
+            '\r' => "\\r".chars().collect(),
+            c => vec![c],
+        })
+        .collect()
+}
+
+/// The staging entry (ONE JSONL line) the deploy's retirement section
+/// executes. `by` is the VERIFIED identity (the token gate runs before this
+/// is called), never env. Appended to designing/schemas/model-retirements.jsonl
+/// — append-only, like every other write this module makes.
+pub fn retirement_entry(spec: &RetireSpec, by: &str, card: &str, date: &str) -> String {
+    format!(
+        r#"{{"subject_domain":"{}","predicate":"definesVocabulary","object_class":"{}","reason":"{}","by":"{}","card":"{}","staged_at":"{}","status":"staged"}}"#,
+        json_escape(spec.domain),
+        json_escape(spec.class),
+        json_escape(spec.reason),
+        json_escape(by),
+        json_escape(card),
+        json_escape(date),
     )
 }
 
@@ -441,7 +573,7 @@ mod tests {
     #[test]
     fn a_shape_with_no_required_properties_is_refused() {
         let r = check_shape(
-            &ShapeSpec { class: "Widget", required: &[], target_file: ok_file() },
+            &ShapeSpec { class: "Widget", required: &[], target_file: ok_file(), instances_graph: None },
             &manifest(),
         );
         assert!(matches!(r.as_slice(), [TboxRefusal::ShapeWithNoFloor { .. }]));
@@ -495,5 +627,70 @@ mod tests {
             &empty,
         );
         assert!(r.is_empty(), "empty manifest must not fabricate a refusal");
+    }
+}
+
+#[cfg(test)]
+mod retire_tests {
+    use super::*;
+
+    fn claims() -> BTreeSet<(String, String)> {
+        [("cards".to_string(), "WorkItem".to_string()),
+         ("security".to_string(), "APISurface".to_string())].into_iter().collect()
+    }
+    fn served() -> BTreeSet<String> {
+        ["apisurfaces".to_string(), "credentials".to_string()].into_iter().collect()
+    }
+
+    #[test]
+    fn happy_path_stages_an_unserved_existing_claim() {
+        let spec = RetireSpec { domain: "cards", class: "WorkItem", reason: "0 instances, no consumer (#3727)" };
+        assert!(check_retire(&spec, &claims(), &served()).is_empty());
+        let e = retirement_entry(&spec, "silas", "3752", "2026-08-05");
+        assert!(e.contains(r#""object_class":"WorkItem""#));
+        assert!(e.contains(r#""status":"staged""#));
+        assert!(e.contains(r#""by":"silas""#));
+        // the line is one valid JSON object (no raw newlines, balanced braces)
+        assert!(!e.contains('\n') && e.starts_with('{') && e.ends_with('}'));
+    }
+
+    /// NEGATIVE PROOF (#3734): retiring a SERVED class must refuse, naming the route.
+    #[test]
+    fn served_claim_refuses_with_route_named() {
+        let spec = RetireSpec { domain: "security", class: "APISurface", reason: "test" };
+        let r = check_retire(&spec, &claims(), &served());
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].code(), "claim-served");
+        assert!(r[0].to_string().contains("/apisurfaces"), "route must be named: {}", r[0]);
+    }
+
+    /// NEGATIVE PROOF: retiring a claim that does not exist refuses loudly.
+    #[test]
+    fn nonexistent_claim_refuses() {
+        let spec = RetireSpec { domain: "cards", class: "Ghost", reason: "test" };
+        let r = check_retire(&spec, &claims(), &served());
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].code(), "claim-not-found");
+    }
+
+    #[test]
+    fn empty_reason_refuses_never_defaults() {
+        let spec = RetireSpec { domain: "cards", class: "WorkItem", reason: "  " };
+        let r = check_retire(&spec, &claims(), &served());
+        assert_eq!(r[0].code(), "required-field-missing");
+    }
+
+    #[test]
+    fn iri_input_refuses() {
+        let spec = RetireSpec { domain: "cards", class: "chorus:WorkItem", reason: "x" };
+        assert_eq!(check_retire(&spec, &claims(), &served())[0].code(), "caller-passed-iri");
+    }
+
+    #[test]
+    fn route_derivation_matches_owl_api_irregulars() {
+        assert_eq!(class_route("WorkItem"), "workitems");
+        assert_eq!(class_route("Property"), "properties");
+        assert_eq!(class_route("PropertyKey"), "propertykeys");
+        assert_eq!(class_route("AuthBoundary"), "authboundaries");
     }
 }

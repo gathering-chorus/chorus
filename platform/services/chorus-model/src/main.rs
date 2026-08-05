@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, WriteReq};
+use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -200,8 +200,10 @@ fn run() -> Result<String, String> {
                     let required: Vec<String> = get("--required")
                         .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
                         .unwrap_or_default();
+                    let ig = get("--instances-graph");
                     let spec = athena_model::tbox::ShapeSpec {
                         class: &class, required: &required, target_file: &file,
+                        instances_graph: ig.as_deref(),
                     };
                     let r = athena_model::tbox::check_shape(&spec, &deploy_set);
                     let ttl = if r.is_empty() { athena_model::tbox::shape_turtle(&spec) } else { String::new() };
@@ -233,6 +235,64 @@ fn run() -> Result<String, String> {
 {}", turtle).map_err(|e| format!("write failed: {}", e))?;
             Ok(format!("appended to {}:
 {}", file, turtle))
+        }
+        // #3752 — the FOURTH TBox verb: retirement. Shares the mint verbs'
+        // refusal-first machinery, DIVERGES at the write boundary: mint ends in
+        // append-to-file, retire ends in emit-to-STAGING (designing/schemas/
+        // model-retirements.jsonl) which chorus-model-deploy's retirement
+        // section executes. NEVER a direct store write — the 2026-08-04
+        // events-relic bounded-exception is the incident this verb closes.
+        Some("retire-claim") => {
+            let rest = &args[1..];
+            let get = |flag: &str| -> Option<String> {
+                rest.iter().position(|a| a == flag).and_then(|i| rest.get(i + 1)).cloned()
+            };
+            let domain = get("--domain").ok_or("retire-claim: --domain <domainLocal> is required")?;
+            let class = get("--class").ok_or("retire-claim: --class <ClassLocal> is required")?;
+            let reason = get("--reason").unwrap_or_default();
+            let card = get("--card").ok_or("retire-claim: --card <id> is required — a retirement without a card is an unrecorded judgment")?;
+            let dry = rest.iter().any(|a| a == "--dry-run");
+
+            let store = FusekiStore::new();
+            // Identity FIRST, fail closed — the staging entry records WHO
+            // decided, from the verified token, never env (#3651/#3687).
+            let by = if dry {
+                "dry-run".to_string()
+            } else {
+                Identity::resolve(&store)?.role().to_string()
+            };
+
+            // Live truth for the checks: claims from the STORE, serving from
+            // owl-api's route table — never a file (DECLARED⊃CLAIMED⊃SERVED).
+            let live_claims = fetch_live_claims(&store)?;
+            let served = fetch_served_routes();
+            let spec = athena_model::tbox::RetireSpec {
+                domain: &domain, class: &class, reason: &reason,
+            };
+            let refusals = athena_model::tbox::check_retire(&spec, &live_claims, &served);
+            if !refusals.is_empty() {
+                let body = refusals.iter()
+                    .map(|r| format!("  [{}] {}", r.code(), r))
+                    .collect::<Vec<_>>().join("\n");
+                return Err(format!("REFUSED — {} violation(s):\n{}", refusals.len(), body));
+            }
+            let date = today_utc();
+            let entry = athena_model::tbox::retirement_entry(&spec, &by, &card, &date);
+            if dry {
+                return Ok(format!("# dry-run — nothing staged\n{}", entry));
+            }
+            use std::io::Write;
+            let path = format!(
+                "{}/designing/schemas/model-retirements.jsonl",
+                std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string())
+            );
+            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)
+                .map_err(|e| format!("cannot append to {}: {}", path, e))?;
+            writeln!(f, "{}", entry).map_err(|e| format!("write failed: {}", e))?;
+            Ok(format!(
+                "staged retirement (executes on next model deploy):\n{}\n→ {}",
+                entry, path
+            ))
         }
         Some("kinds") => Ok("product domain role value-stream value-stream-step service principle practice policy skill gate decision document".into()),
         Some("mint") => {
@@ -414,4 +474,62 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+// #3752 — impure fetchers for retire-claim's checks. Live truth only:
+// claims from the STORE, serving from owl-api's own route table.
+fn fetch_live_claims(store: &FusekiStore) -> Result<std::collections::BTreeSet<(String, String)>, String> {
+    // One var (?v) per select_v's parser: pack domain|class into one binding.
+    let sparql = r##"SELECT ?v WHERE { GRAPH ?g { ?d ?p ?c . FILTER(STRENDS(STR(?p),"definesVocabulary")) BIND(CONCAT(STRAFTER(STR(?d),"#"),"|",STRAFTER(STR(?c),"#")) AS ?v) } }"##;
+    let rows = store.select_v(sparql)?;
+    if rows.is_empty() {
+        // could-not-ask must never read as "no claims": an empty claim set
+        // would make EVERY retire refuse claim-not-found — safe direction —
+        // but an unreachable store should say so, not masquerade as data.
+        return Err("retire-claim: store returned ZERO claims — either Fuseki is unreachable or the model is empty; refusing to check against a blind set (#3731 class)".into());
+    }
+    Ok(rows.into_iter().filter_map(|r| {
+        let mut it = r.splitn(2, '|');
+        match (it.next(), it.next()) {
+            (Some(d), Some(c)) if !d.is_empty() && !c.is_empty() => Some((d.to_string(), c.to_string())),
+            _ => None,
+        }
+    }).collect())
+}
+
+fn fetch_served_routes() -> std::collections::BTreeSet<String> {
+    // owl-api's error envelope lists every served route. Unreachable owl-api →
+    // EMPTY set → the ClaimServed check can't fire; acceptable fail-open ONLY
+    // because the deploy-side ASK re-verifies, and a down owl-api means nothing
+    // is being served to protect. Logged loudly either way.
+    let out = std::process::Command::new("curl")
+        .args(["-s", "-m", "5", "http://localhost:3360/__athena_model_probe__"])
+        .output();
+    let body = match out {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => {
+            eprintln!("athena-model: WARN owl-api unreachable — served-route check running against an EMPTY set (nothing is being served while it is down)");
+            return Default::default();
+        }
+    };
+    // hand-parse {"served": ["/a", "/b", ...]} — zero-dep like select_v.
+    let mut routes = std::collections::BTreeSet::new();
+    if let Some(i) = body.find("\"served\"") {
+        let rest = &body[i..];
+        if let (Some(s), Some(e)) = (rest.find('['), rest.find(']')) {
+            for tok in rest[s + 1..e].split(',') {
+                let r = tok.trim().trim_matches('"').trim_start_matches('/').to_string();
+                if !r.is_empty() { routes.insert(r); }
+            }
+        }
+    }
+    routes
+}
+
+fn today_utc() -> String {
+    // date -u: zero-dep, same approach as chorus-model-deploy's stamp.
+    std::process::Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }

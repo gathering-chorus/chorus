@@ -126,6 +126,58 @@ teardown_file() {
   [ "$(echo "$output" | grep -c .)" -le 1 ]
 }
 
+# --- #3752: staged retirements — execute, idempotent, and three refusals ---
+
+@test "#3752 staged claim retirement executes on deploy and is idempotent on rerun" {
+  RG="${TEST_GRAPH}-retclaim"
+  # NB: --data-binary with a leading @ in a literal reads a FILE — write the
+  # fixture turtle to disk first (the curl @-semantics trap).
+  TT="$BATS_TEST_TMPDIR/claim.ttl"
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:testdom chorus:definesVocabulary chorus:TestClaimX .\n' > "$TT"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' \
+    --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
+  RF="$BATS_TEST_TMPDIR/ret.jsonl"
+  printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "$RG" > "$RF"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "retirement executed .* claim testdom->TestClaimX"
+  run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":false'* ]]
+  # idempotent rerun: already-absent is noted, never an error
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "already absent"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
+}
+
+@test "#3752 NEGATIVE PROOF: malformed staging line REFUSES the deploy" {
+  RF="$BATS_TEST_TMPDIR/bad.jsonl"
+  printf 'this is not json\n' > "$RF"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "MALFORMED"
+}
+
+@test "#3752 NEGATIVE PROOF: claim SERVED at execute time REFUSES (Wren's window)" {
+  # 'credentials' is served by the live owl-api; a staged Credential retirement
+  # must refuse AT EXECUTE regardless of what the store says.
+  RF="$BATS_TEST_TMPDIR/served.jsonl"
+  printf '{"subject_domain":"testdom","object_class":"Credential","graph":"%s"}\n' "${TEST_GRAPH}-sv" > "$RF"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "SERVED at /credentials RIGHT NOW"
+}
+
+@test "#3752 NEGATIVE PROOF: unanswerable owl-api REFUSES claim retirements (never blind)" {
+  RF="$BATS_TEST_TMPDIR/noapi.jsonl"
+  printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "${TEST_GRAPH}-na" > "$RF"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" OWL_API_URL="http://localhost:1" bash "$SCRIPT"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "serve-check UNANSWERED"
+}
+
 @test "an invalid TTL is refused fail-loud (exit 1, no deploy)" {
   badttl="$(mktemp)"; printf 'this is not @@ valid turtle .\n' > "$badttl"
   run env ONTOLOGY_GRAPH="${TEST_GRAPH}-bad" TTL="$badttl" bash "$SCRIPT"
