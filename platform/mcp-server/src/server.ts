@@ -31,7 +31,7 @@ import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
-import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId } from './werk-run-store';
+import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -2387,6 +2387,40 @@ function mcpJson(payload: unknown): { content: Array<{ type: 'text'; text: strin
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] };
 }
 
+/** #3751 — a pin that fails integrity is REFUSED, never reported as a phase.
+ *  The attach path replayed a July pin as {phase:'landed', accepter:'jeff'} for a
+ *  reopened #3606 whose branch had nothing merged — a false land under the human's
+ *  name. Before attaching, the pin is verified against the CURRENT cycle (worktree
+ *  age) and, for 'landed', against the actual merge. On violation: archive the pin
+ *  (forensics, same shape as the manual `.landed-N` / `.stale-N` remedy), emit the spine
+ *  event, and return a typed refusal; the NEXT invoke starts a fresh run cleanly.
+ *  Returns null when the pin is sound. */
+function refuseIfPinStale(
+  run: import('./werk-run-state').WerkRun,
+  args: { role: string; card_id: number },
+  werkDir: string,
+  spawnFn: SpawnFn,
+  scriptsDir: string,
+  runsDir?: string,
+): { content: Array<{ type: 'text'; text: string }> } | null {
+  const verdict = verifyPinIntegrity(run, werkDir);
+  if (verdict.ok) return null;
+  const archived = archiveRun(args.card_id, `stale-${Date.now()}`, runsDir);
+  try {
+    const pathMod = require('path') as typeof import('path');
+    spawnFn('bash', [pathMod.join(scriptsDir, 'chorus-log'), 'werk.pin.stale',
+      args.role, `card=${args.card_id}`, `reason=${verdict.reason}`,
+      `archived=${archived ?? 'archive-failed'}`], { detached: true, stdio: 'ignore' });
+  } catch { /* best-effort */ }
+  return mcpJson({
+    ok: false, verb: 'chorus_werk', refusal: 'stale-run-pin', reason: verdict.reason,
+    role: args.role, card_id: args.card_id, archived,
+    note: `Refused: the run pin for #${args.card_id} fails integrity (${verdict.reason}: ${verdict.detail}). ` +
+      `It belongs to a previous cycle of this card and its phase is NOT the current state — nothing is reported from it. ` +
+      `The pin has been archived${archived ? ` to ${archived}` : ' (archive failed; clear it by re-pulling)'}; re-invoke chorus_werk to start a fresh run.`,
+  });
+}
+
 async function executeChorusWerk(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
@@ -2453,6 +2487,10 @@ async function executeChorusWerk(
   const action = decideRunAction(existingRun, false, existingRun ? isRunStale(existingRun) : false, headChanged, args.represent === true);
   if (action.kind === 'attach') {
     const r = action.run;
+    // #3751 — never report a phase from a pin that fails integrity (previous
+    // cycle, or 'landed' the merge disproves). Refuse typed instead.
+    const refusal = refuseIfPinStale(r, args, werkDir, spawnFn, scriptsDir, runsDir);
+    if (refusal) return refusal;
     const polling = r.phase === 'running';
     return mcpJson({
       ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
@@ -2561,6 +2599,11 @@ async function executeChorusWerkLand(
   }
   if (landAction.kind === 'attach') {
     const r = landAction.run;
+    // #3751 — the land path is where the false 'landed' hurts most: verify the
+    // pin against the cycle + the actual merge before reporting anything from it.
+    const landWerkDir = pathMod.join(werkBase, `${args.role}-${args.card_id}`);
+    const refusal = refuseIfPinStale(r, args, landWerkDir, spawnFn, scriptsDir, runsDir);
+    if (refusal) return refusal;
     return mcpJson({
           ok: true, verb: 'chorus_werk', phase: r.phase, attached: true,
           role: args.role, card_id: args.card_id, accepter,
@@ -3207,7 +3250,33 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         // #3135: pull logic lives in the rust `werk-pull` core; the skin just execs it.
-        return executeWerkVerb('werk-pull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+        const pulled = await executeWerkVerb('werk-pull', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+        // #3751 — A PULL STARTS A NEW CYCLE, SO THE OLD RUN PIN MUST DIE HERE.
+        //
+        // isRunStale() treats terminal phases as final by design ("Only 'running'
+        // can be stale"), which is right WITHIN a cycle — but a reopened card
+        // begins a new one, and nothing cleared the pin at that boundary. The
+        // previous cycle's record survived and every chorus_werk call replayed it.
+        //
+        // Observed three times on 2026-08-04 across two roles. The first is the
+        // worst shape we have: chorus_werk answered {phase:'landed',
+        // accepter:'jeff'} for #3606 while the branch sat 10 commits ahead of
+        // origin/main with NOTHING merged and Jeff having approved nothing. The
+        // /cw skill tells the model to report the current phase, so following it
+        // faithfully produces a false land report carrying Jeff's name — caught
+        // only because a human checked git by hand, which is precisely the
+        // coordination cost the verb layer exists to remove.
+        //
+        // Clearing on pull (rather than loosening staleness) keeps terminal phases
+        // final within a cycle and puts the reset at the event that actually means
+        // "new cycle". Best-effort: a pull must never fail because an old pin
+        // could not be removed.
+        try {
+          clearRun(parsed.data.card_id);
+        } catch {
+          /* non-fatal: a stale pin is a reporting defect, not a reason to fail a pull */
+        }
+        return pulled;
       }
       case 'loom-gemba': {
         const parsed = LoomGembaInput.safeParse(req.params.arguments);
