@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Journey Story — how Athena is navigated and how work moves through it</title>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --rule:#e0e0e0; --text:#1a1a1a; --muted:#667; --accent:#0d6a89;
+          --new:#177a56; --rewrite:#8f5f0d; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,sans-serif; background:var(--bg); color:var(--text); padding:40px; max-width:880px; margin:0 auto; line-height:1.6; }
+  .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:6px; }
+  h1 { font-size:2rem; font-weight:300; margin-bottom:6px; }
+  .lede { font-size:1.05rem; color:var(--muted); margin-bottom:8px; max-width:46rem; }
+  .meta { font-size:.8rem; color:var(--muted); margin-bottom:34px; }
+  h2 { font-size:1.15rem; margin:34px 0 12px; }
+  h3 { font-size:.95rem; margin:20px 0 8px; }
+  p { margin-bottom:12px; max-width:46rem; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:16px 0; }
+  @media (max-width:800px){ .cols { grid-template-columns:1fr; } }
+  .journey { background:var(--panel); border:1px solid var(--rule); border-radius:8px; padding:18px 20px; }
+  .journey.new { border-top:3px solid var(--new); }
+  .journey.rewrite { border-top:3px solid var(--rewrite); }
+  .journey h3 { margin-top:0; }
+  ol { margin:8px 0 10px 20px; }
+  ol li { margin-bottom:6px; font-size:.92rem; }
+  ol li b { font-weight:600; }
+  .ex { font-size:.82rem; color:var(--muted); border-top:1px solid var(--rule); padding-top:10px; margin-top:10px; }
+  .ladder { background:var(--panel); border:1px solid var(--rule); border-radius:8px; padding:18px 22px; overflow-x:auto; margin:14px 0; }
+  pre.mermaid { background:none; border:none; font-size:.9rem; }
+  .q { background:var(--panel); border-left:4px solid var(--accent); padding:14px 18px; margin:16px 0; max-width:46rem; }
+  .q b { font-size:1.02rem; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; margin:12px 0; max-width:46rem; }
+  th { text-align:left; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--rule); }
+  td { padding:7px 8px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  a { color:var(--accent); }
+  .refs { font-size:.85rem; color:var(--muted); border-top:1px solid var(--rule); margin-top:36px; padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="eyebrow">Athena · Design · #3758</div>
+<h1>The Journey Story</h1>
+<p class="lede">Athena is navigated as journeys, not pages. Two journeys move work through it; one ladder moves attention through it. This doc names all three, grounded in the week they were lived rather than imagined.</p>
+<p class="meta">Wren · 2026-08-05 · from Jeff's ideation thread of 2026-08-04/05 · companions: <a href="/designing/docs/chorus-ui-inventory-tobe.html">UI inventory &amp; to-be tree</a> · <a href="/designing/docs/chorus-ui-sitemap/2026-08-05/report.html">site map (39 screenshots + narratives)</a> · design language: <a href="/designing/docs/athena-flow-mock/index.html">athena-flow-mock</a> (#3378)</p>
+
+<h2>Why "journey" and not "site"</h2>
+<p>On 2026-08-05, Jeff walked the Chorus UI for ninety minutes and found four breaks: an instance page that ended the descent in three dashes, a domain page ordered against his reading direction, an ops view with no way to see the model, and a front door linking only three disconnected pages. None of these were rendering bugs — every page rendered. They were <em>journey</em> breaks: places where the question "where does this let me go next?" had no answer. His framing: <em>"~ like jx or user journey in athena"</em>, and the diagnosis that pages weren't the problem: <em>"its lack of integration and design coherence."</em></p>
+<p>So the acceptance question for every Athena surface, from here on:</p>
+<div class="q"><b>Does the journey continue from here?</b><br>
+Not "does the page render." Every surface must answer: where am I, what am I looking at, and where can I go next — up, down, or across. A page that renders but strands the reader fails review. The <a href="/designing/docs/chorus-ui-sitemap/2026-08-05/report.html">site coherence check</a> enforces the mechanical half (responds + renders real content); Jeff's walk enforces the rest.</div>
+
+<h2>The altitude ladder — how attention moves</h2>
+<p>Jeff: <em>"the model view is meant to be big picture drilling down to detail while domains in athena is already at the detail"</em> — and then: <em>"both are needed."</em> They aren't competing pages; they're altitudes. The descent, with the cross-link at the domain rung:</p>
+<div class="ladder">
+<pre class="mermaid">
+flowchart TD
+    ROOT["/ — the entrance<br/><i>value stream as the front door (#3761)</i>"]
+    VS["Value stream<br/>Shaping → Directing → Designing → Building → Proving → Reflecting"]
+    PROD["Products of a step<br/>athena · loom · werk · borg · clearing · convergence"]
+    DOM["Domains of a product"]
+    MODEL["Model view — /domains/&lt;d&gt;<br/>schema → OWL → instances"]
+    OPS["Ops view — Athena listing<br/><i>'i like the ux and simplicity of this'</i>"]
+    SVC["Services — the running things<br/>→ health · logs · deploys"]
+    INST["Instance — /domains/&lt;d&gt;/&lt;i&gt;<br/>the bottom of the descent"]
+    ERD["The ERD — /athena/model.html<br/>what it's all made of (#3739)"]
+
+    ROOT --> VS --> PROD --> DOM
+    ROOT -.one click.-> ERD
+    DOM --> MODEL
+    DOM --> OPS
+    MODEL <-. cross-link, same data,<br/>cannot drift (#3757) .-> OPS
+    MODEL --> INST
+    DOM --> SVC
+    ERD -.drill.-> DOM
+</pre>
+</div>
+<p>The rule at the cross-link: wherever a domain appears, the same model fold appears, drawing from the same generated endpoints — a shared component, not a copy (<a href="#refs">#3757</a>). Two lenses, one substrate, visibly stitched. The failure mode is never having two views; it's forgetting they share one truth.</p>
+
+<h2>The two work journeys</h2>
+<p>Same six muscles, opposite weighting. The week of 2026-08-04/05 ran both back to back, which is why the examples below are receipts, not hypotheticals.</p>
+
+<div class="cols">
+<div class="journey new">
+<h3>Building new — the work is authoring</h3>
+<ol>
+<li><b>Shape</b> — name the domain, its value-stream place, what it claims</li>
+<li><b>Model</b> — classes and properties through the governed pen; the shape declares its instance home (ADR-051)</li>
+<li><b>Generate</b> — owl-api mounts the surface the moment the shape lands; pages project</li>
+<li><b>Populate</b> — instances flow in through the governed writer</li>
+<li><b>Prove</b> — the serve proof: right graph, whole content, source-exclusive</li>
+<li><b>Reflect</b> — the ERD shows the new domain's lines, or its honest isolation</li>
+</ol>
+<p class="ex"><b>Lived example — Values (#3759):</b> chorus:Value has zero triples today. Beck states the five values and their principle edges; the work is authoring them onto proven rails. Almost no history to fight; the risk is modeling wrong, which is cheap to fix.</p>
+</div>
+
+<div class="journey rewrite">
+<h3>Rewriting — the work is negotiating with the past</h3>
+<ol>
+<li><b>Observe</b> — measure what exists and where it actually lives; never from memory</li>
+<li><b>Model the target</b> — what stays, what goes, and why, recorded</li>
+<li><b>Migrate</b> — move the keepers to their declared home</li>
+<li><b>Retire</b> — staged, verified deletions with regression locks; tombstones, not silence</li>
+<li><b>Repoint</b> — every consumer onto the generated surface; old paths retired in the same motion</li>
+<li><b>Prove the transition</b> — the three-state proof, where the change from red to green is the evidence</li>
+</ol>
+<p class="ex"><b>Lived example — Principles (#3749):</b> 29 messy instances across three graphs, three broken read paths, an API serving 2-of-29 for months. Ended as: 14 PC principles in one declared graph, 29 verified retirements, every consumer on one generated surface, provenance in every envelope. All six of the week's two-states bugs lived in this journey — every one was history disagreeing with intent.</p>
+</div>
+</div>
+
+<p>The platform consequence Jeff named: <em>Athena should know which journey you're on.</em> A new-build card runs the left column; a rewrite card runs the right; the tooling (pen, deploy, proofs) is shared, but the sequence, the risks, and the evidence differ. The two-journeys distinction belongs in how cards are shaped, not just in this doc.</p>
+
+<h2>The four journey breaks — the counterexamples</h2>
+<table>
+<tr><th>Break (found 2026-08-05)</th><th>What it violated</th><th>Fix</th></tr>
+<tr><td>Instance page rendered three dashes</td><td>The descent ended in a husk — journey stopped at the bottom rung</td><td>Entity-read pages, long text as prose (#3749)</td></tr>
+<tr><td>Domain page: instances above schema</td><td>Read against the map-first direction of the descent</td><td>Structure first: schema → OWL → instances (#3749)</td></tr>
+<tr><td>Ops pages had no model fold</td><td>Ground level with no ladder up — altitudes disconnected</td><td>Shared model fold, cannot drift (#3757)</td></tr>
+<tr><td>Root page linked three disconnected legacy pages</td><td>The journey had no entrance</td><td>Value stream as the front door (#3761)</td></tr>
+</table>
+
+<h2>Why the front end lagged the back end</h2>
+<p>Jeff, closing the thread: <em>"the front end ux/jx is less organized than the back end ax."</em> The reason is structural, not neglect: the back end has three agents as continuous users — every verb and refusal got hammered into shape by constant use failing loudly. The front end's only user is Jeff, occasionally — so incoherence accumulated silently between walks. The remedy mirrors the cause: give the JX the forcing functions the AX has. The coherence check is the front end's refusal discipline; Jeff's review walk is its gemba, made a ceremony instead of an accident.</p>
+
+<h2 id="refs">The plan</h2>
+<p>Chunk <b>athena-jx</b>, in order: this doc (#3758, the plan on paper) → <a href="/designing/docs/chorus-ui-inventory-tobe.html">the to-be tree</a> reviewed by Jeff → #3761 (the entrance + shared chrome + nav spine, the flow mock as design language, the crawl as the negative proof) → #3757 (the model fold at ground level). The dispositions live in the inventory; corrections belong on #3761 as comments.</p>
+<script src="/js/vendor/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+<div class="refs">
+#3758 (this doc) · #3761 (the Chorus journey — integration) · #3757 (model fold) · #3759 (Values) · #3760 (recursive principles) · #3749 (principles leg, landed 2026-08-05) · #3378 (athena-flow-mock) · #3739 (the ERD) · ADR-051 (instance placement) · Jeff's thread: 2026-08-04 "similar yet different" → 2026-08-05 "value stream and product then drilling down into the domains" · "and services" · "both are needed"
+</div>
+</body>
+</html>
