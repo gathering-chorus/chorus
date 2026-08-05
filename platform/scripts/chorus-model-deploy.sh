@@ -290,6 +290,111 @@ case "$_scode" in
 esac
 
 # =============================================================================
+# STAGED RETIREMENTS (#3752) — execute what `athena-model retire-claim` staged.
+#
+# The write boundary of the TBox retirement verb: the verb NEVER touches the
+# store; it appends a JSONL entry here, and THIS section — the same governed
+# deploy that merges the model — executes the delete. Two entry forms:
+#   claim:   {"subject_domain","object_class",...}  → one definesVocabulary triple
+#   subject: {"retire_subject":"<iri>","graph":...} → every triple of one subject
+# Semantics: IDEMPOTENT (already-absent = executed, noted, never an error) and
+# FAIL-CLOSED at every ask (#3731). Claim entries are re-checked against
+# owl-api's LIVE served routes AT EXECUTE TIME (Wren's review flag: the verb's
+# serve-check runs at stage time; a surface can come back up between staging
+# and deploy — that window refuses loudly here, and an unanswerable owl-api
+# refuses too, never a blind delete).
+# =============================================================================
+RETIREMENTS_FILE="${RETIREMENTS_FILE:-$CHORUS_ROOT/designing/schemas/model-retirements.jsonl}"
+OWL_API_URL="${OWL_API_URL:-http://localhost:3360}"
+if [ -f "$RETIREMENTS_FILE" ]; then
+  _served_resp=$(curl -s -m 5 "$OWL_API_URL/__model_deploy_probe__" 2>/dev/null || true)
+  _rline=0
+  while IFS= read -r _rentry || [ -n "$_rentry" ]; do
+    _rline=$((_rline + 1))
+    [ -z "$_rentry" ] && continue
+    _rparsed=$(printf '%s' "$_rentry" | python3 -c '
+import json, sys
+e = json.load(sys.stdin)
+print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("route",""), sep="\x1f")' 2>/dev/null) || {
+      echo "chorus-model-deploy: RETIREMENTS line $_rline is MALFORMED — refusing the deploy (fail-closed, #3752)" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retirement-staging-malformed" line="$_rline" 2>/dev/null || true
+      exit 1
+    }
+    # \x1f (unit separator): TAB is IFS-whitespace in bash and COLLAPSES
+    # adjacent delimiters, silently shifting fields left past an empty one —
+    # a claim entry became a subject retirement of its own graph name in the
+    # first test run. A non-whitespace separator keeps empty fields empty.
+    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rroute <<< "$_rparsed"
+    _rg="${_rgraph:-$ONTOLOGY_GRAPH}"
+    if [ -n "$_rsubj" ]; then
+      _rask="ASK { GRAPH <$_rg> { <$_rsubj> ?p ?o } }"
+      _rdel="DELETE WHERE { GRAPH <$_rg> { <$_rsubj> ?p ?o } }"
+      _rlabel="subject $_rsubj"
+    elif [ -n "$_rdom" ] && [ -n "$_rcls" ]; then
+      # Serve-gate at EXECUTE time (claim entries only — a claim under a live
+      # route must not retire, and an unanswerable owl-api must not blind-pass).
+      if ! printf '%s' "$_served_resp" | grep -q '"served"'; then
+        echo "chorus-model-deploy: RETIREMENT serve-check UNANSWERED (owl-api gave no route list) — refusing to execute claim retirements blind (#3752, Wren's window)" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-serve-check-unanswered" 2>/dev/null || true
+        exit 1
+      fi
+      _rroute_now=$(printf '%s' "$_rcls" | python3 -c '
+import sys
+c = sys.stdin.read().strip().lower()
+irr = {"property":"properties","propertykey":"propertykeys"}
+print(irr.get(c, c[:-1]+"ies" if c.endswith("y") else c+"s"))')
+      if printf '%s' "$_served_resp" | grep -q "\"/$_rroute_now\""; then
+        echo "chorus-model-deploy: RETIREMENT REFUSED — class $_rcls is SERVED at /$_rroute_now RIGHT NOW (surface came up since staging); unserve first (#3752)" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-claim-served-at-execute" route="$_rroute_now" 2>/dev/null || true
+        exit 1
+      fi
+      _rs="https://jeffbridwell.com/chorus#$_rdom"
+      _ro="https://jeffbridwell.com/chorus#$_rcls"
+      _rp="https://jeffbridwell.com/chorus#definesVocabulary"
+      _rask="ASK { GRAPH <$_rg> { <$_rs> <$_rp> <$_ro> } }"
+      _rdel="DELETE DATA { GRAPH <$_rg> { <$_rs> <$_rp> <$_ro> } }"
+      _rlabel="claim ${_rdom}->${_rcls}"
+    else
+      echo "chorus-model-deploy: RETIREMENTS line $_rline has neither a claim nor a subject — refusing (fail-closed, #3752)" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-entry-empty" line="$_rline" 2>/dev/null || true
+      exit 1
+    fi
+    _rresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode "query=$_rask" -H "Accept: application/sparql-results+json" 2>/dev/null)
+    if ! printf '%s' "$_rresp" | grep -q '"boolean"'; then
+      echo "chorus-model-deploy: RETIREMENT pre-ask unanswered for $_rlabel — refusing a blind execute (#3731 class)" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-ask-unanswered" 2>/dev/null || true
+      exit 1
+    fi
+    if ! printf '%s' "$_rresp" | grep -qE '"boolean"[ ]*:[ ]*true'; then
+      echo "chorus-model-deploy: retirement $_rlabel already absent from <$_rg> (idempotent — previously executed)"
+      continue
+    fi
+    _rcode=$(curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
+      -H 'Content-Type: application/sparql-update' --data-binary "$_rdel" "$FUSEKI_UPDATE" 2>/dev/null) || _rcode="000"
+    case "$_rcode" in 2*) : ;; *)
+      echo "chorus-model-deploy: RETIREMENT delete failed (http $_rcode) for $_rlabel" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-delete-http-$_rcode" 2>/dev/null || true
+      exit 1 ;;
+    esac
+    _rverify=$(curl -s "$FUSEKI_QUERY" --data-urlencode "query=$_rask" -H "Accept: application/sparql-results+json" 2>/dev/null)
+    if ! printf '%s' "$_rverify" | grep -q '"boolean"'; then
+      echo "chorus-model-deploy: RETIREMENT post-verify unanswered for $_rlabel — executed but UNVERIFIED; failing loud" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-verify-unanswered" 2>/dev/null || true
+      exit 1
+    fi
+    if printf '%s' "$_rverify" | grep -qE '"boolean"[ ]*:[ ]*true'; then
+      echo "chorus-model-deploy: RETIREMENT VERIFY FAILED — $_rlabel still present in <$_rg> after delete" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-still-present" 2>/dev/null || true
+      exit 1
+    fi
+    echo "chorus-model-deploy: retirement executed — $_rlabel removed from <$_rg>"
+    "$CHORUS_LOG" model.retirement.executed "$ROLE" graph="$_rg" target="$_rlabel" line="$_rline" 2>/dev/null || true
+  done < "$RETIREMENTS_FILE"
+else
+  echo "chorus-model-deploy: no retirements staged ($RETIREMENTS_FILE absent)"
+fi
+
+# =============================================================================
 # INSTANCE_SET (#3698, Silas-ruled) — hydrate PURE-ABox instances into
 # urn:chorus:instances. SEPARATE from and AFTER the ontology transaction above.
 #

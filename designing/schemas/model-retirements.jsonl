@@ -1,0 +1,3 @@
+{"subject_domain":"cards","predicate":"definesVocabulary","object_class":"WorkItem","reason":"zero instances, no consumer — #3727 disposition (wren)","by":"silas","card":"3752","staged_at":"2026-08-05T17:10:39Z","status":"staged"}
+{"subject_domain":"domains","predicate":"definesVocabulary","object_class":"CollectionDomain","reason":"zero instances, no consumer — #3727 disposition (wren)","by":"silas","card":"3752","staged_at":"2026-08-05T17:10:57Z","status":"staged"}
+{"subject_domain":"cicd","predicate":"definesVocabulary","object_class":"Workflow","reason":"zero instances, no consumer — #3727 disposition (kade)","by":"silas","card":"3752","staged_at":"2026-08-05T17:11:15Z","status":"staged"}

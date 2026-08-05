@@ -3467,6 +3467,16 @@
         "graph": "Target named graph",
         "reason": "riot-absent-allowed"
       }
+    },
+    "model.retirement.executed": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "#3752: a retirement staged by `athena-model retire-claim` was executed by the deploy's retirement section — ASK-verified before (present) and after (absent), serve-gated at execute time for claim entries. The governed replacement for the 2026-08-04 bounded admin-DELETE exception.",
+      "fields": {
+        "graph": "Named graph the retirement executed against",
+        "target": "claim <domain>-><class> or subject <iri>",
+        "line": "Staging file line number"
+      }
     }
   }
 }

@@ -1573,9 +1573,13 @@ pub fn changed_model_sources(diff: &str) -> Vec<String> {
     diff.lines()
         .map(str::trim)
         .filter(|l| {
-            l.ends_with(".ttl")
+            (l.ends_with(".ttl")
                 && l.starts_with("roles/")
-                && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/"))
+                && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/")))
+                // #3752 — staged retirements ARE model changes: landing a card
+                // that stages one must run the model deploy so the retirement
+                // section executes it (the land is the execution moment).
+                || *l == "designing/schemas/model-retirements.jsonl"
         })
         .map(str::to_string)
         .collect()
@@ -2746,6 +2750,15 @@ mod model_source_tests {
     fn non_model_ttls_and_code_do_not_trigger() {
         let diff = "platform/api/src/sparql/shapes.ttl\nroles/silas/adr/ADR-055-harness-dependency-boundary.md\nroles/silas/next-session.md\nplatform/services/werk-deploy/src/lib.rs";
         assert!(changed_model_sources(diff).is_empty());
+    }
+
+    #[test]
+    fn staged_retirements_trigger_the_model_deploy() {
+        // #3752 — a card whose only model-side change is staging a retirement
+        // must still run the model deploy; the retirement section is what
+        // executes the staged delete.
+        let diff = "designing/schemas/model-retirements.jsonl\nplatform/services/chorus-model/src/tbox.rs";
+        assert_eq!(changed_model_sources(diff), vec!["designing/schemas/model-retirements.jsonl"]);
     }
 
     #[test]
