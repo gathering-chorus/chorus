@@ -96,9 +96,24 @@ for ttl in "${MODEL_SET[@]}"; do
 done
 
 # Don't deploy a broken model — riot-validate every set member first.
-if command -v riot >/dev/null 2>&1; then
+# #3731 — ABSENT riot used to mean "every .ttl deploys unvalidated, output
+# identical to a clean run" (fail-open hole 3). Now: refuse loudly, with an
+# EXPLICIT escape (ALLOW_UNVALIDATED=1) whose output is unmistakably not a
+# clean run. RIOT_BIN/SHACL_BIN are test seams so the absent state is drivable.
+RIOT_BIN="${RIOT_BIN:-riot}"
+SHACL_BIN="${SHACL_BIN:-shacl}"
+if ! command -v "$RIOT_BIN" >/dev/null 2>&1; then
+  if [ "${ALLOW_UNVALIDATED:-0}" = "1" ]; then
+    echo "chorus-model-deploy: WARNING — riot NOT INSTALLED, deploying UNVALIDATED TTL (ALLOW_UNVALIDATED=1 set; #3731). This is not a clean run." >&2
+    "$CHORUS_LOG" model.deploy.unvalidated "$ROLE" graph="$ONTOLOGY_GRAPH" reason="riot-absent-allowed" 2>/dev/null || true
+  else
+    echo "chorus-model-deploy: REFUSING — riot (Jena) not installed; cannot validate the model before deploy. Install jena, or set ALLOW_UNVALIDATED=1 to proceed loudly (#3731 fail-closed)." >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="riot-absent" 2>/dev/null || true
+    exit 1
+  fi
+else
   for ttl in "${MODEL_SET[@]}"; do
-    if ! riot --validate "$ttl" >/dev/null 2>&1; then
+    if ! "$RIOT_BIN" --validate "$ttl" >/dev/null 2>&1; then
       echo "chorus-model-deploy: riot validate FAILED for $ttl — NOT deploying" >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="riot-invalid" 2>/dev/null || true
       exit 1
@@ -186,10 +201,20 @@ code="$ccode"
 # additive merge only DELETEs staged subjects, so non-staged subjects are untouched by
 # construction (a runtime co-tenant diff would be dead code). SHACL input-validation is the
 # remaining AC2 gap, gated on a SHACL tool — tracked on the card, not faked here.
-_missing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+# #3731 — CSV-header witness (the #3726 single-request-truth pattern): "0
+# missing" and "could not ask" were the same value here — a dead query endpoint
+# made this verify PASS blind. Require the header + numeric row; else fail-closed.
+_vresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
   "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$ONTOLOGY_GRAPH> { ?s ?q ?r } } }" \
-  -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
-if [ "${_missing:-0}" -ne 0 ] 2>/dev/null; then
+  -H 'Accept: text/csv' 2>/dev/null)
+if ! printf '%s' "$_vresp" | head -1 | grep -q '^n'; then
+  echo "chorus-model-deploy: OUTPUT-VERIFY could not ask (no CSV header from the store) — refusing to pass a blind verify (#3731)" >&2
+  "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-unanswered" 2>/dev/null || true
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  exit 1
+fi
+_missing=$(printf '%s\n' "$_vresp" | tail -1 | tr -dc '0-9')
+if [ "${_missing:-1}" -ne 0 ] 2>/dev/null; then
   echo "chorus-model-deploy: OUTPUT-VERIFY FAILED — ${_missing} staged subject(s) absent from <$ONTOLOGY_GRAPH> post-merge (INSERT dropped data; #3536 AC2)" >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-staged-missing" missing="${_missing}" 2>/dev/null || true
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
@@ -216,13 +241,29 @@ fi
 # here is a separate concern). shapes.ttl (V1: SubProduct/SubDomain/CatalogDoc) is deliberately
 # ignored — validating V2 data against V1 shapes is meaningless noise. Full deploys only
 # (TTL= partial/test deploys skip it — keeps the bats suite fast; the report is for real deploys).
-if [ -z "${TTL:-}" ] && command -v shacl >/dev/null 2>&1; then
-  _v2shapes="$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
-  _union="$(mktemp)"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
-  _shacl_n=$(shacl validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null | grep -c 'sh:resultSeverity' 2>/dev/null || echo 0)
-  rm -f "$_union"
-  echo "chorus-model-deploy: SHACL report (V2 shapes, non-gating) — ${_shacl_n} violation(s) [migration-progress signal, not a gate]"
-  "$CHORUS_LOG" model.deploy.shacl "$ROLE" graph="$ONTOLOGY_GRAPH" violations="${_shacl_n:-0}" gating=false 2>/dev/null || true
+# #3731 — the report stays NON-GATING (Wren's ruling stands), but its three
+# states are now distinguishable: ran-clean / ran-with-violations / DID-NOT-RUN.
+# A crashed validator used to report "0 violation(s)" — migration-complete-by-
+# crash, the could-not-ask class.
+# SHACL_REPORT=1 is a test seam: lets the bats suite drive this leg on a cheap
+# TTL= partial deploy (production behavior unchanged — full deploys only).
+if [ -z "${TTL:-}" ] || [ "${SHACL_REPORT:-0}" = "1" ]; then
+  if command -v "$SHACL_BIN" >/dev/null 2>&1; then
+    _v2shapes="$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
+    _union="$(mktemp)"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
+    if _shacl_out=$("$SHACL_BIN" validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null); then
+      _shacl_n=$(printf '%s' "$_shacl_out" | grep -c 'sh:resultSeverity' 2>/dev/null || true)
+      echo "chorus-model-deploy: SHACL report (V2 shapes, non-gating) — ${_shacl_n:-0} violation(s) [migration-progress signal, not a gate]"
+      "$CHORUS_LOG" model.deploy.shacl "$ROLE" graph="$ONTOLOGY_GRAPH" violations="${_shacl_n:-0}" gating=false status=ran 2>/dev/null || true
+    else
+      echo "chorus-model-deploy: SHACL validator CRASHED — violations UNKNOWN, not 0 (#3731; report-only, deploy continues)" >&2
+      "$CHORUS_LOG" model.deploy.shacl "$ROLE" graph="$ONTOLOGY_GRAPH" violations=unknown gating=false status=crashed 2>/dev/null || true
+    fi
+    rm -f "$_union"
+  else
+    echo "chorus-model-deploy: SHACL report SKIPPED — validator not installed; model deployed WITHOUT the V2-shape report (#3731; not a clean-run signal)" >&2
+    "$CHORUS_LOG" model.deploy.shacl "$ROLE" graph="$ONTOLOGY_GRAPH" violations=unknown gating=false status=absent 2>/dev/null || true
+  fi
 fi
 
 echo "chorus-model-deploy: deployed ${#MODEL_SET[@]} model file(s) -> <$ONTOLOGY_GRAPH> (http $code, $n triples live)"
@@ -306,11 +347,19 @@ if [ -z "${TTL:-}" ]; then
     exit 1
   fi
   # Output-verify: every staged instance subject actually landed (catches a lying-2xx).
-  _imissing=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+  # #3731 — same CSV-header witness as the ontology verify: a dead endpoint
+  # must fail this check, never blank-pass it.
+  _iresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$INSTANCE_GRAPH> { ?s ?q ?r } } }" \
-    -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+    -H 'Accept: text/csv' 2>/dev/null)
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
-  if [ "${_imissing:-0}" -ne 0 ] 2>/dev/null; then
+  if ! printf '%s' "$_iresp" | head -1 | grep -q '^n'; then
+    echo "chorus-model-deploy: INSTANCE-VERIFY could not ask (no CSV header from the store) — refusing to pass a blind verify (#3731)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _imissing=$(printf '%s\n' "$_iresp" | tail -1 | tr -dc '0-9')
+  if [ "${_imissing:-1}" -ne 0 ] 2>/dev/null; then
     echo "chorus-model-deploy: INSTANCE-VERIFY FAILED — ${_imissing} staged subject(s) absent from <$INSTANCE_GRAPH> post-merge" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-missing" missing="${_imissing}" 2>/dev/null || true
     exit 1
