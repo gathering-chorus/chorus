@@ -62,91 +62,76 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
   };
 }
 
-function stripPrefix(uri: string): string {
-  if (uri.startsWith(CHORUS_PREFIX)) return uri.slice(CHORUS_PREFIX.length);
-  const hashIdx = uri.lastIndexOf('#');
-  if (hashIdx >= 0) return uri.slice(hashIdx + 1);
-  const slashIdx = uri.lastIndexOf('/');
-  return slashIdx >= 0 ? uri.slice(slashIdx + 1) : uri;
+// #3749 — the SPARQL fold path (stripPrefix/buildPrincipleRow/addParentIfMissing/
+// foldBindings + loom-principles.sparql) is RETIRED: it read urn:chorus:instances
+// while the canonical principles lived elsewhere (the 2-of-29 split). The
+// handler below sources the generated owl-api surface instead.
+
+export interface LoomPrinciplesOwlDeps {
+  /** injectable for tests — defaults to global fetch against the local owl-api */
+  fetchFn?: typeof fetch;
+  owlApiUrl?: string;
+  now?: () => number;
+  envelope?: typeof defaultEnvelope;
 }
 
-function buildPrincipleRow(b: SparqlPrincipleBinding, uri: string): PrincipleRow {
-  return {
-    id: stripPrefix(uri),
-    label: b.label?.value ?? '',
-    comment: b.comment?.value ?? '',
-    techReading: b.techReading?.value ?? '',
-    jeffReading: b.jeffReading?.value ?? '',
-    isPermacultureParent: b.isPermacultureParent?.value === 'true',
-    order: b.order?.value ? Number.parseInt(b.order.value, 10) : null,
-    parents: [],
-    uri,
-  };
-}
-
-function addParentIfMissing(row: PrincipleRow, b: SparqlPrincipleBinding): void {
-  const parentUri = b.parent?.value;
-  if (!parentUri) return;
-  if (row.parents.some((p) => p.uri === parentUri)) return;
-  row.parents.push({
-    id: stripPrefix(parentUri),
-    label: b.parentLabel?.value ?? stripPrefix(parentUri),
-    uri: parentUri,
-  });
-}
-
-function foldBindings(bindings: SparqlPrincipleBinding[]): PrincipleRow[] {
-  // A principle can have multiple parents (services-R-B-I maps to two
-  // permaculture parents) — bindings arrive one row per parent. Fold into
-  // one row per principle URI, collecting parents[] as a set.
-  const byUri = new Map<string, PrincipleRow>();
-  for (const b of bindings) {
-    const uri = b.principle?.value ?? '';
-    if (!uri) continue;
-    let row = byUri.get(uri);
-    if (!row) {
-      row = buildPrincipleRow(b, uri);
-      byUri.set(uri, row);
-    }
-    addParentIfMissing(row, b);
-  }
-  const principles = Array.from(byUri.values());
-  // Permaculture parents render in book order (chorus:order). Specializations and
-  // unparented entries fall back to label sort. Frontend may re-group nested under
-  // parents — this sort produces a deterministic flat order regardless.
-  principles.sort((a, b) => {
-    if (a.isPermacultureParent && b.isPermacultureParent) {
-      return (a.order ?? 999) - (b.order ?? 999);
-    }
-    if (a.isPermacultureParent !== b.isPermacultureParent) {
-      return a.isPermacultureParent ? -1 : 1;
-    }
-    return a.label.localeCompare(b.label);
-  });
-  return principles;
-}
-
+// #3749 — REPOINTED to the generated surface. The old implementation ran
+// loom-principles.sparql against urn:chorus:instances while 27 of 29 canonical
+// principles sat in urn:chorus:ontology — the writer/reader graph split that
+// served 2-of-29 for months. owl-api /principles reads the shape-declared
+// instance graph (urn:chorus:domains:principles, ADR-051), so this handler now
+// has ONE source of truth and cannot disagree with the model. The legacy
+// envelope shape (id/label/comment/readings/parents) is preserved so
+// loom/principles.html and the session-boot injector keep working unchanged;
+// `parents` is empty by construction post-#3749 (the 14 are peers).
 export async function fetchLoomPrinciples(
-  deps: LoomPrinciplesDeps,
+  deps: LoomPrinciplesOwlDeps = {},
 ): Promise<{ status: number; body: unknown }> {
   const now = deps.now ?? (() => Date.now());
   const envelope = deps.envelope ?? defaultEnvelope;
+  const fetchFn = deps.fetchFn ?? fetch;
+  const base = deps.owlApiUrl ?? process.env.OWL_UPSTREAM ?? 'http://127.0.0.1:3360';
   const started = now();
-
   try {
-    const query = deps.loadQuery('loom-principles');
-    const res = await deps.sparql(query);
-    const principles = foldBindings(res.results?.bindings ?? []);
+    const listRes = await fetchFn(`${base}/principles`);
+    if (!listRes.ok) {
+      // an unreachable generated surface must never read as "no principles"
+      return {
+        status: 502,
+        body: envelope('principles', { error: `owl-api /principles answered ${listRes.status}` }, now() - started, { error: true }),
+      };
+    }
+    const list = (await listRes.json()) as { data?: Array<{ name?: string }> };
+    const names = (list.data ?? []).map((r) => r.name ?? '').filter(Boolean);
+    const principles: PrincipleRow[] = [];
+    for (const name of names) {
+      const entRes = await fetchFn(`${base}/principles/${encodeURIComponent(name)}`);
+      if (!entRes.ok) continue; // a vanished entity mid-walk: skip, count tells
+      const ent = (await entRes.json()) as { data?: Record<string, string> };
+      const d = ent.data ?? {};
+      principles.push({
+        id: name,
+        label: d.label ?? '',
+        comment: d.comment ?? '',
+        techReading: d.techReading ?? '',
+        jeffReading: d.jeffReading ?? '',
+        isPermacultureParent: d.isPermacultureParent === 'true',
+        order: d.order ? Number.parseInt(d.order, 10) : null,
+        parents: [],
+        uri: d.iri ?? `${CHORUS_PREFIX}${name}`,
+      });
+    }
+    principles.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.label.localeCompare(b.label));
     const durationMs = now() - started;
     return {
       status: 200,
-      body: envelope('principles', { principles }, durationMs, { count: principles.length }),
+      body: envelope('principles', { principles }, durationMs, { count: principles.length, servedFrom: 'owl-api:/principles' }),
     };
   } catch (err) {
     const durationMs = now() - started;
     const message = err instanceof Error ? err.message : String(err);
     return {
-      status: 500,
+      status: 502,
       body: envelope('principles', { error: message }, durationMs, { error: true }),
     };
   }

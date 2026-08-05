@@ -1,25 +1,26 @@
 # #3749 — the loom model's serving layer, leg 1: Principle.
 #
 # The class, its properties (techReading/jeffReading) and the 14 PC instances
-# already live in roles/silas/ontology/chorus.ttl. What was missing — and why
-# Principle was CLAIMED but never SERVED — is the SHACL shape owl-api's gate
+# were authored in roles/silas/ontology/chorus.ttl. The missing artifact — why
+# Principle was CLAIMED but never SERVED — was the SHACL shape owl-api's gate
 # requires ("no shape found — land the schema first", lib.rs:734).
 #
-# Everything below this header is MINTED by athena-model's TBox verbs (#3718),
-# appended, never hand-edited. The 14 PC instances MIGRATE to their ADR-051
-# home urn:chorus:domains:principles (see principles-instances-3749.ttl +
-# PRINCIPLES_SET in chorus-model-deploy.sh) — so owl-api's domain-projection
-# resolves with no instancesGraph override, and reader=writer=one canonical
-# graph. That is the kill of the 2-of-29 writer/reader split, not a relocation
-# of it (pair receipt, Wren+Kade 2026-08-05).
+# Everything below this header is MINTED by athena-model's TBox verbs (#3718,
+# --instances-graph flag per #3752), appended, never hand-edited. The 14 PC
+# instances migrate to urn:chorus:domains:principles (ADR-051: placement
+# DECLARED ON THE SHAPE, per-domain named graphs) via principles-instances-3749.ttl
+# + the PRINCIPLES_SET deploy section — reader = writer = one canonical graph,
+# the kill of the 2-of-29 split (pair receipt, Wren+Kade+Silas 2026-08-05).
 
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
+
 chorus:PrincipleShape a sh:NodeShape ;
     sh:targetClass chorus:Principle ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:domains:principles" ;
     chorus:generatedBy "athena-model" .

@@ -2293,7 +2293,9 @@ app.get('/api/loom/decisions', (_req: Request, res: Response) => {
 // Currently scoped to loom-principles; reuses the existing principle folding logic
 // (parent set, sort, envelope) from handlers/loom-principles.ts.
 app.get('/api/athena/subdomains/:id/principles', async (_req: Request, res: Response) => {
-  const r = await fetchLoomPrinciples({ sparql: athenaSparqlQuery, loadQuery: loadSparql });
+  // #3749 — sourced from the generated owl-api surface (one implementation);
+  // the loom-principles.sparql path retired with the 2-of-29 graph split.
+  const r = await fetchLoomPrinciples();
   res.status(r.status).json(r.body);
 });
 

@@ -35,9 +35,15 @@ home=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH 
 # B2 — owl-api SERVES 14 from that graph (reader = writer, one canonical graph).
 served=$(curl -s -m 10 "$OWL_API/principles" | python3 -c "import json,sys
 d=json.load(sys.stdin)
-items=d.get('items', d.get('principles', d if isinstance(d, list) else []))
+items=d.get('data', d.get('items', d.get('principles', d if isinstance(d, list) else [])))
 print(len(items))" 2>/dev/null) || fail "owl-api /principles did not answer parseable JSON"
 [ "$served" = "14" ] || fail "/principles serves $served, want 14 — surface exists but reads the wrong graph (the 2-of-29 class)"
+
+# B3 — SOURCE DISAMBIGUATION (Silas catch): the 14 must exist ONLY in the
+# domain graph. With copies in both graphs, served=14 proves nothing about
+# which graph the reader uses — dual-tenancy makes the source undecidable.
+stale=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:ontology> { ?p a c:Principle . FILTER(STRSTARTS(STR(?p), \"${NS}hemenway-\")) } }")
+[ "$stale" = "0" ] || fail "$stale stale hemenway copies remain in urn:chorus:ontology — served-source undecidable while dual-tenant"
 
 # C — zero dangling broader references: nothing points at or from a retired
 # principle-* subject, in ANY graph. An edge surviving its subject's retirement
