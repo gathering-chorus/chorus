@@ -320,7 +320,7 @@ if [ -f "$RETIREMENTS_FILE" ]; then
     _rparsed=$(printf '%s' "$_rentry" | python3 -c '
 import json, sys
 e = json.load(sys.stdin)
-print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("route",""), sep="\x1f")' 2>/dev/null) || {
+print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("retire_graph",""), sep="\x1f")' 2>/dev/null) || {
       echo "chorus-model-deploy: RETIREMENTS line $_rline is MALFORMED — refusing the deploy (fail-closed, #3752)" >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retirement-staging-malformed" line="$_rline" 2>/dev/null || true
       exit 1
@@ -329,8 +329,62 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
     # adjacent delimiters, silently shifting fields left past an empty one —
     # a claim entry became a subject retirement of its own graph name in the
     # first test run. A non-whitespace separator keeps empty fields empty.
-    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rroute <<< "$_rparsed"
+    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rwholegraph <<< "$_rparsed"
     _rg="${_rgraph:-$ONTOLOGY_GRAPH}"
+    if [ -n "$_rwholegraph" ]; then
+      # WHOLE-GRAPH retirement (#3732): the ADR-051 Addendum II case — a graph
+      # whose every subject is a retired duplicate (blank-node property lists
+      # make per-subject retirement lossy). BACKUP IS MANDATORY AND VERIFIED
+      # BEFORE THE DROP: never practice destructive ops on live without a
+      # restore path (2026-05-30 lesson, in the memory index by name).
+      _bkdir="${GRAPH_BACKUP_DIR:-${CHORUS_ROOT}/platform/backups/graph-retirements}"
+      mkdir -p "$_bkdir" 2>/dev/null || true
+      _bk="$_bkdir/$(printf '%s' "$_rwholegraph" | tr ':/' '__')-$(date -u +%Y%m%dT%H%M%SZ).nt"
+      # CONSTRUCT via the query endpoint, NOT a GSP GET: GSP fetch 500s on this
+      # store ("Failed to write output: NodeTableTRDF/Read" — the #3496 bug
+      # family), which produced a 1-line error file that the size check below
+      # correctly refused to accept as a backup. Found by that check, not by
+      # reading the code.
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$FUSEKI_QUERY" \
+        --data-urlencode "query=CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <$_rwholegraph> { ?s ?p ?o } }" \
+        -H 'Accept: application/n-triples' -o "$_bk" 2>/dev/null || true
+      _bklines=$(grep -c . "$_bk" 2>/dev/null || echo 0)
+      _livecount=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+        "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$_rwholegraph> { ?s ?p ?o } }" \
+        -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+      if [ -z "$_livecount" ]; then
+        echo "chorus-model-deploy: GRAPH RETIREMENT could not count <$_rwholegraph> — refusing a blind drop (#3732)" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rwholegraph" reason="graph-retire-count-unanswered" 2>/dev/null || true
+        exit 1
+      fi
+      if [ "$_livecount" = "0" ]; then
+        echo "chorus-model-deploy: graph <$_rwholegraph> already empty (idempotent — previously retired)"
+        continue
+      fi
+      if [ "${_bklines:-0}" -lt "$_livecount" ]; then
+        echo "chorus-model-deploy: GRAPH RETIREMENT REFUSED — backup has ${_bklines:-0} lines for $_livecount live triples; no verified restore path, NOT dropping <$_rwholegraph> (#3732)" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rwholegraph" reason="graph-retire-backup-incomplete" backup="$_bk" 2>/dev/null || true
+        exit 1
+      fi
+      _dcode=$(curl -s -o /dev/null -w '%{http_code}' "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
+        -H 'Content-Type: application/sparql-update' --data-binary "DROP GRAPH <$_rwholegraph>" "$FUSEKI_UPDATE" 2>/dev/null) || _dcode="000"
+      case "$_dcode" in 2*) : ;; *)
+        echo "chorus-model-deploy: GRAPH RETIREMENT drop failed (http $_dcode) for <$_rwholegraph>" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rwholegraph" reason="graph-retire-drop-http-$_dcode" 2>/dev/null || true
+        exit 1 ;;
+      esac
+      _post=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+        "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$_rwholegraph> { ?s ?p ?o } }" \
+        -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+      if [ "${_post:-1}" != "0" ]; then
+        echo "chorus-model-deploy: GRAPH RETIREMENT VERIFY FAILED — <$_rwholegraph> still holds ${_post:-?} triples after DROP" >&2
+        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rwholegraph" reason="graph-retire-still-present" 2>/dev/null || true
+        exit 1
+      fi
+      echo "chorus-model-deploy: graph retirement executed — <$_rwholegraph> dropped ($_livecount triples, backup $_bk)"
+      "$CHORUS_LOG" model.retirement.executed "$ROLE" graph="$_rwholegraph" target="graph $_rwholegraph" line="$_rline" 2>/dev/null || true
+      continue
+    fi
     if [ -n "$_rsubj" ]; then
       _rask="ASK { GRAPH <$_rg> { <$_rsubj> ?p ?o } }"
       _rdel="DELETE WHERE { GRAPH <$_rg> { <$_rsubj> ?p ?o } }"

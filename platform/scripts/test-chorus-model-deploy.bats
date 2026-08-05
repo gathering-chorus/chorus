@@ -178,6 +178,48 @@ teardown_file() {
   echo "$output" | grep -q "serve-check UNANSWERED"
 }
 
+# --- #3732: whole-graph retirement — backup-verified, fail-closed ---
+
+@test "#3732 graph retirement backs up, drops, verifies, and is idempotent" {
+  RG="${TEST_GRAPH}-dropme"
+  TT="$BATS_TEST_TMPDIR/drop.ttl"
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:DropA chorus:x "1" .\nchorus:DropB chorus:x "2" .\n' > "$TT"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
+  RF="$BATS_TEST_TMPDIR/g.jsonl"
+  printf '{"retire_graph":"%s","reason":"bats fixture","by":"silas","card":"3732"}\n' "$RG" > "$RF"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "graph retirement executed"
+  # the graph is empty AND a backup file exists with the triples
+  run curl -s "$Q" --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$RG> { ?s ?p ?o } }" -H "Accept: text/csv"
+  [[ "$output" == *"0"* ]]
+  ls "$CHORUS_ROOT/platform/backups/graph-retirements/" | grep -q "dropme"
+  # idempotent
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "already empty"
+}
+
+@test "#3732 NEGATIVE PROOF: unbackupable graph is NOT dropped (no restore path, no destruction)" {
+  RG="${TEST_GRAPH}-nobackup"
+  TT="$BATS_TEST_TMPDIR/nb.ttl"
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:KeepA chorus:x "1" .\n' > "$TT"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
+  RF="$BATS_TEST_TMPDIR/nb.jsonl"
+  printf '{"retire_graph":"%s","reason":"backup will fail","by":"silas","card":"3732"}\n' "$RG" > "$RF"
+  # Backup dir is unwritable → no backup file → refuse (data must survive).
+  UNWRITABLE="$BATS_TEST_TMPDIR/ro"; mkdir -p "$UNWRITABLE"; chmod 500 "$UNWRITABLE"
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" GRAPH_BACKUP_DIR="$UNWRITABLE/nested" bash "$SCRIPT"
+  echo "output: $output"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "no verified restore path"
+  # and the data SURVIVED
+  run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#KeepA> ?p ?o } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
+}
+
 @test "an invalid TTL is refused fail-loud (exit 1, no deploy)" {
   badttl="$(mktemp)"; printf 'this is not @@ valid turtle .\n' > "$badttl"
   run env ONTOLOGY_GRAPH="${TEST_GRAPH}-bad" TTL="$badttl" bash "$SCRIPT"
