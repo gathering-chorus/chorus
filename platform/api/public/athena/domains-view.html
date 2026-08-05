@@ -164,6 +164,22 @@ async function get(p) {
   return r.json();
 }
 
+// #3761 — the journey ladder, same rungs as athena-flow.js's journeyNav (kept in
+// step by the crawl check: both render from a single conceptual list; this page
+// has its own design system so the markup is local but the rungs must match).
+function ladder() {
+  const rungs = [
+    ['Chorus', '/'], ['Value stream', '/athena/value-stream.html'],
+    ['Products', '/athena/products.html'], ['Domains', '/athena/domains.html'],
+    ['Model (ERD)', '/athena/model.html'], ['Instances', null],
+  ];
+  return '<nav class="ladder" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">' +
+    rungs.map(([l, h]) => h
+      ? `<a class="rung" style="font-size:.78rem;padding:3px 11px;border:1px solid var(--rule);border-radius:12px;color:var(--ink-faint);text-decoration:none" href="${h}">${l}</a>`
+      : `<span class="rung here" style="font-size:.78rem;padding:3px 11px;border-radius:12px;background:#16202b;color:#fff;font-weight:600">${l}</span>`
+    ).join('') + '</nav>';
+}
+
 function crumbs(parts) {
   const out = ['<a href="/domains">domains</a>'];
   let acc = '/domains';
@@ -173,7 +189,7 @@ function crumbs(parts) {
       ? '<span>' + esc(p) + '</span>'
       : '<a href="' + acc + '">' + esc(p) + '</a>');
   });
-  return '<nav class="crumbs">' + out.join(' <span>/</span> ') + '</nav>';
+  return ladder() + '<nav class="crumbs">' + out.join(' <span>/</span> ') + '</nav>';
 }
 
 // kind → collection path, from the model's own discovery document. Never a
@@ -224,7 +240,8 @@ async function renderDomain(name) {
   const vocab = [].concat(dom.definesVocabulary || []).filter(Boolean);
   let head = crumbs([name]) +
     '<h1>' + esc(name) + '</h1>' +
-    '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') + '</p>';
+    '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') +
+    ' <a class="ref" href="/athena/domain.html?d=' + encodeURIComponent(name) + '">ops view &rarr; cards, code, tests, logs (#3761)</a></p>';
 
   // An honest empty state that names the reason — AC item. There are three
   // different reasons a domain shows nothing, and collapsing them into one
