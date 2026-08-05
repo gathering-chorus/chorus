@@ -270,6 +270,10 @@ app.get('/api/athena/model-relationships', modelRelationshipsHandler());
 // Why turtle and not more JSON: a projection can be faithful and still hide the
 // thing you are checking. Reading the triples is how you verify the projection
 // rather than trust it — which is the whole reason this was asked for.
+// #3749 — ALSO reads the domain's own instance graph (urn:chorus:domains:<d>):
+// post-ADR-051 the instances live there, not in the schema graph, and an OWL
+// view scoped to the schema graph alone showed a stocked domain as empty —
+// the fourth read-path split of the week, caught by Jeff live.
 app.get('/api/athena/domain-owl/:domain', async (req: Request, res: Response) => {
   const d = String(req.params.domain || '');
   // Local names only. A caller-supplied IRI is how injection gets in, and the
@@ -281,12 +285,16 @@ app.get('/api/athena/domain-owl/:domain', async (req: Request, res: Response) =>
   const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-CONSTRUCT { ?s ?p ?o } WHERE { GRAPH <urn:chorus:ontology> {
-  { VALUES ?s { chorus:${d} } ?s ?p ?o }
-  UNION { chorus:${d} chorus:definesVocabulary ?s . ?s ?p ?o }
-  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s rdfs:domain ?c ; ?p ?o }
-  UNION { chorus:${d} chorus:definesVocabulary ?c . ?s sh:targetClass ?c ; ?p ?o }
-} }`;
+CONSTRUCT { ?s ?p ?o } WHERE {
+  { GRAPH <urn:chorus:ontology> {
+    { VALUES ?s { chorus:${d} } ?s ?p ?o }
+    UNION { chorus:${d} chorus:definesVocabulary ?s . ?s ?p ?o }
+    UNION { chorus:${d} chorus:definesVocabulary ?c . ?s rdfs:domain ?c ; ?p ?o }
+    UNION { chorus:${d} chorus:definesVocabulary ?c . ?s sh:targetClass ?c ; ?p ?o }
+  } }
+  UNION
+  { GRAPH <urn:chorus:domains:${d}> { ?s ?p ?o } }
+}`;
   const endpoint = (process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods') + '/query';
   try {
     const r = await fetch(endpoint, {
