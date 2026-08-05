@@ -44,7 +44,7 @@ const REQUIRED_RUNGS = [
 // leaving the set are recorded as exits, not followed). Pattern → sample cap.
 const SCOPE = [
   { re: /^\/$/, cap: 1 },
-  { re: /^\/athena\/(value-stream|products|domains|model|tree)\.html$/, cap: 1 },
+  { re: /^\/athena\/(value-stream|products|domains|model|tree)\.html$/, cap: 5 },
   { re: /^\/athena\/product\.html\?p=[^&]+$/, cap: 3 },
   { re: /^\/athena\/domain\.html\?d=[^&]+$/, cap: 3 },
   { re: /^\/domains$/, cap: 1 },
@@ -71,6 +71,10 @@ async function crawl(base, scope, required) {
   const visited = new Map(); // pathq → { outLinks: n }
   const queue = ['/'];
   const seen = new Set(['/']);
+  // reachability is tracked for EVERY discovered link, independent of the visit
+  // cap — the cap bounds crawl time, and must never make a reachable page
+  // report as an orphan (the bug the first live run of this script had).
+  const discovered = new Set(['/']);
   const deadEnds = [];
 
   while (queue.length) {
@@ -94,6 +98,7 @@ async function crawl(base, scope, required) {
         const pq = u.pathname + u.search;
         if (pq === pathq) continue;
         outs.add(pq);
+        discovered.add(pq);
         if (!seen.has(pq) && inScope(pq, counts)) { seen.add(pq); queue.push(pq); }
       }
       // any same-origin link that leaves the page counts as onward — including
@@ -109,7 +114,7 @@ async function crawl(base, scope, required) {
   await browser.close();
 
   const reached = new Set(visited.keys());
-  for (const pq of seen) reached.add(pq); // discovered = reachable even if capped out of a visit
+  for (const pq of discovered) reached.add(pq); // any discovered link = reachable, even if capped out of a visit
   const orphans = required.filter(r => !reached.has(r));
   return { visited, deadEnds, orphans };
 }
