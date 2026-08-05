@@ -2376,6 +2376,7 @@ pub fn envelope(
     shape: &str,
     shape_version: &str,
     commit: &str,
+    served_from: &str,
     requires_auth: bool,
     data_json: &str,
     links_json: &str,
@@ -2396,6 +2397,11 @@ pub fn envelope(
         "\"generatedFrom\": {{ \"graph\": \"{}\", \"shape\": \"{}\", \"shapeVersion\": \"{}\", \"commit\": \"{}\" }}",
         json_escape(ONTOLOGY_GRAPH), json_escape(shape), json_escape(shape_version), json_escape(commit)
     ));
+    // #3749 — servedFrom = the INSTANCE graph this read actually queried.
+    // generatedFrom.graph names the schema source; without this field a
+    // surface reading the wrong graph is indistinguishable from one reading
+    // the right graph (the dual-tenant ambiguity Silas caught 2026-08-05).
+    p.push(format!("\"servedFrom\": \"{}\"", json_escape(served_from)));
     p.push(format!("\"data\": {}", data_json));
     p.push(format!("\"links\": {}", links_json));
     if let Some(c) = count {
@@ -2480,7 +2486,7 @@ pub fn error_envelope(
         "{{ \"type\": \"/errors/{}\", \"title\": \"{}\", \"status\": {}, \"detail\": \"{}\", \"instance\": \"{}\"{} }}",
         json_escape(type_slug), title, status, json_escape(detail), json_escape(&instance), errs
     );
-    envelope("Error", None, &instance, &shape, &shape_version, &commit, false, &data, "{}", None, "unclassified")
+    envelope("Error", None, &instance, &shape, &shape_version, &commit, &table.instances_graph, false, &data, "{}", None, "unclassified")
     // #3706 — an error envelope has no reviewed class behind it; it must not claim "v2".
 }
 
@@ -2694,6 +2700,11 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             .map(|(i, (n, edge))| {
                 if *edge {
                     format!(" OPTIONAL {{ ?s <{ns}{n}> ?e{i} . BIND(REPLACE(STR(?e{i}), \".*[#/]\", \"\") AS ?f{i}) }}", ns = NS, n = n, i = i)
+                } else if n == "comment" || n == "label" {
+                    // #3749 — rdfs well-knowns: the shape may path rdfs:label /
+                    // rdfs:comment (Principle does); the parser strips the
+                    // namespace, so probe BOTH and coalesce. chorus: wins ties.
+                    format!(" OPTIONAL {{ ?s <{ns}{n}> ?c{i} }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#{n}> ?r{i} }} BIND(COALESCE(?c{i}, ?r{i}) AS ?f{i})", ns = NS, n = n, i = i)
                 } else {
                     format!(" OPTIONAL {{ ?s <{ns}{n}> ?f{i} }}", ns = NS, n = n, i = i)
                 }
@@ -2703,7 +2714,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             .map(|i| format!(", \"|\", COALESCE(STR(?f{i}), \"\")", i = i))
             .collect();
         let q = format!(
-            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?label }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?label, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }} }} ORDER BY ?v",
+            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?clabel, ?rlabel, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }} }} ORDER BY ?v",
             g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
         );
         return match sparql_json(&q) {
@@ -2731,7 +2742,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                         Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, plural, n, limit),
                         None => "{}".to_string(),
                     };
-                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
+                    (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
                 }
             }
             Err(e) => (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
@@ -2916,6 +2927,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 let id = format!("chorus:{}", name);
                 let body = envelope(
                     kind, Some(&id), &self_url, &shape, &shape_version, &commit,
+                    &table.instances_graph,
                     !table.secured.is_empty(), &data, &links, None, &table.model_version,
                 );
                 (200, body)
@@ -3658,6 +3670,7 @@ mod tests {
             "chorus:DomainShape",
             "2026-06-19",
             "534805b9",
+            "urn:chorus:instances",
             true,
             "{ \"purpose\": \"config-as-data\" }",
             "{ \"partOf\": \"/v1/products/borg\" }",
@@ -3845,12 +3858,14 @@ mod tests {
     fn envelope_collection_omits_id_and_carries_count() {
         let c = envelope(
             "Domain", None, "/v1/domains", "chorus:DomainShape",
-            "2026-06-19", "534805b9", false, "[]", "{}", Some(35), "v2",
+            "2026-06-19", "534805b9", "urn:chorus:instances", false, "[]", "{}", Some(35), "v2",
         );
         assert!(c.contains("\"count\": 35"), "collection carries count: {}", c);
         assert!(!c.contains("\"id\":"), "collection omits id: {}", c);
         assert!(c.contains("\"requiresAuth\": false"), "open collection: {}", c);
         assert!(c.contains("\"data\": []"), "collection data is the array: {}", c);
+        // #3749 — the envelope names its true data source, distinct from the schema source
+        assert!(c.contains("\"servedFrom\": \"urn:chorus:instances\""), "envelope carries servedFrom: {}", c);
     }
 
     #[test]

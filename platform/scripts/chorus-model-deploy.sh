@@ -78,6 +78,11 @@ else
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-jobs.ttl"
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-wave2.ttl"
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-final.ttl"
+    # #3749 — the loom model's serving layer: PrincipleShape (first of the trio),
+    # minted through athena-model's TBox verbs, never hand-edited. Day-authored
+    # MODEL_SET discipline (#3654/#3675/#3686): in the manifest before anything
+    # is written to it, so nothing here is ever live-only.
+    "$CHORUS_ROOT/roles/wren/ontology/principles-3749.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
@@ -560,6 +565,76 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
   echo "chorus-model-deploy: hydrated ${#SECURITY_SET[@]} security file(s) -> <$SECURITY_GRAPH> (http $smcode, $_sn principals live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$SECURITY_GRAPH" principals="${_sn}" 2>/dev/null || true
+fi
+
+# =============================================================================
+# PRINCIPLES_SET (#3749) — the 14 PC (Hemenway) principle instances into their
+# ADR-051 home urn:chorus:domains:principles: the graph owl-api's
+# resolve_instances_graph projects from `chorus:principles definesVocabulary
+# chorus:Principle` with NO instancesGraph override. Reader = writer = one
+# canonical graph — the kill of the 2-of-29 writer/reader split (the old
+# /api/loom/principles read urn:chorus:instances while 27 of 29 sat in the
+# ontology graph). Same SAFE-BY-CONSTRUCTION shape as SECURITY_SET: staged
+# load, per-subject ADDITIVE merge (no retire clause), single-request-truth
+# verify (#3726 — a blind verify fails closed, never passes).
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  PRINCIPLES_GRAPH="${PRINCIPLES_GRAPH:-urn:chorus:domains:principles}"
+  PRINCIPLES_STAGING="${PRINCIPLES_GRAPH}-staging-deploy"
+  PRINCIPLES_SET=(
+    "$CHORUS_ROOT/roles/wren/ontology/principles-instances-3749.ttl"
+  )
+  for ttl in "${PRINCIPLES_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "chorus-model-deploy: PRINCIPLES_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "chorus-model-deploy: riot validate FAILED for PRINCIPLES_SET $ttl — NOT deploying principles" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="riot-invalid-principles" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${PRINCIPLES_SET[@]}"; do
+    pcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-resp.txt -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" 2>/dev/null) || pcode="000"
+    if [ "$pcode" != "200" ] && [ "$pcode" != "201" ] && [ "$pcode" != "204" ]; then
+      echo "chorus-model-deploy: PRINCIPLES_SET staging load failed for $ttl (http $pcode)" >&2
+      head -3 /tmp/chorus-model-prin-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-staging-http-$pcode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  PRINCIPLES_MERGE="DELETE { GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?sp ?so } GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?p ?o } }"
+  pmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-merge.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$PRINCIPLES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || pmcode="000"
+  if [ "$pmcode" != "200" ] && [ "$pmcode" != "204" ]; then
+    echo "chorus-model-deploy: PRINCIPLES_SET merge staging->principles failed (http $pmcode)" >&2
+    head -3 /tmp/chorus-model-prin-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-merge-http-$pmcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  _presp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$PRINCIPLES_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_presp" | head -1 | grep -q '^n'; then
+    echo "chorus-model-deploy: PRINCIPLES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _pmissing=$(printf '%s\n' "$_presp" | tail -1 | tr -dc '0-9')
+  if [ "${_pmissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "chorus-model-deploy: PRINCIPLES-VERIFY FAILED — ${_pmissing:-?} staged subject(s) absent from <$PRINCIPLES_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-verify-missing" missing="${_pmissing:-unknown}" 2>/dev/null || true
+    exit 1
+  fi
+  _pn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <$PRINCIPLES_GRAPH> { ?p a c:Principle } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _pn="?"
+  echo "chorus-model-deploy: hydrated ${#PRINCIPLES_SET[@]} principles file(s) -> <$PRINCIPLES_GRAPH> (http $pmcode, $_pn principles live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$PRINCIPLES_GRAPH" principles="${_pn}" 2>/dev/null || true
 fi
 
 exit 0

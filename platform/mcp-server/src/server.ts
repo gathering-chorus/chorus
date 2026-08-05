@@ -300,7 +300,7 @@ const PrinciplesCreateInput = z.object({
 const PRINCIPLES_LIST_TOOL_DEF = {
   name: 'chorus_principles_list',
   description:
-    'List all Chorus principles from the live graph. Use this to show every principle the team has agreed on (~46 today). Returns id + label + comment for each. Use to ground a decision in the canonical set or to discover what already exists before creating a new one. Do NOT use as a paraphrase target — cite by id, do not rewrite the text.',
+    'List all Chorus principles from the live graph — the 14 permaculture (PC) principles, served from the generated owl-api surface (#3749). Returns id + label + comment for each. Use to ground a decision in the canonical set or to discover what already exists before creating a new one. Do NOT use as a paraphrase target — cite by id, do not rewrite the text.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -318,7 +318,7 @@ const PRINCIPLES_GET_TOOL_DEF = {
       id: {
         type: 'string',
         minLength: 1,
-        description: 'Principle id, e.g., hemenway-observe or principle-ship-small',
+        description: 'Principle id, e.g., hemenway-observe or hemenway-catch-and-store (the principle-* operational set retired in #3749)',
       },
     },
     required: ['id'],

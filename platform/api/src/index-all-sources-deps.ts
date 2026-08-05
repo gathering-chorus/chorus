@@ -52,7 +52,8 @@ async function fetchGraphKnowledge(repoRoot: string): Promise<GraphRow[]> {
   const loadQuery = createSparqlLoader({ fs, sparqlDir: path.join(repoRoot, 'platform/api/src/sparql') });
   const rows: GraphRow[] = [];
 
-  const pr = (await fetchLoomPrinciples({ sparql: athena.query, loadQuery })).body as
+  // #3749 — principles now come from the generated owl-api surface (one source)
+  const pr = (await fetchLoomPrinciples()).body as
     { data?: { principles?: Array<{ id: string; label: string; comment: string; techReading?: string; jeffReading?: string }> } };
   for (const p of pr.data?.principles ?? []) {
     rows.push({ source: 'principle', id: `principle:${p.id}`, content: lines(p.label, p.comment, p.techReading && `tech: ${p.techReading}`, p.jeffReading && `jeff: ${p.jeffReading}`) });

@@ -112,6 +112,9 @@
      each domain." Every other view here is a PROJECTION of the model; this is
      the model in its own notation. When a rendering looks wrong, you read the
      triples instead of trusting the renderer. */
+  .prosek { margin: 1.4rem 0 0.3rem; font-size: 0.8rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted, #667); }
+  .prose { margin: 0 0 0.6rem; max-width: 46rem; line-height: 1.55; }
+  .insthead { margin-top: 2.2rem; }
   details.owl { margin-top: 2rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); }
   details.owl > summary {
     cursor: pointer; padding: .7rem .9rem; font-size: .8125rem; font-weight: 600;
@@ -263,10 +266,13 @@ async function renderDomain(name) {
     }
     sections.push('<h2>' + esc(kind) + '</h2>' + body);
   }
-  app.innerHTML = head + sections.join('') +
+  // #3749 UX (Jeff): STRUCTURE FIRST — the schema is the map, the instances
+  // are what it organizes. Order: schema → the OWL itself → instances.
+  app.innerHTML = head +
     '<div class="schema" id="schemabox"><h2>Schema — what the model says each class has</h2>' +
     '<p class="empty">Reading the model…</p></div>' +
-    owlBlock(name);
+    owlBlock(name) +
+    '<h2 class="insthead">Instances — what lives in this domain</h2>' + sections.join('');
   wireOwl(name);
   renderSchema(name);
 }
@@ -395,11 +401,23 @@ async function renderInstance(domainName, instName) {
     return;
   }
 
+  // #3749 UX (Jeff: "this isnt very meaningful"): the collection row is a
+  // 4-field husk — the ENTITY read carries the whole instance (readings,
+  // source, dates). Fetch it; fall back to the row only if it fails.
+  let full = found;
+  try {
+    const coll = await collectionFor(foundKind);
+    const er = await get(coll.replace(/^\/v1/, '') + '/' + encodeURIComponent(instName));
+    if (er && er.data && Object.keys(er.data).length) full = Object.assign({ name: instName }, er.data);
+  } catch { /* husk fallback — better a thin page than a broken one */ }
+
   // Edges render as links to the target's own path — the graph is walkable by
   // clicking, which is the AC item that makes this a navigation surface rather
   // than a viewer.
-  const rows = Object.entries(found)
-    .filter(([k]) => k !== 'name')
+  const LONG = 140; // long text renders as prose above the table, not squeezed into a cell
+  const longs = Object.entries(full).filter(([k, v]) => typeof v === 'string' && v.length > LONG);
+  const rows = Object.entries(full)
+    .filter(([k]) => k !== 'name' && !longs.some(([lk]) => lk === k))
     .map(([k, v]) => {
       const vals = [].concat(v).filter(x => x !== '' && x != null);
       const cell = vals.length
@@ -410,10 +428,13 @@ async function renderInstance(domainName, instName) {
       return '<tr><td class="k">' + esc(k) + '</td><td>' + cell + '</td></tr>';
     }).join('');
 
+  const prose = longs.map(([k, v]) =>
+    '<h3 class="prosek">' + esc(k) + '</h3><p class="prose">' + esc(String(v)) + '</p>').join('');
   app.innerHTML = head +
-    '<h1>' + esc(found.label || found.name) + '<span class="kind">' + esc(foundKind) + '</span></h1>' +
+    '<h1>' + esc(full.label || found.label || found.name) + '<span class="kind">' + esc(foundKind) + '</span></h1>' +
     '<p class="sub"><code>' + esc(found.name) + '</code> — in the <a class="ref" href="/domains/' +
       encodeURIComponent(domainName) + '">' + esc(domainName) + '</a> domain.</p>' +
+    prose +
     '<div class="scroll"><table><thead><tr><th>Property</th><th>Value</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div>';
 }

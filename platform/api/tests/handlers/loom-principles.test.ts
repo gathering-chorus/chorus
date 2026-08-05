@@ -1,111 +1,67 @@
+// @test-type: unit — injected fake fetch; no owl-api, no Fuseki, brings its own world.
 /**
- * loom-principles handler — unit tests (#2337).
- *
- * GET /api/loom/principles — returns all chorus:Principle instances in the
- * loom-principles subdomain, sorted by rdfs:label, as a thin product-facing
- * alias over the existing athena-subdomain-detail machinery. Empty result →
- * still returns 200 with an empty array (principles can be added any time,
- * this is not "missing resource" shaped).
+ * fetchLoomPrinciples — #3749 rewrite. The handler now sources the generated
+ * owl-api surface (list + entity reads) instead of the retired SPARQL path
+ * that read the wrong graph for months (the 2-of-29 split). Legacy envelope
+ * shape preserved for loom/principles.html + the session-boot injector.
  */
-import {
-  fetchLoomPrinciples,
-  type LoomPrinciplesDeps,
-  type SparqlPrincipleBinding,
-} from '../../src/handlers/loom-principles';
+import { fetchLoomPrinciples } from '../../src/handlers/loom-principles';
 
-function result(bindings: SparqlPrincipleBinding[]) {
-  return { results: { bindings } };
-}
+const list = (names: string[]) => ({
+  ok: true, status: 200,
+  json: async () => ({ data: names.map((n) => ({ name: n, label: '', comment: '', status: '' })) }),
+}) as unknown as Response;
 
-function deps(overrides: Partial<LoomPrinciplesDeps> = {}): LoomPrinciplesDeps {
-  return {
-    sparql: async () => result([]),
-    loadQuery: (_name: string) => 'SELECT ... WHERE { ?p a chorus:Principle }',
-    now: () => 1_000_000,
-    ...overrides,
-  };
-}
+const entity = (name: string, fields: Record<string, string>) => ({
+  ok: true, status: 200,
+  json: async () => ({ data: { iri: `https://jeffbridwell.com/chorus#${name}`, ...fields } }),
+}) as unknown as Response;
 
-describe('fetchLoomPrinciples (#2337)', () => {
-  test('empty bindings returns 200 with empty principles array', async () => {
-    const r = await fetchLoomPrinciples(deps());
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { principles: unknown[] } };
-    expect(body.data.principles).toEqual([]);
-  });
-
-  test('returns all principles with label, comment, uri, id', async () => {
-    const r = await fetchLoomPrinciples(deps({
-      sparql: async () => result([
-        {
-          principle: { value: 'https://jeffbridwell.com/chorus#principle-no-dark-work' },
-          label: { value: 'No dark work' },
-          comment: { value: 'Everything must be visible — board, domain graph, API.' },
-        },
-        {
-          principle: { value: 'https://jeffbridwell.com/chorus#principle-ship-small' },
-          label: { value: 'Ship small, learn fast' },
-          comment: { value: 'Small cards, fast cycles, real demos.' },
-        },
-      ]),
-    }));
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { principles: Array<{ id: string; label: string; comment: string; uri: string }> } };
-    expect(body.data.principles).toHaveLength(2);
-    expect(body.data.principles[0]).toMatchObject({
-      id: 'principle-no-dark-work',
-      label: 'No dark work',
-      comment: 'Everything must be visible — board, domain graph, API.',
-      uri: 'https://jeffbridwell.com/chorus#principle-no-dark-work',
+describe('#3749 fetchLoomPrinciples via owl-api', () => {
+  test('folds list + entity reads into the legacy envelope shape', async () => {
+    const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.endsWith('/principles')) return list(['hemenway-observe', 'hemenway-connect']);
+      if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'Watch first.', techReading: 'Gemba.', jeffReading: 'Reads the board.', isPermacultureParent: 'true' });
+      return entity('hemenway-connect', { label: 'Connect', comment: 'Relative location.', isPermacultureParent: 'true' });
     });
+    const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
+    expect(r.status).toBe(200);
+    const body = r.body as { data: { principles: Array<Record<string, unknown>> } };
+    expect(body.data.principles).toHaveLength(2);
+    const obs = body.data.principles.find((p) => p.id === 'hemenway-observe')!;
+    expect(obs.label).toBe('Observe');
+    expect(obs.techReading).toBe('Gemba.');
+    expect(obs.isPermacultureParent).toBe(true);
+    expect(obs.parents).toEqual([]); // the 14 are peers post-#3749
   });
 
-  test('sorts principles alphabetically by label', async () => {
-    const r = await fetchLoomPrinciples(deps({
-      sparql: async () => result([
-        { principle: { value: 'chorus#principle-z' }, label: { value: 'Zebra principle' }, comment: { value: 'z' } },
-        { principle: { value: 'chorus#principle-a' }, label: { value: 'Alpha principle' }, comment: { value: 'a' } },
-        { principle: { value: 'chorus#principle-m' }, label: { value: 'Middle principle' }, comment: { value: 'm' } },
-      ]),
-    }));
-    const body = r.body as { data: { principles: Array<{ label: string }> } };
-    expect(body.data.principles.map((p) => p.label)).toEqual([
-      'Alpha principle',
-      'Middle principle',
-      'Zebra principle',
-    ]);
+  test('NEGATIVE: owl-api unreachable → 502 error envelope, NEVER an empty principle list', async () => {
+    const fetchFn = jest.fn(async () => { throw new Error('ECONNREFUSED'); });
+    const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
+    expect(r.status).toBe(502);
+    const body = r.body as { data: { error?: string; principles?: unknown[] } };
+    expect(body.data.error).toBeTruthy();
+    expect(body.data.principles).toBeUndefined();
   });
 
-  test('envelope includes source=loom, query_name, duration_ms, count', async () => {
-    const r = await fetchLoomPrinciples(deps({
-      sparql: async () => result([
-        { principle: { value: 'chorus#p1' }, label: { value: 'P1' }, comment: { value: 'c1' } },
-      ]),
-    }));
-    const body = r.body as { _meta: { source: string; query_name: string; duration_ms: number; count: number } };
-    expect(body._meta.source).toBe('loom');
-    expect(body._meta.query_name).toBe('principles');
-    expect(typeof body._meta.duration_ms).toBe('number');
+  test('NEGATIVE: owl-api non-200 on the list → 502, the status is named', async () => {
+    const fetchFn = jest.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response);
+    const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
+    expect(r.status).toBe(502);
+    expect(JSON.stringify(r.body)).toContain('503');
+  });
+
+  test('a single vanished entity mid-walk is skipped; the count tells the truth', async () => {
+    const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
+      const u = String(url);
+      if (u.endsWith('/principles')) return list(['hemenway-observe', 'hemenway-gone']);
+      if (u.includes('hemenway-observe')) return entity('hemenway-observe', { label: 'Observe', comment: 'c' });
+      return { ok: false, status: 404, json: async () => ({}) } as unknown as Response;
+    });
+    const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
+    const body = r.body as { data: { principles: unknown[] }; _meta: { count: number } };
+    expect(body.data.principles).toHaveLength(1);
     expect(body._meta.count).toBe(1);
-  });
-
-  test('missing comment falls back to empty string, not undefined', async () => {
-    const r = await fetchLoomPrinciples(deps({
-      sparql: async () => result([
-        { principle: { value: 'chorus#p' }, label: { value: 'No comment' } },
-      ]),
-    }));
-    const body = r.body as { data: { principles: Array<{ comment: string }> } };
-    expect(body.data.principles[0].comment).toBe('');
-  });
-
-  test('sparql throw returns 500 envelope', async () => {
-    const r = await fetchLoomPrinciples(deps({
-      sparql: async () => { throw new Error('Fuseki unreachable'); },
-    }));
-    expect(r.status).toBe(500);
-    const body = r.body as { data: { error: string }; _meta: { error: boolean } };
-    expect(body.data.error).toContain('Fuseki unreachable');
-    expect(body._meta.error).toBe(true);
   });
 });
