@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chorus UI — Inventory &amp; To-Be Tree</title>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --rule:#e0e0e0; --text:#1a1a1a; --muted:#667; --accent:#0d6a89;
+          --keep:#177a56; --integrate:#0d6a89; --fold:#8f5f0d; --review:#a8226b; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,sans-serif; background:var(--bg); color:var(--text); padding:40px; max-width:1100px; margin:0 auto; }
+  h1 { font-size:1.9rem; font-weight:300; margin-bottom:4px; }
+  .lede { color:var(--muted); margin-bottom:6px; }
+  .meta { font-size:.8rem; color:var(--muted); margin-bottom:28px; }
+  h2 { font-size:1.05rem; margin:26px 0 10px; font-weight:600; }
+  details { border:1px solid var(--rule); border-radius:6px; background:var(--panel); margin-bottom:10px; }
+  details > summary { cursor:pointer; padding:10px 14px; font-weight:600; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::before { content:"▸ "; color:var(--accent); }
+  details[open] > summary::before { content:"▾ "; }
+  .body { padding:0 14px 12px; }
+  table { width:100%; border-collapse:collapse; font-size:.85rem; }
+  th { text-align:left; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+       padding:6px 8px; border-bottom:1px solid var(--rule); }
+  td { padding:6px 8px; border-bottom:1px solid #f962; border-bottom:1px solid var(--rule); vertical-align:top; }
+  td.u a { color:var(--accent); text-decoration:none; font-family:ui-monospace,monospace; font-size:.8rem; }
+  td.u a:hover { text-decoration:underline; }
+  .tag { display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.05em; padding:2px 7px; border-radius:3px; color:#fff; }
+  .keep { background:var(--keep); } .integrate { background:var(--integrate); }
+  .fold { background:var(--fold); } .review { background:var(--review); }
+  .note { font-size:.8rem; color:var(--muted); }
+  .legend { display:flex; gap:14px; flex-wrap:wrap; margin:14px 0 22px; font-size:.8rem; align-items:center; }
+  .tree { font-family:ui-monospace,monospace; font-size:.85rem; line-height:1.75; background:var(--panel);
+          border:1px solid var(--rule); border-radius:6px; padding:18px 22px; overflow-x:auto; }
+  .tree .rung { color:var(--accent); font-weight:700; }
+  .tree .new { color:var(--review); font-style:italic; }
+  .tree a { color:inherit; }
+</style>
+</head>
+<body>
+<h1>Chorus UI — Inventory &amp; To-Be Tree</h1>
+<p class="lede">Every UI surface Chorus serves, placed in the journey Jeff named: <strong>value stream → products → domains → services</strong>.</p>
+<p class="meta">#3758 · Wren · 2026-08-05 · as-is inventory measured from the repo + live probes · design language: <a href="/designing/docs/athena-flow-mock/index.html">athena-flow-mock</a> (#3378) · integration plan: #3761 · chunk: athena-jx</p>
+
+<div class="legend">
+  <span class="tag keep">KEEP</span> a rung of the journey — stays, adopts the shared design
+  <span class="tag integrate">INTEGRATE</span> alive &amp; useful — gets the nav spine + design language
+  <span class="tag fold">FOLD</span> content survives, page merges into a journey rung
+  <span class="tag review">REVIEW</span> purpose unclear / likely redundant — judged after integration, per Jeff's rule
+</div>
+
+<h2>The To-Be Tree (for review — this is the proposal)</h2>
+<div class="tree">
+<span class="rung">/</span> — the entrance · <span class="new">rebuilt: value stream as the front door (#3761)</span><br>
+├── <span class="rung">value-stream</span> · <a href="/athena/value-stream.html">athena/value-stream.html</a> — Shaping → Directing → Designing → Building → Proving → Reflecting<br>
+│   ├── each <span class="rung">step</span> → its <span class="rung">products</span> · <a href="/athena/products.html">products.html</a> / <a href="/athena/product.html">product.html</a><br>
+│   │   └── product → its <span class="rung">domains</span> · <a href="/domains">/domains</a> (model view) ⇄ <a href="/athena/domains.html">athena/domains.html</a> (ops view, the simplicity bar)<br>
+│   │       ├── domain → <span class="rung">classes/instances</span> · /domains/&lt;d&gt;/&lt;instance&gt;<br>
+│   │       └── domain → <span class="rung">services</span> · <span class="new">new rung: the running things, → health/logs/deploys</span><br>
+│   └── cross-cutting instruments, one click from the entrance:<br>
+│       ├── <a href="/athena/model.html">the ERD</a> — what it's all made of (#3739)<br>
+│       ├── <a href="/athena/tree.html">tree.html</a> — the containment tree<br>
+│       └── <a href="/chorus">/chorus</a> — Jeff's drawing, the authoritative decomposition<br>
+└── <span class="rung">working surfaces</span> (not part of the descent; linked from the nav, not buried):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;board (:3456) · clearing (:3470) · <a href="/flow">/flow</a> · <a href="/werk">/werk</a> · <a href="/loom">/loom</a> · grafana dashboards
+</div>
+
+<h2>Journey rungs — the spine itself</h2>
+<details open><summary>10 surfaces</summary><div class="body"><table>
+<tr><th>Surface</th><th>Disposition</th><th>Note</th></tr>
+<tr><td class="u"><a href="/">index.html (root)</a></td><td><span class="tag keep">KEEP</span></td><td class="note">Rebuilt as the entrance — currently links only 3 legacy pages; the journey's top rung (#3761)</td></tr>
+<tr><td class="u"><a href="/athena/value-stream.html">athena/value-stream.html</a></td><td><span class="tag keep">KEEP</span></td><td class="note">The spine — Jeff: "has potential"; becomes the organizing frame</td></tr>
+<tr><td class="u"><a href="/athena/products.html">athena/products.html</a> + product.html + product-view.html</td><td><span class="tag keep">KEEP</span></td><td class="note">The product rung; product-view/product likely merge to one</td></tr>
+<tr><td class="u"><a href="/domains">/domains (domains-view.html)</a></td><td><span class="tag keep">KEEP</span></td><td class="note">Model view of a domain — schema → OWL → instances (Jeff's order, #3749)</td></tr>
+<tr><td class="u"><a href="/athena/domains.html">athena/domains.html</a></td><td><span class="tag keep">KEEP</span></td><td class="note">Ops view — "i like the ux and simplicity of this" = the aesthetic bar</td></tr>
+<tr><td class="u"><a href="/athena/model.html">athena/model.html</a></td><td><span class="tag keep">KEEP</span></td><td class="note">The ERD + class diagrams + domain drill (#3739/#3747)</td></tr>
+<tr><td class="u"><a href="/athena/tree.html">athena/tree.html</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Containment tree — a descent instrument; needs the nav spine</td></tr>
+<tr><td class="u"><a href="/chorus">/chorus (chorus-pages/chorus.html)</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Jeff's drawing — the authoritative decomposition, reachable from the entrance</td></tr>
+<tr><td class="u">athena/domain.html · public/domain.html</td><td><span class="tag fold">FOLD</span></td><td class="note">Old per-domain pages; domain.html already 301s → /domains</td></tr>
+<tr><td class="u"><a href="/athena/athena-cmdb-view.html">athena/athena-cmdb-view.html</a></td><td><span class="tag review">REVIEW</span></td><td class="note">CMDB view — overlaps domains/ops; judge after integration</td></tr>
+</table></div></details>
+
+<h2>Loom — values · principles · policies · decisions</h2>
+<details open><summary>7 surfaces</summary><div class="body"><table>
+<tr><th>Surface</th><th>Disposition</th><th>Note</th></tr>
+<tr><td class="u"><a href="/loom/principles.html">loom/principles.html</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Now reads the generated surface (#3749); grows Values (#3759) + the 28 (#3760)</td></tr>
+<tr><td class="u">loom/policies.html · loom/decisions.html</td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Policy leg #3755 repoints policies; decisions same treatment later</td></tr>
+<tr><td class="u"><a href="/loom">/loom (chorus-pages/loom.html)</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">The loom hub — becomes the loom product page in the tree</td></tr>
+<tr><td class="u">loom/principles-list.html · principles-reference-impl.html · cookbook-substrate-class-domain.html</td><td><span class="tag review">REVIEW</span></td><td class="note">Reference/working variants — likely redundant post-#3749; judge after</td></tr>
+<tr><td class="u"><a href="/practice-spine.html">practice-spine.html</a></td><td><span class="tag fold">FOLD</span></td><td class="note">Jeff's home spine — personal rhythm page; folds under loom or Self, Jeff's call</td></tr>
+</table></div></details>
+
+<h2>Working surfaces — the daily instruments</h2>
+<details open><summary>9 surfaces</summary><div class="body"><table>
+<tr><th>Surface</th><th>Disposition</th><th>Note</th></tr>
+<tr><td class="u">board (:3456, vikunja)</td><td><span class="tag keep">KEEP</span></td><td class="note">External tool; linked from the nav</td></tr>
+<tr><td class="u">clearing (:3470)</td><td><span class="tag keep">KEEP</span></td><td class="note">Own product surface (identity #3743, trees #3747, filter #3746)</td></tr>
+<tr><td class="u"><a href="/flow">/flow</a> · <a href="/werk">/werk</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Werk product pages — flow + pipeline state</td></tr>
+<tr><td class="u"><a href="/borg-assessment">/borg-assessment</a></td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Borg product page</td></tr>
+<tr><td class="u"><a href="/harvest-manifests">/harvest-manifests</a> · <a href="/harvest-scope.html">harvest-scope</a> · icd.html</td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Convergence/harvesting product pages</td></tr>
+<tr><td class="u">grafana dashboards (:3100)</td><td><span class="tag keep">KEEP</span></td><td class="note">External; linked from services rung</td></tr>
+<tr><td class="u"><a href="/operations.html">operations.html</a></td><td><span class="tag review">REVIEW</span></td><td class="note">Overlaps services rung once it exists</td></tr>
+</table></div></details>
+
+<h2>Model &amp; data explorers — the root page's three legacy links</h2>
+<details open><summary>6 surfaces</summary><div class="body"><table>
+<tr><th>Surface</th><th>Disposition</th><th>Note</th></tr>
+<tr><td class="u"><a href="/chorus-data-model.html">chorus-data-model.html</a></td><td><span class="tag review">REVIEW</span></td><td class="note">Pre-#3739 model view — the ERD + /domains likely supersede; Jeff's rule: judge after integration, not before</td></tr>
+<tr><td class="u"><a href="/chorus-er-diagram.html">chorus-er-diagram.html</a></td><td><span class="tag review">REVIEW</span></td><td class="note">Hand-drawn ER predecessor of the generated ERD</td></tr>
+<tr><td class="u"><a href="/chorus-instance-explorer.html">chorus-instance-explorer.html</a></td><td><span class="tag review">REVIEW</span></td><td class="note">Instance browsing — /domains/&lt;d&gt;/&lt;i&gt; covers the journey case</td></tr>
+<tr><td class="u">chorus-pages/model-data.html · chorus-model-data.html · model-data-hub.html</td><td><span class="tag review">REVIEW</span></td><td class="note">Three model-data variants — the "fifteen competing surfaces" family</td></tr>
+</table></div></details>
+
+<h2>Analytics &amp; research — one-offs and studies</h2>
+<details><summary>15+ surfaces (collapsed — none block the journey)</summary><div class="body"><table>
+<tr><th>Surface</th><th>Disposition</th><th>Note</th></tr>
+<tr><td class="u">attention-analytics · voice-analytics · reprompt-analytics · gemba-analysis · frustration</td><td><span class="tag integrate">INTEGRATE</span></td><td class="note">Reflecting-step instruments — belong under that value-stream step in the tree</td></tr>
+<tr><td class="u">wardley-map · gathering-chorus · business-plan · lightlife · basement-garden · garden-observability</td><td><span class="tag review">REVIEW</span></td><td class="note">Strategy/personal one-offs; some belong to Gathering, not Chorus</td></tr>
+<tr><td class="u">homeostasis-research · ontology-value-stream-research · self-ontology-sketch · self-relationships · concept-enrichment</td><td><span class="tag review">REVIEW</span></td><td class="note">Research sketches — archive-shaped</td></tr>
+<tr><td class="u">doc-catalog · doc-inventory · dpor-report · v1-acceptance-criteria · werk-process · flow-map · value-stream-render · ui-system</td><td><span class="tag review">REVIEW</span></td><td class="note">Working docs &amp; earlier passes; ui-system may seed the shared design system</td></tr>
+</table></div></details>
+
+<h2>How to review this</h2>
+<p class="note" style="max-width:46rem; line-height:1.6">
+The tree at the top is the proposal; the tables are the evidence. Walk the tree and ask Jeff's question of every rung — <em>does the journey continue from here?</em> Every KEEP/INTEGRATE surface adopts the flow-mock design language via #3761. Every REVIEW surface survives untouched until the integrated journey exists, then gets judged against it — retirement is earned by redundancy proven, not assumed. Corrections to dispositions belong on #3761 as comments; this doc regenerates its verdicts from those.
+</p>
+</body>
+</html>
