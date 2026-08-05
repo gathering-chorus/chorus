@@ -9,7 +9,7 @@
  * malformed file reads as null (→ the decision core treats it as "no run", so
  * the worst case degrades to today's start-fresh behavior, never a throw).
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync, statSync } from 'fs';
 import { execFileSync } from 'child_process';
 import path from 'path';
 import os from 'os';
@@ -114,6 +114,88 @@ export function clearRun(card: number, dir: string = RUNS_DIR): void {
   } catch {
     /* best-effort */
   }
+}
+
+/** #3751 — supersede a pin WITHOUT destroying it: rename `<card>.json` to
+ *  `<card>.json.<tag>` so the record survives as forensics (the manual remedy on
+ *  #3606 archived `.landed-*` / `.stale-*` files the same way; readRun keys on the
+ *  exact `<card>.json` name, so archives are invisible to every reader).
+ *  Returns the archive path, or null if there was nothing to archive / rename failed. */
+export function archiveRun(card: number, tag: string, dir: string = RUNS_DIR): string | null {
+  const src = runPath(dir, card);
+  const safe = tag.replace(/[^A-Za-z0-9._-]/g, '_');
+  const dest = `${src}.${safe}`;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- src is RUNS_DIR + `${card}.json` (card asserted positive-int); dest appends a sanitized tag
+    if (!existsSync(src)) return null;
+    renameSync(src, dest);
+    return dest;
+  } catch {
+    return null;
+  }
+}
+
+/** #3751 — is this pin from THIS card cycle, and is a 'landed' claim real?
+ *
+ *  The defect: card reopen (Done → Next/WIP) had no run-pin lifecycle, so a new
+ *  cycle inherited the previous cycle's terminal record. chorus_werk attached to
+ *  a JULY pin and answered {phase:'landed', accepter:'jeff'} for #3606 while the
+ *  branch sat 10 commits ahead of origin/main with nothing merged — a false land
+ *  report carrying the human's name, caught only by hand-checking git.
+ *
+ *  Two independent violations, checked only when the werk worktree EXISTS
+ *  (a genuine land tears the werk down, so landed-with-no-werk is the normal
+ *  terminal state and is not judged here):
+ *
+ *  1. pin-predates-cycle — the worktree's `.git` file is written once, at
+ *     `git worktree add` (the pull that starts the cycle). A pin whose startedAt
+ *     precedes it was written against a PREVIOUS worktree of the same card id.
+ *  2. landed-but-unmerged — phase 'landed' with commits still ahead of
+ *     origin/main is a lie regardless of age: a land merges by definition.
+ *
+ *  Uncertainty degrades to ok (missing stat/git → no refusal): this guard must
+ *  only fire on positive evidence of a violation, never brick polling. */
+export type PinIntegrityVerdict =
+  | { ok: true }
+  | { ok: false; reason: 'pin-predates-cycle' | 'landed-but-unmerged'; detail: string };
+
+export function verifyPinIntegrity(run: WerkRun, werkDir: string): PinIntegrityVerdict {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkDir is CHORUS_WERK_BASE + validated role/card, no untrusted input
+  if (!existsSync(werkDir)) return { ok: true };
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- same werkDir, constant '.git' suffix
+    const cycleStart = statSync(path.join(werkDir, '.git')).birthtimeMs;
+    const started = Date.parse(run.startedAt);
+    // 2s slack: pin and worktree are stamped by the same clock, but never refuse
+    // on a same-moment race — only on a pin genuinely older than the worktree.
+    if (Number.isFinite(cycleStart) && !Number.isNaN(started) && started + 2000 < cycleStart) {
+      return {
+        ok: false,
+        reason: 'pin-predates-cycle',
+        detail: `pin startedAt=${run.startedAt} precedes this cycle's worktree (created ${new Date(cycleStart).toISOString()})`,
+      };
+    }
+  } catch {
+    /* no stat → cannot place the cycle boundary → no refusal on guesswork */
+  }
+  if (run.phase === 'landed') {
+    try {
+      const ahead = execFileSync('git', ['-C', werkDir, 'rev-list', '--count', 'origin/main..HEAD'], {
+        encoding: 'utf8',
+      }).trim();
+      const n = parseInt(ahead, 10);
+      if (Number.isFinite(n) && n > 0) {
+        return {
+          ok: false,
+          reason: 'landed-but-unmerged',
+          detail: `pin claims landed but the werk is ${n} commit(s) ahead of origin/main — nothing merged`,
+        };
+      }
+    } catch {
+      /* git hiccup → cannot verify the merge → no refusal on guesswork */
+    }
+  }
+  return { ok: true };
 }
 
 /** The per-card log a detached act run streams to; its tail carries the WERK_EXIT

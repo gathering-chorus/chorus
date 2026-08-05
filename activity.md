@@ -1340,3 +1340,13 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [2026-08-03 16:37] [Wren] → #3740 filed: freshness recompute blocks the event loop; tail 14.5s→75.8s, setImmediate keeps it on the same loop → Silas (owns the counting half, #3741/#3742)
 - [2026-08-03 16:37] [Wren] → Schema table exposed 54 shape-only / 44 ontology-only / 31 both across 6 domains — the coherence gap now visible without an audit → all roles
 - [2026-08-03 16:37] [Wren] → Jeff ruling: products are a PEER of domains; /valuestreams /products /domains /services all top-level → all roles
+
+- [Kade] → 2026-08-04/05 two-day session: #3606 nightly-to-zero + principles pair → Jeff, Wren, Silas
+  - LANDED: 83521f5aa (coverage-denominator ratchet, nightly.run.summary board-total event, operating-model regression fix, 2 ceremony suites retired, asyncRoute void) + 9809b0e8a (tailer unref ×2 — the 97-min nightly hang — plus --forceExit and a 600s per-package timeout)
+  - Swagger debt cleared 152 → 0 missing summaries; ratchet TIGHTENED 116 → 0 with a negative proof
+  - ~28,000 triples of test-fixture residue purged from live Fuseki; now zero
+  - A month of phantom "nightly model-deploy failing" alarms explained: 16/16 were passing tests emitting real failure events to the live spine. Memory corrected; unfounded attribution to Wren's lane retracted with receipts.
+  - Flake root causes fixed: MonitoringService inner probe unref'd; sexuality.handler unawaited SPARQL in constructor (also a silent-empty-results PROD bug); icd.service "unit" test shelling to python against the live store; jest maxWorkers bounded; api-e2e budgets set to measured reality
+  - Flaky set ENUMERATED — 6 suites flip between runs on identical main (all silas); 23 stably red
+  - FILED: #3751 (stale run-pin, 4 occurrences incl. cross-role and a false landed/accepter:jeff), #3753 (load-aware measurement)
+  - PAIR (live): #3749 principles OWL+API with Wren — I navigate shape, own Practice next leg. Caught her draft would serve 0 rows (resolve_instances_graph has no ontology fallback); she caught my broader-migration would seed dangling refs. Both fixed pre-land.
