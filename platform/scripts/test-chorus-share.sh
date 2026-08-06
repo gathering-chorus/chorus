@@ -261,26 +261,76 @@ env SHARE_PRINCIPALS_FILE="$TEST_ROOT/no-such-principals.txt" SHARE_ALLOW="/abou
   SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
 assert "NEGATIVE PROOF: missing WebID allow-set -> refuse to start (exit 2)" test "$?" -eq 2
 
-# A WebID ends in a fragment. This is the bug the suite caught during #3770: the
-# '#' comment rule truncated every entry, so the allow-set matched nobody while
-# reading correctly. Pin it.
-printf '# a comment line\nhttps://example.test/alice#me   # trailing note\n' > "$TEST_ROOT/frag.txt"
-env SHARE_PRINCIPALS_FILE="$TEST_ROOT/frag.txt" python3 - <<'"'"'PYEOF'"'"'
-import os, sys
-sys.argv = ["guard"]
-src = open(os.environ.get("GUARD_PATH")).read().split("ALLOW, ALLOW_SOURCE = load_allow()")[0]
-ns = {"__name__": "notmain"}
-exec(compile(src, "guard", "exec"), ns)
-got, _ = ns["load_principals"]()
-sys.exit(0 if got == ["https://example.test/alice#me"] else 1)
-PYEOF
-assert "WebID fragments survive comment-stripping (#me is not a comment)" test "$?" -eq 0
+# A WebID ends in a fragment, and this is the bug the suite caught during #3770:
+# the '#' comment rule truncated every entry, so the allow-set read perfectly and
+# matched nobody. Pinned BEHAVIOURALLY — a fragment WebID with a trailing comment
+# must actually be served — because that is the failure people would experience.
+printf '# a whole-line comment\nhttps://example.test/alice#me   # trailing note\n' > "$PRINCIPALS"
+G5_PORT=$((G_PORT + 30))
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$G5_PORT" \
+  python3 "$GUARD" >/dev/null 2>&1 &
+G5_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G5_PORT/" 2>/dev/null && break; sleep 0.3; done
+assert "WebID fragments survive comment-stripping (#me is not a comment)" \
+  test "$(code_alice http://127.0.0.1:$G5_PORT/about/x.html)" = "200"
+kill "$G5_PID" 2>/dev/null
+printf 'https://example.test/alice#me\n' > "$PRINCIPALS"
+
 
 # The committed allow-set must actually name Jeff, or the surface is unreachable
 # by the person it exists for.
 REPO_PRINCIPALS="$SCRIPT_DIR/../../config/share-principals.txt"
 assert "committed allow-set exists" test -f "$REPO_PRINCIPALS"
 assert "committed allow-set names Jeff" grep -q 'jeff/profile/card#me' "$REPO_PRINCIPALS"
+
+# --- #3770: a person hitting a private page gets a PAGE, not a status line ---
+
+HTML='Accept: text/html,application/xhtml+xml'
+
+# The sign-in page renders for an anonymous browser. It must be self-contained:
+# it is what a visitor sees when the upstream and the identity provider are both
+# unreachable, so a page that pulled a stylesheet through the guard would be blank
+# in exactly the situations it exists for.
+PAGE=$(curl -s -H "$HTML" "http://127.0.0.1:$G_PORT/about/x.html")
+assert "anonymous browser gets a rendered sign-in page" \
+  sh -c "printf '%s' \"\$0\" | grep -q 'Sign in to continue'" "$PAGE"
+assert "sign-in page offers a link to start sign-in" \
+  sh -c "printf '%s' \"\$0\" | grep -q '_auth/login'" "$PAGE"
+assert "sign-in page carries the deep link so sign-in returns you where you asked" \
+  sh -c "printf '%s' \"\$0\" | grep -q 'next=%2Fabout%2Fx.html'" "$PAGE"
+assert "sign-in page is self-contained (no external asset would 404 mid-outage)" \
+  sh -c "printf '%s' \"\$0\" | grep -qv '<script src=\|<link rel=.stylesheet'" "$PAGE"
+
+# NEGATIVE PROOF: rendering a page must NOT mean serving the content. The page
+# comes back with 401, and the upstream body never appears in it.
+assert "NEGATIVE PROOF: the sign-in page is still a refusal (401)" \
+  test "$(code -H "$HTML" http://127.0.0.1:$G_PORT/about/x.html)" = "401"
+assert "NEGATIVE PROOF: the sign-in page does not leak the page it is guarding" \
+  sh -c "printf '%s' \"\$0\" | grep -qv 'public page'" "$PAGE"
+
+# A signed-in stranger gets told they are known and still refused — the
+# distinction between authentication and authorization, said out loud.
+DENIED=$(curl -s -H "$HTML" -H "Cookie: chorus_share_session=$SESS_STRANGER" "http://127.0.0.1:$G_PORT/about/x.html")
+assert "authenticated-but-unauthorized gets a rendered page naming them" \
+  sh -c "printf '%s' \"\$0\" | grep -q 'mallory'" "$DENIED"
+assert "NEGATIVE PROOF: that page is still a 403 and leaks no content" \
+  sh -c "printf '%s' \"\$0\" | grep -qv 'public page'" "$DENIED"
+
+# A script still gets a status code, not HTML — machines should not have to
+# parse a courtesy page.
+assert "non-browser client still gets a redirect, not a page" \
+  test "$(code http://127.0.0.1:$G_PORT/about/x.html)" = "302"
+
+# The identity provider being down must render too. OFFLINE mode stands in for
+# the outage: /_auth/login cannot reach a provider.
+assert "sign-in unavailable renders rather than dumping text at a browser" \
+  sh -c "curl -s -H '$HTML' 'http://127.0.0.1:$G_PORT/_auth/login' | grep -q \"Can't reach the sign-in service\""
+assert "sign-in unavailable is a 503, not a false success" \
+  test "$(code -H "$HTML" http://127.0.0.1:$G_PORT/_auth/login)" = "503"
+
+# Bare /_auth/ is a front door, not a 404.
+assert "bare /_auth/ renders the sign-in page" \
+  sh -c "curl -s -H '$HTML' 'http://127.0.0.1:$G_PORT/_auth/' | grep -q 'Sign in to continue'"
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

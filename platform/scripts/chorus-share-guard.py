@@ -392,6 +392,63 @@ class Guard(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(msg.encode())
 
+    def _wants_html(self):
+        return "text/html" in self.headers.get("Accept", "")
+
+    def _page(self, code, title, body_html):
+        """Render a guard-owned page.
+
+        Self-contained by necessity, not preference: these pages are exactly what
+        a visitor sees when the upstream is unreachable, when the identity
+        provider is down, or before they have any right to reach either. A page
+        that fetched a stylesheet through the guard would be blank in every one
+        of those cases.
+        """
+        html = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} — Chorus</title>
+<style>
+  :root {{ color-scheme: light dark;
+    --ink:#1b1d21; --dim:#5f6873; --line:#dfe3e8; --bg:#f7f8fa; --card:#fff; --accent:#2f5d50; }}
+  @media (prefers-color-scheme: dark) {{ :root {{
+    --ink:#e9ecef; --dim:#a0a8b4; --line:#2b3138; --bg:#131619; --card:#1a1e23; --accent:#79c4ab; }} }}
+  * {{ box-sizing:border-box; }}
+  body {{ margin:0; min-height:100vh; display:grid; place-items:center; padding:2rem;
+    background:var(--bg); color:var(--ink);
+    font:16px/1.6 ui-serif, Georgia, 'Iowan Old Style', serif; }}
+  main {{ width:min(30rem,100%); background:var(--card); border:1px solid var(--line);
+    border-radius:3px; padding:2.25rem 2rem; }}
+  h1 {{ margin:0 0 .5rem; font-size:1.4rem; letter-spacing:-.01em; }}
+  p {{ margin:0 0 1.1rem; color:var(--dim); }}
+  .mark {{ font:600 .68rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+    letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin:0 0 1.4rem; }}
+  a.btn {{ display:inline-block; background:var(--accent); color:var(--bg);
+    text-decoration:none; padding:.7rem 1.4rem; border-radius:2px; font-family:system-ui,sans-serif;
+    font-size:.95rem; font-weight:600; }}
+  a.btn:focus-visible {{ outline:3px solid var(--accent); outline-offset:3px; }}
+  code {{ font:.85em ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; color:var(--ink); }}
+</style></head>
+<body><main>
+<p class="mark">Chorus</p>
+{body_html}
+</main></body></html>"""
+        raw = html.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+        return True
+
+    def _sign_in_page(self, next_path):
+        nxt = urllib.parse.quote(next_path, safe="")
+        return self._page(401, "Sign in", f"""
+<h1>Sign in to continue</h1>
+<p>These pages are private. Sign in with your Chorus identity — the same one you
+use for the Clearing.</p>
+<p><a class="btn" href="{AUTH_PREFIX}login?next={nxt}">Sign in</a></p>""")
+
     def _redirect(self, location, cookie=None):
         self.send_response(302)
         self.send_header("Location", location)
@@ -420,8 +477,18 @@ class Guard(BaseHTTPRequestHandler):
         args = urllib.parse.parse_qs(query)
 
         if path == AUTH_PREFIX + "login":
-            conf, client = oidc()
+            try:
+                conf, client = oidc()
+            except Exception:
+                conf = None
             if not conf:
+                # An outage here is not the visitor's fault and not their
+                # problem to debug. Say what broke, in a page, and let them retry.
+                if self._wants_html():
+                    return self._page(503, "Sign-in unavailable", """
+<h1>Can't reach the sign-in service</h1>
+<p>Chorus is up, but the service that verifies who you are isn't answering.
+Nothing is wrong with your account. Try again in a moment.</p>""")
                 return self._deny(503, "identity provider unavailable\n")
             verifier = b64u(secrets.token_bytes(32))
             challenge = b64u(hashlib.sha256(verifier.encode()).digest())
@@ -443,7 +510,10 @@ class Guard(BaseHTTPRequestHandler):
             return self._redirect(conf["authorization_endpoint"] + "?" + q)
 
         if path == AUTH_PREFIX + "callback":
-            conf, client = oidc()
+            try:
+                conf, client = oidc()
+            except Exception:
+                conf = None
             if not conf:
                 return self._deny(503, "identity provider unavailable\n")
             state = args.get("state", [""])[0]
@@ -488,6 +558,9 @@ class Guard(BaseHTTPRequestHandler):
             self.wfile.write(payload)
             return True
 
+        if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
+            return self._sign_in_page(args.get("next", ["/"])[0])
+
         if path == AUTH_PREFIX + "logout":
             return self._redirect("/", f"{SESSION_COOKIE}=; Path=/; Max-Age=0")
 
@@ -499,12 +572,24 @@ class Guard(BaseHTTPRequestHandler):
 
         webid = self._session_webid()
         if not webid:
-            nxt = urllib.parse.quote(self.path, safe="")
-            return self._redirect(f"{AUTH_PREFIX}login?next={nxt}")
+            # A person gets a page; a script gets a status. Bouncing a browser
+            # straight to the identity provider means the first thing a visitor
+            # sees is someone else's domain asking for credentials, with no
+            # indication of what asked or why — which is the shape of a phishing
+            # page. Say where they are first, then let them choose to go.
+            if self._wants_html():
+                return self._sign_in_page(self.path)
+            return self._redirect(f"{AUTH_PREFIX}login?next={urllib.parse.quote(self.path, safe='')}")
         # Authentication is not authorization (#3770): a valid session proves who
         # you are and nothing more. Checked per request so removing a line from
         # the allow-set revokes on the NEXT request, not at session expiry.
         if webid not in current_principals():
+            if self._wants_html():
+                return self._page(403, "Not authorized", f"""
+<h1>You're signed in, but not on the list</h1>
+<p>Chorus knows who you are — <code>{webid}</code> — and that isn't the same as
+being allowed in. Access is granted per person; ask Jeff to add you.</p>
+<p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
 
         upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
