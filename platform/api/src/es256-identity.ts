@@ -158,7 +158,7 @@ function webIdFromClaims(
 function parseAllowSet(res: SparqlBindings): Map<string, string[]> {
   const map = new Map<string, string[]>();
   for (const b of res.results?.bindings ?? []) {
-    const v = b?.v?.value;
+    const v = b.v?.value;
     if (typeof v !== 'string') continue;
     const sp = v.indexOf(' ');
     if (sp <= 0) continue; // no separator or empty webid — unreadable row, dropped

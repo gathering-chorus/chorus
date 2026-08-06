@@ -333,7 +333,7 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // routes through planDelivery below.
     const typed = planDeliveryTyped(readRegistry(SESSIONS_DIR), to, content, pidAlive, (r) => readTurnState(r), Date.now, actualRoleOfPid);
     if (typed.kind === 'queue') {
-      resolve({ rc: 0, stderr: '', deferred: true, deferReason: `target-busy`, target: `queued:${to}` });
+      resolve({ rc: 0, stderr: '', deferred: true, deferReason: 'target-busy', target: `queued:${to}` });
       return;
     }
     if (typed.kind === 'undelivered') {

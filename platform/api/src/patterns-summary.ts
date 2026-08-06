@@ -121,7 +121,7 @@ export async function getPatternsSummary(days: number): Promise<PatternsSummaryR
       }
     }
   } catch (e) {
-    return degraded(`loki unreachable: ${(e as Error)?.message || String(e)}`);
+    return degraded(`loki unreachable: ${(e as Error).message || String(e)}`);
   }
 
   const total = Object.values(patterns).reduce((a, b) => a + b, 0);

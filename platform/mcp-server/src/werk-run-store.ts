@@ -128,6 +128,7 @@ export function archiveRun(card: number, tag: string, dir: string = RUNS_DIR): s
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- src is RUNS_DIR + `${card}.json` (card asserted positive-int); dest appends a sanitized tag
     if (!existsSync(src)) return null;
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- same controlled src/dest as the existsSync above (#3766: the disable covers one line only)
     renameSync(src, dest);
     return dest;
   } catch {
