@@ -5,7 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('domains');</script></head>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="model-fold.js"></script><script>mountJourneyNav('domains');</script></head>
 <body><div class="wrap">
 <div class="crumb" id="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="domains.html">domains</a></div>
 <h1 id="title">Domain</h1>
@@ -56,8 +56,14 @@
 ${vocab.length ? `<table><tr><th>Class</th><th>Generated collection</th></tr>${vocabRows}</table>` : '<div class="empty">no vocabulary yet</div>'}</div></details>
 ${e.hasDesignDoc ? `<details class="fold" open><summary>Design doc <span class="src">chorus:hasDesignDoc</span></summary><div class="body"><p><a class="edge" href="/${esc(e.hasDesignDoc)}">${esc(e.hasDesignDoc)}</a></p></div></details>` : ''}
 ${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
+<div id="mfold-slot"></div>
 <div id="facets"><p class="empty">loading the materialized view (cards, code, alerts, &hellip;)&hellip;</p></div>
 ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/athena/subdomains, /api/chorus/domain)`)}`;
+    // #3757 — the shared model fold, compact: the ground-level what-is-this
+    // anchor. Same component, same endpoints as /domains/<d>; the drift test
+    // holds the two surfaces identical. Jeff's bar: the fold is a link up the
+    // altitude ladder, not a second dashboard — collapsed by default.
+    renderModelFold(document.getElementById('mfold-slot'), d, { compact: true });
     renderFacets(d);
   } catch (e) { fetchFailed(main, e); }
 })();
