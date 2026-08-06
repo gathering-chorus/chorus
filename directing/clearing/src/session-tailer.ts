@@ -39,6 +39,16 @@ export class SessionTailer {
   private timer: NodeJS.Timeout | null = null;
   // Debounce: buffer last assistant message per role, emit after 3s quiet (#1720)
   private pendingAssistant: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
+  // #3772 — the return path. After a jeff-input lands in a role's session, the
+  // role's REPLY must surface in the room as a visible role-response, not be
+  // folded away as pm-thinking (+n steps). Mechanics: mark the role awaiting;
+  // each flushed assistant text becomes the reply CANDIDATE (demoting the
+  // previous candidate to pm-thinking — mid-turn status notes stay folded,
+  // which is exactly what Jeff asked for: "i want the pm thinking just folded");
+  // the candidate promotes to role-response after REPLY_QUIET_MS of assistant
+  // silence (turn ended) or immediately when Jeff's next input arrives.
+  private awaitingReply: Set<string> = new Set();
+  private replyCandidate: Map<string, { text: string; ts: string; timer: NodeJS.Timeout }> = new Map();
 
   constructor(router: MessageRouter) {
     this.router = router;
@@ -194,7 +204,7 @@ export class SessionTailer {
     return slashCmd || humanParts.join(' ').trim();
   }
 
-  private handleUserMessage(entry: { message?: { content?: unknown } }, ts: string): void {
+  private handleUserMessage(role: string, entry: { message?: { content?: unknown } }, ts: string): void {
     const rawContent = entry.message?.content;
     if (!rawContent) return;
     let text = this.extractUserText(rawContent);
@@ -205,8 +215,22 @@ export class SessionTailer {
     if (nudgeMatch) {
       this.router.ingest({ from: nudgeMatch[1].toLowerCase(), text, ts, type: 'role-response' });
     } else {
+      // Jeff moved the conversation on — whatever reply was pending IS the
+      // reply; promote it before his new input lands so the room reads in order.
+      this.finalizeReply(role);
       this.router.ingest({ from: 'jeff', text, ts, type: 'jeff-input' });
+      this.awaitingReply.add(role);
     }
+  }
+
+  // #3772 — promote the pending reply candidate to a visible role-response.
+  private finalizeReply(role: string): void {
+    const candidate = this.replyCandidate.get(role);
+    if (!candidate) return;
+    clearTimeout(candidate.timer);
+    this.replyCandidate.delete(role);
+    this.awaitingReply.delete(role);
+    this.router.ingest({ from: role, text: candidate.text, ts: candidate.ts, type: 'role-response' });
   }
 
   private extractAssistantText(contentArr: unknown): string {
@@ -240,9 +264,20 @@ export class SessionTailer {
     if (existing) clearTimeout(existing.timer);
     const debounceTimer = setTimeout(() => {
       const pending = this.pendingAssistant.get(role);
-      if (pending) {
+      if (!pending) return;
+      this.pendingAssistant.delete(role);
+      if (this.awaitingReply.has(role)) {
+        // #3772 — this flush is the current reply candidate. The previous
+        // candidate was a mid-turn status note: fold it (pm-thinking).
+        const prev = this.replyCandidate.get(role);
+        if (prev) {
+          clearTimeout(prev.timer);
+          this.router.ingest({ from: role, text: prev.text, ts: prev.ts, type: 'pm-thinking' });
+        }
+        const quietTimer = setTimeout(() => this.finalizeReply(role), REPLY_QUIET_MS);
+        this.replyCandidate.set(role, { text: pending.text, ts: pending.ts, timer: quietTimer });
+      } else {
         this.router.ingest({ from: role, text: pending.text, ts: pending.ts, type: 'pm-thinking' });
-        this.pendingAssistant.delete(role);
       }
     }, 3000);
     this.pendingAssistant.set(role, { text: combined, ts, timer: debounceTimer });
@@ -252,7 +287,39 @@ export class SessionTailer {
     let entry: { type?: string; timestamp?: string; message?: { content?: unknown } };
     try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
-    if (entry.type === 'user') return this.handleUserMessage(entry, ts);
+    if (entry.type === 'user') return this.handleUserMessage(role, entry, ts);
     if (entry.type === 'assistant') return this.handleAssistantMessage(role, entry, ts);
   }
+}
+
+// #3772 — how long the assistant must stay quiet (after the 3s flush debounce)
+// before the pending candidate is promoted as THE reply. Long tool runs between
+// status notes are common; 45s of no new text ≈ the turn has ended. Env override
+// exists for tests, not for tuning-by-vibes.
+const REPLY_QUIET_MS = Number(process.env.CLEARING_REPLY_QUIET_MS) || 45000;
+
+/**
+ * #3772 negative proof — the silent-room state must be DETECTABLE, not just
+ * fixed once. Given a room transcript, find jeff-inputs that received assistant
+ * activity (any pm-thinking after the input) but no visible role-response
+ * before the next jeff-input. Pure function: the reply-delivery check runs it
+ * over live transcripts; the test runs it over an old-style (pre-#3772)
+ * transcript and MUST go red.
+ */
+export interface RoomRecord { from: string; text: string; ts: string; type: string }
+export function findSilentReplies(records: RoomRecord[]): { promptTs: string; role: string }[] {
+  const violations: { promptTs: string; role: string }[] = [];
+  for (let i = 0; i < records.length; i++) {
+    if (records[i].type !== 'jeff-input') continue;
+    let sawActivity: string | null = null;
+    let answered = false;
+    for (let j = i + 1; j < records.length; j++) {
+      const r = records[j];
+      if (r.type === 'jeff-input') break;
+      if (r.type === 'pm-thinking') sawActivity = r.from;
+      if (r.type === 'role-response') { answered = true; break; }
+    }
+    if (sawActivity && !answered) violations.push({ promptTs: records[i].ts, role: sawActivity });
+  }
+  return violations;
 }

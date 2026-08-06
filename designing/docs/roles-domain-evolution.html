@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roles Domain Evolution — role as living configuration</title>
+<style>
+  :root { --bg:#fafafa; --panel:#fff; --rule:#e0e0e0; --text:#1a1a1a; --muted:#667; --accent:#0d6a89; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,sans-serif; background:var(--bg); color:var(--text); padding:40px; max-width:880px; margin:0 auto; line-height:1.6; }
+  .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:6px; }
+  h1 { font-size:2rem; font-weight:300; margin-bottom:6px; }
+  .lede { font-size:1.05rem; color:var(--muted); margin-bottom:8px; max-width:46rem; }
+  .meta { font-size:.8rem; color:var(--muted); margin-bottom:34px; }
+  h2 { font-size:1.15rem; margin:34px 0 12px; }
+  p { margin-bottom:12px; max-width:46rem; }
+  .ladder { background:var(--panel); border:1px solid var(--rule); border-radius:8px; padding:18px 22px; overflow-x:auto; margin:14px 0; }
+  pre.mermaid { background:none; border:none; font-size:.9rem; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; margin:12px 0; }
+  th { text-align:left; font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--rule); }
+  td { padding:7px 8px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  .q { background:var(--panel); border-left:4px solid var(--accent); padding:14px 18px; margin:16px 0; max-width:46rem; }
+  a { color:var(--accent); }
+  code { font-family:ui-monospace,Menlo,monospace; font-size:.85em; background:#f0f2f5; padding:1px 5px; border-radius:3px; }
+  .refs { font-size:.85rem; color:var(--muted); border-top:1px solid var(--rule); margin-top:36px; padding-top:14px; }
+</style>
+</head>
+<body>
+<div class="eyebrow">Roles · Design · from Jeff's 2026-08-06 thread</div>
+<h1>Role as Living Configuration</h1>
+<p class="lede">Today a role is a markdown file we regenerate. The evolution: a role becomes a graph entity whose behavior is readable, tunable, and observable while it runs — and the markdown becomes one projection of it.</p>
+<p class="meta">Wren · 2026-08-06 · born from Jeff: "we might have both global and role level rules that drive behavior" → "properties that tune role dialog" → "shared config that is read by the role and changeable"</p>
+
+<h2>The one-sentence target</h2>
+<div class="q"><b>GET /roles/wren answers: who holds this role, what it's for, what rules govern it, how it's tuned right now, and what changed lately — one query, live.</b><br>
+Today that answer is scattered across a CLAUDE.md, a fragments directory, a memory file, and Jeff's patience.</div>
+
+<h2>Five layers, one entity</h2>
+<p>The design separates what changes at different speeds. Identity almost never changes. Charter changes when the team changes shape. Rules change when we learn something. Tuning changes mid-conversation. Observation never stops.</p>
+
+<div class="ladder">
+<pre class="mermaid">
+flowchart TD
+    P["Principal (security domain, Silas)<br/>jeff · wren · silas · kade · mark …<br/><i>who exists, how they prove it</i>"]
+    R["Role (roles domain, Wren)<br/>product-manager · solutions-architect · engineer<br/><i>charter: purpose, lane, emoji, emphasis→Principles</i>"]
+    RU["Rules — durable behavior<br/>scope: global | role<br/><i>the fragment system, lifted into the graph (#3764)</i>"]
+    T["Tuning — live knobs<br/>PropertyKey × Role → Property (ADR-045)<br/><i>dialog.ask-style · dialog.verbosity · boot.style</i>"]
+    O["Observation (Borg)<br/><i>fitness rows: is the behavior conforming?</i>"]
+
+    P -- holdsRole --> R
+    R --> RU
+    R --> T
+    RU -.composed by generator.-> MD["roles/&lt;r&gt;/CLAUDE.md<br/>(a projection, not the source)"]
+    T -.read live at boot / per turn.-> S["running session"]
+    MD --> S
+    S -.spine events.-> O
+    O -.what drifted.-> RU
+</pre>
+</div>
+
+<table>
+<tr><th>Layer</th><th>Changes</th><th>Mechanism</th><th>Exists today?</th></tr>
+<tr><td>Identity — Principal, holdsRole</td><td>rarely</td><td>security graph + roles join (July seam ruling: role ≠ user)</td><td>10 Principals live; holdsRole edge is the missing join</td></tr>
+<tr><td>Charter — purpose, lane, emphasis</td><td>occasionally</td><td>Role instances + edges to Principles</td><td>4 Role instances live (thin); emphasis re-author planned (#3760)</td></tr>
+<tr><td>Rules — durable behavior</td><td>when we learn</td><td>Rule instances, scope global|role, pen-written; generator composes CLAUDE.md</td><td>Built Feb–Mar as FILES (fragments + manifest); not in the graph (#3764)</td></tr>
+<tr><td>Tuning — live dialog knobs</td><td>mid-day, Jeff's hand</td><td>PropertyKey register-before-use + Property scoped to Role; read live</td><td>Properties domain live (fixed this morning — 4 keys, 2 values); properties-resolver service exists; zero dialog keys yet</td></tr>
+<tr><td>Observation — conformance</td><td>continuous</td><td>Borg fitness rows over spine + transcripts</td><td>Fitness-function paradigm landing now (Silas, #3765 pattern)</td></tr>
+</table>
+
+<h2>The three design calls</h2>
+<p><b>Scope is an axis, not a subclass.</b> One Rule shape with <code>scope: global | role</code> (role-scoped rules carry a Role edge). Same call as <code>principalKind</code> and <code>principleKind</code> — one collection, one enumerable list, shape constraints per scope value. Four subclasses would mount four API surfaces and split the "what governs Wren" answer.</p>
+<p><b>Precedence is written, not emergent.</b> Live Property &gt; role Rule &gt; global Rule — and a Property may only tune <em>within</em> what rules allow (a knob can set <code>dialog.verbosity=terse</code>; it cannot switch off "the ask survives 2-3 scans"). Conflicts refuse at the pen, not at read time.</p>
+<p><b>Two consumers, one graph.</b> The generator (build-time → CLAUDE.md) and the boot/context-inject (run-time → session envelope) read the same instances. What a session actually received is already on the spine (<code>context.inject.*</code> events), which makes conformance measurable instead of vibes: DECLARED (graph) ⊇ COMPOSED (CLAUDE.md) ⊇ INJECTED (session) — three sets, checked, the discipline that caught this week's serving bugs.</p>
+
+<h2>Worked example — today's feedback as data</h2>
+<p>Jeff, this afternoon: "i frequently dont know waht u want from me after 2-3 scans." In the target architecture that becomes:</p>
+<table>
+<tr><th>Artifact</th><th>Instance</th></tr>
+<tr><td>Rule (global)</td><td><code>rule-ask-survives-two-scans</code> — "when a reply needs something from Jeff, the ask is one plain line, first or last; when nothing is needed, say so" — scope: global, cites Jeff 2026-08-06</td></tr>
+<tr><td>PropertyKey</td><td><code>dialog.ask-style</code> (allowed: <code>lead | close | none</code>)</td></tr>
+<tr><td>Property</td><td><code>dialog.ask-style = close</code> scoped to role-product-manager — Jeff flips it to <code>lead</code> through the pen; next turn obeys</td></tr>
+<tr><td>Fitness row</td><td>ask-line-present rate on replies that end a turn with a pending decision — Borg trends it; drift is a number, not a feeling</td></tr>
+</table>
+
+<h2>Strangler path — five steps, nothing breaks</h2>
+<p>1. <b>Facts first:</b> import existing fragments as Rule instances (byte-faithful, like the principles migration). Files still drive; graph mirrors. <br>
+2. <b>Drift check:</b> generator verifies manifest == graph on every compose — a fragment on disk absent from the graph fails loudly (the #3764 negative proof). Behavior unchanged.<br>
+3. <b>Inversion:</b> generator derives FROM the graph; files become committed projections (same pattern as owl-api generated surfaces landing in the repo).<br>
+4. <b>Knobs:</b> register the first dialog PropertyKeys; boot envelope + context-inject read them live; Jeff changes one and sees the next turn obey.<br>
+5. <b>Reflection:</b> Borg fitness rows per role over the spine. The loop closes: he tunes, the system measures, drift surfaces as data.</p>
+
+<h2>What this is NOT</h2>
+<p>Not a rewrite of the fragment system — it worked for six months and its compose discipline survives as step 3's generator. Not per-turn prompt assembly from the graph — the durable floor stays a committed file (reproducible, reviewable); only the knobs are live. Not a new domain — it's the roles domain finally getting the treatment principles got this week.</p>
+
+<div class="refs">
+Feeds on: #3764 (rules→model) · #3760 (emphasis re-author) · #3763 (plain-voice rule — becomes the first Rule instance) · ADR-045 (properties) · DEC-2209 (Principal/holdsRole identity chain) · the Feb–Mar claudemd fragment system (the ancestor, not the enemy) · Jeff's 2026-08-06 thread.
+</div>
+<script src="/js/vendor/mermaid.min.js"></script>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'neutral' });</script>
+</body>
+</html>
