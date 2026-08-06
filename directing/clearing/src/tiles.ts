@@ -220,21 +220,31 @@ export class TilePoller {
   // #3780 — a pin's PHASE alone cannot distinguish a live run from an abandoned
   // one: pins reconcile only on poll (#3664), and ~190 pins from long-finished
   // cards sat at "running" the day #3772 shipped — inverting the lie (idle
-  // roles showed building off June's cards). Liveness needs a second signal:
-  // "running" counts only if the recorded pid is ALIVE; "presented" only
-  // within 24h of presentedAt. A pin failing its liveness check is ignored,
-  // never trusted-by-default.
+  // roles showed building off June's cards).
+  //
+  // #3781 — and pid EXISTENCE is not IDENTITY: pin 3467 (June 17) carried pid
+  // 42578, alive on 2026-08-06 as a Chrome renderer started July 23. On a box
+  // up 15 days, stale pins collide with reused pids. "Running" now requires
+  // the process's ps-reported start time to match the pin's startedAt within
+  // 15min — a reused pid always mismatches (pin says June, process says July).
+  // One batched `ps` per poll; a pin failing identity is ignored, never
+  // trusted-by-default.
   private applyWerkRuns(tile: RoleTile, role: string): void {
     try {
       const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
+      const pidStarts = this.pidStartTimes();
       for (const f of files) {
-        let run: { role?: string; card?: number; phase?: string; pid?: number; presentedAt?: string };
+        let run: { role?: string; card?: number; phase?: string; pid?: number; presentedAt?: string; startedAt?: string };
         try {
           run = JSON.parse(fs.readFileSync(path.join(this.werkRunsDir, f), 'utf-8'));
         } catch { continue; }
         if ((run.role || '').toLowerCase() !== role.toLowerCase()) continue;
         if (run.phase === 'running') {
-          if (!run.pid || !pidAlive(run.pid)) continue;
+          if (!run.pid || !run.startedAt) continue;
+          const procStart = pidStarts.get(run.pid);
+          if (procStart === undefined) continue; // pid not alive
+          const pinStart = Date.parse(run.startedAt);
+          if (!Number.isFinite(pinStart) || Math.abs(procStart - pinStart) > 15 * 60 * 1000) continue; // alive but not OUR runner
         } else if (run.phase === 'presented') {
           const t = run.presentedAt ? Date.parse(run.presentedAt) : NaN;
           if (!Number.isFinite(t) || Date.now() - t > 24 * 3600 * 1000) continue;
@@ -251,6 +261,28 @@ export class TilePoller {
     } catch {
       // No werk-runs dir — tiles fall back to declared state alone.
     }
+  }
+
+  // #3781 — the batched pid→start-time map; cached per poll cycle (5s cadence,
+  // one execSync of ps = milliseconds). Test override wins.
+  private pidStartTimes(): Map<number, number> {
+    if (_pidStartsOverride) return _pidStartsOverride;
+    const map = new Map<number, number>();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { execSync } = require('child_process');
+      const out: string = execSync('ps -eo pid=,lstart=', { encoding: 'utf-8', timeout: 3000 });
+      for (const line of out.split('\n')) {
+        const m = line.match(/^\s*(\d+)\s+(.+)$/);
+        if (!m) continue;
+        const t = Date.parse(m[2].trim());
+        if (Number.isFinite(t)) map.set(Number(m[1]), t);
+      }
+    } catch {
+      // ps failed — empty map means every running pin fails identity, which is
+      // fail-CLOSED: no pin trusted when the instrument is blind.
+    }
+    return map;
   }
 
   private readJeffTile(): RoleTile {
@@ -302,15 +334,12 @@ export class TilePoller {
   }
 }
 
-// #3780 — kill -0 semantics: signal 0 probes existence without sending anything.
-// EPERM means "exists but not ours" — still alive. Anything else: dead.
-function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'EPERM';
-  }
+// #3781 — pid → process start time (epoch ms) for every live process, one
+// batched `ps` call. Injectable for tests (setPidStartTimesForTest). lstart is
+// locale-stable ("Thu Jul 23 11:02:00 2026") and Date.parse handles it.
+let _pidStartsOverride: Map<number, number> | null = null;
+export function setPidStartTimesForTest(m: Map<number, number> | null): void {
+  _pidStartsOverride = m;
 }
 
 function formatAge(secs: number): string {
