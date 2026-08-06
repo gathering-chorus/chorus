@@ -216,16 +216,31 @@ export class TilePoller {
   // (~/.chorus/werk-runs/<card>.json) is ground truth for "is this role working".
   // Declared non-idle states (blocked, observing, …) are NOT overridden — only
   // the idle/unknown lie is corrected.
+  //
+  // #3780 — a pin's PHASE alone cannot distinguish a live run from an abandoned
+  // one: pins reconcile only on poll (#3664), and ~190 pins from long-finished
+  // cards sat at "running" the day #3772 shipped — inverting the lie (idle
+  // roles showed building off June's cards). Liveness needs a second signal:
+  // "running" counts only if the recorded pid is ALIVE; "presented" only
+  // within 24h of presentedAt. A pin failing its liveness check is ignored,
+  // never trusted-by-default.
   private applyWerkRuns(tile: RoleTile, role: string): void {
     try {
       const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
       for (const f of files) {
-        let run: { role?: string; card?: number; phase?: string };
+        let run: { role?: string; card?: number; phase?: string; pid?: number; presentedAt?: string };
         try {
           run = JSON.parse(fs.readFileSync(path.join(this.werkRunsDir, f), 'utf-8'));
         } catch { continue; }
         if ((run.role || '').toLowerCase() !== role.toLowerCase()) continue;
-        if (run.phase !== 'running' && run.phase !== 'presented') continue;
+        if (run.phase === 'running') {
+          if (!run.pid || !pidAlive(run.pid)) continue;
+        } else if (run.phase === 'presented') {
+          const t = run.presentedAt ? Date.parse(run.presentedAt) : NaN;
+          if (!Number.isFinite(t) || Date.now() - t > 24 * 3600 * 1000) continue;
+        } else {
+          continue;
+        }
         if (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting') {
           tile.state = run.phase === 'presented' ? 'presenting' : 'building';
         }
@@ -284,6 +299,17 @@ export class TilePoller {
     }
 
     return tile;
+  }
+}
+
+// #3780 — kill -0 semantics: signal 0 probes existence without sending anything.
+// EPERM means "exists but not ours" — still alive. Anything else: dead.
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 
