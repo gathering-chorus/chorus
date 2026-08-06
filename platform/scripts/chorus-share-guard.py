@@ -296,8 +296,31 @@ COOKIE_KEY = b64u_decode(STATE["cookie_key"])
 PENDING = {}
 
 
+USER_AGENT = "chorus-share-guard/1.0 (+https://chorus.lightlifeurbangardens.com)"
+
+
+def fetch(url, data=None, headers=None, timeout=20):
+    """Every outbound request the guard makes, with an identity attached.
+
+    #3771 — urllib's default User-Agent is `Python-urllib/3.9`, and Cloudflare
+    answers it with 403. So the guard could not reach its OWN identity provider:
+    discovery failed, client registration never happened, and every sign-in
+    returned 503. Measured directly — same URL, same moment, 403 with the default
+    agent and 200 with any other.
+
+    A tool that talks to a service across a CDN has to say who it is. The default
+    library agent is not an identity, it is the absence of one, and infrastructure
+    increasingly treats it as a bot signature.
+    """
+    req = urllib.request.Request(url, data=data, method="POST" if data else "GET")
+    req.add_header("User-Agent", USER_AGENT)
+    for k, v in (headers or {}).items():
+        req.add_header(k, v)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def discover():
-    with urllib.request.urlopen(ISSUER + "/.well-known/openid-configuration", timeout=15) as r:
+    with fetch(ISSUER + "/.well-known/openid-configuration", timeout=15) as r:
         return json.load(r)
 
 
@@ -317,9 +340,8 @@ def register_client(conf):
         "token_endpoint_auth_method": "client_secret_basic",
         "scope": "openid webid profile offline_access",
     }).encode()
-    req = urllib.request.Request(conf["registration_endpoint"], data=body, method="POST")
-    req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=20) as r:
+    with fetch(conf["registration_endpoint"], data=body,
+               headers={"Content-Type": "application/json"}) as r:
         return json.load(r)
 
 
@@ -529,12 +551,12 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 "redirect_uri": REDIRECT_URI,
                 "code_verifier": verifier,
             }).encode()
-            req = urllib.request.Request(conf["token_endpoint"], data=body, method="POST")
             basic = base64.b64encode(f"{client['client_id']}:{client.get('client_secret','')}".encode()).decode()
-            req.add_header("Authorization", "Basic " + basic)
-            req.add_header("Content-Type", "application/x-www-form-urlencoded")
             try:
-                with urllib.request.urlopen(req, timeout=20) as r:
+                with fetch(conf["token_endpoint"], data=body, headers={
+                    "Authorization": "Basic " + basic,
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }) as r:
                     tok = json.load(r)
             except Exception:
                 return self._deny(502, "could not complete sign-in with the identity provider\n")
@@ -661,6 +683,21 @@ if __name__ == "__main__":
     _routes = ", ".join(f"{p} -> {u or UPSTREAM}" for p, u in ALLOW)
     print(f"chorus-share-guard: {BIND}:{PORT}  default={UPSTREAM}  routes: {_routes} "
           f"(GET/HEAD only, source={ALLOW_SOURCE})", file=sys.stderr)
+    # #3771 — say out loud whether sign-in can actually work. The failure that
+    # prompted this was invisible for as long as nobody clicked: the guard
+    # started cleanly, served refusals correctly, and rendered a polished "can't
+    # reach the sign-in service" page — a graceful degradation indistinguishable
+    # from a hard break. A door that cannot be opened is not a working door, and
+    # the log should say so at the moment it starts, not when a person discovers it.
+    if OFFLINE:
+        _reach = "OFFLINE (test mode) — no provider contacted"
+    else:
+        try:
+            discover()
+            _reach = "reachable"
+        except Exception as _e:
+            _reach = f"UNREACHABLE ({type(_e).__name__}: {_e}) — NOBODY CAN SIGN IN"
+    print(f"chorus-share-guard: identity provider {ISSUER} is {_reach}", file=sys.stderr)
     print(f"chorus-share-guard: sign-in via {ISSUER}; {len(PRINCIPALS)} WebID(s) authorized "
           f"(source={PRINCIPALS_SOURCE}). Signing in does not grant reach — the allow-set does.",
           file=sys.stderr)

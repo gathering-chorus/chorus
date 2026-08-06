@@ -332,5 +332,35 @@ assert "sign-in unavailable is a 503, not a false success" \
 assert "bare /_auth/ renders the sign-in page" \
   sh -c "curl -s -H '$HTML' 'http://127.0.0.1:$G_PORT/_auth/' | grep -q 'Sign in to continue'"
 
+# --- #3771: the guard must identify itself on every outbound request ---
+#
+# The break this pins: urllib defaults to `Python-urllib/3.9`, Cloudflare answers
+# that with 403, and the guard could not reach its own identity provider. Every
+# sign-in returned 503 while the guard itself looked healthy — it started
+# cleanly, refused correctly, and rendered a polished "can't reach the sign-in
+# service" page. A graceful degradation is indistinguishable from a hard break.
+#
+# The old suite could not have caught this: it ran entirely OFFLINE, so it proved
+# the guard behaves well when the provider is unreachable and never asked whether
+# it was reachable. The stub below behaves like the CDN did — 403 for the default
+# agent, 200 for a request that names itself — and the probe drives the guard's
+# REAL discover(), not a copy of it.
+
+FIXTURES="$SCRIPT_DIR/../tests/fixtures"
+UA_PORT=$((G_PORT + 40))
+python3 "$FIXTURES/cdn-ua-stub.py" "$UA_PORT" >/dev/null 2>&1 &
+UA_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$UA_PORT/" 2>/dev/null && break; sleep 0.3; done
+
+SHARE_ALLOW="/about" python3 "$FIXTURES/probe-discover.py" "$GUARD" "http://127.0.0.1:$UA_PORT"
+assert "guard reaches a CDN-guarded provider (it identifies itself)" test "$?" -eq 0
+
+# NEGATIVE PROOF: the same call, with the identity stripped back to the library
+# default, is refused. This is the exact violation the fix exists to prevent.
+SHARE_ALLOW="/about" python3 "$FIXTURES/probe-discover.py" "$GUARD" "http://127.0.0.1:$UA_PORT" "Python-urllib/3.9"
+assert "NEGATIVE PROOF: with the default library agent, the same call is REFUSED" test "$?" -eq 1
+
+kill "$UA_PID" 2>/dev/null
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
