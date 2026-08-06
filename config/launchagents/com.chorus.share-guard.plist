@@ -27,8 +27,14 @@
     <dict>
         <key>CHORUS_ROOT</key>
         <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <!-- #3767 — the DEFAULT upstream is chorus-api (:3340), which serves the
+             Athena pages and their data endpoints. Prefixes that live elsewhere
+             name their own upstream in config/share-allowlist.txt (/about is on
+             the app, :3000). Measured 2026-08-06: :3000 404s /athena/model.html
+             and /domains; :3340 404s /about. Neither port alone serves the whole
+             published set, which is why routing moved into the allowlist. -->
         <key>SHARE_UPSTREAM</key>
-        <string>http://localhost:3000</string>
+        <string>http://localhost:3340</string>
         <key>SHARE_PORT</key>
         <string>8899</string>
         <key>SHARE_BIND</key>

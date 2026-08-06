@@ -8,9 +8,18 @@
 #
 # One prefix per line. '#' comments and blank lines ignored.
 # Adding a line here EXPANDS what the outside world can reach — review as such.
+#
+# A line may name the upstream that prefix is served from (#3767):
+#     /about   http://localhost:3000
+# A bare prefix uses SHARE_UPSTREAM (the plist sets it to :3340). The upstream
+# must be loopback — the guard refuses to start otherwise, because pointing a
+# public prefix at another host is a reachability change, not a config tweak.
+# First match wins, so order matters where prefixes overlap.
 
-# The about page — the original share (#3644).
-/about
+# The about page — the original share (#3644). It lives on the app (:3000), not
+# on chorus-api; measured 2026-08-06, :3340 404s it. This explicit route is what
+# lets /about and the Athena pages be public at the same time.
+/about   http://localhost:3000
 
 # Athena model pages: the domain ERD and the model browser (#3739, Jeff 2026-08-04
 # asked for these to be reachable by authenticated users off-LAN).
