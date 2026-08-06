@@ -355,7 +355,11 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String
 fn quarantined_cases() -> Vec<Quarantined> {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
-    let jq = r#".data[] | select(.quarantined==true) | [.testName,.quarantineReason,.quarantineUntil] | @tsv"#;
+    // #3766 — owl-api serves quarantined as the STRING "true" (SHACL string field),
+    // so a boolean-only compare NEVER matched: the quarantine gate was vacuous from
+    // the day it shipped ("quarantined: none" = type mismatch, not an empty set).
+    // Found live 2026-08-06 by writing a quarantine row and running this exact jq.
+    let jq = r#".data[] | select(.quarantined==true or .quarantined=="true") | [.testName,.quarantineReason,.quarantineUntil] | @tsv"#;
     let pipe = format!("curl -s '{}' | jq -r '{}'", endpoint, jq);
     let out = match Command::new("bash").args(["-c", &pipe]).output() {
         Ok(o) if o.status.success() => o.stdout,
