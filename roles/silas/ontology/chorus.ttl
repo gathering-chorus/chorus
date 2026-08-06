@@ -4020,3 +4020,30 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
 
+
+chorus:EmitContractShape a sh:NodeShape ;
+    sh:targetClass chorus:EmitContract ;
+    sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:MetricShape a sh:NodeShape ;
+    sh:targetClass chorus:Metric ;
+    sh:property [ sh:path chorus:metricKind ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:emittedAs ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:PropertyShape a sh:NodeShape ;
+    sh:targetClass chorus:Property ;
+    sh:property [ sh:path chorus:propertyKey ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:propertyValue ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:PropertyKeyShape a sh:NodeShape ;
+    sh:targetClass chorus:PropertyKey ;
+    sh:property [ sh:path chorus:keyName ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:propertyKind ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .

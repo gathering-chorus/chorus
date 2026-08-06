@@ -48,6 +48,15 @@ function diverges(a, b) {
   const page = await browser.newPage();
   const grab = async (url) => {
     await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
+    // #3768 — a redirect here makes the comparison VACUOUS: the #3724 301 sent
+    // the ops URL to the model page for three days and this test "passed" by
+    // comparing the model page with itself. The URL surviving is part of the
+    // invariant; a bounce is a loud failure, never a silent self-comparison.
+    const finalPath = new URL(page.url()).pathname;
+    const wantPath = new URL(url).pathname;
+    if (finalPath !== wantPath) {
+      throw new Error(`redirected: ${url} landed on ${page.url()} — the two surfaces cannot be compared (and one is unreachable by URL)`);
+    }
     await page.waitForSelector('[data-mfold-ready]', { timeout: 20000 });
     const data = await page.evaluate(EXTRACT);
     if (!data) throw new Error('no .mfold rendered at ' + url);
