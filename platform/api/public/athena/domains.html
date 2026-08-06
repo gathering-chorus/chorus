@@ -16,8 +16,18 @@
 (async function () {
   const main = document.getElementById('main');
   try {
-    const [env, prodsEnv] = await Promise.all([fetchJSON('/domains'), fetchJSON('/products')]);
+    const [env, prodsEnv, stepsEnv] = await Promise.all([
+      fetchJSON('/domains'), fetchJSON('/products'), fetchJSON('/valuestreamsteps')]);
     const rows = (env.data || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    // #3761 — the ruled step list comes from the MODEL (the chorus stream's own
+    // steps), not a hardcode. #3702 removed the hardcoded STEPS_RULED from
+    // athena-flow.js but left two references here, so this page threw
+    // "STEPS_RULED is not defined" on every load from Jul 27 until Jeff's
+    // 2026-08-06 walk caught it — the husk check passed because the error
+    // message is over the 80-char floor. Derived live, it cannot dangle again.
+    const STEPS_RULED = (stepsEnv.data || [])
+      .filter(s => s.inStream && String(s.inStream).includes('chorus'))
+      .map(s => stepLocal(s.name));
     const PRODUCT_ORDER = ['chorus', 'athena', 'borg', 'clearing', 'convergence', 'loom', 'pulse', 'werk'];
 
     // partOf is NOT a /domains collection field (containment lives in folds) —
