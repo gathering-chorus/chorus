@@ -1,139 +1,107 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chorus</title>
+<!-- #3761 — the journey entrance. Jeff's organizing frame (2026-08-05): "the journey
+     into chorus being organized around value stream and product then drilling down
+     into the domains" — "and services". The value stream IS the front door; each
+     step opens into its products; products drill into domains; at the domain the
+     two altitudes meet (model view /domains, ops view /athena/domain.html).
+     Design language: the #3378 athena-flow mock via the #3635 family stylesheet.
+     Everything below the header is LIVE from owl-api through the same-origin /owl
+     proxy (#3706/#3644: no hardcoded host, no :3000 dependency — this page must
+     work identically on localhost, over wifi by IP, and through any tunnel). -->
+<link rel="stylesheet" href="/athena/athena-flow.css"><script src="/athena/athena-flow.js"></script>
+<script>mountJourneyNav('chorus');</script>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
-h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
-.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 40px; }
-.products { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
-.product { border: 1px solid #e5e7eb; border-radius: 12px; padding: 24px; background: #fff; }
-.product h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 4px; }
-.product .owner { font-size: 0.8rem; color: #888; margin-bottom: 12px; }
-.product .desc { font-size: 0.85rem; color: #555; margin-bottom: 16px; line-height: 1.5; }
-.product .domains { font-size: 0.78rem; color: #666; }
-.product .domains span { display: inline-block; background: #f3f4f6; padding: 2px 8px; border-radius: 4px; margin: 2px 4px 2px 0; }
-.product .links { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
-.product .links a { font-size: 0.82rem; color: #4f46e5; margin-right: 12px; text-decoration: none; }
-.product .links a:hover { text-decoration: underline; }
-.product.borg { border-color: #a78bfa; }
-.product.loom { border-color: #4f46e5; }
-.product.athena { border-color: #4f46e5; }
-.product.werk { border-color: #4f46e5; }
-.product.clearing { border-color: #4f46e5; }
-.product.convergence { border-color: #4f46e5; }
-.section { margin-top: 40px; }
-.section h2 { font-size: 1rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
-.meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
+  .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:4px; }
+  .views { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; margin:14px 0; }
+  .vcard { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:12px 14px; text-decoration:none; color:var(--text); display:block; }
+  .vcard:hover { border-color:var(--accent); }
+  .vcard strong { display:block; font-size:.95rem; margin-bottom:2px; }
+  .vcard span { font-size:.8rem; color:var(--muted); }
+  .legacy { opacity:.75; }
 </style>
 </head>
-<body>
+<body><div class="wrap wide">
+<div class="eyebrow">Chorus · the journey</div>
+<h1>Chorus <span class="kind">&mdash; value stream &rarr; products &rarr; domains &rarr; services</span></h1>
+<div class="promise">One journey in: the value stream is the front door. Each step opens into its products, each product drills into its domains, and at the domain the two altitudes meet &mdash; the model view (schema &rarr; OWL &rarr; instances) and the ops view (cards, code, tests, logs), cross-linked. Every box below is a live graph entity.</div>
+<div id="stream-block"><p class="empty">loading the stream live from the model&hellip;</p></div>
 
-<h1>Chorus</h1>
-<p class="subtitle">Shaping surfaces — observe and act on the same data. Live from Fuseki.</p>
-
-<div class="products" id="products"></div>
-
-<div class="section">
-<h2>Ontology Views</h2>
-<div class="products">
-  <div class="product">
-    <h2>Schema (ER Diagram)</h2>
-    <div class="desc">Entity relationships, class hierarchy, SHACL constraints. Filter by product.</div>
-    <div class="links"><a href="/docs/chorus-er-diagram.html">Open</a></div>
-  </div>
-  <div class="product">
-    <h2>Data (Instance Explorer)</h2>
-    <div class="desc">Live graph visualization. Drag, filter, cascade. Every node from Fuseki.</div>
-    <div class="links"><a href="/docs/chorus-instance-explorer.html">Open</a></div>
-  </div>
-  <div class="product">
-    <h2>Reference (Data Model Cards)</h2>
-    <div class="desc">Per-class properties, types, descriptions. The ontology as a reference card deck.</div>
-    <div class="links"><a href="/docs/chorus-data-model.html">Open</a></div>
-  </div>
-</div>
+<div class="layer-label">The altitudes &mdash; two lenses on the same model</div>
+<div class="views">
+  <a class="vcard" href="/athena/model.html"><strong>Model (ERD)</strong><span>What it's all made of &mdash; domains and their typed edges, drill to classes. Big picture, descending.</span></a>
+  <a class="vcard" href="/domains"><strong>Instances</strong><span>Every domain's schema &rarr; OWL &rarr; live instances, generated from the graph.</span></a>
+  <a class="vcard" href="/athena/domains.html"><strong>Domains (ops)</strong><span>Already at the detail: cards, code, tests, alerts, logs per domain.</span></a>
+  <a class="vcard" href="/athena/value-stream.html"><strong>Value stream</strong><span>The six steps, their products, and each product's composed pipeline.</span></a>
 </div>
 
-<div class="meta" id="meta">Loading...</div>
+<div class="layer-label">Working surfaces &mdash; the products' own front doors</div>
+<div class="views" id="surfaces"></div>
 
+<details class="fold legacy"><summary>Legacy ontology views <span class="src">judged after integration (#3761) &mdash; retire only what proves redundant</span></summary><div class="body"><div class="views">
+  <a class="vcard" href="/docs/chorus-er-diagram.html"><strong>ER Diagram (legacy)</strong><span>Class hierarchy + SHACL, filter by product. Superseded by the Model (ERD) view above.</span></a>
+  <a class="vcard" href="/docs/chorus-instance-explorer.html"><strong>Instance Explorer (legacy)</strong><span>Drag/filter graph visualization, live from Fuseki.</span></a>
+  <a class="vcard" href="/docs/chorus-data-model.html"><strong>Data Model Cards (legacy)</strong><span>Per-class properties as a reference card deck.</span></a>
+</div></div></details>
+
+<div id="meta" class="src-note">loading&hellip;</div>
+</div>
 <script>
-(async function() {
+(async function () {
+  const block = document.getElementById('stream-block');
   try {
-    // #3603: /api/chorus/products retired with the SubProduct layer — owl-api
-    // /products (generated from chorus:ProductShape) is the product API.
-    // #3706 — SAME-ORIGIN via the chorus-api /owl proxy, the same base
-    // athena-flow.js uses (#3644: "the old hostname:3360 broke off-LAN").
-    // This page still hardcoded http://localhost:3360, so from any device that
-    // is not this machine the fetch resolved to the VIEWER's localhost and the
-    // product tiles silently never rendered — Jeff hit exactly that on his phone
-    // over wifi, 2026-08-01 ("Failed to load: Load failed").
-    const res = await fetch('/owl/products');
-    const data = await res.json();
-    const container = document.getElementById('products');
+    const [stepsEnv, prodsEnv, domsEnv, svcsEnv] = await Promise.all([
+      fetchJSON('/valuestreamsteps'), fetchJSON('/products'), fetchJSON('/domains'),
+      fetchJSON('/services').catch(() => null)]);
+    const steps = (stepsEnv.data || [])
+      .filter(s => s.inStream && String(s.inStream).includes('chorus'))
+      .sort((a, b) => Number(a.stageOrder || 0) - Number(b.stageOrder || 0));
+    const prods = prodsEnv.data || [];
+    const doms = domsEnv.data || [];
+    const svcs = (svcsEnv && svcsEnv.data) || [];
 
-    const descriptions = {
-      'Loom': 'Coordination substrate — principles, practices, decisions, roles, cards, skills, gates. How the team works.',
-      'Athena': 'Knowledge surface — domain pages, SPARQL queries, doc catalog, CMDB. What the system knows.',
-      'Convergence': 'Integration layer — ICDs, harvesters, data pipelines. How data flows between domains.',
-      'Werk': 'Operating model — spine events, value streams, sequences, state machine. How work moves.',
-      'The Clearing': 'Multi-role alignment — group chat, decisions, transcripts. How the team aligns.',
-      'Borg': 'Reflection — observability, heralds, behavioral drift, health. How the system sees itself.',
-      'Gathering': 'Personal knowledge graph — 13 content domains. What Jeff collects and cultivates.',
-    };
-
-    // #3706 — NO DEPENDENCY ON :3000. That port is the GATHERING app; this is
-    // the Chorus landing page and it must stand on chorus-api alone (Jeff,
-    // 2026-08-01). Every href below is host-relative, served by this same
-    // origin — so the page works identically on localhost, over wifi by IP,
-    // and through any tunnel. Hardcoded localhost hrefs are dead on every
-    // device except this machine, which is how the tiles broke on Jeff's phone.
-    // The Clearing is a separate service (:3470) with no chorus-api route, so
-    // it is derived from location.hostname rather than hardcoded.
-    const pageLinks = {
-      'Loom': [{ label: 'Loom', href: '/loom/' }],
-      'Athena': [
-        { label: 'Model', href: '/athena/model.html' },
-        { label: 'Domains', href: '/athena/domains.html' },
-        { label: 'Value Stream', href: '/athena/value-stream.html' },
-      ],
-      'Werk': [
-        { label: 'Werk', href: '/werk/' },
-        // #3656: quality is part of werk (Jeff's call) and served by chorus-api
-        // itself — relative href so it also works through the share tunnel.
-        { label: 'Quality Service', href: '/werk/quality/' },
-      ],
-      'The Clearing': [{ label: 'The Clearing', href: `${location.protocol}//${location.hostname}:3470` }],
-      'Borg': [
-        { label: 'Hooks Dashboard', href: '/borg/hooks/' },
-      ],
-    };
-
-    // owl-api shape: { data: [{ name, label, comment, ownedBy, status, … }] }.
-    // Products are flat typed chorus:Product rows (SubProduct is gone); skip the
-    // parent hub card, render each product with the local description/link maps.
-    const products = data.data || [];
-    for (const p of products) {
-      if (p.label === 'Chorus (Product)') continue;
-      const div = document.createElement('div');
-      div.className = 'product ' + p.label.toLowerCase().replace(/[^a-z]/g, '');
-      const owner = (p.ownedBy || '').replace(/^role-/, '');
-      const links = (pageLinks[p.label] || []).map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('');
-      div.innerHTML = '<h2>' + p.label + '</h2>'
-        + (owner ? '<div class="owner">' + owner + '</div>' : '')
-        + '<div class="desc">' + (descriptions[p.label] || p.comment || '') + '</div>'
-        + (links ? '<div class="links">' + links + '</div>' : '');
-      container.appendChild(div);
+    const byStep = {};
+    for (const p of prods) (byStep[stepLocal(p.atStep)] = byStep[stepLocal(p.atStep)] || []).push(p);
+    const domsByStep = {};
+    for (const d of doms) {
+      const st = String(d.atStep || '').toLowerCase();
+      domsByStep[st] = (domsByStep[st] || 0) + 1;
     }
 
-    document.getElementById('meta').textContent = 'Chorus — ' + products.length + ' products from owl-api (generated from chorus:ProductShape)';
-  } catch (err) {
-    document.getElementById('meta').textContent = 'Failed to load: ' + err.message;
-  }
+    const cols = steps.map(s => {
+      const key = stepLocal(s.name);
+      const at = (byStep[key] || []).sort((a, b) => a.name.localeCompare(b.name));
+      const dn = domsByStep[key] || 0;
+      const items = at.map(p =>
+        `<a class="prod" href="/athena/product.html?p=${encodeURIComponent(p.name)}"><strong>${esc(p.name[0].toUpperCase() + p.name.slice(1))}</strong>` +
+        `<span class="child">${ownerDot(p.ownedBy)} &middot; ${asArray(p.hasDomain).length} domains</span></a>`).join('')
+        || '<div class="empty">no products</div>';
+      return `<div class="step-col ${key}"><h2><a class="edge" href="/athena/value-stream.html">${esc(s.label || key)}</a></h2>` +
+        `<div class="count">${at.length} product${at.length !== 1 ? 's' : ''} &middot; ${dn} domain${dn !== 1 ? 's' : ''}</div>${items}</div>`;
+    }).join('');
+    block.innerHTML = `<div class="stream">${cols}</div>`;
+
+    // working surfaces per product — host-relative (#3706); Clearing derives its
+    // host from location (separate service :3470, no chorus-api route).
+    const surf = {
+      'loom': [{ label: 'Loom', href: '/loom/' }],
+      'werk': [{ label: 'Werk', href: '/werk/' }, { label: 'Quality', href: '/werk/quality/' }],
+      'borg': [{ label: 'Hooks dashboard', href: '/borg/hooks/' }],
+      'clearing': [{ label: 'The Clearing', href: `${location.protocol}//${location.hostname}:3470` }],
+    };
+    document.getElementById('surfaces').innerHTML = prods
+      .filter(p => surf[p.name])
+      .map(p => surf[p.name].map(l =>
+        `<a class="vcard" href="${l.href}"><strong>${esc(l.label)}</strong><span>${esc(p.label || p.name)} &middot; ${ownerLocal(p.ownedBy)}</span></a>`).join(''))
+      .join('');
+
+    document.getElementById('meta').innerHTML =
+      `live from owl-api /owl &middot; ${steps.length} steps &middot; ${prods.length} products &middot; ${doms.length} domains &middot; ` +
+      `${svcs.length} service${svcs.length !== 1 ? 's' : ''} modeled` +
+      (svcs.length < 5 ? ' <span class="flag">service-instances set is thin &mdash; a model gap, not a render choice</span>' : '') +
+      ` &middot; nothing fabricated`;
+  } catch (e) { fetchFailed(block, e); }
 })();
 </script>
-
-</body>
-</html>
+</body></html>

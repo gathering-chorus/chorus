@@ -55,6 +55,37 @@ function domainChips(hasDomain) {
   return doms.map(d => `<a class="chip" href="domain.html?d=${encodeURIComponent(d)}">${esc(d)}</a>`).join('');
 }
 
+// #3761 — the journey ladder, one shared nav on every integrated surface.
+// "Where am I, up one level, the ladder": the crumb answers the first two;
+// this answers the third. Rendered from one list so the rungs cannot drift
+// between pages. current = the key of the page being viewed (or '' for none).
+const JOURNEY_RUNGS = [
+  { key: 'chorus', label: 'Chorus', href: '/' },
+  { key: 'value-stream', label: 'Value stream', href: '/athena/value-stream.html' },
+  { key: 'products', label: 'Products', href: '/athena/products.html' },
+  { key: 'domains', label: 'Domains', href: '/athena/domains.html' },
+  { key: 'model', label: 'Model (ERD)', href: '/athena/model.html' },
+  { key: 'instances', label: 'Instances', href: '/domains' },
+];
+
+function journeyNav(current) {
+  return '<nav class="ladder">' + JOURNEY_RUNGS.map(r =>
+    r.key === current
+      ? `<span class="rung here">${esc(r.label)}</span>`
+      : `<a class="rung" href="${r.href}">${esc(r.label)}</a>`
+  ).join('') + '</nav>';
+}
+
+// injects the ladder above the page's .crumb (or at top of .wrap) on DOM ready
+function mountJourneyNav(current) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const wrap = document.querySelector('.wrap') || document.body;
+    const el = document.createElement('div');
+    el.innerHTML = journeyNav(current);
+    wrap.insertBefore(el.firstChild, wrap.firstChild);
+  });
+}
+
 function srcNote(extra) {
   return `<p class="src-note">live from owl-api ${esc(OWL)} · every field maps 1:1 to a shape property · nothing fabricated${extra ? ' · ' + extra : ''}</p>`;
 }
