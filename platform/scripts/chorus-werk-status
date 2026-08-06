@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+chorus-werk-status — where is each pipeline, in one answer. (#3782)
+
+Jeff, 2026-08-06: "a skill like /cws can be used by both me and u to see where
+we r in a pipeline" — and an hour later, live: "this is where i need cws".
+
+Reads, per card:
+  - the run pin  ~/.chorus/werk-runs/<card>.json   (phase, runId, startedAt, pid, patchId, presentedAt)
+  - the run log  ~/.chorus/werk-runs/<card>-<runId>.log  (current act stage = last stage marker)
+  - the werk     ~/CascadeProjects/chorus-werk/<role>-<card>/  (HEAD patch-id, for the stale-present check)
+
+Trust rules (#3780/#3781 — a pin's phase is a CLAIM, not a fact):
+  - phase=running counts only if the pin's pid is alive AND its process start
+    time matches the pin's startedAt (±15min). Otherwise: "abandoned (pin stale)".
+  - phase=presented counts only within 24h of presentedAt; a presented round
+    whose patchId != the werk's HEAD patch-id gets a STALE-PRESENT warning
+    (go:true would land a witness that misses content).
+
+Usage:
+  chorus-werk-status              # all live runs (jeff's view)
+  chorus-werk-status 3781         # one card
+  chorus-werk-status --role wren  # one role's cards
+  chorus-werk-status --fixture    # NEGATIVE PROOF self-test (see below)
+
+The --fixture mode is the no-gate-without-a-negative-proof contract applied to
+a status tool: it builds a stale-running pin and a HEAD-mismatched presented
+pin in a temp dir, runs BOTH through a naive verbatim-trust reading and this
+tool's reading, and exits 0 only if naive says "running/clean" where this tool
+says "abandoned/stale-present" — proving the tool can tell the two states apart.
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+RUNS_DIR = Path(os.environ.get("CWS_RUNS_DIR", os.path.expanduser("~/.chorus/werk-runs")))
+WERK_BASE = Path(os.environ.get("CHORUS_WERK_BASE", os.path.expanduser("~/CascadeProjects/chorus-werk")))
+SLACK_MS = 15 * 60 * 1000
+PRESENTED_TTL_MS = 24 * 3600 * 1000
+
+# act stage markers, in pipeline order — last one seen in the log wins
+STAGE_RE = re.compile(r"\[werk/werk\]\s+(?:⭐\s+Run|✅\s+Success -)\s+(?:Main\s+)?([a-zA-Z-]+(?:\s[a-zA-Z-]+)?)")
+
+
+def pid_start_times():
+    out = subprocess.run(["ps", "-eo", "pid=,lstart="], capture_output=True, text=True, timeout=5).stdout
+    m = {}
+    for line in out.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            continue
+        try:
+            t = datetime.strptime(parts[1].strip(), "%a %b %d %H:%M:%S %Y")
+            m[int(parts[0])] = t.timestamp() * 1000
+        except ValueError:
+            continue
+    return m
+
+
+def parse_ts(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp() * 1000
+    except ValueError:
+        return None
+
+
+def head_patch_id(role, card):
+    werk = WERK_BASE / f"{role}-{card}"
+    if not werk.is_dir():
+        return None
+    try:
+        diff = subprocess.run(["git", "diff", "origin/main...HEAD"], cwd=werk, capture_output=True, text=True, timeout=15).stdout
+        if not diff.strip():
+            return ""
+        pid_out = subprocess.run(["git", "patch-id", "--stable"], cwd=werk, input=diff, capture_output=True, text=True, timeout=15).stdout
+        return pid_out.split()[0] if pid_out.strip() else ""
+    except Exception:
+        return None
+
+
+def current_stage(pin):
+    run_id = pin.get("runId")
+    card = pin.get("card")
+    if not run_id:
+        return None
+    log = RUNS_DIR / f"{card}-{run_id}.log"
+    if not log.is_file():
+        return None
+    try:
+        tail = log.read_bytes()[-20000:].decode("utf-8", "replace")
+    except OSError:
+        return None
+    stages = STAGE_RE.findall(tail)
+    if "WERK_EXIT=0" in tail:
+        return "act finished"
+    return stages[-1].strip() if stages else None
+
+
+def classify(pin, pid_starts, now_ms):
+    """Return (status, detail) applying the #3781 trust rules."""
+    phase = pin.get("phase")
+    if phase == "running":
+        pid = pin.get("pid")
+        pin_start = parse_ts(pin.get("startedAt"))
+        proc_start = pid_starts.get(pid) if pid else None
+        if proc_start is None:
+            return "abandoned", "pin stale — recorded pid is dead"
+        if pin_start is None or abs(proc_start - pin_start) > SLACK_MS:
+            return "abandoned", "pin stale — pid reused by another process"
+        return "running", None
+    if phase == "presented":
+        t = parse_ts(pin.get("presentedAt"))
+        if t is None or now_ms - t > PRESENTED_TTL_MS:
+            return "abandoned", "presented round expired (>24h)"
+        return "presented", None
+    if phase in ("landed", "failed"):
+        return phase, None
+    return phase or "unknown", None
+
+
+def render(pin, pid_starts, now_ms):
+    card = pin.get("card")
+    role = pin.get("role", "?")
+    status, why = classify(pin, pid_starts, now_ms)
+    line = f"#{card} [{role}] {status}"
+    if why:
+        return line + f" — {why}"
+    started = parse_ts(pin.get("startedAt"))
+    if started and status == "running":
+        line += f" · {int((now_ms - started) / 60000)}m in"
+        stage = current_stage(pin)
+        if stage:
+            line += f" · stage: {stage}"
+    if status == "presented":
+        head = head_patch_id(role, card)
+        pin_patch = pin.get("patchId", "")
+        if head is None:
+            line += " · werk missing (cannot verify round)"
+        elif head != pin_patch:
+            line += " · ⚠ STALE-PRESENT: round != werk HEAD — supersede + re-present before any go"
+        else:
+            line += f" · round matches HEAD ✓ · go: chorus_werk {{role:\"{role}\", card_id:{card}, accepter:\"jeff\", go:true}}"
+    return line
+
+
+def load_pins(card=None, role=None):
+    pins = []
+    if not RUNS_DIR.is_dir():
+        return pins
+    for f in sorted(RUNS_DIR.glob("[0-9]*.json")):
+        if not re.fullmatch(r"\d+\.json", f.name):
+            continue
+        if card and f.stem != str(card):
+            continue
+        try:
+            pin = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if role and pin.get("role") != role:
+            continue
+        pins.append(pin)
+    return pins
+
+
+def fixture_mode():
+    with tempfile.TemporaryDirectory() as td:
+        global RUNS_DIR
+        RUNS_DIR = Path(td)
+        now = datetime.now(timezone.utc)
+        # stale-running: pid of this very process but startedAt from June — identity mismatch
+        (RUNS_DIR / "9001.json").write_text(json.dumps({
+            "card": 9001, "role": "wren", "phase": "running",
+            "pid": os.getpid(), "startedAt": "2026-06-17T22:20:22.455Z", "runId": "fx-1"}))
+        # stale-present: fresh presentedAt but patchId that cannot match any werk (werk missing → flagged)
+        (RUNS_DIR / "9002.json").write_text(json.dumps({
+            "card": 9002, "role": "wren", "phase": "presented",
+            "presentedAt": now.isoformat(), "patchId": "deadbeef", "runId": "fx-2"}))
+        pid_starts = pid_start_times()
+        now_ms = time.time() * 1000
+        pins = load_pins()
+        naive = [p.get("phase") for p in pins]  # verbatim trust: running, presented — both "fine"
+        ours = [classify(p, pid_starts, now_ms)[0] for p in pins]
+        rendered = [render(p, pid_starts, now_ms) for p in pins]
+        naive_wrong = naive == ["running", "presented"]
+        we_catch = ours[0] == "abandoned" and ("STALE-PRESENT" in rendered[1] or "cannot verify" in rendered[1])
+        print(f"fixture: naive-trust reads {naive} (blind to both violations): {naive_wrong}")
+        print(f"fixture: cws reads {ours[0]} + flagged round: {we_catch}")
+        for r in rendered:
+            print("  " + r)
+        if naive_wrong and we_catch:
+            print("NEGATIVE PROOF OK — cws distinguishes the states verbatim-trust cannot.")
+            return 0
+        print("NEGATIVE PROOF FAILED — this tool must not be trusted for status.")
+        return 1
+
+
+def main():
+    args = sys.argv[1:]
+    if "--fixture" in args:
+        sys.exit(fixture_mode())
+    role = None
+    card = None
+    if "--role" in args:
+        role = args[args.index("--role") + 1]
+    for a in args:
+        if a.isdigit():
+            card = a
+    pins = load_pins(card=card, role=role)
+    if not pins:
+        print("no runs on record" + (f" for #{card}" if card else "") + (f" for {role}" if role else ""))
+        return
+    pid_starts = pid_start_times()
+    now_ms = time.time() * 1000
+    live_first = sorted(pins, key=lambda p: (classify(p, pid_starts, now_ms)[0] not in ("running", "presented"), -(parse_ts(p.get("startedAt")) or 0)))
+    shown = 0
+    for pin in live_first:
+        status, _ = classify(pin, pid_starts, now_ms)
+        if card is None and status not in ("running", "presented"):
+            continue  # no-arg view shows LIVE runs only; abandoned pins are noise, not status
+        print(render(pin, pid_starts, now_ms))
+        shown += 1
+    if shown == 0:
+        print("no live runs — every pin on record is landed, failed, or stale")
+
+
+if __name__ == "__main__":
+    main()
