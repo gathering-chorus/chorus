@@ -108,18 +108,16 @@ import { getPostureStrip, getWerkActivity } from './jeff-summary';
 import { listSessions, getSession, getSessionLog, isValidSessionId } from './session-replay';
 
 // Serve Chorus landing at root — #2099 (promoted from /docs per product feedback)
-// #3724: the old query-param model page redirects to the path form rather than
-// lingering as a competing surface — leaving both alive is how fifteen
-// "show me the model" pages accumulated (#3706).
 //
-// REGISTERED BEFORE express.static ON PURPOSE. public/athena/domain.html is a
-// real file, so static at the line below answers it first and the redirect
-// never runs — verified: it returned 200-with-the-old-page, not 301. Order is
-// the mechanism here, and moving this line down silently restores the old page.
-app.get('/athena/domain.html', (req: Request, res: Response) => {
-  const d = typeof req.query.d === 'string' ? req.query.d : '';
-  res.redirect(301, d ? '/domains/' + encodeURIComponent(d) : '/domains');
-});
+// #3768 RETIRED the #3724 redirect that lived here. #3724 read /athena/domain.html
+// as "the old query-param model page" and 301'd it to /domains/<d> — but that URL
+// is the #3635 OPS instance page (17 materialized folds), a different ALTITUDE
+// (Jeff's 2026-08-05 reframe), not a competing model surface. The redirect made
+// the ops page unreachable by URL for three days, bounced the model page's own
+// "ops view →" cross-link straight back, and quietly turned the #3757 drift
+// test's equality vacuous (it compared the model page with itself through the
+// 301 — the test now asserts the URL survives, so this exact regression fails
+// loudly instead). Static serves the real file; the two altitudes cross-link.
 
 app.use('/', express.static(path.join(__dirname, '..', 'public')));
 

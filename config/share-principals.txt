@@ -1,0 +1,30 @@
+# chorus share-guard — WHO may read the Chorus surface (#3770)
+#
+# One WebID per line. '#' comments and blank lines ignored. The guard refuses to
+# start if this file is missing or empty: an absent policy must never mean
+# "everyone who can sign in".
+#
+# This file is AUTHORIZATION. Authentication is the identity provider's job, and
+# the two are deliberately separate — someone can sign in successfully, prove
+# exactly who they are, and still be refused here. That separation is what makes
+# revoking one person a one-line edit that touches nobody else.
+#
+# The allow-set is consulted on EVERY request, not at sign-in. Deleting a line
+# takes effect on that person's next request rather than whenever their session
+# would have expired.
+#
+# Adding a line here grants a real human read access to everything the path
+# allowlist exposes (config/share-allowlist.txt). Review it as that.
+
+# Jeff. Both forms are listed because the WebID claim's host depends on how the
+# identity provider is addressed — internally it is :3001, publicly it is the
+# id. hostname through the tunnel — and a sign-in that works in a browser but is
+# refused here would look like a broken door rather than a policy decision.
+http://localhost:3001/jeff/profile/card#me
+https://id.lightlifeurbangardens.com/jeff/profile/card#me
+
+# Mark — pending. He has no account at the identity provider yet; creating it is
+# part of #3770. Uncommenting a line for a WebID that does not exist grants
+# nothing, but it also hides the fact that the real step was never done, so his
+# entry stays commented until the account exists.
+# https://id.lightlifeurbangardens.com/mark/profile/card#me

@@ -39,6 +39,15 @@
         <string>8899</string>
         <key>SHARE_BIND</key>
         <string>127.0.0.1</string>
+        <!-- #3770 — sign-in delegates to the identity provider we already run.
+             SHARE_PUBLIC_ORIGIN is the origin the browser sees; it builds the
+             OIDC redirect URI, which must match one the provider has registered
+             or sign-in is refused. No credential appears here or in any other
+             committed file — after #3770 there is no shared secret to place. -->
+        <key>SHARE_OIDC_ISSUER</key>
+        <string>https://id.lightlifeurbangardens.com</string>
+        <key>SHARE_PUBLIC_ORIGIN</key>
+        <string>https://chorus.lightlifeurbangardens.com</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

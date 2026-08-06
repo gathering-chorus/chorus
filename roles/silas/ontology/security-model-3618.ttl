@@ -264,3 +264,17 @@ chorus:GateShape-ownerRole a sh:PropertyShape ;
 # blank-node property shapes through the door, which the typed-slot batch
 # refuses). Converting those four to named property shapes is its own small
 # migration, tracked as a #3618 follow-on note, not folded in here.
+
+chorus:APISurfaceShape a sh:NodeShape ;
+    sh:targetClass chorus:APISurface ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:servedBy ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
+
+chorus:GateShape a sh:NodeShape ;
+    sh:targetClass chorus:Gate ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:ownerRole ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
