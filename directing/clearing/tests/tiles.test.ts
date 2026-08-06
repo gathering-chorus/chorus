@@ -1,3 +1,4 @@
+// @test-type: unit — tmp fixture dirs (scan/pulse/werk-runs), no live services; brings its own world.
 /**
  * TilePoller — unit tests (#2167 phase 2).
  *
@@ -13,7 +14,11 @@ import { TilePoller } from '../src/tiles';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tiles-test-'));
 const PULSE = path.join(TMP, 'pulse-latest.json');
-const OPTS = { scanDir: TMP, pulseFile: PULSE };
+// #3772: werkRunsDir pinned to an empty fixture dir — without it the poller
+// reads the LIVE ~/.chorus/werk-runs and a real in-flight pipeline leaks into
+// these hermetic tests (a test brings its own world, #3528).
+const WERK_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'tiles-werk-'));
+const OPTS = { scanDir: TMP, pulseFile: PULSE, werkRunsDir: WERK_TMP };
 
 function writeState(role: string, data: any) {
   fs.writeFileSync(path.join(TMP, `${role}-declared.json`), JSON.stringify(data));

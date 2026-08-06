@@ -10,6 +10,10 @@ import path from 'path';
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
 const PULSE_FILE = process.env.CLEARING_PULSE_FILE || '/tmp/pulse-latest.json';
 const CHORUS_API = process.env.CHORUS_API_BASE || 'http://localhost:3340';
+// #3772 — werk run pins; a live pipeline must show on the tile (Jeff's 10:17
+// screenshot: three "idle" tiles while two pipelines and a build were running).
+const WERK_RUNS_DIR = process.env.CLEARING_WERK_RUNS_DIR
+  || path.join(process.env.HOME || '/Users/jeffbridwell', '.chorus', 'werk-runs');
 const ROLES = ['jeff', 'wren', 'silas', 'kade'] as const;
 
 interface BoardCard { id: number; owner?: string; status?: string; title?: string; domain?: string; }
@@ -44,6 +48,7 @@ export interface TilePollerOptions {
   scanDir?: string;
   pulseFile?: string;
   chorusApi?: string;
+  werkRunsDir?: string;
 }
 
 export class TilePoller {
@@ -55,11 +60,13 @@ export class TilePoller {
   private readonly scanDir: string;
   private readonly pulseFile: string;
   private readonly chorusApi: string;
+  private readonly werkRunsDir: string;
 
   constructor(opts: TilePollerOptions = {}) {
     this.scanDir = opts.scanDir ?? SCAN_DIR;
     this.pulseFile = opts.pulseFile ?? PULSE_FILE;
     this.chorusApi = opts.chorusApi ?? CHORUS_API;
+    this.werkRunsDir = opts.werkRunsDir ?? WERK_RUNS_DIR;
     for (const role of ROLES) {
       this.tiles.set(role, {
         role,
@@ -197,8 +204,38 @@ export class TilePoller {
     };
     this.applyAndonState(tile, role);
     this.applyBoardAndPulse(tile, role);
+    // After the board: the board's card list is authoritative when it answers;
+    // the run pin fills card only when the board gave none (board down ≠ idle).
+    this.applyWerkRuns(tile, role);
     this.applyLastObservation(tile, role);
     return tile;
+  }
+
+  // #3772 — presence derives from live werk phase, not just last-declared state.
+  // A role with a pipeline in flight never shows bare "idle": the run pin
+  // (~/.chorus/werk-runs/<card>.json) is ground truth for "is this role working".
+  // Declared non-idle states (blocked, observing, …) are NOT overridden — only
+  // the idle/unknown lie is corrected.
+  private applyWerkRuns(tile: RoleTile, role: string): void {
+    try {
+      const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
+      for (const f of files) {
+        let run: { role?: string; card?: number; phase?: string };
+        try {
+          run = JSON.parse(fs.readFileSync(path.join(this.werkRunsDir, f), 'utf-8'));
+        } catch { continue; }
+        if ((run.role || '').toLowerCase() !== role.toLowerCase()) continue;
+        if (run.phase !== 'running' && run.phase !== 'presented') continue;
+        if (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting') {
+          tile.state = run.phase === 'presented' ? 'presenting' : 'building';
+        }
+        tile.sessionAlive = true;
+        if (!tile.card && run.card) tile.card = `#${run.card}`;
+        return;
+      }
+    } catch {
+      // No werk-runs dir — tiles fall back to declared state alone.
+    }
   }
 
   private readJeffTile(): RoleTile {
