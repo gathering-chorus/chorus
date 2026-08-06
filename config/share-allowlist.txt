@@ -1,0 +1,29 @@
+# chorus share-guard allowlist (#3744)
+#
+# Path prefixes reachable through the public tunnel, with basic auth, GET/HEAD
+# only. Everything not listed here 404s. This file IS the policy — the guard
+# refuses to start if it is missing or empty, so the allowlist can never again
+# live only inside a running process (2026-07-22 → 2026-08-06, SHARE_ALLOW=/about
+# frozen in a hand-started process with no LaunchAgent and no record).
+#
+# One prefix per line. '#' comments and blank lines ignored.
+# Adding a line here EXPANDS what the outside world can reach — review as such.
+
+# The about page — the original share (#3644).
+/about
+
+# Athena model pages: the domain ERD and the model browser (#3739, Jeff 2026-08-04
+# asked for these to be reachable by authenticated users off-LAN).
+/athena
+/domains
+
+# Read-only model data the pages fetch. No write verb can reach it — the guard is
+# GET/HEAD only — and owl-api itself serves reads.
+/owl
+/api/athena/model-relationships
+/api/athena/domain-schema
+/api/athena/domain-owl
+
+# Assets the pages need to render.
+/js/vendor
+/css

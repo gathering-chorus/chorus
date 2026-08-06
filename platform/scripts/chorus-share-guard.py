@@ -24,12 +24,56 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 UPSTREAM = os.environ.get("SHARE_UPSTREAM", "http://localhost:3000").rstrip("/")
-ALLOW = [p.strip() for p in os.environ.get("SHARE_ALLOW", "/").split(",") if p.strip()]
+
+
+def load_allow():
+    """#3744 — the allowlist is a GOVERNED FILE, not an env var captured at launch.
+
+    Why: the live guard ran from 2026-07-22 to 2026-08-06 with SHARE_ALLOW=/about
+    frozen in its process environment, started by hand with no LaunchAgent. The
+    July /athena entries did not "regress" — they were never persisted anywhere.
+    A policy that exists only inside a running process cannot be reviewed, cannot
+    survive a restart, and cannot be measured. Now it lives in
+    config/share-allowlist.txt, version-controlled and diffable.
+
+    SHARE_ALLOW still wins when set, for tests and one-off shares. Absent BOTH a
+    file and the env var, the guard REFUSES TO START rather than defaulting to
+    "/" — a permissive default on a public-facing door is the fail-open shape
+    this whole file exists to prevent.
+    """
+    env = os.environ.get("SHARE_ALLOW")
+    if env is not None:
+        return [p.strip() for p in env.split(",") if p.strip()], "env:SHARE_ALLOW"
+    path = os.environ.get(
+        "SHARE_ALLOW_FILE",
+        os.path.join(os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"),
+                     "config", "share-allowlist.txt"),
+    )
+    try:
+        with open(path) as fh:
+            entries = []
+            for line in fh:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    entries.append(line)
+        return entries, path
+    except OSError:
+        return [], path
+
+
+ALLOW, ALLOW_SOURCE = load_allow()
 AUTH = os.environ.get("SHARE_AUTH", "")
 PORT = int(os.environ.get("SHARE_PORT", "8899"))
 
 if not AUTH or ":" not in AUTH:
     print("chorus-share-guard: SHARE_AUTH=user:password is required — refusing to start unauthenticated", file=sys.stderr)
+    sys.exit(2)
+
+# #3744 — an empty allowlist is a misconfiguration, never "allow everything" and
+# never a silent no-op. Fail closed, name the source that came up empty.
+if not ALLOW:
+    print(f"chorus-share-guard: allowlist is EMPTY (source: {ALLOW_SOURCE}) — refusing to start rather than "
+          f"guessing a policy. Create the file or set SHARE_ALLOW.", file=sys.stderr)
     sys.exit(2)
 EXPECTED = "Basic " + base64.b64encode(AUTH.encode()).decode()
 

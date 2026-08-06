@@ -81,5 +81,44 @@ assert "guard refuses to start without SHARE_AUTH (exit 2)" test "$?" -eq 2
 SHARE_AUTH="t:p" SHARE_BIND="0.0.0.0" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
 assert "guard refuses non-loopback bind (exit 2)" test "$?" -eq 2
 
+# --- #3744: the allowlist is a GOVERNED FILE, and an absent policy fails closed ---
+
+# The 2026-07-22 shape: policy only in a process env, nothing on disk. Now the
+# file is the source of truth and the guard reads it.
+ALLOWFILE="$TEST_ROOT/allow.txt"
+printf '# comment ignored\n/about\n\n/extra   # trailing comment\n' > "$ALLOWFILE"
+G2_PORT=$((G_PORT + 1))
+mkdir -p "$TEST_ROOT/www/extra"; echo "extra page" > "$TEST_ROOT/www/extra/e.html"
+env -u SHARE_ALLOW SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW_FILE="$ALLOWFILE" \
+  SHARE_AUTH="tester:pw123" SHARE_PORT="$G2_PORT" python3 "$GUARD" >/dev/null 2>&1 &
+G2_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G2_PORT/" 2>/dev/null && break; sleep 0.3; done
+assert "file allowlist: /about served" test "$(code -u tester:pw123 http://127.0.0.1:$G2_PORT/about/x.html)" = "200" # gitleaks:allow — fixture cred
+assert "file allowlist: second entry served" test "$(code -u tester:pw123 http://127.0.0.1:$G2_PORT/extra/e.html)" = "200" # gitleaks:allow — fixture cred
+assert "file allowlist: comments/blank lines ignored, not treated as paths" \
+  test "$(code -u tester:pw123 http://127.0.0.1:$G2_PORT/secret/y.html)" = "404"
+kill "$G2_PID" 2>/dev/null
+
+# NEGATIVE PROOF: no file and no env → REFUSE TO START. Never default to "/",
+# which would silently expose the whole upstream through a public tunnel.
+env -u SHARE_ALLOW SHARE_ALLOW_FILE="$TEST_ROOT/does-not-exist.txt" \
+  SHARE_AUTH="t:p" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: missing allowlist file -> refuse to start (exit 2), never allow-all" test "$?" -eq 2
+
+# NEGATIVE PROOF: a file that exists but declares nothing is a misconfiguration,
+# not an empty policy that quietly permits everything.
+: > "$TEST_ROOT/empty.txt"
+env -u SHARE_ALLOW SHARE_ALLOW_FILE="$TEST_ROOT/empty.txt" \
+  SHARE_AUTH="t:p" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: empty allowlist file -> refuse to start (exit 2)" test "$?" -eq 2
+
+# The committed allowlist must actually carry the Athena entries Jeff asked for
+# (#3744) — otherwise the card's own deliverable can regress unnoticed.
+REPO_ALLOW="$SCRIPT_DIR/../../config/share-allowlist.txt"
+assert "committed allowlist exists" test -f "$REPO_ALLOW"
+for want in /about /athena /domains /owl; do
+  assert "committed allowlist carries $want" grep -qx -- "$want" "$REPO_ALLOW"
+done
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

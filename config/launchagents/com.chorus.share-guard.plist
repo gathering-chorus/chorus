@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  chorus share-guard (#3744) — the tunnel-facing read-only proxy.
+
+  Why this file exists: from 2026-07-22 to 2026-08-06 the guard ran as a
+  hand-started process whose entire security policy (SHARE_ALLOW=/about) lived
+  only in its process environment. Nothing on disk recorded what the public
+  tunnel could reach, so the policy could not be reviewed and would not have
+  survived a restart. Now the allowlist is config/share-allowlist.txt and the
+  process is managed.
+
+  SHARE_AUTH is deliberately NOT set here — credentials never live in a
+  committed file. chorus-share writes the per-session credential into the
+  runtime env file the wrapper reads. A guard with no SHARE_AUTH refuses to
+  start, which is the intended failure when the credential is absent.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.share-guard</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/share-guard-wrapper.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>SHARE_UPSTREAM</key>
+        <string>http://localhost:3000</string>
+        <key>SHARE_PORT</key>
+        <string>8899</string>
+        <key>SHARE_BIND</key>
+        <string>127.0.0.1</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/share-guard.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/share-guard.log</string>
+</dict>
+</plist>
