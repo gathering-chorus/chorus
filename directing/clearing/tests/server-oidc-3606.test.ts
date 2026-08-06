@@ -1,6 +1,5 @@
 // @test-type: integration — in-process listener on an ephemeral port, tempdir fixtures,
 // network-touching seams (CSS token exchange, allow-set) mocked. Brings its own world.
-export {};
 /**
  * #3606 — the OIDC login/callback flow was the largest uncovered region of
  * clearing's server.ts (functions 71.31% vs floor 75): the #3669 human-login

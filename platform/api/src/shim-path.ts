@@ -26,6 +26,7 @@ export function resolveShimPath(env: NodeJS.ProcessEnv = process.env): string {
   // never os.homedir(), so tests can construct the deployed-binary scenario.
   if (env.HOME) {
     const deployed = path.join(env.HOME, '.chorus', 'bin', 'chorus-hook-shim');
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is env HOME + constant segments; env is caller-controlled config, not request input (#3766)
     if (fs.existsSync(deployed)) return deployed;
   }
   if (env.CHORUS_ROOT) return path.join(env.CHORUS_ROOT, SHIM_REL);

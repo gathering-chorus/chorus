@@ -54,6 +54,10 @@ const NudgeInput = z.object({
 
 export type NudgeArgs = z.infer<typeof NudgeInput>;
 
+/** Fallback repo root when CHORUS_HOME/CHORUS_ROOT are unset (dev shells, launchd
+ *  without the env file). One constant, not seven copies (#3766). */
+const DEFAULT_CHORUS_HOME = '/Users/jeffbridwell/CascadeProjects/chorus';
+
 /** #2474 — async exec contract: takes a promisified execFile-shaped fn.
  *  #2662 — opts gains `cwd` so callers spawning binaries that run relative
  *  to repo root (e.g., chorus_commit → git-queue.sh staging paths) can set
@@ -858,7 +862,7 @@ async function executeMigrationReadout(
   execFileAsync: ExecFileAsync,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const endpoint = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/sparql';
-  const root = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const root = process.env.CHORUS_ROOT || DEFAULT_CHORUS_HOME;
   const P = 'PREFIX chorus: <https://jeffbridwell.com/chorus#> ';
   const names = async (query: string): Promise<string[]> => {
     const { stdout } = await execFileAsync(
@@ -2222,7 +2226,7 @@ async function executeWerkVerb(
         ...process.env,
         DEPLOY_ROLE: role,
         CHORUS_ROLE: role,
-        CHORUS_HOME: process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus',
+        CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME,
         CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
         // #3320 — name the invoker so werk-deploy can detect the self-deploy case
         // (deploying chorus-mcp FROM chorus-mcp) and detach instead of killing this
@@ -2287,7 +2291,7 @@ async function executeRegisterFeedback(
           ...process.env,
           DEPLOY_ROLE: peer,
           CHORUS_ROLE: peer,
-          CHORUS_HOME: process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus',
+          CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME,
           CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
         },
         timeout: 30000,
@@ -2416,7 +2420,7 @@ function refuseIfPinStale(
     ok: false, verb: 'chorus_werk', refusal: 'stale-run-pin', reason: verdict.reason,
     role: args.role, card_id: args.card_id, archived,
     note: `Refused: the run pin for #${args.card_id} fails integrity (${verdict.reason}: ${verdict.detail}). ` +
-      `It belongs to a previous cycle of this card and its phase is NOT the current state — nothing is reported from it. ` +
+      'It belongs to a previous cycle of this card and its phase is NOT the current state — nothing is reported from it. ' +
       `The pin has been archived${archived ? ` to ${archived}` : ' (archive failed; clear it by re-pulling)'}; re-invoke chorus_werk to start a fresh run.`,
   });
 }
@@ -2427,7 +2431,7 @@ async function executeChorusWerk(
   runsDir?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
-  const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const home = process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME;
   const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
@@ -2553,7 +2557,7 @@ async function executeChorusWerkLand(
   runsDir?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const pathMod = require('path') as typeof import('path');
-  const home = process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus';
+  const home = process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME;
   const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
@@ -3078,7 +3082,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         // CHORUS_ROOT first: the variant daemon's plist points it at the card's werk, so a
         // demo-test exercises the WERK's dist (Wren's #3331 seam); canonical daemon's
         // CHORUS_ROOT is canonical. CHORUS_HOME fallback for older contexts.
-        const cli = pathMod.join(process.env.CHORUS_ROOT || process.env.CHORUS_HOME || '/Users/jeffbridwell/CascadeProjects/chorus', 'platform/api/dist/flow-report-cli.js');
+        const cli = pathMod.join(process.env.CHORUS_ROOT || process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME, 'platform/api/dist/flow-report-cli.js');
         const htmlOut = pathMod.join(process.env.HOME || '', '.chorus/reports/card-cycle-report.html');
         const execFileP = promisify(execFile);
         try {
@@ -3117,7 +3121,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!SERVICE_LIFECYCLE_VERBS.includes(verb)) {
           throw new Error(`Unknown service verb: ${verb}`);
         }
-        const canonicalRoot = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus';
+        const canonicalRoot = process.env.CHORUS_ROOT || DEFAULT_CHORUS_HOME;
         return executeServiceLifecycle(verb, parsed.data.service, from, canonicalRoot);
       }
       case 'chorus_principles_list':
@@ -3431,7 +3435,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         }
         const resp = await fetchImpl(url);
         const body = (await resp.json()) as { ok?: boolean };
-        emitSpineEvent('chorus_pain.queried', { tool, from, ok: body?.ok !== false });
+        emitSpineEvent('chorus_pain.queried', { tool, from, ok: body.ok !== false });
         return { content: [{ type: 'text' as const, text: JSON.stringify(body, null, 2) }] };
       }
       case 'chorus_tree_get': {

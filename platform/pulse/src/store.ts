@@ -66,7 +66,7 @@ export class MessageStore {
       throw new Error(
         `MEMBRANE REFUSED (#3615): ${ctx} context attempted to open production surface ` +
         `'messages-db' (${defaultDbPath()}) — a test brings its own world (#3528). ` +
-        `Pass an explicit dbPath or set CHORUS_MESSAGES_DB to a path inside the test's tempdir.`
+        "Pass an explicit dbPath or set CHORUS_MESSAGES_DB to a path inside the test's tempdir."
       );
     }
     this.db = new Database(dbPath || defaultDbPath());

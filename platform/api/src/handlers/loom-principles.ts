@@ -107,7 +107,9 @@ export async function fetchLoomPrinciples(
     for (const name of names) {
       const entRes = await fetchFn(`${base}/principles/${encodeURIComponent(name)}`);
       if (!entRes.ok) continue; // a vanished entity mid-walk: skip, count tells
-      const ent = (await entRes.json()) as { data?: Record<string, string> };
+      // Partial<...>: the wire can omit any field — the type must admit that or the
+      // ?? fallbacks below read as dead code to the linter while guarding real gaps (#3766).
+      const ent = (await entRes.json()) as { data?: Partial<Record<string, string>> };
       const d = ent.data ?? {};
       principles.push({
         id: name,

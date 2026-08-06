@@ -219,7 +219,7 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
     const local = (v: string | undefined) => String(v || '').split(/[#/]/).pop() || '';
     interface PropRow { property: string; type: string; required: boolean; source: string[] }
     const classes = new Map<string, Map<string, PropRow>>();
-    for (const row of body?.results?.bindings || []) {
+    for (const row of body.results?.bindings || []) {
       const cls = local(row.class?.value);
       // A blank-node path is an inverse-path constraint (^hasDomain). It is a
       // real requirement and unsatisfiable by authoring, so it is SHOWN and
@@ -305,7 +305,7 @@ CONSTRUCT { ?s ?p ?o } WHERE {
       // and an unreachable store are different answers and this endpoint says so.
       return res.status(502).type('text/plain')
         .send(`# the store answered ${r.status}. This is NOT an empty domain —\n` +
-              `# it means the model could not be read.`);
+              '# it means the model could not be read.');
     }
     res.type('text/turtle').send(await r.text());
   } catch {
