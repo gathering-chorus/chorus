@@ -98,6 +98,38 @@ chorus:webId a owl:DatatypeProperty ;
     rdfs:domain chorus:Principal ;
     rdfs:range xsd:string .
 
+chorus:principalKind a owl:DatatypeProperty ;
+    rdfs:label "principal kind" ;
+    rdfs:comment "What sort of thing this principal is: person, agent, service or worker. A property rather than a subclass so that 'who exists' stays one query against one collection (#3773). The differences between kinds are enforced as constraints on PrincipalShape, not by the type system." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range xsd:string .
+
+chorus:canSignIn a owl:DatatypeProperty ;
+    rdfs:label "can sign in" ;
+    rdfs:comment "Whether this principal can authenticate interactively at the identity provider. Distinct from authorization: signing in proves who you are and grants nothing — reach comes from being named in a surface's allow-set (DEC-2209). Workers and services are false; both still act, but through credentials that are not a login. #3773." ;
+    rdfs:domain chorus:Principal ;
+    rdfs:range xsd:string .
+
+# #3777 (Kade's card, property minted here per SA=OWL-DBA) — the pre-auth
+# publication boundary for the sign-in page.
+#
+# The sign-in page is the ONLY surface an unauthenticated stranger can see, and
+# it is generated from this model. A generator has no judgment: the day someone
+# adds a domain named after a client, it would publish itself with nobody
+# deciding. So publication is OPT-IN and absence means not-published — fail-closed
+# falls out of the data rather than out of generator code that a later edit could
+# soften.
+#
+# Deliberately NOT scoped by rdfs:domain to a list of node kinds. "The kinds the
+# drawing renders, at minimum" was the first proposal, and the phrase is the
+# tell: the day something new is rendered, the property would not apply to it,
+# and a property that cannot apply cannot be false — absence would then mean two
+# different things and the fail-closed reading would have to guess which.
+chorus:publishesPreAuth a owl:DatatypeProperty ;
+    rdfs:label "publishes pre-auth" ;
+    rdfs:comment "May this node appear on a surface visible before sign-in. Absent means NO. Opt-in by construction: nothing reaches the public sign-in page unless the model says so explicitly. #3777." ;
+    rdfs:range xsd:string .
+
 chorus:keyId a owl:DatatypeProperty ;
     rdfs:label "key id" ;
     rdfs:comment "Which signing key verifies this registry entry — an env-var NAME (e.g. CHORUS_SERVICE_TOKEN_SECRET), never a value. #3618." ;
@@ -193,15 +225,12 @@ chorus:gate-chorus-api-mutations a chorus:Gate ;
     chorus:ownerRole chorus:role-silas .
 
 # Principals for the first class's consumers (creds deployed BEFORE the flip):
-chorus:principal-crawler-index a chorus:Principal ;
-    rdfs:label "crawler-index worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/crawler-index/profile/card.ttl#me" .
-chorus:principal-reindex-worker a chorus:Principal ;
-    rdfs:label "reindex worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me" .
-chorus:principal-embed-worker a chorus:Principal ;
-    rdfs:label "embed worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/embed-worker/profile/card.ttl#me" .
+# #3773 — the three worker individuals MOVED OUT of this file.
+# They were ABox living in the TBox: instances in urn:chorus:ontology, the schema
+# graph. That put Principal data in two graphs at once (7 in domains:security, 3
+# here), which union reads then merged so nothing looked wrong. Source
+# exclusivity: one class, one graph (ADR-051 Addendum II). They now live in
+# identity-principals-3613.ttl with the other seven.
 
 # ----------------------------------------------------------------------------
 # 6. SHACL FLOORS — the DAL refuses instances below these
@@ -213,14 +242,89 @@ chorus:principal-embed-worker a chorus:Principal ;
 # the first apply refused a 21-blank-node batch (2026-07-04).
 # ----------------------------------------------------------------------------
 
+# ----------------------------------------------------------------------------
+# #3773 (2026-08-06) — a Principal records HOW it authenticates, and webId stops
+# being mandatory for everyone.
+#
+# The old shape required a webId on every Principal. That was written when the
+# only principals we imagined were people. Of the ten that exist, eight are
+# agents, services and workers with no account anywhere — so the shape demanded
+# credentials for things that must never hold any. It said the opposite of the
+# design: a worker never signs in.
+#
+# principalKind is a PROPERTY, not a set of subclasses (Wren's call, 2026-08-06).
+# owl-api mounts a surface per class, so subclasses would split the one
+# enumerable "who exists" list into four thin collections — the same splitting we
+# spent this week undoing. One /principals with a kind facet keeps the question a
+# single query; the behavioural differences live as the conditional constraints
+# below, each one refusable.
+# ----------------------------------------------------------------------------
+
 chorus:PrincipalShape a sh:NodeShape ;
     sh:targetClass chorus:Principal ;
     sh:property chorus:PrincipalShape-webId ;
-    sh:property chorus:PrincipalShape-label .
+    sh:property chorus:PrincipalShape-label ;
+    sh:property chorus:PrincipalShape-principalKind ;
+    sh:property chorus:PrincipalShape-canSignIn .
+# OPTIONAL, deliberately: only a principal that signs in needs a WebID. That
+# requirement now lives in the person-must-have-one rule below, scoped to where
+# it is actually true, rather than in a blanket minCount that misdescribed eight
+# of the ten records.
 chorus:PrincipalShape-webId a sh:PropertyShape ;
-    sh:path chorus:webId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:webId ; sh:maxCount 1 ; sh:datatype xsd:string .
 chorus:PrincipalShape-label a sh:PropertyShape ;
     sh:path rdfs:label ; sh:minCount 1 .
+chorus:PrincipalShape-principalKind a sh:PropertyShape ;
+    sh:path chorus:principalKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(person|agent|service|worker)$" ;
+    sh:message "principalKind is one of person / agent / service / worker" .
+chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
+    sh:path chorus:canSignIn ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(true|false)$" ;
+    sh:message "canSignIn is true or false — absent is not 'unknown', it is unmodelled" .
+
+# A principal that can sign in must have a WebID to sign in AS. This is the half
+# of the old minCount that was right, kept and scoped to where it holds.
+chorus:PrincipalSignInNeedsWebId a sh:NodeShape ;
+    sh:targetClass chorus:Principal ;
+    sh:severity sh:Violation ;
+    sh:sparql [
+        sh:message "a principal with canSignIn=true must carry a webId" ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://jeffbridwell.com/chorus#canSignIn> "true" .
+              FILTER NOT EXISTS { $this <https://jeffbridwell.com/chorus#webId> ?w }
+            }
+        """ ;
+    ] .
+
+# A worker never signs in and holds no role. Both are refusals rather than
+# conventions — the point of modelling the kind is that the model enforces what
+# the kind means, instead of a human remembering it.
+chorus:PrincipalWorkerCannotSignIn a sh:NodeShape ;
+    sh:targetClass chorus:Principal ;
+    sh:severity sh:Violation ;
+    sh:sparql [
+        sh:message "a worker principal cannot sign in" ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://jeffbridwell.com/chorus#principalKind> "worker" ;
+                    <https://jeffbridwell.com/chorus#canSignIn> "true" .
+            }
+        """ ;
+    ] .
+chorus:PrincipalWorkerHoldsNoRole a sh:NodeShape ;
+    sh:targetClass chorus:Principal ;
+    sh:severity sh:Violation ;
+    sh:sparql [
+        sh:message "a worker principal holds no role" ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://jeffbridwell.com/chorus#principalKind> "worker" ;
+                    <https://jeffbridwell.com/chorus#holdsRole> ?r .
+            }
+        """ ;
+    ] .
 
 chorus:KeyRegistryEntryShape a sh:NodeShape ;
     sh:targetClass chorus:KeyRegistryEntry ;

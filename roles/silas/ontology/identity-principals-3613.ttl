@@ -32,25 +32,35 @@
 chorus:principal-silas a chorus:Principal ;
     rdfs:label "silas (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/silas/profile/card#me" ;
-    chorus:holdsRole chorus:role-silas .
+    chorus:holdsRole chorus:role-silas ;
+    chorus:principalKind "agent" ;
+    chorus:canSignIn "false" .
 
 chorus:principal-wren a chorus:Principal ;
     rdfs:label "wren (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/wren/profile/card#me" ;
-    chorus:holdsRole chorus:role-wren .
+    chorus:holdsRole chorus:role-wren ;
+    chorus:principalKind "agent" ;
+    chorus:canSignIn "false" .
 
 chorus:principal-kade a chorus:Principal ;
     rdfs:label "kade (agent principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/kade/profile/card#me" ;
-    chorus:holdsRole chorus:role-kade .
+    chorus:holdsRole chorus:role-kade ;
+    chorus:principalKind "agent" ;
+    chorus:canSignIn "false" .
 
 chorus:principal-bridge a chorus:Principal ;
     rdfs:label "bridge (non-interactive relay principal)" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/bridge/profile/card#me" .
+    chorus:webId "https://id.lightlifeurbangardens.com/bridge/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:canSignIn "false" .
 
 chorus:principal-chorus-sdk a chorus:Principal ;
     rdfs:label "chorus-sdk (service caller principal)" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/chorus-sdk/profile/card#me" .
+    chorus:webId "https://id.lightlifeurbangardens.com/chorus-sdk/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:canSignIn "false" .
 
 # #3653 — Jeff joins his own security model. The human is a Principal like every
 # other actor (ADR-052: one identity mechanism for human, agent, service). Root
@@ -58,7 +68,9 @@ chorus:principal-chorus-sdk a chorus:Principal ;
 # the authority the roles serve.
 chorus:principal-jeff a chorus:Principal ;
     rdfs:label "jeff (human principal - root authority)" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" .
+    chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" ;
+    chorus:principalKind "person" ;
+    chorus:canSignIn "true" .
 
 # #3726 — marknakib (external human principal, joined via #3669/#3679) was live in
 # the store but never in source; brought in here so a fresh load reproduces the
@@ -67,4 +79,33 @@ chorus:principal-jeff a chorus:Principal ;
 # scheme to match what verification actually matches on.
 chorus:principal-marknakib a chorus:Principal ;
     rdfs:label "marknakib (external human principal)" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/marknakib/profile/card#me" .
+    chorus:webId "https://id.lightlifeurbangardens.com/marknakib/profile/card#me" ;
+    chorus:principalKind "person" ;
+    chorus:canSignIn "true" .
+
+# ============================================================================
+# #3773 — the three WORKER principals, moved here from security-model-3618.ttl.
+#
+# They were declared in the schema file and therefore landed in
+# urn:chorus:ontology — instances in the TBox graph, and a second home for a
+# class whose other seven instances lived in domains:security. Union reads hid
+# the split. All ten now share one home.
+#
+# principalKind/canSignIn added to every principal in this file: a worker never
+# signs in, and the shape now REFUSES a worker that claims it can.
+# ============================================================================
+chorus:principal-crawler-index a chorus:Principal ;
+    rdfs:label "crawler-index worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/crawler-index/profile/card.ttl#me" ;
+    chorus:principalKind "worker" ;
+    chorus:canSignIn "false" .
+chorus:principal-reindex-worker a chorus:Principal ;
+    rdfs:label "reindex worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me" ;
+    chorus:principalKind "worker" ;
+    chorus:canSignIn "false" .
+chorus:principal-embed-worker a chorus:Principal ;
+    rdfs:label "embed worker" ;
+    chorus:webId "http://localhost:3000/pods/chorus/_agents/embed-worker/profile/card.ttl#me" ;
+    chorus:principalKind "worker" ;
+    chorus:canSignIn "false" .

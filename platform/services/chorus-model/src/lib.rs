@@ -92,6 +92,44 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("card", "Card", false),
     ("chunk", "Chunk", false),
     ("chunkmembership", "ChunkMembership", false),
+    // #3773 (Silas, Wren-blessed 2026-08-06) — the generate-vs-write drift again,
+    // and this time it is the WHOLE SECURITY DOMAIN. owl-api serves 24 classes;
+    // this table admitted 19. The 11 missing: the seven security classes below,
+    // plus EmitContract, Metric, Property, PropertyKey.
+    //
+    // The consequence, measured: GET /principals returns 200 with count 0 while
+    // ten Principal instances sit a graph away — and nobody could write them to
+    // fix it. The security fitness function (#3765) reads 1 of 7 conforming. Of
+    // course it does: six of its seven rows name classes the governed writer
+    // refused. A domain cannot conform to a model it is not permitted to populate.
+    //
+    // THIS TABLE IS THE LAST HAND-MADE LINK in a chain that is otherwise
+    // generated, and this is the fourth card it has blocked — #3522
+    // (ValueStream), #3592 (TestResult/TestSuiteRun), #3654 (board kinds), now
+    // this one. Every fix was a single line; every one cost a day of confusion
+    // first, because a class can be declared, claimed, and SERVED and still be
+    // unwritable, and nothing announces that until someone tries to write.
+    //
+    // TOMBSTONE, written in advance: chorus-athena's generate step derives this
+    // list from the declared classes and this array is deleted. Jeff, 2026-08-06:
+    // "it really can be mostly config and api calls like a workflow like
+    // chorus-werk just chorus-athena." When that lands, delete from the #3773
+    // comment through the end of this block. The rows are not the asset; the
+    // generation is.
+    //
+    // bare_grain=false throughout: authored kinds, type-prefixed like the rest,
+    // nothing crawler-minted to reproduce (#3680).
+    ("principal", "Principal", false),
+    ("credential", "Credential", false),
+    ("permission", "Permission", false),
+    ("api-surface", "APISurface", false),
+    ("auth-boundary", "AuthBoundary", false),
+    ("key-registry-entry", "KeyRegistryEntry", false),
+    ("security-probe", "SecurityProbe", false),
+    ("emit-contract", "EmitContract", false),
+    ("metric", "Metric", false),
+    ("property", "Property", false),
+    ("property-key", "PropertyKey", false),
 ];
 
 fn kind_entry(kind: &str) -> R<(&'static str, &'static str, bool)> {
@@ -1716,6 +1754,53 @@ mod tests {
     fn double_prefix_refused() {
         let e = mint("role", "role-wren").unwrap_err();
         assert!(e.starts_with("double-prefix"));
+    }
+
+    // ── #3773 — the pen accepts every class owl-api serves ──────────────────
+    //
+    // Red first: before the rows were added, each of these returned
+    // "unknown-kind" and the whole security domain was unwritable while being
+    // fully readable. The failure was silent in the worst way — GET /principals
+    // answered 200 with an empty list, which reads as "there are none" rather
+    // than "you cannot write these."
+    #[test]
+    fn security_domain_kinds_are_writable() {
+        for kind in [
+            "principal",
+            "credential",
+            "permission",
+            "api-surface",
+            "auth-boundary",
+            "key-registry-entry",
+            "security-probe",
+        ] {
+            let iri = mint(kind, "fixture").unwrap_or_else(|e| {
+                panic!("the governed writer refuses '{kind}': {e} — a class owl-api serves must be writable, or the domain can never conform to its own model")
+            });
+            assert!(iri.ends_with(&format!("{kind}-fixture")), "{kind} mints type-prefixed: {iri}");
+        }
+    }
+
+    #[test]
+    fn model_infrastructure_kinds_are_writable() {
+        for kind in ["emit-contract", "metric", "property", "property-key"] {
+            mint(kind, "fixture")
+                .unwrap_or_else(|e| panic!("the governed writer refuses '{kind}': {e}"));
+        }
+    }
+
+    // NEGATIVE PROOF that the two tests above can actually fail: a kind that is
+    // NOT in the table must still be refused. Without this, a change that made
+    // mint() accept anything would turn both tests green while destroying the
+    // guarantee they exist to hold — the pen's whole job is refusing what the
+    // model does not declare.
+    #[test]
+    fn a_kind_absent_from_the_table_is_still_refused() {
+        let e = mint("principal-impostor", "fixture").unwrap_err();
+        assert!(
+            e.starts_with("unknown-kind"),
+            "adding the security kinds must not have opened the pen to everything: {e}"
+        );
     }
 
     #[test]
