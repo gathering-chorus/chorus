@@ -116,9 +116,96 @@ assert "NEGATIVE PROOF: empty allowlist file -> refuse to start (exit 2)" test "
 # (#3744) — otherwise the card's own deliverable can regress unnoticed.
 REPO_ALLOW="$SCRIPT_DIR/../../config/share-allowlist.txt"
 assert "committed allowlist exists" test -f "$REPO_ALLOW"
+# First field only — #3767 lets a line carry an upstream after the prefix.
+prefixes() { sed 's/#.*//' "$REPO_ALLOW" | awk 'NF {print $1}'; }
 for want in /about /athena /domains /owl; do
-  assert "committed allowlist carries $want" grep -qx -- "$want" "$REPO_ALLOW"
+  assert "committed allowlist carries $want" sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '$want'"
 done
+
+# --- #3767: per-prefix upstream, so /about (:3000) and Athena (:3340) coexist ---
+
+# Two DISTINCT upstreams serving distinguishable content. This is the whole point
+# of the card: one global upstream could only ever serve one of the two shares,
+# and on 2026-08-06 pointing it at :3340 published Athena and 404'd /about.
+UP2_PORT=$((G_PORT + 10))
+mkdir -p "$TEST_ROOT/www2/about" "$TEST_ROOT/www2/athena"
+echo "FROM-UPSTREAM-TWO" > "$TEST_ROOT/www2/about/x.html"
+echo "athena page"       > "$TEST_ROOT/www2/athena/model.html"
+(cd "$TEST_ROOT/www2" && python3 -m http.server "$UP2_PORT" >/dev/null 2>&1) &
+UP2_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$UP2_PORT/" 2>/dev/null && break; sleep 0.3; done
+
+# /about is pinned to upstream TWO; /athena has no route so it falls to the
+# default (upstream ONE, which has no /athena and therefore 404s). The asymmetry
+# is deliberate: it proves the pin is doing the routing, not coincidence.
+ROUTEFILE="$TEST_ROOT/routes.txt"
+printf '/about http://127.0.0.1:%s\n/athena\n' "$UP2_PORT" > "$ROUTEFILE"
+G3_PORT=$((G_PORT + 11))
+env -u SHARE_ALLOW SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW_FILE="$ROUTEFILE" \
+  SHARE_AUTH="tester:pw123" SHARE_PORT="$G3_PORT" python3 "$GUARD" >/dev/null 2>&1 &
+G3_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G3_PORT/" 2>/dev/null && break; sleep 0.3; done
+
+ROUTED=$(curl -s -u tester:pw123 "http://127.0.0.1:$G3_PORT/about/x.html") # gitleaks:allow — fixture cred
+assert "routed prefix is served from ITS upstream, not the default" \
+  test "$ROUTED" = "FROM-UPSTREAM-TWO"
+# NEGATIVE PROOF for the routing itself: if the pin were ignored and everything
+# went to the default, /about/x.html would return upstream ONE's "public page".
+# That string must NOT appear.
+assert "NEGATIVE PROOF: routed prefix does NOT fall through to the default upstream" \
+  test "$ROUTED" != "public page"
+# And the converse: an unrouted prefix DOES use the default, which here lacks the
+# file — so a 404 proves it went to ONE and not to TWO (where the file exists).
+assert "NEGATIVE PROOF: unrouted prefix uses the default upstream, not a routed one" \
+  test "$(code -u tester:pw123 http://127.0.0.1:$G3_PORT/athena/model.html)" = "404"
+assert "routing does not weaken the allowlist: unlisted path still 404s" \
+  test "$(code -u tester:pw123 http://127.0.0.1:$G3_PORT/secret/y.html)" = "404"
+assert "routing does not weaken auth: unauthenticated still 401s" \
+  test "$(code http://127.0.0.1:$G3_PORT/about/x.html)" = "401"
+assert "routing does not weaken read-only: POST still 405s" \
+  test "$(code -u tester:pw123 -X POST http://127.0.0.1:$G3_PORT/about/x.html)" = "405"
+kill "$G3_PID" 2>/dev/null
+
+# NEGATIVE PROOF: an off-box upstream must STOP the guard. A typo here turns the
+# public tunnel into a proxy for another host — a reachability change no one
+# reviewing an allowlist expects to be making.
+printf '/about http://192.168.86.242:3000\n' > "$TEST_ROOT/offbox.txt"
+env -u SHARE_ALLOW SHARE_ALLOW_FILE="$TEST_ROOT/offbox.txt" \
+  SHARE_AUTH="t:p" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: non-loopback upstream in allowlist -> refuse to start (exit 2)" test "$?" -eq 2
+
+# Same rule applies to the DEFAULT upstream, not just per-prefix routes.
+printf '/about\n' > "$TEST_ROOT/okprefix.txt"
+env -u SHARE_ALLOW SHARE_ALLOW_FILE="$TEST_ROOT/okprefix.txt" SHARE_UPSTREAM="http://example.com" \
+  SHARE_AUTH="t:p" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: non-loopback SHARE_UPSTREAM -> refuse to start (exit 2)" test "$?" -eq 2
+
+# A non-http scheme is refused too (file:// would read local disk).
+printf '/about file:///etc\n' > "$TEST_ROOT/scheme.txt"
+env -u SHARE_ALLOW SHARE_ALLOW_FILE="$TEST_ROOT/scheme.txt" \
+  SHARE_AUTH="t:p" SHARE_PORT=1 python3 "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: non-http upstream scheme -> refuse to start (exit 2)" test "$?" -eq 2
+
+kill "$UP2_PID" 2>/dev/null
+
+# The committed policy must actually pin /about to the app (:3000) — otherwise
+# the fix regresses the moment someone tidies the file.
+assert "committed allowlist routes /about to :3000" \
+  grep -qE '^/about[[:space:]]+http://localhost:3000[[:space:]]*$' "$REPO_ALLOW"
+# ...and the committed plist must default to :3340, or Athena goes dark again.
+REPO_PLIST="$SCRIPT_DIR/../../config/launchagents/com.chorus.share-guard.plist"
+assert "committed plist defaults upstream to :3340" \
+  grep -q '<string>http://localhost:3340</string>' "$REPO_PLIST"
+
+# #3744's finding, generalized: config that only exists on the live box cannot be
+# reviewed. If the agent is installed, it must MATCH the committed one.
+INSTALLED_PLIST="$HOME/Library/LaunchAgents/com.chorus.share-guard.plist"
+if [ -f "$INSTALLED_PLIST" ]; then
+  assert "installed plist matches the committed one (no live-only config)" \
+    diff -q "$REPO_PLIST" "$INSTALLED_PLIST"
+else
+  echo "SKIP: share-guard agent not installed on this box — cannot compare live config"
+fi
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
