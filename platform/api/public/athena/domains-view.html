@@ -145,6 +145,7 @@
     font-size: .8125rem; line-height: 1.5; white-space: pre;
   }
 </style>
+<script src="/athena/model-fold.js"></script>
 </head>
 <body>
 <div class="wrap" id="app"><p class="empty">Loading the model…</p></div>
@@ -237,66 +238,23 @@ async function renderDomain(name) {
       'The catalog at <a class="ref" href="/domains">/domains</a> is the live list.</div>';
     return;
   }
-  const vocab = [].concat(dom.definesVocabulary || []).filter(Boolean);
   let head = crumbs([name]) +
     '<h1>' + esc(name) + '</h1>' +
     '<p class="sub">' + (dom.comment ? esc(dom.comment) : '<span class="empty">No comment in the model.</span>') +
     ' <a class="ref" href="/athena/domain.html?d=' + encodeURIComponent(name) + '">ops view &rarr; cards, code, tests, logs (#3761)</a></p>';
 
-  // An honest empty state that names the reason — AC item. There are three
-  // different reasons a domain shows nothing, and collapsing them into one
-  // blank list is the exact failure this whole week has been about.
-  if (!vocab.length) {
-    app.innerHTML = head +
-      '<div class="note"><strong>This domain declares no vocabulary.</strong> ' +
-      'That is a fact about the model, not an empty page: with no <code>definesVocabulary</code> ' +
-      'edge there is no class to list instances of. 16 of 40 domains are in this state ' +
-      '(measured 2026-08-02), so the missing edge — not the missing data — is the thing to fix.</div>';
-    return;
-  }
-
-  const sections = [];
-  for (const kind of vocab) {
-    const coll = await collectionFor(kind);
-    if (!coll) {
-      sections.push('<h2>' + esc(kind) + '</h2><div class="note"><strong>Not served.</strong> ' +
-        '<code>' + esc(kind) + '</code> is declared as this domain\'s vocabulary but no collection ' +
-        'is generated for it — it has no shape, so the API cannot serve it. 96 of 117 classes ' +
-        'are in this state.</div>');
-      continue;
-    }
-    let body;
-    try {
-      const r = await get(coll.replace(/^\/v1/, ''));
-      const items = (r.data || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
-      body = items.length
-        ? '<div class="grid">' + items.map(i =>
-            '<a class="card" href="/domains/' + encodeURIComponent(name) + '/' + encodeURIComponent(i.name) + '">' +
-            '<span class="n">' + esc(i.label || i.name) + '</span>' +
-            '<span class="m">' + esc(i.name) + '</span></a>').join('') + '</div>'
-        : '<div class="note"><strong>Served, but zero instances live.</strong> ' +
-          'The collection exists and answered — the model genuinely holds none of these. ' +
-          'That is different from unreachable and different from unserved.</div>';
-    } catch (e) {
-      body = '<div class="note"><strong>' + esc(e.message) + '</strong> — could not read this collection. ' +
-             'Reported rather than rendered as empty.</div>';
-    }
-    sections.push('<h2>' + esc(kind) + '</h2>' + body);
-  }
-  // #3749 UX (Jeff): STRUCTURE FIRST — the schema is the map, the instances
-  // are what it organizes. Order: schema → the OWL itself → instances.
-  app.innerHTML = head +
-    '<div class="schema" id="schemabox"><h2>Schema — what the model says each class has</h2>' +
-    '<p class="empty">Reading the model…</p></div>' +
-    owlBlock(name) +
-    '<h2 class="insthead">Instances — what lives in this domain</h2>' + sections.join('');
-  wireOwl(name);
-  renderSchema(name);
+  // #3757 — the schema/OWL/instances rendering moved to the SHARED model fold
+  // (model-fold.js), the same component the ops page mounts compact. Order
+  // stays #3749's ruling (structure first: schema → OWL → instances) — it
+  // lives inside the component now, where it cannot diverge between altitudes.
+  app.innerHTML = head + '<div id="mfold-slot"></div>';
+  await renderModelFold(document.getElementById('mfold-slot'), name, { compact: false });
 }
 
-// The table form of the same triples the OWL fold shows raw. `source` is a
-// column because ontology-vs-shape disagreement is the incoherence we keep
-// rediscovering — merging the two silently would hide it.
+// #3757 tombstone: renderSchema / owlBlock / wireOwl moved to model-fold.js —
+// the shared component both altitudes render. Do not reintroduce a local copy;
+// the drift test fails on any divergence between the two surfaces.
+/* RETIRED by #3757:
 async function renderSchema(name) {
   const box = document.getElementById('schemabox');
   if (!box) return;
@@ -392,6 +350,7 @@ function wireOwl(name) {
     }
   });
 }
+END RETIRED */
 
 async function renderInstance(domainName, instName) {
   const d = await get('/domains');
