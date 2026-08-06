@@ -37,7 +37,7 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     fs.writeFileSync(path.join(scanDir, 'wren-declared.json'),
       JSON.stringify({ state: 'idle', session_alive: true, ts: Math.floor(Date.now() / 1000) - 1140 }));
     fs.writeFileSync(path.join(werkDir, '3772.json'),
-      JSON.stringify({ role: 'wren', card: 3772, phase: 'running' }));
+      JSON.stringify({ role: 'wren', card: 3772, phase: 'running', pid: process.pid }));
 
     const t = wrenTile(poller(scanDir, werkDir));
     expect(t.state).toBe('building');
@@ -49,7 +49,7 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     const { scanDir, werkDir } = tmpDirs();
     fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3761.json'),
-      JSON.stringify({ role: 'wren', card: 3761, phase: 'presented' }));
+      JSON.stringify({ role: 'wren', card: 3761, phase: 'presented', presentedAt: new Date().toISOString() }));
 
     expect(wrenTile(poller(scanDir, werkDir)).state).toBe('presenting');
   });
@@ -67,7 +67,7 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     const { scanDir, werkDir } = tmpDirs();
     fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'blocked' }));
     fs.writeFileSync(path.join(werkDir, '3772.json'),
-      JSON.stringify({ role: 'wren', card: 3772, phase: 'running' }));
+      JSON.stringify({ role: 'wren', card: 3772, phase: 'running', pid: process.pid }));
 
     expect(wrenTile(poller(scanDir, werkDir)).state).toBe('blocked');
   });
@@ -76,7 +76,42 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     const { scanDir, werkDir } = tmpDirs();
     fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3766.json'),
-      JSON.stringify({ role: 'kade', card: 3766, phase: 'running' }));
+      JSON.stringify({ role: 'kade', card: 3766, phase: 'running', pid: process.pid }));
+
+    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('idle');
+  });
+
+  // ---- #3780: stale-pin liveness — the NEGATIVE PROOF ----
+  // Red against #3772's shipped behavior (phase trusted alone), green after.
+
+  test('#3780 running pin with a DEAD pid is ignored — idle stays idle', async () => {
+    const { scanDir, werkDir } = tmpDirs();
+    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
+    // a pid that existed and exited: spawn a no-op child and wait it out
+    const { spawn } = await import('child_process');
+    const child = spawn('true');
+    const deadPid: number = child.pid!;
+    await new Promise((r) => child.on('exit', r));
+    fs.writeFileSync(path.join(werkDir, '3432.json'),
+      JSON.stringify({ role: 'wren', card: 3432, phase: 'running', pid: deadPid }));
+
+    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('idle');
+  });
+
+  test('#3780 running pin with NO pid at all is ignored', () => {
+    const { scanDir, werkDir } = tmpDirs();
+    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
+    fs.writeFileSync(path.join(werkDir, '3432.json'),
+      JSON.stringify({ role: 'wren', card: 3432, phase: 'running' }));
+
+    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('idle');
+  });
+
+  test('#3780 presented pin older than 24h is ignored', () => {
+    const { scanDir, werkDir } = tmpDirs();
+    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
+    fs.writeFileSync(path.join(werkDir, '3453.json'),
+      JSON.stringify({ role: 'wren', card: 3453, phase: 'presented', presentedAt: '2026-06-16T15:47:19Z' }));
 
     expect(wrenTile(poller(scanDir, werkDir)).state).toBe('idle');
   });
