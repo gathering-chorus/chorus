@@ -293,7 +293,7 @@ HTML='Accept: text/html,application/xhtml+xml'
 # in exactly the situations it exists for.
 PAGE=$(curl -s -H "$HTML" "http://127.0.0.1:$G_PORT/about/x.html")
 assert "anonymous browser gets a rendered sign-in page" \
-  sh -c "printf '%s' \"\$0\" | grep -q 'Sign in to continue'" "$PAGE"
+  sh -c "printf '%s' \"\$0\" | grep -q '<h1>Chorus</h1>'" "$PAGE"
 assert "sign-in page offers a link to start sign-in" \
   sh -c "printf '%s' \"\$0\" | grep -q '_auth/login'" "$PAGE"
 assert "sign-in page carries the deep link so sign-in returns you where you asked" \
@@ -330,7 +330,7 @@ assert "sign-in unavailable is a 503, not a false success" \
 
 # Bare /_auth/ is a front door, not a 404.
 assert "bare /_auth/ renders the sign-in page" \
-  sh -c "curl -s -H '$HTML' 'http://127.0.0.1:$G_PORT/_auth/' | grep -q 'Sign in to continue'"
+  sh -c "curl -s -H '$HTML' 'http://127.0.0.1:$G_PORT/_auth/' | grep -q '<h1>Chorus</h1>'"
 
 # --- #3771: the guard must identify itself on every outbound request ---
 #
@@ -361,6 +361,78 @@ SHARE_ALLOW="/about" python3 "$FIXTURES/probe-discover.py" "$GUARD" "http://127.
 assert "NEGATIVE PROOF: with the default library agent, the same call is REFUSED" test "$?" -eq 1
 
 kill "$UA_PID" 2>/dev/null
+
+# --- #3790: the session cookie rides every subdomain, and still proves who ----
+#
+# Wren found this before it shipped: every cookie in the system was host-only, so
+# the Clearing would redirect an anonymous visitor to the guard, the guard would
+# sign them in on its own host, send them back, and the cookie would not travel.
+# They arrive anonymous and get redirected again — a login page that never logs
+# you in, which reads as flakiness rather than a bug.
+#
+# Widening a cookie's REACH is a security change. These prove the reach widened
+# and the TRUST did not: the two are separate properties and the change to one
+# must not quietly relax the other.
+
+mint_session() { python3 "$GUARD" --sign-session "$1"; }
+
+echo "--- #3790 cookie scope ---"
+GS_PORT=$((G_PORT + 50))
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GS_PORT" \
+  SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
+GS_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GS_PORT/" 2>/dev/null && break; sleep 0.3; done
+
+# The mint path is /_auth/callback, which needs a live provider; assert instead on
+# the SIGN-OUT header, which is minted by the same helper and is reachable here.
+SIGNOUT_HDRS=$(curl -s -D - -o /dev/null "http://127.0.0.1:$GS_PORT/_auth/logout")
+assert "sign-out clears the cookie at the configured DOMAIN scope" \
+  sh -c "printf '%s' \"\$0\" | grep -qi 'Domain=.example.test'" "$SIGNOUT_HDRS"
+
+# NEGATIVE PROOF: a cookie cleared at a NARROWER scope than it was set leaves the
+# original in place — sign-out would appear to work and do nothing.
+assert "NEGATIVE PROOF: sign-out is not host-only when a domain is configured" \
+  sh -c "printf '%s' \"\$0\" | grep -qv 'Max-Age=0; *\$'" "$SIGNOUT_HDRS"
+kill "$GS_PID" 2>/dev/null
+
+# NEGATIVE PROOF: widening REACH did not weaken TRUST. A tampered session is
+# still refused, with the domain-scoped guard running.
+GT_PORT=$((G_PORT + 51))
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GT_PORT" \
+  SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
+GT_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GT_PORT/" 2>/dev/null && break; sleep 0.3; done
+GOOD="$(mint_session 'https://example.test/alice#me')"
+TAMPERED="${GOOD%.*}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+assert "NEGATIVE PROOF: a tampered session is refused even at parent scope" \
+  test "$(code -H "Cookie: chorus_share_session=$TAMPERED" http://127.0.0.1:$GT_PORT/about/x.html)" = "302"
+assert "the untampered session still works at parent scope" \
+  test "$(code -H "Cookie: chorus_share_session=$GOOD" http://127.0.0.1:$GT_PORT/about/x.html)" = "200"
+kill "$GT_PID" 2>/dev/null
+
+# --- #3790: the Python half of the cross-implementation cookie contract -------
+#
+# One fixture, two consumers. The guard verifies in Python and the Clearing in
+# TypeScript — two implementations of one contract, which is precisely what
+# DEC-2209 clause 2 exists to prevent. #3685's shared verifier crate subsumes
+# both when it exists; until then a drift between them would surface as a login
+# that works on one surface and not the other, discovered by a person.
+#
+# The probe lives in a FILE, not an inline heredoc: a heredoc nested inside this
+# script silently ate everything after it three times today. A fixture file is
+# also what Wren's TS side consumes, so the two halves stay symmetrical.
+
+VECTORS="$SCRIPT_DIR/../tests/fixtures/session-cookie-vectors.json"
+PROBE="$SCRIPT_DIR/../tests/fixtures/verify-cookie-vectors.py"
+assert "cross-impl cookie vectors are committed" test -f "$VECTORS"
+
+python3 "$PROBE" "$GUARD" "$VECTORS"
+assert "guard verifier agrees with every shared vector" test "$?" -eq 0
+
+# NEGATIVE PROOF: the vectors can fail a wrong verifier. Without this, one that
+# accepted anything would pass the run above and the fixture would prove nothing.
+python3 "$PROBE" "$GUARD" "$VECTORS" --wrong-key
+assert "NEGATIVE PROOF: the valid vector is REFUSED under a wrong key" test "$?" -eq 0
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
