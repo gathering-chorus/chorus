@@ -21,4 +21,14 @@ paths = [
   '''roles/silas/scripts/seed-probe\.sh''',                           # seed probe fixture
   '''platform/tests/2709-gitleaks-baseline\.bats''',                  # this card's own test fixture (intentional fake secret)
   '''\.gitleaks-baseline\.json''',                                   # the baseline record itself — scanning it is circular
+  # #3790 — the cross-implementation cookie contract. The "key" in the fixture is
+  # a TEST key, named as such in the file's own header, used to sign vectors that
+  # both the guard's Python verifier and the Clearing's TypeScript verifier assert
+  # against. It signs nothing real: the live cookie key is generated at runtime,
+  # lives at ~/.chorus/share-oidc.json mode 0600, and is never committed. Losing
+  # the live key invalidates every session, which is the intended failure.
+  # Allowlisted BY PATH rather than by pattern so a real credential appearing in
+  # either file is still caught.
+  '''.*session-cookie-vectors\.json''',
+  '''platform/tests/fixtures/verify-cookie-vectors\.py''',
 ]
