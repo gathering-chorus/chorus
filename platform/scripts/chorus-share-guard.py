@@ -47,6 +47,21 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 SESSION_COOKIE = "chorus_share_session"
+
+# #3790 — the session cookie is scoped to the PARENT domain so one sign-in rides
+# every subdomain. Without this the doors loop: the Clearing redirects an
+# anonymous visitor to the guard on chorus.<domain>, the guard signs them in and
+# sends them back to clearing.<domain>, and a host-only cookie never travels — so
+# they arrive anonymous and are redirected again. A login page that never logs
+# you in (Wren, reading the mint paths before it shipped).
+#
+# CONFIG, not a constant, because widening a cookie's reach IS a security change
+# and should read as one. A parent-domain cookie rides every subdomain INCLUDING
+# ONES THAT DO NOT EXIST YET: stand up a new host under this domain and it
+# silently receives everyone's session. That is the grant. Empty means host-only,
+# the old behaviour, and is the setting to use if a subdomain is ever run by
+# something that should not be trusted with a Chorus identity.
+COOKIE_DOMAIN = os.environ.get("SHARE_COOKIE_DOMAIN", ".lightlifeurbangardens.com").strip()
 SESSION_TTL = int(os.environ.get("SHARE_SESSION_TTL", str(12 * 3600)))
 AUTH_PREFIX = "/_auth/"
 
@@ -177,6 +192,35 @@ def save_state(path, state):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as fh:
         json.dump(state, fh)
+
+
+def _backdrop_data_uri():
+    """The sign-in photograph, INLINED.
+
+    #3790 — these pages render exactly when the upstream and the identity
+    provider are unreachable. A linked image would leave a blank frame in the one
+    situation the page exists for, so the photograph ships in the response.
+
+    Downscaled to ~68KB (from 558KB) because it rides EVERY refusal, including
+    the 401 a script gets by accident. If the file is missing the page still
+    renders on the dark ground — the backdrop is decoration, and decoration must
+    never be the reason a door cannot say it is a door.
+    """
+    path = os.path.join(os.environ.get("CHORUS_ROOT", "/Users/jeffbridwell/CascadeProjects/chorus"),
+                        "platform", "assets", "signin-backdrop.b64")
+    try:
+        with open(path) as fh:
+            return "data:image/jpeg;base64," + fh.read().replace("\n", "")
+    except OSError:
+        return ""
+
+
+BACKDROP = _backdrop_data_uri()
+
+
+def cookie_domain_attr():
+    """The Domain attribute, or nothing when host-only is configured."""
+    return f"; Domain={COOKIE_DOMAIN}" if COOKIE_DOMAIN else ""
 
 
 def b64u(raw):
@@ -429,30 +473,34 @@ class Guard(BaseHTTPRequestHandler):
         html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} — Chorus</title>
+<title>Chorus</title>
 <style>
-  :root {{ color-scheme: light dark;
-    --ink:#1b1d21; --dim:#5f6873; --line:#dfe3e8; --bg:#f7f8fa; --card:#fff; --accent:#2f5d50; }}
-  @media (prefers-color-scheme: dark) {{ :root {{
-    --ink:#e9ecef; --dim:#a0a8b4; --line:#2b3138; --bg:#131619; --card:#1a1e23; --accent:#79c4ab; }} }}
-  * {{ box-sizing:border-box; }}
-  body {{ margin:0; min-height:100vh; display:grid; place-items:center; padding:2rem;
-    background:var(--bg); color:var(--ink);
-    font:16px/1.6 ui-serif, Georgia, 'Iowan Old Style', serif; }}
-  main {{ width:min(30rem,100%); background:var(--card); border:1px solid var(--line);
-    border-radius:3px; padding:2.25rem 2rem; }}
-  h1 {{ margin:0 0 .5rem; font-size:1.4rem; letter-spacing:-.01em; }}
-  p {{ margin:0 0 1.1rem; color:var(--dim); }}
-  .mark {{ font:600 .68rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
-    letter-spacing:.16em; text-transform:uppercase; color:var(--dim); margin:0 0 1.4rem; }}
-  a.btn {{ display:inline-block; background:var(--accent); color:var(--bg);
-    text-decoration:none; padding:.7rem 1.4rem; border-radius:2px; font-family:system-ui,sans-serif;
-    font-size:.95rem; font-weight:600; }}
-  a.btn:focus-visible {{ outline:3px solid var(--accent); outline-offset:3px; }}
-  code {{ font:.85em ui-monospace,SFMono-Regular,Menlo,monospace; word-break:break-all; color:var(--ink); }}
+  /* #3790 — the Clearing's treatment, rebranded Chorus (DEC-2209 clause 8).
+     Jeff: "i like the photo and the simplicity on both" — the same page on
+     mobile and desktop, not a responsive variant of two designs. */
+  html,body {{ height:100%; }}
+  body {{
+    margin:0; min-height:100%; display:flex; align-items:center; justify-content:center;
+    background:#0d1117; color:#e6edf3; font-family:system-ui,-apple-system,sans-serif;
+    background-image:url('{BACKDROP}'); background-size:cover; background-position:center;
+  }}
+  main {{
+    background:rgba(22,27,34,0.92); border:1px solid #30363d; border-radius:12px;
+    padding:2rem; width:300px; max-width:calc(100vw - 2.5rem); text-align:center;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }}
+  h1 {{ margin:0 0 .5rem; font-size:1.2rem; font-weight:600; }}
+  p {{ color:#8b949e; font-size:.9rem; line-height:1.4; margin:0 0 1.2rem; }}
+  a.btn {{
+    display:block; width:100%; box-sizing:border-box; padding:.7rem;
+    background:#238636; color:#fff; border-radius:6px; text-decoration:none; font-size:1rem;
+  }}
+  a.btn:hover {{ background:#2ea043; }}
+  a.btn:focus-visible {{ outline:3px solid #2ea043; outline-offset:3px; }}
+  code {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8em; word-break:break-all; color:#e6edf3; }}
 </style></head>
 <body><main>
-<p class="mark">Chorus</p>
+<h1>Chorus</h1>
 {body_html}
 </main></body></html>"""
         raw = html.encode()
@@ -465,11 +513,10 @@ class Guard(BaseHTTPRequestHandler):
 
     def _sign_in_page(self, next_path):
         nxt = urllib.parse.quote(next_path, safe="")
+        # "just chorus" — Jeff, 2026-08-07. No tagline: the card carries the name
+        # and the action, nothing else.
         return self._page(401, "Sign in", f"""
-<h1>Sign in to continue</h1>
-<p>These pages are private. Sign in with your Chorus identity — the same one you
-use for the Clearing.</p>
-<p><a class="btn" href="{AUTH_PREFIX}login?next={nxt}">Sign in</a></p>""")
+<a class="btn" href="{AUTH_PREFIX}login?next={nxt}">Sign in</a>""")
 
     def _redirect(self, location, cookie=None):
         self.send_response(302)
@@ -566,7 +613,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             # NOTE: the allow-set is NOT consulted here. Signing in always
             # succeeds; reach is decided per request, so revocation is immediate.
             cookie = (f"{SESSION_COOKIE}={sign_session(webid, COOKIE_KEY)}; Path=/; HttpOnly; "
-                      f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}")
+                      f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}{cookie_domain_attr()}")
             return self._redirect(return_path if return_path.startswith("/") else "/", cookie)
 
         if path == AUTH_PREFIX + "whoami":
@@ -584,7 +631,10 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             return self._sign_in_page(args.get("next", ["/"])[0])
 
         if path == AUTH_PREFIX + "logout":
-            return self._redirect("/", f"{SESSION_COOKIE}=; Path=/; Max-Age=0")
+            # Cleared at the SAME scope it was minted at — a cookie deleted at a
+            # narrower scope than it was set leaves the original in place, so
+            # sign-out would appear to work and do nothing.
+            return self._redirect("/", f"{SESSION_COOKIE}=; Path=/; Max-Age=0{cookie_domain_attr()}")
 
         return self._deny(404, "no such sign-in route\n")
 

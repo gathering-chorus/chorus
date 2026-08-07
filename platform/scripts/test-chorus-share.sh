@@ -362,5 +362,53 @@ assert "NEGATIVE PROOF: with the default library agent, the same call is REFUSED
 
 kill "$UA_PID" 2>/dev/null
 
+# --- #3790: the session cookie rides every subdomain, and still proves who ----
+#
+# Wren found this before it shipped: every cookie in the system was host-only, so
+# the Clearing would redirect an anonymous visitor to the guard, the guard would
+# sign them in on its own host, send them back, and the cookie would not travel.
+# They arrive anonymous and get redirected again — a login page that never logs
+# you in, which reads as flakiness rather than a bug.
+#
+# Widening a cookie's REACH is a security change. These prove the reach widened
+# and the TRUST did not: the two are separate properties and the change to one
+# must not quietly relax the other.
+
+mint_session() { python3 "$GUARD" --sign-session "$1"; }
+
+echo "--- #3790 cookie scope ---"
+GS_PORT=$((G_PORT + 50))
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GS_PORT" \
+  SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
+GS_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GS_PORT/" 2>/dev/null && break; sleep 0.3; done
+
+# The mint path is /_auth/callback, which needs a live provider; assert instead on
+# the SIGN-OUT header, which is minted by the same helper and is reachable here.
+SIGNOUT_HDRS=$(curl -s -D - -o /dev/null "http://127.0.0.1:$GS_PORT/_auth/logout")
+assert "sign-out clears the cookie at the configured DOMAIN scope" \
+  sh -c "printf '%s' \"\$0\" | grep -qi 'Domain=.example.test'" "$SIGNOUT_HDRS"
+
+# NEGATIVE PROOF: a cookie cleared at a NARROWER scope than it was set leaves the
+# original in place — sign-out would appear to work and do nothing.
+assert "NEGATIVE PROOF: sign-out is not host-only when a domain is configured" \
+  sh -c "printf '%s' \"\$0\" | grep -qv 'Max-Age=0; *\$'" "$SIGNOUT_HDRS"
+kill "$GS_PID" 2>/dev/null
+
+# NEGATIVE PROOF: widening REACH did not weaken TRUST. A tampered session is
+# still refused, with the domain-scoped guard running.
+GT_PORT=$((G_PORT + 51))
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GT_PORT" \
+  SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
+GT_PID=$!
+for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GT_PORT/" 2>/dev/null && break; sleep 0.3; done
+GOOD="$(mint_session 'https://example.test/alice#me')"
+TAMPERED="${GOOD%.*}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+assert "NEGATIVE PROOF: a tampered session is refused even at parent scope" \
+  test "$(code -H "Cookie: chorus_share_session=$TAMPERED" http://127.0.0.1:$GT_PORT/about/x.html)" = "302"
+assert "the untampered session still works at parent scope" \
+  test "$(code -H "Cookie: chorus_share_session=$GOOD" http://127.0.0.1:$GT_PORT/about/x.html)" = "200"
+kill "$GT_PID" 2>/dev/null
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
