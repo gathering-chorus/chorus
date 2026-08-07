@@ -330,9 +330,19 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
 
   // auth-required — the migration token login POST still works until the flag flips.
   if (!REQUIRE_DPOP && req.path === '/login' && req.method === 'POST') return handleLoginPost(req, res);
-  // #3669 spec (Wren) — the DEFAULT unauth experience on the public arm is the
-  // clean login interstitial, no token language. Preserve where the user was
-  // heading so the callback lands them in that room.
+  // #3775 (DEC-2209 clause 1) — ONE sign-in surface for the system. When the
+  // common door exists (CHORUS_SIGNIN_URL, set once the guard cookie is
+  // parent-domain scoped per Silas's #3785 follow-on), the Clearing stops
+  // serving its own login and sends the visitor there, preserving where they
+  // were headed. Unset, the local interstitial survives as the fallback — the
+  // flag flips when the door's cookie actually reaches this subdomain, not
+  // before (host-only cookies never cross; flipping early is an infinite loop
+  // wearing a login page).
+  const commonDoor = process.env.CHORUS_SIGNIN_URL || '';
+  if (commonDoor && req.method === 'GET') {
+    const ret = encodeURIComponent(`https://${req.headers.host || ''}${safeReturnPath(req.originalUrl)}`);
+    return res.redirect(`${commonDoor}?return=${ret}`);
+  }
   res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
 }
 
@@ -360,16 +370,16 @@ async function handleAuthCallback(req: Request, res: Response): Promise<void> {
   const login = verifyCookie<{ verifier: string; state: string; returnPath: string; redirectUri: string }>(
     req.cookies?.clearing_login, SESSION_SECRET, 'login');
   if (req.query.error) {
-    res.status(400).send(errorPage('Login was cancelled or refused. Tap Log in to try again.'));
+    res.status(400).send(errorPage('Login was cancelled or refused. Tap Sign in to try again.'));
     return;
   }
   if (!login || !req.query.state || req.query.state !== login.state) {
-    res.status(400).send(errorPage('That login attempt expired or didn’t match — tap Log in to try again.'));
+    res.status(400).send(errorPage('That login attempt expired or didn’t match — tap Sign in to try again.'));
     return;
   }
   const code = String(req.query.code || '');
   if (!code) {
-    res.status(400).send(errorPage('The login didn’t complete — tap Log in to try again.'));
+    res.status(400).send(errorPage('The login didn’t complete — tap Sign in to try again.'));
     return;
   }
   // Exchange with the redirect_uri from the LOGIN leg (cookie), never re-derived.
@@ -396,12 +406,12 @@ async function handleAuthCallback(req: Request, res: Response): Promise<void> {
 function interstitialPage(returnPath: string): string {
   const q = returnPath && returnPath !== '/' ? `?return=${encodeURIComponent(returnPath)}` : '';
   return authShell('Where the team gathers.',
-    `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Log in</button></a>`);
+    `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Sign in</button></a>`);
 }
 
 // #3669 — errors are sentences, not codes (Wren spec item 4).
 function errorPage(message: string): string {
-  return authShell(message, '<a href="/auth/login" style="text-decoration:none"><button type="button">Log in</button></a>');
+  return authShell(message, '<a href="/auth/login" style="text-decoration:none"><button type="button">Sign in</button></a>');
 }
 
 // Shared dark shell for the interstitial + error pages — mirrors the namePage look.
