@@ -1632,6 +1632,38 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // merged clean, board Done, live chorus:security unchanged until a HAND-RUN deploy.
     let model_files = changed_model_sources(&diff);
 
+    // #3785 — BLOCKING allow-set gate. A deploy that would leave the doors
+    // reading an empty allow-set is refused before it commits.
+    //
+    // owl-api already warned about this at boot on 2026-08-06 — "Principal
+    // allow-set is EMPTY" — and the warning went to stderr while nobody was
+    // reading it. The symptom surfaced minutes later as a human being told he
+    // was not on the team list, three steps from the cause. A warning is not a
+    // gate; this refuses.
+    //
+    // Scoped to deploys that touch identity: the gate asks the STORE what the
+    // door would resolve, so running it on every docs card would be noise that
+    // teaches people to ignore it.
+    let touches_identity = diff.lines().any(|f| {
+        f.contains("chorus-oidc") || f.contains("solid-auth")
+            || f.contains("identity-principals") || f.contains("security-model")
+            || f.contains("owl-api/src/lib.rs")
+    });
+    if touches_identity {
+        let gate = format!("{}/platform/scripts/chorus-allow-set-gate", canonical_root_path(home));
+        match run_env(Some(werk_s), &[], "bash", &[&gate]) {
+            Ok(out) => jsonl(home, role, card, trace, "deploy.allow_set_gate.passed",
+                &format!(",\"detail\":\"{}\"", out.trim().replace('"', "'"))),
+            Err(e) => {
+                jsonl(home, role, card, trace, "deploy.allow_set_gate.refused",
+                    &format!(",\"reason\":\"{}\"", e.to_string().replace('"', "'")));
+                return Err(format!(
+                    "allow-set gate REFUSED — deploying would leave every door failing closed, \
+                     for everyone, including whoever would fix it. {}", e).into());
+            }
+        }
+    }
+
     if crates.is_empty() && ts.is_empty() && model_files.is_empty() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
