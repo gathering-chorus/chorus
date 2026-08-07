@@ -434,5 +434,25 @@ assert "guard verifier agrees with every shared vector" test "$?" -eq 0
 python3 "$PROBE" "$GUARD" "$VECTORS" --wrong-key
 assert "NEGATIVE PROOF: the valid vector is REFUSED under a wrong key" test "$?" -eq 0
 
+# --- #3791: sign-in returns you where you were going, and nowhere else -------
+#
+# The guard's `next` was guard-host-relative, so anyone bounced here from another
+# host signed in successfully and landed on this door's root. Both consumers send
+# absolute URLs now — the Clearing (#3775) and the app's /chorus leg (#3778).
+#
+# Accepting an absolute return URL opens an OPEN REDIRECT if it is done by string
+# matching. The vectors include the two host-spoofing shapes that a naive check
+# admits, and the protocol-relative form that a path check waves through.
+
+RETPROBE="$SCRIPT_DIR/../tests/fixtures/probe-safe-return.py"
+python3 "$RETPROBE" "$GUARD"
+assert "return-URL validator behaves on every vector" test "$?" -eq 0
+
+# NEGATIVE PROOF: the vectors can fail. Point the trusted suffix somewhere else
+# and the legitimate hosts must stop being accepted — without this, a validator
+# that accepted everything would pass the run above.
+SHARE_RETURN_HOST_SUFFIX="somewhere-else.test" python3 "$RETPROBE" "$GUARD" >/dev/null 2>&1
+assert "NEGATIVE PROOF: with a different trusted suffix, the accepts REFUSE" test "$?" -eq 1
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
