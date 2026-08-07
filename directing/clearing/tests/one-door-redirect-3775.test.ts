@@ -64,3 +64,29 @@ describe('#3775 redirect leg — source-level contract', () => {
     expect(block.slice(0, 400)).toContain("req.method === 'GET'");
   });
 });
+
+describe('#3775 guard-session consumption — source contract', () => {
+  const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
+
+  test('isAuthed accepts the guard session, and asks the allow-set separately', () => {
+    const fn = server.slice(server.indexOf('async function isAuthed'), server.indexOf('async function gate'));
+    expect(fn).toContain('shareSessionWebId');
+    expect(fn).toContain('isWebIdAllowed');
+    // per-request, both questions: verify (who) THEN allow-set (whether)
+    expect(fn.indexOf('shareSessionWebId')).toBeLessThan(fn.indexOf('isWebIdAllowed'));
+  });
+
+  test('sessionPrincipal resolves the guard WebID too — one person, either door', () => {
+    const fn = server.slice(server.indexOf('async function sessionPrincipal'), server.indexOf('async function isAuthed'));
+    expect(fn).toContain('shareSessionWebId');
+    expect(fn).toContain('principalForWebId');
+  });
+
+  test('NEGATIVE PROOF: the guard cookie is never trusted unverified', () => {
+    // A path that read the cookie and used its webid WITHOUT verifyShareSession
+    // would be a self-mint hole: anyone could set the cookie by hand.
+    const helper = server.slice(server.indexOf('async function shareSessionWebId'), server.indexOf('async function isAuthed'));
+    expect(helper).toContain('verifyShareSession');
+    expect(helper).toContain('v.ok ? v.webid : null');
+  });
+});

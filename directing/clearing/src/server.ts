@@ -12,6 +12,7 @@ import { Server } from 'socket.io';
 import path from 'path';
 import { TilePoller } from './tiles';
 import { MessageRouter } from './router';
+import { verifyShareSession, shareSessionFromHeader, readCookieKey } from './share-session';
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
@@ -301,13 +302,39 @@ function preAuthRoute(
  * trusting a hand-set cookie over it is the hole Mark fell through.
  */
 async function sessionPrincipal(req: Request): Promise<{ id: string; name: string } | null> {
+  // #3775 — a visitor arriving on the guard's session is the same person as one
+  // arriving on the Clearing's own: message attribution and jeffAuthority
+  // (#3743) resolve identically, because both paths end at WebID → Principal.
+  const guardWebId = await shareSessionWebId(req);
+  if (guardWebId) {
+    const p = await principalForWebId(guardWebId, Date.now());
+    if (p) return p;
+  }
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const fresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
   if (!session?.webid || !fresh) return null;
   return principalForWebId(session.webid, Date.now());
 }
 
+/**
+ * #3775 — WHO, from the common door. The guard mints chorus_share_session at the
+ * parent domain, so it reaches this subdomain; we verify signature + expiry
+ * (share-session.ts, contract published 2026-08-07) and then ask the allow-set
+ * SEPARATELY, per request. Two questions, asked twice, every time: the cookie
+ * says who, the allow-set says whether that still means anything.
+ */
+async function shareSessionWebId(req: Request): Promise<string | null> {
+  const raw = shareSessionFromHeader(req.headers.cookie);
+  if (!raw) return null;
+  const v = verifyShareSession(raw, readCookieKey());
+  return v.ok ? v.webid : null;
+}
+
 async function isAuthed(req: Request): Promise<boolean> {
+  // The common door first — one sign-in for the system (DEC-2209 clause 1).
+  const guardWebId = await shareSessionWebId(req);
+  if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
+
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
   const sessionFresh = !!session?.iat && Date.now() - session.iat <= SESSION_MAX_AGE_MS;
   const sessionAuthed = !!(session?.webid && sessionFresh && (await isWebIdAllowed(session.webid, Date.now())));
