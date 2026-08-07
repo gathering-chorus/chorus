@@ -1655,8 +1655,13 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             Ok(out) => jsonl(home, role, card, trace, "deploy.allow_set_gate.passed",
                 &format!(",\"detail\":\"{}\"", out.trim().replace('"', "'"))),
             Err(e) => {
+                // #3788 — classified, not naked. A failure emit without a
+                // failureClass cannot be grouped or alerted on, so it becomes a
+                // line someone reads once and never aggregates — which is how
+                // the empty-allow-set warning went unnoticed on 2026-08-06.
                 jsonl(home, role, card, trace, "deploy.allow_set_gate.refused",
-                    &format!(",\"reason\":\"{}\"", e.to_string().replace('"', "'")));
+                    &format!("{},\"reason\":\"{}\"", fail_extra("allow-set-gate"),
+                        e.to_string().replace('"', "'")));
                 return Err(format!(
                     "allow-set gate REFUSED — deploying would leave every door failing closed, \
                      for everyone, including whoever would fix it. {}", e).into());

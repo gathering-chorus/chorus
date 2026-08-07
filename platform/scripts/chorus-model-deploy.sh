@@ -320,7 +320,7 @@ if [ -f "$RETIREMENTS_FILE" ]; then
     _rparsed=$(printf '%s' "$_rentry" | python3 -c '
 import json, sys
 e = json.load(sys.stdin)
-print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("retire_graph",""), sep="\x1f")' 2>/dev/null) || {
+print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subject",""), e.get("graph",""), e.get("retire_graph",""), e.get("status","staged"), sep="\x1f")' 2>/dev/null) || {
       echo "chorus-model-deploy: RETIREMENTS line $_rline is MALFORMED — refusing the deploy (fail-closed, #3752)" >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retirement-staging-malformed" line="$_rline" 2>/dev/null || true
       exit 1
@@ -329,7 +329,33 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
     # adjacent delimiters, silently shifting fields left past an empty one —
     # a claim entry became a subject retirement of its own graph name in the
     # first test run. A non-whitespace separator keeps empty fields empty.
-    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rwholegraph <<< "$_rparsed"
+    IFS=$'\x1f' read -r _rdom _rcls _rsubj _rgraph _rwholegraph _rstatus <<< "$_rparsed"
+
+    # #3788 — HONOUR THE STATUS. Until this existed the deploy read every line
+    # and re-executed it, so `status` was decoration: an entry that had already
+    # run stayed armed forever.
+    #
+    # That cost us a team-wide lockout. Ten entries staged under #3773 fired at
+    # 08-06 15:18 as intended; the records were restored from a verified backup;
+    # and seven of them fired AGAIN at 16:19 during that card's land, removing
+    # jeff, marknakib and all three agents from the allow-set the doors read.
+    # Only the workers survived, staged as they were against another graph.
+    # Kade found it the next morning when governed writes began refusing. No
+    # instrument did.
+    #
+    # Idempotent-on-absent is the right posture for a FIRST run and the wrong
+    # one forever after: it makes a restore and a retirement disagree about the
+    # same record, and the retirement wins every deploy. Only `staged` executes.
+    case "${_rstatus:-staged}" in
+      staged) : ;;
+      *)
+        echo "chorus-model-deploy: retirement line $_rline is '${_rstatus}', not staged — skipping (#3788)"
+        "$CHORUS_LOG" model.retirement.skipped "$ROLE" line="$_rline" status="${_rstatus}" \
+          target="${_rsubj:-${_rwholegraph:-claim}}" 2>/dev/null || true
+        continue
+        ;;
+    esac
+
     _rg="${_rgraph:-$ONTOLOGY_GRAPH}"
     if [ -n "$_rwholegraph" ]; then
       # WHOLE-GRAPH retirement (#3732): the ADR-051 Addendum II case — a graph

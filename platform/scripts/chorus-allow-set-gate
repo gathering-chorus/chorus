@@ -52,7 +52,21 @@ FUSEKI="${CHORUS_FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 EXPECT_EMPTY=0
 [ "${1:-}" = "--expect-empty" ] && EXPECT_EMPTY=1
 
-QUERY="PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?w) AS ?n) WHERE { GRAPH <$GRAPH> { ?p a chorus:Principal ; chorus:webId ?w } }"
+# #3788 — NAMED PRESENCE, not a count.
+#
+# The count version of this gate passed on 2026-08-07 while every human and every
+# agent was locked out of governed writes. The graph held three principals — the
+# workers — because the seven humans and agents had been deleted by a retirement
+# that re-fired. Three is non-zero, so the gate said OK.
+#
+# A count cannot distinguish "the people who need to work can work" from "three
+# background jobs survived". Ask for the names.
+#
+# The required set is CONFIG: who must be able to write is a policy statement,
+# not a constant, and it changes when someone joins or leaves.
+REQUIRED="${CHORUS_ALLOW_SET_REQUIRED:-jeff silas wren kade}"
+
+QUERY="PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?w WHERE { GRAPH <$GRAPH> { ?p a chorus:Principal ; chorus:webId ?w } }"
 
 # CSV so the header proves the store answered at all — a bare empty body and a
 # genuine zero are otherwise indistinguishable, which is the same could-not-ask
@@ -65,14 +79,19 @@ resp=$(curl -s --max-time 15 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
 # while the store was answering perfectly — a fail-closed message that named the
 # wrong cause, which is the same could-not-ask-versus-got-nothing confusion this
 # gate exists to end, reproduced inside the gate itself.
-if ! printf '%s' "$resp" | tr -d '\r' | head -1 | grep -q '^n$'; then
+# The header is the SELECT variable name — 'w' since #3788 changed this from
+# COUNT(?n) to the webids themselves. When the query changed and this check did
+# not, the gate refused with "the store did not answer" while the store answered
+# perfectly: fail-closed naming the wrong cause, inside the gate written to end
+# exactly that confusion. Second time in two days.
+if ! printf '%s' "$resp" | tr -d '\r' | head -1 | grep -q '^w$'; then
   echo "allow-set-gate: REFUSED — the store did not answer (no CSV header). Graph <$GRAPH>, endpoint $FUSEKI." >&2
   echo "allow-set-gate: could-not-ask is not the same as nobody-allowed, and neither is a safe deploy." >&2
   exit 2
 fi
 
-count=$(printf '%s' "$resp" | tr -d '\r' | tail -1 | tr -d '"[:space:]')
-: "${count:=0}"
+webids=$(printf '%s' "$resp" | tr -d '\r' | tail -n +2 | tr -d '"' | grep -v '^[[:space:]]*$')
+count=$(printf '%s' "$webids" | grep -c . 2>/dev/null || echo 0)
 
 if [ "$count" -eq 0 ]; then
   echo "allow-set-gate: REFUSED — <$GRAPH> holds ZERO principals with a webId." >&2
@@ -82,10 +101,27 @@ if [ "$count" -eq 0 ]; then
   exit 1
 fi
 
+# Every required principal must be NAMED in the resolved set. A WebID is matched
+# on its /<name>/ path segment so the check survives a provider hostname change —
+# the alternative, pinning full WebIDs here, would make this file wrong the day
+# the identity provider moves and right for the wrong reason until then.
+missing=""
+for who in $REQUIRED; do
+  printf '%s' "$webids" | grep -q "/$who/" || missing="$missing $who"
+done
+
+if [ -n "$missing" ]; then
+  echo "allow-set-gate: REFUSED — <$GRAPH> resolves $count principal(s), but these cannot write:$missing" >&2
+  echo "allow-set-gate: a non-zero count is not the same as the right people being present." >&2
+  echo "allow-set-gate: on 2026-08-07 this graph held three workers and zero humans; the count check passed and every person and agent was locked out of governed writes until Kade noticed." >&2
+  [ "$EXPECT_EMPTY" -eq 1 ] && { echo "NEGATIVE PROOF OK — the gate refuses a set missing required principals."; exit 0; }
+  exit 1
+fi
+
 if [ "$EXPECT_EMPTY" -eq 1 ]; then
-  echo "NEGATIVE PROOF FAILED — the gate PASSED on a graph that was supposed to be empty ($count found in <$GRAPH>)." >&2
+  echo "NEGATIVE PROOF FAILED — the gate PASSED on a graph that was supposed to be missing principals ($count found in <$GRAPH>, all required present)." >&2
   echo "A gate that cannot go red on the state it exists to catch is not a gate (#3734)." >&2
   exit 1
 fi
 
-echo "allow-set-gate: OK — $count principal webid(s) resolvable from <$GRAPH>."
+echo "allow-set-gate: OK — $count principal webid(s) in <$GRAPH>; all required present ($REQUIRED)."
