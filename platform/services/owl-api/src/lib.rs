@@ -3230,15 +3230,21 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         .unwrap_or(0);
     let warmed_allow = oidc_verifier.warm_allow(boot_now);
     if warmed_allow == 0 {
-        eprintln!("owl-api: WARNING — Principal allow-set is EMPTY (no chorus:Principal in urn:chorus:domains:security, or Fuseki unreachable); ES256 tokens are refused (fail-closed) until the TTL'd re-resolve finds Principals. HS256 legacy path unaffected.");
+        // #3785 — name the graph in the WARNING too. On 2026-08-06 this line
+        // fired and told nobody which graph came up empty, which is the whole
+        // difference between "the store is down" and "you are reading the wrong
+        // place" — two states this message could not distinguish.
+        eprintln!("owl-api: WARNING — {} — ES256 tokens are refused (fail-closed) until the TTL'd re-resolve finds Principals. HS256 legacy path unaffected.",
+            oidc::graph_provenance(0, "EMPTY: no chorus:Principal there, or Fuseki unreachable"));
     } else {
-        eprintln!("owl-api: ES256 allow-set = {} Principal webid(s) (model-resolved, TTL'd)", warmed_allow);
+        eprintln!("owl-api: {}", oidc::graph_provenance(warmed_allow, "boot warm, model-resolved, TTL'd"));
     }
     // #3688 — the role map. EMPTY is loud: every verified caller would carry no
     // role, and ownedBy authZ would refuse every write (fail-closed, not silent).
     let warmed_roles = oidc_verifier.warm_roles(boot_now);
     if warmed_roles == 0 {
-        eprintln!("owl-api: WARNING — holdsRole map is EMPTY (no chorus:holdsRole in urn:chorus:domains:security, or Fuseki unreachable); verified callers carry NO role, so ownedBy authZ refuses every write until the TTL'd re-resolve finds edges.");
+        eprintln!("owl-api: WARNING — holdsRole map is EMPTY (no chorus:holdsRole in <{}>, or Fuseki unreachable); verified callers carry NO role, so ownedBy authZ refuses every write until the TTL'd re-resolve finds edges.",
+            oidc::allow_set_graph());
     } else {
         eprintln!("owl-api: role map = {} holdsRole edge(s) (model-resolved, TTL'd)", warmed_roles);
     }

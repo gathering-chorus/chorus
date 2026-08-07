@@ -14,7 +14,7 @@ jest.mock('@solid/access-token-verifier', () => ({
   createSolidTokenVerifier: () => mockVerify,
 }));
 
-import { isWebIdAllowed, authenticateSolid, _resetAllowCache } from '../src/solid-auth';
+import { isWebIdAllowed, authenticateSolid, _resetAllowCache, invalidateAllowCache, ALLOW_SET_GRAPH, ALLOW_QUERY, STALE_CEILING_MS } from '../src/solid-auth';
 
 const WREN = 'http://localhost:3001/wren/profile/card#me';
 const STRANGER = 'http://localhost:3001/mallory/profile/card#me';
@@ -125,5 +125,68 @@ describe('#3669 authenticateSolid — the door', () => {
     mockVerify.mockResolvedValue({ webid: WREN });
     const r = await authenticateSolid('Bearer tok', undefined, 'GET', 'http://localhost:3470/api', false, 1000, fakeFetch([WREN]));
     expect(r).toEqual({ ok: true, webid: WREN });
+  });
+});
+
+
+// --- #3785: the allow-set has one home, and staleness is BOUNDED -------------
+//
+// Wren's distinction, which resolved two acceptance criteria that were arguing
+// with each other: fail-closed governs UNVERIFIABLE ASSERTIONS — a cookie that
+// does not verify, a lost key. It does not govern an infrastructure hiccup on a
+// set we already verified. A store hiccup is not a revocation, and treating one
+// as the other is the lockout class that hit Jeff twice on 2026-08-06.
+//
+// Three legs, and the THIRD is written first on purpose: "hold the store down
+// past the ceiling and confirm refusal" is tedious to arrange and easy to
+// assume, which is exactly why it is the only one that proves the ceiling is
+// real rather than a number in a comment.
+
+describe('#3785 — one graph name, bounded staleness', () => {
+  beforeEach(() => _resetAllowCache());
+
+  test('LEG 3 (the one that would never get written): past the ceiling, a warm cache is REFUSED', async () => {
+    const t0 = 1_000_000;
+    expect(await isWebIdAllowed(WREN, t0, fakeFetch([WREN]))).toBe(true);
+    // store down, and we are past the ceiling: the bound must bite even though
+    // the cached answer would have said yes.
+    const past = t0 + STALE_CEILING_MS + 1;
+    expect(await isWebIdAllowed(WREN, past, fakeFetch([], { fail: true }))).toBe(false);
+  });
+
+  test('LEG 2: inside the ceiling, a store hiccup keeps an existing session working', async () => {
+    const t0 = 2_000_000;
+    expect(await isWebIdAllowed(WREN, t0, fakeFetch([WREN]))).toBe(true);
+    const inside = t0 + Math.floor(STALE_CEILING_MS / 2);
+    expect(await isWebIdAllowed(WREN, inside, fakeFetch([], { fail: true }))).toBe(true);
+  });
+
+  test('LEG 1: revocation bites on the NEXT request, not at TTL expiry', async () => {
+    const t0 = 3_000_000;
+    expect(await isWebIdAllowed(WREN, t0, fakeFetch([WREN]))).toBe(true);
+    // the deliberate act — a write to the principal set invalidates the cache
+    invalidateAllowCache();
+    // ...and the very next read re-resolves against a set that no longer names her
+    expect(await isWebIdAllowed(WREN, t0 + 1, fakeFetch([]))).toBe(false);
+  });
+
+  test('NEGATIVE PROOF: without invalidation the stale answer would have persisted', async () => {
+    // Proves LEG 1 is testing invalidation and not merely TTL expiry — without
+    // this, a cache that ignored invalidateAllowCache() entirely would still pass
+    // LEG 1 whenever the clock happened to cross the TTL.
+    const t0 = 4_000_000;
+    expect(await isWebIdAllowed(WREN, t0, fakeFetch([WREN]))).toBe(true);
+    expect(await isWebIdAllowed(WREN, t0 + 1, fakeFetch([]))).toBe(true);
+  });
+
+  test('the allow-set query is scoped to the ONE declared graph', async () => {
+    expect(ALLOW_QUERY).toContain(`GRAPH <${ALLOW_SET_GRAPH}>`);
+  });
+
+  test('NEGATIVE PROOF: an unscoped query would be a self-mint hole, and is not what we ship', async () => {
+    // Fuseki still takes anonymous LAN writes (#3564), so an unbound GRAPH ?g
+    // would let any local writer INSERT a Principal into a scratch graph and add
+    // themselves to the allow-set.
+    expect(ALLOW_QUERY).not.toMatch(/GRAPH\s+\?/);
   });
 });

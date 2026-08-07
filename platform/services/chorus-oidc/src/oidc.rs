@@ -398,6 +398,38 @@ pub fn seam_auth_any(
     }
 }
 
+/// #3785 — THE ONE NAME. The graph the doors read their allow-set from, declared
+/// once and resolved by every reader, because on 2026-08-06 it was spelled by
+/// hand in twelve places across Rust, TypeScript, shell and the ontology files.
+///
+/// That day the ten Principal records were consolidated into the graph owl-api
+/// SERVES from, and the copies in the graph the doors READ were retired as
+/// duplicates. They were not duplicates — they were the same records with two
+/// consumers. Jeff was locked out of the Clearing within minutes, and the
+/// governed writer refused the operator who had just deleted his own WebID.
+/// Nothing anywhere announced which graph it was reading, so the split was
+/// invisible right up until it wasn't.
+///
+/// Overridable by env so the graph can be moved by configuration rather than by
+/// a coordinated edit across four languages — which is the move that caused the
+/// incident. `graph_provenance()` exists so a door can SAY where it read.
+pub fn allow_set_graph() -> String {
+    std::env::var("CHORUS_ALLOW_SET_GRAPH")
+        .unwrap_or_else(|_| "urn:chorus:domains:security".to_string())
+}
+
+/// What a door prints at startup and on every allow-set refresh. The missing
+/// line of 2026-08-06: two consumers on two graphs, and no surface named its
+/// source, so the only way to discover the split was to break it.
+pub fn graph_provenance(count: usize, reason: &str) -> String {
+    format!(
+        "allow-set: resolved {} principal webid(s) from <{}> ({})",
+        count,
+        allow_set_graph(),
+        reason
+    )
+}
+
 /// ADR-052 §5 — resolve the Principal allow-set from the model at boot (one
 /// query, no per-request graph call: the #3406 freeze-class stays killed).
 /// `query` is injected (prod: sparql_json against Fuseki). Empty/unreachable ⇒
@@ -406,12 +438,14 @@ pub fn seam_auth_any(
 /// weakening" in both directions.
 /// The variable is `?v` because select_v (the DAL's proven single-var
 /// extractor) parses exactly that seam.
-pub const PRINCIPAL_ALLOW_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?v } }";
+pub fn principal_allow_query() -> String {
+    format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?v }} }}", allow_set_graph())
+}
 
 /// None = graph unreachable (caller decides the fail-closed posture);
 /// Some(empty) = reachable and genuinely nobody allowed.
 pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
-    query(PRINCIPAL_ALLOW_QUERY).map(|body| crate::select_v(&body))
+    query(&principal_allow_query()).map(|body| crate::select_v(&body))
 }
 
 /// ADR-054 §3.3 — resolve webId→role from `chorus:holdsRole`, the edge that
@@ -422,7 +456,9 @@ pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Optio
 /// would trade the WebID convention this card retires for an IRI convention.
 /// Principals with no `holdsRole` are simply absent: allowed to authenticate,
 /// holding no role.
-pub const PRINCIPAL_ROLE_QUERY: &str = "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r } BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }";
+pub fn principal_role_query() -> String {
+    format!("PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r }} BIND(CONCAT(STR(?w), \" \", STR(?r)) AS ?v) }}", allow_set_graph())
+}
 
 /// A role IRI's name: the local part after the last `#`, `/` or `:`, minus a
 /// `role-` prefix if the IRI uses one. Convention-TOLERANT by construction —
@@ -441,7 +477,7 @@ fn role_name(role_iri: &str) -> Option<&str> {
 pub fn resolve_principal_roles(
     query: impl Fn(&str) -> Option<String>,
 ) -> Option<Vec<(String, String)>> {
-    query(PRINCIPAL_ROLE_QUERY).map(|body| {
+    query(&principal_role_query()).map(|body| {
         crate::select_v(&body)
             .into_iter()
             .filter_map(|row| {
@@ -475,15 +511,23 @@ pub fn resolve_principal_roles(
 /// The file lives in the api tree because that is the one package whose build
 /// copies `src/sparql → dist/sparql`, giving the TS door a runtime-resolvable
 /// path; Rust binds from anywhere at compile.
-pub const PRINCIPAL_SCOPE_QUERY: &str =
+pub const PRINCIPAL_SCOPE_QUERY_TEMPLATE: &str =
     include_str!("../../../api/src/sparql/principal-scope.rq");
+
+/// #3785 — the scope query resolves the SAME one name. It ships as a .rq file so
+/// the TypeScript door can read it at runtime, so the graph is substituted here
+/// rather than templated in the file: a .rq with a placeholder would be invalid
+/// SPARQL and could not be validated by anything that parses it.
+pub fn principal_scope_query() -> String {
+    PRINCIPAL_SCOPE_QUERY_TEMPLATE.replace("urn:chorus:domains:security", &allow_set_graph())
+}
 
 /// None = graph unreachable (caller fails closed); Some(empty) = reachable and
 /// no grants exist. Rows without a separator are dropped and said.
 pub fn resolve_principal_scopes(
     query: impl Fn(&str) -> Option<String>,
 ) -> Option<Vec<(String, Vec<String>)>> {
-    query(PRINCIPAL_SCOPE_QUERY).map(|body| {
+    query(&principal_scope_query()).map(|body| {
         let mut grants: Vec<(String, Vec<String>)> = Vec::new();
         for row in crate::select_v(&body) {
             let Some((w, sc)) = row.split_once(' ') else {

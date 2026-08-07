@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# chorus-allow-set-gate (#3785) — refuse a deploy that would leave the doors
+# reading an empty allow-set.
+#
+# WHY THIS IS A GATE AND NOT A LOG LINE
+#
+# On 2026-08-06 the Principal records were consolidated into the graph owl-api
+# serves from, and the copies in the graph the doors read were retired as
+# duplicates. They were not duplicates; they were the same records with two
+# consumers. Jeff was locked out of the Clearing within minutes, and the governed
+# writer refused the operator who had just deleted his own WebID.
+#
+# owl-api DID warn — it printed "Principal allow-set is EMPTY" at boot. Nobody
+# was reading stderr at that moment, and by the time the symptom appeared (a
+# human being told he was not on the team list) the cause was three steps back.
+# A warning is not a gate. This runs BEFORE the deploy commits and refuses.
+#
+# THE TWO STATES IT MUST SEPARATE
+#
+# A door serving zero principals and a door correctly refusing everyone are the
+# same observation from outside. This distinguishes them by asking the STORE what
+# the door would resolve — same graph, same query shape — and treating zero as a
+# refusal rather than a valid policy. There is no legitimate deploy in which the
+# allow-set is empty: an empty allow-set locks out every human including whoever
+# would fix it.
+#
+# Usage:
+#   chorus-allow-set-gate                 # check the configured graph
+#   CHORUS_ALLOW_SET_GRAPH=<g> ...        # check a specific graph (test seam)
+#   chorus-allow-set-gate --expect-empty  # NEGATIVE PROOF mode: assert it REFUSES
+set -uo pipefail
+
+# Store credentials, sourced HERE rather than inherited: a bash array does not
+# cross a process boundary, and the first run of this gate refused for exactly
+# that reason — correctly, but for the wrong cause. Fail-closed hid a config bug
+# behind a real-looking refusal, which is its own small lesson.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck disable=SC1091
+# `set -u` off while sourcing: the credential script touches unset vars, and
+# under -u that aborts the source silently, leaving the gate credential-less and
+# refusing for the wrong reason.
+set +u
+[ -f "$SCRIPT_DIR/fuseki-auth.sh" ] && . "$SCRIPT_DIR/fuseki-auth.sh" 2>/dev/null
+set -u
+FUSEKI_AUTH=()
+if [ -n "${FUSEKI_ADMIN_USER:-}" ]; then
+  FUSEKI_AUTH=(-u "${FUSEKI_ADMIN_USER}:${FUSEKI_ADMIN_PASSWORD:-}")
+fi
+
+GRAPH="${CHORUS_ALLOW_SET_GRAPH:-urn:chorus:domains:security}"
+FUSEKI="${CHORUS_FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+EXPECT_EMPTY=0
+[ "${1:-}" = "--expect-empty" ] && EXPECT_EMPTY=1
+
+QUERY="PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?w) AS ?n) WHERE { GRAPH <$GRAPH> { ?p a chorus:Principal ; chorus:webId ?w } }"
+
+# CSV so the header proves the store answered at all — a bare empty body and a
+# genuine zero are otherwise indistinguishable, which is the same could-not-ask
+# versus asked-and-got-nothing confusion this gate exists to end (#3731).
+resp=$(curl -s --max-time 15 "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" \
+  "$FUSEKI" --data-urlencode "query=$QUERY" -H 'Accept: text/csv' 2>/dev/null)
+
+# \r stripped: Fuseki's CSV is CRLF, so the header arrives as "n\r" and a
+# naive ^n$ never matches. The gate then refused with "the store did not answer"
+# while the store was answering perfectly — a fail-closed message that named the
+# wrong cause, which is the same could-not-ask-versus-got-nothing confusion this
+# gate exists to end, reproduced inside the gate itself.
+if ! printf '%s' "$resp" | tr -d '\r' | head -1 | grep -q '^n$'; then
+  echo "allow-set-gate: REFUSED — the store did not answer (no CSV header). Graph <$GRAPH>, endpoint $FUSEKI." >&2
+  echo "allow-set-gate: could-not-ask is not the same as nobody-allowed, and neither is a safe deploy." >&2
+  exit 2
+fi
+
+count=$(printf '%s' "$resp" | tr -d '\r' | tail -1 | tr -d '"[:space:]')
+: "${count:=0}"
+
+if [ "$count" -eq 0 ]; then
+  echo "allow-set-gate: REFUSED — <$GRAPH> holds ZERO principals with a webId." >&2
+  echo "allow-set-gate: deploying this would fail every door closed, for everyone, including whoever would fix it." >&2
+  echo "allow-set-gate: on 2026-08-06 this exact state locked Jeff out of the Clearing and locked the governed writer against its operator." >&2
+  [ "$EXPECT_EMPTY" -eq 1 ] && { echo "NEGATIVE PROOF OK — the gate refuses an empty allow-set."; exit 0; }
+  exit 1
+fi
+
+if [ "$EXPECT_EMPTY" -eq 1 ]; then
+  echo "NEGATIVE PROOF FAILED — the gate PASSED on a graph that was supposed to be empty ($count found in <$GRAPH>)." >&2
+  echo "A gate that cannot go red on the state it exists to catch is not a gate (#3734)." >&2
+  exit 1
+fi
+
+echo "allow-set-gate: OK — $count principal webid(s) resolvable from <$GRAPH>."
