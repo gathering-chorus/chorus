@@ -14,7 +14,7 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { verifyShareSession, shareSessionFromHeader, readCookieKey, SHARE_COOKIE_NAME } from '../src/share-session';
+import { verifyShareSession, shareSessionFromHeader, readCookieKey, _resetKeyWarn, SHARE_COOKIE_NAME } from '../src/share-session';
 
 interface Vector { name: string; cookie: string; expect: 'accept' | 'reject'; why?: string }
 const fixture = JSON.parse(
@@ -111,5 +111,25 @@ describe('#3775 verifier properties beyond the vectors', () => {
     const k = readCookieKey('/nonexistent/nowhere.json');
     expect(k).toBeNull();
     expect(verifyShareSession(valid, k, NOW).ok).toBe(false);
+  });
+});
+
+describe('#3775 key-read failure is LOUD (Silas, 2026-08-07)', () => {
+  test('an unreadable key file logs the path and says look here, not at the guard', () => {
+    _resetKeyWarn();
+    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(readCookieKey('/nonexistent/definitely-not-here.json')).toBeNull();
+      const said = spy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(said).toContain('/nonexistent/definitely-not-here.json');
+      expect(said).toMatch(/fail(s)? closed/i);
+      // warn-once: a second failure in the same outage does not re-log
+      const before = spy.mock.calls.length;
+      readCookieKey('/nonexistent/definitely-not-here.json');
+      expect(spy.mock.calls.length).toBe(before);
+    } finally {
+      spy.mockRestore();
+      _resetKeyWarn();
+    }
   });
 });

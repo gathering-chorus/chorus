@@ -52,12 +52,31 @@ function b64urlEncode(b: Buffer): string {
 /** Raw HMAC key bytes from the guard's state file. Null when unreadable —
  *  which fails every session CLOSED: losing the key must mean signed out, never
  *  trusted-by-default (DEC-2209 clause 5). */
+let keyWarned = false;
+/** Test seam — the warn-once latch is real behaviour (one line per outage, not
+ *  per request), so a test that wants to observe the warning must clear it. */
+export function _resetKeyWarn(): void { keyWarned = false; }
 export function readCookieKey(stateFile: string = STATE_FILE): Buffer | null {
   try {
     const raw = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-    if (typeof raw.cookie_key !== 'string' || !raw.cookie_key) return null;
+    if (typeof raw.cookie_key !== 'string' || !raw.cookie_key) {
+      if (!keyWarned) {
+        keyWarned = true;
+        console.error(`share-session: state file <${stateFile}> has no cookie_key — EVERY guard session will fail closed. This is not "the cookie never arrived".`);
+      }
+      return null;
+    }
+    keyWarned = false;
     return b64urlDecode(raw.cookie_key);
-  } catch {
+  } catch (e) {
+    // #3775 (Silas's ask): say WHICH path failed. An unreadable key refuses every
+    // guard session, which from outside is indistinguishable from the guard not
+    // sending a cookie at all — and sends whoever debugs it to the wrong half of
+    // the system. Warn once per outage, not per request.
+    if (!keyWarned) {
+      keyWarned = true;
+      console.error(`share-session: cannot read cookie key at <${stateFile}> (${(e as Error).message}) — EVERY guard session fails closed until this is readable. Look here, not at the guard.`);
+    }
     return null;
   }
 }
