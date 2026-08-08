@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The security fitness function, running without anyone asking. (#3765)
+
+  Half-hourly rather than nightly on purpose. The failures this suite exists to
+  catch are introduced by a deploy or a config change and are invisible to
+  everyone who already has a session — the gap between "it broke" and "someone
+  noticed" was twenty minutes for the sign-in 404 and two days for the stale
+  guard. A nightly would have reported both the next morning.
+
+  Read-only against live surfaces, except a scratch graph in row 5 that is
+  dropped on the way out.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.fitness-security</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/proving/fitness/run-fitness.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DEPLOY_ROLE</key>
+    <string>silas</string>
+    <key>PATH</key>
+    <string>/Users/jeffbridwell/.chorus/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
+  <key>StartInterval</key>
+  <integer>1800</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/fitness-security.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/fitness-security.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+</dict>
+</plist>
