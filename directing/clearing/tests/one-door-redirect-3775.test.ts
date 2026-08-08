@@ -50,7 +50,10 @@ describe('#3775 redirect leg — source-level contract', () => {
   test('common-door redirect exists, gated on CHORUS_SIGNIN_URL, and carries the return URL', () => {
     expect(server).toContain('CHORUS_SIGNIN_URL');
     const block = server.slice(server.indexOf('CHORUS_SIGNIN_URL'));
-    expect(block).toContain('?return=');
+    // #3792 — pinned to the guard's ACTUAL parser (chorus-share-guard.py:617,
+    // :687 read `next`). A rename on either side breaks this test rather than
+    // silently breaking the journey.
+    expect(block).toContain('?next=');
     expect(block).toContain('safeReturnPath');
     expect(block).toContain('req.headers.host'); // FULL url — cross-subdomain return
   });
@@ -88,5 +91,23 @@ describe('#3775 guard-session consumption — source contract', () => {
     const helper = server.slice(server.indexOf('async function shareSessionWebId'), server.indexOf('async function isAuthed'));
     expect(helper).toContain('verifyShareSession');
     expect(helper).toContain('v.ok ? v.webid : null');
+  });
+});
+
+describe('#3792 — the parameter name is pinned to the guard\'s parser', () => {
+  const server = fs.readFileSync(path.join(SRC, 'server.ts'), 'utf-8');
+  const block = server.slice(server.indexOf('const commonDoor'), server.indexOf('const commonDoor') + 1400);
+
+  test('the redirect sends next=, the parameter chorus-share-guard.py actually reads', () => {
+    expect(block).toContain('?next=');
+  });
+
+  test('NEGATIVE PROOF: the pre-#3792 shape (?return=) is absent — and would be caught here if it came back', () => {
+    // The failure this replaces was SILENT: the guard ignores an unknown
+    // parameter and signs the visitor in to its own root, so nothing errors and
+    // the journey just quietly ends in the wrong place. Assert the wrong shape
+    // is gone, and prove the assertion can see it by checking the matcher works.
+    expect(block).not.toContain('?return=');
+    expect('someurl?return=x').toContain('?return=');  // the check can go red
   });
 });
