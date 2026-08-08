@@ -367,8 +367,14 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   // wearing a login page).
   const commonDoor = process.env.CHORUS_SIGNIN_URL || '';
   if (commonDoor && req.method === 'GET') {
+    // #3792 — the guard's parameter is `next`, NOT `return`: chorus-share-guard.py
+    // reads args.get("next") at :617 (stashing it against the OIDC state) and at
+    // :687 (rendering the sign-in page). #3775 shipped `return`, which the guard
+    // silently ignores — the visitor signs in and lands on the DOOR'S ROOT
+    // instead of the page they asked for. Read from the guard's source on the
+    // running host, because its prose contract and its code disagreed.
     const ret = encodeURIComponent(`https://${req.headers.host || ''}${safeReturnPath(req.originalUrl)}`);
-    return res.redirect(`${commonDoor}?return=${ret}`);
+    return res.redirect(`${commonDoor}?next=${ret}`);
   }
   res.status(401).send(interstitialPage(safeReturnPath(req.originalUrl)));
 }
