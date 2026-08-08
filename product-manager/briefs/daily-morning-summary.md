@@ -1,34 +1,32 @@
-# Daily Morning Summary — 2026-08-07
+# Daily Morning Summary — 2026-08-08
 
-**HEADLINE:** Build type errors spiked +6 overnight (181 → 187) — first regression in 14 days — investigate yesterday's commits before new work lands.
+**HEADLINE:** Domain context breach hits day 8 (ops calling ship block) while build type errors climb to 189 (+8 in two days) — both need owners today.
 
-**OPS:** RED *(Silas review 2026-08-05 — most recent filed; Aug 6 review may be in repo)*
+**OPS:** RED (Silas review 2026-08-07)
 - GREEN: Repo clean (0 uncommitted changes)
-- YELLOW: Hooks dead-code 2 warnings (3rd+ carry); /tmp plist migration stalled 8d; Dependabot #449/#443 **64d open**, Aug 1 batch untriaged
-- RED: CSC 148 `/tmp/` refs in `platform/scripts/` (card open, no target date)
-- RED **BREACHED**: Domain context — all 5 files now 8d stale (threshold was yesterday); shared/ fragments — 23/24 now 8d stale
-- Top concern: Domain context and fragments both in breach with no refresh committed
+- YELLOW: Hooks dead-code 2 warnings (day 5 carry); /tmp plist migration stalled; Dependabot #449/#443 **65d open**, Aug 1 batch still untriaged
+- RED: Domain context — all 5 files day 8 (threshold was 7d); CLAUDE.md fragments day 8 (threshold breached); CSC 124 `/tmp/` refs in `platform/scripts/` (down 24 from 148 — progress, not done)
+- Top concern: Ops review calls ship block until domain context + fragments refreshed
 
-**QUALITY:** RED (Kade review 2026-08-07)
-- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 57** (no movement)
-- Lint blocked (`@eslint/js`), **day 59** (root cause same: `npm ci` unrun)
-- Build: **187 type errors — REGRESSION +6 vs yesterday** (first increase in 14 days)
-- Root cause: `npm ci` at repo root — **59 days unresolved, no owner**
+**QUALITY:** RED (Kade review 2026-08-08)
+- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 58** (no movement)
+- Lint blocked (`@eslint/js`), **day 60** (same root cause)
+- Build: **189 type errors — REGRESSION +2 today** (187 yesterday; +8 over two days)
+- Root cause: `npm ci` at repo root — **60 days unresolved, no owner**
 
-**YESTERDAY (08-06):** 12 cards shipped — heavy share-guard and Wren identity work
-- **#3744 (silas):** Share-guard allowlist becomes governed config — root cause closed (guard had run 15d hand-started, policy in memory, no LaunchAgent)
-- **#3767 (silas):** Share-guard routes per prefix — /about (:3000) and Athena (:3340) public simultaneously
-- **#3771 (silas):** User-agent fix — Cloudflare was 403'ing Python-urllib default agent, breaking identity provider discovery silently
-- **#3770, #3773 (silas), #3766 (kade), #3761, #3768, #3772, #3780, #3781, #3782 (wren):** Additional cards (card details not filed in backlog)
+**YESTERDAY (08-07):** 5 cards — Wren + Silas; Silas added 3 more overnight
+- **#3780, #3781, #3782 (wren), #3772 (wren):** Wren batch landed
+- **#3773 (silas):** Silas Aug 7 card
+- **Overnight:** Silas shipped #3785, #3788, #3790 before this brief (check for type-error contribution)
 
 **TODAY:**
-1. **Wren → domain context + fragments** — now 8d; refresh `domain-context-seeds.md` and 23 shared/ fragments
-2. **Silas → `domain-context-chorus.md`** — 8d, second day in breach
-3. **Investigate build +6 regression** — type errors up 181→187 overnight; check Aug 6 commits (Wren cards #3780, #3781, #3782)
-4. **Jeff → assign `npm ci` owner** — day 59, every suite and lint dark; no ship horizon for quality visibility
-5. **Jeff → Dependabot #449/#443** — 64d, decision overdue
+1. **Wren → domain context** — refresh `domain-context-seeds.md`, infrastructure, music, photos (day 8, ship block)
+2. **Silas → `domain-context-chorus.md`** + shared/ fragments (day 8, ship block)
+3. **Jeff → assign `npm ci` owner** — day 60, all quality dark; no horizon
+4. **Investigate build regression** — type errors +8 in 2 days; check overnight Silas cards #3785/#3788/#3790
+5. **Jeff → Dependabot #449/#443** — 65d, merge-or-close decision overdue
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 59, no owner** — all 4 suites and lint structurally dark; quality blind
-- **Build regression +6** — new type errors entered since yesterday; needs owner today
-- **Dependabot #449/#443 at 64d** — merge-or-close call overdue
+- **`npm ci` day 60, no owner** — all 4 suites + lint structurally dark; quality invisible
+- **Build +8 in 2 days** (189 errors) — trending wrong; needs investigation today
+- **Dependabot #449/#443 at 65d** — overdue decision
