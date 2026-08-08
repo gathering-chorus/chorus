@@ -365,6 +365,19 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   // flag flips when the door's cookie actually reaches this subdomain, not
   // before (host-only cookies never cross; flipping early is an infinite loop
   // wearing a login page).
+  // #3795 — REFUSED IS NOT UNKNOWN. A session we cannot verify is NOBODY: send
+  // them to the door. A session we CAN verify, for a person this app does not
+  // admit, is a KNOWN PERSON TOLD NO: refuse, and never redirect. Bouncing them
+  // produced an infinite loop in Silas's live walk (2026-08-08) — the Clearing
+  // redirected, the guard saw a valid cookie and re-minted it, eight round-trips
+  // until Chrome gave up. Neither door was wrong alone; together they spun.
+  // Today both doors read one list so this is rare; once the lists are per-app
+  // (Jeff, 2026-08-08) "signed in here, not there" is the ordinary case.
+  const knownWebId = await shareSessionWebId(req);
+  if (knownWebId) {
+    return res.status(403).send(refusedPage(knownWebId));
+  }
+
   const commonDoor = process.env.CHORUS_SIGNIN_URL || '';
   if (commonDoor && req.method === 'GET') {
     // #3792 — the guard's parameter is `next`, NOT `return`: chorus-share-guard.py
@@ -440,6 +453,18 @@ function interstitialPage(returnPath: string): string {
   const q = returnPath && returnPath !== '/' ? `?return=${encodeURIComponent(returnPath)}` : '';
   return authShell('Where the team gathers.',
     `<a href="/auth/login${q}" style="text-decoration:none"><button type="button">Sign in</button></a>`);
+}
+
+// #3795 — the refusal page. Reached only by someone whose identity VERIFIED and
+// is not on this app's list: a real person, correctly signed in, one list away.
+// Names them (so they can see WHICH identity they're carrying — the common cause
+// is being signed in as the wrong one) and offers sign-out as the single action.
+// No link back to sign-in: that is the loop.
+function refusedPage(webid: string): string {
+  const short = webid.replace(/^https?:\/\//, '').replace(/\/profile\/card#me$/, '');
+  return authShell(
+    `You're signed in as ${short.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}, but this identity isn't on the Clearing's list.`,
+    '<a href="/logout" style="text-decoration:none"><button type="button">Sign out</button></a>');
 }
 
 // #3669 — errors are sentences, not codes (Wren spec item 4).
