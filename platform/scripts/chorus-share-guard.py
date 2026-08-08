@@ -218,6 +218,58 @@ def _backdrop_data_uri():
 BACKDROP = _backdrop_data_uri()
 
 
+# #3791 — the return URL, validated.
+#
+# Both consumers now send an ABSOLUTE url: the Clearing bounces someone here from
+# clearing.<domain>, and the app's /chorus path from the bare domain. A
+# guard-host-relative `next` discards their host, so a visitor signs in
+# successfully and lands on this door's root instead of the page they asked for.
+# Jeff: "i should be prompted to sign in and then land on THAT page. same with
+# any other page. This feels pretty basic."
+#
+# It is also an OPEN REDIRECT surface. Anyone who can put a URL in this parameter
+# can use our sign-in page as a credible hop to their own site — the victim sees
+# our domain in the link they click and our page in their history. So: parse, do
+# not pattern-match; https only; and match the host suffix on a DOT BOUNDARY.
+#
+# The two holes a substring test leaves open, both of which must fail:
+#   evil-lightlifeurbangardens.com    — ends with our name, is not us
+#   lightlifeurbangardens.com.evil.tld — starts with our name, is not us
+# Those are the negative-proof fixture, not hypotheticals: the first is what a
+# naive endswith() admits, the second is what a naive "contains" admits.
+RETURN_HOST_SUFFIX = os.environ.get("SHARE_RETURN_HOST_SUFFIX", "lightlifeurbangardens.com").strip().lower()
+
+
+def safe_return(raw, default="/"):
+    """A return target we are willing to send a signed-in visitor to.
+
+    Host-relative paths pass through unchanged. Absolute URLs must be https and
+    must sit on the trusted domain. Everything else — unparseable, wrong scheme,
+    wrong host, or a protocol-relative //host/path that a path check would wave
+    through — collapses to the default. Refusing is silent: a visitor did not
+    cause this and should not be shown an error, they should just be signed in.
+    """
+    if not raw:
+        return default
+    # //evil.tld/x is host-relative to a browser and looks like a path to a
+    # naive startswith('/') check. Rule it out before anything else.
+    if raw.startswith("//"):
+        return default
+    if raw.startswith("/"):
+        return raw
+    try:
+        u = urllib.parse.urlparse(raw)
+    except Exception:
+        return default
+    if u.scheme != "https" or not u.hostname:
+        return default
+    host = u.hostname.lower()
+    # EXACT suffix on a dot boundary, or the apex itself. Not endswith().
+    if host != RETURN_HOST_SUFFIX and not host.endswith("." + RETURN_HOST_SUFFIX):
+        return default
+    return urllib.parse.urlunparse(u)
+
+
 def cookie_domain_attr():
     """The Domain attribute, or nothing when host-only is configured."""
     return f"; Domain={COOKIE_DOMAIN}" if COOKIE_DOMAIN else ""
@@ -614,7 +666,11 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             # succeeds; reach is decided per request, so revocation is immediate.
             cookie = (f"{SESSION_COOKIE}={sign_session(webid, COOKIE_KEY)}; Path=/; HttpOnly; "
                       f"Secure; SameSite=Lax; Max-Age={SESSION_TTL}{cookie_domain_attr()}")
-            return self._redirect(return_path if return_path.startswith("/") else "/", cookie)
+            # #3791 — validated, so a cross-host return works and an attacker's
+            # host does not. The old check accepted any string starting with "/"
+            # and dropped everything else, which is why a visitor bounced here
+            # from another host landed on this door's root.
+            return self._redirect(safe_return(return_path), cookie)
 
         if path == AUTH_PREFIX + "whoami":
             webid = self._session_webid()
