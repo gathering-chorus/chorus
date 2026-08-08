@@ -16,6 +16,10 @@ guard = sys.argv[1]
 ns = {"__name__": "probe"}
 exec(compile(open(guard).read().split("ALLOW, ALLOW_SOURCE = load_allow()")[0], "guard", "exec"), ns)
 safe_return = ns["safe_return"]
+# #3796 — a refusal now falls back to the guard's LANDING page, not "/". Comparing
+# against a hardcoded "/" here would read every refusal as an ACCEPT: the probe
+# would go green while the validator refused nothing. Read the constant.
+LANDING = ns["LANDING"]
 
 ACCEPT, REFUSE = "accept", "refuse"
 
@@ -54,7 +58,7 @@ VECTORS = [
 bad = []
 for raw, want, why in VECTORS:
     got = safe_return(raw)
-    accepted = got != "/"
+    accepted = got != LANDING
     if (want == ACCEPT) != accepted:
         bad.append(f"{raw!r}: wanted {want}, got {got!r} — {why}")
 
