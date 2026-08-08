@@ -1168,6 +1168,20 @@ io.use((socket, next) => {
 // in the allow-set, fresh) → allow; else the bridge token as migration fallback.
 /** The CSS session cookie leg of socket auth — same contract as the HTTP gate. */
 async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
+  // #3797 — the GUARD session first. Signing in at the Chorus door mints
+  // chorus_share_session; it never mints clearing_session. Before this, the
+  // socket matched only /clearing_session=/, so a person who signed in once
+  // loaded the page and then watched "connecting…" forever: authenticated for
+  // reading, anonymous for speaking. (Jeff, 2026-08-08.)
+  //
+  // Identity is SHARED; admission stays LOCAL. Holding a guard cookie proves
+  // WHO you are, never that this app admits you — so the WebID still goes
+  // through the Clearing's own isWebIdAllowed, exactly as the clearing_session
+  // leg below does. Widening this to "guard cookie means admitted" is the thing
+  // per-app authorization exists to prevent.
+  const guardWebId = await shareSessionWebId({ headers: { cookie: cookieHeader } } as unknown as Request);
+  if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
+
   const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
   if (!sessMatch) return false;
   const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(sessMatch[1]), SESSION_SECRET, 'session');
@@ -1232,6 +1246,15 @@ io.on('connection', (socket) => {
       fromField: data.from,
       isLocal: isLocalConnection(hdrs, socket.handshake.address || ''),
       verifySession: (cookieHeader) => {
+        // #3797 — a message from someone who signed in at the Chorus door must
+        // be attributed to THEM. Without this the guard session verifies for
+        // the socket but carries no identity here, so the message arrives
+        // unattributed even though the sender is known.
+        const guardRaw = shareSessionFromHeader(cookieHeader);
+        if (guardRaw) {
+          const v = verifyShareSession(guardRaw, readCookieKey());
+          if (v.ok) return { webid: v.webid, fresh: true };
+        }
         const m = cookieHeader.match(/clearing_session=([^;]+)/);
         if (!m) return null;
         const sess = verifyCookie<{ webid?: string; iat?: number }>(decodeURIComponent(m[1]), SESSION_SECRET, 'session');
@@ -1381,7 +1404,11 @@ io.on('connection', (socket) => {
 
 // Export for tests (#2167) — tests import `app` and `server` and spin up
 // on an ephemeral port themselves, so importing the module doesn't bind :3470.
-export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessionTailer };
+// #3797 — socketSessionAuthed is exported as a TEST SEAM. It was untestable
+// before: module-scoped, and every socket test connected from 127.0.0.1 where
+// isLocalConnection short-circuits ahead of it, so the branch that refused Jeff
+// had never been executed by any test in its life.
+export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessionTailer, socketSessionAuthed };
 
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
