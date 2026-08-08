@@ -75,7 +75,13 @@ assert "body proxied from upstream" test "$BODY" = "public page"
 
 # allowlist
 assert "non-allowlisted path -> 404 (never proxied)" test "$(code_alice http://127.0.0.1:$G_PORT/secret/y.html)" = "404"
-assert "root -> 404 when only /about is shared" test "$(code_alice http://127.0.0.1:$G_PORT/)" = "404"
+# #3796 — this used to assert root -> 404, which PINNED THE BUG as correct
+# behaviour: a signed-in caller arriving at the front door got "path not shared",
+# and Jeff read that as a lockout. The root is the guard's own door, not an
+# upstream path — it now sends a signed-in caller to the landing page. The
+# not-widened guarantee is asserted separately below.
+assert "root sends a signed-in caller to the landing page, never 404" \
+  test "$(code_alice http://127.0.0.1:$G_PORT/)" = "302"
 assert "prefix trickery /aboutX -> 404" test "$(code_alice http://127.0.0.1:$G_PORT/aboutX)" = "404"
 
 # read-only: every write verb refused at the guard
@@ -453,6 +459,43 @@ assert "return-URL validator behaves on every vector" test "$?" -eq 0
 # that accepted everything would pass the run above.
 SHARE_RETURN_HOST_SUFFIX="somewhere-else.test" python3 "$RETPROBE" "$GUARD" >/dev/null 2>&1
 assert "NEGATIVE PROOF: with a different trusted suffix, the accepts REFUSE" test "$?" -eq 1
+
+# --- #3796: sign-in must not end in a 404 -----------------------------------
+#
+# Jeff signed in successfully and got "path not shared" — the guard's own root
+# was never in its path allowlist, so the default landing was a 404. He read it
+# as a lockout for twenty minutes, because a refusal that cannot name its own
+# state is indistinguishable from any other refusal.
+#
+# A fallback that can 404 is not a fallback. These pin both halves.
+
+# Reuse the guard already running on $G_PORT rather than standing up another —
+# a second instance added a failure mode (port/startup timing) that had nothing
+# to do with what these assertions are about.
+
+assert "signed in at the root goes to the landing page, not a 404" \
+  test "$(code_alice http://127.0.0.1:$G_PORT/)" = "302"
+
+LANDBODY=$(as_alice "http://127.0.0.1:$G_PORT/_auth/welcome")
+assert "the landing page renders and names the caller" \
+  sh -c "printf '%s' \"\$0\" | grep -q 'Signed in as'" "$LANDBODY"
+
+# NEGATIVE PROOF: this did not widen reach. The root is NOT proxied — an
+# unallowlisted upstream path is still refused, so unblocking a person did not
+# quietly expose whatever the upstream serves.
+assert "NEGATIVE PROOF: an unallowlisted upstream path is still 404" \
+  test "$(code_alice http://127.0.0.1:$G_PORT/secret/y.html)" = "404"
+
+# NEGATIVE PROOF: anonymous root is unchanged — still a refusal, still 401.
+assert "NEGATIVE PROOF: anonymous at the root still gets the sign-in page (401)" \
+  test "$(code -H 'Accept: text/html' http://127.0.0.1:$G_PORT/)" = "401"
+
+# The fallback target must be servable BY THE GUARD ITSELF. Asserted rather than
+# assumed: the whole bug was a fallback pointing at a path nothing served.
+python3 "$RETPROBE" "$GUARD" >/dev/null 2>&1
+assert "return-URL vectors still behave with the new fallback" test "$?" -eq 0
+assert "the fallback target is a guard-served route, not an upstream path" \
+  sh -c "grep -q 'LANDING = AUTH_PREFIX' '$GUARD'"
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

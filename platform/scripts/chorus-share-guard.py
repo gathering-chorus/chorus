@@ -240,7 +240,17 @@ BACKDROP = _backdrop_data_uri()
 RETURN_HOST_SUFFIX = os.environ.get("SHARE_RETURN_HOST_SUFFIX", "lightlifeurbangardens.com").strip().lower()
 
 
-def safe_return(raw, default="/"):
+# #3796 — where a signed-in caller lands, and where a refused return falls back to.
+#
+# Both were "/" and "/" was never servable: the guard's own root is not in the path
+# allowlist, so signing in redirected to a 404. Jeff was authenticated — his WebID is on
+# the request in the audit line — and got "path not shared", which is indistinguishable
+# from being locked out when nothing says otherwise. He read it as a lockout for twenty
+# minutes. Fourth instance in one day of a refusal that cannot name its own state.
+LANDING = AUTH_PREFIX + "welcome"
+
+
+def safe_return(raw, default=None):
     """A return target we are willing to send a signed-in visitor to.
 
     Host-relative paths pass through unchanged. Absolute URLs must be https and
@@ -249,6 +259,7 @@ def safe_return(raw, default="/"):
     through — collapses to the default. Refusing is silent: a visitor did not
     cause this and should not be shown an error, they should just be signed in.
     """
+    default = LANDING if default is None else default
     if not raw:
         return default
     # //evil.tld/x is host-relative to a browser and looks like a path to a
@@ -550,6 +561,12 @@ class Guard(BaseHTTPRequestHandler):
   a.btn:hover {{ background:#2ea043; }}
   a.btn:focus-visible {{ outline:3px solid #2ea043; outline-offset:3px; }}
   code {{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8em; word-break:break-all; color:#e6edf3; }}
+  p.who {{ color:#e6edf3; font-size:1rem; margin:0 0 1rem; }}
+  p.who b {{ font-weight:600; }}
+  a.lnk {{ display:block; padding:.6rem; margin-bottom:.5rem; border:1px solid #30363d;
+           border-radius:6px; color:#e6edf3; text-decoration:none; font-size:.95rem; }}
+  a.lnk:hover {{ border-color:#238636; }}
+  a.quiet {{ color:#8b949e; font-size:.85rem; text-decoration:none; }}
 </style></head>
 <body><main>
 <h1>Chorus</h1>
@@ -683,6 +700,30 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             self.wfile.write(payload)
             return True
 
+        if path == AUTH_PREFIX + "welcome":
+            webid = self._session_webid()
+            if not webid:
+                return self._sign_in_page("/")
+            # The FIRST path segment names the person: id.<host>/jeff/profile/card#me
+            # → "jeff". Taking [-2] gives "profile", which is the pod layout, not a name —
+            # and it would have rendered "Signed in as profile" for everyone.
+            try:
+                name = (urllib.parse.urlparse(webid).path.strip("/").split("/") or [""])[0] or webid
+            except Exception:
+                name = webid
+            links = "".join(
+                f'<a class="lnk" href="{h}">{t}</a>'
+                for t, h in [
+                    ("The model", "/athena/model.html"),
+                    ("Domains", "/domains"),
+                    ("The Clearing", "https://clearing.lightlifeurbangardens.com/"),
+                ]
+            )
+            return self._page(200, "Signed in", f"""
+<p class="who">Signed in as <b>{name}</b></p>
+{links}
+<p><a class="quiet" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
+
         if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
             return self._sign_in_page(args.get("next", ["/"])[0])
 
@@ -719,6 +760,12 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
 being allowed in. Access is granted per person; ask Jeff to add you.</p>
 <p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
+
+        # #3796 — the root is the front door, not an upstream path. A signed-in caller
+        # arriving here gets the landing page; without this the allowlist answers "path
+        # not shared" and a successful sign-in ends in a 404.
+        if self.path.split("?")[0] in ("/", ""):
+            return self._redirect(LANDING)
 
         upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
         if upstream is None:
