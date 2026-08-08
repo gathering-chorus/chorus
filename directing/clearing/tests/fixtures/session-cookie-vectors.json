@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "#3790 \u2014 cross-implementation cookie vectors. ONE artifact, TWO consumers:",
+    "the guard's Python verifier and the Clearing's TypeScript verifier both assert",
+    "against this file. DEC-2209 clause 2 asks for a shared verifier crate; until",
+    "#3685 delivers it there are two implementations of one contract, and drift",
+    "between them would surface as a login that works on one surface and not the",
+    "other. This turns that drift into a red test instead of a Tuesday outage.",
+    "The key here is a TEST key, named below, so the file stays committable."
+  ],
+  "key_b64u": "dGVzdC1rZXktMzc5MC1ub3QtdGhlLWxpdmUtb25lLS0tLS0tLS0",
+  "now": 1786100000,
+  "vectors": [
+    {
+      "name": "valid",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9hbGljZS9wcm9maWxlL2NhcmQjbWUiLCAiZXhwIjogMTc4NjEwMzYwMH0.U38wSsbACQxBIoLUoeBujZOWsN92H4-10Ov2_GIc59I",
+      "expect": "accept",
+      "webid": "https://id.example.test/alice/profile/card#me",
+      "why": "the happy path \u2014 without it every negative below passes against a verifier that refuses everything"
+    },
+    {
+      "name": "tampered-mac",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9hbGljZS9wcm9maWxlL2NhcmQjbWUiLCAiZXhwIjogMTc4NjEwMzYwMH0.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect": "reject",
+      "why": "signature must be checked, in constant time"
+    },
+    {
+      "name": "tampered-payload",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9tYWxsb3J5I21lIiwgImV4cCI6IDE3ODYxMDM2MDB9.U38wSsbACQxBIoLUoeBujZOWsN92H4-10Ov2_GIc59I",
+      "expect": "reject",
+      "why": "a swapped identity with a stolen mac \u2014 the attack the signature exists for"
+    },
+    {
+      "name": "expired",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9hbGljZS9wcm9maWxlL2NhcmQjbWUiLCAiZXhwIjogMTc4NjA5OTk5OX0.HhrJB7MQuQFmvrPmldtHLA_Ak-QOJapFSFkVPhWQ9Bw",
+      "expect": "reject",
+      "why": "exp is in the past"
+    },
+    {
+      "name": "missing-exp",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9hbGljZS9wcm9maWxlL2NhcmQjbWUifQ.Z2O-t2c2MX-j0BDWRnmxBeO7BQbSbC8WIGqk65TluT0",
+      "expect": "reject",
+      "why": "a correctly-signed cookie with no expiry never expires; absent exp is a refusal, not a default"
+    },
+    {
+      "name": "payload-not-json",
+      "cookie": "dGhpcyBpcyBub3QganNvbg.G2czHtx4Ad24o84AQ4InDlpQ0YRNlZ2-73_wIZYrTvU",
+      "expect": "reject",
+      "why": "signed garbage is still garbage \u2014 verify must not throw, it must refuse"
+    },
+    {
+      "name": "mac-over-raw-json",
+      "cookie": "eyJ3ZWJpZCI6ICJodHRwczovL2lkLmV4YW1wbGUudGVzdC9hbGljZS9wcm9maWxlL2NhcmQjbWUiLCAiZXhwIjogMTc4NjEwMzYwMH0.vrAdidGSnhWPPA1okyHMFnUccxMlBBbrZMwaBzah3Jg",
+      "expect": "reject",
+      "why": "THE TRAP: mac computed over the raw JSON instead of the base64url payload string. An implementation that makes this mistake rejects every real cookie AND accepts this one, so it is the single vector that catches the whole class."
+    },
+    {
+      "name": "no-separator",
+      "cookie": "notacookie",
+      "expect": "reject",
+      "why": "malformed input must refuse, never raise"
+    },
+    {
+      "name": "empty",
+      "cookie": "",
+      "expect": "reject",
+      "why": "absent is not anonymous-but-fine; it is nobody"
+    }
+  ]
+}
