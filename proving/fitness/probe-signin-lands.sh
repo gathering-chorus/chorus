@@ -56,8 +56,12 @@ if [ "$PROVE_RED" -eq 1 ]; then
   python3 - "$GUARD" "$RUN" <<'PY'
 import sys, re
 src = open(sys.argv[1]).read()
+# The #3796 guarantee moved when the root became servable (#3765): the redirect
+# is now conditional on the root NOT being served. Same guarantee, later line.
+# The old pattern stopped matching and this proof REFUSED rather than passing —
+# which is the whole reason it was written to refuse.
 out = re.sub(
-    r'\n *if self\.path\.split\("\?"\)\[0\] in \("/", ""\):\n *return self\._redirect\(LANDING\)\n',
+    r'\n *if upstream is None and self\.path\.split\("\?"\)\[0\] in \("/", ""\):\n *return self\._redirect\(LANDING\)\n',
     '\n', src, count=1)
 if out == src:
     sys.stderr.write("row2: could not remove the #3796 root case — the guard changed shape.\n"

@@ -1,3 +1,7 @@
+# The entrance. "/" means the ROOT and only the root (route() was narrowed in
+# #3765 — it used to match every path, so this line would have shared the whole
+# of :3340 while reading like it shared one page).
+/
 # chorus share-guard allowlist (#3744)
 #
 # Path prefixes reachable through the public tunnel, with basic auth, GET/HEAD

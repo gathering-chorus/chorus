@@ -505,9 +505,20 @@ def route(path, allow, default_upstream):
     First match wins, so ordering in the file is meaningful for overlapping
     prefixes; the longest-prefix subtlety is deliberately NOT introduced, since a
     reviewer reading top-to-bottom should be able to predict the outcome.
+
+    A bare "/" entry means the ROOT, and only the root. It previously matched
+    every path, so allowlisting the entrance would have quietly shared the whole
+    upstream — every internal page on :3340 — off one line that reads like it
+    shares one page. Narrowing it is strictly safer: nothing in the allowlist
+    used "/" as a wildcard, and no wildcard spelling replaces it, because the
+    file exists precisely so that reach is enumerated rather than implied.
     """
     for p, upstream in allow:
-        if p == "/" or path == p or path.startswith(p.rstrip("/") + "/"):
+        if p == "/":
+            if path in ("/", ""):
+                return upstream or default_upstream
+            continue
+        if path == p or path.startswith(p.rstrip("/") + "/"):
             return upstream or default_upstream
     return None
 
@@ -761,13 +772,21 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
 <p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
 
-        # #3796 — the root is the front door, not an upstream path. A signed-in caller
-        # arriving here gets the landing page; without this the allowlist answers "path
-        # not shared" and a successful sign-in ends in a 404.
-        if self.path.split("?")[0] in ("/", ""):
+        upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
+
+        # #3796, revised. The rule that mattered was never "the root redirects" — it
+        # was "a successful sign-in must not end in a 404". That is still enforced,
+        # just one step later: the root redirects to the landing page ONLY when the
+        # root is not itself served. Allowlist "/" and a signed-in caller gets the
+        # entrance; leave it out and they get the landing page, exactly as before.
+        #
+        # Sequenced deliberately. #3796 was the fix for a twenty-minute lockout this
+        # afternoon, and the landing page is also where safe_return falls back, so
+        # the two must not move at once: the fallback keeps pointing at a page that
+        # exists whichever way the allowlist is configured.
+        if upstream is None and self.path.split("?")[0] in ("/", ""):
             return self._redirect(LANDING)
 
-        upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
         if upstream is None:
             return self._deny(404, "path not shared\n")
         req = urllib.request.Request(upstream + self.path, method="GET")
