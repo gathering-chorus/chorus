@@ -65,6 +65,14 @@ COOKIE_DOMAIN = os.environ.get("SHARE_COOKIE_DOMAIN", ".lightlifeurbangardens.co
 SESSION_TTL = int(os.environ.get("SHARE_SESSION_TTL", str(12 * 3600)))
 AUTH_PREFIX = "/_auth/"
 
+# The public path this guard is mounted under, e.g. "/chorus". Empty means it is
+# mounted at a host root, which is how it runs today. Normalised so that "chorus",
+# "/chorus" and "/chorus/" all mean the same thing — a trailing slash here would
+# make every stripped path start without one and 404 the lot.
+PATH_PREFIX = "/" + os.environ.get("SHARE_PATH_PREFIX", "").strip().strip("/")
+if PATH_PREFIX == "/":
+    PATH_PREFIX = ""
+
 UPSTREAM = os.environ.get("SHARE_UPSTREAM", "http://localhost:3000").rstrip("/")
 
 
@@ -747,6 +755,32 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         return self._deny(404, "no such sign-in route\n")
 
     def _handle(self, body_allowed):
+        # #3765 — Jeff's four-URL scheme: one host, and every Chorus surface a
+        # child of /chorus. cloudflared matches a path but does not rewrite it,
+        # so the guard receives /chorus/athena and the service behind it still
+        # serves /athena. Stripping here rather than at the tunnel keeps the
+        # allowlist written in the SERVICE's own paths — otherwise every entry
+        # would carry a prefix that has nothing to do with what it names, and a
+        # rename of the public path would silently unshare everything.
+        #
+        # Done first, before any routing or auth decision, so exactly one place
+        # in this file knows the public path differs from the served path.
+        if PATH_PREFIX:
+            p, sep, q = self.path.partition("?")
+            if p == PATH_PREFIX or p == PATH_PREFIX + "/":
+                self.path = "/" + (sep + q if sep else "")
+            elif p.startswith(PATH_PREFIX + "/"):
+                self.path = p[len(PATH_PREFIX):] + (sep + q if sep else "")
+            else:
+                # Mounted under a path means reachable ONLY under that path.
+                # The first version left non-matching paths alone, so the guard
+                # served /athena AND /chorus/athena — ignoring the prefix rather
+                # than enforcing it. Unreachable through today's tunnel, which is
+                # exactly why it would have sat there unnoticed until the tunnel
+                # changed. Caught by asserting the unprefixed path is REFUSED,
+                # not merely that the prefixed one works.
+                return self._deny(404, "not served at this path\n")
+
         if self.path.split("?")[0].startswith(AUTH_PREFIX):
             return self._auth_routes()
 
