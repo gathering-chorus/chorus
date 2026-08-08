@@ -19,7 +19,12 @@
 #                     state is reproducible without breaking production
 #   --expect-red      assert the scored body FAILS — the negative proof. A
 #                     measure that has never been shown to go red is decoration.
-set -uo pipefail
+set -u
+# Deliberately NOT pipefail. `printf ... | grep -q` returns grep's status, but
+# grep -q exits the instant it matches, breaking the pipe under printf — and
+# pipefail then reports the whole pipeline as failed, so a MATCH reads as a
+# MISS. It surfaced in row 2 first; this probe had the identical construct and
+# was one larger fixture away from the same silent inversion.
 
 URL="${FITNESS_PUBLIC_ROOT:-https://lightlifeurbangardens.com/}"
 FIXTURE=""
