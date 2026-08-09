@@ -258,6 +258,18 @@ RETURN_HOST_SUFFIX = os.environ.get("SHARE_RETURN_HOST_SUFFIX", "lightlifeurbang
 LANDING = AUTH_PREFIX + "welcome"
 
 
+# #3765 — /clearing, served as a REDIRECT to the Clearing's own hostname.
+#
+# The Clearing is a socket.io app: long-poll POSTs and a websocket upgrade,
+# neither of which can ride a GET/HEAD-only body proxy — allowlisting the path
+# would produce a page that loads and a socket that dies, which is precisely the
+# refusal-that-cannot-name-itself class (#3796) this guard exists to end. It
+# already has its own tunnel ingress, and the session cookie spans the parent
+# domain (#3790), so a signed-in caller arrives there still signed in.
+CLEARING_URL = os.environ.get(
+    "SHARE_CLEARING_URL", "https://clearing.lightlifeurbangardens.com/")
+
+
 def safe_return(raw, default=None):
     """A return target we are willing to send a signed-in visitor to.
 
@@ -735,7 +747,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 for t, h in [
                     ("The model", "/athena/model.html"),
                     ("Domains", "/domains"),
-                    ("The Clearing", "https://clearing.lightlifeurbangardens.com/"),
+                    ("The Clearing", CLEARING_URL),
                 ]
             )
             return self._page(200, "Signed in", f"""
@@ -805,6 +817,12 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
 being allowed in. Access is granted per person; ask Jeff to add you.</p>
 <p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
+
+        # After the identity checks, deliberately: an anonymous caller asking for
+        # /clearing signs in HERE first and is then sent over, so the flow proves
+        # one sign-in carries across hosts rather than sidestepping the door.
+        if self.path.split("?")[0] in ("/clearing", "/clearing/"):
+            return self._redirect(CLEARING_URL)
 
         upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
 

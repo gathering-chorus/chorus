@@ -538,5 +538,43 @@ assert "return-URL vectors still behave with the new fallback" test "$?" -eq 0
 assert "the fallback target is a guard-served route, not an upstream path" \
   sh -c "grep -q 'LANDING = AUTH_PREFIX' '$GUARD'"
 
+# --- #3765: the entrance, and /clearing --------------------------------------
+#
+# Jeff: the top-level Chorus page IS a page, and signing in should land you on
+# it. Allowlisting "/" is only safe because route() now treats a bare "/" as an
+# exact match — before the narrowing it matched EVERY path, so the entrance line
+# would have shared the whole upstream. The negative proof here is the exact
+# violation that narrowing exists to prevent: with "/" allowlisted, an
+# unallowlisted upstream path must still refuse. Under the old matching it
+# answered 200, so this assertion is the one that goes red on the bug.
+
+echo "--- #3765 entrance + /clearing ---"
+echo "chorus entrance" > "$TEST_ROOT/www/index.html"
+GE_PORT=$(pick_port)
+SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/,/about" \
+  SHARE_PORT="$GE_PORT" python3 "$GUARD" >/dev/null 2>&1 &
+GE_PID=$!
+wait_up "$GE_PORT" "entrance guard" || exit 1
+
+assert "allowlisted '/' serves the entrance page to a signed-in caller" \
+  test "$(as_alice http://127.0.0.1:$GE_PORT/)" = "chorus entrance"
+assert "NEGATIVE PROOF: '/' admits the root and ONLY the root — /secret/y.html still 404" \
+  test "$(code_alice http://127.0.0.1:$GE_PORT/secret/y.html)" = "404"
+assert "NEGATIVE PROOF: anonymous at the served root is still refused (401)" \
+  test "$(code -H 'Accept: text/html' http://127.0.0.1:$GE_PORT/)" = "401"
+
+# /clearing is a redirect to the Clearing's own hostname, never a proxy: the
+# Clearing is a socket.io app (long-poll POSTs + a websocket upgrade), and this
+# guard is GET/HEAD-only by design — proxying the path would produce a page that
+# loads and a socket that dies.
+CLR_LOC=$(curl -s -D - -o /dev/null -H "Cookie: chorus_share_session=$SESS_ALICE" \
+  "http://127.0.0.1:$GE_PORT/clearing" | tr -d '\r' | awk '/^Location:/{print $2}')
+assert "/clearing sends a signed-in caller to the Clearing's own host" \
+  test "$CLR_LOC" = "https://clearing.lightlifeurbangardens.com/"
+assert "NEGATIVE PROOF: anonymous /clearing must sign in HERE first, not be handed on" \
+  sh -c "curl -s -D - -o /dev/null 'http://127.0.0.1:$GE_PORT/clearing' | tr -d '\r' | awk '/^Location:/{print \$2}' | grep -q '^/_auth/login'"
+
+kill "$GE_PID" 2>/dev/null
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
