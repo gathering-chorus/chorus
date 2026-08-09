@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  chorus share-guard, path-mounted instance (#3804) — llug.com/chorus IS the page.
+
+  Same code, same governed policy files (share-allowlist.txt, share-principals.txt),
+  same runtime state file as com.chorus.share-guard — one cookie key means one
+  sign-in works on both surfaces, and one OIDC client carries every callback in
+  the family. What differs is the MOUNT: this instance answers the apex domain's
+  /chorus path (cloudflared ingress rule -> :8898), so SHARE_PATH_PREFIX strips
+  the public prefix and SHARE_PUBLIC_ORIGIN carries it in the redirect URI.
+
+  Adding an instance here adds NO reach: both instances enforce the same
+  allowlist and the same principals; a path unlisted there is refused here too.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.share-guard-path</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/share-guard-wrapper.sh</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>SHARE_UPSTREAM</key>
+        <string>http://localhost:3340</string>
+        <key>SHARE_PORT</key>
+        <string>8898</string>
+        <key>SHARE_BIND</key>
+        <string>127.0.0.1</string>
+        <key>SHARE_PATH_PREFIX</key>
+        <string>/chorus</string>
+        <key>SHARE_OIDC_ISSUER</key>
+        <string>https://id.lightlifeurbangardens.com</string>
+        <key>SHARE_PUBLIC_ORIGIN</key>
+        <string>https://lightlifeurbangardens.com/chorus</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/share-guard-path.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/share-guard-path.log</string>
+</dict>
+</plist>
