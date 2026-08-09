@@ -56,5 +56,38 @@ ok "/chorusX is not treated as the prefix"   "$(code /chorusX/athena/)"         
 # ever authenticate — the failure would present as "the door doesn't exist".
 ok "/chorus/_auth/ is the sign-in page"      "$(curl -s -o /dev/null --max-time 10 -w '%{http_code}' -H 'Accept: text/html' "$B/chorus/_auth/")" "401"
 
+# --- #3805: guard-authored URLs speak the visitor's frame -------------------
+#
+# Wren's flows caught sign-in from /chorus delivering the garden site's 404:
+# every self-referential URL the guard emitted was written in the STRIPPED
+# frame, so the browser left the mount. These pin the emissions; the guard's
+# main suite pins the unmounted frame (unprefixed URLs), which together form
+# the negative proof that pub() is frame-aware, not a blanket prepend.
+
+# A LISTED path, no session, non-HTML: the script-shaped caller gets a 302 to
+# sign-in. (An UNLISTED path 404s before auth — that is #3765's refusal fix, so
+# it cannot be the probe here.)
+LOC=$(curl -s -D - -o /dev/null --max-time 10 "$B/chorus/athena/" | tr -d '\r' | awk '/^Location:/{print $2}')
+ok "anonymous redirect stays under the mount" \
+   "$(printf '%s' "$LOC" | grep -c '^/chorus/_auth/login?next=%2Fchorus')" "1"
+
+SIGNIN=$(curl -s --max-time 10 -H 'Accept: text/html' "$B/chorus/")
+ok "sign-in link on the page carries the mount"      "$(printf '%s' "$SIGNIN" | grep -c 'href="/chorus/_auth/login')" "1"
+ok "sign-in next value is the PUBLIC path"           "$(printf '%s' "$SIGNIN" | grep -c 'next=%2Fchorus')" "1"
+
+# Browser-provided next values are already public-frame: they must pass through
+# UNTOUCHED. A blanket prepend would emit /chorus/chorus here — the double-mount
+# this assertion exists to catch.
+DOUBLE=$(curl -s --max-time 10 "$B/chorus/_auth/?next=%2Fchorus%2Fathena%2F")
+ok "browser-provided next is NOT re-prefixed"        "$(printf '%s' "$DOUBLE" | grep -c 'next=%2Fchorus%2Fchorus')" "0"
+ok "browser-provided next passes through intact"     "$(printf '%s' "$DOUBLE" | grep -c 'next=%2Fchorus%2Fathena')" "1"
+
+LOGOUT=$(curl -s -D - -o /dev/null --max-time 10 -H "Cookie: chorus_share_session=$S" "$B/chorus/_auth/logout" | tr -d '\r' | awk '/^Location:/{print $2}')
+ok "sign-out lands back under the mount"             "$LOGOUT" "/chorus/"
+
+WELCOME=$(curl -s --max-time 10 -H "Cookie: chorus_share_session=$S" "$B/chorus/_auth/welcome")
+ok "welcome links carry the mount"                   "$(printf '%s' "$WELCOME" | grep -c 'href="/chorus/athena/model.html"')" "1"
+ok "welcome sign-out carries the mount"              "$(printf '%s' "$WELCOME" | grep -c 'href="/chorus/_auth/logout"')" "1"
+
 echo "=== prefix suite: $pass passed, $fail failed ==="
 [ "$fail" -eq 0 ]

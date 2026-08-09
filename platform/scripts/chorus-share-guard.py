@@ -76,6 +76,23 @@ if PATH_PREFIX == "/":
 UPSTREAM = os.environ.get("SHARE_UPSTREAM", "http://localhost:3000").rstrip("/")
 
 
+def pub(path):
+    """A guard-authored host-relative URL, spoken in the VISITOR'S frame. (#3805)
+
+    Internally every path is stripped of the mount prefix, and every URL this
+    code writes is correct in that stripped frame — which is the wrong frame for
+    the person reading it. Under a path mount, /_auth/login leaves the mount and
+    lands on whatever else the host serves; Wren's flows watched sign-in deliver
+    the garden site's 404. Same class as the localhost 301s the same morning: a
+    URL right where the code lives and wrong where the visitor lives.
+
+    Applied at EMISSION of guard-authored literals ONLY. Values that arrived
+    from the browser (a next= parameter, a callback return path) are already in
+    the visitor's frame — prefixing those again would double the mount.
+    """
+    return PATH_PREFIX + path if path.startswith("/") else path
+
+
 def load_allow():
     """#3744 — the allowlist is a GOVERNED FILE, not an env var captured at launch.
 
@@ -279,7 +296,7 @@ def safe_return(raw, default=None):
     through — collapses to the default. Refusing is silent: a visitor did not
     cause this and should not be shown an error, they should just be signed in.
     """
-    default = LANDING if default is None else default
+    default = pub(LANDING) if default is None else default
     if not raw:
         return default
     # //evil.tld/x is host-relative to a browser and looks like a path to a
@@ -632,7 +649,7 @@ class Guard(BaseHTTPRequestHandler):
         # "just chorus" — Jeff, 2026-08-07. No tagline: the card carries the name
         # and the action, nothing else.
         return self._page(401, "Sign in", f"""
-<a class="btn" href="{AUTH_PREFIX}login?next={nxt}">Sign in</a>""")
+<a class="btn" href="{pub(AUTH_PREFIX)}login?next={nxt}">Sign in</a>""")
 
     def _redirect(self, location, cookie=None):
         self.send_response(302)
@@ -750,7 +767,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         if path == AUTH_PREFIX + "welcome":
             webid = self._session_webid()
             if not webid:
-                return self._sign_in_page("/")
+                return self._sign_in_page(pub("/"))
             # The FIRST path segment names the person: id.<host>/jeff/profile/card#me
             # → "jeff". Taking [-2] gives "profile", which is the pod layout, not a name —
             # and it would have rendered "Signed in as profile" for everyone.
@@ -761,24 +778,24 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
             links = "".join(
                 f'<a class="lnk" href="{h}">{t}</a>'
                 for t, h in [
-                    ("The model", "/athena/model.html"),
-                    ("Domains", "/domains"),
+                    ("The model", pub("/athena/model.html")),
+                    ("Domains", pub("/domains")),
                     ("The Clearing", CLEARING_URL),
                 ]
             )
             return self._page(200, "Signed in", f"""
 <p class="who">Signed in as <b>{name}</b></p>
 {links}
-<p><a class="quiet" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
+<p><a class="quiet" href="{pub(AUTH_PREFIX)}logout">Sign out</a></p>""")
 
         if path in (AUTH_PREFIX, AUTH_PREFIX.rstrip("/")):
-            return self._sign_in_page(args.get("next", ["/"])[0])
+            return self._sign_in_page(args.get("next", [pub("/")])[0])
 
         if path == AUTH_PREFIX + "logout":
             # Cleared at the SAME scope it was minted at — a cookie deleted at a
             # narrower scope than it was set leaves the original in place, so
             # sign-out would appear to work and do nothing.
-            return self._redirect("/", f"{SESSION_COOKIE}=; Path=/; Max-Age=0{cookie_domain_attr()}")
+            return self._redirect(pub("/"), f"{SESSION_COOKIE}=; Path=/; Max-Age=0{cookie_domain_attr()}")
 
         return self._deny(404, "no such sign-in route\n")
 
@@ -827,11 +844,11 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         if (_p not in ("/", "") and _p not in ("/clearing", "/clearing/")
                 and route(_p, ALLOW, UPSTREAM) is None):
             if self._wants_html():
-                return self._page(404, "Not found", """
+                return self._page(404, "Not found", f"""
 <h1>Not found</h1>
 <p>This page isn't shared through Chorus. If you followed a link here, the
 page may have moved or was never public.</p>
-<p><a class="btn" href="/">Go to the entrance</a></p>""")
+<p><a class="btn" href="{pub('/')}">Go to the entrance</a></p>""")
             return self._deny(404, "path not shared\n")
 
         webid = self._session_webid()
@@ -842,8 +859,8 @@ page may have moved or was never public.</p>
             # indication of what asked or why — which is the shape of a phishing
             # page. Say where they are first, then let them choose to go.
             if self._wants_html():
-                return self._sign_in_page(self.path)
-            return self._redirect(f"{AUTH_PREFIX}login?next={urllib.parse.quote(self.path, safe='')}")
+                return self._sign_in_page(pub(self.path))
+            return self._redirect(f"{pub(AUTH_PREFIX)}login?next={urllib.parse.quote(pub(self.path), safe='')}")
         # Authentication is not authorization (#3770): a valid session proves who
         # you are and nothing more. Checked per request so removing a line from
         # the allow-set revokes on the NEXT request, not at session expiry.
@@ -875,7 +892,7 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
         # the two must not move at once: the fallback keeps pointing at a page that
         # exists whichever way the allowlist is configured.
         if upstream is None and self.path.split("?")[0] in ("/", ""):
-            return self._redirect(LANDING)
+            return self._redirect(pub(LANDING))
 
         if upstream is None:
             return self._deny(404, "path not shared\n")
