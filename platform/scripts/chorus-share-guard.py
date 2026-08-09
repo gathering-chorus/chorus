@@ -460,8 +460,16 @@ def register_client(conf):
     """
     body = json.dumps({
         "client_name": "chorus-share-guard",
-        "redirect_uris": [REDIRECT_URI,
-                          "https://share.lightlifeurbangardens.com" + AUTH_PREFIX + "callback"],
+        # Every surface this guard family answers on, deduped. Two instances
+        # share one state file (one cookie key = one sign-in works everywhere,
+        # #3790) and therefore one client — so the registration must carry every
+        # instance's callback, not just this instance's own (#3804).
+        "redirect_uris": sorted({
+            REDIRECT_URI,
+            "https://chorus.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
+            "https://share.lightlifeurbangardens.com" + AUTH_PREFIX + "callback",
+            "https://lightlifeurbangardens.com/chorus" + AUTH_PREFIX + "callback",
+        }),
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
         "token_endpoint_auth_method": "client_secret_basic",
@@ -485,6 +493,14 @@ def oidc():
         conf = discover()
         STATE["_cache"]["conf"] = conf
     conf = STATE["_cache"]["conf"]
+    # #3804 — self-heal a stale registration. A second instance mounted under a
+    # path shares this state file; if the stored client predates that instance,
+    # its callback is not registered and every sign-in there is refused with a
+    # redirect_uri mismatch — an outage visible only from the new surface.
+    # Re-register (register_client now carries the whole family) rather than
+    # serve a client that cannot answer for this instance.
+    if "client" in STATE and REDIRECT_URI not in (STATE["client"].get("redirect_uris") or []):
+        del STATE["client"]
     if "client" not in STATE:
         STATE["client"] = register_client(conf)
         save_state(STATE_FILE, {k: v for k, v in STATE.items() if k != "_cache"})
