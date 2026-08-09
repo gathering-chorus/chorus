@@ -111,9 +111,15 @@ fi
 # C · an anonymous BROWSER is told where it is before being sent anywhere.
 #     Landing on a stranger's credential prompt with no context is the shape of
 #     a phishing page, whether or not it is one.
+#     Checked by what is ON the page, not by the word "chorus" — which appears
+#     in a URL, a footer, a stray comment, and would have passed a blank page
+#     served from this domain. Our door has a heading and a button; both, or it
+#     is not our door.
 anon=$(curl -s -H 'Accept: text/html' "$B/about/x.html")
-if ! grep -qi 'chorus' <<<"$anon"; then
-  fail="$fail an anonymous browser is not shown our own sign-in page first;"
+if ! grep -qi '<h1>Chorus</h1>' <<<"$anon"; then
+  fail="$fail an anonymous browser does not get our sign-in page (no Chorus heading);"
+elif ! grep -qiE '<a[^>]*class="btn"[^>]*>[^<]*Sign in' <<<"$anon"; then
+  fail="$fail the sign-in page has no way to actually sign in;"
 fi
 
 if [ -n "$fail" ]; then
