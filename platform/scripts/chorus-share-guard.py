@@ -796,6 +796,28 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         if self.path.split("?")[0].startswith(AUTH_PREFIX):
             return self._auth_routes()
 
+        # Wren's flow-suite catch (2026-08-09) — the sixth property, again: a
+        # refusal must name its own state. An unlisted path used to answer an
+        # anonymous browser with the sign-in page, which says "not signed in"
+        # when the truth is "not shared" — the visitor signs in, asks again,
+        # and is refused again: yesterday's loop, one door over. So: a path
+        # this guard does not serve refuses NOT-FOUND, identically with or
+        # without a session. This does let an anonymous caller distinguish
+        # listed from unlisted; accepted deliberately — on a read-only surface,
+        # a refusal that names its state beats hiding the allowlist's shape.
+        # The root and /clearing are the guard's own doors and stay on the
+        # sign-in path below.
+        _p = self.path.split("?")[0]
+        if (_p not in ("/", "") and _p not in ("/clearing", "/clearing/")
+                and route(_p, ALLOW, UPSTREAM) is None):
+            if self._wants_html():
+                return self._page(404, "Not found", """
+<h1>Not found</h1>
+<p>This page isn't shared through Chorus. If you followed a link here, the
+page may have moved or was never public.</p>
+<p><a class="btn" href="/">Go to the entrance</a></p>""")
+            return self._deny(404, "path not shared\n")
+
         webid = self._session_webid()
         if not webid:
             # A person gets a page; a script gets a status. Bouncing a browser

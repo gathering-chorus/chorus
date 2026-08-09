@@ -576,5 +576,26 @@ assert "NEGATIVE PROOF: anonymous /clearing must sign in HERE first, not be hand
 
 kill "$GE_PID" 2>/dev/null
 
+# --- Wren's flow-suite catch (2026-08-09): a refusal names its own state ------
+#
+# An unlisted path used to show an ANONYMOUS browser the sign-in page — "not
+# signed in" as the answer to "not shared". The visitor signs in, asks again,
+# is refused again: the sign-in loop, one door over (the quintet's sixth
+# property). Unlisted must refuse NOT-FOUND, identically with or without a
+# session. Run against the pre-fix guard, the first assertion here goes red
+# (it answered 401 with a sign-in body) — that is the violation this exists
+# to catch.
+
+assert "anonymous + unlisted path -> 404, not the sign-in page" \
+  test "$(code -H 'Accept: text/html' http://127.0.0.1:$G_PORT/secret/y.html)" = "404"
+ANON_UNLISTED=$(curl -s -H 'Accept: text/html' "http://127.0.0.1:$G_PORT/secret/y.html")
+assert "NEGATIVE PROOF: the anonymous unlisted body offers no sign-in" \
+  sh -c "! printf '%s' \"\$0\" | grep -qi 'sign in'" "$ANON_UNLISTED"
+SIGNED_UNLISTED=$(as_alice -H 'Accept: text/html' "http://127.0.0.1:$G_PORT/secret/y.html")
+assert "signed-in + unlisted path -> the same not-found, never the sign-in page" \
+  sh -c "printf '%s' \"\$0\" | grep -qi 'not found' && ! printf '%s' \"\$0\" | grep -qi 'sign in'" "$SIGNED_UNLISTED"
+assert "refusal is identical with and without a session (both 404)" \
+  test "$(code -H 'Accept: text/html' http://127.0.0.1:$G_PORT/secret/y.html)" = "$(code_alice -H 'Accept: text/html' http://127.0.0.1:$G_PORT/secret/y.html)"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
