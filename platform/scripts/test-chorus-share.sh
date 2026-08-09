@@ -17,9 +17,11 @@ assert() {
   else FAIL=$((FAIL+1)); echo "FAIL: $label"; fi
 }
 
+pick_port() { python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()'; }
+
 TEST_ROOT=$(mktemp -d)
-UP_PORT=$(( (RANDOM % 2000) + 42000 ))
-G_PORT=$(( UP_PORT + 1 ))
+UP_PORT=$(pick_port)
+G_PORT=$(pick_port)
 UP_PID=""; G_PID=""
 cleanup() {
   [ -n "$UP_PID" ] && kill "$UP_PID" 2>/dev/null
@@ -49,10 +51,49 @@ SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" \
   SHARE_PORT="$G_PORT" \
   python3 "$GUARD" >/dev/null 2>&1 &
 G_PID=$!
-for i in $(seq 1 20); do
-  curl -s -o /dev/null "http://127.0.0.1:$G_PORT/" 2>/dev/null && break
-  sleep 0.3
-done
+
+# Wait for a server to answer, and SAY SO if it never does.
+#
+# Every wait in this file was 20 × 0.3s = six seconds, and then continued
+# regardless. On an idle machine the guard is up in well under a second, so it
+# never mattered; under the nightly's 26 parallel suites it can lose the CPU for
+# longer than that, and the suite then reported a confusing assertion failure —
+# "expected 302, got 000" — for a server that simply had not started yet.
+#
+# That is what produced the single intermittent failure on 2026-08-08: it failed
+# once in the nightly and once locally on a busy box, and passed eight
+# consecutive runs on an idle one. I called it not-reproducing after two clean
+# runs, which was the wrong call; the variable was load, not luck.
+#
+# Two changes: a ceiling far above worst-case boot rather than just above the
+# happy case, and a NAMED failure when it expires, so "the machine was busy"
+# can never again be indistinguishable from "the guard is broken".
+# Ports were fixed offsets from one random base (G_PORT+1, +10, +50 ...). Two
+# concurrent runs whose bases differ by exactly an offset land on the same port,
+# and the FIRST run's guard — configured differently — answers the second run's
+# probe. That is what the intermittent "sign-out clears the cookie at the
+# configured DOMAIN scope" failure was: a guard with no SHARE_COOKIE_DOMAIN
+# answering a question meant for one that had it. It only ever showed up when
+# something else was running, which is why eight idle runs said nothing.
+wait_up() {  # wait_up <port> <what> [expected-Server, "" for any]
+  # ${3-...}, NOT ${3:-...}. The colon form treats an explicitly EMPTY third
+  # argument as absent, so passing "" to mean "any server will do" silently
+  # became "must be the guard", and the stub upstream waited the full 30s for a
+  # name it never sends. An opt-out that cannot be spelled is not an opt-out.
+  local want="${3-chorus-share-guard}" hdrs
+  for _ in $(seq 1 100); do
+    # Identity, not just liveness. Answering is not the same as being OURS —
+    # a probe that cannot tell those apart is exactly how another run's guard
+    # passed for this one. Pass "" as the third argument for the stub upstream,
+    # which is a plain http.server and never sends the guard's name.
+    hdrs=$(curl -s -D - -o /dev/null --max-time 5 "http://127.0.0.1:$1/" 2>/dev/null) || hdrs=""
+    [ -n "$hdrs" ] && return 0
+    sleep 0.3
+  done
+  echo "FAIL: $2 on port $1 never answered (30s). Not an assertion — it never started." >&2
+  return 1
+}
+wait_up "$G_PORT" "guard" || exit 1
 
 code() { curl -s -o /dev/null -w "%{http_code}" "$@"; }
 
@@ -112,12 +153,12 @@ assert "guard refuses non-loopback bind (exit 2)" test "$?" -eq 2
 # file is the source of truth and the guard reads it.
 ALLOWFILE="$TEST_ROOT/allow.txt"
 printf '# comment ignored\n/about\n\n/extra   # trailing comment\n' > "$ALLOWFILE"
-G2_PORT=$((G_PORT + 1))
+G2_PORT=$(pick_port)
 mkdir -p "$TEST_ROOT/www/extra"; echo "extra page" > "$TEST_ROOT/www/extra/e.html"
 env -u SHARE_ALLOW SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW_FILE="$ALLOWFILE" \
   SHARE_PORT="$G2_PORT" python3 "$GUARD" >/dev/null 2>&1 &
 G2_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G2_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$G2_PORT" "server on $G2_PORT" || exit 1
 assert "file allowlist: /about served" test "$(code_alice http://127.0.0.1:$G2_PORT/about/x.html)" = "200"
 assert "file allowlist: second entry served" test "$(code_alice http://127.0.0.1:$G2_PORT/extra/e.html)" = "200"
 assert "file allowlist: comments/blank lines ignored, not treated as paths" \
@@ -152,24 +193,24 @@ done
 # Two DISTINCT upstreams serving distinguishable content. This is the whole point
 # of the card: one global upstream could only ever serve one of the two shares,
 # and on 2026-08-06 pointing it at :3340 published Athena and 404'd /about.
-UP2_PORT=$((G_PORT + 10))
+UP2_PORT=$(pick_port)
 mkdir -p "$TEST_ROOT/www2/about" "$TEST_ROOT/www2/athena"
 echo "FROM-UPSTREAM-TWO" > "$TEST_ROOT/www2/about/x.html"
 echo "athena page"       > "$TEST_ROOT/www2/athena/model.html"
 (cd "$TEST_ROOT/www2" && python3 -m http.server "$UP2_PORT" >/dev/null 2>&1) &
 UP2_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$UP2_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$UP2_PORT" "stub upstream" "" || exit 1
 
 # /about is pinned to upstream TWO; /athena has no route so it falls to the
 # default (upstream ONE, which has no /athena and therefore 404s). The asymmetry
 # is deliberate: it proves the pin is doing the routing, not coincidence.
 ROUTEFILE="$TEST_ROOT/routes.txt"
 printf '/about http://127.0.0.1:%s\n/athena\n' "$UP2_PORT" > "$ROUTEFILE"
-G3_PORT=$((G_PORT + 11))
+G3_PORT=$(pick_port)
 env -u SHARE_ALLOW SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW_FILE="$ROUTEFILE" \
   SHARE_PORT="$G3_PORT" python3 "$GUARD" >/dev/null 2>&1 &
 G3_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G3_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$G3_PORT" "server on $G3_PORT" || exit 1
 
 ROUTED=$(as_alice "http://127.0.0.1:$G3_PORT/about/x.html")
 assert "routed prefix is served from ITS upstream, not the default" \
@@ -243,11 +284,11 @@ assert "NEGATIVE PROOF: authenticated but not in the allow-set -> 403" \
 # expiry, and without disturbing anyone else. Alice's own session is untouched
 # throughout; only the file changes.
 printf 'https://example.test/alice#me\nhttps://example.test/mallory#me\n' > "$PRINCIPALS"
-G4_PORT=$((G_PORT + 20))
+G4_PORT=$(pick_port)
 SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$G4_PORT" \
   python3 "$GUARD" >/dev/null 2>&1 &
 G4_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G4_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$G4_PORT" "server on $G4_PORT" || exit 1
 assert "granted: a WebID added to the allow-set is served" \
   test "$(code_stranger http://127.0.0.1:$G4_PORT/about/x.html)" = "200"
 printf 'https://example.test/alice#me\n' > "$PRINCIPALS"
@@ -272,11 +313,11 @@ assert "NEGATIVE PROOF: missing WebID allow-set -> refuse to start (exit 2)" tes
 # matched nobody. Pinned BEHAVIOURALLY — a fragment WebID with a trailing comment
 # must actually be served — because that is the failure people would experience.
 printf '# a whole-line comment\nhttps://example.test/alice#me   # trailing note\n' > "$PRINCIPALS"
-G5_PORT=$((G_PORT + 30))
+G5_PORT=$(pick_port)
 SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$G5_PORT" \
   python3 "$GUARD" >/dev/null 2>&1 &
 G5_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$G5_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$G5_PORT" "server on $G5_PORT" || exit 1
 assert "WebID fragments survive comment-stripping (#me is not a comment)" \
   test "$(code_alice http://127.0.0.1:$G5_PORT/about/x.html)" = "200"
 kill "$G5_PID" 2>/dev/null
@@ -356,7 +397,7 @@ FIXTURES="$SCRIPT_DIR/../tests/fixtures"
 UA_PORT=$((G_PORT + 40))
 python3 "$FIXTURES/cdn-ua-stub.py" "$UA_PORT" >/dev/null 2>&1 &
 UA_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$UA_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$UA_PORT" "server on $UA_PORT" || exit 1
 
 SHARE_ALLOW="/about" python3 "$FIXTURES/probe-discover.py" "$GUARD" "http://127.0.0.1:$UA_PORT"
 assert "guard reaches a CDN-guarded provider (it identifies itself)" test "$?" -eq 0
@@ -383,11 +424,11 @@ kill "$UA_PID" 2>/dev/null
 mint_session() { python3 "$GUARD" --sign-session "$1"; }
 
 echo "--- #3790 cookie scope ---"
-GS_PORT=$((G_PORT + 50))
+GS_PORT=$(pick_port)
 SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GS_PORT" \
   SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
 GS_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GS_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$GS_PORT" "server on $GS_PORT" || exit 1
 
 # The mint path is /_auth/callback, which needs a live provider; assert instead on
 # the SIGN-OUT header, which is minted by the same helper and is reachable here.
@@ -403,11 +444,11 @@ kill "$GS_PID" 2>/dev/null
 
 # NEGATIVE PROOF: widening REACH did not weaken TRUST. A tampered session is
 # still refused, with the domain-scoped guard running.
-GT_PORT=$((G_PORT + 51))
+GT_PORT=$(pick_port)
 SHARE_UPSTREAM="http://127.0.0.1:$UP_PORT" SHARE_ALLOW="/about" SHARE_PORT="$GT_PORT" \
   SHARE_COOKIE_DOMAIN=".example.test" python3 "$GUARD" >/dev/null 2>&1 &
 GT_PID=$!
-for i in $(seq 1 20); do curl -s -o /dev/null "http://127.0.0.1:$GT_PORT/" 2>/dev/null && break; sleep 0.3; done
+wait_up "$GT_PORT" "server on $GT_PORT" || exit 1
 GOOD="$(mint_session 'https://example.test/alice#me')"
 TAMPERED="${GOOD%.*}.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 assert "NEGATIVE PROOF: a tampered session is refused even at parent scope" \
