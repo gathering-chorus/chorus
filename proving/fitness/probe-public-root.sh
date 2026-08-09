@@ -55,22 +55,55 @@ fi
 
 fail=""
 
-# A credential FORM, not the word "login". A nav link reading "Sign in" is normal
-# on a public site; an input taking a password where the site should be is the
-# failure. Matching the word alone would cry wolf forever, and a probe that cries
-# wolf gets ignored — which is worse than not having one.
+# A credential form.
 if printf '%s' "$body" | grep -qiE '<input[^>]+type=["'"'"']?password'; then
   fail="$fail a password field is served where the site should be;"
 fi
 
-# The site's own navigation. If these are gone, the root is not the site whatever
-# else it is. Deliberately paths that have existed for months.
-# -o | wc -l, NOT grep -c: grep -c counts matching LINES. A page with all three
-# links on one line scored 1 and read as red. It scored 3 on the live site only
-# because that markup happens to break the lines — an accident, not a measure.
-navcount=$(printf '%s' "$body" | grep -oE 'href="/(about|blog|chorus)"' | sort -u | wc -l | tr -d ' ')
-if [ "${navcount:-0}" -lt 2 ]; then
-  fail="$fail site navigation absent (found ${navcount:-0} of /about /blog /chorus);"
+# AND a link offering a way in. A LINK IS A DOOR.
+#
+# The original comment here argued that matching the word "login" would cry wolf,
+# because a nav link reading "Sign in" is normal on a public site. That reasoning
+# was wrong on this surface and it cost us the actual defect: on 2026-08-09 the
+# garden domain served Jeff's personal CV page with a "Login" link in the nav to
+# anyone who clicked past the root — and this probe called it clean, because
+# there was no form. Wren's browser scenario caught it by asserting on the
+# ANCHOR, not the input.
+#
+# "No credential form" and "no way in from here" are different claims. I was
+# asserting the weaker one while believing I had the stronger.
+#
+# This is the PUBLIC storefront; nothing here should offer sign-in at all, so
+# there is no wolf to cry. A surface that legitimately needs a sign-in link is
+# not this one.
+if printf '%s' "$body" | grep -qiE '<a[^>]*>[^<]*(log ?in|sign ?in|sign ?up|register)[^<]*</a>'; then
+  fail="$fail a link offering sign-in is served on the public site — a link is a door;"
+fi
+
+# And the personal site must not be reachable here at all. Naming the actual
+# strings that appeared, because "wrong page" is not detectable in general but
+# THIS wrong page is the one we shipped.
+if printf '%s' "$body" | grep -qiE 'Engineering Leader|Systems Thinker'; then
+  fail="$fail the personal site is being served on the public garden domain;"
+fi
+
+# THE SITE'S OWN IDENTITY — the garden business, by name.
+#
+# This check used to count links to /about, /blog and /chorus. Those are the
+# PERSONAL site's navigation, and requiring them meant this probe demanded that
+# the public root serve Jeff's personal site. It was green all week for exactly
+# the reason it should have been red: the wrong site was at the front door, and
+# the check had the wrong site written into it.
+#
+# So it now asserts what a garden client must see. Getting this wrong in the
+# other direction is the whole reason row 1 exists — the root serving something
+# other than the thing it is for.
+#
+# (The counting method still matters: grep -c counts matching LINES, so three
+# markers on one line would score 1. -o | wc -l counts matches.)
+idcount=$(printf '%s' "$body" | grep -oiE 'Light Life|Urban Gardens|Roslindale' | sort -uf | wc -l | tr -d ' ')
+if [ "${idcount:-0}" -lt 2 ]; then
+  fail="$fail the garden site's own name is absent (found ${idcount:-0} of Light Life / Urban Gardens / Roslindale);"
 fi
 
 # Substance. A login wall is small; the site is not. A floor, not a range —
@@ -93,4 +126,4 @@ if [ "$EXPECT_RED" -eq 1 ]; then
   exit 1
 fi
 
-echo "row1 GREEN — $src serves the site (${bytes} bytes, ${navcount} nav links, no credential form)"
+echo "row1 GREEN — $src serves the garden site (${bytes} bytes, ${idcount}/3 name markers, no credential form, no sign-in link, no personal site)"

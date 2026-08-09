@@ -59,7 +59,8 @@ This is a subtraction: two lines leave gathering and nothing replaces them
 inside gathering.
 
 It also does not survive contact with the one-host change unexamined. Jeff's
-target is one host with paths — `llug.com`, `/chorus`, `/gathering`, `/borg`.
+target is one host with paths — `lightlifeurbangardens.com`, `/chorus`,
+`/gathering`, `/borg`.
 That collapse makes this *easier*, because there is one front to sit behind
 rather than three hostnames to keep consistent. It should be done as part of
 that move, not before it.
