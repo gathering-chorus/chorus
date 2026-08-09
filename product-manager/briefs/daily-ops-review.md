@@ -1,44 +1,44 @@
-# Daily Ops Review — 2026-08-08
+# Daily Ops Review — 2026-08-09
 
 ## 1. Hooks Health
-**Status: YELLOW (day 6 carry)**
+**Status: YELLOW (day 7 carry)**
 `cargo check` passes; 2 dead-code warnings unchanged since Aug 2. `registration_json` (session_registry.rs:66) and `owes_response_block` (nudge_drain.rs:178).
-**Action:** Silas — remove both dead-code paths; sixth consecutive carry.
+**Action:** Silas — remove both dead-code paths; seventh consecutive carry.
 
 ## 2. LaunchAgent /tmp Refs
 **Status: YELLOW (carry)**
-17+ plist files still logging to `/tmp` (hooks, api, clearing, ops, context-cache). No migration progress.
-**Action:** Silas — confirm migration card exists and assign; >8d stall.
+17+ plist files still logging to `/tmp` (hooks, api, clearing, ops, context-cache, alertmanager, grafana, prometheus, etc.). No migration progress.
+**Action:** Silas — confirm migration card exists and assign; >9d stall.
 
 ## 3. CLAUDE.md Fragments
-**Status: GREEN (resolved from RED)**
-Last git commit for `designing/claudemd/` and `designing/domain-context/` was Aug 3 (#3718) — 5 days ago, under 7d threshold. Yesterday's RED was carrying an incorrect Jul 30 date.
-**Action:** None; monitor — 2d until threshold re-breach.
+**Status: GREEN (monitor)**
+`designing/claudemd/` not present in repo. Domain-context files last committed Aug 3 (6 days ago). 1 day from 7d threshold breach.
+**Action:** Wren/Silas — update domain-context files before EOD tomorrow to prevent RED.
 
 ## 4. CSC Compliance
-**Status: RED (regression)**
-156 `/tmp/` occurrences in `platform/scripts/` — up from 124 yesterday (+32). `chorus-model-deploy.sh` (+16, now 16 refs) is the primary driver added in recent #3785–#3788 batch. `messages/scripts/` and `architect/scripts/` not present in this repo.
-**Action:** Silas — audit `chorus-model-deploy.sh`; 32-hit regression reverses prior week's reduction trend.
+**Status: GREEN (improved)**
+96 `/tmp/` occurrences in `platform/scripts/` — down from 156 yesterday (−60, −38%). Today's #3796 land by Silas appears to be the driver. `messages/scripts/` and `architect/scripts/` not present in this repo.
+**Action:** None; continue reduction trend.
 
 ## 5. Git Dirty State
 **Status: GREEN**
-0 uncommitted changes. Active shipping today: #3785, #3788, #3790 (Silas). Repo clean.
+0 uncommitted changes. HEAD detached from main. Cards shipped today: #3796, #3797 (Silas). Repo clean.
 **Action:** None.
 
 ## 6. Stale WIP Cards
 **Status: YELLOW (carry)**
-Board snapshots dated Apr 7 — stale, can't enumerate live WIP. Dependabot #449/#443 now 67d open (+2d). No GitHub API access to enumerate current WIP list.
-**Action:** Jeff — #449/#443 decision at 67d; Silas — Dependabot batch disposition.
+Board snapshots dated Apr 7 — stale, can't enumerate live WIP. Dependabot #449/#443 now 68d open (+1d). No GitHub API access to enumerate current WIP.
+**Action:** Jeff — #449/#443 decision at 68d; Silas — Dependabot batch disposition.
 
 ## 7. Domain Context Freshness
-**Status: GREEN (resolved from RED)**
-All 5 domain-context files last updated Aug 3 (5 days). 50 cards shipped since; chorus domain most active (#3785, #3788, #3790 today). Under 7d threshold.
-**Action:** None; monitor — 2d until threshold.
+**Status: YELLOW (approaching breach)**
+All 5 domain-context files last committed Aug 3 (6 days). Active domains this week: chorus (#3795–#3797), app/sign-in (#3790, #3796). Domain context is 1 day from 7d breach.
+**Action:** Wren — update domain-context-chorus.md and domain-context-infrastructure.md today.
 
 ## 8. Disk Delta
 **Status: N/A (carry)**
-No `perf-baseline-*.json` committed; `platform/scripts/perf-baseline.sh` exists but emits no committed artifacts. Repo size: 690MB.
+No `perf-baseline-*.json` committed; `platform/scripts/perf-baseline.sh` exists but emits no committed artifacts. Cannot compute delta.
 **Action:** Silas — land nightly baseline JSON to enable delta tracking.
 
 ---
-*Aug 8 delta vs Aug 7: §3 fragments GREEN (resolved — git log shows Aug 3, not Jul 30). §4 CSC RED regression +32 (156 total); chorus-model-deploy.sh new entries. §7 domain context GREEN (same resolution as §3). §1 hooks day 6 carry. §6 Dependabot 67d. All other checks unchanged.*
+*Aug 9 delta vs Aug 8: §4 CSC GREEN (−60 refs, 96 total — major improvement from 156). §3 fragments YELLOW (6d, 1d from breach). §7 domain context YELLOW (same 6d threshold). §1 hooks day 7 carry. §6 Dependabot 68d. All other checks unchanged.*
