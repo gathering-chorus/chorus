@@ -1280,8 +1280,15 @@ pub fn completeness(present: &[(String, String)], mandatory: &[String]) -> (bool
 /// stopped trusting — from Jul 27 to this fix every doored DAL write
 /// fail-closed with identity-token-required while the door reported its own
 /// success paths green.) Returns the DAL's typed refusal text on failure.
+/// #3774 — the DAL binary every write shells to. CHORUS_MODEL_BIN overrides
+/// (hermetic tests wire a stub here); the default MUST be the live binary —
+/// chorus-model was retired into a fail-loud stub by #3718.
+pub fn dal_bin() -> String {
+    std::env::var("CHORUS_MODEL_BIN").unwrap_or_else(|_| "athena-model".to_string())
+}
+
 fn dal_run(args: &[String], token: &str) -> R<()> {
-    let bin = std::env::var("CHORUS_MODEL_BIN").unwrap_or_else(|_| "chorus-model".to_string());
+    let bin = dal_bin();
     let out = Command::new(&bin)
         .args(args)
         .env("CHORUS_IDENTITY_TOKEN", token)
@@ -2004,7 +2011,7 @@ pub fn mcp_binding(t: &RouteTable) -> String {
     let tools = vec![
         tool("list", format!("GET /{}", plural), ""),
         tool("get", format!("GET /{}/:name", plural), ""),
-        tool("add", format!("POST /{}", plural), ", \"delegatesTo\": \"DAL (chorus-model)\""),
+        tool("add", format!("POST /{}", plural), ", \"delegatesTo\": \"DAL (athena-model)\""),
     ];
     format!(
         "{{\n  \"class\": \"{class}\",\n  \"binding\": \"mcp\",\n  \"convention\": \"ADR-031 chorus_<plural-resource>_<verb>\",\n  \"tools\": [\n    {tools}\n  ]\n}}\n",
@@ -3187,7 +3194,7 @@ pub fn read_http_request<Rd: std::io::Read>(r: &mut Rd, max_body: usize) -> Stri
 pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
-    eprintln!("owl-api: serving {} generated API(s) on :{} [{}] (read-only; writes go through chorus-model)", tables.len(), port, classes.join(", "));
+    eprintln!("owl-api: serving {} generated API(s) on :{} [{}] (read-only; writes go through athena-model)", tables.len(), port, classes.join(", "));
     let mut req_counter: u64 = 0;
     // #3402→#3719 — the HS256 KeyRegistry/shared-secret seam config that loaded
     // here was DELETED with the machinery: the ES256/CSS verifier below is the

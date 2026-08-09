@@ -352,7 +352,13 @@ fn test_jwks_json() -> String {
 fn mint_token(web_id: &str, _scope: Option<&[&str]>) -> String {
     let header = b64url(format!(r#"{{"alg":"ES256","typ":"JWT","kid":"{}"}}"#, TEST_KID).as_bytes());
     // iss must equal the CSS_ISSUER the World pinned (the stub base) — verify
-    // checks issuer before anything else.
+    // checks issuer before anything else. Force World init FIRST: a test whose
+    // first statement is mint_token would otherwise read whatever CSS_ISSUER
+    // the invoking shell carries (e.g. the live lightlife issuer) and mint an
+    // IssuerMismatch token — green in the full suite (an earlier test inits the
+    // World), 401 when run solo. Hermetic contract (#3528): a test brings its
+    // own world, never the shell's. Found on #3774; pre-existing, every test.
+    let _ = world();
     let iss = std::env::var("CSS_ISSUER").expect("World sets CSS_ISSUER before minting");
     let payload = b64url(format!(
         "{{\"iss\":\"{}\",\"webid\":\"{}\",\"aud\":\"solid\",\"exp\":4102444800}}",
@@ -384,7 +390,7 @@ fn world() -> &'static World {
         let dal = home.join("dal-stub.sh");
         std::fs::write(
             &dal,
-            "#!/bin/sh\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\nesac\nexit 0\n",
+            "#!/bin/sh\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
         )
         .unwrap();
         {
@@ -798,6 +804,23 @@ fn write_lifecycle_create_replace_edge_delete() {
 }
 
 #[test]
+fn negative_proof_3774_write_path_wired_to_a_retired_dal_fails_loudly() {
+    // #3734 negative proof for #3774: the guarded condition VIOLATED — the
+    // write path shelling to a DAL that answers like the retired chorus-model
+    // stub (#3718: retirement message, exit 1). The door must surface that as
+    // a LOUD typed refusal carrying the stub's message, never a 2xx. This is
+    // the exact state production sat in from #3718 until #3774: every doored
+    // write hit the stub, werk-test's wire-back read the refusals as
+    // 1208/1208 failed case-posts, and the tests domain froze at Aug 3.
+    let tok = mint_token(WREN_WEBID, None);
+    let auth = bearer(&tok);
+    let hdrs: &[(&str, &str)] = &[("Authorization", &auth)];
+    let (c, _, b) = http("POST", "/domains", hdrs, "{\"name\":\"retiredstub\",\"comment\":\"x\"}");
+    assert_eq!(c, 502, "retired-stub DAL answer must refuse loudly, got {}: {}", c, b);
+    assert!(b.contains("RETIRED (#3718)"), "refusal must carry the stub's message: {}", b);
+}
+
+#[test]
 fn batch_route_is_gated_and_delegates_typed_slots() {
     // 401 without a token
     let (c, _, b) = http("POST", "/batch", &[], "INS\turn:s\turn:p\to");
@@ -875,7 +898,7 @@ fn emitters_project_the_same_model() {
     assert!(tm.contains("edge-target-type-reject ownedBy"), "{}", tm);
     let mcp = owl_api::mcp_binding(&w.domain);
     assert!(mcp.contains("chorus_domains_list"), "{}", mcp);
-    assert!(mcp.contains("\"delegatesTo\": \"DAL (chorus-model)\""), "{}", mcp);
+    assert!(mcp.contains("\"delegatesTo\": \"DAL (athena-model)\""), "{}", mcp);
     let page = owl_api::page_html(&w.domain);
     assert!(page.contains("window.OWL_CLASS = \"Domain\""), "{}", page);
     assert!(page.contains("domain-renderer.js"), "Domain keeps the rich renderer: {}", page);
