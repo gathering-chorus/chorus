@@ -23,6 +23,13 @@
 http://localhost:3001/jeff/profile/card#me
 https://id.lightlifeurbangardens.com/jeff/profile/card#me
 
+# flow-probe (#3765) — the browser-flow test identity. Its own CSS account with
+# its own password (never Jeff's), credentials at ~/.chorus/flow-creds.env
+# (0600, outside every repo). It exists so Wren's browser flows can prove the
+# real signed-in journey nightly; it holds nothing but what this list and the
+# path allowlist grant every reader.
+https://id.lightlifeurbangardens.com/flow-probe/profile/card#me
+
 # Mark — pending. He has no account at the identity provider yet; creating it is
 # part of #3770. Uncommenting a line for a WebID that does not exist grants
 # nothing, but it also hides the fact that the real step was never done, so his

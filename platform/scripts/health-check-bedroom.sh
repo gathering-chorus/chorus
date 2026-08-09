@@ -44,11 +44,33 @@ for svc in "com.gathering.images-api" "com.gathering.ollama" "com.gathering.vide
 done
 
 # 3b. Ollama model health — verify embedding endpoint actually works (#1855)
-OLLAMA_DIM=$(ssh -o ConnectTimeout=5 "$BEDROOM" "curl -sf --max-time 10 http://localhost:11434/api/embeddings -d '{\"model\":\"nomic-embed-text\",\"prompt\":\"health check\"}' 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get(\"embedding\",[])))' 2>/dev/null || echo 0" 2>/dev/null)
+#
+# Timeout raised 10s → 45s on 2026-08-09, after the SIXTH false alarm.
+#
+# Measured at the moment of tonight's 03:42 alarm: /api/tags answered in 4ms and
+# a real embedding returned 768 dimensions in 9.68s. Working, and 0.3s from being
+# called broken. The probe was not detecting an outage — it was detecting that
+# the model had been idle long enough to need loading, which is the normal state
+# of that machine at three in the morning.
+#
+# Five earlier fires were each read, recognised as known noise, and left armed.
+# That is the actual danger: a monitor everyone has learned to dismiss will be
+# dismissed on the night it is right.
+#
+# 45s deliberately sits well clear of cold-load rather than just above the
+# observed number — a ceiling tuned to observed-plus-a-bit reproduces this bug
+# the first time the machine is busier than the day it was measured. Slowness is
+# now a WARNING carrying the measured seconds, so drift toward genuinely broken
+# is visible while it is still only drift.
+OLLAMA_T0=$(date +%s)
+OLLAMA_DIM=$(ssh -o ConnectTimeout=5 "$BEDROOM" "curl -sf --max-time 45 http://localhost:11434/api/embeddings -d '{\"model\":\"nomic-embed-text\",\"prompt\":\"health check\"}' 2>/dev/null | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get(\"embedding\",[])))' 2>/dev/null || echo 0" 2>/dev/null)
+OLLAMA_SECS=$(( $(date +%s) - OLLAMA_T0 ))
 if [ "$OLLAMA_DIM" = "0" ] || [ "$OLLAMA_DIM" = "" ]; then
-  FAILURES+=("Ollama embedding failed — model may be unloaded or broken")
+  FAILURES+=("Ollama embedding failed after ${OLLAMA_SECS}s — model unloaded or broken")
 elif [ "$OLLAMA_DIM" != "768" ]; then
   WARNINGS+=("Ollama embedding returned unexpected dim=$OLLAMA_DIM (expected 768)")
+elif [ "$OLLAMA_SECS" -gt 20 ]; then
+  WARNINGS+=("Ollama embedding OK but slow: ${OLLAMA_SECS}s (cold load; failure threshold 45s)")
 fi
 
 # 3c. Fuseki — not installed on Bedroom. Library (Jeffs-Mac-Mini-M1-3.local:3030) is primary.

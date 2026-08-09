@@ -83,6 +83,17 @@ chorus:principal-marknakib a chorus:Principal ;
     chorus:principalKind "person" ;
     chorus:canSignIn "true" .
 
+# #3765 — flow-probe: the browser-flow test identity (Wren's flows, 2026-08-09).
+# A separate CSS account with its own password so the flows never carry Jeff's
+# credential; "service" kind because no human is behind it, canSignIn true
+# because signing in through the real login page IS what it exists to prove.
+# Being a Principal here is what admits it at the Clearing's door.
+chorus:principal-flow-probe a chorus:Principal ;
+    rdfs:label "flow-probe (browser-flow test identity)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/flow-probe/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:canSignIn "true" .
+
 # ============================================================================
 # #3773 — the three WORKER principals, moved here from security-model-3618.ttl.
 #

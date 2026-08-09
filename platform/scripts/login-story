@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# login-story — one sign-in attempt, in order, in one place.
+#
+# Jeff, 2026-08-08: "dont we have logs for our login flow - this seems overly
+# complex." We do, and that was the problem: the guard writes one file, the
+# Clearing writes another, Loki holds a third copy, and reading a single login
+# meant holding three tails side by side and matching timestamps by eye. I did
+# exactly that today to work out why his phone hung, and inferring the answer
+# from a repeating "allow-set refreshed" line is not observability.
+#
+#   login-story          the last 15 minutes
+#   login-story 60       the last 60 minutes
+set -u
+
+MINS="${1:-15}"
+GUARD="$HOME/Library/Logs/Chorus/share-guard.log"
+CLEARING="$HOME/Library/Logs/Chorus/chorus-bridge.log"
+
+since=$(date -v-"${MINS}"M '+%s' 2>/dev/null || date -d "-${MINS} min" '+%s')
+
+echo "sign-in attempts, last ${MINS}m"
+echo
+
+# The guard is the only component that logs the flow properly, so it carries the
+# narrative. Each line is translated into what actually happened to a person —
+# a raw access log makes you reconstruct that every time.
+if [ -f "$GUARD" ]; then
+  tail -400 "$GUARD" | grep -E '_auth/|GET /' | tail -40 | while IFS= read -r line; do
+    case "$line" in
+      *'_auth/callback'*)   echo "  ✓ came back from the identity provider — signed in" ;;
+      *'_auth/login'*)      echo "  → sent to the identity provider" ;;
+      *'_auth/logout'*)     echo "  ← signed out" ;;
+      *'_auth/?next='*)     want="${line#*next=}"; want="${want%% *}"
+                            echo "  · shown our sign-in page, wanting $(python3 -c 'import sys,urllib.parse;print(urllib.parse.unquote(sys.argv[1]))' "${want%%\"*}" 2>/dev/null || echo "$want")" ;;
+      *'_auth/welcome'*)    echo "  ✓ landed on the welcome page" ;;
+      *' 403 '*)            echo "  ✗ signed in but NOT on the allow-list — refused" ;;
+      *' 404 '*)            echo "  ✗ signed in and got a 404 — a door that opens onto nothing" ;;
+      *' 503 '*)            echo "  ✗ identity provider unreachable" ;;
+    esac
+  done
+else
+  echo "  (guard log not found at $GUARD)"
+fi
+
+echo
+echo "then, in the Clearing:"
+# The Clearing does NOT log its socket refusal — socketSessionAuthed returns
+# false silently. So the only visible symptom is the allow-set being re-read on
+# every retry. Counting that is a workaround, and it is named as one here rather
+# than dressed up as a signal.
+if [ -f "$CLEARING" ]; then
+  retries=$(tail -300 "$CLEARING" | grep -c 'allow-set:.*refreshed')
+  if [ "$retries" -gt 20 ]; then
+    echo "  ✗ socket refused — $retries retry loops. The Clearing accepts only its own"
+    echo "    cookie, not the one the Chorus sign-in issues, so a signed-in person"
+    echo "    sits on \"connecting…\" forever."
+    echo "    NOTE: inferred from the retry loop. The refusal itself logs NOTHING;"
+    echo "    that is a gap in the Clearing, not a signal."
+  else
+    echo "  · no refusal loop in the recent log"
+  fi
+else
+  echo "  (clearing log not found)"
+fi

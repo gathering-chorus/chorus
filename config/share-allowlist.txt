@@ -16,6 +16,13 @@
 # public prefix at another host is a reachability change, not a config tweak.
 # First match wins, so order matters where prefixes overlap.
 
+# The entrance (#3765) — the top-level Chorus page, served from :3340. "/" means
+# the ROOT and only the root: route() treats a bare "/" as an exact match, never
+# a prefix. It used to match every path, so this line would have shared the whole
+# of :3340 while reading like it shared one page — the guard code narrowing and
+# this line land together, and the suite proves /anything-else still refuses.
+/
+
 # The about page — the original share (#3644). It lives on the app (:3000), not
 # on chorus-api; measured 2026-08-06, :3340 404s it. This explicit route is what
 # lets /about and the Athena pages be public at the same time.

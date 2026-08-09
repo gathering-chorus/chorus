@@ -65,6 +65,14 @@ COOKIE_DOMAIN = os.environ.get("SHARE_COOKIE_DOMAIN", ".lightlifeurbangardens.co
 SESSION_TTL = int(os.environ.get("SHARE_SESSION_TTL", str(12 * 3600)))
 AUTH_PREFIX = "/_auth/"
 
+# The public path this guard is mounted under, e.g. "/chorus". Empty means it is
+# mounted at a host root, which is how it runs today. Normalised so that "chorus",
+# "/chorus" and "/chorus/" all mean the same thing — a trailing slash here would
+# make every stripped path start without one and 404 the lot.
+PATH_PREFIX = "/" + os.environ.get("SHARE_PATH_PREFIX", "").strip().strip("/")
+if PATH_PREFIX == "/":
+    PATH_PREFIX = ""
+
 UPSTREAM = os.environ.get("SHARE_UPSTREAM", "http://localhost:3000").rstrip("/")
 
 
@@ -248,6 +256,18 @@ RETURN_HOST_SUFFIX = os.environ.get("SHARE_RETURN_HOST_SUFFIX", "lightlifeurbang
 # from being locked out when nothing says otherwise. He read it as a lockout for twenty
 # minutes. Fourth instance in one day of a refusal that cannot name its own state.
 LANDING = AUTH_PREFIX + "welcome"
+
+
+# #3765 — /clearing, served as a REDIRECT to the Clearing's own hostname.
+#
+# The Clearing is a socket.io app: long-poll POSTs and a websocket upgrade,
+# neither of which can ride a GET/HEAD-only body proxy — allowlisting the path
+# would produce a page that loads and a socket that dies, which is precisely the
+# refusal-that-cannot-name-itself class (#3796) this guard exists to end. It
+# already has its own tunnel ingress, and the session cookie spans the parent
+# domain (#3790), so a signed-in caller arrives there still signed in.
+CLEARING_URL = os.environ.get(
+    "SHARE_CLEARING_URL", "https://clearing.lightlifeurbangardens.com/")
 
 
 def safe_return(raw, default=None):
@@ -505,9 +525,20 @@ def route(path, allow, default_upstream):
     First match wins, so ordering in the file is meaningful for overlapping
     prefixes; the longest-prefix subtlety is deliberately NOT introduced, since a
     reviewer reading top-to-bottom should be able to predict the outcome.
+
+    A bare "/" entry means the ROOT, and only the root. It previously matched
+    every path, so allowlisting the entrance would have quietly shared the whole
+    upstream — every internal page on :3340 — off one line that reads like it
+    shares one page. Narrowing it is strictly safer: nothing in the allowlist
+    used "/" as a wildcard, and no wildcard spelling replaces it, because the
+    file exists precisely so that reach is enumerated rather than implied.
     """
     for p, upstream in allow:
-        if p == "/" or path == p or path.startswith(p.rstrip("/") + "/"):
+        if p == "/":
+            if path in ("/", ""):
+                return upstream or default_upstream
+            continue
+        if path == p or path.startswith(p.rstrip("/") + "/"):
             return upstream or default_upstream
     return None
 
@@ -716,7 +747,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
                 for t, h in [
                     ("The model", "/athena/model.html"),
                     ("Domains", "/domains"),
-                    ("The Clearing", "https://clearing.lightlifeurbangardens.com/"),
+                    ("The Clearing", CLEARING_URL),
                 ]
             )
             return self._page(200, "Signed in", f"""
@@ -736,8 +767,56 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         return self._deny(404, "no such sign-in route\n")
 
     def _handle(self, body_allowed):
+        # #3765 — Jeff's four-URL scheme: one host, and every Chorus surface a
+        # child of /chorus. cloudflared matches a path but does not rewrite it,
+        # so the guard receives /chorus/athena and the service behind it still
+        # serves /athena. Stripping here rather than at the tunnel keeps the
+        # allowlist written in the SERVICE's own paths — otherwise every entry
+        # would carry a prefix that has nothing to do with what it names, and a
+        # rename of the public path would silently unshare everything.
+        #
+        # Done first, before any routing or auth decision, so exactly one place
+        # in this file knows the public path differs from the served path.
+        if PATH_PREFIX:
+            p, sep, q = self.path.partition("?")
+            if p == PATH_PREFIX or p == PATH_PREFIX + "/":
+                self.path = "/" + (sep + q if sep else "")
+            elif p.startswith(PATH_PREFIX + "/"):
+                self.path = p[len(PATH_PREFIX):] + (sep + q if sep else "")
+            else:
+                # Mounted under a path means reachable ONLY under that path.
+                # The first version left non-matching paths alone, so the guard
+                # served /athena AND /chorus/athena — ignoring the prefix rather
+                # than enforcing it. Unreachable through today's tunnel, which is
+                # exactly why it would have sat there unnoticed until the tunnel
+                # changed. Caught by asserting the unprefixed path is REFUSED,
+                # not merely that the prefixed one works.
+                return self._deny(404, "not served at this path\n")
+
         if self.path.split("?")[0].startswith(AUTH_PREFIX):
             return self._auth_routes()
+
+        # Wren's flow-suite catch (2026-08-09) — the sixth property, again: a
+        # refusal must name its own state. An unlisted path used to answer an
+        # anonymous browser with the sign-in page, which says "not signed in"
+        # when the truth is "not shared" — the visitor signs in, asks again,
+        # and is refused again: yesterday's loop, one door over. So: a path
+        # this guard does not serve refuses NOT-FOUND, identically with or
+        # without a session. This does let an anonymous caller distinguish
+        # listed from unlisted; accepted deliberately — on a read-only surface,
+        # a refusal that names its state beats hiding the allowlist's shape.
+        # The root and /clearing are the guard's own doors and stay on the
+        # sign-in path below.
+        _p = self.path.split("?")[0]
+        if (_p not in ("/", "") and _p not in ("/clearing", "/clearing/")
+                and route(_p, ALLOW, UPSTREAM) is None):
+            if self._wants_html():
+                return self._page(404, "Not found", """
+<h1>Not found</h1>
+<p>This page isn't shared through Chorus. If you followed a link here, the
+page may have moved or was never public.</p>
+<p><a class="btn" href="/">Go to the entrance</a></p>""")
+            return self._deny(404, "path not shared\n")
 
         webid = self._session_webid()
         if not webid:
@@ -761,13 +840,27 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
 <p><a class="btn" href="{AUTH_PREFIX}logout">Sign out</a></p>""")
             return self._deny(403, "signed in, but not authorized for this surface\n")
 
-        # #3796 — the root is the front door, not an upstream path. A signed-in caller
-        # arriving here gets the landing page; without this the allowlist answers "path
-        # not shared" and a successful sign-in ends in a 404.
-        if self.path.split("?")[0] in ("/", ""):
-            return self._redirect(LANDING)
+        # After the identity checks, deliberately: an anonymous caller asking for
+        # /clearing signs in HERE first and is then sent over, so the flow proves
+        # one sign-in carries across hosts rather than sidestepping the door.
+        if self.path.split("?")[0] in ("/clearing", "/clearing/"):
+            return self._redirect(CLEARING_URL)
 
         upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
+
+        # #3796, revised. The rule that mattered was never "the root redirects" — it
+        # was "a successful sign-in must not end in a 404". That is still enforced,
+        # just one step later: the root redirects to the landing page ONLY when the
+        # root is not itself served. Allowlist "/" and a signed-in caller gets the
+        # entrance; leave it out and they get the landing page, exactly as before.
+        #
+        # Sequenced deliberately. #3796 was the fix for a twenty-minute lockout this
+        # afternoon, and the landing page is also where safe_return falls back, so
+        # the two must not move at once: the fallback keeps pointing at a page that
+        # exists whichever way the allowlist is configured.
+        if upstream is None and self.path.split("?")[0] in ("/", ""):
+            return self._redirect(LANDING)
+
         if upstream is None:
             return self._deny(404, "path not shared\n")
         req = urllib.request.Request(upstream + self.path, method="GET")
