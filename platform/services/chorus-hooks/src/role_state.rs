@@ -253,8 +253,57 @@ fn cleanup_stale_silent() -> usize {
     sweep_and_demote(false)
 }
 
+/// What the sweep should do to one role's entry. Pure — the whole demotion
+/// policy in one testable place, so the negative proofs (#3734) can drive it
+/// with forced measurement failures instead of hoping lsof cooperates.
+#[derive(Debug, PartialEq)]
+enum SweepAction {
+    Keep,
+    /// Leave the declared state, but the reading could not be made — log it.
+    KeepUnmeasurable(&'static str),
+    Demote { new_state: &'static str, reason: &'static str },
+    /// idle written by a previous sweep, but the session is provably alive
+    /// again — restore what the role had declared (#3802: demote-only sweeps
+    /// wrote idle permanently; nothing ever promoted a live role back).
+    Repromote,
+}
+
+fn sweep_decision(
+    state: &str,
+    source: Option<&str>,
+    liveness: &process::Liveness,
+    decayed: bool,
+) -> SweepAction {
+    use process::Liveness::*;
+    let active = ["building", "blocked", "waiting", "observing"].contains(&state);
+    if active {
+        // Two demotion rules:
+        //   1. Session PROVABLY dead → idle. Dead requires positive evidence
+        //      (every claude pid enumerated and read, none matching); a failed
+        //      probe is Unmeasurable and NEVER demotes — one slow lsof under
+        //      CPU starvation must not mark a working role idle (#3802, the
+        //      Clearing showed Jeff idle tiles for roles mid-build).
+        //   2. #3319 AC4: `observing` past TTL → waiting, even with a live
+        //      pid. Observation is only real while the watcher keeps polling.
+        return match liveness {
+            Dead => SweepAction::Demote { new_state: "idle", reason: "session-dead" },
+            Alive(_) if decayed => SweepAction::Demote { new_state: "waiting", reason: "observing-ttl" },
+            Alive(_) => SweepAction::Keep,
+            Unmeasurable(what) => SweepAction::KeepUnmeasurable(what),
+        };
+    }
+    // idle that THIS SWEEP wrote (source=cleanup), with the session provably
+    // alive → the demotion was wrong or the session returned; restore the
+    // declared state. An idle the ROLE declared is a statement, never touched.
+    if state == "idle" && source == Some("cleanup") {
+        if let Alive(_) = liveness {
+            return SweepAction::Repromote;
+        }
+    }
+    SweepAction::Keep
+}
+
 fn sweep_and_demote(verbose: bool) -> usize {
-    let active_states = ["building", "blocked", "waiting", "observing"];
     let mut demoted = 0;
 
     for role in ROLES {
@@ -262,31 +311,58 @@ fn sweep_and_demote(verbose: bool) -> usize {
         let Ok(content) = fs::read_to_string(&state_file) else { continue; };
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) else { continue; };
         let Some(state) = parsed["state"].as_str() else { continue; };
-        if !active_states.contains(&state) {
-            continue;
-        }
-        // Two demotion rules:
-        //   1. Session dead (pid gone) → idle. Pid-alive is the unambiguous
-        //      "session is over" signal; don't touch live states on slow tick.
-        //   2. #3319 AC4: `observing` past TTL → waiting, even with a live
-        //      pid. Observation is only real while the watcher keeps polling
-        //      (loom-gemba re-declares per poll); a stale `observing` is the
-        //      exact lie this state was caught telling on 2026-06-10.
-        let pid_alive = process::find_role_pid(role).is_some();
+
+        let liveness = process::probe_role_session(role);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         let declared_ts = parsed["ts"].as_u64().unwrap_or(0);
         let decayed = observing_decayed(state, declared_ts, now, OBSERVING_TTL_SECS);
-        if pid_alive && !decayed {
-            continue;
-        }
-        let (new_state, reason) = if !pid_alive {
-            ("idle", "session-dead")
-        } else {
-            ("waiting", "observing-ttl")
+
+        let (new_state, reason) = match sweep_decision(state, parsed["source"].as_str(), &liveness, decayed) {
+            SweepAction::Keep => continue,
+            SweepAction::KeepUnmeasurable(what) => {
+                if let Ok(mut log_file) = fs::OpenOptions::new()
+                    .create(true).append(true).open(chorus_log_path())
+                {
+                    let _ = writeln!(
+                        log_file,
+                        "role.state.sweep.unmeasurable | role={} state={} probe={}",
+                        role, state, what
+                    );
+                }
+                continue;
+            }
+            SweepAction::Demote { new_state, reason } => (new_state, reason),
+            SweepAction::Repromote => {
+                let prev = parsed["prev_state"].as_str().unwrap_or("waiting").to_string();
+                let wall = process::wall_clock();
+                let json = format!(
+                    r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":true,"wall_clock":"{}","source":"repromote"}}"#,
+                    role, prev, now, wall, wall
+                );
+                let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
+                if fs::File::create(&tmp).and_then(|mut f| writeln!(f, "{}", json)).is_ok()
+                    && fs::rename(&tmp, &state_file).is_ok()
+                {
+                    if let Ok(mut log_file) = fs::OpenOptions::new()
+                        .create(true).append(true).open(chorus_log_path())
+                    {
+                        let _ = writeln!(
+                            log_file,
+                            "role.state.repromote | role={} restored={} reason=session-alive",
+                            role, prev
+                        );
+                    }
+                    if verbose {
+                        eprintln!("  {} repromoted: idle -> {} (session alive)", role, prev);
+                    }
+                }
+                continue;
+            }
         };
+        let pid_alive = matches!(liveness, process::Liveness::Alive(_));
 
         // Demote. Stamp source="cleanup" so debugging is possible —
         // the next person can see this entry was auto-fixed by sweep, not
@@ -381,6 +457,59 @@ mod tests {
         for s in ["building", "blocked", "waiting", "idle"] {
             assert!(!observing_decayed(s, 0, u64::MAX, OBSERVING_TTL_SECS), "{} must not TTL-decay", s);
         }
+    }
+
+    // --- #3802: the sweep decision, driven with FORCED measurement failures ---
+    use crate::process::Liveness;
+
+    #[test]
+    fn negative_proof_unmeasurable_never_demotes() {
+        // The violation this card exists to catch: a failed probe read as
+        // "dead". A building role with an unmeasurable session KEEPS its state.
+        for what in [Liveness::Unmeasurable("ps"), Liveness::Unmeasurable("lsof")] {
+            assert_eq!(
+                sweep_decision("building", Some("declared"), &what, false),
+                SweepAction::KeepUnmeasurable(match what { Liveness::Unmeasurable(w) => w, _ => unreachable!() }),
+                "unmeasurable must never demote"
+            );
+        }
+    }
+
+    #[test]
+    fn provably_dead_still_demotes() {
+        // The check must still catch the state it exists for: real death.
+        assert_eq!(
+            sweep_decision("building", Some("declared"), &Liveness::Dead, false),
+            SweepAction::Demote { new_state: "idle", reason: "session-dead" }
+        );
+    }
+
+    #[test]
+    fn live_pid_repromotes_idle_by_cleanup_only() {
+        // A sweep-written idle with the session alive again → restore.
+        assert_eq!(
+            sweep_decision("idle", Some("cleanup"), &Liveness::Alive(123), false),
+            SweepAction::Repromote
+        );
+        // NEGATIVE PROOF the other way: an idle the ROLE declared is a
+        // statement — never re-promoted, alive or not.
+        assert_eq!(
+            sweep_decision("idle", Some("declared"), &Liveness::Alive(123), false),
+            SweepAction::Keep
+        );
+        // And a cleanup-idle whose session is still unmeasurable stays put.
+        assert_eq!(
+            sweep_decision("idle", Some("cleanup"), &Liveness::Unmeasurable("lsof"), false),
+            SweepAction::Keep
+        );
+    }
+
+    #[test]
+    fn observing_ttl_demotion_survives_the_refactor() {
+        assert_eq!(
+            sweep_decision("observing", Some("declared"), &Liveness::Alive(9), true),
+            SweepAction::Demote { new_state: "waiting", reason: "observing-ttl" }
+        );
     }
 
     #[test]
