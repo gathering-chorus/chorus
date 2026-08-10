@@ -260,8 +260,19 @@ chorus:gate-chorus-api-mutations a chorus:Gate ;
 # below, each one refusable.
 # ----------------------------------------------------------------------------
 
+# #3785 — the instance home, declared on the SHAPE, not left to the vocab-owning
+# domain's default. Principal's vocabulary is owned by chorus:identity, and owl-api
+# resolves an undeclared home from that domain — which was correct only as long as
+# identity.instancesGraph agreed with where the doors read. On 2026-08-10 they had
+# diverged in EFFECT: the live model said security, but owl-api had cached the home
+# at its Jul-30 boot (domains:identity, from before the repoint), so /principals
+# served 10 stale copies while the doors enforced 11. Declaring it here (ADR-051's
+# explicit override / migration-target) pins the home to the one graph the doors,
+# the deploy (#3726 SECURITY_SET), and the projection (#3776/ADR-057) all use — so
+# SERVED == ENFORCED stops depending on a boot-time default nobody can see.
 chorus:PrincipalShape a sh:NodeShape ;
     sh:targetClass chorus:Principal ;
+    chorus:instancesGraph "urn:chorus:domains:security" ;
     sh:property chorus:PrincipalShape-webId ;
     sh:property chorus:PrincipalShape-label ;
     sh:property chorus:PrincipalShape-principalKind ;

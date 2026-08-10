@@ -44,6 +44,7 @@ ROWS=(
   "6|probe-lists-are-local.sh|--prove-red"
   "7|probe-nobody-walk.sh|--prove-red"
   "8|probe-allowset-is-projection.sh|--prove-red"
+  "9|probe-served-equals-enforced.sh|--prove-red"
 )
 
 # #3806 — every row runs under a hard ceiling. Row 7 sat 600s+ with no verdict
