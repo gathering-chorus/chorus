@@ -791,3 +791,37 @@ fn join_cases_maps_identity_to_entity_and_counts_unregistered() {
     assert_eq!(joined[0].1, "test-a-does-x");
     assert_eq!(unregistered, 1);
 }
+
+// --- #3808: wire-back re-mint decision — token expiry mid-stream is recoverable,
+// a real 401 (re-mint didn't help) fails loudly after ONE re-mint attempt ---
+
+#[test]
+fn remint_decision_accepts_2xx_and_fails_non_401_without_reminting() {
+    use werk_test::{remint_decision, PostStep};
+    assert_eq!(remint_decision("200", false), PostStep::Accept);
+    assert_eq!(remint_decision("201", true), PostStep::Accept);
+    // a 502 is the server refusing content — reminting can't help, count it failed
+    assert_eq!(remint_decision("502", false), PostStep::Fail);
+    assert_eq!(remint_decision("000", false), PostStep::Fail); // curl couldn't connect
+}
+
+#[test]
+fn remint_decision_reminting_exactly_once_on_401() {
+    use werk_test::{remint_decision, PostStep};
+    // first 401 of the run → re-mint and retry (expired-token recovery)
+    assert_eq!(remint_decision("401", false), PostStep::Remint);
+    // 401 AFTER a re-mint → the identity is genuinely refused; fail loudly,
+    // never retry forever (#3808 AC2)
+    assert_eq!(remint_decision("401", true), PostStep::Fail);
+}
+
+#[test]
+fn post_args_with_code_returns_status_and_never_uses_sf() {
+    // the per-case post must yield the HTTP code (the 401 trigger) — `-sf`
+    // swallows it and forced a second diagnostic request per failure (#3725)
+    let args = werk_test::post_args_with_code("http://x/testresults", "tok", "{}");
+    assert!(args.contains(&"%{http_code}".to_string()), "{:?}", args);
+    assert!(!args.contains(&"-sf".to_string()), "{:?}", args);
+    assert!(args.contains(&"Authorization: Bearer tok".to_string()));
+    assert!(args.contains(&"x-target-graph: urn:chorus:domains:tests".to_string()));
+}
