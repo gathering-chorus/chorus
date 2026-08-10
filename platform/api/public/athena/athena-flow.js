@@ -5,16 +5,34 @@
 // additive) — asArray() normalizes.
 // #3644 — same-origin via the chorus-api /owl proxy: one base that works on the
 // LAN and through any share/tunnel origin (the old `hostname:3360` broke off-LAN).
-const OWL = '/owl';
+// #3807 — through the configured base, because /chorus IS the root of the project
+// and not a prefix each page compensates for individually. From
+// lightlifeurbangardens.com/chorus a bare '/owl' resolves against the APEX — the
+// garden site — which correctly answers not-found, so every page drew its frame
+// and none of its content: "loading the stream live from the model…" forever.
+// Jeff signed in and got an empty shell that read as a page somebody invented.
+//
+// Resolved PER CALL, never captured at load: six of the eight pages that use this
+// file load it BEFORE base-path.js, so a constant computed here would read an
+// undefined helper, fall back to '/owl', and go on quietly serving the empty frame
+// on exactly the pages nobody re-checked — a fix that works where you tested it and
+// nowhere else. Asking at call time removes the ordering dependency instead of
+// asking eight files to remember it. At root the base is empty and every URL is
+// byte-for-byte what it was.
+function owlBase() {
+  return (typeof window !== 'undefined' && typeof window.basePath === 'function')
+    ? window.basePath('/owl')
+    : '/owl';
+}
 
 async function fetchJSON(path) {
-  const r = await fetch(OWL + path);
+  const r = await fetch(owlBase() + path);
   if (!r.ok) throw new Error(`${r.status} on ${path}`);
   return r.json();
 }
 
 function fetchFailed(el, e) {
-  el.innerHTML = `<div class="err"><strong>Cannot reach the model API</strong> (${OWL}) — ` +
+  el.innerHTML = `<div class="err"><strong>Cannot reach the model API</strong> (${owlBase()}) — ` +
     `this is a fetch failure, not an empty model. ${esc(String(e.message || e))}</div>`;
 }
 
@@ -87,5 +105,5 @@ function mountJourneyNav(current) {
 }
 
 function srcNote(extra) {
-  return `<p class="src-note">live from owl-api ${esc(OWL)} · every field maps 1:1 to a shape property · nothing fabricated${extra ? ' · ' + extra : ''}</p>`;
+  return `<p class="src-note">live from owl-api ${esc(owlBase())} · every field maps 1:1 to a shape property · nothing fabricated${extra ? ' · ' + extra : ''}</p>`;
 }
