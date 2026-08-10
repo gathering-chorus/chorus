@@ -139,17 +139,47 @@ fn plan_rust_crate_runs_cargo_then_workspace_clippy_and_doc() {
 }
 
 #[test]
-fn plan_ts_package_runs_tsc_and_jest_then_doc_but_no_clippy() {
+fn plan_ts_package_runs_tsc_jest_lint_ratchet_then_doc_but_no_clippy() {
     let units = vec![TestUnit::TsPackage("platform/api".into())];
-    // no Rust changed → no clippy-ratchet; doc-coherence still runs.
+    // no Rust changed → no clippy-ratchet; lint-ratchet fires on any TS change
+    // (#3787 — drift refuses at land, never an anonymous 03:55 red); doc still runs.
     assert_eq!(
         plan_kinds(&units),
-        vec![CheckKind::Tsc, CheckKind::Jest, CheckKind::DocCoherence]
+        vec![CheckKind::Tsc, CheckKind::Jest, CheckKind::LintRatchet, CheckKind::DocCoherence]
     );
 }
 
 #[test]
-fn plan_mixed_runs_all_five_check_kinds() {
+fn plan_rust_only_card_skips_lint_ratchet() {
+    // no TS package affected → the ESLint ratchet has nothing to measure (#3787).
+    let units = vec![TestUnit::RustCrate("werk-merge".into())];
+    assert!(!plan_kinds(&units).contains(&CheckKind::LintRatchet));
+}
+
+#[test]
+fn lint_ratchet_is_workspace_level_and_runs_once() {
+    assert_eq!(CheckKind::LintRatchet.label(), "lint-ratchet");
+    let plan = check_plan(&[
+        TestUnit::TsPackage("platform/pulse".into()),
+        TestUnit::TsPackage("platform/api".into()),
+    ]);
+    let lint: Vec<&PlannedCheck> =
+        plan.iter().filter(|c| c.kind == CheckKind::LintRatchet).collect();
+    assert_eq!(lint.len(), 1, "lint-ratchet runs once, workspace-level");
+    assert!(lint[0].unit.is_none());
+}
+
+#[test]
+fn self_modifying_true_when_diff_touches_the_lint_ratchet_surface() {
+    // #3787 AC3 — a card fixing the ratchet itself (script, config, baseline)
+    // must run advisory, not deadlock on its own gate (#3197 bootstrap lesson).
+    assert!(is_self_modifying(&s(&["platform/scripts/lint-ratchet.js"])));
+    assert!(is_self_modifying(&s(&["eslint.config.js"])));
+    assert!(is_self_modifying(&s(&[".eslint-baseline.json"])));
+}
+
+#[test]
+fn plan_mixed_runs_all_six_check_kinds() {
     let units = vec![
         TestUnit::RustCrate("werk-build".into()),
         TestUnit::TsPackage("platform/pulse".into()),
@@ -161,6 +191,7 @@ fn plan_mixed_runs_all_five_check_kinds() {
             CheckKind::Tsc,
             CheckKind::Jest,
             CheckKind::ClippyRatchet,
+            CheckKind::LintRatchet,
             CheckKind::DocCoherence,
         ]
     );

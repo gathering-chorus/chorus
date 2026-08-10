@@ -948,7 +948,11 @@ export function groupPrioritiesReadout(rows: ReadoutRow[]) {
     if (own.length === 0 && !p.chunks.includes('proving')) {
       roleMap[p.owner].untagged.push(toCard(p)); untaggedN++;
     } else {
-      for (const c of own) { (roleMap[p.owner].chunks[c] ||= []).push(toCard(p)); chunked++; }
+      for (const c of own) {
+        const chunks = roleMap[p.owner].chunks;
+        if (!(c in chunks)) chunks[c] = [];
+        chunks[c].push(toCard(p)); chunked++;
+      }
     }
   }
   const roles = ROLES.map((role) => ({
@@ -2718,7 +2722,7 @@ export async function executeNudge(
     // longer blind. Best-effort parse — fall back to the bare role on any miss.
     let dest = `${to}`;
     try {
-      const body = (resp.json ? await resp.json() : null) as { resolved?: string } | null;
+      const body = (await resp.json()) as { resolved?: string } | null;
       if (body && typeof body.resolved === 'string') dest = body.resolved;
     } catch { /* keep bare role */ }
     logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId, resolved: dest });

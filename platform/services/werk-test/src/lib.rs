@@ -38,6 +38,11 @@ pub const TS_PACKAGES: &[&str] = &[
 pub const SELF_SURFACE: &[&str] = &[
     ".github/workflows/werk.yml",
     "platform/services/werk-test/",
+    // #3787 — the ESLint-ratchet surface: a card fixing the ratchet itself must
+    // run advisory, not deadlock on its own gate (#3197 bootstrap lesson).
+    "platform/scripts/lint-ratchet.js",
+    "eslint.config.js",
+    ".eslint-baseline.json",
 ];
 
 /// A unit whose tests must run because the card's diff touched it.
@@ -138,6 +143,8 @@ pub enum CheckKind {
     Jest,
     /// `clippy-ratchet.sh` — per-lint counts only decrease; workspace-wide, once.
     ClippyRatchet,
+    /// `lint-ratchet.js` — per-rule ESLint counts only decrease (#3787); workspace-wide, once.
+    LintRatchet,
     /// `doc-coherence-ratchet.test.sh` — doc-inventory floor; workspace-wide, once.
     DocCoherence,
 }
@@ -149,6 +156,7 @@ impl CheckKind {
             CheckKind::Tsc => "tsc",
             CheckKind::Jest => "jest",
             CheckKind::ClippyRatchet => "clippy-ratchet",
+            CheckKind::LintRatchet => "lint-ratchet",
             CheckKind::DocCoherence => "doc-coherence",
         }
     }
@@ -190,6 +198,12 @@ pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
     }
     if any_rust {
         plan.push(PlannedCheck { unit: None, kind: CheckKind::ClippyRatchet });
+    }
+    // #3787 — the ESLint mirror of clippy-ratchet: any TS change runs the
+    // workspace lint ratchet once, so drift refuses at land instead of
+    // surfacing as an anonymous 03:55 nightly red.
+    if units.iter().any(|u| matches!(u, TestUnit::TsPackage(_))) {
+        plan.push(PlannedCheck { unit: None, kind: CheckKind::LintRatchet });
     }
     if !units.is_empty() {
         plan.push(PlannedCheck { unit: None, kind: CheckKind::DocCoherence });
@@ -753,4 +767,45 @@ pub fn join_cases(
         }
     }
     (joined, unjoined)
+}
+
+/// #3787 — run the workspace ESLint ratchet (`lint-ratchet.js`) for the werk.
+/// The ESLint mirror of `run_clippy_ratchet`: counts may only decrease; a rule
+/// pushed over baseline REFUSES the land with rule+count+file:line in the
+/// script's output. `LINT_RATCHET_ROOT` pins measurement to the werk (#3701:
+/// the session env otherwise points ratchets at canonical, measuring main
+/// instead of this card's diff). A fresh worktree has no root `node_modules`,
+/// so eslint falls back to canonical's binary via `$CHORUS_HOME` unless the
+/// caller already pinned `LINT_RATCHET_ESLINT_BIN` (hermetic tests do).
+/// Missing script + missing baseline = a pre-#3787 tree — pass. Missing script
+/// with the baseline PRESENT = the ratchet was deleted out of a post-#3787
+/// tree — refuse loudly, never pass vacuously (#3734: a guard whose target is
+/// deleted must fail, not evaporate).
+pub fn run_lint_ratchet(werk: &str) -> bool {
+    let script = format!("{}/platform/scripts/lint-ratchet.js", werk);
+    if !std::path::Path::new(&script).is_file() {
+        let baseline = format!("{}/.eslint-baseline.json", werk);
+        if std::path::Path::new(&baseline).is_file() {
+            eprintln!(
+                "lint-ratchet: REFUSED — {} carries .eslint-baseline.json but platform/scripts/lint-ratchet.js is missing (guard target deleted, #3734)",
+                werk
+            );
+            return false;
+        }
+        return true;
+    }
+    let mut cmd = std::process::Command::new("node");
+    cmd.arg(&script).current_dir(werk).env("LINT_RATCHET_ROOT", werk);
+    let werk_eslint = format!("{}/node_modules/.bin/eslint", werk);
+    if std::env::var("LINT_RATCHET_ESLINT_BIN").is_err()
+        && !std::path::Path::new(&werk_eslint).is_file()
+    {
+        if let Ok(home) = std::env::var("CHORUS_HOME") {
+            let canon = format!("{}/node_modules/.bin/eslint", home);
+            if std::path::Path::new(&canon).is_file() {
+                cmd.env("LINT_RATCHET_ESLINT_BIN", canon);
+            }
+        }
+    }
+    cmd.status().map(|s| s.success()).unwrap_or(false)
 }
