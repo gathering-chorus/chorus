@@ -18,6 +18,18 @@ const ROLES = ['jeff', 'wren', 'silas', 'kade'] as const;
 
 interface BoardCard { id: number; owner?: string; status?: string; title?: string; domain?: string; }
 
+/** A werk-run pin as written to disk. Every field optional on purpose: this is
+ *  parsed from a file another process wrote, and a missing field must read as
+ *  "cannot prove it" rather than crash the poll. */
+interface WerkRunPin {
+  role?: string;
+  card?: number;
+  phase?: string;
+  pid?: number;
+  presentedAt?: string;
+  startedAt?: string;
+}
+
 export interface RoleTile {
   role: string;
   state: string;
@@ -234,23 +246,8 @@ export class TilePoller {
       const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
       const pidStarts = this.pidStartTimes();
       for (const f of files) {
-        let run: { role?: string; card?: number; phase?: string; pid?: number; presentedAt?: string; startedAt?: string };
-        try {
-          run = JSON.parse(fs.readFileSync(path.join(this.werkRunsDir, f), 'utf-8'));
-        } catch { continue; }
-        if ((run.role || '').toLowerCase() !== role.toLowerCase()) continue;
-        if (run.phase === 'running') {
-          if (!run.pid || !run.startedAt) continue;
-          const procStart = pidStarts.get(run.pid);
-          if (procStart === undefined) continue; // pid not alive
-          const pinStart = Date.parse(run.startedAt);
-          if (!Number.isFinite(pinStart) || Math.abs(procStart - pinStart) > 15 * 60 * 1000) continue; // alive but not OUR runner
-        } else if (run.phase === 'presented') {
-          const t = run.presentedAt ? Date.parse(run.presentedAt) : NaN;
-          if (!Number.isFinite(t) || Date.now() - t > 24 * 3600 * 1000) continue;
-        } else {
-          continue;
-        }
+        const run = this.readRun(f, role);
+        if (!run || !this.runIsCurrent(run, pidStarts)) continue;
         if (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting') {
           tile.state = run.phase === 'presented' ? 'presenting' : 'building';
         }
@@ -263,13 +260,47 @@ export class TilePoller {
     }
   }
 
+  /** One run pin, if it parses and belongs to this role. Unreadable or foreign → null. */
+  private readRun(file: string, role: string): WerkRunPin | null {
+    let run: WerkRunPin;
+    try {
+      run = JSON.parse(fs.readFileSync(path.join(this.werkRunsDir, file), 'utf-8')) as WerkRunPin;
+    } catch { return null; }
+    return (run.role || '').toLowerCase() === role.toLowerCase() ? run : null;
+  }
+
+  /**
+   * Does this pin describe something happening NOW?
+   *
+   * The two phases fail differently, which is why they are asked differently.
+   * A `running` pin is only current if a live process matches it by IDENTITY —
+   * pid AND start time within 15 minutes — because pids are reused: #3781 caught
+   * pin 3467's pid alive as a Chrome renderer, and the tile cheerfully reported a
+   * long-dead run as building. A `presented` pin has no process to check, so it
+   * ages out instead. Either way a pin that cannot prove itself is ignored, never
+   * trusted-by-default.
+   */
+  private runIsCurrent(run: WerkRunPin, pidStarts: Map<number, number>): boolean {
+    if (run.phase === 'running') {
+      if (!run.pid || !run.startedAt) return false;
+      const procStart = pidStarts.get(run.pid);
+      if (procStart === undefined) return false; // pid not alive
+      const pinStart = Date.parse(run.startedAt);
+      return Number.isFinite(pinStart) && Math.abs(procStart - pinStart) <= 15 * 60 * 1000;
+    }
+    if (run.phase === 'presented') {
+      const t = run.presentedAt ? Date.parse(run.presentedAt) : NaN;
+      return Number.isFinite(t) && Date.now() - t <= 24 * 3600 * 1000;
+    }
+    return false;
+  }
+
   // #3781 — the batched pid→start-time map; cached per poll cycle (5s cadence,
   // one execSync of ps = milliseconds). Test override wins.
   private pidStartTimes(): Map<number, number> {
     if (_pidStartsOverride) return _pidStartsOverride;
     const map = new Map<number, number>();
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { execSync } = require('child_process');
       const out: string = execSync('ps -eo pid=,lstart=', { encoding: 'utf-8', timeout: 3000 });
       for (const line of out.split('\n')) {

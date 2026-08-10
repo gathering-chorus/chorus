@@ -95,7 +95,12 @@ export function publishEvent(deps: RelayConnDeps, ev: NostrEvent): Promise<Publi
         sendEvent(); // in-order after the AUTH frame
       } else if (type === 'OK' && payload[1] === ev.id) {
         clearTimeout(timer);
-        done(() => resolve({ ok: payload[2] === true, id: ev.id, message: String(payload[3] ?? '') }));
+        // The relay's reason is meant to be a string, but it comes off the wire
+        // and a non-string would stringify to '[object Object]' — an error report
+        // that says nothing, in the one field a person reads when a send fails.
+        const reason = payload[3];
+        const message = typeof reason === 'string' ? reason : reason == null ? '' : JSON.stringify(reason);
+        done(() => resolve({ ok: payload[2] === true, id: ev.id, message }));
       }
       // an OK for the AUTH event's own id (≠ ev.id) is the auth ack — ignored here.
     });
