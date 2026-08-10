@@ -10,7 +10,7 @@
      Everything below the header is LIVE from owl-api through the same-origin /owl
      proxy (#3706/#3644: no hardcoded host, no :3000 dependency — this page must
      work identically on localhost, over wifi by IP, and through any tunnel). -->
-<link rel="stylesheet" href="/athena/athena-flow.css"><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<script>document.write('<link rel="stylesheet" href="'+window.basePath('/athena/athena-flow.css')+'">');document.write('<scr'+'ipt src="'+window.basePath('/athena/athena-flow.js')+'"><\/scr'+'ipt>');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -24,7 +24,7 @@ window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.in
 return b+(x.charAt(0)==='/'?x:'/'+x);};
 /* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
    it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
-var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script><script src="/athena/athena-flow.js"></script>
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
 <script>mountJourneyNav('chorus');</script>
 <style>
   .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:4px; }
