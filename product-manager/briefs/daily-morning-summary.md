@@ -1,32 +1,31 @@
-# Daily Morning Summary — 2026-08-09
+# Daily Morning Summary — 2026-08-10
 
-**HEADLINE:** Build type errors hit 202 (+13, largest single-day jump ever) while CSC regressed +32 to 156 — yesterday's sign-in batch is the prime suspect for both; both need investigation today.
+**HEADLINE:** npm ci enters day 62 with no owner and all tests dark; domain-context files breach the 7d threshold tomorrow unless Wren updates them today.
 
-**OPS:** YELLOW (Silas review 2026-08-08)
-- GREEN: Repo clean; CLAUDE.md fragments resolved; domain context resolved (both 2d from re-breach — monitor)
-- YELLOW: Hooks dead-code day 6; /tmp plist migration stalled >8d; Dependabot #449/#443 **67d open**
-- RED: CSC compliance — 156 `/tmp/` refs in `platform/scripts/` (+32 from 124); `chorus-model-deploy.sh` (+16 refs) from #3785–#3788 batch is primary driver; reverses prior week's reduction trend
-- Top concern: CSC +32 regression entered yesterday — audit `chorus-model-deploy.sh` and consider revert
+**OPS:** YELLOW (Silas review 2026-08-09)
+- GREEN: Repo clean; CSC compliance improved −60 refs to 96 (−38%, #3796 driver); CLAUDE.md fragments still absent
+- YELLOW: Hooks dead-code day 7 carry; /tmp plist migration stalled >9d; Dependabot #449/#443 **68d open**; domain-context files **6d — breaches 7d threshold tomorrow**
+- Top concern: domain-context-chorus.md + domain-context-infrastructure.md need Wren update **today**
 
-**QUALITY:** RED (Kade review 2026-08-09)
-- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 59** (no movement)
-- Lint blocked (`@eslint/js`), **day 61** (same root cause)
-- Build: **202 type errors — REGRESSION +13 today**, largest single-day jump on record
-- Root cause: `npm ci` at repo root — **61 days unresolved, no owner**
+**QUALITY:** RED (Kade review 2026-08-10)
+- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 60** (no movement)
+- Lint blocked (`@eslint/js`), **day 62** (same root cause, no movement)
+- Build: **202 type errors — STABLE** (no new regression; yesterday's +13 has not worsened)
+- Root cause: `npm ci` at repo root — **62 days unresolved, no owner**
 
-**YESTERDAY (08-08):** 6 cards shipped — sign-in flow overhaul
-- **#3791 (Silas):** Return URL fixed across hosts (69 tests)
-- **#3796 (Silas):** Sign-in no longer 404s; guard serves its own "signed in as" page (75 tests)
-- **#3797, #3795, #3792, #3775 (Wren):** Supporting sign-in batch
+**YESTERDAY (08-09):** 4 cards shipped — guard hardening
+- **#3804 (Silas):** Path-mounted guard instance for llug.com/chorus — new plist, shared OIDC state, self-healing client (84 tests)
+- **#3805 (Silas):** Guard-authored URLs speak the visitor's frame — pub() prefixes at emission only (99 tests)
+- **#3765 (Silas):** Supporting guard card
+- **#3774 (Kade):** Supporting card
 
 **TODAY:**
-1. **Silas → investigate build +13** — 202 type errors; yesterday's sign-in cards are prime suspect
-2. **Silas → audit `chorus-model-deploy.sh`** — CSC +32 regression; revert if fix not fast
-3. **Jeff → assign `npm ci` owner** — day 61, all quality dark; no horizon
-4. **Jeff → Dependabot #449/#443** — 67d, merge-or-close decision overdue
-5. **Monitor:** fragments + domain context 2d from 7d threshold re-breach
+1. **Wren → update domain-context-chorus.md + domain-context-infrastructure.md** — breaches 7d tomorrow; action blocks Silas carry resolution
+2. **Jeff → assign `npm ci` owner** — day 62, all quality dark; no horizon; this is the longest-running unowned blocker
+3. **Jeff → Dependabot #449/#443** — 68d open, merge-or-close decision now critical
+4. **Silas → remove dead-code paths** (registration_json, owes_response_block) — hooks day 7 carry
+5. **Silas → land perf-baseline nightly JSON** — disk delta tracking still blind
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 61, no owner** — all 4 suites + lint structurally dark; quality invisible
-- **Build +13 today** (202 errors) — largest single-day jump; source investigation urgent
-- **Dependabot #449/#443 at 67d** — overdue decision
+- **`npm ci` day 62, no owner** — all 4 suites + lint structurally dark; quality invisible
+- **Dependabot #449/#443 at 68d** — overdue decision
