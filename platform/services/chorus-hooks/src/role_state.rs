@@ -303,7 +303,30 @@ fn sweep_decision(
     SweepAction::Keep
 }
 
+/// #3802 — should the sweep run at all in this context?
+///
+/// The sweep operates on PRODUCTION surfaces: the team scan dir and the spine.
+/// In a build/test context that brought no world (#3528), touching either is
+/// exactly what the membrane refuses (#3615) — and before the membrane, a CI
+/// run's auto-sweep could quietly demote the LIVE team's states (the container
+/// sees the host's files but none of its processes, so every session reads
+/// dead). Hygiene on prod state is prod behavior, not a side effect of
+/// invoking the shim inside CI. Pure over an env fn so the proofs can drive it.
+fn sweep_should_skip(env: &dyn Fn(&str) -> Option<String>) -> bool {
+    matches!(
+        crate::shared::membrane::context_from(env).0,
+        crate::shared::membrane::Context::Build
+    ) && env("CHORUS_LOG_FILE").is_none()
+}
+
 fn sweep_and_demote(verbose: bool) -> usize {
+    let env = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
+    if sweep_should_skip(&env) {
+        if verbose {
+            eprintln!("  sweep skipped: build context with no world override (#3615/#3528)");
+        }
+        return 0;
+    }
     let mut demoted = 0;
 
     for role in ROLES {
@@ -502,6 +525,24 @@ mod tests {
             sweep_decision("idle", Some("cleanup"), &Liveness::Unmeasurable("lsof"), false),
             SweepAction::Keep
         );
+    }
+
+    #[test]
+    fn sweep_skips_in_build_context_without_a_world() {
+        // VIOLATION fixture: CI set, no world — running the sweep here is what
+        // demoted live team state from inside containers pre-membrane.
+        let ci = |k: &str| match k { "CI" => Some("true".into()), _ => None };
+        assert!(sweep_should_skip(&ci), "CI with no world must skip the sweep");
+        // NEGATIVE PROOFS both ways: a test that brought its world sweeps...
+        let ci_world = |k: &str| match k {
+            "CI" => Some("true".into()),
+            "CHORUS_LOG_FILE" => Some("/tmp/x/log".into()),
+            _ => None,
+        };
+        assert!(!sweep_should_skip(&ci_world), "a brought world must not skip");
+        // ...and production always sweeps.
+        let prod = |_: &str| None;
+        assert!(!sweep_should_skip(&prod), "prod must never skip");
     }
 
     #[test]
