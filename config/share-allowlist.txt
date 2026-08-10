@@ -53,4 +53,8 @@
 
 # Assets the pages need to render.
 /js/vendor
+# base-path.js is how a page learns it is mounted under /chorus (#3798/#3809).
+# Without it every model fetch escapes the mount and dies on the garden site —
+# the entrance loads its frame and never its content. One exact file.
+/js/base-path.js
 /css
