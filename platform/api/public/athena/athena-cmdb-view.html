@@ -64,7 +64,21 @@ h1 { font-size: 20px; font-weight: 300; margin-bottom: 4px; }
 
 .loading { text-align: center; padding: 40px; color: #888; font-size: 13px; }
 </style>
-<script src="/js/base-path.js"></script>
+<script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+   A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
+   against the apex, asks the garden site, gets a 404 — so the file that would have told
+   this page where it lives can never load. Chicken-and-egg, and it left three correct
+   fixes underneath it inert. Relative src was rejected: it breaks the no-trailing-slash
+   entry and needs ../ depth per page, which is per-page compensation for a mount.
+   No request, so nothing can escape the mount. At root BASE is '' and URLs are unchanged. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+/* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
+   it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
 </head>
 <body>
 

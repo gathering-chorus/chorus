@@ -87,3 +87,42 @@ describe('#3798 NEGATIVE PROOF — the pre-fix shape is detectable', () => {
     expect(fake.includes('base-path.js')).toBe(false);
   });
 });
+
+/**
+ * #3810 — the bootstrap must not FETCH anything to learn its own base.
+ *
+ * The defect this pins: every page loaded the resolver with a root-absolute
+ * <script src>, which from /chorus/ resolves against the apex, hits the garden
+ * site, and 404s. The file that teaches a page its mount could never load, so
+ * three correct fixes underneath it were inert and the entrance rendered empty.
+ *
+ * Asserted structurally on every page in the family, because the failure was
+ * invisible on the one page anyone re-checked.
+ */
+describe('#3810 no page fetches anything to learn where it is', () => {
+  const publicDir = path.join(__dirname, '..', 'public');
+  const pages = fs.readdirSync(publicDir, { recursive: true } as never)
+    .filter((f) => String(f).endsWith('.html'))
+    .map((f) => path.join(publicDir, String(f)))
+    .filter((f) => fs.readFileSync(f, 'utf8').includes('window.CHORUS_BASE'));
+
+  test('the family is not empty — a check over zero pages proves nothing', () => {
+    expect(pages.length).toBeGreaterThanOrEqual(11);
+  });
+
+  test.each(pages)('%s bootstraps inline, with no root-absolute loader tag', (page) => {
+    const html = fs.readFileSync(page, 'utf8');
+    // A TAG, not a mention: the first version of this check matched the comment
+    // that explains the fix, which is the comment-vs-code trap that has bitten
+    // this repo three times in two days.
+    expect(html).not.toMatch(/<script\s+src="\/js\/base-path\.js"\s*>/);
+    expect(html).toContain('window.CHORUS_BASE');
+  });
+
+  test('NEGATIVE PROOF: the matcher fires on the exact tag that shipped the bug', () => {
+    const shipped = '<script src="/js/base-path.js"></script>';
+    expect(shipped).toMatch(/<script\s+src="\/js\/base-path\.js"\s*>/);
+    const fixed = '<script>(function(){window.CHORUS_BASE="";}());</script>';
+    expect(fixed).not.toMatch(/<script\s+src="\/js\/base-path\.js"\s*>/);
+  });
+});
