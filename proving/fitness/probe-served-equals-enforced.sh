@@ -11,69 +11,96 @@
 # ALONE stayed green. That is merged-is-not-running at the MODEL layer, and the
 # only thing that catches it is comparing the two SURFACES against each other.
 #
-# The comparison is deliberately cross-surface, never the store twice (a check
-# that reads the graph on both sides proves nothing here — both would agree
-# while the running service disagreed with both):
+# Deliberately cross-surface, never the store twice (both graph reads would
+# agree while the running service disagreed with both):
 #   SERVED   = owl-api /principals over HTTP — what the page tells a reader.
-#   ENFORCED = a live DOOR admission — flow-probe signs in nightly, so it is a
-#              known door-admitted identity; the page MUST list it.
+#   ENFORCED = the DOOR's live admitted set — config/share-principals.txt, the
+#              file the guard consults per request (the #3776 projection). A real
+#              door fact, resolved, NOT a hardcoded constant (Wren's row-4 lesson:
+#              assume nothing, resolve it — or you blame stale-serve for a
+#              correct, intended removal).
 #
-# Verdicts: 0 = the door-admitted identity appears on the served page (and the
-# served count is non-trivial); 1 = it does not — the page and the door
-# disagree; 2 = a surface could not be reached — UNMEASURABLE, never a pass.
+# The assertion: every identity the door admits must appear on the served page.
+# The door's set is the smaller one (canSignIn principals); the page is a
+# superset (all principals). A door-admitted webid MISSING from the page is the
+# stale-serve drift. A webid removed from the door is not this row's concern —
+# it simply drops from the enforced set, and its absence from the page is then
+# correct, not a finding.
+#
+# Verdicts: 0 = every door-admitted identity is served; 1 = at least one is
+# admitted but not served (page and door disagree); 2 = a surface could not be
+# read, or the enforced set is empty — UNMEASURABLE, never a pass.
 set -u
 
 OWL="${FITNESS_OWL_API:-http://localhost:3360}"
-# The identity we KNOW the live door admits (proven by the nightly sign-in flow,
-# row 7's door-opens leg). Overridable so the fixture can name its own.
-ENFORCED_WEBID="${FITNESS_ENFORCED_WEBID:-https://id.lightlifeurbangardens.com/flow-probe/profile/card#me}"
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# The DOOR's admitted set, resolved from the file the guard actually reads.
+ENFORCED_FILE="${FITNESS_ENFORCED_FILE:-$CHORUS_ROOT/config/share-principals.txt}"
 
 PROVE_RED=0
 [ "${1:-}" = "--prove-red" ] && PROVE_RED=1
 
-# SERVED, over HTTP — the page, not the graph.
-SERVED=$(curl -s --max-time 15 "$OWL/principals" 2>/dev/null) || {
-  echo "row9 UNMEASURABLE — owl-api /principals did not answer at $OWL" >&2; exit 2; }
-COUNT=$(printf '%s' "$SERVED" | python3 -c 'import json,sys
-try:
-    d=json.load(sys.stdin); rows=d.get("data",d if isinstance(d,list) else [])
-    print(len(rows))
-except Exception: print(-1)')
-[ "$COUNT" -ge 0 ] 2>/dev/null || { echo "row9 UNMEASURABLE — /principals did not return a parseable collection" >&2; exit 2; }
-[ "$COUNT" -gt 0 ] || { echo "row9 UNMEASURABLE — /principals served ZERO — a door reading empty is indistinguishable from a correct refusal" >&2; exit 2; }
+# --- ENFORCED: the door's live admitted webids (comment/blank lines stripped).
+[ -r "$ENFORCED_FILE" ] || { echo "row9 UNMEASURABLE — the door's allow-set file is unreadable at $ENFORCED_FILE" >&2; exit 2; }
+enforced_set() { grep -v '^\s*#' "$ENFORCED_FILE" | grep -v '^\s*$' | sed 's/^\s*//;s/\s*$//'; }
+ENFORCED="$(enforced_set)"
+[ -n "$ENFORCED" ] || { echo "row9 UNMEASURABLE — the door admits NO ONE (empty allow-set) — indistinguishable from a correct refusal of everyone" >&2; exit 2; }
 
-served_has() {  # served_has <webid> — does the served page carry this webid?
-  printf '%s' "$SERVED" | python3 -c 'import json,sys
-w=sys.argv[1]
-try: d=json.load(sys.stdin); rows=d.get("data",d if isinstance(d,list) else [])
-except Exception: sys.exit(3)
-def vals(o):
-    if isinstance(o,dict):
-        for v in o.values(): yield from vals(v)
-    elif isinstance(o,list):
-        for v in o: yield from vals(v)
-    else: yield str(o)
-sys.exit(0 if any(w==v for r in rows for v in vals(r)) else 1)' "$1"
+# --- SERVED: the webId FIELD of every /principals record, over HTTP. Narrowed to
+# the field (Wren's non-blocking note) — a webid in a comment/provenance string
+# must not count as served.
+SERVED_JSON=$(curl -s --max-time 15 "$OWL/principals" 2>/dev/null) || {
+  echo "row9 UNMEASURABLE — owl-api /principals did not answer at $OWL" >&2; exit 2; }
+SERVED_WEBIDS=$(printf '%s' "$SERVED_JSON" | python3 -c 'import json,sys
+try:
+    d=json.load(sys.stdin); rows=d.get("data", d if isinstance(d,list) else [])
+except Exception:
+    sys.exit(3)
+if rows is None: sys.exit(3)
+for r in rows:
+    w=r.get("webId") if isinstance(r,dict) else None
+    if w: print(w)') || { echo "row9 UNMEASURABLE — /principals did not return a parseable collection" >&2; exit 2; }
+[ -n "$SERVED_WEBIDS" ] || { echo "row9 UNMEASURABLE — /principals served ZERO webids — a door reading empty is indistinguishable from a correct refusal" >&2; exit 2; }
+
+# THE verdict path, over the two resolved surfaces. Injectable enforced set so
+# the negative proof drives THIS EXACT CODE with a violating input.
+verdict() {  # verdict <enforced-lines>; echoes RED lines, returns 0 all-served / 1 drift
+  local missing="" w
+  while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    if ! grep -Fxq -- "$w" <<<"$SERVED_WEBIDS"; then
+      missing="$missing$w"$'\n'
+    fi
+  done <<<"$1"
+  if [ -n "$missing" ]; then printf '%s' "$missing"; return 1; fi
+  return 0
 }
 
 if [ "$PROVE_RED" -eq 1 ]; then
-  # THE VIOLATION: an identity the door admits that the page does NOT list —
-  # exactly the 2026-08-10 state (flow-probe enforced, not served). We name a
-  # webid we know is NOT on the served page and assert the check catches the gap.
-  ABSENT="https://id.lightlifeurbangardens.com/enforced-but-not-served-$$/profile/card#me"
-  if served_has "$ABSENT"; then
-    echo "NEGATIVE PROOF FAILED — a webid the page does not serve was reported as served." >&2
+  # Drive the REAL verdict path, both directions (Wren's blocker 1):
+  #   A) a violating enforced set — a door-admitted webid ABSENT from served —
+  #      MUST take the RED branch (return 1).
+  #   B) a clean enforced set — only webids that ARE served — MUST pass (0).
+  # Same verdict() the live run calls; not a re-implementation.
+  SYNTH="https://id.lightlifeurbangardens.com/enforced-not-served-proof/profile/card#me"
+  if verdict "$SYNTH" >/dev/null; then
+    echo "NEGATIVE PROOF FAILED — an admitted-but-not-served webid did NOT trip the RED branch." >&2
     exit 1
   fi
-  echo "NEGATIVE PROOF OK — a door-admitted identity ABSENT from the served page makes the check fail (the 2026-08-10 stale-boot drift, reproduced)."
+  CONTROL=$(printf '%s\n' "$SERVED_WEBIDS" | head -1)
+  if ! verdict "$CONTROL" >/dev/null; then
+    echo "NEGATIVE PROOF FAILED — a served webid was wrongly reported as a drift (false positive)." >&2
+    exit 1
+  fi
+  echo "NEGATIVE PROOF OK — an admitted-but-not-served identity trips RED; a served one passes. Both directions through verdict()."
   exit 0
 fi
 
-if served_has "$ENFORCED_WEBID"; then
-  echo "row9 GREEN — the door-admitted identity ($ENFORCED_WEBID) appears on the served /principals page; served ($COUNT) agrees with the door."
+if MISSING=$(verdict "$ENFORCED"); then
+  echo "row9 GREEN — every door-admitted identity appears on the served /principals page ($(printf '%s\n' "$SERVED_WEBIDS" | wc -l | tr -d ' ') served, $(printf '%s\n' "$ENFORCED" | wc -l | tr -d ' ') enforced)."
   exit 0
 else
-  echo "row9 RED — SERVED != ENFORCED: the door admits $ENFORCED_WEBID but owl-api /principals ($COUNT records) does not list it."
-  echo "         The page tells a reader this identity cannot sign in while the door lets it in — the stale-served-graph drift (#3785)."
+  echo "row9 RED — SERVED != ENFORCED: the door admits identities the page does not list, so the page says they cannot sign in while the door lets them in (#3785 stale-serve):"
+  printf '%s\n' "$MISSING" | sed 's/^/  admitted-but-not-served: /'
   exit 1
 fi
