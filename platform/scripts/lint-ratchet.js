@@ -66,6 +66,33 @@ function countByRule(results) {
   return counts;
 }
 
+// #3787 — file:line sites per rule, so a refusal names WHERE, not just how many.
+// All current sites of an over-baseline rule are listed (the new ones are among
+// them; eslint can't tell which are new), capped so one noisy rule can't flood
+// the werk-test failure output.
+const SITES_CAP = 20;
+function sitesByRule(results) {
+  const sites = {};
+  for (const file of results) {
+    const rel = path.relative(REPO_ROOT, file.filePath);
+    for (const msg of file.messages || []) {
+      const rule = msg.ruleId || '__syntax__';
+      (sites[rule] = sites[rule] || []).push(`${rel}:${msg.line || 0}`);
+    }
+  }
+  return sites;
+}
+
+function writeSites(rule, sites) {
+  const list = sites[rule] || [];
+  for (const s of list.slice(0, SITES_CAP)) {
+    process.stderr.write(`      ${s}\n`);
+  }
+  if (list.length > SITES_CAP) {
+    process.stderr.write(`      … +${list.length - SITES_CAP} more site(s)\n`);
+  }
+}
+
 function writeBaseline(counts) {
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -137,10 +164,13 @@ function main() {
   // meanings — 1 = counts climbed, which dominates; 2 = new rules only — so
   // callers keying on them are unaffected, and #3428's parseable summary is
   // still the last stdout line, now emitted exactly once.
+  const sites = (violations.length > 0 || newRules.length > 0) ? sitesByRule(results) : {};
+
   if (violations.length > 0) {
     process.stderr.write('lint-ratchet: FAIL — rule counts climbed above baseline:\n');
     for (const v of violations) {
       process.stderr.write(`  ${v.rule}: ${v.count} (baseline ${v.limit}, +${v.delta})\n`);
+      writeSites(v.rule, sites);
     }
   }
 
@@ -148,6 +178,7 @@ function main() {
     process.stderr.write('lint-ratchet: FAIL — new rule IDs firing that aren\'t in baseline:\n');
     for (const n of newRules) {
       process.stderr.write(`  ${n.rule}: ${n.count}\n`);
+      writeSites(n.rule, sites);
     }
     process.stderr.write('Run `npm run lint:baseline` after review to adopt new rules.\n');
   }

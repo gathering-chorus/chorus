@@ -169,6 +169,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 ok
             }
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
+            (CheckKind::LintRatchet, None) => werk_test::run_lint_ratchet(&werk),
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
         };
