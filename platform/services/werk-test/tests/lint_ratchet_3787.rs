@@ -76,11 +76,21 @@ fn lint_ratchet_refuses_over_baseline_and_passes_at_baseline() {
         "the same werk without the violation must pass"
     );
 
-    // ── Missing script = pass (pre-#3787 trees), but ONLY when genuinely
-    // absent — the werk root exists, the script doesn't.
+    // ── Missing script in a PRE-ratchet tree (no baseline either) = pass.
     let bare = root.join("bare-werk");
     std::fs::create_dir_all(&bare).unwrap();
     assert!(werk_test::run_lint_ratchet(bare.to_str().unwrap()));
+
+    // ── A guard whose target is deleted must fail LOUDLY, never pass
+    // vacuously (#3734). A tree that carries the baseline but not the script
+    // is a post-#3787 tree with the ratchet deleted — refuse.
+    let deleted = root.join("deleted-werk");
+    std::fs::create_dir_all(&deleted).unwrap();
+    std::fs::write(deleted.join(".eslint-baseline.json"), baseline).unwrap();
+    assert!(
+        !werk_test::run_lint_ratchet(deleted.to_str().unwrap()),
+        "baseline present + script deleted must refuse, not vacuously pass"
+    );
 
     std::env::remove_var("LINT_RATCHET_ESLINT_BIN");
     let _ = std::fs::remove_dir_all(&root);

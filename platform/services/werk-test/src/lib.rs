@@ -777,11 +777,21 @@ pub fn join_cases(
 /// instead of this card's diff). A fresh worktree has no root `node_modules`,
 /// so eslint falls back to canonical's binary via `$CHORUS_HOME` unless the
 /// caller already pinned `LINT_RATCHET_ESLINT_BIN` (hermetic tests do).
-/// Missing script = pass (pre-#3787 trees must not fail vacuously — but a
-/// DELETED script in a post-#3787 tree is caught by the negative proof).
+/// Missing script + missing baseline = a pre-#3787 tree — pass. Missing script
+/// with the baseline PRESENT = the ratchet was deleted out of a post-#3787
+/// tree — refuse loudly, never pass vacuously (#3734: a guard whose target is
+/// deleted must fail, not evaporate).
 pub fn run_lint_ratchet(werk: &str) -> bool {
     let script = format!("{}/platform/scripts/lint-ratchet.js", werk);
     if !std::path::Path::new(&script).is_file() {
+        let baseline = format!("{}/.eslint-baseline.json", werk);
+        if std::path::Path::new(&baseline).is_file() {
+            eprintln!(
+                "lint-ratchet: REFUSED — {} carries .eslint-baseline.json but platform/scripts/lint-ratchet.js is missing (guard target deleted, #3734)",
+                werk
+            );
+            return false;
+        }
         return true;
     }
     let mut cmd = std::process::Command::new("node");
