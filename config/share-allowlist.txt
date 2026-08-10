@@ -47,6 +47,9 @@
 # (~/.chorus/security-fitness.json rendered with ageMinutes); nothing personal.
 /security.html
 /api/chorus/security-fitness
+# The rollout map the score page links to (#3809) — one exact document, not the
+# docs tree: the prefix IS the filename, so nothing beside it is shared.
+/designing/docs/security-rollout.html
 
 # Assets the pages need to render.
 /js/vendor
