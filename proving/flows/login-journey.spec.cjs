@@ -175,6 +175,22 @@ test.describe('the journey — one sign-in, land where you asked', () => {
     expect(await looksLikeLogin(page)).toBe(false);
     await expect(page.locator('body')).not.toContainText(/path not shared|not found|404/i);
     expect(page.url()).toContain('/chorus');
+
+    // #3807 — AND THE PAGE HAS ITS CONTENT. Landing is not arriving. This scenario
+    // passed for two days while the entrance rendered an empty frame: the data
+    // calls went to the apex, the garden site answered not-found, and the page sat
+    // on "loading the stream live from the model…" forever. Jeff's words for it:
+    // "the new chorus landing page is NOT the one i expected it looks like u just
+    // made it" — it looked invented because everything real on it was missing.
+    //
+    // Asserted on what the model actually produces, so it fails when the model
+    // cannot be reached rather than when a label is reworded.
+    await expect(page.locator('body'), 'the entrance never finished loading the model')
+      .not.toContainText(/loading the stream live from the model/i, { timeout: 20000 });
+    await expect(page.locator('body'), 'the entrance rendered no value-stream steps')
+      .toContainText(/shaping|directing|designing|building|proving|reflecting/i);
+    await expect(page.locator('#stream-block .prod').first(), 'the stream rendered no products')
+      .toBeVisible();
   });
 
   test('the entrance admits the entrance ONLY — being signed in is not a skeleton key', async ({ page }) => {
