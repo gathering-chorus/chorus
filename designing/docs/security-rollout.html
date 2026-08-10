@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security — Rollout Map</title>
+<style>
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; max-width: 46em; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  h2 { font-size: 1.15em; margin-top: 1.6em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.92em; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  .strong { color: #059669; font-weight: bold; }
+  .stilt { color: #b45309; font-weight: bold; }
+  .weak { color: #b91c1c; font-weight: bold; }
+  .src { color: #777; font-size: 0.82em; }
+  li { margin-bottom: .4em; }
+</style>
+</head>
+<body>
+<h1>Security — Rollout Map <span>#3809</span></h1>
+<div class="date">Silas · 2026-08-10 · live score: <a href="/security.html">/security.html</a> · truth as of the dates on each claim</div>
+
+<p><b>The bar (Jeff, 2026-08-10):</b> “the security piece must work properly on our
+UIs, APIs, CLIs and not be a house of cards.” This page is the standing answer to
+“where are we” — what the architecture is, what is solid, what is a stilt, and in
+what order the stilts become structure.</p>
+
+<h2>The architecture in three sentences</h2>
+<p>Every actor — Jeff, the three roles, services, workers, test identities — is a
+<b>Principal</b> in one security graph (<span class="src">urn:chorus:domains:security</span>),
+with one identity provider (<span class="src">id.lightlifeurbangardens.com</span>, CSS/Solid-OIDC)
+proving who anyone is (ADR-052). Proving who you are grants nothing: each door decides
+reach separately — the share-guard for public pages, the app for llug.com, the Clearing,
+the API envelope (ADR-054: authN is the security domain, authZ belongs to each door).
+Since 2026-08-10 the system measures itself against this model nightly and publishes
+the score at <span class="src">/security.html</span>.</p>
+
+<h2>The five properties that make it not a house of cards</h2>
+<ol>
+  <li><b>One identity mechanism on every surface.</b> No parallel logins, no bespoke tokens.</li>
+  <li><b>No self-declared identity anywhere.</b> A header or env var saying who you are is a claim, not a credential.</li>
+  <li><b>Fail closed, and every refusal names its own state.</b> “Not you”, “not shared”, “not found”, “could not measure” are different answers and must stay different (the quintet's sixth property; four instances of this defect class fixed 2026-08-09/10).</li>
+  <li><b>Conformance machine-measured nightly.</b> Drift surfaces as a score drop on a page, not as an incident (fitness rows + write-snapshot, #3765/#3798/#3806).</li>
+  <li><b>Reproducible from source.</b> A fresh store load reproduces the whole identity substrate (#3726, MODEL_SET/SECURITY_SET).</li>
+</ol>
+
+<h2>Truth per surface — 2026-08-10</h2>
+<table>
+<tr><th>Surface</th><th>State</th><th>The honest detail</th></tr>
+<tr>
+  <td><b>UIs</b></td><td class="strong">SOLID</td>
+  <td>One provider, real sign-in, sessions verified per request, allow-set consulted per
+  request, refusals name their state. llug.com/chorus IS the page (#3804/#3805). A
+  least-privileged identity (flow-probe) walks the whole journey in a real browser
+  nightly — 8/9 flows green 2026-08-10, ninth (sign-out) unskipped by #3798.</td>
+</tr>
+<tr>
+  <td><b>APIs</b></td><td class="stilt">STILTS</td>
+  <td>The public edge is real: ES256 tokens verified against the graph (es256-identity.ts,
+  security-envelope.ts). But DEC-093's standing rule is “localhost:3340, no auth” — every
+  internal API trusts the LAN, and most internal surfaces are not behind the envelope.
+  Where service-to-service auth exists it is brittle: a token minted once expired
+  mid-loop and broke test wire-back (2026-08-10, Kade fixing). Holds because nothing
+  hostile is on the LAN.</td>
+</tr>
+<tr>
+  <td><b>CLIs</b></td><td class="weak">WEAKEST</td>
+  <td>cards, the werk verbs, the scripts take identity from a header or env var —
+  <span class="src">DEPLOY_ROLE=jeff</span> IS the authorization on the board, and the
+  pipeline that merges to main believes the role name the request claims. The machinery
+  to fix this exists (per-role creds in ~/.chorus/identity, chorus-identity-token mints
+  real tokens) — the CLIs don't present them and the internal doors don't ask.</td>
+</tr>
+</table>
+
+<h2>Gaps, in the order to close them</h2>
+<ol>
+  <li><b>Self-declared identity dies</b> — CLIs and werk verbs present the role's real
+  token; the doors that merge to main verify it. Kills the weakest leg. (Property 2)</li>
+  <li><b>The envelope covers the LAN</b> — internal APIs move behind the same door,
+  DEC-093's “no auth on 3340” retired deliberately, with service creds and sane TTL
+  re-minting so it does not break the pipelines that already struggle with it. (Property 1)</li>
+  <li><b>One authorization model, four projections</b> — today four independent
+  allow-lists (guard file, app users.ttl, Clearing graph, envelope graph); adding or
+  revoking a person is four edits, and only fitness row 6 keeps them from drifting.
+  The graph becomes the source; the doors project from it.</li>
+  <li><b>The model's empty classes get instances</b> — Permission (~30 real rules,
+  0 modeled), Credential (live creds, 0 modeled), AuthBoundary (4+, 0), SecurityProbe
+  (8, 0). This is the model-conformance half of the original fitness ask (#3765),
+  still unbuilt.</li>
+  <li><b>The three lying gates</b> — pair_gate, inject_force, quality_gate document
+  “blocking” and return allow. Verify or strip the claim. (Named 2026-08-06, unverified.)</li>
+  <li><b>Credentials into the backup tier</b> — ~/.chorus/identity, secrets, tunnel cred:
+  irreplaceable, ~1.5G with the rest of tier 1, currently zero copies (#3799).</li>
+  <li><b>Edge-policy honesty</b> — password change from a phone fails because the tunnel
+  blocks the account API by design, and the error says “try again”; Buzz keys are not
+  yet derived credentials (#3674 bar).</li>
+</ol>
+
+<h2>What done means</h2>
+<p>All five properties hold on all three surfaces, and the fitness page proves it
+nightly: every row green, including rows that do not exist yet (CLI-identity and
+LAN-envelope conformance become rows when their work lands). At that point this page
+stops being a map of stilts and becomes the record of a structure.</p>
+
+<p class="src">Related: ADR-052 (identity via Solid-OIDC/CSS), ADR-054 (authN/authZ seam),
+ADR-056 (fitness functions per domain), #3726 (reproducible substrate), #3765/#3806
+(fitness rows), #3798 (snapshot + page), DEC-093 (LAN no-auth — to retire), DEC-2209
+(sign-in vocabulary).</p>
+</body>
+</html>
