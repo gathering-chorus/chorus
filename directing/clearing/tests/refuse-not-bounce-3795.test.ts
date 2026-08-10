@@ -65,8 +65,11 @@ describe('#3795 the verifier still separates the two states it must', () => {
   test('a valid cookie verifies (so the gate can tell "known" from "nobody")', () => {
     const valid = fixture.vectors.find((v) => v.name === 'valid')!;
     const v = verifyShareSession(valid.cookie, KEY, fixture.now);
-    expect(v.ok).toBe(true);
-    if (v.ok) expect(v.webid).toMatch(/^https?:\/\//);
+    // Not `if (v.ok) expect(...)`: a conditional expect asserts nothing on the
+    // branch it does not take, so a verifier that refused everything would pass
+    // this test in silence — which is the exact defect class this card is about.
+    if (!v.ok) throw new Error(`the valid vector failed to verify: ${v.reason}`);
+    expect(v.webid).toMatch(/^https?:\/\//);
   });
 
   test('a tampered cookie does NOT verify (so those people are still sent to the door, not refused by name)', () => {

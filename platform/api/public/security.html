@@ -1,0 +1,110 @@
+<!--
+  The security readout — a page, not an answer from a role.
+
+  Jeff, 2026-08-09: "so any time i want to know i gotta ask u and hope you give
+  me the same readout and dont improvise or confabulate or hallucinate."
+
+  Every row it can measure is here, in the words of what it claims. Every row it
+  CANNOT measure is also here, saying why — a row left off a list of seven reads
+  as a row that passed, and that is how "five of seven" got reported as green.
+
+  The age of the reading is displayed as prominently as the reading.
+-->
+<meta charset="utf-8">
+<title>Security — Chorus</title>
+<link rel="stylesheet" href="/css/chorus.css">
+<style>
+  .taken { font-size: .85rem; opacity: .7; margin: 0 0 1.25rem; }
+  .taken.stale { opacity: 1; color: #b45309; font-weight: 600; }
+  .rows { display: grid; gap: .5rem; margin-bottom: 1.5rem; }
+  .row {
+    display: grid; grid-template-columns: 7.5rem 1fr; gap: 1rem;
+    align-items: baseline; padding: .7rem .9rem;
+    border: 1px solid var(--border-color, #e2e2e2); border-radius: 8px;
+  }
+  .verdict { font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; font-weight: 700; }
+  .v-green        { color: #15803d; }
+  .v-red          { color: #b91c1c; }
+  .v-unmeasurable { color: #b45309; }
+  .v-untrustworthy{ color: #b45309; }
+  .v-notwired     { color: #6b7280; }
+  .claim { font-size: .98rem; }
+  .detail { display: block; font-size: .8rem; opacity: .65; margin-top: .2rem; }
+  .score { font-size: 1.05rem; margin: 0 0 .35rem; }
+  .note { font-size: .85rem; opacity: .75; max-width: 62ch; }
+  @media (prefers-color-scheme: dark) {
+    .row { border-color: #333; }
+    .v-green { color: #4ade80; } .v-red { color: #f87171; }
+    .v-unmeasurable, .v-untrustworthy { color: #fbbf24; } .v-notwired { color: #9ca3af; }
+  }
+</style>
+<div class="wrap wide">
+  <div class="eyebrow">Chorus · security</div>
+  <h1>Is security holding?</h1>
+  <p class="score" id="score">reading…</p>
+  <p class="taken" id="taken"></p>
+  <div class="rows" id="rows"></div>
+  <p class="note">
+    Each row asserts one thing about the <em>running</em> system and is scored twice:
+    once against reality, and once against the state it exists to catch. A row whose
+    negative proof stops failing is reported untrustworthy — never green — because a
+    check that cannot fail is not evidence. Unmeasurable is never a pass.
+  </p>
+</div>
+<script>
+const LABEL = {
+  'green': 'green', 'red': 'red', 'unmeasurable': 'unmeasurable',
+  'untrustworthy': 'untrustworthy', 'not wired': 'not wired',
+};
+function cls(v) { return 'v-' + String(v).replace(/\s+/g, ''); }
+
+fetch('/api/chorus/security-fitness')
+  .then(r => r.json().then(body => ({ ok: r.ok, body })))
+  .then(({ ok, body }) => {
+    const rowsEl = document.getElementById('rows');
+    if (!ok) {
+      document.getElementById('score').textContent = 'No reading has been taken.';
+      document.getElementById('taken').textContent = body.detail || '';
+      return;
+    }
+    const rows = body.rows || [];
+    const green = rows.filter(r => r.verdict === 'green').length;
+    document.getElementById('score').textContent =
+      `${green} of ${rows.length} rows green.`;
+
+    // Age is stated, and shouted once it is old enough to mislead.
+    const age = body.ageMinutes;
+    const takenEl = document.getElementById('taken');
+    const hrs = Math.floor(age / 60);
+    const ageText = age < 60 ? `${age} min ago` : `${hrs} hour${hrs === 1 ? '' : 's'} ago`;
+    takenEl.textContent = `Measured ${body.taken} — ${ageText}.`;
+    if (age > 60 * 36) {
+      takenEl.classList.add('stale');
+      takenEl.textContent += ' This reading is old; it describes the system as it was, not as it is.';
+    }
+
+    rowsEl.innerHTML = '';
+    for (const r of rows) {
+      const el = document.createElement('div');
+      el.className = 'row';
+      const v = document.createElement('span');
+      v.className = 'verdict ' + cls(r.verdict);
+      v.textContent = LABEL[r.verdict] || r.verdict;
+      const c = document.createElement('span');
+      c.className = 'claim';
+      c.textContent = r.claim;
+      if (r.detail) {
+        const d = document.createElement('span');
+        d.className = 'detail';
+        d.textContent = r.detail;
+        c.appendChild(d);
+      }
+      el.appendChild(v); el.appendChild(c);
+      rowsEl.appendChild(el);
+    }
+  })
+  .catch(e => {
+    document.getElementById('score').textContent = 'Could not read the snapshot.';
+    document.getElementById('taken').textContent = String(e);
+  });
+</script>

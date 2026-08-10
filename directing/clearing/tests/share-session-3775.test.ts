@@ -25,6 +25,26 @@ const KEY = Buffer.from(fixture.key_b64u.replace(/-/g, '+').replace(/_/g, '/'), 
 const NOW = fixture.now;
 const named = (n: string): Vector => fixture.vectors.find((v) => v.name === n)!;
 
+/**
+ * Narrow a verdict, loudly.
+ *
+ * These assertions used to read `if (v.ok) expect(v.webid)...` — a conditional
+ * expect, which jest/no-conditional-expect flags for exactly the reason that has
+ * bitten us all week: if the branch is never taken the assertion silently does
+ * not run, and the test passes having checked nothing. The narrowing was for
+ * TypeScript's benefit; the silence was the cost. These throw instead, so the
+ * wrong verdict fails the test with the reason attached rather than skipping it.
+ */
+type Verdict = ReturnType<typeof verifyShareSession>;
+function accepted(v: Verdict): Extract<Verdict, { ok: true }> {
+  if (!v.ok) throw new Error(`expected the cookie to verify, got refusal: ${v.reason}`);
+  return v;
+}
+function refused(v: Verdict): Extract<Verdict, { ok: false }> {
+  if (v.ok) throw new Error(`expected a refusal, but the cookie verified as ${v.webid}`);
+  return v;
+}
+
 describe('#3790 shared vectors — the Clearing verifier agrees with the guard', () => {
   test('every vector resolves to the verdict the fixture declares', () => {
     const got = fixture.vectors.map((v) => ({
@@ -36,16 +56,14 @@ describe('#3790 shared vectors — the Clearing verifier agrees with the guard',
 
   test('the valid vector yields a WebID — accept means we learned WHO, not merely that nothing threw', () => {
     const v = verifyShareSession(named('valid').cookie, KEY, NOW);
-    expect(v.ok).toBe(true);
-    if (v.ok) expect(v.webid).toMatch(/^https?:\/\//);
+    expect(accepted(v).webid).toMatch(/^https?:\/\//);
   });
 
   test('tampered-payload is refused — a stolen MAC on a swapped identity must not verify as that identity', () => {
     // The real attack, and the one a mac-over-the-wrong-string verifier accepts:
     // it would hand back the WRONG person, verified.
     const v = verifyShareSession(named('tampered-payload').cookie, KEY, NOW);
-    expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toBe('bad-signature');
+    expect(refused(v).reason).toBe('bad-signature');
   });
 
   test('malformed input REFUSES rather than throws — a throw becomes a 500, and 500s get retried', () => {
@@ -60,8 +78,7 @@ describe('#3790 shared vectors — the Clearing verifier agrees with the guard',
     // accept-nothing implementation and the suite would prove nothing.
     const wrong = Buffer.from('a-different-key-entirely-not-the-fixture-key');
     const v = verifyShareSession(named('valid').cookie, wrong, NOW);
-    expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toBe('bad-signature');
+    expect(refused(v).reason).toBe('bad-signature');
   });
 });
 
@@ -70,16 +87,14 @@ describe('#3775 verifier properties beyond the vectors', () => {
 
   test('no key fails closed — a lost key means signed out, never trusted-by-default', () => {
     const v = verifyShareSession(valid, null, NOW);
-    expect(v.ok).toBe(false);
-    if (!v.ok) expect(v.reason).toBe('no-key');
+    expect(refused(v).reason).toBe('no-key');
   });
 
   test('expiry is a boundary: accepted just before, refused just after', () => {
     const before = verifyShareSession(valid, KEY, NOW);
     expect(before.ok).toBe(true);
     const after = verifyShareSession(valid, KEY, NOW + 10 * 365 * 24 * 3600);
-    expect(after.ok).toBe(false);
-    if (!after.ok) expect(after.reason).toBe('expired');
+    expect(refused(after).reason).toBe('expired');
   });
 
   test('verify answers WHO only — a signed cookie for an unknown WebID still verifies', () => {
@@ -91,14 +106,11 @@ describe('#3775 verifier properties beyond the vectors', () => {
     // failed on the COMMENT that explains this very separation — a check that
     // cannot tell a comment from a call, the same trap Silas hit in his
     // recovery-path test the same morning.)
-    const v = verifyShareSession(valid, KEY, NOW);
-    expect(v.ok).toBe(true);
-    if (v.ok) {
-      expect(typeof v.webid).toBe('string');
-      expect(v).not.toHaveProperty('allowed');
-      expect(v).not.toHaveProperty('role');
-      expect(v).not.toHaveProperty('scope');
-    }
+    const v = accepted(verifyShareSession(valid, KEY, NOW));
+    expect(typeof v.webid).toBe('string');
+    expect(v).not.toHaveProperty('allowed');
+    expect(v).not.toHaveProperty('role');
+    expect(v).not.toHaveProperty('scope');
   });
 
   test('the cookie is found among others, and absent when absent', () => {

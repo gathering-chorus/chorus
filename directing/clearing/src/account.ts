@@ -51,21 +51,39 @@ function local(url: string, cssBase: string): string {
   return url.replace(/^https?:\/\/[^/]+/, cssBase);
 }
 
+/** Argument checks that must happen before ANY call to CSS — refusing here is
+ *  what keeps a weak or unauthenticated request from touching the identity
+ *  server at all (asserted by 'weak new password is refused BEFORE any CSS call'). */
+function rejectBadArguments(p: ChangeParams): ChangeResult | null {
+  if (!p.sessionWebid) return { ok: false, reason: 'not-your-account', message: 'Please sign in again.' };
+  if (!p.email || !p.oldPassword) return { ok: false, reason: 'bad-credentials', message: 'Enter your email and current password.' };
+  if (p.newPassword.length < 8) return { ok: false, reason: 'weak-password', message: 'New password must be at least 8 characters.' };
+  return null;
+}
+
+/** Authenticate with the CURRENT password. Returns the account token, or null —
+ *  and null must always read back as the SAME generic message a wrong password
+ *  gets, or the route becomes an account-enumeration oracle. */
+async function authenticate(
+  p: ChangeParams, cssBase: string, fetchImpl: typeof fetch,
+): Promise<string | null> {
+  const loginRes = await fetchImpl(`${cssBase}/.account/login/password/`, {
+    method: 'POST', headers: h(), body: JSON.stringify({ email: p.email, password: p.oldPassword }),
+  });
+  if (!loginRes.ok) return null;
+  return ((await loginRes.json()) as { authorization?: string }).authorization ?? null;
+}
+
 export async function changePassword(
   p: ChangeParams,
   cssBase = 'http://localhost:3001',
   fetchImpl: typeof fetch = fetch,
 ): Promise<ChangeResult> {
-  if (!p.sessionWebid) return { ok: false, reason: 'not-your-account', message: 'Please sign in again.' };
-  if (!p.email || !p.oldPassword) return { ok: false, reason: 'bad-credentials', message: 'Enter your email and current password.' };
-  if (p.newPassword.length < 8) return { ok: false, reason: 'weak-password', message: 'New password must be at least 8 characters.' };
+  const bad = rejectBadArguments(p);
+  if (bad) return bad;
 
   // 1. authenticate as the user with their CURRENT password
-  const loginRes = await fetchImpl(`${cssBase}/.account/login/password/`, {
-    method: 'POST', headers: h(), body: JSON.stringify({ email: p.email, password: p.oldPassword }),
-  });
-  if (!loginRes.ok) return { ok: false, reason: 'bad-credentials', message: 'That email or current password is incorrect.' };
-  const token = ((await loginRes.json()) as { authorization?: string }).authorization;
+  const token = await authenticate(p, cssBase, fetchImpl);
   if (!token) return { ok: false, reason: 'bad-credentials', message: 'That email or current password is incorrect.' };
 
   // fetch the authed account controls (account-scoped endpoints)

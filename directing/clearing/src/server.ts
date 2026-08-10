@@ -305,7 +305,7 @@ async function sessionPrincipal(req: Request): Promise<{ id: string; name: strin
   // #3775 — a visitor arriving on the guard's session is the same person as one
   // arriving on the Clearing's own: message attribution and jeffAuthority
   // (#3743) resolve identically, because both paths end at WebID → Principal.
-  const guardWebId = await shareSessionWebId(req);
+  const guardWebId = shareSessionWebId(req);
   if (guardWebId) {
     const p = await principalForWebId(guardWebId, Date.now());
     if (p) return p;
@@ -323,7 +323,12 @@ async function sessionPrincipal(req: Request): Promise<{ id: string; name: strin
  * SEPARATELY, per request. Two questions, asked twice, every time: the cookie
  * says who, the allow-set says whether that still means anything.
  */
-async function shareSessionWebId(req: Request): Promise<string | null> {
+/* Synchronous: verification is a local HMAC over a cookie plus a key-file read,
+   with nothing to await. It was declared async, which made every `await` at a
+   call site read as "this can block" when only the allow-set lookup beside it
+   actually does — worth keeping honest, since which step does I/O is exactly
+   what you need to know when the door is slow. */
+function shareSessionWebId(req: Request): string | null {
   const raw = shareSessionFromHeader(req.headers.cookie);
   if (!raw) return null;
   const v = verifyShareSession(raw, readCookieKey());
@@ -332,7 +337,7 @@ async function shareSessionWebId(req: Request): Promise<string | null> {
 
 async function isAuthed(req: Request): Promise<boolean> {
   // The common door first — one sign-in for the system (DEC-2209 clause 1).
-  const guardWebId = await shareSessionWebId(req);
+  const guardWebId = shareSessionWebId(req);
   if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
 
   const session = verifyCookie<{ webid?: string; iat?: number }>(req.cookies?.clearing_session, SESSION_SECRET, 'session');
@@ -373,7 +378,7 @@ async function gate(req: Request, res: Response, next: NextFunction): Promise<un
   // until Chrome gave up. Neither door was wrong alone; together they spun.
   // Today both doors read one list so this is rare; once the lists are per-app
   // (Jeff, 2026-08-08) "signed in here, not there" is the ordinary case.
-  const knownWebId = await shareSessionWebId(req);
+  const knownWebId = shareSessionWebId(req);
   if (knownWebId) {
     return res.status(403).send(refusedPage(knownWebId));
   }
@@ -1179,7 +1184,7 @@ async function socketSessionAuthed(cookieHeader: string): Promise<boolean> {
   // through the Clearing's own isWebIdAllowed, exactly as the clearing_session
   // leg below does. Widening this to "guard cookie means admitted" is the thing
   // per-app authorization exists to prevent.
-  const guardWebId = await shareSessionWebId({ headers: { cookie: cookieHeader } } as unknown as Request);
+  const guardWebId = shareSessionWebId({ headers: { cookie: cookieHeader } } as unknown as Request);
   if (guardWebId && (await isWebIdAllowed(guardWebId, Date.now()))) return true;
 
   const sessMatch = cookieHeader.match(/clearing_session=([^;]+)/);
