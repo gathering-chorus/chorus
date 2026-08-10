@@ -58,6 +58,11 @@ let keyWarned = false;
 export function _resetKeyWarn(): void { keyWarned = false; }
 export function readCookieKey(stateFile: string = STATE_FILE): Buffer | null {
   try {
+    /* The path is ours and never a request's: it defaults to STATE_FILE, a module
+       constant, and is overridden only by tests pointing at a tmp file. This becomes
+       unsafe the day a caller passes something derived from a header, query or body —
+       if you are here because you want to do that, read the constant instead. */
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
     const raw = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
     if (typeof raw.cookie_key !== 'string' || !raw.cookie_key) {
       if (!keyWarned) {

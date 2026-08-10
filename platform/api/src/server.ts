@@ -1459,6 +1459,39 @@ app.get('/api/chorus/context/health', async (req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
+/**
+ * The security readout, served instead of narrated.
+ *
+ * Jeff, 2026-08-09: "so any time i want to know i gotta ask u and hope you give
+ * me the same readout and dont improvise or confabulate or hallucinate." The
+ * rows were real all along; the only way to read them was to ask a role to run
+ * them and retype the answer, which makes the measurement only as reliable as
+ * the narrator. This serves the recorded snapshot verbatim.
+ *
+ * ageMinutes travels with it and is never hidden: a readout whose age you cannot
+ * see cannot be told apart from a readout taken last Tuesday. If no snapshot
+ * exists, say so — never synthesise one.
+ */
+app.get('/api/chorus/security-fitness', (_req: Request, res: Response) => {
+  const file = process.env.FITNESS_SNAPSHOT
+    || path.join(os.homedir(), '.chorus', 'security-fitness.json');
+  try {
+    const stat = fs.statSync(file);
+    const snapshot = JSON.parse(fs.readFileSync(file, 'utf8'));
+    res.json({
+      ...snapshot,
+      ageMinutes: Math.floor((Date.now() - stat.mtimeMs) / 60000),
+      source: file,
+    });
+  } catch {
+    res.status(503).json({
+      error: 'no snapshot has been taken',
+      detail: `expected ${file} — run proving/fitness/write-snapshot.sh`,
+      rows: [],
+    });
+  }
+});
+
 // #2652 AC9 — POST /api/cards/<verb> mutation routes.
 // Thin HTTP wrappers that spawn the cards bash CLI as subprocess with
 // DEPLOY_ROLE injected from X-Role header. Same canonical chain as bash CLI

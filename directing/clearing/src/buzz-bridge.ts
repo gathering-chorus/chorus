@@ -56,7 +56,11 @@ function serialize(pubkey: string, created_at: number, kind: number, tags: strin
  * (msg, channel, signer).
  */
 export function buildKind9(msg: ClearingMsg, channel: string, signer: NostrSigner): NostrEvent {
-  if (!signer || !signer.pubkey) throw new Error('buzz-bridge: no signing key — refusing to build an unsigned event');
+  // `!signer` is dead per the type. The guard that earns its keep is the empty
+  // pubkey — the type cannot rule that out, and it would produce an event signed
+  // by nobody. Narrowed rather than deleted: refusing to build an unsigned event
+  // is the whole point of this line.
+  if (!signer.pubkey) throw new Error('buzz-bridge: no signing key — refusing to build an unsigned event');
   const pubkey = signer.pubkey;
   const created_at = Math.floor(Date.parse(msg.ts) / 1000);
   const kind = 9;

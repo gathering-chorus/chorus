@@ -10,7 +10,7 @@
      Everything below the header is LIVE from owl-api through the same-origin /owl
      proxy (#3706/#3644: no hardcoded host, no :3000 dependency — this page must
      work identically on localhost, over wifi by IP, and through any tunnel). -->
-<link rel="stylesheet" href="/athena/athena-flow.css"><script src="/athena/athena-flow.js"></script>
+<link rel="stylesheet" href="/athena/athena-flow.css"><script src="/js/base-path.js"></script><script src="/athena/athena-flow.js"></script>
 <script>mountJourneyNav('chorus');</script>
 <style>
   .eyebrow { font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin-bottom:4px; }
@@ -23,6 +23,13 @@
 </style>
 </head>
 <body><div class="wrap wide">
+<!-- A way out. DEC-2209 names "Sign in" / "Sign out" as the vocabulary, and the
+     guard has served /_auth/logout all along — this page just never linked it,
+     so there was no way to end a session from the place you land in. Shown
+     unconditionally: the session cookie is HttpOnly and correctly invisible to
+     this page, and everyone who reaches the entrance came through the door. -->
+<p class="signout"><a class="quiet" href="/_auth/logout">Sign out</a></p>
+<style>.signout{text-align:right;margin:0 0 .25rem}.signout a{font-size:.85rem;opacity:.7;text-decoration:none}.signout a:hover{opacity:1;text-decoration:underline}</style>
 <div class="eyebrow">Chorus · the journey</div>
 <h1>Chorus <span class="kind">&mdash; value stream &rarr; products &rarr; domains &rarr; services</span></h1>
 <div class="promise">One journey in: the value stream is the front door. Each step opens into its products, each product drills into its domains, and at the domain the two altitudes meet &mdash; the model view (schema &rarr; OWL &rarr; instances) and the ops view (cards, code, tests, logs), cross-linked. Every box below is a live graph entity.</div>
@@ -34,6 +41,7 @@
   <a class="vcard" href="/domains"><strong>Instances</strong><span>Every domain's schema &rarr; OWL &rarr; live instances, generated from the graph.</span></a>
   <a class="vcard" href="/athena/domains.html"><strong>Domains (ops)</strong><span>Already at the detail: cards, code, tests, alerts, logs per domain.</span></a>
   <a class="vcard" href="/athena/value-stream.html"><strong>Value stream</strong><span>The six steps, their products, and each product's composed pipeline.</span></a>
+  <a class="vcard" href="/security.html"><strong>Security</strong><span>Is security holding? Every row's verdict against the running system, with the age of the reading — no asking a role.</span></a>
 </div>
 
 <div class="layer-label">Working surfaces &mdash; the products' own front doors</div>

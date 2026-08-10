@@ -152,3 +152,7 @@ roles/*/CLAUDE.md
 # runtime cursors (pulse-gather/loom-gemba) — state, not source (#3319)
 ops/
 platform/services/owl-api/llvm-cov-summary.json
+
+# Playwright browser-flow artifacts (#3798) — runs, not source
+test-results/
+playwright-report/

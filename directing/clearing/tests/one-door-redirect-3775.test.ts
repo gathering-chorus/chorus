@@ -88,7 +88,7 @@ describe('#3775 guard-session consumption — source contract', () => {
   test('NEGATIVE PROOF: the guard cookie is never trusted unverified', () => {
     // A path that read the cookie and used its webid WITHOUT verifyShareSession
     // would be a self-mint hole: anyone could set the cookie by hand.
-    const helper = server.slice(server.indexOf('async function shareSessionWebId'), server.indexOf('async function isAuthed'));
+    const helper = server.slice(server.indexOf('function shareSessionWebId'), server.indexOf('function isAuthed'));
     expect(helper).toContain('verifyShareSession');
     expect(helper).toContain('v.ok ? v.webid : null');
   });

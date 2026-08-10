@@ -1,4 +1,3 @@
-/* eslint-env node */
 // #2284: Chorus root ESLint config — parity with jeff-bridwell-personal-site/eslint.config.js.
 // All package src/ and tests/ across platform/ and directing/ are linted by this single config.
 
@@ -29,6 +28,19 @@ module.exports = [
     ],
   },
   js.configs.recommended,
+  {
+    // This file and its CommonJS siblings. ESLint 9 removed `/* eslint-env */`,
+    // so the comment that used to sit at the top of this file had been declaring
+    // nothing for two major versions — the config only started failing its own
+    // lint (ten no-undef on require/module/__dirname) once it entered the target
+    // set. Declared here instead of assumed, because a config that cannot lint
+    // itself is the tool telling you its rules are not applied where you think.
+    files: ['**/*.config.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { ...globals.node },
+    },
+  },
   {
     files: ['platform/**/src/**/*.ts', 'directing/**/src/**/*.ts'],
     languageOptions: {

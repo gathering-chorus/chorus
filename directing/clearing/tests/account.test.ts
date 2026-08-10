@@ -8,6 +8,21 @@
 
 import { changePassword, sameWebid } from '../src/account';
 
+/**
+ * Narrow a refusal, loudly.
+ *
+ * These assertions used to read `if (!r.ok) expect(r.reason)...`. A conditional
+ * expect checks NOTHING when the branch is not taken, and this is the worst file
+ * in the repo for that: every test below asserts a password change was REFUSED,
+ * so a silently-skipped assertion means the test goes green while the mutation
+ * it forbids may have happened. Throwing makes the wrong outcome fail loudly.
+ */
+type ChangeResult = Awaited<ReturnType<typeof changePassword>>;
+function refusal(r: ChangeResult): Extract<ChangeResult, { ok: false }> {
+  if (r.ok) throw new Error('expected the password change to be REFUSED, but it succeeded');
+  return r;
+}
+
 const CSS = 'http://localhost:3001';
 const MARK = 'https://id.lightlifeurbangardens.com/marknakib/profile/card#me';
 const JEFF = 'https://id.lightlifeurbangardens.com/jeff/profile/card#me';
@@ -65,16 +80,14 @@ describe('#3679 changePassword — security core', () => {
     // authenticated as an account whose only link is JEFF, but the session is MARK
     const { fetchImpl, calls } = mockCss({ linkedWebid: JEFF });
     const r = await changePassword({ ...P, sessionWebid: MARK }, CSS, fetchImpl);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('not-your-account');
+    expect(refusal(r).reason).toBe('not-your-account');
     expect(calls.some((c) => c.startsWith(`POST ${CHANGE_URL.replace(/^https?:\/\/[^/]+/, '')}`))).toBe(false); // fail-closed: never changed
   });
 
   test('wrong current password → generic bad-credentials, no mutation', async () => {
     const { fetchImpl, calls } = mockCss({ loginOk: false });
     const r = await changePassword(P, CSS, fetchImpl);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe('bad-credentials');
+    expect(refusal(r).reason).toBe('bad-credentials');
     expect(calls).toEqual(['POST /.account/login/password/']); // stopped at auth
   });
 
@@ -82,15 +95,15 @@ describe('#3679 changePassword — security core', () => {
     // CSS returns 401 for both a wrong password and an unknown email — the route must not distinguish
     const wrongPw = await changePassword(P, CSS, mockCss({ loginOk: false }).fetchImpl);
     const noSuchAcct = await changePassword({ ...P, email: 'ghost@nobody.com' }, CSS, mockCss({ loginOk: false }).fetchImpl);
-    expect(wrongPw.ok).toBe(false); expect(noSuchAcct.ok).toBe(false);
-    if (!wrongPw.ok && !noSuchAcct.ok) expect(wrongPw.message).toBe(noSuchAcct.message); // no oracle
+    expect(refusal(wrongPw).message).toBe(refusal(noSuchAcct).message); // no oracle
   });
 
   test('CSS refuses the change (e.g. policy) → clean css-error, no secret in message', async () => {
     const { fetchImpl } = mockCss({ changeOk: false });
     const r = await changePassword(P, CSS, fetchImpl);
-    expect(r.ok).toBe(false);
-    if (!r.ok) { expect(r.reason).toBe('css-error'); expect(r.message).not.toContain(P.oldPassword); expect(r.message).not.toContain(P.newPassword); }
+    expect(refusal(r).reason).toBe('css-error');
+    expect(refusal(r).message).not.toContain(P.oldPassword);
+    expect(refusal(r).message).not.toContain(P.newPassword);
   });
 
   test('NO SECRET IN LOGS: neither password appears in any console output across success + failure', async () => {

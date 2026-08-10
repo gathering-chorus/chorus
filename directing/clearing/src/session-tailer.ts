@@ -307,19 +307,26 @@ const REPLY_QUIET_MS = Number(process.env.CLEARING_REPLY_QUIET_MS) || 45000;
  * transcript and MUST go red.
  */
 export interface RoomRecord { from: string; text: string; ts: string; type: string }
+/** What happened between one prompt and the next: did a role think, and did it
+ *  ever say anything? Split out so the outer pass reads as the rule it encodes —
+ *  worked but never answered — rather than as two nested loops. */
+function turnAfter(records: RoomRecord[], promptIndex: number): { thoughtBy: string | null; answered: boolean } {
+  let thoughtBy: string | null = null;
+  for (let j = promptIndex + 1; j < records.length; j++) {
+    const r = records[j];
+    if (r.type === 'jeff-input') break;
+    if (r.type === 'pm-thinking') thoughtBy = r.from;
+    if (r.type === 'role-response') return { thoughtBy, answered: true };
+  }
+  return { thoughtBy, answered: false };
+}
+
 export function findSilentReplies(records: RoomRecord[]): { promptTs: string; role: string }[] {
   const violations: { promptTs: string; role: string }[] = [];
   for (let i = 0; i < records.length; i++) {
     if (records[i].type !== 'jeff-input') continue;
-    let sawActivity: string | null = null;
-    let answered = false;
-    for (let j = i + 1; j < records.length; j++) {
-      const r = records[j];
-      if (r.type === 'jeff-input') break;
-      if (r.type === 'pm-thinking') sawActivity = r.from;
-      if (r.type === 'role-response') { answered = true; break; }
-    }
-    if (sawActivity && !answered) violations.push({ promptTs: records[i].ts, role: sawActivity });
+    const { thoughtBy, answered } = turnAfter(records, i);
+    if (thoughtBy && !answered) violations.push({ promptTs: records[i].ts, role: thoughtBy });
   }
   return violations;
 }
