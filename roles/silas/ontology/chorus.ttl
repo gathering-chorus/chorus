@@ -3949,7 +3949,20 @@ chorus:enrichment a chorus:Writer ;
     rdfs:comment "Derived/decorative writer. Owns predicates produced by analysis, cross-references, computed metadata. Runs after the crawler; reads the crawler's structural-base, writes its own predicates without overlap." .
 
 # Concrete Hydratable: chorus:File — minimum at this card per #2827 AC §B.
-# chorus:Test (Hydratable) follows in #2818 once test-tag schema lands.
+# chorus:Test joined the registry in #3811 (the "follows incrementally" leg,
+# promised at #2827, kept two months later): a BESPOKE hydrator, because Test
+# instances are per-CASE parses with classification, not a generic file walk.
+
+chorus:hydratedBy a owl:AnnotationProperty ;
+    rdfs:label "hydrated by" ;
+    rdfs:comment "#3811 — names the script the crawler runs as this Hydratable class's hydration leg, instead of the generic file walk. The script owns its write mechanism (clear+insert, validation); the crawler owns lifecycle: run per cycle, crawler.graph.hydrated on success, crawler.graph.failed {reason=hydrator-exit-N} + red run on failure." .
+
+# Registry declaration for chorus:Test (class facts live in werk-domains.ttl —
+# stated once per concern: identity there, hydration here where resolve_registry reads).
+chorus:Test a owl:Class ;
+    rdfs:subClassOf chorus:Hydratable ;
+    chorus:hydratesFromSource "platform/** test files (*.bats, *.test|spec.[tj]s, *.test.sh, test_*.py, .rs with #[test]) — discovery lives in the hydrator" ;
+    chorus:hydratedBy "platform/scripts/tag-tests-domain.py" .
 
 chorus:File a owl:Class ;
     rdfs:subClassOf chorus:Hydratable ;

@@ -148,6 +148,13 @@ def clear_graph(dg):
                          f"urn:chorus:domain:<name> may be cleared, never a system/portfolio graph")
     return post(f"PREFIX chorus: <{NS}> DELETE WHERE {{ GRAPH <{dg}> {{ ?t ?p ?o }} }}")
 
+def freshness_stamp(now_iso, commit):
+    """#3811 AC5 — corpus-level provenance, written WITH the corpus so staleness
+    is answerable from the graph itself (generated-at + source commit)."""
+    return (f'<{NS}tests-corpus> a chorus:HydrationStamp ; '
+            f'chorus:generatedAt "{esc(now_iso)}" ; chorus:fromCommit "{esc(commit)}" ; '
+            f'chorus:inDomain <{HOME}> .')
+
 def main():
     files = discover()
     clear_graph(DG)  # bounded + validated (#3560) — replaces the raw unguarded DELETE
@@ -175,8 +182,14 @@ def main():
             batch.append(t + " .")
             ntests += 1
         if len(batch) >= 300: flush()
+    # #3811 AC5 — the stamp rides the same run (same clear+insert lifecycle).
+    import datetime, subprocess
+    now_iso = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    commit = (subprocess.run(['git', 'rev-parse', 'HEAD'], capture_output=True, text=True)
+              .stdout.strip() or "unknown")
+    batch.append(freshness_stamp(now_iso, commit))
     flush()
-    print(f"tests-domain ingested: {len(files)} files -> {ntests} Tests in {DG}")
+    print(f"tests-domain ingested: {len(files)} files -> {ntests} Tests in {DG} (stamp {now_iso} @ {commit[:12]})")
 
 if __name__ == "__main__":
     main()

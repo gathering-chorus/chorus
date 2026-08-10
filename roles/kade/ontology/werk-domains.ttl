@@ -284,13 +284,16 @@ chorus:inFile a owl:ObjectProperty ;
 # (#2818/#2819 tagging + a result-emission path) that must land BEFORE
 # werk-test can query which-tests-for-which-card. Ship ingestion first.
 
+# #3811 — chorus:Test is Hydratable; the registry declaration (subClassOf
+# Hydratable + hydratesFromSource + hydratedBy) lives in chorus.ttl's crawler
+# registry section, the ONE file resolve_registry() reads. Stated once, there.
 chorus:Test a owl:Class ;
     chorus:mintKey ("filePath" "testName") ;
     chorus:provenance "derived-crawl" ;
     rdfs:label "Test" ;
     rdfs:comment "ONE test with durable identity (chorus:filePath + chorus:testName), a pyramid layer (unit|integration|e2e|bdd), a validity class from the #3324 taxonomy (valid | asserts-retired-behavior | passes-by-definition | integration-not-gated), and domain tags (#2818)." ;
-    chorus:dataSource "NONE TODAY — the #2818/#2819 tagging pass creates identity; cargo/jest emit names at run time but nothing lands them" ;
-    chorus:ingestionStatus "needs-identity" .
+    chorus:dataSource "crawler cycle → tag-tests-domain.py (#3811): full clear+insert regenerate per run, add/change/delete all reconciled; results land per-land via werk-test wire-back (#3774)" ;
+    chorus:ingestionStatus "hydrated" .
 
 chorus:TestSuiteRun a owl:Class ;
     chorus:mintKey ("cardId" "ts") ;

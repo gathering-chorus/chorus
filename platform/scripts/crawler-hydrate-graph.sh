@@ -120,8 +120,16 @@ for m in re.finditer(r'(chorus:\w+)\s+a\s+owl:(?:Object|Datatype)Property\s*;([^
             # Predicate on the marker class applies to all hydratable subclasses
             for cls in preds_by_class: preds_by_class[cls].append(pred)
 
+# #3811 — a class may declare a BESPOKE hydrator (chorus:hydratedBy "<script>")
+# when its instances can't come from the generic file walk (chorus:Test needs
+# per-case parsing + classification). Emitted as the 4th column; empty = generic.
+hydrators = {}
+for cls in sources:
+    m = re.search(r'chorus:hydratedBy\s+"([^"]+)"', class_blocks_orig.get(cls, ""))
+    if m:
+        hydrators[cls] = m.group(1)
 for cls in sorted(sources):
-    print(f"{cls}\t{sources[cls]}\t{','.join(preds_by_class[cls])}")
+    print(f"{cls}\t{sources[cls]}\t{','.join(preds_by_class[cls])}\t{hydrators.get(cls,'')}")
 PYEOF
 }
 
@@ -394,9 +402,33 @@ $stale_updates"
   return 0
 }
 
+# #3811 — run a class's BESPOKE hydrator. The script owns its own write
+# mechanism (the Test hydrator is tag-tests-domain.py: clear+insert, per-case
+# classification); the crawler owns the lifecycle: run from CHORUS_ROOT, time
+# it, emit crawler.graph.hydrated on success / crawler.graph.failed with the
+# exit code on failure — a red hydrator reds the whole run, never a silent skip.
+run_bespoke_hydrator() {
+  local cls="$1" script="$2"
+  local start_ts end_ts duration_ms rc
+  start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
+  ( cd "$CHORUS_ROOT" && "$script" ) 2>&1 | tail -5
+  rc=${PIPESTATUS[0]}
+  end_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
+  duration_ms=$((end_ts - start_ts))
+  if [ "$rc" -eq 0 ]; then
+    "$CHORUS_LOG" crawler.graph.hydrated "$ROLE" class="$cls" hydrator="$(basename "$script")" duration_ms="$duration_ms" failures=0 2>/dev/null || true
+    echo "Hydrated $cls via $(basename "$script"), ${duration_ms}ms"
+    return 0
+  fi
+  "$CHORUS_LOG" crawler.graph.failed "$ROLE" class="$cls" reason="hydrator-exit-$rc" duration_ms="$duration_ms" 2>/dev/null || true
+  echo "Hydrator for $cls FAILED (exit $rc)" >&2
+  return 1
+}
+
 # --- main ---
 
-if ! curl -sf --max-time 3 "http://localhost:3030/\$/ping" -o /dev/null 2>/dev/null; then
+FUSEKI_PING="${FUSEKI_PING:-http://localhost:3030/\$/ping}"
+if ! curl -sf --max-time 3 "$FUSEKI_PING" -o /dev/null 2>/dev/null; then
   echo "crawler-hydrate-graph: Fuseki not reachable at localhost:3030" >&2
   "$CHORUS_LOG" crawler.graph.failed "$ROLE" class="*" reason="fuseki-unreachable" 2>/dev/null || true
   exit 1
@@ -405,15 +437,19 @@ fi
 ensure_chorus_files_table
 
 errors=0
-while IFS=$'\t' read -r cls glob preds; do
+while IFS=$'\t' read -r cls glob preds hydrator; do
+  if [ -n "$hydrator" ]; then
+    # #3811 — bespoke hydrator declared on the class (chorus:hydratedBy).
+    run_bespoke_hydrator "$cls" "$hydrator" || errors=$((errors + 1))
+    continue
+  fi
   case "$cls" in
     chorus:File)
       hydrate_chorus_file "$glob" "$preds" || errors=$((errors + 1))
       ;;
     *)
-      # Other Hydratable classes follow in #2818 / future cards. For now,
-      # emit a no-op event so consumers see the class is registered but
-      # no hydrator implementation exists yet.
+      # A Hydratable class with neither generic support nor a declared
+      # hydrator: loud skip so consumers see it is registered but unserved.
       "$CHORUS_LOG" crawler.graph.skipped "$ROLE" class="$cls" reason="no-hydrator-implementation-yet" 2>/dev/null || true
       ;;
   esac
