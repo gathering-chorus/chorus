@@ -809,3 +809,97 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
     }
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
+
+// ---- #3808 — wire-back token re-mint: expiry mid-stream is recoverable ----
+
+/// What to do with one case-post's HTTP status (#3808). Decision table, not
+/// policy-in-the-loop: 2xx accepts; the FIRST 401 of a run re-mints (the token
+/// outlived chorus-identity-token's ~600s cache mid-stream — measured on #3802,
+/// 594 posted then 534 401s); a 401 AFTER re-minting means the identity itself
+/// is refused — fail loudly, never retry forever. Anything else (5xx, 000) is a
+/// server-side refusal a fresh token cannot cure.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum PostStep {
+    Accept,
+    Remint,
+    Fail,
+}
+
+pub fn remint_decision(http_code: &str, reminted_already: bool) -> PostStep {
+    if http_code.starts_with('2') {
+        return PostStep::Accept;
+    }
+    if http_code == "401" && !reminted_already {
+        return PostStep::Remint;
+    }
+    PostStep::Fail
+}
+
+/// #3808 — per-case POST argv that YIELDS the status code (`-w %{http_code}`,
+/// stdout) instead of `-sf`'s swallow-and-exit — the 401 trigger needs the code,
+/// and this retires #3725's second diagnostic request per failure.
+pub fn post_args_with_code(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
+    vec![
+        "-s".into(), "-o".into(), "/dev/null".into(), "-w".into(), "%{http_code}".into(),
+        "--max-time".into(), "10".into(), "-X".into(), "POST".into(),
+        "-H".into(), format!("Authorization: Bearer {}", token),
+        "-H".into(), "Content-Type: application/json".into(),
+        "-H".into(), "x-target-graph: urn:chorus:domains:tests".into(),
+        "-d".into(), payload.into(), endpoint.into(),
+    ]
+}
+
+/// Outcome of a posting loop (#3808) — what the caller banners + puts on the
+/// spine. `reminted` counts re-mint attempts (0 or 1 by construction).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct PostStats {
+    pub posted: usize,
+    pub failed: usize,
+    pub reminted: usize,
+    pub first_fail_code: Option<String>,
+}
+
+/// #3808 — the posting loop with expired-token recovery. Pure orchestration
+/// over curl: posts each payload, and on the first 401 asks `mint` for a fresh
+/// token ONCE, retries the same case, and resumes. A 401 that survives the
+/// re-mint — or a `mint` that refuses — is a real refusal: every remaining case
+/// counts failed (loud banner + spine at the caller), never an endless retry.
+pub fn post_results_loop(
+    endpoint: &str,
+    initial_token: &str,
+    payloads: &[String],
+    mint: &dyn Fn() -> Option<String>,
+) -> PostStats {
+    let mut stats = PostStats::default();
+    let mut token = initial_token.to_string();
+    let mut reminted_already = false;
+    for payload in payloads {
+        let mut code = post_once(endpoint, &token, payload);
+        if remint_decision(&code, reminted_already) == PostStep::Remint {
+            stats.reminted += 1;
+            reminted_already = true;
+            if let Some(fresh) = mint() {
+                token = fresh;
+                code = post_once(endpoint, &token, payload);
+            }
+        }
+        match remint_decision(&code, reminted_already) {
+            PostStep::Accept => stats.posted += 1,
+            _ => {
+                stats.failed += 1;
+                if stats.first_fail_code.is_none() {
+                    stats.first_fail_code = Some(code);
+                }
+            }
+        }
+    }
+    stats
+}
+
+fn post_once(endpoint: &str, token: &str, payload: &str) -> String {
+    std::process::Command::new("curl")
+        .args(post_args_with_code(endpoint, token, payload))
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "000".to_string())
+}

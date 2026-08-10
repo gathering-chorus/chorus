@@ -596,67 +596,42 @@ fn post_test_results(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let mut posted = 0usize;
-    let mut failed = 0usize;
-    let mut first_fail_code: Option<String> = None;
-    for (i, (c, of_test)) in joined.iter().take(MAX_POSTS).enumerate() {
-        let payload = test_result_payload(
-            &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, i);
-        let args = werk_test::suite_run_post_args(&endpoint, &token, &payload);
-        let ok = Command::new("curl")
-            .args(&args)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if ok {
-            posted += 1
-        } else {
-            failed += 1;
-            // #3725 AC4 — capture WHY, once. `-sf` means curl exits non-zero on
-            // any 4xx/5xx and `-s` swallows the body, so a failed post left
-            // nothing behind but a count. Across 95 runs that count reached
-            // 42,769 failed case-posts with nobody able to say what the server
-            // was refusing. One diagnostic request on the FIRST failure of a run
-            // buys the status code; the rest are assumed to share it rather than
-            // paying for 1,251 more round-trips.
-            if first_fail_code.is_none() {
-                let mut diag = args.clone();
-                diag.retain(|a| a != "-sf");
-                let mut probe: Vec<String> = vec![
-                    "-s".into(), "-o".into(), "/dev/null".into(),
-                    "-w".into(), "%{http_code}".into(),
-                ];
-                probe.extend(diag);
-                first_fail_code = Command::new("curl")
-                    .args(&probe)
-                    .output()
-                    .ok()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .filter(|c| !c.is_empty());
-            }
-        }
-    }
-    // #3725 AC4 — say it out loud. This was emitted to the spine and printed
-    // nowhere, so a run that posted ZERO results to the model looked identical
-    // to one that posted all of them: `test.completed ... verdict=pass` either
-    // way. The model is the point of the tests domain; silently not populating
-    // it is a failure worth a line in the log a human already reads.
-    if failed > 0 {
+    let payloads: Vec<String> = joined
+        .iter()
+        .take(MAX_POSTS)
+        .enumerate()
+        .map(|(i, (c, of_test))| {
+            test_result_payload(
+                &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, i)
+        })
+        .collect();
+    // #3808 — the loop yields per-case HTTP codes (retiring #3725's second
+    // diagnostic request) and recovers a token that expires mid-stream: the
+    // first 401 re-mints ONCE and resumes from the same case. Measured cause
+    // (#3802): one token minted up front, chorus-identity-token's ~600s cache,
+    // 594 posts landed then 534 died 401. A 401 that survives the re-mint is a
+    // real refusal and fails loudly below — never an endless retry.
+    let stats = werk_test::post_results_loop(&endpoint, &token, &payloads, &|| mint_token(role));
+    // #3725 AC4 — say it out loud. A run that posts ZERO results must never
+    // look identical to one that posted all of them.
+    if stats.failed > 0 {
         println!(
             "!! testresult wire-back: {} of {} case(s) FAILED to POST to the model{}              — the tests domain did not receive this run's results",
-            failed,
-            posted + failed,
-            match &first_fail_code {
+            stats.failed,
+            stats.posted + stats.failed,
+            match &stats.first_fail_code {
                 Some(c) => format!(" (first failure HTTP {})", c),
                 None => String::new(),
             }
         );
     }
     let mut extras: Vec<(String, String)> = vec![
-        ("count".into(), posted.to_string()),
-        ("failed_posts".into(), failed.to_string()),
+        ("count".into(), stats.posted.to_string()),
+        ("failed_posts".into(), stats.failed.to_string()),
+        // #3808 AC3 — expiry frequency is observable from the spine.
+        ("reminted".into(), stats.reminted.to_string()),
     ];
-    if let Some(c) = &first_fail_code {
+    if let Some(c) = &stats.first_fail_code {
         extras.push(("first_fail_http".into(), c.clone()));
     }
     if joined.len() > MAX_POSTS {
