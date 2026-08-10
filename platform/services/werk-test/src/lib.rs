@@ -850,12 +850,15 @@ pub fn post_args_with_code(endpoint: &str, token: &str, payload: &str) -> Vec<St
 }
 
 /// Outcome of a posting loop (#3808) — what the caller banners + puts on the
-/// spine. `reminted` counts re-mint attempts (0 or 1 by construction).
+/// spine. `remint_attempts` counts re-mint ATTEMPTS (0 or 1 by construction)
+/// — an attempt fires per expiry-shaped 401 whether or not the mint succeeded,
+/// so the field measures expiry frequency, not recovery success (reviewers'
+/// catch on the first round: a mint that refused still counted).
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct PostStats {
     pub posted: usize,
     pub failed: usize,
-    pub reminted: usize,
+    pub remint_attempts: usize,
     pub first_fail_code: Option<String>,
 }
 
@@ -876,7 +879,7 @@ pub fn post_results_loop(
     for payload in payloads {
         let mut code = post_once(endpoint, &token, payload);
         if remint_decision(&code, reminted_already) == PostStep::Remint {
-            stats.reminted += 1;
+            stats.remint_attempts += 1;
             reminted_already = true;
             if let Some(fresh) = mint() {
                 token = fresh;

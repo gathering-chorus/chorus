@@ -48,7 +48,7 @@ fn expired_token_reminting_resumes_and_real_401_fails_loudly() {
     });
     assert_eq!(stats.posted, 4, "all cases posted after recovery: {:?}", stats);
     assert_eq!(stats.failed, 0, "{:?}", stats);
-    assert_eq!(stats.reminted, 1, "exactly one re-mint: {:?}", stats);
+    assert_eq!(stats.remint_attempts, 1, "exactly one re-mint: {:?}", stats);
 
     // ── AC2 negative proof (#3734): the door refuses even the re-minted token
     // (revoked principal). One re-mint attempt, then every case counts FAILED
@@ -58,12 +58,13 @@ fn expired_token_reminting_resumes_and_real_401_fails_loudly() {
     });
     assert_eq!(stats.posted, 0, "{:?}", stats);
     assert_eq!(stats.failed, 4, "{:?}", stats);
-    assert_eq!(stats.reminted, 1, "re-mint tried exactly once: {:?}", stats);
+    assert_eq!(stats.remint_attempts, 1, "re-mint tried exactly once: {:?}", stats);
     assert_eq!(stats.first_fail_code.as_deref(), Some("401"));
 
     // ── mint itself refuses (no identity available) — same loud failure.
     let stats = werk_test::post_results_loop(&endpoint, "stale", &payloads, &|| None);
     assert_eq!(stats.posted, 0, "{:?}", stats);
+    assert_eq!(stats.remint_attempts, 1, "refused mint still counts the ATTEMPT — the field measures expiry, not success: {:?}", stats);
     assert_eq!(stats.failed, 4, "{:?}", stats);
     assert_eq!(stats.first_fail_code.as_deref(), Some("401"));
 
@@ -72,5 +73,5 @@ fn expired_token_reminting_resumes_and_real_401_fails_loudly() {
         panic!("mint must not be called when the token works")
     });
     assert_eq!(stats.posted, 4, "{:?}", stats);
-    assert_eq!(stats.reminted, 0, "{:?}", stats);
+    assert_eq!(stats.remint_attempts, 0, "{:?}", stats);
 }

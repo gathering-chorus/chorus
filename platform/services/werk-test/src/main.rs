@@ -629,7 +629,7 @@ fn post_test_results(
         ("count".into(), stats.posted.to_string()),
         ("failed_posts".into(), stats.failed.to_string()),
         // #3808 AC3 — expiry frequency is observable from the spine.
-        ("reminted".into(), stats.reminted.to_string()),
+        ("remint_attempts".into(), stats.remint_attempts.to_string()),
     ];
     if let Some(c) = &stats.first_fail_code {
         extras.push(("first_fail_http".into(), c.clone()));
