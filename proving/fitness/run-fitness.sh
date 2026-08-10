@@ -39,10 +39,41 @@ emit() {  # emit <verdict> <row> <detail>
 ROWS=(
   "1|probe-public-root.sh|--fixture $HERE/fixtures/login-wall-otherwise-perfect.html --expect-red"
   "2|probe-signin-lands.sh|--prove-red"
+  "4|probe-running-is-merged.sh|--prove-red"
   "5|probe-write-still-works.sh|--prove-red"
   "6|probe-lists-are-local.sh|--prove-red"
   "7|probe-nobody-walk.sh|--prove-red"
 )
+
+# #3806 — every row runs under a hard ceiling. Row 7 sat 600s+ with no verdict
+# on 2026-08-09: an unbounded probe in a nightly is one slow tunnel away from
+# the whole readout reporting nothing. Expiry is UNMEASURABLE by definition —
+# the row could not ask in the time it was given — never red, never a hang.
+# (The snapshot layer carries its own ceiling too, deliberately: this one fixes
+# the row, that one contains a row that fails to honor this.)
+ROW_CEILING="${FITNESS_ROW_CEILING:-300}"
+# run_bounded <script> [args...] — rc 142 on expiry.
+# Two traps this shape exists to dodge, both hit while building it:
+#   - a plain `perl alarm; exec` kills the SHELL but not its children, so a
+#     probe's hung curl survives the ceiling;
+#   - capturing via a pipe blocks until every fd holder exits, so the orphan
+#     holds the readout hostage anyway. Output goes to a FILE; the child runs
+#     in its own process GROUP and the whole group is killed on expiry.
+run_bounded() {
+  local out rc; out=$(mktemp)
+  perl -e '
+    my $t = shift @ARGV;
+    my $pid = fork();
+    if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127; }
+    $SIG{ALRM} = sub { kill "KILL", -$pid };
+    alarm $t;
+    waitpid($pid, 0);
+    exit((($? & 127) == 9) ? 142 : ($? >> 8));
+  ' "$ROW_CEILING" "$@" >"$out" 2>&1
+  rc=$?
+  cat "$out"; rm -f "$out"
+  return "$rc"
+}
 
 green=0; red=0; unmeasurable=0; untrustworthy=0
 echo "SECURITY FITNESS — $(TZ=America/New_York date '+%Y-%m-%d %H:%M') Boston"
@@ -59,12 +90,24 @@ for entry in "${ROWS[@]}"; do
     continue
   fi
 
-  live=$("$s" 2>&1); live_rc=$?
+  live=$(run_bounded "$s"); live_rc=$?
+  if [ "$live_rc" -eq 142 ]; then
+    echo "row$n  UNMEASURABLE — exceeded the ${ROW_CEILING}s ceiling; the row could not ask in the time it was given"
+    unmeasurable=$((unmeasurable + 1)); emit unmeasurable "$n" "ceiling-${ROW_CEILING}s"
+    continue
+  fi
 
   # The proof runs on the SAME pass, against the SAME code. Running it only at
   # authoring time is how a check quietly stops being able to fail.
+  # A proof that cannot finish inside the ceiling cannot vouch for anything —
+  # that is untrustworthy, not unmeasurable: the row's green would be void.
   # shellcheck disable=SC2086
-  proof_out=$("$s" $proof 2>&1); proof_rc=$?
+  proof_out=$(run_bounded "$s" $proof); proof_rc=$?
+  if [ "$proof_rc" -eq 142 ]; then
+    echo "row$n  UNTRUSTWORTHY — its negative proof exceeded the ${ROW_CEILING}s ceiling; any green it reports is void"
+    untrustworthy=$((untrustworthy + 1)); emit untrustworthy "$n" "proof-ceiling-${ROW_CEILING}s"
+    continue
+  fi
 
   if [ "$proof_rc" -ne 0 ]; then
     echo "row$n  UNTRUSTWORTHY — its negative proof no longer goes red; any green it reports is void"

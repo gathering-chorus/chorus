@@ -155,10 +155,15 @@ if [ "$PROVE_RED" -eq 0 ]; then
     echo "row7 UNMEASURABLE — could not derive the public entry point; refusing to skip the leg." >&2
     exit 2
   fi
+  # #3804 moved the public entry: governed content on the apex lives under
+  # /chorus (the path-mounted guard), and the sign-in for that walk is served
+  # ON the apex at /chorus/_auth/. A stranger entering there must land under
+  # one of OUR doors — the apex mount or the governed host — never anywhere
+  # else. (llug.com/athena is the garden site's business now, not a door.)
   landed=$(curl -s -L --max-redirs 6 --max-time 30 -H 'Accept: text/html' \
-           -o /dev/null -w '%{url_effective}' "$PUBLIC/athena" 2>/dev/null)
+           -o /dev/null -w '%{url_effective}' "$PUBLIC/chorus/athena" 2>/dev/null)
   case "$landed" in
-    "$GOVERNED"*) ;;
+    "$GOVERNED"*|"$PUBLIC/chorus"*) ;;
     "")  fail="$fail the public entry point did not answer;" ;;
     *)   fail="$fail entering from the public site, a stranger is handed to $(sed -E 's#(https?://[^/]+).*#\1#' <<<"$landed") instead of our own sign-in page;" ;;
   esac
@@ -176,8 +181,56 @@ if [ "$PROVE_RED" -eq 1 ]; then
   exit 1
 fi
 
+# THE DOOR MUST ALSO OPEN — measured as flow-probe (#3806).
+#
+# This leg shipped as "UNMEASURABLE by design: needs a permanent least-privileged
+# account, and none exists". flow-probe exists now (its own CSS account, creds at
+# ~/.chorus/flow-creds.env, 0600, outside every repo) — so the excuse expired.
+# What this proves here: the least-privileged account can AUTHENTICATE at the
+# real provider. The full browser journey (sign in, land, send in the Clearing)
+# is proven by the flow suite as flow-probe — one proof owns that walk; this leg
+# only refuses to call the door "working" while the account itself cannot get
+# past the first door. Creds are read by reference and never echoed.
+FLOW_ENV="$HOME/.chorus/flow-creds.env"
+if [ ! -r "$FLOW_ENV" ]; then
+  echo "row7 UNMEASURABLE — flow-creds.env missing; the door-opens leg cannot ask." >&2
+  exit 2
+fi
+FLOW_USER=$(grep -m1 '^FLOW_USER=' "$FLOW_ENV" | cut -d= -f2-)
+# curl, not urllib: CSS's strict-host check 500s on urllib's normalized
+# headers while accepting the identical request from curl — measured
+# 2026-08-10, same URL, same moment, 500 vs 200. The credential travels via a
+# 0600 tempfile (never argv — argv is world-readable in ps).
+CSS_LOCAL="http://localhost:3001"
+IDH=(-H 'Host: id.lightlifeurbangardens.com' -H 'X-Forwarded-Proto: https' -H 'X-Forwarded-Host: id.lightlifeurbangardens.com')
+LOGIN_URL=$(curl -s --max-time 10 "${IDH[@]}" "$CSS_LOCAL/.account/" \
+  | python3 -c 'import json,sys;print(json.load(sys.stdin)["controls"]["password"]["login"])' 2>/dev/null \
+  | sed 's#https://id.lightlifeurbangardens.com#'"$CSS_LOCAL"'#')
+if [ -z "$LOGIN_URL" ]; then
+  echo "row7 UNMEASURABLE — identity provider did not answer the door-opens leg." >&2; exit 2
+fi
+CREDBODY=$(mktemp); chmod 600 "$CREDBODY"
+python3 - "$FLOW_ENV" > "$CREDBODY" <<'PY'
+import json, sys
+env = {}
+for line in open(sys.argv[1]):
+    if "=" in line:
+        k, v = line.strip().split("=", 1); env[k] = v
+print(json.dumps({"email": env.get("FLOW_USER", ""), "password": env.get("FLOW_PASS", "")}))
+PY
+LOGIN_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${IDH[@]}" \
+  -H 'Content-Type: application/json' --data @"$CREDBODY" "$LOGIN_URL")
+rm -f "$CREDBODY"
+case "$LOGIN_CODE" in
+  2*) ;;
+  000)
+    echo "row7 UNMEASURABLE — identity provider did not answer the door-opens leg." >&2; exit 2 ;;
+  *)
+    echo "row7 RED — the least-privileged account ($FLOW_USER) cannot sign in at the provider (http $LOGIN_CODE): the door is proven to close and proven NOT to open."
+    exit 1 ;;
+esac
+
 echo "row7 GREEN — a caller with no standing is refused coherently and terminally on every governed path,"
 echo "         no test seam answers publicly, and the refusal offers a way in."
-echo "         NOT PROVEN: that such a person can then actually GET IN. Completing a real sign-in"
-echo "         needs a permanent least-privileged account, which does not exist. Until one does,"
-echo "         the door is proven to close and is NOT proven to open for anyone but us."
+echo "         And the door OPENS: the least-privileged account authenticates at the real provider;"
+echo "         the full signed-in journey is proven by the flow suite running as that same account."

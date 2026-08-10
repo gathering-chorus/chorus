@@ -40,6 +40,14 @@
 /api/athena/domain-schema
 /api/athena/domain-owl
 
+# The security fitness readout (#3806, page landed by #3798). The page and its
+# data endpoint are ONE decision — a page without its endpoint is inert, and
+# allowing the endpoint without the page publishes data with no explanation.
+# Both are read-only GETs over the snapshot we already publish internally
+# (~/.chorus/security-fitness.json rendered with ageMinutes); nothing personal.
+/security.html
+/api/chorus/security-fitness
+
 # Assets the pages need to render.
 /js/vendor
 /css
