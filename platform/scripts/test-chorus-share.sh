@@ -188,6 +188,21 @@ for want in /about /athena /domains /owl; do
   assert "committed allowlist carries $want" sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '$want'"
 done
 
+# --- #3813: the landing page's data endpoint ---------------------------------
+# Jeff on his phone, 2026-08-11: "i dont see any difference on the page". The
+# page had landed; its endpoint had not been allowlisted, so the fetch was
+# refused at the door and the page fell back to its old hand-written links. It
+# did not look broken — it looked OLD, which is worse, because nobody
+# investigates a page that renders.
+assert "committed allowlist carries /api/chorus/ui-pages" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '/api/chorus/ui-pages'"
+
+# NEGATIVE PROOF: the entry is an EXACT path, not a prefix. If it admitted
+# anything starting with it, one line would publish a family of endpoints
+# nobody reviewed — the /docs trap from #3815, one directory up.
+assert "NEGATIVE PROOF: a sibling endpoint is NOT admitted by the ui-pages entry" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; ! prefixes | grep -qx -- '/api/chorus/ui-pages-x'"
+
 # --- #3767: per-prefix upstream, so /about (:3000) and Athena (:3340) coexist ---
 
 # Two DISTINCT upstreams serving distinguishable content. This is the whole point

@@ -47,6 +47,14 @@
 # (~/.chorus/security-fitness.json rendered with ageMinutes); nothing personal.
 /security.html
 /api/chorus/security-fitness
+# #3813 — the landing page's inventory endpoint. Same one-decision rule as the
+# security pair above: the page is already public and this is the data it
+# renders — page titles and hrefs discovered from public/, nothing else. Without
+# it the page loads and silently falls back to its old hand-written links, which
+# is exactly how Jeff saw "no difference" on his phone while it worked at
+# localhost. A page whose data is refused does not look broken; it looks old.
+/api/chorus/ui-pages
+
 # The rollout map the score page links to (#3809) — one exact document, not the
 # docs tree: the prefix IS the filename, so nothing beside it is shared.
 /designing/docs/security-rollout.html
