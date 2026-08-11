@@ -17,6 +17,7 @@ import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { buildBuzzWiring } from './buzz-wiring';
+import { decideBind } from './room-bind';
 import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
@@ -543,6 +544,15 @@ ${error ? `<div class="error">${error}</div>` : ''}
 }
 
 // Static files — no cache, plus rewrite index.html to bust browser cache
+/** #3827 — WebID → the public key that browser holds. In memory for now: a
+ *  binding that does not survive a restart is honest about being a test-drive,
+ *  and Silas's KeyRegistryEntry is where it becomes durable. */
+const roomBindings = new Map<string, { pubkey: string; boundAt: string }>();
+
+function log(level: 'info' | 'error', event: string, fields: Record<string, unknown>): void {
+  process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n');
+}
+
 app.get('/', async (req: Request, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf-8');
@@ -558,6 +568,15 @@ app.get('/', async (req: Request, res) => {
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
 });
+// #3827 — the browser needs secp256k1 Schnorr to sign Jeff's messages in the
+// page. Serve @noble's ESM straight from node_modules rather than adding a
+// bundler: the page is plain HTML with inline script and has no build step, and
+// a CDN is not an option (the tunnel serves this and a remote script would be a
+// third party in the signing path). Read-only, and scoped to the two packages —
+// not the whole tree.
+app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'curves', 'esm')));
+app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'hashes', 'esm')));
+
 app.use(express.static(path.join(__dirname, '../public'), {
   etag: false,
   maxAge: 0,
@@ -707,6 +726,39 @@ if (!fs_node.existsSync('/tmp/bridge-uploads')) {
 app.use('/uploads', express.static('/tmp/bridge-uploads'));
 
 // Health
+// #3827 — bind a browser-held key to the signed-in WebID.
+//
+// The browser sends ONLY a public key. The private half is generated in the
+// page and never leaves it — this endpoint could not sign as Jeff if it wanted
+// to, which is the entire point: today's room had four "jeff" messages signed
+// with a key WE held, and that is attribution, not authentication.
+//
+// Identity comes from the SERVER-VERIFIED session cookie, never from anything
+// the client says about itself (#3679/#3743). An unauthenticated caller is
+// REFUSED and told which state it is in — binding a key to nobody would produce
+// messages that render as nobody, and we would debug the relay for an afternoon
+// before finding it.
+app.post('/api/room/bind', (req: Request, res: Response) => {
+  // The WebID comes from the SERVER-VERIFIED cookie, never from the body
+  // (#3679/#3743). decideBind cannot check that itself, which is why it must
+  // never be handed anything a client said about itself.
+  const outcome = decideBind(sessionWebid(req), (req.body as { pubkey?: unknown })?.pubkey);
+  if (!outcome.ok) {
+    res.status(outcome.status).json({ error: outcome.error, detail: outcome.detail });
+    return;
+  }
+  const boundAt = new Date().toISOString();
+  roomBindings.set(outcome.webid, { pubkey: outcome.pubkey, boundAt });
+  log('info', 'room.key.bound', { webid: outcome.webid, pubkey: outcome.pubkey.slice(0, 8) });
+  res.json({ webid: outcome.webid, pubkey: outcome.pubkey, boundAt });
+});
+
+// #3827 — who is bound right now. Read-only; the roles and Silas's admission
+// path both need to see this without asking the browser.
+app.get('/api/room/bindings', (_req: Request, res: Response) => {
+  res.json(Array.from(roomBindings.entries()).map(([webid, b]) => ({ webid, ...b })));
+});
+
 app.get('/health', (_req, res) => res.json({ status: 'ok', port: PORT }));
 
 // API: upload image (with HEIC→JPEG conversion)
