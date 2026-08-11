@@ -71,6 +71,34 @@ export function buildKind9(msg: ClearingMsg, channel: string, signer: NostrSigne
   return { id, pubkey, created_at, kind, tags, content, sig };
 }
 
+/**
+ * #3823 — build a signed kind:1 note carrying a Clearing message, topic-tagged
+ * rather than group-scoped.
+ *
+ * Why kind:1 and not the kind:9 above: this relay build refuses NIP-29 group
+ * writes from non-members, and its own add-member call is refused with "must
+ * include an h tag" while carrying that very tag. A refusal naming the wrong
+ * state cost an hour today; rather than fight it, the test-drive uses plain
+ * notes with a topic tag. Access control is a real question and a later one —
+ * it is not what Jeff is trying to learn by talking in a room.
+ *
+ * The content is the message text ALONE. No "[wren] " prefix: the author is the
+ * signature now, and a name in the body invites reading the body to find out
+ * who spoke, which is the habit this card exists to end.
+ */
+export function buildNote(msg: ClearingMsg, topic: string, signer: NostrSigner): NostrEvent {
+  if (!signer.pubkey) throw new Error('buzz-bridge: no signing key — refusing to build an unsigned event');
+  const pubkey = signer.pubkey;
+  const parsed = Date.parse(msg.ts);
+  // A relay rejects a stale or absent timestamp, and an unparseable ts would
+  // send NaN — serialized as null, failing at the door with a complaint about
+  // the signature rather than about the clock.
+  const created_at = Number.isFinite(parsed) ? Math.floor(parsed / 1000) : Math.floor(Date.now() / 1000);
+  const tags: string[][] = [['t', topic]];
+  const { id, sig } = signer.signEvent(serialize(pubkey, created_at, 1, tags, msg.text));
+  return { id, pubkey, created_at, kind: 1, tags, content: msg.text, sig };
+}
+
 export interface BuzzBridgeDeps {
   enabled: boolean;
   channel: string;

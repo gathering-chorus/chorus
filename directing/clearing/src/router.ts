@@ -9,6 +9,8 @@ export interface ChannelMessage {
   from: string;
   text: string;
   ts: string;
+  /** #3823 — arrived from the Buzz relay; must not be published back to it. */
+  buzzInbound?: boolean;
   type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe';
   level?: string;
   visible: boolean;
@@ -20,9 +22,10 @@ export class MessageRouter extends EventEmitter {
   private messages: ChannelMessage[] = [];
 
   /** Ingest a raw message, classify it, and store */
-  ingest(raw: { from: string; text: string; ts: string; type?: string; level?: string }): void {
+  ingest(raw: { from: string; text: string; ts: string; type?: string; level?: string; buzzInbound?: boolean }): void {
     const classified = this.classify(raw);
     if (raw.level) classified.level = raw.level;
+    if (raw.buzzInbound) classified.buzzInbound = true;
 
     // Dedup: skip if any recent message (last 10) has same from + exact same text
     // #2036: Removed fuzzy substring matching — it dropped Jeff's short messages
@@ -73,6 +76,24 @@ export class MessageRouter extends EventEmitter {
     for (const rule of classificationRules) {
       const hit = rule(raw);
       if (hit) return { from, text: hit.text ?? text, ts, type: hit.type, visible: hit.visible };
+    }
+    // #3823 — an unrecognized message from a ROLE is VISIBLE. Hiding must be a
+    // positive decision by a rule above that names why (probe, bridge echo,
+    // system noise, a role-to-role nudge); falling off the end of the chain is
+    // not a reason to disappear.
+    //
+    // This default is why Jeff said "i got nothing in clearing" (2026-08-11):
+    // several replies to him that morning matched no rule and were filed
+    // hidden, so the room held his half of the conversation and little of
+    // ours. It would also have eaten the Buzz work — relay messages arrive in
+    // a shape no rule has seen, so a working relay would have rendered an
+    // empty room and we would have spent the day debugging the relay.
+    //
+    // Non-role senders keep the old treatment: an unrecognized message from
+    // something that is neither a person nor a role is plumbing, and plumbing
+    // has to earn its way onto the screen.
+    if (isRoleName(from)) {
+      return { from, text: stripSpineMetadata(text), ts, type: 'role-response', visible: true };
     }
     return { from, text: stripSpineMetadata(text), ts, type: 'role-to-role', visible: false };
   }
@@ -197,9 +218,17 @@ function isSkillOutput(text: string): boolean {
   return SKILL_OUTPUT_PATTERNS.some((re) => re.test(text));
 }
 
+/** The three AI roles. Jeff is a person, not a role, and is handled earlier. */
+const ROLE_NAMES = ['wren', 'silas', 'kade'];
+
+/** Is this sender one of the three roles? Exact match, never a prefix (#3743). */
+export function isRoleName(from: string): boolean {
+  return ROLE_NAMES.includes(from.toLowerCase());
+}
+
 /** Check if a message is role-to-role (no Jeff involvement) */
 function isRoleToRole(from: string, text: string): boolean {
-  const roles = ['wren', 'silas', 'kade'];
+  const roles = ROLE_NAMES;
   if (!roles.includes(from)) return false;
 
   // Nudge prefixes targeting another role

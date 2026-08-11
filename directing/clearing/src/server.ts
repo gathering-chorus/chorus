@@ -17,6 +17,7 @@ import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
 import { buildBuzzWiring } from './buzz-wiring';
+import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
 import { lanAddress, bonjourHost, startupLanLines, detectIpDrift } from './lan-url';
 import { isLocalConnection, isTunneled } from './connection-auth';
@@ -1306,10 +1307,27 @@ const buzz = buildBuzzWiring(process.env, (level, event, fields) =>
   process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
 );
 
+// #3823 — the room. Flag-gated OFF. When on: every visible Clearing message is
+// published to the relay signed by ITS AUTHOR's WebID-derived key, and notes on
+// the topic are ingested back attributed by signature.
+const room = process.env.BUZZ_ROOM_ENABLED === '1'
+  ? startRoom({
+    relayUrl: process.env.BUZZ_RELAY_URL ?? 'ws://192.168.86.242:3000',
+    topic: process.env.BUZZ_ROOM_TOPIC ?? 'team',
+    ingest: (msg) => messageRouter.ingest({ ...msg, buzzInbound: true }),
+    log: (level, event, fields) =>
+      process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
+  })
+  : null;
+
 // Broadcast new messages as they arrive
 messageRouter.on('message', (msg) => {
   io.emit('message', msg);
   buzz.mirror(msg); // #3696 — mirror to Buzz relay (dark unless BUZZ_BRIDGE_ENABLED=1)
+  // #3823 — publish outbound, but NEVER re-publish what arrived from the relay:
+  // otherwise every Clearing that receives a note broadcasts it again and the
+  // room amplifies itself into a loop.
+  if (room && !msg.buzzInbound) room.publish(msg);
 });
 
 // Start tailing chorus log for spine events (demos, accepts, blocks)
