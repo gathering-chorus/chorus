@@ -296,3 +296,93 @@ fn jsonl_line_is_well_formed() {
     assert!(l.contains("\"trace_id\":\"tr1\""));
     assert!(l.ends_with("}\n"));
 }
+
+// ── #3783 — change-scoped build: the diff decides the unit set, the dependency
+// graph decides the cascade, and anything unmappable escapes to FULL, loudly.
+
+fn m(unit: BuildUnit, dir: &str) -> werk_build::UnitMap {
+    werk_build::UnitMap { unit, dir: dir.to_string() }
+}
+
+fn demo_map() -> Vec<werk_build::UnitMap> {
+    vec![
+        m(BuildUnit::TsService("clearing".into()), "directing/clearing"),
+        m(BuildUnit::TsService("chorus-api".into()), "platform/api"),
+        m(BuildUnit::SharedLib("chorus-sdk".into()), "platform/chorus-sdk"),
+        m(BuildUnit::RustCrate("werk-accept".into()), "platform/services/werk-accept"),
+        m(BuildUnit::RustCrate("werk-pull".into()), "platform/services/werk-pull"),
+    ]
+}
+
+fn demo_edges() -> Vec<(String, String)> {
+    vec![
+        // chorus-sdk's declared consumers (file: deps)
+        ("chorus-sdk".into(), "chorus-api".into()),
+        ("chorus-sdk".into(), "clearing".into()),
+        // lib-only crate → its binary dependents (cargo path deps)
+        ("werk-teardown".into(), "werk-accept".into()),
+        ("werk-teardown".into(), "werk-pull".into()),
+    ]
+}
+
+#[test]
+fn one_file_scopes_to_its_unit_alone() {
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(&[s("directing/clearing/src/tiles.ts")], &demo_map(), &demo_edges(), false);
+    match d {
+        ScopeDecision::Scoped(u) => assert_eq!(u, vec![BuildUnit::TsService("clearing".into())]),
+        ScopeDecision::Full(r) => panic!("must scope, escaped full: {}", r),
+    }
+}
+
+#[test]
+fn negative_proof_3783_sharedlib_touch_rebuilds_declared_dependents() {
+    // #3734 — the under-build fixture: chorus-sdk changed and the scoped set
+    // MUST contain every declared consumer. A mapping that returns only the
+    // lib is the #3092/#3126 silent-stale class and this test goes red on it.
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(&[s("platform/chorus-sdk/src/index.ts")], &demo_map(), &demo_edges(), false);
+    let ScopeDecision::Scoped(u) = d else { panic!("must scope") };
+    assert!(u.contains(&BuildUnit::SharedLib("chorus-sdk".into())), "{:?}", u);
+    assert!(u.contains(&BuildUnit::TsService("chorus-api".into())), "consumer missing — under-build: {:?}", u);
+    assert!(u.contains(&BuildUnit::TsService("clearing".into())), "consumer missing — under-build: {:?}", u);
+}
+
+#[test]
+fn lib_only_crate_touch_rebuilds_its_binary_dependents() {
+    use werk_build::{scope_units, ScopeDecision};
+    // werk-teardown has no binary of its own (not a unit) — touching it must
+    // rebuild the binaries that path-dep on it, never build nothing.
+    let d = scope_units(&[s("platform/services/werk-teardown/src/lib.rs")], &demo_map(), &demo_edges(), false);
+    let ScopeDecision::Scoped(u) = d else { panic!("must scope") };
+    assert!(u.contains(&BuildUnit::RustCrate("werk-accept".into())), "{:?}", u);
+    assert!(u.contains(&BuildUnit::RustCrate("werk-pull".into())), "{:?}", u);
+}
+
+#[test]
+fn docs_only_diff_builds_nothing() {
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(
+        &[s("designing/docs/foo.html"), s("roles/kade/current-work.md")],
+        &demo_map(), &demo_edges(), false);
+    assert_eq!(d, ScopeDecision::Scoped(vec![]), "docs-only card needs no build");
+}
+
+#[test]
+fn unmapped_build_relevant_file_escapes_to_full_with_named_reason() {
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(&[s("tsconfig.base.json")], &demo_map(), &demo_edges(), false);
+    match d {
+        ScopeDecision::Full(r) => assert!(r.contains("tsconfig.base.json"), "reason names the file: {}", r),
+        ScopeDecision::Scoped(u) => panic!("root config must escape to FULL, got {:?}", u),
+    }
+}
+
+#[test]
+fn force_full_escape_hatch_is_named() {
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(&[s("directing/clearing/src/tiles.ts")], &demo_map(), &demo_edges(), true);
+    assert_eq!(d, ScopeDecision::Full("forced".into()));
+}
+
+fn s(v: &str) -> String { v.to_string() }
