@@ -92,7 +92,8 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // is not this machine the fetch resolved to the VIEWER's localhost and the
     // product tiles silently never rendered — Jeff hit exactly that on his phone
     // over wifi, 2026-08-01 ("Failed to load: Load failed").
-    const res = await fetch((window.basePath ? window.basePath('/owl/products') : '/owl/products'));
+    const bp = (path) => (window.basePath ? window.basePath(path) : path);
+    const res = await fetch(bp('/owl/products'));
     const data = await res.json();
     const container = document.getElementById('products');
 
@@ -137,12 +138,32 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // Products are flat typed chorus:Product rows (SubProduct is gone); skip the
     // parent hub card, render each product with the local description/link maps.
     const products = data.data || [];
+    const labels = products.map(p => p.label).filter(l => l !== 'Chorus (Product)');
+
+    // #3813 — the pages on disk, DISCOVERED. `pageLinks` above is a hand-written
+    // map of 8 links; there are 77 pages in the tree. A hand-list cannot tell you
+    // about the page you forgot, which is why most of this app was invisible from
+    // its own front door. The curated links stay (they are the ones worth leading
+    // with); everything else is appended from the inventory.
+    let inventory = { claimed: {}, misc: [], total: 0, miscCount: 0 };
+    try {
+      const invRes = await fetch(bp('/api/chorus/ui-pages') + '?products=' + encodeURIComponent(labels.join(',')));
+      if (invRes.ok) inventory = await invRes.json();
+    } catch (e) { /* the tiles still render from the curated map */ }
+
+    const esc = (t) => String(t).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    const linkTo = (href, label) => '<a href="' + esc(href) + '">' + esc(label) + '</a>';
+
     for (const p of products) {
       if (p.label === 'Chorus (Product)') continue;
       const div = document.createElement('div');
       div.className = 'product ' + p.label.toLowerCase().replace(/[^a-z]/g, '');
       const owner = (p.ownedBy || '').replace(/^role-/, '');
-      const links = (pageLinks[p.label] || []).map(l => '<a href="' + l.href + '">' + l.label + '</a>').join('');
+      const curated = (pageLinks[p.label] || []);
+      const curatedHrefs = new Set(curated.map(l => l.href));
+      const discovered = (inventory.claimed[p.label] || []).filter(pg => !curatedHrefs.has(pg.href));
+      const links = curated.map(l => linkTo(l.href, l.label)).join('')
+        + discovered.map(pg => linkTo(pg.href, pg.title)).join('');
       div.innerHTML = '<h2>' + p.label + '</h2>'
         + (owner ? '<div class="owner">' + owner + '</div>' : '')
         + '<div class="desc">' + (descriptions[p.label] || p.comment || '') + '</div>'
@@ -150,7 +171,21 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       container.appendChild(div);
     }
 
-    document.getElementById('meta').textContent = 'Chorus — ' + products.length + ' products from owl-api (generated from chorus:ProductShape)';
+    // The misc pile. Every attic has one; the point is that you can see it and
+    // count it, not that it is empty. It shrinks when a page is claimed or
+    // deleted — both real decisions — never by being hidden.
+    if (inventory.miscCount > 0) {
+      const section = document.createElement('div');
+      section.className = 'section';
+      section.innerHTML = '<h2>Unclaimed — ' + inventory.miscCount + ' pages</h2>'
+        + '<div class="desc">Pages on disk that no product folder claims. Not broken, not sorted.'
+        + ' Each one is waiting on a decision: give it a home, or delete it.</div>'
+        + '<div class="links">' + inventory.misc.map(pg => linkTo(pg.href, pg.title)).join('') + '</div>';
+      document.getElementById('meta').parentNode.insertBefore(section, document.getElementById('meta'));
+    }
+
+    document.getElementById('meta').textContent = 'Chorus — ' + products.length + ' products from owl-api'
+      + (inventory.total ? ' · ' + inventory.total + ' pages on disk, ' + inventory.miscCount + ' unclaimed' : '');
   } catch (err) {
     document.getElementById('meta').textContent = 'Failed to load: ' + err.message;
   }

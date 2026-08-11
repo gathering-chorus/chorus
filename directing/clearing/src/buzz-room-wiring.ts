@@ -12,8 +12,7 @@
  */
 
 import WebSocket from 'ws';
-import type { NostrEvent } from './buzz-bridge';
-import type { ClearingMsg } from './buzz-bridge';
+import type { ClearingMsg, NostrEvent, NostrSigner } from './buzz-bridge';
 import { buildRoomIdentity, inboundToClearing, publishToRoom, type RoomIdentity } from './buzz-room';
 import { derivedSigner } from './buzz-signer';
 
@@ -21,6 +20,12 @@ type Logger = (level: 'info' | 'error', event: string, fields: Record<string, un
 
 /** How many un-sent messages to hold while the relay is unreachable. */
 const MAX_PENDING = 100;
+
+/** The subscription frame. One definition — it is sent twice (before auth,
+ *  optimistically, and again once the relay accepts us). */
+function reqFrame(topic: string): string {
+  return JSON.stringify(['REQ', 'room', { kinds: [1], '#t': [topic], limit: 30 }]);
+}
 
 export interface RoomWiring {
   enabled: boolean;
@@ -43,133 +48,160 @@ export interface RoomWiringDeps {
   connect?: (url: string) => WebSocket;
 }
 
+
+/**
+ * The NIP-42 auth event.
+ *
+ * This is not optional, and no unit test could have told us so: with green
+ * tests and no auth the socket connected, published fine, and read back
+ * NOTHING — the relay answered every REQ with "auth-required: authenticate
+ * before subscribing" and the room sat empty. Found by running it against the
+ * live relay (2026-08-11).
+ *
+ * created_at is computed ONCE and reused. Calling Date.now() again for the sent
+ * event lets the two differ by a second across a tick boundary, and the relay
+ * then rejects a signature that is in fact correct — failing over a clock while
+ * complaining about crypto.
+ */
+function buildAuthEvent(signer: NostrSigner, relayUrl: string, challenge: string): NostrEvent {
+  const createdAt = Math.floor(Date.now() / 1000);
+  const tags = [['relay', relayUrl], ['challenge', challenge]];
+  const { id, sig } = signer.signEvent(
+    JSON.stringify([0, signer.pubkey, createdAt, 22242, tags, '']),
+  );
+  return { id, pubkey: signer.pubkey, created_at: createdAt, kind: 22242, tags, content: '', sig };
+}
+
+interface RoomState {
+  deps: RoomWiringDeps;
+  identity: RoomIdentity;
+  connSigner: NostrSigner;
+  seenIds: Set<string>;
+  pending: NostrEvent[];
+  ws: WebSocket | null;
+  stopped: boolean;
+  authed: boolean;
+  authEventId: string | null;
+}
+
+/** Remember an id we published, bounded — an unbounded set in a process that
+ *  runs for weeks is a slow leak, and the echo window only needs to cover the
+ *  round trip. */
+function rememberSent(st: RoomState, id: string): void {
+  st.seenIds.add(id);
+  if (st.seenIds.size > 500) {
+    const oldest = st.seenIds.values().next().value;
+    if (oldest !== undefined) st.seenIds.delete(oldest);
+  }
+}
+
+/** Render an inbound note, or log WHY it was not rendered. A silent drop is
+ *  indistinguishable from a relay that never delivered — the debugging hole
+ *  that cost an afternoon on 2026-08-11. */
+function handleInbound(st: RoomState, ev: NostrEvent): void {
+  const { msg, disposition } = inboundToClearing(ev, st.identity, st.seenIds);
+  if (msg) {
+    st.deps.ingest(msg);
+    return;
+  }
+  if (disposition !== 'own-echo') {
+    st.deps.log('info', 'buzz.room.not_rendered', { disposition, pubkey: ev.pubkey.slice(0, 8) });
+  }
+}
+
+function onAuthChallenge(st: RoomState, challenge: string): void {
+  const auth = buildAuthEvent(st.connSigner, st.deps.relayUrl, challenge);
+  st.authEventId = auth.id;
+  st.ws?.send(JSON.stringify(['AUTH', auth]));
+  st.deps.log('info', 'buzz.room.authenticating', { as: st.deps.authAs ?? 'wren' });
+}
+
+function onAuthAccepted(st: RoomState, accepted: unknown): void {
+  st.authed = true;
+  st.deps.log('info', 'buzz.room.authenticated', { accepted });
+  st.ws?.send(reqFrame(st.deps.topic));
+  for (const ev of st.pending.splice(0)) st.ws?.send(JSON.stringify(['EVENT', ev]));
+}
+
+/** Dispatch one relay frame. */
+function onFrame(st: RoomState, raw: unknown): void {
+  let m: unknown[];
+  try {
+    m = JSON.parse(String(raw)) as unknown[];
+  } catch {
+    return;
+  }
+  if (!Array.isArray(m)) return;
+  const kind = m[0];
+  if (kind === 'AUTH' && typeof m[1] === 'string') return onAuthChallenge(st, m[1]);
+  if (kind === 'OK' && m[1] === st.authEventId && !st.authed) return onAuthAccepted(st, m[2]);
+  if (kind === 'EVENT' && m[2] && typeof m[2] === 'object') return handleInbound(st, m[2] as NostrEvent);
+  if (kind === 'NOTICE') st.deps.log('error', 'buzz.room.notice', { notice: String(m[1]) });
+}
+
+/** Queue an event the socket cannot send yet, bounded. Drops the OLDEST during
+ *  an outage — the newest messages are the ones still worth saying when the
+ *  relay returns — and says so, because a silently shortened backlog is how a
+ *  room quietly loses history. */
+function queuePending(st: RoomState, ev: NostrEvent): void {
+  st.pending.push(ev);
+  if (st.pending.length > MAX_PENDING) {
+    const dropped = st.pending.splice(0, st.pending.length - MAX_PENDING);
+    st.deps.log('error', 'buzz.room.backlog_dropped', { dropped: dropped.length, kept: MAX_PENDING });
+  }
+}
+
+function connectRoom(st: RoomState, connect: (url: string) => WebSocket): void {
+  if (st.stopped) return;
+  // A reconnect starts a fresh session: the relay challenges again, and carrying
+  // `authed` across would skip the re-auth and subscribe to a socket that
+  // refuses us — the room would go quiet after one blip.
+  st.authed = false;
+  st.authEventId = null;
+  const ws = connect(st.deps.relayUrl);
+  st.ws = ws;
+  ws.on('open', () => {
+    st.deps.log('info', 'buzz.room.connected', { relay: st.deps.relayUrl, topic: st.deps.topic });
+    // Subscribe optimistically: a relay that demands auth first refuses this and
+    // we re-send after the AUTH ok; one that does not never makes us wait for a
+    // challenge that will not come.
+    ws.send(reqFrame(st.deps.topic));
+  });
+  ws.on('message', (raw: unknown) => onFrame(st, raw));
+  ws.on('close', () => {
+    if (st.stopped) return;
+    st.deps.log('error', 'buzz.room.disconnected', { retryMs: 5000 });
+    setTimeout(() => connectRoom(st, connect), 5000).unref();
+  });
+  ws.on('error', (e: Error) => st.deps.log('error', 'buzz.room.socket_error', { reason: e.message }));
+}
+
 export function startRoom(deps: RoomWiringDeps): RoomWiring {
-  const identity = deps.identity ?? buildRoomIdentity();
+  const st: RoomState = {
+    deps,
+    identity: deps.identity ?? buildRoomIdentity(),
+    connSigner: derivedSigner(deps.authAs ?? 'wren'),
+    seenIds: new Set<string>(),
+    pending: [],
+    ws: null,
+    stopped: false,
+    authed: false,
+    authEventId: null,
+  };
   const connect = deps.connect ?? ((url: string) => new WebSocket(url));
-  // Ids we published. Bounded — an unbounded set in a long-lived process is a
-  // slow leak, and the echo window only needs to cover the round trip.
-  const seenIds = new Set<string>();
-  const rememberSent = (id: string): void => {
-    seenIds.add(id);
-    if (seenIds.size > 500) {
-      const oldest = seenIds.values().next().value;
-      if (oldest !== undefined) seenIds.delete(oldest);
-    }
-  };
-
-  let ws: WebSocket | null = null;
-  let stopped = false;
-  let authed = false;
-  let authEventId: string | null = null;
-  const connSigner = derivedSigner(deps.authAs ?? 'wren');
-  const pending: NostrEvent[] = [];
-
-  const open = (): void => {
-    if (stopped) return;
-    // A reconnect starts a fresh session: the relay will challenge again, and
-    // carrying `authed` across would make us skip the re-auth and subscribe to
-    // a socket that refuses us — the room would go quiet after one blip.
-    authed = false;
-    authEventId = null;
-    ws = connect(deps.relayUrl);
-
-    ws.on('open', () => {
-      deps.log('info', 'buzz.room.connected', { relay: deps.relayUrl, topic: deps.topic });
-      // Subscribe optimistically. A relay that demands auth first refuses this
-      // and we re-send after the AUTH ok; a relay that does not never makes us
-      // wait for a challenge that will not come.
-      ws?.send(JSON.stringify(['REQ', 'room', { kinds: [1], '#t': [deps.topic], limit: 30 }]));
-    });
-
-    ws.on('message', (raw: unknown) => {
-      let m: unknown[];
-      try {
-        m = JSON.parse(String(raw));
-      } catch {
-        return;
-      }
-      if (!Array.isArray(m)) return;
-
-      if (m[0] === 'AUTH' && typeof m[1] === 'string') {
-        // NIP-42. This is not optional and the unit tests could not have told
-        // us so: with green tests and no auth, the socket connected, published
-        // fine, and read back NOTHING — the relay answered every REQ with
-        // "auth-required: authenticate before subscribing" and the room sat
-        // empty. Found by running it against the live relay (2026-08-11).
-        // created_at is computed ONCE. Calling Date.now() again for the sent
-        // event would let the two differ by a second across a tick boundary,
-        // and the relay would reject a signature that is in fact correct —
-        // over a clock, while complaining about crypto.
-        const createdAt = Math.floor(Date.now() / 1000);
-        const tags = [['relay', deps.relayUrl], ['challenge', m[1]]];
-        const auth = connSigner.signEvent(
-          JSON.stringify([0, connSigner.pubkey, createdAt, 22242, tags, '']),
-        );
-        authEventId = auth.id;
-        ws?.send(JSON.stringify(['AUTH', {
-          id: auth.id, pubkey: connSigner.pubkey, created_at: createdAt,
-          kind: 22242, tags, content: '', sig: auth.sig,
-        }]));
-        deps.log('info', 'buzz.room.authenticating', { as: deps.authAs ?? 'wren' });
-        return;
-      }
-      if (m[0] === 'OK' && m[1] === authEventId && !authed) {
-        authed = true;
-        deps.log('info', 'buzz.room.authenticated', { accepted: m[2] });
-        ws?.send(JSON.stringify(['REQ', 'room', { kinds: [1], '#t': [deps.topic], limit: 30 }]));
-        for (const ev of pending.splice(0)) ws?.send(JSON.stringify(['EVENT', ev]));
-        return;
-      }
-      if (m[0] === 'EVENT' && m[2] && typeof m[2] === 'object') {
-        const ev = m[2] as NostrEvent;
-        const { msg, disposition } = inboundToClearing(ev, identity, seenIds);
-        if (msg) {
-          deps.ingest(msg);
-          return;
-        }
-        // Log every refusal WITH its state. A silent drop here is
-        // indistinguishable from a relay that never delivered, which is the
-        // debugging hole that ate this morning.
-        if (disposition !== 'own-echo') {
-          deps.log('info', 'buzz.room.not_rendered', { disposition, pubkey: ev.pubkey?.slice(0, 8) });
-        }
-        return;
-      }
-      if (m[0] === 'NOTICE') deps.log('error', 'buzz.room.notice', { notice: String(m[1]) });
-    });
-
-    ws.on('close', () => {
-      if (stopped) return;
-      deps.log('error', 'buzz.room.disconnected', { retryMs: 5000 });
-      setTimeout(open, 5000).unref?.();
-    });
-    ws.on('error', (e: Error) => deps.log('error', 'buzz.room.socket_error', { reason: e.message }));
-  };
-
-  open();
+  connectRoom(st, connect);
 
   return {
     enabled: true,
     publish: (msg: ClearingMsg) => {
       void publishToRoom(msg, {
         topic: deps.topic,
-        identity,
-        publish: async (ev) => {
-          rememberSent(ev.id);
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify(['EVENT', ev]));
-            return;
-          }
-          // Bounded (Silas, #3823 review). An unbounded queue turns a Bedroom
-          // outage into a slow leak in a process that runs for weeks. Drop the
-          // OLDEST — during an outage the newest messages are the ones still
-          // worth saying when the relay comes back — and say so, because a
-          // silently shortened backlog is how a room quietly loses history.
-          pending.push(ev);
-          if (pending.length > MAX_PENDING) {
-            const dropped = pending.splice(0, pending.length - MAX_PENDING);
-            deps.log('error', 'buzz.room.backlog_dropped', { dropped: dropped.length, kept: MAX_PENDING });
-          }
+        identity: st.identity,
+        publish: (ev) => {
+          rememberSent(st, ev.id);
+          if (st.ws && st.ws.readyState === WebSocket.OPEN) st.ws.send(JSON.stringify(['EVENT', ev]));
+          else queuePending(st, ev);
+          return Promise.resolve();
         },
         log: deps.log,
       }).catch((err: unknown) => {
@@ -179,8 +211,8 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
       });
     },
     stop: () => {
-      stopped = true;
-      try { ws?.close(); } catch { /* already gone */ }
+      st.stopped = true;
+      try { st.ws?.close(); } catch { /* already gone */ }
     },
   };
 }

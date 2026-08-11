@@ -1472,6 +1472,25 @@ app.get('/api/chorus/context/health', async (req: Request, res: Response) => {
  * see cannot be told apart from a readout taken last Tuesday. If no snapshot
  * exists, say so — never synthesise one.
  */
+// #3813 — the UI inventory: every page on disk, grouped by the product whose
+// folder it lives in, everything else in one honest misc pile. Discovered per
+// request, never a hand-written list — the landing page's old `pageLinks` map
+// named 8 links while 77 pages sat on disk, so a page was invisible until
+// someone remembered it.
+//
+// Jeff's framing: piles in an attic. The misc pile is not a failure state and
+// this endpoint does not try to empty it; it makes the pile countable so its
+// size is a choice rather than a surprise.
+app.get('/api/chorus/ui-pages', (_req: Request, res: Response) => {
+  const root = path.join(__dirname, '..', 'public');
+  const products = String(_req.query.products ?? '')
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const inventory = buildInventory(discoverPages(root), products);
+  res.json(inventory);
+});
+
 app.get('/api/chorus/security-fitness', (_req: Request, res: Response) => {
   const file = process.env.FITNESS_SNAPSHOT
     || path.join(os.homedir(), '.chorus', 'security-fitness.json');
@@ -3392,6 +3411,7 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
 import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
 import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './handlers/doc-tagger';
 import { detectDrift } from './handlers/doc-tag-drift';
+import { discoverPages, buildInventory } from './handlers/ui-pages';
 import { buildHierarchyTree, type AthenaShape } from './handlers/doc-catalog-tree';
 app.get('/api/doc-catalog', docCatalogList);
 app.post('/api/doc-catalog/add', docCatalogAdd);
