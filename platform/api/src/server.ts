@@ -906,7 +906,7 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
           return JSON.parse(stdout) as CardMeta;
         },
         db,
-        readLog: () => safeReadFile(logPath),
+        scanSpine: () => scanTail(logPath),
         loadNudges: async () => {
           const resp = await fetch(`${MESSAGING_URL}/api/messages?limit=100`);
           if (!resp.ok) return [];
@@ -934,7 +934,7 @@ app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
       {
         getCards: () => getBoardCards(),
         db,
-        readLog: () => safeReadFile(logPath),
+        scanSpine: () => scanTail(logPath),
       },
       req.params.domain,
       req.query.limit as string | undefined,
@@ -3411,6 +3411,7 @@ app.get('/api/chorus/trace/integrations/:domain', (req: Request, res: Response) 
 import { listCatalog as docCatalogList, addDoc as docCatalogAdd, domainArtifacts as docCatalogDomain, linkArtifact as docCatalogLink, buildDocCatalog } from './handlers/doc-catalog';
 import { inferTags, SUBPRODUCT_DOMAINS, GATHERING_SUBDOMAINS } from './handlers/doc-tagger';
 import { detectDrift } from './handlers/doc-tag-drift';
+import { scanTail } from './handlers/spine-scan';
 import { discoverPages, buildInventory } from './handlers/ui-pages';
 import { buildHierarchyTree, type AthenaShape } from './handlers/doc-catalog-tree';
 app.get('/api/doc-catalog', docCatalogList);

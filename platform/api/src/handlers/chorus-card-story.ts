@@ -4,7 +4,7 @@
  * Dependencies injected:
  *   loadCard   — async (cardId) => card metadata + comments (null if unavailable)
  *   db         — better-sqlite3 Database for chorus-index mentions (null OK)
- *   readLog    — () => string | null — spine log contents
+ *   scanSpine  — () => SpineScan — a bounded read of the spine's tail (#3819)
  *   loadNudges — async () => Array<{from, to, text, timestamp}> (empty OK)
  *
  * Behavior:
@@ -15,6 +15,7 @@
  */
 import type Database from 'better-sqlite3';
 import type { FetchResult } from './codebase-topology';
+import { parseMatching, type SpineScan } from './spine-scan';
 
 export interface CardComment {
   text?: string;
@@ -41,7 +42,9 @@ export interface NudgeMessage {
 export interface ChorusCardStoryDeps {
   loadCard: (cardId: number) => Promise<CardMeta | null>;
   db: Database.Database | null;
-  readLog: () => string | null;
+  /** #3819 — a BOUNDED scan of the spine's tail. Replaces readLog(), which
+   *  returned all 732MB of a never-rotated file and froze the event loop. */
+  scanSpine: () => SpineScan;
   loadNudges: () => Promise<NudgeMessage[]>;
 }
 
@@ -100,25 +103,52 @@ function collectIndexMentions(deps: ChorusCardStoryDeps, cardId: number, timelin
   } catch { /* db read failed */ }
 }
 
-function collectSpineEvents(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): void {
-  let log: string | null;
-  try { log = deps.readLog(); } catch { return; }
-  if (log === null) return;
-  for (const line of log.split('\n')) {
-    if (!line.includes(`card=${cardId}`) && !line.includes(`"card":"${cardId}"`)) continue;
-    try {
-      const parsed = JSON.parse(line);
-      if (parsed.event && String(parsed.event).startsWith('card.')) {
-        timeline.push({
-          timestamp: parsed.timestamp,
-          source: 'spine',
-          text: String(parsed.event),
-          role: parsed.role,
-          event: parsed.event,
-        });
-      }
-    } catch { /* skip malformed line */ }
-  }
+/**
+ * #3819 — scan the spine's tail rather than reading all 732MB of it.
+ *
+ * This used to call deps.readLog(), which pulled the entire never-rotated spine
+ * into a string and split it — 3-8 seconds of frozen API per request, growing
+ * daily. Card events are sparse and recent, so a bounded tail answers the
+ * question the caller actually asked.
+ *
+ * `spineTruncated` is returned to the caller, not swallowed: a story that
+ * stopped looking must not be indistinguishable from a card that nothing
+ * happened to.
+ */
+function collectSpineEvents(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): boolean {
+  const scan = deps.scanSpine();
+  // #3819 — the predicate matches the shape the spine ACTUALLY writes:
+  // {"event":"card.demo.started", ..., "card_id":3813} — card_id, and a NUMBER.
+  // The old predicate looked for `card=N` or `"card":"N"`, neither of which
+  // appears in this log. So even before the file outgrew a JS string, a card's
+  // story matched nothing: the handler spent seconds to return an empty list.
+  // The `card=` form is kept because older lines carry it.
+  const events = parseMatching(
+    scan.lines,
+    // The cheap string test may OVER-match: "card_id":38130 contains
+    // "card_id":3813. That is fine and deliberate — it is a filter, not the
+    // decision. The taker below re-checks the parsed number, so a prefix
+    // collision costs one wasted JSON.parse instead of putting another card's
+    // event in this card's story.
+    (line) => line.includes(`"card_id":${cardId}`)
+      || line.includes(`card=${cardId}`)
+      || line.includes(`"card":"${cardId}"`),
+    (parsed) => {
+      const event = parsed.event;
+      if (!event || !String(event).startsWith('card.')) return null;
+      const parsedId = Number(parsed.card_id ?? parsed.card ?? NaN);
+      if (Number.isFinite(parsedId) && parsedId !== cardId) return null;
+      return {
+        timestamp: String(parsed.timestamp ?? ''),
+        source: 'spine' as const,
+        text: String(event),
+        role: parsed.role as string | undefined,
+        event: String(event),
+      };
+    },
+  );
+  for (const e of events) timeline.push(e as TimelineEntry);
+  return scan.truncated;
 }
 
 async function collectNudges(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): Promise<void> {
@@ -142,7 +172,7 @@ export async function fetchChorusCardStory(
   const timeline: TimelineEntry[] = [];
   const meta = await collectCardData(deps, cardId, timeline);
   collectIndexMentions(deps, cardId, timeline);
-  collectSpineEvents(deps, cardId, timeline);
+  const spineTruncated = collectSpineEvents(deps, cardId, timeline);
   await collectNudges(deps, cardId, timeline);
   timeline.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
@@ -154,6 +184,9 @@ export async function fetchChorusCardStory(
       timeline,
       sources: [...new Set(timeline.map((e) => e.source))],
       count: timeline.length,
+      // #3819 — say when the spine window did not reach the beginning. Without
+      // this the caller cannot tell an empty history from a shortened search.
+      spineTruncated,
     },
   };
 }

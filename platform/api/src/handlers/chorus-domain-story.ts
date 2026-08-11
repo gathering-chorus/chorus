@@ -4,7 +4,7 @@
  * Dependencies injected:
  *   getCards — () => Array<{id, title, status, owner, tags}>
  *   db       — better-sqlite3 Database (nullable)
- *   readLog  — () => string | null
+ *   scanSpine — () => SpineScan — bounded tail read of the spine (#3819)
  *
  * Behavior:
  *   - Lists cards tagged domain:<name>
@@ -15,6 +15,7 @@
  */
 import type Database from 'better-sqlite3';
 import type { FetchResult } from './codebase-topology';
+import type { SpineScan } from './spine-scan';
 
 export interface BoardCard {
   id: string;
@@ -27,7 +28,8 @@ export interface BoardCard {
 export interface ChorusDomainStoryDeps {
   getCards: () => BoardCard[];
   db: Database.Database | null;
-  readLog: () => string | null;
+  /** #3819 — bounded tail scan; replaces the whole-file readLog(). */
+  scanSpine: () => SpineScan;
 }
 
 interface MentionEntry {
@@ -112,16 +114,19 @@ function collectMentions(db: ChorusDomainStoryDeps['db'], domain: string, limit:
   return mentions;
 }
 
-function collectSpineEvents(readLog: ChorusDomainStoryDeps['readLog'], cards: CardEntry[], timeline: TimelineEntry[]): void {
+// #3819 — bounded tail scan, same reason as chorus-card-story: this read the
+// whole 732MB spine per request.
+function collectSpineEvents(scanSpine: ChorusDomainStoryDeps['scanSpine'], cards: CardEntry[], timeline: TimelineEntry[]): boolean {
   try {
-    const log = readLog();
-    if (log === null) return;
+    const scan = scanSpine();
     const cardIds = new Set(cards.map((c) => c.index));
-    for (const line of log.split('\n')) {
+    for (const line of scan.lines) {
       try {
         const parsed = JSON.parse(line);
         if (!parsed.event || !String(parsed.event).startsWith('card.')) continue;
-        const cardId = parseInt(parsed.card || '0', 10);
+        // #3819 — card_id (number) is what the spine writes; `card` was never
+        // present, so this matched nothing even when the read succeeded.
+        const cardId = Number(parsed.card_id ?? parsed.card ?? 0);
         if (!cardIds.has(cardId)) continue;
         timeline.push({
           timestamp: parsed.timestamp,
@@ -132,7 +137,9 @@ function collectSpineEvents(readLog: ChorusDomainStoryDeps['readLog'], cards: Ca
         });
       } catch { /* skip malformed */ }
     }
+    return scan.truncated;
   } catch { /* log unreadable */ }
+  return false;
 }
 
 export function fetchChorusDomainStory(
@@ -146,7 +153,7 @@ export function fetchChorusDomainStory(
 
   const cards = collectCardEntries(deps.getCards(), domain, timeline);
   const mentions = collectMentions(deps.db, domain, limit, timeline);
-  collectSpineEvents(deps.readLog, cards, timeline);
+  const spineTruncated = collectSpineEvents(deps.scanSpine, cards, timeline);
   timeline.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
 
   return {
@@ -157,6 +164,8 @@ export function fetchChorusDomainStory(
       mentions,
       timeline,
       count: timeline.length,
+      // #3819 — a shortened search must not look like an empty history.
+      spineTruncated,
       card_count: cards.length,
       mention_count: mentions.length,
     },
