@@ -825,3 +825,60 @@ fn post_args_with_code_returns_status_and_never_uses_sf() {
     assert!(args.contains(&"Authorization: Bearer tok".to_string()));
     assert!(args.contains(&"x-target-graph: urn:chorus:domains:tests".to_string()));
 }
+
+// ── #3821 — the test leg scopes to the diff via the SAME shared core builds
+// use (shared/scope_units.rs). Full suite is the loud fallback, never the
+// default; an asset-only diff runs nothing.
+
+fn sg(v: &str) -> String { v.to_string() }
+
+fn su(name: &str, dir: &str) -> werk_test::ScopeUnit {
+    werk_test::ScopeUnit { name: name.into(), dir: dir.into() }
+}
+
+fn test_world() -> (Vec<werk_test::ScopeUnit>, Vec<(String, String)>) {
+    let units = vec![
+        su("werk-teardown", "platform/services/werk-teardown"),
+        su("werk-accept", "platform/services/werk-accept"),
+        su("owl-api", "platform/services/owl-api"),
+        su("platform/api", "platform/api"),
+        su("platform/pulse", "platform/pulse"),
+    ];
+    let edges = vec![
+        ("werk-teardown".to_string(), "werk-accept".to_string()),
+        ("chorus-sdk".to_string(), "platform/api".to_string()),
+    ];
+    (units, edges)
+}
+
+#[test]
+fn asset_only_diff_scopes_to_no_test_units() {
+    // #3810's exact shape: an HTML page + a knowledge doc → zero units, the
+    // 24-minute Rust sweep never starts.
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(
+        &[sg("platform/api/public/index.html"), sg("knowledge/doc-coherence.md")],
+        &units, &edges);
+    assert_eq!(v, Some(vec![]));
+}
+
+#[test]
+fn negative_proof_3821_downstream_dependent_tests_still_run() {
+    // #3734 — the fixture where scoping too narrowly ships a break: a change
+    // in werk-teardown (lib-only provider) must include werk-accept's tests,
+    // because A's change can break B's suite. Scope-to-A-alone fails here.
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(
+        &[sg("platform/services/werk-teardown/src/lib.rs")], &units, &edges);
+    let scoped = v.expect("must scope");
+    assert!(scoped.contains(&su("werk-teardown", "platform/services/werk-teardown")), "{:?}", scoped);
+    assert!(scoped.contains(&su("werk-accept", "platform/services/werk-accept")),
+        "downstream dependent's tests MUST run — under-scoping ships breaks: {:?}", scoped);
+}
+
+#[test]
+fn unmapped_file_falls_back_to_full_suite() {
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(&[sg("tsconfig.base.json")], &units, &edges);
+    assert_eq!(v, None, "unknown means run everything, never means skip");
+}

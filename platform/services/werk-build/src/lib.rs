@@ -24,6 +24,8 @@ use std::thread::sleep;
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 // Single source under services/shared, compiled into every verb. Not a crate, not a verb.
 include!("../../shared/failure_class.rs");
+// #3821 — the ONE diff→units scoping core, shared with werk-test (source-include).
+include!("../../shared/scope_units.rs");
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 extern "C" {
@@ -1118,14 +1120,9 @@ pub enum ScopeDecision {
 /// Files that can never change build OUTPUT: prose, rendered assets, role
 /// state, dashboards. Everything else is build-relevant until mapped.
 fn build_irrelevant(f: &str) -> bool {
-    let ext_ok = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
-        .iter()
-        .any(|e| f.ends_with(e));
-    let dir_ok = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-                  "platform/scripts/", "platform/tests/", "skills/", ".claude/"]
-        .iter()
-        .any(|d| f.starts_with(d));
-    ext_ok || dir_ok
+    // #3821 — delegates to the shared core so build and test agree on what a
+    // diff can affect.
+    scope_irrelevant(f)
 }
 
 /// Pure scoping core (#3783). `edges` are DECLARED provider→dependent pairs by
@@ -1137,51 +1134,21 @@ pub fn scope_units(
     edges: &[(String, String)],
     force_full: bool,
 ) -> ScopeDecision {
-    if force_full {
-        return ScopeDecision::Full("forced".to_string());
-    }
-    if changed.is_empty() {
-        return ScopeDecision::Full("empty-diff".to_string());
-    }
-    let mut names: BTreeSet<String> = BTreeSet::new();
-    for f in changed {
-        if build_irrelevant(f) {
-            continue;
-        }
-        if let Some(um) = map.iter().find(|m| f.starts_with(&format!("{}/", m.dir))) {
-            names.insert(unit_name(&um.unit).to_string());
-            continue;
-        }
-        // A crate dir that is not a unit (lib-only, e.g. werk-teardown): owned
-        // iff it appears as a provider in the declared edges.
-        if let Some(rest) = f.strip_prefix("platform/services/") {
-            if let Some(crate_name) = rest.split('/').next() {
-                if edges.iter().any(|(p, _)| p == crate_name) {
-                    names.insert(crate_name.to_string());
-                    continue;
-                }
-            }
-        }
-        return ScopeDecision::Full(format!("unmapped:{}", f));
-    }
-    // Transitive dependent closure over the declared edges.
-    loop {
-        let add: Vec<String> = edges
-            .iter()
-            .filter(|(p, d)| names.contains(p) && !names.contains(d))
-            .map(|(_, d)| d.clone())
-            .collect();
-        if add.is_empty() {
-            break;
-        }
-        names.extend(add);
-    }
-    let scoped: Vec<BuildUnit> = map
+    // #3821 — thin adapter over the shared scoping core (scope_unit_names),
+    // the same code werk-test compiles: one answer, asked twice.
+    let units: Vec<ScopeUnit> = map
         .iter()
-        .filter(|m| names.contains(unit_name(&m.unit)))
-        .map(|m| m.unit.clone())
+        .map(|m| ScopeUnit { name: unit_name(&m.unit).to_string(), dir: m.dir.clone() })
         .collect();
-    ScopeDecision::Scoped(scoped)
+    match scope_unit_names(changed, &units, edges, force_full) {
+        ScopeVerdict::Full(r) => ScopeDecision::Full(r),
+        ScopeVerdict::Scoped(names) => ScopeDecision::Scoped(
+            map.iter()
+                .filter(|m| names.contains(&unit_name(&m.unit).to_string()))
+                .map(|m| m.unit.clone())
+                .collect(),
+        ),
+    }
 }
 
 /// Discover each unit's werk-relative dir (the fs twin of
@@ -1217,51 +1184,8 @@ pub fn discover_unit_dirs(werk_root: &Path) -> Vec<UnitMap> {
 /// path dep between platform/services crates (a binary rebuilds when a lib-only
 /// sibling it path-deps on changes).
 pub fn declared_edges(werk_root: &Path) -> Vec<(String, String)> {
-    let mut edges = Vec::new();
-    // TS: file: deps — provider is the target package's name, dependent is the declarer's.
-    for pj in find_files(werk_root, "package.json") {
-        let Ok(content) = fs::read_to_string(&pj) else { continue };
-        let Some(dep_name) = pkg_name(&content) else { continue };
-        let pkg_dir = pj.parent().unwrap_or(werk_root);
-        for (_d, target) in extract_file_deps(&content) {
-            if let Ok(canon) = fs::canonicalize(pkg_dir.join(&target)) {
-                if let Ok(lib_pj) = fs::read_to_string(canon.join("package.json")) {
-                    if let Some(lib_name) = pkg_name(&lib_pj) {
-                        edges.push((lib_name, dep_name.clone()));
-                    }
-                }
-            }
-        }
-    }
-    // Cargo: path deps among platform/services — provider is the target crate DIR name.
-    let services = werk_root.join("platform/services");
-    if let Ok(entries) = fs::read_dir(&services) {
-        for e in entries.flatten() {
-            let dir = e.path();
-            let Ok(toml) = fs::read_to_string(dir.join("Cargo.toml")) else { continue };
-            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
-            for line in toml.lines() {
-                if let Some(i) = line.find("path") {
-                    let rest = &line[i..];
-                    if let Some(q1) = rest.find('"') {
-                        if let Some(q2) = rest[q1 + 1..].find('"') {
-                            let target = &rest[q1 + 1..q1 + 1 + q2];
-                            if let Some(provider) =
-                                std::path::Path::new(target).file_name().and_then(|n| n.to_str())
-                            {
-                                if services.join(provider).join("Cargo.toml").is_file() {
-                                    edges.push((provider.to_string(), dep_crate.clone()));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    edges.sort();
-    edges.dedup();
-    edges
+    // #3821 — shared core owns edge discovery.
+    scope_declared_edges(werk_root)
 }
 
 /// #3783 — the card's changed files vs origin/main (merge-base three-dot), the

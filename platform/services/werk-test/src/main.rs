@@ -14,8 +14,9 @@ use werk_test::{
     match_cargo_case, model_units, parse_cargo_cases, parse_case_tsv, parse_quarantine_rows,
     parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
-    suite_run_payload, test_result_payload, undeclared_gaps, CaseResult, CheckKind, Quarantined,
-    TestRow, TestUnit, TS_PACKAGES,
+    scope_declared_edges, scoped_test_units, suite_run_payload, test_result_payload,
+    undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
+    TS_PACKAGES,
 };
 
 fn main() {
@@ -87,7 +88,30 @@ fn run(args: &[String]) -> Result<i32, String> {
         );
         plan_units_from_rows(&scoped_rows)
     } else {
-        model_units(&rows, &legacy_units)
+        // #3821 — diff-scoped plan via the ONE shared core werk-build uses:
+        // a diff runs the tests of the units it can affect (touched + declared
+        // dependents), the FULL widened plan only on a loud fallback. The
+        // 24-minute lesson (#3810): an HTML page pulled four Rust crates'
+        // 1,782 cases through the covers-union; nothing it touched could
+        // reach them.
+        let full_units = model_units(&rows, &legacy_units);
+        match diff_scoped_units(&werk, &changed) {
+            Some(scoped_units) => {
+                emit_spine("test.scoped", &role, &card, &trace,
+                    &[("changed", &changed.len().to_string()),
+                      ("scoped", &scoped_units.len().to_string()),
+                      ("of", &full_units.len().to_string())]);
+                println!("scope(diff): {} unit(s) of {} (shared scope core, #3821)",
+                    scoped_units.len(), full_units.len());
+                scoped_units
+            }
+            None => {
+                emit_spine("test.scope.full", &role, &card, &trace,
+                    &[("reason", "unmapped-or-forced"), ("units", &full_units.len().to_string())]);
+                println!("scope(diff): FULL fallback — unmapped path or WERK_TEST_FULL (loud, never silent)");
+                full_units
+            }
+        }
     };
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
@@ -745,4 +769,64 @@ fn mint_token(role: &str) -> Option<String> {
     }
     let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if t.is_empty() { None } else { Some(t) }
+}
+
+/// #3821 — candidate units + declared edges from the werk tree, then the shared
+/// scoping core. Candidates are STRUCTURAL: every platform/services crate with a
+/// Cargo.toml (lib-only crates have tests too) + the known TS packages. TS edges
+/// come back keyed by package NAME; test units key TS by DIR, so names translate
+/// through each package.json before scoping.
+fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
+    let root = Path::new(werk);
+    let mut units: Vec<ScopeUnit> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(root.join("platform/services")) {
+        for e in entries.flatten() {
+            if e.path().join("Cargo.toml").is_file() {
+                if let Some(n) = e.file_name().to_str() {
+                    units.push(ScopeUnit {
+                        name: n.to_string(),
+                        dir: format!("platform/services/{}", n),
+                    });
+                }
+            }
+        }
+    }
+    let mut ts_name_to_dir: Vec<(String, String)> = Vec::new();
+    for pkg in TS_PACKAGES {
+        units.push(ScopeUnit { name: (*pkg).to_string(), dir: (*pkg).to_string() });
+        if let Ok(content) = std::fs::read_to_string(root.join(pkg).join("package.json")) {
+            if let Some(i) = content.find("\"name\"") {
+                let rest = &content[i + 6..];
+                if let Some(c) = rest.find(':') {
+                    let rest = rest[c + 1..].trim_start();
+                    if let Some(rest) = rest.strip_prefix('"') {
+                        if let Some(e) = rest.find('"') {
+                            ts_name_to_dir.push((rest[..e].to_string(), (*pkg).to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let edges: Vec<(String, String)> = scope_declared_edges(root)
+        .into_iter()
+        .map(|(p, d)| {
+            let p2 = ts_name_to_dir.iter().find(|(n, _)| *n == p).map(|(_, d2)| d2.clone()).unwrap_or(p);
+            let d2 = ts_name_to_dir.iter().find(|(n, _)| *n == d).map(|(_, dd)| dd.clone()).unwrap_or(d);
+            (p2, d2)
+        })
+        .collect();
+    let scoped = scoped_test_units(changed, &units, &edges)?;
+    Some(
+        scoped
+            .into_iter()
+            .map(|u| {
+                if u.dir.starts_with("platform/services/") {
+                    TestUnit::RustCrate(u.name)
+                } else {
+                    TestUnit::TsPackage(u.dir)
+                }
+            })
+            .collect(),
+    )
 }
