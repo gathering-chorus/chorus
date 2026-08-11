@@ -1,3 +1,4 @@
+// @test-type: unit — every dependency injected; no files, no services.
 /**
  * chorus-domain-story handler — unit tests (#2188).
  */
@@ -24,7 +25,8 @@ function defaultDeps(over: Partial<ChorusDomainStoryDeps> = {}): ChorusDomainSto
   return {
     getCards: () => [],
     db: null,
-    readLog: () => null,
+    // #3819 — bounded tail scan replaces the whole-file read.
+    scanSpine: () => ({ lines: [], truncated: false, bytesRead: 0 }),
     ...over,
   };
 }
@@ -90,7 +92,10 @@ describe('fetchChorusDomainStory (#2188)', () => {
       'malformed-line',
     ].join('\n');
     const body = fetchChorusDomainStory(
-      defaultDeps({ getCards: () => cards, readLog: () => log }),
+      defaultDeps({
+        getCards: () => cards,
+        scanSpine: () => ({ lines: log.split('\n'), truncated: false, bytesRead: log.length }),
+      }),
       'photos',
     ).body as { timeline: Array<{ source: string; card?: number }> };
     const spine = body.timeline.filter((t) => t.source === 'spine');
@@ -120,9 +125,12 @@ describe('fetchChorusDomainStory (#2188)', () => {
     expect(body.mentions).toEqual([]);
   });
 
-  test('null readLog → skip spine section, no throw', () => {
+  test('an empty spine scan → skip spine section, no throw', () => {
     const cards: BoardCard[] = [{ id: '1', title: 'A', status: 'WIP', owner: 'wren', tags: 'domain:photos' }];
-    const body = fetchChorusDomainStory(defaultDeps({ getCards: () => cards, readLog: () => null }), 'photos').body as {
+    const body = fetchChorusDomainStory(defaultDeps({
+      getCards: () => cards,
+      scanSpine: () => ({ lines: [], truncated: false, bytesRead: 0 }),
+    }), 'photos').body as {
       timeline: Array<{ source: string }>;
     };
     expect(body.timeline.filter((t) => t.source === 'spine').length).toBe(0);
