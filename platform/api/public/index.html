@@ -64,17 +64,17 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
   <div class="product">
     <h2>Schema (ER Diagram)</h2>
     <div class="desc">Entity relationships, class hierarchy, SHACL constraints. Filter by product.</div>
-    <div class="links"><a href="/docs/chorus-er-diagram.html">Open</a></div>
+    <div class="links"><a href="/chorus-er-diagram.html">Open</a></div>
   </div>
   <div class="product">
     <h2>Data (Instance Explorer)</h2>
     <div class="desc">Live graph visualization. Drag, filter, cascade. Every node from Fuseki.</div>
-    <div class="links"><a href="/docs/chorus-instance-explorer.html">Open</a></div>
+    <div class="links"><a href="/chorus-instance-explorer.html">Open</a></div>
   </div>
   <div class="product">
     <h2>Reference (Data Model Cards)</h2>
     <div class="desc">Per-class properties, types, descriptions. The ontology as a reference card deck.</div>
-    <div class="links"><a href="/docs/chorus-data-model.html">Open</a></div>
+    <div class="links"><a href="/chorus-data-model.html">Open</a></div>
   </div>
 </div>
 </div>
@@ -92,7 +92,7 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // is not this machine the fetch resolved to the VIEWER's localhost and the
     // product tiles silently never rendered — Jeff hit exactly that on his phone
     // over wifi, 2026-08-01 ("Failed to load: Load failed").
-    const res = await fetch('/owl/products');
+    const res = await fetch((window.basePath ? window.basePath('/owl/products') : '/owl/products'));
     const data = await res.json();
     const container = document.getElementById('products');
 
