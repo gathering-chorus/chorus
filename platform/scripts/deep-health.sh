@@ -330,9 +330,39 @@ elif [ "$CARDS_EXIT" -ne 0 ]; then
   WARNINGS+=("vikunja-auth-probe: cards CLI exit ${CARDS_EXIT} with no auth-error in output — probe inconclusive")
 fi
 
+# --- 11e. Deferred services (#3820) — off BY DECISION, not broken. -----------
+# A service the team has deliberately kept down (e.g. Buzz, deferred per the
+# Gall's-Law call on #3674) must not fire a FAILURE every run — that trains
+# everyone to ignore reds, the exact broken-monitor tax the zero-red bar exists
+# to prevent. Down-while-deferred is a named WARNING. But honesty runs both
+# ways: a deferred service that ANSWERS is also a warning (unexpected-up — the
+# decision may be stale), never silent. The reason travels so the readout says
+# WHY it is muted, not just that it is.
+#
+# A case function, NOT declare -A: macOS /bin/bash is 3.2 (no associative
+# arrays) and this probe runs under launchd/cron in that shell — an assoc array
+# would break the whole health check, turning a mute into an outage.
+deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
+  case "$1" in
+    buzz-relay-http) echo "deferred per #3674 (Buzz-as-substrate is a chosen 'later', not now)" ;;
+    *) echo "" ;;
+  esac
+}
+
 for entry in "${HEALTH_ENDPOINTS[@]}"; do
   IFS='|' read -r url name desc <<< "$entry"
-  if ! curl -sf --max-time 5 "$url" > /dev/null 2>&1; then
+  reachable=0
+  curl -sf --max-time 5 "$url" > /dev/null 2>&1 && reachable=1
+  deferred_why="$(deferred_reason "$name")"
+  if [ -n "$deferred_why" ]; then
+    if [ "$reachable" -eq 1 ]; then
+      WARNINGS+=("$name: UNEXPECTEDLY UP while deferred — $deferred_why; the deferral decision may be stale")
+    else
+      WARNINGS+=("$name: expected-down, $deferred_why")
+    fi
+    continue
+  fi
+  if [ "$reachable" -eq 0 ]; then
     FAILURES+=("$name: unreachable — $desc broken")
   fi
 done
