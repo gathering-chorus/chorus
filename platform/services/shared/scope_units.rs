@@ -30,7 +30,7 @@ pub fn scope_irrelevant(f: &str) -> bool {
         .iter()
         .any(|e| f.ends_with(e));
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-               "skills/", ".claude/"]
+               "platform/scripts/", "platform/tests/", "skills/", ".claude/"]
         .iter()
         .any(|d| f.starts_with(d));
     ext || dir || f.contains("/public/")
