@@ -597,5 +597,32 @@ assert "signed-in + unlisted path -> the same not-found, never the sign-in page"
 assert "refusal is identical with and without a session (both 404)" \
   test "$(code -H 'Accept: text/html' http://127.0.0.1:$G_PORT/secret/y.html)" = "$(code_alice -H 'Accept: text/html' http://127.0.0.1:$G_PORT/secret/y.html)"
 
+# --- #3815: the three ontology pages are EXACT-FILE, not a /docs tree ---------
+#
+# The trap: allowlisting /docs (or any prefix reading like one page) publishes
+# the whole public tree — 77 pages, incl. unreviewed. These prove a listed page
+# is reachable AND a sibling public page not on the list is NOT — exact-file
+# matching, not a prefix that admits neighbours. Own stub upstream + guard.
+echo "--- #3815 exact-file ontology pages ---"
+OP_ROOT=$(mktemp -d)
+echo "ER-PAGE" > "$OP_ROOT/chorus-er-diagram.html"
+echo "SIBLING-UNREVIEWED" > "$OP_ROOT/chorus-hook-architecture.html"
+OUP_PORT=$(pick_port); OG_PORT=$(pick_port)
+(cd "$OP_ROOT" && python3 -m http.server "$OUP_PORT" >/dev/null 2>&1) &
+OUP_PID=$!
+wait_up "$OUP_PORT" "ontology upstream" "" || exit 1
+SHARE_UPSTREAM="http://127.0.0.1:$OUP_PORT" \
+  SHARE_ALLOW="/chorus-er-diagram.html,/chorus-instance-explorer.html,/chorus-data-model.html" \
+  SHARE_PORT="$OG_PORT" python3 "$GUARD" >/dev/null 2>&1 &
+OG_PID=$!
+wait_up "$OG_PORT" "ontology-pages guard" || exit 1
+assert "a listed ontology page serves to a signed-in caller" \
+  test "$(as_alice http://127.0.0.1:$OG_PORT/chorus-er-diagram.html | tr -d '\n')" = "ER-PAGE"
+assert "NEGATIVE PROOF: an UNLISTED sibling public page still 404s (exact-file, not a tree)" \
+  test "$(code_alice http://127.0.0.1:$OG_PORT/chorus-hook-architecture.html)" = "404"
+assert "NEGATIVE PROOF: a /docs-prefixed path is NOT reachable (the static-tree trap stays shut)" \
+  test "$(code_alice http://127.0.0.1:$OG_PORT/docs/chorus-er-diagram.html)" = "404"
+kill "$OG_PID" "$OUP_PID" 2>/dev/null; rm -rf "$OP_ROOT"
+
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

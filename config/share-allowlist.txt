@@ -51,6 +51,15 @@
 # docs tree: the prefix IS the filename, so nothing beside it is shared.
 /designing/docs/security-rollout.html
 
+# The three ontology views the entrance links to (#3815). EXACT FILES, never
+# /docs: server.ts:125 mounts /docs as express.static over the whole public
+# tree, so a /docs prefix would publish all 77 pages incl. unreviewed ones —
+# the prefix-reads-as-one-page-admits-a-tree trap. These three are reviewed and
+# serve 200 at their root paths; nothing beside them is shared.
+/chorus-er-diagram.html
+/chorus-instance-explorer.html
+/chorus-data-model.html
+
 # Assets the pages need to render.
 /js/vendor
 # base-path.js is how a page learns it is mounted under /chorus (#3798/#3809).
