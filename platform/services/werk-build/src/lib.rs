@@ -997,6 +997,35 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
     // card's deploy to unrelated crates' health on main).
     if !only.is_empty() {
         units.retain(|u| only.iter().any(|n| n == unit_name(u)));
+    } else if target == "werk" {
+        // #3783 — change-scoped build: the werk path scopes to the DIFF + declared
+        // dependents (5.7min of build for a 2-file card, measured on #3781 — none
+        // of it scaling with the change). FULL is the loud escape, never the
+        // silent default: an unmapped build-relevant file, an unreadable diff,
+        // and WERK_BUILD_FULL=1 all widen with a named reason on the spine.
+        let force_full = env::var("WERK_BUILD_FULL").map(|v| v == "1").unwrap_or(false);
+        match werk_changed_files(&build_root_s) {
+            Ok(files) => {
+                let map = discover_unit_dirs(&build_root);
+                let edges = declared_edges(&build_root);
+                match scope_units(&files, &map, &edges, force_full) {
+                    ScopeDecision::Scoped(scoped) => {
+                        jsonl(home, role, card, &trace, "build.scoped", &format!(
+                            ",\"changed\":{},\"scoped\":{},\"of\":{}",
+                            files.len(), scoped.len(), units.len()));
+                        units = scoped;
+                    }
+                    ScopeDecision::Full(reason) => {
+                        jsonl(home, role, card, &trace, "build.scope.escaped", &format!(
+                            ",\"reason\":\"{}\",\"changed\":{}", reason, files.len()));
+                    }
+                }
+            }
+            Err(e) => {
+                jsonl(home, role, card, &trace, "build.scope.escaped", &format!(
+                    ",\"reason\":\"diff-unreadable\",\"detail\":\"{}\"", e));
+            }
+        }
     }
     if units.is_empty() {
         // No buildable units (degenerate root) OR none matched the filter (e.g. a
@@ -1014,8 +1043,10 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
     let _lock = lock(&build_root, Duration::from_secs(120))?;
     jsonl(home, role, card, &trace, "lock.acquired", "");
 
+    let build_started = Instant::now();
     let mut summary: Vec<String> = Vec::new();
     for unit in &units {
+        let unit_started = Instant::now();
         let (kind_str, name) = match unit {
             BuildUnit::SharedLib(n) => ("sharedlib", n.as_str()),
             BuildUnit::RustCrate(n) => ("rust", n.as_str()),
@@ -1041,9 +1072,11 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
             card,
             &trace,
             "unit.build.completed",
+            // #3783 AC4 — per-unit duration so /cws and the trace viewer can show
+            // where build time actually goes, before/after scoping.
             &format!(
-                ",\"kind\":\"{}\",\"name\":\"{}\",\"identity\":\"{}\"",
-                kind_str, name, identity
+                ",\"kind\":\"{}\",\"name\":\"{}\",\"identity\":\"{}\",\"duration_ms\":{}",
+                kind_str, name, identity, unit_started.elapsed().as_millis()
             ),
         );
         // gh status per unit (last write wins for the chorus/build/<card> context;
@@ -1053,6 +1086,188 @@ pub fn build(card: u64, role: &str, home: &Path, werk_base: &Path, target: &str,
     }
 
     let joined = summary.join(",");
-    jsonl(home, role, card, &trace, "build.completed", &format!(",\"built\":\"{}\"", joined));
+    jsonl(home, role, card, &trace, "build.completed", &format!(
+        ",\"built\":\"{}\",\"duration_ms\":{},\"units\":{}",
+        joined, build_started.elapsed().as_millis(), units.len()));
     Ok(joined)
+}
+
+// ── #3783 — change-scoped build: units from the DIFF + the declared dependency
+// graph, with a loud FULL escape for anything the mapping can't own. This is
+// NOT the pre-#3132 hardcoded path list coming back: scoping is derived from
+// the same structural discovery (#3132) plus DECLARED edges (file: deps for TS,
+// cargo path deps for Rust), and any build-relevant file outside every unit
+// escapes to FULL with a named reason — under-build is unrepresentable by
+// construction, the #3092/#3126 silent-stale defense.
+
+/// A build unit with its werk-relative directory (no trailing slash).
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct UnitMap {
+    pub unit: BuildUnit,
+    pub dir: String,
+}
+
+/// The scoping decision: a (possibly empty) scoped unit set, or FULL with the
+/// reason the caller must log (never a silent widen).
+#[derive(Debug, PartialEq, Eq)]
+pub enum ScopeDecision {
+    Scoped(Vec<BuildUnit>),
+    Full(String),
+}
+
+/// Files that can never change build OUTPUT: prose, rendered assets, role
+/// state, dashboards. Everything else is build-relevant until mapped.
+fn build_irrelevant(f: &str) -> bool {
+    let ext_ok = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
+        .iter()
+        .any(|e| f.ends_with(e));
+    let dir_ok = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
+                  "platform/scripts/", "platform/tests/", "skills/", ".claude/"]
+        .iter()
+        .any(|d| f.starts_with(d));
+    ext_ok || dir_ok
+}
+
+/// Pure scoping core (#3783). `edges` are DECLARED provider→dependent pairs by
+/// unit/dir name (TS `file:` deps + cargo path deps); the cascade is their
+/// transitive closure. `force_full` is the operator escape hatch.
+pub fn scope_units(
+    changed: &[String],
+    map: &[UnitMap],
+    edges: &[(String, String)],
+    force_full: bool,
+) -> ScopeDecision {
+    if force_full {
+        return ScopeDecision::Full("forced".to_string());
+    }
+    if changed.is_empty() {
+        return ScopeDecision::Full("empty-diff".to_string());
+    }
+    let mut names: BTreeSet<String> = BTreeSet::new();
+    for f in changed {
+        if build_irrelevant(f) {
+            continue;
+        }
+        if let Some(um) = map.iter().find(|m| f.starts_with(&format!("{}/", m.dir))) {
+            names.insert(unit_name(&um.unit).to_string());
+            continue;
+        }
+        // A crate dir that is not a unit (lib-only, e.g. werk-teardown): owned
+        // iff it appears as a provider in the declared edges.
+        if let Some(rest) = f.strip_prefix("platform/services/") {
+            if let Some(crate_name) = rest.split('/').next() {
+                if edges.iter().any(|(p, _)| p == crate_name) {
+                    names.insert(crate_name.to_string());
+                    continue;
+                }
+            }
+        }
+        return ScopeDecision::Full(format!("unmapped:{}", f));
+    }
+    // Transitive dependent closure over the declared edges.
+    loop {
+        let add: Vec<String> = edges
+            .iter()
+            .filter(|(p, d)| names.contains(p) && !names.contains(d))
+            .map(|(_, d)| d.clone())
+            .collect();
+        if add.is_empty() {
+            break;
+        }
+        names.extend(add);
+    }
+    let scoped: Vec<BuildUnit> = map
+        .iter()
+        .filter(|m| names.contains(unit_name(&m.unit)))
+        .map(|m| m.unit.clone())
+        .collect();
+    ScopeDecision::Scoped(scoped)
+}
+
+/// Discover each unit's werk-relative dir (the fs twin of
+/// `discover_build_units_in_tree`, carrying WHERE each unit lives).
+pub fn discover_unit_dirs(werk_root: &Path) -> Vec<UnitMap> {
+    let mut out = Vec::new();
+    for unit in discover_build_units_in_tree(werk_root) {
+        match &unit {
+            BuildUnit::RustCrate(n) => {
+                out.push(UnitMap { unit: unit.clone(), dir: format!("platform/services/{}", n) });
+            }
+            BuildUnit::SharedLib(n) | BuildUnit::TsService(n) => {
+                for pj in find_files(werk_root, "package.json") {
+                    let Ok(content) = fs::read_to_string(&pj) else { continue };
+                    if pkg_name(&content).as_deref() == Some(n.as_str()) {
+                        if let Some(dir) = pj.parent().and_then(|p| p.strip_prefix(werk_root).ok()) {
+                            out.push(UnitMap {
+                                unit: unit.clone(),
+                                dir: dir.to_string_lossy().trim_end_matches('/').to_string(),
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// DECLARED dependency edges, provider→dependent by unit/dir name: every TS
+/// `file:` dep (consumer rebuilds when the lib changes, #3126) and every cargo
+/// path dep between platform/services crates (a binary rebuilds when a lib-only
+/// sibling it path-deps on changes).
+pub fn declared_edges(werk_root: &Path) -> Vec<(String, String)> {
+    let mut edges = Vec::new();
+    // TS: file: deps — provider is the target package's name, dependent is the declarer's.
+    for pj in find_files(werk_root, "package.json") {
+        let Ok(content) = fs::read_to_string(&pj) else { continue };
+        let Some(dep_name) = pkg_name(&content) else { continue };
+        let pkg_dir = pj.parent().unwrap_or(werk_root);
+        for (_d, target) in extract_file_deps(&content) {
+            if let Ok(canon) = fs::canonicalize(pkg_dir.join(&target)) {
+                if let Ok(lib_pj) = fs::read_to_string(canon.join("package.json")) {
+                    if let Some(lib_name) = pkg_name(&lib_pj) {
+                        edges.push((lib_name, dep_name.clone()));
+                    }
+                }
+            }
+        }
+    }
+    // Cargo: path deps among platform/services — provider is the target crate DIR name.
+    let services = werk_root.join("platform/services");
+    if let Ok(entries) = fs::read_dir(&services) {
+        for e in entries.flatten() {
+            let dir = e.path();
+            let Ok(toml) = fs::read_to_string(dir.join("Cargo.toml")) else { continue };
+            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
+            for line in toml.lines() {
+                if let Some(i) = line.find("path") {
+                    let rest = &line[i..];
+                    if let Some(q1) = rest.find('"') {
+                        if let Some(q2) = rest[q1 + 1..].find('"') {
+                            let target = &rest[q1 + 1..q1 + 1 + q2];
+                            if let Some(provider) =
+                                std::path::Path::new(target).file_name().and_then(|n| n.to_str())
+                            {
+                                if services.join(provider).join("Cargo.toml").is_file() {
+                                    edges.push((provider.to_string(), dep_crate.clone()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    edges.sort();
+    edges.dedup();
+    edges
+}
+
+/// #3783 — the card's changed files vs origin/main (merge-base three-dot), the
+/// same diff the test gate scopes on. Committed werk state only — build runs
+/// post-commit in the pipeline.
+fn werk_changed_files(werk_s: &str) -> R<Vec<String>> {
+    let out = run("git", &["-C", werk_s, "diff", "--name-only", "origin/main...HEAD"])?;
+    Ok(out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
 }
