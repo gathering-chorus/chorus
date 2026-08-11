@@ -844,3 +844,16 @@ fn negative_proof_3817_buildable_change_with_empty_summary_still_dies() {
     let model = "roles/silas/ontology/chorus.ttl\n";
     assert!(!werk_deploy::empty_summary_is_config_only(model), "model diff must NOT no-op (model deploys at land)");
 }
+
+#[test]
+fn asset_only_diff_under_a_service_dir_is_still_a_noop() {
+    // #3817/Wren's #3810 — a page-only card: platform/api/public/index.html is
+    // INSIDE the chorus-api dir but needs no build (the variant serves public/
+    // straight from the werk). The classifier must not let the dir prefix
+    // override the asset nature of the file.
+    let diff = "platform/api/public/index.html\n";
+    assert!(werk_deploy::empty_summary_is_config_only(diff), "asset-only diff → no-op");
+    // and the guard stands: real source under the same dir still dies
+    let diff = "platform/api/public/index.html\nplatform/api/src/server.ts\n";
+    assert!(!werk_deploy::empty_summary_is_config_only(diff));
+}

@@ -2869,7 +2869,23 @@ mod running_verdict_tests {
 /// back empty: no service crates, no TS services, no model sources. Anything
 /// else means the empty summary is a failure, not a no-op.
 pub fn empty_summary_is_config_only(diff: &str) -> bool {
-    changed_service_crates(diff).is_empty()
-        && changed_ts_services(diff).is_empty()
-        && changed_model_sources(diff).is_empty()
+    // Asset/prose lines are dropped BEFORE classification (Wren's #3810: a
+    // page-only diff like platform/api/public/index.html sits inside the
+    // chorus-api dir but needs no build — the variant serves public/ straight
+    // from the werk). Mirrors werk-build's build-irrelevant rule so the two
+    // verbs agree on what an empty summary can explain.
+    let buildable: String = diff
+        .lines()
+        .filter(|l| {
+            let l = l.trim();
+            let asset_ext = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
+                .iter().any(|e| l.ends_with(e));
+            let static_dir = l.contains("/public/");
+            !(asset_ext || static_dir)
+        })
+        .map(|l| format!("{}\n", l))
+        .collect();
+    changed_service_crates(&buildable).is_empty()
+        && changed_ts_services(&buildable).is_empty()
+        && changed_model_sources(&buildable).is_empty()
 }
