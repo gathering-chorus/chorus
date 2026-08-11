@@ -187,8 +187,13 @@ describe('MessageRouter — classify: accept-request', () => {
   test('role saying "Accepted #X" is NOT accept-request (skill output)', () => {
     const r = new MessageRouter();
     r.ingest(mk('kade', 'Accepted #42 — ship it'));
-    // Not jeff, no explicit type — falls through to default hidden.
-    expect(r.getRecent(10)).toHaveLength(0);
+    // What this test is actually about: only Jeff's acceptance is an
+    // accept-request; a role echoing the words must not be typed as one.
+    // #3823 — it used to assert that by checking the message was HIDDEN, which
+    // was incidental. It fell off the end of the rule chain into a default that
+    // hid EVERY unrecognized role message, which is the defect behind Jeff's
+    // "i got nothing in clearing" (2026-08-11). The type is the real subject.
+    expect(r.getRecent(10)[0].type).not.toBe('accept-request');
   });
 });
 
@@ -299,10 +304,20 @@ describe('MessageRouter — classify: role-to-role (hidden)', () => {
     expect(r.getRecent(10)[0].type).toBe('role-response');
   });
 
-  test('role message with no signal defaults to hidden role-to-role', () => {
+  // #3823 — INVERTED, deliberately. This test used to assert that a role
+  // message matching no rule defaults to hidden. That is the defect, written
+  // down as intent: it is why Jeff said "i got nothing in clearing" on
+  // 2026-08-11 while the room was in fact receiving our replies. A role
+  // message that no rule claims is a reply to Jeff far more often than it is
+  // internal chatter — genuine role-to-role traffic carries a "[nudge from X]"
+  // prefix and is caught by a rule that names its reason. Hiding is now a
+  // decision, never a fall-through.
+  test('role message with no signal is VISIBLE, not silently hidden', () => {
     const r = new MessageRouter();
     r.ingest(mk('silas', 'just some random internal note'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    const shown = r.getRecent(10);
+    expect(shown).toHaveLength(1);
+    expect(shown[0].type).toBe('role-response');
   });
 });
 
