@@ -167,3 +167,34 @@ describe('#3823 identity table', () => {
     expect(authorOf({ pubkey: 'ff'.repeat(32) }, identity)).toBeNull();
   });
 });
+
+describe('#3823 offline backlog is bounded (Silas review)', () => {
+  test('a long outage drops the oldest and says so, instead of growing forever', async () => {
+    // An unbounded queue in a process that runs for weeks turns one Bedroom
+    // outage into a leak. The proof that matters is not "it has a cap" but
+    // "the cap engages and reports" — a silent trim is how a room loses
+    // history without anyone noticing.
+    const { startRoom } = await import('../src/buzz-room-wiring');
+    const dropped: Array<Record<string, unknown>> = [];
+    const sock = {
+      readyState: 0, // never OPEN — the relay is down for this whole test
+      send: () => { throw new Error('socket should not be written while closed'); },
+      on: () => { /* no events */ },
+      close: () => { /* noop */ },
+    };
+    const room = startRoom({
+      relayUrl: 'ws://offline.invalid:3000',
+      topic: 'team',
+      ingest: () => { /* nothing arrives while down */ },
+      log: (_l, ev, f) => { if (ev === 'buzz.room.backlog_dropped') dropped.push(f); },
+      connect: () => sock as never,
+    });
+    for (let i = 0; i < 150; i++) {
+      room.publish({ from: 'wren', text: `queued ${i}`, ts: new Date().toISOString(), type: 'role-response', visible: true });
+    }
+    await new Promise((r) => setTimeout(r, 50));
+    room.stop();
+    expect(dropped.length).toBeGreaterThan(0);
+    expect(dropped[dropped.length - 1].kept).toBe(100);
+  });
+});

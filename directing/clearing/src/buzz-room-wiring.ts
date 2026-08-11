@@ -19,6 +19,9 @@ import { derivedSigner } from './buzz-signer';
 
 type Logger = (level: 'info' | 'error', event: string, fields: Record<string, unknown>) => void;
 
+/** How many un-sent messages to hold while the relay is unreachable. */
+const MAX_PENDING = 100;
+
 export interface RoomWiring {
   enabled: boolean;
   /** Call for every Clearing message; publishes it to the room as its author. */
@@ -153,8 +156,20 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
         identity,
         publish: async (ev) => {
           rememberSent(ev.id);
-          if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(['EVENT', ev]));
-          else pending.push(ev);
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(['EVENT', ev]));
+            return;
+          }
+          // Bounded (Silas, #3823 review). An unbounded queue turns a Bedroom
+          // outage into a slow leak in a process that runs for weeks. Drop the
+          // OLDEST — during an outage the newest messages are the ones still
+          // worth saying when the relay comes back — and say so, because a
+          // silently shortened backlog is how a room quietly loses history.
+          pending.push(ev);
+          if (pending.length > MAX_PENDING) {
+            const dropped = pending.splice(0, pending.length - MAX_PENDING);
+            deps.log('error', 'buzz.room.backlog_dropped', { dropped: dropped.length, kept: MAX_PENDING });
+          }
         },
         log: deps.log,
       }).catch((err: unknown) => {
