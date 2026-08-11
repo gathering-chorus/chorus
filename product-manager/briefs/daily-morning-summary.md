@@ -1,31 +1,35 @@
-# Daily Morning Summary — 2026-08-10
+# Daily Morning Summary — 2026-08-11
 
-**HEADLINE:** npm ci enters day 62 with no owner and all tests dark; domain-context files breach the 7d threshold tomorrow unless Wren updates them today.
+**HEADLINE:** Domain-context breach is TODAY (7d threshold hit); CSC compliance spiked RED at 156 /tmp refs; npm ci enters day 63 still ownerless.
 
-**OPS:** YELLOW (Silas review 2026-08-09)
-- GREEN: Repo clean; CSC compliance improved −60 refs to 96 (−38%, #3796 driver); CLAUDE.md fragments still absent
-- YELLOW: Hooks dead-code day 7 carry; /tmp plist migration stalled >9d; Dependabot #449/#443 **68d open**; domain-context files **6d — breaches 7d threshold tomorrow**
-- Top concern: domain-context-chorus.md + domain-context-infrastructure.md need Wren update **today**
+**OPS:** YELLOW/RED (Silas review 2026-08-10)
+- RED: CSC compliance — 156 /tmp refs in platform/scripts/ (up from 96; possible #3805/#3804 regression or measurement artifact; Silas to recount)
+- YELLOW: Domain-context files — **breach day today** (Aug 4 + 7d = Aug 11); chorus + infrastructure need update now
+- YELLOW: Hooks dead-code day 8 carry (registration_json, owes_response_block); /tmp plist migration >10d stalled; Dependabot #449/#443 **69d open**
+- GREEN: Repo clean; #3805 + #3804 shipped yesterday
 
-**QUALITY:** RED (Kade review 2026-08-10)
-- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 60** (no movement)
-- Lint blocked (`@eslint/js`), **day 62** (same root cause, no movement)
-- Build: **202 type errors — STABLE** (no new regression; yesterday's +13 has not worsened)
-- Root cause: `npm ci` at repo root — **62 days unresolved, no owner**
+**QUALITY:** RED (Kade review 2026-08-11)
+- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 61**
+- Lint blocked (`@eslint/js`), **day 63** (same root cause)
+- Build: **202 type errors — STABLE** (no new regression)
+- Root cause: `npm ci` at repo root — **63 days unresolved, no owner**
 
-**YESTERDAY (08-09):** 4 cards shipped — guard hardening
-- **#3804 (Silas):** Path-mounted guard instance for llug.com/chorus — new plist, shared OIDC state, self-healing client (84 tests)
-- **#3805 (Silas):** Guard-authored URLs speak the visitor's frame — pub() prefixes at emission only (99 tests)
-- **#3765 (Silas):** Supporting guard card
-- **#3774 (Kade):** Supporting card
+**YESTERDAY (08-10):** 5 cards shipped
+- **#3811 (Kade):** chorus:Test registered Hydratable with bespoke hydrator; crawler dispatches declared hydrators per cycle; HydrationStamp on corpus; tagger + lifecycle proofs
+- **#3810 (Wren):** 2 commits landed
+- **#3809 (Silas):** Supporting ops card
+- **#3808 (Kade):** Supporting card
+- **#3776 (Silas):** Guard allow-set as generated projection of Principals (ADR-057); render-share-principals.sh; fitness row 8 diff enforced; 84/84 tests
+- **Kade:** Removed stray curl cookie jar from roles/kade (backslash-pipe filename was breaking every crawler chorus:File batch since April)
 
 **TODAY:**
-1. **Wren → update domain-context-chorus.md + domain-context-infrastructure.md** — breaches 7d tomorrow; action blocks Silas carry resolution
-2. **Jeff → assign `npm ci` owner** — day 62, all quality dark; no horizon; this is the longest-running unowned blocker
-3. **Jeff → Dependabot #449/#443** — 68d open, merge-or-close decision now critical
-4. **Silas → remove dead-code paths** (registration_json, owes_response_block) — hooks day 7 carry
-5. **Silas → land perf-baseline nightly JSON** — disk delta tracking still blind
+1. **Wren → update domain-context-chorus.md + domain-context-infrastructure.md** — breach is today, not tomorrow
+2. **Jeff → assign `npm ci` owner** — day 63, all quality dark, no horizon
+3. **Jeff → Dependabot #449/#443** — 69d, decision overdue
+4. **Silas → recount CSC refs clean from repo root** — confirm if 156 is regression or artifact
+5. **Silas → remove dead-code hooks paths** — registration_json, owes_response_block; day 8 carry
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 62, no owner** — all 4 suites + lint structurally dark; quality invisible
-- **Dependabot #449/#443 at 68d** — overdue decision
+- **`npm ci` day 63, no owner** — all 4 suites + lint structurally dark
+- **CSC RED at 156** — possible regression from #3805/#3804; needs clean recount before escalation
+- **Dependabot #449/#443 at 69d** — merge or close
