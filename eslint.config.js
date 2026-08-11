@@ -42,6 +42,18 @@ module.exports = [
     },
   },
   {
+    // #3827 — browser-side scripts served from public/. They run in a page, not
+    // in node: window, localStorage, crypto and fetch are the environment, not
+    // undefined globals. Declared rather than assumed — the same lesson this
+    // file's own config block records one comment up.
+    files: ['directing/**/public/**/*.js', 'platform/**/public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: { ...globals.browser },
+    },
+  },
+  {
     files: ['platform/**/src/**/*.ts', 'directing/**/src/**/*.ts'],
     languageOptions: {
       parser: tsParser,

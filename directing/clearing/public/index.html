@@ -558,6 +558,9 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="/clearing-tree.js"></script>
+<!-- #3827 — Jeff's key lives in his browser. Module, so it can import @noble
+     directly; deferred by nature, so it never blocks the room rendering. -->
+<script type="module" src="/room-key.js"></script>
 <script>
 // Pass auth token to Socket.IO for remote connections (#1719)
 const bridgeCookie = document.cookie.match(/bridge_token=([^;]+)/);
