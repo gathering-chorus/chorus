@@ -30,7 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fuseki_auth import write_auth_headers  # #3566 write-door credential (empty unless FUSEKI_ADMIN_PASSWORD set)
 
 NS  = "https://jeffbridwell.com/chorus#"
-DG  = "urn:chorus:domain:tests"
+DG  = "urn:chorus:domains:tests"   # 3825: the graph owl-api SERVES (plural). The singular was a dead graph nobody read - verify the store, never the file.
 UPD = os.environ.get("ATHENA_UPDATE", "http://localhost:3030/pods/update")
 OWLAPI = os.environ.get("OWLAPI", "http://localhost:3360")
 HOME = f"{NS}tests"
@@ -42,28 +42,31 @@ def slug(s): return re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-')[:90]
 
 # the generated V2 domains: the ONLY legal covers targets (no invented domains)
 GEN = {x['name'] for x in json.load(urllib.request.urlopen(f"{OWLAPI}/domains", timeout=6))['data']}
+# #3825 — one live domain is served capitalized ('Properties'); resolve config
+# names case-insensitively but always EMIT the live name, never invent a casing.
+GEN_CI = {n.lower(): n for n in GEN}
 
-HANDMAP = [("failure_class","builds"),("ac-autocheck","cicd"),("api-fragile-endpoints","senses"),
+HANDMAP = [("failure_class","builds"),("ac-autocheck","cicd"),("api-fragile-endpoints","services"),
  ("chorus-inject-signed-stable","messages"),("chorus-ops-triage","alerts-monitors"),("close-out","roles"),
- ("daily-signal-scan","alerts-monitors"),("domain-detail-retired","domains"),("execsync-audit","security-trust"),
+ ("daily-signal-scan","alerts-monitors"),("domain-detail-retired","domains"),("execsync-audit","security"),
  ("ownership-partof-chain","domains"),("regression-locks","cicd"),("write-story","cards")]
 PREFIX = sorted([("platform/services/chorus-hooks","cicd"),("platform/services/owl-api","domains"),
  ("platform/services/chorus-model","domains"),("platform/services/athena-deploy","deploys"),
  ("platform/services/chorus-inject","messages"),("platform/services/pulse-gather","messages"),
- ("platform/services/properties-resolver","properties"),("platform/services/loom-gemba","senses"),
+ ("platform/services/properties-resolver","properties"),("platform/services/loom-gemba","alerts-monitors"),
  ("platform/services/pair-heartbeat","roles"),("platform/services/werk-","builds"),
  ("platform/mcp-server","services"),("platform/chorus-sdk","services"),("platform/scripts","toolchain"),
- ("platform/workflow-engine","pipelines"),("platform/pulse","messages"),("platform/api","senses")],
+ ("platform/workflow-engine","pipelines"),("platform/pulse","messages"),("platform/api","services")],
  key=lambda x: -len(x[0]))
-KW = [(r'secret|gitleaks|scrubber|sensitive|credential|leak','security-trust'),(r'alert','alerts-monitors'),
+KW = [(r'secret|gitleaks|scrubber|sensitive|credential|leak','security'),(r'alert','alerts-monitors'),
  (r'health|probe|heartbeat|monitor|andon|watchdog','alerts-monitors'),(r'doc|catalog','knowledge'),(r'knowledge','knowledge'),
  (r'principle','principles'),(r'skill|standards','skills'),(r'clippy|lint','code'),(r'decision','decisions'),
  (r'perf|baseline','metrics'),(r'infrastructure','infrastructure'),(r'nudge|bridge|message|clearing','messages'),
  (r'pulse','messages'),(r'role-state|alias','roles'),(r'context-inject|inject-lock|shim|spine','spine'),
  (r'ci-|nightly','cicd'),(r'hook|gate|guard|bouncer','cicd'),(r'demo|werk|run-tests|manifest|jest-randomize','builds'),
  (r'env-setup|building|pipeline|act-','builds'),(r'deploy|launch','deploys'),(r'promtail','logs'),(r'search|fts','search'),
- (r'force-push','version-control'),(r'filedependson|fileindomain','senses'),(r'crawl|index|convergence','senses'),
- (r'session|correlation|frustration','senses'),(r'operating-model|reference-model','domains'),
+ (r'force-push','version-control'),(r'filedependson|fileindomain','search'),(r'crawl|index|convergence','search'),
+ (r'session|correlation|frustration','pulse'),(r'operating-model|reference-model','domains'),
  (r'git|commit|merge|branch','version-control')]
 
 def cardlookup(n):
@@ -80,16 +83,16 @@ def covers_for(path):
         if sub in b: return dom
     if path.startswith("platform/api/tests/handlers/"): return "domains"
     m = re.match(r'platform/tests/(\d{3,4})-', path)
-    if m: return cardlookup(m.group(1)) or "senses"
+    if m: return cardlookup(m.group(1)) or "services"
     if path.startswith("platform/tests/"):
         for pat, dom in KW:
             if re.search(pat, b): return dom
-        return "senses"
+        return "services"
     for pre, dom in PREFIX:
         if path.startswith(pre): return dom
     for pat, dom in KW:
         if re.search(pat, b): return dom
-    return "senses"
+    return "services"
 
 def classify(path, c):
     pc = path + "\n" + c
@@ -140,13 +143,20 @@ def post(q):
 # every system/portfolio graph (urn:chorus:instances, urn:gathering:*, urn:jb:*) —
 # the wrong-graph clobber class that made the 2026-06-22 incident recoverable only by
 # luck. A raw `DELETE WHERE { GRAPH <X> { ?s ?p ?o } }` with an unvalidated X is gone.
-_DOMAIN_GRAPH = re.compile(r'^urn:chorus:domain:[a-z0-9-]+$')
+_DOMAIN_GRAPH = re.compile(r'^urn:chorus:domains?:[a-z0-9-]+$')  # 3825: served graphs use the plural form
 
 def clear_graph(dg):
     if not dg or not _DOMAIN_GRAPH.match(dg):
         raise SystemExit(f"#3560 guard: refusing to clear {dg!r} — only "
                          f"urn:chorus:domain:<name> may be cleared, never a system/portfolio graph")
-    return post(f"PREFIX chorus: <{NS}> DELETE WHERE {{ GRAPH <{dg}> {{ ?t ?p ?o }} }}")
+    # #3825 - TYPED clear: this graph also serves TestResult + TestSuiteRun
+    # (the wire-back corpus, 27k+ rows). Deleting ?t ?p ?o would wipe them - the
+    # #3601 graph-wipe class. The tagger owns exactly Test, SourceFile, and its
+    # HydrationStamp; only those are cleared.
+    rc = 0
+    for cls in ("Test", "SourceFile", "HydrationStamp"):
+        rc = post(f"PREFIX chorus: <{NS}> DELETE WHERE {{ GRAPH <{dg}> {{ ?t a chorus:{cls} ; ?p ?o }} }}")
+    return rc
 
 def freshness_stamp(now_iso, commit):
     """#3811 AC5 — corpus-level provenance, written WITH the corpus so staleness
@@ -167,8 +177,9 @@ def main():
     for p in files:
         cs, c = case_names(p)
         layer, herm, concern = classify(p, c)
-        cov = "security-trust" if concern == 'security' else covers_for(p)
-        assert cov in GEN, f"covers target {cov!r} is not a generated V2 domain"   # no invented domains
+        cov = "security" if concern == 'security' else covers_for(p)
+        assert cov.lower() in GEN_CI, f"covers target {cov!r} is not a generated V2 domain"   # no invented domains
+        cov = GEN_CI[cov.lower()]
         sf = f"{NS}sf-{slug(p)}"
         batch.append(f'<{sf}> a chorus:SourceFile ; chorus:filePath "{esc(p)}" .')
         for nm in cs:
