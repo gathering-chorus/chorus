@@ -857,3 +857,20 @@ fn asset_only_diff_under_a_service_dir_is_still_a_noop() {
     let diff = "platform/api/public/index.html\nplatform/api/src/server.ts\n";
     assert!(!werk_deploy::empty_summary_is_config_only(diff));
 }
+
+#[test]
+fn non_crate_shared_dir_never_enters_the_deployable_set() {
+    // #3821's own land broke here: platform/services/shared/ (source-include
+    // files, no Cargo.toml) classified DEPLOYABLE and target_class died with
+    // "no matching crate or build-script package". A non-crate dir rides with
+    // lib_only — skipped and named, never deployed.
+    let tmp = std::env::temp_dir().join(format!("wd3821-{}", std::process::id()));
+    let shared = tmp.join("platform/services/shared");
+    std::fs::create_dir_all(&shared).unwrap();
+    std::fs::write(shared.join("scope_units.rs"), "// include file").unwrap();
+    let (deployable, lib_only) =
+        werk_deploy::partition_lib_only(&tmp, &["shared".to_string()]);
+    assert!(deployable.is_empty(), "{:?}", deployable);
+    assert_eq!(lib_only, vec!["shared".to_string()]);
+    let _ = std::fs::remove_dir_all(&tmp);
+}

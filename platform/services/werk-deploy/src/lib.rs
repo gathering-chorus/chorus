@@ -1540,7 +1540,15 @@ pub fn partition_lib_only(root: &Path, crates: &[String]) -> (Vec<String>, Vec<S
     let mut lib_only = Vec::new();
     for c in crates {
         let dir = root.join("platform/services").join(c);
-        if dir.join("Cargo.toml").is_file() && crate_binaries_in(&dir).is_empty() {
+        // #3821 fallout — a platform/services dir that EXISTS but has no
+        // Cargo.toml (shared/: source-include files compiled INSIDE their
+        // includers) is not a crate and can never deploy; it rides with
+        // lib_only (skipped, named). A dir that does NOT exist stays
+        // deployable so deploy's own error names the miss loudly (the prior
+        // pin below) — existence is what separates "include dir" from "typo".
+        if dir.is_dir() && !dir.join("Cargo.toml").is_file() {
+            lib_only.push(c.clone());
+        } else if dir.join("Cargo.toml").is_file() && crate_binaries_in(&dir).is_empty() {
             lib_only.push(c.clone());
         } else {
             deployable.push(c.clone());
