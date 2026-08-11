@@ -16,26 +16,23 @@ const PUBKEY = 'a1b2c3d4'.repeat(8); // 64 hex chars
 
 describe('#3827 bind requires a signed-in identity', () => {
   test('a signed-in WebID with a well-formed key binds', () => {
-    const out = decideBind(WEBID, PUBKEY);
-    expect(out.ok).toBe(true);
-    if (out.ok) {
-      expect(out.webid).toBe(WEBID);
-      expect(out.pubkey).toBe(PUBKEY.toLowerCase());
-    }
+    // Asserted on the whole object rather than behind an `if (out.ok)` guard:
+    // a conditional expect silently passes when the condition is false, which
+    // is the same "green because it never ran" shape this suite exists to
+    // prevent.
+    expect(decideBind(WEBID, PUBKEY)).toEqual({
+      ok: true, webid: WEBID, pubkey: PUBKEY.toLowerCase(),
+    });
   });
 
   test('an unauthenticated caller is refused, and the refusal names the state', () => {
+    // "not signed in" is a different situation from "bad key". A refusal that
+    // says only "refused" sends the reader to the wrong half of the system —
+    // precisely how the relay's "must include an h tag" cost an hour this
+    // morning when it meant "you are not a member".
     const out = decideBind(null, PUBKEY);
-    expect(out.ok).toBe(false);
-    if (!out.ok) {
-      // "not signed in" is a different situation from "bad key". A refusal that
-      // says only "refused" sends the reader to the wrong half of the system —
-      // which is precisely how the relay's "must include an h tag" cost an hour
-      // this morning when it meant "you are not a member".
-      expect(out.error).toBe('not-signed-in');
-      expect(out.status).toBe(401);
-      expect(out.detail).toMatch(/sign in/i);
-    }
+    expect(out).toMatchObject({ ok: false, error: 'not-signed-in', status: 401 });
+    expect(JSON.stringify(out)).toMatch(/sign in/i);
   });
 
   test('NEGATIVE PROOF: identity is checked BEFORE the key', () => {
@@ -43,9 +40,7 @@ describe('#3827 bind requires a signed-in identity', () => {
     // garbage would be told "bad-pubkey" — which tells them their session was
     // accepted and only the key was wrong. Both wrong at once must still fail
     // on identity.
-    const out = decideBind(null, 'not-a-key');
-    expect(out.ok).toBe(false);
-    if (!out.ok) expect(out.error).toBe('not-signed-in');
+    expect(decideBind(null, 'not-a-key')).toMatchObject({ ok: false, error: 'not-signed-in' });
   });
 
   test('NEGATIVE PROOF: a well-formed key alone is not sufficient', () => {
@@ -65,12 +60,7 @@ describe('#3827 what counts as a key', () => {
     ['missing', undefined],
     ['an object', { pubkey: PUBKEY }],
   ])('refuses %s as bad-pubkey', (_label, value) => {
-    const out = decideBind(WEBID, value);
-    expect(out.ok).toBe(false);
-    if (!out.ok) {
-      expect(out.error).toBe('bad-pubkey');
-      expect(out.status).toBe(400);
-    }
+    expect(decideBind(WEBID, value)).toMatchObject({ ok: false, error: 'bad-pubkey', status: 400 });
   });
 
   test('NEGATIVE PROOF: the shape check cannot tell a private key from a public one', () => {

@@ -134,16 +134,19 @@ function collectSpineEvents(deps: ChorusCardStoryDeps, cardId: number, timeline:
       || line.includes(`card=${cardId}`)
       || line.includes(`"card":"${cardId}"`),
     (parsed) => {
-      const event = parsed.event;
-      if (!event || !String(event).startsWith('card.')) return null;
+      // Narrow to string BEFORE using: these come off JSON, so a field could be
+      // an object, and String({}) is "[object Object]" — an event name that
+      // matches nothing and reads as data in the timeline.
+      const event = typeof parsed.event === 'string' ? parsed.event : '';
+      if (!event.startsWith('card.')) return null;
       const parsedId = Number(parsed.card_id ?? parsed.card ?? NaN);
       if (Number.isFinite(parsedId) && parsedId !== cardId) return null;
       return {
-        timestamp: String(parsed.timestamp ?? ''),
+        timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : '',
         source: 'spine' as const,
-        text: String(event),
-        role: parsed.role as string | undefined,
-        event: String(event),
+        text: event,
+        role: typeof parsed.role === 'string' ? parsed.role : undefined,
+        event,
       };
     },
   );

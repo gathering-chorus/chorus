@@ -1,3 +1,8 @@
+/* eslint-disable security/detect-non-literal-fs-filename --
+ * The path is the spine log's location, supplied by the server at wiring time
+ * from its own config — never from a request. Read-only, and the alternative
+ * (a literal) would hardcode one machine's home directory into a handler.
+ */
 /**
  * #3819 — scan the spine instead of swallowing it.
  *
