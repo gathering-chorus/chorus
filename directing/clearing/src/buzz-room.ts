@@ -15,8 +15,7 @@
  * standing at it. A topic every actor reads has no switchboard.
  */
 
-import type { ClearingMsg, NostrEvent, NostrSigner } from './buzz-bridge';
-import { buildNote } from './buzz-bridge';
+import { buildNote, type ClearingMsg, type NostrEvent, type NostrSigner } from './buzz-bridge';
 import { derivedSigner } from './buzz-signer';
 
 /** The actors with derived keys in the test-drive. */

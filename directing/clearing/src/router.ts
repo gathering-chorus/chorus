@@ -18,6 +18,11 @@ export interface ChannelMessage {
 
 const MAX_MESSAGES = 200;
 
+/** Message types used in more than one place. Named so the classifier reads as
+ *  decisions rather than repeated string literals. */
+const ROLE_RESPONSE = 'role-response' as const;
+const ROLE_TO_ROLE = 'role-to-role' as const;
+
 export class MessageRouter extends EventEmitter {
   private messages: ChannelMessage[] = [];
 
@@ -93,9 +98,9 @@ export class MessageRouter extends EventEmitter {
     // something that is neither a person nor a role is plumbing, and plumbing
     // has to earn its way onto the screen.
     if (isRoleName(from)) {
-      return { from, text: stripSpineMetadata(text), ts, type: 'role-response', visible: true };
+      return { from, text: stripSpineMetadata(text), ts, type: ROLE_RESPONSE, visible: true };
     }
-    return { from, text: stripSpineMetadata(text), ts, type: 'role-to-role', visible: false };
+    return { from, text: stripSpineMetadata(text), ts, type: ROLE_TO_ROLE, visible: false };
   }
 }
 
@@ -107,11 +112,11 @@ const classificationRules: ClassificationRule[] = [
   // Synthetic probe messages — hidden (#1933)
   (r) => (r.type === 'probe' || r.from === 'probe') ? { type: 'probe', visible: false } : null,
   // Batch progress / chorus-query system messages — hidden (#1706)
-  (r) => /\[(progress|batch|batch-complete)\]/.test(r.text) ? { type: 'role-to-role', visible: false } : null,
+  (r) => /\[(progress|batch|batch-complete)\]/.test(r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
   // Filter bridge-subscriber echo (#1700)
-  (r) => r.text.startsWith('[bridge]') ? { type: 'role-to-role', visible: false } : null,
+  (r) => r.text.startsWith('[bridge]') ? { type: ROLE_TO_ROLE, visible: false } : null,
   // Filter system noise
-  (r) => isSystemNoise(r.text) ? { type: 'role-to-role', visible: false } : null,
+  (r) => isSystemNoise(r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
   // PM thinking (#1720, #2049: filter tool calls + skill output)
   (r) => r.type === 'pm-thinking'
     ? { type: 'pm-thinking', visible: !(isToolCall(r.text) || isSkillOutput(r.text)) }
@@ -138,15 +143,15 @@ const classificationRules: ClassificationRule[] = [
   (r) => (r.text.includes('blocked') || r.text.includes('BLOCKED')) ? { type: 'blocked', visible: true } : null,
   // Decision needed
   (r) => (r.text.includes('[decision]') || r.text.includes('decision needed'))
-    ? { type: 'role-response', visible: true } : null,
+    ? { type: ROLE_RESPONSE, visible: true } : null,
   // Gemba observations
   (r) => r.text.includes('[gemba]')
-    ? { type: 'role-response', visible: true, text: r.text.replace('[gemba] ', '👁 ') }
+    ? { type: ROLE_RESPONSE, visible: true, text: r.text.replace('[gemba] ', '👁 ') }
     : null,
   // Role-to-role nudges — hidden
-  (r) => isRoleToRole(r.from, r.text) ? { type: 'role-to-role', visible: false } : null,
+  (r) => isRoleToRole(r.from, r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
   // Role responding to Jeff — tagged explicitly
-  (r) => r.type === 'role-response' ? { type: 'role-response', visible: true } : null,
+  (r) => r.type === ROLE_RESPONSE ? { type: ROLE_RESPONSE, visible: true } : null,
 ];
 
 /** Strip spine metadata suffix from messages (e.g., " | tools: none | 0.0s") */

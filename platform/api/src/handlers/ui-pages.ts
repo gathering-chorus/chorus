@@ -1,3 +1,10 @@
+/* eslint-disable security/detect-non-literal-fs-filename, security/detect-object-injection --
+ * Paths here are built by walking a directory we own (platform/api/public) with
+ * fs.readdirSync results — never from a request. The only request-derived input
+ * is the product-label list, which is compared, never used as a path or a key.
+ * Object indexing is on a fixed entity table and on labels drawn from that same
+ * compared list.
+ */
 /**
  * #3813 — the UI inventory. Every page that exists on disk, grouped by the
  * product that owns it, with everything else in one honest misc pile.
@@ -70,7 +77,7 @@ export function buildInventory(pages: UiPage[], productLabels: string[]): UiInve
   }
 
   const byTitle = (a: UiPage, b: UiPage): number => a.title.localeCompare(b.title);
-  for (const label of Object.keys(claimed)) claimed[label].sort(byTitle);
+  for (const list of Object.values(claimed)) list.sort(byTitle);
   misc.sort(byTitle);
 
   const claimedCount = Object.values(claimed).reduce((n, list) => n + list.length, 0);
@@ -92,7 +99,7 @@ export function buildInventory(pages: UiPage[], productLabels: string[]): UiInve
  * an HTML file does not exist in any practical sense.
  */
 export function readTitle(file: string, stem: string): string {
-  let head = '';
+  let head: string;
   try {
     const fd = fs.openSync(file, 'r');
     try {
