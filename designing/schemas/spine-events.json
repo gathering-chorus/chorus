@@ -2055,6 +2055,29 @@
         "role": "Acting role"
       }
     },
+    "build.scoped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `build` verb (#3783) \u2014 change-scoped build: built only the DIFF's units + declared dependents, not the full set. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "changed": "Count of changed files in the diff",
+        "scoped": "Count of units the change scoped to",
+        "of": "Total units available (scoped < of is the saving)"
+      }
+    },
+    "build.scope.escaped": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `build` verb (#3783) \u2014 the loud escape to a FULL build: an unmapped build-relevant file, an unreadable diff, or WERK_BUILD_FULL=1. Never silent; carries the widening reason. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "reason": "Why the scope widened to full (diff-unreadable, unmapped-file, forced)",
+        "changed": "Count of changed files in the diff"
+      }
+    },
     "card.done": {
       "vertebra": "directing",
       "source": "cards",
