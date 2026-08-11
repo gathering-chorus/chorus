@@ -126,3 +126,37 @@ describe('#3810 no page fetches anything to learn where it is', () => {
     expect(fixed).not.toMatch(/<script\s+src="\/js\/base-path\.js"\s*>/);
   });
 });
+
+/**
+ * #3810 follow — ORDER, not just presence.
+ *
+ * The fix shipped and the page was still empty: the script that USES window.basePath
+ * sat above the script that DEFINES it, so the call threw, the stylesheet and the
+ * page runtime were never written, and the entrance rendered unstyled with
+ * "loading the stream live from the model…" forever. Jeff saw it on his phone.
+ *
+ * Presence was already asserted and passed. Order is a different property and
+ * needs its own assertion — a page can contain every right line in the wrong
+ * sequence and be exactly as broken as one missing them.
+ */
+describe('#3810 the base is defined before anything uses it', () => {
+  const entrance = path.join(__dirname, '..', 'public', 'index.html');
+  const html = fs.readFileSync(entrance, 'utf8');
+
+  test('window.basePath is defined earlier in the document than its first use', () => {
+    const defines = html.indexOf('window.basePath=function');
+    const uses = html.indexOf("window.basePath('/athena/athena-flow.css')");
+    expect(defines).toBeGreaterThan(-1);
+    expect(uses).toBeGreaterThan(-1);
+    expect(defines).toBeLessThan(uses);
+  });
+
+  test('NEGATIVE PROOF: the check fails on the order that shipped', () => {
+    const broken = '<script>window.basePath(\'/athena/athena-flow.css\')</script>'
+      + '<script>window.basePath=function(){}</script>';
+    const d = broken.indexOf('window.basePath=function');
+    const u = broken.indexOf("window.basePath('/athena/athena-flow.css')");
+    expect(d).toBeGreaterThan(u); // i.e. defined AFTER used — the bug
+    expect(() => { expect(d).toBeLessThan(u); }).toThrow();
+  });
+});
