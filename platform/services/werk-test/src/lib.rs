@@ -906,3 +906,25 @@ fn post_once(endpoint: &str, token: &str, payload: &str) -> String {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "000".to_string())
 }
+
+// #3821 — the ONE shared diff→units scoping core (also compiled by werk-build).
+include!("../../shared/scope_units.rs");
+
+/// #3821 — the diff-scoped TEST plan. Some(units) = scoped (possibly empty:
+/// an asset-only diff runs nothing); None = FULL fallback (unmapped file,
+/// empty diff, or forced) — the caller logs the reason and runs the legacy
+/// widened plan. Same core as werk-build's scoping, so what a diff can affect
+/// is one answer asked twice.
+pub fn scoped_test_units(
+    changed: &[String],
+    units: &[ScopeUnit],
+    edges: &[(String, String)],
+) -> Option<Vec<ScopeUnit>> {
+    let force_full = std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
+    match scope_unit_names(changed, units, edges, force_full) {
+        ScopeVerdict::Scoped(names) => Some(
+            units.iter().filter(|u| names.contains(&u.name)).cloned().collect(),
+        ),
+        ScopeVerdict::Full(_) => None,
+    }
+}

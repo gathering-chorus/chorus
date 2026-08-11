@@ -386,3 +386,16 @@ fn force_full_escape_hatch_is_named() {
 }
 
 fn s(v: &str) -> String { v.to_string() }
+
+#[test]
+fn script_only_diff_stays_scoped_not_full() {
+    // #3821 review catch (Silas+Wren): extracting the shared core DROPPED
+    // platform/scripts/ + platform/tests/ from the irrelevant list, sending
+    // script-only cards back to FULL builds — the exact regression #3783
+    // existed to kill. Pinned here so the shared list can't lose them again.
+    use werk_build::{scope_units, ScopeDecision};
+    let d = scope_units(
+        &[s("platform/scripts/tag-tests-domain.py"), s("platform/tests/foo.bats")],
+        &demo_map(), &demo_edges(), false);
+    assert_eq!(d, ScopeDecision::Scoped(vec![]), "script/test-harness diffs build nothing");
+}
