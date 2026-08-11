@@ -879,6 +879,21 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
         format!("rebuild failed (werk-build); nothing installed: {}", e)))?;
     let built = parse_build_summary(&build_out);
     if built.is_empty() {
+        // #3817 — two states, separable by the same classifiers the canonical
+        // no-op (deploy_canonical, "no-service-crates") already trusts:
+        //   empty because nothing buildable changed (config/docs-only card,
+        //   normal since #3783's scoped build) → clean no-op, demo proceeds;
+        //   empty despite buildable changes → the build broke or scoping
+        //   under-built → DIE, exactly as before. The no-op must never
+        //   swallow a real failure. Model-only diffs also die here on the
+        //   variant (model deploys at land, #3736) — unchanged behaviour.
+        let wdiff = run_env(Some(&werk_s), &[], "git",
+            &["-C", &werk_s, "diff", "--name-only", "origin/main...HEAD"]).unwrap_or_default();
+        if empty_summary_is_config_only(&wdiff) {
+            jsonl(home, role, card, &trace, "deploy.completed",
+                ",\"target\":\"werk\",\"deployed\":\"\",\"reason\":\"config-only-no-op\"");
+            return Ok("nothing to deploy (config-only card) target=werk".to_string());
+        }
         return Err(died(home, role, card, &trace, "empty-summary",
             "werk-build produced no crate=cdhash pairs — nothing to deploy".to_string()));
     }
@@ -2847,4 +2862,30 @@ mod running_verdict_tests {
         // PID/start-time unresolvable → Unknown (the contract's unknown=RED; never silent-pass).
         assert_eq!(running_verdict(true, "SAME", "SAME", None), RunVerdict::Unknown);
     }
+}
+
+/// #3817 — is an EMPTY build summary explained by the diff (nothing buildable
+/// changed)? True only when every classifier the canonical path trusts comes
+/// back empty: no service crates, no TS services, no model sources. Anything
+/// else means the empty summary is a failure, not a no-op.
+pub fn empty_summary_is_config_only(diff: &str) -> bool {
+    // Asset/prose lines are dropped BEFORE classification (Wren's #3810: a
+    // page-only diff like platform/api/public/index.html sits inside the
+    // chorus-api dir but needs no build — the variant serves public/ straight
+    // from the werk). Mirrors werk-build's build-irrelevant rule so the two
+    // verbs agree on what an empty summary can explain.
+    let buildable: String = diff
+        .lines()
+        .filter(|l| {
+            let l = l.trim();
+            let asset_ext = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
+                .iter().any(|e| l.ends_with(e));
+            let static_dir = l.contains("/public/");
+            !(asset_ext || static_dir)
+        })
+        .map(|l| format!("{}\n", l))
+        .collect();
+    changed_service_crates(&buildable).is_empty()
+        && changed_ts_services(&buildable).is_empty()
+        && changed_model_sources(&buildable).is_empty()
 }

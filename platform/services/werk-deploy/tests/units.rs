@@ -819,3 +819,41 @@ fn partition_lib_only_splits_teardown_from_deployables() {
     assert!(l2.is_empty());
     fs::remove_dir_all(&root).ok();
 }
+
+// ── #3817 — empty build summary on the VARIANT path: no-op vs death is decided
+// by the same diff classifiers the canonical path trusts. Two states, separable:
+// empty-because-nothing-buildable-changed → clean no-op; empty-with-buildable-
+// changes → the build broke or scoping under-built, and it must still DIE.
+
+#[test]
+fn config_only_diff_is_a_clean_noop_verdict() {
+    let diff = "config/share-allowlist.txt\nplatform/config/spine-events.json\ndocs/x.md\n";
+    assert!(werk_deploy::empty_summary_is_config_only(diff), "pure config diff → no-op");
+}
+
+#[test]
+fn negative_proof_3817_buildable_change_with_empty_summary_still_dies() {
+    // #3734 — the fixture where the guarded condition is VIOLATED: a Rust crate
+    // changed but the summary came back empty. That is a broken build or an
+    // under-building scope, never a no-op. This test goes red if the no-op
+    // branch ever swallows it.
+    let diff = "platform/services/werk-merge/src/lib.rs\nconfig/foo.txt\n";
+    assert!(!werk_deploy::empty_summary_is_config_only(diff), "crate diff must NOT no-op");
+    let ts = "platform/api/src/server.ts\n";
+    assert!(!werk_deploy::empty_summary_is_config_only(ts), "ts-service diff must NOT no-op");
+    let model = "roles/silas/ontology/chorus.ttl\n";
+    assert!(!werk_deploy::empty_summary_is_config_only(model), "model diff must NOT no-op (model deploys at land)");
+}
+
+#[test]
+fn asset_only_diff_under_a_service_dir_is_still_a_noop() {
+    // #3817/Wren's #3810 — a page-only card: platform/api/public/index.html is
+    // INSIDE the chorus-api dir but needs no build (the variant serves public/
+    // straight from the werk). The classifier must not let the dir prefix
+    // override the asset nature of the file.
+    let diff = "platform/api/public/index.html\n";
+    assert!(werk_deploy::empty_summary_is_config_only(diff), "asset-only diff → no-op");
+    // and the guard stands: real source under the same dir still dies
+    let diff = "platform/api/public/index.html\nplatform/api/src/server.ts\n";
+    assert!(!werk_deploy::empty_summary_is_config_only(diff));
+}
