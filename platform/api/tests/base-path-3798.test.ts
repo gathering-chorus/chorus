@@ -75,8 +75,16 @@ describe('#3798 NEGATIVE PROOF — the pre-fix shape is detectable', () => {
       .map((f) => path.join(__dirname, '..', 'public', 'athena', f)),
   ];
 
-  test('every Chorus page loads the base-path module — a page without it silently breaks under a prefix', () => {
-    const missing = pages.filter((p) => !fs.readFileSync(p, 'utf-8').includes('base-path.js'));
+  test('every Chorus page can resolve its own mount — module OR inline boot', () => {
+    // Re-targeted 2026-08-11. This asserted one MECHANISM (base-path.js) and went red
+    // when the entrance was restored to the page Jeff actually asked for, which carries
+    // an inline resolver instead. The requirement was never "load this file" — it is
+    // "the page knows its mount". Asserting the mechanism made the test an obstacle to
+    // the requirement, which is how a test ends up defending the wrong design.
+    const missing = pages.filter((p) => {
+      const html = fs.readFileSync(p, 'utf-8');
+      return !html.includes('base-path.js') && !html.includes('window.CHORUS_BASE');
+    });
     expect(missing.map((p) => path.basename(p))).toEqual([]);
   });
 
@@ -143,12 +151,21 @@ describe('#3810 the base is defined before anything uses it', () => {
   const entrance = path.join(__dirname, '..', 'public', 'index.html');
   const html = fs.readFileSync(entrance, 'utf8');
 
-  test('window.basePath is defined earlier in the document than its first use', () => {
+  test('if the entrance uses basePath, it defines it first', () => {
     const defines = html.indexOf('window.basePath=function');
-    const uses = html.indexOf("window.basePath('/athena/athena-flow.css')");
+    const uses = html.indexOf("window.basePath('/athena");
     expect(defines).toBeGreaterThan(-1);
-    expect(uses).toBeGreaterThan(-1);
-    expect(defines).toBeLessThan(uses);
+    // The restored entrance rewrites links rather than emitting tags, so there may be
+    // no call site at all — that is fine. What must never happen is a call BEFORE the
+    // definition, which is the bug that shipped an unstyled page.
+    if (uses > -1) expect(defines).toBeLessThan(uses);
+  });
+
+  test('the entrance rewrites its own links, including ones built after fetch', () => {
+    // The requirement in Jeff's words: the links have to work. A one-shot rewrite misses
+    // the product cards, which are built after the model responds.
+    expect(html).toContain('window.applyBasePath');
+    expect(html).toMatch(/MutationObserver/);
   });
 
   test('NEGATIVE PROOF: the check fails on the order that shipped', () => {
