@@ -1,3 +1,4 @@
+// @test-type: unit — every dependency injected (cards, db, spine scan, nudges); no files, no services.
 /**
  * chorus-card-story handler — unit tests (#2188).
  */
@@ -25,7 +26,9 @@ function deps(over: Partial<ChorusCardStoryDeps> = {}): ChorusCardStoryDeps {
   return {
     loadCard: async () => null,
     db: null,
-    readLog: () => null,
+    // #3819 — readLog (whole-file) replaced by scanSpine (bounded tail). An
+    // empty scan is the same "no spine events" this stub always meant.
+    scanSpine: () => ({ lines: [], truncated: false, bytesRead: 0 }),
     loadNudges: async () => [],
     ...over,
   };
@@ -97,7 +100,10 @@ describe('fetchChorusCardStory (#2188)', () => {
       JSON.stringify({ event: 'card.pulled', timestamp: '2026-04-18T10:00:00', role: 'silas' }) + ' card=99',
       'malformed-line',
     ].join('\n');
-    const body = (await fetchChorusCardStory(deps({ readLog: () => log }), '42')).body as {
+    const body = (await fetchChorusCardStory(
+      deps({ scanSpine: () => ({ lines: log.split('\n'), truncated: false, bytesRead: log.length }) }),
+      '42',
+    )).body as {
       timeline: Array<{ source: string; text: string }>;
     };
     const spine = body.timeline.filter((t) => t.source === 'spine');
