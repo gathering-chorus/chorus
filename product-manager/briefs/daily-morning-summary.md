@@ -1,35 +1,38 @@
-# Daily Morning Summary — 2026-08-11
+# Daily Morning Summary — 2026-08-12
 
-**HEADLINE:** Domain-context breach is TODAY (7d threshold hit); CSC compliance spiked RED at 156 /tmp refs; npm ci enters day 63 still ownerless.
+**HEADLINE:** Domain-context files breach tomorrow (Aug 13) and build type errors jumped +11 overnight — two fires that need action before end of day.
 
-**OPS:** YELLOW/RED (Silas review 2026-08-10)
-- RED: CSC compliance — 156 /tmp refs in platform/scripts/ (up from 96; possible #3805/#3804 regression or measurement artifact; Silas to recount)
-- YELLOW: Domain-context files — **breach day today** (Aug 4 + 7d = Aug 11); chorus + infrastructure need update now
-- YELLOW: Hooks dead-code day 8 carry (registration_json, owes_response_block); /tmp plist migration >10d stalled; Dependabot #449/#443 **69d open**
-- GREEN: Repo clean; #3805 + #3804 shipped yesterday
+---
 
-**QUALITY:** RED (Kade review 2026-08-11)
-- 0 tests run — all 4 suites blocked: `ts-jest` preset missing, **day 61**
-- Lint blocked (`@eslint/js`), **day 63** (same root cause)
-- Build: **202 type errors — STABLE** (no new regression)
-- Root cause: `npm ci` at repo root — **63 days unresolved, no owner**
+**OPS:** YELLOW/RED
+- RED: CSC compliance — 156 `/tmp/` refs across 68 files, no progress, no assigned card
+- YELLOW: Hooks warning set changed (day 9, 3 dead-code paths from #3810/#3811 refactor)
+- YELLOW: Domain-context files 5d stale, **breach Aug 13 (tomorrow)** — Wren owns today
+- YELLOW: LaunchAgent `/tmp` refs — >11d stall, no migration progress
+- GREEN: Git state clean; 0 uncommitted changes
+- Top concern: domain-context breach. If Wren doesn't update today it's a violation.
 
-**YESTERDAY (08-10):** 5 cards shipped
-- **#3811 (Kade):** chorus:Test registered Hydratable with bespoke hydrator; crawler dispatches declared hydrators per cycle; HydrationStamp on corpus; tagger + lifecycle proofs
-- **#3810 (Wren):** 2 commits landed
-- **#3809 (Silas):** Supporting ops card
-- **#3808 (Kade):** Supporting card
-- **#3776 (Silas):** Guard allow-set as generated projection of Principals (ADR-057); render-share-principals.sh; fitness row 8 diff enforced; 84/84 tests
-- **Kade:** Removed stray curl cookie jar from roles/kade (backslash-pipe filename was breaking every crawler chorus:File batch since April)
+**QUALITY:** RED (across the board)
+- 0 tests run — all 4 suites blocked by `ts-jest preset not found`, **day 62**
+- Lint blocked by `@eslint/js` not found, **day 64**
+- Build: **213 type errors — REGRESSION, +11 from yesterday** (was 202). New errors from today; commit not yet identified
+- Root cause for test/lint: `npm ci` not run; **64 days unresolved, no owner**
 
-**TODAY:**
-1. **Wren → update domain-context-chorus.md + domain-context-infrastructure.md** — breach is today, not tomorrow
-2. **Jeff → assign `npm ci` owner** — day 63, all quality dark, no horizon
-3. **Jeff → Dependabot #449/#443** — 69d, decision overdue
-4. **Silas → recount CSC refs clean from repo root** — confirm if 156 is regression or artifact
-5. **Silas → remove dead-code hooks paths** — registration_json, owes_response_block; day 8 carry
+**YESTERDAY:** High-velocity day — ~10 cards landed
+- #3827 (wren) — client-side key generation; server receives public half only
+- #3826 (silas) — emit-conformance phantoms cleared (2→0), health green
+- #3825 (kade) — tagger fixes committed to werk; 5094 tests hydrated green
+- #3820 (silas) — deep-health deferred-services tier (buzz-relay silenced honestly)
+- #3816 (silas) — build.scoped registered in spine-events.json; werk-emit-conformance red cleared
+- #3813 (wren) — inventory endpoint fix for Jeff's phone link fallback
+
+**TODAY:** Recommended priorities
+1. **Wren** — update domain-context-chorus.md + domain-context-infrastructure.md (breach tomorrow)
+2. **Kade/Silas** — identify which commit introduced +11 type errors; assign fix
+3. **Silas** — assign CSC migration card; 156 refs is the floor to beat
+4. **Silas** — investigate why board snapshots emit 0-byte files
 
 **BLOCKERS (needs Jeff):**
-- **`npm ci` day 63, no owner** — all 4 suites + lint structurally dark
-- **CSC RED at 156** — possible regression from #3805/#3804; needs clean recount before escalation
-- **Dependabot #449/#443 at 69d** — merge or close
+- Dependabot PRs #449/#443 — 70d open, decision needed (merge or close)
+- Build regression +11: no owner assigned yet; needs triage this morning
+- `npm ci` block — 64 days; if test infrastructure isn't a priority, close the lane; if it is, assign it
