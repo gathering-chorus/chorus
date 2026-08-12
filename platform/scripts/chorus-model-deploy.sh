@@ -632,6 +632,24 @@ fi
 # The security SCHEMA (class defs, shapes, surfaces, worker principals) rides
 # MODEL_SET into urn:chorus:ontology above; this section is the ABox identity
 # instances only. (Nostr credential shape+instances ride #3691.)
+#
+# #3839 — WHY THIS LEG IS STILL A STAGED MERGE, SAID OUT LOUD.
+#
+# INSTANCE_SET now writes through athena-model, which shape-checks every subject.
+# This leg does not, and cannot as things stand: assert_dal_writable (chorus-model
+# lib.rs) refuses urn:chorus:domains:security outright as a DBA-path graph, so
+# the governed writer will not touch it by design.
+#
+# The cost is exact and worth naming rather than leaving to be rediscovered:
+# chorus:uniqueGlobal on Principal's webId is REAL and enforced in the DAL, and
+# Principals travel this path, so the rule and its enforcement never meet. Two
+# principals can claim the same WebID here and nothing objects — and the WebID is
+# the correlation key between CSS and this graph. That is the #3838 finding.
+#
+# NOT fixed here on purpose: closing it means either giving the DAL a DBA mode or
+# moving Principals off the DBA graph, and both are decisions about the identity
+# substrate, not about a deploy script. Silas owns the Principal half. This
+# comment exists so the gap is a stated position with an owner, not a silence.
 # =============================================================================
 if [ -z "${TTL:-}" ]; then
   SECURITY_GRAPH="${SECURITY_GRAPH:-urn:chorus:domains:security}"

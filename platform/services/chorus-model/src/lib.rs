@@ -1271,6 +1271,43 @@ fn is_nt_literal(t: &str) -> bool {
     quoted_ok(t)
 }
 
+/// #3839 — a stable content hash for one subject's authored triples (FNV-1a
+/// 64-bit, hex). Not cryptographic; it only has to change when the content does.
+///
+/// Used for idempotence: the deploy re-runs nightly over instances that have not
+/// changed. Without this, every run DELETEs and re-INSERTs all 67 subjects and
+/// bumps dcterms:modified on each — which destroys the only signal saying when a
+/// thing actually changed. Comparing stored triples directly was the other
+/// option and it is worse: through a single-variable SELECT the datatype falls
+/// off a literal, so `"1"` and `"1"^^xsd:integer` compare equal and a real change
+/// reads as unchanged. A hash of the exact terms we are about to write cannot
+/// make that mistake.
+pub fn content_hash(props: &[(String, String)]) -> String {
+    let mut sorted: Vec<String> = props.iter().map(|(p, o)| format!("{} {}", p, o)).collect();
+    sorted.sort();
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in sorted.join("\n").bytes() {
+        h ^= byte as u64;
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    format!("{:016x}", h)
+}
+
+/// #3839 — which graph does this class's shape say its instances live in?
+///
+/// WHY it is checked at the door: a shape with no `chorus:instancesGraph` pin
+/// lets instances land in a default graph nothing reads. That is the exact
+/// zero-rows failure #3581 / #3675 / #3838 each hit separately — the data was
+/// written, the write succeeded, and the surface served nothing. A write that
+/// lands somewhere unread is not a successful write, so the door refuses rather
+/// than reporting success.
+fn instances_graph_pins(store: &dyn Store, class: &str) -> R<Vec<String>> {
+    store.select_v(&format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    ))
+}
+
 /// #3839 — split an N-Triples literal into its lexical form and its carried
 /// datatype local name (`"1"^^<...#integer>` → `("1", Some("integer"))`).
 ///
@@ -1521,7 +1558,49 @@ pub fn seed_multi(
     graph: Option<&str>,
     id: &Identity,
 ) -> R<SeedReport> {
-    let g = graph.unwrap_or(INSTANCES_GRAPH);
+    // #3839 AC7 — where do these instances go?
+    //
+    // A caller that STATES a graph is honored: per-domain graphs are legitimate
+    // (the ICD set seeds Domain individuals into urn:chorus:domains:icd), and
+    // refusing an explicit target against the shape's pin would be the door
+    // second-guessing an instruction it was given.
+    //
+    // A caller that states NOTHING is the failure this guards. It used to fall
+    // back to a hardcoded urn:chorus:instances — write succeeds, surface serves
+    // nothing, and the write's own result cannot tell you (the #3581 / #3675 /
+    // #3838 zero-rows class, three separate hits). Now the SHAPE decides, and a
+    // class whose shape declares no pin is refused rather than guessed at.
+    let resolved: String;
+    let g: &str = match graph {
+        Some(explicit) => explicit,
+        None => {
+            let mut pins: Vec<String> = Vec::new();
+            for gr in groups {
+                let class = class_iri(gr.kind)?;
+                let p = instances_graph_pins(store, &class)?;
+                if p.is_empty() {
+                    witness("model.seed.refused", &[("class", class.as_str()), ("reason", "no-instances-graph-pin")]);
+                    return Err(format!(
+                        "seed: no --graph given and the shape for <{}> declares no chorus:instancesGraph — refusing to guess a default (the zero-rows class: written, and read by nothing)",
+                        class
+                    ));
+                }
+                for v in p {
+                    if !pins.contains(&v) {
+                        pins.push(v);
+                    }
+                }
+            }
+            if pins.len() != 1 {
+                return Err(format!(
+                    "seed: no --graph given and the batch's shapes pin different instance graphs {:?} — state the target explicitly",
+                    pins
+                ));
+            }
+            resolved = pins.remove(0);
+            &resolved
+        }
+    };
     if g.contains(['<', '>', '{', '}', ' ', ';']) {
         witness("model.seed.refused", &[("graph", g), ("reason", "malformed-graph")]);
         return Err(format!("seed: graph '{}' is malformed (refused)", g));
@@ -1733,6 +1812,22 @@ pub fn seed_multi(
         shapes.push(class_and_shape);
     }
 
+    // ── Idempotence (AC4): read the stored content hashes in ONE query ──────
+    // A subject whose authored content is byte-identical to what is already in
+    // the graph is skipped entirely — no DELETE, no INSERT, no modified bump.
+    // Both sides of the comparison are plain strings, so nothing can be lost in
+    // transit the way a literal's datatype is.
+    let mut stored_hash: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for row in store.select_v(&format!(
+        "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s <{ns}contentHash> ?h }} BIND(CONCAT(STR(?s), '|', STR(?h)) AS ?v) }}",
+        g = g, ns = NS
+    ))? {
+        if let Some((subj, h)) = row.split_once('|') {
+            stored_hash.insert(subj.to_string(), h.to_string());
+        }
+    }
+
     // ── Assemble the single transaction, across every group ─────────────────
     const DCT: &str = "http://purl.org/dc/terms/";
     let now = now_iso();
@@ -1741,15 +1836,23 @@ pub fn seed_multi(
     let mut body = String::new();
     let mut triple_count = 0usize;
     let mut subject_count = 0usize;
+    let mut unchanged = 0usize;
 
     for ((kind, order, by_subject), class_and_shape) in grouped.iter().zip(shapes.iter()) {
+        let mut unchanged_in_group = 0usize;
         for subject_term in order {
             let iri = &subject_term[1..subject_term.len() - 1];
+            let props = &by_subject[subject_term];
+            let hash = content_hash(props);
+            if stored_hash.get(iri).map(|h| h == &hash).unwrap_or(false) {
+                unchanged += 1;
+                unchanged_in_group += 1;
+                continue; // AC4 — identical content is a no-op, not a rewrite
+            }
             sparql.push_str(&format!(
                 "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\n",
                 g = g, s = iri
             ));
-            let props = &by_subject[subject_term];
             let mut has_label = false;
             let mut has_type = false;
             for (p, o) in props {
@@ -1783,14 +1886,20 @@ pub fn seed_multi(
                 .next();
             let created = existing_created.unwrap_or_else(|| now.clone());
             body.push_str(&format!(
-                "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . ",
+                "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . {st} <{ns}contentHash> \"{ch}\" . ",
                 st = subject_term, d = DCT, c = esc(&created), m = esc(&now),
-                cr = esc(&creator), ns = NS, pv = esc(provenance)
+                cr = esc(&creator), ns = NS, pv = esc(provenance), ch = hash
             ));
         }
         let (ns_, no_) = (order.len().to_string(), kind.to_string());
         witness("model.seed", &[("kind", no_.as_str()), ("graph", g), ("subjects", ns_.as_str()), ("provenance", provenance)]);
-        subject_count += order.len();
+        subject_count += order.len() - unchanged_in_group;
+    }
+    if body.is_empty() {
+        // Everything was already exactly this. Say so — a deploy that reports
+        // "wrote 67" every night when it changed nothing is a broken signal.
+        witness("model.seed.unchanged", &[("graph", g), ("subjects", unchanged.to_string().as_str())]);
+        return Ok(SeedReport { subjects: 0, triples: 0 });
     }
     sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = g, b = body));
     store.update(&sparql)?;
@@ -2400,6 +2509,11 @@ mod seed_multi_3839 {
         updates: std::cell::RefCell<Vec<String>>,
         /// (sub, super) pairs the ontology would answer subClassOf* true for.
         subclasses: Vec<(String, String)>,
+        /// What the shape pins as its instances graph. None = the shape declares
+        /// no pin, which is the #3581/#3675/#3838 zero-rows condition.
+        pin: Option<String>,
+        /// subject IRI → content hash already stored (idempotence fixture).
+        stored: Vec<(String, String)>,
     }
     impl Store for EmptyStore {
         fn ask(&self, sparql: &str) -> R<bool> {
@@ -2412,6 +2526,16 @@ mod seed_multi_3839 {
             Ok(false) // nothing pre-exists — every edge target must come from the batch
         }
         fn select_v(&self, sparql: &str) -> R<Vec<String>> {
+            if sparql.contains("chorus:instancesGraph ?v") {
+                return Ok(self.pin.iter().cloned().collect());
+            }
+            if sparql.contains("contentHash") {
+                return Ok(self
+                    .stored
+                    .iter()
+                    .map(|(s, h)| format!("{}|{}", s, h))
+                    .collect());
+            }
             if sparql.contains("sh:datatype ?dt") && sparql.contains(VSS) {
                 // The step's stageOrder is declared xsd:integer — without this the
                 // datatype checks have nothing to compare against and the test
@@ -2439,7 +2563,14 @@ mod seed_multi_3839 {
             Ok(())
         }
     }
-    fn store() -> EmptyStore { EmptyStore { updates: Default::default(), subclasses: vec![] } }
+    fn store() -> EmptyStore {
+        EmptyStore {
+            updates: Default::default(),
+            subclasses: vec![],
+            pin: Some("urn:chorus:instances".into()),
+            stored: vec![],
+        }
+    }
     /// A store whose ontology knows AgentRole is a subclass of Role.
     fn store_with_subclass() -> EmptyStore {
         EmptyStore {
@@ -2448,6 +2579,8 @@ mod seed_multi_3839 {
                 "https://jeffbridwell.com/chorus#AgentRole".into(),
                 "https://jeffbridwell.com/chorus#Role".into(),
             )],
+            pin: Some("urn:chorus:instances".into()),
+            stored: vec![],
         }
     }
     fn tid() -> Identity { Identity("wren".into()) }
@@ -2675,6 +2808,115 @@ mod seed_multi_3839 {
             .expect_err("a datatype the shape did not declare must refuse");
         assert!(e.contains("shape-violation"), "typed refusal: {e}");
         assert!(st2.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// NEGATIVE PROOF (AC7) — a shape with no chorus:instancesGraph pin. The
+    /// write would succeed and the surface would serve nothing: exactly the
+    /// zero-rows failure #3581, #3675 and #3838 each hit separately, and the one
+    /// thing a write's own result can never tell you.
+    #[test]
+    fn a_shape_with_no_instances_graph_pin_refuses() {
+        let mut st = store();
+        st.pin = None;
+        let a = streams();
+        // No --graph: the shape is the only thing that could say where these go.
+        let e = seed_multi(&st, &[SeedGroup { kind: "value-stream", triples: &a }],
+                           "deploy", None, &tid())
+            .expect_err("an unpinned shape with no stated graph must refuse");
+        assert!(e.contains("instancesGraph"), "refusal names the missing pin: {e}");
+        assert!(st.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// The other direction — a pinned shape resolves its own target, so the
+    /// caller does not have to repeat it and cannot get it wrong. Without this
+    /// the refusal above would be indistinguishable from "seed always needs
+    /// --graph".
+    #[test]
+    fn a_pinned_shape_resolves_its_own_graph() {
+        let st = store(); // pin = urn:chorus:instances
+        let (a, b) = (streams(), steps());
+        seed_multi(&st, &[SeedGroup { kind: "value-stream", triples: &a },
+                          SeedGroup { kind: "value-stream-step", triples: &b }],
+                   "deploy", None, &tid())
+            .expect("a pinned shape needs no explicit graph");
+        assert!(
+            st.updates.borrow()[0].contains("GRAPH <urn:chorus:instances>"),
+            "it wrote to the graph the SHAPE named"
+        );
+    }
+
+    /// An EXPLICIT graph is honored even when it is not the shape's pin —
+    /// per-domain graphs are legitimate (the ICD set seeds Domain individuals
+    /// into urn:chorus:domains:icd). The door refuses guesses, not instructions.
+    #[test]
+    fn an_explicit_graph_is_honored_over_the_pin() {
+        let mut st = store();
+        st.pin = Some("urn:chorus:instances".into());
+        let (a, b) = (streams(), steps());
+        seed_multi(&st, &[SeedGroup { kind: "value-stream", triples: &a },
+                          SeedGroup { kind: "value-stream-step", triples: &b }],
+                   "deploy", Some("urn:chorus:domains:werk"), &tid())
+            .expect("an explicitly stated graph is an instruction, not a guess");
+        assert!(st.updates.borrow()[0].contains("GRAPH <urn:chorus:domains:werk>"));
+    }
+
+    /// AC4 — re-deploying unchanged content is a no-op. The nightly deploy runs
+    /// over these instances every night; without this it rewrote all of them and
+    /// bumped dcterms:modified each time, destroying the only signal that says
+    /// when a thing actually changed.
+    #[test]
+    fn identical_content_is_a_no_op() {
+        let a = streams();
+        // First run writes, and the hash it stores is derived from the same
+        // authored triples the second run will hash.
+        let b = steps(); // the stream references its step — one batch, as deployed
+        let st = store();
+        seed_multi(&st, &[SeedGroup { kind: "value-stream", triples: &a },
+                          SeedGroup { kind: "value-stream-step", triples: &b }],
+                   "deploy", Some("urn:chorus:instances"), &tid()).unwrap();
+        let written = st.updates.borrow()[0].clone();
+        let hash = written
+            .split("contentHash> \"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .expect("the write records a content hash")
+            .to_string();
+
+        let mut st2 = store();
+        st2.stored = vec![("https://jeffbridwell.com/chorus#value-stream-werk".into(), hash)];
+        let r = seed_multi(&st2, &[SeedGroup { kind: "value-stream", triples: &a },
+                                   SeedGroup { kind: "value-stream-step", triples: &b }],
+                           "deploy", Some("urn:chorus:instances"), &tid()).unwrap();
+        // Only the stream's hash is on file, so the step is still written — the
+        // assertion is that the STREAM was skipped, not that nothing happened.
+        assert_eq!(r.subjects, 1, "the stream is skipped, the step is not");
+        assert!(
+            !st2.updates.borrow()[0].contains("value-stream-werk> ?p ?o"),
+            "the unchanged stream must not be deleted-and-rewritten"
+        );
+    }
+
+    /// NEGATIVE PROOF (AC4) — the skip is not a blanket skip. A subject whose
+    /// content CHANGED must still be written, even though a hash is on file.
+    /// Without this the idempotence check would be indistinguishable from
+    /// "never write anything twice".
+    #[test]
+    fn changed_content_is_still_written() {
+        let mut st = store();
+        st.stored = vec![(
+            "https://jeffbridwell.com/chorus#value-stream-werk".into(),
+            "0000000000000000".into(), // a hash from some earlier, different content
+        )];
+        let a = streams();
+        let b = steps();
+        let r = seed_multi(&st, &[SeedGroup { kind: "value-stream", triples: &a },
+                                  SeedGroup { kind: "value-stream-step", triples: &b }],
+                           "deploy", Some("urn:chorus:instances"), &tid()).unwrap();
+        assert_eq!(r.subjects, 2, "a stale hash means the subject is written, not skipped");
+        assert!(
+            st.updates.borrow()[0].contains("value-stream-werk> ?p ?o"),
+            "the changed stream IS deleted-and-rewritten"
+        );
     }
 
     /// NEGATIVE PROOF — the DBA-path graphs stayed refused. Batching gave the
