@@ -207,7 +207,7 @@ CRITICAL_SERVICES=(
   "com.gathering.app:gathering-app:main application"
   "com.gathering.fuseki:fuseki:knowledge graph"
   "com.gathering.vikunja:vikunja:board"
-  "com.gathering.css:css:SOLID CSS server"
+  "com.security.css:css:SOLID CSS server (shared-security, #3835 — extracted from gathering)"
   "com.gathering.wordpress:wordpress:blog"
   "com.gathering.mysql:mysql:database"
   # Library — observability
