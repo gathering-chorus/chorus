@@ -563,7 +563,14 @@ app.get('/', async (req: Request, res) => {
   const guestName = req.cookies?.bridge_name || '';
   const isLocalReq = isLocal(req);
   const userName = principal ? principal.name : (isLocalReq ? 'jeff' : (guestName || 'guest'));
-  html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";</script></head>`);
+  // #3827 — the page needs the WebID to key its own signing key by, so two
+  // people sharing a browser never inherit each other's identity. The value is
+  // the SERVER-VERIFIED session's, never anything the client claimed; an
+  // unauthenticated visitor gets an empty string and the room refuses to mint
+  // a key rather than making one that belongs to nobody.
+  const sessionWebId = sessionWebid(req) ?? '';
+  html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";`
+    + `window.CHORUS_WEBID="${sessionWebId.replace(/"/g, '')}";</script></head>`);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
