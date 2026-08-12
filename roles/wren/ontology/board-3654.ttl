@@ -129,7 +129,7 @@ chorus:board a owl:Class, chorus:Domain ;
   rdfs:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:comment "The team's work board — cards grouped into chunks and ordered for execution." ;
   chorus:purpose "Group work into committed chunks with deterministic ordering so roles run bigger units without colliding on loose cards." ;
-  chorus:ownedBy chorus:wren ;
+  chorus:ownedBy chorus:role-wren ;
   chorus:partOf chorus:chorusProduct ;
   chorus:atStep chorus:Directing ;
   chorus:atStream chorus:chorusStream ;

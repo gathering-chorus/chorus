@@ -1,0 +1,65 @@
+# =============================================================================
+# #3838 — the roles, in a file, for the first time.
+#
+# Until now chorus:role-wren and its siblings existed ONLY in the live store.
+# Every ownership edge in the model points at them — holdsRole, ownedBy on
+# products and domains and cards — and none of them could be reproduced by a
+# deploy. Silas's CSS extraction (#3837) is blocked on exactly this: re-seed
+# identity and the Principal→Role edges dangle against individuals nobody can
+# rebuild.
+#
+# ONE SPELLING. There were three:
+#   chorus:wren        AgentRole, urn:chorus:ontology  — 72 references, but
+#                      nothing at runtime points at it
+#   chorus:role-wren   Role, urn:chorus:instances      — 6 references, and they
+#                      are holdsRole + every ownedBy
+#   chorus:wren-owner  Role, test fixture only
+#
+# chorus:role-* wins, and not by preference: `athena-model add --kind role`
+# mints exactly that IRI, so the governed writer had already decided. The other
+# two are retired by this card rather than aliased — an owl:sameAs bridge is how
+# three spellings became normal in the first place.
+#
+# The graph is urn:chorus:instances (pure ABox, ADR-025), loaded through the
+# INSTANCE_SET leg of chorus-model-deploy, which is purely additive and cannot
+# delete a co-tenant.
+#
+# NOTE ON TYPES: each role is typed BOTH chorus:Role and its subclass. Our store
+# does no inference, so a role typed only AgentRole would vanish from every
+# query that asks for a Role — and every ownership constraint in the model asks
+# for a Role. Dual-typing is deliberate, not belt-and-braces: it is the only way
+# the subclass carries meaning without breaking the superclass queries. This
+# also retires the string "kind=agent" living inside a comment field, which is
+# what the type system existed to express.
+# =============================================================================
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+chorus:role-jeff a chorus:Role, chorus:HumanRole ;
+    chorus:roleKind "human" ;
+    rdfs:label "Jeff" ; chorus:label "Jeff" ;
+    rdfs:comment "Owner. Judgment, direction, meaning. The authority the roles serve — holds no Principal→Role edge, deliberately." ;
+    chorus:comment "Owner. Judgment, direction, meaning." ;
+    chorus:rolePriority 0 .
+
+chorus:role-wren a chorus:Role, chorus:AgentRole ;
+    chorus:roleKind "agent" ;
+    rdfs:label "Wren" ; chorus:label "Wren" ;
+    rdfs:comment "Product Manager. Owns the interaction layer — Clearing, Athena, cards, roles. Value first, ship small, have a position." ;
+    chorus:comment "Product Manager. Value first, ship small, have a position." ;
+    chorus:rolePriority 3 .
+
+chorus:role-silas a chorus:Role, chorus:AgentRole ;
+    chorus:roleKind "agent" ;
+    rdfs:label "Silas" ; chorus:label "Silas" ;
+    rdfs:comment "Architect. Owns the observation layer and identity — dashboards, alerting, gates, the security model and the authN seam." ;
+    chorus:comment "Architect. Observation layer, identity, authN." ;
+    chorus:rolePriority 2 .
+
+chorus:role-kade a chorus:Role, chorus:AgentRole ;
+    chorus:roleKind "agent" ;
+    rdfs:label "Kade" ; chorus:label "Kade" ;
+    rdfs:comment "Engineer. Owns the build and delivery layer — werk verbs, tests, the pipeline, presentation." ;
+    chorus:comment "Engineer. Build and delivery, werk, tests." ;
+    chorus:rolePriority 1 .

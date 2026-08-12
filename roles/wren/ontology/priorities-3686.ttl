@@ -53,3 +53,67 @@ chorus:ProductOrderShape a sh:NodeShape ;
 chorus:DomainOrderShape a sh:NodeShape ;
   sh:targetClass chorus:Domain ;
   sh:property [ sh:path chorus:ownerSequence ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] .
+
+# =============================================================================
+# #3838 — responseWordCap: the cap is DATA, not a constant.
+#
+# Jeff, 2026-08-12: "make a word prompt attribute under roles that the attribute
+# should be set via a property from the properties domain. That way, if we need
+# to change it in the future, we don't have to make another code change."
+#
+# So the Role does not carry the NUMBER. It carries nothing — the number lives
+# as a chorus:Property in the properties domain, resolved through the #3437
+# cascade. Changing the team's cap is a property edit; changing one role's cap
+# is a property edit at a narrower scope. Neither is a deploy.
+#
+# The PropertyKey below is the registry entry that makes the key writable at
+# all: ADR-044 register-before-use — a chorus:Property whose propertyKey does
+# not resolve to a registered PropertyKey is refused at the door.
+# =============================================================================
+
+chorus:pk-responseWordCap a chorus:PropertyKey ;
+    rdfs:label "responseWordCap" ;
+    chorus:keyName "response.word.cap" ;
+    chorus:appliesToClass chorus:Role ;
+    chorus:propertyKind "datatype" ;
+    chorus:lifecycleEnabled "false" ;
+    rdfs:comment "Maximum words in a role's response to Jeff. Read from the properties cascade at send time, never compiled in. A role-scoped Property overrides the broader default; absent a value the enforcement point must REFUSE to cap rather than invent a number — a silent default is how a governed value becomes a constant again." .
+
+# =============================================================================
+# #3838 — RoleShape. The floor a Role must clear.
+#
+# There has never been one. The only shape targeting Role was
+# RolePriorityShape below, which constrains rolePriority and requires NOTHING —
+# a Role with no label, no kind, no owner was valid. Meanwhile ten other shapes
+# in this model demand `ownedBy minCount 1` pointing AT a Role, so the whole
+# ownership graph leaned on a class with no floor of its own.
+#
+# instancesGraph is the line that makes the generated route work at all. Without
+# it owl-api resolves urn:chorus:domains:roles — a graph that does not exist —
+# and /roles/role serves 0 rows while looking healthy. Card, Chunk, Domain,
+# Product and File shapes all carry this pin; Role was the one that never got
+# it (#3581/#3675 class).
+#
+# roleKind is a STRING, not a subclass reference, and that is deliberate: the
+# AgentRole/HumanRole subclasses carry no properties and nothing in the model
+# uses them as a range, so making the shape depend on them would give the
+# constraint nothing to check. The individuals are dual-typed in
+# role-instances-3838.ttl so the subclass still means something to a query;
+# this field is what a validator can actually enforce.
+# =============================================================================
+
+chorus:RoleShape a sh:NodeShape ;
+  sh:targetClass chorus:Role ;
+  chorus:instancesGraph "urn:chorus:instances" ;
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  sh:property [ sh:path chorus:roleKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                sh:pattern "^(agent|human)$" ] ;
+  sh:property [ sh:path chorus:rolePriority ; sh:maxCount 1 ; sh:datatype xsd:integer ;
+                chorus:uniqueGlobal true ] .
+
+chorus:roleKind a owl:DatatypeProperty ;
+    rdfs:domain chorus:Role ;
+    rdfs:range xsd:string ;
+    rdfs:label "role kind" ;
+    rdfs:comment "agent|human. Retires the string \"kind=agent\" that lived inside a comment field — the type system existed to express this and was not being used. Paired with dual-typing on the individual (chorus:Role + chorus:AgentRole) because our store does no inference." .
