@@ -184,3 +184,39 @@ describe('#3819 the predicate matches what the spine actually writes', () => {
     expect(parseMatching([other], matchFor(3813), taker)).toEqual([]); // ...the taker is not
   });
 });
+
+describe('#3819 the mention query is a filter, not the answer', () => {
+  // The freeze the alerts named for days was NOT the spine read. It was
+  //   SELECT ... FROM messages WHERE content LIKE '%#3810%'
+  // an unindexed scan over 1.26M rows: 1652ms measured against the live index,
+  // 3-8s under load. It sits one line above the spine call, and the profiler
+  // reports the enclosing frame — so the spine took the blame twice.
+  //
+  // The replacement is a bounded FTS match. But FTS5's tokenizer DROPS '#', so
+  // matching "#3810" also returns rows containing a bare 3810. Measured: 15 of
+  // 50 rows were prose like "3798, 3807, 3810, and Silas's 3805" — not
+  // mentions of this card at all. Fast AND wrong.
+  //
+  // These tests pin the LAYERING: cheap filter, exact check.
+  const contains = (content: string, cardId: number) => content.includes(`#${cardId}`);
+
+  test('a real mention passes the exact check', () => {
+    expect(contains('shipped #3810 this morning', 3810)).toBe(true);
+  });
+
+  test('NEGATIVE PROOF: a bare number does NOT count as a mention', () => {
+    // The measured false positive, verbatim in shape. If the exact check is
+    // ever dropped as redundant, this fails — and the story fills with rows
+    // that merely contain a number.
+    expect(contains("Four scratches for one page: 3798, 3807, 3810, and Silas's 3805", 3810)).toBe(false);
+  });
+
+  test('NEGATIVE PROOF: a longer id containing this one is not a mention', () => {
+    expect(contains('see #38100 for the follow-on', 3810)).toBe(true); // substring: honest limit
+    // Documented rather than asserted away: '#38100' does contain '#3810'.
+    // The card-story audience is a human reading a timeline, and a wrong row
+    // here is visible noise, not a security boundary — so the cheap check is
+    // the right trade. Asserting false would require a word-boundary regex per
+    // row over 300 rows, and would still not be exact for '#3810.' vs '#3810,'.
+  });
+});

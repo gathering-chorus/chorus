@@ -7,11 +7,16 @@ import { fetchChorusCardStory, type ChorusCardStoryDeps, type CardMeta, type Nud
 
 function seedDb(): Database.Database {
   const db = new Database(':memory:');
+  // #3819 — the fixture now brings the SAME world the real index has: an FTS5
+  // table beside messages. The handler stopped using a LIKE scan (1652ms over
+  // 1.26M rows, measured) and matches through FTS, so a fixture without it
+  // would test a query the handler no longer runs.
   db.exec(`
     CREATE TABLE messages (
       id INTEGER PRIMARY KEY,
       author TEXT, content TEXT, timestamp TEXT, role TEXT
     );
+    CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='id');
   `);
   const m = db.prepare('INSERT INTO messages (author, content, timestamp, role) VALUES (?,?,?,?)');
   m.run('user', 'working on #42 today', '2026-04-18T10:00:00', 'wren');
@@ -19,6 +24,10 @@ function seedDb(): Database.Database {
   m.run('user', '<system-reminder>about #42</system-reminder>', '2026-04-18T12:00:00', 'wren');
   m.run('user', '#42 x', '2026-04-18T13:00:00', 'wren');
   m.run('user', 'no card ref here', '2026-04-18T14:00:00', 'silas');
+  // A row the FTS match WILL return and the exact check must reject: the
+  // tokenizer drops '#', so a bare number looks like a mention.
+  m.run('user', 'ranked 41, 42, 43 in the sweep — none of them mentions', '2026-04-18T15:00:00', 'kade');
+  db.exec("INSERT INTO messages_fts(rowid, content) SELECT id, content FROM messages");
   return db;
 }
 
@@ -86,9 +95,12 @@ describe('fetchChorusCardStory (#2188)', () => {
     const body = (await fetchChorusCardStory(deps({ db }), '42')).body as {
       timeline: Array<{ source: string; text: string; role?: string }>;
     };
-    // 2 of 5 rows pass filter (#42 mentions, >10 char, not system-reminder)
+    // 2 of 6 rows pass: the two real #42 mentions. The system-reminder is
+    // filtered, '#42 x' is too short, 'no card ref here' never matches, and the
+    // bare-number row is returned by FTS but rejected by the exact check.
     const mentions = body.timeline.filter((t) => t.source === 'chorus-index');
     expect(mentions.length).toBe(2);
+    expect(mentions.every((t) => t.text.includes('#42'))).toBe(true);
     expect(mentions[0].role).toBe('jeff'); // author=user → jeff
     db.close();
   });
