@@ -512,12 +512,22 @@ if [ -z "${TTL:-}" ]; then
     "role:$CHORUS_ROOT/roles/wren/ontology/role-instances-3838.ttl"
   )
   # riot-validate each distinct file once before any write.
+  #
+  # Dedup through a plain STRING, not by reading the array back. Canonical runs
+  # bash 3.2, where `${arr[*]}` on an EMPTY array is an unbound-variable error
+  # under `set -u` — so the array-reading version died on its first iteration,
+  # every time, on the only box that matters. It ran clean here because this werk
+  # has a newer bash. That is the whole bug: the deploy is 3.2, the werk is not.
+  _seen_ttl=""
   INSTANCE_SET=()
   for entry in "${INSTANCE_SET_KINDS[@]}"; do
     f="${entry#*:}"
-    case " ${INSTANCE_SET[*]} " in *" $f "*) ;; *) INSTANCE_SET+=("$f") ;; esac
+    case "$_seen_ttl" in
+      *"|$f|"*) ;;
+      *) INSTANCE_SET+=("$f"); _seen_ttl="${_seen_ttl}|$f|" ;;
+    esac
   done
-  for ttl in "${INSTANCE_SET[@]}"; do
+  for ttl in ${INSTANCE_SET[@]+"${INSTANCE_SET[@]}"}; do
     [ -f "$ttl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ttl" >&2; exit 1; }
     if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
       echo "chorus-model-deploy: riot validate FAILED for INSTANCE_SET $ttl — NOT deploying instances" >&2
@@ -567,7 +577,7 @@ if [ -z "${TTL:-}" ]; then
     [ -f "$ittl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ittl" >&2; exit 1; }
     SEED_ARGS+=(--kind "$ikind" --ttl "$ittl")
   done
-  if ! sout=$(athena-model seed "${SEED_ARGS[@]}" --graph "$INSTANCE_GRAPH" --provenance deploy 2>&1); then
+  if ! sout=$(athena-model seed ${SEED_ARGS[@]+"${SEED_ARGS[@]}"} --graph "$INSTANCE_GRAPH" --provenance deploy 2>&1); then
     echo "chorus-model-deploy: REFUSED — instances NOT written (the batch is one transaction)" >&2
     # The refusal names the subject and the constraint — print it whole. A
     # deploy that fails with a count and no names is not usable (#3839 AC).
@@ -588,7 +598,7 @@ if [ -z "${TTL:-}" ]; then
   # the files (riot → N-Triples → distinct subjects); found count comes from the
   # store. A dead endpoint yields no CSV header and REFUSES rather than passing
   # blind (#3731).
-  _expected_iris=$(for f in "${INSTANCE_SET[@]}"; do riot --output=ntriples "$f" 2>/dev/null; done \
+  _expected_iris=$(for f in ${INSTANCE_SET[@]+"${INSTANCE_SET[@]}"}; do riot --output=ntriples "$f" 2>/dev/null; done \
     | awk '{print $1}' | grep '^<' | sort -u)
   _expected=$(printf '%s\n' "$_expected_iris" | grep -c '^<' || true)
   _values=$(printf '%s ' $_expected_iris)
