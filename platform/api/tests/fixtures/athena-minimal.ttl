@@ -38,8 +38,8 @@ chorus:harvesting a chorus:Vertebra ; rdfs:label "harvesting" .
 chorus:building a chorus:Vertebra ; rdfs:label "building" .
 
 # Owners
-chorus:wren-owner a chorus:Role ; rdfs:label "Wren" .
-chorus:silas-owner a chorus:Role ; rdfs:label "Silas" .
+chorus:role-wren a chorus:Role ; rdfs:label "Wren" .
+chorus:role-silas a chorus:Role ; rdfs:label "Silas" .
 
 # Product + sub-products + sub-domains
 chorus:demo-product a chorus:Product ;
@@ -49,37 +49,37 @@ chorus:demo-product a chorus:Product ;
 
 chorus:demo-subproduct-a a chorus:SubProduct ;
   rdfs:label "Demo SubA" ;
-  chorus:ownedBy chorus:wren-owner ;
+  chorus:ownedBy chorus:role-wren ;
   chorus:hasDomain chorus:demo-alpha-domain, chorus:demo-beta-domain .
 
 chorus:demo-subproduct-b a chorus:SubProduct ;
   rdfs:label "Demo SubB" ;
-  chorus:ownedBy chorus:silas-owner ;
+  chorus:ownedBy chorus:role-silas ;
   chorus:hasDomain chorus:demo-gamma-domain .
 
 chorus:demo-alpha-domain a chorus:SubDomain ;
   rdfs:label "Alpha" ;
   rdfs:comment "First demo sub-domain." ;
-  chorus:ownedBy chorus:wren-owner ;
+  chorus:ownedBy chorus:role-wren ;
   chorus:primaryStep chorus:harvesting ;
   chorus:hasService chorus:demo-alpha-service-reader ;
   chorus:hasPersistence chorus:demo-alpha-store .
 
 chorus:demo-beta-domain a chorus:SubDomain ;
   rdfs:label "Beta" ;
-  chorus:ownedBy chorus:wren-owner ;
+  chorus:ownedBy chorus:role-wren ;
   chorus:primaryStep chorus:building .
 
 chorus:demo-gamma-domain a chorus:SubDomain ;
   rdfs:label "Gamma" ;
-  chorus:ownedBy chorus:silas-owner ;
+  chorus:ownedBy chorus:role-silas ;
   chorus:primaryStep chorus:building .
 
 # Service entity with enrichment
 chorus:demo-alpha-service-reader a chorus:Service ;
   rdfs:label "Alpha Reader" ;
   rdfs:comment "Reads the Alpha store and emits records." ;
-  chorus:ownedBy chorus:wren-owner ;
+  chorus:ownedBy chorus:role-wren ;
   chorus:reads chorus:demo-alpha-store .
 
 chorus:demo-alpha-store a chorus:Persistence ;
@@ -90,5 +90,5 @@ chorus:demo-alpha-store a chorus:Persistence ;
 # Handler URI convention: <subdomainId>-service-<eid>, <subdomainId>-store-<eid>.
 chorus:demo-alpha-domain-service-reader a chorus:Service ;
   rdfs:label "Alpha Reader v2" ;
-  chorus:ownedBy chorus:wren-owner .
+  chorus:ownedBy chorus:role-wren .
 chorus:demo-alpha-domain chorus:hasService chorus:demo-alpha-domain-service-reader .

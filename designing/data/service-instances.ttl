@@ -15,7 +15,7 @@
 chorus:service-clearing a chorus:Service ;
     rdfs:label "The Clearing service" ; chorus:label "The Clearing service" ;
     chorus:overview "Browser-based multi-party chat where Jeff and the three agent roles align in real time. Serves the room at :3470 (com.chorus.clearing) and a public door at clearing.lightlifeurbangardens.com via Cloudflare tunnel. Messages persist to the messaging store, transcripts index into the Chorus memory, DECISION: lines are captured to the decision log, and outbound delivery to agent sessions rides pulse through the session registry (tty, vscode, and tmux pane-first transports)." ;
-    chorus:ownedBy chorus:wren ;
+    chorus:ownedBy chorus:role-wren ;
     chorus:status "operating" ;
     chorus:asIs "Live and proven end-to-end 2026-07-23: phone to clearing.lightlifeurbangardens.com to a locked-screen wren session over the tmux pane transport (#3668). WebSocket bridge token now enforced on tunneled traffic (#3669 lane 1). Remaining as-is gaps: the public door has no per-participant authentication (any holder of the URL reaches the room), share.* export is unreliable, and delivery to agents is terminal injection rather than subscription." ;
     chorus:toBe "Every participant, human or agent, authenticates through the identity seam (#3613): agents via client-credentials with DPoP, humans via browser OIDC, verified against the seam's JWKS. Delivery moves toward agents subscribing to a signed log rather than terminal injection - substrate decision pending the Buzz spike (#3674, adopt / steal-the-pattern / pass). The service-design page regenerates from this model instead of being hand-maintained HTML." ;

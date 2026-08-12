@@ -503,6 +503,10 @@ if [ -z "${TTL:-}" ]; then
   INSTANCE_STAGING="${INSTANCE_GRAPH}-staging-deploy"
   INSTANCE_SET=(
     "$CHORUS_ROOT/designing/data/value-stream-instances.ttl"
+    # #3838 — the four roles. Until this card they existed ONLY in the live
+    # store: every ownedBy and holdsRole in the model pointed at individuals no
+    # deploy could reproduce, which is why re-seeding identity was unsafe.
+    "$CHORUS_ROOT/roles/wren/ontology/role-instances-3838.ttl"
   )
   for ttl in "${INSTANCE_SET[@]}"; do
     [ -f "$ttl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ttl" >&2; exit 1; }

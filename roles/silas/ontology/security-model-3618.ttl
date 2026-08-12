@@ -276,7 +276,8 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-webId ;
     sh:property chorus:PrincipalShape-label ;
     sh:property chorus:PrincipalShape-principalKind ;
-    sh:property chorus:PrincipalShape-canSignIn .
+    sh:property chorus:PrincipalShape-canSignIn ;
+    sh:property chorus:PrincipalShape-holdsRole .
 # OPTIONAL, deliberately: only a principal that signs in needs a WebID. That
 # requirement now lives in the person-must-have-one rule below, scoped to where
 # it is actually true, rather than in a blanket minCount that misdescribed eight
@@ -293,6 +294,39 @@ chorus:PrincipalShape-canSignIn a sh:PropertyShape ;
     sh:path chorus:canSignIn ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
     sh:pattern "^(true|false)$" ;
     sh:message "canSignIn is true or false — absent is not 'unknown', it is unmodelled" .
+
+# #3838 (Wren, in Silas's file by agreement — his review, not a rubber stamp).
+#
+# holdsRole is the ONLY join between an identity and what it does here, and it
+# was live in the store while absent from this shape. owl-api projects only
+# shape-declared fields, so /principals never returned it: the seam existed and
+# could not be seen through the API. Silas's #3837 survive-check depended on
+# reading it, and would have passed vacuously.
+#
+# OPTIONAL by minCount, deliberately: Jeff holds no role (he is the authority
+# the roles serve), workers hold none by rule. Typed by sh:class so a dangling
+# or mistyped object is refused — which is the actual risk during a re-seed.
+chorus:PrincipalShape-holdsRole a sh:PropertyShape ;
+    sh:path chorus:holdsRole ; sh:maxCount 1 ; sh:class chorus:Role ;
+    sh:message "holdsRole must point at a chorus:Role that exists — a dangling role reference is how a re-seed loses the identity-to-role seam silently" .
+
+# #3838 — the WebID is the correlation key between CSS and this graph. It was a
+# bare string with no uniqueness rule, so two principals could claim the same
+# identity and nothing would object. A key that does not enforce uniqueness is
+# a convention.
+chorus:PrincipalWebIdUnique a sh:NodeShape ;
+    sh:targetClass chorus:Principal ;
+    sh:severity sh:Violation ;
+    sh:sparql [
+        sh:message "two principals share a webId — the correlation key must identify exactly one" ;
+        sh:select """
+            SELECT $this WHERE {
+              $this <https://jeffbridwell.com/chorus#webId> ?w .
+              ?other <https://jeffbridwell.com/chorus#webId> ?w .
+              FILTER(?other != $this)
+            }
+        """ ;
+    ] .
 
 # A principal that can sign in must have a WebID to sign in AS. This is the half
 # of the old minCount that was right, kept and scoped to where it holds.

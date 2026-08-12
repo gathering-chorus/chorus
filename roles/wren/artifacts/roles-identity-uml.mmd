@@ -1,0 +1,99 @@
+classDiagram
+  class Actor {
+    +actorAction
+    +actorRole
+  }
+  class AgentRole
+  class AuthBoundary {
+    +bypassAudit: boolean
+    +bypassEnvs: string
+    +checkType: string [required]
+    +label: string [required]
+  }
+  class CollectionDomain
+  class Credential {
+    +label: string [required]
+    +rotationPolicy: string
+    +scope: string [required]
+    +severityIfLeaked: string
+    +source: string [required]
+  }
+  class Domain {
+    +comment: string [required]
+    +definesVocabulary [required]
+    +gaps: string [required]
+    +label: string [required]
+    +publishesPreAuth: string
+    +purpose: string [required]
+    +repoTarget: string
+    +status [required]
+  }
+  class HumanRole
+  class Permission {
+    +action: string [required]
+    +conditions: string
+    +explicitGrant: boolean [required]
+    +label: string [required]
+    +resource: string [required]
+    +subject [required]
+  }
+  class Product {
+    +audience: string [required]
+    +comment: string [required]
+    +gaps: string [required]
+    +label: string [required]
+    +publishesPreAuth: string
+    +status [required]
+    +valueProposition: string [required]
+    +vision: string [required]
+  }
+  class Role {
+    +channelName: string
+    +domain: string
+  }
+  class SecurityProbe {
+    +framingClass: string [required]
+    +label: string [required]
+    +severity: string
+    +signalType: string
+    +target: string [required]
+  }
+  class Service {
+    +asIs: string [required]
+    +gaps: string [required]
+    +healthEndpoint
+    +implementationPlan: string [required]
+    +label: string [required]
+    +notInScope: string [required]
+    +overview: string [required]
+    +pathToClose: string [required]
+    +publishesPreAuth: string
+    +serviceHost
+  }
+  class SubDomain
+  Domain <|-- CollectionDomain
+  Domain <|-- SubDomain
+  Role <|-- AgentRole
+  Role <|-- HumanRole
+  AuthBoundary --> Role : ownedBy [required]
+  AuthBoundary --> SubDomain : betweenDomainA
+  AuthBoundary --> SubDomain : betweenDomainA [required]
+  AuthBoundary --> SubDomain : betweenDomainB
+  AuthBoundary --> SubDomain : betweenDomainB [required]
+  Credential --> Role : ownedBy [required]
+  Domain --> Product : nec70ac12135140b09c18a3b606f8087bb101 [required]
+  Domain --> Role : ownedBy
+  Domain --> Role : ownedBy [required]
+  Domain --> Service : hosts
+  Permission --> Role : ownedBy [required]
+  Product --> Domain : hasDomain
+  Product --> Domain : hasDomain [required]
+  Product --> Role : ownedBy [required]
+  Product --> Service : consumes
+  Product --> Service : provides
+  Product --> SubDomain : hasDomain
+  SecurityProbe --> Role : ownedBy [required]
+  Service --> Domain : nec70ac12135140b09c18a3b606f8087bb107 [required]
+  Service --> Role : ownedBy [required]
+  SubDomain --> Actor : hasActor
+  SubDomain --> Service : hasService

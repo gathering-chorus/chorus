@@ -398,7 +398,7 @@ chorus:code-domain
 chorus:tests a owl:Class, chorus:Domain ;
     rdfs:label "tests" ;
     rdfs:comment "The set of all Tests — every automated test (jest, bats, cargo, integration) registered as a Test instance with its pyramid layer, hermeticity, and the domain it covers. The noun the register/run/trace verbs operate on." ;
-    chorus:ownedBy chorus:kade ;
+    chorus:ownedBy chorus:role-kade ;
     chorus:purpose "Make the system's tests a first-class queryable set, so any domain can ask for its tests and results and the runner/gates/proving consume them uniformly." ;
     chorus:definesVocabulary chorus:Test , chorus:TestResult , chorus:TestSuiteRun ;
     chorus:atStream chorus:chorusStream ;

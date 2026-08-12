@@ -23,6 +23,16 @@
 /// The structural scope kinds a property can attach to, in cascade order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScopeKind {
+    /// #3838 — a ROLE is a scope. Added so a per-role config value (the first
+    /// is response.word.cap) can be set as DATA rather than compiled in. Jeff,
+    /// 2026-08-12: "if we need to change it in the future, we don't have to
+    /// make another code change." This is that one code change; every value
+    /// after it is a property edit.
+    ///
+    /// Ranked MOST specific — above Service — because a role's setting is about
+    /// the actor, and an actor's own setting should not be overridden by the
+    /// service it happens to be calling.
+    Role,
     Service,
     Domain,
     Product,
@@ -31,11 +41,12 @@ pub enum ScopeKind {
 }
 
 impl ScopeKind {
-    /// Specificity rank — higher wins. Service is most specific; ValueStream is
-    /// the broadest default. Encodes Service > Domain > Product >
+    /// Specificity rank — higher wins. Role is most specific; ValueStream is the
+    /// broadest default. Encodes Role > Service > Domain > Product >
     /// ValueStreamStep > ValueStream.
     pub fn rank(self) -> u8 {
         match self {
+            ScopeKind::Role => 6,
             ScopeKind::Service => 5,
             ScopeKind::Domain => 4,
             ScopeKind::Product => 3,
@@ -119,4 +130,123 @@ pub fn decide_effective_value(
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod role_scope_3838 {
+    use super::*;
+
+    /// #3838 — a Role's own setting must beat every broader scope.
+    ///
+    /// The point of adding Role to the cascade is that Jeff can throttle ONE
+    /// role without touching code or the others. If Service outranked Role, a
+    /// role-level cap would be silently overridden by whatever service the
+    /// role happened to be calling — the setting would appear to be saved and
+    /// have no effect, which is the worst of both.
+    #[test]
+    fn role_beats_service() {
+        assert!(ScopeKind::Role.rank() > ScopeKind::Service.rank());
+    }
+
+    /// NEGATIVE PROOF: ranks stay strictly ordered and unique.
+    ///
+    /// Two scopes sharing a rank makes precedence a coin-flip, and the
+    /// resolver's own malformed_duplicate_rank test proves it errors on that.
+    /// Inserting Role at the top is exactly where a duplicate would be
+    /// introduced by accident, so pin the whole ladder rather than one pair.
+    #[test]
+    fn ranks_are_strictly_descending_and_unique() {
+        let ladder = [
+            ScopeKind::Role,
+            ScopeKind::Service,
+            ScopeKind::Domain,
+            ScopeKind::Product,
+            ScopeKind::ValueStreamStep,
+            ScopeKind::ValueStream,
+        ];
+        for pair in ladder.windows(2) {
+            assert!(
+                pair[0].rank() > pair[1].rank(),
+                "{:?} must outrank {:?}",
+                pair[0],
+                pair[1]
+            );
+        }
+    }
+
+    /// A role-scoped value wins over a domain-scoped default — the actual
+    /// behaviour Jeff asked for, exercised through the resolver rather than
+    /// asserted on the enum.
+    #[test]
+    fn role_scoped_word_cap_overrides_the_domain_default() {
+        // Chain is MOST specific first — the resolver refuses a chain that is
+        // not strictly descending, so Role leads.
+        let chain = vec![
+            ScopeNode {
+                kind: ScopeKind::Role,
+                iri: "chorus:role-wren".into(),
+                properties: vec![PropertyDatum {
+                    iri: "chorus:prop-wren-word-cap".into(),
+                    key: "response.word.cap".into(),
+                    value: "40".into(),
+                    value_type: "integer".into(),
+                }],
+            },
+            ScopeNode {
+                kind: ScopeKind::Domain,
+                iri: "chorus:roles".into(),
+                properties: vec![PropertyDatum {
+                    iri: "chorus:prop-team-word-cap".into(),
+                    key: "response.word.cap".into(),
+                    value: "100".into(),
+                    value_type: "integer".into(),
+                }],
+            },
+        ];
+        let got = decide_effective_value(&chain, "response.word.cap")
+            .expect("chain is well-formed")
+            .expect("the key is set somewhere in the chain");
+        assert_eq!(got.value, "40", "the role's own cap must win");
+        assert_eq!(got.winning_property_iri, "chorus:prop-wren-word-cap");
+        assert_eq!(got.winning_scope_kind, ScopeKind::Role);
+    }
+
+    /// NEGATIVE PROOF: with no role-scoped value, the domain default is what
+    /// resolves — so the test above is proving precedence, not just reading
+    /// back the last thing pushed.
+    #[test]
+    fn without_a_role_value_the_domain_default_resolves() {
+        let chain = vec![ScopeNode {
+            kind: ScopeKind::Domain,
+            iri: "chorus:roles".into(),
+            properties: vec![PropertyDatum {
+                iri: "chorus:prop-team-word-cap".into(),
+                key: "response.word.cap".into(),
+                value: "100".into(),
+                value_type: "integer".into(),
+            }],
+        }];
+        let got = decide_effective_value(&chain, "response.word.cap")
+            .expect("well-formed")
+            .expect("set at domain");
+        assert_eq!(got.value, "100");
+        assert_eq!(got.winning_scope_kind, ScopeKind::Domain);
+    }
+
+    /// NEGATIVE PROOF: an unset key resolves to None, never to a number.
+    ///
+    /// The enforcement point must be able to tell "no cap configured" from "cap
+    /// is zero". If this ever returned a default, the governed value would
+    /// quietly become a constant again — the exact thing this card removes.
+    #[test]
+    fn an_unconfigured_cap_is_none_not_a_default() {
+        let chain = vec![ScopeNode {
+            kind: ScopeKind::Role,
+            iri: "chorus:role-wren".into(),
+            properties: vec![],
+        }];
+        assert!(decide_effective_value(&chain, "response.word.cap")
+            .expect("well-formed")
+            .is_none());
+    }
 }
