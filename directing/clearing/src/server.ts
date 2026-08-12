@@ -713,14 +713,8 @@ try {
   }
 } catch { /* ignored */ }
 
-// Save messages every 10 seconds
-// #3604 — unref: background save timer must not keep Node's loop alive (jest exit clean).
-setInterval(() => {
-  try {
-    const msgs = messageRouter.getRecent(200, true);
-    fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
-  } catch { /* ignored */ }
-}, 10000).unref();
+// #3831 — message persistence moved into startBackgroundWork(). Importing a
+// module must not start writing files on a timer.
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
@@ -1353,11 +1347,10 @@ io.on('connection', (socket) => {
 });
 
 // Broadcast tile updates every 5 seconds
-// #3604 — unref: background broadcast timer must not keep Node's loop alive (jest exit clean).
-setInterval(() => {
-  tilePoller.poll();
-  io.emit('tiles', tilePoller.getTiles());
-}, 5000).unref();
+// #3831 — the tile broadcast moved into startBackgroundWork(). It was already
+// unref'd, so it did not hold the loop open by itself; it is deferred anyway
+// because a module that emits to sockets on import is a surprise to every
+// caller that only wanted a function.
 
 // #3696 — Clearing→Buzz mirror (Leg A), flag-gated OFF by default. Best-effort:
 // the bridge's onMessageSafe swallows every failure so a relay outage or missing
@@ -1389,8 +1382,7 @@ messageRouter.on('message', (msg) => {
   if (room && !msg.buzzInbound) room.publish(msg);
 });
 
-// Start tailing chorus log for spine events (demos, accepts, blocks)
-tailer.start();
+// #3831 — NOT started at import. See startBackgroundWork() below.
 
 // Push board events to all connected clients (#1681)
 tailer.on('board-event', (event) => {
@@ -1405,9 +1397,12 @@ tailer.on('board-event', (event) => {
   }
 });
 
-// Start tailing session JSONL files for conversation mirroring (#1665)
+// Start tailing session JSONL files for conversation mirroring (#1665).
+// #3831 — CONSTRUCTED here (inert), STARTED in startBackgroundWork(). start()
+// calls fs.watch per role session file, and that watcher was the FSEVENTWRAP
+// handle that hung the suite: any test importing this module for one function
+// inherited a live filesystem watcher nobody could close.
 const sessionTailer = new SessionTailer(messageRouter);
-sessionTailer.start();
 
 // Graceful restart: POST /api/restart shuts down cleanly so new process can bind
 app.post('/api/restart', (_req, res) => {
@@ -1490,11 +1485,64 @@ io.on('connection', (socket) => {
 // before: module-scoped, and every socket test connected from 127.0.0.1 where
 // isLocalConnection short-circuits ahead of it, so the branch that refused Jeff
 // had never been executed by any test in its life.
+/**
+ * #3831 — everything that OUTLIVES a function call.
+ *
+ * Importing this module used to start a filesystem watcher, two timers and a
+ * log tailer. Four test files import it for one function each; every one of
+ * them inherited those handles, so the clearing suite passed 567 tests and
+ * then hung until the nightly killed it at 1800s. Three nights running, and
+ * the tests were green the whole time — the failure was invisible to the thing
+ * that was supposed to see it.
+ *
+ * The rule this encodes: importing a module must not start anything. The
+ * entrypoint starts things. That is why the fix is here rather than an
+ * afterAll() in each suite — per-suite cleanup is whack-a-mole that loses the
+ * moment someone adds a fifth importer, and it treats the symptom (a handle
+ * left open) instead of the cause (a module that starts itself).
+ */
+export interface BackgroundWorkDeps {
+  /** Injectable so a test can prove the work STARTS without starting it. */
+  tailer?: { start: () => void };
+  sessionTailer?: { start: () => void };
+  /** False in tests: assert the wiring without leaving timers behind. */
+  timers?: boolean;
+}
+
+export function startBackgroundWork(deps: BackgroundWorkDeps = {}): void {
+  // Spine events: demos, accepts, blocks.
+  (deps.tailer ?? tailer).start();
+
+  // Session JSONL → the room. This is the fs.watch that showed up as
+  // FSEVENTWRAP in --detectOpenHandles.
+  (deps.sessionTailer ?? sessionTailer).start();
+
+  if (deps.timers === false) return;
+
+  // Persist the room every 10s. unref'd so it can never be the reason Node
+  // stays alive — belt and braces, since it is no longer created on import.
+  setInterval(() => {
+    try {
+      const msgs = messageRouter.getRecent(200, true);
+      fs_sync.writeFileSync(MSG_FILE, JSON.stringify(msgs));
+    } catch { /* ignored */ }
+  }, 10000).unref();
+
+  // Broadcast tiles every 5s.
+  setInterval(() => {
+    tilePoller.poll();
+    io.emit('tiles', tilePoller.getTiles());
+  }, 5000).unref();
+}
+
 export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessionTailer, socketSessionAuthed };
 
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
 if (require.main === module) {
+  // #3831 — the entrypoint starts the background work. Imports do not.
+  startBackgroundWork();
+
   // #3390 — :3470 INTENTIONALLY serves the LAN: #3366 made
   // http://jeffs-mac-mini-m1-3.local:3470 the IP-proof phone-over-wifi URL
   // (a direct LAN hit, not via the tunnel). Binding loopback would kill it.
