@@ -84,13 +84,47 @@ async function collectCardData(deps: ChorusCardStoryDeps, cardId: number, timeli
   return meta;
 }
 
+/** How many FTS rows to scan before sorting. Bounded so a common card number
+ *  costs the same as a rare one. */
+export const MENTION_SCAN_CAP = 300;
+
+/**
+ * Messages mentioning this card.
+ *
+ * #3819 — this was `WHERE content LIKE '%#3810%'`: an unindexed scan over
+ * 1.26M rows, synchronously, on every card story. THAT is the 3-8 second
+ * event-loop freeze the alerts have been naming for days, not the spine read
+ * one line below it — the profiler reports the enclosing frame, so the spine
+ * call took the blame twice.
+ *
+ * The cure already existed in this codebase and nobody carried it across:
+ * #3054 removed exactly this LIKE-scan from the crawl handler and #3055
+ * bounded its replacement. Same query shape here, same fix, one file over.
+ *
+ * FTS5 MATCH over a bounded scan, then sort. The LIMIT inside the subquery is
+ * what makes it early-terminate; sorting the full match set is itself the slow
+ * part for a common term.
+ *
+ * The FTS tokenizer DROPS the '#', so a match for "#3810" also returns rows
+ * containing a bare 3810 — measured: 15 of 50 rows were prose like "3798,
+ * 3807, 3810, and Silas's 3805", which is not a mention of this card. So the
+ * query is a cheap FILTER and the exact test happens below in JS. Shipping
+ * without that check would have been faster AND wrong, which is the failure
+ * this whole card keeps circling.
+ */
 function collectIndexMentions(deps: ChorusCardStoryDeps, cardId: number, timeline: TimelineEntry[]): void {
   if (!deps.db) return;
   try {
     const rows = deps.db.prepare(
-      'SELECT author, content, timestamp, role FROM messages WHERE content LIKE ? ORDER BY timestamp ASC LIMIT 50',
-    ).all(`%#${cardId}%`) as Array<{ author: string; content: string; timestamp: string; role: string }>;
+      `SELECT m.author, m.content, m.timestamp, m.role
+         FROM (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ? LIMIT ?) f
+         JOIN messages m ON f.rowid = m.id
+        ORDER BY m.timestamp ASC LIMIT 50`,
+    ).all(`"#${cardId}"`, MENTION_SCAN_CAP) as Array<{ author: string; content: string; timestamp: string; role: string }>;
+    const mention = `#${cardId}`;
     for (const m of rows) {
+      // The exact test the tokenizer cannot do.
+      if (!m.content.includes(mention)) continue;
       const text = m.content.trim();
       if (text.startsWith('<system-reminder>') || text.startsWith('Base directory for this skill:') || text.length < 10) continue;
       timeline.push({

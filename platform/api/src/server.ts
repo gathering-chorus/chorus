@@ -890,7 +890,12 @@ const SPINE_TAIL_BYTES = 4 * 1024 * 1024;
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
   const cardsScript = path.resolve(__dirname, '../../scripts/cards');
   const MESSAGING_URL = 'http://localhost:3475';
-  const logPath = path.resolve(__dirname, '../../logs/chorus.log');
+  // #3819 — the SPINE, which moved to ~/.chorus/chorus.log on 2026-05-04 when
+  // branch checkouts were clobbering the in-repo copy. These handlers were
+  // never repointed, so they read a 57KB leftover and returned no events —
+  // silently, for months. The candidates list at the /api/chorus/spine route
+  // has had the right path all along.
+  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
 
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
@@ -926,7 +931,12 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
 
 import { fetchChorusDomainStory } from './handlers/chorus-domain-story';
 app.get('/api/chorus/domain-story/:domain', (req: Request, res: Response) => {
-  const logPath = path.resolve(__dirname, '../../logs/chorus.log');
+  // #3819 — the SPINE, which moved to ~/.chorus/chorus.log on 2026-05-04 when
+  // branch checkouts were clobbering the in-repo copy. These handlers were
+  // never repointed, so they read a 57KB leftover and returned no events —
+  // silently, for months. The candidates list at the /api/chorus/spine route
+  // has had the right path all along.
+  const logPath = `${process.env.HOME}/.chorus/chorus.log`;
   let db: Database.Database | null = null;
   try { db = getDb(); } catch { /* db optional */ }
   try {
