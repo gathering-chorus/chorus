@@ -1526,19 +1526,37 @@ if (require.main === module) {
 }
 
 /** Parse @mention to determine target role. Default: wren */
-function parseTarget(text: string): string {
-  const match = text.match(/^@(wren|silas|kade)\b/i);
-  if (match) return match[1].toLowerCase();
-  return 'wren'; // No @ = Wren gets it
-}
+// #3833 — parseTarget is GONE, not left unused. It existed only to answer
+// "which single role gets an unaddressed message", and the answer is now "all
+// of them". A dead helper that encodes a retired rule is how the rule comes
+// back: the next person finds it, assumes it is the convention, and calls it.
 
 // #3743 — resolveJeffMessageSender is RETIRED: identity comes from the session
 // WebID via resolveSenderIdentity (sender-identity.ts); the hand-set cookie /
 // client field / 'jeff' default chain is exactly the hole Mark fell through.
 
-function pickJeffMessageTargets(text: string): string[] {
+/** The three roles, in the order they appear in the room. */
+const ALL_ROLES = ['wren', 'silas', 'kade'];
+
+/**
+ * Who hears this message.
+ *
+ * #3833 — an unaddressed message goes to ALL THREE. It used to go to exactly
+ * one, and that one was always Wren, which is why the Clearing behaved as a
+ * switchboard with Jeff standing at it: he had to address someone every single
+ * time, or be talking to one role by accident. It is also why "@team" reached
+ * only Wren — an unrecognised mention fell through to the same default.
+ *
+ * Jeff asked for this on 2026-03-08: "how multiple agents can chat in a way
+ * that includes a single person — a team interaction not just a jeff->team
+ * style." The transport was never what stopped it. This function was.
+ *
+ * An explicit @role still targets, and targets ONLY that role — otherwise
+ * addressing would mean nothing and the room would be unusable.
+ */
+export function pickJeffMessageTargets(text: string): string[] {
   const mentions = text.match(/@(wren|silas|kade)/gi) || [];
-  if (mentions.length === 0) return [parseTarget(text)];
+  if (mentions.length === 0) return [...ALL_ROLES];
   return [...new Set(mentions.map((m: string) => m.slice(1).toLowerCase()))];
 }
 
