@@ -284,8 +284,14 @@ pub fn build_inject_tmux_script(pane: &str, text: &str) -> String {
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect();
+    // Silas (#3841 review): unique names remove the accidental cleanup the shared
+    // name used to give us. `paste-buffer -d` deletes on success — but if the
+    // paste FAILS (pane gone), the loaded buffer is orphaned under a name nobody
+    // will ever reuse. One per failed delivery, forever. So delete it explicitly
+    // on the failure path, then still exit nonzero: `do shell script` throws on
+    // nonzero rc, and losing that would turn a failed delivery into a false "ok".
     format!(
-        r#"do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; printf %s '{b64}' | base64 -D | tmux load-buffer -b {buf} - && tmux paste-buffer -d -b {buf} -t '{pane}' && sleep 0.1 && tmux send-keys -t '{pane}' Enter"
+        r#"do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; printf %s '{b64}' | base64 -D | tmux load-buffer -b {buf} - && {{ tmux paste-buffer -d -b {buf} -t '{pane}' || {{ tmux delete-buffer -b {buf} 2>/dev/null; false; }}; }} && sleep 0.1 && tmux send-keys -t '{pane}' Enter"
 return "ok""#,
         b64 = b64,
         buf = buf,
@@ -991,6 +997,39 @@ mod delivery_buffer_race_3841 {
         );
     }
 
+    /// Silas's review catch: with a shared name, a failed paste left a buffer
+    /// that the NEXT delivery overwrote — accidental cleanup. Unique names take
+    /// that away, so a failed paste would orphan one buffer per failure forever.
+    #[test]
+    fn a_failed_paste_deletes_its_own_buffer() {
+        let s = build_inject_tmux_script("%1", "hello");
+        assert!(s.contains("delete-buffer"), "the failure path must clean up: {s}");
+        let buf = buffer_name_in(&s);
+        assert!(
+            s.contains(&format!("delete-buffer -b {buf}")),
+            "it must delete THIS delivery's buffer, not some other name"
+        );
+    }
+
+    /// NEGATIVE PROOF for that cleanup: adding it must not swallow the failure.
+    /// `do shell script` throws on nonzero rc — that is the only reason a dead
+    /// pane surfaces as an error instead of a false "ok" (and a false ok is
+    /// worse than a drop, because nothing retries it).
+    #[test]
+    fn cleanup_does_not_turn_a_failed_delivery_into_a_success() {
+        let s = build_inject_tmux_script("%1", "hello");
+        let cleanup = s.split("|| {").nth(1).expect("a failure branch exists");
+        assert!(
+            cleanup.contains("false"),
+            "the failure branch must still end nonzero, or the delivery reports ok: {cleanup}"
+        );
+        let after_cleanup = cleanup.split("; }").next().unwrap();
+        assert!(
+            after_cleanup.find("delete-buffer").unwrap() < after_cleanup.find("false").unwrap(),
+            "delete first, THEN fail — reversing these skips the cleanup"
+        );
+    }
+
     /// Both occurrences in one script must name the SAME buffer — load and
     /// paste have to agree, or every delivery fails instead of every other one.
     #[test]
@@ -1001,7 +1040,11 @@ mod delivery_buffer_race_3841 {
             .skip(1)
             .map(|r| r.split_whitespace().next().unwrap())
             .collect();
-        assert_eq!(names.len(), 2, "load-buffer and paste-buffer both name it");
-        assert_eq!(names[0], names[1], "load and paste must agree");
+        // load-buffer, paste-buffer, and the failure-path delete-buffer.
+        assert_eq!(names.len(), 3, "load, paste, and cleanup each name a buffer");
+        assert!(
+            names.iter().all(|n| *n == names[0]),
+            "every -b in one delivery must name the SAME buffer: {names:?}"
+        );
     }
 }
