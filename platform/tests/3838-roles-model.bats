@@ -139,10 +139,31 @@ TTL
   [ "$output" -eq 1 ]
 }
 
-@test "the WebID correlation key is unique" {
-  # It was a bare string with no uniqueness rule — two principals could claim
-  # the same identity and nothing would object.
-  grep -q "chorus:PrincipalWebIdUnique" "$SEC_TTL"
+@test "the WebID correlation key is unique, expressed in the idiom that RUNS" {
+  # It was a bare string with no uniqueness rule — two principals could claim the
+  # same identity and nothing would object.
+  #
+  # This asserts chorus:uniqueGlobal, NOT a sh:sparql shape. I wrote it as
+  # sh:sparql first; the chorus-model validator never reads sh:sparql (zero
+  # occurrences in the crate), so it would have looked enforced and never fired.
+  # The behavioural proof lives in the crate — webid_uniqueness_3838 — where a
+  # duplicate is actually refused. This grep only pins the DECLARATION.
+  # Block delimited by the next BLANK LINE, not by a trailing period: the
+  # comment explaining this choice ends in a period, which truncated the sed
+  # range and failed against a file that was correct. A range ending in the
+  # wrong place is its own small hollow gate.
+  #
+  # And the match is anchored to the start of the line so the comment that
+  # NAMES uniqueGlobal cannot satisfy the check — prose about a rule is not the
+  # rule, which is the whole lesson of this card.
+  run bash -c "awk '/PrincipalShape-webId a sh:PropertyShape/,/^[[:space:]]*\$/' '$SEC_TTL' | grep -cE '^[[:space:]]+chorus:uniqueGlobal true'"
+  [ "$output" -eq 1 ]
+}
+
+@test "NEGATIVE PROOF: the decorative sh:sparql rule is GONE, not left beside the real one" {
+  # Two rules for one thing is how three spellings of a role happened. The
+  # inert one had to be deleted, not demoted.
+  ! grep -q "chorus:PrincipalWebIdUnique" "$SEC_TTL"
 }
 
 # ------------------------------------------------------- the word cap ---

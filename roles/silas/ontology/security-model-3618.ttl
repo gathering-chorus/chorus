@@ -283,7 +283,20 @@ chorus:PrincipalShape a sh:NodeShape ;
 # it is actually true, rather than in a blanket minCount that misdescribed eight
 # of the ten records.
 chorus:PrincipalShape-webId a sh:PropertyShape ;
-    sh:path chorus:webId ; sh:maxCount 1 ; sh:datatype xsd:string .
+    sh:path chorus:webId ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    # #3838 — the WebID is the correlation key between CSS and this graph, and it
+    # was a bare string with no uniqueness rule: two principals could claim the
+    # same identity and nothing would object.
+    #
+    # Expressed as chorus:uniqueGlobal, NOT as a sh:sparql NodeShape. I wrote it
+    # as sh:sparql first. The chorus-model validator does not read sh:sparql at
+    # all — zero occurrences in the crate; it hand-implements constraints and
+    # honours these annotations (#3681). A sh:sparql rule here would have looked
+    # enforced and never fired, which is worse than the bare string it replaced.
+    # Silas found the same thing on 2026-07-24 and it is worth re-recording,
+    # because I reintroduced it three weeks later from the SHACL spec rather
+    # than from our validator.
+    chorus:uniqueGlobal true .
 chorus:PrincipalShape-label a sh:PropertyShape ;
     sh:path rdfs:label ; sh:minCount 1 .
 chorus:PrincipalShape-principalKind a sh:PropertyShape ;
@@ -310,23 +323,6 @@ chorus:PrincipalShape-holdsRole a sh:PropertyShape ;
     sh:path chorus:holdsRole ; sh:maxCount 1 ; sh:class chorus:Role ;
     sh:message "holdsRole must point at a chorus:Role that exists — a dangling role reference is how a re-seed loses the identity-to-role seam silently" .
 
-# #3838 — the WebID is the correlation key between CSS and this graph. It was a
-# bare string with no uniqueness rule, so two principals could claim the same
-# identity and nothing would object. A key that does not enforce uniqueness is
-# a convention.
-chorus:PrincipalWebIdUnique a sh:NodeShape ;
-    sh:targetClass chorus:Principal ;
-    sh:severity sh:Violation ;
-    sh:sparql [
-        sh:message "two principals share a webId — the correlation key must identify exactly one" ;
-        sh:select """
-            SELECT $this WHERE {
-              $this <https://jeffbridwell.com/chorus#webId> ?w .
-              ?other <https://jeffbridwell.com/chorus#webId> ?w .
-              FILTER(?other != $this)
-            }
-        """ ;
-    ] .
 
 # A principal that can sign in must have a WebID to sign in AS. This is the half
 # of the old minCount that was right, kept and scoped to where it holds.

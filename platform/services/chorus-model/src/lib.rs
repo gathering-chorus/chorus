@@ -2133,3 +2133,108 @@ mod tests {
         assert!(ups[0].contains("partOf"));
     }
 }
+
+#[cfg(test)]
+mod webid_uniqueness_3838 {
+    use super::*;
+
+    /// A store that answers the shape-load queries with a uniqueGlobal on webId,
+    /// and reports whether a DIFFERENT principal already holds a given value.
+    struct UniqStore {
+        /// webId values already held by some other principal.
+        taken: Vec<String>,
+        updates: std::cell::RefCell<Vec<String>>,
+    }
+    impl Store for UniqStore {
+        fn ask(&self, sparql: &str) -> R<bool> {
+            // Mirrors lib.rs:925 — the crate asks whether ?other (self-excluded)
+            // holds this value. We answer from `taken`.
+            Ok(self.taken.iter().any(|v| sparql.contains(v.as_str())))
+        }
+        fn select_v(&self, sparql: &str) -> R<Vec<String>> {
+            // The shape reader asks three separate questions; answer each one
+            // the way security-model-3618.ttl now does.
+            if sparql.contains("chorus:uniqueGlobal true") {
+                return Ok(vec!["webId".into()]);
+            }
+            if sparql.contains("sh:minCount") {
+                return Ok(vec!["label".into()]);
+            }
+            Ok(vec![])
+        }
+        fn update(&self, sparql: &str) -> R<()> {
+            self.updates.borrow_mut().push(sparql.to_string());
+            Ok(())
+        }
+    }
+    fn tid() -> Identity { Identity("wren".into()) }
+
+    fn req(name: &str, webid: &str) -> WriteReq {
+        let mut fields = BTreeMap::new();
+        fields.insert("label".to_string(), format!("{name} (principal)"));
+        fields.insert("webId".to_string(), webid.to_string());
+        WriteReq {
+            placement_override_reason: None,
+            kind: "principal".into(),
+            name: name.into(),
+            fields,
+            edges: vec![],
+            // urn:chorus:instances, NOT the security graph. See the module note:
+            // the security graph is DBA-path only and the DAL refuses it outright,
+            // so the uniqueness primitive is proven here on a graph the DAL owns.
+            graph: Some("urn:chorus:instances".into()),
+        }
+    }
+
+    fn store(taken: &[&str]) -> UniqStore {
+        UniqStore {
+            taken: taken.iter().map(|s| s.to_string()).collect(),
+            updates: Default::default(),
+        }
+    }
+
+    /// #3838 NEGATIVE PROOF — the one Silas asked for, against the mechanism
+    /// that actually runs.
+    ///
+    /// The WebID is the correlation key between CSS and this graph. It was a
+    /// bare string with no uniqueness rule: two principals could claim the same
+    /// identity and nothing would object.
+    ///
+    /// I first wrote this rule as a sh:sparql NodeShape. The validator does not
+    /// read sh:sparql — zero occurrences in this crate — so it would have looked
+    /// enforced and never fired. chorus:uniqueGlobal is the primitive that is
+    /// hand-implemented here (lib.rs:399 loads it, :923 enforces it), so that is
+    /// where the rule now lives, and this proves it refuses.
+    ///
+    /// THE LIMIT, stated because finding it is the point of writing the test:
+    /// this proves the PRIMITIVE refuses a duplicate. It does not prove that
+    /// PRINCIPALS get that protection, and today they do not. Principals live in
+    /// urn:chorus:domains:security, which assert_dal_writable (lib.rs:787)
+    /// refuses outright as a DBA-path graph — they are deployed by
+    /// chorus-model-deploy's SECURITY_SET, a staged GSP merge that never calls
+    /// this validator. So the uniqueness rule is real, the enforcement path is
+    /// real, and the two do not meet for Principal. That gap is #3838's finding,
+    /// not something this test can close, and saying so here is the difference
+    /// between a proof and a comfort.
+    #[test]
+    fn a_second_principal_claiming_the_same_webid_is_refused() {
+        let s = store(&["https://id.lightlifeurbangardens.com/jeff/profile/card#me"]);
+        let err = write(&s, &req("impostor", "https://id.lightlifeurbangardens.com/jeff/profile/card#me"), &tid())
+            .expect_err("a duplicate webId must be refused");
+        assert!(
+            err.contains("duplicate 'webId'") && err.contains("uniqueGlobal"),
+            "the refusal must name the field and the rule, not just fail: {err}"
+        );
+    }
+
+    /// NEGATIVE PROOF of the negative proof: a principal with its OWN webId
+    /// passes. Without this, the test above would pass against an implementation
+    /// that refuses everything — which is a different kind of broken and looks
+    /// identical from the failing side.
+    #[test]
+    fn a_principal_with_its_own_webid_passes() {
+        let s = store(&["https://id.lightlifeurbangardens.com/jeff/profile/card#me"]);
+        write(&s, &req("marknakib", "https://id.lightlifeurbangardens.com/marknakib/profile/card#me"), &tid())
+            .expect("a distinct webId must be accepted");
+    }
+}
