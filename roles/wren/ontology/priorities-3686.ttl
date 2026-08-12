@@ -42,9 +42,14 @@ chorus:ownerSequence a owl:DatatypeProperty ;
   rdfs:comment "The owning role's ordinal over this thing among the things of the same kind they own (1 = first). Unique within ownedBy per kind. Applied to Product and Domain (#3686); Chunk uses roleSequence (#3654)." .
 
 # ── additive shapes (ordinals only — primary shapes unchanged in chorus.ttl) ──
-chorus:RolePriorityShape a sh:NodeShape ;
-  sh:targetClass chorus:Role ;
-  sh:property [ sh:path chorus:rolePriority ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
+#
+# #3839 — RolePriorityShape RETIRED. It targeted chorus:Role and declared
+# rolePriority; #3838's RoleShape below targets the same class and declares the
+# same property with the same uniqueGlobal. Two shapes on one class is how a
+# constraint ends up half-applied — and it showed up concretely: RoleShape
+# carries the chorus:instancesGraph pin and this one did not, so a query for
+# "where do Role instances live" got two answers, one of them empty. RoleShape is
+# the complete one; this is the duplicate.
 
 chorus:ProductOrderShape a sh:NodeShape ;
   sh:targetClass chorus:Product ;

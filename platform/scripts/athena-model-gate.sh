@@ -9,10 +9,19 @@
 #   1. The model is not written through the DAL. Files are hand-edited, then
 #      chorus-model-deploy.sh POSTs turtle straight to Fuseki's graph-store
 #      endpoint. The DAL is never in the path.
+#      — #3839 UPDATE: no longer true of INSTANCES. The instance leg now calls
+#      athena-model seed, so every instance is shape-checked at the door and a
+#      violation refuses the deploy by name. Routing it there found three things
+#      nothing had ever checked: typed literals were parsed as value-plus-tail
+#      so every ^^-typed literal failed its own datatype rule, dual-typed
+#      individuals (the model's own convention) were unloadable, and two
+#      mutually-referential kinds could not bootstrap at all. SCHEMA is still
+#      hand-edited and POSTed — which is what this gate is for.
 #   2. assert_dal_writable marks urn:chorus:ontology DBA-path-only (#3356), so
 #      SCHEMA cannot go through the DAL by design.
 #
-# Net: the DAL governs instances; NOTHING governs schema. Schema is where every
+# Net: the DAL governs instances (and since #3839 the deploy actually uses
+# it); NOTHING governs schema. Schema is where every
 # failure of the last three days lived — 186 classes over 13 files and 6
 # namespaces, 69 binding nothing, 11 properties with no domain/range, a shape
 # and an ontology disagreeing about what a Domain is.

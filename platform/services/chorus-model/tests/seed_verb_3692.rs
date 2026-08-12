@@ -36,7 +36,12 @@ impl Store for Cfg {
         Ok(self.existing.iter().any(|e| sparql.contains(e.as_str())))
     }
     fn select_v(&self, sparql: &str) -> R<Vec<String>> {
-        if sparql.contains("sh:minCount") {
+        // #3839 — the shape pins where its instances live. These fixtures model a
+        // correctly-pinned shape; the refusal for an UNPINNED one is proved
+        // separately in lib.rs (seed_multi_3839::a_shape_with_no_instances_graph_pin_refuses).
+        if sparql.contains("chorus:instancesGraph ?v") {
+            Ok(vec!["urn:chorus:instances".to_string()])
+        } else if sparql.contains("sh:minCount") {
             Ok(self.required.clone())
         } else if sparql.contains("created") {
             Ok(self.created_of_existing.iter().cloned().collect())

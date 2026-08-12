@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
 use std::process::ExitCode;
 
 fn usage() -> String {
@@ -18,7 +18,8 @@ fn usage() -> String {
        chorus-model set    --kind <kind> --name <name> --field k=v [--graph <g>]\n\
        chorus-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
-       chorus-model seed   --kind <kind> --ttl <file> [--graph <g>] [--provenance migrated] [--base <iri>]\n\
+       chorus-model seed   (--kind <kind> --ttl <file>)... [--graph <g>] [--provenance migrated] [--base <iri>]\n\
+                    --kind/--ttl repeat as pairs; several kinds load as ONE transaction (#3839)\n\
        chorus-model mint   --kind <kind> --name <name>\n\
        chorus-model kinds"
         .to_string()
@@ -347,8 +348,14 @@ fn run() -> Result<String, String> {
         // TTL is normalized to N-Triples via riot (the same toolchain
         // model-deploy validates with) — fail-loud if riot is absent.
         Some("seed") => {
-            let mut kind = String::new();
-            let mut ttl_path = String::new();
+            // #3839 — --kind/--ttl may repeat. Each pair is one GROUP: the kind
+            // the caller states that file is, validated against that class's
+            // shape. Several groups load as ONE transaction, so kinds that
+            // reference each other (a stream contains its steps, each step is
+            // inStream its stream) can arrive together — two independent runs
+            // could never bootstrap that from an empty store, whichever ran
+            // first would refuse on targets that exist nowhere yet.
+            let mut pairs: Vec<(String, String)> = Vec::new();
             let mut graph: Option<String> = None;
             let mut provenance = "migrated".to_string();
             let mut base: Option<String> = None;
@@ -356,8 +363,22 @@ fn run() -> Result<String, String> {
             let mut i = 0;
             while i < rest.len() {
                 match rest[i].as_str() {
-                    "--kind" => { i += 1; kind = rest.get(i).cloned().unwrap_or_default(); }
-                    "--ttl" => { i += 1; ttl_path = rest.get(i).cloned().unwrap_or_default(); }
+                    "--kind" => {
+                        i += 1;
+                        pairs.push((rest.get(i).cloned().unwrap_or_default(), String::new()));
+                    }
+                    "--ttl" => {
+                        i += 1;
+                        let v = rest.get(i).cloned().unwrap_or_default();
+                        match pairs.last_mut() {
+                            // Attach to the kind it follows. A --ttl with no
+                            // --kind before it has no stated class, and a file
+                            // whose class nobody stated is precisely what this
+                            // door exists to refuse.
+                            Some(last) if last.1.is_empty() => last.1 = v,
+                            _ => return Err("seed: --ttl must follow its own --kind (one --kind per --ttl)".into()),
+                        }
+                    }
                     "--graph" => { i += 1; graph = rest.get(i).cloned(); }
                     "--provenance" => { i += 1; provenance = rest.get(i).cloned().unwrap_or_default(); }
                     // #3392 — resolve relative TTL IRIs against this base so a
@@ -368,34 +389,42 @@ fn run() -> Result<String, String> {
                 }
                 i += 1;
             }
-            if kind.is_empty() || ttl_path.is_empty() {
-                return Err(format!("seed needs --kind <K> and --ttl <file>\n{}", usage()));
+            if pairs.is_empty() || pairs.iter().any(|(k, t)| k.is_empty() || t.is_empty()) {
+                return Err(format!("seed needs --kind <K> and --ttl <file> (repeatable, paired)\n{}", usage()));
             }
-            let nt = if ttl_path.ends_with(".nt") {
-                std::fs::read_to_string(&ttl_path).map_err(|e| format!("seed: read {}: {}", ttl_path, e))?
-            } else {
-                let mut riot_args: Vec<String> = vec!["--output=ntriples".to_string()];
-                if let Some(b) = &base {
-                    riot_args.push(format!("--base={}", b));
-                }
-                riot_args.push(ttl_path.clone());
-                let out = std::process::Command::new("riot")
-                    .args(&riot_args)
-                    .output()
-                    .map_err(|e| format!("seed: riot not runnable ({}) — TTL→N-Triples needs riot on PATH", e))?;
-                if !out.status.success() {
-                    return Err(format!(
-                        "seed: riot failed on {} — fix the TTL first:\n{}",
-                        ttl_path,
-                        String::from_utf8_lossy(&out.stderr)
-                    ));
-                }
-                String::from_utf8_lossy(&out.stdout).to_string()
-            };
-            let triples = parse_ntriples(&nt)?;
+            let mut parsed: Vec<(String, Vec<(String, String, String)>)> = Vec::new();
+            for (kind, ttl_path) in &pairs {
+                let nt = if ttl_path.ends_with(".nt") {
+                    std::fs::read_to_string(ttl_path).map_err(|e| format!("seed: read {}: {}", ttl_path, e))?
+                } else {
+                    let mut riot_args: Vec<String> = vec!["--output=ntriples".to_string()];
+                    if let Some(b) = &base {
+                        riot_args.push(format!("--base={}", b));
+                    }
+                    riot_args.push(ttl_path.clone());
+                    let out = std::process::Command::new("riot")
+                        .args(&riot_args)
+                        .output()
+                        .map_err(|e| format!("seed: riot not runnable ({}) — TTL→N-Triples needs riot on PATH", e))?;
+                    if !out.status.success() {
+                        return Err(format!(
+                            "seed: riot failed on {} — fix the TTL first:\n{}",
+                            ttl_path,
+                            String::from_utf8_lossy(&out.stderr)
+                        ));
+                    }
+                    String::from_utf8_lossy(&out.stdout).to_string()
+                };
+                parsed.push((kind.clone(), parse_ntriples(&nt)?));
+            }
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651 — same gate as every verb
-            let report = seed(&store, &kind, &triples, &provenance, graph.as_deref(), &id)?;
+            let groups: Vec<SeedGroup> = parsed
+                .iter()
+                .map(|(k, t)| SeedGroup { kind: k.as_str(), triples: t.as_slice() })
+                .collect();
+            let kind = pairs.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join("+");
+            let report = seed_multi(&store, &groups, &provenance, graph.as_deref(), &id)?;
             Ok(format!(
                 "seeded: {} subjects / {} triples (kind={}, provenance={})",
                 report.subjects, report.triples, kind, provenance
