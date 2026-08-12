@@ -118,3 +118,39 @@ async function join(webid) {
 
 window.roomKey = { join, loadOrCreate, signEvent, pubkeyOf };
 
+/**
+ * Join on load.
+ *
+ * The first version of this file shipped the functions and nothing called
+ * them. Everything was correct and nothing happened: Jeff opened the room
+ * repeatedly and the server's bindings stayed empty, which reads as "the key
+ * failed" rather than "the key was never asked for". A library is not a
+ * behaviour.
+ *
+ * Signed out, this does nothing and says so. Minting a key for an anonymous
+ * visitor would produce an identity belonging to nobody — the exact failure
+ * this card exists to remove.
+ */
+(async function autoJoin() {
+  const webid = window.CHORUS_WEBID || '';
+  if (!webid) {
+    window.roomKeyStatus = { state: 'signed-out', detail: 'No signed-in WebID — no key minted. Sign in and reload.' };
+    return;
+  }
+  try {
+    const joined = await join(webid);
+    window.roomKeyStatus = {
+      state: 'bound',
+      pubkey: joined.pubkey,
+      fresh: joined.fresh,
+      detail: joined.fresh
+        ? 'A new key was created in this browser and bound to your WebID.'
+        : 'This browser already held your key; rebound.',
+    };
+  } catch (err) {
+    // Surfaced, not swallowed. A silent failure here is indistinguishable from
+    // never having tried — which is precisely what went wrong the first time.
+    window.roomKeyStatus = { state: 'failed', detail: String(err && err.message ? err.message : err) };
+  }
+}());
+
