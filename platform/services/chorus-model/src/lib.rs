@@ -1271,6 +1271,28 @@ fn is_nt_literal(t: &str) -> bool {
     quoted_ok(t)
 }
 
+/// #3839 — split an N-Triples literal into its lexical form and its carried
+/// datatype local name (`"1"^^<...#integer>` → `("1", Some("integer"))`).
+///
+/// WHY this exists: the shape checks used `o.trim_matches('"')`, which on a
+/// typed literal yields `1"^^<http://...#integer>` — the value plus its own
+/// datatype tail. Every typed literal therefore failed its own sh:datatype
+/// check, and every sh:in check compared against a string no enum could match.
+/// It never surfaced because the only seeds run so far carried plain literals.
+/// Found by routing the real deploy data through this door (#3839).
+///
+/// Same `rfind("\"^^<")` rule the NT-contract check uses (a literal's value
+/// cannot contain an unescaped quote, so the LAST one is the terminator).
+pub fn nt_literal_parts(o: &str) -> (&str, Option<&str>) {
+    if let Some(pos) = o.rfind("\"^^<") {
+        let lexical = &o[1..pos];
+        let dt = o[pos + 4..].trim_end_matches('>');
+        let local = dt.rsplit(['#', '/']).next().unwrap_or(dt);
+        return (lexical, Some(local));
+    }
+    (o.trim_matches('"'), None)
+}
+
 /// Governed batch write — structural single-graph, typed-slot only, one transaction.
 /// `deletes`: (s,p,o) patterns, o may be "?o" (delete all matching) → DELETE WHERE.
 /// `inserts`: (s,p,o) ground triples → INSERT DATA. Returns count of triples touched.
@@ -1458,10 +1480,43 @@ fn realm_policy(graph: &str) -> Option<RealmPolicy> {
     }
 }
 
+/// One kind's worth of a seed batch: the class the caller states it is loading,
+/// and that file's triples.
+pub struct SeedGroup<'a> {
+    pub kind: &'a str,
+    pub triples: &'a [(String, String, String)],
+}
+
 pub fn seed(
     store: &dyn Store,
     kind: &str,
     triples: &[(String, String, String)],
+    provenance: &str,
+    graph: Option<&str>,
+    id: &Identity,
+) -> R<SeedReport> {
+    seed_multi(store, &[SeedGroup { kind, triples }], provenance, graph, id)
+}
+
+/// #3839 — seed several kinds as ONE batch.
+///
+/// WHY this exists: the referential-integrity check is fail-closed against the
+/// store OR the current batch. Two kinds that reference each other — a
+/// ValueStream `contains` its steps, each step is `inStream` its stream — can
+/// therefore never be loaded by two independent seed runs on an empty store:
+/// whichever runs first has targets that exist in neither place, and refuses.
+/// That is not a data problem, it is the door being unable to express "these
+/// arrive together". Splitting the file would not have fixed it; it would have
+/// moved the refusal.
+///
+/// What does NOT loosen: every subject is still validated against the shape of
+/// the kind ITS OWN group declares, rdf:type still must agree with that kind, a
+/// shape violation anywhere refuses the WHOLE batch before a single write. Only
+/// the set of IRIs that count as "present" widens, to the union of the batch —
+/// which is exactly what one transaction means.
+pub fn seed_multi(
+    store: &dyn Store,
+    groups: &[SeedGroup<'_>],
     provenance: &str,
     graph: Option<&str>,
     id: &Identity,
@@ -1476,187 +1531,271 @@ pub fn seed(
         format!("seed: graph '{}' is outside the known realms (urn:chorus:*, urn:gathering:*) — refused", g)
     })?;
     assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
-    if triples.is_empty() {
+    if groups.is_empty() || groups.iter().all(|gr| gr.triples.is_empty()) {
         return Err("seed: no triples to load".into());
     }
 
-    // Group triples by subject, preserving first-seen order (deterministic tx).
-    let mut order: Vec<String> = Vec::new();
-    let mut by_subject: std::collections::HashMap<String, Vec<(String, String)>> =
-        std::collections::HashMap::new();
-    for (s, p, o) in triples {
-        // Object check is the NT-contract one (escape-aware) — seed's input is
-        // riot-canonicalized N-Triples, where real content legitimately carries
-        // { } ; and escaped quotes (mermaid, slug templates). See is_nt_literal.
-        if !subj_pred_ok(s) || !subj_pred_ok(p) || !(is_iri_term(o) || is_nt_literal(o)) {
-            witness("model.seed.refused", &[("reason", "bad-slot")]);
-            return Err("seed: a triple has an invalid/injection-shaped slot".into());
-        }
-        if !by_subject.contains_key(s) {
-            order.push(s.clone());
-        }
-        by_subject.entry(s.clone()).or_default().push((p.clone(), o.clone()));
-    }
-
-    // ── Validate ALL subjects first — fail-closed, nothing written on error ──
-    // Chorus realm: the full #3692 battery. Gathering realm: NS-membership +
-    // well-formed + no-injection ONLY (Silas ruling — their vocab, not ours;
-    // slot shapes were already checked at grouping).
+    // Group triples by subject, per group, preserving first-seen order.
     let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
-    let batch_iris: std::collections::HashSet<String> = order
-        .iter()
-        .map(|s| s[1..s.len() - 1].to_string())
-        .collect();
-
-    if let RealmPolicy::ForeignNs(ns_set) = policy {
-        for subject_term in &order {
-            let iri = &subject_term[1..subject_term.len() - 1];
-            if !ns_set.iter().any(|ns| iri.starts_with(ns)) {
-                witness("model.seed.refused", &[("iri", iri), ("reason", "iri-off-realm-ns")]);
-                return Err(format!(
-                    "seed: iri-guard — <{}> is outside the realm's namespace set {:?} (refused)",
-                    iri, ns_set
-                ));
+    let mut grouped: Vec<(&str, Vec<String>, std::collections::HashMap<String, Vec<(String, String)>>)> =
+        Vec::new();
+    for gr in groups {
+        let mut order: Vec<String> = Vec::new();
+        let mut by_subject: std::collections::HashMap<String, Vec<(String, String)>> =
+            std::collections::HashMap::new();
+        for (s, p, o) in gr.triples {
+            // Object check is the NT-contract one (escape-aware) — seed's input is
+            // riot-canonicalized N-Triples, where real content legitimately carries
+            // { } ; and escaped quotes (mermaid, slug templates). See is_nt_literal.
+            if !subj_pred_ok(s) || !subj_pred_ok(p) || !(is_iri_term(o) || is_nt_literal(o)) {
+                witness("model.seed.refused", &[("reason", "bad-slot")]);
+                return Err("seed: a triple has an invalid/injection-shaped slot".into());
             }
+            if !by_subject.contains_key(s) {
+                order.push(s.clone());
+            }
+            by_subject.entry(s.clone()).or_default().push((p.clone(), o.clone()));
         }
+        grouped.push((gr.kind, order, by_subject));
     }
 
-    let class_and_shape = if policy == RealmPolicy::ChorusStrict {
-        let class = class_iri(kind)?;
-        let shape = read_shape(store, &class)?;
-        Some((class, shape))
-    } else {
-        None
-    };
-
-    if let Some((class, shape)) = &class_and_shape {
-        let class = class.as_str();
-    for subject_term in &order {
-        let iri = seed_iri_ok(kind, subject_term)?;
-        let props = &by_subject[subject_term];
-
-        // rdf:type, when carried, must be the seed kind's class — a mixed-kind
-        // TTL is two seed runs, not one blind one.
-        for (p, o) in props {
-            if p == rdf_type && o != &format!("<{}>", class) {
-                witness("model.seed.refused", &[("iri", iri.as_str()), ("reason", "type-mismatch")]);
-                return Err(format!(
-                    "shape-violation: <{}> declares type {} but seed kind '{}' is <{}>",
-                    iri, o, kind, class
-                ));
-            }
-        }
-
-        // Field view of the subject's NS-local properties.
-        let field_of = |p: &str| -> Option<String> {
-            p.strip_prefix(&format!("<{}", NS))
-                .and_then(|r| r.strip_suffix('>'))
-                .map(|s| s.to_string())
-        };
-        let has_prop = |name: &str| props.iter().any(|(p, _)| field_of(p).as_deref() == Some(name));
-
-        for need in &shape.required {
-            if !has_prop(need) && need != "label" {
-                witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", need)]);
-                return Err(format!(
-                    "shape-violation: {} requires '{}' (sh:minCount 1, from {}) — subject <{}>",
-                    class, need, ONTOLOGY_GRAPH, iri
-                ));
-            }
-        }
-        for (p, o) in props {
-            let Some(local) = field_of(p) else { continue };
-            if o.starts_with('"') {
-                let val = o.trim_matches('"');
-                if let Some(allowed) = shape.enums.get(&local) {
-                    if !allowed.iter().any(|a| a == val) {
-                        return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", val, allowed, local));
-                    }
-                }
-                if let Some(dt) = shape.datatypes.get(&local) {
-                    if !datatype_ok(val, dt) {
-                        witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", local.as_str())]);
-                        return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", val, dt, local));
-                    }
-                }
-            } else if is_iri_term(o) && p != rdf_type {
-                // Edge — referential integrity, fail-closed. A target inside
-                // THIS batch counts (migration TTLs are internally referential).
-                let target = &o[1..o.len() - 1];
-                if !batch_iris.contains(target) {
-                    let exists = store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", target))?;
-                    if !exists {
-                        witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "unknown-target"), ("edge", local.as_str())]);
+    // A subject may be claimed by exactly ONE kind in the batch. Two groups
+    // claiming the same IRI would each validate it against a different shape and
+    // then race in the write — refuse rather than pick a winner.
+    {
+        let mut claimed: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        for (kind, order, _) in &grouped {
+            for subject_term in order {
+                if let Some(prev) = claimed.insert(subject_term.as_str(), kind) {
+                    if prev != *kind {
+                        witness("model.seed.refused", &[("iri", subject_term.as_str()), ("reason", "subject-claimed-twice")]);
                         return Err(format!(
-                            "unknown-target: {} → <{}> exists neither in the store nor in this batch (referential integrity, fail-closed)",
-                            local, target
+                            "seed: subject {} is claimed by two kinds in one batch ('{}' and '{}') — refused",
+                            subject_term, prev, kind
                         ));
                     }
                 }
             }
         }
     }
-    } // end chorus-strict validation
 
-    // ── Assemble the single transaction ─────────────────────────────────────
+    // ── Validate ALL subjects of ALL groups first — nothing written on error ──
+    // Chorus realm: the full #3692 battery. Gathering realm: NS-membership +
+    // well-formed + no-injection ONLY (Silas ruling — their vocab, not ours).
+    // The in-batch IRI set is the UNION across groups (#3839).
+    let batch_iris: std::collections::HashSet<String> = grouped
+        .iter()
+        .flat_map(|(_, order, _)| order.iter())
+        .map(|s| s[1..s.len() - 1].to_string())
+        .collect();
+
+    let mut shapes: Vec<Option<(String, ShapeReq)>> = Vec::new();
+    for (kind, order, by_subject) in &grouped {
+        if let RealmPolicy::ForeignNs(ns_set) = policy {
+            for subject_term in order {
+                let iri = &subject_term[1..subject_term.len() - 1];
+                if !ns_set.iter().any(|ns| iri.starts_with(ns)) {
+                    witness("model.seed.refused", &[("iri", iri), ("reason", "iri-off-realm-ns")]);
+                    return Err(format!(
+                        "seed: iri-guard — <{}> is outside the realm's namespace set {:?} (refused)",
+                        iri, ns_set
+                    ));
+                }
+            }
+        }
+
+        let class_and_shape = if policy == RealmPolicy::ChorusStrict {
+            let class = class_iri(kind)?;
+            let shape = read_shape(store, &class)?;
+            Some((class, shape))
+        } else {
+            None
+        };
+
+        if let Some((class, shape)) = &class_and_shape {
+            let class = class.as_str();
+            for subject_term in order {
+                let iri = seed_iri_ok(kind, subject_term)?;
+                let props = &by_subject[subject_term];
+
+                // rdf:type, when carried, must INCLUDE the seed kind's class —
+                // a mixed-kind TTL is two seed GROUPS, not one blind one.
+                //
+                // #3839 — this used to demand every carried type equal the kind's
+                // class exactly, which refused legitimate dual typing: #3838's
+                // roles are `chorus:Role, chorus:AgentRole` on purpose, because
+                // the store does no inference and a role typed only AgentRole
+                // would vanish from every Role query. Exact-equality made the
+                // model's own convention unloadable through its own door.
+                //
+                // The rule that keeps the teeth: the kind's class must be present,
+                // and any ADDITIONAL type must be a subclass of it (asked of the
+                // ontology, fail-closed). ValueStreamStep is not a subclass of
+                // ValueStream, so a mixed file is still refused.
+                let class_term = format!("<{}>", class);
+                let carried: Vec<&String> = props
+                    .iter()
+                    .filter(|(p, _)| p == rdf_type)
+                    .map(|(_, o)| o)
+                    .collect();
+                if !carried.is_empty() {
+                    if !carried.iter().any(|o| **o == class_term) {
+                        witness("model.seed.refused", &[("iri", iri.as_str()), ("reason", "type-missing")]);
+                        return Err(format!(
+                            "shape-violation: <{}> declares type(s) {} but seed kind '{}' requires <{}> among them",
+                            iri,
+                            carried.iter().map(|o| o.as_str()).collect::<Vec<_>>().join(", "),
+                            kind, class
+                        ));
+                    }
+                    for o in &carried {
+                        if **o == class_term {
+                            continue;
+                        }
+                        let sub = o.trim_start_matches('<').trim_end_matches('>');
+                        let is_sub = store.ask(&format!(
+                            "ASK {{ GRAPH ?g {{ <{}> <http://www.w3.org/2000/01/rdf-schema#subClassOf>* <{}> }} }}",
+                            sub, class
+                        ))?;
+                        if !is_sub {
+                            witness("model.seed.refused", &[("iri", iri.as_str()), ("reason", "type-mismatch")]);
+                            return Err(format!(
+                                "shape-violation: <{}> also declares type {}, which is not a subclass of the seed kind '{}' (<{}>)",
+                                iri, o, kind, class
+                            ));
+                        }
+                    }
+                }
+
+                // Field view of the subject's NS-local properties.
+                let field_of = |p: &str| -> Option<String> {
+                    p.strip_prefix(&format!("<{}", NS))
+                        .and_then(|r| r.strip_suffix('>'))
+                        .map(|s| s.to_string())
+                };
+                let has_prop = |name: &str| props.iter().any(|(p, _)| field_of(p).as_deref() == Some(name));
+
+                for need in &shape.required {
+                    if !has_prop(need) && need != "label" {
+                        witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", need)]);
+                        return Err(format!(
+                            "shape-violation: {} requires '{}' (sh:minCount 1, from {}) — subject <{}>",
+                            class, need, ONTOLOGY_GRAPH, iri
+                        ));
+                    }
+                }
+                for (p, o) in props {
+                    let Some(local) = field_of(p) else { continue };
+                    if o.starts_with('"') {
+                        let (val, carried_dt) = nt_literal_parts(o);
+                        // A literal that names its OWN datatype must agree with
+                        // the shape's. Silently revalidating "1"^^xsd:string as
+                        // an integer would be the door approving a lie.
+                        if let (Some(carried), Some(declared)) = (carried_dt, shape.datatypes.get(&local)) {
+                            if carried != declared {
+                                witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "datatype-mismatch"), ("field", local.as_str())]);
+                                return Err(format!(
+                                    "shape-violation: '{}' carries xsd:{} but {} declares sh:datatype xsd:{} for '{}'",
+                                    val, carried, class, declared, local
+                                ));
+                            }
+                        }
+                        if let Some(allowed) = shape.enums.get(&local) {
+                            if !allowed.iter().any(|a| a == val) {
+                                return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", val, allowed, local));
+                            }
+                        }
+                        if let Some(dt) = shape.datatypes.get(&local) {
+                            if !datatype_ok(val, dt) {
+                                witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "shape-violation"), ("field", local.as_str())]);
+                                return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", val, dt, local));
+                            }
+                        }
+                    } else if is_iri_term(o) && p != rdf_type {
+                        // Edge — referential integrity, fail-closed. A target
+                        // anywhere in THIS batch counts (#3839: mutually
+                        // referential kinds arrive in one transaction).
+                        let target = &o[1..o.len() - 1];
+                        if !batch_iris.contains(target) {
+                            let exists = store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", target))?;
+                            if !exists {
+                                witness("model.refused", &[("kind", kind), ("name", iri.as_str()), ("reason", "unknown-target"), ("edge", local.as_str())]);
+                                return Err(format!(
+                                    "unknown-target: {} → <{}> exists neither in the store nor in this batch (referential integrity, fail-closed)",
+                                    local, target
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        shapes.push(class_and_shape);
+    }
+
+    // ── Assemble the single transaction, across every group ─────────────────
     const DCT: &str = "http://purl.org/dc/terms/";
     let now = now_iso();
     let creator = id.role().to_string();
     let mut sparql = String::new();
     let mut body = String::new();
     let mut triple_count = 0usize;
+    let mut subject_count = 0usize;
 
-    for subject_term in &order {
-        let iri = &subject_term[1..subject_term.len() - 1];
-        sparql.push_str(&format!(
-            "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\n",
-            g = g, s = iri
-        ));
-        let props = &by_subject[subject_term];
-        let mut has_label = false;
-        let mut has_type = false;
-        for (p, o) in props {
-            if p == rdf_type { has_type = true; }
-            if p == &format!("<{}label>", NS) { has_label = true; }
-            body.push_str(&format!("{} {} {} . ", subject_term, p, o));
-            triple_count += 1;
-        }
-        // Autofill (type + label) is chorus-vocab — chorus realm only. A
-        // foreign-realm subject keeps exactly its own triples (its vocab,
-        // not ours) plus the audit/provenance envelope below.
-        if let Some((class, _)) = &class_and_shape {
-            if !has_type {
-                body.push_str(&format!("{} a <{}> . ", subject_term, class));
+    for ((kind, order, by_subject), class_and_shape) in grouped.iter().zip(shapes.iter()) {
+        for subject_term in order {
+            let iri = &subject_term[1..subject_term.len() - 1];
+            sparql.push_str(&format!(
+                "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\n",
+                g = g, s = iri
+            ));
+            let props = &by_subject[subject_term];
+            let mut has_label = false;
+            let mut has_type = false;
+            for (p, o) in props {
+                if p == rdf_type { has_type = true; }
+                if p == &format!("<{}label>", NS) { has_label = true; }
+                body.push_str(&format!("{} {} {} . ", subject_term, p, o));
+                triple_count += 1;
             }
-            if !has_label {
-                let local = iri.strip_prefix(NS).unwrap_or(iri);
-                body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+            // Autofill (type + label) is chorus-vocab — chorus realm only. A
+            // foreign-realm subject keeps exactly its own triples (its vocab,
+            // not ours) plus the audit/provenance envelope below.
+            if let Some((class, _)) = class_and_shape {
+                if !has_type {
+                    body.push_str(&format!("{} a <{}> . ", subject_term, class));
+                }
+                if !has_label {
+                    let local = iri.strip_prefix(NS).unwrap_or(iri);
+                    body.push_str(&format!("{} <{}label> \"{}\" . ", subject_term, NS, esc(local)));
+                }
+            } else {
+                let _ = (has_type, has_label);
             }
-        } else {
-            let _ = (has_type, has_label);
+            // created preserved (write() pattern), modified bumped, creator = the
+            // verified identity, provenance = the migration stamp.
+            let existing_created = store
+                .select_v(&format!(
+                    "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
+                    g = g, s = iri, d = DCT
+                ))?
+                .into_iter()
+                .next();
+            let created = existing_created.unwrap_or_else(|| now.clone());
+            body.push_str(&format!(
+                "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . ",
+                st = subject_term, d = DCT, c = esc(&created), m = esc(&now),
+                cr = esc(&creator), ns = NS, pv = esc(provenance)
+            ));
         }
-        // created preserved (write() pattern), modified bumped, creator = the
-        // verified identity, provenance = the migration stamp.
-        let existing_created = store
-            .select_v(&format!(
-                "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
-                g = g, s = iri, d = DCT
-            ))?
-            .into_iter()
-            .next();
-        let created = existing_created.unwrap_or_else(|| now.clone());
-        body.push_str(&format!(
-            "{st} <{d}created> \"{c}\" . {st} <{d}modified> \"{m}\" . {st} <{d}creator> \"{cr}\" . {st} <{ns}provenance> \"{pv}\" . ",
-            st = subject_term, d = DCT, c = esc(&created), m = esc(&now),
-            cr = esc(&creator), ns = NS, pv = esc(provenance)
-        ));
+        let (ns_, no_) = (order.len().to_string(), kind.to_string());
+        witness("model.seed", &[("kind", no_.as_str()), ("graph", g), ("subjects", ns_.as_str()), ("provenance", provenance)]);
+        subject_count += order.len();
     }
     sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = g, b = body));
     store.update(&sparql)?;
 
-    let (ns_, nt_) = (order.len().to_string(), triple_count.to_string());
-    witness("model.seed", &[("kind", kind), ("graph", g), ("subjects", ns_.as_str()), ("triples", nt_.as_str()), ("provenance", provenance)]);
-    Ok(SeedReport { subjects: order.len(), triples: triple_count })
+    Ok(SeedReport { subjects: subject_count, triples: triple_count })
 }
 
 /// #3392 — governed by-IRI delete (Silas ruling 2026-07-25): the migration-
@@ -2236,5 +2375,324 @@ mod webid_uniqueness_3838 {
         let s = store(&["https://id.lightlifeurbangardens.com/jeff/profile/card#me"]);
         write(&s, &req("marknakib", "https://id.lightlifeurbangardens.com/marknakib/profile/card#me"), &tid())
             .expect("a distinct webId must be accepted");
+    }
+}
+
+/// #3839 — the deploy now goes through this door, so the door has to be proven
+/// at the shape the deploy actually uses: several kinds, one transaction.
+///
+/// Every test here except the first is a NEGATIVE PROOF (#3734) — a fixture
+/// where the guarded condition is violated, showing the check FAILS. The
+/// batching widened exactly one thing (which IRIs count as present); these
+/// exist to show it widened only that, and that nothing is written when any
+/// group refuses.
+#[cfg(test)]
+mod seed_multi_3839 {
+    use super::*;
+
+    const VS: &str = "https://jeffbridwell.com/chorus#ValueStream";
+    const VSS: &str = "https://jeffbridwell.com/chorus#ValueStreamStep";
+
+    /// An EMPTY store: nothing exists yet. That is the condition the old
+    /// two-independent-runs path could never survive, and the one a deploy has
+    /// to survive to be reproducible.
+    struct EmptyStore {
+        updates: std::cell::RefCell<Vec<String>>,
+        /// (sub, super) pairs the ontology would answer subClassOf* true for.
+        subclasses: Vec<(String, String)>,
+    }
+    impl Store for EmptyStore {
+        fn ask(&self, sparql: &str) -> R<bool> {
+            if sparql.contains("subClassOf") {
+                return Ok(self
+                    .subclasses
+                    .iter()
+                    .any(|(sub, sup)| sparql.contains(sub.as_str()) && sparql.contains(sup.as_str())));
+            }
+            Ok(false) // nothing pre-exists — every edge target must come from the batch
+        }
+        fn select_v(&self, sparql: &str) -> R<Vec<String>> {
+            if sparql.contains("sh:datatype ?dt") && sparql.contains(VSS) {
+                // The step's stageOrder is declared xsd:integer — without this the
+                // datatype checks have nothing to compare against and the test
+                // would pass for the wrong reason (the first version of this
+                // fixture did exactly that).
+                return Ok(vec!["stageOrder|integer".into()]);
+            }
+            if sparql.contains("sh:minCount") {
+                // Each class requires one property, so a missing one is provable.
+                // VSS first: "ValueStream" is a PREFIX of "ValueStreamStep", so
+                // testing the shorter one first answers the step's query with the
+                // stream's shape. The first version of this fixture did exactly
+                // that and reported a violation the code had not made.
+                if sparql.contains(VSS) {
+                    return Ok(vec!["stageOrder".into()]);
+                }
+                if sparql.contains(VS) {
+                    return Ok(vec!["outcome".into()]);
+                }
+            }
+            Ok(vec![])
+        }
+        fn update(&self, sparql: &str) -> R<()> {
+            self.updates.borrow_mut().push(sparql.to_string());
+            Ok(())
+        }
+    }
+    fn store() -> EmptyStore { EmptyStore { updates: Default::default(), subclasses: vec![] } }
+    /// A store whose ontology knows AgentRole is a subclass of Role.
+    fn store_with_subclass() -> EmptyStore {
+        EmptyStore {
+            updates: Default::default(),
+            subclasses: vec![(
+                "https://jeffbridwell.com/chorus#AgentRole".into(),
+                "https://jeffbridwell.com/chorus#Role".into(),
+            )],
+        }
+    }
+    fn tid() -> Identity { Identity("wren".into()) }
+
+    fn t(s: &str, p: &str, o: &str) -> (String, String, String) {
+        (s.to_string(), p.to_string(), o.to_string())
+    }
+    fn iri(local: &str) -> String { format!("<https://jeffbridwell.com/chorus#{}>", local) }
+    fn prop(local: &str) -> String { format!("<https://jeffbridwell.com/chorus#{}>", local) }
+
+    /// The stream references its step; the step references the stream back.
+    fn streams() -> Vec<(String, String, String)> {
+        vec![
+            t(&iri("value-stream-werk"), &prop("outcome"), "\"A card landed\""),
+            t(&iri("value-stream-werk"), &prop("contains"), &iri("value-stream-step-pull")),
+        ]
+    }
+    fn steps() -> Vec<(String, String, String)> {
+        vec![
+            t(&iri("value-stream-step-pull"), &prop("stageOrder"), "\"1\""),
+            t(&iri("value-stream-step-pull"), &prop("inStream"), &iri("value-stream-werk")),
+        ]
+    }
+
+    /// The thing that was impossible. Two kinds that point at each other load
+    /// against an empty store — because they are one batch, so each is present
+    /// for the other's referential check.
+    #[test]
+    fn mutually_referential_kinds_load_on_an_empty_store() {
+        let st = store();
+        let (a, b) = (streams(), steps());
+        let r = seed_multi(
+            &st,
+            &[
+                SeedGroup { kind: "value-stream", triples: &a },
+                SeedGroup { kind: "value-stream-step", triples: &b },
+            ],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect("a mutually-referential batch must load");
+        assert_eq!(r.subjects, 2, "both subjects written");
+        assert_eq!(st.updates.borrow().len(), 1, "ONE transaction, not one per kind");
+    }
+
+    /// NEGATIVE PROOF — the widening did not turn the referential check off. A
+    /// target that is in neither the batch nor the store still refuses.
+    #[test]
+    fn a_target_in_neither_batch_nor_store_still_refuses() {
+        let st = store();
+        let mut a = streams();
+        a.push(t(&iri("value-stream-werk"), &prop("contains"), &iri("value-stream-step-ghost")));
+        let b = steps();
+        let e = seed_multi(
+            &st,
+            &[
+                SeedGroup { kind: "value-stream", triples: &a },
+                SeedGroup { kind: "value-stream-step", triples: &b },
+            ],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect_err("a dangling target must refuse");
+        assert!(e.contains("unknown-target"), "refusal names the class of problem: {e}");
+        assert!(e.contains("value-stream-step-ghost"), "refusal names WHICH target: {e}");
+        assert!(st.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// NEGATIVE PROOF — the whole point of routing the deploy through here. A
+    /// shape violation in the SECOND group refuses the batch, and the FIRST
+    /// group's subjects are not written. The old staged-POST path would have
+    /// written both without asking.
+    #[test]
+    fn a_violation_in_one_group_writes_nothing_from_any_group() {
+        let st = store();
+        let a = streams();
+        // Drop the required stageOrder from the step.
+        let b = vec![t(&iri("value-stream-step-pull"), &prop("inStream"), &iri("value-stream-werk"))];
+        let e = seed_multi(
+            &st,
+            &[
+                SeedGroup { kind: "value-stream", triples: &a },
+                SeedGroup { kind: "value-stream-step", triples: &b },
+            ],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect_err("a missing required property must refuse");
+        assert!(e.contains("shape-violation"), "typed refusal: {e}");
+        assert!(e.contains("stageOrder"), "refusal names WHICH constraint: {e}");
+        assert!(e.contains("value-stream-step-pull"), "refusal names WHICH subject: {e}");
+        assert!(
+            st.updates.borrow().is_empty(),
+            "group 1 validated clean but must NOT be written — the batch is one transaction"
+        );
+    }
+
+    /// NEGATIVE PROOF — per-group typing survived batching. A step's subject IRI
+    /// passes the value-stream iri-guard by prefix accident, so rdf:type is what
+    /// catches it; put the step in the stream group and the door must object.
+    #[test]
+    fn a_subject_typed_against_the_wrong_group_refuses() {
+        let st = store();
+        let mut a = streams();
+        a.push(t(
+            &iri("value-stream-step-pull"),
+            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
+            &iri("ValueStreamStep"),
+        ));
+        let e = seed_multi(
+            &st,
+            &[SeedGroup { kind: "value-stream", triples: &a }],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect_err("a step declared inside the stream group must refuse");
+        assert!(e.contains("shape-violation"), "typed refusal: {e}");
+        assert!(e.contains("value-stream-step-pull"), "refusal names the subject: {e}");
+        assert!(st.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// NEGATIVE PROOF — a subject claimed by two kinds would be validated
+    /// against two different shapes and then race in the write. Refuse instead
+    /// of picking a winner.
+    #[test]
+    fn the_same_subject_in_two_groups_refuses() {
+        let st = store();
+        let a = streams();
+        let mut b = steps();
+        b.push(t(&iri("value-stream-werk"), &prop("stageOrder"), "\"1\""));
+        let e = seed_multi(
+            &st,
+            &[
+                SeedGroup { kind: "value-stream", triples: &a },
+                SeedGroup { kind: "value-stream-step", triples: &b },
+            ],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect_err("a doubly-claimed subject must refuse");
+        assert!(e.contains("claimed by two kinds"), "refusal says what happened: {e}");
+        assert!(st.updates.borrow().is_empty(), "nothing written");
+    }
+
+    const RDF_TYPE: &str = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+
+    fn role_triples(extra_type: Option<&str>) -> Vec<(String, String, String)> {
+        let mut v = vec![
+            t(&iri("role-wren"), RDF_TYPE, &iri("Role")),
+            t(&iri("role-wren"), &prop("roleKind"), "\"agent\""),
+        ];
+        if let Some(x) = extra_type {
+            v.push(t(&iri("role-wren"), RDF_TYPE, &iri(x)));
+        }
+        v
+    }
+
+    /// #3838's roles are `chorus:Role, chorus:AgentRole` on purpose — the store
+    /// does no inference, so a role typed only AgentRole vanishes from every
+    /// Role query. The door must be able to load the model's own convention.
+    #[test]
+    fn dual_typing_with_a_real_subclass_loads() {
+        let st = store_with_subclass();
+        let tr = role_triples(Some("AgentRole"));
+        seed_multi(
+            &st,
+            &[SeedGroup { kind: "role", triples: &tr }],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect("Role + AgentRole must load");
+        assert_eq!(st.updates.borrow().len(), 1);
+    }
+
+    /// NEGATIVE PROOF — accepting subclasses did not become accepting anything.
+    /// An extra type the ontology does NOT relate to the kind still refuses.
+    #[test]
+    fn an_unrelated_extra_type_still_refuses() {
+        let st = store_with_subclass();
+        let tr = role_triples(Some("ValueStream"));
+        let e = seed_multi(
+            &st,
+            &[SeedGroup { kind: "role", triples: &tr }],
+            "deploy",
+            Some("urn:chorus:instances"),
+            &tid(),
+        )
+        .expect_err("an unrelated second type must refuse");
+        assert!(e.contains("not a subclass"), "refusal says why: {e}");
+        assert!(e.contains("ValueStream"), "refusal names the offending type: {e}");
+        assert!(st.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// NEGATIVE PROOF — the typed-literal fix. `"1"^^xsd:integer` must validate
+    /// as the integer 1, and a literal that names a datatype the shape did not
+    /// declare must refuse rather than be quietly accepted.
+    #[test]
+    fn a_typed_literal_is_read_as_its_value_not_its_tail() {
+        // BEFORE the fix, trim_matches('"') left `1"^^<...#integer>` as the
+        // "value", so this well-formed literal failed its own datatype check —
+        // the door refusing correct data, which is how the bug surfaced.
+        let good = vec![
+            t(&iri("value-stream-step-pull"), &prop("stageOrder"),
+              "\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>"),
+        ];
+        let st = store();
+        seed_multi(&st, &[SeedGroup { kind: "value-stream-step", triples: &good }],
+                   "deploy", Some("urn:chorus:instances"), &tid())
+            .expect("a well-formed typed literal must load");
+
+        // And the teeth: a literal carrying a datatype the shape did not declare.
+        let bad = vec![
+            t(&iri("value-stream-step-pull"), &prop("stageOrder"),
+              "\"first\"^^<http://www.w3.org/2001/XMLSchema#string>"),
+        ];
+        let st2 = store();
+        let e = seed_multi(&st2, &[SeedGroup { kind: "value-stream-step", triples: &bad }],
+                           "deploy", Some("urn:chorus:instances"), &tid())
+            .expect_err("a datatype the shape did not declare must refuse");
+        assert!(e.contains("shape-violation"), "typed refusal: {e}");
+        assert!(st2.updates.borrow().is_empty(), "nothing written");
+    }
+
+    /// NEGATIVE PROOF — the DBA-path graphs stayed refused. Batching gave the
+    /// caller a new way in; it must not be a new way around assert_dal_writable.
+    #[test]
+    fn a_batch_cannot_reach_a_dba_path_graph() {
+        let st = store();
+        let a = streams();
+        for g in ["urn:chorus:ontology", "urn:chorus:domains:security"] {
+            let e = seed_multi(
+                &st,
+                &[SeedGroup { kind: "value-stream", triples: &a }],
+                "deploy",
+                Some(g),
+                &tid(),
+            )
+            .expect_err("the DAL must refuse a DBA-path graph");
+            assert!(st.updates.borrow().is_empty(), "nothing written to {g}: {e}");
+        }
     }
 }

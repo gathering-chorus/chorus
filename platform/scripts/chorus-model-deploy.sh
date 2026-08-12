@@ -500,14 +500,23 @@ fi
 # =============================================================================
 if [ -z "${TTL:-}" ]; then
   INSTANCE_GRAPH="${INSTANCE_GRAPH:-urn:chorus:instances}"
-  INSTANCE_STAGING="${INSTANCE_GRAPH}-staging-deploy"
-  INSTANCE_SET=(
-    "$CHORUS_ROOT/designing/data/value-stream-instances.ttl"
-    # #3838 — the four roles. Until this card they existed ONLY in the live
-    # store: every ownedBy and holdsRole in the model pointed at individuals no
-    # deploy could reproduce, which is why re-seeding identity was unsafe.
-    "$CHORUS_ROOT/roles/wren/ontology/role-instances-3838.ttl"
+  # #3839 — kind:path, because the door validates against the class's shape and
+  # the caller must say which class it is loading. A file carrying two kinds is
+  # listed twice, once per kind — the same file, seeded once for each.
+  INSTANCE_SET_KINDS=(
+    "value-stream:$CHORUS_ROOT/designing/data/value-stream-instances.ttl"
+    "value-stream-step:$CHORUS_ROOT/designing/data/value-stream-step-instances.ttl"
+    # #3838 — the four roles. Until that card they existed ONLY in the live
+    # store: every ownedBy and holdsRole pointed at individuals no deploy could
+    # reproduce, which is why re-seeding identity was unsafe.
+    "role:$CHORUS_ROOT/roles/wren/ontology/role-instances-3838.ttl"
   )
+  # riot-validate each distinct file once before any write.
+  INSTANCE_SET=()
+  for entry in "${INSTANCE_SET_KINDS[@]}"; do
+    f="${entry#*:}"
+    case " ${INSTANCE_SET[*]} " in *" $f "*) ;; *) INSTANCE_SET+=("$f") ;; esac
+  done
   for ttl in "${INSTANCE_SET[@]}"; do
     [ -f "$ttl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ttl" >&2; exit 1; }
     if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
@@ -516,53 +525,92 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  # Stage the INSTANCE_SET into a FRESH staging graph (GSP POST merges into staging).
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
-  for ttl in "${INSTANCE_SET[@]}"; do
-    icode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-inst-resp.txt -w '%{http_code}' -X POST \
-      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$INSTANCE_STAGING" 2>/dev/null) || icode="000"
-    if [ "$icode" != "200" ] && [ "$icode" != "201" ] && [ "$icode" != "204" ]; then
-      echo "chorus-model-deploy: INSTANCE_SET staging load failed for $ttl (http $icode)" >&2
-      head -3 /tmp/chorus-model-inst-resp.txt >&2
-      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-staging-http-$icode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
-      exit 1
-    fi
-  done
-  # Per-subject additive merge into the instances graph — NO retire clause.
-  INSTANCE_MERGE="DELETE { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?sp ?so } GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?p ?o } }"
-  imcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-inst-merge.txt -w '%{http_code}' -X POST \
-    -H 'Content-Type: application/sparql-update' --data-binary "$INSTANCE_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || imcode="000"
-  if [ "$imcode" != "200" ] && [ "$imcode" != "204" ]; then
-    echo "chorus-model-deploy: INSTANCE_SET merge staging->instances failed (http $imcode)" >&2
-    head -3 /tmp/chorus-model-inst-merge.txt >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-merge-http-$imcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
+  # #3839 — instances go through THE DOOR, not around it.
+  #
+  # This used to stage each TTL with a GSP POST and merge it with a raw SPARQL
+  # transaction. That path calls no validator: every instance in the graph
+  # arrived somewhere no shape could refuse it. Proven on #3838 — chorus:uniqueGlobal
+  # on webId is real and enforced in the DAL, and Principals never travel that
+  # path, so the rule and its enforcement never meet.
+  #
+  # athena-model seed reads each class's SHACL shape, validates EVERY subject
+  # before writing anything, fails closed, and emits model.seed.refused naming
+  # the subject and the constraint that refused it.
+  #
+  # ONE call, all kinds. Each --kind/--ttl pair states what the caller believes
+  # that file is; a subject whose rdf:type disagrees is refused rather than
+  # validated against whatever class it claims. They go together because the
+  # kinds reference each other (a stream contains its steps, each step is
+  # inStream its stream) — see seed_multi's comment for why two calls could
+  # never bootstrap that.
+  # The door requires a VERIFIED identity (#3687 retired DEPLOY_ROLE env-trust).
+  # The staged-POST path this replaces needed no identity at all — that was part
+  # of what made it a way around the door. Mint here and fail loudly: a deploy
+  # that silently skipped instances because it could not identify itself is the
+  # failure mode this card exists to end.
+  if [ -z "${CHORUS_IDENTITY_TOKEN:-}" ]; then
+    CHORUS_IDENTITY_TOKEN="$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" "$ROLE" 2>/dev/null || true)"
+    export CHORUS_IDENTITY_TOKEN
+  fi
+  if [ -z "${CHORUS_IDENTITY_TOKEN:-}" ]; then
+    echo "chorus-model-deploy: cannot mint a CSS identity token for role '$ROLE' — instances NOT deployed." >&2
+    echo "  The instance leg writes through athena-model, which fails closed without a verified identity." >&2
+    echo "  Run with DEPLOY_ROLE=<a role with ~/.chorus/identity/<role>/cred.json>, or bring CSS up." >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="no-identity-token" 2>/dev/null || true
     exit 1
   fi
-  # Output-verify: every staged instance subject actually landed (catches a lying-2xx).
-  # #3731 — same CSV-header witness as the ontology verify: a dead endpoint
-  # must fail this check, never blank-pass it.
-  _iresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
-    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$INSTANCE_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$INSTANCE_GRAPH> { ?s ?q ?r } } }" \
+
+  SEED_ARGS=()
+  for entry in "${INSTANCE_SET_KINDS[@]}"; do
+    ikind="${entry%%:*}"
+    ittl="${entry#*:}"
+    [ -f "$ittl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ittl" >&2; exit 1; }
+    SEED_ARGS+=(--kind "$ikind" --ttl "$ittl")
+  done
+  if ! sout=$(athena-model seed "${SEED_ARGS[@]}" --graph "$INSTANCE_GRAPH" --provenance deploy 2>&1); then
+    echo "chorus-model-deploy: REFUSED — instances NOT written (the batch is one transaction)" >&2
+    # The refusal names the subject and the constraint — print it whole. A
+    # deploy that fails with a count and no names is not usable (#3839 AC).
+    echo "$sout" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-seed-refused" 2>/dev/null || true
+    exit 1
+  fi
+  echo "chorus-model-deploy: $sout"
+
+  # #3839 — output-verify, rewritten because the old one no longer could work.
+  #
+  # It compared the STAGING graph against the live graph. seed writes through the
+  # DAL and never stages, so that query would have compared an empty set and
+  # passed every time — a verify that cannot fail, which is worse than none.
+  #
+  # This asks the question that still means something: every SUBJECT declared in
+  # the source TTLs must be present in the live graph. Expected count comes from
+  # the files (riot → N-Triples → distinct subjects); found count comes from the
+  # store. A dead endpoint yields no CSV header and REFUSES rather than passing
+  # blind (#3731).
+  _expected_iris=$(for f in "${INSTANCE_SET[@]}"; do riot --output=ntriples "$f" 2>/dev/null; done \
+    | awk '{print $1}' | grep '^<' | sort -u)
+  _expected=$(printf '%s\n' "$_expected_iris" | grep -c '^<' || true)
+  _values=$(printf '%s ' $_expected_iris)
+  _fresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { VALUES ?s { $_values } GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INSTANCE_STAGING" -o /dev/null 2>/dev/null || true
-  if ! printf '%s' "$_iresp" | head -1 | grep -q '^n'; then
+  if ! printf '%s' "$_fresp" | head -1 | grep -q '^n'; then
     echo "chorus-model-deploy: INSTANCE-VERIFY could not ask (no CSV header from the store) — refusing to pass a blind verify (#3731)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-unanswered" 2>/dev/null || true
     exit 1
   fi
-  _imissing=$(printf '%s\n' "$_iresp" | tail -1 | tr -dc '0-9')
-  if [ "${_imissing:-1}" -ne 0 ] 2>/dev/null; then
-    echo "chorus-model-deploy: INSTANCE-VERIFY FAILED — ${_imissing} staged subject(s) absent from <$INSTANCE_GRAPH> post-merge" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-missing" missing="${_imissing}" 2>/dev/null || true
+  _found=$(printf '%s\n' "$_fresp" | tail -1 | tr -dc '0-9')
+  if [ "${_found:-0}" -ne "${_expected:-1}" ] 2>/dev/null; then
+    echo "chorus-model-deploy: INSTANCE-VERIFY FAILED — ${_expected} subject(s) declared in source, ${_found} present in <$INSTANCE_GRAPH>" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-missing" expected="${_expected}" found="${_found}" 2>/dev/null || true
     exit 1
   fi
   _in=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } }" \
     -H "Accept: application/sparql-results+json" 2>/dev/null \
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _in="?"
-  echo "chorus-model-deploy: hydrated ${#INSTANCE_SET[@]} instance file(s) -> <$INSTANCE_GRAPH> (http $imcode, $_in triples live)"
+  echo "chorus-model-deploy: seeded ${#INSTANCE_SET_KINDS[@]} kind(s) from ${#INSTANCE_SET[@]} file(s) -> <$INSTANCE_GRAPH> (${_expected} subjects verified, $_in triples live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$INSTANCE_GRAPH" triples="${_in}" 2>/dev/null || true
 fi
 
