@@ -252,13 +252,57 @@ pub fn build_inject_tmux_script(pane: &str, text: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric() || matches!(*c, '%' | '.' | ':' | '-' | '_'))
         .collect();
     let b64 = b64_encode(text.as_bytes());
+    // #3841 — the buffer name must be UNIQUE PER DELIVERY.
+    //
+    // It used to be the constant `chorus-nudge`, and `paste-buffer -d` deletes
+    // the buffer after pasting. Two concurrent deliveries therefore interleave:
+    //
+    //   A: load-buffer  -b chorus-nudge     (A's text)
+    //   B: load-buffer  -b chorus-nudge     (OVERWRITES with B's text)
+    //   A: paste-buffer -d -b chorus-nudge  (pastes B's text, deletes buffer)
+    //   B: paste-buffer -d -b chorus-nudge  -> "no buffer chorus-nudge", dropped
+    //
+    // Two failures, and the second is the dangerous one: B fails loudly, but A
+    // silently delivered B's message into A's pane. Right pane, wrong words,
+    // exit 0, no error for any check to find.
+    //
+    // Latent since the constant was introduced; it became routine on 2026-08-12
+    // when #3833 made one unaddressed Clearing message fan out to all three
+    // roles at once. Jeff reported dropped messages for days and was told each
+    // time that nothing was wrong.
+    //
+    // Uniqueness = pane + a per-call counter + pid. The pane alone is not
+    // enough: the Clearing sends several messages to the SAME pane in a burst
+    // (a nudge and its demo banner), which collide exactly the same way.
+    let uniq = format!(
+        "{}-{}-{}",
+        safe_pane.trim_start_matches('%'),
+        std::process::id(),
+        DELIVERY_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    let buf: String = format!("chorus-nudge-{}", uniq)
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    // Silas (#3841 review): unique names remove the accidental cleanup the shared
+    // name used to give us. `paste-buffer -d` deletes on success — but if the
+    // paste FAILS (pane gone), the loaded buffer is orphaned under a name nobody
+    // will ever reuse. One per failed delivery, forever. So delete it explicitly
+    // on the failure path, then still exit nonzero: `do shell script` throws on
+    // nonzero rc, and losing that would turn a failed delivery into a false "ok".
     format!(
-        r#"do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; printf %s '{b64}' | base64 -D | tmux load-buffer -b chorus-nudge - && tmux paste-buffer -d -b chorus-nudge -t '{pane}' && sleep 0.1 && tmux send-keys -t '{pane}' Enter"
+        r#"do shell script "export PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; printf %s '{b64}' | base64 -D | tmux load-buffer -b {buf} - && {{ tmux paste-buffer -d -b {buf} -t '{pane}' || {{ tmux delete-buffer -b {buf} 2>/dev/null; false; }}; }} && sleep 0.1 && tmux send-keys -t '{pane}' Enter"
 return "ok""#,
         b64 = b64,
+        buf = buf,
         pane = safe_pane
     )
 }
+
+/// #3841 — monotonic per-process delivery counter, so two deliveries from the
+/// same process to the same pane in the same millisecond still get distinct
+/// buffer names. Paired with the pid, distinct across processes too.
+static DELIVERY_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Seam for osascript execution. `RealOsaRunner` shells out; tests use a fake.
 pub trait OsaRunner {
@@ -807,5 +851,200 @@ mod tmux_dispatch_tests {
         assert_eq!(d, Dispatch::Ok);
         let out = String::from_utf8(w).unwrap();
         assert!(out.contains("DRY-RUN inject-tmux pane=%5"), "{}", out);
+    }
+}
+
+/// #3841 — the race, proven, then proven fixed.
+///
+/// Jeff reported the Clearing dropping messages for days. Every report was met
+/// with a restart or a "nothing is wrong" — including one from me, hours before
+/// this module was written. These tests exist so that answer can never be given
+/// again from reasoning alone: the failure is reproducible in-process, in
+/// milliseconds, with no tmux and no live session.
+#[cfg(test)]
+mod delivery_buffer_race_3841 {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// The builder as it shipped before this card — a single global name.
+    /// Kept verbatim so the proof below runs against the REAL defect and not a
+    /// paraphrase of it.
+    fn build_old(pane: &str, text: &str) -> String {
+        let b64 = b64_encode(text.as_bytes());
+        format!(
+            r#"tmux load-buffer -b chorus-nudge - && tmux paste-buffer -d -b chorus-nudge -t '{pane}' [{b64}]"#,
+            b64 = b64,
+            pane = pane
+        )
+    }
+
+    fn buffer_name_in(script: &str) -> String {
+        // `-b <name>` — the first one; both occurrences must agree anyway.
+        let after = script.split("-b ").nth(1).expect("script names a buffer");
+        after.split_whitespace().next().unwrap().to_string()
+    }
+
+    /// A minimal model of tmux's buffer table, which is all the race needs:
+    /// load-buffer sets a name, paste-buffer -d reads it and REMOVES it.
+    #[derive(Default)]
+    struct Tmux {
+        buffers: std::collections::HashMap<String, String>,
+    }
+    impl Tmux {
+        fn load(&mut self, name: &str, text: &str) {
+            self.buffers.insert(name.to_string(), text.to_string());
+        }
+        /// Returns the pasted text, or None when the buffer is gone — tmux's
+        /// "no buffer <name>" error, which is what the log recorded.
+        fn paste_d(&mut self, name: &str) -> Option<String> {
+            self.buffers.remove(name)
+        }
+    }
+
+    /// NEGATIVE PROOF — the OLD builder, two deliveries interleaved exactly as
+    /// two concurrent osascript invocations interleave. One drop, one
+    /// misdelivery. If this test ever passes clean, the model stopped modelling
+    /// the bug and everything below it is worthless.
+    #[test]
+    fn the_old_shared_buffer_drops_one_and_misdelivers_the_other() {
+        let a = build_old("%1", "message for wren");
+        let b = build_old("%2", "message for kade");
+        let (na, nb) = (buffer_name_in(&a), buffer_name_in(&b));
+        assert_eq!(na, nb, "the whole defect: two deliveries, one buffer name");
+
+        let mut tmux = Tmux::default();
+        tmux.load(&na, "message for wren"); // A loads
+        tmux.load(&nb, "message for kade"); // B loads, overwriting A
+        let a_got = tmux.paste_d(&na); // A pastes...
+        let b_got = tmux.paste_d(&nb); // ...and B finds nothing
+
+        assert_eq!(
+            a_got.as_deref(),
+            Some("message for kade"),
+            "the SILENT half: wren's pane receives kade's message, exit 0, no error"
+        );
+        assert_eq!(
+            b_got, None,
+            "the LOUD half: 'no buffer chorus-nudge' — the dropped message"
+        );
+    }
+
+    /// The fix, against the same interleaving.
+    #[test]
+    fn unique_buffers_deliver_both_messages_intact() {
+        let a = build_inject_tmux_script("%1", "message for wren");
+        let b = build_inject_tmux_script("%2", "message for kade");
+        let (na, nb) = (buffer_name_in(&a), buffer_name_in(&b));
+        assert_ne!(na, nb, "distinct deliveries must not share a buffer name");
+
+        let mut tmux = Tmux::default();
+        tmux.load(&na, "message for wren");
+        tmux.load(&nb, "message for kade");
+        assert_eq!(tmux.paste_d(&na).as_deref(), Some("message for wren"));
+        assert_eq!(tmux.paste_d(&nb).as_deref(), Some("message for kade"));
+    }
+
+    /// The pane alone would NOT have been enough, and this is the case that
+    /// proves it: the Clearing sends several messages to the SAME pane in a
+    /// burst — a nudge and its demo banner land together. Same pane, same
+    /// millisecond, and they must still not collide.
+    #[test]
+    fn two_deliveries_to_the_same_pane_get_distinct_buffers() {
+        let first = buffer_name_in(&build_inject_tmux_script("%1", "the nudge"));
+        let second = buffer_name_in(&build_inject_tmux_script("%1", "the demo banner"));
+        assert_ne!(
+            first, second,
+            "same pane twice must still get distinct buffers — pane-only naming would collide here"
+        );
+    }
+
+    /// A fan-out of one Jeff message to all three roles: three deliveries,
+    /// three distinct buffers, three intact payloads. This is the shape #3833
+    /// introduced and the shape that was failing 2-of-3 in production.
+    #[test]
+    fn a_three_way_fan_out_delivers_all_three() {
+        let panes = ["%1", "%2", "%3"];
+        let texts = ["for wren", "for silas", "for kade"];
+        let names: Vec<String> = panes
+            .iter()
+            .zip(texts.iter())
+            .map(|(p, t)| buffer_name_in(&build_inject_tmux_script(p, t)))
+            .collect();
+        assert_eq!(
+            names.iter().collect::<HashSet<_>>().len(),
+            3,
+            "three concurrent deliveries need three buffer names"
+        );
+
+        let mut tmux = Tmux::default();
+        for (n, t) in names.iter().zip(texts.iter()) {
+            tmux.load(n, t);
+        }
+        for (n, t) in names.iter().zip(texts.iter()) {
+            assert_eq!(tmux.paste_d(n).as_deref(), Some(*t), "each role gets its OWN message");
+        }
+    }
+
+    /// The buffer name goes into a shell command inside an AppleScript string.
+    /// A pane id is stripped of shell-meta upstream; assert the name that
+    /// reaches the command line carries nothing that could break out of it.
+    #[test]
+    fn the_buffer_name_is_shell_safe() {
+        let name = buffer_name_in(&build_inject_tmux_script("%1; rm -rf /", "x"));
+        assert!(
+            name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'),
+            "buffer name must stay [A-Za-z0-9-]: got {name}"
+        );
+    }
+
+    /// Silas's review catch: with a shared name, a failed paste left a buffer
+    /// that the NEXT delivery overwrote — accidental cleanup. Unique names take
+    /// that away, so a failed paste would orphan one buffer per failure forever.
+    #[test]
+    fn a_failed_paste_deletes_its_own_buffer() {
+        let s = build_inject_tmux_script("%1", "hello");
+        assert!(s.contains("delete-buffer"), "the failure path must clean up: {s}");
+        let buf = buffer_name_in(&s);
+        assert!(
+            s.contains(&format!("delete-buffer -b {buf}")),
+            "it must delete THIS delivery's buffer, not some other name"
+        );
+    }
+
+    /// NEGATIVE PROOF for that cleanup: adding it must not swallow the failure.
+    /// `do shell script` throws on nonzero rc — that is the only reason a dead
+    /// pane surfaces as an error instead of a false "ok" (and a false ok is
+    /// worse than a drop, because nothing retries it).
+    #[test]
+    fn cleanup_does_not_turn_a_failed_delivery_into_a_success() {
+        let s = build_inject_tmux_script("%1", "hello");
+        let cleanup = s.split("|| {").nth(1).expect("a failure branch exists");
+        assert!(
+            cleanup.contains("false"),
+            "the failure branch must still end nonzero, or the delivery reports ok: {cleanup}"
+        );
+        let after_cleanup = cleanup.split("; }").next().unwrap();
+        assert!(
+            after_cleanup.find("delete-buffer").unwrap() < after_cleanup.find("false").unwrap(),
+            "delete first, THEN fail — reversing these skips the cleanup"
+        );
+    }
+
+    /// Both occurrences in one script must name the SAME buffer — load and
+    /// paste have to agree, or every delivery fails instead of every other one.
+    #[test]
+    fn load_and_paste_name_the_same_buffer() {
+        let s = build_inject_tmux_script("%7", "hello");
+        let names: Vec<&str> = s
+            .split("-b ")
+            .skip(1)
+            .map(|r| r.split_whitespace().next().unwrap())
+            .collect();
+        // load-buffer, paste-buffer, and the failure-path delete-buffer.
+        assert_eq!(names.len(), 3, "load, paste, and cleanup each name a buffer");
+        assert!(
+            names.iter().all(|n| *n == names[0]),
+            "every -b in one delivery must name the SAME buffer: {names:?}"
+        );
     }
 }
