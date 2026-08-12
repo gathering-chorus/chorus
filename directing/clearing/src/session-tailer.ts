@@ -251,7 +251,7 @@ export class SessionTailer {
     return false;
   }
 
-  private handleAssistantMessage(role: string, entry: { message?: { content?: unknown } }, ts: string): void {
+  private handleAssistantMessage(role: string, entry: { message?: { content?: unknown; stop_reason?: string } }, ts: string): void {
     const contentArr = entry.message?.content;
     if (!contentArr) return;
     let combined = this.extractAssistantText(contentArr);
@@ -260,8 +260,19 @@ export class SessionTailer {
     if (!combined) return;
     if (this.isFilteredAssistantText(combined)) return;
 
+    // #3834 — did the model STOP here, or is it mid-turn? stop_reason
+    // 'end_turn' means it finished without reaching for a tool: the reply is
+    // complete and there is nothing to wait for. Anything else (tool_use, or
+    // absent) means more is coming, and the candidate should keep folding.
+    const endedTurn = entry.message?.stop_reason === 'end_turn';
+
     const existing = this.pendingAssistant.get(role);
     if (existing) clearTimeout(existing.timer);
+    // #3834 — the 3s debounce exists to coalesce a burst of streamed chunks.
+    // Once the turn has ENDED there is no burst left to wait for, so a finished
+    // reply flushes immediately. Without this, a two-word answer still cost
+    // three seconds before it could even become a candidate.
+    const flushDelay = endedTurn ? 0 : 3000;
     const debounceTimer = setTimeout(() => {
       const pending = this.pendingAssistant.get(role);
       if (!pending) return;
@@ -276,15 +287,18 @@ export class SessionTailer {
         }
         const quietTimer = setTimeout(() => this.finalizeReply(role), REPLY_QUIET_MS);
         this.replyCandidate.set(role, { text: pending.text, ts: pending.ts, timer: quietTimer });
+        // The turn is over — promote NOW rather than waiting out a clock that
+        // has nothing left to learn.
+        if (endedTurn) this.finalizeReply(role);
       } else {
         this.router.ingest({ from: role, text: pending.text, ts: pending.ts, type: 'pm-thinking' });
       }
-    }, 3000);
+    }, flushDelay);
     this.pendingAssistant.set(role, { text: combined, ts, timer: debounceTimer });
   }
 
   private processLine(role: string, line: string): void {
-    let entry: { type?: string; timestamp?: string; message?: { content?: unknown } };
+    let entry: { type?: string; timestamp?: string; message?: { content?: unknown; stop_reason?: string } };
     try { entry = JSON.parse(line); } catch { return; }
     const ts = entry.timestamp || new Date().toISOString();
     if (entry.type === 'user') return this.handleUserMessage(role, entry, ts);
@@ -292,11 +306,24 @@ export class SessionTailer {
   }
 }
 
-// #3772 — how long the assistant must stay quiet (after the 3s flush debounce)
-// before the pending candidate is promoted as THE reply. Long tool runs between
-// status notes are common; 45s of no new text ≈ the turn has ended. Env override
-// exists for tests, not for tuning-by-vibes.
-const REPLY_QUIET_MS = Number(process.env.CLEARING_REPLY_QUIET_MS) || 45000;
+// #3834 — the BACKSTOP, not the mechanism.
+//
+// This used to be 45000, and it was the only thing deciding when a reply became
+// visible. The cost, measured 2026-08-12: Jeff asked "anyone there?" at
+// 16:08:04, the reply was written at 16:08:13, and he saw it three quarters of
+// a minute later. His words: "it makes it impossible for any of u to give a
+// simple response" and "u have to burn at least 45 seconds of tokens to say
+// yes" — literally true, since the only way to make a short answer appear was
+// to stay silent for 45s afterwards.
+//
+// A clock cannot tell "finished" from "still going". The transcript can:
+// stop_reason === 'end_turn' means the assistant stopped WITHOUT a tool call,
+// which is exactly a finished turn. That is now the signal (see
+// handleAssistantMessage); this timer only covers the case where the turn-end
+// marker never arrives — a crash, a truncated write, an older transcript
+// format. Short enough to feel like a conversation, long enough to let a
+// genuine multi-step turn finish.
+const REPLY_QUIET_MS = Number(process.env.CLEARING_REPLY_QUIET_MS) || 8000;
 
 /**
  * #3772 negative proof — the silent-room state must be DETECTABLE, not just
