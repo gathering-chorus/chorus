@@ -559,7 +559,34 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 <script src="/socket.io/socket.io.js"></script>
 <script src="/clearing-tree.js"></script>
 <!-- #3827 — Jeff's key lives in his browser. Module, so it can import @noble
-     directly; deferred by nature, so it never blocks the room rendering. -->
+     directly; deferred by nature, so it never blocks the room rendering.
+
+     #3865 — "it can import @noble directly" was not true, and nothing caught it
+     for two days. The vendored esm build keeps BARE specifiers internally
+     (`import { sha256 } from '@noble/hashes/sha2.js'`), which a browser cannot
+     resolve, so room-key.js threw on its first import line and the key was
+     never minted. The files themselves serve fine — only the specifier is
+     unresolvable — so an import map is the whole fix, no bundler.
+
+     The map must come BEFORE the module script: an import map is only honoured
+     if it is parsed before any module loads. -->
+     The exact entry below is NOT redundant with the prefix above it.
+     `abstract/weierstrass.js` imports '@noble/hashes/utils' with NO extension;
+     the prefix rule maps that to /vendor/@noble/hashes/utils, which express
+     .static does not serve (only utils.js), so it 404s and the whole module
+     graph fails — with the same symptom as the bare-specifier bug and none of
+     the same cause. Exact keys win over prefix keys in an import map. Found by
+     running it: the first fix cleared the console error and the key was STILL
+     undefined. -->
+<script type="importmap">
+{
+  "imports": {
+    "@noble/hashes/utils": "/vendor/@noble/hashes/utils.js",
+    "@noble/hashes/": "/vendor/@noble/hashes/",
+    "@noble/curves/": "/vendor/@noble/curves/"
+  }
+}
+</script>
 <script type="module" src="/room-key.js"></script>
 <script>
 // Pass auth token to Socket.IO for remote connections (#1719)
