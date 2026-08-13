@@ -51,7 +51,7 @@ import { resolveCap, checkCap, CAP_KEY_NUDGE } from './word-cap';
 // the point is that "which transport" is now a value, not the shape of the code.
 import {
   PulseTransport, sendVia, selectTransports,
-  type NudgeTransport, type FetchLike,
+  type NudgeTransport,
 } from './nudge-transport';
 
 const NudgeInput = z.object({
@@ -2737,7 +2737,7 @@ export async function executeNudge(
   // config edit plus one new implementation of the interface — not a rewrite of
   // every caller, and with somewhere to put fallback that does not exist today.
   const available = new Map<string, NudgeTransport>([
-    ['pulse', new PulseTransport(fetchImpl as unknown as FetchLike, resolvedPulseUrl, resolvePulseSecret() ?? undefined)],
+    ['pulse', new PulseTransport(fetchImpl, resolvedPulseUrl, resolvePulseSecret() ?? undefined)],
   ]);
   const { chosen, unknown } = selectTransports(available, process.env.CHORUS_NUDGE_TRANSPORTS);
   if (unknown.length > 0) {

@@ -36,15 +36,24 @@ export interface NudgeTransport {
   send(payload: NudgePayload): Promise<SendResult>;
 }
 
-/** Minimal fetch shape — the same seam executeNudge already injects for tests. */
+/**
+ * The fetch seam. This is DELIBERATELY the same shape as server.ts's FetchImpl,
+ * not a looser one.
+ *
+ * The first version declared `init: Record<string, unknown>` and a required
+ * `status`, which forced `fetchImpl as unknown as FetchLike` at the call site —
+ * a double-cast, flagged by both Silas and Kade. A double-cast does not fix a
+ * type mismatch, it hides one: it would have kept compiling if the shapes drifted
+ * apart, which is how a transport starts reading a field that is never there.
+ */
 export type FetchLike = (
   url: string,
-  init: Record<string, unknown>,
+  init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal },
 ) => Promise<{
   ok: boolean;
-  status: number;
+  status?: number;
+  json: () => Promise<unknown>;
   text?: () => Promise<string>;
-  json?: () => Promise<unknown>;
 }>;
 
 /**
@@ -88,13 +97,18 @@ export class PulseTransport implements NudgeTransport {
       });
       if (!resp.ok) {
         const errText = resp.text ? await resp.text().catch(() => '') : '';
-        return { ok: false, error: `pulse POST returned ${resp.status}: ${errText.slice(0, 200)}` };
+        // status is optional on the seam, so say "unknown" rather than print
+        // the word undefined into an operator-facing failure message.
+        return {
+          ok: false,
+          error: `pulse POST returned ${resp.status ?? 'unknown status'}: ${errText.slice(0, 200)}`,
+        };
       }
       // #3439 — surface the destination pulse actually resolved, so "sent" is
       // not blind. Best-effort: a parse miss falls back to the bare role.
       let resolved = p.to;
       try {
-        const body = (await resp.json?.()) as { resolved?: string } | null;
+        const body = (await resp.json()) as { resolved?: string } | null;
         if (body && typeof body.resolved === 'string') resolved = body.resolved;
       } catch {
         /* keep the bare role */
