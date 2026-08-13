@@ -267,7 +267,9 @@ function isMachineryEcho(text: string): boolean {
     /\[e2e-[a-z]+\]/i.test(text) ||                  // e2e test traffic acking itself
     /^API Error: \d{3}/.test(text) ||                // an upstream tool error, verbatim
     /\btype=is-error\b/.test(text) ||                // an MCP refusal echoed back
-    /^word-cap: \d+ words/.test(text)                // the cap gate refusing a send
+    /^word-cap: \d+ words/.test(text) ||              // the cap gate refusing a send
+    /<task-notification>|<\/task-notification>/.test(text) ||  // harness XML, seen 18:19 in Jeff's own bubble
+    /<(task-id|tool-use-id|output-file)>/.test(text)  // …and its fragments, when a blob is split
   );
 }
 
