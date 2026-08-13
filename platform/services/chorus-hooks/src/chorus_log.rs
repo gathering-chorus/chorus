@@ -241,13 +241,22 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
             // corrupt line. A single write_all of line+"\n" is one uninterruptible append.
             let mut buf = line.clone().into_bytes();
             buf.push(b'\n');
-            let _ = f.write_all(&buf);
+            // #3853 — a failed WRITE must fail loud, not be swallowed. Previously
+            // `let _ = f.write_all(...)` discarded the error and the function still
+            // returned SUCCESS, so a dropped spine emit reported success (best-effort
+            // masquerading as reliable — the unreliability behind streams gaps). A
+            // raw O_APPEND File is unbuffered, so write_all reaching Ok means the
+            // bytes are handed to the fd; on Err the event is lost and we say so.
+            if let Err(e) = f.write_all(&buf) {
+                eprintln!("{} | {} — FAILED to write (spine emit dropped): {}", event, role, e);
+                return ExitCode::from(1);
+            }
             if !silent {
                 println!("{} | {}{}", event, role, display);
             }
         }
-        Err(_) => {
-            eprintln!("{} | {} — FAILED to write", event, role);
+        Err(e) => {
+            eprintln!("{} | {} — FAILED to open spine log: {}", event, role, e);
             return ExitCode::from(1);
         }
     }
