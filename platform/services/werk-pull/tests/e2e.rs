@@ -210,3 +210,63 @@ fn refusals_are_typed_spined_and_gh_fail_restores_board_status() {
     assert!(emitted.contains("pull.rolledback") && emitted.contains("reason=gh-register-fail"),
         "rollback reached the spine: {emitted}");
 }
+
+// #3842 — repo-aware pull, end to end on real git: a card labeled repo:<name>
+// gets its worktree from the TARGET repo's origin/main, not chorus. AC1 + AC5
+// (fixture-repo variant; the live shared-security run happens post-land).
+#[test]
+fn e2e_pull_into_declared_target_repo() {
+    let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let bin = tmp("bin2");
+    write_exec(&bin.join("gh"), "#!/bin/sh\nexit 0\n");
+    std::env::set_var(
+        "PATH",
+        format!("{}:{}", bin.display(), std::env::var("PATH").unwrap_or_default()),
+    );
+
+    // one projects dir holding BOTH repos, the ADR-041 sibling layout
+    let projects = tmp("projects2");
+    let origin_chorus = tmp("oc2");
+    let origin_target = tmp("ot2");
+    for (origin, marker) in [(&origin_chorus, "chorus"), (&origin_target, "shared-security")] {
+        git(origin, &["init", "-q", "-b", "main", "."]);
+        fs::write(origin.join("WHICH"), marker).unwrap();
+        git(origin, &["add", "."]);
+        git(origin, &["commit", "-q", "-m", "init"]);
+        git(origin, &["config", "receive.denyCurrentBranch", "ignore"]);
+    }
+    let home = projects.join("chorus");
+    let target = projects.join("shared-security");
+    for (origin, clone) in [(&origin_chorus, &home), (&origin_target, &target)] {
+        assert!(Command::new("git")
+            .args(["clone", "-q", origin.to_str().unwrap(), clone.to_str().unwrap()])
+            .status().unwrap().success());
+    }
+    let scripts = home.join("platform/scripts");
+    fs::create_dir_all(&scripts).unwrap();
+    // cards shim: card json carries the repo label in domains
+    write_exec(
+        &scripts.join("cards"),
+        "#!/bin/sh\ncase \"$1\" in\n view) echo \"{ \\\"status\\\": \\\"Next\\\", \\\"domains\\\": [\\\"repo:shared-security\\\"] }\" ;;\n *) exit 0 ;;\nesac\n",
+    );
+    write_exec(&scripts.join("role-state"), "#!/bin/sh\nexit 0\n");
+    std::env::remove_var("CARDS_STATUS");
+    std::env::remove_var("CARDS_MOVE_EXIT");
+    std::env::set_var("GH_EXIT", "0");
+
+    let werk_base = tmp("werk2");
+    let branch = pull(7101, "kade", &home, &werk_base).expect("target-repo pull");
+    assert_eq!(branch, "kade/7101");
+    let werk = werk_base.join("kade-7101");
+    // the worktree's content is the TARGET repo's, not chorus's
+    let which = fs::read_to_string(werk.join("WHICH")).expect("worktree has target content");
+    assert_eq!(which, "shared-security", "worktree came from the target repo");
+    // and the worktree is administered by the target repo, not home
+    let out = Command::new("git")
+        .args(["-C", target.to_str().unwrap(), "worktree", "list"])
+        .output().unwrap();
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("kade-7101"),
+        "target repo administers the worktree"
+    );
+}
