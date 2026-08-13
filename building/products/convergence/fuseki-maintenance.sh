@@ -138,6 +138,18 @@ cmd_check() {
 }
 
 # ── compact ────────────────────────────────────────────────────
+# #3799 AC1 — did the compact actually RECLAIM? A Jena task sets .finished whether
+# it succeeded, failed, or did nothing — "finished" is not "reclaimed" (the hollow
+# check this replaces). Honest test: the store must actually shrink. Equal-or-larger
+# means the compact did nothing (or wrote a bloated copy) = FAIL, loudly.
+compact_reclaimed() {
+  local before="$1" after="$2"
+  [ "$after" -lt "$before" ] 2>/dev/null
+}
+
+FUSEKI_STORE="${FUSEKI_STORE:-/Users/jeffbridwell/.gathering/data/fuseki-pods}"
+store_bytes() { du -sk "$FUSEKI_STORE" 2>/dev/null | awk '{print $1*1024}'; }
+
 cmd_compact() {
   echo "TDB2 Compact"
   echo "============="
@@ -151,6 +163,8 @@ cmd_compact() {
     exit 2
   fi
 
+  local before_b; before_b=$(store_bytes)
+  echo "Store before: $(( before_b/1073741824 ))G"
   echo "Starting compact (this may take several minutes for large stores)..."
   local result
   result=$(curl -s --max-time 30 $auth_flag -X POST \
@@ -175,12 +189,18 @@ cmd_compact() {
       if echo "$task_status" | jq -e '.finished' >/dev/null 2>&1; then
         local finished
         finished=$(echo "$task_status" | jq -r '.finished')
-        echo -e "  ${GREEN}DONE${NC}  Compact finished at $finished (${elapsed}s)"
-        log_event "ops.fuseki.compact.completed" "task_id=$task_id,duration=${elapsed}s"
-
-        # Record last compact time
-        echo "$finished" > /Users/jeffbridwell/Library/Logs/Gathering/fuseki-last-compact
-        return 0
+        # #3799 AC1 — finished != reclaimed. Verify the store actually shrank.
+        local after_b; after_b=$(store_bytes)
+        if compact_reclaimed "$before_b" "$after_b"; then
+          echo -e "  ${GREEN}DONE${NC}  Compact reclaimed $(( (before_b-after_b)/1073741824 ))G ($(( before_b/1073741824 ))G -> $(( after_b/1073741824 ))G, ${elapsed}s)"
+          log_event "ops.fuseki.compact.completed" "task_id=$task_id,duration=${elapsed}s,before=$before_b,after=$after_b"
+          echo "$finished" > /Users/jeffbridwell/Library/Logs/Gathering/fuseki-last-compact
+          return 0
+        else
+          echo -e "  ${RED}FAIL${NC}  Compact 'finished' but the store did NOT shrink ($(( before_b/1073741824 ))G -> $(( after_b/1073741824 ))G) — reclaimed nothing (#3799: finished != reclaimed)"
+          log_event "ops.fuseki.compact.failed" "reason=no-reclaim,task_id=$task_id,before=$before_b,after=$after_b"
+          return 3
+        fi
       fi
       echo "    ...${elapsed}s elapsed"
     done
