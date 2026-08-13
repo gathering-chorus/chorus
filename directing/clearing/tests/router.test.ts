@@ -4,7 +4,7 @@
  *
  * Target: 80%+ on src/router.ts. Covers classify() dispatch across all
  * type paths, dedup, trim-to-max, and the four private helpers
- * (stripSpineMetadata, isSystemNoise, isToolCall, isSkillOutput,
+ * (stripSpineMetadata, isSystemNoise,
  * isRoleToRole) via routed inputs.
  */
 
@@ -160,11 +160,13 @@ describe('MessageRouter — classify: pm-thinking', () => {
     expect(r.getRecent(10)).toHaveLength(0);
   });
 
-  test('pm-thinking with plain commentary is visible', () => {
+  // #3852 — INVERTED. Mid-turn commentary used to be visible; it is always
+  // folded now, by turn state rather than by inspecting the text.
+  test('pm-thinking is folded even when it reads like plain commentary', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'I think we should prioritize the tests.', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(1);
-    expect(r.getRecent(10)[0].type).toBe('pm-thinking');
+    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10, true)).toHaveLength(1);
   });
 });
 
@@ -344,42 +346,6 @@ describe('MessageRouter — getHiddenCount', () => {
   });
 });
 
-describe('MessageRouter — isToolCall / isSkillOutput corner cases', () => {
-  test('pm-thinking with bash command hidden', () => {
-    const r = new MessageRouter();
-    r.ingest(mk('wren', 'cd /tmp && ls', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-
-  test('pm-thinking with git bracket output hidden', () => {
-    const r = new MessageRouter();
-    r.ingest(mk('wren', '[main abc1234] committed changes', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-
-  test('pm-thinking with JSON block hidden', () => {
-    const r = new MessageRouter();
-    r.ingest(mk('wren', '{"status": "ok"}', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-
-  test('pm-thinking with HTTP response hidden', () => {
-    const r = new MessageRouter();
-    r.ingest(mk('wren', 'HTTP/1.1 200 OK', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-
-  test('pm-thinking with exit code hidden', () => {
-    const r = new MessageRouter();
-    r.ingest(mk('wren', 'Exit code 1', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-
-  test('pm-thinking with skill output variants all hidden', () => {
-    const r = new MessageRouter();
-    ['Auto-checked 5 AC items', 'INJECT_FAILED', 'Updated #1', 'Rejected: #2 — reason',
-     'Blocked: #3', 'Unblocked: #4', 'gate:product-pass', 'Nudge delivered', 'pre-commit: done']
-      .forEach((t) => r.ingest(mk('wren', t, 'pm-thinking')));
-    expect(r.getRecent(10)).toHaveLength(0);
-  });
-});
+// #3852 — isToolCall / isSkillOutput tests removed with the functions. They
+// tested a text heuristic that no longer decides anything; folding reads
+// stop_reason. Keeping tests for deleted code is how a dead guard looks alive.

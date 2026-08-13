@@ -1,3 +1,4 @@
+// @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
 /**
  * Session Tailer Tests — #2035 AC #1, #2
  *
@@ -277,21 +278,28 @@ describe('AC #1: Jeff input from session JSONL is visible in Clearing', () => {
 // AC #2: Role thinking and ideation visible
 // ═══════════════════════════════════════════════════════════════════════════
 
+// #3852 — REVERSED by Jeff, 2026-08-13. This asserted the ORIGINAL requirement
+// that role thinking be visible in the Clearing. Living with it, he found the
+// opposite: our narration crowded him out of his own room (18 of 50 rows ours,
+// 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
+// flipping an assertion someone deliberately wrote.
 describe('AC #2: Role thinking/ideation visible in Clearing', () => {
   let router: MessageRouter;
   beforeEach(() => { router = new MessageRouter(); });
 
-  test('Role commentary is visible as pm-thinking', () => {
+  // #3852 — REVERSED by Jeff 2026-08-13: thinking folds, it does not show.
+  test('Role commentary is FOLDED as pm-thinking', () => {
     router.ingest({
       from: 'silas',
       text: 'Found the root cause — findSessionFile stops at the first matching directory.',
       ts: new Date().toISOString(),
       type: 'pm-thinking',
     });
-    const msgs = router.getRecent(10);
-    expect(msgs.length).toBe(1);
-    expect(msgs[0].type).toBe('pm-thinking');
-    expect(msgs[0].visible).toBe(true);
+    expect(router.getRecent(10).length).toBe(0);
+    const hidden = router.getRecent(10, true);
+    expect(hidden.length).toBe(1);
+    expect(hidden[0].type).toBe('pm-thinking');
+    expect(hidden[0].visible).toBe(false);
   });
 
   test('Role tool call output is hidden', () => {

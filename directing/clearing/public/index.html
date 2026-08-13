@@ -646,9 +646,12 @@ socket.on('messages', (msgs) => {
 
 // New message
 socket.on('message', (msg) => {
+  // Read the position BEFORE the DOM grows — after render, scrollHeight has
+  // already changed and everyone looks un-pinned.
+  var wasPinned = isPinnedToBottom();
   allMessages.push(msg);
   renderTranscript();
-  scrollToBottom();
+  scrollToBottomIfPinned(wasPinned);
 });
 
 // #3646 — per-target delivery outcome (the ack means accepted+persisted; this is
@@ -663,8 +666,9 @@ socket.on('delivery-status', (status) => {
       type: 'system',
       visible: true,
     });
+    var wasPinnedDelivery = isPinnedToBottom();
     renderTranscript();
-    scrollToBottom();
+    scrollToBottomIfPinned(wasPinnedDelivery);
   }
 });
 
@@ -1116,8 +1120,34 @@ function buildMessageEl(msg, cls, isClosing) {
   return div;
 }
 
+// #3852 — Jeff, 2026-08-13: "if i scroll up i get forced back to bottom even
+// when no new messages arrive... message arrive must not force to bottom."
+//
+// Every arrival used to scroll unconditionally, so reading anything older than
+// the last screen was impossible while the team was working — and the team is
+// always working. Scrolling up to read is exactly when someone is trying to
+// catch up, which is exactly when we yanked them away.
+//
+// Stick-to-bottom ONLY if already at the bottom. 80px of slack so a resting
+// position a few pixels off still counts as pinned.
+var SCROLL_PIN_SLACK = 80;
+
+function isPinnedToBottom() {
+  if (!msgScroller) return true;
+  var distance = msgScroller.scrollHeight - msgScroller.scrollTop - msgScroller.clientHeight;
+  return distance <= SCROLL_PIN_SLACK;
+}
+
 function scrollToBottom() {
+  if (!msgScroller) return;
   msgScroller.scrollTop = msgScroller.scrollHeight;
+}
+
+// Use this on ARRIVAL. scrollToBottom stays unconditional for the deliberate
+// cases (first load, the user's own send) — those should always land at the
+// bottom, and conflating them is how "never scroll" becomes the next bug.
+function scrollToBottomIfPinned(wasPinned) {
+  if (wasPinned) scrollToBottom();
 }
 
 function escapeHtml(text) {
@@ -1663,11 +1693,13 @@ async function loadMobileStream() {
     const resp = await fetch('/api/stream?lines=80');
     const entries = await resp.json();
     const el = document.getElementById('mobile-stream');
+    const streamWasPinned = !el || (el.scrollHeight - el.scrollTop - el.clientHeight) <= 80;
     el.innerHTML = entries.map(function(e) {
       var color = e.role === 'wren' ? '#3fb950' : e.role === 'silas' ? '#58a6ff' : '#d29922';
       return '<div style="margin-bottom:2px;"><span style="color:#484f58;">' + e.ts + '</span> <span style="color:' + color + ';font-weight:700;">' + e.role + '</span> ' + escapeHtml(e.text) + '</div>';
     }).join('');
-    el.scrollTop = el.scrollHeight;
+    // #3852 — same rule for the mobile stream: only follow if already at the end.
+    if (streamWasPinned) el.scrollTop = el.scrollHeight;
   } catch(err) {}
 }
 

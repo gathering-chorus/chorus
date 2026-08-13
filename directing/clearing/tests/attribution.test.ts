@@ -1,3 +1,4 @@
+// @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
 /**
  * Attribution tests — #2048
  *
@@ -56,6 +57,11 @@ describe('#2048: Message attribution', () => {
   });
 });
 
+// #3852 — REVERSED by Jeff, 2026-08-13. This asserted the ORIGINAL requirement
+// that role thinking be visible in the Clearing. Living with it, he found the
+// opposite: our narration crowded him out of his own room (18 of 50 rows ours,
+// 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
+// flipping an assertion someone deliberately wrote.
 describe('#2049: Skill output filtering', () => {
   test('structured skill output is hidden from Clearing', () => {
     const router = new MessageRouter();
@@ -76,7 +82,8 @@ describe('#2049: Skill output filtering', () => {
     }
   });
 
-  test('role thinking/commentary passes through', () => {
+  // #3852 — REVERSED. Commentary no longer passes through; it folds.
+  test('role thinking/commentary is folded', () => {
     const router = new MessageRouter();
     router.ingest({
       from: 'kade',
@@ -84,8 +91,10 @@ describe('#2049: Skill output filtering', () => {
       ts: new Date().toISOString(),
       type: 'pm-thinking',
     });
-    const msgs = router.getRecent(10);
-    expect(msgs.length).toBe(1);
-    expect(msgs[0].visible).toBe(true);
+    // #3852 — folded, and still retrievable with includeHidden.
+    expect(router.getRecent(10).length).toBe(0);
+    const hidden = router.getRecent(10, true);
+    expect(hidden.length).toBe(1);
+    expect(hidden[0].visible).toBe(false);
   });
 });
