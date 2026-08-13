@@ -85,11 +85,14 @@ async function call(p: string, opts: Parameters<typeof fetch>[1] = {}) {
 describe('formatObserverDigest — observer digest formatting (#3604)', () => {
   const now = new Date('2026-07-03T12:00:00Z').toISOString();
 
-  test('dedupes, maps actions to emoji, skips nudges, appends card', () => {
+  // #3852 — REVERSED. Skipping nudges was deliberate (#1675) and it made
+  // coordination invisible: a role spending ten minutes coordinating read as
+  // idle. Jeff's rule now: all agent commands show in streams.
+  test('dedupes, maps actions to emoji, SHOWS nudges, appends card', () => {
     const content = [
       JSON.stringify({ ts: now, digest: 'editing src/foo.ts', card: '42' }),
       JSON.stringify({ ts: now, digest: 'editing src/foo.ts', card: '42' }), // duplicate → deduped
-      JSON.stringify({ ts: now, digest: 'nudging: wren about x' }),           // skipped
+      JSON.stringify({ ts: now, digest: 'nudging: wren about x' }),           // now SHOWN
       JSON.stringify({ ts: now, digest: 'writing notes.md' }),
       JSON.stringify({ ts: now, digest: 'committing changes' }),
     ].join('\n');
@@ -99,7 +102,7 @@ describe('formatObserverDigest — observer digest formatting (#3604)', () => {
     expect(joined).toContain('#42');              // card appended
     expect(joined).toContain('📝 notes.md');      // writing → emoji
     expect(joined).toContain('📦 commit');        // committing changes → mapped
-    expect(joined).not.toContain('nudging');      // nudge line skipped
+    expect(joined).toContain('nudging');          // #3852 — coordination is work
     expect(lines.filter((l) => l.includes('✏️ src/foo.ts')).length).toBe(1); // deduped to one
   });
 

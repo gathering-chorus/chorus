@@ -66,7 +66,10 @@ export function formatObserverDigest(content: string): string[] {
       const ts = new Date(obs.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
       const card = obs.card ? ` #${obs.card}` : '';
       let short = obs.digest || '';
-      if (short.startsWith('nudging:')) continue;   // role-to-role coordination (#1675)
+      // #3852 — the nudging: filter is GONE. Jeff, 2026-08-13: "all commands run
+      // by agent roles must show in streams" and "must not be best effort."
+      // Dropping role-to-role coordination (#1675) made the busiest kind of work
+      // invisible: a role spending ten minutes coordinating looked idle.
       short = short.replace(/^bash: bash .*\/scripts\//, '→ ')
                     .replace(/^bash: cd .*? && /, '→ ')
                     .replace(/^bash: /, '→ ')
@@ -897,16 +900,23 @@ function readRoleObservations(fs: typeof fs_node): StreamLine[] {
   return out;
 }
 
-function dedupeLines(lines: StreamLine[]): StreamLine[] {
+/**
+ * #3852 — NARROWED to exact duplicates only.
+ *
+ * This used to drop any line whose text was CONTAINED in another line from the
+ * same role. Six commands that all start `cd chorus-werk/wren-3851 && ...`
+ * collapse to one under that rule — so the more focused the work, the more
+ * invisible it looks. Jeff watched three roles build for an hour and saw an
+ * idle team.
+ *
+ * Exact-match dedup survives because it removes only the observer's genuine
+ * double-write, which carries no information. Substring domination removed
+ * information: "all commands run by agent roles must show in streams."
+ */
+export function dedupeLines(lines: StreamLine[]): StreamLine[] {
   const out: StreamLine[] = [];
   for (const line of lines) {
-    const dominated = out.some((prev) => {
-      if (prev.role !== line.role) return false;
-      if (prev.text === line.text) return true;
-      const shorter = prev.text.length < line.text.length ? prev.text : line.text;
-      const longer = prev.text.length >= line.text.length ? prev.text : line.text;
-      return shorter.length > 10 && longer.includes(shorter);
-    });
+    const dominated = out.some((prev) => prev.role === line.role && prev.text === line.text);
     if (!dominated) out.push(line);
   }
   return out;
