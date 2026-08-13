@@ -737,6 +737,17 @@ fn emit_spine_reason(home: &Path, event: &str, role: &str, card: u64, trace: &st
 /// Current (#3116): Q2 named to "you and your domain" (the demoee IS the user);
 /// +Q4 Loom lens (the discriminator no peer can answer for). Approach: extract
 /// to a pure fn so the wording is pinned by test and can't silently soften.
+/// #3858 — the one-line room announce: card, title, AC tally, gate state,
+/// the decision ask, and the trace link for everything else. Jeff's rule via
+/// Wren's screenshot: the room is a phone; detail goes behind the link.
+pub fn bridge_announce_line(card: u64, title: &str, checked: usize, total: usize, gates_green: bool, trace: &str) -> String {
+    let gates = if gates_green { "gates ✓" } else { "gates ✗" };
+    let t = if title.len() > 60 { &title[..60] } else { title };
+    format!(
+        "🎬 #{card} · {t} · AC {checked}/{total} · {gates} · go / no / more · http://localhost:3340/borg/trace.html?card={card}&trace={trace}"
+    )
+}
+
 pub fn feedback_message(card: u64, from: &str) -> String {
     format!(
         "[feedback #{} — ACK REQUIRED]\\nFrom: {}\\nRead the card. Read the code. Then reply.\\n(1) How does this impact your products?\\n(2) How does this impact you and your domain?\\n(3) Am I over-building or under-planning?\\n(4) Does this strengthen Loom, or just please the room?\\nAck: substantive reply or blocked-on-X within 10 min.",
@@ -1355,6 +1366,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // gates: #3284 (AC7) — each gate's VERDICT (✓/✗/-), not just which ran, so the
     // decision surface carries the feedback (the #3251 residual).
     let gate_summary = render_gate_summary(&witness, card);
+    // #3858 — the room line's gate bit: green only when the summary carries no
+    // failure mark (the summary itself is the source of truth for per-gate state).
+    let gates_green = !gate_summary.contains('✗') && !gate_summary.to_lowercase().contains("fail");
 
     // #3284 (AC1-4) — the execution-state cockpit, from the card's real events.
     let events = fetch_card_events(card);
@@ -1382,7 +1396,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
 
     let mut parts: Vec<String> = Vec::new();
     parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
-    parts.push(format!("🎬 {}", if title.is_empty() { format!("#{}", card) } else { title })); // (3) card # + title
+    parts.push(format!("🎬 {}", if title.is_empty() { format!("#{}", card) } else { title.clone() })); // (3) card # + title
     parts.push(format!("   DEMO · ready for your GO · AC {}/{}", checked, total));
     parts.push("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".to_string());
     parts.push(cockpit.clone());
@@ -1397,11 +1411,15 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     parts.push("Look at the variant, ask me anything, or tell me to TEST it.".to_string());
     parts.push(format!("Then your call → `werk-demo go {}` to land · no/more to hold.", card));
     let announce = parts.join("\n");
-    // Also POST to Bridge (history + any non-focus surface). Escaped for one-line JSON.
+    // #3858 — the ROOM gets ONE LINE (Jeff reads it on a phone; the full cockpit
+    // above fills his screen — his screenshot, 2026-08-13). The rich announce
+    // stays this verb's returned message (the session reply); the room line
+    // carries exactly the decision contract + the trace link for detail.
     let surface_body = format!(
         r#"{{"from":"{}","text":"{}"}}"#,
         role,
-        announce.replace('\\', " ").replace('"', "'").replace('\n', "\\n")
+        bridge_announce_line(card, &title, checked, total, gates_green, &trace)
+            .replace('\\', " ").replace('"', "'")
     );
     let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
                           "-H", "Content-Type: application/json", "-d", &surface_body]);
