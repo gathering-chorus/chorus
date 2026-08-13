@@ -43,6 +43,10 @@ import {
   lookupOwnership as athenaLookupOwnership,
   computeBlastRadius as athenaComputeBlastRadius,
 } from './athena-tree-stub';
+// #3818 — the word cap: counting is shared with Kade's Rust Stop-hook leg via
+// config/word-cap-fixtures.json; the cap VALUE resolves from the Properties
+// domain so changing it is an edit, not a deploy.
+import { resolveCap, checkCap, CAP_KEY_NUDGE } from './word-cap';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -2670,8 +2674,40 @@ export async function executeNudge(
   from: string,
   fetchImpl: FetchImpl,
   pulseUrl?: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  // isError is part of the contract, not a cast: a TS caller must be able to
+  // tell a refusal from a send without parsing the text (Silas + Kade, #3818).
+): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
   const { to, message, expects } = args;
+
+  // #3818 — the word cap, enforced BEFORE anything is recorded or sent.
+  //
+  // Placement is the whole design. The spine emits below deliberately fire
+  // before the pulse POST so the audit trail survives an unreachable pulse — but
+  // that means a message rejected AFTER them would be recorded as requested and
+  // emitted while never being sent. So the gate goes first: an over-cap message
+  // leaves no trace of having been sent, because it wasn't.
+  //
+  // Kade's catch (#3818 pairing): this can deadlock against the RESPOND-FIRST
+  // gate, which blocks a role's tools until it answers a peer. If a reply
+  // bounces for length, the role still owes the reply — so the bounce MUST NOT
+  // mark the nudge answered, and the reply path must stay callable so a shorter
+  // resend clears it. Returning an error from this tool satisfies both: nothing
+  // is consumed, and the caller can immediately retry shorter.
+  //
+  // Fail-open lives in resolveCap: a dead store yields the default, never a
+  // rejection. A cap is a courtesy to Jeff, not a security control, and muting
+  // the whole team because Fuseki blinked is the #3218 lockout shape.
+  // The NUDGE key, not the response key. Role-to-role traffic is the half Jeff
+  // never sees, so it caps tighter (#3818 AC2).
+  const cap = await resolveCap(from, {
+    fetchImpl: (url: string) => fetchImpl(url) as unknown as Promise<{ ok: boolean; json: () => Promise<unknown> }>,
+    now: () => Date.now(),
+  }, CAP_KEY_NUDGE);
+  const verdict = checkCap(message, cap);
+  if (!verdict.ok) {
+    logEvent('info', 'mcp.nudge.over_cap', { from, to, words: verdict.words, cap: verdict.cap });
+    return { content: [{ type: 'text', text: verdict.message }], isError: true };
+  }
   // #3485 — the pulse endpoint lives in exactly ONE place: here. Callers
   // (the MCP dispatch, the POST /nudge route, transport.ts) do not name it,
   // so this is the single file that knows/POSTs the pulse nudge URL.
