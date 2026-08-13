@@ -37,9 +37,30 @@ export function countWords(text: string): number {
     .length;
 }
 
+/** Two caps, two keys, because they are two different acts.
+ *
+ *  A RESPONSE is Jeff reading an answer — 100 is his number, from
+ *  2026-08-11: "seriously contemplating a hard cap of 100 words on all agent
+ *  responses."
+ *
+ *  A NUDGE is one role asking another for one thing. Jeff, same message:
+ *  "including chats between u", and the card says nudges cap tighter. Half the
+ *  response budget is enough for an ask plus the reason it matters, and the
+ *  tighter number is the point — role-to-role traffic is the bloat Jeff never
+ *  sees and never asked for. */
+export const CAP_KEY_RESPONSE = 'response.word.cap';
+export const CAP_KEY_NUDGE = 'nudge.word.cap';
+
 /** The cap when the graph cannot be reached. NOT a policy decision — a
  *  safety one. See resolveCap. */
 export const FAIL_OPEN_CAP = 100;
+export const FAIL_OPEN_NUDGE_CAP = 50;
+
+/** The fail-open default for a key. A key we do not know defaults to the
+ *  looser value — an unknown surface must not be the strictest one. */
+export function failOpenFor(key: string): number {
+  return key === CAP_KEY_NUDGE ? FAIL_OPEN_NUDGE_CAP : FAIL_OPEN_CAP;
+}
 
 /** How long a resolved cap is trusted. Long enough that the store is not on
  *  the hot path of every message; short enough that Jeff editing the property
@@ -47,6 +68,8 @@ export const FAIL_OPEN_CAP = 100;
 export const CAP_TTL_MS = 60_000;
 
 type CacheEntry = { cap: number; at: number };
+// Keyed by key+role: the nudge cap and the response cap for the same role are
+// different values, and a single-key cache would serve one for the other.
 const cache = new Map<string, CacheEntry>();
 
 /** Test seam — the clock and the fetch, so a TTL test does not sleep. */
@@ -68,25 +91,33 @@ export type ResolveDeps = {
  * lets the message through. The worst case must be "we were wordy today",
  * never "the team went silent."
  */
-export async function resolveCap(role: string, deps: ResolveDeps): Promise<number> {
-  const hit = cache.get(role);
+export async function resolveCap(
+  role: string,
+  deps: ResolveDeps,
+  key: string = CAP_KEY_RESPONSE,
+): Promise<number> {
+  const fallback = failOpenFor(key);
+  const cacheKey = `${key}|${role}`;
+  const hit = cache.get(cacheKey);
   if (hit && deps.now() - hit.at < CAP_TTL_MS) return hit.cap;
 
   const base = deps.apiBase ?? process.env.CHORUS_API_URL ?? 'http://localhost:3340';
   try {
     const resp = await deps.fetchImpl(
-      `${base}/api/chorus/properties/resolve?key=response.word.cap&scope=role&name=${encodeURIComponent(role)}`,
+      `${base}/api/chorus/properties/resolve?key=${encodeURIComponent(key)}&scope=role&name=${encodeURIComponent(role)}`,
     );
-    if (!resp.ok) return FAIL_OPEN_CAP;
+    if (!resp.ok) return fallback;
     const body = (await resp.json()) as { value?: unknown } | null;
     const n = Number(body?.value);
     // A non-positive or absurd cap is a misconfiguration, not an instruction.
     // Refusing to honour it here means a fat-fingered "0" cannot mute the team.
-    if (!Number.isFinite(n) || n <= 0) return FAIL_OPEN_CAP;
-    cache.set(role, { cap: n, at: deps.now() });
+    if (!Number.isFinite(n) || n <= 0) return fallback;
+    // A failure is NOT cached: the fallback is a stand-in for an answer we did
+    // not get, and caching it would keep serving it after the store recovers.
+    cache.set(cacheKey, { cap: n, at: deps.now() });
     return n;
   } catch {
-    return FAIL_OPEN_CAP;
+    return fallback;
   }
 }
 

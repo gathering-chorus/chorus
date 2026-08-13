@@ -2,16 +2,18 @@
 // #3818 — the word cap. Jeff, 2026-08-11: "seriously contemplating a hard cap of
 // 100 words on all agent responses" — "including chats between u."
 //
-// Two surfaces enforce it in two languages: this send-path gate (TS) and Kade's
-// Stop-hook leg (Rust). They cannot share a module, so they share a FIXTURE:
-// config/word-cap-fixtures.json. Both run it. Two counters that disagree would
-// bounce Jeff on one surface and not the other, which reads as a broken cap.
+// Two surfaces enforce it in two languages: this send-path gate (TS, #3818) and
+// Kade's Stop-hook leg (Rust, #3843 — a separate card, landing after this so the
+// fixture exists on main for his test to read). They cannot share a module, so
+// they share a FIXTURE: config/word-cap-fixtures.json. Two counters that
+// disagree would bounce Jeff on one surface and not the other.
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import * as fs from 'fs';
 import * as path from 'path';
 import {
-  countWords, resolveCap, checkCap, FAIL_OPEN_CAP, CAP_TTL_MS, __clearCapCache,
+  countWords, resolveCap, checkCap, FAIL_OPEN_CAP, FAIL_OPEN_NUDGE_CAP, CAP_TTL_MS,
+  CAP_KEY_NUDGE, CAP_KEY_RESPONSE, failOpenFor, __clearCapCache,
 } from '../src/word-cap';
 
 const FIXTURE = JSON.parse(
@@ -113,4 +115,50 @@ test('caches per role — one role\'s cap never answers for another', async () =
   __clearCapCache();
   assert.equal(await resolveCap('wren', { fetchImpl: async () => okResp(10), now: () => 0 }), 10);
   assert.equal(await resolveCap('kade', { fetchImpl: async () => okResp(20), now: () => 0 }), 20);
+});
+
+test('the nudge key resolves separately from the response key', async () => {
+  __clearCapCache();
+  const seen: string[] = [];
+  const deps = {
+    fetchImpl: async (url: string) => { seen.push(url); return okResp(url.includes('nudge') ? 30 : 90); },
+    now: () => 0,
+  };
+  assert.equal(await resolveCap('wren', deps, CAP_KEY_NUDGE), 30);
+  assert.equal(await resolveCap('wren', deps, CAP_KEY_RESPONSE), 90);
+  assert.ok(seen[0].includes('nudge.word.cap'), seen[0]);
+  assert.ok(seen[1].includes('response.word.cap'), seen[1]);
+});
+
+// NEGATIVE PROOF for the cache split: one key's value must never answer for the
+// other. A single-key cache would serve the nudge cap as the response cap.
+test('the two keys do not share a cache entry', async () => {
+  __clearCapCache();
+  let calls = 0;
+  const deps = { fetchImpl: async () => { calls++; return okResp(11); }, now: () => 0 };
+  await resolveCap('wren', deps, CAP_KEY_NUDGE);
+  await resolveCap('wren', deps, CAP_KEY_RESPONSE);
+  assert.equal(calls, 2, 'each key is resolved on its own');
+});
+
+test('nudges fail open TIGHTER than responses — the tighter default is the point', () => {
+  assert.equal(failOpenFor(CAP_KEY_NUDGE), FAIL_OPEN_NUDGE_CAP);
+  assert.equal(failOpenFor(CAP_KEY_RESPONSE), FAIL_OPEN_CAP);
+  assert.ok(FAIL_OPEN_NUDGE_CAP < FAIL_OPEN_CAP, 'a nudge is one ask');
+});
+
+test('an UNKNOWN key fails open to the looser cap — an unrecognised surface must not become the strictest', () => {
+  assert.equal(failOpenFor('some.future.key'), FAIL_OPEN_CAP);
+});
+
+test('a dead store does not poison the cache — it re-reads once the store is back', async () => {
+  __clearCapCache();
+  let up = false;
+  const deps = {
+    fetchImpl: async () => { if (!up) throw new Error('down'); return okResp(25); },
+    now: () => 0,
+  };
+  assert.equal(await resolveCap('wren', deps, CAP_KEY_NUDGE), FAIL_OPEN_NUDGE_CAP);
+  up = true;
+  assert.equal(await resolveCap('wren', deps, CAP_KEY_NUDGE), 25, 'the fallback was never cached');
 });

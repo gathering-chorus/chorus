@@ -2,7 +2,7 @@
   "_comment": [
     "#3818 — the SHARED TRUTH for word counting, and the reason it is a data file.",
     "",
-    "The cap is enforced on two surfaces in two languages: Wren's send-path gate",
+    "The cap is enforced on two surfaces in two languages: Wren's send-path gate (TypeScript, in the nudge send path — THIS card, #3818) and Kade's Stop-hook leg (Rust, in chorus-hooks — a SEPARATE card, #3843, landing after this one so that this file exists on main for his test to read). As of #3818 only the TS side runs these cases; Kade's leg is built and deliberately RED until then.",
     "(TypeScript, in the messaging API POST) and Kade's Stop-hook leg (Rust, in",
     "chorus-hooks). A shared module cannot span that boundary, so the shared thing",
     "is this fixture. BOTH implementations run it and both must agree.",
