@@ -1,0 +1,118 @@
+{
+  "_comment": [
+    "#3818 — the SHARED TRUTH for word counting, and the reason it is a data file.",
+    "",
+    "The cap is enforced on two surfaces in two languages: Wren's send-path gate",
+    "(TypeScript, in the messaging API POST) and Kade's Stop-hook leg (Rust, in",
+    "chorus-hooks). A shared module cannot span that boundary, so the shared thing",
+    "is this fixture. BOTH implementations run it and both must agree.",
+    "",
+    "Why that matters more than it sounds: two counters that disagree means Jeff",
+    "gets bounced on one surface and not the other for the same text. He would",
+    "rightly read that as the cap being broken, and we would rip it out.",
+    "",
+    "Rule, decided with Kade 2026-08-12: count PROSE ONLY. Strip fenced code",
+    "blocks, inline code spans, and URLs before counting. Do NOT strip",
+    "indented lines — Kade's call, and he is right: ordinary paragraphs indent by",
+    "accident, and the first wordy reply that slips through on an accidental",
+    "indent costs more trust than the cap earns. Fencing receipts is a habit we",
+    "should have anyway; they render better in his terminal."
+  ],
+  "cases": [
+    {
+      "name": "plain prose counts every word",
+      "text": "one two three four five",
+      "expect": 5
+    },
+    {
+      "name": "empty text is zero, not an error",
+      "text": "",
+      "expect": 0
+    },
+    {
+      "name": "whitespace only is zero",
+      "text": "   \n\t  \n ",
+      "expect": 0
+    },
+    {
+      "name": "runs of whitespace collapse",
+      "text": "one    two\n\n\nthree\t\tfour",
+      "expect": 4
+    },
+    {
+      "name": "a fenced block is stripped entirely",
+      "text": "before the block\n```\nthis whole block is not counted at all\n```\nafter",
+      "expect": 4
+    },
+    {
+      "name": "a fenced block with a language tag is stripped",
+      "text": "look at this\n```bash\ngrep -rn something big and wordy here\n```\ndone",
+      "expect": 4
+    },
+    {
+      "name": "several fenced blocks all strip",
+      "text": "a\n```\nx y z\n```\nb\n```\np q r\n```\nc",
+      "expect": 3
+    },
+    {
+      "name": "an UNCLOSED fence strips to end of text — ACCEPTED RISK, not a bug: open a fence and talk forever and it counts zero. Kept because the cap is a courtesy to Jeff, not a security control, and the alternative (counting a pasted log as prose) bounces a message for showing evidence. Named here so nobody rediscovers it as a defect.",
+      "text": "here it is\n```\nnever closed and very long indeed",
+      "expect": 3
+    },
+    {
+      "name": "inline code spans are stripped",
+      "text": "run `chorus-model seed --kind role` when ready",
+      "expect": 3
+    },
+    {
+      "name": "urls are stripped whole, not counted as several words",
+      "text": "see http://localhost:3340/api/chorus/health for details",
+      "expect": 3
+    },
+    {
+      "name": "https urls too",
+      "text": "open https://id.lightlifeurbangardens.com/.well-known/openid-configuration now",
+      "expect": 2
+    },
+    {
+      "name": "indented lines are NOT stripped — Kade's call, the deliberate hole we refuse to open",
+      "text": "prose here\n    indented receipt line counts too",
+      "expect": 7
+    },
+    {
+      "name": "punctuation does not create words",
+      "text": "yes. no! maybe? sure —",
+      "expect": 4
+    },
+    {
+      "name": "a hyphenated word is one word",
+      "text": "the send-path gate",
+      "expect": 3
+    },
+    {
+      "name": "emoji prefix is not a word",
+      "text": "🪶 got it",
+      "expect": 2
+    },
+    {
+      "name": "a realistic short nudge",
+      "text": "🪶 Got it — on it now. Dropping #3839 polling, Jeff's feedback loop is the priority.",
+      "expect": 14
+    },
+    {
+      "name": "prose plus a big fenced receipt stays small — the case the whole rule exists for",
+      "text": "Two concurrent deliveries, both attempt 1:\n```\n23:46:35  id 25451  wren -> silas  attempt 1  nudge.surfaced\n23:46:35  id 25452  wren -> kade   attempt 1  nudge.surfaced\n```\nZero failures.",
+      "expect": 8
+    },
+    {
+      "name": "ws:// relay urls are stripped like http ones — Buzz relay urls already appear in our nudges (Kade, #3818)",
+      "text": "relay is ws://192.168.86.242:3000 right now",
+      "expect": 4
+    },
+    {
+      "name": "wss:// too",
+      "text": "try wss://relay.example.com/socket instead",
+      "expect": 2
+    }
+  ]
+}

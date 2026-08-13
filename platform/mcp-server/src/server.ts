@@ -43,6 +43,10 @@ import {
   lookupOwnership as athenaLookupOwnership,
   computeBlastRadius as athenaComputeBlastRadius,
 } from './athena-tree-stub';
+// #3818 — the word cap: counting is shared with Kade's Rust Stop-hook leg via
+// config/word-cap-fixtures.json; the cap VALUE resolves from the Properties
+// domain so changing it is an edit, not a deploy.
+import { resolveCap, checkCap } from './word-cap';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -2672,6 +2676,35 @@ export async function executeNudge(
   pulseUrl?: string,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   const { to, message, expects } = args;
+
+  // #3818 — the word cap, enforced BEFORE anything is recorded or sent.
+  //
+  // Placement is the whole design. The spine emits below deliberately fire
+  // before the pulse POST so the audit trail survives an unreachable pulse — but
+  // that means a message rejected AFTER them would be recorded as requested and
+  // emitted while never being sent. So the gate goes first: an over-cap message
+  // leaves no trace of having been sent, because it wasn't.
+  //
+  // Kade's catch (#3818 pairing): this can deadlock against the RESPOND-FIRST
+  // gate, which blocks a role's tools until it answers a peer. If a reply
+  // bounces for length, the role still owes the reply — so the bounce MUST NOT
+  // mark the nudge answered, and the reply path must stay callable so a shorter
+  // resend clears it. Returning an error from this tool satisfies both: nothing
+  // is consumed, and the caller can immediately retry shorter.
+  //
+  // Fail-open lives in resolveCap: a dead store yields the default, never a
+  // rejection. A cap is a courtesy to Jeff, not a security control, and muting
+  // the whole team because Fuseki blinked is the #3218 lockout shape.
+  const cap = await resolveCap(from, {
+    fetchImpl: (url: string) => fetchImpl(url) as unknown as Promise<{ ok: boolean; json: () => Promise<unknown> }>,
+    now: () => Date.now(),
+  });
+  const verdict = checkCap(message, cap);
+  if (!verdict.ok) {
+    logEvent('info', 'mcp.nudge.over_cap', { from, to, words: verdict.words, cap: verdict.cap });
+    return { content: [{ type: 'text', text: verdict.message }], isError: true } as unknown as
+      { content: Array<{ type: 'text'; text: string }> };
+  }
   // #3485 — the pulse endpoint lives in exactly ONE place: here. Callers
   // (the MCP dispatch, the POST /nudge route, transport.ts) do not name it,
   // so this is the single file that knows/POSTs the pulse nudge URL.
