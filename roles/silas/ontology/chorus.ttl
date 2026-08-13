@@ -2137,66 +2137,6 @@ chorus:prop-pipeline-test-type a chorus:Property ;
     chorus:propertyValueType "string" ;
     chorus:propertyScope "instance" .
 
-# --- #3845 leg A — word-cap Properties: the first REAL cascade data. Until these
-# rows, the whole graph held two instance-scope Properties and the #3437 resolver
-# had never run against anything but its own fixtures. Values are the ENFORCED
-# live numbers (Jeff 2026-08-11: 100-word response cap; 50-word nudge cap) — the
-# governed value replaces the compiled-in constant, it does not invent a new one.
-# Role-scoped now; the broader team-wide default lands with the ownership-walk
-# chain (Wren's effective_response leg), where a narrower scope has something to
-# override. register-before-use: pk-responseWordCap (priorities-3686.ttl) +
-# pk-nudgeWordCap below. ---
-chorus:pk-nudgeWordCap a chorus:PropertyKey ;
-    rdfs:label "nudgeWordCap" ;
-    chorus:keyName "nudge.word.cap" ;
-    chorus:appliesToClass chorus:Role ;
-    chorus:propertyKind "datatype" ;
-    chorus:keyValueType "int" ;
-    chorus:lifecycleEnabled false ;
-    rdfs:comment "Maximum words in a role-to-role nudge. Same contract as pk-responseWordCap: read from the cascade at send time, never compiled in; absent a value the gate must refuse to cap rather than invent a number." .
-
-chorus:prop-role-silas-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-silas chorus:hasProperty chorus:prop-role-silas-response-word-cap .
-
-chorus:prop-role-wren-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-wren chorus:hasProperty chorus:prop-role-wren-response-word-cap .
-
-chorus:prop-role-kade-response-word-cap a chorus:Property ;
-    chorus:propertyKey "response.word.cap" ;
-    chorus:propertyValue "100" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-kade chorus:hasProperty chorus:prop-role-kade-response-word-cap .
-
-chorus:prop-role-silas-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-silas chorus:hasProperty chorus:prop-role-silas-nudge-word-cap .
-
-chorus:prop-role-wren-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
-
-chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
-    chorus:propertyKey "nudge.word.cap" ;
-    chorus:propertyValue "50" ;
-    chorus:propertyValueType "int" ;
-    chorus:propertyScope "role" .
-chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .
-
 # --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
 # PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
 # projects into the API surface) AND a chorus:Domain individual (individual-facet — sits in
@@ -4115,10 +4055,6 @@ chorus:PropertyShape a sh:NodeShape ;
     sh:targetClass chorus:Property ;
     sh:property [ sh:path chorus:propertyKey ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:propertyValue ; sh:minCount 1 ] ;
-    # #3845 — propertyValueType is MANDATORY: the /effective fetch's graph pattern
-    # requires it, so a Property written without it is silently invisible to the
-    # cascade — the door must refuse what the resolver cannot see.
-    sh:property [ sh:path chorus:propertyValueType ; sh:minCount 1 ] ;
     chorus:instancesGraph "urn:chorus:ontology" ;
     chorus:generatedBy "athena-model" .
 
