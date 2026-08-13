@@ -84,8 +84,18 @@ fi
 # 4. Disk space on Bedroom external drives
 DISK_INFO=$(ssh -o ConnectTimeout=5 "$BEDROOM" "df -h /Volumes/VideosNew 2>/dev/null | tail -1 | awk '{print \$5}'" 2>/dev/null || echo "unknown")
 DISK_PCT="${DISK_INFO%%%}"
+# fire-on-change only: nudge when the % rises to a NEW level or hits critical
+# (>=95), not every hourly poll at the same level. Kills the repeat-nag for a
+# known, slowly-filling media volume while keeping the climb + critical loud.
+DISK_LAST="$HOME/.chorus/bedroom-disk-last-pct"
 if [ "$DISK_PCT" != "unknown" ] && [ "$DISK_PCT" -gt 90 ] 2>/dev/null; then
-  WARNINGS+=("Bedroom external disk at ${DISK_PCT}%")
+  DISK_PREV=$(cat "$DISK_LAST" 2>/dev/null || echo 0)
+  if [ "$DISK_PCT" -gt "$DISK_PREV" ] || [ "$DISK_PCT" -ge 95 ]; then
+    WARNINGS+=("Bedroom external disk at ${DISK_PCT}%")
+    echo "$DISK_PCT" > "$DISK_LAST"
+  fi
+elif [ "$DISK_PCT" != "unknown" ]; then
+  rm -f "$DISK_LAST"  # recovered below 91 — reset so a future climb alerts fresh
 fi
 
 # 5. Memory pressure
