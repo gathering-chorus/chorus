@@ -59,7 +59,7 @@ pub mod nudge_gate {
 // stub server, never a live chorus-api.
 pub mod word_cap {
     pub use crate::hooks::word_cap::{
-        block_message, check_cap, clear_cap_cache, count_words, note_refusal,
+        block_message, cap_context_line, check_cap, clear_cap_cache, count_words, note_refusal,
         reset_refusals, resolve_cap, OverCap, CAP_TTL, FAIL_OPEN_CAP,
         WORD_CAP_REFUSAL_CAP,
     };
