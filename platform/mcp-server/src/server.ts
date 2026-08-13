@@ -47,6 +47,12 @@ import {
 // config/word-cap-fixtures.json; the cap VALUE resolves from the Properties
 // domain so changing it is an edit, not a deploy.
 import { resolveCap, checkCap, CAP_KEY_NUDGE } from './word-cap';
+// #3844 — the transport behind the verb. One implementation today (pulse);
+// the point is that "which transport" is now a value, not the shape of the code.
+import {
+  PulseTransport, sendVia, selectTransports,
+  type NudgeTransport,
+} from './nudge-transport';
 
 const NudgeInput = z.object({
   to: z.enum(['silas', 'wren', 'kade', 'jeff']).describe('Target role'),
@@ -2725,49 +2731,33 @@ export async function executeNudge(
   await appendChorusLog('nudge.requested', from, { payload });
   await appendChorusLog('nudge.emitted', from, { payload });
 
-  // POST to pulse — pulse worker owns delivery (chorus-inject keystroke).
-  // X-Chorus-MCP-Caller header marks this as the canonical caller for the
-  // pulse-side caller-check (subsequent commit on this branch hardens the
-  // check; today this header is informational and load-bearing for it).
-  try {
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), 5000);
-    // #3485 — present the shared secret so pulse's gate accepts us as the
-    // canonical caller. X-Chorus-MCP-Caller kept for one migration window
-    // (pulse no longer reads it, but old pulse builds still do).
-    const pulseSecret = resolvePulseSecret();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'X-Chorus-Trace-Id': traceId,
-      'X-Chorus-MCP-Caller': '1',
-    };
-    if (pulseSecret) headers['X-Chorus-Pulse-Secret'] = pulseSecret;
-    const resp = await fetchImpl(resolvedPulseUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ from, to, content: message, traceId, expects: expects ?? 'none' }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!resp.ok) {
-      const errText = resp.text ? await resp.text().catch(() => '') : '';
-      throw new Error(`pulse POST returned ${resp.status}: ${errText.slice(0, 200)}`);
-    }
-    // #3439 AC3: surface the RESOLVED destination pulse computed (which live
-    // session/tty the nudge targets, or name-match fallback) so "sent" is no
-    // longer blind. Best-effort parse — fall back to the bare role on any miss.
-    let dest = `${to}`;
-    try {
-      const body = (await resp.json()) as { resolved?: string } | null;
-      if (body && typeof body.resolved === 'string') dest = body.resolved;
-    } catch { /* keep bare role */ }
-    logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId, resolved: dest });
-    return { content: [{ type: 'text', text: `nudge sent: ${from} → ${dest} (trace=${traceId})` }] };
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    logEvent('error', 'mcp.nudge.failed', { from, to, trace_id: traceId, error: errMsg });
-    throw new Error(`nudge delivery failed: ${errMsg}`, { cause: err });
+  // #3844 — send through the FACADE. Behaviour is identical to the inline POST
+  // this replaces: same URL, headers, timeout, resolved-destination parse. The
+  // change is that the transport is now selectable, so adopting Buzz becomes a
+  // config edit plus one new implementation of the interface — not a rewrite of
+  // every caller, and with somewhere to put fallback that does not exist today.
+  const available = new Map<string, NudgeTransport>([
+    ['pulse', new PulseTransport(fetchImpl, resolvedPulseUrl, resolvePulseSecret() ?? undefined)],
+  ]);
+  const { chosen, unknown } = selectTransports(available, process.env.CHORUS_NUDGE_TRANSPORTS);
+  if (unknown.length > 0) {
+    // A typo must not quietly leave you on the old transport — that is
+    // indistinguishable from the change never happening.
+    logEvent('error', 'mcp.nudge.transport_unknown', { from, to, unknown: unknown.join(',') });
   }
+  const { result, attempts } = await sendVia(chosen, {
+    from, to, content: message, traceId, expects: expects ?? 'none',
+  });
+  if (!result.ok) {
+    for (const a of attempts) {
+      logEvent('error', 'mcp.nudge.transport_failed', { from, to, transport: a.name, error: a.error });
+    }
+    // Loud. A facade that swallows a dead transport is worse than no facade.
+    throw new Error(result.error);
+  }
+  const dest = result.resolved;
+  logEvent('info', 'mcp.nudge.delivered', { from, to, trace_id: traceId, resolved: dest });
+  return { content: [{ type: 'text', text: `nudge sent: ${from} → ${dest} (trace=${traceId})` }] };
 }
 
 // #2652 (AC8) — cards execute helpers. Each spawns the cards bash CLI with
