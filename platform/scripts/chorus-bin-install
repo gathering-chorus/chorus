@@ -138,3 +138,35 @@ elif [ -x "${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/s
 fi
 
 echo "chorus-bin-install: installed $NAME → $DEST (cdhash=$CDHASH commit=$COMMIT card=$CARD_ID target=$TARGET)"
+
+# #3845 groundhog-day class — a canonical install must not leave a stale process
+# serving. If a LaunchAgent com.chorus.<name> is loaded and running, the process
+# it carries predates the binary we just installed BY CONSTRUCTION; kickstart it
+# so installed==running holds at the only moment we can guarantee it. Werk-target
+# installs never touch live units (the demo env manages its own). Failure is
+# LOUD (spine event + stderr), not fatal — the install itself succeeded.
+# Override for fixtures: CHORUS_BIN_NO_KICKSTART=1.
+if [ "$TARGET" = "canonical" ] && [ -z "${CHORUS_BIN_NO_KICKSTART:-}" ]; then
+  # Unit naming is not uniform: owl-api runs as com.chorus.owl-api but
+  # chorus-hooks runs as com.chorus.hooks — try the name as-is, then with the
+  # chorus- prefix stripped.
+  UNIT="com.chorus.$NAME"
+  UID_N=$(id -u)
+  if ! launchctl print "gui/$UID_N/$UNIT" >/dev/null 2>&1; then
+    UNIT="com.chorus.${NAME#chorus-}"
+  fi
+  if launchctl print "gui/$UID_N/$UNIT" >/dev/null 2>&1; then
+    if launchctl kickstart -k "gui/$UID_N/$UNIT" >/dev/null 2>&1; then
+      echo "chorus-bin-install: kickstarted $UNIT (installed binary is now the running binary)"
+      RESTART_RESULT="ok"
+    else
+      echo "chorus-bin-install: WARNING — $UNIT is loaded but kickstart FAILED; the running process is now STALE relative to $DEST" >&2
+      RESTART_RESULT="failed"
+    fi
+    if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+      echo "binary.restarted | $ROLE binary=$NAME unit=$UNIT result=$RESTART_RESULT" >> "$CHORUS_BIN_SPINE_LOG"
+    elif command -v chorus-log >/dev/null 2>&1; then
+      chorus-log binary.restarted "$ROLE" "binary=$NAME" "unit=$UNIT" "result=$RESTART_RESULT" >/dev/null 2>&1 || true
+    fi
+  fi
+fi
