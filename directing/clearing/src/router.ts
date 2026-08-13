@@ -138,8 +138,18 @@ const classificationRules: ClassificationRule[] = [
   (r) => /\[(progress|batch|batch-complete)\]/.test(r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
   // Filter bridge-subscriber echo (#1700)
   (r) => r.text.startsWith('[bridge]') ? { type: ROLE_TO_ROLE, visible: false } : null,
-  // Filter system noise
-  (r) => isSystemNoise(r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
+  // #3862 — machinery, from any sender. These three shapes rendered as chat
+  // bubbles on Jeff's phone today; the last one arrived tagged as HIS OWN
+  // message, in his own colour, because an MCP refusal is echoed back on the
+  // jeff-input path. Machinery is hidden by NAME here, so that the broad
+  // isSystemNoise sweep below can be narrowed to plumbing.
+  (r) => isMachineryEcho(r.text) ? { type: 'system-error', visible: false } : null,
+  // #3862 — system noise applies to PLUMBING only. This rule used to run against
+  // every sender, and one of its tests is "text contains a filesystem path", so
+  // any reply that quoted a path silently disappeared from Jeff's room. A role's
+  // own words are never "noise": what a role says to Jeff is the product.
+  (r) => (!isRoleName(r.from) && !isJeff(r.from) && isSystemNoise(r.text))
+    ? { type: ROLE_TO_ROLE, visible: false } : null,
   // #3852 — mid-turn thinking is ALWAYS folded. Jeff, 2026-08-13: the folding
   // "is also unreliable in how it works" — and he was right, because it decided
   // by CONTENT: a line was hidden only if it looked like a tool call or skill
@@ -154,7 +164,22 @@ const classificationRules: ClassificationRule[] = [
   // The cost of getting this wrong was measured: 18 of 50 room rows were
   // pm-thinking while Jeff's own messages were 12, so his room was mostly us
   // narrating at him.
-  (r) => r.type === 'pm-thinking' ? { type: 'pm-thinking', visible: false } : null,
+  //
+  // #3862 — and it was still wrong, in the direction that costs the most.
+  // `stop_reason` is 'end_turn' only when a turn ends in plain text. A turn that
+  // ends after tool calls does not carry it, so a FINISHED REPLY gets tagged
+  // mid-turn and folded. Every reply written while doing work goes through
+  // tools, so in practice this hid the answers and kept the narration.
+  //
+  // Measured in the live room at 17:22 Boston: 16 rows tagged pm-thinking,
+  // hidden — including two direct answers to a question Jeff had just asked.
+  //
+  // The type is kept: it still tells the UI this row is lower-signal, and the
+  // room can style or collapse it. But collapsing is a rendering decision, and
+  // Jeff settled what the current one actually does — "the ui definitely does
+  // not show collapsed messages that i can unfold - they literally are NOT
+  // THERE". Until a row can be unfolded, hiding is deletion.
+  (r) => r.type === 'pm-thinking' ? { type: 'pm-thinking', visible: true } : null,
   // Accept request / acceptance — Jeff or accept-request type (#2049)
   (r) => {
     const fromJeff = r.from.toLowerCase() === 'jeff'; // #3743: exact identity, never a prefix ('jeffrey' is not Jeff)
@@ -182,8 +207,15 @@ const classificationRules: ClassificationRule[] = [
   (r) => r.text.includes('[gemba]')
     ? { type: ROLE_RESPONSE, visible: true, text: r.text.replace('[gemba] ', '👁 ') }
     : null,
-  // Role-to-role nudges — hidden
-  (r) => isRoleToRole(r.from, r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
+  // #3862 — role-to-role nudges are VISIBLE. Jeff, 2026-08-13: "i dont want to
+  // hide any fucking nudges" / "i dont know how we got here where we hide
+  // nudges". The room is where the team talks; a nudge is the team talking.
+  // The type is kept so the UI can render it as an aside rather than a reply.
+  //
+  // This rule also caught replies written TO Jeff that merely mentioned another
+  // role by name, and filed them hidden. "Kade has streams. #3827 is mine." was
+  // an answer to a question he asked, and he never saw it.
+  (r) => isRoleToRole(r.from, r.text) ? { type: ROLE_TO_ROLE, visible: true } : null,
   // Role responding to Jeff — tagged explicitly
   (r) => r.type === ROLE_RESPONSE ? { type: ROLE_RESPONSE, visible: true } : null,
 ];
@@ -211,6 +243,28 @@ const SYSTEM_NOISE_RULES: ReadonlyArray<(t: string) => boolean> = [
 /** Whitelist filter — only show clean human-readable content */
 function isSystemNoise(text: string): boolean {
   return SYSTEM_NOISE_RULES.some((rule) => rule(text));
+}
+
+/**
+ * #3862 — machinery that reached Jeff's room as conversation.
+ *
+ * Each pattern is a shape he was actually shown on his phone on 2026-08-13,
+ * not a category we imagined. Kept narrow and named: a broad "looks technical"
+ * sweep is what ate the replies in the first place, so this list may only grow
+ * by adding a shape someone has SEEN in the room.
+ */
+function isMachineryEcho(text: string): boolean {
+  return (
+    /\[e2e-[a-z]+\]/i.test(text) ||                  // e2e test traffic acking itself
+    /^API Error: \d{3}/.test(text) ||                // an upstream tool error, verbatim
+    /\btype=is-error\b/.test(text) ||                // an MCP refusal echoed back
+    /^word-cap: \d+ words/.test(text)                // the cap gate refusing a send
+  );
+}
+
+/** #3743 — exact identity, never a prefix ('jeffrey' is not Jeff). */
+function isJeff(from: string): boolean {
+  return from.toLowerCase() === 'jeff';
 }
 
 // #3852 — isToolCall DELETED. It decided visibility by inspecting text, which is

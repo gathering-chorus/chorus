@@ -63,7 +63,11 @@ describe('#2048: Message attribution', () => {
 // 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
 // flipping an assertion someone deliberately wrote.
 describe('#2049: Skill output filtering', () => {
-  test('structured skill output is hidden from Clearing', () => {
+  // #3862 — skill output stays in the room, typed. Jeff asked for the opposite
+  // of filtering: "all commands run by agent roles must show in streams", and
+  // he can only judge what he can see. Hiding these was how "Done: #2048"
+  // became something he had to ask about instead of read.
+  test('structured skill output stays in the room, typed pm-thinking', () => {
     const router = new MessageRouter();
     const skillOutputs = [
       'Auto-checked 3 AC items on #2017',
@@ -77,13 +81,13 @@ describe('#2049: Skill output filtering', () => {
       router.ingest({ from: 'kade', text, ts: new Date().toISOString(), type: 'pm-thinking' });
     }
     const visible = router.getRecent(20);
-    for (const msg of visible) {
-      expect(msg.text).not.toMatch(/^(Auto-checked|Demo started:|Done:|Moved #|Accepted #\d+|INJECT_FAILED)/);
-    }
+    expect(visible).toHaveLength(skillOutputs.length);
+    expect(visible.every((m) => m.type === 'pm-thinking')).toBe(true);
   });
 
-  // #3852 — REVERSED. Commentary no longer passes through; it folds.
-  test('role thinking/commentary is folded', () => {
+  // #3852 folded commentary; #3862 shows it. See router.ts — the tag marks
+  // lower signal, it does not license deleting the row.
+  test('role thinking/commentary is visible', () => {
     const router = new MessageRouter();
     router.ingest({
       from: 'kade',
@@ -91,10 +95,9 @@ describe('#2049: Skill output filtering', () => {
       ts: new Date().toISOString(),
       type: 'pm-thinking',
     });
-    // #3852 — folded, and still retrievable with includeHidden.
-    expect(router.getRecent(10).length).toBe(0);
-    const hidden = router.getRecent(10, true);
-    expect(hidden.length).toBe(1);
-    expect(hidden[0].visible).toBe(false);
+    expect(router.getRecent(10).length).toBe(1);
+    const all = router.getRecent(10, true);
+    expect(all.length).toBe(1);
+    expect(all[0].visible).toBe(true);
   });
 });

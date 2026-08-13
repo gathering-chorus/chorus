@@ -50,15 +50,20 @@ describe('#3823 classifier default — unrecognized role messages are visible', 
     // default. A rule-matched message is typed by its rule; the fallback types
     // it 'role-response'. Pin the discriminator: the nudge text must NOT come
     // back as a fallback-typed message.
-    const claimed = ingest('wren', NUDGE);
-    expect(claimed.type).toBe('role-to-role');
-    expect(claimed.visible).toBe(false);
+    // #3862 — the discriminator is now the TYPE alone. Nudges are visible
+    // ("i dont want to hide any fucking nudges"), so visibility no longer
+    // separates a rule-matched row from a fallback row; the type still does.
+    const router = new MessageRouter();
+    router.ingest({ from: 'wren', text: NUDGE, ts: new Date().toISOString() });
+    expect(router.getRecent(10, true)[0].type).toBe('role-to-role');
   });
 
   test('NEGATIVE PROOF: hiding still happens when a rule names a reason', () => {
     // The fix must not turn the router into "show everything". Probes, bridge
-    // echo and role-to-role nudges are hidden BY RULE and must stay hidden —
+    // echo and batch progress are hidden BY RULE and must stay hidden —
     // otherwise this card trades an empty room for an unreadable one.
+    // #3862 removed nudges from this list; the other three still hold, and
+    // they are what keeps 129-of-200 probe rows out of Jeff's room.
     expect(ingest('probe', 'heartbeat', 'probe').visible).toBe(false);
     expect(ingest('wren', '[bridge] subscriber echo').visible).toBe(false);
     expect(ingest('wren', '[progress] 4/10 files').visible).toBe(false);
