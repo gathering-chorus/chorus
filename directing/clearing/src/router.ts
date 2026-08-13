@@ -198,8 +198,17 @@ const classificationRules: ClassificationRule[] = [
   // Demo ready
   (r) => (r.text.includes('[demo]') || r.text.toLowerCase().includes('demo ready'))
     ? { type: 'demo-ready', visible: true } : null,
-  // Blocked
-  (r) => (r.text.includes('blocked') || r.text.includes('BLOCKED')) ? { type: 'blocked', visible: true } : null,
+  // #3862 — blocked is a DECLARATION, not a word.
+  //
+  // This matched the substring anywhere in the text, and index.html reads type
+  // 'blocked' as level critical — so any message containing the word landed in
+  // the ALERTS pane. Observed live in Jeff's room at 17:47: my own reply
+  // quoting "event loop blocked 4712ms" was filed CRITICAL, next to a reply of
+  // Silas's. A role saying the word is not a role being blocked.
+  //
+  // An emitter that means it either sets the type or leads with the marker.
+  (r) => (r.type === 'blocked' || /^\[?blocked\]?\b/i.test(r.text.trim()))
+    ? { type: 'blocked', visible: true } : null,
   // Decision needed
   (r) => (r.text.includes('[decision]') || r.text.includes('decision needed'))
     ? { type: ROLE_RESPONSE, visible: true } : null,

@@ -269,9 +269,18 @@ describe('MessageRouter — classify: visible markers', () => {
     expect(r.getRecent(10)[0].type).toBe('blocked');
   });
 
-  test('"blocked" lowercase keyword also becomes blocked', () => {
+  // #3862 — this is the case that filed chat as CRITICAL. A sentence that uses
+  // the word mid-clause is prose; a declaration leads with it. See
+  // blocked-word-3862.test.ts for the live rows this came from.
+  test('"blocked" mid-sentence is prose, not a blocked declaration', () => {
     const r = new MessageRouter();
     r.ingest(mk('silas', 'task blocked by perms'));
+    expect(r.getRecent(10)[0].type).not.toBe('blocked');
+  });
+
+  test('a leading blocked declaration still types blocked', () => {
+    const r = new MessageRouter();
+    r.ingest(mk('silas', 'blocked by perms on the fuseki write'));
     expect(r.getRecent(10)[0].type).toBe('blocked');
   });
 
