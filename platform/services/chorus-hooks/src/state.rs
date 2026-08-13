@@ -21,6 +21,22 @@ pub struct AppState {
     /// the gate to write-test-then-write-code TDD in a werk. std::sync::Mutex so the
     /// sync gate can read it without an async context.
     test_edits: Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    /// #3853 — per-session activity for the streams heartbeat. session_id -> Activity.
+    /// A background ticker beats "running <tool>" while a command is in flight past a
+    /// threshold, and "thinking" between commands, so a long build or a composing turn
+    /// is never silent (the "idle" that isn't). Cleared on Stop (turn ended = truly
+    /// idle). std::sync::Mutex so the sync hook paths update it without an async context.
+    activity: Arc<std::sync::Mutex<std::collections::HashMap<String, Activity>>>,
+}
+
+/// #3853 — a session's current activity for the heartbeat ticker.
+#[derive(Clone, Debug)]
+struct Activity {
+    role: String,
+    tool: String,
+    phase: &'static str, // "running" | "thinking"
+    started: u64,        // epoch secs when this phase began
+    last_beat: u64,      // epoch secs of the last heartbeat emitted for it
 }
 
 /// Chorus search results cached from context_inject (#2225)
@@ -84,6 +100,7 @@ impl AppState {
             })),
             session_cache: SessionCache::new(),
             test_edits: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
+            activity: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             config: Arc::new(Config {
                 log_dir: repo_root.join("platform/logs"),
                 prefs_file: repo_root.join("jeff-preferences.json"),
@@ -92,6 +109,59 @@ impl AppState {
                 home_dir: PathBuf::from(home),
             }),
         }
+    }
+
+    fn now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// #3853 — a command started; beat "running <tool>" until it ends.
+    pub fn mark_running(&self, session_id: &str, role: &str, tool: &str) {
+        if session_id.is_empty() { return; }
+        let now = Self::now_secs();
+        if let Ok(mut m) = self.activity.lock() {
+            m.insert(session_id.to_string(), Activity {
+                role: role.to_string(), tool: tool.to_string(),
+                phase: "running", started: now, last_beat: now,
+            });
+        }
+    }
+
+    /// #3853 — a command ended; the session is now composing/thinking.
+    pub fn mark_thinking(&self, session_id: &str, role: &str) {
+        if session_id.is_empty() { return; }
+        let now = Self::now_secs();
+        if let Ok(mut m) = self.activity.lock() {
+            m.insert(session_id.to_string(), Activity {
+                role: role.to_string(), tool: String::new(),
+                phase: "thinking", started: now, last_beat: now,
+            });
+        }
+    }
+
+    /// #3853 — the turn ended (Stop); the session is genuinely idle. Silence now means idle.
+    pub fn clear_activity(&self, session_id: &str) {
+        if let Ok(mut m) = self.activity.lock() { m.remove(session_id); }
+    }
+
+    /// #3853 — entries silent for >= `threshold` secs since their last beat. Returns
+    /// (session, role, tool, phase, elapsed_since_phase_start) and bumps last_beat so
+    /// each returns again ~threshold later — repeated beats while still in-flight.
+    pub fn activity_due(&self, threshold: u64) -> Vec<(String, String, String, &'static str, u64)> {
+        let now = Self::now_secs();
+        let mut due = Vec::new();
+        if let Ok(mut m) = self.activity.lock() {
+            for (session, a) in m.iter_mut() {
+                if now.saturating_sub(a.last_beat) >= threshold {
+                    due.push((session.clone(), a.role.clone(), a.tool.clone(), a.phase, now.saturating_sub(a.started)));
+                    a.last_beat = now;
+                }
+            }
+        }
+        due
     }
 
     /// #3278 — record that this session has edited a test file (called live from
@@ -437,5 +507,60 @@ mod append_log_tests {
         assert!(is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::Interrupted)));
         assert!(!is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::PermissionDenied)));
         assert!(!is_transient_append_error(&std::io::Error::from(std::io::ErrorKind::NotFound)));
+    }
+}
+
+#[cfg(test)]
+mod activity_heartbeat_tests {
+    // #3853 — the streams heartbeat's core: a running command is "due" so the ticker
+    // beats it; between commands it's "thinking"; Stop clears it so silence truthfully
+    // means idle, not hidden work. That last one is the whole point — the negative case.
+    use super::*;
+
+    #[test]
+    fn running_command_is_due_and_labeled() {
+        let s = AppState::new();
+        s.mark_running("sess1", "silas", "Bash");
+        let due = s.activity_due(0);
+        assert_eq!(due.len(), 1);
+        let (sess, role, tool, phase, _elapsed) = &due[0];
+        assert_eq!(sess, "sess1");
+        assert_eq!(role, "silas");
+        assert_eq!(tool, "Bash");
+        assert_eq!(*phase, "running");
+    }
+
+    #[test]
+    fn not_due_before_the_threshold() {
+        let s = AppState::new();
+        s.mark_running("s", "silas", "Bash");
+        // elapsed ~0s, threshold huge -> a short command never beats (no spam)
+        assert!(s.activity_due(9999).is_empty());
+    }
+
+    #[test]
+    fn between_commands_is_thinking() {
+        let s = AppState::new();
+        s.mark_running("s", "silas", "Bash");
+        s.mark_thinking("s", "silas");
+        let due = s.activity_due(0);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].3, "thinking");
+    }
+
+    #[test]
+    fn stop_clears_activity_so_silence_means_idle() {
+        let s = AppState::new();
+        s.mark_running("s", "silas", "Bash");
+        s.clear_activity("s");
+        // the turn ended -> no beat -> quiet is honest idle, not a hidden command
+        assert!(s.activity_due(0).is_empty());
+    }
+
+    #[test]
+    fn empty_session_is_never_tracked() {
+        let s = AppState::new();
+        s.mark_running("", "silas", "Bash");
+        assert!(s.activity_due(0).is_empty());
     }
 }
