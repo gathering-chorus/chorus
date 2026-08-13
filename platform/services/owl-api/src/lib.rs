@@ -4683,10 +4683,11 @@ mod dispatch_effective_3845 {
         assert_eq!(dispatch_for("/", &t), Dispatch::NotFound);
     }
 
-    /// The bare word "effective" is not the route — only /effective/:node/:key
-    /// is. Without the trailing slash check, /effectiveness would match.
+    /// The route is /effective/:node/:key — three segments. Neither the bare
+    /// word nor a word merely STARTING with it is the route: without matching on
+    /// "effective/" with the slash, /effectiveness would dispatch here.
     #[test]
-    fn only_the_two_segment_effective_route_matches() {
+    fn a_bare_or_prefixed_effective_is_not_the_route() {
         let t = tables();
         assert_eq!(dispatch_for("/effective", &t), Dispatch::NotFound);
         assert_eq!(dispatch_for("/effectiveness", &t), Dispatch::NotFound);
@@ -4700,6 +4701,10 @@ mod dispatch_effective_3845 {
     fn a_trailing_slash_dispatches_but_the_handler_owns_arity() {
         let t = tables();
         assert!(matches!(dispatch_for("/effective/role-silas/", &t), Dispatch::Table(_)));
+        // Kade's degenerate: /effective/ with no node at all. Dispatch routes the
+        // family; the handler refuses the arity. Pinned so the division stays
+        // deliberate rather than becoming a surprise to whoever reads it next.
+        assert!(matches!(dispatch_for("/effective/", &t), Dispatch::Table(_)));
         // 2 segments after the split -> not the 3 the handler requires.
         let parts: Vec<&str> = "/effective/role-silas/"
             .trim_end_matches('/')
