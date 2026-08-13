@@ -2158,22 +2158,28 @@ async function notifySilasOfMcpError(event: string, fields: Record<string, unkno
   ]
     .filter(Boolean)
     .join(' ');
-  const pulseUrl = process.env.CHORUS_PULSE_URL || 'http://localhost:3475/api/nudge';
+  // #3851 — this used to POST pulse directly, which bypassed the nudge path
+  // and therefore the word cap. Jeff, 2026-08-13: the cap must hold on ALL
+  // messages. A system-generated nudge is still a nudge arriving in someone's
+  // terminal, so it goes through the same door as every other one.
+  //
+  // The summary is already bounded (msg sliced at 200 chars) and reads as one
+  // line, so the cap is not expected to fire here. If it ever does, that is the
+  // signal that an error summary grew into a paragraph — worth knowing, and the
+  // refusal says so rather than silently delivering it.
   try {
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => ctrl.abort(), 2000);
-    const resp = await fetch(pulseUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Chorus-MCP-Caller': '1' },
-      body: JSON.stringify({ from: 'chorus-mcp', to: 'silas', content: summary, traceId }),
-      signal: ctrl.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!resp.ok) {
-      logEvent('error', 'mcp.notification.failed', { reason: `pulse-${resp.status}`, event, trace_id: traceId });
-    }
+    await executeNudge(
+      { to: 'silas', message: summary } as NudgeArgs,
+      'chorus-mcp',
+      ((url: string, init?: Record<string, unknown>) =>
+        fetch(url, init as RequestInit) as unknown as ReturnType<FetchImpl>) as FetchImpl,
+    );
   } catch (err) {
-    logEvent('error', 'mcp.notification.failed', { reason: String(err).slice(0, 200), event, trace_id: traceId });
+    logEvent('error', 'mcp.notification.failed', {
+      reason: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      event,
+      trace_id: traceId,
+    });
   }
 }
 

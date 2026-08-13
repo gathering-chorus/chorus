@@ -6,6 +6,8 @@
  * any sink.
  */
 import express, { Request, Response, NextFunction } from 'express';
+import { checkCap } from './word-cap';
+import { isRoleName } from './router';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
@@ -1372,8 +1374,29 @@ const room = process.env.BUZZ_ROOM_ENABLED === '1'
   })
   : null;
 
+// #3851 — same counter as every other surface (config/word-cap-fixtures.json).
+// A second definition of "a word" is the failure mode, not a detail.
+const ROOM_WORD_CAP = Number(process.env.CHORUS_ROOM_WORD_CAP || 100);
+
 // Broadcast new messages as they arrive
 messageRouter.on('message', (msg) => {
+  // #3851 — the cap on the Clearing/Buzz OUTBOUND path. Jeff, 2026-08-13:
+  // "all messages" — agent-agent, agent-Jeff, agent-any-user. The room and the
+  // relay are send paths like any other, and they were uncapped.
+  //
+  // Refuse, never truncate: an over-cap role message is dropped from the
+  // outbound broadcast with a loud event, not silently shortened. Jeff's input
+  // is NEVER capped — the cap is ours, not his.
+  if (isRoleName(msg.from) && msg.type !== 'jeff-input') {
+    const v = checkCap(msg.text ?? '', ROOM_WORD_CAP);
+    if (!v.ok) {
+      process.stderr.write(JSON.stringify({
+        level: 'error', event: 'clearing.message.over_cap',
+        from: msg.from, words: v.words, cap: v.cap, ts: new Date().toISOString(),
+      }) + '\n');
+      return;
+    }
+  }
   io.emit('message', msg);
   buzz.mirror(msg); // #3696 — mirror to Buzz relay (dark unless BUZZ_BRIDGE_ENABLED=1)
   // #3823 — publish outbound, but NEVER re-publish what arrived from the relay:

@@ -113,6 +113,21 @@
       "name": "wss:// too",
       "text": "try wss://relay.example.com/socket instead",
       "expect": 2
+    },
+    {
+      "name": "the chorus prompt header is METADATA and never counts — Jeff 2026-08-13: 'dont count any metadata. its just whatever words you need to make that are specific to me'",
+      "text": "--- Wren | 2026-08-13 07:37 Boston | #3851 | Werk v1.6.0 ---\n\nthree real words",
+      "expect": 3
+    },
+    {
+      "name": "a header alone is zero words, not a message",
+      "text": "--- Silas | 2026-08-13 07:37 Boston | no card | Werk v1.6.0 ---",
+      "expect": 0
+    },
+    {
+      "name": "only a LEADING header strips — a dashed line mid-prose is content, not metadata",
+      "text": "one two\n--- three four ---\nfive",
+      "expect": 5
     }
   ]
 }
