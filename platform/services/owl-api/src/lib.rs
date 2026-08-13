@@ -3063,9 +3063,17 @@ pub fn dispatch_for(path: &str, tables: &[RouteTable]) -> Dispatch {
         };
     }
     match select_table(path, tables) {
-        Some(t) => Dispatch::Table(
-            tables.iter().position(|x| std::ptr::eq(x, t)).unwrap_or(0),
-        ),
+        // Kade (#3845 review): unwrap_or(0) here would silently fall back to the
+        // FIRST table on an invariant violation — and "first table" means a
+        // different instances_graph, so the request would succeed against the
+        // wrong graph and return a confident wrong answer. select_table returns a
+        // reference INTO this slice, so a missing position is impossible; if it
+        // ever happens the invariant is broken and we want to know immediately,
+        // not to serve someone else's data.
+        Some(t) => match tables.iter().position(|x| std::ptr::eq(x, t)) {
+            Some(i) => Dispatch::Table(i),
+            None => unreachable!("select_table returned a table outside the slice it was given"),
+        },
         None => Dispatch::NotFound,
     }
 }
@@ -4682,6 +4690,23 @@ mod dispatch_effective_3845 {
         let t = tables();
         assert_eq!(dispatch_for("/effective", &t), Dispatch::NotFound);
         assert_eq!(dispatch_for("/effectiveness", &t), Dispatch::NotFound);
+    }
+
+    /// Kade's gap: a trailing slash DOES reach the Property table here, and then
+    /// handle_inner rejects it on parts.len() != 3. Pinning that so the split of
+    /// responsibility is deliberate — dispatch routes the family, the handler
+    /// validates the shape — rather than an accident nobody wrote down.
+    #[test]
+    fn a_trailing_slash_dispatches_but_the_handler_owns_arity() {
+        let t = tables();
+        assert!(matches!(dispatch_for("/effective/role-silas/", &t), Dispatch::Table(_)));
+        // 2 segments after the split -> not the 3 the handler requires.
+        let parts: Vec<&str> = "/effective/role-silas/"
+            .trim_end_matches('/')
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .collect();
+        assert_eq!(parts.len(), 2, "handle_inner requires 3 and will refuse this");
     }
 
     /// NEGATIVE PROOF for the third state. A model with no Property class means
