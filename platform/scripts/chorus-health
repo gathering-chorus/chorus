@@ -411,6 +411,47 @@ else
   fail "deployed-equals-running" "deployed=${deployed_cdhash:0:12} running=${running_cdhash:0:12} — binary drift"
 fi
 
+# process-newer-than-binary (#3845 groundhog-day class). The cdhash check above
+# compares the deploy EVENT against the INSTALLED FILE — it never looks at the
+# running process, so a service running a two-week-old process under a fresh
+# binary passes it as "cdhash matches" (owl-api did exactly that, Jul 30 process
+# under an Aug 13 binary). This check compares each com.chorus.* unit's process
+# START TIME against its binary's mtime — the two states the old check could not
+# separate. Any process older than its binary = FAIL, per unit, loudly.
+STALE_BIN_PLIST_DIR="${STALE_BIN_PLIST_DIR:-$HOME/Library/LaunchAgents}"
+STALE_BIN_UID="${STALE_BIN_UID:-$(id -u)}"
+for plist in "$STALE_BIN_PLIST_DIR"/com.chorus.*.plist; do
+  [ -f "$plist" ] || continue
+  unit=$(basename "$plist" .plist)
+  prog=$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$plist" 2>/dev/null || true)
+  case "$prog" in
+    "$HOME/.chorus/bin/"*) ;;
+    *) continue ;;   # only binary-backed services deploy through ~/.chorus/bin
+  esac
+  # Stat the DEPLOYED BINARY, not whatever ProgramArguments points at — some
+  # units launch through a wrapper (owl-api-launch.sh), and stat-ing the wrapper
+  # made this check pass on the exact stale state it exists to catch (the
+  # first negative-proof run caught this — the wrapper's old mtime hid an
+  # Aug-13 binary under a Jul-30 process). Unit suffix maps to the binary:
+  # com.chorus.owl-api → owl-api; com.chorus.hooks → chorus-hooks.
+  suffix="${unit#com.chorus.}"
+  if [ -f "$HOME/.chorus/bin/$suffix" ]; then
+    prog="$HOME/.chorus/bin/$suffix"
+  elif [ -f "$HOME/.chorus/bin/chorus-$suffix" ]; then
+    prog="$HOME/.chorus/bin/chorus-$suffix"
+  fi
+  [ -f "$prog" ] || continue
+  pid=$(launchctl print "gui/$STALE_BIN_UID/$unit" 2>/dev/null | awk '/^\tpid = /{print $3; exit}')
+  [ -n "$pid" ] || continue   # not running: covered by the service-up checks
+  pstart=$(ps -o lstart= -p "$pid" 2>/dev/null | xargs -I{} date -j -f "%a %b %d %T %Y" "{}" +%s 2>/dev/null)
+  bmtime=$(stat -f %m "$prog" 2>/dev/null)
+  if [ -n "$pstart" ] && [ -n "$bmtime" ] && [ "$bmtime" -gt "$pstart" ]; then
+    fail "process-newer-than-binary" "$unit: process (pid $pid, started $(date -r "$pstart" '+%m-%d %H:%M')) predates its binary (installed $(date -r "$bmtime" '+%m-%d %H:%M')) — landed-not-running; kickstart it"
+  else
+    pass "process-newer-than-binary" "$unit: running process is current"
+  fi
+done
+
 # ─── INTERACTION / CONTEXT ───────────────────────────────────────────────────
 
 # session-start envelope completeness (principles_inject not stale in last 24h)
