@@ -3026,6 +3026,50 @@ pub fn openapi_html(class: &str) -> String {
 /// → "product" → the Product table; `/health` is handled server-level upstream.
 /// None = no class owns the resource (typed 404). Multi-class serve dispatches
 /// through this so one server fronts every generated API on one origin.
+/// #3845 — what the dispatcher should do with a path, decided in pure code.
+///
+/// WHY this exists as its own function: the decision used to live inline in the
+/// accept loop, where nothing could test it — and it was wrong for two months.
+/// `/effective/:node/:key` is a CROSS-CLASS route; select_table matches a path's
+/// first segment against a class plural, "effective" matches none, so the
+/// dispatcher answered "unknown route" before reaching the handler that had been
+/// compiled in since #3435 (2026-06-17). A routing bug that read exactly like a
+/// missing feature, and that two of us first mis-diagnosed as a stale deploy.
+#[derive(Debug, PartialEq)]
+pub enum Dispatch {
+    /// Serve with this table (index into the slice).
+    Table(usize),
+    /// An /effective request with no Property table mounted — distinct from
+    /// "unknown route", because the path is RIGHT and the model is missing.
+    /// Collapsing the two would send the next reader hunting a typo.
+    EffectiveUnavailable,
+    /// Genuinely unknown.
+    NotFound,
+}
+
+pub fn dispatch_for(path: &str, tables: &[RouteTable]) -> Dispatch {
+    let bare = path.split('?').next().unwrap_or("").trim_start_matches('/');
+    if bare.starts_with("effective/") {
+        return match tables
+            .iter()
+            .position(|t| t.class.rsplit('#').next().unwrap_or("").eq_ignore_ascii_case("Property"))
+        {
+            // Property's table, deliberately — the effective fetch reads
+            // table.instances_graph, and the rows being resolved ARE Property
+            // individuals. Falling back to the first table would silently read
+            // the wrong graph, which is the failure this route exists to stop.
+            Some(i) => Dispatch::Table(i),
+            None => Dispatch::EffectiveUnavailable,
+        };
+    }
+    match select_table(path, tables) {
+        Some(t) => Dispatch::Table(
+            tables.iter().position(|x| std::ptr::eq(x, t)).unwrap_or(0),
+        ),
+        None => Dispatch::NotFound,
+    }
+}
+
 pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a RouteTable> {
     let trimmed = path.trim_start_matches('/');
     let mut segs = trimmed.split('/');
@@ -3443,9 +3487,18 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
-        let table = match select_table(&path, tables) {
-            Some(t) => t,
-            None => {
+        // #3845 — dispatch decided in pure code (dispatch_for), because this
+        // decision lived inline here and was wrong for two months with nothing
+        // able to test it.
+        let table = match dispatch_for(&path, tables) {
+            Dispatch::Table(i) => &tables[i],
+            Dispatch::EffectiveUnavailable => {
+                let nf = "{ \"error\": \"effective-unavailable\", \"message\": \"no Property route table is mounted, so no effective-config graph can be resolved\" }";
+                let resp = http_response_ct(status_line(503), nf, "application/json");
+                let _ = stream.write_all(resp.as_bytes());
+                continue;
+            }
+            Dispatch::NotFound => {
                 let served: Vec<String> = tables
                     .iter()
                     .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
@@ -4525,5 +4578,124 @@ mod read_http_request_tests {
         let req = read_http_request(&mut r, 65_536);
         let got_body = req.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
         assert_eq!(got_body.len(), 4_000, "returns what arrived; downstream validation refuses");
+    }
+}
+
+/// #3845 — the dispatch bug, proven, then proven fixed.
+///
+/// `/effective/:node/:key` shipped in #3435 on 2026-06-17 and never answered a
+/// single request. The handler was the FIRST branch of handle_inner and was
+/// compiled into the running binary the whole time — but the accept loop chose a
+/// route table before calling it, select_table matches a path's first segment
+/// against a class plural, and "effective" is not a class. So every request
+/// 404'd "unknown route" with a list of collections, which reads exactly like a
+/// feature nobody built.
+///
+/// It stayed invisible because nothing tested the decision: it lived inline in
+/// the accept loop. These run against `dispatch_for`, which is that decision
+/// extracted — the point of extracting it.
+#[cfg(test)]
+mod dispatch_effective_3845 {
+    use super::*;
+
+    fn table(class: &str) -> RouteTable {
+        RouteTable {
+            class: format!("https://jeffbridwell.com/chorus#{class}"),
+            fields: vec![],
+            routes: vec![],
+            secured: vec![],
+            mandatory: vec![],
+            repo_target: String::new(),
+            exposure: vec![],
+            instances_graph: format!("urn:chorus:test:{}", class.to_lowercase()),
+            tree_edges: vec![],
+            tree_order: None,
+            model_version: "target".into(),
+        }
+    }
+
+    /// The tables as mounted: Property is NOT first, so a "just use tables[0]"
+    /// fix would pass a weaker test and read the wrong instances graph.
+    fn tables() -> Vec<RouteTable> {
+        vec![table("Domain"), table("Role"), table("Property"), table("Service")]
+    }
+
+    /// NEGATIVE PROOF — the OLD path, unchanged, still fails on the same input.
+    /// select_table is what the dispatcher used to call, and it is still here:
+    /// if this ever starts returning Some, the bug closed some other way and
+    /// everything below is measuring nothing.
+    #[test]
+    fn the_old_selector_still_cannot_find_a_table_for_effective() {
+        let t = tables();
+        assert!(
+            select_table("/effective/role-silas/response.word.cap", &t).is_none(),
+            "select_table matching a class plural is exactly why /effective 404'd"
+        );
+    }
+
+    #[test]
+    fn effective_now_dispatches_to_the_property_table() {
+        let t = tables();
+        match dispatch_for("/effective/role-silas/response.word.cap", &t) {
+            Dispatch::Table(i) => {
+                assert!(t[i].class.ends_with("#Property"), "got {}", t[i].class);
+                // The graph is the point: the effective fetch reads
+                // table.instances_graph. Picking any old table would query the
+                // wrong graph and return a confident wrong answer.
+                assert_eq!(t[i].instances_graph, "urn:chorus:test:property");
+            }
+            other => panic!("expected the Property table, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_query_string_does_not_break_the_effective_match() {
+        let t = tables();
+        assert!(matches!(
+            dispatch_for("/effective/role-silas/response.word.cap?trace=1", &t),
+            Dispatch::Table(_)
+        ));
+    }
+
+    /// NEGATIVE PROOF — the fix did not turn the dispatcher into a catch-all.
+    /// An unknown path is still NotFound, and the collection routes still land
+    /// on their own tables.
+    #[test]
+    fn ordinary_routes_are_untouched() {
+        let t = tables();
+        match dispatch_for("/domains", &t) {
+            Dispatch::Table(i) => assert!(t[i].class.ends_with("#Domain")),
+            other => panic!("expected the Domain table, got {other:?}"),
+        }
+        match dispatch_for("/properties", &t) {
+            Dispatch::Table(i) => assert!(t[i].class.ends_with("#Property")),
+            other => panic!("expected the Property table, got {other:?}"),
+        }
+        assert_eq!(dispatch_for("/nonsense", &t), Dispatch::NotFound);
+        assert_eq!(dispatch_for("/", &t), Dispatch::NotFound);
+    }
+
+    /// The bare word "effective" is not the route — only /effective/:node/:key
+    /// is. Without the trailing slash check, /effectiveness would match.
+    #[test]
+    fn only_the_two_segment_effective_route_matches() {
+        let t = tables();
+        assert_eq!(dispatch_for("/effective", &t), Dispatch::NotFound);
+        assert_eq!(dispatch_for("/effectiveness", &t), Dispatch::NotFound);
+    }
+
+    /// NEGATIVE PROOF for the third state. A model with no Property class means
+    /// the path is RIGHT and the model is missing — reporting "unknown route"
+    /// there sends the next reader hunting a typo that isn't there. Two states
+    /// this check must never collapse into one (#3734).
+    #[test]
+    fn no_property_table_is_unavailable_not_unknown() {
+        let t = vec![table("Domain"), table("Role")];
+        assert_eq!(
+            dispatch_for("/effective/role-silas/response.word.cap", &t),
+            Dispatch::EffectiveUnavailable
+        );
+        // and the genuinely-unknown path is still unknown, in the same model
+        assert_eq!(dispatch_for("/nonsense", &t), Dispatch::NotFound);
     }
 }
