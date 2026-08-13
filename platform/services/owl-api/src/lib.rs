@@ -2116,6 +2116,82 @@ pub fn build_scope_node(node_iri: &str, kind: ScopeKind, rows: &[String]) -> R<S
     Ok(ScopeNode { kind, iri: node_iri.to_string(), properties })
 }
 
+/// #3863 — read a ScopeKind from a class, by name. Accepts a full IRI or a bare
+/// localname; anything that is not one of the six cascade scopes returns None.
+///
+/// The `None` matters more than the `Some`s. `build_scope_node`'s caller used to
+/// pass `ScopeKind::Service` for whatever node was asked about, which meant a
+/// node of any class silently became a Service — and since a chain of one is
+/// trivially "strictly descending", nothing ever complained. Reading the kind
+/// and refusing the unknown is what turns the cascade from decoration into a
+/// rule that can be violated.
+pub fn scope_kind_from_class(class: &str) -> Option<ScopeKind> {
+    let local = class.rsplit(['#', '/']).next().unwrap_or(class);
+    match local {
+        "Role" => Some(ScopeKind::Role),
+        "Service" => Some(ScopeKind::Service),
+        "Domain" => Some(ScopeKind::Domain),
+        "Product" => Some(ScopeKind::Product),
+        "ValueStreamStep" => Some(ScopeKind::ValueStreamStep),
+        "ValueStream" => Some(ScopeKind::ValueStream),
+        _ => None,
+    }
+}
+
+/// #3863 — parse one ancestry row: `owner|ownerClass|propIri|key|valueType|value`.
+///
+/// `value` is LAST and `splitn(6)` gives it the remainder, so a config value may
+/// itself contain '|'. Every field before it is required: a row missing its owner
+/// or class cannot be placed in a chain, and placing it anyway is how a property
+/// ends up attributed to the wrong scope.
+fn parse_ancestry_row(row: &str) -> R<(String, ScopeKind, properties_resolver::PropertyDatum)> {
+    let mut it = row.splitn(6, '|');
+    let (owner, class, iri, key, vtype, value) =
+        match (it.next(), it.next(), it.next(), it.next(), it.next(), it.next()) {
+            (Some(o), Some(c), Some(i), Some(k), Some(t), Some(v))
+                if !o.is_empty() && !c.is_empty() && !i.is_empty() && !k.is_empty() =>
+            {
+                (o, c, i, k, t, v)
+            }
+            _ => return Err(format!("malformed ancestry row: {:?}", row)),
+        };
+    let kind = scope_kind_from_class(class)
+        .ok_or_else(|| format!("class {:?} is not a cascade scope (row {:?})", class, row))?;
+    Ok((
+        owner.to_string(),
+        kind,
+        properties_resolver::PropertyDatum {
+            iri: iri.to_string(),
+            key: key.to_string(),
+            value: value.to_string(),
+            value_type: vtype.to_string(),
+        },
+    ))
+}
+
+/// #3863 — assemble ancestry rows into the scope chain, most specific first.
+///
+/// Rows arrive flat (one per property, each tagged with its owning scope and
+/// that scope's class) because the fetch is ONE round-trip. Properties on the
+/// same scope collapse into one node — a scope with three properties is one
+/// link in the chain, not three.
+///
+/// Order is by `ScopeKind::rank`, descending, which is the precondition
+/// `decide_effective_value` enforces. Sorting here rather than trusting the
+/// query's ORDER BY keeps the guarantee in code the tests can reach.
+pub fn build_scope_chain(rows: &[String]) -> R<Vec<ScopeNode>> {
+    let mut nodes: Vec<ScopeNode> = Vec::new();
+    for row in rows {
+        let (owner, kind, datum) = parse_ancestry_row(row)?;
+        match nodes.iter_mut().find(|n| n.iri == owner) {
+            Some(existing) => existing.properties.push(datum),
+            None => nodes.push(ScopeNode { kind, iri: owner, properties: vec![datum] }),
+        }
+    }
+    nodes.sort_by(|a, b| b.kind.rank().cmp(&a.kind.rank()));
+    Ok(nodes)
+}
+
 /// #3435 — the node-scoped effective-config fetch. Reads `urn:chorus:instances` LIVE
 /// via SPARQL — NO projection/mirror/sqlite store (the AC invariant; the query-builder
 /// test asserts the instances graph + hasProperty traversal so a projection swap goes
@@ -2123,16 +2199,31 @@ pub fn build_scope_node(node_iri: &str, kind: ScopeKind, rows: &[String]) -> R<S
 /// as "iri|key|valueType|value" rows (value LAST so it may contain '|') in ONE round-trip.
 /// The key is selected in pure code (decide_effective_value), never filtered in SPARQL —
 /// so the round-trip stays one and key-selection stays unit-tested.
+/// #3863 — now walks the node's ANCESTRY, not just the node.
+///
+/// The containment path is zero-or-more hops, so the node itself is the first
+/// link and each enclosing scope follows. Each row carries the OWNING scope and
+/// its class, because a property means nothing without knowing which scope set
+/// it — that is precisely what the old single-node fetch could not say, and why
+/// the handler had to assume `ScopeKind::Service`.
+///
+/// `?ownerClass` is constrained with VALUES to the six cascade scopes. Without
+/// it, `?owner a ?c` returns every type an individual carries (owl:Class,
+/// owl:NamedIndividual, its domain class) and one node would multiply into
+/// several chain links, most of them nonsense.
 pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
     format!(
         "SELECT ?v WHERE {{ \
            GRAPH <{g}> {{ \
-             <{node}> <{ns}hasProperty> ?prop . \
+             VALUES ?ownerClass {{ <{ns}Role> <{ns}Service> <{ns}Domain> <{ns}Product> <{ns}ValueStreamStep> <{ns}ValueStream> }} \
+             <{node}> (<{ns}partOf>|<{ns}memberOf>|<{ns}atStep>|<{ns}ownedBy>)* ?owner . \
+             ?owner a ?ownerClass . \
+             ?owner <{ns}hasProperty> ?prop . \
              ?prop <{ns}propertyKey> ?key . \
              ?prop <{ns}propertyValue> ?value . \
              ?prop <{ns}propertyValueType> ?vtype . \
            }} \
-           BIND(CONCAT(STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
+           BIND(CONCAT(STR(?owner), \"|\", STR(?ownerClass), \"|\", STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
          }}",
         g = instances_graph,
         ns = NS,
@@ -2146,12 +2237,14 @@ pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
 /// 404 if the key is unset on the node, 500 on a malformed row / coercion mismatch.
 /// `value` is the coerced JSON fragment (bare `3000`, `true`, or a quoted string).
 pub fn effective_response(node_name: &str, key: &str, rows: &[String]) -> (u16, String) {
-    let node_iri = format!("{}{}", NS, node_name);
-    let node = match build_scope_node(&node_iri, ScopeKind::Service, rows) {
-        Ok(n) => n,
+    // #3863 — the chain is the node's own ancestry, built from the rows' own
+    // owner+class tags. Was: one node, `ScopeKind::Service` assumed. The
+    // cascade could not cascade, because there was never more than one link.
+    let chain = match build_scope_chain(rows) {
+        Ok(c) => c,
         Err(e) => return (500, format!("{{\"error\":\"{}\"}}", json_escape(&e))),
     };
-    match decide_effective_value(&[node], key) {
+    match decide_effective_value(&chain, key) {
         Ok(Some(res)) => match coerce_effective(&res.value, &res.value_type) {
             Ok(coerced) => (
                 200,

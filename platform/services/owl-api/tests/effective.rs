@@ -183,7 +183,7 @@ use owl_api::effective_response;
 
 #[test]
 fn effective_response_200_coerces_string() {
-    let rows = vec!["https://x#p|testType|string|integration".to_string()];
+    let rows = vec!["https://x#svc|https://jeffbridwell.com/chorus#Service|https://x#p|testType|string|integration".to_string()];
     let (code, body) = effective_response("testnode", "testType", &rows);
     assert_eq!(code, 200);
     assert!(body.contains("\"value\":\"integration\""), "got: {body}");
@@ -194,7 +194,7 @@ fn effective_response_200_coerces_string() {
 #[test]
 fn effective_response_int_is_bare_number() {
     // dotted key flows through — it is NOT interpolated into SPARQL, only compared in code
-    let rows = vec!["https://x#p|alert.threshold|int|3000".to_string()];
+    let rows = vec!["https://x#svc|https://jeffbridwell.com/chorus#Service|https://x#p|alert.threshold|int|3000".to_string()];
     let (code, body) = effective_response("n", "alert.threshold", &rows);
     assert_eq!(code, 200);
     assert!(body.contains("\"value\":3000"), "int must be a bare JSON number, got: {body}");
@@ -202,7 +202,7 @@ fn effective_response_int_is_bare_number() {
 
 #[test]
 fn effective_response_404_on_unset_key() {
-    let rows = vec!["https://x#p|testType|string|unit".to_string()];
+    let rows = vec!["https://x#svc|https://jeffbridwell.com/chorus#Service|https://x#p|testType|string|unit".to_string()];
     let (code, body) = effective_response("n", "missing.key", &rows);
     assert_eq!(code, 404);
     assert!(body.contains("error"));

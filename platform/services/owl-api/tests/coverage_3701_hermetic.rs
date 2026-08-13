@@ -221,8 +221,15 @@ fn rows_for(q: &str) -> Vec<String> {
         };
     }
     if q.contains("hasProperty") {
-        // /effective property rows: iri|key|valueType|value
-        return vec![format!("{NS}prop-1|alert.threshold|int|42")];
+        // #3863 — rows now carry the OWNING scope and its class:
+        // owner|ownerClass|propIri|key|valueType|value. Two scopes here, not
+        // one, so this fixture exercises a real cascade: the Service's value
+        // must beat the Product's. A one-element fixture could not tell the
+        // two apart, which is how the hardcoded-Service kind survived.
+        return vec![
+            format!("{NS}pulse|{NS}Service|{NS}prop-1|alert.threshold|int|42"),
+            format!("{NS}chorus|{NS}Product|{NS}prop-2|alert.threshold|int|999"),
+        ];
     }
     if q.contains("chorus:ownedBy") {
         for owned in ["pulse", "hasparent", "phantom", "dalboom", "shapefail", "borg"] {
