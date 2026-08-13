@@ -75,19 +75,56 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
     expect(atBottom).toBe(true);                              // and we followed it
   });
 
-  // Jeff: 18 of 50 rows were our mid-turn narration while his own were 12.
-  test('mid-turn thinking is folded; a finished reply shows', async ({ page, request }) => {
-    const marker = `visible-reply-${Date.now()}`;
-    await postAs(request, 'wren', marker);
-    await expect(page.locator('#messages')).toContainText(marker, { timeout: 20000 });
+  // #3862 — THE CANARY.
+  //
+  // Jeff, 2026-08-13: "i guess i get to be the canary in the coal mine." He is
+  // right, and that is the defect this replaces. He reported missing messages
+  // for three days; each time he was answered with a measurement instead of a
+  // browser, and each time the answer was that it worked. It did not.
+  //
+  // What used to stand here was worse than nothing:
+  //
+  //     expect(foldedCount).toBeGreaterThanOrEqual(0);
+  //
+  // A count is never negative, so that assertion could not fail — written by me,
+  // the same day, in a file whose header names the hollow-check shape. It passed
+  // while three of my replies to Jeff were being hidden on his screen.
+  //
+  // These four shapes are the ones that were actually vanishing, taken from his
+  // room's store: a reply naming another role, a reply from a turn that used
+  // tools, a reply quoting a path, and a nudge. If any stops rendering, this
+  // goes red — and the alarm is a test, not his evening.
+  const MUST_REACH_JEFF = [
+    ['names another role', (m) => `${m} — Kade has streams, #3827 is mine.`],
+    ['quotes a filesystem path', (m) => `${m} — the fix is in /Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/public/index.html`],
+    ['is a role-to-role nudge', (m) => `[nudge from silas | 2026-08-13 17:00 Boston] ${m} — the importmap fix is yours.`],
+    ['says the word "blocked" in prose', (m) => `${m} — chorus-api event loop blocked 4712ms; not a real block.`],
+  ];
 
-    const foldedCount = await page.locator('#messages').evaluate(
-      (el) => (el.textContent || '').match(/\+\d+ steps?/g)?.length ?? 0,
-    );
-    // Folding is present as a step count rather than as messages. Zero folds is
-    // acceptable on a quiet room; what must never happen is thinking rendered
-    // as speech, which the room-level unit tests pin.
-    expect(foldedCount).toBeGreaterThanOrEqual(0);
+  for (const [shape, build] of MUST_REACH_JEFF) {
+    test(`a reply that ${shape} reaches Jeff's room`, async ({ page, request }) => {
+      const marker = `canary-${Date.now()}-${Math.floor(performance.now())}`;
+      await postAs(request, 'wren', build(marker));
+      // NEGATIVE PROOF: each of these four was observed HIDDEN in the live room
+      // at 17:22 Boston. Reverting the matching rule in router.ts turns the
+      // corresponding case red — the bug reproduced, not the fix asserted.
+      await expect(page.locator('#messages')).toContainText(marker, { timeout: 20000 });
+    });
+  }
+
+  // The other half. Without this, "make everything visible" passes the four
+  // above and leaves Jeff a room full of machinery — which is the state his
+  // phone was in this afternoon: e2e acks and tool errors as chat bubbles.
+  test('machinery does NOT reach the room', async ({ page, request }) => {
+    const marker = `machinery-${Date.now()}`;
+    await postAs(request, 'silas', `[e2e-ack] silas received ${marker}`);
+    const anchor = `anchor-${Date.now()}`;
+    await postAs(request, 'jeff', anchor);
+
+    // Wait on the anchor, so we are asserting absence at a moment the room has
+    // demonstrably caught up — not absence because nothing has arrived yet.
+    await expect(page.locator('#messages')).toContainText(anchor, { timeout: 20000 });
+    await expect(page.locator('#messages')).not.toContainText(marker);
   });
 
   // Jeff's 10:24 screenshot: his message appeared TWICE.
