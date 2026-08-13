@@ -22,6 +22,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+// #3842 — the ONE shared target-repo resolver.
+include!("../../shared/target_repo.rs");
 
 pub type R<T> = Result<T, String>;
 
@@ -247,7 +249,16 @@ pub fn unpull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String>
         let mut emit = |event: &str, extras: &[(&str, &str)]| {
             emit_spine(home, event, role, card, &trace, extras);
         };
-        match teardown_werk(home, werk_base, role, card, &mut emit) {
+        // #3842 — teardown walks the card's TARGET repo; resolve failure is a
+        // typed refusal, never a silent chorus fallback (#3734).
+        let repo_root = match target_repo_root(home, &cj) {
+            Ok(r) => r,
+            Err(e) => {
+                let reason = e.split(':').next().unwrap_or("target-repo-invalid").to_string();
+                return Err(refuse("werk-close", &reason, e));
+            }
+        };
+        match teardown_werk(&repo_root, werk_base, role, card, &mut emit) {
             Ok(Teardown::AlreadyRemoved) => jsonl(home, role, card, &trace, "werk.remove.idempotent", ""),
             Ok(Teardown::OrphanPropagated) => jsonl(home, role, card, &trace, "werk.remove.orphan_propagated", ""),
             Ok(Teardown::Removed) => {}

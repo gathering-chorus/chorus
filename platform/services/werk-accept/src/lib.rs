@@ -31,6 +31,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // #3513 — the ONE shared failure classifier (failure_class / fail_extra).
 include!("../../shared/failure_class.rs");
+// #3842 — the ONE shared target-repo resolver.
+include!("../../shared/target_repo.rs");
 
 extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
@@ -371,7 +373,15 @@ pub fn finalize(card: u64, role: &str, home: &Path) -> R<String> {
             let argrefs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             let _ = run(&script_path(home, "chorus-log"), &argrefs);
         };
-        match werk_teardown::teardown_werk(home, &werk_base, role, card, &mut emit) {
+        // #3842 — teardown must walk the card's TARGET repo. A resolve failure is
+        // witnessed and skips teardown entirely: tearing down against the wrong
+        // repo (silent chorus fallback) is the #3734 risk this refuses.
+        let cj = run(&script_path(home, "cards"), &["view", &card.to_string(), "--json"])
+            .unwrap_or_default();
+        match target_repo_root(home, &cj).and_then(|repo_root| {
+            werk_teardown::teardown_werk(&repo_root, &werk_base, role, card, &mut emit)
+                .map_err(|e| e.to_string())
+        }) {
             Ok(_) => jsonl(home, role, card, &trace, "accept.teardown", ",\"result\":\"ok\""),
             Err(e) => jsonl(home, role, card, &trace, "accept.teardown.failed",
                 &format!("{},\"result\":\"fail\",\"error\":\"{}\"", fail_extra("teardown-fail"), e.to_string().replace('"', "'"))),
