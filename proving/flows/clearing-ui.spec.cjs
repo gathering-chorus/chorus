@@ -23,8 +23,10 @@ const CLEARING = process.env.CLEARING_URL || 'http://localhost:3470';
  *
  * /api/message is the room's ingest (server.ts:1228 -> messageRouter.ingest).
  */
-async function postAs(request, from, text) {
-  return request.post(`${CLEARING}/api/message`, { data: { from, text } });
+async function postAs(request, from, text, type) {
+  return request.post(`${CLEARING}/api/message`, {
+    data: type ? { from, text, type } : { from, text },
+  });
 }
 
 test.describe('Clearing UI — the behaviours Jeff reported', () => {
@@ -94,20 +96,26 @@ test.describe('Clearing UI — the behaviours Jeff reported', () => {
   // room's store: a reply naming another role, a reply from a turn that used
   // tools, a reply quoting a path, and a nudge. If any stops rendering, this
   // goes red — and the alarm is a test, not his evening.
+  // The TYPE matters as much as the text. The first version of this block
+  // posted all four as plain messages and passed against a build with the
+  // pm-thinking rule reverted to hidden — it could not reach the rule it
+  // claimed to guard. Proven by running it, in 23 seconds, against a reverted
+  // instance on :3479. Every entry now carries the type the real emitter sends.
   const MUST_REACH_JEFF = [
-    ['names another role', (m) => `${m} — Kade has streams, #3827 is mine.`],
-    ['quotes a filesystem path', (m) => `${m} — the fix is in /Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/public/index.html`],
-    ['is a role-to-role nudge', (m) => `[nudge from silas | 2026-08-13 17:00 Boston] ${m} — the importmap fix is yours.`],
-    ['says the word "blocked" in prose', (m) => `${m} — chorus-api event loop blocked 4712ms; not a real block.`],
+    ['names another role', (m) => `${m} — Kade has streams, #3827 is mine.`, undefined],
+    ['quotes a filesystem path', (m) => `${m} — the fix is in /Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/public/index.html`, undefined],
+    ['is a role-to-role nudge', (m) => `[nudge from silas | 2026-08-13 17:00 Boston] ${m} — the importmap fix is yours.`, undefined],
+    ['says the word "blocked" in prose', (m) => `${m} — chorus-api event loop blocked 4712ms; not a real block.`, undefined],
+    ['came from a turn that used tools', (m) => `${m} — Silas confirms his seam needs no change.`, 'pm-thinking'],
   ];
 
-  for (const [shape, build] of MUST_REACH_JEFF) {
+  for (const [shape, build, type] of MUST_REACH_JEFF) {
     test(`a reply that ${shape} reaches Jeff's room`, async ({ page, request }) => {
       const marker = `canary-${Date.now()}-${Math.floor(performance.now())}`;
-      await postAs(request, 'wren', build(marker));
-      // NEGATIVE PROOF: each of these four was observed HIDDEN in the live room
-      // at 17:22 Boston. Reverting the matching rule in router.ts turns the
-      // corresponding case red — the bug reproduced, not the fix asserted.
+      await postAs(request, 'wren', build(marker), type);
+      // NEGATIVE PROOF: each shape was observed HIDDEN in the live room at 17:22
+      // Boston. Reverting the matching rule in router.ts turns its case red —
+      // the bug reproduced, not the fix asserted.
       await expect(page.locator('#messages')).toContainText(marker, { timeout: 20000 });
     });
   }
