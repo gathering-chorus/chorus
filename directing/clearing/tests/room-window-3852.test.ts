@@ -11,33 +11,44 @@ const mk = (from: string, text: string, type?: string) => ({
   from, text, ts: new Date().toISOString(), type,
 });
 
-describe('#3852 folding decides by turn state, not by text', () => {
-  // NEGATIVE PROOF (#3734): the old rule let SOME narration through — whichever
-  // did not look like a tool call. That is the unreliability: no rule a person
-  // could predict. Prose that would have passed the old heuristic must fold now.
-  it('folds narration that the old text-heuristic would have shown', () => {
+// #3862 — #3852 tagged mid-turn rows by turn state, which was right, and then
+// removed them from the room, which was not. `stop_reason` is 'end_turn' only
+// when a turn ends in plain text, so a finished reply written after tool calls
+// carries the same tag as narration. The rule could not separate the two states
+// it existed to separate, and it deleted the wrong one.
+//
+// Jeff, 2026-08-13, on what folding actually did: "the ui definitely does not
+// show collapsed messages that i can unfold - they literally are NOT THERE".
+describe('#3862 mid-turn rows are typed, not removed', () => {
+  it('keeps narration in the room, typed pm-thinking', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'Looking at the second path now, this one is trickier.', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    const [m] = r.getRecent(10);
+    expect(m.type).toBe('pm-thinking');
+    expect(m.visible).toBe(true);
   });
 
-  it('folds narration that looks like a tool call too — same rule, no exceptions', () => {
+  it('keeps a row that looks like a tool call — same rule, no exceptions', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'bash: cd /tmp && ls', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10)).toHaveLength(1);
   });
 
-  it('a finished reply is still a message — folding must not eat everything', () => {
+  it('a finished reply is still a message', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'Landed. Three paths capped.'));
     expect(r.getRecent(10).length).toBeGreaterThan(0);
   });
 
-  it('folded is HIDDEN, not discarded — includeHidden still returns it', () => {
+  // NEGATIVE PROOF (#3734): this suite must still be able to observe a hidden
+  // row, or it cannot tell "nothing is hidden" from "hiding is broken". Probes
+  // are the remaining hidden class — 129 of 200 rows in the live room.
+  it('hiding still exists for probes, so this suite can still see the difference', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'mid-turn note', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
-    expect(r.getRecent(10, true)).toHaveLength(1);
+    r.ingest(mk('probe', 'heartbeat', 'probe'));
+    expect(r.getRecent(10)).toHaveLength(1);
+    expect(r.getRecent(10, true)).toHaveLength(2);
   });
 });
 
@@ -70,9 +81,10 @@ describe('#3852 the window admits what it withheld', () => {
     expect(w.withheld).toBe(0);
   });
 
+  // #3862 — the hidden class is probes now, not pm-thinking.
   it('hidden rows do not count against the visible window', () => {
     const r = new MessageRouter();
-    for (let i = 0; i < 20; i++) r.ingest(mk('wren', `thinking ${i}`, 'pm-thinking'));
+    for (let i = 0; i < 20; i++) r.ingest(mk('probe', `probe ${i}`, 'probe'));
     for (let i = 0; i < 5; i++) r.ingest(mk('jeff', `real ${i}`));
     const w = r.getRecentWindowed(300);
     expect(w.messages).toHaveLength(5);

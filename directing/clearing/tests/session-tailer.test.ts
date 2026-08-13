@@ -284,34 +284,35 @@ describe('AC #1: Jeff input from session JSONL is visible in Clearing', () => {
 // 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
 // flipping an assertion someone deliberately wrote.
 describe('AC #2: Role thinking/ideation visible in Clearing', () => {
-  let router: MessageRouter;
-  beforeEach(() => { router = new MessageRouter(); });
 
-  // #3852 — REVERSED by Jeff 2026-08-13: thinking folds, it does not show.
-  test('Role commentary is FOLDED as pm-thinking', () => {
-    router.ingest({
+  // #3852 folded this; #3862 unfolds it. The tag is not trustworthy enough to
+  // delete a row: a reply written after tool calls carries 'pm-thinking' too,
+  // so folding by this tag removed real answers. Typed, kept, shown.
+  test('Role commentary is typed pm-thinking and stays in the room', () => {
+    const r = new MessageRouter();
+    r.ingest({
       from: 'silas',
       text: 'Found the root cause — findSessionFile stops at the first matching directory.',
       ts: new Date().toISOString(),
       type: 'pm-thinking',
     });
-    expect(router.getRecent(10).length).toBe(0);
-    const hidden = router.getRecent(10, true);
-    expect(hidden.length).toBe(1);
-    expect(hidden[0].type).toBe('pm-thinking');
-    expect(hidden[0].visible).toBe(false);
+    const shown = r.getRecent(10);
+    expect(shown.length).toBe(1);
+    expect(shown[0].type).toBe('pm-thinking');
+    expect(shown[0].visible).toBe(true);
   });
 
-  test('Role tool call output is hidden', () => {
-    router.ingest({
+  test('Role tool call output is typed, not removed', () => {
+    const r = new MessageRouter();
+    r.ingest({
       from: 'silas',
       text: 'bash ../platform/scripts/cards view 2035',
       ts: new Date().toISOString(),
       type: 'pm-thinking',
     });
-    const msgs = router.getRecent(10, true);
+    const msgs = r.getRecent(10, true);
     expect(msgs.length).toBe(1);
-    expect(msgs[0].visible).toBe(false);
+    expect(msgs[0].visible).toBe(true);
   });
 });
 

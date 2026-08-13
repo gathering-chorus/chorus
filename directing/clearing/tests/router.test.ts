@@ -32,10 +32,12 @@ describe('MessageRouter — ingest basics', () => {
     expect(m.level).toBe('critical');
   });
 
+  // #3862 — the hidden example is a health probe, not a nudge. Nudges are
+  // visible now; the only things still filtered are probes and machinery echo.
   test('getRecent default filters hidden', () => {
     const r = new MessageRouter();
     r.ingest(mk('jeff', 'visible'));
-    r.ingest(mk('kade', '[nudge from kade] hidden'));
+    r.ingest(mk('probe', 'clearing probe', 'probe'));
     expect(r.getRecent(10)).toHaveLength(1);
     expect(r.getRecent(10, true)).toHaveLength(2);
   });
@@ -55,8 +57,8 @@ describe('MessageRouter — ingest basics', () => {
     const r = new MessageRouter();
     expect(r.getHiddenCount()).toBe(0);
     r.ingest(mk('jeff', 'visible-1'));
-    r.ingest(mk('kade', '[nudge from kade] hidden-1'));
-    r.ingest(mk('silas', '[nudge from silas] hidden-2'));
+    r.ingest(mk('probe', 'probe-1', 'probe'));
+    r.ingest(mk('kade', '[e2e-ack] kade received e2e-lan-1'));
     expect(r.getHiddenCount()).toBe(2);
     r.ingest(mk('jeff', 'visible-2'));
     expect(r.getHiddenCount()).toBe(0);
@@ -121,51 +123,72 @@ describe('MessageRouter — classify: hidden paths', () => {
     expect(r.getRecent(10)).toHaveLength(0);
   });
 
+  // #3862 — the noise sweep applies to PLUMBING, not to roles. These three
+  // tests used a role as the sender, which is why a reply that quoted a path
+  // vanished from Jeff's room. Same patterns, non-role sender.
   test('XML-tag system noise is hidden', () => {
     const r = new MessageRouter();
-    r.ingest(mk('silas', '<system>raw</system>'));
+    r.ingest(mk('hooks-daemon', '<system>raw</system>'));
     expect(r.getRecent(10)).toHaveLength(0);
   });
 
   test('file-path noise is hidden (Users, var, private, tmp)', () => {
     const r = new MessageRouter();
-    r.ingest(mk('kade', '/Users/jeff/x'));
-    r.ingest(mk('kade', '/var/log/y'));
-    r.ingest(mk('kade', '/private/tmp/z'));
-    r.ingest(mk('kade', '/tmp/w'));
+    r.ingest(mk('hooks-daemon', '/Users/jeff/x'));
+    r.ingest(mk('hooks-daemon', '/var/log/y'));
+    r.ingest(mk('hooks-daemon', '/private/tmp/z'));
+    r.ingest(mk('hooks-daemon', '/tmp/w'));
     expect(r.getRecent(10)).toHaveLength(0);
   });
 
   test('specific noise prefixes are hidden', () => {
     const r = new MessageRouter();
     ['hook fire', 'Base directory: x', 'ARGUMENTS: x', 'Stop hook', '→ delivered', '[Request interrupted]', '[Image: source: x]', 'chorus-query result', '[search] 3 results']
-      .forEach((t) => r.ingest(mk('kade', t)));
+      .forEach((t) => r.ingest(mk('hooks-daemon', t)));
     expect(r.getRecent(10)).toHaveLength(0);
+  });
+
+  // #3862 — the same patterns, from a ROLE, must survive. This is the case that
+  // ate real answers: a reply naming the file it was about read as "noise".
+  test('a role quoting a filesystem path is NOT noise', () => {
+    const r = new MessageRouter();
+    r.ingest(mk('wren', 'The fix is one block in /Users/jeffbridwell/CascadeProjects/chorus/directing/clearing/public/index.html'));
+    expect(r.getRecent(10)).toHaveLength(1);
   });
 });
 
+// #3862 — INVERTED AGAIN, and this is the last time it should need inverting.
+//
+// #3852 made pm-thinking always-hidden, on the reasoning that turn state is
+// more reliable than text heuristics. The state part was right; the hiding was
+// not. `stop_reason` is 'end_turn' only when a turn ends in plain text, so any
+// reply written after tool calls carries the mid-turn tag — and every reply
+// written while doing work does. The rule meant to remove narration removed the
+// answers instead.
+//
+// The type is retained and still asserted, because the UI needs it to render an
+// aside differently from a reply. What changed is that `pm-thinking` no longer
+// means "delete this row".
 describe('MessageRouter — classify: pm-thinking', () => {
-  test('pm-thinking with tool call is hidden', () => {
+  test('pm-thinking keeps its type but is not removed from the room', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'bash ls', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    const [m] = r.getRecent(10);
+    expect(m.type).toBe('pm-thinking');
+    expect(m.visible).toBe(true);
   });
 
-  test('pm-thinking with skill output is hidden', () => {
+  test('a finished reply tagged mid-turn still reaches Jeff', () => {
     const r = new MessageRouter();
-    r.ingest(mk('wren', 'Done: #1234', 'pm-thinking'));
-    r.ingest(mk('wren', 'Moved #5 to WIP', 'pm-thinking'));
-    r.ingest(mk('wren', 'Pulled #7', 'pm-thinking'));
-    r.ingest(mk('wren', 'Gate chain passed', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    r.ingest(mk('wren', "Silas confirms his seam needs no change.", 'pm-thinking'));
+    r.ingest(mk('wren', 'Kade is on streams. #3827 is mine.', 'pm-thinking'));
+    expect(r.getRecent(10)).toHaveLength(2);
   });
 
-  // #3852 — INVERTED. Mid-turn commentary used to be visible; it is always
-  // folded now, by turn state rather than by inspecting the text.
-  test('pm-thinking is folded even when it reads like plain commentary', () => {
+  test('pm-thinking that reads like plain commentary is visible', () => {
     const r = new MessageRouter();
     r.ingest(mk('wren', 'I think we should prioritize the tests.', 'pm-thinking'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10)).toHaveLength(1);
     expect(r.getRecent(10, true)).toHaveLength(1);
   });
 });
@@ -273,31 +296,38 @@ describe('MessageRouter — classify: visible markers', () => {
   });
 });
 
-describe('MessageRouter — classify: role-to-role (hidden)', () => {
-  test('[nudge from X] is hidden', () => {
+// #3862 — role-to-role traffic is VISIBLE. Jeff, 2026-08-13: "i dont want to
+// hide any fucking nudges" / "i dont know how we got here where we hide
+// nudges". The room is where the team talks; hiding the team talking left him
+// reading one side of a conversation. The TYPE survives so the UI can render a
+// nudge as an aside — what is gone is the removal.
+describe('MessageRouter — classify: role-to-role (visible, typed)', () => {
+  test('[nudge from X] is visible and keeps its type', () => {
     const r = new MessageRouter();
     r.ingest(mk('silas', '[nudge from silas] internal'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    const [m] = r.getRecent(10);
+    expect(m.type).toBe('role-to-role');
+    expect(m.visible).toBe(true);
   });
 
-  test('coordination prefixes hidden ([reply], [ack], [feedback], [direction], [correction], [chat])', () => {
+  test('coordination prefixes stay in the room ([reply], [ack], [feedback], [direction], [correction], [chat])', () => {
     const r = new MessageRouter();
     ['[reply] ok', '[ack] got it', '[feedback] nit', '[direction] do X', '[correction] fix Y', '[chat] hi']
       .forEach((t) => r.ingest(mk('kade', t)));
-    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10)).toHaveLength(6);
   });
 
-  test('plain acks hidden (ack, acknowledged, got it, will do, on it)', () => {
+  test('plain acks stay in the room (ack, acknowledged, got it, will do, on it)', () => {
     const r = new MessageRouter();
     ['ack', 'acknowledged', 'got it', 'will do', 'on it']
       .forEach((t) => r.ingest(mk('kade', t)));
-    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10)).toHaveLength(5);
   });
 
-  test('DELIVERED to role is hidden', () => {
+  test('DELIVERED to role is visible', () => {
     const r = new MessageRouter();
     r.ingest(mk('kade', 'DELIVERED to silas at 10:00'));
-    expect(r.getRecent(10)).toHaveLength(0);
+    expect(r.getRecent(10)).toHaveLength(1);
   });
 
   test('role-response explicit tag (not caught by role-to-role) is visible', () => {
@@ -326,9 +356,9 @@ describe('MessageRouter — classify: role-to-role (hidden)', () => {
 describe('MessageRouter — getHiddenCount', () => {
   test('counts hidden since last visible, resets on visible', () => {
     const r = new MessageRouter();
-    r.ingest(mk('jeff', 'visible one'));           // visible
-    r.ingest(mk('kade', '[nudge from kade] h1'));   // hidden
-    r.ingest(mk('kade', '[nudge from kade] h2'));   // hidden
+    r.ingest(mk('jeff', 'visible one'));                    // visible
+    r.ingest(mk('probe', 'p1', 'probe'));                   // hidden
+    r.ingest(mk('kade', '[e2e-ack] kade received lan-1'));  // hidden
     expect(r.getHiddenCount()).toBe(2);
     r.ingest(mk('jeff', 'visible two'));
     expect(r.getHiddenCount()).toBe(0);
@@ -337,7 +367,7 @@ describe('MessageRouter — getHiddenCount', () => {
   test('all hidden = count equals total', () => {
     const r = new MessageRouter();
     r.ingest(mk('kade', '[bridge] echo'));
-    r.ingest(mk('silas', '[nudge from silas] x'));
+    r.ingest(mk('silas', 'API Error: 529 Overloaded'));
     expect(r.getHiddenCount()).toBe(2);
   });
 
