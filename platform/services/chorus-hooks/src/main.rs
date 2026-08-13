@@ -166,6 +166,36 @@ async fn main() {
 
     let state = AppState::new();
 
+    // #3853 — streams heartbeat. A background beat so a long-running command or a
+    // composing turn is never silent (the "idle" that isn't — the trust gap of
+    // 2026-08-13). Emits through the fail-loud spine path; a dropped beat surfaces,
+    // never swallowed. Additive: never touches a hook decision, so it can't break
+    // the hot path — worst case the task stops and beats go quiet.
+    {
+        let hb = state.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+            loop {
+                tick.tick().await;
+                for (session, role, tool, phase, elapsed) in hb.activity_due(15) {
+                    let el = elapsed.to_string();
+                    let sid = if session.len() > 8 { &session[..8] } else { session.as_str() };
+                    crate::state::chorus_log(
+                        "agent.activity",
+                        &role,
+                        &[
+                            ("phase", phase),
+                            ("tool", tool.as_str()),
+                            ("elapsed_s", el.as_str()),
+                            ("session_id", sid),
+                        ],
+                    )
+                    .await;
+                }
+            }
+        });
+    }
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/pre-tool-use", post(pre_tool_use))
@@ -263,6 +293,9 @@ async fn pre_tool_use_inner(
         _ => String::new(),
     };
     log_hook("pre_tool_use", &tool, role.as_str(), "enter", &detail_str);
+    // #3853 — a command is now in flight; the heartbeat ticker beats "running <tool>"
+    // if it outlives the threshold, so a long command is never a silent window.
+    state.mark_running(input.session_id.as_deref().unwrap_or(""), role.as_str(), &tool);
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
     // #3278 — record test-file edits live, the instant the daemon sees them, so the
@@ -592,6 +625,11 @@ async fn post_tool_use(
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
     let tool = input.tool_name_str().to_string();
+
+    // #3853 — command finished; the session is now composing/thinking. The ticker beats
+    // "thinking" if the compose window outlives the threshold, so between-command silence
+    // isn't read as idle.
+    state.mark_thinking(input.session_id.as_deref().unwrap_or(""), input.role().as_str());
 
     // Clock sync on every tool call (#1849) — keeps /tmp/wall-clock.txt fresh
     hooks::clock_sync::post_tick(&input).await;
@@ -979,6 +1017,9 @@ async fn stop_hook(
 ) -> Json<HookResponse> {
     let start = std::time::Instant::now();
     let input: HookInput = serde_json::from_value(raw.clone()).unwrap_or_default();
+    // #3853 — turn ended; the session is genuinely idle now. Clear its activity so the
+    // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
+    if let Some(sid) = input.session_id.as_deref() { state.clear_activity(sid); }
     // #3203 — context-inject FORCE, observe-only phase. Did this turn's response
     // engage what the inject surfaced? Read the surfaced records + my last assistant
     // message (from the transcript), run the verdict, and LOG it (👍 pass / 🛑 block)
