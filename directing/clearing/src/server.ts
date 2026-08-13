@@ -1196,7 +1196,17 @@ end tell'`, { encoding: 'utf-8', timeout: 5000, env: { ...process.env, PATH: '/u
 app.get('/api/tiles', (_req, res) => res.json(tilePoller.getTiles()));
 
 // API: get recent messages (for page load)
-app.get('/api/messages', (req, res) => res.json(messageRouter.getRecent(50, !!req.query.includeHidden)));
+// #3852 — the window is a parameter and the response says what it withheld.
+// Default raised 50 -> 300: a working morning is ~130 replies, so 50 could not
+// hold one conversation, let alone a day.
+app.get('/api/messages', (req, res) => {
+  const raw = Number(req.query.limit);
+  const limit = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 2000) : 300;
+  const w = messageRouter.getRecentWindowed(limit, !!req.query.includeHidden);
+  res.setHeader('X-Chorus-Total', String(w.total));
+  res.setHeader('X-Chorus-Withheld', String(w.withheld));
+  res.json(w.messages);
+});
 
 // #2895 proposal routes RETIRED in #2905 — Jeff direct: bouncer is just
 // nudge-based now. Agent cards add composes a structured nudge text and
@@ -1276,7 +1286,7 @@ async function socketAuth(socket: { handshake: { address?: string; headers: Reco
 io.on('connection', (socket) => {
   // Send initial state
   socket.emit('tiles', tilePoller.getTiles());
-  socket.emit('messages', messageRouter.getRecent(50));
+  socket.emit('messages', messageRouter.getRecent(300));
 
   // Client heartbeat — respond to ping with pong (#2036)
   socket.on('ping', () => { socket.emit('pong'); });

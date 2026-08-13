@@ -1,3 +1,4 @@
+// @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
 /**
  * Bridge Integration Tests — #1674 AC #2
  *
@@ -23,6 +24,11 @@ function ingestAndGet(router: MessageRouter, msg: { from: string; text: string; 
 // 1. MESSAGE ATTRIBUTION — Jeff sees the correct role name on every message
 // ═══════════════════════════════════════════════════════════════════════════
 
+// #3852 — REVERSED by Jeff, 2026-08-13. This asserted the ORIGINAL requirement
+// that role thinking be visible in the Clearing. Living with it, he found the
+// opposite: our narration crowded him out of his own room (18 of 50 rows ours,
+// 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
+// flipping an assertion someone deliberately wrote.
 describe('AC #2.1: Message attribution — correct role name on every message', () => {
   let router: MessageRouter;
   beforeEach(() => { router = new MessageRouter(); });
@@ -121,13 +127,15 @@ describe('AC #2.2: Delivery — messages reach the correct stream', () => {
     expect(msg.type).toBe('accept-request');
   });
 
-  test('PM thinking is visible in Jeff stream', () => {
+  // #3852 — REVERSED by Jeff 2026-08-13. He asked for thinking to be visible
+  // originally; living with it, our narration crowded him out of his own room.
+  test('PM thinking is FOLDED, not shown in Jeff stream', () => {
     const msg = ingestAndGet(router, {
       from: 'wren',
       text: 'Considering whether to pull #1675 or wait for Silas...',
       type: 'pm-thinking',
     });
-    expect(msg.visible).toBe(true);
+    expect(msg.visible).toBe(false);
     expect(msg.type).toBe('pm-thinking');
   });
 

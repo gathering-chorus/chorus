@@ -65,6 +65,29 @@ export class MessageRouter extends EventEmitter {
     return filtered.slice(-count);
   }
 
+  /**
+   * #3852 — the same window, plus what it left out.
+   *
+   * The room served 50 rows and said nothing about the rest. On a day where I
+   * sent 134 replies, 5 were reachable and 129 were silently gone — which reads
+   * exactly like messages being dropped, and is why Jeff kept saying he was
+   * losing them. Nothing WAS dropped; the window never admitted it was a window.
+   *
+   * Truncation that does not announce itself is indistinguishable from data
+   * loss, and the reader has no way to tell which one they are looking at.
+   */
+  getRecentWindowed(count: number, includeHidden = false): {
+    messages: ChannelMessage[];
+    total: number;
+    withheld: number;
+  } {
+    const filtered = includeHidden
+      ? this.messages
+      : this.messages.filter((m) => m.visible);
+    const messages = filtered.slice(-count);
+    return { messages, total: filtered.length, withheld: filtered.length - messages.length };
+  }
+
   /** Get count of hidden messages since last visible message */
   getHiddenCount(): number {
     let count = 0;
@@ -117,10 +140,21 @@ const classificationRules: ClassificationRule[] = [
   (r) => r.text.startsWith('[bridge]') ? { type: ROLE_TO_ROLE, visible: false } : null,
   // Filter system noise
   (r) => isSystemNoise(r.text) ? { type: ROLE_TO_ROLE, visible: false } : null,
-  // PM thinking (#1720, #2049: filter tool calls + skill output)
-  (r) => r.type === 'pm-thinking'
-    ? { type: 'pm-thinking', visible: !(isToolCall(r.text) || isSkillOutput(r.text)) }
-    : null,
+  // #3852 — mid-turn thinking is ALWAYS folded. Jeff, 2026-08-13: the folding
+  // "is also unreliable in how it works" — and he was right, because it decided
+  // by CONTENT: a line was hidden only if it looked like a tool call or skill
+  // output. Heuristics on text drift, so some narration showed and some didn't,
+  // with no rule a person could predict.
+  //
+  // It decides by STATE now. The transcript already says which is which —
+  // stop_reason 'end_turn' is a finished reply, anything else is mid-turn — and
+  // the tailer already reads that field for the reply timer. We were guessing at
+  // text while holding the answer.
+  //
+  // The cost of getting this wrong was measured: 18 of 50 room rows were
+  // pm-thinking while Jeff's own messages were 12, so his room was mostly us
+  // narrating at him.
+  (r) => r.type === 'pm-thinking' ? { type: 'pm-thinking', visible: false } : null,
   // Accept request / acceptance — Jeff or accept-request type (#2049)
   (r) => {
     const fromJeff = r.from.toLowerCase() === 'jeff'; // #3743: exact identity, never a prefix ('jeffrey' is not Jeff)
@@ -179,49 +213,15 @@ function isSystemNoise(text: string): boolean {
   return SYSTEM_NOISE_RULES.some((rule) => rule(text));
 }
 
-/** Check if text looks like a tool call, command output, or system plumbing — not human-readable (#1720) */
-function isToolCall(text: string): boolean {
-  // Bash/shell commands
-  if (text.match(/^(bash |cd |ls |cat |grep |curl |scp |ssh |git |npm |npx |node )/)) return true;
-  // Commands with paths
-  if (text.match(/^(\.\.\/|\.\/|\/Users\/|\/tmp\/|\/opt\/)/)) return true;
-  // Git output
-  if (text.match(/^\[(main|master|HEAD) [0-9a-f]/)) return true;
-  // JSON responses
-  if (text.match(/^\s*[[{].*[":]/) && text.match(/[}\]]\s*$/)) return true;
-  // ssh command patterns
-  if (text.includes('jeffbridwell@192.168.86')) return true;
-  // HTTP response codes
-  if (text.match(/^HTTP\/[12]/)) return true;
-  // Exit codes
-  if (text.match(/^Exit code \d+/)) return true;
-  // Shell variable assignments
-  if (text.match(/^[A-Z_]+=.*[;|&]/)) return true;
-  return false;
-}
+// #3852 — isToolCall DELETED. It decided visibility by inspecting text, which is
+// the unreliability Jeff named; folding now reads stop_reason instead. Left in
+// #3852 — SKILL_OUTPUT_PATTERNS deleted with isSkillOutput.
 
-const SKILL_OUTPUT_PATTERNS: ReadonlyArray<RegExp> = [
-  /^Auto-checked \d+ AC item/i,
-  /^Demo started: #\d+/i,
-  /^Done: #\d+/i,
-  /^Moved #\d+/i,
-  /^Accepted #\d+/i,
-  /^INJECT_FAILED/i,
-  /^Pulled #\d+/i,
-  /^Updated #\d+/i,
-  /^Rejected: #\d+/i,
-  /^Blocked: #\d+/i,
-  /^Unblocked: #\d+/i,
-  /^Gate chain/i,
-  /^gate:(product|code|quality|arch|ops)/i,
-  /^Nudge delivered/i,
-  /^pre-commit:/i,
-];
 
-/** Check if text is structured skill/CLI output — not role thinking (#2049) */
-function isSkillOutput(text: string): boolean {
-  return SKILL_OUTPUT_PATTERNS.some((re) => re.test(text));
-}
+// #3852 — isSkillOutput DELETED. It decided visibility by inspecting text, which is
+// the unreliability Jeff named; folding now reads stop_reason instead. Left in
+// place it would invite a rewire of the same guessing.
+
 
 /** The three AI roles. Jeff is a person, not a role, and is handled earlier. */
 const ROLE_NAMES = ['wren', 'silas', 'kade'];
