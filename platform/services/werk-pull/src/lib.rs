@@ -219,6 +219,36 @@ fn json_str_field(json: &str, key: &str) -> Option<String> {
     Some(val[..q2].to_string())
 }
 
+/// #3842 — a card may declare its deliverable's repo with a `repo:<name>` label
+/// (in `cards --json` these arrive in the "domains" array). Default is `home`
+/// (the chorus repo). A named target resolves to a SIBLING of home under the
+/// same projects directory — the ADR-041 layout — and must already be a git
+/// repo. Every failure is a typed refusal; there is deliberately NO fallback
+/// to chorus (#3734): a card that says shared-security must never silently
+/// land its worktree in the substrate.
+pub fn target_repo_root(home: &Path, card_json: &str) -> R<PathBuf> {
+    let name = match card_json.find("\"repo:") {
+        None => return Ok(home.to_path_buf()),
+        Some(i) => {
+            let after = &card_json[i + 6..];
+            let end = after.find('"').ok_or("target-repo-invalid: unterminated label")?;
+            after[..end].to_string()
+        }
+    };
+    if name.is_empty() || name.contains('/') || name.contains("..") {
+        return Err(format!("target-repo-invalid: label 'repo:{}' must be a bare sibling-directory name", name));
+    }
+    let parent = home.parent().ok_or("target-repo-invalid: home has no parent directory")?;
+    let root = parent.join(&name);
+    if !root.is_dir() {
+        return Err(format!("target-repo-missing: {} does not exist (label repo:{})", root.display(), name));
+    }
+    if !root.join(".git").exists() {
+        return Err(format!("target-repo-not-git: {} exists but is not a git repository", root.display()));
+    }
+    Ok(root)
+}
+
 /// Register the card's pipeline state in gh — the process holder (v6 diagram).
 /// Writes {card#, role, trace, branch, status} as a commit-status on the branch
 /// HEAD (already on GitHub). No push (see body). Queryable by card-specific context.
@@ -351,18 +381,34 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
         return Err(format!("card #{} is in '{}', not Next/Later", card, status));
     }
 
-    // --- canonical-touching steps, serialized under one flock ---
+    // #3842 — the card may declare a target repo; resolve it BEFORE any git
+    // step, refusing typed (no silent fallback to chorus, per the card's #3734
+    // risk note). Default: home, the chorus repo — behavior unchanged.
+    let repo_root = match target_repo_root(home, &cj) {
+        Ok(r) => r,
+        Err(e) => {
+            let reason = e.split(':').next().unwrap_or("target-repo-invalid");
+            jsonl(home, role, card, &trace, "pull.refused", &fail_extra(reason));
+            emit_spine(home, "pull.refused", role, card, &trace, &[("disposition", "refuse"), ("reason", reason), ("failureClass", failure_class(reason))]);
+            return Err(e);
+        }
+    };
+    let repo_s = path(&repo_root)?.to_string();
+    let repo_name = repo_root.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+
+    // --- canonical-touching steps, serialized under one flock (one global lock
+    // for all target repos — conservative, and pulls are rare enough) ---
     {
         let _lock = lock(home, Duration::from_secs(30))?;
         jsonl(home, role, card, &trace, "lock.acquired", "");
-        run("git", &["-C", &home_s, "fetch", "-q", "origin", "main"])?;
+        run("git", &["-C", &repo_s, "fetch", "-q", "origin", "main"])?;
         jsonl(home, role, card, &trace, "fetch.done", "");
-        run("git", &["-C", &home_s, "worktree", "add", "-b", &branch, &werk_s, "origin/main"])?;
+        run("git", &["-C", &repo_s, "worktree", "add", "-b", &branch, &werk_s, "origin/main"])?;
         jsonl(home, role, card, &trace, "worktree.added", "");
     } // flock released here
 
     // node_modules — best-effort, not transactional.
-    let nm = home.join("node_modules");
+    let nm = repo_root.join("node_modules");
     if nm.exists() {
         let _ = std::os::unix::fs::symlink(&nm, werk.join("node_modules"));
     }
@@ -374,7 +420,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // the pull. Consistency over availability, consistent with gh-as-authoritative.
     if let Err(e) = run(&script(home, "cards"), &["move", &card.to_string(), "WIP"]) {
         // card never moved; nothing to restore, just undo the worktree.
-        rollback(home, &home_s, &werk_s, &branch, role, card, &trace, "cards-move-fail", None);
+        rollback(home, &repo_s, &werk_s, &branch, role, card, &trace, "cards-move-fail", None);
         return Err(format!("board move failed; rolled back: {}", e));
     }
     jsonl(home, role, card, &trace, "card.wip", "");
@@ -382,7 +428,7 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     // register the card in gh — the PROCESS HOLDER (v6 diagram). LAST: most fragile
     // (remote). On failure, all-or-nothing restores the card's prior status too.
     if let Err(e) = register_gh(&werk_s, card, role, &trace, &branch) {
-        rollback(home, &home_s, &werk_s, &branch, role, card, &trace, "gh-register-fail", Some(&status));
+        rollback(home, &repo_s, &werk_s, &branch, role, card, &trace, "gh-register-fail", Some(&status));
         return Err(format!("gh registration failed; rolled back: {}", e));
     }
     jsonl(home, role, card, &trace, "gh.registered", "");
@@ -395,6 +441,6 @@ pub fn pull(card: u64, role: &str, home: &Path, werk_base: &Path) -> R<String> {
     jsonl(home, role, card, &trace, "pull.completed", &format!(",\"branch\":\"{}\"", branch));
     // #3135 AUDITABLE: card.pulled to the ONE spine (Loki-queryable), carrying the
     // shared trace so this pull correlates with the card's demo + acp.
-    emit_spine(home, "card.pulled", role, card, &trace, &[]);
+    emit_spine(home, "card.pulled", role, card, &trace, &[("repo", repo_name.as_str())]);
     Ok(branch)
 }

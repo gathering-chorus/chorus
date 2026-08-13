@@ -117,3 +117,55 @@ fn parse_pull_args_recognizes_atomic_anywhere() {
     assert_eq!((c, r.as_str(), a), (3294, "kade", false));
     assert!(parse_pull_args(&["notanum".into(), "kade".into()], None).is_err());
 }
+
+// --- #3842 repo-aware pull: card declares a target repo via a `repo:<name>` label ---
+
+#[test]
+fn target_repo_default_is_home_when_no_label() {
+    let home = tmpdir("trh");
+    let json = r#"{"index":1,"domains":["domain:chorus","type:enhance"]}"#;
+    let got = werk_pull::target_repo_root(&home, json).unwrap();
+    assert_eq!(got, home);
+}
+
+#[test]
+fn target_repo_label_resolves_to_sibling_git_repo() {
+    let parent = tmpdir("trs");
+    let home = parent.join("chorus");
+    let target = parent.join("shared-security");
+    std::fs::create_dir_all(home.join(".git")).unwrap();
+    std::fs::create_dir_all(target.join(".git")).unwrap();
+    let json = r#"{"index":1,"domains":["domain:chorus","repo:shared-security"]}"#;
+    let got = werk_pull::target_repo_root(&home, json).unwrap();
+    assert_eq!(got, target);
+}
+
+/// #3734 negative proof: a declared target that is missing or not a git repo
+/// refuses with a typed reason — never a silent fallback to chorus.
+#[test]
+fn target_repo_missing_or_not_git_refuses_typed() {
+    let parent = tmpdir("trm");
+    let home = parent.join("chorus");
+    std::fs::create_dir_all(home.join(".git")).unwrap();
+    let json = r#"{"index":1,"domains":["repo:not-there"]}"#;
+    let err = werk_pull::target_repo_root(&home, json).unwrap_err();
+    assert!(err.contains("target-repo-missing"), "typed reason, got: {err}");
+
+    let flat = parent.join("flat"); // exists but not a git repo
+    std::fs::create_dir_all(&flat).unwrap();
+    let json2 = r#"{"index":1,"domains":["repo:flat"]}"#;
+    let err2 = werk_pull::target_repo_root(&home, json2).unwrap_err();
+    assert!(err2.contains("target-repo-not-git"), "typed reason, got: {err2}");
+}
+
+/// Path traversal in a label must refuse — `repo:../../etc` cannot escape
+/// the projects directory.
+#[test]
+fn target_repo_label_with_traversal_refuses() {
+    let parent = tmpdir("trt");
+    let home = parent.join("chorus");
+    std::fs::create_dir_all(home.join(".git")).unwrap();
+    let json = r#"{"index":1,"domains":["repo:../evil"]}"#;
+    let err = werk_pull::target_repo_root(&home, json).unwrap_err();
+    assert!(err.contains("target-repo-invalid"), "typed reason, got: {err}");
+}
