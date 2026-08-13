@@ -1057,6 +1057,65 @@ async fn stop_hook(
         }
     }
 
+    // #3843 — word-cap leg (pairs with #3818's send-path gate). Only when the
+    // stop is otherwise clean: never stack a word-cap bounce on top of an
+    // autonomy or nudge block — one correction per continuation. The counting
+    // contract is config/word-cap-fixtures.json (shared with the TS leg); the
+    // cap value is response.word.cap resolved at role scope, fail-open 100.
+    // Bounded by word_cap's OWN refusal counter (not nudge_drain's, which this
+    // handler resets on clean stops): a rewritten reply is a new debt with
+    // fresh chances; the same over-cap text degrades after WORD_CAP_REFUSAL_CAP.
+    if response.exit_code == 0 && response.stdout.is_none() {
+        let text = raw
+            .get("transcript_path")
+            .and_then(|v| v.as_str())
+            .and_then(hooks::inject_force::last_assistant_text);
+        if let Some(text) = text {
+            let role = format!("{:?}", input.role()).to_lowercase();
+            let api_base = std::env::var("CHORUS_API_URL")
+                .unwrap_or_else(|_| "http://localhost:3340".to_string());
+            // ureq is blocking — keep it off the async worker.
+            let cap = {
+                let (role, api_base) = (role.clone(), api_base.clone());
+                tokio::task::spawn_blocking(move || {
+                    hooks::word_cap::resolve_cap(&role, &api_base)
+                })
+                .await
+                .unwrap_or(hooks::word_cap::FAIL_OPEN_CAP)
+            };
+            match hooks::word_cap::check_cap(&text, cap) {
+                Err(over) => {
+                    let debt_key = format!("{}:{}", over.words, text.len());
+                    let refusals = hooks::word_cap::note_refusal(&role, &debt_key);
+                    let words = over.words.to_string();
+                    let cap_s = over.cap.to_string();
+                    if refusals < hooks::word_cap::WORD_CAP_REFUSAL_CAP {
+                        crate::state::chorus_log(
+                            "word.cap.blocked",
+                            &role,
+                            &[("words", words.as_str()), ("cap", cap_s.as_str())],
+                        )
+                        .await;
+                        let resp = HookResponse::block_with_stderr(
+                            &hooks::word_cap::block_message(&over),
+                        );
+                        emit_hook_decision("stop_hook", &input, "word_cap", &resp, start).await;
+                        return Json(resp);
+                    }
+                    // Cap spent: the rewrite visibly is not happening — let the
+                    // turn end with the overage on the spine, never a fire loop.
+                    crate::state::chorus_log(
+                        "word.cap.degraded",
+                        &role,
+                        &[("words", words.as_str()), ("cap", cap_s.as_str())],
+                    )
+                    .await;
+                }
+                Ok(()) => hooks::word_cap::reset_refusals(&role),
+            }
+        }
+    }
+
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)

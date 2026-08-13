@@ -53,6 +53,17 @@ pub mod nudge_gate {
         PRETOOL_REFUSAL_CAP, STOP_REFUSAL_CAP,
     };
 }
+// #3843 — word-cap Stop-hook leg, pub for tests/word_cap_3843.rs (shared
+// fixture from config/word-cap-fixtures.json + resolver fail-open negative
+// proofs). Counter is pure; resolver takes api_base so tests bring their own
+// stub server, never a live chorus-api.
+pub mod word_cap {
+    pub use crate::hooks::word_cap::{
+        block_message, check_cap, clear_cap_cache, count_words, note_refusal,
+        reset_refusals, resolve_cap, OverCap, CAP_TTL, FAIL_OPEN_CAP,
+        WORD_CAP_REFUSAL_CAP,
+    };
+}
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.
 // #3721 — and append_log_result, so that test can assert on WHY an append failed
