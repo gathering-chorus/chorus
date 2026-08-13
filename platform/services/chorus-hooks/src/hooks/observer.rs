@@ -394,6 +394,48 @@ fn write_inferred_state(role: &str, inferred_card: &str) {
     }
 }
 
+/// #3861 — the first SUBSTANTIVE command in a compound line. Role commands
+/// almost always open with `cd <werk> &&` or `source <env> &&` plus env
+/// assignments, so digesting the raw first token turned Jeff's streams pane
+/// into a wall of identical truncated cd paths. Walk the `&&`/`;` chain past
+/// cd / source / export / bare VAR=val segments to the first real verb; if
+/// nothing substantive follows, keep the last segment as-is (a bare `cd` is
+/// still honest activity, never an empty row).
+pub fn substantive_command(cmd: &str) -> String {
+    let normalized = cmd.replace("&&", "\u{1}").replace(';', "\u{1}");
+    let mut last = cmd.trim().to_string();
+    for seg in normalized.split('\u{1}').map(str::trim).filter(|s| !s.is_empty()) {
+        last = seg.to_string();
+        // strip leading env assignments (FOO=1 BAR=2 verb ...)
+        let mut rest = seg;
+        loop {
+            let tok = rest.split_whitespace().next().unwrap_or("");
+            let is_env = tok.contains('=')
+                && !tok.starts_with('=')
+                && tok.split('=').next().map(|k| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).unwrap_or(false);
+            if is_env {
+                rest = rest[tok.len()..].trim_start();
+            } else {
+                break;
+            }
+        }
+        let verb = rest.split_whitespace().next().unwrap_or("");
+        if verb.is_empty() || verb == "cd" || verb == "source" || verb == "export" || verb == "." {
+            continue;
+        }
+        return shorten_known_roots(rest);
+    }
+    shorten_known_roots(&last)
+}
+
+/// AC3 (#3861) — absolute paths in a digest spend Jeff's screen on
+/// /Users/jeffbridwell/CascadeProjects noise. Strip that projects-root prefix
+/// (and the chorus-werk/ segment) wherever it appears in the command.
+fn shorten_known_roots(cmd: &str) -> String {
+    cmd.replace("/Users/jeffbridwell/CascadeProjects/chorus-werk/", "")
+        .replace("/Users/jeffbridwell/CascadeProjects/", "")
+}
+
 /// Digest a tool call into a compact human-readable summary
 fn digest_tool_call(input: &HookInput) -> String {
     let tool = input.tool_name_str();
@@ -401,9 +443,10 @@ fn digest_tool_call(input: &HookInput) -> String {
     match tool {
         "Bash" => {
             let cmd = input.get_tool_input_str("command");
-            let first_line = cmd.lines().next().unwrap_or("");
-            // Extract the meaningful part of the command
-            let short: String = first_line.chars().take(120).collect();
+            // #3861 — digest the first SUBSTANTIVE command, not the cd chain.
+            let joined = cmd.lines().next().unwrap_or("");
+            let substantive = substantive_command(joined);
+            let short: String = substantive.chars().take(120).collect();
             if short.is_empty() {
                 return String::new();
             }
@@ -663,6 +706,46 @@ fn short_path(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    // #3861 — the streams pane showed fifty copies of "bash: cd /Users/…"
+    // because digests keep the cd/source chain. The digest must surface the
+    // first SUBSTANTIVE command.
+    #[test]
+    fn substantive_strips_cd_and_chain() {
+        assert_eq!(
+            super::substantive_command("cd /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-3861/platform && cargo test --test units"),
+            "cargo test --test units"
+        );
+    }
+    #[test]
+    fn substantive_strips_source_and_env_prefixes() {
+        assert_eq!(
+            super::substantive_command("source platform/scripts/fuseki-auth.sh && FOO=1 BAR=2 node scripts/lint-ratchet.js"),
+            "node scripts/lint-ratchet.js"
+        );
+    }
+    #[test]
+    fn bare_cd_stays_honest_never_empty() {
+        // #3734 negative proof: nothing substantive after the chain — digest
+        // the cd itself, never an empty string that would vanish a row.
+        assert_eq!(super::substantive_command("cd /tmp"), "cd /tmp");
+    }
+    #[test]
+    fn substantive_shortens_known_roots_in_the_command() {
+        // AC3 — absolute paths under the projects root read as repo-relative.
+        assert_eq!(
+            super::substantive_command("cargo test --manifest-path /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-3861/platform/services/chorus-hooks/Cargo.toml"),
+            "cargo test --manifest-path kade-3861/platform/services/chorus-hooks/Cargo.toml"
+        );
+        assert_eq!(
+            super::substantive_command("bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/wall-clock"),
+            "bash chorus/platform/scripts/wall-clock"
+        );
+    }
+    #[test]
+    fn plain_command_unchanged() {
+        assert_eq!(super::substantive_command("git status"), "git status");
+    }
+
     use super::*;
     use crate::types::HookInput;
     use serde_json::json;
