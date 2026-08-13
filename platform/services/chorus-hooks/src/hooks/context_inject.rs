@@ -930,6 +930,25 @@ pub async fn check(input: &HookInput, state: &AppState) -> HookResponse {
         )
     };
 
+    // #3854 — the cap belongs at WRITE time, not only at stop time: the Stop
+    // gate cannot unprint a streamed draft (Jeff watched a bounced 158-word
+    // draft sit above its rewrite, 2026-08-13). Same resolver + 60s cache as
+    // the stop-hook leg, one graph property. spawn_blocking because ureq
+    // blocks; a join failure just omits the line — this path never blocks.
+    let manifest_block = {
+        let role = role_name.clone();
+        let api_base = std::env::var("CHORUS_API_URL")
+            .unwrap_or_else(|_| "http://localhost:3340".to_string());
+        match tokio::task::spawn_blocking(move || {
+            crate::hooks::word_cap::resolve_cap(&role, &api_base)
+        })
+        .await
+        {
+            Ok(cap) => format!("{}\n\n{}", manifest_block, crate::hooks::word_cap::cap_context_line(cap)),
+            Err(_) => manifest_block,
+        }
+    };
+
     // Pulse: assemble team state snapshot. A background daemon already refreshes
     // /tmp/pulse-latest.json on schedule (#1881); only spawn a rebuild when the
     // snapshot is stale past PULSE_STALE_THRESHOLD. Pre-#2231 this spawned

@@ -46,13 +46,24 @@ pub const WORD_CAP_REFUSAL_CAP: u32 = 2;
 /// accepted risk, named in the fixture), then inline code spans, then
 /// http(s)/ws(s) URLs. A token counts only if it contains a letter or digit.
 pub fn count_words(text: &str) -> usize {
-    let no_fences = strip_fences(text);
+    let no_header = strip_leading_header(text);
+    let no_fences = strip_fences(&no_header);
     let no_inline = strip_inline_code(&no_fences);
     let no_urls = strip_urls(&no_inline);
     no_urls
         .split_whitespace()
         .filter(|tok| tok.chars().any(|c| c.is_alphanumeric()))
         .count()
+}
+
+/// #3854 — the chorus prompt header is METADATA and never counts (Jeff,
+/// 2026-08-13: "dont count any metadata"). LEADING only, mirroring the TS
+/// leg's /^\s*---[^\n]*---\s*(\n|$)/: a dashed line mid-prose is content —
+/// stripping every dashed line would let anyone hide a paragraph in dashes.
+fn strip_leading_header(text: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"^\s*---[^\n]*---\s*(\n|$)").unwrap());
+    re.replace(text, " ").into_owned()
 }
 
 /// Paired ``` fences strip non-greedily; a trailing unpaired ``` strips to
@@ -204,6 +215,16 @@ pub fn reset_refusals(role: &str) {
     if let Ok(mut map) = REFUSALS.lock() {
         map.retain(|(r, _, _)| r != role);
     }
+}
+
+/// #3854 — the one line injected into every turn's context so the cap is
+/// known at WRITE time. The Stop gate stays as backstop; this line exists
+/// because the gate cannot unprint an already-streamed draft.
+pub fn cap_context_line(cap: u32) -> String {
+    format!(
+        "Reply cap: {} words of prose (fenced blocks, inline code, URLs, and the header line don't count). Write short the first time — the Stop gate bounces over-cap replies but cannot unprint the draft.",
+        cap
+    )
 }
 
 pub fn block_message(over: &OverCap) -> String {
