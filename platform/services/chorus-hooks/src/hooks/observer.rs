@@ -423,9 +423,17 @@ pub fn substantive_command(cmd: &str) -> String {
         if verb.is_empty() || verb == "cd" || verb == "source" || verb == "export" || verb == "." {
             continue;
         }
-        return rest.to_string();
+        return shorten_known_roots(rest);
     }
-    last
+    shorten_known_roots(&last)
+}
+
+/// AC3 (#3861) — absolute paths in a digest spend Jeff's screen on
+/// /Users/jeffbridwell/CascadeProjects noise. Strip that projects-root prefix
+/// (and the chorus-werk/ segment) wherever it appears in the command.
+fn shorten_known_roots(cmd: &str) -> String {
+    cmd.replace("/Users/jeffbridwell/CascadeProjects/chorus-werk/", "")
+        .replace("/Users/jeffbridwell/CascadeProjects/", "")
 }
 
 /// Digest a tool call into a compact human-readable summary
@@ -720,6 +728,18 @@ mod tests {
         // #3734 negative proof: nothing substantive after the chain — digest
         // the cd itself, never an empty string that would vanish a row.
         assert_eq!(super::substantive_command("cd /tmp"), "cd /tmp");
+    }
+    #[test]
+    fn substantive_shortens_known_roots_in_the_command() {
+        // AC3 — absolute paths under the projects root read as repo-relative.
+        assert_eq!(
+            super::substantive_command("cargo test --manifest-path /Users/jeffbridwell/CascadeProjects/chorus-werk/kade-3861/platform/services/chorus-hooks/Cargo.toml"),
+            "cargo test --manifest-path kade-3861/platform/services/chorus-hooks/Cargo.toml"
+        );
+        assert_eq!(
+            super::substantive_command("bash /Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/wall-clock"),
+            "bash chorus/platform/scripts/wall-clock"
+        );
     }
     #[test]
     fn plain_command_unchanged() {
