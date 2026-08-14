@@ -45,4 +45,5 @@ pub mod nudge_drain; // #3218 — reliable FIFO drain off messages.db (PreToolUs
 pub mod canonical_write_guard;
 pub mod card_add_probe;
 pub mod memory_pressure_guard; // #3625 — refuse Task/Agent fanout under memory pressure
+pub mod reply_delivery; // #3864 — reply.emitted at the Stop hook (delivery correlation)
 pub mod word_cap; // #3843 — word-cap Stop-hook leg (pairs with #3818 send-path gate)

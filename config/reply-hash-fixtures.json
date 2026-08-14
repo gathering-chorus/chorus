@@ -1,0 +1,45 @@
+{
+  "_contract": "#3864 — reply-delivery correlation. The content hash is the cross-language join key: chorus-hooks (Rust, reply.emitted at the Stop hook) and Clearing's session-tailer (TS, reply.rendered) must produce the IDENTICAL hash for the same reply, or emitted/rendered pairs never join and every reply looks like a delivery gap. The two sides read DIFFERENT bytes for the same reply — the Rust extractor joins text blocks with newline and keeps the chorus header; the tailer joins with spaces and strips it — so the rule canonicalizes BOTH to one form. Canonicalize: (1) strip one LEADING '--- ... ---' chorus header (dotall, first occurrence only), (2) collapse every whitespace run to a single space, (3) trim. Hash: sha256 of the canonical utf8, lowercase hex, first 16 chars. Nothing else — each additional normalization is a place for the two implementations to disagree (#3818's lesson).",
+  "cases": [
+    {
+      "name": "plain",
+      "text": "Landed on your go — merge ed90a44e8.",
+      "hash": "13d9145e2bb4b6d5"
+    },
+    {
+      "name": "trim-equivalence",
+      "text": "  Landed on your go — merge ed90a44e8.  \n",
+      "hash": "13d9145e2bb4b6d5"
+    },
+    {
+      "name": "newline-vs-space-join",
+      "text": "block one\nblock two",
+      "hash": "15daddcb85f9a862"
+    },
+    {
+      "name": "space-join-equivalent",
+      "text": "block one block two",
+      "hash": "15daddcb85f9a862"
+    },
+    {
+      "name": "header-stripped",
+      "text": "--- Silas | 2026-08-13 18:08 Boston | #3845 | Werk v1.6.0 ---\n\nLanded on your go — merge ed90a44e8.",
+      "hash": "13d9145e2bb4b6d5"
+    },
+    {
+      "name": "empty-after-canon",
+      "text": "   \n\t ",
+      "hash": "e3b0c44298fc1c14"
+    },
+    {
+      "name": "unicode",
+      "text": "café ⭐ 日本語 — em-dash",
+      "hash": "ba806763a1c0d6c4"
+    },
+    {
+      "name": "multiline-fence",
+      "text": "Header line\n\n```\ncode block | with pipes\n```\ntail line",
+      "hash": "261be6f12c2df0c8"
+    }
+  ]
+}
