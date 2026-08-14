@@ -1,0 +1,3 @@
+{"harvestedAt":"2026-08-14T17:00:00Z","machines":{"library":{
+ "com.test.api":{"pid":"123","runState":"running","kind":"service","keepAlive":true,"program":"/Users/jeffbridwell/.chorus/bin/test-api"},
+ "com.test.nightly":{"pid":null,"runState":"loaded","kind":"job","keepAlive":false,"calendar":true,"program":"/opt/test/nightly.sh"}}}}

@@ -62,16 +62,11 @@ BROKEN_HREFS=""
 BROKEN_COUNT=0
 PROBE_HOST="${CHORUS_API_HOST:-localhost:3340}"
 FALLBACK_HOST="${CHORUS_FALLBACK_HOST:-localhost:3000}"
-# #2994: pre-/acp side-port auto-detect. If CHORUS_API_HOST is unset and a
-# side-port chorus-api is up on 3345 (the pre-/acp verify port — Wren and Silas
-# both use this), prefer it. This lets the ratchet see the werk dist's routes
-# before the deploy lands. After /acp the side-port goes idle and the next
-# coherence run falls through to canonical :3340.
-if [ -z "${CHORUS_API_HOST:-}" ]; then
-  if curl -s -o /dev/null --max-time 1 -w "%{http_code}" "http://localhost:3345/api/chorus/health" 2>/dev/null | grep -q "^200$"; then
-    PROBE_HOST="localhost:3345"
-  fi
-fi
+# #3870: the #2994 side-port auto-detect is RETIRED. 3345 is wren's werk demo
+# variant port (demo_env.rs 3343/3344/3345 per role) — with her variant up,
+# the auto-detect silently health-checked an UNMERGED BRANCH build. A probe
+# must never guess at a port range it doesn't own: callers that want a
+# non-canonical host say so explicitly via CHORUS_API_HOST.
 if [ "$SKIP_HREF_PROBE" != "1" ]; then
   # Pull catalog hrefs from chorus-api (#2445 wave 3 — was :3000 gathering).
   CATALOG_JSON=$(curl -s --max-time 5 "http://$PROBE_HOST/api/doc-catalog" 2>/dev/null)

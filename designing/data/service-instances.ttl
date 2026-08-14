@@ -23,3 +23,52 @@ chorus:service-clearing a chorus:Service ;
     chorus:pathToClose "Closed when the public door requires seam-issued identity for every participant, the substrate decision from #3674 is recorded on this instance, and the service-design page is generated from the graph with the April hand-authored page retired." ;
     chorus:gaps "Public door has no per-participant authentication - any holder of the URL reaches the room (#3669 lanes 2-3). share.* export is unreliable. Delivery to agents is terminal injection, not subscription (#3674 decides the substrate). The service-design HTML page is still hand-authored, not generated from this instance. hasDesignDoc unfilled - no Document instances exist in the graph." ;
     chorus:notInScope "Nudge transport and session-registry routing (pulse owns delivery; the Clearing hands outbound messages to pulse). Spine event persistence (Spine product). Card and board mutations (werk / cards). Voice input (/listen). Substrate replacement itself - #3674 is a spike commitment to a readout, not to adoption." .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #3870 — Service ONE of nine: Identity. Pair-review copy (kade drafts, wren
+# navigates, silas gates — authN is his domain per Jeff's 2026-07-24 cut).
+# BOUNDARY (issuance-only — wren's red-line 16:04 applied): a running thing
+# is INSIDE Identity iff it MINTS who-you-are — issues tokens, holds signing
+# keys, publishes JWKS, owns WebIDs. VERIFICATION IS A LIBRARY consumers
+# embed: the verify code runs inside chorus-api, the app, the clearing — those
+# instances deploy to THEIR Services, not to Identity. Two people agree at
+# instance level: does this process mint identity? CSS pod: yes, inside — and
+# it is Identity's ONLY instance (com.security.css). chorus-api verifying a
+# token: outside. authorized-users.ts deciding access: outside (authZ).
+
+chorus:service-identity a chorus:Service ;
+    rdfs:label "Identity" ; chorus:label "Identity" ;
+    chorus:overview "Who anyone is, human or agent — the one place identity is MINTED for the whole system. The CSS Solid pod on :3001 is the OIDC issuer (public door id.lightlifeurbangardens.com via the tunnel); the #3613 seam issues agents client-credential identities (ES256, JWKS published for consumers to verify with); the shared-session cookie key (~/.chorus/share-oidc.json) lets surfaces verify a browser session without re-asking. Everything downstream that decides permissions consumes this service's answers; nothing else may mint them." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:status "operating" ;
+    chorus:asIs "Live: CSS pod issues for jeff + all three role Principals (webIds reconciled #3726, reproducible from MODEL_SET); seam verification is deployed on chorus-api's envelope door; login on the gathering app performs the client-credentials grant server-side, spoofing the public issuer Host because Cloudflare 1010-blocks the direct call. Hard truths from the live walk: login FAILS HARD when :3001 is down (no fallback page, error render), and Identity is a single instance on one machine." ;
+    chorus:toBe "Every participant on every public surface authenticates through this seam — the Clearing door included (#3669 lanes 2-3): agents via client-credentials with DPoP, humans via browser OIDC against id.lightlifeurbangardens.com, verified against the seam's JWKS everywhere. The Host-spoof workaround retired by fixing the tunnel path. Fail-closed stays, but fails LOUD: an identity outage renders as 'identity is down', never as a generic error page." ;
+    chorus:implementationPlan "(1) #3878's /clearing move forces the Clearing-door decision — route its auth through the seam in the same change rather than porting the static token. (2) Retire the Cloudflare Host-spoof: tunnel config gains a direct id.* path for server-side grants (Silas, tunnel owner). (3) Loud-fail login page distinguishing identity-down from bad-credentials (the gate-refusal-names-its-state rule applied to the front door)." ;
+    chorus:pathToClose "Closed when every public surface's login flows through the seam, the Host-spoof is gone, and an identity outage names itself to the visitor." ;
+    chorus:gaps "Single instance, hard-fail dependency for all login (observed: CSS down = login error page). Host-spoof workaround in login.handler.ts is load-bearing. Clearing public door still uses a static bridge token, not seam identity. No Document instance linked yet (hasDesignDoc floor unmet across all Services — Silas review point 3)." ;
+    chorus:notInScope "AuthZ of any kind: allow-lists, role grants, per-surface permissions (roles domain / consuming apps). Session STORAGE (gathering's sessions.db). Nostr key derivation for Buzz (#3674 bar: derived creds bound to Principals — a consumer of this seam, not part of it)." .
+
+# Instances observed (from instances-observed.json; the harvester will own
+# these rows in the graph — listed here only as the deploys-mapping spec):
+#   instance-library-com.gathering.blockverse? NO — outside (app).
+#   CSS pod runs as... (launchd label verified below in pair review)
+#   deploys→ chorus:service-identity: the CSS pod unit on library.
+
+# #3870 — Service: Loom. Jeff's cut 2026-08-14 ~09:34: coordination splits
+# Clearing (delivery to screens) / Loom (watching and guarding role turns).
+# BOUNDARY (two-people-agree): INSIDE Loom iff its subject is ROLE TURNS —
+# observing, guarding, digesting them. hooks daemon: inside. pulse (delivers
+# to screens): Clearing. chorus-api hosts loom endpoints among many: its
+# instance deploys to several Services, loom included (shared-instance rule).
+chorus:service-loom a chorus:Service ;
+    rdfs:label "Loom" ; chorus:label "Loom" ;
+    chorus:overview "The role-thread runtime — every tool turn a role takes passes through it. The chorus-hooks daemon guards each turn (canonical write guard, TDD gate, search hierarchy, respond-first), digests it for the streams, and emits the observation record peers and Jeff watch. Loom is why a role's work is visible and bounded at all." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "operating" ;
+    chorus:asIs "Live: the daemon runs on a unix socket (no TCP), fail-closed for every role when down — the highest-blast-radius edge on the topology map (one restart command recovers). Observer digests cover shell/edit/agent/skill turns; MCP verbs digest to nothing (#3884). Gates fire per-turn with per-role config." ;
+    chorus:toBe "Every tool class digests (#3884 kills the silent-empty default); pipeline phases interleave into streams so out-of-session work reads as work; daemon degradation surfaces as a named identity rather than mysterious tool denials (the #2790 lockout class, made legible)." ;
+    chorus:implementationPlan "(1) #3884 digest-all + werk-phase interleave — carded, kade. (2) Daemon-down legibility: deny message names the daemon and the recovery line (exists; keep under test). (3) Tile cross-role lastAction misattribution seen once 2026-08-14 — reproduce with a fixture or retire the suspicion." ;
+    chorus:pathToClose "Closed when no tool class is silently invisible, pipeline activity renders in streams, and a daemon outage names itself." ;
+    chorus:gaps "MCP verbs invisible in streams (#3884, carded). Werk runs render as watcher sleeps. Possible tile misattribution (one observation, unconfirmed). hasDesignDoc unfilled pending Document instances (Silas review point 3)." ;
+    chorus:notInScope "Message delivery to screens (Clearing/pulse). Card and board state (werk/cards). Gate POLICY content — loom runs gates; what they enforce belongs to the owning domains." .

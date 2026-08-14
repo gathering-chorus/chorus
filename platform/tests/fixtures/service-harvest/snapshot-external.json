@@ -1,0 +1,35 @@
+{
+ "harvestedAt": "2026-08-14T20:00:00Z",
+ "machines": {
+  "library": {
+   "com.microsoft.teams": {
+    "pid": "9",
+    "runState": "running",
+    "kind": "service",
+    "program": "/Applications/Microsoft Teams.app/Contents/MacOS/teams"
+   },
+   "com.test.ours": {
+    "pid": "8",
+    "runState": "running",
+    "kind": "service",
+    "program": "/Users/jeffbridwell/.chorus/bin/ours"
+   },
+   "com.test.wrapper": {
+    "pid": "7",
+    "runState": "running",
+    "kind": "service",
+    "program": "/bin/bash",
+    "argv": [
+     "/bin/bash",
+     "/Users/jeffbridwell/CascadeProjects/shared-security/bin/start.sh"
+    ]
+   },
+   "com.test.bundleonly": {
+    "pid": "6",
+    "runState": "running",
+    "kind": "service",
+    "bundleId": "com.electron.thing"
+   }
+  }
+ }
+}

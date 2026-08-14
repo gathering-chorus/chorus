@@ -1,0 +1,7 @@
+{
+  "_comment": "#3870 \u2014 authored label\u2192Service mapping. The generator emits deploys edges from this; every graph row stays machine-written. A label here with no observed instance becomes a LOUD MappingStaleness finding; an unknown Service IRI refuses at generate. Add entries as Services are authored \u2014 this file is the ONLY hand-edited surface, and both drift directions guard it.",
+  "com.security.css": "service-identity",
+  "com.chorus.clearing": "service-clearing",
+  "com.chorus.pulse": "service-clearing",
+  "com.chorus.jeff-input-monitor": "service-clearing"
+}

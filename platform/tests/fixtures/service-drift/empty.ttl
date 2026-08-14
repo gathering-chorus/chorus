@@ -1,0 +1,2 @@
+# #3870 fixture: the empty graph. Zero instances = green (and proves the
+# check runs before any harvester has ever written a triple).

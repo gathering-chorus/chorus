@@ -874,6 +874,18 @@ chorus:product-clearing
 chorus:messages-domain chorus:hosts chorus:service-clearing .
 chorus:service-clearing chorus:atStep chorus:value-stream-step-directing .
 
+# #3870 — Identity Service (def: service-instances.ttl; issuance-only boundary,
+# pair-reviewed kade+wren, Jeff homed it under borg). security is the V2
+# canonical domain individual (#3587 repoint).
+chorus:security chorus:hosts chorus:service-identity .
+chorus:service-identity chorus:atStep chorus:value-stream-step-proving .
+
+# #3870 — Loom Service (def: service-instances.ttl; role-turns boundary).
+# Hosting domain: Silas review point — roles domain per Jeff's 2026-07-24
+# authN/authZ cut, exact domain IRI to confirm at gate-arch.
+chorus:roles-domain chorus:hosts chorus:service-loom .
+chorus:service-loom chorus:atStep chorus:value-stream-step-building .
+
 # Spine (def: product-instances.ttl). Child product of The Clearing.
 chorus:product-spine
     chorus:atStep chorus:Directing ;

@@ -1,0 +1,14 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3870 negative-proof fixture: ONE instance no Service claims.
+# The drift check must go RED and NAME com.example.mystery — before the
+# harvester exists (Wren: written first so the check can't be shaped to
+# whatever the harvester happens to produce).
+<urn:test:instance-library-com.example.mystery>
+    a chorus:ServiceInstance ;
+    rdfs:label "com.example.mystery (library)" ;
+    chorus:launchdLabel "com.example.mystery" ;
+    chorus:runState "running" ;
+    chorus:lastObserved "2099-01-01T00:00:00Z"^^xsd:dateTime .

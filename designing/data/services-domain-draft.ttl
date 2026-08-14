@@ -1,0 +1,181 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# ============================================================================
+# #3870 DRAFT — ServiceInstance + ScheduledJob vocabulary (PAIR REVIEW COPY)
+# Driver: kade · Navigator: wren · Shape gate: silas (OWL-DBA) at gate-arch.
+# Drafted FROM the observed harvest (instances-observed.json, 2026-08-14
+# 09:47: library 30 services + 42 jobs, bedroom 8 + 2) — fields below exist
+# because the walk produced them, not because a design guessed them.
+# Final home: vocabulary + shapes move into roles/silas/ontology/chorus.ttl
+# beside ServiceShape; this file exists so the pair red-lines first.
+# ServiceInstance individuals are NEVER in any TTL file — the harvester writes
+# them (Wren pin #1: a hand-editable instance field is a lie waiting to happen).
+# ============================================================================
+
+# --- ServiceInstance: the RUNTIME fact. Discovered, never authored. ---
+chorus:ServiceInstance a owl:Class ;
+    rdfs:label "Service Instance" ;
+    rdfs:comment "A running (or recently observed) launchd unit implementing zero or more Services — one process on one machine, harvested from launchctl + plist. Discovered, never authored (#3870). An instance with no deploys edge is the drift signal, not an error." .
+
+chorus:deploys a owl:ObjectProperty ;
+    rdfs:label "deploys" ;
+    rdfs:comment "A ServiceInstance implements a Service. OPTIONAL (Wren pin #2: unmapped must be representable or the drift check can never fire) and MULTI-VALUED (chorus-api carries endpoints of Loom, cards, and knowledge — one process, several Services; same shape as Fuseki serving two products)." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range chorus:Service .
+
+chorus:lastObserved a owl:DatatypeProperty ;
+    rdfs:label "last observed" ;
+    rdfs:comment "When the harvester last saw this unit. MANDATORY (Wren pin #3): a running instance and one unseen for 24h are different facts. Ephemeral instances (werk variants) age out — that is information, not noise." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:dateTime .
+
+chorus:launchdLabel a owl:DatatypeProperty ;
+    rdfs:label "launchd label" ;
+    rdfs:comment "The launchd unit name (com.gathering.app). Instance IRI derives from machine + label, so re-harvest is idempotent." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+chorus:onMachine a owl:ObjectProperty ;
+    rdfs:label "on machine" ;
+    rdfs:comment "Which machine runs the instance. Range chorus:Machine — the class exists (chorus.ttl:637) with chorus:library / chorus:bedroom already typed." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range chorus:Machine .
+
+chorus:listensOn a owl:DatatypeProperty ;
+    rdfs:label "listens on" ;
+    rdfs:comment "Port(s) the instance answers, from the harvester probe. Absent for socket-only units (chorus-hooks) and jobs." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:integer .
+
+chorus:runState a owl:DatatypeProperty ;
+    rdfs:label "run state" ;
+    rdfs:comment "Harvested: 'running' (pid present) | 'loaded' (no pid — on-demand, exited, or crashed), as launchctl reports at harvest time." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+# --- Provenance triplet (Jeff's ask via Wren 09:25): joins the running thing
+#     to the design that produced it. Harvested from binary.deployed spine
+#     events {binary, cdhash, commit, role} — already emitted per deploy by
+#     build-signed.sh/chorus-bin-install (#2734) — never authored. ---
+chorus:deployedCommit a owl:DatatypeProperty ;
+    rdfs:label "deployed commit" ;
+    rdfs:comment "Source commit of the running binary, from the latest binary.deployed spine event for this unit. Answers 'which design produced this running thing.'" ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+chorus:cdhash a owl:DatatypeProperty ;
+    rdfs:label "cdhash" ;
+    rdfs:comment "Code-directory hash of the installed binary (the identity macOS TCC actually trusts, #2734). From binary.deployed; lets drift between installed and running binaries be asked as a query." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+chorus:binaryPath a owl:DatatypeProperty ;
+    rdfs:label "binary path" ;
+    rdfs:comment "Program path from the plist (harvested 'program' field) — e.g. ~/.chorus/bin/chorus-hooks vs a stray target/release build, which is itself a drift signal." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+chorus:external a owl:DatatypeProperty ;
+    rdfs:label "external" ;
+    rdfs:comment "Observed-not-owned: the binary lives outside our trees (evidence-derived by the harvester, never hand-typed). Externals are excluded from the unmapped drift finding and counted separately — unmapped means OURS and unexplained (wren, #3870)." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:boolean .
+
+chorus:ServiceInstanceShape a sh:NodeShape ;
+    sh:targetClass chorus:ServiceInstance ;
+    chorus:instancesGraph "urn:chorus:domains:services" ;   # harvested facts live in the
+    # dedicated domain-named graph (Silas ruling 16:06), NOT the ontology
+    # graph — model-deploy additive-merge must never wipe or resurrect
+    # harvested state (#3587 landmine class); the harvester owns it wholesale.
+    # Every property below is machine-written (Wren pin #1: no authored fields).
+    sh:property [ sh:path rdfs:label            ; sh:minCount 1 ; sh:datatype xsd:string  ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:launchdLabel   ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:onMachine      ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastObserved   ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runState       ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "running" "loaded" "absent" ) ; chorus:exposure chorus:public ] ;
+    # "absent" (Wren red-line): a vanished unit keeps its row and says so —
+    # deleting it would blind the drift check to disappearances, and the two
+    # legal states alone would force the harvester to write a lie.
+    sh:property [ sh:path chorus:deploys        ; sh:minCount 0 ; sh:class chorus:Service ; chorus:exposure chorus:public ] ;
+    #                         ^^^^^^^^^^ minCount 0, DELIBERATE and load-bearing:
+    # requiring the edge makes "unmapped instance" unrepresentable and the drift
+    # check permanently green (Wren: "a minCount-1 there makes the whole thing
+    # decorative" — the #3734 hollow-gate class, applied to a shape).
+    sh:property [ sh:path chorus:listensOn      ; sh:minCount 0 ; sh:datatype xsd:integer ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:binaryPath     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:deployedCommit ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:cdhash         ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:external       ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:boolean ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:evidenceState  ; sh:minCount 0 ; sh:maxCount 1 ; sh:in ( "unknown" ) ; chorus:exposure chorus:public ] .
+    # evidenceState "unknown" = the harvester could not read this unit's
+    # identity evidence (remote, no plist reachable) — an OPS gap distinct
+    # from unmapped (ours, unexplained) and external (not ours, evidenced).
+    # Provenance triplet minCount 0 because only chorus-deploy'd binaries emit
+    # binary.deployed today — node/jar services have no event yet. Requiring it
+    # would fail every honest harvest of them (same hollow-gate reasoning).
+
+# --- ScheduledJob: the 42 timers (observed count, 09:47 — not the ~25 we said). ---
+chorus:evidenceState a owl:DatatypeProperty ;
+    rdfs:label "evidence state" ;
+    rdfs:comment "Wren's third state (#3870): unknown = the harvester could not look (no plist reachable, no print access). Cleared by the per-machine agent. Distinct from unmapped and external by construction." ;
+    rdfs:domain chorus:ServiceInstance ;
+    rdfs:range xsd:string .
+
+chorus:ScheduledJob a owl:Class ;
+    rdfs:label "Scheduled Job" ;
+    rdfs:comment "A launchd unit with StartCalendarInterval/StartInterval that runs and exits (nightly-suites, backups, probes). Harvested like ServiceInstance; classified from its own plist. Not a Service and never counted as one (#3870)." .
+
+chorus:lastRunAt a owl:DatatypeProperty ;
+    rdfs:label "last run at" ;
+    rdfs:comment "When the job last fired, from launchd/log evidence at harvest." ;
+    rdfs:domain chorus:ScheduledJob ;
+    rdfs:range xsd:dateTime .
+
+chorus:lastExitCode a owl:DatatypeProperty ;
+    rdfs:label "last exit code" ;
+    rdfs:comment "Exit status of the job's last run (launchctl list column 2)." ;
+    rdfs:domain chorus:ScheduledJob ;
+    rdfs:range xsd:integer .
+
+chorus:ScheduledJobShape a sh:NodeShape ;
+    sh:targetClass chorus:ScheduledJob ;
+    chorus:instancesGraph "urn:chorus:domains:services" ;   # Silas ruling: ADR-051 domain-named; harvester owns it, OUT of MODEL_SET
+    sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:onMachine    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastObserved ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastRunAt    ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastExitCode ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer  ; chorus:exposure chorus:public ] .
+    # lastRunAt/lastExitCode (Wren follow-on, folded in): "which nightly job
+    # failed" becomes a graph query instead of a Loki spelunk. minCount 0 —
+    # a job that has never fired since harvest began has no run to report.
+
+# --- The services domain claims its vocabulary (DECLARED -> CLAIMED -> SERVED).
+# chorus:Machine was DECLARED (chorus.ttl:637, library+bedroom typed) but no
+# domain ever CLAIMED it, so owl-api never served it (the three-sets rule:
+# serving is definesVocabulary-claimed, by construction). Claiming here is a
+# DELIBERATE surface mount, not backfill. Final home: the services Domain
+# individual in chorus.ttl grows this definesVocabulary list.
+# services-domain definesVocabulary: chorus:Service (already claimed today),
+#   chorus:ServiceInstance , chorus:ScheduledJob , chorus:Machine .
+
+# ============================================================================
+# SILAS REVIEW POINTS (gate-arch)
+# 1. instancesGraph split: authored Services in urn:chorus:ontology (#3675)
+#    vs harvested instances in urn:chorus:instances — confirm additive-merge/
+#    wipe-protection reasoning holds for a harvester-owned graph region.
+# 2. RESOLVED then reopened as a claim: chorus:Machine is declared+typed in the
+#    file but unclaimed/unserved — the services domain claims it (above).
+#    Confirm you want Machine served from this domain vs a future infra domain.
+# 3. ServiceShape floor: hasDesignDoc minCount 1 needs chorus:Document
+#    instances that do not exist yet (service-clearing's gaps say so) — the
+#    nine authored Services need Document instances or the floor is
+#    unsatisfiable. Sequencing is your call.
+# 4. deploys multi-target: confirm no upstream maxCount conflicts.
+# 5. Provenance join: harvester reads latest binary.deployed per binary from
+#    the spine — confirm the spine is the right source vs codesign -dv live.
+# ============================================================================

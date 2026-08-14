@@ -1,0 +1,41 @@
+# #3870 — the service-drift question, as one query.
+# A row returned = a drift finding. Zero rows = quiet.
+# Runs identically over the live endpoint (service-drift-check.sh) and over
+# fixture files via arq in the bats suite — the check IS this file; the
+# wrapper only chooses the data source, so the tested thing is the shipped thing.
+PREFIX chorus: <https://jeffbridwell.com/chorus#>
+PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:    <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?instance ?label ?finding WHERE {
+  {
+    # 1. UNMAPPED — an instance no Service claims. Undocumented, or shouldn't run.
+    ?instance a chorus:ServiceInstance ; rdfs:label ?label .
+    FILTER NOT EXISTS { ?instance chorus:deploys ?svc }
+    # externals (observed-not-owned, evidence-derived) are counted elsewhere;
+    # unmapped means OURS and unexplained — the number that trends to zero.
+    FILTER NOT EXISTS { ?instance chorus:external true }
+    # evidence-unavailable (wren's third state): we could not look — an ops
+    # gap counted on its own, never "ours, unexplained".
+    FILTER NOT EXISTS { ?instance chorus:evidenceState "unknown" }
+    BIND("unmapped: no Service claims this instance" AS ?finding)
+  } UNION {
+    # 2. VANISHED — the harvester marked it absent; the row remembers.
+    ?instance a chorus:ServiceInstance ; rdfs:label ?label ;
+              chorus:runState "absent" .
+    BIND("vanished: was running, now absent" AS ?finding)
+  } UNION {
+    # 2b. STALE MAPPING — a Service claims a label nobody observed running
+    # (wren condition 1): the authored map has drifted from the world.
+    ?instance a chorus:MappingStaleness ; rdfs:label ?label .
+    BIND("stale-mapping: mapped label has no observed instance" AS ?finding)
+  } UNION {
+    # 3. STALE — not observed within the freshness window (?cutoff is injected
+    # by the wrapper as now-24h; fixtures pass an explicit cutoff).
+    ?instance a chorus:ServiceInstance ; rdfs:label ?label ;
+              chorus:lastObserved ?seen .
+    FILTER(?seen < ?cutoff)
+    BIND(CONCAT("stale: last observed ", STR(?seen)) AS ?finding)
+  }
+}
+ORDER BY ?finding ?label
