@@ -95,37 +95,19 @@ export function startWipDriftWatch(
   intervalMs = 10 * 60 * 1000,
   now: () => number = Date.now,
 ): () => void {
-  const priorDrift = new Map<string, number>(); // `${role}:${card}` → firedAt
   // #3880 fix (first live firing was a false positive on its own author):
   // the spine tail covers minutes, the window is hours — so ACCUMULATE the
   // newest-seen timestamps across ticks instead of trusting one shallow read,
   // and date observation per card so the first window must be genuinely
   // WATCHED before anything fires.
-  const seenCard = new Map<string, number>();   // key → newest card event ever seen
-  const seenRole = new Map<string, number>();   // role → newest role event ever seen
-  const observedSince = new Map<string, number>(); // key → when we started watching
+  const state: WatchState = {
+    priorDrift: new Map(), seenCard: new Map(), seenRole: new Map(), observedSince: new Map(),
+  };
   const timer = setInterval(() => {
     void (async () => {
       try {
         for (const c of await readWip()) {
-          const role = c.owner.toLowerCase();
-          const a = await readActivity(role, c.id);
-          const key = `${role}:${c.id}`;
-          if (!observedSince.has(key)) observedSince.set(key, now());
-          seenCard.set(key, Math.max(seenCard.get(key) ?? 0, a.lastCardActivityMs));
-          seenRole.set(role, Math.max(seenRole.get(role) ?? 0, a.lastRoleActivityMs));
-          const d = detectWipDrift({
-            role, cardId: c.id, nowMs: now(),
-            lastRoleActivityMs: seenRole.get(role) ?? 0,
-            lastCardActivityMs: seenCard.get(key) ?? 0,
-            priorDriftAtMs: priorDrift.get(key) ?? null,
-            observedSinceMs: observedSince.get(key) ?? now(),
-          });
-          if (!d) { if (a.lastCardActivityMs > (priorDrift.get(key) ?? 0)) priorDrift.delete(key); continue; }
-          const fired = priorDrift.get(key) ?? 0;
-          if (now() - fired < DRIFT_WINDOW_MS) continue; // one nudge per window
-          priorDrift.set(key, now());
-          await emitDrift(d);
+          await tickOneCard(c, state, readActivity, emitDrift, now);
         }
       } catch (e) {
         console.error('[wip-drift] scan failed:', e instanceof Error ? e.message : e);
@@ -133,4 +115,38 @@ export function startWipDriftWatch(
     })();
   }, intervalMs);
   return () => clearInterval(timer);
+}
+
+interface WatchState {
+  priorDrift: Map<string, number>;    // `${role}:${card}` → firedAt
+  seenCard: Map<string, number>;      // key → newest card event ever seen
+  seenRole: Map<string, number>;      // role → newest role event ever seen
+  observedSince: Map<string, number>; // key → when we started watching
+}
+
+/** One card, one tick: merge newest-seen, detect, fire at most once per window. */
+async function tickOneCard(
+  c: WipCard, s: WatchState, readActivity: ReadActivity, emitDrift: EmitDrift, now: () => number,
+): Promise<void> {
+  const role = c.owner.toLowerCase();
+  const a = await readActivity(role, c.id);
+  const key = `${role}:${c.id}`;
+  if (!s.observedSince.has(key)) s.observedSince.set(key, now());
+  s.seenCard.set(key, Math.max(s.seenCard.get(key) ?? 0, a.lastCardActivityMs));
+  s.seenRole.set(role, Math.max(s.seenRole.get(role) ?? 0, a.lastRoleActivityMs));
+  const d = detectWipDrift({
+    role, cardId: c.id, nowMs: now(),
+    lastRoleActivityMs: s.seenRole.get(role) ?? 0,
+    lastCardActivityMs: s.seenCard.get(key) ?? 0,
+    priorDriftAtMs: s.priorDrift.get(key) ?? null,
+    observedSinceMs: s.observedSince.get(key) ?? now(),
+  });
+  if (!d) {
+    if (a.lastCardActivityMs > (s.priorDrift.get(key) ?? 0)) s.priorDrift.delete(key);
+    return;
+  }
+  const fired = s.priorDrift.get(key) ?? 0;
+  if (now() - fired < DRIFT_WINDOW_MS) return; // one nudge per window
+  s.priorDrift.set(key, now());
+  await emitDrift(d);
 }
