@@ -2213,12 +2213,28 @@ pub fn build_scope_chain(rows: &[String]) -> R<Vec<ScopeNode>> {
 /// several chain links, most of them nonsense.
 pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
     format!(
+        // #3876 — TWO named graph blocks, because the facts genuinely live in
+        // two homes and the rule says which:
+        //
+        //   an EDGE lives in the home graph of the node it hangs off
+        //   FIELDS live with their subject
+        //
+        // `role-wren hasProperty prop-x` sits in the ROLE's home (instances,
+        // per RoleShape's pin); `prop-x propertyKey "response.word.cap"` sits
+        // in the PROPERTY's home (ontology, per PropertyShape's pin).
+        //
+        // One block spanning both finds a typed Role with no properties and
+        // answers 404 — which it did for two days after every other piece of
+        // this path existed. This is NOT a union: each block names the home the
+        // rule assigns it, so a misplaced triple still fails loudly.
         "SELECT ?v WHERE {{ \
-           GRAPH <{g}> {{ \
+           GRAPH <{ng}> {{ \
              VALUES ?ownerClass {{ <{ns}Role> <{ns}Service> <{ns}Domain> <{ns}Product> <{ns}ValueStreamStep> <{ns}ValueStream> }} \
              <{node}> (<{ns}partOf>|<{ns}memberOf>|<{ns}atStep>|<{ns}ownedBy>)* ?owner . \
              ?owner a ?ownerClass . \
              ?owner <{ns}hasProperty> ?prop . \
+           }} \
+           GRAPH <{g}> {{ \
              ?prop <{ns}propertyKey> ?key . \
              ?prop <{ns}propertyValue> ?value . \
              ?prop <{ns}propertyValueType> ?vtype . \
@@ -2226,10 +2242,21 @@ pub fn effective_fetch_query(node_iri: &str, instances_graph: &str) -> String {
            BIND(CONCAT(STR(?owner), \"|\", STR(?ownerClass), \"|\", STR(?prop), \"|\", STR(?key), \"|\", STR(?vtype), \"|\", STR(?value)) AS ?v) \
          }}",
         g = instances_graph,
+        // #3876 — the NODE's home. Named separately from the Property's home
+        // above. Today every cascade scope (Role, Service, Domain, Product,
+        // Step, Stream) is an individual pinned to instances, so this is a
+        // constant; it is a parameter-shaped constant rather than an inlined
+        // string so that when a shape moves its pin, the fix is one call site
+        // and not a hunt through a format literal.
+        ng = NODE_HOME_GRAPH,
         ns = NS,
         node = node_iri
     )
 }
+
+/// #3876 — where cascade scope individuals live. RoleShape pins it; the other
+/// five scope shapes agree today. Kept named so the coupling is visible.
+pub const NODE_HOME_GRAPH: &str = "urn:chorus:instances";
 
 /// #3435 — shape the effective-config response from a node's already-fetched rows.
 /// The handler's pure core (it adds only the live `sparql_json` fetch): build the
