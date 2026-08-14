@@ -20,7 +20,11 @@ REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 STORE_VOL="/System/Volumes/Data"
 SNAP_REL="Users/jeffbridwell/.gathering/data/fuseki-pods"   # path to the TDB2 dir within the snapshot
 DEST_BASE="${FUSEKI_BACKUP_DEST:-/Users/jeffbridwell/Backups/library/fuseki}"
-KEEP="${FUSEKI_BACKUP_KEEP:-3}"
+# #3799 — was 3 fulls; each full is ~450G (store not yet right-sized), so 3-4
+# copies = 1.4-1.7T and Bedroom fills (tomorrow FAILS, measured 2026-08-13).
+# Drop to 2 recovery points until the compact fix (AC1) shrinks the store ~7x.
+# Prune (step 5) enforces this; tonight's 3AM run self-prunes to 2.
+KEEP="${FUSEKI_BACKUP_KEEP:-2}"
 MNT="$(mktemp -d /tmp/fuseki-backup-snap.XXXXXX)"
 LOG_TAG="fuseki-backup"
 CHORUS_LOG="${CHORUS_LOG:-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log}"
