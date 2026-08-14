@@ -1,0 +1,106 @@
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+
+# ============================================================================
+# #3846 — Governance checks: ADRs / decisions / practices as CHECKABLE DATA.
+#
+# Jeff, 2026-08-14: "we need to design an athena-validate verb that scans a
+# graph for any violations of adrs and practices and decisions." SHACL is the
+# structural floor; the rules that actually bit us this week (one home per
+# subject, edge lives in its subject's home graph) are CROSS-GRAPH conventions
+# SHACL cannot express. Each becomes a chorus:GovernanceCheck individual: a
+# named SPARQL query bound to the governing document, run by athena-validate
+# (Wren's verb — the code; this file — the architecture).
+#
+# Discipline (#3734, amended by Wren 2026-08-14): a check enters the registry
+# only having FOUND its violation in the LIVE store — the store is the
+# fixture. Both checks below were proven before authoring:
+#   gc-edge-follows-node  → found exactly role-{silas,wren,kade} (the 6
+#                           misplaced word-cap edges; #3876 moves them, and
+#                           this check flipping GREEN is #3876's proof)
+#   gc-one-home-per-subject → found pulse, clearing, borg, werk typed in BOTH
+#                           urn:chorus:ontology and urn:chorus:instances
+# Adding a future rule = a model write (this registry), never a deploy.
+# ============================================================================
+
+chorus:GovernanceCheck a owl:Class ;
+    rdfs:label "Governance Check" ;
+    rdfs:comment "A machine-checkable rule derived from an ADR / decision / practice. checkQuery is a SPARQL SELECT whose ROWS ARE VIOLATIONS (empty result = compliant). athena-validate runs every registered check and reports each violation with the governing document cited. Register-before-run: a check must have demonstrably found a real violation (live store or committed fixture) before it may gate — a check that cannot go red is not a check (#3734)." .
+
+chorus:boundTo a owl:ObjectProperty ;
+    rdfs:label "bound to" ;
+    rdfs:comment "GovernanceCheck -> the ADR / Decision / Practice individual it enforces. The citation athena-validate prints next to each violation — a violation names its law." ;
+    rdfs:domain chorus:GovernanceCheck .
+
+chorus:checkQuery a owl:DatatypeProperty ;
+    rdfs:label "check query" ;
+    rdfs:comment "SPARQL SELECT returning one row per violation (?s mandatory, extra columns = evidence). Empty result = compliant. Rows-are-violations keeps the verb dumb: run, count, report." ;
+    rdfs:domain chorus:GovernanceCheck ;
+    rdfs:range xsd:string .
+
+chorus:checkSeverity a owl:DatatypeProperty ;
+    rdfs:label "check severity" ;
+    rdfs:comment "block | warn. block-grade checks red athena-validate's exit; warn-grade report only." ;
+    rdfs:domain chorus:GovernanceCheck ;
+    rdfs:range xsd:string .
+
+chorus:provenRedOn a owl:DatatypeProperty ;
+    rdfs:label "proven red on" ;
+    rdfs:comment "ISO date the check demonstrably FOUND a real violation (the #3734 negative proof, recorded as data). A check without this field must not gate." ;
+    rdfs:domain chorus:GovernanceCheck ;
+    rdfs:range xsd:string .
+
+chorus:provenRedRows a owl:DatatypeProperty ;
+    rdfs:label "proven red rows" ;
+    rdfs:comment "How many violation rows the proving run returned (Wren, 2026-08-14: 'found 3, now 0' is proof — 'ran once' isn't). Together with provenRedOn this pins the arc a fix must close: athena-validate can report found-N-then / now-M." ;
+    rdfs:domain chorus:GovernanceCheck ;
+    rdfs:range xsd:integer .
+
+chorus:GovernanceCheckShape a sh:NodeShape ;
+    sh:targetClass chorus:GovernanceCheck ;
+    sh:property [ sh:path chorus:checkQuery ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:checkSeverity ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:boundTo ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:ontology" ;
+    chorus:generatedBy "athena-model" .
+
+# ---------------------------------------------------------------------------
+# Check 1 — one home per subject (ADR-051 instance-home discipline).
+# Proven red 2026-08-14: pulse, clearing, borg, werk typed in both graphs.
+# ---------------------------------------------------------------------------
+chorus:gc-one-home-per-subject a chorus:GovernanceCheck ;
+    rdfs:label "one home per subject" ;
+    chorus:boundTo chorus:adr-051 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 4 ;
+    chorus:checkQuery """SELECT DISTINCT ?s WHERE {
+  GRAPH <urn:chorus:ontology>  { ?s a ?t1 }
+  GRAPH <urn:chorus:instances> { ?s a ?t2 }
+}""" ;
+    rdfs:comment "A subject carries rdf:type in more than one home graph. Every reader that joins within one graph silently sees half the subject (the 2026-08-14 /effective 404 class). Violators found at authoring: pulse, clearing, borg, werk." .
+
+# ---------------------------------------------------------------------------
+# Check 2 — edge follows node (steward ruling 2026-08-14, Silas+Wren).
+# Proven red 2026-08-14: role-{silas,wren,kade} — 6 word-cap hasProperty
+# edges asserted in urn:chorus:ontology while the subjects' pinned home is
+# urn:chorus:instances (RoleShape). #3876 moves them; this check flipping
+# GREEN on its land is #3876's acceptance proof.
+# ---------------------------------------------------------------------------
+chorus:gc-edge-follows-node a chorus:GovernanceCheck ;
+    rdfs:label "edge follows node" ;
+    chorus:boundTo chorus:adr-058 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 3 ;
+    chorus:checkQuery """SELECT DISTINCT ?s ?ge WHERE {
+  GRAPH ?ge { ?s <https://jeffbridwell.com/chorus#hasProperty> ?p }
+  GRAPH ?gt { ?s a ?t }
+  FILTER(?ge != ?gt)
+  FILTER NOT EXISTS { GRAPH ?ge { ?s a ?t2 } }
+}""" ;
+    rdfs:comment "An outgoing edge asserted in a graph where its subject carries no typing — the edge lives outside the node's home, so a home-graph walk cannot see it. Co-location (gate.enforced) is the special case where node-home equals property-home; this check encodes the general rule." .

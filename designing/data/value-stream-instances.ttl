@@ -41,8 +41,12 @@ chorus:value-stream-athena a chorus:ValueStream ;
     rdfs:label "Athena" ; chorus:label "Athena" ;
     chorus:outcome "Takes a model class from OWL to a live, materialized surface — routes, MCP, skill, and page generated from the model" ;
     chorus:trigger "event" ;
-    chorus:contains chorus:value-stream-step-athena-model, chorus:value-stream-step-athena-make,
-        chorus:value-stream-step-athena-deploy, chorus:value-stream-step-athena-land .
+    # #3846 — reconciled to athena-value-stream-design.html (Jeff-approved card
+    # 2026-08-13 supersedes the 06-22 model/make/deploy/land naming, which had
+    # dropped every PROVING step): shape → forge → seed → validate → demo → live.
+    chorus:contains chorus:value-stream-step-athena-shape, chorus:value-stream-step-athena-forge,
+        chorus:value-stream-step-athena-seed, chorus:value-stream-step-athena-validate,
+        chorus:value-stream-step-athena-demo, chorus:value-stream-step-athena-live .
 chorus:value-stream-borg a chorus:ValueStream ;
     rdfs:label "Borg" ; chorus:label "Borg" ;
     chorus:outcome "Continuously reflects the running system against its model and surfaces a verdict to the owner to act on" ;
@@ -74,7 +78,8 @@ chorus:value-stream-loom a chorus:ValueStream ;
 # #3545 — STEPS for the bottom 5, sourced from each design doc's named cycle / OWL block.
 # Step subjects are stream-prefixed (map/surface recur across streams).
 
-# ── athena: model → make → deploy → land (Jeff 2026-06-22; supersedes the doc's shape/forge/seed/validate) ──
+# ── athena: shape → forge → seed → validate → demo → live (#3846 reconcile, Jeff-approved
+# 2026-08-13 — re-supersedes the 06-22 model/make/deploy/land truncation; proving steps restored) ──
 chorus:value-stream-gathering a chorus:ValueStream ;
     rdfs:label "Gathering" ; chorus:label "Gathering" ;
     chorus:outcome "A thing of Jeff's life — a plant, a photo, a practice, a person, a note — carried Sowing → Growing → Practicing → Tending → Harvesting → Reflecting → Connecting, and returned to him as something he can see and use" ;

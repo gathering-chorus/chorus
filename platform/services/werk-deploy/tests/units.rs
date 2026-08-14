@@ -842,7 +842,31 @@ fn negative_proof_3817_buildable_change_with_empty_summary_still_dies() {
     let ts = "platform/api/src/server.ts\n";
     assert!(!werk_deploy::empty_summary_is_config_only(ts), "ts-service diff must NOT no-op");
     let model = "roles/silas/ontology/chorus.ttl\n";
-    assert!(!werk_deploy::empty_summary_is_config_only(model), "model diff must NOT no-op (model deploys at land)");
+    assert!(!werk_deploy::empty_summary_is_config_only(model), "model diff must NOT no-op as CONFIG (it is real content with a land-time deploy moment — the model-only verdict, #3846)");
+}
+
+// #3846 (ADR-058, Jeff's option-A call 2026-08-14) — the model-only verdict:
+// a pure model diff no-ops the VARIANT deploy (model deploys at land, #3736)
+// so a model card has a proving path (demo shows athena-validate output).
+// Pre-3846 this diff shape died at deploy-werk, leaving every pure model card
+// undemoable — the dropped-proving-steps gap.
+#[test]
+fn model_only_diff_is_a_model_only_verdict() {
+    let model = "roles/silas/ontology/governance-checks-3846.ttl\ndesigning/schemas/model-retirements.jsonl\ndocs/x.md\n";
+    assert!(werk_deploy::empty_summary_is_model_only(model), "pure model diff → model-only no-op");
+}
+
+#[test]
+fn negative_proof_3846_model_plus_crate_still_dies() {
+    // #3734 — the violated fixture: model sources AND a crate changed, build
+    // summary empty. That is a broken/under-scoped build wearing a model
+    // card's clothes; the model-only verdict must refuse it.
+    let diff = "roles/silas/ontology/chorus.ttl\nplatform/services/werk-merge/src/lib.rs\n";
+    assert!(!werk_deploy::empty_summary_is_model_only(diff), "model+crate must NOT no-op");
+    let ts = "roles/silas/ontology/chorus.ttl\nplatform/api/src/server.ts\n";
+    assert!(!werk_deploy::empty_summary_is_model_only(ts), "model+ts must NOT no-op");
+    let none = "config/foo.txt\ndocs/x.md\n";
+    assert!(!werk_deploy::empty_summary_is_model_only(none), "no model sources → not model-only (config-only owns it)");
 }
 
 #[test]
