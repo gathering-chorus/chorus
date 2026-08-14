@@ -40,7 +40,11 @@ done
 
 # 2. dangling edges — object is a chorus: IRI that is never a subject
 echo "2) dangling edges (object node does not exist):"
-DANGLE=$(Q "PREFIX c: <$NS> SELECT ?s ?p ?o WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } } LIMIT 20")
+# exclude rdf:type edges: their object is a CLASS, which lives in the ontology
+# graph, not the instance graph — so "missing here" is expected, not dangling.
+# Only edges to expected-instance nodes that don't exist are real dangling.
+RDFTYPE="http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+DANGLE=$(Q "PREFIX c: <$NS> SELECT ?s ?p ?o WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } } LIMIT 20")
 nd=$(count "$DANGLE")
 if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; else echo "  ✅ none"; fi
 
