@@ -100,7 +100,7 @@ export function startReplyGapWatch(
       } catch (e) {
         // Loud, not fatal: the watcher's own failure must not take pulse down,
         // but silence here would be a monitor that cannot report itself broken.
-        console.error('[reply-gap] scan failed:', (e as Error)?.message ?? e);
+        console.error('[reply-gap] scan failed:', e instanceof Error ? e.message : e);
       }
     })();
   }, intervalMs);

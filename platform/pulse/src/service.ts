@@ -12,11 +12,10 @@ import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, t
 import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch } from './reply-gap';
-import { open as fsOpen } from 'fs/promises';
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
-import { appendFile } from 'fs/promises';
+import { appendFile, open as fsOpen } from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 
