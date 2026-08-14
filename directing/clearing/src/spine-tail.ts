@@ -74,6 +74,35 @@ function parseNudgeEntry(entry: LogEntry, role: string): StreamLine | null {
   return { ts: entry.timestamp ?? '', role, type: 'gemba', text: content.substring(0, 200) };
 }
 
+// #3884 — werk pipeline phases render in the stream. A run executes outside
+// any session, so without these Jeff's pane shows watcher sleeps during the
+// most important minutes. Closed set, NOT a spine firehose: everything else
+// still drops (negative-proof tested).
+const WERK_PHASE_EVENTS: Record<string, string> = {
+  'commit.started': '⚙ werk: commit',
+  'build.artifact.hashed': '⚙ werk: build',
+  'env.up.completed': '⚙ werk: env up',
+  'demo.test_result': '⚙ werk: tests',
+  'demo.presented': '🎬 werk: demo presented',
+  'merge.approved': '⚙ werk: merge approved',
+  'deploy.completed': '🚀 werk: deploy complete',
+  'card.branch.closed': '✅ werk: landed',
+  'werk.failed': '🔴 werk: failed',
+};
+
+function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
+  const label = WERK_PHASE_EVENTS[entry.event ?? ''];
+  if (!label) return null;
+  const card = (entry as Record<string, unknown>)['card_id'];
+  return {
+    ts: entry.timestamp ?? '',
+    role,
+    type: 'werk',
+    text: label,
+    card: card ? String(card) : null,
+  };
+}
+
 function parseLogEntry(entry: LogEntry): StreamLine | null {
   const role = entry.role ?? '';
   if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
@@ -81,7 +110,14 @@ function parseLogEntry(entry: LogEntry): StreamLine | null {
   if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
+  if (WERK_PHASE_EVENTS[event]) return parseWerkEntry(entry, role);
   return null;
+}
+
+// test seam (#3884): parseLogEntry is module-private; the suite exercises it
+// directly so the phase set and the no-firehose negative stay pinned.
+export function parseLogEntryForTest(entry: LogEntry): StreamLine | null {
+  return parseLogEntry(entry);
 }
 
 /**

@@ -108,3 +108,35 @@ describe('readSpineLines — latency on a 100MB+ log', () => {
     expect(p95).toBeLessThan(50);
   }, 120000);
 });
+
+// #3884 — werk pipeline phases interleave into the stream. The spine carries
+// them (demo.presented, deploy.completed…) but parseLogEntry dropped every
+// non-session event, so Jeff's pane showed watcher sleeps while the most
+// important minutes ran. Negative proof: an event OUTSIDE the phase set still
+// returns null — the stream doesn't become a spine firehose.
+describe('#3884 werk phase interleave', () => {
+  const { parseLogEntryForTest } = require('../src/spine-tail');
+
+  const entry = (event: string, extra: any = {}) => ({
+    timestamp: '2026-08-14T19:00:00-0400', role: 'kade', event, ...extra,
+  });
+
+  test('demo.presented renders as a werk phase line with card', () => {
+    const l = parseLogEntryForTest(entry('demo.presented', { card_id: '3884' }));
+    expect(l).not.toBeNull();
+    expect(l.type).toBe('werk');
+    expect(l.text).toContain('demo');
+    expect(l.card).toBe('3884');
+  });
+
+  test('deploy.completed and werk.failed both render', () => {
+    expect(parseLogEntryForTest(entry('deploy.completed')).text).toContain('deploy');
+    const failed = parseLogEntryForTest(entry('werk.failed'));
+    expect(failed.text).toContain('failed');
+  });
+
+  test('NEGATIVE: non-phase spine events still drop (no firehose)', () => {
+    expect(parseLogEntryForTest(entry('hook.decision'))).toBeNull();
+    expect(parseLogEntryForTest(entry('context.inject.request'))).toBeNull();
+  });
+});
