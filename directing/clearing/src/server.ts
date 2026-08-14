@@ -557,7 +557,16 @@ function log(level: 'info' | 'error', event: string, fields: Record<string, unkn
   process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n');
 }
 
-app.get('/', async (req: Request, res) => {
+// #3878 — the room answers at `/clearing` as well as `/`.
+//
+// Jeff, three times since 2026-02-21: "lightlifeurbangardens.com/clearing...
+// you go from general to specific." The tunnel passes the path through
+// unchanged — cloudflared does not rewrite — so a `/clearing` ingress rule
+// lands here as a literal GET /clearing. Without this route it 404s, and the
+// routing rule looks broken when it is doing exactly what it was told.
+//
+// `/` stays for the subdomain and for local use; both render the same page.
+app.get(['/', '/clearing'], async (req: Request, res) => {
   const fs = require('fs');
   let html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf-8');
   // #3743 — the verified session's Principal wins over every fallback: Mark's
