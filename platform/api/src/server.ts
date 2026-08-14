@@ -472,6 +472,7 @@ app.use('/akasha', express.static(path.join(gatheringRepoRoot, 'public', 'akasha
 // Borg summary delegates — #2173 AC4: uniform run() wrapper replaces
 // per-handler try/catch boilerplate. Each adapter is one line.
 import { run, asStr } from './handlers/util';
+import { resolveProperty } from './handlers/properties-resolve';
 
 app.get('/api/chorus/hooks/summary', async (_req, res) => {
   const r = await run(() => getHooksSummary());
@@ -490,6 +491,26 @@ app.get('/api/chorus/fitness/summary', async (_req, res) => {
 
 app.get('/api/chorus/quality/summary', async (_req, res) => {
   const r = await run(() => getQualityScan());
+  res.status(r.status).json(r.body);
+});
+
+// #3863 — the effective-config door. Both word-cap consumers have called this
+// route since #3838 and it has never existed; they fail open to a compiled
+// constant on any non-ok response, so its absence was invisible from the call
+// site. Proxies owl-api's generated /effective — one resolver, no second
+// cascade to drift against it.
+app.get('/api/chorus/properties/resolve', async (req, res) => {
+  const r = await resolveProperty(
+    {
+      key: asStr(req.query.key) ?? '',
+      scope: asStr(req.query.scope) ?? '',
+      name: asStr(req.query.name) ?? '',
+    },
+    {
+      fetchImpl: (url) => fetch(url),
+      owlBase: process.env.OWL_API_URL ?? 'http://localhost:3360',
+    },
+  );
   res.status(r.status).json(r.body);
 });
 
