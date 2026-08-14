@@ -54,6 +54,12 @@ chorus:provenRedOn a owl:DatatypeProperty ;
     rdfs:domain chorus:GovernanceCheck ;
     rdfs:range xsd:string .
 
+chorus:provenRedRows a owl:DatatypeProperty ;
+    rdfs:label "proven red rows" ;
+    rdfs:comment "How many violation rows the proving run returned (Wren, 2026-08-14: 'found 3, now 0' is proof — 'ran once' isn't). Together with provenRedOn this pins the arc a fix must close: athena-validate can report found-N-then / now-M." ;
+    rdfs:domain chorus:GovernanceCheck ;
+    rdfs:range xsd:integer .
+
 chorus:GovernanceCheckShape a sh:NodeShape ;
     sh:targetClass chorus:GovernanceCheck ;
     sh:property [ sh:path chorus:checkQuery ; sh:minCount 1 ; sh:datatype xsd:string ] ;
@@ -71,6 +77,7 @@ chorus:gc-one-home-per-subject a chorus:GovernanceCheck ;
     chorus:boundTo chorus:adr-051 ;
     chorus:checkSeverity "block" ;
     chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 4 ;
     chorus:checkQuery """SELECT DISTINCT ?s WHERE {
   GRAPH <urn:chorus:ontology>  { ?s a ?t1 }
   GRAPH <urn:chorus:instances> { ?s a ?t2 }
@@ -89,6 +96,7 @@ chorus:gc-edge-follows-node a chorus:GovernanceCheck ;
     chorus:boundTo chorus:dec-edge-follows-node ;
     chorus:checkSeverity "block" ;
     chorus:provenRedOn "2026-08-14" ;
+    chorus:provenRedRows 3 ;
     chorus:checkQuery """SELECT DISTINCT ?s ?ge WHERE {
   GRAPH ?ge { ?s <https://jeffbridwell.com/chorus#hasProperty> ?p }
   GRAPH ?gt { ?s a ?t }
