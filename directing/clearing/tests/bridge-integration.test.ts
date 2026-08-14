@@ -1,14 +1,22 @@
 // @test-type: unit — signal is fixture-data: in-memory MessageRouter, no io, no live session
 /**
- * Bridge Integration Tests — #1674 AC #2
+ * Bridge Integration Tests — #1674 AC #2, visibility matrix per #3862.
  *
  * Tests what Jeff SEES on the Bridge, not internal state.
  *
  * AC:
  * 1. Message attribution: each message shows correct role name
  * 2. Delivery: messages reach the correct stream panel
- * 3. Filtering: role-to-role coordination not in Jeff's feed
+ * 3. Visibility: what a role SAYS renders; MACHINERY is hidden by name
  * 4. All 3 sessions: wren, silas, kade sessions all visible and distinct
+ *
+ * History this file records rather than papers over:
+ * - #3852: Jeff reversed "thinking visible" — narration crowded him out.
+ * - #3862: reversed the hiding half — role-to-role nudges, replies, acks,
+ *   paths and mid-turn answers RENDER; hiding is a positive decision that
+ *   names machinery (probe, [bridge], [progress], task-notification XML,
+ *   [e2e-*], API errors, is-error refusals). What a role says to Jeff is
+ *   the product.
  */
 
 import { MessageRouter } from '../src/router';
@@ -24,11 +32,6 @@ function ingestAndGet(router: MessageRouter, msg: { from: string; text: string; 
 // 1. MESSAGE ATTRIBUTION — Jeff sees the correct role name on every message
 // ═══════════════════════════════════════════════════════════════════════════
 
-// #3852 — REVERSED by Jeff, 2026-08-13. This asserted the ORIGINAL requirement
-// that role thinking be visible in the Clearing. Living with it, he found the
-// opposite: our narration crowded him out of his own room (18 of 50 rows ours,
-// 12 his). Mid-turn is folded now. Recording the reversal rather than quietly
-// flipping an assertion someone deliberately wrote.
 describe('AC #2.1: Message attribution — correct role name on every message', () => {
   let router: MessageRouter;
   beforeEach(() => { router = new MessageRouter(); });
@@ -127,15 +130,17 @@ describe('AC #2.2: Delivery — messages reach the correct stream', () => {
     expect(msg.type).toBe('accept-request');
   });
 
-  // #3852 — REVERSED by Jeff 2026-08-13. He asked for thinking to be visible
-  // originally; living with it, our narration crowded him out of his own room.
-  test('PM thinking is FOLDED, not shown in Jeff stream', () => {
+  // #3852 folded thinking; #3862 un-hid it: the stop_reason heuristic tagged
+  // FINISHED replies as mid-turn (any turn ending after tool calls), so the
+  // fold hid answers and kept narration. The row renders; the type still
+  // marks it lower-signal so the UI can style it.
+  test('PM thinking renders (typed pm-thinking so the UI can de-emphasize)', () => {
     const msg = ingestAndGet(router, {
       from: 'wren',
       text: 'Considering whether to pull #1675 or wait for Silas...',
       type: 'pm-thinking',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
     expect(msg.type).toBe('pm-thinking');
   });
 
@@ -177,93 +182,94 @@ describe('AC #2.2: Delivery — messages reach the correct stream', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 3. FILTERING — role-to-role coordination hidden from Jeff's feed
+// 3. VISIBILITY — what a role SAYS renders; machinery is hidden by name
+//    (#3862 — the old version of this block asserted the inverse)
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC #2.3: Filtering — role-to-role coordination hidden from Jeff', () => {
+describe('AC #2.3a: What roles say RENDERS (#3862)', () => {
   let router: MessageRouter;
   beforeEach(() => { router = new MessageRouter(); });
 
-  test('[nudge from role] messages are hidden', () => {
+  test('[nudge from role] messages are visible', () => {
     const msg = ingestAndGet(router, {
       from: 'silas',
       text: '[nudge from silas | 2026-03-24 14:01 Boston] [feedback] #1670 looks solid.',
     });
-    expect(msg.visible).toBe(false);
-    expect(msg.type).toBe('role-to-role');
+    expect(msg.visible).toBe(true);
   });
 
-  test('[feedback] between roles is hidden', () => {
+  test('[feedback] between roles is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'wren',
       text: '[feedback] #1676 — brief landed, auto-generation works.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('[reply] between roles is hidden', () => {
+  test('[reply] between roles is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'silas',
       text: '[reply] #1670 — you\'re right. The hook never fired.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('[ack] between roles is hidden', () => {
+  test('[ack] between roles is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'kade',
       text: '[ack] blast radius check clean — kade is waiting.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('[direction] between roles is hidden', () => {
+  test('[direction] between roles is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'wren',
       text: '[direction] Silas — pull #1675 next, not #1673.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('[correction] between roles is hidden', () => {
+  test('[correction] between roles is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'wren',
       text: '[correction] AC #3 needs WIP detection, not just delivery.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('bare ack/acknowledged from role is hidden', () => {
+  test('bare ack/acknowledged from role is visible', () => {
     const msg1 = ingestAndGet(router, { from: 'kade', text: 'ack — blast radius check clean.' });
-    expect(msg1.visible).toBe(false);
+    expect(msg1.visible).toBe(true);
 
     const router2 = new MessageRouter();
     const msg2 = ingestAndGet(router2, { from: 'silas', text: 'acknowledged — pulling now.' });
-    expect(msg2.visible).toBe(false);
+    expect(msg2.visible).toBe(true);
   });
 
-  test('nudge delivery echo (arrow prefix) is hidden', () => {
+  test('nudge delivery echo (arrow prefix) is visible', () => {
     const msg = ingestAndGet(router, {
       from: 'silas',
-      text: '\u2192 kade [feedback] #1671 looks solid.',
+      text: '→ kade [feedback] #1671 looks solid.',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
   });
 
-  test('system noise with XML tags is hidden', () => {
-    const msg = ingestAndGet(router, {
-      from: 'silas',
-      text: '<system-reminder>PostToolUse hook output</system-reminder>',
-    });
-    expect(msg.visible).toBe(false);
-  });
-
-  test('file paths are hidden', () => {
+  test('a role quoting a file path is visible', () => {
+    // The old "paths are noise" sweep disappeared any reply quoting a path.
     const msg = ingestAndGet(router, {
       from: 'kade',
       text: '/Users/jeffbridwell/CascadeProjects/engineer/src/app.ts',
     });
-    expect(msg.visible).toBe(false);
+    expect(msg.visible).toBe(true);
+  });
+
+  test('XML from a ROLE sender is visible (only non-role XML is plumbing)', () => {
+    const msg = ingestAndGet(router, {
+      from: 'silas',
+      text: '<system-reminder>PostToolUse hook output</system-reminder>',
+    });
+    expect(msg.visible).toBe(true);
   });
 
   test('tool metadata suffixes are stripped from visible messages', () => {
@@ -275,12 +281,73 @@ describe('AC #2.3: Filtering — role-to-role coordination hidden from Jeff', ()
     expect(msg.text).toBe('show me the board');
     expect(msg.text).not.toContain('tools:');
   });
+});
 
-  test('visible messages still show after filtering hidden ones', () => {
-    // Interleave visible and hidden messages
-    ingestAndGet(router, { from: 'silas', text: '[nudge from silas] hidden nudge' });
+describe('AC #2.3b: Machinery is hidden by NAME (#3862)', () => {
+  let router: MessageRouter;
+  beforeEach(() => { router = new MessageRouter(); });
+
+  test('probe messages are hidden', () => {
+    const msg = ingestAndGet(router, { from: 'probe', text: 'clearing-probe ping' });
+    expect(msg.visible).toBe(false);
+    expect(msg.type).toBe('probe');
+  });
+
+  test('[bridge] subscriber echo is hidden', () => {
+    const msg = ingestAndGet(router, { from: 'silas', text: '[bridge] echo of upstream row' });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('[progress] and [batch] rows are hidden', () => {
+    const msg1 = ingestAndGet(router, { from: 'kade', text: '[progress] 40/120 files scanned' });
+    expect(msg1.visible).toBe(false);
+
+    const router2 = new MessageRouter();
+    const msg2 = ingestAndGet(router2, { from: 'kade', text: '[batch] chunk 3 complete' });
+    expect(msg2.visible).toBe(false);
+  });
+
+  test('<task-notification> harness XML is hidden regardless of sender', () => {
+    const msg = ingestAndGet(router, {
+      from: 'silas',
+      text: '<task-notification><task-id>b123</task-id><summary>done</summary></task-notification>',
+    });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('[e2e-*] traffic is hidden', () => {
+    const msg = ingestAndGet(router, {
+      from: 'kade',
+      text: '[e2e-ack] bridge-roundtrip-1786600000000',
+    });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('verbatim API errors are hidden', () => {
+    const msg = ingestAndGet(router, { from: 'wren', text: 'API Error: 529 overloaded' });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('MCP is-error refusals are hidden', () => {
+    const msg = ingestAndGet(router, {
+      from: 'jeff',
+      text: 'word-cap: 53 words, cap is 50 type=is-error',
+    });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('XML from a NON-role sender is hidden', () => {
+    const msg = ingestAndGet(router, {
+      from: 'bridge-subscriber',
+      text: '<system-reminder>plumbing output</system-reminder>',
+    });
+    expect(msg.visible).toBe(false);
+  });
+
+  test('visible speech still shows when interleaved with machinery', () => {
+    ingestAndGet(router, { from: 'probe', text: 'clearing-probe ping' });
     ingestAndGet(router, { from: 'wren', text: 'Card shipped!', type: 'role-response' });
-    ingestAndGet(router, { from: 'kade', text: '[ack] got it' });
+    ingestAndGet(router, { from: 'kade', text: '[progress] 4/10' });
     ingestAndGet(router, { from: 'silas', text: 'Deploy complete.', type: 'role-response' });
 
     const visible = router.getRecent(10, false);
@@ -334,10 +401,10 @@ describe('AC #2.4: All 3 sessions visible and distinct', () => {
     expect(matching).toHaveLength(1);
   });
 
-  test('hidden count tracks role-to-role messages since last visible', () => {
+  test('hidden count tracks MACHINERY since last visible message (#3862)', () => {
     ingestAndGet(router, { from: 'wren', text: 'Visible message.', type: 'role-response' });
-    ingestAndGet(router, { from: 'silas', text: '[ack] got it' });
-    ingestAndGet(router, { from: 'kade', text: '[reply] confirmed' });
+    ingestAndGet(router, { from: 'probe', text: 'clearing-probe ping' });
+    ingestAndGet(router, { from: 'kade', text: '[progress] 7/10' });
 
     expect(router.getHiddenCount()).toBe(2);
   });

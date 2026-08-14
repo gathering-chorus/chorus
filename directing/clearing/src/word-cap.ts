@@ -154,7 +154,7 @@ export function checkCap(text: string, cap: number): CapVerdict {
     cap,
     message:
       `word-cap: ${words} words, cap is ${cap}. Rewrite shorter and resend — ` +
-      `nothing was sent and nothing was truncated. Fenced code blocks, inline code, ` +
-      `and URLs do not count toward the total, so receipts belong in a fence.`,
+      'nothing was sent and nothing was truncated. Fenced code blocks, inline code, ' +
+      'and URLs do not count toward the total, so receipts belong in a fence.',
   };
 }

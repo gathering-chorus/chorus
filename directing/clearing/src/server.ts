@@ -7,13 +7,12 @@
  */
 import express, { Request, Response, NextFunction } from 'express';
 import { checkCap } from './word-cap';
-import { isRoleName } from './router';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
 import { Server } from 'socket.io';
 import path from 'path';
 import { TilePoller } from './tiles';
-import { MessageRouter } from './router';
+import { MessageRouter, isRoleName } from './router';
 import { verifyShareSession, shareSessionFromHeader, readCookieKey } from './share-session';
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
@@ -1591,6 +1590,12 @@ export { app, server, io, tilePoller, messageRouter, clearingChat, tailer, sessi
 
 // Only bind when run as the main module. Under jest (require.main !== module)
 // tests control the listener lifecycle.
+//
+// istanbul ignore next — this block CANNOT execute under jest by construction
+// (the guard exists so imports don't bind, #3831), so in-process coverage can
+// never see it. It is not untested: import-no-side-effects-3831 exercises the
+// entrypoint through a real subprocess, both directions. (#3866)
+/* istanbul ignore next */
 if (require.main === module) {
   // #3831 — the entrypoint starts the background work. Imports do not.
   startBackgroundWork();
