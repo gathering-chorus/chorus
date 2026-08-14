@@ -421,19 +421,53 @@ fn run_browser_flows(werk: &str, pkg: &str) -> bool {
         eprintln!("!! browser-flow:{} — {} MISSING — FAIL LOUD", pkg, flows_dir);
         return false;
     }
+    // Any spec extension playwright accepts. The first version matched
+    // `.spec.cjs` only — Silas and Kade both caught it: a `.spec.ts` flow would
+    // make this report "no specs" while specs exist, i.e. fail loud for a false
+    // reason, which is barely better than passing for a false one.
     let has_specs = std::fs::read_dir(&flows_dir)
         .map(|d| {
-            d.filter_map(|e| e.ok())
-                .any(|e| e.file_name().to_string_lossy().ends_with(".spec.cjs"))
+            d.filter_map(|e| e.ok()).any(|e| {
+                let n = e.file_name().to_string_lossy().to_string();
+                n.ends_with(".spec.cjs") || n.ends_with(".spec.js") || n.ends_with(".spec.ts")
+            })
         })
         .unwrap_or(false);
     if !has_specs {
-        eprintln!("!! browser-flow:{} — no .spec.cjs under {} — FAIL LOUD", pkg, flows_dir);
+        eprintln!("!! browser-flow:{} — no spec files under {} — FAIL LOUD", pkg, flows_dir);
         return false;
     }
+
+    // The surface under test, passed EXPLICITLY.
+    //
+    // The first version of this function described `CLEARING_URL` in its own
+    // doc comment and never passed it — so the flows would have hit
+    // playwright.config.cjs's default and the check would have proven the wrong
+    // surface, which is precisely the defect this card exists to end. Both
+    // reviewers caught it; I had written the architecture in a comment and
+    // shipped none of it.
+    //
+    // `FLOW_BASE` is what playwright.config.cjs actually reads. A land proves
+    // the werk variant; the canary passes the public host. If neither is set we
+    // refuse rather than silently test localhost — an unstated surface is how
+    // "3 passed" meant nothing to Jeff all week.
+    let base = std::env::var("FLOW_BASE").or_else(|_| std::env::var("CLEARING_URL"));
+    let base = match base {
+        Ok(b) if !b.is_empty() => b,
+        _ => {
+            eprintln!(
+                "!! browser-flow:{} — neither FLOW_BASE nor CLEARING_URL set; \
+                 refusing to test an unnamed surface — FAIL LOUD",
+                pkg
+            );
+            return false;
+        }
+    };
+    eprintln!("   browser-flow:{} — surface {}", pkg, base);
     status_ok(
         Command::new("npx")
             .args(["playwright", "test", "proving/flows", "--reporter=line"])
+            .env("FLOW_BASE", &base)
             .current_dir(werk),
     )
 }

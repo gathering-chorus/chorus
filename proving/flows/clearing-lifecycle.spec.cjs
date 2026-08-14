@@ -58,7 +58,13 @@ base.describe('Clearing: chat session lifecycle', () => {
   });
 
   base('messages sent during clearing appear in message list', async ({ request }) => {
-    const uniqueText = `[e2e-clearing] decision-${Date.now()}`;
+    // #3871 — marker deliberately NOT the `[e2e-…]` bracket form. That shape is
+    // filtered as machinery (router.ts isMachineryEcho), because Jeff was shown
+    // `[e2e-ack]` rows as chat on his phone yesterday. A test that labels itself
+    // machinery and then asserts the room displays it is testing its own
+    // disguise, and fails for a reason unrelated to the behaviour it names.
+    // Kade hit the identical shape this morning in the gathering copy.
+    const uniqueText = `flow-lifecycle decision-${Date.now()}`;
 
     await base.step('Post clearing message via main message API', async () => {
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
