@@ -30,6 +30,71 @@ interface WerkRunPin {
   startedAt?: string;
 }
 
+/**
+ * #3869 — how long after a role's last observed command it still counts as
+ * working. Two minutes: long enough to span a build step or a considered
+ * reply, short enough that a dead session shows as idle before Jeff has to ask.
+ */
+export const ACTIVE_WINDOW_SECS = 120;
+
+/**
+ * #3869 — the role card's state, derived rather than remembered.
+ *
+ * `declared` is what the role last wrote to `<role>-declared.json` by hand.
+ * It is authoritative ONLY for states no amount of observation can infer:
+ * a role saying it is blocked, or that it is observing someone. Those often
+ * come with continued command activity — a blocked role investigates — so
+ * inference must not overwrite them.
+ *
+ * Everything else is a fact about whether commands are landing. A declaration
+ * of `building` that has gone quiet for an hour is not information; it is the
+ * last time somebody remembered to type it.
+ */
+export function deriveState(input: {
+  declared: string;
+  lastActivityAgeSecs: number | null;
+}): string {
+  const active =
+    input.lastActivityAgeSecs !== null && input.lastActivityAgeSecs < ACTIVE_WINDOW_SECS;
+
+  // A stale declaration of ANY kind, including blocked, decays to idle. A
+  // "blocked" card from three hours ago tells Jeff nothing about now.
+  if (!active) return 'idle';
+
+  if (input.declared === 'blocked' || input.declared === 'observing') return input.declared;
+  return 'building';
+}
+
+export type BoardCacheState = { wip_cards: BoardCard[]; swat_cards: BoardCard[]; ts: number };
+
+/**
+ * #3869 — fold a board poll into the cache without letting a failed read blank
+ * the screen.
+ *
+ * A rejected fetch, a non-ok response, and a body missing `data.cards` all
+ * arrive here as `null`. The old code turned every one of those into `[]` and
+ * replaced the cache with it, so a single bad poll wiped the cards off Jeff's
+ * tiles until the next good one — the flicker he described, on the polling
+ * interval.
+ *
+ * `null` means "could not ask". `[]` means "asked, nothing there". They are
+ * different facts and only the second one may clear the screen.
+ */
+export function mergeBoardRefresh(
+  prev: BoardCacheState,
+  read: { wip: BoardCard[] | null; swat: BoardCard[] | null },
+  now: number,
+): BoardCacheState {
+  const learnedSomething = read.wip !== null || read.swat !== null;
+  return {
+    wip_cards: read.wip ?? prev.wip_cards,
+    swat_cards: read.swat ?? prev.swat_cards,
+    // Only advance the stamp when a read actually succeeded, so freshness
+    // never claims to know something it could not fetch.
+    ts: learnedSomething ? now : prev.ts,
+  };
+}
+
 export interface RoleTile {
   role: string;
   state: string;
@@ -109,9 +174,16 @@ export class TilePoller {
     ]).then(([wipResult, swatResult]) => {
       const wipData = wipResult.status === 'fulfilled' ? wipResult.value : null;
       const swatData = swatResult.status === 'fulfilled' ? swatResult.value : null;
-      const wip: BoardCard[] = (wipData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'WIP' }));
-      const swat: BoardCard[] = (swatData?.data?.cards ?? []).map((c: BoardCard) => ({ ...c, status: 'SWAT' }));
-      this.boardCache = { wip_cards: wip, swat_cards: swat, ts: Date.now() };
+      // #3869 — `null` is preserved all the way to the merge. Collapsing it to
+      // `[]` here is what made a failed poll indistinguishable from an empty
+      // board, and blanked Jeff's cards once per bad interval.
+      const wip: BoardCard[] | null = wipData?.data?.cards
+        ? wipData.data.cards.map((c: BoardCard) => ({ ...c, status: 'WIP' }))
+        : null;
+      const swat: BoardCard[] | null = swatData?.data?.cards
+        ? swatData.data.cards.map((c: BoardCard) => ({ ...c, status: 'SWAT' }))
+        : null;
+      this.boardCache = mergeBoardRefresh(this.boardCache, { wip, swat }, Date.now());
     });
   }
 
@@ -198,6 +270,11 @@ export class TilePoller {
       if (last.ts) {
         const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
         tile.lastActionAge = formatAge(ageSecs);
+        // #3869 — the observation stream has always known whether a role is
+        // working; the tile read it for the age label and then took `state`
+        // from a file agents update by hand. That is why every screenshot Jeff
+        // sent for two days said "Wren idle" while Wren was mid-build.
+        tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
       }
     } catch {
       // No observations yet
