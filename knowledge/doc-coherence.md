@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-08-14 17:30
+# Doc coherence report — 2026-08-14 18:24
 
 content-dup-groups: 13
 basename-dup-groups: 37
-broken-hrefs: 1
+broken-hrefs: 0
 
 ## Content-hash duplicates
 
@@ -166,8 +166,4 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 
 ## Broken hrefs
 
-Catalog hrefs returning non-2xx / non-302:
-
-```
-404 /roles/silas/adr/ADR-058-athena-verb-family-and-governance-checks.md
-```
+_None. All catalog hrefs return 200 or 302 (auth-gated)._

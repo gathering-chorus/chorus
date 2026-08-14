@@ -26,11 +26,19 @@ export interface DriftInput {
   cardId: number;
   /** newest spine event from this role, any kind (heartbeat, tool, reply) */
   lastRoleActivityMs: number;
-  /** newest CARD-ATTRIBUTED event: werk-commit, pipeline run, card comment */
+  /** newest CARD-ATTRIBUTED event: werk-commit, pipeline run, card comment.
+   *  0 = never OBSERVED — which is unknown, not "idle since epoch". */
   lastCardActivityMs: number;
   nowMs: number;
   /** when this card last fired wip.drift, if the card is untouched since */
   priorDriftAtMs: number | null;
+  /** when observation of this card began (watcher start / card first seen).
+   *  First live firing (2026-08-14 18:32, on its own author): the spine tail
+   *  is ~6 min deep while the window is 4h — "no card event in view" is NOT
+   *  "no card event in 4h". The check must not fire until it has WATCHED a
+   *  full window; idle counts from observation start, never epoch (the
+   *  "496319h" nudge). */
+  observedSinceMs: number;
 }
 
 export interface Drift {
@@ -52,7 +60,12 @@ export interface Drift {
 export function detectWipDrift(i: DriftInput): Drift | null {
   const roleActive = i.nowMs - i.lastRoleActivityMs <= ROLE_ACTIVE_MS;
   if (!roleActive) return null;
-  const idleCardMs = i.nowMs - i.lastCardActivityMs;
+  // Idle counts from the newest of (card activity, observation start): a
+  // window we did not watch is UNKNOWN, never idle. This both prevents the
+  // fire-on-first-sight false positive and caps the reported number at the
+  // observed span — no more since-epoch hours.
+  const idleFrom = Math.max(i.lastCardActivityMs, i.observedSinceMs);
+  const idleCardMs = i.nowMs - idleFrom;
   if (idleCardMs <= DRIFT_WINDOW_MS) return null;
   const priorStands = i.priorDriftAtMs !== null && i.priorDriftAtMs > i.lastCardActivityMs;
   return {
@@ -83,6 +96,14 @@ export function startWipDriftWatch(
   now: () => number = Date.now,
 ): () => void {
   const priorDrift = new Map<string, number>(); // `${role}:${card}` → firedAt
+  // #3880 fix (first live firing was a false positive on its own author):
+  // the spine tail covers minutes, the window is hours — so ACCUMULATE the
+  // newest-seen timestamps across ticks instead of trusting one shallow read,
+  // and date observation per card so the first window must be genuinely
+  // WATCHED before anything fires.
+  const seenCard = new Map<string, number>();   // key → newest card event ever seen
+  const seenRole = new Map<string, number>();   // role → newest role event ever seen
+  const observedSince = new Map<string, number>(); // key → when we started watching
   const timer = setInterval(() => {
     void (async () => {
       try {
@@ -90,11 +111,15 @@ export function startWipDriftWatch(
           const role = c.owner.toLowerCase();
           const a = await readActivity(role, c.id);
           const key = `${role}:${c.id}`;
+          if (!observedSince.has(key)) observedSince.set(key, now());
+          seenCard.set(key, Math.max(seenCard.get(key) ?? 0, a.lastCardActivityMs));
+          seenRole.set(role, Math.max(seenRole.get(role) ?? 0, a.lastRoleActivityMs));
           const d = detectWipDrift({
             role, cardId: c.id, nowMs: now(),
-            lastRoleActivityMs: a.lastRoleActivityMs,
-            lastCardActivityMs: a.lastCardActivityMs,
+            lastRoleActivityMs: seenRole.get(role) ?? 0,
+            lastCardActivityMs: seenCard.get(key) ?? 0,
             priorDriftAtMs: priorDrift.get(key) ?? null,
+            observedSinceMs: observedSince.get(key) ?? now(),
           });
           if (!d) { if (a.lastCardActivityMs > (priorDrift.get(key) ?? 0)) priorDrift.delete(key); continue; }
           const fired = priorDrift.get(key) ?? 0;

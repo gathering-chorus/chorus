@@ -19,6 +19,7 @@ const base = (over: Partial<DriftInput> = {}): DriftInput => ({
   lastCardActivityMs: T0,             // card untouched since T0
   nowMs: T0 + 5 * H,
   priorDriftAtMs: null,
+  observedSinceMs: T0,                // watched the whole span
   ...over,
 });
 
@@ -56,5 +57,18 @@ describe('#3879 detectWipDrift', () => {
 
   it('window is 4 hours', () => {
     expect(DRIFT_WINDOW_MS).toBe(4 * H);
+  });
+
+  // #3880 fix — the first live firing (on its own author, "496319h"): a card
+  // never OBSERVED must not read as idle-since-epoch, and nothing fires until
+  // a full window has actually been WATCHED.
+  it('NEGATIVE PROOF: never-observed card with a young watcher does NOT fire', () => {
+    expect(detectWipDrift(base({ lastCardActivityMs: 0, observedSinceMs: T0 + 4.5 * H }))).toBeNull();
+  });
+
+  it('never-observed card DOES fire once a full window has been watched, with idle capped at the observed span', () => {
+    const d = detectWipDrift(base({ lastCardActivityMs: 0, observedSinceMs: T0, nowMs: T0 + 5 * H }));
+    expect(d).not.toBeNull();
+    expect(d!.idleCardMs).toBe(5 * H); // observed span, not since-epoch
   });
 });
