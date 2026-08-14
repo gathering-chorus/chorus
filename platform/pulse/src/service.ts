@@ -13,6 +13,7 @@ import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRo
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
 import { startWipDriftWatch } from './wip-drift';
+import { bostonOffsetIso } from './boston-iso';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
 type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
@@ -378,7 +379,12 @@ function buildRuntimeDeps(): { runInject: RunInject; emitSpine: EmitSpine; selfT
     // tooling). Found during #2764 cutover verification: nudge.surfaced was
     // firing but readers couldn't parse the timestamp because the field was
     // named `ts`. pulse's own messaging.log uses `ts` — that stays.
-    const line = JSON.stringify({ timestamp: new Date().toISOString(), event, role: 'pulse', ...fields }) + '\n';
+    // #3880 — ONE CLOCK: offset-ISO Boston, matching chorus-events (the
+    // majority writer). toISOString() emitted UTC-Z here, so every pulse event
+    // (nudge.*, jeff.input.surfaced, terminal.*, reply.delivery.*) rendered
+    // +4h off next to the rest of the spine — the daily "timestamp issue"
+    // Jeff called groundhog day on 2026-08-14.
+    const line = JSON.stringify({ timestamp: bostonOffsetIso(), event, role: 'pulse', ...fields }) + '\n';
     try { await appendFile(chorusLog, line); } catch { /* best-effort spine write */ }
   };
 

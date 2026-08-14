@@ -380,8 +380,12 @@ fn fetch_search_candidates(url: &str, query_for_log: &str, leg: &str) -> Vec<(St
     let raw_count = body.get("results").and_then(|r| r.as_array()).map(|a| a.len()).unwrap_or(0);
     let total = body.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
     emit_inject_event(&format!(
-        "{{\"ts\":\"{}\",\"event\":\"context.inject.chorus.raw\",\"leg\":\"{}\",\"q\":{},\"raw_results\":{},\"total\":{},\"parsed\":{}}}",
-        chrono::Utc::now().to_rfc3339(),
+        // #3880 — ONE CLOCK: field is `timestamp` (the spine convention every
+        // reader parses; `ts` registered as MISSING) and the clock is local
+        // offset-ISO, not UTC — this line was 112 of the 173 off-format spine
+        // lines in the 08-14 measurement.
+        "{{\"timestamp\":\"{}\",\"event\":\"context.inject.chorus.raw\",\"leg\":\"{}\",\"q\":{},\"raw_results\":{},\"total\":{},\"parsed\":{}}}",
+        chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z"),
         leg,
         serde_json::to_string(query_for_log).unwrap_or_else(|_| String::from("\"\"")),
         raw_count, total, results.len()
@@ -783,7 +787,7 @@ fn emit_spine_observation(
     chorus_hits: usize, memory_hits: usize, log_errors: usize,
     injected_bytes: usize, elapsed_ms: u64,
 ) {
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string();
     let line = format_spine_line(&ts, role, event, chorus_hits, memory_hits, log_errors, injected_bytes, elapsed_ms);
     emit_inject_event(&line);
 }
@@ -880,12 +884,12 @@ pub fn format_inject_response(ts: &str, r: &InjectResponse) -> String {
 
 // #3147 — emit with a fresh timestamp.
 fn emit_inject_request(r: &InjectRequest) {
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string();
     emit_inject_event(&format_inject_request(&ts, r));
 }
 
 fn emit_inject_response(r: &InjectResponse) {
-    let ts = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3f%z").to_string();
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z").to_string();
     emit_inject_event(&format_inject_response(&ts, r));
 }
 
