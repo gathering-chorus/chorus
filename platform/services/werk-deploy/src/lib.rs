@@ -885,14 +885,26 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
         //   normal since #3783's scoped build) → clean no-op, demo proceeds;
         //   empty despite buildable changes → the build broke or scoping
         //   under-built → DIE, exactly as before. The no-op must never
-        //   swallow a real failure. Model-only diffs also die here on the
-        //   variant (model deploys at land, #3736) — unchanged behaviour.
+        //   swallow a real failure.
         let wdiff = run_env(Some(&werk_s), &[], "git",
             &["-C", &werk_s, "diff", "--name-only", "origin/main...HEAD"]).unwrap_or_default();
         if empty_summary_is_config_only(&wdiff) {
             jsonl(home, role, card, &trace, "deploy.completed",
                 ",\"target\":\"werk\",\"deployed\":\"\",\"reason\":\"config-only-no-op\"");
             return Ok("nothing to deploy (config-only card) target=werk".to_string());
+        }
+        // #3846 (ADR-058, Jeff's option-A call 2026-08-14) — a MODEL-ONLY diff
+        // (model sources changed, zero crates/TS) no longer dies here: the
+        // model deploys at land (#3736, deploy_canonical), and the variant's
+        // demo proves the model with athena-validate output instead of a
+        // rebuilt binary. Pre-3846 this branch refused, which left every pure
+        // model card with NO proving path — the dropped-proving-steps gap the
+        // athena stream reconcile closes. A diff with buildable changes that
+        // produced no pairs still DIES below, exactly as before.
+        if empty_summary_is_model_only(&wdiff) {
+            jsonl(home, role, card, &trace, "deploy.completed",
+                ",\"target\":\"werk\",\"deployed\":\"\",\"reason\":\"model-only-deploys-at-land\"");
+            return Ok("nothing to deploy (model-only card — model deploys at land, demo proves via athena-validate) target=werk".to_string());
         }
         return Err(died(home, role, card, &trace, "empty-summary",
             "werk-build produced no crate=cdhash pairs — nothing to deploy".to_string()));
@@ -2876,6 +2888,20 @@ mod running_verdict_tests {
 /// changed)? True only when every classifier the canonical path trusts comes
 /// back empty: no service crates, no TS services, no model sources. Anything
 /// else means the empty summary is a failure, not a no-op.
+/// #3846 (ADR-058) — a diff whose only BUILDABLE content is model sources:
+/// zero service crates, zero TS services, at least one model source. Such a
+/// card's variant no-ops the deploy (the model deploys at land, #3736) and its
+/// demo proves the model via athena-validate. Distinct from config-only: a
+/// model diff is real deployable content with a DIFFERENT deploy moment, not
+/// an absence of content. Crates/TS present alongside model sources → NOT
+/// model-only — the empty build summary still means a broken/under-scoped
+/// build and must die.
+pub fn empty_summary_is_model_only(diff: &str) -> bool {
+    changed_service_crates(diff).is_empty()
+        && changed_ts_services(diff).is_empty()
+        && !changed_model_sources(diff).is_empty()
+}
+
 pub fn empty_summary_is_config_only(diff: &str) -> bool {
     // Asset/prose lines are dropped BEFORE classification (Wren's #3810: a
     // page-only diff like platform/api/public/index.html sits inside the

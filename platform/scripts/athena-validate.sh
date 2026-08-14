@@ -44,14 +44,19 @@ echo "2) dangling edges (object node does not exist):"
 # graph, not the instance graph — so "missing here" is expected, not dangling.
 # Only edges to expected-instance nodes that don't exist are real dangling.
 RDFTYPE="http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+# display shows 8 examples; the COUNT is uncapped — a capped count reads as
+# "covered everything" when it hasn't (the no-silent-caps rule, caught live by
+# Jeff 2026-08-14 when "40 issues" was really 20+20 display limits over 310).
 DANGLE=$(Q "PREFIX c: <$NS> SELECT ?s ?p ?o WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } } LIMIT 20")
-nd=$(count "$DANGLE")
+NDALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } }")
+nd=$(echo "$NDALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
 if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; else echo "  ✅ none"; fi
 
 # 3. untyped instances — a chorus: subject with data but no rdf:type
 echo "3) untyped instances (data with no class):"
 UNTYPED=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } } GROUP BY ?s LIMIT 20")
-nu=$(count "$UNTYPED")
+NUALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } }")
+nu=$(echo "$NUALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
 if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; else echo "  ✅ none"; fi
 
 # 4. #3846/ADR-058 — the GOVERNANCE CHECK registry: ADRs/decisions/practices as
