@@ -11,7 +11,11 @@ import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
-import { startReplyGapWatch } from './reply-gap';
+import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
+import { startWipDriftWatch } from './wip-drift';
+
+// #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
+type SpineEvExt = SpineEv & { card?: number | string; card_id?: number | string };
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
@@ -486,6 +490,44 @@ if (require.main === module) {
         });
       });
       process.stderr.write(JSON.stringify({ event: 'startup.replygap.watch', window_ms: 60000 }) + '\n');
+
+      // #3879 — WIP-drift watch: an owner active while their WIP card sits
+      // untouched for 4h gets nudged by the SYSTEM (Jeff only on the second
+      // consecutive window). WIP from chorus-api; activity from the spine tail
+      // (role = any event with that role; card = events carrying the card id).
+      const apiBase = process.env.CHORUS_API_URL || 'http://localhost:3340';
+      const readWip = async () => {
+        const r = await fetch(`${apiBase}/api/chorus/context/board/wip`);
+        const j = await r.json() as { data?: { cards?: { id: number; owner: string }[] } };
+        return (j.data?.cards ?? []).filter(c => ['silas', 'wren', 'kade'].includes(c.owner.toLowerCase()));
+      };
+      const readActivity = async (role: string, cardId: number) => {
+        const events = parseSpineTail(await readTail()) as (SpineEvExt)[];
+        let lastRole = 0, lastCard = 0;
+        for (const e of events) {
+          const at = Date.parse(e.timestamp ?? '');
+          if (Number.isNaN(at)) continue;
+          if (e.role === role && at > lastRole) lastRole = at;
+          const cid = typeof e.card === 'number' ? e.card : parseInt(String(e.card ?? e.card_id ?? ''), 10);
+          if (cid === cardId && at > lastCard) lastCard = at;
+        }
+        return { lastRoleActivityMs: lastRole, lastCardActivityMs: lastCard };
+      };
+      startWipDriftWatch(readWip, readActivity, async (d) => {
+        await emitSpine('wip.drift', {
+          role: d.role, card: d.cardId, idle_card_ms: d.idleCardMs, escalate: d.escalateToJeff,
+        });
+        const to = d.escalateToJeff ? 'jeff' : d.role;
+        const hours = Math.round(d.idleCardMs / 3600000);
+        const content = d.escalateToJeff
+          ? `[wip.drift] ${d.role}'s WIP #${d.cardId} untouched ${hours}h across two windows while they work elsewhere.`
+          : `[wip.drift] Your WIP #${d.cardId} has had no card-attributed activity for ${hours}h while you're active elsewhere. Finish it, hand it off, or unpull it — don't make Jeff say it.`;
+        // a2r + expects none: an alert must never trap the recipient (#3403)
+        const id = store.sendNudge('pulse', to, content, undefined, 'a2r', 'none');
+        const row = store.getPendingDeliveries().find(r => r.id === id);
+        if (row) void worker.enqueue(row);
+      });
+      process.stderr.write(JSON.stringify({ event: 'startup.wipdrift.watch', window_ms: 14400000 }) + '\n');
     }
 
     const app = createApp(store, worker);
