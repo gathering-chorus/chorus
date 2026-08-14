@@ -54,6 +54,25 @@ fn a_non_user_facing_change_plans_no_flow() {
     );
 }
 
+/// Silas, 2026-08-14, on the `_ => true` removal: "the whole #3734 disease in
+/// three characters — an unwired check kind indistinguishable from a passing
+/// one. Make its absence a fixture so it can't grow back."
+///
+/// `has_runner` is an exhaustive match, so a NEW variant fails to compile until
+/// someone answers the question. This test is the second lock: it fails if a
+/// variant is ever answered `false` and left planned.
+#[test]
+fn all_kinds_are_wired() {
+    for kind in werk_test::ALL_KINDS {
+        assert!(
+            kind.has_runner(),
+            "{} is planned but has no runner — it would report without running",
+            kind.label()
+        );
+    }
+}
+
+
 #[test]
 fn the_flow_check_is_labelled_for_the_spine() {
     // The label lands in test.failed events and on the demo surface. "check

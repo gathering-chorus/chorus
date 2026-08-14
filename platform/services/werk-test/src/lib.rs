@@ -131,10 +131,29 @@ pub fn gate_outcome(unit_count: usize, any_failed: bool, self_modifying: bool) -
     }
 }
 
-/// A single check the verb runs. Per-unit checks carry their unit; workspace-level
-/// ratchets (`ClippyRatchet`, `DocCoherence`) run once with `unit == None`.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum CheckKind {
+/// #3871 — declare the enum and its full variant list in ONE place.
+///
+/// Silas's third lock. The first version had a hand-maintained `ALL_KINDS`
+/// array and a test asserting its length — which is itself a fact someone must
+/// remember to update, i.e. the same class of hole one level out. Here the list
+/// is generated from the declaration, so it cannot disagree with the enum and
+/// the count assertion disappears entirely.
+///
+/// zero-dep by design (this crate is std-only), so a macro rather than strum.
+macro_rules! check_kinds {
+    ($( $(#[$meta:meta])* $variant:ident ),+ $(,)?) => {
+        /// A single check the verb runs. Per-unit checks carry their unit;
+        /// workspace-level ratchets run once with `unit == None`.
+        #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+        pub enum CheckKind { $( $(#[$meta])* $variant ),+ }
+
+        /// Every CheckKind that exists — derived from the declaration above, so
+        /// it can never drift from it.
+        pub const ALL_KINDS: &[CheckKind] = &[ $( CheckKind::$variant ),+ ];
+    };
+}
+
+check_kinds! {
     /// `cargo test --lib --bins` — per Rust crate.
     CargoTest,
     /// `npx tsc --noEmit` — per TS package.
@@ -165,7 +184,23 @@ pub enum CheckKind {
 /// signal, and a tax gets switched off the first slow week.
 pub const USER_FACING_PACKAGES: &[&str] = &["directing/clearing"];
 
+
 impl CheckKind {
+    /// #3871 — does the runner actually execute this kind? A kind with no arm
+    /// is a check that reports without running. Kept next to `label` so adding
+    /// a variant forces an answer to both questions in one place.
+    pub fn has_runner(self) -> bool {
+        match self {
+            CheckKind::CargoTest
+            | CheckKind::Tsc
+            | CheckKind::Jest
+            | CheckKind::ClippyRatchet
+            | CheckKind::LintRatchet
+            | CheckKind::DocCoherence
+            | CheckKind::BrowserFlow => true,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             CheckKind::CargoTest => "cargo-test",
