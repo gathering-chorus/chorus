@@ -586,8 +586,17 @@ app.get('/', async (req: Request, res) => {
 // a CDN is not an option (the tunnel serves this and a remote script would be a
 // third party in the signing path). Read-only, and scoped to the two packages —
 // not the whole tree.
-app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'curves', 'esm')));
-app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'hashes', 'esm')));
+// #3865 — `extensions: ['js']` is load-bearing, not tidiness. The vendored esm
+// build imports some of its own modules WITHOUT an extension
+// ('@noble/hashes/utils', '@noble/hashes/crypto'), and a browser asks for the
+// specifier verbatim. Without this, those requests 404 and the whole module
+// graph fails — the same visible symptom as the bare-specifier bug, three
+// layers deep, each one only findable by loading the page. Fixing it here
+// covers every extensionless import; an import-map entry per name is
+// whack-a-mole that ends the moment the dependency adds another.
+const vendorOpts = { extensions: ['js'] };
+app.use('/vendor/@noble/curves', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'curves', 'esm'), vendorOpts));
+app.use('/vendor/@noble/hashes', express.static(path.join(__dirname, '..', 'node_modules', '@noble', 'hashes', 'esm'), vendorOpts));
 
 app.use(express.static(path.join(__dirname, '../public'), {
   etag: false,
