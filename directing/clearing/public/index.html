@@ -569,7 +569,8 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
      unresolvable — so an import map is the whole fix, no bundler.
 
      The map must come BEFORE the module script: an import map is only honoured
-     if it is parsed before any module loads. -->
+     if it is parsed before any module loads.
+
      The exact entry below is NOT redundant with the prefix above it.
      `abstract/weierstrass.js` imports '@noble/hashes/utils' with NO extension;
      the prefix rule maps that to /vendor/@noble/hashes/utils, which express
