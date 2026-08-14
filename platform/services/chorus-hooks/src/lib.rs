@@ -64,6 +64,12 @@ pub mod word_cap {
         WORD_CAP_REFUSAL_CAP,
     };
 }
+// #3864 — reply-delivery hash, pub for tests/reply_delivery_3864.rs (shared
+// fixture from config/reply-hash-fixtures.json — the cross-language join key
+// with Clearing's TS hasher).
+pub mod reply_delivery {
+    pub use crate::hooks::reply_delivery::content_hash;
+}
 pub use state::AppState;
 // #3278 — expose append_log for the concurrent-append atomicity test.
 // #3721 — and append_log_result, so that test can assert on WHY an append failed

@@ -11,6 +11,8 @@ import { MessageStore, inferNudgeClass } from './store';
 import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, type SelfTest } from './delivery-worker';
 import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
+import { startReplyGapWatch } from './reply-gap';
+import { open as fsOpen } from 'fs/promises';
 import { callerIsAuthorized, resolvePulseSecret } from './pulse-secret';
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
 import { spawn } from 'child_process';
@@ -457,6 +459,34 @@ if (require.main === module) {
       }
     } else {
       process.stderr.write(JSON.stringify({ event: 'startup.requeue.skipped', reason: 'PULSE_REQUEUE_ON_BOOT unset' }) + '\n');
+    }
+
+    // #3864 — reply-delivery gap watch: reply.emitted (Stop hook) without
+    // reply.rendered (Clearing) inside the window fires reply.delivery.gap.
+    // Reads the spine TAIL only (last 512KB) — the spine is never rotated
+    // (Jeff's ruling) and a full read per tick would grow with it forever.
+    {
+      const spinePath = process.env.CHORUS_LOG_FILE || process.env.CHORUS_LOG
+        || path.join(os.homedir(), '.chorus', 'chorus.log');
+      const readTail = async (): Promise<string> => {
+        const TAIL_BYTES = 512 * 1024;
+        const fh = await fsOpen(spinePath, 'r');
+        try {
+          const { size } = await fh.stat();
+          const start = Math.max(0, size - TAIL_BYTES);
+          const buf = Buffer.alloc(size - start);
+          await fh.read(buf, 0, buf.length, start);
+          return buf.toString('utf8');
+        } finally {
+          await fh.close();
+        }
+      };
+      startReplyGapWatch(readTail, async (gap) => {
+        await emitSpine('reply.delivery.gap', {
+          role: gap.role, hash: gap.hash, emittedAt: gap.emittedAt, surface: 'clearing',
+        });
+      });
+      process.stderr.write(JSON.stringify({ event: 'startup.replygap.watch', window_ms: 60000 }) + '\n');
     }
 
     const app = createApp(store, worker);

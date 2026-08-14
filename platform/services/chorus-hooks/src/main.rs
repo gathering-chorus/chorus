@@ -1151,9 +1151,29 @@ async fn stop_hook(
                         &[("words", words.as_str()), ("cap", cap_s.as_str())],
                     )
                     .await;
+                    // #3864 — a degraded turn still ENDS with this reply on the
+                    // terminal; it must correlate like any other (fall through).
                 }
                 Ok(()) => hooks::word_cap::reset_refusals(&role),
             }
+            // #3864 — the reply STANDS (blocked turns returned above): stamp
+            // reply.emitted with the cross-surface join key. The transcript is
+            // Claude Code delivery; Clearing answers with reply.rendered on the
+            // same hash, and pulse fires reply.delivery.gap on a missing pair.
+            let hash = hooks::reply_delivery::content_hash(&text);
+            let words = hooks::word_cap::count_words(&text).to_string();
+            let session = input.session_id.as_deref().unwrap_or("");
+            crate::state::chorus_log(
+                "reply.emitted",
+                &role,
+                &[
+                    ("hash", hash.as_str()),
+                    ("words", words.as_str()),
+                    ("session", session),
+                    ("surface", "claude-code"),
+                ],
+            )
+            .await;
         }
     }
 
