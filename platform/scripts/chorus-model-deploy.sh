@@ -63,6 +63,11 @@ else
     # ownerSequence (Product/Domain, uniqueWithin ownedBy) as ADDITIVE shapes.
     # Same day-authored MODEL_SET discipline as #3654.
     "$CHORUS_ROOT/roles/wren/ontology/priorities-3686.ttl"
+    # #3881 — the ADR-058 GovernanceCheck registry (#3846). Landed in the repo
+    # but never deployed (not in MODEL_SET = live-only-in-reverse); caught by
+    # athena-validate's own empty-registry warn on day one. Same day-authored
+    # MODEL_SET discipline as #3654/#3686.
+    "$CHORUS_ROOT/roles/silas/ontology/governance-checks-3846.ttl"
     # #3726 — the security SCHEMA + surfaces enter MODEL_SET so a fresh load
     # rebuilds them instead of leaving them live-only (the #3587 wipe class, and
     # why the envelope surface-table must survive a reload). security-model-3618
