@@ -147,7 +147,23 @@ pub enum CheckKind {
     LintRatchet,
     /// `doc-coherence-ratchet.test.sh` — doc-inventory floor; workspace-wide, once.
     DocCoherence,
+    /// #3871 — `playwright test proving/flows/` — a REAL browser against the
+    /// running surface, per user-facing TS package.
+    ///
+    /// The kinds above are all unit-layer. Nothing in the land path ever opened
+    /// a page, so every Clearing defect Jeff hit this week — the dead room key,
+    /// the hidden replies, my own comment rendering as page copy — was
+    /// invisible to the pipeline that approved the card. Jeff, plainly: "our
+    /// user facing test automation for clearing is 100% not helping — i doubt
+    /// we even run it on changes." He was right: `proving/flows` appeared in
+    /// neither werk.yml nor the nightly.
+    BrowserFlow,
 }
+
+/// #3871 — TS packages that put a page in front of a person. Only these plan a
+/// browser flow. Booting a browser for a headless package is a tax with no
+/// signal, and a tax gets switched off the first slow week.
+pub const USER_FACING_PACKAGES: &[&str] = &["directing/clearing"];
 
 impl CheckKind {
     pub fn label(self) -> &'static str {
@@ -158,6 +174,7 @@ impl CheckKind {
             CheckKind::ClippyRatchet => "clippy-ratchet",
             CheckKind::LintRatchet => "lint-ratchet",
             CheckKind::DocCoherence => "doc-coherence",
+            CheckKind::BrowserFlow => "browser-flow",
         }
     }
 }
@@ -190,9 +207,16 @@ pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
                 any_rust = true;
                 plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::CargoTest });
             }
-            TestUnit::TsPackage(_) => {
+            TestUnit::TsPackage(name) => {
                 plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Tsc });
                 plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Jest });
+                // #3871 — a package that puts a page in front of a person also
+                // gets checked in a browser. ADDITIVE: tsc and jest keep their
+                // fast signal; this catches what they structurally cannot —
+                // whether the page works.
+                if USER_FACING_PACKAGES.contains(&name.as_str()) {
+                    plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::BrowserFlow });
+                }
             }
         }
     }

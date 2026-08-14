@@ -195,7 +195,19 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
             (CheckKind::LintRatchet, None) => werk_test::run_lint_ratchet(&werk),
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
-            _ => true, // unreachable given check_plan's construction
+            (CheckKind::BrowserFlow, Some(TestUnit::TsPackage(p))) => run_browser_flows(&werk, p),
+            // #3871 — was `_ => true`. A kind the runner does not know silently
+            // PASSED, so adding BrowserFlow would have reported green while
+            // never opening a browser. That is the defect this whole card is
+            // about, sitting inside the runner that is supposed to catch it.
+            // An unhandled kind is now a loud red, not a free pass.
+            (kind, unit) => {
+                eprintln!(
+                    "!! werk-test: no runner for {:?} on {:?} — FAIL LOUD (unwired check)",
+                    kind, unit
+                );
+                false
+            }
         };
         println!("   {}:{} … {}", check.kind.label(), target, if ok { "ok" } else { "FAIL" });
         if !ok {
@@ -391,6 +403,39 @@ fn quarantined_cases() -> Vec<Quarantined> {
         _ => return Vec::new(),
     };
     parse_quarantine_rows(&String::from_utf8_lossy(&out))
+}
+
+/// #3871 — the browser flows, per user-facing package.
+///
+/// Runs `proving/flows/` against a LIVE surface; `CLEARING_URL` selects which,
+/// so the same flows point at the werk variant during a land and at the public
+/// host from the canary. That distinction is why this week's green checks were
+/// worthless to Jeff — he was never on localhost.
+///
+/// Absence is LOUD in both directions: a missing flows directory, or a
+/// directory with no specs in it, is a FAIL. A guard whose target vanished must
+/// say so — these flows existed all week and never ran, and nothing noticed.
+fn run_browser_flows(werk: &str, pkg: &str) -> bool {
+    let flows_dir = format!("{}/proving/flows", werk);
+    if !Path::new(&flows_dir).exists() {
+        eprintln!("!! browser-flow:{} — {} MISSING — FAIL LOUD", pkg, flows_dir);
+        return false;
+    }
+    let has_specs = std::fs::read_dir(&flows_dir)
+        .map(|d| {
+            d.filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_string_lossy().ends_with(".spec.cjs"))
+        })
+        .unwrap_or(false);
+    if !has_specs {
+        eprintln!("!! browser-flow:{} — no .spec.cjs under {} — FAIL LOUD", pkg, flows_dir);
+        return false;
+    }
+    status_ok(
+        Command::new("npx")
+            .args(["playwright", "test", "proving/flows", "--reporter=line"])
+            .current_dir(werk),
+    )
 }
 
 /// `tsc --noEmit` per TS package. Shares the dep-availability guard with jest:
