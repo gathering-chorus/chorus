@@ -63,3 +63,25 @@ chorus:role-kade a chorus:Role, chorus:AgentRole ;
     rdfs:comment "Engineer. Owns the build and delivery layer — werk verbs, tests, the pipeline, presentation." ;
     chorus:comment "Engineer. Build and delivery, werk, tests." ;
     chorus:rolePriority 1 .
+
+# #3876 — the hasProperty edges live HERE, not in chorus.ttl.
+#
+# The rule, settled with Silas 2026-08-14: an EDGE lives in the home graph
+# of the node it hangs off. RoleShape pins Role individuals to
+# urn:chorus:instances, so a role's hasProperty edge belongs in this file.
+#
+# They were authored into chorus.ttl (ontology) alongside the Property
+# individuals, which is where the Properties correctly live — fields with
+# their subject. The split meant /effective found a typed Role with no
+# properties and answered 404, and Jeff's word cap stayed a compiled
+# constant for two days after every piece of the path existed.
+#
+# gate.enforced looked like counter-evidence (property, edge and node all
+# in ontology) but ServiceShape pins Service to ontology, so it satisfies
+# edge-follows-node too. The rules coincide there; it proved nothing.
+chorus:role-silas chorus:hasProperty chorus:prop-role-silas-response-word-cap .
+chorus:role-wren chorus:hasProperty chorus:prop-role-wren-response-word-cap .
+chorus:role-kade chorus:hasProperty chorus:prop-role-kade-response-word-cap .
+chorus:role-silas chorus:hasProperty chorus:prop-role-silas-nudge-word-cap .
+chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
+chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .

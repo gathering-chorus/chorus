@@ -2160,42 +2160,36 @@ chorus:prop-role-silas-response-word-cap a chorus:Property ;
     chorus:propertyValue "100" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-silas chorus:hasProperty chorus:prop-role-silas-response-word-cap .
 
 chorus:prop-role-wren-response-word-cap a chorus:Property ;
     chorus:propertyKey "response.word.cap" ;
     chorus:propertyValue "100" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-wren chorus:hasProperty chorus:prop-role-wren-response-word-cap .
 
 chorus:prop-role-kade-response-word-cap a chorus:Property ;
     chorus:propertyKey "response.word.cap" ;
     chorus:propertyValue "100" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-kade chorus:hasProperty chorus:prop-role-kade-response-word-cap .
 
 chorus:prop-role-silas-nudge-word-cap a chorus:Property ;
     chorus:propertyKey "nudge.word.cap" ;
     chorus:propertyValue "50" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-silas chorus:hasProperty chorus:prop-role-silas-nudge-word-cap .
 
 chorus:prop-role-wren-nudge-word-cap a chorus:Property ;
     chorus:propertyKey "nudge.word.cap" ;
     chorus:propertyValue "50" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-wren chorus:hasProperty chorus:prop-role-wren-nudge-word-cap .
 
 chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
     chorus:propertyKey "nudge.word.cap" ;
     chorus:propertyValue "50" ;
     chorus:propertyValueType "int" ;
     chorus:propertyScope "role" .
-chorus:role-kade chorus:hasProperty chorus:prop-role-kade-nudge-word-cap .
 
 # --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
 # PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
