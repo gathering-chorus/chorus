@@ -93,7 +93,7 @@ chorus:gc-one-home-per-subject a chorus:GovernanceCheck ;
 # ---------------------------------------------------------------------------
 chorus:gc-edge-follows-node a chorus:GovernanceCheck ;
     rdfs:label "edge follows node" ;
-    chorus:boundTo chorus:dec-edge-follows-node ;
+    chorus:boundTo chorus:adr-058 ;
     chorus:checkSeverity "block" ;
     chorus:provenRedOn "2026-08-14" ;
     chorus:provenRedRows 3 ;

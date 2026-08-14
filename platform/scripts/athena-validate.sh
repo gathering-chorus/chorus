@@ -54,6 +54,51 @@ UNTYPED=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(ST
 nu=$(count "$UNTYPED")
 if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; else echo "  ✅ none"; fi
 
+# 4. #3846/ADR-058 — the GOVERNANCE CHECK registry: ADRs/decisions/practices as
+# checkable data (chorus:GovernanceCheck in urn:chorus:ontology). Each check's
+# checkQuery returns one row per violation; the violation cites its law
+# (boundTo). Registry rules: a check missing provenRedOn must NOT gate (a
+# check never seen red is not a check, #3734) — reported, skipped, counted
+# loud. Zero registered checks is itself a WARN: the registry is the guard's
+# target, and a deleted target must never pass vacuously.
+echo "4) governance checks (ADR-058 registry):"
+CHECKS=$(Q "PREFIX c: <$NS> SELECT ?chk ?q ?sev ?law WHERE { GRAPH <urn:chorus:ontology> { ?chk a c:GovernanceCheck ; c:checkQuery ?q ; c:checkSeverity ?sev ; c:boundTo ?law . OPTIONAL { ?chk c:provenRedOn ?red } BIND(BOUND(?red) AS ?proven) FILTER(?proven) } }")
+nchk=$(count "$CHECKS")
+UNPROVEN=$(Q "PREFIX c: <$NS> SELECT ?chk WHERE { GRAPH <urn:chorus:ontology> { ?chk a c:GovernanceCheck . FILTER NOT EXISTS { ?chk c:provenRedOn ?d } } }")
+nup=$(count "$UNPROVEN")
+[ "$nup" != "0" ] && [ "$nup" != "?" ] && echo "  ⚠️  $nup check(s) missing provenRedOn — NOT run (never seen red = not a check)" && rows "$UNPROVEN"
+if [ "$nchk" = "0" ] || [ "$nchk" = "?" ]; then
+  echo "  ⚠️  0 provable governance checks registered — registry empty or unreachable (vacuous pass refused; not counting as clean)"
+else
+  echo "$CHECKS" | python3 -c '
+import sys, json, urllib.request, urllib.parse
+data = json.load(sys.stdin)["results"]["bindings"]
+fuseki = "'"$FUSEKI"'"
+bad = 0
+for b in data:
+    chk = b["chk"]["value"].split("#")[-1]
+    law = b["law"]["value"].split("#")[-1]
+    sev = b["sev"]["value"]
+    q = b["q"]["value"]
+    req = urllib.request.Request(fuseki, data=urllib.parse.urlencode({"query": q}).encode(),
+        headers={"Accept": "application/sparql-results+json"})
+    try:
+        rows = json.load(urllib.request.urlopen(req, timeout=30))["results"]["bindings"]
+    except Exception as e:
+        print(f"  ⚠️  {chk}: query FAILED ({e}) — counted as violation, never skipped"); bad += 1; continue
+    if rows:
+        print(f"  ⚠️  {chk} [{sev}] — {len(rows)} violation(s) of {law}:")
+        for r in rows[:8]:
+            print("      " + " ".join(v["value"].split("#")[-1] for v in r.values()))
+        if sev == "block": bad += len(rows)
+    else:
+        print(f"  ✅ {chk} — 0 violations ({law})")
+print(f"GOVBAD={bad}")
+' | tee /tmp/gov-check-out.$$
+  GOVBAD=$(grep -o "GOVBAD=[0-9]*" /tmp/gov-check-out.$$ | cut -d= -f2); rm -f /tmp/gov-check-out.$$
+  BAD=$((BAD+${GOVBAD:-0}))
+fi
+
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."

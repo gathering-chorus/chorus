@@ -22,14 +22,24 @@
 # an empty store. seed_multi loads both halves in ONE transaction, which is what
 # makes this split safe.
 
-chorus:value-stream-step-athena-model  a chorus:ValueStreamStep ; rdfs:label "Model" ; chorus:label "Model" ;
+# #3846 — reconciled to athena-value-stream-design.html: the truncated
+# Model/Make/Deploy/Land taxonomy dropped every PROVING step (seed, validate);
+# the doc's six-step flow restores them. Owners per the doc's Owner column:
+# shape=Silas(OWL-DBA), forge=Wren(generator), seed=Silas(DAL #3257),
+# validate=Silas(CI), demo=Jeff. Old step subjects staged for retirement in
+# designing/schemas/model-retirements.jsonl (the #3752 path — the land executes it).
+chorus:value-stream-step-athena-shape    a chorus:ValueStreamStep ; rdfs:label "Shape" ; chorus:label "Shape" ;
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 1 .
-chorus:value-stream-step-athena-make   a chorus:ValueStreamStep ; rdfs:label "Make" ; chorus:label "Make" ;
+chorus:value-stream-step-athena-forge    a chorus:ValueStreamStep ; rdfs:label "Forge" ; chorus:label "Forge" ;
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 2 .
-chorus:value-stream-step-athena-deploy a chorus:ValueStreamStep ; rdfs:label "Deploy" ; chorus:label "Deploy" ;
+chorus:value-stream-step-athena-seed     a chorus:ValueStreamStep ; rdfs:label "Seed" ; chorus:label "Seed" ;
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 3 .
-chorus:value-stream-step-athena-land   a chorus:ValueStreamStep ; rdfs:label "Land" ; chorus:label "Land" ;
+chorus:value-stream-step-athena-validate a chorus:ValueStreamStep ; rdfs:label "Validate" ; chorus:label "Validate" ;
     chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 .
+chorus:value-stream-step-athena-demo     a chorus:ValueStreamStep ; rdfs:label "Demo" ; chorus:label "Demo" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 5 .
+chorus:value-stream-step-athena-live     a chorus:ValueStreamStep ; rdfs:label "Live" ; chorus:label "Live" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 6 .
 
 # ── borg: plant → tend → read → surface⭐ → prune → feed ────────────────────
 chorus:value-stream-step-borg-plant   a chorus:ValueStreamStep ; rdfs:label "Plant" ; chorus:label "Plant" ;
