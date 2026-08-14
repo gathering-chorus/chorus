@@ -39,7 +39,17 @@ test.describe('#3868 — the room shows conversation, not source', () => {
   test('no code commentary leaks into the rendered page', async ({ page }) => {
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#messages', { timeout: 20000 });
-    const body = await page.locator('body').innerText();
+    // Chrome only — same scoping as the test above, and for the same reason.
+    // The first version of THIS test read the whole body and fired on a chat
+    // message where I was describing the bug to Jeff. I fixed the sibling test
+    // and left this one, so half the file could tell conversation from markup
+    // and half could not. Caught by running it against live prod after the fix
+    // had already landed and the card said Done.
+    const body = await page.evaluate(() => {
+      const clone = document.body.cloneNode(true);
+      clone.querySelectorAll('#messages, .messages').forEach((n) => n.remove());
+      return clone.innerText || '';
+    });
 
     // Phrases from the leaked block, verbatim off Jeff's screenshot. Named
     // rather than pattern-matched: a broad "looks like code" check would fire
