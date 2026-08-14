@@ -33,7 +33,12 @@ export type ResolveResult = { status: number; body: unknown };
  * from upstream — the same status as a genuinely unset key, and a caller could
  * not tell the difference between "no such property" and "you asked wrong".
  */
-const NODE_FOR: Record<string, (name: string) => string> = {
+// Partial<> is load-bearing: a plain Record<string, fn> tells the type system
+// every lookup succeeds, so the `if (!toNode)` refusal below reads as dead code
+// (the ratchet flagged it) and a future edit could "clean it up" — turning an
+// unknown scope back into a plausible-looking IRI for a subject that does not
+// exist. The type has to admit the miss for the refusal to be real.
+const NODE_FOR: Partial<Record<string, (name: string) => string>> = {
   role: (name) => `role-${name}`,
   service: (name) => name,
   domain: (name) => name,

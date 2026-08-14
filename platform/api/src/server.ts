@@ -502,9 +502,11 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
 app.get('/api/chorus/properties/resolve', async (req, res) => {
   const r = await resolveProperty(
     {
-      key: asStr(req.query.key) ?? '',
-      scope: asStr(req.query.scope) ?? '',
-      name: asStr(req.query.name) ?? '',
+      // asStr already falls back to ''. The `?? ''` I wrote here read as
+      // defensive and was dead code — which is what the ratchet caught.
+      key: asStr(req.query.key),
+      scope: asStr(req.query.scope),
+      name: asStr(req.query.name),
     },
     {
       fetchImpl: (url) => fetch(url),
