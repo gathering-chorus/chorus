@@ -59,3 +59,28 @@ edge move) — the first fix whose done-ness is defined by a governance check.
 - The verb *names* athena-model / athena-deploy (binaries) are unchanged — they
   are implementations that serve the shape/seed and live steps; the stream
   describes the flow, not the binary inventory.
+
+## Addendum (2026-08-15, #3895) — the seed verb's recovery boundary
+
+The deploy-time instance seeding moved out of `chorus-model-deploy.sh` and INTO
+the existing verb binary: `athena-model seed --deploy` (ADR-038 — no new
+deploy-path bash; Jeff's ruling the same day). Its file list is data:
+`platform/config/instance-seed-manifest.txt`, read by the verb and by owl-api's
+`deploy_set()` audit. The boundary this enforces:
+
+- **`chorus-model-deploy.sh` is the incident recovery path (#3785).** It
+  authenticates to the *store* (fuseki-auth) and must never require an identity
+  token or shell to the governed writer — the 2026-08-06 allow-set lockout is
+  the incident class. Run it alone, with CSS down, to restore the schema,
+  security, and principles graphs. Guarded nightly by
+  `platform/tests/recovery-path-ungated-3785.bats` (no edits; it is the
+  acceptance check).
+- **`athena-model seed --deploy` is the DAL-gated instance leg.** It requires a
+  verified identity (#3687), fails closed without one, and output-verifies every
+  declared subject against the live graph — guarded by
+  `platform/tests/athena-seed-gated-3895.bats` (runtime negative proofs:
+  unauthenticated refuses, bogus token refuses, empty manifest refuses).
+- **Landing runs both** (werk-deploy's model leg: model-deploy, then the seed
+  verb with a token minted for the land role), so a land still seeds instances.
+  Recovery contexts run only the first; the pure-ABox instances re-seed the
+  moment identity is back.
