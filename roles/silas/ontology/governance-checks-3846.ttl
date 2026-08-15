@@ -104,3 +104,31 @@ chorus:gc-edge-follows-node a chorus:GovernanceCheck ;
   FILTER NOT EXISTS { GRAPH ?ge { ?s a ?t2 } }
 }""" ;
     rdfs:comment "An outgoing edge asserted in a graph where its subject carries no typing — the edge lives outside the node's home, so a home-graph walk cannot see it. Co-location (gate.enforced) is the special case where node-home equals property-home; this check encodes the general rule." .
+
+# ---------------------------------------------------------------------------
+# #3896 — every step of an AUTOMATED stream names its implementation.
+# Jeff 2026-08-15: HTML, OWL, and code served three vocabularies for the
+# athena stream; the graph's six steps named nothing that runs. The rule this
+# check makes data: a step of a stream that is wired (or being wired) into act
+# MUST carry chorus:implementedBy naming the invocable that runs it. Absence
+# on OTHER streams is fine — an unautomated step is visibly provisional
+# (volatility, Jeff's cut), which is why this lives here and not as a
+# sh:minCount on StepShape (that would refuse every human-stream step).
+# Automated streams are enumerated in the query; wiring a new stream into act
+# adds it to the VALUES row — a model write, never a deploy.
+chorus:gc-step-implemented a chorus:GovernanceCheck ;
+    rdfs:label "automated-stream steps name their implementation" ;
+    chorus:boundTo chorus:adr-058 ;   # the verb-family ADR; its 08-15 addendum carries the #3896 ruling
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-08-15" ;
+    chorus:provenRedRows 15 ;
+    chorus:checkQuery """SELECT ?s WHERE {
+  GRAPH <urn:chorus:instances> {
+    ?s a <https://jeffbridwell.com/chorus#ValueStreamStep> ;
+       <https://jeffbridwell.com/chorus#inStream> ?st .
+    VALUES ?st { <https://jeffbridwell.com/chorus#value-stream-athena>
+                 <https://jeffbridwell.com/chorus#value-stream-werk> }
+    FILTER NOT EXISTS { ?s <https://jeffbridwell.com/chorus#implementedBy> ?i }
+  }
+}""" ;
+    rdfs:comment "A step in an automated stream (athena, werk) without implementedBy. Proven red 2026-08-15 against the live store: 15 rows (all 6 athena + all 9 werk steps). This check flipping GREEN is #3896's acceptance proof — found-15-then, now-0." .

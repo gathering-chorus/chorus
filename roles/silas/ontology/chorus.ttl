@@ -591,6 +591,20 @@ chorus:hasValueStreamStep a owl:ObjectProperty ;
 # composition edges in value-stream-instances.ttl) but only DECLARED in the superseded
 # chorus-core.ttl draft (#3697) — defined here in the live model so the property the
 # recursion rides is no longer a dangling reference.
+# #3896 — a step names WORK; a verb implements it (Silas+Wren+Kade, Jeff-ruled
+# 2026-08-15 after HTML/OWL/code served three different athena vocabularies).
+# String (the invocable name: binary or script), NOT an edge to a Service — the
+# services domain (#3870) is in flight; when Service instances land this migrates
+# to an ObjectProperty with referential integrity. Absence = the step is not yet
+# automated: VISIBLY provisional (Jeff: volatility drops as steps get implemented).
+# Enforcement is gc-step-implemented (ADR-058 registry): a step of an AUTOMATED
+# stream (athena, werk) without implementedBy is a rows-are-violations red.
+chorus:implementedBy a owl:DatatypeProperty ;
+    rdfs:label "implemented by" ;
+    rdfs:comment "The invocable implementation (binary or script name) that runs this value-stream step. A verb rename updates this value; the step label (the WORK) survives it." ;
+    rdfs:domain chorus:ValueStreamStep ;
+    rdfs:range xsd:string .
+
 chorus:hasValueStream a owl:ObjectProperty ;
     rdfs:label "has value stream" ;
     rdfs:comment "A value-stream step composes a child value stream (recursive composition; ratified 2026-07-15)." ;
@@ -2262,7 +2276,8 @@ chorus:StepShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:instances" ;  # #3698 — pure-ABox (48 steps) live in urn:chorus:instances via athena-deploy (NOT punned like Domain/Service → NOT ontology; ADR-025 pure-ABox→instances). Without it the serve read defaults to urn:chorus:ontology (0 steps).
     sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:inStream   ; sh:minCount 1 ; sh:class chorus:ValueStream ] ;
-    sh:property [ sh:path chorus:stageOrder ; sh:minCount 1 ; sh:datatype xsd:integer ] .
+    sh:property [ sh:path chorus:stageOrder ; sh:minCount 1 ; sh:datatype xsd:integer ] ;
+    sh:property [ sh:path chorus:implementedBy ; sh:maxCount 1 ; sh:datatype xsd:string ] .   # #3896 — OPTIONAL by design: absence marks an unautomated step (visible volatility); automated-stream coverage is enforced by gc-step-implemented, rows-are-violations
 
 # --- ValueStreamShape (NEW — was absent in both v0.3.0 and the stranded draft) ---
 chorus:ValueStreamShape a sh:NodeShape ;
