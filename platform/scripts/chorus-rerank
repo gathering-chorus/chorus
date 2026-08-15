@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# chorus-rerank — declare chunk order for a role, and card order within a chunk.
+#
+# #3897. `/sup`'s documentation has promised this since #3654: "when Jeff says
+# 'X first' in conversation, the walk changes via a governed DAL write to the
+# chunk's roleSequence/rank." No verb ever did that write. The only path was
+# hand-running athena-model with the right IRIs, which is why Wren's order has
+# not been touched since June while the board moved on without it.
+#
+# The projection (board-3654-project.sh) has preserved declared order since
+# #3686 — it does not fight this script. It discovers MEMBERSHIP from the board;
+# this declares ORDER. Two jobs, one graph.
+#
+# Usage:
+#   chorus-rerank chunks <role> <slug> [<slug> ...]
+#       The role's chunk order, first to last. Chunks not named keep their
+#       current ordinals ABOVE the named set (see below).
+#
+#   chorus-rerank cards <slug> <card-id> [<card-id> ...]
+#       Card order within one chunk, first to last.
+#
+#   DRY_RUN=1 chorus-rerank ...   # print the writes, touch nothing
+#
+# Unnamed chunks: a partial order is the common case ("phone-first, then athena")
+# and re-numbering silently around it is how an order drifts from what was said.
+# Named chunks take 1..N; every unnamed chunk is pushed to N+1 and beyond,
+# keeping its relative order. Nothing is dropped, and nothing quietly outranks
+# what Jeff just named.
+#
+# Duplicate ordinals are refused by the DAL (#3681 uniqueness). This script must
+# SURFACE that refusal with the conflicting pair named — a re-rank that reports
+# success while the graph refused the write would be the exact class of hollow
+# gate #3734 exists to stop.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CM="${CHORUS_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo target/release/athena-model)}"
+FUSEKI_QUERY="${FUSEKI_QUERY_URL:-http://localhost:3030/pods/query}"
+DRY="${DRY_RUN:-0}"
+NS="https://jeffbridwell.com/chorus#"
+
+usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+
+# --- reads (anon; only writes need the credential) ---------------------------
+
+# Every chunk owned by a role, as "slug<TAB>roleSequence", ordinal ascending.
+chunks_for_role() {
+  local role="$1"
+  local q="PREFIX chorus: <$NS> SELECT ?slug ?rseq WHERE { GRAPH <urn:chorus:instances> { ?ch a chorus:Chunk ; chorus:ownedBy chorus:role-${role} ; chorus:slug ?slug ; chorus:roleSequence ?rseq } } ORDER BY ?rseq"
+  curl -s "$FUSEKI_QUERY" --data-urlencode "query=$q" -H "Accept: text/csv" 2>/dev/null \
+    | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2}'
+}
+
+# Card ids in a chunk, as "cardId<TAB>rank", ordinal ascending.
+cards_in_chunk() {
+  local slug="$1"
+  local q="PREFIX chorus: <$NS> SELECT ?cid ?rank WHERE { GRAPH <urn:chorus:instances> { ?m a chorus:ChunkMembership ; chorus:inChunk ?ch ; chorus:rank ?rank ; chorus:hasCard ?card . ?ch chorus:slug \"$slug\" . BIND(STRAFTER(STR(?card), \"card-\") AS ?cid) } } ORDER BY ?rank"
+  curl -s "$FUSEKI_QUERY" --data-urlencode "query=$q" -H "Accept: text/csv" 2>/dev/null \
+    | tail -n +2 | tr -d '\r' | awk -F, 'NF>=2 && $1!=""{print $1"\t"$2}'
+}
+
+# --- writes ------------------------------------------------------------------
+
+W=0; R=0
+write() {  # write <description> <athena-model args...>
+  local d="$1"; shift
+  if [ "$DRY" = "1" ]; then echo "DRY: $d"; W=$((W+1)); return 0; fi
+  local out
+  if ! out="$("$CM" add "$@" 2>&1)"; then
+    # The DAL's uniqueness refusal (#3681) lands here. Print it whole: the
+    # conflicting ordinal is in that message and it is the only thing that
+    # tells the caller WHICH pair collided.
+    echo "REFUSED: $d" >&2
+    echo "         $out" >&2
+    R=$((R+1))
+    return 1
+  fi
+  W=$((W+1))
+}
+
+need_creds() {
+  [ "$DRY" = "1" ] && return 0
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/fuseki-auth.sh"
+  local role="${DEPLOY_ROLE:-${CHORUS_ROLE:-wren}}"
+  CHORUS_IDENTITY_TOKEN="$("$SCRIPT_DIR/chorus-identity-token" "$role" 2>/dev/null || true)"
+  export CHORUS_IDENTITY_TOKEN
+  if [ -z "$CHORUS_IDENTITY_TOKEN" ]; then
+    echo "FATAL: no identity token for $role — the DAL fails closed, so this would refuse every write" >&2
+    exit 1
+  fi
+}
+
+# --- verbs -------------------------------------------------------------------
+
+rerank_chunks() {
+  local role="$1"; shift
+  [ $# -gt 0 ] || usage
+  local -a named=("$@")
+
+  local existing; existing="$(chunks_for_role "$role")"
+  [ -n "$existing" ] || { echo "FATAL: role '$role' owns no chunks in the graph" >&2; exit 1; }
+
+  # Refuse an unknown slug BEFORE writing anything. A typo that silently creates
+  # a new empty chunk at position 1 would bury the real work under a ghost.
+  local slug
+  for slug in "${named[@]}"; do
+    if ! printf '%s\n' "$existing" | cut -f1 | grep -qx "$slug"; then
+      echo "FATAL: '$slug' is not a chunk owned by $role. Owned:" >&2
+      printf '%s\n' "$existing" | cut -f1 | sed 's/^/         /' >&2
+      exit 1
+    fi
+  done
+
+  # Named take 1..N in the order given; unnamed follow, keeping relative order.
+  local -a order=("${named[@]}")
+  while IFS=$'\t' read -r s _; do
+    [ -n "$s" ] || continue
+    printf '%s\n' "${named[@]}" | grep -qx "$s" || order+=("$s")
+  done <<<"$existing"
+
+  need_creds
+  local i=1
+  for slug in "${order[@]}"; do
+    write "chunk $slug → roleSequence $i" \
+      --kind chunk --name "$slug" --field "slug=$slug" --field "label=$slug" \
+      --field "roleSequence=$i" --edge "ownedBy=role:$role"
+    i=$((i+1))
+  done
+  report "$role chunk order"
+}
+
+rerank_cards() {
+  local slug="$1"; shift
+  [ $# -gt 0 ] || usage
+  local -a named=("$@")
+
+  local existing; existing="$(cards_in_chunk "$slug")"
+  [ -n "$existing" ] || { echo "FATAL: chunk '$slug' has no members in the graph" >&2; exit 1; }
+
+  local cid
+  for cid in "${named[@]}"; do
+    if ! printf '%s\n' "$existing" | cut -f1 | grep -qx "$cid"; then
+      echo "FATAL: #$cid is not in chunk '$slug'. Members:" >&2
+      printf '%s\n' "$existing" | cut -f1 | tr '\n' ' ' | sed 's/^/         /' >&2; echo >&2
+      exit 1
+    fi
+  done
+
+  local -a order=("${named[@]}")
+  while IFS=$'\t' read -r c _; do
+    [ -n "$c" ] || continue
+    printf '%s\n' "${named[@]}" | grep -qx "$c" || order+=("$c")
+  done <<<"$existing"
+
+  need_creds
+  local i=1
+  for cid in "${order[@]}"; do
+    write "membership $slug#$cid → rank $i" \
+      --kind chunkmembership --name "$slug-$cid" \
+      --field "rank=$i" --edge "inChunk=chunk:$slug" --edge "hasCard=card:$cid"
+    i=$((i+1))
+  done
+  report "chunk $slug card order"
+}
+
+report() {
+  echo "$1: $W writes, $R refusals"
+  # Non-zero exit on ANY refusal. A partially-applied order is worse than none —
+  # it reads as Jeff's order while being something else.
+  [ "$R" -eq 0 ] || exit 1
+}
+
+case "${1:-}" in
+  chunks) shift; [ $# -ge 2 ] || usage; rerank_chunks "$@" ;;
+  cards)  shift; [ $# -ge 2 ] || usage; rerank_cards  "$@" ;;
+  *)      usage ;;
+esac
