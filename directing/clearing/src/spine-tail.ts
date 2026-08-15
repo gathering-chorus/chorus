@@ -28,6 +28,8 @@ interface LogEntry {
   role?: string;
   event?: string;
   card_id?: string | number;
+  phase?: string;
+  state?: string;
   summary?: string;
   action?: string;
   tool_count?: string | number;
@@ -92,6 +94,17 @@ const WERK_PHASE_EVENTS = new Map<string, string>([
 ]);
 
 function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
+  // #3883's emitter shape (the one the live spine carries): event=werk.phase
+  // with {phase, state}. The named-event map below stays as fallback for
+  // events other emitters produce (deploy.completed from chorus-deploy, etc).
+  if (entry.event === 'werk.phase') {
+    const phase = entry.phase ?? '?';
+    const state = entry.state ?? '';
+    const mark = state === 'fail' ? '🔴' : '⚙';
+    const text = state && state !== 'pass' ? `${mark} werk: ${phase} (${state})` : `${mark} werk: ${phase}`;
+    const card = entry.card_id;
+    return { ts: entry.timestamp ?? '', role, type: 'werk', text, card: card ? String(card) : null };
+  }
   const label = WERK_PHASE_EVENTS.get(entry.event ?? '');
   if (!label) return null;
   const card = entry.card_id;
@@ -111,7 +124,7 @@ function parseLogEntry(entry: LogEntry): StreamLine | null {
   if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
-  if (WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
+  if (event === 'werk.phase' || WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
   return null;
 }
 
