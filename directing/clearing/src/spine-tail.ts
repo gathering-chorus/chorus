@@ -164,6 +164,16 @@ export function tailReadUtf8(fs: typeof fs_node, file: string, maxBytes: number 
 }
 
 /** Last `limit*2` parseable stream lines, newest first — tail-read, never the whole file. */
+/** #3884 — the durable spine lives at ~/.chorus/chorus.log (never rotated;
+ *  the memory layer). /api/stream once read ${CHORUS_ROOT}/platform/logs/
+ *  chorus.log — a stale side-file — so werk lines never rendered live.
+ *  Resolution: CHORUS_SPINE explicit override > CHORUS_HOME > HOME. */
+export function spinePath(env: Record<string, string | undefined>): string {
+  if (env.CHORUS_SPINE) return env.CHORUS_SPINE;
+  if (env.CHORUS_HOME) return `${env.CHORUS_HOME}/chorus.log`;
+  return `${env.HOME}/.chorus/chorus.log`;
+}
+
 export function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
   const out: StreamLine[] = [];
   const logLines = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
