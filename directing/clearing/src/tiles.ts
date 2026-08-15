@@ -5,6 +5,8 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { latestSpineActivity, projectRoleState, type SpineActivity } from './tiles-spine';
+import { spinePath } from './spine-tail';
 
 // #2167: env-configurable so tests can point at a fixture directory.
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
@@ -130,6 +132,7 @@ export interface TilePollerOptions {
 
 export class TilePoller {
   private tiles: Map<string, RoleTile> = new Map();
+  private spineActivity: Record<string, SpineActivity> = {};
   private pulse: PulseState | null = null;
   private boardCache: { wip_cards: BoardCard[]; swat_cards: BoardCard[]; ts: number } = { wip_cards: [], swat_cards: [], ts: 0 };
   // #2273: exposed so tests can await the board refresh instead of using setTimeout
@@ -159,6 +162,8 @@ export class TilePoller {
   }
 
   poll(): void {
+    // #3882 — one spine read, one clock, for every tile this poll.
+    this.spineActivity = this.readSpineActivity(Date.now());
     for (const role of ROLES) {
       const tile = this.readRoleTile(role);
       this.tiles.set(role, tile);
@@ -297,7 +302,48 @@ export class TilePoller {
     // the run pin fills card only when the board gave none (board down ≠ idle).
     this.applyWerkRuns(tile, role);
     this.applyLastObservation(tile, role);
+    // #3882 — the spine outranks everything above for STATE: Jeff's ruling
+    // ("if messages and streams are right then role state largely follows").
+    // werk.phase / reply / digest events are the projection input; declared
+    // survives only as blocked/observing intent inside the active window.
+    this.applySpineProjection(tile, role);
     return tile;
+  }
+
+  /** #3882 — read the durable spine's tail once per poll (same file the
+   *  streams pane reads, #3884's spinePath). ~400KB covers hours of events. */
+  private readSpineActivity(now: number): Record<string, SpineActivity> {
+    try {
+      const p = process.env.CLEARING_SPINE_FILE || spinePath(process.env);
+      const fd = fs.openSync(p, 'r');
+      try {
+        const size = fs.fstatSync(fd).size;
+        const len = Math.min(size, 400_000);
+        const buf = Buffer.alloc(len);
+        fs.readSync(fd, buf, 0, len, size - len);
+        const lines = buf.toString('utf-8').split('\n').slice(1);
+        return latestSpineActivity(lines, now);
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  private applySpineProjection(tile: RoleTile, role: string): void {
+    const act = this.spineActivity[role];
+    const projected = projectRoleState({
+      declared: tile.state,
+      lastEventAgeSecs: act ? act.ageSecs : null,
+      lastEventKind: act ? act.kind : null,
+      now: Date.now(),
+    });
+    // 'unknown' from the spine must not erase richer sources (run pins,
+    // observations) that already proved presence this poll.
+    if (projected.state === 'unknown' && tile.state !== 'idle') return;
+    tile.state = projected.state === 'unknown' ? tile.state : projected.state;
+    if (projected.ageSecs !== null) tile.lastActionAge = formatAge(projected.ageSecs);
   }
 
   // #3772 — presence derives from live werk phase, not just last-declared state.
