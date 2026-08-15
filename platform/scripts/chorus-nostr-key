@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+/**
+ * chorus-nostr-key <who> — mint (or show) an actor's Nostr keypair. (#3900)
+ *
+ * The sanctioned minter: keys are 0600 runtime artifacts under
+ * ~/.chorus/identity/<who>/nostr.json — never in the repo, never in a plist,
+ * never printed. Derivation is x-only schnorr (BIP-340) via @noble/curves —
+ * the same library the Clearing's room signer uses, resolved from its
+ * installed tree so there is exactly one curve implementation in play.
+ *
+ * Refuses to overwrite: a key rotation is a deliberate op (delete first,
+ * with the old pubkey retired wherever it was granted), not a re-run.
+ * Prints ONLY the public key. Exit 0 = key exists (minted now or before).
+ */
+'use strict';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+const who = process.argv[2];
+if (!who || !/^[a-z][a-z0-9-]{1,31}$/.test(who)) {
+  console.error('usage: chorus-nostr-key <who>   (lowercase actor name)');
+  process.exit(2);
+}
+
+const nobleHome = path.join(
+  process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects/chorus',
+  'directing/clearing/node_modules/@noble/curves/secp256k1',
+);
+// eslint-disable-next-line security/detect-non-literal-require -- fixed repo-relative path, not caller input
+const { schnorr } = require(nobleHome);
+
+const dir = path.join(os.homedir(), '.chorus', 'identity', who);
+const file = path.join(dir, 'nostr.json');
+
+if (fs.existsSync(file)) {
+  const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
+  console.log(`exists ${who} pubkey=${existing.pubkey}`);
+  process.exit(0);
+}
+
+fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+const seckey = crypto.randomBytes(32);
+const pubkey = Buffer.from(schnorr.getPublicKey(seckey)).toString('hex');
+const payload = JSON.stringify(
+  { seckey: seckey.toString('hex'), pubkey, mintedAt: new Date().toISOString(), mintedBy: 'chorus-nostr-key' },
+  null,
+  2,
+);
+fs.writeFileSync(file, payload + '\n', { mode: 0o600 });
+console.log(`minted ${who} pubkey=${pubkey}`);
