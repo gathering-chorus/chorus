@@ -188,7 +188,13 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
             card: card.clone(),
         };
 
-        write_observation(&obs).await;
+        // #3884 — quiet-class split: reads/searches show in STREAMS (the
+        // observations file) but do NOT emit spine events. The spine is the
+        // permanent memory layer (never rotated); per-Read events would flood
+        // it — and the werk membrane caught exactly that: bats fixtures whose
+        // Read turns suddenly wrote production spine from build context.
+        let spine_worthy = !matches!(tool, "Read" | "Grep" | "Glob");
+        write_observation(&obs, spine_worthy).await;
     }
 
     // #2891 — On error, emit observer.error spine event paired with the
@@ -491,12 +497,64 @@ fn digest_tool_call(input: &HookInput) -> String {
             let skill = input.get_tool_input_str("skill");
             format!("skill: /{}", skill)
         }
-        _ => String::new(),
+        "Read" => {
+            // #3884 — reads are work too; Jeff ruled no silent tool class.
+            let path = input.get_tool_input_str("file_path");
+            format!("reading {}", short_path(&path))
+        }
+        "Grep" | "Glob" => {
+            let pat = input.get_tool_input_str("pattern");
+            format!("searching: {}", truncate(&pat, 60))
+        }
+        t if t.starts_with("mcp__") => {
+            // #3884 — MCP verbs were the invisible class (chorus_werk, nudges,
+            // card ops digested to empty; Jeff read "idle" during pipelines).
+            // Name = verb after the server prefix; args = the identifying few.
+            let verb = t.rsplit("__").next().unwrap_or(t);
+            let mut parts: Vec<String> = Vec::new();
+            for key in ["card_id", "to", "target", "role", "id"] {
+                // numbers arrive as JSON numbers (card_id: 3870), not strings —
+                // read the raw value, not the string view (first red run proved it).
+                let v = input
+                    .tool_input
+                    .as_ref()
+                    .and_then(|ti| ti.get(key))
+                    .map(|x| match x {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    })
+                    .unwrap_or_default();
+                if !v.is_empty() {
+                    let val = if key == "card_id" || key == "id" {
+                        format!("#{v}")
+                    } else {
+                        v
+                    };
+                    parts.push(match key {
+                        "to" => format!("→ {val}"),
+                        _ => val,
+                    });
+                }
+            }
+            let go = input.get_tool_input_str("go");
+            if go == "true" {
+                parts.push("go".to_string());
+            }
+            if parts.is_empty() {
+                verb.to_string()
+            } else {
+                format!("{verb} {}", parts.join(" "))
+            }
+        }
+        // #3884 negative-proof anchor: the silent-empty default is DEAD. A
+        // tool class we have never seen still names itself — "unknown tool"
+        // can never again mean "invisible to Jeff".
+        other => format!("tool: {other}"),
     }
 }
 
 /// Write an observation to the role's observation log
-async fn write_observation(obs: &Observation) {
+async fn write_observation(obs: &Observation, emit_spine: bool) {
     let dir = PathBuf::from(SCAN_DIR);
     let _ = tokio::fs::create_dir_all(&dir).await;
 
@@ -519,7 +577,10 @@ async fn write_observation(obs: &Observation) {
     // Rotate if too large
     rotate_if_needed(&log_path, &obs.role).await;
 
-    // Log to spine
+    // Log to spine (skipped for quiet-class digests — see #3884 split above)
+    if !emit_spine {
+        return;
+    }
     let role = obs.role.clone();
     let digest = obs.digest.clone();
     tokio::spawn(async move {
@@ -764,6 +825,54 @@ mod tests {
             trace_id: None, tool_output_is_error: None,}
     }
 
+    // === #3884: every tool class digests — no silent-empty default ===
+
+    #[test]
+    fn digest_mcp_werk_names_verb_and_card() {
+        let input = make_post_input(
+            "mcp__chorus-api__chorus_werk",
+            json!({"role": "kade", "card_id": 3870, "go": true}),
+            "/tmp",
+        );
+        let d = digest_tool_call(&input);
+        assert!(d.contains("chorus_werk"), "verb visible: {d}");
+        assert!(d.contains("3870"), "card visible: {d}");
+    }
+
+    #[test]
+    fn digest_mcp_nudge_names_recipient() {
+        let input = make_post_input(
+            "mcp__chorus-api__chorus_nudge_message",
+            json!({"to": "wren", "message": "hello"}),
+            "/tmp",
+        );
+        let d = digest_tool_call(&input);
+        assert!(d.contains("nudge"), "{d}");
+        assert!(d.contains("wren"), "recipient visible: {d}");
+    }
+
+    #[test]
+    fn digest_read_tool_shows_path() {
+        let input = make_post_input(
+            "Read",
+            json!({"file_path": "/Users/jeffbridwell/CascadeProjects/chorus/README.md"}),
+            "/tmp",
+        );
+        let d = digest_tool_call(&input);
+        assert!(d.contains("README.md"), "{d}");
+    }
+
+    // #3884 negative proof (#3734): the silent-empty default is DEAD. An
+    // unknown tool class must digest to something that names it — the state
+    // this card exists to prevent is "a tool class Jeff cannot see".
+    #[test]
+    fn digest_unknown_tool_never_empty() {
+        let input = make_post_input("SomeFutureTool", json!({"x": 1}), "/tmp");
+        let d = digest_tool_call(&input);
+        assert!(!d.is_empty(), "unknown tool digested to empty — the #3884 hole is back");
+        assert!(d.contains("SomeFutureTool"), "names the tool: {d}");
+    }
+
     // === digest_tool_call tests ===
 
     #[test]
@@ -907,16 +1016,19 @@ mod tests {
         assert_eq!(d, "skill: /reboot");
     }
 
+    // #3884 — REVERSED by Jeff, 2026-08-14: "streams must be all commands."
+    // The original assert (Read digests to empty) recorded the old deliberate
+    // filter; recording the reversal rather than quietly flipping it (the
+    // #3852 pattern).
     #[test]
-    fn test_digest_read_skipped() {
-        // Read is filtered out before digest is called, but if called directly:
+    fn test_digest_read_now_visible() {
         let input = make_post_input(
             "Read",
             json!({"file_path": "/tmp/test"}),
             &format!("{}/architect", chorus_root()),
         );
-        let d = digest_tool_call(&input);
-        assert!(d.is_empty(), "Read should produce empty digest, got: {}", d);
+        let digest = digest_tool_call(&input);
+        assert!(digest.contains("/tmp/test"), "Read digests visibly now: {digest}");
     }
 
     // === Observation serialization ===
