@@ -84,8 +84,8 @@ import { appendFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
-/** #3880 one-clock: offset-ISO Boston — this writer is born compliant. */
-function bostonOffsetIso(d: Date = new Date()): string {
+/** #3880 one-clock: offset-ISO Boston — THE formatter for this package's spine writers. */
+export function bostonOffsetIso(d: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: 'numeric', month: '2-digit', day: '2-digit',
