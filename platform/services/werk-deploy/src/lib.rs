@@ -1443,6 +1443,23 @@ fn deploy_crate_canonical(home: &Path, role: &str, card: u64, trace: &str, name:
                         name, root, name, bin
                     ))?;
                 deploy_cli_verb(home, &root, role, card, "canonical", trace, name, &built, bin)?;
+                // #3896 — deploy the crate's OTHER binaries too. The #3895 land
+                // proved the gap live: crate chorus-model's crate-named bin is the
+                // RETIRED STUB, so the deploy shipped the stub and left the real
+                // verb (athena-model) stale at ~/.chorus/bin — landed ≠ running.
+                // Structural, not a name map: every discovered [[bin]] deploys.
+                let crate_dir = Path::new(&root).join(format!("platform/services/{}", name));
+                for (sibling, _) in crate_binaries_with_service_in(&crate_dir, name) {
+                    if sibling == *bin {
+                        continue;
+                    }
+                    let sib_path = format!("{}/platform/services/{}/target/release/{}", root, name, sibling);
+                    let sib_built = file_cdhash(&sib_path).ok_or_else(|| format!(
+                        "binary missing for {} sibling {} — run werk-build --target canonical first ({})",
+                        name, sibling, sib_path
+                    ))?;
+                    deploy_cli_verb(home, &root, role, card, "canonical", trace, name, &sib_built, &sibling)?;
+                }
                 artifact_class = "rust-cli";
             }
             other => {

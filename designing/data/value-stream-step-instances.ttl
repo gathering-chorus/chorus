@@ -22,24 +22,26 @@
 # an empty store. seed_multi loads both halves in ONE transaction, which is what
 # makes this split safe.
 
-# #3846 — reconciled to athena-value-stream-design.html: the truncated
-# Model/Make/Deploy/Land taxonomy dropped every PROVING step (seed, validate);
-# the doc's six-step flow restores them. Owners per the doc's Owner column:
-# shape=Silas(OWL-DBA), forge=Wren(generator), seed=Silas(DAL #3257),
-# validate=Silas(CI), demo=Jeff. Old step subjects staged for retirement in
-# designing/schemas/model-retirements.jsonl (the #3752 path — the land executes it).
-chorus:value-stream-step-athena-shape    a chorus:ValueStreamStep ; rdfs:label "Shape" ; chorus:label "Shape" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 1 .
-chorus:value-stream-step-athena-forge    a chorus:ValueStreamStep ; rdfs:label "Forge" ; chorus:label "Forge" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 2 .
-chorus:value-stream-step-athena-seed     a chorus:ValueStreamStep ; rdfs:label "Seed" ; chorus:label "Seed" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 3 .
+# #3896 — steps name the IMPLEMENTED WORK (Jeff 2026-08-15: HTML/OWL/code had
+# three vocabularies; the graph served six doc-derived steps while four real
+# verbs ran). Direction agreed Silas+Wren+Kade: a step names WORK, a verb
+# implements it — chorus:implementedBy carries the binary name, so a verb
+# rename never erases what the work is, and an unimplemented step is VISIBLY
+# provisional (no implementedBy = volatility, Jeff's cut). The #3846 six
+# (shape/forge/seed/demo/live retired; validate re-authored) were fiction:
+# steps with no implementation. Supersedes the #3846 paragraph that stood here.
+chorus:value-stream-step-athena-model    a chorus:ValueStreamStep ; rdfs:label "Model" ; chorus:label "Model" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 1 ;
+    chorus:implementedBy "athena-model" .
+chorus:value-stream-step-athena-make     a chorus:ValueStreamStep ; rdfs:label "Make" ; chorus:label "Make" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 2 ;
+    chorus:implementedBy "owl-api" .   # Jeff 08-15: "athena-make (owl-api)" — the generator IS the implementation; rename to an athena-make binary is future debt, and the step label survives it
+chorus:value-stream-step-athena-deploy   a chorus:ValueStreamStep ; rdfs:label "Deploy" ; chorus:label "Deploy" ;
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 3 ;
+    chorus:implementedBy "athena-deploy" .
 chorus:value-stream-step-athena-validate a chorus:ValueStreamStep ; rdfs:label "Validate" ; chorus:label "Validate" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 .
-chorus:value-stream-step-athena-demo     a chorus:ValueStreamStep ; rdfs:label "Demo" ; chorus:label "Demo" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 5 .
-chorus:value-stream-step-athena-live     a chorus:ValueStreamStep ; rdfs:label "Live" ; chorus:label "Live" ;
-    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 6 .
+    chorus:inStream chorus:value-stream-athena ; chorus:stageOrder 4 ;
+    chorus:implementedBy "athena-validate.sh" .   # bash today (ADR-038 port debt); records what RUNS, not what we wish ran
 
 # ── borg: plant → tend → read → surface⭐ → prune → feed ────────────────────
 chorus:value-stream-step-borg-plant   a chorus:ValueStreamStep ; rdfs:label "Plant" ; chorus:label "Plant" ;
@@ -130,23 +132,32 @@ chorus:value-stream-step-reflecting a chorus:ValueStreamStep ; rdfs:label "Refle
 
 # ── werk build-cycle stream: pull → accept ─────────────────────────────────
 chorus:value-stream-step-pull   a chorus:ValueStreamStep ; rdfs:label "Pull" ; chorus:label "Pull" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 1 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 1  ;
+    chorus:implementedBy "werk-pull".
 chorus:value-stream-step-commit a chorus:ValueStreamStep ; rdfs:label "Commit" ; chorus:label "Commit" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 2 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 2  ;
+    chorus:implementedBy "werk-commit".
 chorus:value-stream-step-push   a chorus:ValueStreamStep ; rdfs:label "Push" ; chorus:label "Push" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 3 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 3  ;
+    chorus:implementedBy "werk-push".
 chorus:value-stream-step-build  a chorus:ValueStreamStep ; rdfs:label "Build" ; chorus:label "Build" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 4 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 4  ;
+    chorus:implementedBy "werk-build".
 chorus:value-stream-step-test   a chorus:ValueStreamStep ; rdfs:label "Test" ; chorus:label "Test" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 5 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 5  ;
+    chorus:implementedBy "werk-test".
 chorus:value-stream-step-deploy a chorus:ValueStreamStep ; rdfs:label "Deploy" ; chorus:label "Deploy" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 6 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 6  ;
+    chorus:implementedBy "werk-deploy".
 chorus:value-stream-step-demo   a chorus:ValueStreamStep ; rdfs:label "Demo" ; chorus:label "Demo" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 7 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 7  ;
+    chorus:implementedBy "werk-demo".
 chorus:value-stream-step-merge  a chorus:ValueStreamStep ; rdfs:label "Merge" ; chorus:label "Merge" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 8 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 8  ;
+    chorus:implementedBy "werk-merge".
 chorus:value-stream-step-accept a chorus:ValueStreamStep ; rdfs:label "Accept" ; chorus:label "Accept" ;
-    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 9 .
+    chorus:inStream chorus:value-stream-werk ; chorus:stageOrder 9  ;
+    chorus:implementedBy "werk-accept".
 
 # ═══════════════════════════════════════════════════════════════════════════
 # #3706 — THE GATHERING VALUE STREAM (Wren, 2026-07-30)

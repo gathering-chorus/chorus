@@ -84,3 +84,16 @@ deploy-path bash; Jeff's ruling the same day). Its file list is data:
   verb with a token minted for the land role), so a land still seeds instances.
   Recovery contexts run only the first; the pure-ABox instances re-seed the
   moment identity is back.
+
+## Addendum (2026-08-15, #3896) — steps name work; implementedBy names what runs
+
+Jeff caught HTML, OWL, and code serving three vocabularies for the Designing
+stream in one conversation. The ruling, shaped with Wren and Kade: a step names
+WORK (labels Model → Make → Deploy → Validate), and `chorus:implementedBy`
+carries the invocable that runs it (`athena-model`, `owl-api`, `athena-deploy`,
+`athena-validate.sh`). The six doc-derived steps retire as fiction. werk's nine
+steps carry their `werk-*` edges from the same land. Absence of the edge marks
+an unautomated step — visibly provisional, never refused (Jeff: volatility
+drops as steps get implemented). Enforcement for automated streams is
+`gc-step-implemented` in this ADR's registry — proven red on the live store
+(15 rows, 2026-08-15) before authoring, per the register-before-run discipline.
