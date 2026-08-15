@@ -165,3 +165,29 @@ describe('#3884 werk.phase (the #3883 emitter shape)', () => {
     expect(l.text).toContain('fail');
   });
 });
+
+// #3884 reopen 2: /api/stream read ${CHORUS_ROOT}/platform/logs/chorus.log —
+// a 67KB stale side-file — while every werk.phase/observer event lands in the
+// DURABLE spine at ~/.chorus/chorus.log (never rotated, the memory layer).
+// Result: parser fixed, werk lines still 0 live. The path is now resolved by
+// spinePath(): CHORUS_SPINE env override, else $CHORUS_HOME/chorus.log, else
+// $HOME/.chorus/chorus.log. The stale side-file is never the answer.
+describe('#3884 spinePath resolves the durable spine', () => {
+  const { spinePath } = require('../src/spine-tail');
+  test('defaults to HOME/.chorus/chorus.log', () => {
+    const p = spinePath({ HOME: '/Users/x' });
+    expect(p).toBe('/Users/x/.chorus/chorus.log');
+  });
+  test('CHORUS_HOME wins over HOME', () => {
+    const p = spinePath({ HOME: '/Users/x', CHORUS_HOME: '/Users/x/.chorus2' });
+    expect(p).toBe('/Users/x/.chorus2/chorus.log');
+  });
+  test('CHORUS_SPINE explicit override wins', () => {
+    const p = spinePath({ HOME: '/Users/x', CHORUS_SPINE: '/tmp/fixture.log' });
+    expect(p).toBe('/tmp/fixture.log');
+  });
+  test('never points into platform/logs (the stale side-file)', () => {
+    const p = spinePath({ HOME: '/Users/x', CHORUS_ROOT: '/repo' });
+    expect(p).not.toContain('platform/logs');
+  });
+});

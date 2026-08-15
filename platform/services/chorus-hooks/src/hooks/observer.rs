@@ -540,10 +540,12 @@ fn digest_tool_call(input: &HookInput) -> String {
             if go == "true" {
                 parts.push("go".to_string());
             }
+            // "mcp: " class prefix — Jeff reads the pane by class (bash:,
+            // tool:); an unprefixed verb reads as noise, not as a class.
             if parts.is_empty() {
-                verb.to_string()
+                format!("mcp: {verb}")
             } else {
-                format!("{verb} {}", parts.join(" "))
+                format!("mcp: {verb} {}", parts.join(" "))
             }
         }
         // #3884 negative-proof anchor: the silent-empty default is DEAD. A
@@ -835,6 +837,9 @@ mod tests {
             "/tmp",
         );
         let d = digest_tool_call(&input);
+        // Jeff, 2026-08-15: "mcp: prefix would be meaningful i can easily
+        // see bash and tool" — the class must be legible like bash:/tool:.
+        assert!(d.starts_with("mcp: "), "class prefix visible: {d}");
         assert!(d.contains("chorus_werk"), "verb visible: {d}");
         assert!(d.contains("3870"), "card visible: {d}");
     }
@@ -847,6 +852,7 @@ mod tests {
             "/tmp",
         );
         let d = digest_tool_call(&input);
+        assert!(d.starts_with("mcp: "), "class prefix visible: {d}");
         assert!(d.contains("nudge"), "{d}");
         assert!(d.contains("wren"), "recipient visible: {d}");
     }

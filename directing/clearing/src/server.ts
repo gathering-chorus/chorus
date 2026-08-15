@@ -740,7 +740,7 @@ try {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
-import { readSpineLines, type StreamLine } from './spine-tail';
+import { readSpineLines, spinePath, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -943,7 +943,7 @@ app.get('/api/stream', (req, res) => {
   const fs = require('fs');
   const limit = parseInt(req.query.lines as string) || 60;
   const lines = [
-    ...readSpineLines(fs, `${CHORUS_ROOT}/platform/logs/chorus.log`, limit),
+    ...readSpineLines(fs, spinePath(process.env), limit), // #3884: the durable spine, not platform/logs
     ...readRoleObservations(fs),
   ];
   lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
