@@ -68,6 +68,33 @@ pub fn load_key(identity_dir: &std::path::Path, role: &str) -> Result<RoleKey, S
     Ok(RoleKey { pubkey, seckey })
 }
 
+use std::sync::Mutex;
+
+static SEQ_LOCK: Mutex<()> = Mutex::new(());
+
+/// Per-role monotonic reply counter, persisted at <dir>/reply-seq-<role>.
+/// Wren's completeness red-line: ordering is a relay property, completeness
+/// is not — a HOLE ("message 5 never arrived") is only computable against a
+/// sender-side counter. The single hooks daemon is the only writer (process
+/// mutex); write-then-rename keeps a crash from corrupting the counter. A
+/// corrupt/missing file restarts at 1 — the consumer treats a seq REGRESSION
+/// as a counter reset, not a hole.
+pub fn next_seq(dir: &std::path::Path, role: &str) -> u64 {
+    let _g = SEQ_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    let path = dir.join(format!("reply-seq-{role}"));
+    let prev: u64 = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+    let next = prev + 1;
+    let _ = std::fs::create_dir_all(dir);
+    let tmp = dir.join(format!(".reply-seq-{role}.tmp"));
+    if std::fs::write(&tmp, next.to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+    next
+}
+
 /// Build + schnorr-sign a kind-1 reply event. Deterministic given inputs —
 /// the caller owns the clock (created_at is an argument, never read here).
 pub fn build_reply_event(
@@ -77,11 +104,37 @@ pub fn build_reply_event(
     content_hash: &str,
     created_at: u64,
 ) -> Result<NostrEvent, String> {
-    let tags = vec![
+    build_reply_event_tags(key, role, text, content_hash, created_at, None)
+}
+
+/// As build_reply_event, with the per-role seq riding as a ["seq", n] tag.
+pub fn build_reply_event_seq(
+    key: &RoleKey,
+    role: &str,
+    text: &str,
+    content_hash: &str,
+    created_at: u64,
+    seq: u64,
+) -> Result<NostrEvent, String> {
+    build_reply_event_tags(key, role, text, content_hash, created_at, Some(seq))
+}
+
+fn build_reply_event_tags(
+    key: &RoleKey,
+    role: &str,
+    text: &str,
+    content_hash: &str,
+    created_at: u64,
+    seq: Option<u64>,
+) -> Result<NostrEvent, String> {
+    let mut tags = vec![
         vec!["t".to_string(), "reply".to_string()],
         vec!["role".to_string(), role.to_string()],
         vec!["hash".to_string(), content_hash.to_string()],
     ];
+    if let Some(n) = seq {
+        tags.push(vec!["seq".to_string(), n.to_string()]);
+    }
     // NIP-01 canonical serialization: [0, pubkey, created_at, kind, tags, content]
     let ser = serde_json::json!([0, key.pubkey, created_at, 1, tags, text]).to_string();
     let digest = sha256::Hash::hash(ser.as_bytes());
@@ -193,6 +246,11 @@ fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, S
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let key = load_key(&identity_dir, role)?;
-    let ev = build_reply_event(&key, role, text, content_hash, created_at)?;
+    let state_dir = std::path::PathBuf::from(
+        std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string()),
+    )
+    .join(".chorus/state");
+    let seq = next_seq(&state_dir, role);
+    let ev = build_reply_event_seq(&key, role, text, content_hash, created_at, seq)?;
     publish(&relay, &ev).map(|()| ev.id)
 }

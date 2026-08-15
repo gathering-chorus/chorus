@@ -151,3 +151,33 @@ fn live_publish_probe() {
     publish(&relay, &ev).expect("relay accepted");
     eprintln!("relay accepted event {}", ev.id);
 }
+
+// #3893 seq tag (Wren's completeness red-line): order is a protocol property,
+// COMPLETENESS is not — "message 5 never arrived" is only computable against
+// a sender-side counter. Per-role, monotonic, survives restarts.
+#[test]
+fn seq_is_monotonic_per_role_and_persisted() {
+    let dir = tempfile::tempdir().unwrap();
+    assert_eq!(next_seq(dir.path(), "kade"), 1);
+    assert_eq!(next_seq(dir.path(), "kade"), 2);
+    assert_eq!(next_seq(dir.path(), "wren"), 1);
+    let on_disk: u64 = std::fs::read_to_string(dir.path().join("reply-seq-kade"))
+        .unwrap().trim().parse().unwrap();
+    assert_eq!(on_disk, 2);
+}
+
+#[test]
+fn seq_corrupt_counter_restarts_instead_of_wedging() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("reply-seq-kade"), "not-a-number").unwrap();
+    assert_eq!(next_seq(dir.path(), "kade"), 1);
+}
+
+#[test]
+fn reply_event_carries_seq_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event_seq(&k, "kade", "t", "h", 1, 42).unwrap();
+    assert!(ev.tags.iter().any(|t| t[0] == "seq" && t[1] == "42"), "{:?}", ev.tags);
+}
