@@ -342,6 +342,23 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// `cargo test --lib --bins` in the crate dir, iff it has a Cargo.toml (a path
 /// match without a manifest is skipped = pass; nothing to run). Quarantined case
 /// names are appended as `-- --skip <case>` (#2530) so a flaky hold can't block the
+/// #3892 — spawn suites with a self-contained world (tempdir overrides for
+/// every overridable membrane surface) so a lazy subprocess test never panics
+/// MEMBRANE REFUSED into the werk log. Explicit env wins: a var the caller
+/// already set is left alone, so fixtures/integration setups keep control.
+fn apply_suite_world(cmd: &mut Command, werk: &str) {
+    // OUTSIDE the werk tree: an untracked dir inside it would trip the
+    // teardown's refuse-if-dirty at accept (#3431).
+    let slot = Path::new(werk).file_name().and_then(|s| s.to_str()).unwrap_or("werk");
+    let tmp = std::env::temp_dir().join(format!("werk-suite-world-{slot}")).to_string_lossy().into_owned();
+    let _ = std::fs::create_dir_all(&tmp);
+    for (k, v) in werk_test::suite_world_env(&tmp) {
+        if std::env::var(&k).is_err() {
+            cmd.env(k, v);
+        }
+    }
+}
+
 /// gate; an empty quarantine set leaves the invocation byte-identical.
 fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String, String)>) {
     let dir = format!("{}/platform/services/{}", werk, name);
@@ -352,7 +369,10 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String
     args.extend(cargo_skip_args(quarantined));
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
-    match Command::new("cargo").args(&args).current_dir(&dir).output() {
+    let mut cmd = Command::new("cargo");
+    cmd.args(&args).current_dir(&dir);
+    apply_suite_world(&mut cmd, werk);
+    match cmd.output() {
         Ok(o) => {
             let ok = o.status.success();
             let text = format!(
@@ -422,11 +442,11 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     if !Path::new(&jest).exists() {
         return (true, Vec::new());
     }
-    match Command::new(&jest)
-        .args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
-        .current_dir(&pkg_dir)
-        .output()
-    {
+    let mut cmd = Command::new(&jest);
+    cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
+        .current_dir(&pkg_dir);
+    apply_suite_world(&mut cmd, werk);
+    match cmd.output() {
         Ok(o) => {
             let ok = o.status.success();
             if !ok {

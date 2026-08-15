@@ -928,3 +928,48 @@ pub fn scoped_test_units(
         ScopeVerdict::Full(_) => None,
     }
 }
+
+/// #3892 — the runner hands every spawned suite a self-contained world so a
+/// lazy subprocess test resolving a prod surface lands in a tempdir instead
+/// of a MEMBRANE REFUSED panic in the werk log. Three misdiagnoses in 48h
+/// came from those panic lines outshouting the fatal step (Wren on #3863,
+/// Kade twice on #3884) — and they appeared in GREEN runs too.
+///
+/// Deliberately NOT overridden (the membrane's teeth stay in):
+/// - FUSEKI_URL — integration tests gate on RUN_LIVE_INTEGRATION explicitly
+/// - CHORUS_HOME — redirecting it re-homes far more than test writes
+/// - RoleState — has no override by design; touching it must stay loud
+pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
+    vec![
+        ("CHORUS_LOG_FILE".into(), format!("{tmp}/chorus.log")),
+        ("CHORUS_SESSIONS_DIR".into(), format!("{tmp}/sessions")),
+        ("CHORUS_DB_PATH".into(), format!("{tmp}/index.db")),
+        ("CHORUS_LANCE_DIR".into(), format!("{tmp}/lance")),
+        ("CHORUS_MESSAGES_DB".into(), format!("{tmp}/messages.db")),
+    ]
+}
+
+#[cfg(test)]
+mod suite_world_tests {
+    use super::suite_world_env;
+
+    #[test]
+    fn overridable_surfaces_point_into_the_tempdir() {
+        let env = suite_world_env("/tmp/w");
+        let keys: Vec<&str> = env.iter().map(|(k, _)| k.as_str()).collect();
+        for k in ["CHORUS_LOG_FILE", "CHORUS_SESSIONS_DIR", "CHORUS_DB_PATH", "CHORUS_LANCE_DIR", "CHORUS_MESSAGES_DB"] {
+            assert!(keys.contains(&k), "missing {k}");
+        }
+        assert!(env.iter().all(|(_, v)| v.starts_with("/tmp/w/")), "{env:?}");
+    }
+
+    #[test]
+    fn membrane_teeth_stay_negative_proof() {
+        // #3734 — the surfaces whose refusal must SURVIVE this change are
+        // provably absent from the override set.
+        let env = suite_world_env("/tmp/w");
+        for k in ["FUSEKI_URL", "CHORUS_HOME"] {
+            assert!(!env.iter().any(|(key, _)| key == k), "{k} must not be overridden");
+        }
+    }
+}
