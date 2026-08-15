@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service Topology — live</title>
+<style>
+body{font-family:Georgia,serif;margin:40px 1in;line-height:1.5;color:#1a1a1a}
+h1{border-bottom:2px solid #333;padding-bottom:8px} h1 span{color:#0369a1;font-weight:normal}
+.note{background:#f0f9ff;border:1px solid #0369a1;padding:8px 12px;font-size:0.85em}
+table{border-collapse:collapse;width:100%;font-size:0.82em;margin:1em 0}
+th{background:#e0f2fe;color:#0c4a6e;text-align:left;padding:5px 8px;border:1px solid #e5e7eb}
+td{padding:5px 8px;border:1px solid #e5e7eb;vertical-align:top}
+code{background:#f3f4f6;padding:1px 4px;border-radius:3px}
+.absent{color:#991b1b} .running{color:#166534}
+.err{background:#fef2f2;border-left:4px solid #dc2626;padding:8px 12px}
+</style>
+</head>
+<body>
+<h1>Service Topology <span>— live from the graph</span></h1>
+<div class="note"><strong>#3870 AC6:</strong> this page holds no hand-list. Services come from
+<code>:3360/services</code>; runtime instances from <code>:3360/serviceinstances</code>.
+If either fetch fails, the failure renders — it never falls back to a stale list.</div>
+
+<h2>Services</h2>
+<div id="services">loading…</div>
+
+<h2>Runtime instances</h2>
+<div id="instances">loading…</div>
+
+<script>
+const OWL = 'http://localhost:3360';
+
+function table(rows, cols) {
+  const th = cols.map(c => `<th>${c}</th>`).join('');
+  const trs = rows.map(r => `<tr>${cols.map(c => `<td>${r[c] ?? ''}</td>`).join('')}</tr>`).join('');
+  return `<table><tr>${th}</tr>${trs}</table>`;
+}
+
+async function load(path, el, render) {
+  const box = document.getElementById(el);
+  try {
+    const res = await fetch(`${OWL}${path}`);
+    if (!res.ok) throw new Error(`${path} answered ${res.status}`);
+    const body = await res.json();
+    render(box, body.data ?? body);
+  } catch (e) {
+    // fail loud, never a stale list (gate-refusal-names-its-state, applied here)
+    box.innerHTML = `<div class="err">${path} unavailable: ${e.message} — the topology is UNKNOWN, not empty.</div>`;
+  }
+}
+
+load('/services', 'services', (box, rows) => {
+  box.innerHTML = rows.length
+    ? table(rows.map(r => ({name: r.name ?? r.label, label: r.label, status: r.status, ownedBy: r.ownedBy})),
+            ['name','label','status','ownedBy'])
+    : '<div class="err">/services served ZERO rows — authored Services are not reaching the store.</div>';
+});
+
+load('/serviceinstances', 'instances', (box, rows) => {
+  box.innerHTML = rows.length
+    ? table(rows.map(r => ({
+        label: r.launchdLabel ?? r.label,
+        state: `<span class="${(r.runState==='running')?'running':'absent'}">${r.runState ?? '?'}</span>`,
+        lastObserved: r.lastObserved,
+      })), ['label','state','lastObserved'])
+    : '<div class="err">/serviceinstances served ZERO rows — the harvester has not loaded, or the vocabulary is unclaimed.</div>';
+});
+</script>
+</body>
+</html>

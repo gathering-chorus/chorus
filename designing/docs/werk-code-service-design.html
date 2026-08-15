@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>werk-code — Service Design</title>
+<link rel="stylesheet" href="/designing/docs/doc-responsive.css">
+<style>
+body{font-family:Georgia,serif;margin:40px 1in;line-height:1.6;color:#1a1a1a}
+h1{border-bottom:2px solid #333;padding-bottom:8px}
+h1 span{color:#c2410c;font-weight:normal}
+h2{font-size:1.2em;margin-top:2em;color:#444;border-bottom:1px solid #ddd;padding-bottom:4px}
+h3{font-size:1.05em;color:#555}
+p,li{font-size:0.88em}
+table{border-collapse:collapse;width:100%;font-size:0.82em;margin:1em 0}
+th{background:#ffedd5;color:#7c2d12;text-align:left;padding:6px 8px;border:1px solid #e5e7eb}
+td{padding:6px 8px;border:1px solid #e5e7eb;vertical-align:top}
+code{background:#f3f4f6;padding:1px 4px;border-radius:3px;font-size:0.95em}
+.date{color:#666;font-size:0.85em}
+.promise{background:#ffedd5;border-left:4px solid #c2410c;padding:10px 14px;font-style:italic;color:#7c2d12}
+.source-note{background:#f9fafb;border:1px solid #e5e7eb;padding:10px 14px;font-size:0.85em;margin:1em 0}
+.related{background:#e0e7ff;border:1px solid #6366f1;padding:10px 14px;font-size:0.85em;margin-bottom:1.5em}
+.gap{background:#fef2f2;border-left:4px solid #dc2626;padding:8px 12px;font-size:0.85em}
+.tag-live{background:#dcfce7;color:#166534;padding:0 6px;border-radius:8px;font-size:0.8em;font-family:sans-serif}
+.tag-missing{background:#fee2e2;color:#991b1b;padding:0 6px;border-radius:8px;font-size:0.8em;font-family:sans-serif}
+.tag-partial{background:#fef9c3;color:#854d0e;padding:0 6px;border-radius:8px;font-size:0.8em;font-family:sans-serif}
+.footer{margin-top:3em;padding-top:1em;border-top:1px solid #ddd;color:#888;font-size:0.8em}
+@media print{body{margin:0.5in}}
+</style>
+</head>
+<body>
+
+<div class="related"><strong>Service design for werk-code.</strong> Related:
+<a href="http://localhost:3340/designing/docs/version-control-service-design.html">Version Control</a> ·
+<a href="http://localhost:3340/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> ·
+<a href="http://localhost:3340/designing/docs/ci-pipeline-service-design.html">CI/CD Pipeline</a> ·
+<a href="http://localhost:3340/designing/docs/quality-service-design.html">Quality</a> ·
+<a href="http://localhost:3340/designing/docs/tests-service-design.html">Tests</a> ·
+<a href="http://localhost:3340/designing/docs/werk-review-service-design.html">werk-review</a></div>
+
+<h1>werk-code <span>— Service Design</span></h1>
+
+<p class="date">Domain owner: Kade. <strong>First authoring 2026-08-15</strong> — written at Jeff's direction during the werk-code ↔ athena-model alignment conversation; the live fixture that forced it is #3895 (a new deploy-path bash script landed the same morning with ADR-038 watching and unable to refuse).</p>
+
+<div class="source-note"><strong>Source of truth.</strong> This doc narrates structure and intent. The enforcement mechanisms themselves live in the repo (paths named inline); their pass/fail state lives in pipeline runs and the nightly, never in this file. Where a count appears here it is a snapshot dated 2026-08-15.</div>
+
+<div class="promise"><strong>Promise.</strong> A rule about code that reaches werk-code either fires as a refusal at a named pipeline moment, with a fixture proving it goes red on a violation — or it is listed in this doc as prose, and nobody mistakes it for protection.</div>
+
+<h2>The model</h2>
+
+<p>Chorus runs two kinds of truth, and the boundary between them is the boundary between athena-model and werk-code. <strong>Shape truth — what may exist — belongs to athena-model:</strong> SHACL and the DAL refuse a malformed thing at the pen (hand-typed IRIs refused in <code>chorus-model</code>'s tbox, placement×derivation checked in <code>adr.rs</code>, instance writes governed at <code>athena-model-gate.sh</code>). <strong>State truth — what may transition — belongs to werk-code:</strong> the pipeline refuses a forbidden movement of code at the moment it tries to move (commit, test, merge, deploy, accept, nightly).</p>
+
+<p>werk-code is therefore not one program. It is the <em>service contract over every enforcement surface in the pipeline</em>: one vocabulary, one placement rule (a guidance item binds to exactly one moment), and one quality bar (<strong>no gate without a negative proof, #3734</strong>). The same shape as athena-model — guidance lives as data, violations are refused at the door, and the refusal names its state — applied to code instead of model.</p>
+
+<p>The reason this service exists as a named thing is recorded in its own corpus. Eleven hollow-gate instances in eight weeks (#3734's ledger) taught that a check that cannot go red is worse than no check. And the ADR audit below shows the complementary failure: the three highest-traffic code-discipline ADRs are prose-only, while each one's own text asserts that a convention without a gate is not real (ADR-031: "teeth = the gate"). werk-code is where both failure classes get a single owner.</p>
+
+<h2>Vocabulary</h2>
+
+<table>
+<tr><th>Term</th><th>What it is</th></tr>
+<tr><td><code>Guidance</code></td><td>A rule about code: language choice, naming grain, placement, path discipline, test discipline. Authored in an ADR or decision; only real once bound to a moment.</td></tr>
+<tr><td><code>Gate</code></td><td>A refusal at a moment. Violation → red + typed reason. Examples: werk-commit's rebase-or-refuse (#3186), the accept gate's self-accept refusal (DEC-048).</td></tr>
+<tr><td><code>Ratchet</code></td><td>A baseline that may only decrease. Per-lint clippy counts (#2532/#3710), per-rule ESLint counts, doc-coherence floor. Climbing = red; new lint unbaselined = red.</td></tr>
+<tr><td><code>Absence guard</code></td><td>A gate asserting a retired surface stays dead — the retired-*.bats family, hardcoded-bin-paths baseline. The guard must fail loudly if its target is renamed, never pass vacuously (#3734).</td></tr>
+<tr><td><code>Membrane</code></td><td>Context-conditional refusal: test/build contexts refused prod-surface writes (#3615), with the surface list as data (<code>membrane-surfaces.json</code>) and a drift-guard proving enum and schema stay joined.</td></tr>
+<tr><td><code>Negative proof</code></td><td>A fixture in which the guarded condition is VIOLATED and the check is shown RED. Ships with the gate or the gate does not land (#3734).</td></tr>
+<tr><td><code>Prose-only</code></td><td>Guidance with no binding. Legitimate as a stated direction — illegitimate the moment anyone reads it as a backstop. This doc's gap ledger names every one.</td></tr>
+</table>
+
+<h2>The six moments</h2>
+
+<p>Every enforcement surface binds to exactly one pipeline moment. Snapshot of what fires where (2026-08-15; 36 mechanisms inventoried):</p>
+
+<table>
+<tr><th>Moment</th><th>What refuses there today</th><th>Negative fixture?</th></tr>
+<tr><td><strong>Edit-time</strong> (chorus-hooks PreToolUse)</td><td><code>canonical_write_guard</code> (canonical + cross-role werk writes), <code>tdd_gate</code> (code before tests, building state only), <code>test_quality_gate</code> (#2196, assertion-less tests), <code>log_first_gate</code> (defect fix without log read), <code>icd_write_gate</code>, <code>story_write_gate</code>, sensitive-paths/infra/SPARQL/CSC guards, shim fail-closed</td><td>Mostly yes (<code>tests/canonical_write_guard.rs</code>, <code>tdd_gate_acceptance.rs</code>, <code>shim_fail_closed_pre_tool_use.rs</code>, shared <code>hook_false_positives.rs</code>)</td></tr>
+<tr><td><strong>Commit</strong> (pre-commit, local-authoritative per ADR-053)</td><td>clippy per-lint ratchet, test-type header gate (#3442), retirement gate (#3598), gitleaks, catalog-oversize, decision/ADR/principle direct-edit checks</td><td><span class="tag-partial">GAP</span> — ratchet yes; the four newest (test-type, retirement, oversize, direct-edit) lack dedicated negative suites</td></tr>
+<tr><td><strong>Pipeline test</strong> (act run of werk.yml)</td><td><code>werk-test</code> blocking red floor on diff-affected units (self-modifying cards degrade to advisory), ESLint ratchet, doc-coherence ratchet, membrane at runtime of every test, build/deploy invariance checks</td><td>Yes (<code>lint-ratchet.test.sh</code>, <code>membrane-guard.bats</code>, <code>units.rs</code>)</td></tr>
+<tr><td><strong>Merge</strong></td><td><code>werk-merge</code>: branch-mismatch, no-open-PR, post-merge content-verify (MERGED read from origin, never assumed), atomic-requires-accepter (ADR-037); stale-base guard (#2944)</td><td>Yes (<code>tests/e2e.rs</code>, <code>2944-stale-base-guard.bats</code>)</td></tr>
+<tr><td><strong>Deploy / accept</strong></td><td>allow-set gate (#3785, no deploy that empties the doors), SDK propagation guard (#3628), athena-model gate, <code>werk-accept</code>: DEC-048 accepter check, owner-unresolved refusal, dirty-teardown refusal (#3431)</td><td>Yes (<code>allow-set-gate-scope-3785.bats</code>, <code>3628-sdk-propagation-guard.bats</code>, <code>tests/e2e.rs</code>)</td></tr>
+<tr><td><strong>Nightly</strong> (the red-main detector)</td><td>hardcoded-bin-paths baseline (#2734), retired-surface greps, required-checks drift, factory↔product membrane (#3722 self-guarded), invariance suite</td><td>Yes — the absence guards are their own fixtures</td></tr>
+</table>
+
+<h2>The gap ledger — prose that is not protection</h2>
+
+<div class="gap"><strong>The pattern that forced this section:</strong> on 2026-08-15, #3895 added a new deploy-path bash script while ADR-038 (Rust for substrate-grade code) watched from the shelf. Its own text says "teeth are not live yet" (pending #3291). Nothing fired. The pre-commit driver itself carries the cautionary header: it once claimed "CI is authoritative on main (ADR-026)" for months after that stopped being true — engineers read a backstop that did not exist.</div>
+
+<table>
+<tr><th>Guidance</th><th>Status</th><th>The missing binding</th></tr>
+<tr><td>ADR-038 — Rust for substrate-grade code</td><td><span class="tag-missing">PROSE-ONLY</span></td><td>Reverse-<code>mapsTo</code> graph query at <strong>commit</strong> (#3291) — explicitly a graph lookup, not a path glob (its own design; <code>platform/scripts/</code> mixes substrate and glue). Named port-debt: <code>chorus-deploy</code> (#3285).</td></tr>
+<tr><td>ADR-031 — MCP/REST naming grain</td><td><span class="tag-missing">PROSE-ONLY</span></td><td>The name-test on tool names + REST paths its text demands; only description-shape lint exists. Binds at <strong>pipeline test</strong>.</td></tr>
+<tr><td>ADR-055 — harness dependency boundary</td><td><span class="tag-missing">PROSE-ONLY</span></td><td>Its self-described "enforceable part" (placement rule) — new adapter logic lands silently. Binds at <strong>commit</strong>.</td></tr>
+<tr><td>ADR-036 — one build/deploy path</td><td><span class="tag-missing">PROSE-ONLY</span></td><td>Nothing refuses a second deploy path — the exact #3895 shape. Binds at <strong>commit</strong> (path-class scan) until #3291's graph query subsumes it.</td></tr>
+<tr><td>ADR-041 — repo tree / one home</td><td><span class="tag-partial">PARTIAL</span></td><td>Retirement gates exist; the accretion-into-retired-homes grep-gate its text demands does not.</td></tr>
+<tr><td>ADR-022 graph hygiene · ADR-029 design-doc template · ADR-044 propertykey governance</td><td><span class="tag-missing">PROSE-ONLY</span></td><td>Orphan/duplicate gate; doc-structure lint; resolver blocked on #3437.</td></tr>
+<tr><td>ADR-056's own finding</td><td><span class="tag-missing">HOLLOW</span></td><td>Three modules document themselves as blocking and return allow — the #3734 class, alive today. Each needs its negative fixture or an honest downgrade to advisory in its doc-comment.</td></tr>
+</table>
+
+<h2>Contracts</h2>
+
+<ul>
+<li><strong>No gate without a negative proof (#3734).</strong> The fixture ships in the landing diff. A green run of the fixture is a red flag — the fixture passes only by proving red.</li>
+<li><strong>A refusal names its state.</strong> Typed reasons (<code>no-werk</code>, <code>branch-mismatch</code>, <code>MEMBRANE REFUSED</code>), never a bare exit 1 — the gate-refusal-names-its-state rule generalized from the auth quintet.</li>
+<li><strong>Ratchets only decrease.</strong> A climb is red; an unbaselined new lint is red; regenerating a baseline is legitimate only on a real drop.</li>
+<li><strong>Unknown is RED (ADR-049).</strong> A gate that cannot resolve its input (cdhash unresolvable, store unreachable) refuses; it never passes on absence of evidence.</li>
+<li><strong>A deleted target fails its guard loudly (#3734).</strong> Absence guards and drift-guards (membrane <code>enum_matches_schema</code>) exist so renames can't produce vacuous green.</li>
+<li><strong>One binding per guidance item.</strong> Guidance binding at two moments drifts into two implementations; the earlier moment wins, later moments only <em>verify</em>.</li>
+</ul>
+
+<h2>Emitted spine events</h2>
+<ul>
+<li><code>hook.decision</code> — every edit-time gate verdict, uniform (#3252)</li>
+<li><code>membrane.violation</code> — typed, on every refused prod-surface write from a test/build context</li>
+<li><code>werk.phase</code> — each pipeline moment's running/pass/fail (#3883), rendered in Jeff's streams (#3884)</li>
+<li><code>binary.deployed</code> — the provenance triplet ({binary, cdhash, commit}) that answers "which commit is live?" (#2734)</li>
+</ul>
+
+<h2>Current state &amp; open work</h2>
+
+<table>
+<tr><th>Open work</th><th>What</th><th>Owner</th></tr>
+<tr><td>#3291</td><td>ADR-038 teeth — substrate-grade refusal at commit via reverse-<code>mapsTo</code> graph query; subsumes the #3895 shape</td><td>Silas (model) + Kade (verb wiring)</td></tr>
+<tr><td>#3285</td><td>Port <code>chorus-deploy</code> (largest substrate-grade bash) to Rust</td><td>Kade</td></tr>
+<tr><td>Negative fixtures for the four newest commit gates</td><td>test-type, retirement, catalog-oversize, direct-edit checks — the only inventory rows without dedicated red suites</td><td>Kade</td></tr>
+<tr><td>ADR-056's three hollow modules</td><td>Fixture each or downgrade honestly to advisory</td><td>Silas</td></tr>
+<tr><td>ADR-031 name-test</td><td>Naming-grain check at pipeline test</td><td>Wren (owns owl-api/MCP surface)</td></tr>
+</table>
+
+<h2>Not in scope</h2>
+<ul>
+<li><strong>Hosted per-PR CI.</strong> Cost-killed 2026-04-29 (#2600); ADR-053 makes the local act run + merge verbs the authority. Does not return without naming why the cost calculus changed.</li>
+<li><strong>Style enforcement beyond ratchets.</strong> Formatting opinions stay in editors; werk-code refuses defect classes, not taste.</li>
+<li><strong>Path globs for the substrate rule.</strong> ADR-038 rejected them explicitly — <code>platform/scripts/</code> mixes substrate and glue; the graph query is the binding.</li>
+<li><strong>A workflow engine.</strong> Moments chain by spine events (the #2044 direction), not by an orchestrator.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+<li>ADR corpus: <code>roles/silas/adr/</code> — ADR-026, -031, -032, -036, -037, -038, -041, -049, -053, -055, -056</li>
+<li>#3734 — no gate without a negative proof (the contract this service enforces on itself)</li>
+<li>Sibling designs: Version Control (shares the verb-refusal narrative), Build + Deploy, CI/CD Pipeline, Quality, Tests</li>
+<li>Athena: <code>/athena/domain-detail.html?id=quality-domain</code> — this doc narrates; the graph counts</li>
+</ul>
+
+<div class="footer">werk-code · Service Design · 2026-08-15 (first authoring, Jeff-directed) — domain owner: Kade</div>
+
+</body>
+</html>

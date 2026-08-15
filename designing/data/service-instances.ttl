@@ -72,3 +72,82 @@ chorus:service-loom a chorus:Service ;
     chorus:pathToClose "Closed when no tool class is silently invisible, pipeline activity renders in streams, and a daemon outage names itself." ;
     chorus:gaps "MCP verbs invisible in streams (#3884, carded). Werk runs render as watcher sleeps. Possible tile misattribution (one observation, unconfirmed). hasDesignDoc unfilled pending Document instances (Silas review point 3)." ;
     chorus:notInScope "Message delivery to screens (Clearing/pulse). Card and board state (werk/cards). Gate POLICY content — loom runs gates; what they enforce belongs to the owning domains." .
+
+# #3870 — Services four through nine, authored from Jeff's product cuts
+# (2026-08-14: Knowledge Store = chorus context+memory+knowledge; Model
+# Surface = Athena; "we are missing werk"; observability+security = borg;
+# bedroom media/ai = gathering core; nifi = convergence 100%). Each carries
+# the same two-people-agree boundary test the first three set. Structural
+# edges live in roles/silas/ontology/chorus.ttl (Silas gate-arch).
+
+chorus:service-athena a chorus:Service ;
+    rdfs:label "Athena" ; chorus:label "Athena" ;
+    chorus:overview "The model surface — the governed pen and the read door for the OWL model. owl-api on :3360 serves DECLARED-and-claimed classes as REST collections (/products, /services, /domains…); chorus-model is the DAL that refuses hand-typed IRIs and ungoverned writes; athena pages render domain detail from the graph. INSIDE iff its subject is the MODEL: serving it, mutating it under governance, rendering it. The store that persists triples is the Knowledge Store's, not Athena's." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "operating" ;
+    chorus:asIs "Live: owl-api serves exactly definesVocabulary-claimed classes (DECLARED ⊃ CLAIMED ⊃ SERVED, lib.rs:863); the DAL + athena-model-gate close the back door; /services serves the three Services authored this week. Gap proven this card: /serviceinstances does not exist yet — harvested runtime rows have no read door." ;
+    chorus:toBe "Every domain's collections regenerate from the model on land (#3551 direction); /serviceinstances serves the harvested graph; #3896 adds athena step instances with implementedBy + negativeFixture edges so pipeline gates are model-visible." ;
+    chorus:implementationPlan "(1) Claim ServiceInstance/ScheduledJob vocabulary so owl-api mounts /serviceinstances (this card, with Silas's shape review). (2) #3896 (Silas) lands the athena step shape. (3) Topology page reads /services + /serviceinstances instead of a hand-list." ;
+    chorus:pathToClose "Closed when the runtime registry is served from the graph and the topology page renders from it with zero hand-maintained service lists." ;
+    chorus:gaps "/serviceinstances unmounted (vocabulary unclaimed). hasDesignDoc unfilled pending Document instances (Silas review point 3)." ;
+    chorus:notInScope "Triple persistence (Knowledge Store). Pipeline execution (Werk). Page hosting for non-model pages (Gathering App / Clearing)." .
+
+chorus:service-knowledge-store a chorus:Service ;
+    rdfs:label "Knowledge Store" ; chorus:label "Knowledge Store" ;
+    chorus:overview "Context, memory, and knowledge — Jeff's cut: 'Knowledge Store is really chorus.' The Fuseki triple store (:3030, 62GB shared store) is the persistence heart; chorus-api (:3340) is the read/write door for search, context injection, seeds, and cards views; the index/embedding workers keep FTS and vectors fresh; the crawler and context caches keep session boot cheap. INSIDE iff its subject is STORED KNOWLEDGE — persisting it, indexing it, retrieving it." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:status "operating" ;
+    chorus:asIs "Live and load-bearing for every session boot (context inject) and every /chorus search. Known hard truths: one Fuseki instance on one machine serves both products; the 1.1GB FTS index once blocked the event loop (#3086 moved it off-loop); anonymous LAN writes remain possible pending the Shiro/DAL work (#3564 lineage)." ;
+    chorus:toBe "Store writes go through governed doors only (DAL for model graphs, harvest loaders for runtime graphs, fuseki-auth everywhere); replies delivered over Buzz index into search automatically (#3893 Wren leg); backup/compact jobs stay boring and observable." ;
+    chorus:implementationPlan "(1) #3893's search fan-out lands with Wren's subscriber. (2) Write-governance follow-through per the security substrate work (#3726 lineage). (3) Keep compact/backup under observability's watch rather than silent cron." ;
+    chorus:pathToClose "Closed when every write surface is a governed door and reply/search freshness is proven by the delivery canary." ;
+    chorus:gaps "Anonymous LAN write path still open at the store level. Single instance, single machine. hasDesignDoc unfilled." ;
+    chorus:notInScope "Model governance semantics (Athena). Message delivery (Clearing/Buzz). Dashboards over the data (Observability)." .
+
+chorus:service-werk a chorus:Service ;
+    rdfs:label "Werk" ; chorus:label "Werk" ;
+    chorus:overview "The pipeline that moves code from card to canonical — Jeff's cut: 'we are missing werk.' The Rust verb crates (werk-pull … werk-accept) are the state-transition gates; chorus-mcp (:3350) is the door roles invoke them through; act runs werk.yml as the one pipeline config; the board (vikunja) holds the cards the pipeline serves. INSIDE iff its subject is a STATE TRANSITION of work: pull, commit, test, demo, merge, accept." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:status "operating" ;
+    chorus:asIs "Live: one trigger (chorus_werk), seven verbs, ephemeral per-card worktrees, blocking test floor (#3190), two-tier merge proof, DEC-048 accept authority, werk.phase events rendering in Jeff's streams since today (#3884). Hard truths from this week: a run pin can claim landed while unmerged (caught by the integrity refusal), and run state still lives in pins + spine rather than the graph." ;
+    chorus:toBe "Pipelines and runs are model instances (the Pipeline domain sketch with Silas): typed steps with implementedBy + negativeFixture edges, runs with per-step metadata, pulse holding open runs as live state — loop position queryable, not archaeological." ;
+    chorus:implementationPlan "(1) #3896 (Silas) lands the step shape; werk-* steps follow. (2) Run metadata projection from spine to graph. (3) Pulse renders open runs (the loop-state surface from Jeff's 2026-08-15 framing)." ;
+    chorus:pathToClose "Closed when a run's position is a query, not a log grep, and every gate the pipeline enforces is declared with its negative fixture." ;
+    chorus:gaps "Run state not in the graph. Landed-but-unmerged contradiction still possible at pin level (refused on read, not prevented at write). hasDesignDoc unfilled." ;
+    chorus:notInScope "What the code does once deployed (each service owns its runtime). Card content authoring (roles). Model mutations (Athena)." .
+
+chorus:service-gathering-app a chorus:Service ;
+    rdfs:label "Gathering App" ; chorus:label "Gathering App" ;
+    chorus:overview "Jeff's personal-infrastructure product as experienced in the browser — the Express app on :3000 with photos, music, property, garden, self — plus the bedroom media/AI cluster Jeff placed inside it: images-api (server + video), ollama (LLM inference), navidrome (music streaming), the self-ai player experiences. INSIDE iff Jeff experiences it as Gathering content or the compute that serves that content." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:status "operating" ;
+    chorus:asIs "Live on library (app, blockverse, edge, mysql, wordpress) with the media/AI cluster on bedroom over NFS + SSH ops (DEC-089). CI green as of #3856. Bedroom units were invisible to the first harvester passes — three plist dirs + full-argv evidence fixed that in this card." ;
+    chorus:toBe "Demo env can stand up the app's true dependency set because this registry names it; bedroom units carry the same lastObserved freshness as library's; media pipelines log to Loki like everything else." ;
+    chorus:implementationPlan "(1) This card's harvester LaunchAgents on both machines keep the registry fresh. (2) Map remaining bedroom units as they're understood (volume-keepalive, sexuality-player mapped; toolkit/GoogleUpdater stay external). (3) Feed the demo-env dependency list from /serviceinstances." ;
+    chorus:pathToClose "Closed when the app's full runtime dependency set is readable from the registry and the demo env consumes it." ;
+    chorus:gaps "Bedroom freshness depends on SSH reachability. hasDesignDoc unfilled." ;
+    chorus:notInScope "Coordination surfaces (Clearing). The store itself (Knowledge Store). Observability agents on the same boxes." .
+
+chorus:service-observability a chorus:Service ;
+    rdfs:label "Observability" ; chorus:label "Observability" ;
+    chorus:overview "Borg's seeing half — Jeff's cut: 'observability and security are borg.' Prometheus, Grafana, Loki, promtail on both machines; alertmanager + the alert-notifier/runner delivery chain; the probe fleet (deep-health, chorus-health, bedroom-health, heartbeat, eventloop, clearing-probe, nudge-health, blackbox) and the exporters (node, mysqld, launchagent-metrics, harvest-exporter, nifi-metrics). INSIDE iff its subject is WATCHING other services and saying so — metrics, logs, probes, alerts." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:status "operating" ;
+    chorus:asIs "Live across both machines; Loki is the durable log superset (tailing files is ephemeral); the probe fleet's recurring false-fire classes were each diagnosed 2026-07-10 — fragile probes, not outages. Hard truth: 26 standing warnings on the health surface reads as noise, and a broken monitor is a real defect to fix or retire, not weather." ;
+    chorus:toBe "Zero-red nightly stays the bar; every probe that fires names a real state; run/loop positions join the watched surface via pulse (the loop-state work), so 'is it turning' is observable for pipelines the way 'is it up' is for services." ;
+    chorus:implementationPlan "(1) Nightly triage discipline continues (#3890 lineage). (2) Warning-count burn-down owned by Silas. (3) Pulse run-state feed lands with the Pipeline domain." ;
+    chorus:pathToClose "Closed when the standing-warning count is a worked queue, not a backdrop, and loop state is a first-class watched surface." ;
+    chorus:gaps "26 standing warnings. Probe fleet still contains known-fragile members. hasDesignDoc unfilled." ;
+    chorus:notInScope "Fixing what it observes (owning services). Identity/authN (Identity). The spine's persistence (Knowledge Store)." .
+
+chorus:service-integration a chorus:Service ;
+    rdfs:label "Integration" ; chorus:label "Integration" ;
+    chorus:overview "Convergence's moving belt — Jeff's cut: 'nifi is convergence 100%.' Apache NiFi on bedroom carries bulk data flows between sources and the Gathering store; the harvest/ICD discipline (no harvester without a provider contract) governs what may flow. INSIDE iff its subject is MOVING data between systems under contract — flows, harvesters, ingestion." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:status "operating" ;
+    chorus:asIs "NiFi live on bedroom (com.apache.nifi, with nifi-metrics exporting to observability). ICD gate enforces provider-before-harvester at edit time. Jeff's open framing: possibly a shared-integration project alongside shared-security and shared-observability." ;
+    chorus:toBe "Flows declared as data with contracts (ICD instances) the same way pipelines declare steps; a flow's freshness and volume visible in observability; the shared-integration project decision recorded." ;
+    chorus:implementationPlan "(1) Inventory NiFi flows against ICD providers. (2) Decide shared-integration placement with Jeff. (3) Wire flow metrics into the standard dashboards." ;
+    chorus:pathToClose "Closed when every active flow maps to an ICD provider and the placement decision is recorded." ;
+    chorus:gaps "Flow inventory not yet mapped to ICDs. Placement decision open. hasDesignDoc unfilled." ;
+    chorus:notInScope "Store persistence (Knowledge Store). App-side rendering of converged data (Gathering App). One-shot scripts that aren't contracted flows." .

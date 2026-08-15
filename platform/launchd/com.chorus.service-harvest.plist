@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.chorus.service-harvest</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/service-harvest-cycle.sh</string>
+  </array>
+  <key>StartInterval</key><integer>3600</integer>
+  <key>StandardOutPath</key><string>/tmp/service-harvest.log</string>
+  <key>StandardErrorPath</key><string>/tmp/service-harvest.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>CHORUS_ROOT</key><string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+  </dict>
+</dict>
+</plist>
