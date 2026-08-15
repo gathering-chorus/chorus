@@ -40,6 +40,30 @@ interface SessionState {
   watcher?: fs.FSWatcher;
 }
 
+/**
+ * #3887 — render a slash command as the command, not as its harness envelope.
+ *
+ * Claude Code wraps an invocation in `<command-message>`, `<command-name>` and
+ * `<command-args>`. Jeff typed `/fuc !!!`; the room showed him the markup.
+ * Third time he has named it.
+ *
+ * Exported and pure so the room's behaviour can be proven without a session
+ * file — and so the string and array paths cannot drift apart again.
+ */
+export function normalizeCommandText(raw: string): string {
+  const t = raw.trim();
+  const name = t.match(/<command-name>([^<]+)<\/command-name>/);
+  if (!name) {
+    // No command envelope: ordinary typing, returned untouched. Stripping
+    // angle brackets here would eat any message that legitimately quotes XML.
+    return t;
+  }
+  const args = t.match(/<command-args>([^<]*)<\/command-args>/);
+  const cmd = name[1].trim();
+  const rest = args ? args[1].trim() : '';
+  return rest ? `${cmd} ${rest}` : cmd;
+}
+
 export class SessionTailer {
   private router: MessageRouter;
   private sessions: Map<string, SessionState> = new Map();
@@ -199,7 +223,12 @@ export class SessionTailer {
   }
 
   private extractUserText(rawContent: unknown): string {
-    if (typeof rawContent === 'string') return rawContent.trim();
+    // #3887 — a single-string content carries the SAME command envelope as the
+    // array form, and this branch used to hand it to the room verbatim. That is
+    // how Jeff saw `<command-message>fuc</command-message>` as a chat bubble:
+    // the array path had cleaned commands up since #3852, and nobody noticed the
+    // string path bypassed all of it.
+    if (typeof rawContent === 'string') return normalizeCommandText(rawContent);
     if (!Array.isArray(rawContent)) return '';
     let slashCmd = '';
     const humanParts: string[] = [];
