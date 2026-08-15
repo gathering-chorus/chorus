@@ -17,4 +17,4 @@
 # of an ambient surprise on release day.
 [toolchain]
 channel = "1.97.1"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "llvm-tools-preview"]  # #3890: coverage silently broken since the pin — cargo llvm-cov needs it
