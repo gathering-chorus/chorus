@@ -61,7 +61,13 @@ for attempt in 1 2 3 4 5; do
 done
 [ "$mount_ok" = 1 ] || { log "ERROR: mount_apfs failed after 5 attempts for $SNAP: $mount_err"; spine ops.backup.fuseki.failed reason=mount-failed detail="$mount_err"; exit 1; }
 SRC="$MNT/$SNAP_REL"
-[ -d "$SRC/Data-0003" ] || { log "ERROR: snapshot missing TDB2 dir at $SRC"; spine ops.backup.fuseki.failed reason=no-tdb2-in-snapshot; exit 1; }
+# #3888 — TDB2 presence, not a hardcoded generation: the old check required
+# Data-0003 (a compaction-count coincidence of the bloated store) and failed
+# the FIRST post-#3799 right-sized backup, whose fresh store is Data-0001.
+# Any Data-* generation counts; an empty/absent store still fails loud.
+if ! compgen -G "$SRC/Data-*" > /dev/null; then
+  log "ERROR: snapshot missing TDB2 Data-* dir at $SRC"; spine ops.backup.fuseki.failed reason=no-tdb2-in-snapshot; exit 1;
+fi
 
 # 3. rsync the frozen store to bedroom (dated dir)
 DEST="$DEST_BASE/fuseki-pods-${SNAP_DATE}"
