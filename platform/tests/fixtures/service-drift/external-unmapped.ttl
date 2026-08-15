@@ -1,0 +1,14 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3870 fixture: observed-not-owned (external true), no deploys edge.
+# NOT an unmapped finding — external is a separate count (wren). The paired
+# negative proof is unmapped-instance.ttl: same shape minus external → RED.
+<urn:test:instance-library-com.microsoft.teams>
+    a chorus:ServiceInstance ;
+    rdfs:label "com.microsoft.teams (library)" ;
+    chorus:launchdLabel "com.microsoft.teams" ;
+    chorus:runState "running" ;
+    chorus:external true ;
+    chorus:lastObserved "2099-01-01T00:00:00Z"^^xsd:dateTime .

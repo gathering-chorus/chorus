@@ -1,0 +1,3 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+chorus:service-example a chorus:Service ; rdfs:label "Example Service" .

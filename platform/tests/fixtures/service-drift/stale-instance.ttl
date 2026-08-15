@@ -1,0 +1,14 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3870 fixture: mapped and nominally running, but lastObserved is ancient —
+# older than any plausible cutoff. Check must go RED as stale.
+<urn:test:service-example> a chorus:Service ; rdfs:label "Example Service" .
+<urn:test:instance-library-com.example.stale>
+    a chorus:ServiceInstance ;
+    rdfs:label "com.example.stale (library)" ;
+    chorus:launchdLabel "com.example.stale" ;
+    chorus:runState "running" ;
+    chorus:deploys <urn:test:service-example> ;
+    chorus:lastObserved "2001-01-01T00:00:00Z"^^xsd:dateTime .

@@ -1,0 +1,11 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3870 fixture (wren condition 1): a Service claims a label nobody observed.
+# Drift must go RED and name it.
+<urn:chorus:mapping-stale-com.test.ghost>
+    a chorus:MappingStaleness ;
+    rdfs:label "stale mapping: com.test.ghost maps to service-example but no instance was observed" ;
+    chorus:launchdLabel "com.test.ghost" ;
+    chorus:lastObserved "2099-01-01T00:00:00Z"^^xsd:dateTime .

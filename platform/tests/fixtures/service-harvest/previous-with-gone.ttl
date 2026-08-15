@@ -1,0 +1,10 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+<urn:chorus:instance-library-com.test.gone>
+    a chorus:ServiceInstance ;
+    rdfs:label "com.test.gone (library)" ;
+    chorus:launchdLabel "com.test.gone" ;
+    chorus:onMachine chorus:library ;
+    chorus:runState "running" ;
+    chorus:lastObserved "2026-08-13T00:00:00Z"^^xsd:dateTime .

@@ -1,0 +1,13 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3870 fixture: evidence-unavailable — we could not look. NOT an unmapped
+# finding (paired with unmapped-instance.ttl which IS). Ops gap, own count.
+<urn:test:instance-bedroom-com.mystery.remote>
+    a chorus:ServiceInstance ;
+    rdfs:label "com.mystery.remote (bedroom)" ;
+    chorus:launchdLabel "com.mystery.remote" ;
+    chorus:runState "running" ;
+    chorus:evidenceState "unknown" ;
+    chorus:lastObserved "2099-01-01T00:00:00Z"^^xsd:dateTime .
