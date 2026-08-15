@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- #3891: both paths are internal, never untrusted input — logFile comes from werk-run-store.runLogPath (RUNS_DIR + sanitized runId) and spinePath from CHORUS_LOG_FILE env/homedir, the same justification as pulse service.ts */
 /**
  * werk-phase.ts — #3883: a running pipeline is visible in Jeff's streams.
  *
