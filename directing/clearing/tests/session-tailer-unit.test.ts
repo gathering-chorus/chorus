@@ -298,14 +298,18 @@ describe('SessionTailer.findSessionFile', () => {
     expect((t as any).findSessionFile('jeff')).toBeNull();
   });
 
-  test('finds newest .jsonl across matching project dirs', () => {
-    fs.mkdirSync(path.join(TMP, 'project-kade-old'));
-    fs.mkdirSync(path.join(TMP, 'project-kade-new'));
-    const oldFile = path.join(TMP, 'project-kade-old/a.jsonl');
-    const newFile = path.join(TMP, 'project-kade-new/b.jsonl');
+  // #3890/#3900 — matching is EXACT on the role's canonical slug (substring
+  // matching let empty werk transcript dirs shadow real sessions: the
+  // message-loss outage). Fixtures use the real slugs; the newest-file rule
+  // now applies WITHIN the one matching dir, and a werk-style dir containing
+  // the role name is the must-NOT-match case.
+  test('finds newest .jsonl within the role\'s exact canonical dir', () => {
+    const dir = path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade');
+    fs.mkdirSync(dir);
+    const oldFile = path.join(dir, 'a.jsonl');
+    const newFile = path.join(dir, 'b.jsonl');
     fs.writeFileSync(oldFile, '');
     fs.writeFileSync(newFile, '');
-    // Force newer mtime on newFile
     const now = Date.now();
     fs.utimesSync(oldFile, new Date(now - 60_000), new Date(now - 60_000));
     fs.utimesSync(newFile, new Date(now), new Date(now));
@@ -316,16 +320,28 @@ describe('SessionTailer.findSessionFile', () => {
   });
 
   test('skips project dirs that do not match the role', () => {
-    fs.mkdirSync(path.join(TMP, 'project-silas'));
-    fs.writeFileSync(path.join(TMP, 'project-silas/a.jsonl'), '');
+    const dir = path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-roles-silas');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'a.jsonl'), '');
     const { SessionTailer } = load();
     const t = new SessionTailer(makeRouter() as any);
     expect((t as any).findSessionFile('kade')).toBeNull();
   });
 
-  test('tolerates non-jsonl files and unreadable project dirs', () => {
-    fs.mkdirSync(path.join(TMP, 'kade-proj'));
-    fs.writeFileSync(path.join(TMP, 'kade-proj/not-a-session.txt'), 'x');
+  test('NEGATIVE PROOF (#3890): a werk dir CONTAINING the role name must not shadow', () => {
+    // The outage class: an empty werk transcript dir, newest by mtime, matched
+    // by substring and shadowed the real session. Exact match must refuse it.
+    fs.mkdirSync(path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-werk-kade-3882'));
+    fs.writeFileSync(path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-werk-kade-3882', 'a.jsonl'), '');
+    const { SessionTailer } = load();
+    const t = new SessionTailer(makeRouter() as any);
+    expect((t as any).findSessionFile('kade')).toBeNull();
+  });
+
+  test('tolerates non-jsonl files in the matching dir', () => {
+    const dir = path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, 'not-a-session.txt'), 'x');
     const { SessionTailer } = load();
     const t = new SessionTailer(makeRouter() as any);
     expect((t as any).findSessionFile('kade')).toBeNull();
@@ -349,9 +365,13 @@ describe('SessionTailer.start and getSessionCount', () => {
   });
 
   test('start registers each role that has a session file', () => {
-    for (const role of ['kade', 'silas', 'wren']) {
-      fs.mkdirSync(path.join(TMP, role));
-      fs.writeFileSync(path.join(TMP, role, 'a.jsonl'), '');
+    for (const slug of [
+      '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade',
+      '-Users-jeffbridwell-CascadeProjects-chorus-roles-silas',
+      '-Users-jeffbridwell-CascadeProjects-chorus-roles-wren',
+    ]) {
+      fs.mkdirSync(path.join(TMP, slug));
+      fs.writeFileSync(path.join(TMP, slug, 'a.jsonl'), '');
     }
     const { SessionTailer } = load();
     const t = new SessionTailer(makeRouter() as any);
@@ -370,7 +390,7 @@ describe('SessionTailer.readNewEntries', () => {
   });
 
   test('reads appended entries from known offset and dispatches processLine', () => {
-    const roleDir = path.join(TMP, 'kade');
+    const roleDir = path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade');
     fs.mkdirSync(roleDir);
     const f = path.join(roleDir, 'a.jsonl');
     fs.writeFileSync(f, '');
@@ -398,7 +418,7 @@ describe('SessionTailer.readNewEntries', () => {
   });
 
   test('readNewEntries handles partial trailing line (no final newline)', () => {
-    const roleDir = path.join(TMP, 'kade');
+    const roleDir = path.join(TMP, '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade');
     fs.mkdirSync(roleDir);
     const f = path.join(roleDir, 'a.jsonl');
     fs.writeFileSync(f, '');
