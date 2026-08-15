@@ -26,11 +26,19 @@ export interface DriftInput {
   cardId: number;
   /** newest spine event from this role, any kind (heartbeat, tool, reply) */
   lastRoleActivityMs: number;
-  /** newest CARD-ATTRIBUTED event: werk-commit, pipeline run, card comment */
+  /** newest CARD-ATTRIBUTED event: werk-commit, pipeline run, card comment.
+   *  0 = never OBSERVED — which is unknown, not "idle since epoch". */
   lastCardActivityMs: number;
   nowMs: number;
   /** when this card last fired wip.drift, if the card is untouched since */
   priorDriftAtMs: number | null;
+  /** when observation of this card began (watcher start / card first seen).
+   *  First live firing (2026-08-14 18:32, on its own author): the spine tail
+   *  is ~6 min deep while the window is 4h — "no card event in view" is NOT
+   *  "no card event in 4h". The check must not fire until it has WATCHED a
+   *  full window; idle counts from observation start, never epoch (the
+   *  "496319h" nudge). */
+  observedSinceMs: number;
 }
 
 export interface Drift {
@@ -52,7 +60,12 @@ export interface Drift {
 export function detectWipDrift(i: DriftInput): Drift | null {
   const roleActive = i.nowMs - i.lastRoleActivityMs <= ROLE_ACTIVE_MS;
   if (!roleActive) return null;
-  const idleCardMs = i.nowMs - i.lastCardActivityMs;
+  // Idle counts from the newest of (card activity, observation start): a
+  // window we did not watch is UNKNOWN, never idle. This both prevents the
+  // fire-on-first-sight false positive and caps the reported number at the
+  // observed span — no more since-epoch hours.
+  const idleFrom = Math.max(i.lastCardActivityMs, i.observedSinceMs);
+  const idleCardMs = i.nowMs - idleFrom;
   if (idleCardMs <= DRIFT_WINDOW_MS) return null;
   const priorStands = i.priorDriftAtMs !== null && i.priorDriftAtMs > i.lastCardActivityMs;
   return {
@@ -82,25 +95,19 @@ export function startWipDriftWatch(
   intervalMs = 10 * 60 * 1000,
   now: () => number = Date.now,
 ): () => void {
-  const priorDrift = new Map<string, number>(); // `${role}:${card}` → firedAt
+  // #3880 fix (first live firing was a false positive on its own author):
+  // the spine tail covers minutes, the window is hours — so ACCUMULATE the
+  // newest-seen timestamps across ticks instead of trusting one shallow read,
+  // and date observation per card so the first window must be genuinely
+  // WATCHED before anything fires.
+  const state: WatchState = {
+    priorDrift: new Map(), seenCard: new Map(), seenRole: new Map(), observedSince: new Map(),
+  };
   const timer = setInterval(() => {
     void (async () => {
       try {
         for (const c of await readWip()) {
-          const role = c.owner.toLowerCase();
-          const a = await readActivity(role, c.id);
-          const key = `${role}:${c.id}`;
-          const d = detectWipDrift({
-            role, cardId: c.id, nowMs: now(),
-            lastRoleActivityMs: a.lastRoleActivityMs,
-            lastCardActivityMs: a.lastCardActivityMs,
-            priorDriftAtMs: priorDrift.get(key) ?? null,
-          });
-          if (!d) { if (a.lastCardActivityMs > (priorDrift.get(key) ?? 0)) priorDrift.delete(key); continue; }
-          const fired = priorDrift.get(key) ?? 0;
-          if (now() - fired < DRIFT_WINDOW_MS) continue; // one nudge per window
-          priorDrift.set(key, now());
-          await emitDrift(d);
+          await tickOneCard(c, state, readActivity, emitDrift, now);
         }
       } catch (e) {
         console.error('[wip-drift] scan failed:', e instanceof Error ? e.message : e);
@@ -108,4 +115,38 @@ export function startWipDriftWatch(
     })();
   }, intervalMs);
   return () => clearInterval(timer);
+}
+
+interface WatchState {
+  priorDrift: Map<string, number>;    // `${role}:${card}` → firedAt
+  seenCard: Map<string, number>;      // key → newest card event ever seen
+  seenRole: Map<string, number>;      // role → newest role event ever seen
+  observedSince: Map<string, number>; // key → when we started watching
+}
+
+/** One card, one tick: merge newest-seen, detect, fire at most once per window. */
+async function tickOneCard(
+  c: WipCard, s: WatchState, readActivity: ReadActivity, emitDrift: EmitDrift, now: () => number,
+): Promise<void> {
+  const role = c.owner.toLowerCase();
+  const a = await readActivity(role, c.id);
+  const key = `${role}:${c.id}`;
+  if (!s.observedSince.has(key)) s.observedSince.set(key, now());
+  s.seenCard.set(key, Math.max(s.seenCard.get(key) ?? 0, a.lastCardActivityMs));
+  s.seenRole.set(role, Math.max(s.seenRole.get(role) ?? 0, a.lastRoleActivityMs));
+  const d = detectWipDrift({
+    role, cardId: c.id, nowMs: now(),
+    lastRoleActivityMs: s.seenRole.get(role) ?? 0,
+    lastCardActivityMs: s.seenCard.get(key) ?? 0,
+    priorDriftAtMs: s.priorDrift.get(key) ?? null,
+    observedSinceMs: s.observedSince.get(key) ?? now(),
+  });
+  if (!d) {
+    if (a.lastCardActivityMs > (s.priorDrift.get(key) ?? 0)) s.priorDrift.delete(key);
+    return;
+  }
+  const fired = s.priorDrift.get(key) ?? 0;
+  if (now() - fired < DRIFT_WINDOW_MS) return; // one nudge per window
+  s.priorDrift.set(key, now());
+  await emitDrift(d);
 }

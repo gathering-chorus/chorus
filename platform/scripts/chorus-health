@@ -452,6 +452,49 @@ for plist in "$STALE_BIN_PLIST_DIR"/com.chorus.*.plist; do
   fi
 done
 
+# spine-one-clock (#3880 / ADR-058 discipline). Every spine line's timestamp
+# must be offset-ISO on the LOCAL (Boston) clock. Three formats coexisted for
+# months (chorus-events offset · pulse UTC-Z · context.inject `ts`-only) and
+# every fold/sort mixed +4h-apart events — the daily "timestamp issue" Jeff
+# called groundhog day 2026-08-14. Proven RED on that day's live spine (173
+# off-format lines) before the writer fixes landed. Samples the tail; any
+# UTC-Z, naive, or missing timestamp FAILS naming the writer + event.
+SPINE_CLOCK_LOG="${SPINE_CLOCK_LOG:-$HOME/.chorus/chorus.log}"
+if [ -f "$SPINE_CLOCK_LOG" ]; then
+  CLOCK_REPORT=$(tail -c 524288 "$SPINE_CLOCK_LOG" | python3 -c '
+import sys, json, re, collections
+bad = collections.Counter()
+total = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line: continue
+    try: e = json.loads(line)
+    except Exception: continue
+    total += 1
+    ts = e.get("timestamp", "")
+    writer = e.get("appName") or e.get("role") or e.get("component") or "?"
+    ev = e.get("event", "?")
+    if not ts: bad[(writer, ev, "MISSING")] += 1
+    elif ts.endswith("Z"): bad[(writer, ev, "utc-Z")] += 1
+    elif not re.search(r"[+-]\d{2}:?\d{2}$", ts): bad[(writer, ev, "naive")] += 1
+n = sum(bad.values())
+print(f"BADCOUNT={n} TOTAL={total}")
+for (w, ev, f), c in bad.most_common(6):
+    print(f"  {c:5}  {w} · {ev} · {f}")
+' 2>/dev/null)
+  BADN=$(echo "$CLOCK_REPORT" | grep -o "BADCOUNT=[0-9]*" | cut -d= -f2)
+  if [ -z "$BADN" ]; then
+    warn "spine-one-clock" "could not sample the spine tail — check did not run (never a vacuous pass)"
+  elif [ "$BADN" = "0" ]; then
+    pass "spine-one-clock" "all sampled spine lines offset-ISO"
+  else
+    fail "spine-one-clock" "$BADN off-format spine line(s) — writers still off the one clock:"
+    echo "$CLOCK_REPORT" | grep -v BADCOUNT
+  fi
+else
+  warn "spine-one-clock" "spine missing at $SPINE_CLOCK_LOG — cannot verify (never a vacuous pass)"
+fi
+
 # ─── INTERACTION / CONTEXT ───────────────────────────────────────────────────
 
 # session-start envelope completeness (principles_inject not stale in last 24h)

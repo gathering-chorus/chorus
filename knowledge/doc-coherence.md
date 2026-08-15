@@ -1,8 +1,8 @@
-# Doc coherence report — 2026-08-14 17:30
+# Doc coherence report — 2026-08-14 19:33
 
 content-dup-groups: 13
 basename-dup-groups: 37
-broken-hrefs: 1
+broken-hrefs: 17
 
 ## Content-hash duplicates
 
@@ -169,5 +169,21 @@ Same filename at multiple paths with different content. Catalog `seenHref`/`seen
 Catalog hrefs returning non-2xx / non-302:
 
 ```
-404 /roles/silas/adr/ADR-058-athena-verb-family-and-governance-checks.md
+000 /system/docs/API
+000 /roles/silas/adr/ADR-054-role-identity-authz-seam.md
+000 /designing/docs/athena-49-subdomains.html
+000 /designing/docs/agent-experience.md
+000 /designing/docs/athena-as-modeling-platform.html
+000 /designing/docs/blocking-rules-audit.html
+000 /roles/wren/decisions/board-api-verb-model.md
+000 /designing/docs/design-gate-definitions.html
+000 /system/docs/BOOK_CATALOG_WORKFLOW
+000 /designing/docs/athena-runtime-service-map.html
+000 /skills/cards/bouncer-flow.md
+000 /designing/docs/chorus-readme.html
+000 /designing/docs/card-id-propagation.html
+000 /designing/docs/canonical-namespaces.md
+000 /designing/docs/domain-mockup-cards.html
+000 /designing/docs/athena-v2-instance-classification.html
+000 /designing/docs/chorus-reference-model.html
 ```
