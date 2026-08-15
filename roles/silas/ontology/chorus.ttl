@@ -4341,15 +4341,18 @@ chorus:services-domain chorus:definesVocabulary chorus:Service , chorus:ServiceI
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
 # FLAG(silas): hosting-domain choices are kade's best mapping to existing
 # SubDomains; rule at gate-arch and I re-point.
+# Silas gate-arch ruling 2026-08-15 15:15 applied: v2 step grammar, ruled domains.
 chorus:services-domain chorus:hosts chorus:service-athena .        # model surface
-chorus:service-athena chorus:atStep chorus:Designing .
+chorus:service-athena chorus:atStep chorus:value-stream-step-designing .
 chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+memory+knowledge
-chorus:service-knowledge-store chorus:atStep chorus:Reflecting .
+chorus:service-knowledge-store chorus:atStep chorus:value-stream-step-reflecting .
 chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
-chorus:service-werk chorus:atStep chorus:Building .
-chorus:chorus-domain chorus:hosts chorus:service-gathering-app .   # FLAG(silas): gathering product domain IRI?
-chorus:service-gathering-app chorus:atStep chorus:Building .
-chorus:chorus-domain chorus:hosts chorus:service-observability .   # FLAG(silas): borg domain IRI?
-chorus:service-observability chorus:atStep chorus:Proving .
+chorus:service-werk chorus:atStep chorus:value-stream-step-building .
+# gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
+# to a gathering product domain the day one exists in this graph.
+chorus:infrastructure-domain chorus:hosts chorus:service-gathering-app .
+chorus:service-gathering-app chorus:atStep chorus:value-stream-step-building .
+chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
+chorus:service-observability chorus:atStep chorus:value-stream-step-proving .
 chorus:convergence-domain chorus:hosts chorus:service-integration .
-chorus:service-integration chorus:atStep chorus:Building .
+chorus:service-integration chorus:atStep chorus:value-stream-step-building .
