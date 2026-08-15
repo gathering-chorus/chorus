@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- #3890: spine append target is CHORUS_LOG_FILE env / homedir chorus.log, an internal fixed path, never untrusted input (same justification as pulse service.ts + werk-phase.ts) */
 /**
  * reply-delivery.ts — #3864: the Clearing half of reply-delivery correlation.
  *
