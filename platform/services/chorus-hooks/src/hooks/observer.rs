@@ -188,7 +188,13 @@ pub async fn observe(input: &HookInput, _state: &AppState) {
             card: card.clone(),
         };
 
-        write_observation(&obs).await;
+        // #3884 — quiet-class split: reads/searches show in STREAMS (the
+        // observations file) but do NOT emit spine events. The spine is the
+        // permanent memory layer (never rotated); per-Read events would flood
+        // it — and the werk membrane caught exactly that: bats fixtures whose
+        // Read turns suddenly wrote production spine from build context.
+        let spine_worthy = !matches!(tool, "Read" | "Grep" | "Glob");
+        write_observation(&obs, spine_worthy).await;
     }
 
     // #2891 — On error, emit observer.error spine event paired with the
@@ -548,7 +554,7 @@ fn digest_tool_call(input: &HookInput) -> String {
 }
 
 /// Write an observation to the role's observation log
-async fn write_observation(obs: &Observation) {
+async fn write_observation(obs: &Observation, emit_spine: bool) {
     let dir = PathBuf::from(SCAN_DIR);
     let _ = tokio::fs::create_dir_all(&dir).await;
 
@@ -571,7 +577,10 @@ async fn write_observation(obs: &Observation) {
     // Rotate if too large
     rotate_if_needed(&log_path, &obs.role).await;
 
-    // Log to spine
+    // Log to spine (skipped for quiet-class digests — see #3884 split above)
+    if !emit_spine {
+        return;
+    }
     let role = obs.role.clone();
     let digest = obs.digest.clone();
     tokio::spawn(async move {

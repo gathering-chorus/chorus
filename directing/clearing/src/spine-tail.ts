@@ -27,6 +27,7 @@ interface LogEntry {
   timestamp?: string;
   role?: string;
   event?: string;
+  card_id?: string | number;
   summary?: string;
   action?: string;
   tool_count?: string | number;
@@ -78,22 +79,22 @@ function parseNudgeEntry(entry: LogEntry, role: string): StreamLine | null {
 // any session, so without these Jeff's pane shows watcher sleeps during the
 // most important minutes. Closed set, NOT a spine firehose: everything else
 // still drops (negative-proof tested).
-const WERK_PHASE_EVENTS: Record<string, string> = {
-  'commit.started': '⚙ werk: commit',
-  'build.artifact.hashed': '⚙ werk: build',
-  'env.up.completed': '⚙ werk: env up',
-  'demo.test_result': '⚙ werk: tests',
-  'demo.presented': '🎬 werk: demo presented',
-  'merge.approved': '⚙ werk: merge approved',
-  'deploy.completed': '🚀 werk: deploy complete',
-  'card.branch.closed': '✅ werk: landed',
-  'werk.failed': '🔴 werk: failed',
-};
+const WERK_PHASE_EVENTS = new Map<string, string>([
+  ['commit.started', '⚙ werk: commit'],
+  ['build.artifact.hashed', '⚙ werk: build'],
+  ['env.up.completed', '⚙ werk: env up'],
+  ['demo.test_result', '⚙ werk: tests'],
+  ['demo.presented', '🎬 werk: demo presented'],
+  ['merge.approved', '⚙ werk: merge approved'],
+  ['deploy.completed', '🚀 werk: deploy complete'],
+  ['card.branch.closed', '✅ werk: landed'],
+  ['werk.failed', '🔴 werk: failed'],
+]);
 
 function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
-  const label = WERK_PHASE_EVENTS[entry.event ?? ''];
+  const label = WERK_PHASE_EVENTS.get(entry.event ?? '');
   if (!label) return null;
-  const card = (entry as Record<string, unknown>)['card_id'];
+  const card = entry.card_id;
   return {
     ts: entry.timestamp ?? '',
     role,
@@ -110,7 +111,7 @@ function parseLogEntry(entry: LogEntry): StreamLine | null {
   if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
-  if (WERK_PHASE_EVENTS[event]) return parseWerkEntry(entry, role);
+  if (WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
   return null;
 }
 
