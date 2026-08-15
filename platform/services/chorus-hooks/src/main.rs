@@ -1049,7 +1049,7 @@ async fn stop_hook(
         }
     }
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
-    let response = hooks::autonomy_guard::check(&input, &state).await;
+    let mut response = hooks::autonomy_guard::check(&input, &state).await;
 
     // #3218 — Stop-hook backstop: a role cannot end a turn / go idle while it
     // OWES a peer a response (the turn-boundary half; PreToolUse is the finer
@@ -1174,6 +1174,15 @@ async fn stop_hook(
                 ],
             )
             .await;
+            // #3893 — deliver the reply itself over Buzz (Jeff: "do not build
+            // a new custom delivery path" — the relay IS the path). All
+            // branching lives in buzz_reply::deliver_and_emit; Some(warning)
+            // means the failure must be LOUD on this role's own terminal.
+            if let Some(warn) = hooks::buzz_reply::deliver_and_emit(&role, &text, &hash).await {
+                if response.exit_code == 0 && response.stderr.is_none() {
+                    response = HookResponse::warn_stderr(&warn);
+                }
+            }
         }
     }
 
