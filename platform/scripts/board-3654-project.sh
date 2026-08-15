@@ -51,7 +51,11 @@ if [ "${RESEED:-0}" != "1" ]; then
   # anon read (query endpoint is open; only updates need the cred). Query built
   # in a var + apostrophe-free (STRAFTER not REPLACE) — the $() parser chokes on
   # nested quotes (same class as the Won-t-Do heredoc break).
-  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rseq WHERE { GRAPH <urn:chorus:instances> { { ?ch a chorus:Chunk ; chorus:slug ?slug ; chorus:roleSequence ?rseq } UNION { ?m a chorus:ChunkMembership ; chorus:inChunk ?c2 ; chorus:rank ?rank ; chorus:hasCard ?card . ?c2 chorus:slug ?slug . BIND(STRAFTER(STR(?card), "card-") AS ?cid) } } }'
+  # #3898 — ?own is fetched because roleSequence collision is decided per ROLE.
+  # Without it the newcomer ordinal was computed from only those chunks that
+  # still have open cards, so a role whose top chunk had emptied got a duplicate
+  # handed to it and the projection refused its own write.
+  Q='PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?slug ?cid ?rank ?rseq ?own WHERE { GRAPH <urn:chorus:instances> { { ?ch a chorus:Chunk ; chorus:slug ?slug ; chorus:roleSequence ?rseq . OPTIONAL { ?ch chorus:ownedBy ?ownIri . BIND(STRAFTER(STR(?ownIri), "role-") AS ?own) } } UNION { ?m a chorus:ChunkMembership ; chorus:inChunk ?c2 ; chorus:rank ?rank ; chorus:hasCard ?card . ?c2 chorus:slug ?slug . BIND(STRAFTER(STR(?card), "card-") AS ?cid) } } }'
   existing="$(curl -s "http://localhost:3030/pods/query" --data-urlencode "query=$Q" -H "Accept: text/csv" 2>/dev/null | tail -n +2)"
 fi
 
@@ -75,12 +79,15 @@ for line in os.environ["BOARD_LISTING"].splitlines():
 
 # graph truth (preserve mode): chunk → set(card ids) + max rank; chunk → roleSequence
 known_members, max_rank, known_chunks = defaultdict(set), defaultdict(int), {}
+known_owner = {}   # #3898 — owner straight from the graph, not inferred from open cards
 for row in os.environ.get("EXISTING", "").splitlines():
     parts = row.split(",")
     if len(parts) < 4: continue
     slug, cid, rank, rseq = parts[0], parts[1], parts[2], parts[3]
+    own = parts[4] if len(parts) > 4 else ""
     if rseq:
         known_chunks[slug] = rseq
+        if own: known_owner[slug] = own
     if cid and rank:
         known_members[slug].add(cid)
         max_rank[slug] = max(max_rank[slug], int(rank))
@@ -99,9 +106,14 @@ for ch in chunks:
     if ch not in known_chunks: by_role[owner_of[ch]].append(ch)
 role_max = defaultdict(int)
 for slug, rseq in known_chunks.items():
-    # owner of an existing chunk may not be recomputable if it has no open cards; skip those
-    if slug in owner_of:
-        role_max[owner_of[slug]] = max(role_max[owner_of[slug]], int(rseq))
+    # #3898 — ownedBy from the graph first; owner_of (dominant open-card owner)
+    # only as a fallback. Skipping chunks with no open cards is what produced a
+    # duplicate ordinal: an emptied chunk still HOLDS its number.
+    # (No apostrophes in this heredoc — the $() parser chokes on them, as the
+    # note above the query says. That is how this edit first broke the file.)
+    role = known_owner.get(slug) or owner_of.get(slug)
+    if role:
+        role_max[role] = max(role_max[role], int(rseq))
 role_seq = {}
 for role, chs in by_role.items():
     ordered = sorted(chs, key=lambda c: (0 if c == "security" else 1, -len(chunks[c]), c))
