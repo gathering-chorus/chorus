@@ -485,149 +485,19 @@ else
 fi
 
 # =============================================================================
-# INSTANCE_SET (#3698, Silas-ruled) — hydrate PURE-ABox instances into
-# urn:chorus:instances. SEPARATE from and AFTER the ontology transaction above.
+# INSTANCE_SET — MOVED to athena-seed.sh (#3895).
 #
-# The two sections use the SAME per-subject additive merge (#3550: DELETE only the
-# staged subjects' triples, then INSERT staging — NEVER a whole-graph COPY/replace).
-# The ONE deliberate difference: this section carries NO retire-clause. The ontology
-# section owns the RETIRE_ABSENT domain-retirement leg (#3593 — destructively DELETEs
-# Domain/SubDomain subjects absent from staging); that destructive leg stays
-# QUARANTINED to urn:chorus:ontology and must NEVER be expressed against the instances
-# graph (it would delete every co-tenant — cards/steps/files — not in the one TTL).
-# Here: purely additive, so a co-tenant can never be deleted by construction.
-#
-# WHY a separate graph at all: value-stream instances are PURE ABox (ADR-025 →
-# urn:chorus:instances), unlike the PUNNED Domain/Service individuals (owl:Class +
-# chorus:Domain, ABox-in-ontology → urn:chorus:ontology). #3705's gathering/life
-# migration rides this same INSTANCE_SET, making that migration self-testing.
-# Full deploys only (a TTL= partial/test deploy skips instance hydration).
+# #3839 put the DAL-gated instance-seed leg (governed-writer seed + identity-
+# token mint) inside this script, violating the #3785 recovery invariant: this
+# is the RECOVERY path and must authenticate to the STORE only — never require
+# an identity token, never shell to the governed writer. (Those two names are
+# deliberately not spelled out here — the #3785 guard greps this file raw, and
+# a comment naming them would trip it. The 2026-08-06 lockout is why it exists.)
+# The instance leg now lives in platform/scripts/athena-seed.sh; werk-deploy
+# runs chorus-model-deploy.sh THEN athena-seed.sh at land, so landing still
+# seeds instances. Recovery contexts run this script alone.
+# Guarded by platform/tests/recovery-path-ungated-3785.bats.
 # =============================================================================
-if [ -z "${TTL:-}" ]; then
-  INSTANCE_GRAPH="${INSTANCE_GRAPH:-urn:chorus:instances}"
-  # #3839 — kind:path, because the door validates against the class's shape and
-  # the caller must say which class it is loading. A file carrying two kinds is
-  # listed twice, once per kind — the same file, seeded once for each.
-  INSTANCE_SET_KINDS=(
-    "value-stream:$CHORUS_ROOT/designing/data/value-stream-instances.ttl"
-    "value-stream-step:$CHORUS_ROOT/designing/data/value-stream-step-instances.ttl"
-    # #3838 — the four roles. Until that card they existed ONLY in the live
-    # store: every ownedBy and holdsRole pointed at individuals no deploy could
-    # reproduce, which is why re-seeding identity was unsafe.
-    "role:$CHORUS_ROOT/roles/wren/ontology/role-instances-3838.ttl"
-  )
-  # riot-validate each distinct file once before any write.
-  #
-  # Dedup through a plain STRING, not by reading the array back. Canonical runs
-  # bash 3.2, where `${arr[*]}` on an EMPTY array is an unbound-variable error
-  # under `set -u` — so the array-reading version died on its first iteration,
-  # every time, on the only box that matters. It ran clean here because this werk
-  # has a newer bash. That is the whole bug: the deploy is 3.2, the werk is not.
-  _seen_ttl=""
-  INSTANCE_SET=()
-  for entry in "${INSTANCE_SET_KINDS[@]}"; do
-    f="${entry#*:}"
-    case "$_seen_ttl" in
-      *"|$f|"*) ;;
-      *) INSTANCE_SET+=("$f"); _seen_ttl="${_seen_ttl}|$f|" ;;
-    esac
-  done
-  for ttl in ${INSTANCE_SET[@]+"${INSTANCE_SET[@]}"}; do
-    [ -f "$ttl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ttl" >&2; exit 1; }
-    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
-      echo "chorus-model-deploy: riot validate FAILED for INSTANCE_SET $ttl — NOT deploying instances" >&2
-      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="riot-invalid-instance" 2>/dev/null || true
-      exit 1
-    fi
-  done
-  # #3839 — instances go through THE DOOR, not around it.
-  #
-  # This used to stage each TTL with a GSP POST and merge it with a raw SPARQL
-  # transaction. That path calls no validator: every instance in the graph
-  # arrived somewhere no shape could refuse it. Proven on #3838 — chorus:uniqueGlobal
-  # on webId is real and enforced in the DAL, and Principals never travel that
-  # path, so the rule and its enforcement never meet.
-  #
-  # athena-model seed reads each class's SHACL shape, validates EVERY subject
-  # before writing anything, fails closed, and emits model.seed.refused naming
-  # the subject and the constraint that refused it.
-  #
-  # ONE call, all kinds. Each --kind/--ttl pair states what the caller believes
-  # that file is; a subject whose rdf:type disagrees is refused rather than
-  # validated against whatever class it claims. They go together because the
-  # kinds reference each other (a stream contains its steps, each step is
-  # inStream its stream) — see seed_multi's comment for why two calls could
-  # never bootstrap that.
-  # The door requires a VERIFIED identity (#3687 retired DEPLOY_ROLE env-trust).
-  # The staged-POST path this replaces needed no identity at all — that was part
-  # of what made it a way around the door. Mint here and fail loudly: a deploy
-  # that silently skipped instances because it could not identify itself is the
-  # failure mode this card exists to end.
-  if [ -z "${CHORUS_IDENTITY_TOKEN:-}" ]; then
-    CHORUS_IDENTITY_TOKEN="$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" "$ROLE" 2>/dev/null || true)"
-    export CHORUS_IDENTITY_TOKEN
-  fi
-  if [ -z "${CHORUS_IDENTITY_TOKEN:-}" ]; then
-    echo "chorus-model-deploy: cannot mint a CSS identity token for role '$ROLE' — instances NOT deployed." >&2
-    echo "  The instance leg writes through athena-model, which fails closed without a verified identity." >&2
-    echo "  Run with DEPLOY_ROLE=<a role with ~/.chorus/identity/<role>/cred.json>, or bring CSS up." >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="no-identity-token" 2>/dev/null || true
-    exit 1
-  fi
-
-  SEED_ARGS=()
-  for entry in "${INSTANCE_SET_KINDS[@]}"; do
-    ikind="${entry%%:*}"
-    ittl="${entry#*:}"
-    [ -f "$ittl" ] || { echo "chorus-model-deploy: INSTANCE_SET TTL not found: $ittl" >&2; exit 1; }
-    SEED_ARGS+=(--kind "$ikind" --ttl "$ittl")
-  done
-  if ! sout=$(athena-model seed ${SEED_ARGS[@]+"${SEED_ARGS[@]}"} --graph "$INSTANCE_GRAPH" --provenance deploy 2>&1); then
-    echo "chorus-model-deploy: REFUSED — instances NOT written (the batch is one transaction)" >&2
-    # The refusal names the subject and the constraint — print it whole. A
-    # deploy that fails with a count and no names is not usable (#3839 AC).
-    echo "$sout" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-seed-refused" 2>/dev/null || true
-    exit 1
-  fi
-  echo "chorus-model-deploy: $sout"
-
-  # #3839 — output-verify, rewritten because the old one no longer could work.
-  #
-  # It compared the STAGING graph against the live graph. seed writes through the
-  # DAL and never stages, so that query would have compared an empty set and
-  # passed every time — a verify that cannot fail, which is worse than none.
-  #
-  # This asks the question that still means something: every SUBJECT declared in
-  # the source TTLs must be present in the live graph. Expected count comes from
-  # the files (riot → N-Triples → distinct subjects); found count comes from the
-  # store. A dead endpoint yields no CSV header and REFUSES rather than passing
-  # blind (#3731).
-  _expected_iris=$(for f in ${INSTANCE_SET[@]+"${INSTANCE_SET[@]}"}; do riot --output=ntriples "$f" 2>/dev/null; done \
-    | awk '{print $1}' | grep '^<' | sort -u)
-  _expected=$(printf '%s\n' "$_expected_iris" | grep -c '^<' || true)
-  _values=$(printf '%s ' $_expected_iris)
-  _fresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
-    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { VALUES ?s { $_values } GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } }" \
-    -H 'Accept: text/csv' 2>/dev/null)
-  if ! printf '%s' "$_fresp" | head -1 | grep -q '^n'; then
-    echo "chorus-model-deploy: INSTANCE-VERIFY could not ask (no CSV header from the store) — refusing to pass a blind verify (#3731)" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-unanswered" 2>/dev/null || true
-    exit 1
-  fi
-  _found=$(printf '%s\n' "$_fresp" | tail -1 | tr -dc '0-9')
-  if [ "${_found:-0}" -ne "${_expected:-1}" ] 2>/dev/null; then
-    echo "chorus-model-deploy: INSTANCE-VERIFY FAILED — ${_expected} subject(s) declared in source, ${_found} present in <$INSTANCE_GRAPH>" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INSTANCE_GRAPH" reason="instance-verify-missing" expected="${_expected}" found="${_found}" 2>/dev/null || true
-    exit 1
-  fi
-  _in=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
-    "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$INSTANCE_GRAPH> { ?s ?p ?o } }" \
-    -H "Accept: application/sparql-results+json" 2>/dev/null \
-    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _in="?"
-  echo "chorus-model-deploy: seeded ${#INSTANCE_SET_KINDS[@]} kind(s) from ${#INSTANCE_SET[@]} file(s) -> <$INSTANCE_GRAPH> (${_expected} subjects verified, $_in triples live)"
-  "$CHORUS_LOG" model.deployed "$ROLE" graph="$INSTANCE_GRAPH" triples="${_in}" 2>/dev/null || true
-fi
 
 # =============================================================================
 # SECURITY_SET (#3726) — the identity substrate: Principal instances + hasScope

@@ -211,21 +211,26 @@ pub fn instances_outside_placement(placement: Option<&str>, live: &[(String, u64
 /// never copied here. A hand-kept list would reproduce the authored-vs-deployed
 /// gap this endpoint exists to expose.
 pub fn deploy_set() -> Vec<String> {
-    let path = format!("{}/platform/scripts/chorus-model-deploy.sh", chorus_root());
-    let body = match std::fs::read_to_string(&path) {
-        Ok(b) => b,
-        Err(_) => return vec![],
-    };
+    // #3895 split the deploy into two scripts: chorus-model-deploy.sh (schema +
+    // security — the store-auth recovery path) and athena-seed.sh (the DAL-gated
+    // instance leg). "Deployed" means either script loads it — parse both.
     let mut out = vec![];
-    for line in body.lines() {
-        let l = line.trim();
-        if l.starts_with('#') {
-            continue;
-        }
-        if let Some(i) = l.find("$CHORUS_ROOT/") {
-            let rest = &l[i + "$CHORUS_ROOT/".len()..];
-            if let Some(end) = rest.find(".ttl") {
-                out.push(rest[..end + 4].to_string());
+    for script in ["chorus-model-deploy.sh", "athena-seed.sh"] {
+        let path = format!("{}/platform/scripts/{}", chorus_root(), script);
+        let body = match std::fs::read_to_string(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        for line in body.lines() {
+            let l = line.trim();
+            if l.starts_with('#') {
+                continue;
+            }
+            if let Some(i) = l.find("$CHORUS_ROOT/") {
+                let rest = &l[i + "$CHORUS_ROOT/".len()..];
+                if let Some(end) = rest.find(".ttl") {
+                    out.push(rest[..end + 4].to_string());
+                }
             }
         }
     }

@@ -59,3 +59,23 @@ edge move) — the first fix whose done-ness is defined by a governance check.
 - The verb *names* athena-model / athena-deploy (binaries) are unchanged — they
   are implementations that serve the shape/seed and live steps; the stream
   describes the flow, not the binary inventory.
+
+## Addendum (2026-08-15, #3895) — the seed verb's recovery boundary
+
+The Seed step now has its own script home: `platform/scripts/athena-seed.sh`,
+extracted from `chorus-model-deploy.sh`. The boundary it enforces:
+
+- **`chorus-model-deploy.sh` is the incident recovery path (#3785).** It
+  authenticates to the *store* (fuseki-auth) and must never require an identity
+  token or shell to the governed writer — the 2026-08-06 allow-set lockout is
+  the incident class. Run it alone, with CSS down, to restore the schema,
+  security, and principles graphs. Guarded nightly by
+  `platform/tests/recovery-path-ungated-3785.bats` (no edits; it is the
+  acceptance check).
+- **`athena-seed.sh` is the DAL-gated instance leg.** It mints a verified
+  identity (#3687) and fails closed without one — guarded by
+  `platform/tests/athena-seed-gated-3895.bats`, including the runtime negative
+  proof that an unauthenticated run refuses.
+- **Landing runs both** (werk-deploy's model leg: model-deploy, then
+  athena-seed), so a land still seeds instances. Recovery contexts run only the
+  first; the pure-ABox instances re-seed the moment identity is back.
