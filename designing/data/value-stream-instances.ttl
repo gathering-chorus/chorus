@@ -41,12 +41,12 @@ chorus:value-stream-athena a chorus:ValueStream ;
     rdfs:label "Athena" ; chorus:label "Athena" ;
     chorus:outcome "Takes a model class from OWL to a live, materialized surface — routes, MCP, skill, and page generated from the model" ;
     chorus:trigger "event" ;
-    # #3846 — reconciled to athena-value-stream-design.html (Jeff-approved card
-    # 2026-08-13 supersedes the 06-22 model/make/deploy/land naming, which had
-    # dropped every PROVING step): shape → forge → seed → validate → demo → live.
-    chorus:contains chorus:value-stream-step-athena-shape, chorus:value-stream-step-athena-forge,
-        chorus:value-stream-step-athena-seed, chorus:value-stream-step-athena-validate,
-        chorus:value-stream-step-athena-demo, chorus:value-stream-step-athena-live .
+    # #3896 — steps name implemented WORK (supersedes #3846's doc-derived six;
+    # Jeff 2026-08-15): Model → Make → Deploy → Validate, each implementedBy a
+    # real invocable. The first #3896 land REFUSED here — these contains edges
+    # still named the retired six, and referential integrity failed closed.
+    chorus:contains chorus:value-stream-step-athena-model, chorus:value-stream-step-athena-make,
+        chorus:value-stream-step-athena-deploy, chorus:value-stream-step-athena-validate .
 chorus:value-stream-borg a chorus:ValueStream ;
     rdfs:label "Borg" ; chorus:label "Borg" ;
     chorus:outcome "Continuously reflects the running system against its model and surfaces a verdict to the owner to act on" ;
