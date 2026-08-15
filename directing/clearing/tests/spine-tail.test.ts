@@ -140,3 +140,28 @@ describe('#3884 werk phase interleave', () => {
     expect(parseLogEntryForTest(entry('context.inject.request'))).toBeNull();
   });
 });
+
+// #3884 integration fix: Silas's #3883 emitter landed with event name
+// `werk.phase` + {phase, state} kvs — not the per-event names the first map
+// keyed on. Both parse now; this is the shape the LIVE spine actually carries
+// (verified against chorus.log 08:24 lines).
+describe('#3884 werk.phase (the #3883 emitter shape)', () => {
+  const { parseLogEntryForTest } = require('../src/spine-tail');
+  test('werk.phase renders phase and state with card', () => {
+    const l = parseLogEntryForTest({
+      timestamp: '2026-08-15T08:24:56-0400', role: 'kade', event: 'werk.phase',
+      card_id: 3884, phase: 'build', state: 'pass',
+    });
+    expect(l).not.toBeNull();
+    expect(l.type).toBe('werk');
+    expect(l.text).toContain('build');
+    expect(l.card).toBe('3884');
+  });
+  test('werk.phase fail state is visible', () => {
+    const l = parseLogEntryForTest({
+      timestamp: '2026-08-15T08:24:56-0400', role: 'kade', event: 'werk.phase',
+      phase: 'test', state: 'fail',
+    });
+    expect(l.text).toContain('fail');
+  });
+});
