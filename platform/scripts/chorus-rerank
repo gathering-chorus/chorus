@@ -31,6 +31,17 @@
 # SURFACE that refusal with the conflicting pair named — a re-rank that reports
 # success while the graph refused the write would be the exact class of hollow
 # gate #3734 exists to stop.
+#
+# #3898 — TWO-PHASE, because uniqueness is checked per write. Assigning final
+# ordinals one at a time walks straight through a collision: move a chunk to 2
+# while another still holds 2 and the DAL refuses, correctly. On first contact
+# with real data this verb wrote nothing and refused twelve times.
+#
+# So: phase one parks every affected row in a disjoint range (current max +
+# PARK_OFFSET, order preserved), phase two assigns the final 1..N. A failure
+# between the two leaves a visibly wrong order rather than a silently wrong one,
+# and says so — parked ordinals are recoverable by re-running; a half-applied
+# permutation read as intent is not.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -60,6 +71,10 @@ cards_in_chunk() {
 }
 
 # --- writes ------------------------------------------------------------------
+
+# Far enough above any real ordinal that phase one cannot collide with the
+# untouched rows it steps over.
+PARK_OFFSET=1000
 
 W=0; R=0
 write() {  # write <description> <athena-model args...>
@@ -120,11 +135,25 @@ rerank_chunks() {
   done <<<"$existing"
 
   need_creds
+
+  # Phase one: park. Nothing here can collide — the range is disjoint from every
+  # ordinal in play.
   local i=1
+  for slug in "${order[@]}"; do
+    write "park chunk $slug → $((PARK_OFFSET + i))" \
+      --kind chunk --name "$slug" --field "slug=$slug" --field "label=$slug" \
+      --field "roleSequence=$((PARK_OFFSET + i))" --edge "ownedBy=role:$role" \
+      || { parked_abort "$role chunks" "${order[@]}"; }
+    i=$((i+1))
+  done
+
+  # Phase two: the order Jeff asked for.
+  i=1
   for slug in "${order[@]}"; do
     write "chunk $slug → roleSequence $i" \
       --kind chunk --name "$slug" --field "slug=$slug" --field "label=$slug" \
-      --field "roleSequence=$i" --edge "ownedBy=role:$role"
+      --field "roleSequence=$i" --edge "ownedBy=role:$role" \
+      || { parked_abort "$role chunks" "${order[@]}"; }
     i=$((i+1))
   done
   report "$role chunk order"
@@ -154,14 +183,37 @@ rerank_cards() {
   done <<<"$existing"
 
   need_creds
+
   local i=1
+  for cid in "${order[@]}"; do
+    write "park $slug#$cid → $((PARK_OFFSET + i))" \
+      --kind chunkmembership --name "$slug-$cid" \
+      --field "rank=$((PARK_OFFSET + i))" --edge "inChunk=chunk:$slug" --edge "hasCard=card:$cid" \
+      || { parked_abort "chunk $slug cards" "${order[@]}"; }
+    i=$((i+1))
+  done
+
+  i=1
   for cid in "${order[@]}"; do
     write "membership $slug#$cid → rank $i" \
       --kind chunkmembership --name "$slug-$cid" \
-      --field "rank=$i" --edge "inChunk=chunk:$slug" --edge "hasCard=card:$cid"
+      --field "rank=$i" --edge "inChunk=chunk:$slug" --edge "hasCard=card:$cid" \
+      || { parked_abort "chunk $slug cards" "${order[@]}"; }
     i=$((i+1))
   done
   report "chunk $slug card order"
+}
+
+# A failure anywhere in either phase stops immediately and says what state the
+# graph is in. Silence here would leave someone reading a half-applied order as
+# though it were the declared one.
+parked_abort() {
+  local what="$1"; shift
+  echo "ABORTED mid-reorder: $what" >&2
+  echo "  affected: $*" >&2
+  echo "  the graph may hold PARKED ordinals (>$PARK_OFFSET) — visibly wrong, not silently wrong." >&2
+  echo "  re-run the same command once the refusal above is resolved; the verb is idempotent." >&2
+  exit 1
 }
 
 report() {
