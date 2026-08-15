@@ -128,7 +128,9 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
         // itself — relative href so it also works through the share tunnel.
         { label: 'Quality Service', href: '/werk/quality/' },
       ],
-      'The Clearing': [{ label: 'The Clearing', href: `${location.protocol}//${location.hostname}:3470` }],
+      // #3886 — path link, not a port link: :3470 is dead from anywhere off
+      // the LAN (Jeff's phone). /clearing rides the four-URL scheme (#3878).
+      'The Clearing': [{ label: 'The Clearing', href: '/clearing' }],
       'Borg': [
         { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],
