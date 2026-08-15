@@ -1,0 +1,16 @@
+# instance-seed-manifest (#3895) — the INSTANCE_SET, as data.
+#
+# Read by `athena-model seed --deploy` (the DAL-gated instance leg of a model
+# deploy) and parsed by owl-api's deploy_set() audit. One line per group:
+#   <kind>:<path relative to CHORUS_ROOT>
+# A file carrying two kinds is listed twice — same file, seeded once per kind
+# (#3839: the door validates each group against the STATED class's shape).
+#
+# This file exists so the manifest has ONE home that both the seeder and the
+# authored-vs-deployed audit read — not a bash array in one script and a
+# hand-kept list in another (the drift class #3895 closed).
+value-stream:designing/data/value-stream-instances.ttl
+value-stream-step:designing/data/value-stream-step-instances.ttl
+# #3838 — the four roles: before this they existed only in the live store, so
+# no deploy could reproduce ownedBy/holdsRole targets.
+role:roles/wren/ontology/role-instances-3838.ttl

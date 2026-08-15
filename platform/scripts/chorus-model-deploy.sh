@@ -485,7 +485,7 @@ else
 fi
 
 # =============================================================================
-# INSTANCE_SET — MOVED to athena-seed.sh (#3895).
+# INSTANCE_SET — MOVED to `athena-model seed --deploy` (#3895).
 #
 # #3839 put the DAL-gated instance-seed leg (governed-writer seed + identity-
 # token mint) inside this script, violating the #3785 recovery invariant: this
@@ -493,9 +493,10 @@ fi
 # an identity token, never shell to the governed writer. (Those two names are
 # deliberately not spelled out here — the #3785 guard greps this file raw, and
 # a comment naming them would trip it. The 2026-08-06 lockout is why it exists.)
-# The instance leg now lives in platform/scripts/athena-seed.sh; werk-deploy
-# runs chorus-model-deploy.sh THEN athena-seed.sh at land, so landing still
-# seeds instances. Recovery contexts run this script alone.
+# The instance leg now lives in the athena-model binary (`seed --deploy`,
+# manifest at platform/config/instance-seed-manifest.txt — ADR-038: no new
+# deploy-path bash); werk-deploy runs this script THEN that verb at land, so
+# landing still seeds instances. Recovery contexts run this script alone.
 # Guarded by platform/tests/recovery-path-ungated-3785.bats.
 # =============================================================================
 

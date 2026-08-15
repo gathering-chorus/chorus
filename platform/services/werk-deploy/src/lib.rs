@@ -1799,18 +1799,37 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
             format!("chorus-model-deploy.sh failed — model changes are landed but NOT live: {}", e)))?;
         // #3895 — the DAL-gated instance leg was split OUT of chorus-model-deploy.sh
-        // (the #3785 recovery path must never require an identity token). Landing
-        // still seeds instances: run athena-seed.sh here, after the store-auth
-        // deploy. It mints its own identity token and fails CLOSED — a land whose
-        // instances did not seed fails loudly rather than landing them stale.
-        run_env(
+        // (the #3785 recovery path must never require an identity token, ADR-038:
+        // no new deploy-path bash). Landing still seeds instances: mint the
+        // land-role's token, then `athena-model seed --deploy` (manifest +
+        // output-verify live in the binary). Fails CLOSED — a land whose
+        // instances did not seed dies loudly rather than landing them stale.
+        let seed_token = run_env(
             Some(root_m.as_str()),
-            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
+            &[],
             "bash",
-            &[&format!("{}/platform/scripts/athena-seed.sh", root_m)],
+            &[&format!("{}/platform/scripts/chorus-identity-token", root_m), role],
         )
         .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("athena-seed.sh failed — instances are landed but NOT live: {}", e)))?;
+            format!("cannot mint a CSS identity token for '{}' — instances NOT seeded (DAL fails closed): {}", role, e)))?
+        .trim()
+        .to_string();
+        // ~/.chorus/bin is THE deploy location (#2734); crates deployed above,
+        // so this binary is the landed build. PATH fallback for pre-deploy boxes.
+        let seed_bin = {
+            let installed = format!("{}/.chorus/bin/athena-model",
+                env::var("HOME").unwrap_or_default());
+            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
+        };
+        run_env(
+            Some(root_m.as_str()),
+            &[("CHORUS_TRACE_ID", trace), ("CHORUS_ROOT", root_m.as_str()),
+              ("CHORUS_IDENTITY_TOKEN", seed_token.as_str())],
+            &seed_bin,
+            &["seed", "--deploy"],
+        )
+        .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
+            format!("athena-model seed --deploy failed — instances are landed but NOT live: {}", e)))?;
         // Single-request truth: the store attests which commit its model came from
         // (#3736 stamp, written by the script). Gate stamp == landedCommit on pipeline lands.
         let stamp = read_model_stamp(root_m.as_str());

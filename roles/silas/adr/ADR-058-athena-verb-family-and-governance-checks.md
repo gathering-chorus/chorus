@@ -62,8 +62,11 @@ edge move) — the first fix whose done-ness is defined by a governance check.
 
 ## Addendum (2026-08-15, #3895) — the seed verb's recovery boundary
 
-The Seed step now has its own script home: `platform/scripts/athena-seed.sh`,
-extracted from `chorus-model-deploy.sh`. The boundary it enforces:
+The deploy-time instance seeding moved out of `chorus-model-deploy.sh` and INTO
+the existing verb binary: `athena-model seed --deploy` (ADR-038 — no new
+deploy-path bash; Jeff's ruling the same day). Its file list is data:
+`platform/config/instance-seed-manifest.txt`, read by the verb and by owl-api's
+`deploy_set()` audit. The boundary this enforces:
 
 - **`chorus-model-deploy.sh` is the incident recovery path (#3785).** It
   authenticates to the *store* (fuseki-auth) and must never require an identity
@@ -72,10 +75,12 @@ extracted from `chorus-model-deploy.sh`. The boundary it enforces:
   security, and principles graphs. Guarded nightly by
   `platform/tests/recovery-path-ungated-3785.bats` (no edits; it is the
   acceptance check).
-- **`athena-seed.sh` is the DAL-gated instance leg.** It mints a verified
-  identity (#3687) and fails closed without one — guarded by
-  `platform/tests/athena-seed-gated-3895.bats`, including the runtime negative
-  proof that an unauthenticated run refuses.
-- **Landing runs both** (werk-deploy's model leg: model-deploy, then
-  athena-seed), so a land still seeds instances. Recovery contexts run only the
-  first; the pure-ABox instances re-seed the moment identity is back.
+- **`athena-model seed --deploy` is the DAL-gated instance leg.** It requires a
+  verified identity (#3687), fails closed without one, and output-verifies every
+  declared subject against the live graph — guarded by
+  `platform/tests/athena-seed-gated-3895.bats` (runtime negative proofs:
+  unauthenticated refuses, bogus token refuses, empty manifest refuses).
+- **Landing runs both** (werk-deploy's model leg: model-deploy, then the seed
+  verb with a token minted for the land role), so a land still seeds instances.
+  Recovery contexts run only the first; the pure-ABox instances re-seed the
+  moment identity is back.

@@ -20,6 +20,7 @@ fn usage() -> String {
        chorus-model unlink --kind <kind> --name <name> --edge prop=kind:name\n\
        chorus-model seed   (--kind <kind> --ttl <file>)... [--graph <g>] [--provenance migrated] [--base <iri>]\n\
                     --kind/--ttl repeat as pairs; several kinds load as ONE transaction (#3839)\n\
+       chorus-model seed --deploy   built-in instance manifest -> urn:chorus:instances, output-verified (#3895)\n\
        chorus-model mint   --kind <kind> --name <name>\n\
        chorus-model kinds"
         .to_string()
@@ -359,10 +360,18 @@ fn run() -> Result<String, String> {
             let mut graph: Option<String> = None;
             let mut provenance = "migrated".to_string();
             let mut base: Option<String> = None;
+            let mut deploy = false;
             let rest = &args[1..];
             let mut i = 0;
             while i < rest.len() {
                 match rest[i].as_str() {
+                    // #3895 — the deploy manifest, IN the binary (ADR-038: no
+                    // deploy-path bash). Replaces chorus-model-deploy.sh's
+                    // INSTANCE_SET leg, which had put an identity gate inside
+                    // the #3785 recovery path. --deploy loads the built-in
+                    // kind:file set, targets urn:chorus:instances, stamps
+                    // provenance=deploy, and output-verifies after the write.
+                    "--deploy" => deploy = true,
                     "--kind" => {
                         i += 1;
                         pairs.push((rest.get(i).cloned().unwrap_or_default(), String::new()));
@@ -388,6 +397,42 @@ fn run() -> Result<String, String> {
                     other => return Err(format!("seed: unknown arg '{}'\n{}", other, usage())),
                 }
                 i += 1;
+            }
+            if deploy {
+                if !pairs.is_empty() {
+                    return Err("seed: --deploy carries its own manifest — do not combine with --kind/--ttl".into());
+                }
+                let root = std::env::var("CHORUS_ROOT")
+                    .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+                // The manifest is DATA with one home — read by this verb and
+                // parsed by owl-api's deploy_set() audit. kind:path per line,
+                // stated per file, because the door validates each group
+                // against the STATED class's shape (#3839).
+                let mpath = format!("{}/platform/config/instance-seed-manifest.txt", root);
+                let mbody = std::fs::read_to_string(&mpath)
+                    .map_err(|e| format!("seed --deploy: manifest unreadable ({}): {}", mpath, e))?;
+                for line in mbody.lines() {
+                    let l = line.trim();
+                    if l.is_empty() || l.starts_with('#') {
+                        continue;
+                    }
+                    let (k, rel) = l
+                        .split_once(':')
+                        .ok_or_else(|| format!("seed --deploy: manifest line not kind:path — '{}'", l))?;
+                    pairs.push((k.trim().to_string(), format!("{}/{}", root, rel.trim())));
+                }
+                if pairs.is_empty() {
+                    return Err(format!("seed --deploy: manifest {} declares no groups — refusing a vacuous deploy", mpath));
+                }
+                for (_, f) in &pairs {
+                    if !std::path::Path::new(f).is_file() {
+                        return Err(format!("seed --deploy: manifest TTL not found: {}", f));
+                    }
+                }
+                if graph.is_none() {
+                    graph = Some("urn:chorus:instances".into());
+                }
+                provenance = "deploy".into();
             }
             if pairs.is_empty() || pairs.iter().any(|(k, t)| k.is_empty() || t.is_empty()) {
                 return Err(format!("seed needs --kind <K> and --ttl <file> (repeatable, paired)\n{}", usage()));
@@ -425,6 +470,44 @@ fn run() -> Result<String, String> {
                 .collect();
             let kind = pairs.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join("+");
             let report = seed_multi(&store, &groups, &provenance, graph.as_deref(), &id)?;
+            // #3895 — output-verify (deploy only): every SUBJECT declared in the
+            // manifest must be present in the live graph. Asks the store, names
+            // any absentee — a verify that cannot fail is worse than none
+            // (#3839's staging-compare verify was exactly that).
+            if deploy {
+                let g = graph.as_deref().unwrap_or("urn:chorus:instances");
+                // parse_ntriples keeps subjects bracketed (`<iri>`); bare IRIs
+                // for comparison with select_v's unbracketed bindings.
+                let mut declared: Vec<String> = parsed
+                    .iter()
+                    .flat_map(|(_, t)| t.iter().map(|(s, _, _)| s.trim_matches(['<', '>']).to_string()))
+                    .collect();
+                declared.sort();
+                declared.dedup();
+                let values = declared.iter().map(|s| format!("<{}>", s)).collect::<Vec<_>>().join(" ");
+                let q = format!(
+                    "SELECT DISTINCT ?v WHERE {{ VALUES ?v {{ {} }} GRAPH <{}> {{ ?v ?p ?o }} }}",
+                    values, g
+                );
+                let present = store.select_v(&q)?;
+                let missing: Vec<&String> = declared
+                    .iter()
+                    .filter(|s| !present.iter().any(|p| p == *s))
+                    .collect();
+                if !missing.is_empty() {
+                    return Err(format!(
+                        "seed --deploy VERIFY FAILED: {} of {} declared subjects absent from <{}>: {}",
+                        missing.len(),
+                        declared.len(),
+                        g,
+                        missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                    ));
+                }
+                return Ok(format!(
+                    "seeded: {} subjects / {} triples (kind={}, provenance={}) — {} declared subjects verified live in <{}>",
+                    report.subjects, report.triples, kind, provenance, declared.len(), g
+                ));
+            }
             Ok(format!(
                 "seeded: {} subjects / {} triples (kind={}, provenance={})",
                 report.subjects, report.triples, kind, provenance
