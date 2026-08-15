@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- #3890: spine append target is CHORUS_LOG_FILE env / homedir chorus.log, an internal fixed path, never untrusted input (same justification as pulse service.ts + werk-phase.ts) */
 /**
  * reply-delivery.ts — #3864: the Clearing half of reply-delivery correlation.
  *
@@ -14,6 +15,9 @@
  * implementations to disagree (#3818's lesson).
  */
 import { createHash } from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 /**
  * Canonical form both surfaces can reach from their own bytes: strip one
@@ -53,12 +57,35 @@ export type EmitSpine = (ev: RenderedEvent) => void;
  * rendered-stamp must not break rendering, but it must not vanish silently
  * either — it will surface as a delivery gap, which is the truthful signal.
  */
-export function makeSpineEmitter(apiBase = 'http://localhost:3340'): EmitSpine {
+export function makeSpineEmitter(spinePath?: string): EmitSpine {
+  // #3890 root-cause: the HTTP pulse door grew an authn gate; unauthenticated
+  // POSTs got authn-missing and the fire-and-forget fetch never checked the
+  // body — every reply.rendered silently dropped (Jeff, 2026-08-15: "still
+  // pretty sure im not getting messages"; measured 8 emitted / 0 rendered).
+  // Append to the spine directly like pulse's emitSpine — same host, same
+  // file, offset-ISO Boston (#3880 one-clock), no credential in the render path.
+  const target = spinePath
+    ?? process.env.CHORUS_LOG_FILE
+    ?? path.join(os.homedir(), '.chorus', 'chorus.log');
   return (ev) => {
-    fetch(`${apiBase}/api/chorus/pulse`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(ev),
-    }).catch((e) => console.error('[reply-delivery] rendered-stamp failed:', e?.message ?? e));
+    const line = JSON.stringify({ timestamp: bostonOffsetIso(), ...ev }) + '\n';
+    fs.appendFile(target, line, (e) => {
+      if (e) console.error('[reply-delivery] rendered-stamp failed:', e.message);
+    });
   };
+}
+
+/** #3880 one-clock: offset-ISO Boston (same rule as every spine writer). */
+function bostonOffsetIso(d: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false, timeZoneName: 'longOffset',
+  }).formatToParts(d);
+  const get = (t: string) => parts.find(p => p.type === t)?.value ?? '';
+  const hour = get('hour') === '24' ? '00' : get('hour');
+  const offset = (get('timeZoneName') || 'GMT+00:00').replace('GMT', '');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+  return `${get('year')}-${get('month')}-${get('day')}T${hour}:${get('minute')}:${get('second')}.${ms}${offset}`;
 }

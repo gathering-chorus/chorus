@@ -301,12 +301,17 @@ pub fn register(role: &str) {
 /// #3700 — the sessions dir with its #3608 test-isolation seam, shared by
 /// register() above and the shim-side heal wiring below.
 pub fn sessions_dir() -> Option<PathBuf> {
-    match std::env::var("CHORUS_SESSIONS_DIR") {
-        Ok(d) if !d.is_empty() => Some(PathBuf::from(d)),
-        _ => std::env::var("HOME")
-            .ok()
-            .map(|h| PathBuf::from(h).join(".chorus").join("sessions")),
-    }
+    // #3890 — route through the membrane like register() does. The raw HOME
+    // fallback here BYPASSED #3615: a test/CI context without
+    // CHORUS_SESSIONS_DIR silently got the LIVE registry (membrane-guard
+    // test 1 caught session-start generating real context — the hollow-gate
+    // shape). One wired path, one not, is how a membrane leaks.
+    let home = std::env::var("HOME").ok()?;
+    let prod = PathBuf::from(home).join(".chorus").join("sessions");
+    Some(PathBuf::from(crate::shared::membrane::resolve(
+        crate::shared::membrane::Surface::SessionsRegistry,
+        prod.to_str()?,
+    )))
 }
 
 /// #3700 (kade half) — shim-side self-heal + turn-state wiring, called on

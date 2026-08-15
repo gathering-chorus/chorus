@@ -47,20 +47,20 @@ cat > "$TMP/nodefail/package.json" <<'EOF'
 EOF
 
 echo "--- non-jest pass package ---"
-OUT=$(bash "$NIGHTLY" --run-one npm "$TMP/nodepass" 2>&1)
+OUT=$(NIGHTLY_FAIL_DIR="$TMP" bash "$NIGHTLY" --run-one npm "$TMP/nodepass" 2>&1)  # #3890: own-world fail dir — the self-test's fixture failure was landing in the PROD failures dir nightly
 LINE=$(echo "$OUT" | grep "^SUITE|npm|" | head -1)
 echo "$LINE" | grep -q "|pass|" && p "non-jest passing package graded pass" || f "expected |pass|, got: $LINE"
 echo "$LINE" | grep -q "pass 3" && p "summary carries the runner's own counts" || f "summary lost the counts: $LINE"
 
 echo "--- non-jest fail package ---"
-OUT=$(bash "$NIGHTLY" --run-one npm "$TMP/nodefail" 2>&1)
+OUT=$(NIGHTLY_FAIL_DIR="$TMP" bash "$NIGHTLY" --run-one npm "$TMP/nodefail" 2>&1)
 LINE=$(echo "$OUT" | grep "^SUITE|npm|" | head -1)
 echo "$LINE" | grep -q "|fail|" && p "non-jest failing package graded fail" || f "expected |fail|, got: $LINE"
 
 echo "--- no jest download attempted for non-jest package ---"
 # `npx jest` against the fixture would fail loudly with npm-cache noise or a
 # jest install attempt; the runner must never mention jest for these packages.
-OUT=$(bash "$NIGHTLY" --run-one npm "$TMP/nodepass" 2>&1)
+OUT=$(NIGHTLY_FAIL_DIR="$TMP" bash "$NIGHTLY" --run-one npm "$TMP/nodepass" 2>&1)  # #3890: own-world fail dir — the self-test's fixture failure was landing in the PROD failures dir nightly
 if echo "$OUT" | grep -qi "jest"; then f "runner invoked jest for a non-jest package: $(echo "$OUT" | grep -i jest | head -1)"; else p "no jest invocation for non-jest package"; fi
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
