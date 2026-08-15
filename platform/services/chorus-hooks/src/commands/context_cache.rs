@@ -266,7 +266,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let start_path = format!("/tmp/session-start-{}.md", role);
     let _ = fs::write(&start_path, &out);
     let lines = out.lines().count();
-    println!("Context cached: {} ({} lines)", out_path, lines);
+    // #3890 — stderr, NOT stdout: session-start's stdout is the hook JSON
+    // contract (hookSpecificOutput); this line printed first broke every
+    // consumer's parse (session-start-orchestration-e2e caught it live).
+    eprintln!("Context cached: {} ({} lines)", out_path, lines);
 
     // Spine events — AC for #1808
     let log_path = format!("{}/platform/logs/chorus.log", repo_root());
