@@ -21,11 +21,17 @@ const PROJECTS_DIR = process.env.CLEARING_PROJECTS_DIR || '/Users/jeffbridwell/.
 const POLL_INTERVAL = 30000; // 30s fallback — primary delivery is fs.watch
 const ROLES = ['wren', 'silas', 'kade'] as const;
 
-// Map role to its project directory pattern
+// #3890/#3893 — the role's CANONICAL session dir, matched EXACTLY. The old
+// substring match ('wren' ∈ entry) let ephemeral werk dirs shadow the real
+// session (chorus-werk-kade-3884-…-roles-wren, EMPTY, newest wins) — which was
+// the 100%-reply-loss outage Jeff called "snapchat": the tailer sat on empty
+// werk transcripts while every real reply scrolled by unseen. The protected
+// primitive is role-directory IS session-start (/chorus/roles/<role>/); only
+// its slug is the session source. Werk transcripts are deliberately excluded.
 const ROLE_DIRS: Record<string, string> = {
-  wren: 'wren',
-  silas: 'silas',
-  kade: 'kade',
+  wren: '-Users-jeffbridwell-CascadeProjects-chorus-roles-wren',
+  silas: '-Users-jeffbridwell-CascadeProjects-chorus-roles-silas',
+  kade: '-Users-jeffbridwell-CascadeProjects-chorus-roles-kade',
 };
 
 interface SessionState {
@@ -143,7 +149,7 @@ export class SessionTailer {
       let newest: { path: string; mtime: number } | null = null;
 
       for (const entry of entries) {
-        if (!entry.includes(roleDir)) continue;
+        if (entry !== roleDir) continue; // EXACT — substring let werk dirs shadow (see ROLE_DIRS)
         newest = this.newestJsonlIn(path.join(PROJECTS_DIR, entry), newest);
       }
 
