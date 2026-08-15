@@ -32,6 +32,7 @@ import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
 import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun } from './werk-run-store';
+import { wireRunFollower, bostonOffsetIso } from './werk-phase';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -2083,8 +2084,11 @@ function mintTraceIdV7(): string {
 async function appendChorusLog(event: string, role: string, fields: Record<string, unknown>): Promise<void> {
   const home = process.env.HOME || '/Users/jeffbridwell';
   const logPath = process.env.CHORUS_LOG_FILE || `${home}/.chorus/chorus.log`;
+  // #3880 one-clock (found by the spine-one-clock check naming THIS writer,
+  // 2026-08-14 20:52): offset-ISO Boston, never UTC-Z, matching every other
+  // spine writer so folds sort on one clock.
   const line = JSON.stringify({
-    timestamp: new Date().toISOString(),
+    timestamp: bostonOffsetIso(),
     event,
     role,
     ...fields,
@@ -2550,6 +2554,9 @@ async function executeChorusWerk(
     stdio: 'ignore',
   });
   child.unref();
+  // #3883 — pipeline visible in streams: follow this run's log and stamp
+  // werk.phase on the spine at every phase transition.
+  wireRunFollower(log, { card: args.card_id, role: args.role, runId });
   writeRun({
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
@@ -2665,6 +2672,9 @@ async function executeChorusWerkLand(
     stdio: 'ignore',
   });
   child.unref();
+  // #3883 — pipeline visible in streams: follow this run's log and stamp
+  // werk.phase on the spine at every phase transition.
+  wireRunFollower(log, { card: args.card_id, role: args.role, runId });
   writeRun({
     runId, card: args.card_id, role: args.role, go: true,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
