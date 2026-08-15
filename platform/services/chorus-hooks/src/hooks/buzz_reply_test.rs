@@ -148,7 +148,8 @@ fn live_publish_probe() {
         .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
     let ev = build_reply_event(&key, "kade", "[#3893 probe] stop-hook publish path live-check", "probe000", created).unwrap();
     let relay = std::env::var("BUZZ_RELAY_URL").unwrap_or_else(|_| "ws://192.168.86.242:3000".into());
-    publish(&relay, &ev).expect("relay accepted");
+    let tunnel = std::env::var("BUZZ_RELAY_TUNNEL").ok();
+    publish_authed(&relay, tunnel.as_deref(), &key, &ev).expect("relay accepted");
     eprintln!("relay accepted event {}", ev.id);
 }
 
@@ -180,4 +181,108 @@ fn reply_event_carries_seq_tag() {
     let k = load_key(dir.path(), "kade").unwrap();
     let ev = build_reply_event_seq(&k, "kade", "t", "h", 1, 42).unwrap();
     assert!(ev.tags.iter().any(|t| t[0] == "seq" && t[1] == "42"), "{:?}", ev.tags);
+}
+
+// #3893 tunnel leg: the relay virtual-hosts by Host header (LAN ip → 200,
+// anything else → 404, proven live 2026-08-15). Through the LNP loopback
+// tunnel the TCP endpoint differs from the URL, so publish must dial the
+// tunnel while keeping the relay URL's Host. BUZZ_RELAY_TUNNEL=host:port.
+#[test]
+fn publish_via_tunnel_keeps_relay_host_header() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let tunnel = listener.local_addr().unwrap().to_string();
+    let h = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        // hand-roll the handshake so we can SEE the Host header
+        let mut stream = stream;
+        use std::io::{Read as _, Write as _};
+        let mut buf = [0u8; 2048];
+        let n = stream.read(&mut buf).unwrap();
+        let req = String::from_utf8_lossy(&buf[..n]).to_string();
+        // answer 404 like the real relay does on a wrong Host — the test
+        // asserts on the captured request, not on publish succeeding
+        stream.write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\n\r\n").unwrap();
+        req
+    });
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event(&k, "kade", "t", "h", 1).unwrap();
+    let _ = publish_via("ws://192.168.86.242:3000", Some(&tunnel), &ev);
+    let req = h.join().unwrap();
+    assert!(req.contains("Host: 192.168.86.242:3000"), "Host must be the relay's, got: {req}");
+}
+
+// NIP-42: the live relay refused with "auth-required" (2026-08-15) — it
+// challenges with ["AUTH", chal]; the client answers a signed kind-22242
+// event carrying relay+challenge tags, then re-sends the EVENT.
+#[test]
+fn publish_answers_nip42_auth_challenge() {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let url2 = url.clone();
+    let h = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        // first EVENT arrives → challenge instead of OK
+        let first = ws.read().unwrap();
+        let v: serde_json::Value = serde_json::from_str(first.to_text().unwrap()).unwrap();
+        assert_eq!(v[0], "EVENT");
+        let id = v[1]["id"].as_str().unwrap().to_string();
+        ws.send(tungstenite::Message::Text(format!(r#"["OK","{id}",false,"auth-required: not authenticated"]"#))).unwrap();
+        ws.send(tungstenite::Message::Text(r#"["AUTH","chal-123"]"#.to_string())).unwrap();
+        // client must answer AUTH with a signed 22242 carrying our challenge
+        let auth = ws.read().unwrap();
+        let a: serde_json::Value = serde_json::from_str(auth.to_text().unwrap()).unwrap();
+        assert_eq!(a[0], "AUTH");
+        assert_eq!(a[1]["kind"], 22242);
+        let tags = a[1]["tags"].as_array().unwrap();
+        assert!(tags.iter().any(|t| t[0] == "challenge" && t[1] == "chal-123"), "{tags:?}");
+        assert!(tags.iter().any(|t| t[0] == "relay"), "{tags:?}");
+        // then the EVENT again → accept it
+        let second = ws.read().unwrap();
+        let v2: serde_json::Value = serde_json::from_str(second.to_text().unwrap()).unwrap();
+        assert_eq!(v2[0], "EVENT");
+        let id2 = v2[1]["id"].as_str().unwrap().to_string();
+        ws.send(tungstenite::Message::Text(format!(r#"["OK","{id2}",true,""]"#))).unwrap();
+        let _ = ws.flush();
+    });
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event(&k, "kade", "t", "h", 1).unwrap();
+    publish_authed(&url2, None, &k, &ev).expect("auth flow succeeds");
+    h.join().unwrap();
+}
+
+// Live frame order (2026-08-15, node trace): AUTH challenge arrives FIRST,
+// the pre-auth send's refusal SECOND, the re-send's OK true LAST. The first
+// implementation returned Err on that middle frame.
+#[test]
+fn publish_survives_auth_refusal_arriving_after_challenge() {
+    use std::io::Write as _;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("ws://{}", listener.local_addr().unwrap());
+    let h = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut ws = tungstenite::accept(stream).unwrap();
+        let first = ws.read().unwrap();
+        let v: serde_json::Value = serde_json::from_str(first.to_text().unwrap()).unwrap();
+        let id = v[1]["id"].as_str().unwrap().to_string();
+        ws.send(tungstenite::Message::Text(r#"["AUTH","chal-x"]"#.to_string())).unwrap();
+        ws.send(tungstenite::Message::Text(format!(r#"["OK","{id}",false,"auth-required: not authenticated"]"#))).unwrap();
+        let _auth = ws.read().unwrap();
+        let second = ws.read().unwrap();
+        let v2: serde_json::Value = serde_json::from_str(second.to_text().unwrap()).unwrap();
+        let id2 = v2[1]["id"].as_str().unwrap().to_string();
+        ws.send(tungstenite::Message::Text(format!(r#"["OK","{id2}",true,""]"#))).unwrap();
+        let _ = ws.flush();
+    });
+    let dir = tempfile::tempdir().unwrap();
+    write_key(dir.path(), "kade", 0o600);
+    let k = load_key(dir.path(), "kade").unwrap();
+    let ev = build_reply_event(&k, "kade", "t", "h", 1).unwrap();
+    publish_authed(&url, None, &k, &ev).expect("survives live ordering");
+    h.join().unwrap();
 }

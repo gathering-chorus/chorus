@@ -119,6 +119,35 @@ pub fn build_reply_event_seq(
     build_reply_event_tags(key, role, text, content_hash, created_at, Some(seq))
 }
 
+/// Sign an arbitrary-kind event with the given tags (NIP-01 id + schnorr).
+fn sign_event(
+    key: &RoleKey,
+    kind: u32,
+    tags: Vec<Vec<String>>,
+    content: &str,
+    created_at: u64,
+) -> Result<NostrEvent, String> {
+    let ser = serde_json::json!([0, key.pubkey, created_at, kind, tags, content]).to_string();
+    let digest = sha256::Hash::hash(ser.as_bytes());
+    let id = hex_encode(digest.as_ref());
+    let secp = Secp256k1::new();
+    let kp = Keypair::from_secret_key(
+        &secp,
+        &SecretKey::from_slice(&key.seckey).map_err(|e| format!("bad seckey: {e}"))?,
+    );
+    let msg = Message::from_digest(digest.to_byte_array());
+    let sig = secp.sign_schnorr_no_aux_rand(&msg, &kp);
+    Ok(NostrEvent {
+        id,
+        pubkey: key.pubkey.clone(),
+        created_at,
+        kind,
+        tags,
+        content: content.to_string(),
+        sig: hex_encode(sig.as_ref()),
+    })
+}
+
 fn build_reply_event_tags(
     key: &RoleKey,
     role: &str,
@@ -160,29 +189,118 @@ fn build_reply_event_tags(
 /// Publish over the relay websocket; Ok only on the relay's ["OK", id, true].
 /// Blocking (tungstenite) — call from spawn_blocking.
 pub fn publish(relay_url: &str, event: &NostrEvent) -> Result<(), String> {
-    let (mut ws, _) =
-        tungstenite::connect(relay_url).map_err(|e| format!("relay connect: {e}"))?;
+    publish_via(relay_url, None, event)
+}
+
+/// As publish, optionally dialing a different TCP endpoint (the LNP loopback
+/// tunnel) while keeping the relay URL — the relay virtual-hosts by Host
+/// header (wrong Host → 404, proven live 2026-08-15), so the handshake must
+/// carry the relay's own host:port even when the bytes travel via localhost.
+pub fn publish_via(relay_url: &str, tunnel: Option<&str>, event: &NostrEvent) -> Result<(), String> {
+    publish_inner(relay_url, tunnel, None, event)
+}
+
+/// As publish_via, answering NIP-42 AUTH challenges with the role's key —
+/// the live relay refuses unauthenticated publishes ("auth-required",
+/// observed 2026-08-15).
+pub fn publish_authed(
+    relay_url: &str,
+    tunnel: Option<&str>,
+    key: &RoleKey,
+    event: &NostrEvent,
+) -> Result<(), String> {
+    publish_inner(relay_url, tunnel, Some(key), event)
+}
+
+fn publish_inner(
+    relay_url: &str,
+    tunnel: Option<&str>,
+    key: Option<&RoleKey>,
+    event: &NostrEvent,
+) -> Result<(), String> {
+    match tunnel {
+        Some(addr) => {
+            let stream = std::net::TcpStream::connect(addr)
+                .map_err(|e| format!("relay connect (tunnel {addr}): {e}"))?;
+            stream
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .map_err(|e| format!("tunnel timeout set: {e}"))?;
+            let (mut ws, _) = tungstenite::client(relay_url, stream)
+                .map_err(|e| format!("relay connect: {e}"))?;
+            pump(&mut ws, relay_url, key, event)
+        }
+        None => {
+            let (mut ws, _) =
+                tungstenite::connect(relay_url).map_err(|e| format!("relay connect: {e}"))?;
+            pump(&mut ws, relay_url, key, event)
+        }
+    }
+}
+
+/// Send the EVENT frame and read until the relay's OK for OUR event id
+/// (relays may interleave other frames).
+fn pump<S: std::io::Read + std::io::Write>(
+    ws: &mut tungstenite::WebSocket<S>,
+    relay_url: &str,
+    key: Option<&RoleKey>,
+    event: &NostrEvent,
+) -> Result<(), String> {
     let frame = serde_json::json!(["EVENT", event]).to_string();
-    ws.send(tungstenite::Message::Text(frame))
+    ws.send(tungstenite::Message::Text(frame.clone()))
         .map_err(|e| format!("relay send: {e}"))?;
-    // read until the OK for OUR event id (relays may interleave other frames)
-    for _ in 0..10 {
+    let mut authed = false;
+    let mut last_refusal = String::new();
+    for _ in 0..20 {
         let msg = ws.read().map_err(|e| format!("relay read: {e}"))?;
         if let tungstenite::Message::Text(t) = msg {
             let v: serde_json::Value = match serde_json::from_str(&t) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
-            if v[0] == "OK" && v[1] == event.id.as_str() {
-                return if v[2] == true {
-                    Ok(())
-                } else {
-                    Err(format!("relay refused: {}", v[3].as_str().unwrap_or("")))
+            if v[0] == "AUTH" {
+                // NIP-42 challenge — sign kind-22242 and re-send the event
+                let (Some(key), Some(chal)) = (key, v[1].as_str()) else {
+                    return Err("relay demands auth; no key available".to_string());
                 };
+                if authed {
+                    continue; // one answer per connection; don't loop
+                }
+                let tags = vec![
+                    vec!["relay".to_string(), relay_url.to_string()],
+                    vec!["challenge".to_string(), chal.to_string()],
+                ];
+                let auth_ev = sign_event(key, 22242, tags, "", event.created_at)?;
+                ws.send(tungstenite::Message::Text(
+                    serde_json::json!(["AUTH", auth_ev]).to_string(),
+                ))
+                .map_err(|e| format!("relay auth send: {e}"))?;
+                ws.send(tungstenite::Message::Text(frame.clone()))
+                    .map_err(|e| format!("relay resend: {e}"))?;
+                authed = true;
+                continue;
+            }
+            if v[0] == "OK" && v[1] == event.id.as_str() {
+                let reason = v[3].as_str().unwrap_or("").to_string();
+                if v[2] == true {
+                    return Ok(());
+                }
+                if reason.starts_with("auth-required") && key.is_some() {
+                    // the refusal of the PRE-auth send — the challenge may
+                    // follow, or our authed re-send's OK is still coming
+                    // (live order 2026-08-15: AUTH, this refusal, then the
+                    // re-send's OK true). Keep reading either way.
+                    last_refusal = reason;
+                    continue;
+                }
+                return Err(format!("relay refused: {reason}"));
             }
         }
     }
-    Err("no OK from relay for our event".to_string())
+    if last_refusal.is_empty() {
+        Err("no OK from relay for our event".to_string())
+    } else {
+        Err(format!("relay refused: {last_refusal}"))
+    }
 }
 
 fn hex_encode(b: &[u8]) -> String {
@@ -241,6 +359,7 @@ fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, S
     let identity_dir = std::path::PathBuf::from(home).join(".chorus/identity");
     let relay = std::env::var("BUZZ_RELAY_URL")
         .unwrap_or_else(|_| "ws://192.168.86.242:3000".to_string());
+    let tunnel = std::env::var("BUZZ_RELAY_TUNNEL").ok();
     let created_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -252,5 +371,5 @@ fn deliver_reply(role: &str, text: &str, content_hash: &str) -> Result<String, S
     .join(".chorus/state");
     let seq = next_seq(&state_dir, role);
     let ev = build_reply_event_seq(&key, role, text, content_hash, created_at, seq)?;
-    publish(&relay, &ev).map(|()| ev.id)
+    publish_authed(&relay, tunnel.as_deref(), &key, &ev).map(|()| ev.id)
 }
