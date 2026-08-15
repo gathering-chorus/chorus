@@ -46,4 +46,8 @@ pub mod canonical_write_guard;
 pub mod card_add_probe;
 pub mod memory_pressure_guard; // #3625 — refuse Task/Agent fanout under memory pressure
 pub mod reply_delivery; // #3864 — reply.emitted at the Stop hook (delivery correlation)
+pub mod buzz_reply; // #3893 — reply publish to Buzz (Nostr) from the Stop hook
+#[cfg(test)]
+#[path = "buzz_reply_test.rs"]
+mod buzz_reply_test; // red-first tests for buzz_reply (DEC-1674)
 pub mod word_cap; // #3843 — word-cap Stop-hook leg (pairs with #3818 send-path gate)

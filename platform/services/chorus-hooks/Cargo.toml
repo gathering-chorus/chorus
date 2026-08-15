@@ -41,6 +41,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ureq = { version = "2", features = ["json"] }
 libc = "0.2"
 sha2 = "0.10"
+# #3893 — Buzz reply publish from the Stop hook (schnorr sign + relay WS)
+secp256k1 = { version = "0.29", features = ["rand", "hashes"] }
+tungstenite = "0.21"
 # #2765 — UUIDv7 for nudge trace_id (sortable, time-ordered correlation key)
 uuid = { version = "1", features = ["v7"] }
 
