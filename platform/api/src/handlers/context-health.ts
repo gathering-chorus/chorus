@@ -77,6 +77,19 @@ export async function fetchContextHealth(
         .filter((c: unknown): c is Record<string, unknown> => !!c && typeof c === 'object')
         .map(shapeCheck)
     : [];
+  // #3900 — a health surface must NAME its state (the 08-08 gate-refusal rule
+  // applied to health; Kade caught "degraded failures=1, checks: []" live —
+  // the failure was unfindable from the endpoint that reported it). The pulse
+  // mirror of deep-health carries `warnings`/`details` as STRING ARRAYS
+  // ("name: reason"), never a `checks` array — so the branch above was
+  // structurally empty in production. Map them in; never report a count whose
+  // members the reader cannot see.
+  if (checks.length === 0) {
+    checks.push(
+      ...stringChecks(healthRaw.details, 'error'),
+      ...stringChecks(healthRaw.warnings, 'warning'),
+    );
+  }
 
   const data: ContextHealthData = { status, failures, warnings, checks };
   return { status: 200, body: buildEnvelope(header, sourceUrl, data) };
@@ -108,4 +121,20 @@ function shapeCheck(raw: Record<string, unknown>): HealthCheck {
   if (typeof raw.latencyMs === 'number') check.latencyMs = raw.latencyMs;
   else if (typeof raw.latency_ms === 'number') check.latencyMs = raw.latency_ms;
   return check;
+}
+
+/**
+ * "log-freshness: alert-notifier.log is 46h stale" → {name, status, reason}.
+ * A bare string with no colon becomes its own name — visible beats parsed.
+ */
+function stringChecks(raw: unknown, status: CheckStatus): HealthCheck[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((s: unknown): s is string => typeof s === 'string' && s.trim().length > 0)
+    .map((s) => {
+      const i = s.indexOf(':');
+      const name = i > 0 ? s.slice(0, i).trim() : s.trim();
+      const reason = i > 0 ? s.slice(i + 1).trim() : undefined;
+      return reason ? { name, status, reason } : { name, status };
+    });
 }

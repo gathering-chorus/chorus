@@ -1,3 +1,4 @@
+// @test-type: unit
 /**
  * context-health handler tests (#2234 Step 3).
  */
@@ -147,5 +148,41 @@ describe('fetchContextHealth', () => {
     expect(body.data.checks[1].status).toBe('unknown');
     expect(body.data.checks[2].latencyMs).toBe(5);
     expect(body.data.checks[2].lastCheck).toBe('2026-04-19T10:14:50-04:00');
+  });
+
+  // #3900 — the health surface must NAME its state. Production pulse carries
+  // warnings/details as STRING ARRAYS, never `checks` — before this fix the
+  // endpoint reported "degraded failures=1, checks: []" (Kade, 2026-08-15):
+  // a count whose members the reader could not see.
+  it('#3900: string warnings/details become named checks (the unfindable-failure fix)', async () => {
+    const pulse = JSON.stringify({
+      health: {
+        status: 'degraded',
+        failures: 1,
+        warning_count: 2,
+        details: ['deep-health: fuseki query timed out'],
+        warnings: ['log-freshness: a.log is 46h stale', 'bare-warning-no-colon'],
+      },
+    });
+    const r = await fetchContextHealth(
+      { sparql: stubSparql(), readPulse: () => pulse },
+      '/api/chorus/context/health',
+    );
+    const body = r.body as { data: { checks: Array<{ name: string; status: string; reason?: string }> } };
+    expect(body.data.checks).toHaveLength(3);
+    expect(body.data.checks[0]).toEqual({ name: 'deep-health', status: 'error', reason: 'fuseki query timed out' });
+    expect(body.data.checks[1]).toEqual({ name: 'log-freshness', status: 'warning', reason: 'a.log is 46h stale' });
+    expect(body.data.checks[2]).toEqual({ name: 'bare-warning-no-colon', status: 'warning' });
+  });
+
+  it('#3900 negative proof: the pre-fix shape (counts, no arrays) yields empty checks — the state the fix exists to end', async () => {
+    const pulse = JSON.stringify({ health: { status: 'degraded', failures: 1, warning_count: 24 } });
+    const r = await fetchContextHealth(
+      { sparql: stubSparql(), readPulse: () => pulse },
+      '/api/chorus/context/health',
+    );
+    const body = r.body as { data: { failures: number; checks: unknown[] } };
+    expect(body.data.failures).toBe(1);
+    expect(body.data.checks).toHaveLength(0);
   });
 });

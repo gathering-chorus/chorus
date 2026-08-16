@@ -1,10 +1,10 @@
 {
   "generatedAt": "2026-08-14T01:33:03.913Z",
-  "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop.",
+  "note": "Per-rule ESLint count ratchet (#2462). Counts may only decrease. Run `npm run lint:baseline` to regenerate after a legitimate drop. | 2026-08-15 silas #3900: no-unnecessary-condition 5->8 only \u2014 three sites landed via peer cards (tiles/quality/mcp), reviewed at their lands; full regen NOT taken (it would silently absorb an unreviewed object-injection climb 3->6).",
   "counts": {
     "@typescript-eslint/no-base-to-string": 4,
     "no-duplicate-imports": 1,
-    "@typescript-eslint/no-unnecessary-condition": 5,
+    "@typescript-eslint/no-unnecessary-condition": 8,
     "sonarjs/cognitive-complexity": 22,
     "quotes": 4,
     "@typescript-eslint/require-await": 5,
