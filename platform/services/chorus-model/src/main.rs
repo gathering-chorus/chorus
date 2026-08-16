@@ -235,8 +235,16 @@ fn run() -> Result<String, String> {
                 .map_err(|e| format!("cannot append to {}: {}", path, e))?;
             write!(f, "
 {}", turtle).map_err(|e| format!("write failed: {}", e))?;
-            Ok(format!("appended to {}:
-{}", file, turtle))
+            // #3902 — the pen DECLARES the version: every TBox write classifies
+            // itself (add = MINOR) and bumps the vocabulary ledger + its store
+            // projection. Fail-loud: an unrecorded bump would be a hand-edit
+            // wearing the pen's clothes.
+            let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+            let who = std::env::var("DEPLOY_ROLE").or_else(|_| std::env::var("CHORUS_ROLE")).unwrap_or_else(|_| "system".to_string());
+            let card = std::env::var("CHORUS_CARD").unwrap_or_default();
+            let vv = athena_model::vocab_version::record(&root, v, &format!("{}:{}", v, file), &who, &card)?;
+            Ok(format!("appended to {} (vocabVersion -> {}):
+{}", file, vv, turtle))
         }
         // #3752 — the FOURTH TBox verb: retirement. Shares the mint verbs'
         // refusal-first machinery, DIVERGES at the write boundary: mint ends in
@@ -291,9 +299,14 @@ fn run() -> Result<String, String> {
             let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)
                 .map_err(|e| format!("cannot append to {}: {}", path, e))?;
             writeln!(f, "{}", entry).map_err(|e| format!("write failed: {}", e))?;
+            // #3902 — a retire is a BREAKING change: MAJOR bump at the pen,
+            // recorded when the retirement is STAGED (the declaration moment),
+            // not at the deploy that executes it.
+            let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+            let vv = athena_model::vocab_version::record(&root, "retire", &format!("{}:{}", spec.domain, spec.class), &by, &card)?;
             Ok(format!(
-                "staged retirement (executes on next model deploy):\n{}\n→ {}",
-                entry, path
+                "staged retirement (executes on next model deploy; vocabVersion -> {}):\n{}\n→ {}",
+                vv, entry, path
             ))
         }
         Some("kinds") => Ok("product domain role value-stream value-stream-step service principle practice policy skill gate decision document".into()),

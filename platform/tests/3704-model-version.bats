@@ -36,9 +36,12 @@ aq() {
   echo "$output" | grep -qi 'yes'
 }
 
-# ── AC2: the first v1 class is tagged + points at its successor ──
-@test "AC2 Vertebra carries modelVersion v1 and supersededBy ValueStreamStep" {
-  run aq 'ASK { c:Vertebra c:modelVersion "v1" ; c:supersededBy c:ValueStreamStep }'
+# ── AC2: the first superseded class is tagged + points at its successor ──
+# #3902 — literals updated: the review pass renamed the transitional v1/v2 to
+# legacy/target (lib.rs:282, Jeff's 07-30 ruling); these tests still asserted
+# the pre-review literals and went red the day the review landed.
+@test "AC2 Vertebra carries modelVersion legacy and supersededBy ValueStreamStep" {
+  run aq 'ASK { c:Vertebra c:modelVersion "legacy" ; c:supersededBy c:ValueStreamStep }'
   echo "$output" | grep -qi 'yes'
 }
 # born-v2 default: a live/canonical class must NOT be tagged v1 (absence = v2).
@@ -48,8 +51,8 @@ aq() {
 }
 
 # ── AC3: the report query — every v1 class with its successor, machine-readable ──
-@test "AC3 v1-classes report query returns Vertebra→ValueStreamStep" {
-  run aq 'SELECT ?cl ?successor WHERE { ?cl c:modelVersion "v1" ; c:supersededBy ?successor }'
+@test "AC3 legacy-classes report query returns Vertebra→ValueStreamStep" {
+  run aq 'SELECT ?cl ?successor WHERE { ?cl c:modelVersion "legacy" ; c:supersededBy ?successor }'
   echo "$output" | grep -q 'Vertebra'
   echo "$output" | grep -q 'ValueStreamStep'
 }
