@@ -17,7 +17,6 @@ import { verifyShareSession, shareSessionFromHeader, readCookieKey } from './sha
 import { ChorusLogTailer } from './tailer';
 import { processJeffInput } from './jeff-input';
 import { SessionTailer } from './session-tailer';
-import { buildBuzzWiring } from './buzz-wiring';
 import { decideBind } from './room-bind';
 import { startRoom } from './buzz-room-wiring';
 import { ClearingChat } from './chat';
@@ -1391,12 +1390,12 @@ io.on('connection', (socket) => {
 // because a module that emits to sockets on import is a surprise to every
 // caller that only wanted a function.
 
-// #3696 — Clearing→Buzz mirror (Leg A), flag-gated OFF by default. Best-effort:
-// the bridge's onMessageSafe swallows every failure so a relay outage or missing
-// key can never break the room. Signs visible coordination types as kind:9.
-const buzz = buildBuzzWiring(process.env, (level, event, fields) =>
-  process.stderr.write(JSON.stringify({ level, event, ...fields, ts: new Date().toISOString() }) + '\n'),
-);
+// #3893 — the #3696 one-way mirror is GONE. It signed every visible message a
+// SECOND time as `principal-bridge` and published it to the same relay the room
+// publishes to, so one message could arrive twice under two different authors:
+// a delivery bug living inside the delivery mechanism. buzz-room-wiring.ts said
+// one of the two had to be deleted rather than left to confuse the next reader.
+// This is that deletion.
 
 // #3823 — the room. Flag-gated OFF. When on: every visible Clearing message is
 // published to the relay signed by ITS AUTHOR's WebID-derived key, and notes on
@@ -1435,7 +1434,6 @@ messageRouter.on('message', (msg) => {
     }
   }
   io.emit('message', msg);
-  buzz.mirror(msg); // #3696 — mirror to Buzz relay (dark unless BUZZ_BRIDGE_ENABLED=1)
   // #3823 — publish outbound, but NEVER re-publish what arrived from the relay:
   // otherwise every Clearing that receives a note broadcasts it again and the
   // room amplifies itself into a loop.
