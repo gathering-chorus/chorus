@@ -742,7 +742,13 @@ fn emit_spine_reason(home: &Path, event: &str, role: &str, card: u64, trace: &st
 /// Wren's screenshot: the room is a phone; detail goes behind the link.
 pub fn bridge_announce_line(card: u64, title: &str, checked: usize, total: usize, gates_green: bool, trace: &str) -> String {
     let gates = if gates_green { "gates ✓" } else { "gates ✗" };
-    let t = if title.len() > 60 { &title[..60] } else { title };
+    // #3892 (found live): byte-slicing panicked mid-'—' on a real card title
+    // ("not a char boundary"). Truncate on a CHARACTER boundary.
+    let t: String = if title.chars().count() > 60 {
+        title.chars().take(60).collect()
+    } else {
+        title.to_string()
+    };
     format!(
         "🎬 #{card} · {t} · AC {checked}/{total} · {gates} · go / no / more · http://localhost:3340/borg/trace.html?card={card}&trace={trace}"
     )
@@ -2965,4 +2971,18 @@ mod tests {
         assert_eq!(test_result_recorded(&test_result_line(31, "pass"), 3), None);
     }
 
+}
+
+#[cfg(test)]
+mod announce_truncation_3892 {
+    use super::bridge_announce_line;
+
+    #[test]
+    fn multibyte_title_truncates_on_char_boundary_not_panic() {
+        // negative proof: the exact live crash — em-dash straddling byte 60
+        let title = "Membrane panics in werk logs get labeled or silenced — three misdiagnoses in two days";
+        let line = bridge_announce_line(3892, title, 1, 2, true, "t");
+        assert!(line.contains("#3892"));
+        assert!(!line.is_empty());
+    }
 }
