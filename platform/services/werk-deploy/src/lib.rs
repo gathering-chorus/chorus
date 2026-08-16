@@ -204,11 +204,24 @@ pub fn crate_binaries_in(crate_dir: &Path) -> Vec<String> {
     };
     let explicit = bin_names_in_toml(&toml);
     let pkg = package_name_in_toml(&toml);
+    // #3902 — a src/bin/*.rs whose PATH is claimed by an explicit [[bin]] is not
+    // an autobin: cargo builds it under the [[bin]]'s NAME only. Discovering it
+    // by file stem invented a phantom binary (chorus_model_retired) that no
+    // build produces — and the #3896 sibling deploy then refused, correctly, on
+    // an artifact that cannot exist. Exclude explicitly-pathed files.
+    let claimed_paths: std::collections::HashSet<String> = bin_paths_in_toml(&toml).into_iter().collect();
     let mut autobins: Vec<String> = Vec::new();
     if let Ok(rd) = fs::read_dir(crate_dir.join("src").join("bin")) {
         for e in rd.flatten() {
             let p = e.path();
             if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+                let rel = p.strip_prefix(crate_dir).ok()
+                    .and_then(|r| r.to_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if claimed_paths.contains(&rel) {
+                    continue;
+                }
                 if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
                     autobins.push(stem.to_string());
                 }
@@ -233,6 +246,56 @@ pub fn crate_binaries_in(crate_dir: &Path) -> Vec<String> {
     out.extend(autobins);
     let mut seen = std::collections::HashSet::new();
     out.into_iter().filter(|b| !b.is_empty() && seen.insert(b.clone())).collect()
+}
+
+#[cfg(test)]
+mod discovery_3902 {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn explicitly_pathed_src_bin_is_not_a_phantom_autobin() {
+        let dir = std::env::temp_dir().join(format!("disc3902-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src/bin")).unwrap();
+        fs::write(dir.join("Cargo.toml"),
+            "[package]\nname = \"athena-model\"\n\n[[bin]]\nname = \"athena-model\"\npath = \"src/main.rs\"\n\n[[bin]]\nname = \"chorus-model\"\npath = \"src/bin/chorus_model_retired.rs\"\n").unwrap();
+        fs::write(dir.join("src/bin/chorus_model_retired.rs"), "fn main(){}").unwrap();
+        fs::write(dir.join("src/bin/real_autobin.rs"), "fn main(){}").unwrap();
+        let bins = crate_binaries_in(&dir);
+        // The claimed file must NOT re-appear under its stem (the #3902 phantom
+        // that failed a live land); the true autobin still discovers.
+        assert!(!bins.contains(&"chorus_model_retired".to_string()), "phantom: {:?}", bins);
+        assert!(bins.contains(&"athena-model".to_string()), "{:?}", bins);
+        assert!(bins.contains(&"chorus-model".to_string()), "{:?}", bins);
+        assert!(bins.contains(&"real_autobin".to_string()), "{:?}", bins);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
+
+/// `[[bin]] path = "..."` entries — the source files explicit bins claim.
+/// Companion to bin_names_in_toml; used to keep autobin discovery from
+/// re-inventing an explicitly-pathed file under its stem name (#3902).
+fn bin_paths_in_toml(toml: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut in_bin = false;
+    for line in toml.lines() {
+        let t = line.trim_start();
+        if t.starts_with("[[bin]]") {
+            in_bin = true;
+            continue;
+        }
+        if t.starts_with('[') {
+            in_bin = false;
+            continue;
+        }
+        if in_bin && t.starts_with("path") {
+            if let Some(v) = t.split('"').nth(1) {
+                out.push(v.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// `[[bin]] name = "..."` entries from a Cargo.toml (mirrors chorus-deploy's awk: inside a
