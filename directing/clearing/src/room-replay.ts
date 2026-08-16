@@ -96,8 +96,10 @@ export function readCursor(file: string): number | null {
   if (!ownedCursorPath(file)) return null;
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename -- path validated by ownedCursorPath above
-    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
-    const v = (parsed as { cursor?: unknown })?.cursor;
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as { cursor?: unknown } | null;
+    // #3909 — no optional chain here: JSON.parse either throws (caught below) or
+    // yields a value, so `?.` was a guard against a state the types rule out.
+    const v = parsed === null ? undefined : parsed.cursor;
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
   } catch {
     return null;
