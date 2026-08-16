@@ -1,3 +1,4 @@
+// @test-type: unit
 // #3335 — shouldNotifyOps: which mcp.tool.error events nudge ops (silas) vs stay
 // spine-only. The synthetic-trace guard (Pattern 1) + the anchored-regex fix (Pattern 9).
 // Pure predicate, so no HTTP/fetch — just the decision. node:test/tsx (the mcp-server runner).
@@ -37,4 +38,23 @@ test('caller validation/refusal at message start → suppressed', () => {
 test('Pattern 9: a real error containing "refused:"/"expected one of" mid-message is NOT suppressed', () => {
   assert.equal(shouldNotifyOps('fuseki connection refused: ECONNREFUSED', '3335', false), true);
   assert.equal(shouldNotifyOps('upstream said expected one of the shards to respond', '3335', false), true);
+});
+
+// #3904 — the live refusal shape. The old /^refused:/ anchor never matched
+// "chorus_cards_move refused: ..." so contract-test refusals nudged ops on
+// every nightly run (the 03:10 storms). These strings are copied VERBATIM
+// from the 2026-08-16 03:10 spine events — the store is the fixture.
+test('#3904: real refusal shape is suppressed (tool-name prefix)', () => {
+  assert.equal(shouldNotifyOps(
+    'chorus_cards_move refused: use-cards-done — status=Done must go through chorus_cards_done', '', false), false);
+  assert.equal(shouldNotifyOps(
+    'chorus_cards_set refused: no-status-changes — status is a transition, not a field.', '', false), false);
+  assert.equal(shouldNotifyOps('Unknown tool: chorus_nonexistent_tool', '', false), false);
+});
+
+test('#3904 NEGATIVE PROOF: systemic failures still notify', () => {
+  assert.equal(shouldNotifyOps('werk-deploy-fail — reason=work-fail exit=1', '', false), true);
+  assert.equal(shouldNotifyOps('ECONNREFUSED localhost:3340', '', false), true);
+  // "refused" as a bare word inside a systemic message must NOT suppress:
+  assert.equal(shouldNotifyOps('spawn failed; connection refused by kernel', '', false), true);
 });

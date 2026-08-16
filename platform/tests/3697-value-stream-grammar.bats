@@ -17,7 +17,11 @@ load test_helper
 
 setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  # #3904 — the #3839 split moved ValueStreamStep stanzas into their own file;
+  # these tests kept querying the streams file alone and went red asserting a
+  # layout the model deliberately left. The grammar spans BOTH files now.
   VSI="$REPO/designing/data/value-stream-instances.ttl"
+  VSS="$REPO/designing/data/value-stream-step-instances.ttl"
   CT="$REPO/roles/silas/ontology/chorus.ttl"
 }
 
@@ -26,7 +30,8 @@ q() {
   local data="$1" query="$2" qf
   qf="$(mktemp "${BATS_TMPDIR:-/tmp}/q.XXXXXX.rq")"
   printf 'PREFIX c: <https://jeffbridwell.com/chorus#>\nPREFIX owl: <http://www.w3.org/2002/07/owl#>\n%s\n' "$query" > "$qf"
-  arq --data="$data" --query="$qf" 2>/dev/null
+  # Steps + streams are one grammar split across two files (#3839): load both.
+  arq --data="$data" --data="$VSS" --query="$qf" 2>/dev/null
   rm -f "$qf"
 }
 

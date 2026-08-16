@@ -32,8 +32,17 @@ find_sentinel() {
     return 0
   fi
   local id
-  id=$(bash ${CHORUS_ROOT}/platform/scripts/cards list 2>/dev/null \
-    | grep -oE '[0-9]+[[:space:]]+\[e2e-sentinel\]' | awk '{print $1}' | head -1)
+  # #3904: list-scrape was fragile twice over (Later-lane truncation, then CLI
+  # env drift under bats). The sentinel is a PINNED fixture — #2429, titled
+  # "DO NOT MOVE" — so resolve it directly and VERIFY by marker; scrape only
+  # as fallback for a re-filed sentinel.
+  local pinned=2429
+  if bash ${CHORUS_ROOT}/platform/scripts/cards view "$pinned" 2>/dev/null | grep -q '\[e2e-sentinel\]'; then
+    id="$pinned"
+  else
+    id=$(bash ${CHORUS_ROOT}/platform/scripts/cards list --limit 500 2>/dev/null \
+      | grep -oE '[0-9]+[[:space:]]+\[e2e-sentinel\]' | awk '{print $1}' | head -1)
+  fi
   if [ -z "$id" ]; then
     echo "SENTINEL_MISSING — run: cards add '[e2e-sentinel] DO NOT MOVE — bats fixture (#2428)' ..." >&2
     return 1

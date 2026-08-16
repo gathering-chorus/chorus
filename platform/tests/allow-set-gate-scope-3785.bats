@@ -19,7 +19,7 @@
 # to the scope rather than to the gate.
 
 setup() {
-  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
   DEPLOY_SRC="$ROOT/platform/services/werk-deploy/src/lib.rs"
 }
 

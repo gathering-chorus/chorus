@@ -20,16 +20,25 @@ setup() {
 }
 
 # ── AC2 (hermetic): value-stream-instances.ttl is governed-deployed, wipe-safe ──
-@test "AC2 chorus-model-deploy hydrates value-stream-instances into urn:chorus:instances" {
-  grep -q 'INSTANCE_SET=' "$DEPLOY"
-  grep -q 'INSTANCE_GRAPH.*urn:chorus:instances' "$DEPLOY"
-  grep -q 'value-stream-instances.ttl' "$DEPLOY"
+@test "AC2 instances hydrate via athena-model seed --deploy from the committed manifest (#3895)" {
+  # #3904 — re-pointed: the INSTANCE_SET lane was deliberately REMOVED from
+  # chorus-model-deploy.sh by #3895 (recovery must never carry the DAL gate).
+  MANIFEST="$REPO/platform/config/instance-seed-manifest.txt"
+  [ -f "$MANIFEST" ]
+  grep -q 'value-stream-instances.ttl' "$MANIFEST"
+  # and the recovery script must NOT regrow the lane (mirrors 3785 guard):
+  run grep -c 'INSTANCE_SET=' "$DEPLOY"
+  [ "$output" = "0" ]
 }
-@test "AC2 the instances merge is additive-only — NO retire clause (co-tenant wipe impossible)" {
-  # the destructive #3593 retire leg (a FILTER-gated DELETE) must NEVER appear on the
-  # INSTANCE_MERGE — that leg stays quarantined to the ontology graph.
-  grep -q 'INSTANCE_MERGE=' "$DEPLOY"
-  ! grep -q 'INSTANCE_MERGE=.*FILTER' "$DEPLOY"
+@test "AC2 instances writes carry no retire clause (co-tenant wipe impossible, #3895 lane)" {
+  # #3904 re-point: the bash INSTANCE_MERGE lane is GONE (#3895). Additivity now
+  # lives in the DAL (seed_multi: per-subject delete-then-insert of staged
+  # subjects only — covered by chorus-model crate tests). What this file can
+  # still hold: the lane must not REGROW here, and the destructive RETIRE_ABSENT
+  # leg stays quarantined to the ontology graph, never the instances graph.
+  run grep -c 'INSTANCE_MERGE=' "$DEPLOY"
+  [ "$output" = "0" ]
+  ! grep -E 'RETIRE_ABSENT.*INSTANCE_GRAPH|INSTANCE_GRAPH.*RETIRE_ABSENT' "$DEPLOY"
 }
 
 # arq (portable across BSD/GNU, unlike grep -P) parses the committed TTL for the

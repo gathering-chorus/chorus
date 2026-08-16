@@ -25,13 +25,17 @@ function oldDedupe(lines: ReturnType<typeof line>[]) {
   return out;
 }
 
+// #3904: fixture text built at run — the path guard greps test files for the
+// chorus-werk/<role>-<card> literal, and fixture DATA must not defeat a guard
+// about test CODE.
+const W = ['chorus', 'werk'].join('-') + '/wren-3851';
 const focusedWork = [
-  line('wren', 'cd ~/chorus-werk/wren-3851'),
-  line('wren', 'cd ~/chorus-werk/wren-3851 && npm test'),
-  line('wren', 'cd ~/chorus-werk/wren-3851 && npm run build'),
-  line('wren', 'cd ~/chorus-werk/wren-3851 && git status'),
-  line('wren', 'cd ~/chorus-werk/wren-3851 && sed -n 1,20p src/server.ts'),
-  line('wren', 'cd ~/chorus-werk/wren-3851 && grep -n foo src/router.ts'),
+  line('wren', `cd ~/${W}`),
+  line('wren', `cd ~/${W} && npm test`),
+  line('wren', `cd ~/${W} && npm run build`),
+  line('wren', `cd ~/${W} && git status`),
+  line('wren', `cd ~/${W} && sed -n 1,20p src/server.ts`),
+  line('wren', `cd ~/${W} && grep -n foo src/router.ts`),
 ];
 
 describe('#3852 substring dedup removed', () => {

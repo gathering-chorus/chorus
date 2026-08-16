@@ -107,16 +107,16 @@ chorus:principal-flow-probe a chorus:Principal ;
 # ============================================================================
 chorus:principal-crawler-index a chorus:Principal ;
     rdfs:label "crawler-index worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/crawler-index/profile/card.ttl#me" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/crawler-index/profile/card#me" ;
     chorus:principalKind "worker" ;
     chorus:canSignIn "false" .
 chorus:principal-reindex-worker a chorus:Principal ;
     rdfs:label "reindex worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/reindex-worker/profile/card.ttl#me" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/reindex-worker/profile/card#me" ;
     chorus:principalKind "worker" ;
     chorus:canSignIn "false" .
 chorus:principal-embed-worker a chorus:Principal ;
     rdfs:label "embed worker" ;
-    chorus:webId "http://localhost:3000/pods/chorus/_agents/embed-worker/profile/card.ttl#me" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/embed-worker/profile/card#me" ;
     chorus:principalKind "worker" ;
     chorus:canSignIn "false" .

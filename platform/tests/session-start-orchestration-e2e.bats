@@ -16,7 +16,11 @@ load test_helper
 # to .consumed) — that path is tested by grep-style source-shape assertions
 # plus the existing Rust tests (session_start_additional_context.rs).
 
-SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
+# #3904 — resolve the INSTALLED shim (#2734: ~/.chorus/bin is the deploy
+# artifact; target/release is a build artifact that may be stale or absent).
+SHIM="$(command -v chorus-hook-shim || true)"
+[ -x "$SHIM" ] || SHIM="$HOME/.chorus/bin/chorus-hook-shim"
+[ -x "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 SESSION_RS="${CHORUS_ROOT}/platform/services/chorus-hooks/src/commands/session.rs"
 PULSE_LATEST="/tmp/pulse-latest.json"
 CONTEXT_CACHE="/tmp/session-context-silas.md"

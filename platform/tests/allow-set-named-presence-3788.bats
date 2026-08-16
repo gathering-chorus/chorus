@@ -18,7 +18,7 @@
 # asserts against a graph nobody built proves the gate compiles.
 
 setup() {
-  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
   GATE="$ROOT/platform/scripts/chorus-allow-set-gate"
   command -v curl >/dev/null || skip "curl absent"
   # shellcheck disable=SC1091

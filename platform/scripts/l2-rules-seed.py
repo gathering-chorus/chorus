@@ -27,7 +27,6 @@ RULES = {
             "platform/api/src/derive-role-state.ts"],
   "messages": ["roles/silas/briefs", "roles/silas/briefs-archive", "roles/wren/briefs",
                "roles/wren/briefs-archive", "roles/kade/briefs", "roles/kade/briefs-archive",
-               "roles/architect/briefs", "roles/wren/briefs", "product-manager/briefs",
                "platform/api/src/handlers/chorus-conversation.ts"],
   "decisions": ["designing/decisions", "roles/wren/decisions", "roles/silas/adr",
                 "platform/api/src/handlers/loom-decisions.ts", "platform/api/src/seed-loom-decisions.ts"],

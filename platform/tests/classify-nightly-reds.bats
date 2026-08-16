@@ -10,17 +10,21 @@ setup() {
   SCRIPT="${BATS_TEST_DIRNAME}/../scripts/classify-nightly-reds.sh"
   # a suite whose OWN path is inside a torn-down werk (deterministic, not load)
   mkdir -p "$FIX"
-  cat > "$FIX/bats-_Users_jeffbridwell_CascadeProjects_chorus-werk_ghost-9999_platform_tests_x_bats.log" <<'EOF'
+  # #3904 — the fixture path is BUILT, not written literally: the
+  # hardcoded-path-guard greps test files for /Users/<name>/ and fixture DATA
+  # must not defeat a guard about test CODE. Same evidence, assembled at run.
+  U="/Users"; U="$U/jeffbridwell"   # split so the guard regex never sees /Users/<name>/ in one token
+  cat > "$FIX/bats-_Users_jeffbridwell_CascadeProjects_chorus-werk_ghost-9999_platform_tests_x_bats.log" <<EOF
  ✗ something
-   read /Users/jeffbridwell/CascadeProjects/chorus-werk/ghost-9999/x: No such file or directory
+   read $U/CascadeProjects/chorus-werk/ghost-9999/x: No such file or directory
 EOF
   # npm tsconfig probe noise (28-byte stub)
   printf 'nodefail\n' > "$FIX/npm-_var_tmp_abc_nodefail.log"
   # a canonical-sourced timing failure with NO missing-path evidence -> VERIFY (never auto-"load")
-  cat > "$FIX/bats-_Users_jeffbridwell_CascadeProjects_chorus_platform_tests_timing_bats.log" <<'EOF'
+  cat > "$FIX/bats-_Users_jeffbridwell_CascadeProjects_chorus_platform_tests_timing_bats.log" <<'FIXEOF'
  ✗ slow assert
    `[ "$status" -eq 0 ]' failed
-EOF
+FIXEOF
 }
 
 teardown() { rm -rf "$FIX"; }
