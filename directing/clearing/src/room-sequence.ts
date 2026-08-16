@@ -52,7 +52,10 @@ export function emptySeqState(): SeqState {
  */
 export function seqOf(ev: { tags?: string[][] }): number | null {
   const tag = ev.tags?.find((t) => t[0] === SEQ_TAG);
-  if (!tag || tag[1] === undefined) return null;
+  // #3909 — `tag[1] === undefined` was unreachable: a tag that matched has at
+  // least one element, and the string[] type says every element is a string. The
+  // real check is whether the VALUE parses, done on the next line.
+  if (!tag) return null;
   const n = Number(tag[1]);
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
