@@ -21,9 +21,21 @@ fn hook_check(tool: &str, input: serde_json::Value) -> String {
         "cwd": &format!("{}/roles/silas", chorus_root())
     });
 
+    // #3905 — the test brings its own world (#3528/#3892): under cargo the
+    // membrane classifies Build context and empties the shim's stdout when it
+    // resolves prod surfaces. Every overridable surface points at a tempdir;
+    // the assertion below then tests the GUARD, not the membrane.
+    let world = std::env::temp_dir().join("hook-fp-world");
+    let _ = std::fs::create_dir_all(&world);
+    let w = |p: &str| world.join(p).to_string_lossy().into_owned();
     let output = Command::new(SHIM)
         .arg("pre-tool-use")
         .env("DEPLOY_ROLE", "silas")
+        .env("CHORUS_LOG_FILE", w("chorus.log"))
+        .env("CHORUS_SESSIONS_DIR", w("sessions"))
+        .env("CHORUS_DB_PATH", w("index.db"))
+        .env("CHORUS_LANCE_DIR", w("lance"))
+        .env("CHORUS_MESSAGES_DB", w("messages.db"))
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

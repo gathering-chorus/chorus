@@ -128,6 +128,9 @@ export interface TilePollerOptions {
   pulseFile?: string;
   chorusApi?: string;
   werkRunsDir?: string;
+  /** #3905 — the spine the projection reads. Tests MUST pin a fixture; the
+   *  live default made three 3772 cases red whenever a 03:00 pipeline ran. */
+  spineFile?: string;
 }
 
 export class TilePoller {
@@ -141,12 +144,19 @@ export class TilePoller {
   private readonly pulseFile: string;
   private readonly chorusApi: string;
   private readonly werkRunsDir: string;
+  private readonly spineFile: string;
 
   constructor(opts: TilePollerOptions = {}) {
     this.scanDir = opts.scanDir ?? SCAN_DIR;
     this.pulseFile = opts.pulseFile ?? PULSE_FILE;
     this.chorusApi = opts.chorusApi ?? CHORUS_API;
     this.werkRunsDir = opts.werkRunsDir ?? WERK_RUNS_DIR;
+    // A fixture scanDir without an explicit spine means a HERMETIC caller —
+    // point the spine into the same fixture dir (usually absent → no
+    // projection) instead of the live log.
+    this.spineFile = opts.spineFile
+      ?? process.env.CLEARING_SPINE_FILE
+      ?? (opts.scanDir ? path.join(opts.scanDir, 'chorus.log') : spinePath(process.env));
     for (const role of ROLES) {
       this.tiles.set(role, {
         role,
@@ -314,8 +324,7 @@ export class TilePoller {
    *  streams pane reads, #3884's spinePath). ~400KB covers hours of events. */
   private readSpineActivity(now: number): Record<string, SpineActivity> {
     try {
-      const p = process.env.CLEARING_SPINE_FILE || spinePath(process.env);
-      const fd = fs.openSync(p, 'r');
+      const fd = fs.openSync(this.spineFile, 'r');
       try {
         const size = fs.fstatSync(fd).size;
         const len = Math.min(size, 400_000);

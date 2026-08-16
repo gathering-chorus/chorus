@@ -62,6 +62,7 @@ export function followRun(
 ): () => void {
   let done = false;
   const timer = setInterval(() => {
+    // (unref below) — see #3905
     void (async () => {
       if (done) return;
       try {
@@ -75,6 +76,11 @@ export function followRun(
       }
     })();
   }, intervalMs);
+  // #3905 — the follower must never HOLD the process open. In the daemon the
+  // server socket owns the event loop; in a test that launched a stub run,
+  // no WERK_EXIT ever arrives and this interval wedged the whole node:test
+  // process past the 30-min guard (nightly 2026-08-16, mcp-server suite).
+  if (typeof timer.unref === 'function') { timer.unref(); }
   return () => { done = true; clearInterval(timer); };
 }
 
