@@ -24,6 +24,18 @@ type Logger = (level: 'info' | 'error', event: string, fields: Record<string, un
 /** How many un-sent messages to hold while the relay is unreachable. */
 const MAX_PENDING = 100;
 
+/**
+ * #3907 — the Host the relay must see.
+ *
+ * Exported and pure so it can be asserted directly. The bug lived in the dial
+ * ARGUMENTS, and every existing room test injects its own connect(), so nothing
+ * that hid inside the default connect could ever be caught by them.
+ */
+export function dialOptions(relayHost: string | undefined, env: NodeJS.ProcessEnv = process.env): { headers?: { Host: string } } {
+  const host = relayHost ?? env.BUZZ_RELAY_HOST_HEADER;
+  return host ? { headers: { Host: host } } : {};
+}
+
 /** The subscription frame. One definition — it is sent twice (before auth,
  *  optimistically, and again once the relay accepts us).
  *
@@ -53,10 +65,13 @@ export interface RoomWiringDeps {
    *  identity is separate from per-message authorship: messages are signed by
    *  their author, the socket is authenticated by whoever is running it. */
   authAs?: string;
-  connect?: (url: string) => WebSocket;
+  connect?: (url: string, opts?: unknown) => WebSocket;
   /** #3893 — where the replay cursor persists. Injected so a test brings its
    *  own world instead of writing into the running role's ~/.chorus. */
   cursorFile?: string;
+  /** #3907 — the Host the relay should see, when we reach it through a tunnel
+   *  whose address is not the relay's own. Falls back to BUZZ_RELAY_HOST_HEADER. */
+  relayHost?: string;
 }
 
 
@@ -96,6 +111,8 @@ interface RoomState {
   /** #3893 — newest rendered note's created_at; the replay point. */
   cursor: number | null;
   cursorFile: string;
+  /** #3907 — options handed to every dial, including reconnects. */
+  dialOpts: { headers?: { Host: string } };
   /** #3893 — per-author counters, so a message that never came can be named. */
   seq: SeqState;
   /** Holes already announced, so the marker is said once and not on every note. */
@@ -204,14 +221,16 @@ function queuePending(st: RoomState, ev: NostrEvent): void {
   }
 }
 
-function connectRoom(st: RoomState, connect: (url: string) => WebSocket): void {
+function connectRoom(st: RoomState, connect: (url: string, opts?: unknown) => WebSocket): void {
   if (st.stopped) return;
   // A reconnect starts a fresh session: the relay challenges again, and carrying
   // `authed` across would skip the re-auth and subscribe to a socket that
   // refuses us — the room would go quiet after one blip.
   st.authed = false;
   st.authEventId = null;
-  const ws = connect(st.deps.relayUrl);
+  // Options go on EVERY dial, not just the first — a reconnect that drops the
+  // Host would silently resubscribe to nothing.
+  const ws = connect(st.deps.relayUrl, st.dialOpts);
   st.ws = ws;
   ws.on('open', () => {
     st.deps.log('info', 'buzz.room.connected', { relay: st.deps.relayUrl, topic: st.deps.topic });
@@ -244,9 +263,17 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
     seq: emptySeqState(),
     announced: new Map<string, string>(),
     cursorFile: deps.cursorFile ?? defaultCursorPath(os.homedir(), deps.topic),
+    dialOpts: {},
   };
   st.cursor = readCursor(st.cursorFile);
-  const connect = deps.connect ?? ((url: string) => new WebSocket(url));
+  // #3907 — the relay virtual-hosts by Host. Reaching it through the loopback
+  // tunnel (127.0.0.1:<port>) sends a Host of 127.0.0.1 and the relay answers
+  // 404 — the socket opens, the subscription never does, and the room looks
+  // simply quiet. Found live by Kade; a unit test could not see it because the
+  // stub socket never had a Host to get wrong.
+  const dialOpts = dialOptions(deps.relayHost);
+  const connect = deps.connect ?? ((url: string, opts?: unknown) => new WebSocket(url, opts as never));
+  st.dialOpts = dialOpts;
   connectRoom(st, connect);
 
   return {
