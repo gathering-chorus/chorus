@@ -106,7 +106,13 @@ export async function fetchContextPriorities(
   const byChunk = new Map<string, PriorityChunk>();
   const sequencedIds = new Set<number>();
   for (const b of bindings) {
-    const val = (k: string): string | undefined => (b as Record<string, { value?: string } | undefined>)[k]?.value;
+    // #3906 — bindings are read through a Map, not by indexing the parsed object.
+    // The keys come from a query WE wrote, but the object itself is parsed from an
+    // external response: an inherited key (constructor, __proto__) would resolve
+    // as a binding and quietly become a chunk label. Object.entries takes own
+    // enumerable keys only, so the inherited ones cannot be reached at all.
+    const fields = new Map(Object.entries(b as Record<string, { value?: string } | undefined>));
+    const val = (k: string): string | undefined => fields.get(k)?.value;
     const label = val('chunkLabel');
     const roleSeq = val('roleSeq');
     if (!label || roleSeq === undefined) continue;
@@ -234,8 +240,16 @@ function readUnsequenced(raw: string | null, role: string, sequenced: Set<number
     return { scope: 'board mirror unparseable — unsequenced set unknown, not empty', cards: [] };
   }
   const board = (pulse as { board?: Record<string, unknown> }).board ?? {};
+  // #3906 — same treatment for the pulse mirror. The three keys are literals
+  // today, so this one is provably safe; written this way so it STAYS safe if the
+  // list ever becomes dynamic, which is how the first one got in.
+  const lanes = new Map(Object.entries(board));
+  const readList = (k: string): unknown[] => {
+    const v = lanes.get(k);
+    return Array.isArray(v) ? v : [];
+  };
   const open = ['wip_cards', 'next_cards', 'swat_cards']
-    .flatMap((k) => (Array.isArray(board[k]) ? (board[k] as unknown[]) : []))
+    .flatMap(readList)
     .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object');
 
   const cards = open
