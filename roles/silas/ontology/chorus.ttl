@@ -605,6 +605,16 @@ chorus:implementedBy a owl:DatatypeProperty ;
     rdfs:domain chorus:ValueStreamStep ;
     rdfs:range xsd:string .
 
+# #3902 — the vocabulary's semantic version. DECLARED at the pen (athena-model
+# bumps it on every TBox write: retire=MAJOR, additive=MINOR; ledger at
+# designing/schemas/model-version-ledger.jsonl is the one home), IMPLEMENTED at
+# athena-make (owl-api serves it on every envelope). Distinct from
+# chorus:modelVersion, which is the per-class REVIEW classification
+# (target/legacy — Jeff's 07-30 ruling), not a version number.
+chorus:vocabVersion a owl:AnnotationProperty ;
+    rdfs:label "vocabulary version" ;
+    rdfs:comment "Semver of the whole model vocabulary, bumped at the governed pen. A consumer pins against this to detect breaking model changes." .
+
 chorus:hasValueStream a owl:ObjectProperty ;
     rdfs:label "has value stream" ;
     rdfs:comment "A value-stream step composes a child value stream (recursive composition; ratified 2026-07-15)." ;

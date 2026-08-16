@@ -2038,6 +2038,24 @@ pub fn pluralize(s: &str) -> String {
     format!("{}s", s)
 }
 
+/// #3902 — read the vocabulary semver once per process from the ontology graph
+/// (chorus:model chorus:vocabVersion, written by the pen's generated projection).
+/// Cached: deploys restart this service, so the cache lifetime IS the deploy.
+fn vocab_version_cached() -> String {
+    use std::sync::OnceLock;
+    static VV: OnceLock<String> = OnceLock::new();
+    VV.get_or_init(|| {
+        let q = format!(
+            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ chorus:model chorus:vocabVersion ?v }} }} LIMIT 1",
+            ns = NS, g = ONTOLOGY_GRAPH
+        );
+        sparql_json(&q).ok()
+            .map(|r| select_v(&r))
+            .and_then(|v| v.into_iter().next())
+            .unwrap_or_else(|| "unversioned".to_string())
+    }).clone()
+}
+
 fn json_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
 }
@@ -2516,6 +2534,12 @@ pub fn envelope(
     // #3704 — the class's model-version, PROJECTED from chorus:modelVersion (born-v2
     // default when absent). Makes the strangler-fig legible on every generated surface.
     p.push(format!("\"modelVersion\": \"{}\"", json_escape(model_version)));
+    // #3902 — the vocabulary's SEMVER, declared at the pen (athena-model bumps
+    // the ledger; the store carries chorus:vocabVersion via the generated
+    // MODEL_SET projection). A consumer pins against this to detect breaking
+    // model changes. "unversioned" = the projection is absent from the store —
+    // loud, never defaulted to a number.
+    p.push(format!("\"vocabVersion\": \"{}\"", json_escape(&vocab_version_cached())));
     if let Some(i) = id {
         p.push(format!("\"id\": \"{}\"", json_escape(i)));
     }
