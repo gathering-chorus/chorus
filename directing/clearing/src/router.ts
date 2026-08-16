@@ -11,7 +11,9 @@ export interface ChannelMessage {
   ts: string;
   /** #3823 — arrived from the Buzz relay; must not be published back to it. */
   buzzInbound?: boolean;
-  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe';
+  /** `gap` (#3893) names messages that never arrived — the only system-authored
+   *  type that is always visible. */
+  type: 'jeff-input' | 'role-response' | 'demo-ready' | 'accept-request' | 'blocked' | 'role-to-role' | 'system-error' | 'pm-thinking' | 'probe' | 'gap';
   level?: string;
   visible: boolean;
 }
@@ -132,6 +134,12 @@ type ClassificationHit = { type: ChannelMessage['type']; visible: boolean; text?
 type ClassificationRule = (raw: RawMessage) => ClassificationHit | null;
 
 const classificationRules: ClassificationRule[] = [
+  // #3893 — a gap marker is the ONE system message Jeff must always see: it
+  // names the messages that never reached him. It runs FIRST, above every noise
+  // sweep, because it is sent by `system` and would otherwise be swept up as
+  // plumbing — a notice about hidden messages, hidden. Proven by deleting this
+  // rule in room-gap-render-3893.test.ts.
+  (r) => r.type === 'gap' ? { type: 'gap', visible: true } : null,
   // Synthetic probe messages — hidden (#1933)
   (r) => (r.type === 'probe' || r.from === 'probe') ? { type: 'probe', visible: false } : null,
   // Batch progress / chorus-query system messages — hidden (#1706)

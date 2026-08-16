@@ -11,10 +11,13 @@
  * when Bedroom is off.
  */
 
+import os from 'os';
 import WebSocket from 'ws';
 import type { ClearingMsg, NostrEvent, NostrSigner } from './buzz-bridge';
 import { buildRoomIdentity, inboundToClearing, publishToRoom, type RoomIdentity } from './buzz-room';
 import { derivedSigner } from './buzz-signer';
+import { advanceCursor, defaultCursorPath, readCursor, roomFilter, writeCursor } from './room-replay';
+import { emptySeqState, holeMarker, holesFor, recordSeq, seqOf, type SeqState } from './room-sequence';
 
 type Logger = (level: 'info' | 'error', event: string, fields: Record<string, unknown>) => void;
 
@@ -22,9 +25,14 @@ type Logger = (level: 'info' | 'error', event: string, fields: Record<string, un
 const MAX_PENDING = 100;
 
 /** The subscription frame. One definition — it is sent twice (before auth,
- *  optimistically, and again once the relay accepts us). */
-function reqFrame(topic: string): string {
-  return JSON.stringify(['REQ', 'room', { kinds: [1], '#t': [topic], limit: 30 }]);
+ *  optimistically, and again once the relay accepts us).
+ *
+ *  #3893: the filter comes from the durable cursor, so a reconnect asks for
+ *  everything said while we were gone instead of the newest 30. The frame is
+ *  built at send time, never cached — a cursor read once at startup would
+ *  replay the same window after every disconnect. */
+function reqFrame(topic: string, cursor: number | null): string {
+  return JSON.stringify(['REQ', 'room', roomFilter(topic, cursor)]);
 }
 
 export interface RoomWiring {
@@ -46,6 +54,9 @@ export interface RoomWiringDeps {
    *  their author, the socket is authenticated by whoever is running it. */
   authAs?: string;
   connect?: (url: string) => WebSocket;
+  /** #3893 — where the replay cursor persists. Injected so a test brings its
+   *  own world instead of writing into the running role's ~/.chorus. */
+  cursorFile?: string;
 }
 
 
@@ -82,6 +93,13 @@ interface RoomState {
   stopped: boolean;
   authed: boolean;
   authEventId: string | null;
+  /** #3893 — newest rendered note's created_at; the replay point. */
+  cursor: number | null;
+  cursorFile: string;
+  /** #3893 — per-author counters, so a message that never came can be named. */
+  seq: SeqState;
+  /** Holes already announced, so the marker is said once and not on every note. */
+  announced: Map<string, string>;
 }
 
 /** Remember an id we published, bounded — an unbounded set in a process that
@@ -102,11 +120,46 @@ function handleInbound(st: RoomState, ev: NostrEvent): void {
   const { msg, disposition } = inboundToClearing(ev, st.identity, st.seenIds);
   if (msg) {
     st.deps.ingest(msg);
+    // #3893 — advance ONLY on a rendered note. Advancing on one we dropped
+    // would move the replay point past a message nobody ever saw, which is the
+    // silent loss this cursor exists to end.
+    const next = advanceCursor(st.cursor, ev.created_at);
+    if (next !== st.cursor) {
+      st.cursor = next;
+      if (next !== null) writeCursor(st.cursorFile, next);
+    }
+    announceHoles(st, msg.from, ev);
     return;
   }
   if (disposition !== 'own-echo') {
     st.deps.log('info', 'buzz.room.not_rendered', { disposition, pubkey: ev.pubkey.slice(0, 8) });
   }
+}
+
+/**
+ * #3893 — say what never arrived, in the room, once.
+ *
+ * The marker is ingested as a message rather than logged, because a hole Jeff
+ * cannot see is the defect itself: he spent days answering messages one, four
+ * and eight without knowing two, three, five, six and seven existed. It is
+ * announced once per distinct hole set — repeating it under every subsequent
+ * note would train him to scroll past it, which is the same as hiding it.
+ */
+function announceHoles(st: RoomState, author: string, ev: NostrEvent): void {
+  recordSeq(st.seq, author, seqOf(ev));
+  const missing = holesFor(st.seq, author);
+  const marker = holeMarker(author, missing);
+  if (marker === (st.announced.get(author) ?? '')) return;
+  st.announced.set(author, marker);
+  if (marker === '') return;   // the hole closed — a late note arrived
+  st.deps.log('error', 'buzz.room.gap', { author, missing });
+  st.deps.ingest({
+    from: 'system',
+    text: marker,
+    ts: new Date().toISOString(),
+    type: 'gap',
+    visible: true,
+  });
 }
 
 function onAuthChallenge(st: RoomState, challenge: string): void {
@@ -119,7 +172,7 @@ function onAuthChallenge(st: RoomState, challenge: string): void {
 function onAuthAccepted(st: RoomState, accepted: unknown): void {
   st.authed = true;
   st.deps.log('info', 'buzz.room.authenticated', { accepted });
-  st.ws?.send(reqFrame(st.deps.topic));
+  st.ws?.send(reqFrame(st.deps.topic, st.cursor));
   for (const ev of st.pending.splice(0)) st.ws?.send(JSON.stringify(['EVENT', ev]));
 }
 
@@ -165,7 +218,7 @@ function connectRoom(st: RoomState, connect: (url: string) => WebSocket): void {
     // Subscribe optimistically: a relay that demands auth first refuses this and
     // we re-send after the AUTH ok; one that does not never makes us wait for a
     // challenge that will not come.
-    ws.send(reqFrame(st.deps.topic));
+    ws.send(reqFrame(st.deps.topic, st.cursor));
   });
   ws.on('message', (raw: unknown) => onFrame(st, raw));
   ws.on('close', () => {
@@ -187,7 +240,12 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
     stopped: false,
     authed: false,
     authEventId: null,
+    cursor: null,
+    seq: emptySeqState(),
+    announced: new Map<string, string>(),
+    cursorFile: deps.cursorFile ?? defaultCursorPath(os.homedir(), deps.topic),
   };
+  st.cursor = readCursor(st.cursorFile);
   const connect = deps.connect ?? ((url: string) => new WebSocket(url));
   connectRoom(st, connect);
 
