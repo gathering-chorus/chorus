@@ -2126,7 +2126,11 @@ export const SYNTHETIC_CARD_IDS = new Set(['99998', '99999']);
 export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic: boolean): boolean {
   if (synthetic) return false;
   if (SYNTHETIC_CARD_IDS.has(cardId)) return false;
-  if (/^(Invalid (arguments|option)|expected one of|refused:)/i.test(errorMessage)) return false;
+  // #3904 — the old anchor /^refused:/ could not see the REAL message shape
+  // ("chorus_cards_move refused: use-cards-done ..."), so caller-side refusals
+  // nudged ops on every nightly contract-test run (03:10 storms, three nights).
+  // A suppression that cannot match the state it suppresses is a hollow gate.
+  if (/^(Invalid (arguments|option)|expected one of|Unknown tool:|(\w+ )?refused:)/i.test(errorMessage)) return false;
   return true;
 }
 

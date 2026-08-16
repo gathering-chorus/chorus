@@ -18,7 +18,7 @@
 setup() {
   SHACL="${SHACL_BIN:-shacl}"
   command -v "$SHACL" >/dev/null 2>&1 || skip "SHACL tool absent — cannot validate shapes here"
-  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
   SHAPES="$ROOT/roles/silas/ontology/security-model-3618.ttl"
   WORK="$(mktemp -d)"
   PRE='@prefix chorus: <https://jeffbridwell.com/chorus#> .

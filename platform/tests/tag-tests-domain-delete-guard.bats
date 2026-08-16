@@ -5,7 +5,11 @@
 # (the guard refuses system/portfolio graphs). Hermetic: reads source only,
 # never contacts Fuseki or any live service.
 
-setup() { ROOT="$(git rev-parse --show-toplevel)"; SCRIPT="$ROOT/platform/scripts/tag-tests-domain.py"; }
+setup() {
+  # #3904: cwd-independent — the nightly runner has its own cwd.
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME" && git rev-parse --show-toplevel)}"
+  SCRIPT="$ROOT/platform/scripts/tag-tests-domain.py"
+}
 
 @test "the only DELETE WHERE is the guarded one, and main() routes through clear_graph" {
   # exactly one executable DELETE (the f-string form `DELETE WHERE {{`), inside clear_graph().

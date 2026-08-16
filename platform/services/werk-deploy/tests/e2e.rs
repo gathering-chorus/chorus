@@ -1,3 +1,4 @@
+// @test-type: e2e
 //! Real end-to-end: actual `git` on temp repos + PATH-shimmed werk-build,
 //! chorus-bin-install, launchctl, codesign, gh. Proves deploy() against ADR-032 +
 //! #3062 AC: guaranteed rebuild; the TWO slot targets (test-in-demo = werk slot,
@@ -261,7 +262,7 @@ fn e2e_deploy_both_slots_and_guards() {
 /// (guard). RED before the died() instrumentation: this exit was silent, so a deploy
 /// that died before it could roll back vanished with only a dangling deploy.started.
 #[test]
-fn e2e_deploy_failed_witnessed_on_died_not_rolledback() {
+fn e2e_config_only_deploy_is_explicit_noop() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
     let bin = tmp("dfbin");
     // werk-build exits 0 but emits NO crate=cdhash pairs → the empty-summary terminal Err.
@@ -281,19 +282,18 @@ fn e2e_deploy_failed_witnessed_on_died_not_rolledback() {
     let werk = werk_base.join("silas-7301");
     git(&home, &["worktree", "add", "-q", "-b", "silas/7301", werk.to_str().unwrap(), "origin/main"]);
 
-    // target=werk (demo) skips the canonical stale-guard, so we reach the build step,
-    // which returns empty → the empty-summary terminal Err (a death, not a rollback).
-    let e = deploy(7301, "silas", "werk", &home, &werk_base).expect_err("empty summary must Err");
-    assert!(e.contains("no crate=cdhash") || e.contains("nothing to deploy"), "empty-summary err: {}", e);
+    // #3904 re-point (#3736/#3881): an empty summary is a MODEL-ONLY / config-only
+    // card and deploys as an explicit no-op — Ok("nothing to deploy"), never a
+    // death. The old expect_err pinned the retired fail-on-empty contract and
+    // went red the day empty_summary_is_model_only landed.
+    let out = deploy(7301, "silas", "werk", &home, &werk_base).expect("config-only deploy is an explicit no-op");
+    assert!(out.contains("nothing to deploy"), "config-only no-op names itself: {}", out);
 
     let witness = read(&home.join("ops/logs/werk-deploy.jsonl"));
-    assert!(witness.contains("\"event\":\"deploy.failed\""),
-        "deploy.failed witnessed on a died deploy (was silent): {}", witness);
-    assert!(witness.contains("\"reason\":\"empty-summary\""),
-        "deploy.failed carries the reason: {}", witness);
-    assert!(witness.contains("\"card_id\":7301"), "deploy.failed is card-bound: {}", witness);
+    assert!(!witness.contains("\"reason\":\"empty-summary\""),
+        "no empty-summary death may be witnessed for a config-only card: {}", witness);
     assert!(!witness.contains("deploy.rolled_back"),
-        "empty-summary is a death, not a rollback: {}", witness);
+        "a config-only no-op never rolls back: {}", witness);
 }
 
 /// #3126 — SHARED-LIBRARY deploy: cascade to graph-discovered consumers + the AC4

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @test-type: security — source-vs-store manifest audit
 # test-security-manifest-3726.sh — #3726: the security substrate must survive a
 # fresh load. Proves the deploy set carries identity/scope/schema/surfaces AND
 # that a clean load reproduces a WORKING allow-set — webIds that MATCH what CSS
@@ -22,7 +23,8 @@ no(){ echo "  FAIL: $1"; FAIL=1; }
 
 # 1 — source reconciled: 7 principals, ALL logical-issuer webIds, marknakib present, ZERO localhost
 np=$(grep -c "a chorus:Principal" "$ID_TTL" 2>/dev/null || echo 0)
-[ "$np" -eq 7 ] && ok "identity source has all 7 security principals ($np)" || no "identity source principal count = $np, expected 7"
+# #3904: 7→11 — the roster grew by reviewed cards (jeff+marknakib #3773 restore, bridge #3691, canary #3871). Exact-count stays (a ghost principal = red).
+[ "$np" -eq 11 ] && ok "identity source has all 11 security principals ($np)" || no "identity source principal count = $np, expected 11"
 if grep -qE 'webId +"http://localhost' "$ID_TTL" 2>/dev/null; then
   no "identity source STILL carries a localhost webId value — a fresh load would lock out every role"
 else
@@ -60,7 +62,7 @@ if [ -r "$AUTH" ] && curl -s -m4 http://localhost:3030/pods/query --data-urlenco
   sc=$(curl -s "$Q" --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?s) AS ?n) WHERE { GRAPH <$SG> { ?x c:hasScope ?s } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
   sloc=$(curl -s "$Q" --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?w) AS ?n) WHERE { GRAPH <$SG> { ?p c:webId ?w FILTER(CONTAINS(STR(?w),\"localhost\")) } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$SG" -o /dev/null 2>/dev/null || true
-  [ "${sp:-0}" -eq 7 ] && ok "scratch load reproduces 7 security principals" || no "scratch load reproduced ${sp:-?} principals, expected 7"
+  [ "${sp:-0}" -eq 11 ] && ok "scratch load reproduces 11 security principals" || no "scratch load reproduced ${sp:-?} principals, expected 11"
   [ "${sc:-0}" -eq 13 ] && ok "scratch load reproduces 13 scope grants" || no "scratch load reproduced ${sc:-?} scopes, expected 13"
   [ "${sloc:-1}" -eq 0 ] && ok "reproduced allow-set has ZERO localhost webIds (matches real tokens)" || no "reproduced allow-set has ${sloc} localhost webIds — reload would lock out"
 else

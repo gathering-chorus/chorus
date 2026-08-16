@@ -14,6 +14,7 @@ setup() {
   REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   CT="$REPO/roles/silas/ontology/chorus.ttl"
   VSI="$REPO/designing/data/value-stream-instances.ttl"
+  VSS="$REPO/designing/data/value-stream-step-instances.ttl"   # #3904 — the #3839 split
   DEPLOY="$REPO/platform/scripts/chorus-model-deploy.sh"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
 }
@@ -21,7 +22,7 @@ setup() {
 aq() { # arq over a data file; $1=data $2=query
   local qf; qf="$(mktemp "${BATS_TMPDIR:-/tmp}/tq.XXXXXX.rq")"
   printf 'PREFIX c: <https://jeffbridwell.com/chorus#>\nPREFIX owl: <http://www.w3.org/2002/07/owl#>\nPREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n%s\n' "$2" > "$qf"
-  arq --data="$1" --query="$qf" 2>/dev/null; rm -f "$qf"
+  arq --data="$1" --data="$VSS" --query="$qf" 2>/dev/null; rm -f "$qf"   # #3904: grammar spans two files since #3839
 }
 
 @test "arq SPARQL engine is present (no false-green from a missing binary)" {
@@ -49,9 +50,14 @@ aq() { # arq over a data file; $1=data $2=query
 }
 
 # ── AC4: the staging draft is INGESTED (via #3698 INSTANCE_SET), not un-ingested ──
-@test "AC4 value-stream-instances.ttl is ingested via the INSTANCE_SET lane" {
-  grep -q 'value-stream-instances.ttl' "$DEPLOY"
-  grep -q 'INSTANCE_GRAPH.*urn:chorus:instances' "$DEPLOY"
+@test "AC4 value-stream-instances.ttl is ingested via the seed manifest (#3895 lane)" {
+  # #3904 — the INSTANCE_SET lane moved OUT of chorus-model-deploy.sh (#3895:
+  # the recovery path must not carry the DAL-gated seed). The ingest lane is
+  # now `athena-model seed --deploy` reading the committed manifest.
+  MANIFEST="$REPO/platform/config/instance-seed-manifest.txt"
+  [ -f "$MANIFEST" ]
+  grep -q 'value-stream-instances.ttl' "$MANIFEST"
+  grep -q 'value-stream-step-instances.ttl' "$MANIFEST"
 }
 
 # ── AC3 (live): GET /valuestreams/chorus/tree returns the RECURSIVE tree ──

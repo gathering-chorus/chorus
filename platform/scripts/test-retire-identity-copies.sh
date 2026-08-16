@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# @test-type: integration — fixture graphs on live Fuseki, hermetic subjects
 # Negative proofs for retire-identity-principal-copies.sh (#3785 phase 2 / #3734).
 #
 # The retire deletes Principal records; done wrong it is the 2026-08-06 lockout.
@@ -36,7 +37,13 @@ trap wipe EXIT
 pass=0; fail=0
 ok() { if eval "$2"; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1"; fail=$((fail+1)); fi; }
 
+# #3904 — FITNESS_OWL_API pinned to a dead port: GUARD 2 probes the SERVED
+# surface, and the live owl-api now serves flow-probe (phase 1 went live after
+# this test was written), so an unpinned run leaked live state into the fixture
+# and GUARD 2 stopped refusing. A test brings its own world (#3528): here the
+# world is "phase 1 NOT live", which a dead port states exactly.
 run() { RETIRE_SECURITY_GRAPH="$SG" RETIRE_IDENTITY_GRAPH="$IG" \
+        FITNESS_OWL_API="${TEST_OWL:-http://127.0.0.1:9}" \
         CHORUS_ROOT="$ROOT" bash "$SCRIPT" 2>&1; }
 
 # --- VIOLATION: identity has an orphan (principal-ghost NOT in security).

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — static source/workflow asserts, no live service
 # #3116 retirement gate — werk-demo is the proving ceremony, not an orchestrator.
 # Structural memory (ADR-026 retirement-gate pattern): the ACT and the
 # go-run-your-gate nudge relay were stripped out of the binary; a future
@@ -25,8 +26,10 @@ ACCEPT="$ROOT/platform/services/werk-accept/src/lib.rs"
   [ "$status" -ne 0 ]
 }
 
-@test "werk-demo delegates the gate chain to the skill layer (#3116)" {
-  run grep -n "demo.gate.delegated" "$DEMO"
+@test "werk-demo gathers the gate chain as witness results (#3116→#3443)" {
+  # #3904 re-point: the delegated marker became the demo.gate.result witness —
+  # no verdict until every gate leaves one (the un-skippable ceremony, #3443).
+  run grep -n "demo.gate.result" "$DEMO"
   [ "$status" -eq 0 ]
 }
 
@@ -35,7 +38,19 @@ ACCEPT="$ROOT/platform/services/werk-accept/src/lib.rs"
   [ "$status" -eq 0 ]
 }
 
-@test "werk-accept gates finalize on demo.verdict, not preflight-pass/show.completed (#3116)" {
-  run grep -n "demo_verdict_pass" "$ACCEPT"
-  [ "$status" -eq 0 ]
+@test "werk-accept does NOT re-check the demo — ordering is the orchestrator's (#3499)" {
+  # #3904 re-point, INVERTED: the old assert pinned the witness-wall pattern
+  # #3499 deliberately removed (a downstream verb auditing an upstream verb
+  # failed real lands). Now: finalize must carry NO demo gate, and werk.yml
+  # must order demo before merge/accept — structure, not re-checking.
+  # comment-stripped: the #3499 doc comments NAME the retired gate in prose.
+  run bash -c "sed 's|//.*||' '$ACCEPT' | grep -nE 'demo_verdict_pass|demo\.presented'"
+  [ "$status" -ne 0 ]
+  WERKYML="$ROOT/.github/workflows/werk.yml"
+  [ -f "$WERKYML" ]
+  demo_line=$(grep -n "id: demo" "$WERKYML" | head -1 | cut -d: -f1)
+  merge_line=$(grep -n "name: merge" "$WERKYML" | head -1 | cut -d: -f1)
+  [ -n "$demo_line" ] && [ -n "$merge_line" ] && [ "$demo_line" -lt "$merge_line" ]
+  # and merge is CONDITIONED on the demo's proven output — the structural edge:
+  grep -q "steps.demo.outputs.proven" "$WERKYML"
 }

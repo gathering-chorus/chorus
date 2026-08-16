@@ -21,7 +21,11 @@ setup() {
   bad=$(grep -rlE '/Users/[A-Za-z0-9._-]+/' platform/tests/ 2>/dev/null \
           | grep -v 'features/step_definitions/' \
           | grep -v 'node_modules/' \
+          | grep -v 'fixtures/' \
           | grep -v 'hardcoded-path-guard.bats' || true)
+  # fixtures/ exempted (#3904): harvested-evidence snapshots (launchctl JSON)
+  # legitimately CONTAIN real paths — the guard governs test CODE, not captured
+  # data. Test code keeps deriving roots from $CHORUS_ROOT/BATS_TEST_DIRNAME.
   if [ -n "$bad" ]; then
     echo "Hardcoded absolute local paths found in:"
     echo "$bad" | sed 's/^/  - /'

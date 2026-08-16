@@ -19,7 +19,7 @@
 # fails loudly the moment someone adds a token requirement to the recovery path.
 
 setup() {
-  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
   DEPLOY="$ROOT/platform/scripts/chorus-model-deploy.sh"
 }
 

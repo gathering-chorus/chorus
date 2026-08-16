@@ -1,4 +1,5 @@
 #!/bin/bash
+# @test-type: unit — stubbed ops-nudge capture, hermetic
 # #3254 — nightly-suites must ALERT the owning role on completion (the call-to-action).
 # notify_results() parses the run's SUITE|kind|path|owner|status|summary lines, groups the
 # failures by owner, and fires ONE ops-nudge per owning role with their red suites. Green →
@@ -47,7 +48,10 @@ grep -q '^silas|' "$CAP" && p "silas alerted on his reds"          || f "silas N
 grep '^kade|'  "$CAP" | grep -q 'cards'        && p "kade's nudge names his red suite"   || f "kade nudge missing suite name: $(grep '^kade|' "$CAP")"
 grep '^silas|' "$CAP" | grep -qE 'pulse-bar|session-health' && p "silas's nudge names his red suites" || f "silas nudge missing suites: $(grep '^silas|' "$CAP")"
 # exactly one nudge per owner (not one per suite)
-[ "$(grep -c '^kade|'  "$CAP")" = "1" ] && p "kade alerted once (grouped)"  || f "kade alerted $(grep -c '^kade|' "$CAP")× (expected 1)"
+# #3904 — since #3606 kade (nightly owner) gets TWO nudges by design: his own
+# slice + the board-level TOTAL (the 2026-08-04 5x-undercount fix). 2 is correct.
+[ "$(grep -c '^kade|'  "$CAP")" = "2" ] && p "kade alerted twice (slice + board total, #3606)" || f "kade alerted $(grep -c '^kade|' "$CAP")× (expected 2: slice + total)"
+grep -q '^kade|nightly TOTAL:' "$CAP" && p "board-level TOTAL nudge present" || f "no board-total nudge — the #3606 aggregate is missing"
 [ "$(grep -c '^silas|' "$CAP")" = "1" ] && p "silas alerted once (grouped)" || f "silas alerted $(grep -c '^silas|' "$CAP")× (expected 1)"
 # passing suites' owners are NOT spuriously alerted beyond their real reds
 grep '^kade|' "$CAP" | grep -q 'pulse$' && f "kade nudge wrongly lists a passing suite" || p "passing suites not listed as red"

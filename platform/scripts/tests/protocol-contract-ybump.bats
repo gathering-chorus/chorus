@@ -1,98 +1,93 @@
 #!/usr/bin/env bats
-# #2311 — Y auto-bump regression.
+# @test-type: unit — hermetic: runs the generator against a COPY of claudemd.
 #
-# The bug Jeff caught in demo: hash flipped but chorus-prompt stayed at 2.0
-# because the plain `generate` path never persisted _protocol_core_hash, so
-# the auto-bump's "stored != current" check was always False on first compare.
-# Silas's fix adds the persist block at the plain-gen checksum-save site.
+# #2311 origin: the Y auto-bump regression. REWRITTEN by #3904 for the #3288
+# ledger contract, which retired auto-bump-on-generate entirely:
 #
-# This test pins that behavior: across multiple regens with core mutation,
-# Y must increment monotonically and the stamped chorus-prompt version in
-# each role's CLAUDE.md must match PROTOCOL_VERSION on disk.
+#   - version-ledger.json is the ONE home; PROTOCOL_VERSION is a rendered cache
+#   - plain `generate` NEVER writes version state (AC5: a version change cannot
+#     sit floating in canonical)
+#   - `bump` mode classifies deterministically: core fragment → MINOR,
+#     other constituent → PATCH, CLAUDEMD_MAJOR=1 → MAJOR
+#
+# The old suite asserted the retired X.Y auto-bump against LIVE canonical
+# (mutating real role CLAUDE.mds — a #3528 violation) and died parsing "6.0"
+# as an integer the day versions went semver. This suite brings its own world:
+# a tmp copy of designing/claudemd with tmp role dirs.
 
-CHORUS_ROOT="/Users/jeffbridwell/CascadeProjects/chorus"
-CLAUDEMD="$CHORUS_ROOT/designing/claudemd"
-GEN="$CHORUS_ROOT/platform/scripts/claudemd-gen.py"
-
-# Snapshot mutable state so a failed test doesn't leave the repo drifted.
 setup() {
-  PV_BACKUP=$(mktemp); cp "$CLAUDEMD/PROTOCOL_VERSION" "$PV_BACKUP"
-  CK_BACKUP=$(mktemp); cp "$CLAUDEMD/.checksums.json"  "$CK_BACKUP"
-  export PV_BACKUP CK_BACKUP
+  REPO="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
+  GEN="$REPO/platform/scripts/claudemd-gen.py"
+  W="$(mktemp -d)"
+  mkdir -p "$W/designing" "$W/roles/silas" "$W/roles/wren" "$W/roles/kade"
+  cp -R "$REPO/designing/claudemd" "$W/designing/claudemd"
+  CLAUDEMD="$W/designing/claudemd"
 }
 
-teardown() {
-  [ -n "$PV_BACKUP" ] && cp "$PV_BACKUP" "$CLAUDEMD/PROTOCOL_VERSION" && rm "$PV_BACKUP"
-  [ -n "$CK_BACKUP" ] && cp "$CK_BACKUP" "$CLAUDEMD/.checksums.json"  && rm "$CK_BACKUP"
-  # Re-regen so role CLAUDE.md stamps match the restored state.
-  python3 "$GEN" "$CLAUDEMD/manifest.json" "$CLAUDEMD" generate "" "#2311-ybump-teardown" >/dev/null 2>&1 || true
-}
+teardown() { rm -rf "$W"; }
 
-regen() {
-  python3 "$GEN" "$CLAUDEMD/manifest.json" "$CLAUDEMD" generate "" "#2311-ybump" >/dev/null 2>&1
-}
+gen()  { python3 "$GEN" "$CLAUDEMD/manifest.json" "$CLAUDEMD" generate "" "#3904-test" >/dev/null 2>&1; }
+bump() { python3 "$GEN" "$CLAUDEMD/manifest.json" "$CLAUDEMD" bump "" "#3904-test" >/dev/null 2>&1; }
 
 stamp_version() {
-  grep -oE '<!-- chorus-prompt: [0-9]+\.[0-9]+ -->' "$CHORUS_ROOT/roles/$1/CLAUDE.md" \
+  grep -oE '<!-- chorus-prompt: [0-9]+\.[0-9]+\.[0-9]+ -->' "$W/roles/$1/CLAUDE.md" \
     | head -1 | sed -E 's/<!-- chorus-prompt: (.+) -->/\1/'
 }
 
-@test "baseline: PROTOCOL_VERSION on disk matches stamp in all 3 roles" {
-  regen
+@test "baseline: PROTOCOL_VERSION matches the stamp in all 3 roles (semver)" {
+  gen
   disk=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
+  echo "$disk" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'
   for r in silas wren kade; do
     [ "$(stamp_version $r)" = "$disk" ]
   done
 }
 
-@test "mutating a core fragment auto-bumps Y and restamps all 3 roles" {
-  # Seed: establish baseline persisted _protocol_core_hash
-  regen
+@test "AC5 NEGATIVE PROOF: plain generate NEVER writes version state, even with a mutated core fragment" {
+  gen
   before=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
-  before_x="${before%.*}"
-  before_y="${before#*.}"
+  printf '\n<!-- ybump test marker -->\n' >> "$CLAUDEMD/shared/chorus-prompt.md"
+  gen
+  [ "$(cat "$CLAUDEMD/PROTOCOL_VERSION")" = "$before" ]
+}
 
-  # Mutate a protocol-core fragment
-  target="$CLAUDEMD/shared/chorus-prompt.md"
-  backup=$(mktemp); cp "$target" "$backup"
-  printf '\n<!-- ybump test marker -->\n' >> "$target"
-
-  regen
-
+@test "bump: core-fragment change classifies MINOR and restamps all 3 roles" {
+  gen
+  before=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
+  bx="${before%%.*}"; rest="${before#*.}"; by="${rest%%.*}"
+  printf '\n<!-- ybump test marker -->\n' >> "$CLAUDEMD/shared/chorus-prompt.md"
+  bump
   after=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
-  after_x="${after%.*}"
-  after_y="${after#*.}"
-
-  # X unchanged, Y bumped by exactly 1
-  [ "$after_x" = "$before_x" ]
-  [ "$after_y" -eq $((before_y + 1)) ]
-
-  # All 3 role stamps now at the new version
+  [ "$after" = "${bx}.$((by + 1)).0" ]
   for r in silas wren kade; do
     [ "$(stamp_version $r)" = "$after" ]
   done
-
-  mv "$backup" "$target"
 }
 
-@test "restoring the fragment still bumps Y (monotonic, not reset)" {
-  regen
-  v0=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
+@test "bump appends the ledger (append-only home, version is its head)" {
+  gen
+  n_before=$(python3 -c "import json;print(len(json.load(open('$CLAUDEMD/version-ledger.json'))['entries']))")
+  printf '\n<!-- ledger marker -->\n' >> "$CLAUDEMD/shared/chorus-prompt.md"
+  bump
+  n_after=$(python3 -c "import json;print(len(json.load(open('$CLAUDEMD/version-ledger.json'))['entries']))")
+  [ "$n_after" -eq $((n_before + 1)) ]
+  head_v=$(python3 -c "import json;print(json.load(open('$CLAUDEMD/version-ledger.json'))['entries'][-1]['version'])")
+  [ "$head_v" = "$(cat "$CLAUDEMD/PROTOCOL_VERSION")" ]
+}
 
-  target="$CLAUDEMD/shared/chorus-prompt.md"
-  backup=$(mktemp); cp "$target" "$backup"
-
-  printf '\n<!-- ybump test marker -->\n' >> "$target"
-  regen
+@test "monotonic: reverting the fragment and bumping again still climbs, never resets" {
+  gen
+  cp "$CLAUDEMD/shared/chorus-prompt.md" "$W/orig-fragment"
+  printf '\n<!-- marker A -->\n' >> "$CLAUDEMD/shared/chorus-prompt.md"
+  bump
   v1=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
-
-  mv "$backup" "$target"
-  regen
+  cp "$W/orig-fragment" "$CLAUDEMD/shared/chorus-prompt.md"
+  bump
   v2=$(cat "$CLAUDEMD/PROTOCOL_VERSION")
-
-  y0="${v0#*.}"; y1="${v1#*.}"; y2="${v2#*.}"
-  [ "$y1" -eq $((y0 + 1)) ]
-  [ "$y2" -eq $((y1 + 1)) ]
-  # Specifically: v2 is NOT equal to v0, even though fragments match v0.
-  [ "$v2" != "$v0" ]
+  [ "$v1" != "$v2" ]
+  python3 - "$v1" "$v2" <<'PYEOF'
+import sys
+a=tuple(map(int,sys.argv[1].split('.'))); b=tuple(map(int,sys.argv[2].split('.')))
+sys.exit(0 if b>a else 1)
+PYEOF
 }

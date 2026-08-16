@@ -10,7 +10,7 @@
 # gated, one home each.
 
 setup() {
-  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
   MANIFEST="$ROOT/platform/config/instance-seed-manifest.txt"
   # The artifact under test: this tree's build when present (a werk proves its
   # OWN binary, not whatever older build is installed), installed otherwise.

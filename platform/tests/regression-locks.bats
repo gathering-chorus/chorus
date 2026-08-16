@@ -124,9 +124,14 @@ CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
   # named here explicitly. If the Buzz transport changes, delete the line and the
   # lock tightens again — that is the point of listing it rather than widening
   # the pattern.
-  hits=$(grep -rni --include='*.sh' --include='*.rs' --include='*.ts' --include='*.py' \
-    -l '\bdocker\b' \
-    platform/scripts platform/services platform/api 2>/dev/null | \
+  # #3904 — comment-stripped: harvest scripts legitimately MENTION docker in
+  # prose about observed launchd units. A lock that cannot tell a comment from
+  # an invocation cannot tell the two states it exists to separate (the 3785
+  # guard's own lesson). Strip #- and //-comments, then match.
+  hits=$(for f in $(grep -rnil --include='*.sh' --include='*.rs' --include='*.ts' --include='*.py' \
+      '\bdocker\b' platform/scripts platform/services platform/api 2>/dev/null); do
+      sed -e 's|//.*||' -e 's|#.*||' "$f" | grep -qi '\bdocker\b' && echo "$f"
+    done | \
     grep -v 'node_modules' | \
     grep -v '\.bak$' | \
     grep -v 'regression-locks.bats' | \
@@ -150,4 +155,18 @@ CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
   count=$(grep 'docker compose' platform/api/src/index-all-sources-deps.ts 2>/dev/null \
     | grep -vE '^\s*(//|\*|/\*)' | wc -l | tr -d ' ')
   [ "$count" -le 1 ]
+}
+
+@test "#3904 NEGATIVE PROOF: the comment-stripped docker lock still catches a REAL invocation" {
+  # Same discipline as recovery-path-ungated-3785: prove the strip did not
+  # defang the lock — a file whose comment mentions docker but whose CODE
+  # invokes it must be seen.
+  FIXTURE="$BATS_TEST_TMPDIR/uses-docker.sh"
+  printf '#!/usr/bin/env bash\n# docker is mentioned here in prose\ndocker compose up -d\n' > "$FIXTURE"
+  run bash -c "sed -e 's|//.*||' -e 's|#.*||' '$FIXTURE' | grep -qi '\\bdocker\\b'"
+  [ "$status" -eq 0 ]
+  FIXTURE2="$BATS_TEST_TMPDIR/mentions-docker.sh"
+  printf '#!/usr/bin/env bash\n# docker mentioned only in prose\necho hello\n' > "$FIXTURE2"
+  run bash -c "sed -e 's|//.*||' -e 's|#.*||' '$FIXTURE2' | grep -qi '\\bdocker\\b'"
+  [ "$status" -ne 0 ]
 }
