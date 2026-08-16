@@ -2130,7 +2130,11 @@ export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic:
   // ("chorus_cards_move refused: use-cards-done ..."), so caller-side refusals
   // nudged ops on every nightly contract-test run (03:10 storms, three nights).
   // A suppression that cannot match the state it suppresses is a hollow gate.
-  if (/^(Invalid (arguments|option)|expected one of|Unknown tool:|(\w+ )?refused:)/i.test(errorMessage)) return false;
+  // #3908 — split into two anchored, backtrack-free tests: the combined
+  // `(\w+ )?refused:` optional group tripped detect-unsafe-regex and the
+  // ratchet blocked every land. Behavior identical, proven by the suite.
+  if (/^(Invalid (arguments|option)|expected one of|Unknown tool:|refused:)/i.test(errorMessage)) return false;
+  if (/^\w+ refused:/i.test(errorMessage)) return false;
   return true;
 }
 
