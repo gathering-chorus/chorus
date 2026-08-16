@@ -1,61 +1,60 @@
-# Daily Ops Review — 2026-08-15
+# Daily Ops Review — 2026-08-16
 
-_Run at 10:15 UTC. Feeds Wren's morning summary._
+_Run at UTC. Feeds Wren's morning summary._
 
 ---
 
 ## 1. Hooks Health
-**🟡 YELLOW** — `cargo check` clean, 4 dead-code warnings (day 13 of accumulation)
-- `clear_cap_cache`, `Liveness` enum, `probe_role_session` + 1 unreferenced fn in word_cap.rs
-- **Action:** Address dead-code set before day 14 EOD (Wren/Silas). No blockers, no errors.
+**🟡 YELLOW** — `cargo check` passes; warning count climbed from 4 → 7 (day 14, deadline blown)
+- Dead-code set: `clear_cap_cache`, `Liveness` enum, `probe_role_session` + 4 more
+- **Action:** Wren/Silas — EOD deadline was today; remove dead-code set or file a card now
 
 ---
 
 ## 2. LaunchAgent /tmp Refs
-**🟡 YELLOW** — 17 plists carry `/tmp` log paths; all are stdout/stderr only (not runtime state paths)
-- Files: alert-notifier, api, clearing, context-cache-{daily,hourly,weekly}, cruft-scan, fuseki-{compact,perf,compact}, harvest-exporter, hooks, jeff-input-monitor, launchagent-metrics, nudge-health, ops, perf-baseline, posture-capture
-- Status unchanged >14d; no migration card visible
-- **Action:** Silas to open migration card and assign; target `$TMPDIR` or `~/.chorus/logs/`
+**🟡 YELLOW** — 17 plists carry `/tmp` log paths; all stdout/stderr only (unchanged, day 15+)
+- Files: alert-notifier, api, clearing, context-cache-{daily,hourly,weekly}, cruft-scan, fuseki-{compact,perf}, harvest-exporter, hooks, jeff-input-monitor, launchagent-metrics, nudge-health, ops, perf-baseline, posture-capture
+- **Action:** Silas to open migration card (target `$TMPDIR` / `~/.chorus/logs/`); no card yet
 
 ---
 
 ## 3. CLAUDE.md Fragment Staleness
-**🟡 YELLOW** — Fragments (roles/wren, roles/silas, roles/kade) last updated 3 days ago (#3831); root CLAUDE.md refresh due **Aug 16 (tomorrow)**
-- manifest.json at `_build: 217`; PROTOCOL_VERSION is single source for human version string
-- **Action:** Wren must bump fragment + CLAUDE.md to v1.6.1+ before EOD Aug 16.
+**🔴 RED** — Deadline missed; no claudemd commits in 7+ days; PROTOCOL_VERSION still 1.6.0
+- Wren was assigned EOD Aug 16 bump to v1.6.1+; not done as of this run
+- **Action:** Wren: bump fragment + CLAUDE.md today; this is overdue
 
 ---
 
 ## 4. CSC Compliance (/tmp in Scripts)
-**🔴 RED** — 152 `/tmp/` refs in platform/scripts/ (unchanged from yesterday); kade/scripts/ adds ~6 more, wren/scripts/ adds ~3
-- No migration in progress, no card assigned, floor not moving
-- **Action:** Silas escalate or assign migration card immediately; Wren owns kade/wren role script refs
+**🔴 RED** — 70 platform/scripts files + 2 wren/scripts + 4 kade/scripts carry `/tmp/` refs
+- No migration card, no movement from yesterday; floor not moving
+- **Action:** Silas to file migration card; Wren owns role-script refs
 
 ---
 
 ## 5. Git Dirty State
-**🟢 GREEN** — Working tree clean across all tracked role directories (0 uncommitted changes)
+**🟢 GREEN** — Working tree clean; 41 commits landed since Aug 14, all pushed
 
 ---
 
 ## 6. Stale WIP Cards
-**🔴 RED** — Card #1962 is 124+ days in "building"; no recent activity detected
-- Morning summary flagged this as zombie; still unresolved
-- **Action:** Wren to close #1962 from state.json today
+**🔴 RED** — Card #1962 still in `building` since 2026-04-12 (126 days); state.json unchanged
+- Wren was asked to close this yesterday; action not taken
+- **Action:** Wren to close #1962 immediately — zombie card is blocking state clarity
 
 ---
 
 ## 7. Domain Context Freshness
-**🔴 RED** — Breach at day 3; domain-context-chorus.md and domain-context-infrastructure.md months stale (10+ cards shipped since April, no content update)
-- All 5 domain-context files technically touched 3 days ago (#3831) but that was a code commit not a content refresh
-- **Action:** Wren owns both files; update today to close d3 breach (protocol violation)
+**🔴 RED** — Day 4 breach; all 5 domain-context files touched 2026-08-14 (code commit, not content)
+- domain-context-chorus.md and domain-context-infrastructure.md have months-stale content; 10+ cards shipped since last refresh
+- **Action:** Wren: content update required today; domain-context-seeds.md also suspect
 
 ---
 
 ## 8. Disk / Perf Baseline Delta
-**⚪ N/A** — No perf-baseline snapshot data found in repo (`data/` empty; `platform/scripts/perf-baseline*.sh` present but no output committed)
-- **Action:** Silas to confirm whether nightly perf-baseline LaunchAgent is capturing to spine or local file; wire output to repo if it should be tracked
+**⚪ N/A** — No baseline snapshot data in repo; perf-baseline scripts present but no output committed
+- **Action:** Silas to verify nightly LaunchAgent is firing and route output to repo or spine
 
 ---
 
-_Total: 3 RED, 3 YELLOW, 1 GREEN, 1 N/A_
+_Total: 4 RED, 2 YELLOW, 1 GREEN, 1 N/A (escalation from yesterday: CLAUDE.md deadline blown, warning count up)_
