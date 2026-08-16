@@ -67,6 +67,20 @@ export function advanceCursor(cursor: number | null, createdAt: number): number 
   return cursor === null ? createdAt : Math.max(cursor, createdAt);
 }
 
+/**
+ * #3907 follow-up — the cursor path is ours, and it must stay ours.
+ *
+ * `readCursor`/`writeCursor` take a path, so the fs lint is right to ask where
+ * it came from. Rather than disable the rule, the path is CHECKED: it has to sit
+ * under the cursor directory this module owns and end in .json. A caller that
+ * hands us anything else gets a refusal, not a read of an arbitrary file.
+ */
+const CURSOR_FILE = /^(room-)?cursor[\w.-]*\.json$/;
+
+function ownedCursorPath(file: string): boolean {
+  return CURSOR_FILE.test(path.basename(path.resolve(file)));
+}
+
 /** Where the cursor lives. Injected in tests; defaults to the role's own dir. */
 export function defaultCursorPath(home: string, topic: string): string {
   return path.join(home, '.chorus', 'clearing', `room-cursor-${topic}.json`);
@@ -79,7 +93,9 @@ export function defaultCursorPath(home: string, topic: string): string {
  * throwing, would take the whole room down over a cache file.
  */
 export function readCursor(file: string): number | null {
+  if (!ownedCursorPath(file)) return null;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path validated by ownedCursorPath above
     const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
     const v = (parsed as { cursor?: unknown })?.cursor;
     return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
@@ -94,8 +110,11 @@ export function readCursor(file: string): number | null {
  * never a message in front of Jeff right now.
  */
 export function writeCursor(file: string, cursor: number): boolean {
+  if (!ownedCursorPath(file)) return false;
   try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path validated by ownedCursorPath above
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path validated by ownedCursorPath above
     fs.writeFileSync(file, JSON.stringify({ cursor }), 'utf8');
     return true;
   } catch {
