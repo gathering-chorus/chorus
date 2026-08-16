@@ -80,7 +80,7 @@ export function followRun(
   // server socket owns the event loop; in a test that launched a stub run,
   // no WERK_EXIT ever arrives and this interval wedged the whole node:test
   // process past the 30-min guard (nightly 2026-08-16, mcp-server suite).
-  timer.unref?.();
+  if (typeof timer.unref === 'function') { timer.unref(); }
   return () => { done = true; clearInterval(timer); };
 }
 
