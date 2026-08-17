@@ -61,7 +61,12 @@ export function parseDeclarationInfo(content: string): Declaration | null {
   for (const raw of content.split('\n')) {
     const line = raw.trim();
     if (line === '') continue;
-    const m = line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)(?::([a-z0-9-]+))?\s*(.*)$/i);
+    // #3913 (from #3912): the optional `(?::([a-z0-9-]+))?` group after a
+    // quantified class tripped detect-unsafe-regex (backtracking). Same match
+    // set, spelled as two anchored linear alternatives — layer:concern first,
+    // bare layer second; no nested optional quantifier.
+    const m = line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+):([a-z0-9-]+)\s*(.*)$/i)
+      ?? line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)()\s*(.*)$/i);
     if (!m) {
       // still inside the leading comment block? keep scanning; else stop.
       if (isCommentLine(line)) continue;
@@ -69,7 +74,7 @@ export function parseDeclarationInfo(content: string): Declaration | null {
     }
     const t = m[1].toLowerCase();
     if (!VALID_LAYERS.has(t)) return null;
-    const concern = m[2] ? m[2].toLowerCase() : null;
+    const concern = m[2] ? m[2].toLowerCase() : null;   // '' from the bare-layer alternative → null
     if (concern !== null && !VALID_CONCERNS.has(concern)) return null;
     const rest = m[3].replace(/^[\s—–-]+/, '').trim();
     return { type: t, concern, justification: rest.length > 0 ? rest : null };
