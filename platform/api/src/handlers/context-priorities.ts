@@ -30,6 +30,11 @@ export interface ContextPrioritiesDeps {
   sparql: StampSparqlClient;
   /** Returns the raw pulse-latest.json file contents, or null if missing. */
   readPulse: () => string | null;
+  /** #3885 — statuses for the sequenced ids, so a landed card leaves the walk.
+   *  Returns id → status ('Done', 'Won\'t Do', 'Next', 'Later', …). Absent ids
+   *  are treated as still-open: dropping what we cannot confirm is how parked
+   *  work would silently disappear. */
+  readCardStatuses?: (ids: number[]) => Promise<Map<number, string>>;
   /** #3686 — governed read path: fetch an owl-api GENERATED route (e.g.
    *  '/domains?limit=500') and return its parsed JSON. Levels with a generated
    *  route read through it (Jeff's governed-paths steer); levels without one
@@ -137,6 +142,25 @@ export async function fetchContextPriorities(
       }
     }
   }
+  // #3885 — Jeff, 2026-08-17: the walk is "what's left, uncluttered by what is
+  // done". Membership rows carry an id and a rank and NO status, so five landed
+  // cards were being presented to Silas as open work and misordering his pulls.
+  //
+  // Closed statuses are named explicitly rather than inferred from absence: the
+  // board mirror only carries wip/next/swat, so "not in the mirror" means Done OR
+  // parked in Later, and dropping on absence would hide real work.
+  const CLOSED = new Set(['done', "won't do", 'wont do']);
+  if (deps.readCardStatuses && sequencedIds.size > 0) {
+    const statuses = await deps.readCardStatuses([...sequencedIds]);
+    for (const chunk of byChunk.values()) {
+      chunk.cards = chunk.cards.filter((c) => {
+        const st = statuses.get(c.id);
+        // Unknown status stays IN. A read that failed must not read as "all done".
+        return st === undefined || !CLOSED.has(st.trim().toLowerCase());
+      });
+    }
+  }
+
   const chunks = [...byChunk.values()].sort((a, b) => a.roleSequence - b.roleSequence);
   for (const c of chunks) c.cards.sort((a, b) => a.rank - b.rank);
 
