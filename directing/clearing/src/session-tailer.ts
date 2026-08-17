@@ -198,25 +198,30 @@ export class SessionTailer {
     return newest;
   }
 
+  /** #3913 — extracted from poll() so each half is one job: this one rebinds a
+   *  role's watcher when its session file changes. Returns false when the file
+   *  vanished mid-rebind (caller skips the read this tick). */
+  private rebindSession(role: string): boolean {
+    const state = this.sessions.get(role);
+    const currentFile = this.findSessionFile(role);
+    if (!currentFile || (state && state.file === currentFile)) return true;
+    if (state?.watcher) state.watcher.close();
+    try {
+      const stats = fs.statSync(currentFile);
+      const newState: SessionState = { file: currentFile, offset: stats.size };
+      try {
+        newState.watcher = fs.watch(currentFile, () => this.readNewEntries(role));
+      } catch { /* watch unavailable — the poll fallback still reads */ }
+      this.sessions.set(role, newState);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private poll(): void {
     for (const role of ROLES) {
-      const state = this.sessions.get(role);
-
-      // Check if session file changed (new session started)
-      const currentFile = this.findSessionFile(role);
-      if (currentFile && (!state || state.file !== currentFile)) {
-        // Close old watcher
-        if (state?.watcher) state.watcher.close();
-        try {
-          const stats = fs.statSync(currentFile);
-          const newState: SessionState = { file: currentFile, offset: stats.size };
-          try {
-            newState.watcher = fs.watch(currentFile, () => this.readNewEntries(role));
-          } catch { /* ignored */ }
-          this.sessions.set(role, newState);
-        } catch { continue; }
-      }
-
+      if (!this.rebindSession(role)) continue;
       // Fallback read for anything fs.watch missed
       this.readNewEntries(role);
     }

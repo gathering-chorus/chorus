@@ -113,10 +113,25 @@ export function nobleSigner(privKeyHex: string): NostrSigner {
  * chorus-nostr-key, and the graph's credential rows carry the same pubkeys. This
  * reads; it never writes and never mints.
  */
+/**
+ * #3913 — ONE identity-file reader, path validated before it reaches fs
+ * (security/detect-non-literal-fs-filename): `who` must be a bare slug, so a
+ * traversal or absolute path can never be composed into the read. Both public
+ * entry points default to this instead of an inline fs.readFileSync.
+ */
+function readIdentityFile(p: string): string {
+  const who = path.basename(path.dirname(p));
+  if (!/^[a-z0-9-]+$/.test(who) || p !== path.join(path.dirname(path.dirname(p)), who, 'nostr.json')) {
+    throw new Error(`buzz-signer: refusing to read an identity path that is not <home>/.chorus/identity/<slug>/nostr.json (${p})`);
+  }
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path proven above: fixed filename under a slug-validated identity dir
+  return fs.readFileSync(p, 'utf8');
+}
+
 export function registeredSigner(
   who: string,
   home: string = os.homedir(),
-  read: (p: string) => string = (p) => fs.readFileSync(p, 'utf8'),
+  read: (p: string) => string = readIdentityFile,
 ): NostrSigner {
   const file = path.join(home, '.chorus', 'identity', who, 'nostr.json');
   let parsed: { seckey?: unknown; pubkey?: unknown };
@@ -125,9 +140,11 @@ export function registeredSigner(
   } catch (err) {
     // Fail loud. A room that quietly runs unsigned is the failure we are leaving
     // behind: it looks alive and delivers nothing.
+    // #3913 — attach the cause instead of stringifying it (preserve-caught-error).
     throw new Error(
       `buzz-signer: cannot read the registered key for '${who}' at ${file} — `
-      + `mint it with chorus-nostr-key. (${err instanceof Error ? err.message : String(err)})`,
+      + 'mint it with chorus-nostr-key.',
+      { cause: err },
     );
   }
   if (typeof parsed.seckey !== 'string') {
@@ -149,7 +166,7 @@ export function registeredSigner(
 export function registeredPubkey(
   who: string,
   home: string = os.homedir(),
-  read: (p: string) => string = (p) => fs.readFileSync(p, 'utf8'),
+  read: (p: string) => string = readIdentityFile,
 ): string | null {
   try {
     const parsed = JSON.parse(read(path.join(home, '.chorus', 'identity', who, 'nostr.json'))) as { pubkey?: unknown };
