@@ -25,7 +25,9 @@ describe('deriveTestType', () => {
   });
 
   it('an explicit @test-type declaration is authoritative (gate enforces it matches signals)', () => {
-    expect(deriveTestType('// @test-type: security\nconst x = 1', 'tests/foo.test.ts')).toBe('security');
+    // #3912 two-axes: layer[:concern] — the derived TYPE is the layer axis;
+    // a bare concern is no longer a declaration (Silas ruling 2026-08-16).
+    expect(deriveTestType('// @test-type: unit:security\nconst x = 1', 'tests/foo.test.ts')).toBe('unit');
   });
 
   it('defaults to unit when no declaration, extension, or content signal', () => {

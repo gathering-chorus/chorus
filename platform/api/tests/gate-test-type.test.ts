@@ -80,3 +80,31 @@ describe('gateTestType', () => {
     expect(r.reason).toMatch(/justify the override/i);
   });
 });
+
+// #3912 — Silas's two-axes ruling (2026-08-16): the header grammar becomes
+// layer[:concern]. layer = cost (unit/integration/e2e/bdd/contract/fitness/
+// smoke); concern = subject (api/ui/perf/security). A concern ALONE is no
+// longer a declaration — that flattening is the ambiguity Jeff named (a file
+// can be unit AND security).
+import { parseDeclarationInfo as parseDeclaration } from '../src/gate-test-type';
+
+describe('#3912 layer[:concern] grammar', () => {
+  test('plain layer still valid', () => {
+    const d = parseDeclaration('// @test-type: unit — pure fns');
+    expect(d?.type).toBe('unit');
+  });
+  test('layer:concern valid, both axes captured', () => {
+    const d = parseDeclaration('// @test-type: unit:security — key perms refusals');
+    expect(d?.type).toBe('unit');
+    expect(d?.concern).toBe('security');
+  });
+  test('new layers valid (contract/fitness/smoke)', () => {
+    expect(parseDeclaration('// @test-type: contract — schema pin')?.type).toBe('contract');
+  });
+  test('concern alone is NOT a valid declaration (negative proof)', () => {
+    expect(parseDeclaration('// @test-type: security — probes')).toBeNull();
+  });
+  test('unknown concern refused', () => {
+    expect(parseDeclaration('// @test-type: unit:banana — nope')).toBeNull();
+  });
+});

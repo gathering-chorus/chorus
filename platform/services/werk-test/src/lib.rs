@@ -973,3 +973,165 @@ mod suite_world_tests {
         }
     }
 }
+
+// ── #3912 phase 1 — jest selection from the registry ────────────────────────
+// Jeff: "pipelines that pull registered tests." The jest leg stops running
+// whole packages from TS_PACKAGES; it runs the REGISTERED unit-layer test
+// files that cover the diff. Mechanical coverage comes from jest's own
+// import graph (--findRelatedTests); the registry is the authority on what
+// is a unit test at all. Selection = related ∩ registered(unit).
+//
+// Fallback contract (AC): registry unreachable → FULL package run, loudly
+// labeled — never a silent narrow. Under-selection is the failure the
+// negative fixture guards: a test registered as covering a changed file's
+// domain must appear when jest names it related.
+
+/// Structural TS-package resolution — NO hardcoded list (TS_PACKAGES is the
+/// surface this phase retires): the package is the path prefix before the
+/// first `tests/` or `src/` segment. `directing/clearing/tests/x.test.ts` →
+/// `directing/clearing`. Registry rows always carry such paths.
+pub fn ts_package_of(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    let cut = parts.iter().position(|s| *s == "tests" || *s == "src")?;
+    if cut == 0 {
+        return None;
+    }
+    Some(parts[..cut].join("/"))
+}
+
+/// One selected jest invocation: package dir + the test files to run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JestSelection {
+    pub package: String,
+    pub test_files: Vec<String>,
+}
+
+/// Intersect jest-related test files with the registry's unit-layer rows.
+/// `related` are repo-relative test file paths (from --findRelatedTests
+/// --listTests, normalized). Returns per-package selections, deterministic
+/// order. Files jest names related but the registry doesn't know stay OUT of
+/// the selection — they surface via the undeclared-gap channel instead of
+/// silently riding (registration is the contract, #3190 tagging rule).
+pub fn jest_selection(rows: &[TestRow], related: &[String]) -> Vec<JestSelection> {
+    let registered_unit: std::collections::BTreeSet<&str> = rows
+        .iter()
+        .filter(|r| r.pyramid_layer == "unit")
+        .map(|r| r.file_path.as_str())
+        .collect();
+    let mut by_pkg: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    for f in related {
+        if !registered_unit.contains(f.as_str()) {
+            continue;
+        }
+        if let Some(p) = ts_package_of(f) {
+            by_pkg.entry(p).or_default().push(f.clone());
+        }
+    }
+    by_pkg
+        .into_iter()
+        .map(|(package, mut test_files)| {
+            test_files.sort();
+            test_files.dedup();
+            JestSelection { package, test_files }
+        })
+        .collect()
+}
+
+/// The fallback decision, typed so the label can't be forgotten: a selection
+/// plan is either Selected (registry answered) or FullFallback with the
+/// REASON the registry could not be honored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JestPlan {
+    Selected(Vec<JestSelection>),
+    FullFallback { reason: String },
+}
+
+/// Build the jest plan: registry rows present → selection (possibly empty —
+/// an empty selection is a VALID answer meaning no registered unit test
+/// covers the diff); rows absent/unfetchable → full fallback, reason carried.
+pub fn jest_plan(rows_fetched: bool, rows: &[TestRow], related: &[String]) -> JestPlan {
+    if !rows_fetched {
+        return JestPlan::FullFallback {
+            reason: "registry unreachable — running FULL jest per affected package (loud fallback, #3912)".to_string(),
+        };
+    }
+    JestPlan::Selected(jest_selection(rows, related))
+}
+
+#[cfg(test)]
+mod jest_selection_3912 {
+    use super::*;
+
+    fn row(f: &str, layer: &str) -> TestRow {
+        TestRow { file_path: f.into(), covers: "messages-domain".into(), pyramid_layer: layer.into() }
+    }
+
+    #[test]
+    fn selection_is_related_intersect_registered_unit() {
+        let rows = vec![
+            row("directing/clearing/tests/tiles.test.ts", "unit"),
+            row("directing/clearing/tests/room.e2e.test.ts", "e2e"),
+        ];
+        let related = vec![
+            "directing/clearing/tests/tiles.test.ts".to_string(),
+            "directing/clearing/tests/room.e2e.test.ts".to_string(), // e2e: not unit-layer
+            "directing/clearing/tests/unregistered.test.ts".to_string(), // unknown to registry
+        ];
+        let sel = jest_selection(&rows, &related);
+        assert_eq!(sel.len(), 1);
+        assert_eq!(sel[0].package, "directing/clearing");
+        assert_eq!(sel[0].test_files, vec!["directing/clearing/tests/tiles.test.ts"]);
+    }
+
+    #[test]
+    fn under_selection_negative_proof() {
+        // #3734 — the guarded condition: a registered unit test jest names
+        // related MUST be selected. If this assertion can pass with the file
+        // absent, the selector is under-selecting and the gate is hollow.
+        let rows = vec![row("directing/clearing/tests/spine-tail.test.ts", "unit")];
+        let related = vec!["directing/clearing/tests/spine-tail.test.ts".to_string()];
+        let sel = jest_selection(&rows, &related);
+        assert!(
+            sel.iter().any(|s| s.test_files.iter().any(|f| f.ends_with("spine-tail.test.ts"))),
+            "known covering test was dropped: under-selection"
+        );
+    }
+
+    #[test]
+    fn registry_unreachable_is_loud_full_fallback() {
+        let plan = jest_plan(false, &[], &[]);
+        match plan {
+            JestPlan::FullFallback { reason } => assert!(reason.contains("registry unreachable")),
+            _ => panic!("must fall back FULL when registry is unreachable"),
+        }
+    }
+
+    #[test]
+    fn empty_selection_is_a_valid_answer_not_a_fallback() {
+        let rows = vec![row("directing/clearing/tests/tiles.test.ts", "unit")];
+        let plan = jest_plan(true, &rows, &[]);
+        assert_eq!(plan, JestPlan::Selected(vec![]));
+    }
+}
+
+#[cfg(test)]
+mod ts_packages_retirement_3912 {
+    /// #3912 retirement gate — the SELECTION path must stay free of the
+    /// hardcoded TS_PACKAGES list (the five-drifting-lists disease). This
+    /// reads the crate's own source: the jest-selection region (from
+    /// `pub fn ts_package_of` to the end of `jest_plan`) may not reference
+    /// TS_PACKAGES. If someone re-couples selection to the list, this goes
+    /// RED — and if the region markers are renamed it fails LOUDLY on the
+    /// missing marker rather than passing vacuously (#3734).
+    #[test]
+    fn jest_selection_region_never_consults_ts_packages() {
+        let src = include_str!("lib.rs");
+        let start = src.find("pub fn ts_package_of").expect("region start marker missing — retirement gate must fail loud, not vacuously");
+        let end = src[start..].find("mod jest_selection_3912").map(|i| start + i).expect("region end marker missing — retirement gate must fail loud, not vacuously");
+        let region = &src[start..end];
+        assert!(
+            !region.contains("TS_PACKAGES"),
+            "jest selection re-coupled to TS_PACKAGES — the retired list is back"
+        );
+    }
+}

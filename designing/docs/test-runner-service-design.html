@@ -69,6 +69,14 @@ code{background:#f3f4f6;padding:1px 4px;border-radius:3px;font-size:0.95em}
 <tr><td>eslint 10</td><td>n/a</td><td>yes (file args + --cache)</td><td>yes (--format=json)</td></tr>
 </table>
 
+<h2>Review rulings (Silas, gate-arch, 2026-08-16 — all accepted)</h2>
+<ul>
+<li><strong>Two axes, never merged:</strong> <code>pyramidLayer</code> (cost: unit/integration/e2e/bdd/contract/fitness/smoke) stays separate from <code>testConcern</code> (subject: api/ui/perf/security). Header grammar: <code>@test-type: layer[:concern]</code>; a concern alone is refused — one merged enum rebuilds the ambiguity Jeff named (a file can be unit AND security). Shipped in #3912.</li>
+<li><strong>Results get a clock:</strong> <code>runTs</code> offset-ISO Boston (#3880) + OPTIONAL <code>cardId</code> with typed absence (nightly has no card) — added via the pen as a live #3902 MINOR bump. (Silas)</li>
+<li><strong>nextest adopted, pinned:</strong> the runner fails LOUD if it is absent — no vacuous green (the arq lesson).</li>
+<li><strong>Selector home — werk-test evolves:</strong> a new crate would be a competing implementation. Executors become modules; the nightly reconciler lives beside them; nightly-suites shrinks to a caller.</li>
+</ul>
+
 <h2>Registration gaps this design closes</h2>
 <ul>
 <li><strong>One type vocabulary.</strong> The commit gate allows <code>unit…security</code>; the shape splits <code>pyramidLayer</code>/<code>testConcern</code> with different values — a <code>@test-type: security</code> file is unreachable by its declared type today. Unify (Silas shape ruling), and the gate's vocabulary becomes the shape's.</li>
