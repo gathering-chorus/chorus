@@ -12,7 +12,8 @@ use std::process::Command;
 use werk_test::{
     affected_units, cargo_skip_args, check_plan, gap_report, gate_outcome, is_self_modifying,
     match_cargo_case, model_units, parse_cargo_cases, parse_case_tsv, parse_quarantine_rows,
-    parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
+    jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
+    JestPlan,
     reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
     scope_declared_edges, scoped_test_units, suite_run_payload, test_result_payload,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
@@ -116,6 +117,29 @@ fn run(args: &[String]) -> Result<i32, String> {
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
+    // #3912 phase 1 — the jest leg pulls REGISTERED tests: per affected TS
+    // package, jest's import graph names the related test files for the diff
+    // and the registry (unit layer) is the authority on what runs. Registry
+    // unreachable → FULL per-package fallback, loudly labeled.
+    let mut related_all: Vec<String> = Vec::new();
+    for u in &units {
+        if let werk_test::TestUnit::TsPackage(p) = u {
+            let in_pkg: Vec<String> = changed
+                .iter()
+                .filter(|f| f.starts_with(&format!("{}/", p)))
+                .cloned()
+                .collect();
+            related_all.extend(jest_related_files(&werk, p, &in_pkg));
+        }
+    }
+    let jplan = jest_plan(plan_source == "model", &rows, &related_all);
+    if let JestPlan::FullFallback { ref reason } = jplan {
+        println!("jest-select: {}", reason);
+    } else if let JestPlan::Selected(ref sels) = jplan {
+        let n: usize = sels.iter().map(|s| s.test_files.len()).sum();
+        println!("jest-select: {} registered unit test file(s) cover the diff (registry-answered)", n);
+    }
+
     // #3661 AC3 — the on-disk-but-undeclared surface: test files in the planned
     // units that the tests domain does not declare are NAMED (stdout + spine),
     // never silently run or skipped. Only meaningful when the model answered.
@@ -188,7 +212,22 @@ fn run(args: &[String]) -> Result<i32, String> {
             }
             (CheckKind::Tsc, Some(TestUnit::TsPackage(p))) => run_tsc(&werk, p),
             (CheckKind::Jest, Some(TestUnit::TsPackage(p))) => {
-                let (ok, cases) = run_jest(&werk, p);
+                let (ok, cases) = match &jplan {
+                    JestPlan::Selected(sels) => {
+                        match sels.iter().find(|s| s.package == *p) {
+                            Some(sel) => run_jest_selected(&werk, p, &sel.test_files),
+                            None => {
+                                // A valid registry answer: nothing registered
+                                // covers this diff in this package. Visible,
+                                // never silent (#3443) — and the undeclared-gap
+                                // channel above names unregistered files.
+                                println!("   jest:{} — 0 registered unit tests cover the diff (selection empty)", p);
+                                (true, Vec::new())
+                            }
+                        }
+                    }
+                    JestPlan::FullFallback { .. } => run_jest(&werk, p),
+                };
                 all_cases.extend(cases);
                 ok
             }
@@ -455,6 +494,72 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
             (ok, jest_cases_via_jq(&o.stdout, werk))
         }
         Err(_) => (false, Vec::new()),
+    }
+}
+
+/// #3912 — run jest on an explicit registered-file selection. Paths arrive
+/// repo-relative; jest wants them package-relative.
+fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<CaseResult>) {
+    let pkg_dir = format!("{}/{}", werk, pkg);
+    if !ensure_ts_deps(werk, pkg) {
+        eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
+        return (false, Vec::new());
+    }
+    let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
+    if !Path::new(&jest).exists() {
+        return (true, Vec::new());
+    }
+    let rel: Vec<String> = files
+        .iter()
+        .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
+        .collect();
+    let mut cmd = Command::new(&jest);
+    cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json", "--runTestsByPath"])
+        .args(&rel)
+        .current_dir(&pkg_dir);
+    apply_suite_world(&mut cmd, werk);
+    match cmd.output() {
+        Ok(o) => {
+            let ok = o.status.success();
+            if !ok {
+                eprintln!("{}", String::from_utf8_lossy(&o.stderr));
+            }
+            (ok, jest_cases_via_jq(&o.stdout, werk))
+        }
+        Err(_) => (false, Vec::new()),
+    }
+}
+
+/// #3912 — jest's own import graph: which test FILES relate to the changed
+/// sources. `--listTests --findRelatedTests` prints absolute paths; normalize
+/// to repo-relative. Any failure yields EMPTY (selection then runs nothing
+/// for the package — visible; the full-fallback lane is only for a dead
+/// registry, not a jest hiccup, which would fail the real run anyway).
+fn jest_related_files(werk: &str, pkg: &str, changed_in_pkg: &[String]) -> Vec<String> {
+    if changed_in_pkg.is_empty() {
+        return Vec::new();
+    }
+    let pkg_dir = format!("{}/{}", werk, pkg);
+    let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
+    if !Path::new(&jest).exists() {
+        return Vec::new();
+    }
+    let rel: Vec<String> = changed_in_pkg
+        .iter()
+        .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
+        .collect();
+    let mut cmd = Command::new(&jest);
+    cmd.args(["--listTests", "--findRelatedTests"]).args(&rel).current_dir(&pkg_dir);
+    match cmd.output() {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|l| {
+                let l = l.trim();
+                let idx = l.find(&format!("{}/", pkg))?;
+                Some(l[idx..].to_string())
+            })
+            .collect(),
+        _ => Vec::new(),
     }
 }
 

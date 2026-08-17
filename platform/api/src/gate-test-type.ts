@@ -28,12 +28,18 @@ export interface GateResult {
 
 export interface Declaration {
   type: string;
+  /** #3912 — the second axis (Silas ruling 2026-08-16): concern = subject
+   *  (api/ui/perf/security), orthogonal to layer = cost. */
+  concern: string | null;
   justification: string | null;
 }
 
 // The declared vocabulary. A token outside this set is not a declaration — it's
 // prose or fixture noise (e.g. a doc comment's "@test-type: X" placeholder).
-const VALID_TYPES = new Set(['unit', 'integration', 'api', 'ui', 'perf', 'security', 'bdd', 'e2e']);
+// #3912 two-axes grammar: `layer[:concern]`. A concern ALONE is refused —
+// the merged enum rebuilt the ambiguity (a file can be unit AND security).
+const VALID_LAYERS = new Set(['unit', 'integration', 'bdd', 'e2e', 'contract', 'fitness', 'smoke']);
+const VALID_CONCERNS = new Set(['api', 'ui', 'perf', 'security']);
 
 // A declaration is honored ONLY in the file's LEADING comment block — a comment
 // line that begins with @test-type, before any real code. This defeats the
@@ -55,16 +61,18 @@ export function parseDeclarationInfo(content: string): Declaration | null {
   for (const raw of content.split('\n')) {
     const line = raw.trim();
     if (line === '') continue;
-    const m = line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)\s*(.*)$/i);
+    const m = line.match(/^(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)(?::([a-z0-9-]+))?\s*(.*)$/i);
     if (!m) {
       // still inside the leading comment block? keep scanning; else stop.
       if (isCommentLine(line)) continue;
       return null;
     }
     const t = m[1].toLowerCase();
-    if (!VALID_TYPES.has(t)) return null;
-    const rest = m[2].replace(/^[\s—–-]+/, '').trim();
-    return { type: t, justification: rest.length > 0 ? rest : null };
+    if (!VALID_LAYERS.has(t)) return null;
+    const concern = m[2] ? m[2].toLowerCase() : null;
+    if (concern !== null && !VALID_CONCERNS.has(concern)) return null;
+    const rest = m[3].replace(/^[\s—–-]+/, '').trim();
+    return { type: t, concern, justification: rest.length > 0 ? rest : null };
   }
   return null;
 }
@@ -81,6 +89,11 @@ export function gateTestType(content: string, _relPath: string): GateResult {
     return { ok: false, declared: null, signalled, reason: 'no @test-type declaration' };
   }
   const declared = decl.type;
+  // #3912 — a signalled CONCERN (api/ui/perf/security) is satisfied by the
+  // concern axis; the layer axis no longer has to impersonate it.
+  if (decl.concern !== null && decl.concern === signalled) {
+    return { ok: true, declared, signalled };
+  }
   if (signalled !== 'unit' && declared !== signalled) {
     // declared != signalled. The signal may be a fixture-data false positive
     // (a test ABOUT a security domain carrying its words as data). Allow the
