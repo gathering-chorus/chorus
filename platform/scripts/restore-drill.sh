@@ -130,7 +130,8 @@ for g in $GRAPHS; do
   if [ "$R" -gt $(( L * 2 )) ] && [ "$L" -gt 0 ]; then
     log "FAILED: <$g> restored $R far EXCEEDS live $L — wrong store compared"; FAILED=1; continue
   fi
-  log "ok <$g>: restored $R vs live $L (${AGE_DAYS}d old, floor $(awk -v l=$L -v m=$EFFECTIVE_RATIO "BEGIN{printf \"%d\", l*m}"))"
+  FLOOR="$(awk -v l="$L" -v m="$EFFECTIVE_RATIO" 'BEGIN{printf "%d", l*m}')"
+  log "ok <$g>: restored $R vs live $L (${AGE_DAYS}d old, floor ${FLOOR})"
 done
 
 # ── Leg 3: SQLite index — integrity + row counts ─────────────────────────────
