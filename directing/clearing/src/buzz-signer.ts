@@ -9,6 +9,9 @@
  * BUZZ_BRIDGE_NOSTR_KEY by the bridge's startup — the #3618 keyId convention
  * (name in the graph, value only in the file/env, never in the graph).
  */
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { schnorr } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils';
@@ -92,4 +95,66 @@ export function nobleSigner(privKeyHex: string): NostrSigner {
       return { id, sig };
     },
   };
+}
+
+/**
+ * #3910 — read a REGISTERED key from disk, rather than deriving one.
+ *
+ * The room derived its keys from a shared secret while the graph registered each
+ * identity's personal keys. Two key families for one identity: Silas rotated the
+ * secret on Friday and the room silently stopped authenticating, with nothing
+ * anywhere saying so. Jeff's Clearing sat empty through Sunday because of it.
+ *
+ * Custody (Silas, 2026-08-17): the room signs as ONE service identity — the
+ * bridge — because each role already publishes its own replies through its hooks
+ * daemon. The room never holds a role's private key.
+ *
+ * Keys live at ~/.chorus/identity/<who>/nostr.json, 0600, minted by
+ * chorus-nostr-key, and the graph's credential rows carry the same pubkeys. This
+ * reads; it never writes and never mints.
+ */
+export function registeredSigner(
+  who: string,
+  home: string = os.homedir(),
+  read: (p: string) => string = (p) => fs.readFileSync(p, 'utf8'),
+): NostrSigner {
+  const file = path.join(home, '.chorus', 'identity', who, 'nostr.json');
+  let parsed: { seckey?: unknown; pubkey?: unknown };
+  try {
+    parsed = JSON.parse(read(file)) as { seckey?: unknown; pubkey?: unknown };
+  } catch (err) {
+    // Fail loud. A room that quietly runs unsigned is the failure we are leaving
+    // behind: it looks alive and delivers nothing.
+    throw new Error(
+      `buzz-signer: cannot read the registered key for '${who}' at ${file} — `
+      + `mint it with chorus-nostr-key. (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  if (typeof parsed.seckey !== 'string') {
+    throw new Error(`buzz-signer: ${file} has no seckey — refusing to sign with nothing`);
+  }
+  const signer = nobleSigner(parsed.seckey);
+  // The file carries the pubkey too. If they disagree, the file is wrong about
+  // itself and every signature would be attributed to a key nobody registered.
+  if (typeof parsed.pubkey === 'string' && parsed.pubkey !== signer.pubkey) {
+    throw new Error(
+      `buzz-signer: ${file} pubkey does not match its seckey — `
+      + `file says ${parsed.pubkey.slice(0, 12)}…, key derives ${signer.pubkey.slice(0, 12)}…`,
+    );
+  }
+  return signer;
+}
+
+/** The pubkey a registered identity is known by, without touching its seckey. */
+export function registeredPubkey(
+  who: string,
+  home: string = os.homedir(),
+  read: (p: string) => string = (p) => fs.readFileSync(p, 'utf8'),
+): string | null {
+  try {
+    const parsed = JSON.parse(read(path.join(home, '.chorus', 'identity', who, 'nostr.json'))) as { pubkey?: unknown };
+    return typeof parsed.pubkey === 'string' ? parsed.pubkey : null;
+  } catch {
+    return null;   // an identity with no minted key simply cannot be attributed
+  }
 }
