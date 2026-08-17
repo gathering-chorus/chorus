@@ -1113,3 +1113,25 @@ mod jest_selection_3912 {
         assert_eq!(plan, JestPlan::Selected(vec![]));
     }
 }
+
+#[cfg(test)]
+mod ts_packages_retirement_3912 {
+    /// #3912 retirement gate — the SELECTION path must stay free of the
+    /// hardcoded TS_PACKAGES list (the five-drifting-lists disease). This
+    /// reads the crate's own source: the jest-selection region (from
+    /// `pub fn ts_package_of` to the end of `jest_plan`) may not reference
+    /// TS_PACKAGES. If someone re-couples selection to the list, this goes
+    /// RED — and if the region markers are renamed it fails LOUDLY on the
+    /// missing marker rather than passing vacuously (#3734).
+    #[test]
+    fn jest_selection_region_never_consults_ts_packages() {
+        let src = include_str!("lib.rs");
+        let start = src.find("pub fn ts_package_of").expect("region start marker missing — retirement gate must fail loud, not vacuously");
+        let end = src[start..].find("mod jest_selection_3912").map(|i| start + i).expect("region end marker missing — retirement gate must fail loud, not vacuously");
+        let region = &src[start..end];
+        assert!(
+            !region.contains("TS_PACKAGES"),
+            "jest selection re-coupled to TS_PACKAGES — the retired list is back"
+        );
+    }
+}

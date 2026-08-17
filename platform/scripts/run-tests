@@ -288,7 +288,14 @@ fi
 
 # Rust + bats: minimum smoke-dispatch — run them, count exit codes
 for f in "${BATS_FILES[@]}"; do
-  if bats "$f" >/dev/null 2>&1; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); fi
+  # #3912 — per-CASE counting via TAP (a file with 12 cases counted as "1"
+  # understated every summary; Silas review add). Runner absent/failed to
+  # parse → the whole file counts as one FAIL, never a silent skip.
+  _tap="$(bats -F tap "$f" 2>/dev/null)" || true
+  _p=$(printf '%s\n' "$_tap" | grep -c '^ok ' || true)
+  _f=$(printf '%s\n' "$_tap" | grep -c '^not ok ' || true)
+  if [ "$_p" -eq 0 ] && [ "$_f" -eq 0 ]; then _f=1; fi
+  PASS=$((PASS + _p)); FAIL=$((FAIL + _f))
 done
 
 end_ms=$(date +%s%N | cut -c1-13)
