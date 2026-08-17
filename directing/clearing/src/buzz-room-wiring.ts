@@ -89,6 +89,22 @@ export interface RoomWiringDeps {
  * then rejects a signature that is in fact correct — failing over a clock while
  * complaining about crypto.
  */
+/**
+ * #3911 — the URL we DIAL is not the URL we may CLAIM.
+ *
+ * Reaching the relay through the loopback tunnel means dialing
+ * ws://127.0.0.1:13000, and the AUTH event was carrying that address in its
+ * relay tag. NIP-42 has the relay validate that tag against its own identity, so
+ * every AUTH was refused — `accepted:false`, then "auth-required: authenticate
+ * before subscribing", forever. The tunnel fixed the dial and made the AUTH
+ * statement false, which is the same mistake as the Host header one layer up.
+ */
+export function authRelayUrl(dialUrl: string, hostHeader?: string): string {
+  if (!hostHeader) return dialUrl;
+  const scheme = dialUrl.startsWith('wss://') ? 'wss://' : 'ws://';
+  return `${scheme}${hostHeader}`;
+}
+
 function buildAuthEvent(signer: NostrSigner, relayUrl: string, challenge: string): NostrEvent {
   const createdAt = Math.floor(Date.now() / 1000);
   const tags = [['relay', relayUrl], ['challenge', challenge]];
@@ -180,7 +196,9 @@ function announceHoles(st: RoomState, author: string, ev: NostrEvent): void {
 }
 
 function onAuthChallenge(st: RoomState, challenge: string): void {
-  const auth = buildAuthEvent(st.connSigner, st.deps.relayUrl, challenge);
+  // Claim the relay's own address, not the tunnel we happen to reach it through.
+  const claimed = authRelayUrl(st.deps.relayUrl, st.deps.relayHost ?? process.env.BUZZ_RELAY_HOST_HEADER);
+  const auth = buildAuthEvent(st.connSigner, claimed, challenge);
   st.authEventId = auth.id;
   st.ws?.send(JSON.stringify(['AUTH', auth]));
   st.deps.log('info', 'buzz.room.authenticating', { as: st.deps.authAs ?? 'wren' });
