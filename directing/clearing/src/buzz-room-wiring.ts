@@ -15,7 +15,7 @@ import os from 'os';
 import WebSocket from 'ws';
 import type { ClearingMsg, NostrEvent, NostrSigner } from './buzz-bridge';
 import { buildRoomIdentity, inboundToClearing, publishToRoom, type RoomIdentity } from './buzz-room';
-import { derivedSigner } from './buzz-signer';
+import { registeredSigner } from './buzz-signer';
 import { advanceCursor, defaultCursorPath, readCursor, roomFilter, writeCursor } from './room-replay';
 import { emptySeqState, holeMarker, holesFor, recordSeq, seqOf, type SeqState } from './room-sequence';
 
@@ -252,7 +252,9 @@ export function startRoom(deps: RoomWiringDeps): RoomWiring {
   const st: RoomState = {
     deps,
     identity: deps.identity ?? buildRoomIdentity(),
-    connSigner: derivedSigner(deps.authAs ?? 'wren'),
+    // #3910 — the socket authenticates as the bridge service identity, whose
+    // pubkey IS in the relay allowlist because the graph registered it.
+    connSigner: registeredSigner(deps.authAs ?? 'bridge'),
     seenIds: new Set<string>(),
     pending: [],
     ws: null,

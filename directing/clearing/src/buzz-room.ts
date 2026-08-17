@@ -16,7 +16,7 @@
  */
 
 import { buildNote, type ClearingMsg, type NostrEvent, type NostrSigner } from './buzz-bridge';
-import { derivedSigner } from './buzz-signer';
+import { registeredPubkey, registeredSigner } from './buzz-signer';
 
 /** The actors with derived keys in the test-drive. */
 export const ROOM_ACTORS = ['jeff', 'wren', 'silas', 'kade'] as const;
@@ -30,17 +30,43 @@ export interface RoomIdentity {
 }
 
 /** Build the identity table from the derivation — one source, both directions. */
-export function buildRoomIdentity(actors: readonly string[] = ROOM_ACTORS): RoomIdentity {
-  const signers = new Map<string, NostrSigner>();
+export interface IdentitySources {
+  /** The registered pubkey for an actor, or null if none is minted. */
+  pubkeyFor?: (actor: string) => string | null;
+  /** The signer the room connects and publishes with. */
+  serviceSigner?: () => NostrSigner;
+}
+
+export function buildRoomIdentity(
+  actors: readonly string[] = ROOM_ACTORS,
+  sources: IdentitySources = {},
+): RoomIdentity {
+  // #3910 — attribution reads REGISTERED pubkeys, and the room signs as ONE
+  // service identity (bridge). Two changes, one cause: the room used to derive
+  // its own keys from a shared secret while the graph registered personal ones,
+  // so Silas's Friday rotation silently unauthenticated the room and Jeff's
+  // Clearing sat empty all weekend with nothing reporting it.
+  //
+  // Custody (Silas, 2026-08-17): each role already publishes its own replies
+  // through its hooks daemon, so the room never needs — and never holds — a
+  // role's private key. It reads their pubkeys to attribute what arrives.
+  // Injectable so a test brings its own world (#3528) instead of reading the
+  // running machine's ~/.chorus identity files.
+  const pubkeyFor = sources.pubkeyFor ?? ((a: string) => registeredPubkey(a));
+  const serviceSigner = sources.serviceSigner ?? (() => registeredSigner('bridge'));
   const byPubkey = new Map<string, RoomActor>();
   for (const actor of actors) {
-    const signer = derivedSigner(actor);
-    signers.set(actor, signer);
-    byPubkey.set(signer.pubkey, actor as RoomActor);
+    const pubkey = pubkeyFor(actor);
+    // An actor with no minted key is simply unattributable. Skipping is right:
+    // inventing a placeholder would let an unknown key render as a role.
+    if (pubkey) byPubkey.set(pubkey, actor as RoomActor);
   }
+  const bridge = serviceSigner();
   return {
     byPubkey,
-    signerFor: (actor: string) => signers.get(actor.toLowerCase()) ?? null,
+    // The room signs as the bridge, whoever is speaking. Authorship of a message
+    // is carried by the publisher that made it, not by this connection.
+    signerFor: () => bridge,
   };
 }
 

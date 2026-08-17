@@ -20,7 +20,13 @@ import type { ClearingMsg, NostrEvent } from '../src/buzz-bridge';
 const TEST_SECRET = 'test-secret-3823';
 process.env.BUZZ_ROOM_SECRET = TEST_SECRET;
 
-const identity = buildRoomIdentity();
+// #3910 — identity now reads REGISTERED keys from disk. The test injects its own
+// sources so it never touches the running machine's ~/.chorus, and still proves
+// the property that matters: a note is attributed by WHO SIGNED IT.
+const identity = buildRoomIdentity(undefined, {
+  pubkeyFor: (actor) => derivedSigner(actor, TEST_SECRET).pubkey,
+  serviceSigner: () => derivedSigner('bridge', TEST_SECRET),
+});
 
 const msg = (from: string, text = 'hello', visible = true): ClearingMsg => ({
   from, text, ts: '2026-08-11T16:00:00.000Z', type: 'role-response', visible,
@@ -116,13 +122,21 @@ describe('#3823 inbound attribution', () => {
 });
 
 describe('#3823 outbound', () => {
-  test('a visible message is published signed by its author', async () => {
+  // #3910 — CONTRACT CHANGE, recorded rather than quietly edited. The room used
+  // to sign as each author, which required holding every role's private key and
+  // a second key family derived from a shared secret. Silas's rotation of that
+  // secret unauthenticated the room on 2026-08-14 and nothing said so; Jeff's
+  // Clearing was empty all weekend. Custody ruling (Silas, 08-17): the room signs
+  // as ONE service identity, the bridge, and never holds a role's key — roles
+  // publish their own replies through their hooks daemon.
+  test('a published note is signed by the bridge service identity, not by the author', async () => {
     const sent: NostrEvent[] = [];
     const result = await publishToRoom(msg('kade'), {
       topic: 'team', identity, publish: async (ev) => { sent.push(ev); },
     });
     expect(result).toBe('sent');
-    expect(sent[0].pubkey).toBe(derivedSigner('kade').pubkey);
+    expect(sent[0].pubkey).toBe(derivedSigner('bridge', TEST_SECRET).pubkey);
+    expect(sent[0].pubkey).not.toBe(derivedSigner('kade', TEST_SECRET).pubkey);
     expect(sent[0].tags).toEqual([['t', 'team']]);
   });
 
@@ -139,16 +153,18 @@ describe('#3823 outbound', () => {
     });
   });
 
-  test('NEGATIVE PROOF: an actor with no key is refused, never signed by a stand-in', async () => {
-    // The tempting fallback is to sign with a default key so the message still
-    // gets out. That is exactly how the bridge key made every message look
-    // equally authentic.
-    const sent: NostrEvent[] = [];
-    const result = await publishToRoom(msg('some-stranger'), {
-      topic: 'team', identity, publish: async (ev) => { sent.push(ev); },
-    });
-    expect(result).toBe('no-key');
-    expect(sent).toHaveLength(0);
+  test('NEGATIVE PROOF: the room refuses to start when its service key is absent', () => {
+    // The old proof here was "an unknown actor is refused, never signed by a
+    // stand-in". Under the bridge-signs-everything model that property moved:
+    // the room makes no authorship claim, so an unknown SENDER is not the risk.
+    // The risk that remains is a room with no service key publishing anyway —
+    // unsigned traffic the relay would reject while our logs read as sent.
+    // It refuses at CONSTRUCTION, which is stricter and better: the room never
+    // starts rather than starting and failing quietly on each publish.
+    expect(() => buildRoomIdentity(undefined, {
+      pubkeyFor: () => null,
+      serviceSigner: () => { throw new Error('no bridge key'); },
+    })).toThrow(/no bridge key/);
   });
 
   test('hidden messages stay out of the room', async () => {
