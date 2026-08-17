@@ -1414,9 +1414,11 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
       // landed card leaves the walk. Read-only, ids parameterised, and a failure
       // returns an EMPTY map: unknown status keeps a card visible, because
       // hiding work we cannot confirm is the worse error.
-      readCardStatuses: async (ids: number[]) => {
+      // Synchronous inside (better-sqlite3), wrapped in a resolved promise to
+      // satisfy the dep's async contract without an await that does nothing.
+      readCardStatuses: (ids: number[]) => {
         const out = new Map<number, string>();
-        if (ids.length === 0) return out;
+        if (ids.length === 0) return Promise.resolve(out);
         try {
           const db = new Database(VIKUNJA_DB_PATH, { readonly: true, fileMustExist: true });
           try {
@@ -1432,9 +1434,9 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
             db.close();
           }
         } catch {
-          return new Map();
+          return Promise.resolve(new Map<number, string>());
         }
-        return out;
+        return Promise.resolve(out);
       },
     },
     req.originalUrl,

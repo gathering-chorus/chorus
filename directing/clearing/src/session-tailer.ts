@@ -227,6 +227,14 @@ export class SessionTailer {
     }
   }
 
+  /** Harness scaffolding that is never Jeff's words. */
+  private static readonly SCAFFOLD_PREFIX = ['Base directory for this skill', 'ARGUMENTS:', 'Stop hook'];
+
+  private static isScaffold(t: string): boolean {
+    if (t.includes('<system-reminder>') || t.includes('<command-message>')) return true;
+    return SessionTailer.SCAFFOLD_PREFIX.some((p) => t.startsWith(p));
+  }
+
   private extractUserText(rawContent: unknown): string {
     // #3887 — a single-string content carries the SAME command envelope as the
     // array form, and this branch used to hand it to the room verbatim. That is
@@ -240,13 +248,11 @@ export class SessionTailer {
     for (const p of rawContent) {
       if (p.type !== 'text' || !p.text) continue;
       const t = p.text.trim();
-      const nameMatch = t.match(/<command-name>([^<]+)<\/command-name>/);
-      const argsMatch = t.match(/<command-args>([^<]*)<\/command-args>/);
-      if (nameMatch) { slashCmd = nameMatch[1].trim(); continue; }
-      if (argsMatch && slashCmd) { slashCmd += ' ' + argsMatch[1].trim(); continue; }
-      if (t.includes('<system-reminder>') || t.includes('<command-message>')) continue;
-      if (t.startsWith('Base directory for this skill') || t.startsWith('ARGUMENTS:') || t.startsWith('Stop hook')) continue;
-      humanParts.push(t);
+      const name = /<command-name>([^<]+)<\/command-name>/.exec(t);
+      if (name) { slashCmd = name[1].trim(); continue; }
+      const args = /<command-args>([^<]*)<\/command-args>/.exec(t);
+      if (args && slashCmd) { slashCmd += ` ${args[1].trim()}`; continue; }
+      if (!SessionTailer.isScaffold(t)) humanParts.push(t);
     }
     return slashCmd || humanParts.join(' ').trim();
   }
