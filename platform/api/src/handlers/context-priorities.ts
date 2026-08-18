@@ -30,6 +30,11 @@ export interface ContextPrioritiesDeps {
   sparql: StampSparqlClient;
   /** Returns the raw pulse-latest.json file contents, or null if missing. */
   readPulse: () => string | null;
+  /** #3885 — statuses for the sequenced ids, so a landed card leaves the walk.
+   *  Returns id → status ('Done', 'Won\'t Do', 'Next', 'Later', …). Absent ids
+   *  are treated as still-open: dropping what we cannot confirm is how parked
+   *  work would silently disappear. */
+  readCardStatuses?: (ids: number[]) => Promise<Map<number, string>>;
   /** #3686 — governed read path: fetch an owl-api GENERATED route (e.g.
    *  '/domains?limit=500') and return its parsed JSON. Levels with a generated
    *  route read through it (Jeff's governed-paths steer); levels without one
@@ -137,6 +142,15 @@ export async function fetchContextPriorities(
       }
     }
   }
+  // #3885 — Jeff, 2026-08-17: the walk is "what's left, uncluttered by what is
+  // done". Membership rows carry an id and a rank and NO status, so five landed
+  // cards were being presented to Silas as open work and misordering his pulls.
+  //
+  // Closed statuses are named explicitly rather than inferred from absence: the
+  // board mirror only carries wip/next/swat, so "not in the mirror" means Done OR
+  // parked in Later, and dropping on absence would hide real work.
+  await dropClosedCards(byChunk, sequencedIds, deps.readCardStatuses);
+
   const chunks = [...byChunk.values()].sort((a, b) => a.roleSequence - b.roleSequence);
   for (const c of chunks) c.cards.sort((a, b) => a.rank - b.rank);
 
@@ -224,6 +238,34 @@ async function readRolePriority(deps: ContextPrioritiesDeps): Promise<RolePriori
 }
 
 /** card IRI `<NS>card-<vikunja-id>` → numeric id, or null if non-conformant. */
+/**
+ * #3885 — closed statuses are NAMED, never inferred from absence.
+ *
+ * The board mirror carries only wip/next/swat, so "missing" means Done OR parked
+ * in Later. Of the five rows reported stale on 2026-08-17, two were Later — real
+ * work an absence-based filter would have hidden. An unknown status therefore
+ * counts as open: a failed read must not empty the walk.
+ */
+const CLOSED_STATUSES = new Set(['done', "won't do", 'wont do']);
+
+function isOpenStatus(status: string | undefined): boolean {
+  return status === undefined || !CLOSED_STATUSES.has(status.trim().toLowerCase());
+}
+
+/** #3885 — drop landed rows from every chunk. Kept out of the walk builder so
+ *  that function does not grow another branch; the rule is in isOpenStatus. */
+async function dropClosedCards(
+  byChunk: Map<string, PriorityChunk>,
+  ids: Set<number>,
+  read?: (ids: number[]) => Promise<Map<number, string>>,
+): Promise<void> {
+  if (!read || ids.size === 0) return;
+  const statuses = await read([...ids]);
+  for (const chunk of byChunk.values()) {
+    chunk.cards = chunk.cards.filter((c) => isOpenStatus(statuses.get(c.id)));
+  }
+}
+
 function vikunjaId(iri: string): number | null {
   const m = /#card-(\d+)$/.exec(iri);
   return m ? Number(m[1]) : null;

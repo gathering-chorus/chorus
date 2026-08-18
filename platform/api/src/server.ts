@@ -9,6 +9,9 @@
  */
 import express, { Request, Response, NextFunction } from 'express';
 import Database from 'better-sqlite3';
+// #3885 — the board's own store, read-only. Same file the cards CLI writes.
+const VIKUNJA_DB_PATH = process.env.VIKUNJA_DB_PATH
+  ?? `${process.env.HOME ?? ''}/.chorus/vikunja/db/vikunja.db`;
 import { execFile, exec, spawn, fork as forkChild } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
@@ -1406,6 +1409,34 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
         const resp = await fetch(`${owlBase}${path}`);
         if (!resp.ok) throw new Error(`owl-api ${resp.status} on ${path}`);
         return resp.json();
+      },
+      // #3885 — read each sequenced card's real status from the board, so a
+      // landed card leaves the walk. Read-only, ids parameterised, and a failure
+      // returns an EMPTY map: unknown status keeps a card visible, because
+      // hiding work we cannot confirm is the worse error.
+      // Synchronous inside (better-sqlite3), wrapped in a resolved promise to
+      // satisfy the dep's async contract without an await that does nothing.
+      readCardStatuses: (ids: number[]) => {
+        const out = new Map<number, string>();
+        if (ids.length === 0) return Promise.resolve(out);
+        try {
+          const db = new Database(VIKUNJA_DB_PATH, { readonly: true, fileMustExist: true });
+          try {
+            const rows = db.prepare(
+              `SELECT t."index" AS id, b.title AS status
+                 FROM tasks t
+                 LEFT JOIN task_buckets tb ON tb.task_id = t.id
+                 LEFT JOIN buckets b ON tb.bucket_id = b.id
+                WHERE t."index" IN (${ids.map(() => '?').join(',')})`,
+            ).all(...ids) as Array<{ id: number; status: string | null }>;
+            for (const r of rows) if (r.status) out.set(r.id, r.status);
+          } finally {
+            db.close();
+          }
+        } catch {
+          return Promise.resolve(new Map<number, string>());
+        }
+        return Promise.resolve(out);
       },
     },
     req.originalUrl,
