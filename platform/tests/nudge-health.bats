@@ -6,7 +6,11 @@ load test_helper
 # when all three sessions are running. Zombie Terminal windows crash
 # the osascript lookup and the whole check fails.
 
-HEALTH_SCRIPT="${CHORUS_ROOT:-${CHORUS_ROOT}}/platform/scripts/nudge-health-check.sh"
+# #3915 — was ${CHORUS_ROOT:-${CHORUS_ROOT}}: a tautology that resolves to an
+# EMPTY path whenever CHORUS_ROOT is unset, which is exactly how the nightly
+# runs it. The script was fine; the test could not find it and reported the
+# health check as broken every night.
+HEALTH_SCRIPT="${CHORUS_ROOT:-$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)}/platform/scripts/nudge-health-check.sh"
 
 # --- AC 1: Health check survives zombie windows ---
 
@@ -14,15 +18,42 @@ HEALTH_SCRIPT="${CHORUS_ROOT:-${CHORUS_ROOT}}/platform/scripts/nudge-health-chec
   [ -x "$HEALTH_SCRIPT" ]
 }
 
+# #3915 — these two assert LIVE state (all three role sessions registered and
+# their panes alive). That is a real property worth checking, but it is not a
+# property of the CODE: at 03:00 with no session started, or inside a bats
+# subshell that cannot see the user's tmux, a red here says "the machine is
+# quiet", not "the health check is broken". Nightly read it as the latter every
+# night. So: measure the precondition first and SKIP when it does not hold —
+# UNMEASURABLE, never a false red (#3753). When sessions ARE up, the assertion
+# is unchanged and still catches the zombie-window bug it was written for.
+# ROOT CAUSE (#3915): test_helper exports CHORUS_SESSIONS_DIR to an EMPTY
+# tmpdir — the membrane's "a test brings its own world" (#3528). The health
+# check then correctly reports "no registration" for every role, and these two
+# tests called that a product defect. They are the only tests in this file that
+# assert LIVE state, and inside a sandboxed world that state cannot exist.
+#
+# So the precondition is measured against THE DIRECTORY THE SCRIPT WILL READ,
+# not against $HOME — and when the sandbox is in force (the normal case), the
+# assertion is UNMEASURABLE and skips rather than reporting a false red.
+roles_measurable() {
+  local dir="${CHORUS_SESSIONS_DIR:-$HOME/.chorus/sessions}" n=0
+  for r in wren silas kade; do
+    ls "$dir/${r}-"*.json >/dev/null 2>&1 && n=$((n+1))
+  done
+  [ "$n" -eq 3 ] || return 1
+  command -v tmux >/dev/null 2>&1 || return 1
+  [ -n "$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)" ]
+}
+
 @test "health check succeeds when role sessions are running" {
-  # All three role windows exist (wren, silas, kade)
-  # If zombie windows crash the check, this fails — proving the bug
+  roles_measurable || skip "UNMEASURABLE: role sessions or tmux panes not visible from this test context"
   run bash "$HEALTH_SCRIPT"
   echo "output: $output"
   [ "$status" -eq 0 ]
 }
 
 @test "health check reports all roles reachable" {
+  roles_measurable || skip "UNMEASURABLE: role sessions or tmux panes not visible from this test context"
   run bash "$HEALTH_SCRIPT"
   echo "output: $output"
   echo "$output" | grep -q "all roles reachable"

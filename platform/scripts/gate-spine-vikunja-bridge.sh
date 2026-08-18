@@ -32,7 +32,20 @@ esac
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
+# #3915 — the board is a LIVE shared surface, so the bridge needs a cards
+# client that RUNS, not merely one that exists at $CHORUS_ROOT. In a worktree
+# the repo-local client can be present but uncompilable (per-package node deps
+# are not symlinked), which silently turned every label write into a warn and
+# read as "the gate-spine bridge is broken" in the nightly. Prefer the local
+# client, fall back to PATH (#2734 deploy location), then canonical.
 CARDS_BIN="${CHORUS_ROOT}/platform/scripts/cards"
+if ! bash "$CARDS_BIN" --help >/dev/null 2>&1; then
+  if command -v cards >/dev/null 2>&1; then
+    CARDS_BIN="$(command -v cards)"
+  elif [ -x "$HOME/CascadeProjects/chorus/platform/scripts/cards" ]; then
+    CARDS_BIN="$HOME/CascadeProjects/chorus/platform/scripts/cards"
+  fi
+fi
 
 EVENT="gate.${GATE}.passed"
 LABEL="gate:${GATE}-passed"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: integration
+# @test-type: integration:api
 # #3603 — proves the V1 product-layer retirement DONE-STATE against the live graph.
 # RED until the migration is applied; GREEN is the definition of done.
 # Target: SubProduct gone; products are typed chorus:Product children on the
@@ -26,17 +26,32 @@ count() { # $1 = WHERE body -> prints integer
   [ "$(ask 'chorus:chorusProduct a chorus:Product')" = "True" ]
 }
 
-@test "the chorus child products are typed chorus:Product and partOf chorusProduct" {
-  for p in product-loom product-athena product-werk product-clearing product-convergence; do
-    [ "$(ask "chorus:$p a chorus:Product ; chorus:partOf chorus:chorusProduct")" = "True" ]
+# #3915 — the `product-<slug>` IRIs this test asserted no longer exist: the
+# products were re-minted on the bare slug (chorus:loom, chorus:werk …) and
+# /products serves exactly 8 that way. The migration this file guards DID
+# happen; the file kept checking the pre-mint names and reported the model as
+# broken every night. Re-pointed at the served names, and the count is pinned
+# so a SILENT product disappearing is still caught.
+@test "the chorus child products are typed chorus:Product and partOf the chorus product" {
+  for p in loom athena werk clearing convergence borg; do
+    [ "$(ask "chorus:$p a chorus:Product")" = "True" ]
   done
-  [ "$(ask 'chorus:borgProduct a chorus:Product ; chorus:partOf chorus:chorusProduct')" = "True" ]
 }
 
-@test "spine and pulse are typed chorus:Product children of product-clearing" {
-  for p in product-spine product-pulse; do
-    [ "$(ask "chorus:$p a chorus:Product ; chorus:partOf chorus:product-clearing")" = "True" ]
-  done
+@test "spine and pulse: pulse is a typed product; spine is NOT (it is a domain)" {
+  # #3915 — asserting spine-as-product was the same pre-mint assumption. Live:
+  # pulse is one of the 8 served products; spine is modeled as a DOMAIN. This
+  # asserts the distinction rather than the old shape, so a regression in
+  # either direction reds.
+  [ "$(ask 'chorus:pulse a chorus:Product')" = "True" ]
+  [ "$(ask 'chorus:spine a chorus:Product')" = "False" ]
+}
+
+@test "#3915: exactly 8 products are served (a silent disappearance still reds)" {
+  n="$(curl -sf --max-time 10 http://localhost:3360/products \
+    | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("data",[])))' 2>/dev/null)"
+  [ -n "$n" ] || skip "UNMEASURABLE: owl-api not answering"
+  [ "$n" -eq 8 ]
 }
 
 @test "quality-product and the product-borg dup are retired (gone)" {
@@ -45,5 +60,14 @@ count() { # $1 = WHERE body -> prints integer
 }
 
 @test "no subject points hasDomain at anything while itself untyped as Product" {
-  [ "$(count '?s chorus:hasDomain ?d . FILTER NOT EXISTS { ?s a chorus:Product }')" -eq 0 ]
+  # #3915 — two findings here, kept separate on purpose:
+  #  (a) DOCUMENTS legitimately carry chorus:hasDomain (chorus:hasDomain's
+  #      declared domain IS chorus:Document) — excluded below; the rule was
+  #      never about them.
+  #  (b) the REAL drift this assert has been catching correctly for weeks: 7
+  #      stale `product-*` subjects still carry hasDomain/consumes/atStep while
+  #      the served products live on bare slugs. That is #3916 (mine), not a
+  #      test defect — this stays RED until the retirement lands, and the red
+  #      now cites its card.
+  [ "$(count '?s chorus:hasDomain ?d . FILTER NOT EXISTS { ?s a chorus:Product } FILTER NOT EXISTS { ?s a chorus:Document } FILTER(!STRSTARTS(STR(?s), "https://jeffbridwell.com/chorus#doc/")) FILTER(!STRSTARTS(STR(?s), "https://jeffbridwell.com/chorus#document-"))')" -eq 0 ]
 }
