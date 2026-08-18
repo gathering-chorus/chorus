@@ -2338,7 +2338,11 @@ async function executeRegisterFeedback(
     };
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
-    throw new Error(`chorus_register_feedback-fail — exit=${e.code ?? 1}${(e.stderr || '').trim() ? ' stderr=' + (e.stderr || '').trim().slice(0, 300) : ''}`);
+    // #3913 — cause preserved, not flattened into the message string.
+    throw new Error(
+      `chorus_register_feedback-fail — exit=${e.code ?? 1}${(e.stderr || '').trim() ? ' stderr=' + (e.stderr || '').trim().slice(0, 300) : ''}`,
+      { cause: err },
+    );
   }
 }
 
