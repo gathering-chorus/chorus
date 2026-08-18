@@ -41,6 +41,23 @@ if ! CHORUS_ROOT="$REPO" "$REPO/platform/scripts/retirement-gate.sh"; then
   exit 1
 fi
 
+# #3927 — spine-emit registration gate. This check already existed and was
+# CORRECT; it just ran nowhere that could stop anything (only chorus-health,
+# every 20 min, post-land). Twice in one afternoon a new emit landed unregistered
+# — #3917's test.script.uncovered and #3926's merge.stale_flag — and both times
+# the alarm fired after the fact, by the same person who had just fixed the
+# previous instance. Being careful is not a mechanism. ~50ms, so it belongs here.
+if ! CHORUS_ROOT="$REPO" bash "$REPO/platform/scripts/test-werk-emit-conformance.sh" >/tmp/emit-conf.$$ 2>&1; then
+  echo "" >&2
+  echo "📡 pre-commit BLOCKED: a werk spine emit is not registered in spine-events.json (#3513/#3927)." >&2
+  grep -E "PHANTOM" /tmp/emit-conf.$$ >&2 || true
+  echo "   Register it in designing/schemas/spine-events.json in THIS commit —" >&2
+  echo "   an unregistered event is one no reader can describe." >&2
+  rm -f /tmp/emit-conf.$$
+  exit 1
+fi
+rm -f /tmp/emit-conf.$$
+
 # #3710 — clippy ratchet on staged Rust. The ratchet script's own header says
 # "Ratchet runs in pre-commit (Check 4.65)" and the CI job's comment calls
 # pre-commit the opportunistic layer — but the wiring was not here, so Rust lint
