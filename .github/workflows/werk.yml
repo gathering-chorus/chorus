@@ -112,11 +112,16 @@ jobs:
           # instead of this card's werk (a lint landed on main blocks every later card,
           # and the card fixing it can never green). Same class as run_doc_coherence's
           # CHORUS_REPO pin; werk-test's run_clippy_ratchet gets the same pin in source.
-          # #3745 — revert the job-level CHORUS_CONTEXT=prod for the SUITES this verb
-          # runs: empty = unset to the membrane, so suites classify ambient (BATS/CARGO/
-          # NODE_ENV) and test_helper's default seams apply. The prod declaration is the
-          # RUNNER's identity, never the tests'.
-          CHORUS_CONTEXT= CHORUS_ROOT="$WERK" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
+          # #3745 stated the rule: "The prod declaration is the RUNNER's identity,
+          # never the tests'." It cleared CHORUS_CONTEXT here — which cleared it for
+          # werk-test ITSELF, not just the suites werk-test spawns. Under act (CI=true)
+          # the runner then classified as a BUILD context and every spine event it
+          # emitted panicked on the membrane: the gate ran and left no record.
+          # #3918 moves the clearing one level down, into werk-test, which sets
+          # CHORUS_CONTEXT="" on each test child it spawns (cargo/jest/tsc/bats). The
+          # suites still classify ambient and are still refused the production spine;
+          # the runner keeps the prod identity its own telemetry needs.
+          CHORUS_ROOT="$WERK" PATH="$HOME/.local/bin:$HOME/.chorus/bin:$PATH" werk-test "${CARD_ID}" "${ROLE}"
           rc=$?
           set -e
           if [ "$rc" = 0 ]; then post success; else post failure; fi

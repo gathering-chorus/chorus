@@ -1342,3 +1342,83 @@ mod bats_selection_3917 {
         assert_ne!(label, GateOutcome::Pass.label());
     }
 }
+
+// ---------------------------------------------------------------------------
+// #3918 — the land lane's own telemetry.
+//
+// #3745 wrote the principle down: "The prod declaration is the RUNNER's identity,
+// never the tests'." It implemented that by clearing CHORUS_CONTEXT on the shell
+// line that invokes werk-test — which clears it for the RUNNER too. So werk-test
+// runs under act's CI=true with no declaration, the membrane classifies it Build,
+// and every spine event it emits panics on the way out. The land happens; the
+// record does not. Same principle, one level lower: the runner keeps its prod
+// identity, and clears the variable per spawned test child.
+// ---------------------------------------------------------------------------
+
+/// What a spawned child should inherit for `CHORUS_CONTEXT`.
+///
+/// `None` = leave the runner's own value in place (the runner IS prod work).
+/// `Some("")` = explicitly cleared, so the child classifies from its own ambient
+/// markers (BATS_TEST_TMPDIR / CARGO / NODE_ENV) exactly as #3745 intended.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ChildContext {
+    /// A test child: clear the declaration so the membrane sees the test.
+    Test,
+    /// A runner-side child (chorus-log, git, curl): keep the runner's identity.
+    Runner,
+}
+
+impl ChildContext {
+    /// The value to set on the child, or None to leave inherited.
+    pub fn env_value(self) -> Option<&'static str> {
+        match self {
+            ChildContext::Test => Some(""),
+            ChildContext::Runner => None,
+        }
+    }
+}
+
+/// Classify a spawned command by what it IS, not where it runs. The check that
+/// decides whether a process may write the production spine has to be able to
+/// separate these two — that is the whole defect.
+pub fn child_context(program: &str) -> ChildContext {
+    match program {
+        "cargo" | "bats" => ChildContext::Test,
+        p if p.ends_with("jest") || p.ends_with("tsc") => ChildContext::Test,
+        _ => ChildContext::Runner,
+    }
+}
+
+#[cfg(test)]
+mod land_lane_telemetry_3918 {
+    use super::*;
+
+    /// The runner's own emissions keep prod identity — this is the bug: they
+    /// were being cleared along with the tests', so they died on the membrane.
+    #[test]
+    fn the_runners_own_spine_emit_keeps_prod_identity() {
+        assert_eq!(child_context("bash"), ChildContext::Runner);
+        assert_eq!(child_context("bash").env_value(), None);
+    }
+
+    /// NEGATIVE PROOF (#3734), the other half: a genuine test child is STILL
+    /// cleared. If this ever returns Runner, the membrane's teeth are gone and
+    /// a test could write the production spine — the exact thing #3615 exists
+    /// to prevent. Both directions, or the distinction is unproven.
+    #[test]
+    fn a_real_test_child_is_still_cleared_and_therefore_still_refused() {
+        for p in ["cargo", "bats", "/usr/local/bin/jest", "node_modules/.bin/tsc"] {
+            assert_eq!(child_context(p), ChildContext::Test, "{} must classify as test", p);
+            assert_eq!(child_context(p).env_value(), Some(""), "{} must be cleared", p);
+        }
+    }
+
+    /// The classifier keys on what the child IS. A runner-side helper that
+    /// merely has a test-ish name must not be mistaken for a test.
+    #[test]
+    fn runner_helpers_are_not_tests() {
+        for p in ["git", "curl", "jq", "gh"] {
+            assert_eq!(child_context(p), ChildContext::Runner, "{} is runner-side", p);
+        }
+    }
+}

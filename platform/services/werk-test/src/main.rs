@@ -382,6 +382,10 @@ fn run_bats(werk: &str, suite: &str) -> bool {
         Command::new("bats")
             .arg(suite)
             .current_dir(werk)
+            // #3918 — the child is a TEST: clear the runner's prod declaration so
+            // the membrane classifies it from its own ambient markers and still
+            // refuses it the production spine.
+            .env("CHORUS_CONTEXT", "")
             .env("CHORUS_ROOT", werk)
             .env("CHORUS_LOG_FILE", tmp.join("spine.log")),
     )
@@ -511,6 +515,8 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
     let mut cmd = Command::new("cargo");
+    // #3918 — test child: cleared, so the membrane still refuses it (see child_context).
+    cmd.env("CHORUS_CONTEXT", "");
     cmd.args(&args).current_dir(&dir);
     apply_suite_world(&mut cmd, werk);
     match cmd.output() {
@@ -567,7 +573,13 @@ fn run_tsc(werk: &str, pkg: &str) -> bool {
     if !Path::new(&tsc).exists() {
         return true; // package has no local tsc → nothing to typecheck here
     }
-    status_ok(Command::new(&tsc).arg("--noEmit").current_dir(&pkg_dir))
+    status_ok(
+        Command::new(&tsc)
+            .arg("--noEmit")
+            .current_dir(&pkg_dir)
+            // #3918 — test child: cleared (see child_context).
+            .env("CHORUS_CONTEXT", ""),
+    )
 }
 
 /// `jest --ci` per TS package, deps guarded the same way (#3397).
@@ -584,6 +596,8 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
         return (true, Vec::new());
     }
     let mut cmd = Command::new(&jest);
+    // #3918 — test child: cleared (see child_context).
+    cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
         .current_dir(&pkg_dir);
     apply_suite_world(&mut cmd, werk);
@@ -616,6 +630,8 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
         .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
         .collect();
     let mut cmd = Command::new(&jest);
+    // #3918 — test child: cleared (see child_context).
+    cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json", "--runTestsByPath"])
         .args(&rel)
         .current_dir(&pkg_dir);
@@ -651,6 +667,8 @@ fn jest_related_files(werk: &str, pkg: &str, changed_in_pkg: &[String]) -> Vec<S
         .map(|f| f.strip_prefix(&format!("{}/", pkg)).unwrap_or(f).to_string())
         .collect();
     let mut cmd = Command::new(&jest);
+    // #3918 — test child: cleared (see child_context).
+    cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--listTests", "--findRelatedTests"]).args(&rel).current_dir(&pkg_dir);
     match cmd.output() {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
