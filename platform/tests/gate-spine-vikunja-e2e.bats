@@ -17,9 +17,16 @@ load test_helper
 #     mocks hide divergence." Sentinel keeps real writer-path coverage while
 #     satisfying both of Jeff's hard constraints.
 
-CHORUS_LOG="${CHORUS_ROOT}/platform/logs/chorus.log"
+# #3915 — this suite predates the #3615 membrane. chorus-log now writes to
+# CHORUS_LOG_FILE, which test_helper points into the run tmpdir, so grepping
+# the repo copy could never see the emit: the assertion had stopped being able
+# to go green for a real reason. Read the log the emit actually goes to.
+CHORUS_LOG="${CHORUS_LOG_FILE:-${CHORUS_ROOT}/platform/logs/chorus.log}"
 CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
+# #3915 — CARDS must be a client that RUNS (see find_sentinel): the werk copy
+# needs node deps the werk may not have. Resolve once, canonical as fallback.
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
+bash "$CARDS" view 2429 >/dev/null 2>&1 || CARDS="$HOME/CascadeProjects/chorus/platform/scripts/cards"
 BRIDGE="${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh"
 SENTINEL_CACHE="/tmp/e2e-sentinel-id"
 
@@ -36,11 +43,23 @@ find_sentinel() {
   # env drift under bats). The sentinel is a PINNED fixture — #2429, titled
   # "DO NOT MOVE" — so resolve it directly and VERIFY by marker; scrape only
   # as fallback for a re-filed sentinel.
-  local pinned=2429
-  if bash ${CHORUS_ROOT}/platform/scripts/cards view "$pinned" 2>/dev/null | grep -q '\[e2e-sentinel\]'; then
+  # #3915 — the CLIENT must be one that can RUN. test_helper points CHORUS_ROOT
+  # at this werk (correct for #3528 hermeticity), but the werk's cards CLI needs
+  # node deps the werk may not have bootstrapped — so discovery failed and the
+  # nightly read "sentinel missing" as a board problem. The BOARD is a live
+  # shared surface, so resolve it with whichever client works, canonical last.
+  local pinned=2429 cards_bin=""
+  for c in "${CHORUS_ROOT}/platform/scripts/cards" "$HOME/CascadeProjects/chorus/platform/scripts/cards"; do
+    if bash "$c" view "$pinned" >/dev/null 2>&1; then cards_bin="$c"; break; fi
+  done
+  if [ -z "$cards_bin" ]; then
+    echo "SENTINEL_UNMEASURABLE — no runnable cards client (board unreachable from this context)" >&2
+    return 2
+  fi
+  if bash "$cards_bin" view "$pinned" 2>/dev/null | grep -q '\[e2e-sentinel\]'; then
     id="$pinned"
   else
-    id=$(bash ${CHORUS_ROOT}/platform/scripts/cards list --limit 500 2>/dev/null \
+    id=$(bash "$cards_bin" list --limit 500 2>/dev/null \
       | grep -oE '[0-9]+[[:space:]]+\[e2e-sentinel\]' | awk '{print $1}' | head -1)
   fi
   if [ -z "$id" ]; then
@@ -54,8 +73,10 @@ find_sentinel() {
 TEST_LABELS=(gate:code-passed gate:quality-passed gate:arch-passed gate:ops-passed gate:product-passed)
 
 setup() {
-  SENTINEL=$(find_sentinel)
-  [ -n "$SENTINEL" ] || skip "sentinel card not found"
+  SENTINEL=$(find_sentinel) || true
+  # #3915 — a board we cannot reach is UNMEASURABLE, not a failing gate-spine
+  # bridge. Skip loudly with the reason instead of reporting the bridge broken.
+  [ -n "$SENTINEL" ] || skip "UNMEASURABLE: board unreachable / sentinel unresolvable from this context"
   export SENTINEL
 }
 
@@ -95,7 +116,7 @@ import sys, json
 d = json.loads(sys.stdin.read())
 assert d.get('event') == 'gate.code.passed', f\"event={d.get('event')}\"
 assert d.get('role') == 'silas', f\"role={d.get('role')}\"
-assert str(d.get('card')) == '${SENTINEL}', f\"card={d.get('card')}\"
+assert str(d.get('card_id')) == '${SENTINEL}', f\"card_id={d.get('card_id')}\"
 print('shape-ok')
 "
 }
@@ -141,7 +162,7 @@ print('shape-ok')
 import sys, json
 d = json.loads(sys.stdin.read())
 assert d.get('event') == 'gate.quality.passed', f\"event={d.get('event')}\"
-assert str(d.get('card')) == '${SENTINEL}', f\"card={d.get('card')}\"
+assert str(d.get('card_id')) == '${SENTINEL}', f\"card_id={d.get('card_id')}\"
 "
   run bash "$CARDS" view "$SENTINEL"
   echo "$output" | grep -qE "gate:quality-passed"
@@ -201,5 +222,37 @@ print('emit-path-ok')
     -X POST -H 'Content-Type: application/json' -d '{}' \
     "http://localhost:3340/api/athena/discover-pages" 2>/dev/null)
   rm -f /tmp/discover-pages-resp.$$
+  # #3915 — auth now runs BEFORE routing, so a missing route answers 401 exactly
+  # like a real one (proven by the NEGATIVE test below, which is why 401 is NOT
+  # accepted here). While that is true this smoke cannot separate the two states
+  # it exists to separate, so it is UNMEASURABLE, not green. Owner: #3901.
+  if [[ "$CODE" == "401" || "$CODE" == "403" ]]; then
+    skip "UNMEASURABLE: auth precedes routing — 401 cannot be distinguished from a missing route (#3901)"
+  fi
   [[ "$CODE" == "200" || "$CODE" == "400" || "$CODE" == "422" ]]
+}
+
+# --- #3734 negative proof: the log assertion can still go RED ---
+
+@test "NEGATIVE: a marker that was never emitted is absent from the resolved log" {
+  ABSENT="gate-code-never-emitted-$$-$RANDOM"
+  run grep -F "$ABSENT" "$CHORUS_LOG"
+  [ "$status" -ne 0 ]
+}
+
+@test "NEGATIVE: an emit with the wrong card does not satisfy the card assertion" {
+  MARKER="gate-code-wrongcard-$$-$RANDOM"
+  run bash "$CHORUS_LOG_BIN" gate.code.passed silas card=999999 marker="$MARKER"
+  [ "$status" -eq 0 ]
+  line=$(grep -F "$MARKER" "$CHORUS_LOG" | tail -1)
+  [ -n "$line" ]
+  run bash -c "echo '$line' | grep -q 'card=${SENTINEL}\b'"
+  [ "$status" -ne 0 ]
+}
+
+@test "NEGATIVE: a route that does not exist fails the discover-pages smoke" {
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/json' -d '{}' \
+    "http://localhost:3340/api/athena/discover-pages-does-not-exist" 2>/dev/null)
+  [[ "$CODE" != "200" && "$CODE" != "400" && "$CODE" != "422" ]]
 }

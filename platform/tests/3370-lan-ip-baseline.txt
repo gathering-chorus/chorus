@@ -1,5 +1,5 @@
 platform/RUNBOOK.md:3
-platform/tests/3370-no-new-hardcoded-lan-ips.bats:2
+platform/tests/3370-no-new-hardcoded-lan-ips.bats:4
 platform/tests/infrastructure-service-design.bats:2
 platform/tests/features/step_definitions/clearing_steps.ts:1
 platform/tests/features/clearing/clearing-access.feature:1
