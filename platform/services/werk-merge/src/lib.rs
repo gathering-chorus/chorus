@@ -176,6 +176,29 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// #3926 — run a command and keep the EXIT CODE and stdout. `run_in` throws the
+/// code away, but `git merge-tree` says "clean" vs "conflicted" in exactly that
+/// code, so the verification needs it.
+fn run_capture(dir: &str, cmd: &str, args: &[&str]) -> (i32, String) {
+    match Command::new(cmd).args(args).current_dir(dir).output() {
+        Ok(out) => (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        ),
+        Err(_) => (-1, String::new()),
+    }
+}
+
+/// #3926 — ask GIT what the trees actually do, independent of GitHub's cache.
+pub fn verify_merge_against_trees(werk: &str, base: &str, head: &str) -> TreeVerdict {
+    let (rc, out) = run_capture(
+        werk,
+        "git",
+        &["merge-tree", "--write-tree", "--name-only", base, head],
+    );
+    parse_merge_tree(rc, &out)
+}
+
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
     fn drop(&mut self) {
@@ -533,10 +556,47 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     {
         let _lock = lock(home, Duration::from_secs(30))?;
         jsonl(home, role, card, &trace, "lock.acquired", &format!(",\"pr\":{}", pr));
-        if let Err(e) = run_in(&werk_s, "gh", &["pr", "merge", &pr.to_string(), "--squash"]) {
-            let reason = classify_merge_error(&e);
+        // #3926 — a conflict REPORTED by gh is a claim about a cached field, not
+        // proof about the trees. Verify it with git before it becomes a refusal:
+        // a stale flag was blocking clean branches and sending roles to rebase
+        // work that was never needed. One bounded retry; everything else refuses
+        // exactly as before.
+        let mut attempt = 0;
+        loop {
+            let err = match run_in(&werk_s, "gh", &["pr", "merge", &pr.to_string(), "--squash"]) {
+                Ok(_) => break,
+                Err(e) => e,
+            };
+            let reason = classify_merge_error(&err);
+            if reason == "merge-conflict" && attempt == 0 {
+                let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
+                let head_ref = format!("origin/{}/{}", role, card);
+                let verdict = verify_merge_against_trees(&werk_s, "origin/main", &head_ref);
+                match verdict {
+                    TreeVerdict::Clean => {
+                        // The trees merge. GitHub's mergeable field was stale.
+                        jsonl(home, role, card, &trace, "merge.stale_flag", &format!(",\"pr\":{}", pr));
+                        emit_spine(home, "merge.stale_flag", role, card, &trace,
+                            &[("pr", &pr.to_string()), ("verdict", "clean-trees-retrying")]);
+                        attempt += 1;
+                        continue;
+                    }
+                    TreeVerdict::Conflicted(files) => {
+                        jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
+                        return Err(verified_conflict_message(pr, &files));
+                    }
+                    TreeVerdict::Unmeasurable => {
+                        // #3753 — absence of evidence is not evidence of clean.
+                        jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
+                        return Err(format!(
+                            "{}: pr #{} did not merge; nothing landed (could not verify against trees): {}",
+                            reason, pr, err
+                        ));
+                    }
+                }
+            }
             jsonl(home, role, card, &trace, "merge.refused", &fail_extra(reason));
-            return Err(format!("{}: pr #{} did not merge; nothing landed: {}", reason, pr, e));
+            return Err(format!("{}: pr #{} did not merge; nothing landed: {}", reason, pr, err));
         }
         jsonl(home, role, card, &trace, "merged", &format!(",\"pr\":{}", pr));
     }
@@ -581,4 +641,127 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
     jsonl(home, role, card, &trace, "merge.completed", &format!(",\"pr\":{},\"sha\":\"{}\"", pr, main_sha));
     emit_landed_trigger(home, role, card, &trace, &werk_s, &main_sha); // #3517 — real-merge land fires the deploy trigger
     Ok(main_sha)
+}
+
+// ---------------------------------------------------------------------------
+// #3926 — a reported conflict is a CLAIM, not proof.
+//
+// werk-merge already refuses to trust `gh` in the SUCCESS direction: the
+// post-merge content-verify exists because gh once reported success while zero
+// commits landed. The FAILURE direction had no such skepticism — stderr
+// containing "conflict" became a refusal, full stop.
+//
+// GitHub's `mergeable` is an async cached computation. After a push to the base
+// branch it goes stale and can report CONFLICTING for a branch that merges
+// clean. On 2026-08-18 that blocked PR #1013 twice while `git merge-tree`
+// reported zero conflicted files and the head OID never changed. The refusal
+// then sent a role to rebase and regenerate a branch that was fine.
+// ---------------------------------------------------------------------------
+
+/// What the REAL trees say about a merge, independent of GitHub's cache.
+#[derive(Debug, PartialEq, Eq)]
+pub enum TreeVerdict {
+    /// git merged the trees with no conflicts — a reported conflict was stale.
+    Clean,
+    /// git hit real conflicts, in these files.
+    Conflicted(Vec<String>),
+    /// git could not answer (old git, missing ref). NOT a licence to retry —
+    /// an unanswerable check must never silently become a pass (#3753).
+    Unmeasurable,
+}
+
+/// Parse `git merge-tree --write-tree --name-only <base> <head>`.
+///
+/// Success (exit 0): first line is the written tree OID, and any following
+/// lines are informational — there are NO conflicts. Conflict (exit 1): the
+/// first line is the tree OID, subsequent lines are the conflicted paths.
+pub fn parse_merge_tree(exit_code: i32, stdout: &str) -> TreeVerdict {
+    let mut lines = stdout.lines().map(str::trim).filter(|l| !l.is_empty());
+    let oid = match lines.next() {
+        Some(o) if o.len() >= 7 && o.chars().all(|c| c.is_ascii_hexdigit()) => o,
+        _ => return TreeVerdict::Unmeasurable,
+    };
+    let _ = oid;
+    match exit_code {
+        0 => TreeVerdict::Clean,
+        1 => {
+            let files: Vec<String> = lines.map(|s| s.to_string()).collect();
+            if files.is_empty() {
+                // Exit 1 with no named files is not something we can act on.
+                TreeVerdict::Unmeasurable
+            } else {
+                TreeVerdict::Conflicted(files)
+            }
+        }
+        _ => TreeVerdict::Unmeasurable,
+    }
+}
+
+/// Should werk-merge retry the merge after `gh` reported a conflict?
+///
+/// ONLY when git itself proves the trees merge clean. An unmeasurable verdict
+/// refuses — we do not retry on the absence of evidence.
+pub fn should_retry_after_reported_conflict(reason: &str, verdict: &TreeVerdict) -> bool {
+    reason == "merge-conflict" && matches!(verdict, TreeVerdict::Clean)
+}
+
+/// The refusal message for a VERIFIED conflict — names the files, so the role
+/// knows what to fix instead of guessing (the cost that made #3926 expensive).
+pub fn verified_conflict_message(pr: u64, files: &[String]) -> String {
+    format!(
+        "merge-conflict: pr #{} has REAL conflicts in {} file(s), verified against the trees: {}",
+        pr,
+        files.len(),
+        files.join(", ")
+    )
+}
+
+#[cfg(test)]
+mod stale_mergeable_3926 {
+    use super::*;
+
+    #[test]
+    fn clean_merge_tree_means_the_reported_conflict_was_stale() {
+        let out = "ee9a6dd9c49c82ae8e6676dd907d636e703b9264\n";
+        assert_eq!(parse_merge_tree(0, out), TreeVerdict::Clean);
+        assert!(should_retry_after_reported_conflict("merge-conflict", &TreeVerdict::Clean));
+    }
+
+    /// NEGATIVE PROOF (#3734): a REAL conflict must still refuse. If this ever
+    /// retries, the fix has deleted the check it was meant to make honest.
+    #[test]
+    fn a_real_conflict_still_refuses_and_names_the_files() {
+        let out = "abc1234567890abc\nknowledge/doc-coherence.md\nplatform/api/src/server.ts\n";
+        let v = parse_merge_tree(1, out);
+        assert_eq!(
+            v,
+            TreeVerdict::Conflicted(vec![
+                "knowledge/doc-coherence.md".to_string(),
+                "platform/api/src/server.ts".to_string(),
+            ])
+        );
+        assert!(!should_retry_after_reported_conflict("merge-conflict", &v));
+        let msg = verified_conflict_message(1013, &["knowledge/doc-coherence.md".to_string()]);
+        assert!(msg.contains("knowledge/doc-coherence.md"), "must name the file: {}", msg);
+        assert!(msg.contains("REAL"));
+    }
+
+    /// An unanswerable check must not become a pass (#3753).
+    #[test]
+    fn unmeasurable_never_retries() {
+        for (rc, out) in [(0, ""), (1, "abc1234567890abc\n"), (128, "fatal: bad ref\n")] {
+            let v = parse_merge_tree(rc, out);
+            assert_eq!(v, TreeVerdict::Unmeasurable, "rc={} out={:?}", rc, out);
+            assert!(!should_retry_after_reported_conflict("merge-conflict", &v));
+        }
+    }
+
+    /// The verification is scoped to conflict claims — other refusals are
+    /// untouched, so this cannot become a general retry-everything loop.
+    #[test]
+    fn other_refusals_are_not_retried() {
+        for r in ["merge-fail", "not-mergeable", "no-open-pr", "pr-create-fail"] {
+            assert!(!should_retry_after_reported_conflict(r, &TreeVerdict::Clean), "{}", r);
+        }
+    }
 }
