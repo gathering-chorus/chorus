@@ -114,6 +114,41 @@ fn run(args: &[String]) -> Result<i32, String> {
             }
         }
     };
+    // #3917 — bats suites and the shell scripts they cover were invisible to every
+    // selection lane above: neither is a Rust crate nor a TS package, so a diff made
+    // entirely of them selected ZERO units and the blocking gate exited 0. Union the
+    // implicated suites in here, after scoping, so they are added on every lane
+    // (scoped, diff-scoped, and full fallback alike).
+    let mut units = units;
+    let cov_index = build_suite_coverage(&werk);
+    for suite in werk_test::affected_bats_suites(&changed, &cov_index) {
+        let u = werk_test::TestUnit::BatsSuite(suite);
+        if !units.contains(&u) {
+            units.push(u);
+        }
+    }
+    // AC2 — a changed script no suite exercises is a NAMED gap. Silence here is how
+    // "nothing ran" became indistinguishable from "everything passed".
+    for s in werk_test::uncovered_scripts(&changed, &cov_index) {
+        println!("   gap: {} — no bats suite references this script (uncovered, #3917)", s);
+        emit_spine("test.script.uncovered", &role, &card, &trace, &[("script", &s)]);
+    }
+    let units = units;
+
+    // #3917 AC5 — `--explain` answers "what would this diff measure?" without
+    // running anything. The question had no answer before: the only way to learn
+    // the gate had selected nothing was to read a green summary and disbelieve it.
+    if args.iter().any(|a| a == "--explain") {
+        println!("changed: {} file(s)", changed.len());
+        for u in &units {
+            println!("  unit: {}", unit_name(u));
+        }
+        if units.is_empty() {
+            println!("  {} — this diff would be waved through", gate_outcome(0, false, false).label());
+        }
+        return Ok(0);
+    }
+
     let self_mod = is_self_modifying(&changed);
     let plan = check_plan(&units);
 
@@ -231,6 +266,7 @@ fn run(args: &[String]) -> Result<i32, String> {
                 all_cases.extend(cases);
                 ok
             }
+            (CheckKind::Bats, Some(TestUnit::BatsSuite(s))) => run_bats(&werk, s),
             (CheckKind::ClippyRatchet, None) => run_clippy_ratchet(&werk),
             (CheckKind::LintRatchet, None) => werk_test::run_lint_ratchet(&werk),
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
@@ -290,7 +326,65 @@ fn unit_name(u: &TestUnit) -> &str {
     match u {
         TestUnit::RustCrate(n) => n,
         TestUnit::TsPackage(p) => p,
+        TestUnit::BatsSuite(s) => s,
     }
+}
+
+/// #3917 — build the script→suite coverage index by reading each bats suite and
+/// recording the repo-relative script paths its body names. Deliberately textual:
+/// a suite that runs a script names it, and the tests-domain graph (stage 2) is
+/// where this becomes a declared `covers` edge rather than a read.
+fn build_suite_coverage(werk: &str) -> Vec<werk_test::SuiteCoverage> {
+    let dir = std::path::Path::new(werk).join("platform/tests");
+    let mut rows = Vec::new();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return rows,
+    };
+    let mut paths: Vec<std::path::PathBuf> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|x| x == "bats").unwrap_or(false))
+        .collect();
+    paths.sort();
+    for path in paths {
+        let body = match std::fs::read_to_string(&path) {
+            Ok(b) => b,
+            Err(_) => continue,
+        };
+        let suite = format!(
+            "platform/tests/{}",
+            path.file_name().unwrap_or_default().to_string_lossy()
+        );
+        let mut covers: Vec<String> = Vec::new();
+        for tok in body.split(|c: char| !(c.is_alphanumeric() || "._/-".contains(c))) {
+            if tok.ends_with(".sh") {
+                let rel = match tok.find("platform/") {
+                    Some(i) => tok[i..].to_string(),
+                    None => continue,
+                };
+                if !covers.contains(&rel) {
+                    covers.push(rel);
+                }
+            }
+        }
+        rows.push(werk_test::SuiteCoverage { suite, covers });
+    }
+    rows
+}
+
+/// Run one bats suite. The suite gets its own world (#3528/#3615): CHORUS_LOG_FILE
+/// points into a per-run tempdir so a suite that emits to the spine cannot write
+/// the production log from a build context.
+fn run_bats(werk: &str, suite: &str) -> bool {
+    let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp);
+    status_ok(
+        Command::new("bats")
+            .arg(suite)
+            .current_dir(werk)
+            .env("CHORUS_ROOT", werk)
+            .env("CHORUS_LOG_FILE", tmp.join("spine.log")),
+    )
 }
 
 /// #3661 — `--flag=value` extraction (the verb's positional parse filters all
@@ -312,6 +406,14 @@ fn on_disk_test_files(werk: &str, units: &[TestUnit]) -> Vec<String> {
         let (dir, suffix): (String, &str) = match unit {
             TestUnit::RustCrate(c) => (format!("platform/services/{}/tests", c), ".rs"),
             TestUnit::TsPackage(p) => (format!("{}/tests", p), ".test.ts"),
+            // A bats suite IS its own file — there is no directory to crawl, and
+            // the file is already the unit. Skip rather than invent a convention.
+            TestUnit::BatsSuite(s) => {
+                if !found.contains(s) {
+                    found.push(s.clone());
+                }
+                continue;
+            }
         };
         collect_files(werk, &dir, suffix, &mut found);
     }
@@ -954,4 +1056,54 @@ fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
             })
             .collect(),
     )
+}
+
+#[cfg(test)]
+mod suite_coverage_3917 {
+    use super::*;
+
+    fn world(files: &[(&str, &str)]) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "werk-test-cov-{}-{}",
+            std::process::id(),
+            files.len()
+        ));
+        let tests = root.join("platform/tests");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&tests).unwrap();
+        for (name, body) in files {
+            std::fs::write(tests.join(name), body).unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn index_records_the_scripts_a_suite_names() {
+        let root = world(&[(
+            "a.bats",
+            "run bash \"${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh\" code 1\n",
+        )]);
+        let rows = build_suite_coverage(root.to_str().unwrap());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].suite, "platform/tests/a.bats");
+        assert_eq!(rows[0].covers, vec!["platform/scripts/gate-spine-vikunja-bridge.sh"]);
+    }
+
+    /// NEGATIVE PROOF (#3734): a suite that names NO script must yield no
+    /// coverage. If this ever returns rows, the index is matching noise and
+    /// every script would look covered — the exact hollow-gate shape #3917 fixes.
+    #[test]
+    fn a_suite_naming_no_script_covers_nothing() {
+        let root = world(&[("b.bats", "@test \"nothing\" { true; }\n"), ("c.bats", "# no scripts here\n")]);
+        let rows = build_suite_coverage(root.to_str().unwrap());
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.covers.is_empty()), "got {:?}", rows);
+    }
+
+    /// A missing tests dir is empty coverage, not a panic — the index must not
+    /// take down the gate in a tree that has no bats suites.
+    #[test]
+    fn missing_tests_dir_is_empty_not_fatal() {
+        assert!(build_suite_coverage("/nonexistent/werk/root").is_empty());
+    }
 }

@@ -52,6 +52,9 @@ pub enum TestUnit {
     RustCrate(String),
     /// TS package (one of `TS_PACKAGES`) — `jest` in the package dir.
     TsPackage(String),
+    /// Bats suite under `platform/tests/` — `bats <path>` (#3917). Before this
+    /// existed a bats-only diff selected nothing and the gate exited 0.
+    BatsSuite(String),
 }
 
 /// Classify the card's changed files into the test units that must run.
@@ -147,6 +150,8 @@ pub enum CheckKind {
     LintRatchet,
     /// `doc-coherence-ratchet.test.sh` — doc-inventory floor; workspace-wide, once.
     DocCoherence,
+    /// `bats <suite>` — per changed bats suite (#3917).
+    Bats,
 }
 
 impl CheckKind {
@@ -158,6 +163,7 @@ impl CheckKind {
             CheckKind::ClippyRatchet => "clippy-ratchet",
             CheckKind::LintRatchet => "lint-ratchet",
             CheckKind::DocCoherence => "doc-coherence",
+            CheckKind::Bats => "bats",
         }
     }
 }
@@ -193,6 +199,9 @@ pub fn check_plan(units: &[TestUnit]) -> Vec<PlannedCheck> {
             TestUnit::TsPackage(_) => {
                 plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Tsc });
                 plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Jest });
+            }
+            TestUnit::BatsSuite(_) => {
+                plan.push(PlannedCheck { unit: Some(u.clone()), kind: CheckKind::Bats });
             }
         }
     }
@@ -354,7 +363,10 @@ impl GateOutcome {
     /// Human label for the verb's summary line + the gh status description.
     pub fn label(&self) -> &'static str {
         match self {
-            GateOutcome::NoUnits => "no-affected-units",
+            // #3917 AC4 — "no-affected-units" read as green for months. It is
+            // not a pass; it is the absence of a measurement, and the label now
+            // says so out loud.
+            GateOutcome::NoUnits => "SELECTED 0 UNITS — nothing was measured",
             GateOutcome::Pass => "pass",
             GateOutcome::Block => "BLOCK",
             GateOutcome::AdvisoryFail => "advisory-fail (self-modifying)",
@@ -415,6 +427,7 @@ pub fn plan_units_from_rows(rows: &[TestRow]) -> Vec<TestUnit> {
     units.sort_by_key(|u| match u {
         TestUnit::RustCrate(n) => (0, n.clone()),
         TestUnit::TsPackage(p) => (1, p.clone()),
+        TestUnit::BatsSuite(s) => (2, s.clone()),
     });
     units.dedup();
     units
@@ -489,6 +502,7 @@ pub fn model_units(rows: &[TestRow], legacy: &[TestUnit]) -> Vec<TestUnit> {
     additions.sort_by_key(|u| match u {
         TestUnit::RustCrate(n) => (0, n.clone()),
         TestUnit::TsPackage(p) => (1, p.clone()),
+        TestUnit::BatsSuite(s) => (2, s.clone()),
     });
     additions.dedup();
     units.extend(additions);
@@ -1133,5 +1147,198 @@ mod ts_packages_retirement_3912 {
             !region.contains("TS_PACKAGES"),
             "jest selection re-coupled to TS_PACKAGES — the retired list is back"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #3917 — the bats/script blind spot.
+//
+// Before this, `affected_units` recognised exactly two shapes: a Rust crate and
+// a TS package. A card whose whole diff was `platform/tests/*.bats` and
+// `platform/scripts/*.sh` therefore selected ZERO units and the blocking gate
+// exited 0 — not because nothing needed running, but because nothing could be
+// seen. #3915's own land proved it: five bats suites fixing nightly reds landed
+// under a green `werk-test: no-affected-units`.
+// ---------------------------------------------------------------------------
+
+/// One row of the script→suite coverage index: a bats suite and the repo-relative
+/// script paths its body references. Built by the runner (which may touch the fs);
+/// kept out of the pure selection so selection stays testable without a repo.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SuiteCoverage {
+    pub suite: String,
+    pub covers: Vec<String>,
+}
+
+/// Is this changed path a bats suite?
+pub fn is_bats_suite(path: &str) -> bool {
+    path.starts_with("platform/tests/") && path.ends_with(".bats")
+}
+
+/// Is this changed path a shell script the gate should account for?
+pub fn is_shell_script(path: &str) -> bool {
+    path.ends_with(".sh") || path.starts_with("platform/scripts/")
+}
+
+/// Bats suites implicated by the diff: every changed suite itself, plus every
+/// suite whose body references a changed script. Deterministic (sorted, deduped).
+pub fn affected_bats_suites(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for f in changed {
+        if is_bats_suite(f) && !out.contains(f) {
+            out.push(f.clone());
+        }
+    }
+    for f in changed {
+        if !is_shell_script(f) {
+            continue;
+        }
+        for row in index {
+            if row.covers.iter().any(|c| c == f) && !out.contains(&row.suite) {
+                out.push(row.suite.clone());
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The full selection: the pre-#3917 crate/package units PLUS the bats suites
+/// the diff implicates. `affected_units` is left untouched so the old shape
+/// stays independently testable (and so the regression test can show what it
+/// could not see).
+pub fn affected_units_full(changed: &[String], index: &[SuiteCoverage]) -> Vec<TestUnit> {
+    let mut units = affected_units(changed);
+    for suite in affected_bats_suites(changed, index) {
+        units.push(TestUnit::BatsSuite(suite));
+    }
+    units
+}
+
+/// Changed shell scripts that NO suite covers. AC2: these are reported loudly
+/// rather than dissolving into an empty selection — an uncovered script is a
+/// known gap, not a pass.
+pub fn uncovered_scripts(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
+    let mut out: Vec<String> = changed
+        .iter()
+        .filter(|f| is_shell_script(f) && !is_bats_suite(f))
+        .filter(|f| !index.iter().any(|r| r.covers.iter().any(|c| c == *f)))
+        .cloned()
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[cfg(test)]
+mod bats_selection_3917 {
+    use super::*;
+
+    fn index() -> Vec<SuiteCoverage> {
+        vec![
+            SuiteCoverage {
+                suite: "platform/tests/gate-spine-vikunja-e2e.bats".to_string(),
+                covers: vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()],
+            },
+            SuiteCoverage {
+                suite: "platform/tests/nudge-health.bats".to_string(),
+                covers: vec!["platform/scripts/nudge-health.sh".to_string()],
+            },
+        ]
+    }
+
+    /// The exact file list #3915 landed with. This is the regression: it MUST
+    /// select units now, and it selected none before.
+    #[test]
+    fn card_3915_file_list_now_selects_its_suites() {
+        let changed: Vec<String> = [
+            "platform/scripts/gate-spine-vikunja-bridge.sh",
+            "platform/tests/3370-lan-ip-baseline.txt",
+            "platform/tests/3370-no-new-hardcoded-lan-ips.bats",
+            "platform/tests/gate-spine-vikunja-e2e.bats",
+            "platform/tests/nudge-health.bats",
+            "platform/tests/products-3603-migration.bats",
+            "platform/tests/session-start-orchestration-e2e.bats",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+
+        let suites = affected_bats_suites(&changed, &index());
+        assert_eq!(suites.len(), 5, "expected all five changed suites, got {:?}", suites);
+        let units = affected_units_full(&changed, &index());
+        assert!(!units.is_empty(), "#3915's diff must not select zero units");
+        assert_eq!(gate_outcome(units.len(), false, false), GateOutcome::Pass);
+    }
+
+    /// NEGATIVE PROOF (#3734, AC3): with the fix in place a RED suite must
+    /// BLOCK. If this ever passes as non-blocking, the gate is decorative.
+    #[test]
+    fn a_red_bats_suite_blocks_the_land() {
+        let changed = vec!["platform/tests/nudge-health.bats".to_string()];
+        let units = affected_units_full(&changed, &index());
+        assert_eq!(units.len(), 1);
+        assert_eq!(
+            gate_outcome(units.len(), true, false),
+            GateOutcome::Block,
+            "a failing bats suite must block, not advise"
+        );
+    }
+
+    /// NEGATIVE PROOF: the OLD selection could not do this. Guards against a
+    /// future refactor quietly dropping bats back out of the unit shapes.
+    #[test]
+    fn bats_only_diff_is_not_no_units() {
+        let changed = vec!["platform/tests/session-start-orchestration-e2e.bats".to_string()];
+        assert!(
+            affected_units(&changed).is_empty(),
+            "documents the old behaviour this card fixes"
+        );
+        let units = affected_units_full(&changed, &index());
+        assert_ne!(
+            gate_outcome(units.len(), false, false),
+            GateOutcome::NoUnits,
+            "a bats-only diff must be measured, not waved through"
+        );
+    }
+
+    /// A changed script pulls in the suite that covers it (AC2, covered half).
+    #[test]
+    fn changed_script_pulls_in_its_covering_suite() {
+        let changed = vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()];
+        let suites = affected_bats_suites(&changed, &index());
+        assert_eq!(suites, vec!["platform/tests/gate-spine-vikunja-e2e.bats"]);
+        assert!(uncovered_scripts(&changed, &index()).is_empty());
+    }
+
+    /// An UNCOVERED script is named, not silently dropped (AC2, uncovered half).
+    #[test]
+    fn uncovered_script_is_named_not_silently_dropped() {
+        let changed = vec!["platform/scripts/no-suite-touches-this.sh".to_string()];
+        assert!(affected_bats_suites(&changed, &index()).is_empty());
+        assert_eq!(
+            uncovered_scripts(&changed, &index()),
+            vec!["platform/scripts/no-suite-touches-this.sh"]
+        );
+    }
+
+    /// A bats suite is planned as a bats check — not silently unplanned.
+    #[test]
+    fn bats_unit_gets_a_bats_check() {
+        let units = vec![TestUnit::BatsSuite("platform/tests/nudge-health.bats".to_string())];
+        let plan = check_plan(&units);
+        assert!(plan.iter().any(|p| p.kind == CheckKind::Bats));
+    }
+
+    /// AC4: selecting zero units must not read the same as passing units.
+    #[test]
+    fn no_units_label_does_not_read_as_green() {
+        let label = GateOutcome::NoUnits.label();
+        assert!(
+            label.contains("0"),
+            "NoUnits must state that nothing was measured, got {:?}",
+            label
+        );
+        assert_ne!(label, GateOutcome::Pass.label());
     }
 }
