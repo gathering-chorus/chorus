@@ -480,18 +480,12 @@ pub fn conflict_hold_message(card: u64, role: &str, files: &[String]) -> String 
         .iter()
         .filter(|f| GENERATED_FILES.iter().any(|g| f.as_str() == *g))
         .collect();
-    let generated_note = if generated.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " NOTE (#3632): {} is GENERATED — no human decision needed: take origin/main's side \
-             (`git checkout --theirs` semantics do not apply mid-rebase here; simply accept main's \
-             version of the file, stage it, then `werk-commit {} {} --continue`). It regenerates \
-             on the next doc-coherence pass.",
-            generated.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
-            card, role
-        )
-    };
+    // #3928 — the doc-coherence advice is GONE. It hardcoded one file's name and
+    // told the reader to accept main's side; the file is gitignored now and the
+    // advice outlived it, pointing people at a path that does not exist. This was
+    // the FOURTH copy of the same accommodation (sweep, teardown, autoresolve,
+    // and this string) — deleting three left the fourth doing the harm.
+    let generated_note = String::new();
     format!(
         "rebase-conflict HELD for #{}: conflict markers are in your werk — edit the file(s) to \
          resolve, then `werk-commit {} {} --continue` to finish (or `werk-commit {} {} --abort` \
