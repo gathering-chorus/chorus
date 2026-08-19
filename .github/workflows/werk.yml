@@ -213,9 +213,24 @@ jobs:
         # #3517 — capture the trigger's landedCommit (werk-merge returns the landed origin/main sha
         # in content.text) and thread it forward to deploy. grep the 40-hex so it's robust to any
         # surrounding log text (no dependence on the exact MCP return shape). Empty → deploy REDs.
+        # #3932 — print the reason BEFORE acting on the exit code. This is the only
+        # step that captures a chorus-mcp-call.sh invocation into a variable. The
+        # helper writes the verb's error text to STDOUT and exits 1, and steps run
+        # under `bash -e`, so the shell died AT the assignment: the reason was
+        # captured and then thrown away. That is the entirety of "Failure - Main
+        # merge" with no explanation — #3911 three times, and #3928's land, where
+        # the PR had already merged. The MCP is NOT dropping stderr: calling the
+        # helper directly prints `JSON-RPC ERROR: ... stderr=werk-merge: <reason>`.
         run: |
+          set +e
           LANDED="$(chorus-mcp-call.sh "${ROLE}" werk-merge "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")")"
+          MERGE_RC=$?
+          set -e
           printf '%s\n' "$LANDED"
+          if [ "$MERGE_RC" -ne 0 ]; then
+            echo "   [fail] werk-merge exited ${MERGE_RC} — reason above (#3932: it used to be swallowed)" >&2
+            exit "$MERGE_RC"
+          fi
           LC="$(printf '%s' "$LANDED" | grep -oE '[0-9a-f]{40}' | tail -1)"
           echo "LANDED_COMMIT=${LC}" >> "$GITHUB_ENV"
           [ -n "$LC" ] || echo "   [warn] #3517: could not capture landedCommit from werk-merge output — deploy gate will RED on empty (claimed≠verified)" >&2

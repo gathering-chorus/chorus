@@ -124,6 +124,23 @@ pub fn pr_number_for_sha(json: &str, head_sha: &str) -> Option<u64> {
     None
 }
 
+/// Does this `gh pr merge` failure mean the PR is ALREADY IN, rather than that
+/// nothing landed?
+///
+/// #3932 — on #3928's land the PR was MERGED and its commit was on origin/main,
+/// yet the step reported failure and skipped sync/deploy/accept. `gh pr merge`
+/// errors on an already-merged PR, and every error was read as "nothing landed".
+///
+/// This only ROUTES: a true answer sends the run to the post-merge content
+/// verify it would have reached anyway, which still requires state == MERGED and
+/// the merge commit present on origin/main. Nothing is taken on trust here.
+pub fn already_landed(stderr: &str) -> bool {
+    let s = stderr.to_lowercase();
+    // "not open" / "is closed" reach the verify, which refuses a PR that closed
+    // without merging — so a closed-unmerged PR still fails, and fails loudly.
+    s.contains("already merged") || s.contains("not open") || s.contains("is closed")
+}
+
 /// Map a failed `gh pr merge` stderr to a typed refusal reason.
 pub fn classify_merge_error(stderr: &str) -> &'static str {
     let s = stderr.to_lowercase();
@@ -567,6 +584,16 @@ fn merge_inner(card: u64, role: &str, home: &Path, werk_base: &Path, atomic: boo
                 Ok(_) => break,
                 Err(e) => e,
             };
+            // #3932 — already in? Fall through to the content-verify below,
+            // which proves it (state == MERGED + merge commit on origin/main)
+            // before this run claims anything. Refusing here was what turned a
+            // successful land into "Failure - Main merge" on #3928.
+            if already_landed(&err) {
+                jsonl(home, role, card, &trace, "merge.already_landed", &format!(",\"pr\":{}", pr));
+                emit_spine(home, "merge.already_landed", role, card, &trace,
+                    &[("pr", &pr.to_string())]);
+                break;
+            }
             let reason = classify_merge_error(&err);
             if reason == "merge-conflict" && attempt == 0 {
                 let _ = run_in(&werk_s, "git", &["fetch", "-q", "origin", "main"]);
