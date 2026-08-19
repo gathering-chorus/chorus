@@ -525,9 +525,9 @@ async fn pre_tool_use_inner(
                     let rel = fp.rsplit_once("/chorus-werk/").map(|(_, r)| {
                         r.split_once('/').map(|(_, p)| p.to_string()).unwrap_or_default()
                     }).unwrap_or_else(|| fp.replacen(&format!("{root}/"), "", 1));
-                    match hooks::bounded_surfaces::load_surfaces(root.as_str()) {
+                    match hooks::bounded_surfaces::load_surfaces(root) {
                         Ok(set) => {
-                            if let Some(msg) = hooks::bounded_surfaces::check_path(&set, rel.as_str()) {
+                            if let Some(msg) = hooks::bounded_surfaces::check_path(&set, &rel) {
                                 return (_last_module.clone(), HookResponse::block_with_stderr(&msg));
                             }
                         }
@@ -535,7 +535,7 @@ async fn pre_tool_use_inner(
                             // Loud, never open: an unreadable list means the
                             // bound cannot be evaluated — say so on the paths
                             // it governs rather than allowing them silently.
-                            if hooks::bounded_surfaces::governs(rel.as_str()) {
+                            if hooks::bounded_surfaces::governs(&rel) {
                                 return (
                                     _last_module.clone(),
                                     HookResponse::block_with_stderr(&format!(
