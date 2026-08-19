@@ -39,6 +39,12 @@ export interface DriftInput {
    *  full window; idle counts from observation start, never epoch (the
    *  "496319h" nudge). */
   observedSinceMs: number;
+  /** #3936 — when the card's demo was PRESENTED, if no go has answered it yet;
+   *  null once answered (or never presented). A presented card is finished work
+   *  waiting on a human, so the role is not the blocker and nudging the role
+   *  cannot move it. On 2026-08-19 this watcher told Kade to finish or unpull
+   *  #3424 while #3424 sat green awaiting Jeff's go for four hours. */
+  awaitingGoSinceMs?: number | null;
 }
 
 export interface Drift {
@@ -60,6 +66,10 @@ export interface Drift {
 export function detectWipDrift(i: DriftInput): Drift | null {
   const roleActive = i.nowMs - i.lastRoleActivityMs <= ROLE_ACTIVE_MS;
   if (!roleActive) return null;
+  // #3936 — presented and unanswered: the card is done and the human holds it.
+  // Deliberately narrow — the moment a go lands, the role owns the card again
+  // and an ordinary stall drifts as before.
+  if (i.awaitingGoSinceMs != null) return null;
   // Idle counts from the newest of (card activity, observation start): a
   // window we did not watch is UNKNOWN, never idle. This both prevents the
   // fire-on-first-sight false positive and caps the reported number at the
@@ -80,7 +90,16 @@ export function detectWipDrift(i: DriftInput): Drift | null {
 
 export interface WipCard { id: number; owner: string }
 export type ReadWip = () => Promise<WipCard[]>;
-export type ReadActivity = (role: string, cardId: number) => Promise<{ lastRoleActivityMs: number; lastCardActivityMs: number }>;
+export type ReadActivity = (role: string, cardId: number) => Promise<{
+  lastRoleActivityMs: number;
+  lastCardActivityMs: number;
+  /** #3936 — newest demo.presented for this card, and newest event that ANSWERS
+   *  a presentation (the go: merge.approved / card.accepted). Both accumulate
+   *  across ticks like the others: the spine tail is minutes deep, so a
+   *  presentation that scrolls out must not read as "never presented". */
+  lastPresentedMs?: number;
+  lastGoMs?: number;
+}>;
 export type EmitDrift = (d: Drift) => Promise<void>;
 
 /**
@@ -102,6 +121,7 @@ export function startWipDriftWatch(
   // WATCHED before anything fires.
   const state: WatchState = {
     priorDrift: new Map(), seenCard: new Map(), seenRole: new Map(), observedSince: new Map(),
+    seenPresented: new Map(), seenGo: new Map(),
   };
   const timer = setInterval(() => {
     void (async () => {
@@ -122,6 +142,8 @@ interface WatchState {
   seenCard: Map<string, number>;      // key → newest card event ever seen
   seenRole: Map<string, number>;      // role → newest role event ever seen
   observedSince: Map<string, number>; // key → when we started watching
+  seenPresented: Map<string, number>; // key → newest demo.presented seen (#3936)
+  seenGo: Map<string, number>;        // key → newest go/accept seen (#3936)
 }
 
 /** One card, one tick: merge newest-seen, detect, fire at most once per window. */
@@ -134,12 +156,19 @@ async function tickOneCard(
   if (!s.observedSince.has(key)) s.observedSince.set(key, now());
   s.seenCard.set(key, Math.max(s.seenCard.get(key) ?? 0, a.lastCardActivityMs));
   s.seenRole.set(role, Math.max(s.seenRole.get(role) ?? 0, a.lastRoleActivityMs));
+  s.seenPresented.set(key, Math.max(s.seenPresented.get(key) ?? 0, a.lastPresentedMs ?? 0));
+  s.seenGo.set(key, Math.max(s.seenGo.get(key) ?? 0, a.lastGoMs ?? 0));
+  // #3936 — presented with no go after it means the human holds this card.
+  const presentedAt = s.seenPresented.get(key) ?? 0;
+  const goAt = s.seenGo.get(key) ?? 0;
+  const awaitingGoSinceMs = presentedAt > 0 && presentedAt > goAt ? presentedAt : null;
   const d = detectWipDrift({
     role, cardId: c.id, nowMs: now(),
     lastRoleActivityMs: s.seenRole.get(role) ?? 0,
     lastCardActivityMs: s.seenCard.get(key) ?? 0,
     priorDriftAtMs: s.priorDrift.get(key) ?? null,
     observedSinceMs: s.observedSince.get(key) ?? now(),
+    awaitingGoSinceMs,
   });
   if (!d) {
     if (a.lastCardActivityMs > (s.priorDrift.get(key) ?? 0)) s.priorDrift.delete(key);

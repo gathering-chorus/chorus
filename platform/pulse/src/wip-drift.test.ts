@@ -72,3 +72,36 @@ describe('#3879 detectWipDrift', () => {
     expect(d!.idleCardMs).toBe(5 * H); // observed span, not since-epoch
   });
 });
+
+// ── #3936 — a card waiting on Jeff's go is not drifting ──────────────────────
+//
+// 2026-08-19: this watcher told Kade to "finish it, hand it off, or unpull it"
+// about #3424, which was finished — presented, green, waiting four hours for a
+// go. Waiting on the human is the one state where the ROLE is not the blocker,
+// and it is exactly the state the old check read as drift. A watcher that
+// cannot tell "stalled" from "blocked on Jeff" trains everyone to ignore it.
+describe('#3936 presented-awaiting-go', () => {
+  const presented = (over: Partial<DriftInput> = {}): DriftInput => ({
+    ...base({ lastCardActivityMs: T0, nowMs: T0 + 5 * H, lastRoleActivityMs: T0 + 5 * H }),
+    awaitingGoSinceMs: T0,
+    ...over,
+  });
+
+  it('stays silent while the card is presented and unanswered', () => {
+    expect(detectWipDrift(presented())).toBeNull();
+  });
+
+  it('still fires once the go landed and work then stopped', () => {
+    // NEGATIVE PROOF: the exemption must be narrow. Go answered → the role owns
+    // the card again, so a stall after that is drift like any other.
+    const d = detectWipDrift(presented({ awaitingGoSinceMs: null }));
+    expect(d).not.toBeNull();
+    expect(d!.cardId).toBe(3879);
+  });
+
+  it('still fires on a card that was never presented at all', () => {
+    // NEGATIVE PROOF: the ordinary stall — the case #3879 exists for — is
+    // untouched by this change.
+    expect(detectWipDrift(base())).not.toBeNull();
+  });
+});

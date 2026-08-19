@@ -509,15 +509,24 @@ if (require.main === module) {
       };
       const readActivity = async (role: string, cardId: number) => {
         const events = parseSpineTail(await readTail()) as (SpineEvExt)[];
-        let lastRole = 0, lastCard = 0;
+        let lastRole = 0, lastCard = 0, lastPresented = 0, lastGo = 0;
         for (const e of events) {
           const at = Date.parse(e.timestamp ?? '');
           if (Number.isNaN(at)) continue;
           if (e.role === role && at > lastRole) lastRole = at;
           const cid = typeof e.card === 'number' ? e.card : parseInt(String(e.card ?? e.card_id ?? ''), 10);
-          if (cid === cardId && at > lastCard) lastCard = at;
+          if (cid !== cardId) continue;
+          if (at > lastCard) lastCard = at;
+          // #3936 — a presented card waits on Jeff and is not the role's to
+          // move. The go that answers it is merge.approved (written before the
+          // merge) or card.accepted; either hands the card back to the role.
+          if (e.event === 'demo.presented' && at > lastPresented) lastPresented = at;
+          if ((e.event === 'merge.approved' || e.event === 'card.accepted') && at > lastGo) lastGo = at;
         }
-        return { lastRoleActivityMs: lastRole, lastCardActivityMs: lastCard };
+        return {
+          lastRoleActivityMs: lastRole, lastCardActivityMs: lastCard,
+          lastPresentedMs: lastPresented, lastGoMs: lastGo,
+        };
       };
       startWipDriftWatch(readWip, readActivity, async (d) => {
         await emitSpine('wip.drift', {
