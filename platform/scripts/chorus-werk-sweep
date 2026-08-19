@@ -52,12 +52,21 @@ SWEPT=0; ABANDONED=0; FLAGGED=0; PRESERVED=0
 # it in werk-teardown; bash remove does not): if a CLOSED card's werk is dirty
 # with ONLY regenerated artifacts, discard them so the merge proof can run.
 # Any other dirt is untouched — remove's refusal then classifies honestly.
-GENERATED_FILES="knowledge/doc-coherence.md"
+# #3928 — EMPTY on purpose. Its one entry, knowledge/doc-coherence.md, is
+# gitignored now, so it can no longer dirty a werk: the cause removed rather
+# than tolerated here. The seam stays because the next committed generated
+# artifact will arrive at this line — and the answer then is to ignore it at
+# the source too, not to grow this list.
+GENERATED_FILES=""
 clean_generated_churn() { # <werk-dir> -> rc 0 if werk is now clean
   local werk="$1" dirty real f
   dirty=$(git -C "$werk" status --porcelain 2>/dev/null) || return 1
   [ -z "$dirty" ] && return 0
-  real=$(awk '{ $1=""; sub(/^ /,""); print }' <<< "$dirty" | grep -vxF "$GENERATED_FILES" || true)
+  if [ -z "$GENERATED_FILES" ]; then
+    real="$dirty"   # nothing is excused; every dirty file is real work
+  else
+    real=$(awk '{ $1=""; sub(/^ /,""); print }' <<< "$dirty" | grep -vxF "$GENERATED_FILES" || true)
+  fi
   [ -n "$real" ] && return 1
   for f in $GENERATED_FILES; do git -C "$werk" checkout -- "$f" 2>/dev/null; done
   git -C "$werk" clean -fd -- $GENERATED_FILES 2>/dev/null || true

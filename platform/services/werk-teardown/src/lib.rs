@@ -24,7 +24,14 @@ use std::process::Command;
 /// the werk AFTER werk-commit, so a clean land arrives at teardown "dirty" with
 /// churn that is derived, not work (bit #3634 and #3421 on accept). Shared with
 /// werk-commit's conflict-hold messaging via the existing path-dep.
-pub const GENERATED_FILES: &[&str] = &["knowledge/doc-coherence.md"];
+/// #3928 — EMPTY on purpose. Its one entry, `knowledge/doc-coherence.md`, is
+/// gitignored now, so it can no longer dirty a werk. That single file cost three
+/// rebases on #3911 and a July note on #3622, and this constant plus the sweep's
+/// twin were both written to live with it instead of removing it.
+///
+/// The seam stays: the next committed generated artifact will arrive here, and
+/// the answer then is to ignore it at the source too, not to grow this list.
+pub const GENERATED_FILES: &[&str] = &[];
 
 /// The dirty paths from a `status --porcelain` listing that are NOT regenerated
 /// artifacts. Empty ⇒ the werk's only dirt is generated churn, safe to discard.

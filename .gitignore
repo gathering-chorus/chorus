@@ -156,3 +156,10 @@ platform/services/owl-api/llvm-cov-summary.json
 # Playwright browser-flow artifacts (#3798) — runs, not source
 test-results/
 playwright-report/
+
+# #3928 — generated report, not source. A timestamped snapshot rewritten by the
+# pipeline on every land, so two cards in flight conflict on it BY CONSTRUCTION.
+# Nothing reads it from git; the checks that produce it read it from disk.
+# Cost: 3 rebases on #3911, a July note on #3622, and two carve-outs written to
+# tolerate it (chorus-werk-sweep, werk-teardown) instead of removing the cause.
+knowledge/doc-coherence.md

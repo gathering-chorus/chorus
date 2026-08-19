@@ -205,22 +205,27 @@ fn card_boundary_300_does_not_match_3000() {
 // live (#3634, #3421) — both needed a manual clean + chorus-werk remove.
 
 /// Seed the scenario with a TRACKED generated file so a werk can dirty it.
+/// #3928 — the report is GITIGNORED now, not tracked. The fixture mirrors that:
+/// the pipeline still writes the file, git simply never sees it.
 fn scenario_with_generated() -> (PathBuf, PathBuf) {
     let (origin, home) = scenario();
     fs::create_dir_all(home.join("knowledge")).unwrap();
-    fs::write(home.join("knowledge/doc-coherence.md"), "generated v1\n").unwrap();
+    fs::write(home.join(".gitignore"), "knowledge/doc-coherence.md\n").unwrap();
     git(&home, &["add", "-A"]);
-    git(&home, &["commit", "-m", "seed generated file"]);
+    git(&home, &["commit", "-m", "ignore the generated report"]);
     git(&home, &["push", "origin", "main"]);
+    fs::write(home.join("knowledge/doc-coherence.md"), "generated v1\n").unwrap();
     (origin, home)
 }
 
 #[test]
-fn generated_only_churn_discarded_and_teardown_proceeds() {
+fn generated_report_cannot_dirty_a_werk_at_all() {
+    // #3928 — this used to assert that generated churn was DISCARDED. The cause
+    // is gone: the report is gitignored, so regenerating it leaves the werk
+    // clean and there is nothing to excuse. Same outcome, no tolerance.
     let (_origin, home) = scenario_with_generated();
     let base = tmp("base");
     let werk = add_werk(&home, &base, "kade", 77);
-    // merged card (tier-1 proof on main), then the pipeline regenerates the file
     fs::write(werk.join("w.txt"), "w").unwrap();
     git(&werk, &["add", "-A"]);
     git(&werk, &["commit", "-m", "kade: #77 — work"]);
@@ -228,14 +233,16 @@ fn generated_only_churn_discarded_and_teardown_proceeds() {
     git(&home, &["add", "-A"]);
     git(&home, &["commit", "-m", "#77 (kade) (#998)"]);
     git(&home, &["push", "origin", "main"]);
+    // the pipeline regenerates the report inside the werk, as it always does
+    fs::create_dir_all(werk.join("knowledge")).unwrap();
     fs::write(werk.join("knowledge/doc-coherence.md"), "generated v2 — pipeline churn\n").unwrap();
 
     let mut events = Vec::new();
     let res = teardown_werk(&home, &base, "kade", 77, &mut collect_emit(&mut events));
-    assert_eq!(res, Ok(Teardown::Removed), "generated-only churn must not refuse");
-    assert!(!werk.exists(), "worktree removed after discarding generated churn");
-    assert!(events.iter().any(|e| e.starts_with("teardown.generated.discarded")),
-        "discard is witnessed, never silent: {:?}", events);
+    assert_eq!(res, Ok(Teardown::Removed), "an ignored report is not dirt");
+    assert!(!werk.exists(), "worktree removed");
+    assert!(!events.iter().any(|e| e.starts_with("teardown.generated.discarded")),
+        "nothing to discard — the file never entered git: {:?}", events);
 }
 
 #[test]
@@ -243,6 +250,9 @@ fn generated_plus_real_dirt_still_refused_nothing_lost() {
     let (_origin, home) = scenario_with_generated();
     let base = tmp("base");
     let werk = add_werk(&home, &base, "kade", 78);
+    // #3928 — the report is ignored, so it is invisible to git; the refusal must
+    // still fire on the REAL dirt beside it and leave both files untouched.
+    fs::create_dir_all(werk.join("knowledge")).unwrap();
     fs::write(werk.join("knowledge/doc-coherence.md"), "generated churn\n").unwrap();
     fs::write(werk.join("precious.txt"), "real uncommitted work").unwrap();
 
@@ -261,9 +271,15 @@ fn generated_plus_real_dirt_still_refused_nothing_lost() {
 
 #[test]
 fn non_generated_dirty_parses_porcelain() {
+    // #3928 NEGATIVE PROOF: with the list empty, NOTHING is excused. The old
+    // version asserted doc-coherence.md was filtered out; that tolerance is the
+    // thing being removed, so the test that guarded it must invert.
     let porcelain = " M knowledge/doc-coherence.md\n?? new-file.txt\n M src/lib.rs\n";
-    assert_eq!(non_generated_dirty(porcelain), vec!["new-file.txt".to_string(), "src/lib.rs".to_string()]);
-    assert!(non_generated_dirty(" M knowledge/doc-coherence.md\n").is_empty());
+    assert_eq!(
+        non_generated_dirty(porcelain),
+        vec!["knowledge/doc-coherence.md".to_string(), "new-file.txt".to_string(), "src/lib.rs".to_string()],
+        "a TRACKED generated file is real dirt now — it should not be tracked at all",
+    );
     assert!(non_generated_dirty("").is_empty());
-    assert_eq!(GENERATED_FILES, &["knowledge/doc-coherence.md"]);
+    assert!(GENERATED_FILES.is_empty(), "the excuse list stays empty; ignore at the source instead");
 }
