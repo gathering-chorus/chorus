@@ -1180,6 +1180,21 @@ pub fn is_shell_script(path: &str) -> bool {
     path.ends_with(".sh") || path.starts_with("platform/scripts/")
 }
 
+/// #3934 — a GOVERNED SURFACE: a non-script file whose content a suite asserts
+/// on. #3917 taught the gate to see changed test FILES; it still could not see
+/// what a test is ABOUT. A one-line change to `.github/workflows/werk.yml`
+/// (#3918) implicated no test, so the land was green and the 04:19 nightly was
+/// red on `membrane-guard.bats` — a suite that greps that exact line.
+pub fn is_governed_surface(path: &str) -> bool {
+    path.starts_with(".github/workflows/") && (path.ends_with(".yml") || path.ends_with(".yaml"))
+        || path.starts_with("platform/hooks/")
+}
+
+/// Any changed path a suite may reference by name: scripts plus governed surfaces.
+pub fn is_referenceable(path: &str) -> bool {
+    (is_shell_script(path) || is_governed_surface(path)) && !is_bats_suite(path)
+}
+
 /// Bats suites implicated by the diff: every changed suite itself, plus every
 /// suite whose body references a changed script. Deterministic (sorted, deduped).
 pub fn affected_bats_suites(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
@@ -1190,7 +1205,7 @@ pub fn affected_bats_suites(changed: &[String], index: &[SuiteCoverage]) -> Vec<
         }
     }
     for f in changed {
-        if !is_shell_script(f) {
+        if !is_referenceable(f) {
             continue;
         }
         for row in index {
@@ -1221,7 +1236,7 @@ pub fn affected_units_full(changed: &[String], index: &[SuiteCoverage]) -> Vec<T
 pub fn uncovered_scripts(changed: &[String], index: &[SuiteCoverage]) -> Vec<String> {
     let mut out: Vec<String> = changed
         .iter()
-        .filter(|f| is_shell_script(f) && !is_bats_suite(f))
+        .filter(|f| is_referenceable(f))
         .filter(|f| !index.iter().any(|r| r.covers.iter().any(|c| c == *f)))
         .cloned()
         .collect();
@@ -1386,6 +1401,80 @@ pub fn child_context(program: &str) -> ChildContext {
         "cargo" | "bats" => ChildContext::Test,
         p if p.ends_with("jest") || p.ends_with("tsc") => ChildContext::Test,
         _ => ChildContext::Runner,
+    }
+}
+
+#[cfg(test)]
+mod governed_surface_selection_3934 {
+    use super::*;
+
+    fn index() -> Vec<SuiteCoverage> {
+        vec![
+            SuiteCoverage {
+                suite: "platform/tests/membrane-guard.bats".to_string(),
+                covers: vec![".github/workflows/werk.yml".to_string()],
+            },
+            SuiteCoverage {
+                suite: "platform/tests/gate-spine-vikunja-e2e.bats".to_string(),
+                covers: vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()],
+            },
+        ]
+    }
+
+    /// The #3918 regression: its diff changed werk.yml, membrane-guard.bats
+    /// asserts on that exact line, and NOTHING connected them. The land was
+    /// green; the nightly was red.
+    #[test]
+    fn a_werkyml_change_now_selects_the_suite_that_asserts_on_it() {
+        let changed = vec![".github/workflows/werk.yml".to_string()];
+        let suites = affected_bats_suites(&changed, &index());
+        assert_eq!(suites, vec!["platform/tests/membrane-guard.bats"]);
+        let units = affected_units_full(&changed, &index());
+        assert_ne!(gate_outcome(units.len(), false, false), GateOutcome::NoUnits);
+    }
+
+    /// NEGATIVE PROOF (#3734): widening must not become select-everything. A
+    /// governed surface NO suite references still selects nothing — and is
+    /// named as an uncovered gap rather than passing silently.
+    #[test]
+    fn an_unreferenced_governed_surface_selects_nothing_and_is_named() {
+        let changed = vec![".github/workflows/nobody-tests-this.yml".to_string()];
+        assert!(affected_bats_suites(&changed, &index()).is_empty());
+        assert_eq!(
+            uncovered_scripts(&changed, &index()),
+            vec![".github/workflows/nobody-tests-this.yml"]
+        );
+    }
+
+    /// NEGATIVE PROOF: ordinary source files are NOT governed surfaces — this
+    /// must not quietly turn every .ts/.rs change into a bats sweep.
+    #[test]
+    fn ordinary_source_is_not_a_governed_surface() {
+        for p in [
+            "platform/api/src/server.ts",
+            "platform/services/werk-test/src/lib.rs",
+            "designing/schemas/spine-events.json",
+            "knowledge/doc-coherence.md",
+        ] {
+            assert!(!is_governed_surface(p), "{} must not be governed", p);
+            assert!(!is_referenceable(p), "{} must not be referenceable", p);
+        }
+    }
+
+    /// A bats suite is never ALSO a referenceable target — it is the unit.
+    #[test]
+    fn a_suite_is_not_its_own_coverage_target() {
+        assert!(!is_referenceable("platform/tests/membrane-guard.bats"));
+    }
+
+    /// The #3917 script path still works — widening did not replace it.
+    #[test]
+    fn script_coverage_still_selects() {
+        let changed = vec!["platform/scripts/gate-spine-vikunja-bridge.sh".to_string()];
+        assert_eq!(
+            affected_bats_suites(&changed, &index()),
+            vec!["platform/tests/gate-spine-vikunja-e2e.bats"]
+        );
     }
 }
 
