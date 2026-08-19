@@ -197,7 +197,11 @@ fn run_in(dir: &str, cmd: &str, args: &[&str]) -> R<String> {
 /// #3623 — files whose conflicts carry no human decision: generated artifacts
 /// that the next generation pass recreates. A conflict touching ONLY these
 /// self-resolves to main's side; any source file in the set keeps the #3304 hold.
-const GENERATED_AUTORESOLVE: &[&str] = &["knowledge/doc-coherence.md"];
+// #3928 removed knowledge/doc-coherence.md from git entirely — it was a
+// generated report nobody read. This list is what remains of the accommodation
+// and it must stay EMPTY: a path listed here that git does not have makes
+// `checkout --ours` fail, which is what blocked three commits on 2026-08-19.
+const GENERATED_AUTORESOLVE: &[&str] = &[];
 
 /// Split conflicted paths into (generated, source). Pure — pinned by units.
 pub fn partition_generated(files: &[String]) -> (Vec<String>, Vec<String>) {
@@ -252,7 +256,14 @@ fn rebase_onto_origin_main(werk_s: &str, home: &Path, role: &str, card: u64, tra
                 // generated-only: take main's side (mid-rebase, main = --ours; the
                 // file regenerates on the next pass — #3632 semantics), stage, continue.
                 for f in &generated {
-                    run_in(werk_s, "git", &["checkout", "--ours", "--", f])?;
+                    // A path git has no "ours" version for is one that was
+                    // DELETED upstream — the retire case. Dying here turns a
+                    // resolved conflict into a hard commit failure (three of
+                    // them on 2026-08-19). Removing it from the index IS the
+                    // resolution; `?` on the checkout was the bug.
+                    if run_in(werk_s, "git", &["checkout", "--ours", "--", f]).is_err() {
+                        let _ = run_in(werk_s, "git", &["rm", "-q", "--ignore-unmatch", "--", f]);
+                    }
                     run_in(werk_s, "git", &["add", "--", f])?;
                 }
                 jsonl(home, role, card, trace, "rebase.conflict.autoresolved",
@@ -661,4 +672,34 @@ fn commit_inner(card: u64, role: &str, summary: &str, home: &Path, werk_base: &P
     jsonl(home, role, card, &trace, "commit.completed", &format!(",\"sha\":\"{}\"", sha));
     emit_spine(home, "commit.completed", role, card, &trace, &[("sha", &sha)]);
     Ok(sha)
+}
+
+#[cfg(test)]
+mod autoresolve_retire_3937 {
+    use super::*;
+
+    /// NEGATIVE PROOF (#3734): the list must stay empty. A path here that git
+    /// has no "ours" version for made `checkout --ours` fail and killed the
+    /// commit — three of Kade's on 2026-08-19, four hours after the file was
+    /// deleted upstream. If someone re-adds an entry, this goes red.
+    #[test]
+    fn generated_autoresolve_is_empty() {
+        assert!(
+            GENERATED_AUTORESOLVE.is_empty(),
+            "a generated path here must exist in git on BOTH sides; \
+             a deleted one fails checkout --ours and kills the commit"
+        );
+    }
+
+    /// Everything is source now, so the #3304 hold still applies to real conflicts.
+    #[test]
+    fn every_conflicted_path_is_treated_as_source() {
+        let files = vec![
+            "knowledge/doc-coherence.md".to_string(),
+            "platform/api/src/server.ts".to_string(),
+        ];
+        let (generated, source) = partition_generated(&files);
+        assert!(generated.is_empty());
+        assert_eq!(source.len(), 2);
+    }
 }
