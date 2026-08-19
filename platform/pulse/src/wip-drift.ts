@@ -123,19 +123,31 @@ export function foldCardActivity(events: ActivityEv[], role: string, cardId: num
   for (const e of events) {
     const at = Date.parse(e.timestamp ?? '');
     if (Number.isNaN(at)) continue;
-    if (e.role === role && at > a.lastRoleActivityMs) a.lastRoleActivityMs = at;
-    const raw = e.card ?? e.card_id ?? '';
-    const cid = typeof e.card === 'number' ? e.card : parseInt(String(raw), 10);
-    if (cid !== cardId) continue;
-    if (at > a.lastCardActivityMs) a.lastCardActivityMs = at;
-    // A go is what hands the card back to the role: merge.approved is written
-    // before the merge, card.accepted closes it. Either answers a presentation.
-    if (e.event === 'demo.presented') a.lastPresentedMs = Math.max(a.lastPresentedMs ?? 0, at);
-    if (e.event === 'merge.approved' || e.event === 'card.accepted') {
-      a.lastGoMs = Math.max(a.lastGoMs ?? 0, at);
-    }
+    if (e.role === role) a.lastRoleActivityMs = Math.max(a.lastRoleActivityMs, at);
+    if (cardIdOf(e) !== cardId) continue;
+    a.lastCardActivityMs = Math.max(a.lastCardActivityMs, at);
+    applyCardEvent(a, e.event, at);
   }
   return a;
+}
+
+/** The card id an event is about — the field is `card` or `card_id`, number or string. */
+function cardIdOf(e: ActivityEv): number {
+  if (typeof e.card === 'number') return e.card;
+  return parseInt(String(e.card ?? e.card_id ?? ''), 10);
+}
+
+/**
+ * Record the two events that decide who holds the card. A go is what hands it
+ * back to the role: merge.approved is written before the merge, card.accepted
+ * closes it — either one answers a presentation.
+ */
+function applyCardEvent(a: CardActivity, event: string | undefined, at: number): void {
+  if (event === 'demo.presented') {
+    a.lastPresentedMs = Math.max(a.lastPresentedMs ?? 0, at);
+  } else if (event === 'merge.approved' || event === 'card.accepted') {
+    a.lastGoMs = Math.max(a.lastGoMs ?? 0, at);
+  }
 }
 export type EmitDrift = (d: Drift) => Promise<void>;
 
