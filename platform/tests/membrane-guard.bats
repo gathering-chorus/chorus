@@ -117,9 +117,20 @@ require_shim() {
   grep -qE '^[[:space:]]+CHORUS_CONTEXT:[[:space:]]*prod[[:space:]]*$' "$CHORUS_ROOT/.github/workflows/werk.yml"
 }
 
-@test "werk.yml test step reverts CHORUS_CONTEXT for the suites it runs (#3745)" {
-  # The runner's prod identity must not leak into the suites: the werk-test
-  # invocation line explicitly empties the var so ambient classification and
-  # test_helper's default seams apply inside the suites.
-  grep -qE 'CHORUS_CONTEXT= .*werk-test' "$CHORUS_ROOT/.github/workflows/werk.yml"
+@test "werk-test reverts CHORUS_CONTEXT for the suites it runs, not for itself (#3745/#3918)" {
+  # #3745's RULE is unchanged: the runner's prod identity must not leak into the
+  # suites. #3918 moved WHERE it is applied. Clearing the var on the werk.yml
+  # invocation line cleared it for werk-test ITSELF, so under act (CI=true) the
+  # runner classified as a build context and every spine event it emitted died
+  # on the membrane — the gate ran and left no record. The clearing now happens
+  # per spawned test child inside werk-test.
+  ! grep -qE 'CHORUS_CONTEXT= .*werk-test' "$CHORUS_ROOT/.github/workflows/werk.yml"
+  grep -q 'CHORUS_CONTEXT", ""' "$CHORUS_ROOT/platform/services/werk-test/src/main.rs"
+}
+
+@test "NEGATIVE: the runner keeps a prod identity to declare (#3918)" {
+  # If werk.yml ever stops declaring prod at job level, the runner is back to
+  # ambient CI=true and its telemetry silently dies again. Asserted separately
+  # from the test above so the two halves cannot both rot into one vacuous pass.
+  grep -qE '^[[:space:]]+CHORUS_CONTEXT:[[:space:]]*prod[[:space:]]*$' "$CHORUS_ROOT/.github/workflows/werk.yml"
 }

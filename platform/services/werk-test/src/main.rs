@@ -357,6 +357,18 @@ fn build_suite_coverage(werk: &str) -> Vec<werk_test::SuiteCoverage> {
         );
         let mut covers: Vec<String> = Vec::new();
         for tok in body.split(|c: char| !(c.is_alphanumeric() || "._/-".contains(c))) {
+            // #3934 — governed surfaces (workflow yml, hooks) count as coverage
+            // targets too: a suite that greps werk.yml is ABOUT werk.yml.
+            if tok.contains(".github/workflows/") || tok.contains("platform/hooks/") {
+                let rel = match tok.find(".github/workflows/").or_else(|| tok.find("platform/hooks/")) {
+                    Some(i) => tok[i..].to_string(),
+                    None => continue,
+                };
+                if !covers.contains(&rel) {
+                    covers.push(rel);
+                }
+                continue;
+            }
             if tok.ends_with(".sh") {
                 let rel = match tok.find("platform/") {
                     Some(i) => tok[i..].to_string(),
@@ -1080,12 +1092,12 @@ fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
 mod suite_coverage_3917 {
     use super::*;
 
-    fn world(files: &[(&str, &str)]) -> std::path::PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "werk-test-cov-{}-{}",
-            std::process::id(),
-            files.len()
-        ));
+    /// #3934 — key the fixture dir on the CALLER, not on files.len(): two tests
+    /// with one file each collided in the same tmpdir and saw each other's
+    /// suites. The tests caught it; the naming scheme was the bug.
+    fn world_named(tag: &str, files: &[(&str, &str)]) -> std::path::PathBuf {
+        let root = std::env::temp_dir()
+            .join(format!("werk-test-cov-{}-{}", std::process::id(), tag));
         let tests = root.join("platform/tests");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&tests).unwrap();
@@ -1097,7 +1109,7 @@ mod suite_coverage_3917 {
 
     #[test]
     fn index_records_the_scripts_a_suite_names() {
-        let root = world(&[(
+        let root = world_named("scripts", &[(
             "a.bats",
             "run bash \"${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh\" code 1\n",
         )]);
@@ -1112,7 +1124,7 @@ mod suite_coverage_3917 {
     /// every script would look covered — the exact hollow-gate shape #3917 fixes.
     #[test]
     fn a_suite_naming_no_script_covers_nothing() {
-        let root = world(&[("b.bats", "@test \"nothing\" { true; }\n"), ("c.bats", "# no scripts here\n")]);
+        let root = world_named("nogovern", &[("b.bats", "@test \"nothing\" { true; }\n"), ("c.bats", "# no scripts here\n")]);
         let rows = build_suite_coverage(root.to_str().unwrap());
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.covers.is_empty()), "got {:?}", rows);
@@ -1120,6 +1132,28 @@ mod suite_coverage_3917 {
 
     /// A missing tests dir is empty coverage, not a panic — the index must not
     /// take down the gate in a tree that has no bats suites.
+    /// #3934 — the index must harvest GOVERNED SURFACES, not just *.sh. This is
+    /// the edge that let #3918's werk.yml change run no tests.
+    #[test]
+    fn index_records_a_governed_surface_a_suite_greps() {
+        let root = world_named("governed", &[(
+            "guard.bats",
+            "grep -qE 'CHORUS_CONTEXT' \"$CHORUS_ROOT/.github/workflows/werk.yml\"\n",
+        )]);
+        let rows = build_suite_coverage(root.to_str().unwrap());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].covers, vec![".github/workflows/werk.yml"]);
+    }
+
+    /// NEGATIVE PROOF (#3734): a suite naming no governed surface covers none —
+    /// otherwise every yml change would sweep every suite.
+    #[test]
+    fn a_suite_naming_no_governed_surface_covers_none() {
+        let root = world_named("noscript", &[("plain.bats", "@test \"x\" { true; }\n")]);
+        let rows = build_suite_coverage(root.to_str().unwrap());
+        assert!(rows[0].covers.is_empty(), "got {:?}", rows[0].covers);
+    }
+
     #[test]
     fn missing_tests_dir_is_empty_not_fatal() {
         assert!(build_suite_coverage("/nonexistent/werk/root").is_empty());
