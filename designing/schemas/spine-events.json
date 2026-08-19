@@ -2898,6 +2898,17 @@
         "role": "Acting role"
       }
     },
+    "merge.already_landed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk `merge` verb (#3932) — `gh pr merge` refused because the PR is already merged, so the work is IN rather than lost. The run falls through to the post-merge content verify (state == MERGED plus the merge commit present on origin/main) instead of refusing; nothing is claimed on the strength of this event alone. Before #3932 this case reported \"Failure - Main merge\" and skipped sync/deploy/accept on a land that had already succeeded. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card": "Card the land belongs to",
+        "pr": "Pull request number found already merged"
+      }
+    },
     "merge.stale_flag": {
       "vertebra": "building",
       "source": "werk",
