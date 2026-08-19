@@ -1,34 +1,35 @@
-# Daily Morning Summary — 2026-08-18
+# Daily Morning Summary — 2026-08-19
 
-**HEADLINE:** Build type errors are accelerating (+14 in three days, now 230) and the npm ci blocker enters day 70 with no owner — both quality lanes need a decision today.
+**HEADLINE:** The `npm ci` blocker enters day 71 with no owner — tests, lint, and build all dark — and two WIP cards have been stale 132 days; both need a decision today.
 
 ---
 
-**OPS:** YELLOW (ops review 2026-08-17 — 0 red, 5 yellow, 2 green; improvement from yesterday's 4 red)
-- YELLOW: Domain context stale — all 5 domains last updated 2026-08-14, now day 4; chorus + infra lag recent shipping
-- YELLOW: Hooks dead-code — `probe_role_session` never called (`src/process.rs:76`); warning count unchanged
-- YELLOW: LaunchAgent `/tmp` refs — 12+ plists using `/tmp` for log paths; no migration card yet
-- YELLOW: Perf-baseline never seeded — scripts exist, no data; first run needed before delta checks work
-- GREEN: Git tree clean; CSC compliance check vacuous pass
+**OPS:** YELLOW/RED (1 red, 4 yellow, 2 green)
+- RED: 2 WIP cards stale 132 days (last touched 2026-04-07) — "OWL entity model" + "Restore chorus product boundary." Close or requeue.
+- YELLOW: Hooks warnings up to 8 (was 7); dead-code accumulation continues — `owes_response_block`, `build_reply_event`, etc.
+- YELLOW: LaunchAgent `/tmp` refs now confirmed at 17 plists (up from 12+); no migration card filed.
+- YELLOW: Clone landed in detached HEAD (`5515d27`); investigate scheduled-session checkout.
+- GREEN: Domain context fresh (all 5 domains updated 2026-08-15, within 7-day threshold). CSC clean.
 
-**QUALITY:** RED (all suites blocked — day 68 / lint day 70)
-- Tests: 0 run — 4 suites blocked (`ts-jest preset not found`), day 68
-- Lint: blocked (`@eslint/js`), day 70
-- Build: 230 type errors (+3 today); three-day trend: 216→217→226→227→230; **+14 in three days, regression accelerating**
-- Root cause: `npm ci` unrun at repo root — **70 days, no owner**
+**QUALITY:** RED (all lanes blocked)
+- Tests: 0 run — 4 suites blocked (`ts-jest preset not found`), **day 69**
+- Lint: blocked (`@eslint/js`), **day 71**
+- Build: 231 type errors (+1 today; +14 over five days; trend accelerating)
+- Root cause: `npm ci` unrun at repo root — **71 days. Escalation warranted.**
 
-**YESTERDAY (2026-08-17):** 4 cards shipped
-- wren: #3910 — room signs as bridge with its own registered key; refuses to start without it
-- silas: #3386, #3616 — two infra/ops cards (3 commits total)
-- kade: #3912 — landed
+**YESTERDAY (2026-08-18):** 7 cards shipped
+- silas: #3915, #3917, #3918, #3926, #3927
+- wren: #3911
+- kade: #3913
 
 **TODAY: Recommended priorities**
-1. **Jeff / team** — assign an owner to `npm ci` (day 70); or formally close the lane and cancel tests; this is the single highest-leverage unblocked action
-2. **Wren** — investigate build type error regression (+14 in three days) before it compounds further
-3. **Wren** — content-refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` (day 4 breach, recent shipping warrants update)
-4. **Silas** — seed perf-baseline data so disk-delta checks have something to compare
-5. **Silas** — file migration card for LaunchAgent `/tmp` log paths
+1. **Jeff** — assign owner to `npm ci` (day 71) or formally close the test lane; highest-leverage unblocked action
+2. **Jeff** — decide on the two 132-day WIP cards; they are dead weight on the board
+3. **Wren** — investigate build type error regression (+14 in 5 days) before 231 becomes 250
+4. **Silas** — file LaunchAgent `/tmp` migration card; 17 plists confirmed, no card exists
+5. **Wren** — refresh `domain-context-chorus.md` at next session given recent ships
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` — **day 70**, no owner; all tests + lint dark; needs an explicit owner or a close decision
-- Build errors at 230 and accelerating — if no one is looking at this, it needs a card and an owner today
+- `npm ci` — day 71, no owner; all tests + lint dark; needs owner or explicit close decision
+- Build errors at 231 and accelerating — needs a card and an owner if no one is on it
+- Two WIP cards 132 days stale — board hygiene decision needed
