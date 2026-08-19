@@ -511,6 +511,42 @@ async fn pre_tool_use_inner(
             if r.stdout.is_some() || r.exit_code != 0 {
                 return (_last_module.clone(), r);
             }
+            // #3424 — bounded surfaces: a NEW werk verb crate or role skill
+            // outside the declared set is refused. Widening is legitimate and
+            // cheap (edit canonical-surfaces.json in the same change); what
+            // this catches is the surface that arrives without anyone
+            // deciding. Silent on every unrelated path.
+            _last_module = "bounded_surfaces".into();
+            {
+                let fp = input.get_tool_input_str("file_path");
+                if !fp.is_empty() {
+                    let root = crate::shared::state_paths::chorus_root();
+                    // A repo-relative view of the write, werk or canonical.
+                    let rel = fp.rsplit_once("/chorus-werk/").map(|(_, r)| {
+                        r.split_once('/').map(|(_, p)| p.to_string()).unwrap_or_default()
+                    }).unwrap_or_else(|| fp.replacen(&format!("{root}/"), "", 1));
+                    match hooks::bounded_surfaces::load_surfaces(root.as_str()) {
+                        Ok(set) => {
+                            if let Some(msg) = hooks::bounded_surfaces::check_path(&set, rel.as_str()) {
+                                return (_last_module.clone(), HookResponse::block_with_stderr(&msg));
+                            }
+                        }
+                        Err(e) => {
+                            // Loud, never open: an unreadable list means the
+                            // bound cannot be evaluated — say so on the paths
+                            // it governs rather than allowing them silently.
+                            if hooks::bounded_surfaces::governs(rel.as_str()) {
+                                return (
+                                    _last_module.clone(),
+                                    HookResponse::block_with_stderr(&format!(
+                                        "BOUNDED SURFACE (#3424): cannot evaluate the canonical set — {e}"
+                                    )),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             // Sensitive paths — block writes to .env, credentials, SSH keys
             _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {

@@ -1,0 +1,16 @@
+{
+  "_comment": "#3424 — THE canonical set of werk verbs and role skills. This file IS the bound: the guard reads it, never a hardcode, so widening the set is a deliberate edit to this list (reviewable in a diff) rather than a new name quietly appearing beside the others. Adding an entry is allowed and cheap — doing it ACCIDENTALLY is what this refuses.",
+  "verbs": [
+    "werk-pull", "werk-commit", "werk-push", "werk-build", "werk-test",
+    "werk-review", "werk-demo", "werk-deploy", "werk-merge", "werk-sync",
+    "werk-accept", "werk-unpull", "werk-teardown"
+  ],
+  "skills": [
+    "ab", "board-sweep", "card", "chat", "chat-tick", "chorus", "close", "cno",
+    "cs", "cw", "cws", "demo", "flow", "fuc", "gate-arch", "gate-code",
+    "gate-ops", "gate-product", "gate-quality", "gemba", "gemba-tick",
+    "golfball", "interrupt", "jdi", "lc", "listen", "lk", "lm", "look", "ls",
+    "lw", "nudge", "ot", "pair", "pipeline", "pull", "reboot", "retro", "sb",
+    "share", "simplify", "sup", "unpull", "werk", "wip", "wtf"
+  ]
+}
