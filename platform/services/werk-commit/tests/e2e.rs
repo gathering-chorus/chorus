@@ -610,18 +610,15 @@ fn clean_werk_with_no_card_work_still_refuses_nothing_to_commit() {
 
 // ── #3623 — a GENERATED-only rebase conflict self-resolves (main's side), never held ──
 #[test]
-fn a_conflict_on_a_path_deleted_upstream_does_not_kill_the_commit() {
-    // Was: "generated-only conflict self-resolves, taking main's side" — the
-    // test that encoded the doc-coherence accommodation. #3928 deleted that
-    // file from git, which made the accommodation lethal: `checkout --ours`
-    // has no "ours" for a path deleted upstream, so it errored and took the
-    // whole commit with it. Three of Kade's commits died that way on
-    // 2026-08-19, four hours after the delete.
-    //
-    // The premise is now inverted. There is no autoresolve list. What must be
-    // true is narrower and more honest: a conflict where the peer DELETED the
-    // file resolves by accepting the delete, and the card's own work survives.
-    let origin = tmp("origin-del");
+/// #3928 — INVERTED, deliberately. This asserted that a doc-coherence conflict
+/// self-resolves to main's side. That tolerance is gone: the file is gitignored,
+/// so it cannot conflict — and the autoresolve list that outlived it went on
+/// matching a deleted path and wedging unrelated commits.
+///
+/// The property now: a conflict in a TRACKED file is HELD for a human, with no
+/// exceptions. Nothing is quietly resolved on anyone's behalf.
+fn rebase_holds_every_conflict_no_generated_exception() {
+    let origin = tmp("origin-gen");
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::create_dir_all(origin.join("knowledge")).unwrap();
     fs::write(origin.join("knowledge/doc-coherence.md"), "base").unwrap();
@@ -629,38 +626,28 @@ fn a_conflict_on_a_path_deleted_upstream_does_not_kill_the_commit() {
     git(&origin, &["commit", "-q", "-m", "init"]);
     git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
 
-    let home = tmp("home-del");
+    let home = tmp("home-gen");
     assert!(Command::new("git")
         .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
         .status().unwrap().success());
 
-    let werk_base = tmp("werk-del");
+    let werk_base = tmp("werk-gen");
     let werk = werk_base.join("kade-9102");
     git(&home, &["worktree", "add", "-b", "kade/9102", werk.to_str().unwrap(), "origin/main"]);
 
-    // The werk regenerates the file (as every land used to)…
     fs::write(werk.join("knowledge/doc-coherence.md"), "werk-regen").unwrap();
     fs::write(werk.join("card.txt"), "card-work").unwrap();
-    // …while main RETIRES it. modify/delete — the exact live shape.
-    fs::remove_file(origin.join("knowledge/doc-coherence.md")).unwrap();
-    git(&origin, &["add", "-A"]);
-    git(&origin, &["commit", "-q", "-m", "retire the generated report"]);
+    fs::write(origin.join("knowledge/doc-coherence.md"), "main-regen").unwrap();
+    git(&origin, &["add", "."]);
+    git(&origin, &["commit", "-q", "-m", "peer regen"]);
 
-    let res = commit(9102, "kade", "retire conflict test", &home, &werk_base);
-    // It may HOLD for a human (that is the #3304 guard, and correct) — what it
-    // must never do is die with "does not have our version".
-    if let Err(e) = &res {
-        assert!(
-            !e.contains("does not have our version"),
-            "the resolver must survive a path deleted upstream, got: {}",
-            e
-        );
-    }
-    // The card's own work is intact either way.
-    assert_eq!(fs::read_to_string(werk.join("card.txt")).unwrap(), "card-work");
+    let err = commit(9102, "kade", "gen conflict test", &home, &werk_base)
+        .expect_err("a tracked conflict must be HELD, never auto-resolved");
+    assert!(err.contains("rebase-conflict HELD"), "the refusal names the hold: {}", err);
+    assert!(err.contains("knowledge/doc-coherence.md"),
+        "the refusal names the file so a human can act: {}", err);
 }
 
-// source conflicts keep the #3304 hold — humans decide source.
 #[test]
 fn rebase_still_holds_on_source_conflict() {
     let origin = tmp("origin-src");
