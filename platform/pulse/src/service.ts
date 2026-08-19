@@ -12,7 +12,7 @@ import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, t
 import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
-import { startWipDriftWatch } from './wip-drift';
+import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
@@ -509,24 +509,9 @@ if (require.main === module) {
       };
       const readActivity = async (role: string, cardId: number) => {
         const events = parseSpineTail(await readTail()) as (SpineEvExt)[];
-        let lastRole = 0, lastCard = 0, lastPresented = 0, lastGo = 0;
-        for (const e of events) {
-          const at = Date.parse(e.timestamp ?? '');
-          if (Number.isNaN(at)) continue;
-          if (e.role === role && at > lastRole) lastRole = at;
-          const cid = typeof e.card === 'number' ? e.card : parseInt(String(e.card ?? e.card_id ?? ''), 10);
-          if (cid !== cardId) continue;
-          if (at > lastCard) lastCard = at;
-          // #3936 — a presented card waits on Jeff and is not the role's to
-          // move. The go that answers it is merge.approved (written before the
-          // merge) or card.accepted; either hands the card back to the role.
-          if (e.event === 'demo.presented' && at > lastPresented) lastPresented = at;
-          if ((e.event === 'merge.approved' || e.event === 'card.accepted') && at > lastGo) lastGo = at;
-        }
-        return {
-          lastRoleActivityMs: lastRole, lastCardActivityMs: lastCard,
-          lastPresentedMs: lastPresented, lastGoMs: lastGo,
-        };
+        // #3936 — the fold lives in wip-drift.ts and is pure: what counts as
+        // card activity, a presentation, and a go is testable there.
+        return foldCardActivity(events, role, cardId);
       };
       startWipDriftWatch(readWip, readActivity, async (d) => {
         await emitSpine('wip.drift', {

@@ -7,7 +7,7 @@
  * ROLE; only a second consecutive window escalates to Jeff. DEC-1571 said
  * this in prose — prose produced the repeats; this goes red.
  */
-import { detectWipDrift, DRIFT_WINDOW_MS, DriftInput } from './wip-drift';
+import { detectWipDrift, DRIFT_WINDOW_MS, DriftInput, foldCardActivity, awaitingGoSince } from './wip-drift';
 
 const T0 = Date.parse('2026-08-14T12:00:00.000-04:00');
 const H = 60 * 60 * 1000;
@@ -103,5 +103,34 @@ describe('#3936 presented-awaiting-go', () => {
     // NEGATIVE PROOF: the ordinary stall — the case #3879 exists for — is
     // untouched by this change.
     expect(detectWipDrift(base())).not.toBeNull();
+  });
+});
+
+// #3936 — the fold that answers "was this presented, and did a go answer it?"
+describe('#3936 foldCardActivity', () => {
+  const ev = (event: string, at: number, over: Record<string, unknown> = {}) => ({
+    timestamp: new Date(at).toISOString(), role: 'kade', event, card: 3424, ...over,
+  });
+
+  it('separates presentation from the go that answers it', () => {
+    const a = foldCardActivity([ev('demo.presented', T0), ev('merge.approved', T0 + 1 * H)], 'kade', 3424);
+    expect(a.lastPresentedMs).toBe(T0);
+    expect(a.lastGoMs).toBe(T0 + 1 * H);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBeNull();
+  });
+
+  it('leaves an unanswered presentation awaiting', () => {
+    const a = foldCardActivity([ev('demo.presented', T0)], 'kade', 3424);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBe(T0);
+  });
+
+  it('ignores other cards and unparseable timestamps', () => {
+    // NEGATIVE PROOF: another card's demo must not silence THIS card.
+    const a = foldCardActivity(
+      [ev('demo.presented', T0, { card: 9999 }), { timestamp: 'not-a-date', event: 'demo.presented', card: 3424 }],
+      'kade', 3424,
+    );
+    expect(a.lastPresentedMs).toBe(0);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBeNull();
   });
 });
