@@ -610,8 +610,18 @@ fn clean_werk_with_no_card_work_still_refuses_nothing_to_commit() {
 
 // ── #3623 — a GENERATED-only rebase conflict self-resolves (main's side), never held ──
 #[test]
-fn rebase_autoresolves_generated_only_conflict_taking_mains_side() {
-    let origin = tmp("origin-gen");
+fn a_conflict_on_a_path_deleted_upstream_does_not_kill_the_commit() {
+    // Was: "generated-only conflict self-resolves, taking main's side" — the
+    // test that encoded the doc-coherence accommodation. #3928 deleted that
+    // file from git, which made the accommodation lethal: `checkout --ours`
+    // has no "ours" for a path deleted upstream, so it errored and took the
+    // whole commit with it. Three of Kade's commits died that way on
+    // 2026-08-19, four hours after the delete.
+    //
+    // The premise is now inverted. There is no autoresolve list. What must be
+    // true is narrower and more honest: a conflict where the peer DELETED the
+    // file resolves by accepting the delete, and the card's own work survives.
+    let origin = tmp("origin-del");
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::create_dir_all(origin.join("knowledge")).unwrap();
     fs::write(origin.join("knowledge/doc-coherence.md"), "base").unwrap();
@@ -619,30 +629,34 @@ fn rebase_autoresolves_generated_only_conflict_taking_mains_side() {
     git(&origin, &["commit", "-q", "-m", "init"]);
     git(&origin, &["config", "receive.denyCurrentBranch", "ignore"]);
 
-    let home = tmp("home-gen");
+    let home = tmp("home-del");
     assert!(Command::new("git")
         .args(["clone", "-q", origin.to_str().unwrap(), home.to_str().unwrap()])
         .status().unwrap().success());
 
-    let werk_base = tmp("werk-gen");
+    let werk_base = tmp("werk-del");
     let werk = werk_base.join("kade-9102");
     git(&home, &["worktree", "add", "-b", "kade/9102", werk.to_str().unwrap(), "origin/main"]);
 
-    // werk regenerates the file one way…
+    // The werk regenerates the file (as every land used to)…
     fs::write(werk.join("knowledge/doc-coherence.md"), "werk-regen").unwrap();
     fs::write(werk.join("card.txt"), "card-work").unwrap();
-    // …peer lands a DIFFERENT regeneration on main → guaranteed conflict.
-    fs::write(origin.join("knowledge/doc-coherence.md"), "main-regen").unwrap();
-    git(&origin, &["add", "."]);
-    git(&origin, &["commit", "-q", "-m", "peer regen"]);
+    // …while main RETIRES it. modify/delete — the exact live shape.
+    fs::remove_file(origin.join("knowledge/doc-coherence.md")).unwrap();
+    git(&origin, &["add", "-A"]);
+    git(&origin, &["commit", "-q", "-m", "retire the generated report"]);
 
-    let res = commit(9102, "kade", "gen conflict test", &home, &werk_base);
-    assert!(res.is_ok(), "generated-only conflict must self-resolve, got: {:?}", res.err());
-
-    // main's side won (it regenerates next pass anyway — #3632 semantics).
-    let content = fs::read_to_string(werk.join("knowledge/doc-coherence.md")).unwrap();
-    assert_eq!(content, "main-regen");
-    // the card's real work survived the rebase.
+    let res = commit(9102, "kade", "retire conflict test", &home, &werk_base);
+    // It may HOLD for a human (that is the #3304 guard, and correct) — what it
+    // must never do is die with "does not have our version".
+    if let Err(e) = &res {
+        assert!(
+            !e.contains("does not have our version"),
+            "the resolver must survive a path deleted upstream, got: {}",
+            e
+        );
+    }
+    // The card's own work is intact either way.
     assert_eq!(fs::read_to_string(werk.join("card.txt")).unwrap(), "card-work");
 }
 
