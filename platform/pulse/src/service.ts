@@ -12,7 +12,7 @@ import { DeliveryWorker, classifyInjectOutput, type RunInject, type EmitSpine, t
 import { planDelivery, planDeliveryTyped, readRegistry, readTurnState, resolveRoleTarget, describeTarget, SESSIONS_DIR, pidAlive, actualRoleOfPid } from './session-registry';
 import { dedupeKey, seenRecently } from './nudge-dedup';
 import { startReplyGapWatch, parseSpineTail, SpineEv } from './reply-gap';
-import { startWipDriftWatch } from './wip-drift';
+import { startWipDriftWatch, foldCardActivity } from './wip-drift';
 import { bostonOffsetIso } from './boston-iso';
 
 // #3879 — spine events carry role/card fields beyond reply-gap's minimal shape.
@@ -509,15 +509,9 @@ if (require.main === module) {
       };
       const readActivity = async (role: string, cardId: number) => {
         const events = parseSpineTail(await readTail()) as (SpineEvExt)[];
-        let lastRole = 0, lastCard = 0;
-        for (const e of events) {
-          const at = Date.parse(e.timestamp ?? '');
-          if (Number.isNaN(at)) continue;
-          if (e.role === role && at > lastRole) lastRole = at;
-          const cid = typeof e.card === 'number' ? e.card : parseInt(String(e.card ?? e.card_id ?? ''), 10);
-          if (cid === cardId && at > lastCard) lastCard = at;
-        }
-        return { lastRoleActivityMs: lastRole, lastCardActivityMs: lastCard };
+        // #3936 — the fold lives in wip-drift.ts and is pure: what counts as
+        // card activity, a presentation, and a go is testable there.
+        return foldCardActivity(events, role, cardId);
       };
       startWipDriftWatch(readWip, readActivity, async (d) => {
         await emitSpine('wip.drift', {

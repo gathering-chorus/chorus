@@ -39,6 +39,12 @@ export interface DriftInput {
    *  full window; idle counts from observation start, never epoch (the
    *  "496319h" nudge). */
   observedSinceMs: number;
+  /** #3936 — when the card's demo was PRESENTED, if no go has answered it yet;
+   *  null once answered (or never presented). A presented card is finished work
+   *  waiting on a human, so the role is not the blocker and nudging the role
+   *  cannot move it. On 2026-08-19 this watcher told Kade to finish or unpull
+   *  #3424 while #3424 sat green awaiting Jeff's go for four hours. */
+  awaitingGoSinceMs?: number | null;
 }
 
 export interface Drift {
@@ -60,6 +66,10 @@ export interface Drift {
 export function detectWipDrift(i: DriftInput): Drift | null {
   const roleActive = i.nowMs - i.lastRoleActivityMs <= ROLE_ACTIVE_MS;
   if (!roleActive) return null;
+  // #3936 — presented and unanswered: the card is done and the human holds it.
+  // Deliberately narrow — the moment a go lands, the role owns the card again
+  // and an ordinary stall drifts as before.
+  if (i.awaitingGoSinceMs != null) return null;
   // Idle counts from the newest of (card activity, observation start): a
   // window we did not watch is UNKNOWN, never idle. This both prevents the
   // fire-on-first-sight false positive and caps the reported number at the
@@ -80,7 +90,65 @@ export function detectWipDrift(i: DriftInput): Drift | null {
 
 export interface WipCard { id: number; owner: string }
 export type ReadWip = () => Promise<WipCard[]>;
-export type ReadActivity = (role: string, cardId: number) => Promise<{ lastRoleActivityMs: number; lastCardActivityMs: number }>;
+export interface CardActivity {
+  lastRoleActivityMs: number;
+  lastCardActivityMs: number;
+  /** #3936 — newest demo.presented for this card, and newest event that ANSWERS
+   *  a presentation (the go: merge.approved / card.accepted). Both accumulate
+   *  across ticks like the others: the spine tail is minutes deep, so a
+   *  presentation that scrolls out must not read as "never presented". */
+  lastPresentedMs?: number;
+  lastGoMs?: number;
+}
+export type ReadActivity = (role: string, cardId: number) => Promise<CardActivity>;
+
+/** The spine shape this fold needs — a subset of the real event. */
+export interface ActivityEv {
+  timestamp?: string;
+  role?: string;
+  event?: string;
+  card?: number | string;
+  card_id?: number | string;
+}
+
+/**
+ * Fold a spine tail into one card's activity timestamps. Pure — the watcher's
+ * only reading of the spine, so what "presented", "go", and "card activity"
+ * mean is testable without a running pulse (#3936).
+ */
+export function foldCardActivity(events: ActivityEv[], role: string, cardId: number): CardActivity {
+  const a: CardActivity = {
+    lastRoleActivityMs: 0, lastCardActivityMs: 0, lastPresentedMs: 0, lastGoMs: 0,
+  };
+  for (const e of events) {
+    const at = Date.parse(e.timestamp ?? '');
+    if (Number.isNaN(at)) continue;
+    if (e.role === role) a.lastRoleActivityMs = Math.max(a.lastRoleActivityMs, at);
+    if (cardIdOf(e) !== cardId) continue;
+    a.lastCardActivityMs = Math.max(a.lastCardActivityMs, at);
+    applyCardEvent(a, e.event, at);
+  }
+  return a;
+}
+
+/** The card id an event is about — the field is `card` or `card_id`, number or string. */
+function cardIdOf(e: ActivityEv): number {
+  if (typeof e.card === 'number') return e.card;
+  return parseInt(String(e.card ?? e.card_id ?? ''), 10);
+}
+
+/**
+ * Record the two events that decide who holds the card. A go is what hands it
+ * back to the role: merge.approved is written before the merge, card.accepted
+ * closes it — either one answers a presentation.
+ */
+function applyCardEvent(a: CardActivity, event: string | undefined, at: number): void {
+  if (event === 'demo.presented') {
+    a.lastPresentedMs = Math.max(a.lastPresentedMs ?? 0, at);
+  } else if (event === 'merge.approved' || event === 'card.accepted') {
+    a.lastGoMs = Math.max(a.lastGoMs ?? 0, at);
+  }
+}
 export type EmitDrift = (d: Drift) => Promise<void>;
 
 /**
@@ -102,6 +170,7 @@ export function startWipDriftWatch(
   // WATCHED before anything fires.
   const state: WatchState = {
     priorDrift: new Map(), seenCard: new Map(), seenRole: new Map(), observedSince: new Map(),
+    seenPresented: new Map(), seenGo: new Map(),
   };
   const timer = setInterval(() => {
     void (async () => {
@@ -122,6 +191,22 @@ interface WatchState {
   seenCard: Map<string, number>;      // key → newest card event ever seen
   seenRole: Map<string, number>;      // role → newest role event ever seen
   observedSince: Map<string, number>; // key → when we started watching
+  seenPresented: Map<string, number>; // key → newest demo.presented seen (#3936)
+  seenGo: Map<string, number>;        // key → newest go/accept seen (#3936)
+}
+
+/** Newest-seen merge for one key — the tail is shallow, the window is hours. */
+function bump(m: Map<string, number>, key: string, seen: number): void {
+  m.set(key, Math.max(m.get(key) ?? 0, seen));
+}
+
+/**
+ * #3936 — when is a card waiting on Jeff rather than drifting? When it has been
+ * presented and nothing has answered that presentation. Pure so the question
+ * "is the human the blocker" is answerable without a watch loop.
+ */
+export function awaitingGoSince(presentedAtMs: number, goAtMs: number): number | null {
+  return presentedAtMs > 0 && presentedAtMs > goAtMs ? presentedAtMs : null;
 }
 
 /** One card, one tick: merge newest-seen, detect, fire at most once per window. */
@@ -132,14 +217,18 @@ async function tickOneCard(
   const a = await readActivity(role, c.id);
   const key = `${role}:${c.id}`;
   if (!s.observedSince.has(key)) s.observedSince.set(key, now());
-  s.seenCard.set(key, Math.max(s.seenCard.get(key) ?? 0, a.lastCardActivityMs));
-  s.seenRole.set(role, Math.max(s.seenRole.get(role) ?? 0, a.lastRoleActivityMs));
+  bump(s.seenCard, key, a.lastCardActivityMs);
+  bump(s.seenRole, role, a.lastRoleActivityMs);
+  bump(s.seenPresented, key, a.lastPresentedMs ?? 0);
+  bump(s.seenGo, key, a.lastGoMs ?? 0);
+  const awaitingGoSinceMs = awaitingGoSince(s.seenPresented.get(key) ?? 0, s.seenGo.get(key) ?? 0);
   const d = detectWipDrift({
     role, cardId: c.id, nowMs: now(),
     lastRoleActivityMs: s.seenRole.get(role) ?? 0,
     lastCardActivityMs: s.seenCard.get(key) ?? 0,
     priorDriftAtMs: s.priorDrift.get(key) ?? null,
     observedSinceMs: s.observedSince.get(key) ?? now(),
+    awaitingGoSinceMs,
   });
   if (!d) {
     if (a.lastCardActivityMs > (s.priorDrift.get(key) ?? 0)) s.priorDrift.delete(key);

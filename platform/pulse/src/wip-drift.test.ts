@@ -7,7 +7,7 @@
  * ROLE; only a second consecutive window escalates to Jeff. DEC-1571 said
  * this in prose — prose produced the repeats; this goes red.
  */
-import { detectWipDrift, DRIFT_WINDOW_MS, DriftInput } from './wip-drift';
+import { detectWipDrift, DRIFT_WINDOW_MS, DriftInput, foldCardActivity, awaitingGoSince } from './wip-drift';
 
 const T0 = Date.parse('2026-08-14T12:00:00.000-04:00');
 const H = 60 * 60 * 1000;
@@ -70,5 +70,67 @@ describe('#3879 detectWipDrift', () => {
     const d = detectWipDrift(base({ lastCardActivityMs: 0, observedSinceMs: T0, nowMs: T0 + 5 * H }));
     expect(d).not.toBeNull();
     expect(d!.idleCardMs).toBe(5 * H); // observed span, not since-epoch
+  });
+});
+
+// ── #3936 — a card waiting on Jeff's go is not drifting ──────────────────────
+//
+// 2026-08-19: this watcher told Kade to "finish it, hand it off, or unpull it"
+// about #3424, which was finished — presented, green, waiting four hours for a
+// go. Waiting on the human is the one state where the ROLE is not the blocker,
+// and it is exactly the state the old check read as drift. A watcher that
+// cannot tell "stalled" from "blocked on Jeff" trains everyone to ignore it.
+describe('#3936 presented-awaiting-go', () => {
+  const presented = (over: Partial<DriftInput> = {}): DriftInput => ({
+    ...base({ lastCardActivityMs: T0, nowMs: T0 + 5 * H, lastRoleActivityMs: T0 + 5 * H }),
+    awaitingGoSinceMs: T0,
+    ...over,
+  });
+
+  it('stays silent while the card is presented and unanswered', () => {
+    expect(detectWipDrift(presented())).toBeNull();
+  });
+
+  it('still fires once the go landed and work then stopped', () => {
+    // NEGATIVE PROOF: the exemption must be narrow. Go answered → the role owns
+    // the card again, so a stall after that is drift like any other.
+    const d = detectWipDrift(presented({ awaitingGoSinceMs: null }));
+    expect(d).not.toBeNull();
+    expect(d!.cardId).toBe(3879);
+  });
+
+  it('still fires on a card that was never presented at all', () => {
+    // NEGATIVE PROOF: the ordinary stall — the case #3879 exists for — is
+    // untouched by this change.
+    expect(detectWipDrift(base())).not.toBeNull();
+  });
+});
+
+// #3936 — the fold that answers "was this presented, and did a go answer it?"
+describe('#3936 foldCardActivity', () => {
+  const ev = (event: string, at: number, over: Record<string, unknown> = {}) => ({
+    timestamp: new Date(at).toISOString(), role: 'kade', event, card: 3424, ...over,
+  });
+
+  it('separates presentation from the go that answers it', () => {
+    const a = foldCardActivity([ev('demo.presented', T0), ev('merge.approved', T0 + 1 * H)], 'kade', 3424);
+    expect(a.lastPresentedMs).toBe(T0);
+    expect(a.lastGoMs).toBe(T0 + 1 * H);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBeNull();
+  });
+
+  it('leaves an unanswered presentation awaiting', () => {
+    const a = foldCardActivity([ev('demo.presented', T0)], 'kade', 3424);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBe(T0);
+  });
+
+  it('ignores other cards and unparseable timestamps', () => {
+    // NEGATIVE PROOF: another card's demo must not silence THIS card.
+    const a = foldCardActivity(
+      [ev('demo.presented', T0, { card: 9999 }), { timestamp: 'not-a-date', event: 'demo.presented', card: 3424 }],
+      'kade', 3424,
+    );
+    expect(a.lastPresentedMs).toBe(0);
+    expect(awaitingGoSince(a.lastPresentedMs!, a.lastGoMs!)).toBeNull();
   });
 });
