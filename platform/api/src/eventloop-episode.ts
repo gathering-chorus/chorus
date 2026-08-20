@@ -14,6 +14,8 @@
 // This module is pure: readings in, episodes out. No timers, no I/O — so the
 // grouping can be proven against the real measured pairs without a busy box.
 
+import * as fs from 'fs';
+
 /** One detector's reading of a block. */
 export interface BlockReading {
   /** ISO timestamp — storage contract, rendered to Boston at the edge (#3093). */
@@ -189,8 +191,7 @@ export class FileEpisodeGate {
 
   private read(): { key: string; lastTs: number } | null {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require('fs') as typeof import('fs');
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- the path is operator-configured (env or a constant default), never user input; both detectors must open the SAME file for the episode claim to work (#3742)
       const raw = fs.readFileSync(this.statePath, 'utf8');
       const parsed = JSON.parse(raw) as { key?: string; lastTs?: number };
       if (typeof parsed.key !== 'string' || typeof parsed.lastTs !== 'number') return null;
@@ -202,11 +203,11 @@ export class FileEpisodeGate {
 
   private write(key: string, lastTs: number): void {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require('fs') as typeof import('fs');
       // Write-then-rename so a reader never sees a half-written claim.
       const tmp = `${this.statePath}.tmp${process.pid}`;
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- the path is operator-configured (env or a constant default), never user input; both detectors must open the SAME file for the episode claim to work (#3742)
       fs.writeFileSync(tmp, JSON.stringify({ key, lastTs }));
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- the path is operator-configured (env or a constant default), never user input; both detectors must open the SAME file for the episode claim to work (#3742)
       fs.renameSync(tmp, this.statePath);
     } catch {
       // Cannot persist the claim: the next reading will announce. Loud, not silent.
