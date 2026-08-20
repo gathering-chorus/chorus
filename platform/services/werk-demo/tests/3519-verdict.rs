@@ -56,3 +56,65 @@ fn verdict_proven_requires_gates_gathers_and_go() {
         "missing kade's gather → not proven"
     );
 }
+
+// #3944 — THE ROUND-IDENTITY REFUSALS.
+//
+// Jeff, 2026-08-20: "i expect an assertion via werk-demo that the card is ready" and
+// "i said go and now the whole test cycle is running again thats wrong!"
+//
+// verdict_proven already takes (round, patch_id) — the identity assertion exists. What
+// was never tested is that it REFUSES on a mismatch. Without these, the predicate cannot
+// distinguish "the round Jeff approved" from "some round", which is the whole reason a
+// land could not trust the witness and re-ran the pipeline instead.
+//
+// Both are negative proofs (#3734): each pins a state the check exists to reject.
+
+#[test]
+fn a_go_on_one_round_does_not_prove_another() {
+    // Everything approved for r1. The werk then moved on: a new round r2 exists.
+    // Landing r2 on r1's approval would merge content Jeff never saw.
+    let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
+    lines.push(gather(3519, "wren"));
+    lines.push(gather(3519, "kade"));
+    let witness = format!("{}\n{}", lines.join("\n"), GO);
+
+    assert!(
+        verdict_proven(&witness, 3519, "silas", "r1", "pX"),
+        "control: r1 IS proven"
+    );
+    assert!(
+        !verdict_proven(&witness, 3519, "silas", "r2", "pX"),
+        "r1's gates/gathers/go must NOT prove r2"
+    );
+}
+
+#[test]
+fn a_commit_after_the_demo_invalidates_the_proof() {
+    // Same round, but the werk gained a commit — the patch id no longer matches what was
+    // demoed. This is Jeff's case exactly: the approval was for pX; the tree is now pY.
+    // The land must refuse and demand a fresh round, never merge unproven content.
+    let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
+    lines.push(gather(3519, "wren"));
+    lines.push(gather(3519, "kade"));
+    let witness = format!("{}\n{}", lines.join("\n"), GO);
+
+    assert!(
+        !verdict_proven(&witness, 3519, "silas", "r1", "pY"),
+        "a post-demo commit (pX -> pY) must NOT be proven by the old go"
+    );
+}
+
+#[test]
+fn another_cards_approval_does_not_prove_this_card() {
+    // A go recorded for card 9999 must not land 3519.
+    let other_go = r#"{"ts":1,"event":"demo.go","role":"jeff","card_id":9999,"trace_id":"t","round":"r1","patch_id":"pX"}"#;
+    let mut lines: Vec<String> = GATES.iter().map(|g| gate(3519, g)).collect();
+    lines.push(gather(3519, "wren"));
+    lines.push(gather(3519, "kade"));
+    let witness = format!("{}\n{}", lines.join("\n"), other_go);
+
+    assert!(
+        !verdict_proven(&witness, 3519, "silas", "r1", "pX"),
+        "a go for another card must NOT prove this one"
+    );
+}

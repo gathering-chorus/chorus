@@ -228,8 +228,33 @@ fn line_in_round(line: &str, round: &str) -> bool {
 /// round-only (no false match); mirrors #3459's land-gate fallback for the
 /// gather/gate gates. Pure + unit-tested.
 fn line_keyed(line: &str, round: &str, patch_id: &str) -> bool {
+    // #3944 — CONTENT WINS. When both sides carry a patch id, the patch id decides:
+    // it identifies the tree that was actually demoed. The old rule was
+    // `round OR patch`, which passed whenever the ROUND matched — so a commit added
+    // after the demo (same round, new patch) still read as proven, and a land could
+    // merge content Jeff never saw. The patch id was in the signature and ignored.
+    //
+    // Rebase tolerance (#3461) is preserved and is the reason patch is checked FIRST:
+    // a content-preserving rebase churns the round but keeps the patch, so Jeff's go
+    // survives. What changes is only the inverse case — same round, different content
+    // — which must refuse.
+    let line_patch = extract_field(line, "patch_id");
+    if !patch_id.is_empty() {
+        if let Some(lp) = line_patch {
+            return lp == patch_id;
+        }
+    }
     line_in_round(line, round)
-        || (!patch_id.is_empty() && line.contains(&format!("\"patch_id\":\"{}\"", patch_id)))
+}
+
+/// Pull a string field's value out of a witness line without a JSON parser (the verb
+/// is std-only, ADR-032 §6). Returns None when the field is absent.
+fn extract_field<'a>(line: &'a str, field: &str) -> Option<&'a str> {
+    let key = format!("\"{}\":\"", field);
+    let start = line.find(&key)? + key.len();
+    let rest = &line[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
 }
 
 /// #3461 — the current werk's patch-id (mirrors current_round). I/O (git), so
