@@ -351,8 +351,23 @@ deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
 
 for entry in "${HEALTH_ENDPOINTS[@]}"; do
   IFS='|' read -r url name desc <<< "$entry"
-  reachable=0
-  curl -sf --max-time 5 "$url" > /dev/null 2>&1 && reachable=1
+  # #3948 — one 5s curl was the whole verdict, and six times it called a
+  # healthy Clearing "unreachable — team chat broken" (a busy box stalls one
+  # connect and the banner goes DEGRADED). The probe now: records WHAT it saw
+  # (code + latency, never a bare word), retries once on failure, and splits
+  # DOWN (refused / non-200 — degrades) from UNMEASURABLE (timeout under load,
+  # #3753 — warns, never degrades).
+  reachable=0; probe_code="000"; probe_ms="?"; probe_exit=0
+  for attempt in 1 2; do
+    t0=$(python3 -c 'import time; print(int(time.time()*1000))')
+    probe_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null); probe_exit=$?
+    t1=$(python3 -c 'import time; print(int(time.time()*1000))')
+    probe_ms=$((t1 - t0))
+    if [ "$probe_exit" -eq 0 ] && [ "$probe_code" -ge 200 ] && [ "$probe_code" -lt 400 ]; then
+      reachable=1; break
+    fi
+    [ "$attempt" -eq 1 ] && sleep 2
+  done
   deferred_why="$(deferred_reason "$name")"
   if [ -n "$deferred_why" ]; then
     if [ "$reachable" -eq 1 ]; then
@@ -363,7 +378,13 @@ for entry in "${HEALTH_ENDPOINTS[@]}"; do
     continue
   fi
   if [ "$reachable" -eq 0 ]; then
-    FAILURES+=("$name: unreachable — $desc broken")
+    if [ "$probe_exit" -eq 28 ]; then
+      # curl 28 = timed out: the box (or path) was too slow to answer in 5s,
+      # twice. That is a measurement failure, not proof the service is down.
+      WARNINGS+=("$name: UNMEASURABLE — timed out 2x at 5s (last ${probe_ms}ms) — $desc not proven down (#3753)")
+    else
+      FAILURES+=("$name: DOWN — code=${probe_code} exit=${probe_exit} after retry (${probe_ms}ms) — $desc broken")
+    fi
   fi
 done
 
