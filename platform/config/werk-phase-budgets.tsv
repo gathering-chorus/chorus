@@ -1,0 +1,21 @@
+# #3921 — per-phase p95 budgets (seconds) for werk pipeline runs, last 24h.
+# Measured 2026-08-20 from 145 runs on the spine (p50/p95/max in the card).
+# A phase whose p95 climbs past its budget is a RED — the 25-30 minute werk
+# run class Jeff called unacceptable becomes a named, owned failure.
+# phase	p95_budget_s
+commit	60
+push	15
+build	360
+# test: measured p95 was 1525s (25.4min!) on land day — Jeff's exact complaint.
+# 1650 is a DETECTOR CEILING pinned at reality, not an acceptance: it can only
+# be ratcheted DOWN, and #3929 (nextest) + #3922 (selection by concern) own
+# driving it to the 600s target. Any regression past today's worst is a RED.
+test	1650
+review	30
+deploy-werk	240
+env-up	60
+demo	480
+merge	30
+sync	30
+deploy-canonical	150
+accept	45
