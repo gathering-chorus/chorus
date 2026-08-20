@@ -41,4 +41,22 @@ test.describe('#1778 chorus pages render real data', () => {
     const font = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
     expect(font.toLowerCase()).not.toMatch(/^\s*(times|serif)\b/);
   });
+
+  test('/loom renders the operations fold with real counts', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE}/loom`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#ops-deploys')).toHaveText(/\d+/, { timeout: 15000 });
+    await expect(page.locator('#ops-commits')).toHaveText(/\d+/, { timeout: 15000 });
+    expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
+  });
+
+  test('/borg-assessment renders the assessment grid', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE}/borg-assessment`, { waitUntil: 'domcontentloaded' });
+    // the grid must gain CHILDREN — a rendered assessment, not an empty shell
+    await expect(page.locator('#assessment-grid > *').first()).toBeVisible({ timeout: 15000 });
+    expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
+  });
 });
