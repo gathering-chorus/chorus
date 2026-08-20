@@ -56,7 +56,10 @@
     dcterms:title "Werk Domains — cicd, version-control, code, tests" ;
     dcterms:creator "Kade (Engineer)" ;
     dcterms:date "2026-06-11" ;
-    owl:versionInfo "0.2.0-converged-2026-06-11" ;
+    # #3925 — semver from here on (#3902 discipline): MINOR = additive shape
+    # change. This bump: TestResultShape gains runTs + cardId (minCount 0).
+    # The old "-converged-<date>" suffix form is retired; dcterms:date carries dates.
+    owl:versionInfo "0.3.0" ;
     rdfs:seeAlso <https://jeffbridwell.com/chorus> ;
     rdfs:comment "Query-backwards refinement of Kade's four werk domains. Generator input for owl-api (model-5). Sources: the #3339-reconciled service designs + the live witness/spine vocabulary." .
 
@@ -522,7 +525,16 @@ chorus:TestResultShape a sh:NodeShape ;
     chorus:instancesGraph "urn:chorus:domains:tests" ;
     sh:property [ sh:path chorus:filePath ; sh:minCount 1 ] ;
     sh:property [ sh:path chorus:testName ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:result ; sh:minCount 1 ]  .
+    sh:property [ sh:path chorus:result ; sh:minCount 1 ] ;
+    # #3925 — results get a clock. runTs = when the test RAN (offset-ISO
+    # Boston, run-start clocked — post time is not run time, Wren's catch).
+    # minCount 0 THIS bump: 137,184 existing rows backfill from
+    # dcterms:created (upper bound, noted in the backfill script); tightens
+    # to minCount 1 next bump once the backfill count reads full.
+    sh:property [ sh:path chorus:runTs ; sh:datatype xsd:string ] ;
+    # cardId optional BY DESIGN, not by migration: a nightly run has no card.
+    # Absence is typed (key omitted), never an empty string.
+    sh:property [ sh:path chorus:cardId ; sh:datatype xsd:string ]  .
 
 chorus:TestEdgesShape a sh:NodeShape ;
     sh:targetClass chorus:Test ;

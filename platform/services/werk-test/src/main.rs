@@ -220,6 +220,13 @@ fn run(args: &[String]) -> Result<i32, String> {
 
     // #3621 — canonical run evidence: started at plan time, completed ALWAYS.
     let started_at = std::time::Instant::now();
+    // #3925 — runTs must be when the TEST RAN, not when the result was posted
+    // (Wren's catch: #3941's land posted 20min after the suite finished, so
+    // created-time already lies). Capture the wall clock ONCE at run start.
+    let run_epoch_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
     if plan_source == "fallback" {
         emit_spine("test.plan.degraded", &role, &card, &trace,
             &[("reason", "tests-domain-unreachable"), ("plan", "legacy-lanes")]);
@@ -331,7 +338,7 @@ fn run(args: &[String]) -> Result<i32, String> {
             &[("count", &unregistered.to_string())]);
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
     }
-    post_test_results(&role, &card, &trace, &joined);
+    post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -875,6 +882,7 @@ fn post_test_results(
     card: &str,
     trace: &str,
     joined: &[(CaseResult, String)],
+    run_epoch_ms: u128,
 ) {
     if joined.is_empty() {
         return;
@@ -887,10 +895,8 @@ fn post_test_results(
         return;
     };
     const MAX_POSTS: usize = 2000;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
+    // #3925 — the RUN's clock, threaded from run start; post time is not run time.
+    let ts = run_epoch_ms;
     let payloads: Vec<String> = joined
         .iter()
         .take(MAX_POSTS)

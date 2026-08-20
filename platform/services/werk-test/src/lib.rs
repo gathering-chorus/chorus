@@ -687,17 +687,73 @@ pub fn test_result_payload(
     ts_millis: u128,
     idx: usize,
 ) -> String {
-    // The DAL refuses off-model props, so ONLY the deployed TestResultShape
-    // fields travel (filePath/testName/result) plus the REQUIRED ofTest edge
-    // (sh:minCount 1) referencing the registered Test entity. The run ts + card
-    // live in the minted `name` (testresult-<card>-<ts>-<idx>) until the model
-    // grows an official runTs (already named by chorus:mintKey — shape follow-up).
+    // #3925 — runTs and cardId are REAL FIELDS now (shape bump: minCount 0
+    // this cycle, tightened to required once the 137k-row backfill lands).
+    // The minted name keeps its old form so existing joins survive, but the
+    // data no longer lives ONLY smuggled inside it. runTs is offset-ISO
+    // Boston (#3880), derived from the same ts_millis that keys the name —
+    // one clock, two representations, never two clocks.
+    // A nightly run has no card: cardId is OMITTED (typed absence), never "".
     let _ = (role, trace);
+    let run_ts = boston_offset_iso(ts_millis);
+    let card_field = if card.is_empty() || card == "0" {
+        String::new()
+    } else {
+        format!(",\"cardId\":\"{}\"", json_escape(card))
+    };
     format!(
         "{{\"name\":\"testresult-{}-{}-{}\",\"filePath\":\"{}\",\"testName\":\"{}\",\
-         \"result\":\"{}\",\"ofTest\":\"{}\"}}",
+         \"result\":\"{}\",\"ofTest\":\"{}\",\"runTs\":\"{}\"{}}}",
         json_escape(card), ts_millis, idx,
         json_escape(file_path), json_escape(test_name), json_escape(result), json_escape(of_test),
+        run_ts, card_field,
+    )
+}
+
+/// #3880 — offset-ISO in America/New_York from epoch millis, no chrono dep.
+/// EST/EDT boundary via the 2007+ US rule (2nd Sun Mar / 1st Sun Nov, UTC).
+pub fn boston_offset_iso(ts_millis: u128) -> String {
+    let secs = (ts_millis / 1000) as i64;
+    fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+        let y = if m <= 2 { y - 1 } else { y };
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = (y - era * 400) as u64;
+        let mp = (if m > 2 { m - 3 } else { m + 9 }) as u64;
+        let doy = (153 * mp + 2) / 5 + d as u64 - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        era * 146097 + doe as i64 - 719468
+    }
+    fn civil(z: i64) -> (i64, u32, u32) {
+        let z = z + 719468;
+        let era = if z >= 0 { z } else { z - 146096 } / 146097;
+        let doe = (z - era * 146097) as u64;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe as i64 + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+        let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+        (if m <= 2 { y + 1 } else { y }, m, d)
+    }
+    fn nth_sun(y: i64, m: u32, nth: i64) -> i64 {
+        let d = days_from_civil(y, m, 1);
+        let first_dow = (d + 4).rem_euclid(7); // 0 = Sunday
+        d + (7 - first_dow) % 7 + (nth - 1) * 7
+    }
+    let (y, _, _) = civil(secs.div_euclid(86400));
+    let dst_start = nth_sun(y, 3, 2) * 86400 + 7 * 3600; // 2nd Sun Mar 07:00 UTC
+    let dst_end = nth_sun(y, 11, 1) * 86400 + 6 * 3600; // 1st Sun Nov 06:00 UTC
+    let (off, tag) = if secs >= dst_start && secs < dst_end {
+        (-4 * 3600, "-04:00")
+    } else {
+        (-5 * 3600, "-05:00")
+    };
+    let local = secs + off;
+    let (ly, lm, ld) = civil(local.div_euclid(86400));
+    let tod = local.rem_euclid(86400);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}",
+        ly, lm, ld, tod / 3600, (tod % 3600) / 60, tod % 60, tag
     )
 }
 
@@ -1581,5 +1637,36 @@ mod selection_visibility_tests {
         // diff) — the record is empty-by-truth, distinct from fallback.
         let d = selection_details(&JestPlan::Selected(vec![]));
         assert!(d.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod test_result_clock_tests {
+    use super::*;
+
+    #[test]
+    fn payload_carries_run_ts_and_card_as_real_fields() {
+        let p = test_result_payload("a/b.test.ts", "case one", "pass", "test-x", "3925", "kade", "t", 1787264000000, 0);
+        assert!(p.contains("\"runTs\":\"2026-08-"), "offset-ISO runTs present: {p}");
+        assert!(p.contains("-04:00"), "August is EDT: {p}");
+        assert!(p.contains("\"cardId\":\"3925\""), "card as a real field: {p}");
+        assert!(p.contains("\"name\":\"testresult-3925-1787264000000-0\""), "old name form survives: {p}");
+    }
+
+    #[test]
+    fn nightly_run_omits_card_id_typed_absence_never_empty_string() {
+        // NEGATIVE PROOF (#3734): the failure mode is cardId:"" polluting the
+        // graph — absence must be OMISSION.
+        let p = test_result_payload("a/b.test.ts", "c", "pass", "t-x", "", "system", "t", 1787264000000, 1);
+        assert!(!p.contains("cardId"), "no cardId key at all: {p}");
+        assert!(p.contains("runTs"), "runTs still present on nightly rows: {p}");
+    }
+
+    #[test]
+    fn boston_clock_handles_both_offsets() {
+        // 2026-01-15 12:00 UTC → EST (-05:00) 07:00
+        assert_eq!(boston_offset_iso(1768478400000), "2026-01-15T07:00:00-05:00");
+        // 2026-07-15 12:00 UTC → EDT (-04:00) 08:00
+        assert_eq!(boston_offset_iso(1784116800000), "2026-07-15T08:00:00-04:00");
     }
 }

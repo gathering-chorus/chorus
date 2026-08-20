@@ -727,11 +727,14 @@ fn test_result_payload_carries_identity_and_escapes() {
     assert!(p.contains("\"testName\":\"asserts \\\"quoted\\\" thing\""), "{}", p);
     assert!(p.contains("\"result\":\"fail\""), "{}", p);
     assert!(p.contains("\"name\":\"testresult-3592-1700000000123-7\""), "{}", p);
-    // DAL refuses off-model props: only the deployed shape fields + the
-    // mandatory ofTest edge travel; the run ts+card stay embedded in `name`.
     assert!(p.contains("\"ofTest\":\"test-a-asserts-quoted-thing\""), "{}", p);
-    assert!(!p.contains("\"runTs\":"), "off-model prop must not be sent: {}", p);
-    assert!(!p.contains("\"card\":"), "off-model prop must not be sent: {}", p);
+    // #3925 INVERTED: runTs/cardId are ON-model now (shape bump, minCount 0
+    // this cycle). The old assertion pinned the smuggling era — these fields
+    // MUST travel as real properties, run-time-clocked, never post-time.
+    assert!(p.contains("\"runTs\":"), "runTs is a real field now: {}", p);
+    assert!(p.contains("\"cardId\":\"3592\""), "cardId is a real field now: {}", p);
+    // the bare `card` key stays forbidden — cardId is the modeled name.
+    assert!(!p.contains("\"card\":"), "bare 'card' was never the modeled name: {}", p);
 }
 
 #[test]
