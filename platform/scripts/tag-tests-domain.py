@@ -94,6 +94,27 @@ def covers_for(path):
         if re.search(pat, b): return dom
     return "services"
 
+# #3924 — the AUTHORED declaration wins. The @test-type header (enforced at
+# commit by gate-test-type.ts, #3442) was thrown away at ingest: classify()
+# re-guessed every layer from path/content regexes, so the runner selected on
+# a heuristic while the author's declaration sat unread at line 1. Grammar
+# mirrors gate-test-type.ts exactly: layer[:concern] after "@test-type:",
+# comment leader // or # or *. Returns (layer, concern) or None.
+DECLARED_RE = re.compile(
+    r"""^\s*(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)(?::([a-z0-9-]+))?""",
+    re.I | re.M)
+VALID_LAYERS = {'unit','integration','bdd','e2e','contract','fitness','smoke'}
+VALID_CONCERNS = {'api','ui','perf','security'}
+
+def declared(c):
+    m = DECLARED_RE.search(c[:2000])
+    if not m: return None
+    layer = m.group(1).lower()
+    concern = (m.group(2) or '').lower() or None
+    if layer not in VALID_LAYERS: return None          # junk header -> heuristic, inferred
+    if concern and concern not in VALID_CONCERNS: concern = None
+    return layer, concern
+
 def classify(path, c):
     pc = path + "\n" + c
     concern = None
@@ -177,6 +198,13 @@ def main():
     for p in files:
         cs, c = case_names(p)
         layer, herm, concern = classify(p, c)
+        inferred = "true"
+        d = declared(c)
+        if d:
+            # authored beats heuristic — even when the path signal disagrees
+            layer = d[0]
+            if d[1]: concern = d[1]
+            inferred = "false"
         cov = "security" if concern == 'security' else covers_for(p)
         assert cov.lower() in GEN_CI, f"covers target {cov!r} is not a generated V2 domain"   # no invented domains
         cov = GEN_CI[cov.lower()]
@@ -187,7 +215,7 @@ def main():
             if ti in seen: continue
             seen.add(ti)
             t = (f'<{ti}> a chorus:Test ; chorus:filePath "{esc(p)}" ; chorus:testName "{esc(nm[:160])}" ; '
-                 f'chorus:pyramidLayer "{layer}" ; chorus:hermeticity "{herm}" ; '
+                 f'chorus:pyramidLayer "{layer}" ; chorus:hermeticity "{herm}" ; chorus:inferred "{inferred}" ; '
                  f'chorus:inFile <{sf}> ; chorus:inDomain <{HOME}> ; chorus:covers <{NS}{cov}>')
             if concern: t += f' ; chorus:testConcern "{concern}"'
             batch.append(t + " .")
