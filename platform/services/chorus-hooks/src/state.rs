@@ -74,6 +74,9 @@ pub struct Config {
     pub log_dir: PathBuf,
     pub chorus_db: PathBuf,
     pub prefs_file: PathBuf,
+    /// #3941 — the stated-intent vocabulary. Declared data, not regexes in the hook;
+    /// belongs to the skills domain once that has an OWL declaration.
+    pub stated_intent_vocabulary: PathBuf,
     pub home_dir: PathBuf,
 }
 
@@ -104,6 +107,8 @@ impl AppState {
             config: Arc::new(Config {
                 log_dir: repo_root.join("platform/logs"),
                 prefs_file: repo_root.join("jeff-preferences.json"),
+                stated_intent_vocabulary: repo_root
+                    .join("platform/config/stated-intent-vocabulary.json"),
                 chorus_db: PathBuf::from(&home).join(".chorus/index.db"),
                 repo_root,
                 home_dir: PathBuf::from(home),

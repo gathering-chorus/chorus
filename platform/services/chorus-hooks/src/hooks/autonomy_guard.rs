@@ -446,6 +446,126 @@ fn read_last_messages_from_jsonl(
     (h, r)
 }
 
+// === Stated-intent gate: "I will do it", then stop ===
+//
+// Jeff, 2026-08-20: "if u say ~ i will do it then stop".
+//
+// The permission-seeking half of this guard recognises only QUESTIONS — "shall I
+// proceed", "would you like me to". Announce-and-stop asks nothing, so it passes
+// clean: "Pipeline running." "Taking it." "Building the gate that way." The turn
+// ends, no tool runs, and Jeff finds the stall by walking past.
+//
+// Measured on Wren's own transcript 2026-08-20: of 6873 turns, 241 stated a forward
+// intent and made ZERO tool calls in the same turn. None was a question, so none was
+// ever seen by the check above.
+//
+// #3879 (Done) covers the slow version — a WIP card untouched for 4+ hours. This is
+// the turn-level version, the one Jeff actually experiences.
+//
+// The vocabulary lives in platform/config/stated-intent-vocabulary.json, not here:
+// it is role behaviour and belongs in the skills domain, which has no OWL
+// declaration yet. One declared file now means generating it later is a repoint,
+// not a rewrite.
+
+/// One commitment phrase, loaded from the declared vocabulary.
+pub struct Commitment {
+    pub id: String,
+    pub regex: Regex,
+}
+
+/// Read the vocabulary file. Returns empty on any failure — a missing vocabulary
+/// must make the gate INERT, never make it block everything. A guard whose data
+/// source vanished has to fail open here, because failing closed would trap every
+/// session in the team at once (the #3218 lockout shape).
+pub fn load_commitments(path: &std::path::Path) -> Vec<Commitment> {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return Vec::new();
+    };
+    let Some(items) = json.get("commitments").and_then(|c| c.as_array()) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|c| {
+            let id = c.get("id")?.as_str()?.to_string();
+            let pat = c.get("pattern")?.as_str()?;
+            Some(Commitment {
+                id,
+                regex: Regex::new(pat).ok()?,
+            })
+        })
+        .collect()
+}
+
+/// A turn that stated intent and did NOTHING is the failure.
+///
+/// `tool_calls` is the number of tool invocations in the turn. Acting on your own
+/// word is exactly the behaviour we want, so any tool call passes — this gate must
+/// never punish a role for doing the thing it said.
+///
+/// Returns the matched commitment id so the refusal can quote the promise back.
+pub fn stated_intent_without_action(
+    response_text: &str,
+    tool_calls: usize,
+    commitments: &[Commitment],
+) -> Option<String> {
+    if tool_calls > 0 {
+        return None;
+    }
+    let stripped = strip_code_blocks(response_text);
+    commitments
+        .iter()
+        .find(|c| c.regex.is_match(&stripped))
+        .map(|c| c.id.clone())
+}
+
+/// Count tool invocations in the CURRENT turn — everything the assistant did since
+/// the last human message. This is the other half of the signal: intent in the text
+/// is only a stall if nothing was actually done.
+///
+/// Returns 0 on any read/parse failure. Combined with an empty vocabulary that keeps
+/// the gate inert rather than blocking on bad data.
+pub fn tool_calls_this_turn(transcript_path: &str) -> usize {
+    let Ok(content) = std::fs::read_to_string(transcript_path) else {
+        return 0;
+    };
+    let mut count = 0usize;
+    for line in content.lines() {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let msg = v.get("message").unwrap_or(&v);
+        // A human message starts a new turn — reset.
+        if msg.get("role").and_then(|r| r.as_str()) == Some("user")
+            || v.get("type").and_then(|t| t.as_str()) == Some("user")
+        {
+            count = 0;
+            continue;
+        }
+        if let Some(serde_json::Value::Array(blocks)) = msg.get("content") {
+            count += blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("tool_use"))
+                .count();
+        }
+    }
+    count
+}
+
+/// The refusal. Quotes the promise back so the role sees what it committed to.
+pub fn stall_refusal(commitment_id: &str) -> String {
+    format!(
+        "Stated-intent gate (#3941): your reply promised action ({commitment_id}) and this turn \
+         called no tool. Jeff, 2026-08-20: \"if u say ~ i will do it then stop\" — and, after \
+         waiting seven minutes, \"u respond to me u were [working] when u were not.\"\n\n\
+         Do the thing you said, in THIS turn. If you genuinely cannot, name what blocks it and \
+         who owns it — but do not end a turn on a promise."
+    )
+}
+
 /// Load preference text from jeff-preferences.json
 fn lookup_preference(pref_id: &str, prefs_path: &std::path::Path) -> Option<(String, String)> {
     let content = std::fs::read_to_string(prefs_path).ok()?;
@@ -725,5 +845,178 @@ mod tests {
         assert!(result.contains("use"));
         assert!(result.contains("for deploys"));
         assert!(!result.contains("app-state.sh"));
+    }
+}
+
+#[cfg(test)]
+mod stated_intent_tests {
+    use super::*;
+
+    fn vocab() -> Vec<Commitment> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/stated-intent-vocabulary.json");
+        let c = load_commitments(&p);
+        assert!(!c.is_empty(), "vocabulary must load from the declared file");
+        c
+    }
+
+    // Jeff's real messages this session, verbatim. Each promised action and the
+    // turn made no tool call.
+    #[test]
+    fn catches_the_promises_actually_made_on_2026_08_20() {
+        let v = vocab();
+        for said in [
+            "Building the gate that way.",
+            "Taking it.",
+            "I'll run it now.",
+            "Fixing next.",
+            "On it.",
+            "I'm building the turn-level detector into autonomy_guard now.",
+            "Going to fix that.",
+        ] {
+            assert!(
+                stated_intent_without_action(said, 0, &v).is_some(),
+                "should have caught: {said}"
+            );
+        }
+    }
+
+    // NEGATIVE PROOF #1 — the state this gate exists to SEPARATE.
+    // Same sentence, but the role actually acted. Blocking here would punish the
+    // exact behaviour we want and make the gate worse than useless.
+    #[test]
+    fn does_not_fire_when_the_role_acted_in_the_same_turn() {
+        let v = vocab();
+        for said in ["Taking it.", "I'll run it now.", "On it."] {
+            assert!(
+                stated_intent_without_action(said, 1, &v).is_none(),
+                "must NOT fire when a tool ran: {said}"
+            );
+        }
+    }
+
+    // NEGATIVE PROOF #2 — a reply with no promise in it is not a stall. Reporting a
+    // finished result and stopping is correct and must stay silent.
+    #[test]
+    fn does_not_fire_on_a_reply_that_promises_nothing() {
+        let v = vocab();
+        for said in [
+            "Landed and live — the old subdomain 308s to the apex path.",
+            "Load average 69. Not a chorus-api defect.",
+            "You were right and I was wrong.",
+        ] {
+            assert!(
+                stated_intent_without_action(said, 0, &v).is_none(),
+                "must stay silent: {said}"
+            );
+        }
+    }
+
+    // NEGATIVE PROOF #3 — the vocabulary is DATA. If its file is missing the gate
+    // must go inert, not block every turn in the team. A guard that fails closed on
+    // a missing data source is the #3218 lockout shape.
+    #[test]
+    fn missing_vocabulary_makes_the_gate_inert_not_universal() {
+        let none = load_commitments(std::path::Path::new("/nonexistent/vocab.json"));
+        assert!(none.is_empty());
+        assert!(stated_intent_without_action("I'll run it now.", 0, &none).is_none());
+    }
+
+    // NEGATIVE PROOF #4 — quoting a promise inside a code fence is not making one.
+    #[test]
+    fn does_not_fire_on_a_promise_quoted_in_a_code_block() {
+        let v = vocab();
+        let said = "The pattern we catch:\n```\nI'll run it now.\n```\n";
+        assert!(stated_intent_without_action(said, 0, &v).is_none());
+    }
+}
+
+#[cfg(test)]
+mod turn_counting_tests {
+    use super::*;
+    use std::io::Write;
+
+    /// The test brings its own world (#3528) — a transcript in a tempdir, never the
+    /// live session file.
+    fn transcript(lines: &[&str]) -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let mut f = std::fs::File::create(&path).unwrap();
+        for l in lines {
+            writeln!(f, "{l}").unwrap();
+        }
+        (dir, path.to_string_lossy().to_string())
+    }
+
+    const USER: &str = r#"{"type":"user","message":{"role":"user","content":"go"}}"#;
+    const SAID: &str = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Taking it."}]}}"#;
+    const DID: &str = r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}"#;
+
+    #[test]
+    fn counts_only_the_current_turn() {
+        // Two tools LAST turn, none this turn — the stall must still be visible.
+        let (_d, p) = transcript(&[USER, DID, DID, USER, SAID]);
+        assert_eq!(tool_calls_this_turn(&p), 0);
+    }
+
+    #[test]
+    fn counts_tools_in_this_turn() {
+        let (_d, p) = transcript(&[USER, SAID, DID, DID]);
+        assert_eq!(tool_calls_this_turn(&p), 2);
+    }
+
+    // NEGATIVE PROOF — an unreadable transcript must yield 0 AND, with the gate's
+    // tool_calls>0 short-circuit, that means a missing transcript cannot silently
+    // suppress the gate for a turn that really did work. It is the vocabulary that
+    // fails inert; this one fails toward CHECKING, which is the safe direction here
+    // only because the vocabulary still has to match real promise text.
+    #[test]
+    fn unreadable_transcript_counts_zero() {
+        assert_eq!(tool_calls_this_turn("/nonexistent/t.jsonl"), 0);
+    }
+}
+
+#[cfg(test)]
+mod real_stall_specimens {
+    use super::*;
+
+    /// AC6 — proven against Wren's ACTUAL replies, lifted verbatim from the session
+    /// transcript. Each of these ended a turn with ZERO tool calls after promising
+    /// work. The last one is the turn Jeff was looking at when he wrote "u stopped
+    /// lol"; the middle two are turns he waited through before asking whether I was
+    /// working at all.
+    ///
+    /// Copied as fixture text rather than read from the live transcript on purpose —
+    /// a test brings its own world (#3528) and must not depend on $HOME.
+    const VERBATIM_STALLS: &[(&str, &str)] = &[
+        ("2026-08-20 13:45:59", "Building the gate that way."),
+        ("2026-08-20 13:49:08", "Committing the Host fix and running the pipeline."),
+        ("2026-08-20 13:48:27", "Re-running with honest AC. Seven files moved, four flows passing live."),
+        ("2026-08-20 13:48:23", "Host-header fix is done and green (715 tests). Committing and running the pipeline."),
+    ];
+
+    #[test]
+    fn every_real_stall_is_caught() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/stated-intent-vocabulary.json");
+        let v = load_commitments(&p);
+        for (when, text) in VERBATIM_STALLS {
+            assert!(
+                stated_intent_without_action(text, 0, &v).is_some(),
+                "{when} stalled and the gate missed it: {text}"
+            );
+        }
+    }
+
+    /// The same four texts, had the role actually acted. None may block — otherwise
+    /// the gate punishes the behaviour it exists to produce.
+    #[test]
+    fn none_of_them_block_when_the_work_happened() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/stated-intent-vocabulary.json");
+        let v = load_commitments(&p);
+        for (_when, text) in VERBATIM_STALLS {
+            assert!(stated_intent_without_action(text, 1, &v).is_none());
+        }
     }
 }

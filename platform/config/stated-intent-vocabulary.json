@@ -1,0 +1,50 @@
+{
+  "_comment": "Stated-intent vocabulary \u2014 the phrases by which a role commits to act.",
+  "_why": "Jeff, 2026-08-20: 'if u say ~ i will do it then stop'. The autonomy guard's permission-seeking half only recognises QUESTIONS ('shall I proceed'). Announce-and-stop asks nothing, so it passes clean, the turn ends with no tool call, and Jeff discovers the stall by walking past. Measured on Wren's transcript 2026-08-20: of 6873 turns, 241 stated a forward intent and made ZERO tool calls in the same turn. Not one was a question.",
+  "_scope": "#3879 (Done) catches the slow version \u2014 a WIP card untouched 4+ hours. This is the turn-level version, which is the one Jeff experiences: he reads a promise, waits, nothing moves.",
+  "_home": "This file is the single declared source so the vocabulary is data, not scattered regexes. It belongs in the SKILLS domain, which has no OWL declaration and no generated API today (owl-api serves /roles, /gates, /principles \u2014 not /skills). When skills is built properly through athena-make, this file is generated from the graph and the loader repoints; it is not rewritten. Carded separately \u2014 building a half-domain to host one file is the anti-pattern Jeff named on 2026-06-25.",
+  "version": 1,
+  "commitments": [
+    {
+      "id": "will-act",
+      "pattern": "(?i)\\bi'?(?:ll| will) (?:do|run|fix|take|build|land|start|check|write|add|file|send|register)\\b",
+      "example": "I'll run it now."
+    },
+    {
+      "id": "am-acting",
+      "pattern": "(?i)\\bi'?m (?:doing|running|fixing|taking|building|landing|starting|writing|checking|working on)\\b",
+      "example": "I'm building the gate that way."
+    },
+    {
+      "id": "verb-it-now",
+      "pattern": "(?i)\\b(?:taking|running|building|fixing|landing|writing|checking) (?:it|them|this|that)(?:\\s+now)?\\b",
+      "example": "Taking it."
+    },
+    {
+      "id": "doing-now",
+      "pattern": "(?i)\\b(?:doing|starting|running) (?:it|this|that) now\\b",
+      "example": "Doing it now."
+    },
+    {
+      "id": "going-to",
+      "pattern": "(?i)\\bgoing to (?:do|run|fix|take|build|land|start|write|add|file)\\b",
+      "example": "Going to fix that."
+    },
+    {
+      "id": "on-it",
+      "pattern": "(?i)\\bon it\\b",
+      "example": "On it."
+    },
+    {
+      "id": "bare-gerund",
+      "_note": "Subjectless commitment opening a sentence \u2014 'Building the gate that way.' Caught by the test suite against Wren's own 2026-08-20 replies; the first vocabulary draft missed it because every pattern assumed a subject. Extended twice on 2026-08-20 \u2014 'Committing the Host fix...' and 'Re-running with honest AC.' each slipped a list that looked complete. Both were found by the fixture, neither by reading it.",
+      "pattern": "(?i)(?:^|[.!?]\\s+|\\n\\s*)(?:re-)?(?:taking|building|running|fixing|landing|writing|starting|doing|filing|sending|registering|checking|committing|pushing|merging|deploying|pulling|wiring|adding|moving)\\b",
+      "example": "Building the gate that way."
+    },
+    {
+      "id": "x-next",
+      "pattern": "(?i)\\b(?:fixing|doing|landing|running|building) next\\b",
+      "example": "Fixing next."
+    }
+  ]
+}
