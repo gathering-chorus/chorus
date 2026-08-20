@@ -1048,6 +1048,63 @@ async fn user_prompt_submit(
 /// Stop hook — autonomy guard (permission-seeking scan) + #3203 inject-force OBSERVE.
 /// Takes the raw body so it can read `transcript_path` (a Stop-only field Claude Code
 /// sends) without adding it to HookInput, which is hand-built in 30+ test sites.
+/// #3941 — a reply that promises action and calls no tool ends the turn as a stall.
+/// autonomy_guard's other half catches QUESTIONS; this catches the opposite failure.
+/// Jeff waited 13:44->13:51 on 2026-08-20, asked, and was told work was underway when
+/// it was not. Measured: 241 of 6873 turns stated intent with zero tool calls, none a
+/// question. Returns Some(block) only when a promise was made and nothing was done.
+async fn stated_intent_block(
+    response: &HookResponse,
+    raw: &serde_json::Value,
+    input: &HookInput,
+    state: &AppState,
+) -> Option<HookResponse> {
+    // Only when autonomy_guard already ALLOWED the stop — never override its block.
+    if response.exit_code != 0 || response.stdout.is_some() {
+        return None;
+    }
+    let tp = raw.get("transcript_path").and_then(|v| v.as_str())?;
+    let text = hooks::inject_force::last_assistant_text(tp)?;
+    let calls = hooks::autonomy_guard::tool_calls_this_turn(tp);
+    let vocab = hooks::autonomy_guard::load_commitments(&state.config.stated_intent_vocabulary);
+    let id = hooks::autonomy_guard::stated_intent_without_action(&text, calls, &vocab)?;
+    let role = format!("{:?}", input.role()).to_lowercase();
+    crate::state::chorus_log("stated.intent.stall", &role, &[("commitment", id.as_str())]).await;
+    Some(HookResponse::block_with_stderr(
+        &hooks::autonomy_guard::stall_refusal(&id),
+    ))
+}
+
+/// #3203 — context-inject FORCE, observe-only. Did this turn's response engage what
+/// the inject surfaced? Read the surfaced records + the last assistant message and LOG
+/// the verdict; never blocks. Extracted from stop_hook (#3941) — that handler sat at
+/// the clippy cognitive-complexity ceiling, so any new gate tipped the ratchet. Moving
+/// a self-contained observer out is the honest way to make room.
+async fn inject_force_observe(raw: &serde_json::Value, input: &HookInput) {
+if let Some(session_id) = input.session_id.as_deref() {
+    let surfaced = hooks::inject_force::read_surfaced(session_id);
+    if !surfaced.is_empty() {
+        let transcript = raw.get("transcript_path").and_then(|v| v.as_str());
+        if let Some(resp) = transcript.and_then(hooks::inject_force::last_assistant_text)
+        {
+            let verdict = hooks::inject_force::inject_engagement_verdict(&surfaced, &resp);
+            let role = format!("{:?}", input.role()).to_lowercase();
+            let n = surfaced.len().to_string();
+            let (label, detail) = match &verdict {
+                hooks::inject_force::EngagementVerdict::Pass => ("pass", String::new()),
+                hooks::inject_force::EngagementVerdict::Block { reason } => ("block", reason.clone()),
+            };
+            crate::state::chorus_log(
+                "context.inject.force.verdict",
+                &role,
+                &[("mode", "observe"), ("verdict", label), ("surfaced", &n), ("detail", detail.as_str())],
+            )
+            .await;
+        }
+    }
+}
+}
+
 async fn stop_hook(
     State(state): State<AppState>,
     Json(raw): Json<serde_json::Value>,
@@ -1057,36 +1114,16 @@ async fn stop_hook(
     // #3853 — turn ended; the session is genuinely idle now. Clear its activity so the
     // heartbeat goes quiet, and silence now truthfully means idle rather than hidden work.
     if let Some(sid) = input.session_id.as_deref() { state.clear_activity(sid); }
-    // #3203 — context-inject FORCE, observe-only phase. Did this turn's response
-    // engage what the inject surfaced? Read the surfaced records + my last assistant
-    // message (from the transcript), run the verdict, and LOG it (👍 pass / 🛑 block)
-    // to the spine. Does NOT block yet — the verdict must be proven on real turns
-    // before a turn-blocking gate goes live, or it traps every session. Enforce flips
-    // on once the observe log shows it's right.
-    if let Some(session_id) = input.session_id.as_deref() {
-        let surfaced = hooks::inject_force::read_surfaced(session_id);
-        if !surfaced.is_empty() {
-            let transcript = raw.get("transcript_path").and_then(|v| v.as_str());
-            if let Some(resp) = transcript.and_then(hooks::inject_force::last_assistant_text)
-            {
-                let verdict = hooks::inject_force::inject_engagement_verdict(&surfaced, &resp);
-                let role = format!("{:?}", input.role()).to_lowercase();
-                let n = surfaced.len().to_string();
-                let (label, detail) = match &verdict {
-                    hooks::inject_force::EngagementVerdict::Pass => ("pass", String::new()),
-                    hooks::inject_force::EngagementVerdict::Block { reason } => ("block", reason.clone()),
-                };
-                crate::state::chorus_log(
-                    "context.inject.force.verdict",
-                    &role,
-                    &[("mode", "observe"), ("verdict", label), ("surfaced", &n), ("detail", detail.as_str())],
-                )
-                .await;
-            }
-        }
-    }
+    inject_force_observe(&raw, &input).await;
     // Existing behavior unchanged — observe-only, no block on the inject-force path.
     let mut response = hooks::autonomy_guard::check(&input, &state).await;
+
+    // #3941 — the stated-intent gate. ONE line in this handler on purpose: the
+    // nested version pushed clippy::cognitive_complexity here 25 -> 28 and the
+    // ratchet refused the commit, correctly. All branching lives in the callee.
+    if let Some(block) = stated_intent_block(&response, &raw, &input, &state).await {
+        return Json(block);
+    }
 
     // #3218 — Stop-hook backstop: a role cannot end a turn / go idle while it
     // OWES a peer a response (the turn-boundary half; PreToolUse is the finer
