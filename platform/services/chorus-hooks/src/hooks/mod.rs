@@ -12,6 +12,7 @@ pub mod session_init_gate;
 pub mod sparql_guard;
 pub mod tool_telemetry;
 pub mod story_write_gate;
+pub mod emit_guard;
 pub mod write_scrubber;
 pub mod icd_write_gate;
 // #3046: demo_preflight / demo_show / demo_provenance / demo_gate retired —
