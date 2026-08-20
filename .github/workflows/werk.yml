@@ -70,6 +70,34 @@ jobs:
             "$ts" "${CARD_ID}" "${ROLE}" "${GO}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
+      # ═══ #3921 — A GO DOES NOT RE-PROVE A PROVEN ROUND. ═══
+      # Before this, go=true re-ran build+test (p95 25min) on the EXACT commit
+      # the human just saw presented — every go bought a silent second loop.
+      # If the werk HEAD equals the commit of a PRESENTED round on the run pin,
+      # the proof already exists; build/test/demo are skipped and the run goes
+      # straight to merge. ANY drift (one byte) takes the full prove path.
+      - name: proven-round
+        id: provenround
+        run: |
+          SKIP=false
+          case "${GO}" in true|go|yes)
+            PIN="$HOME/.chorus/werk-runs/${CARD_ID}.json"
+            if [ -f "$PIN" ]; then
+              PHASE=$(python3 -c "import json;print(json.load(open('$PIN')).get('phase',''))" 2>/dev/null)
+              PINSHA=$(python3 -c "import json;p=json.load(open('$PIN')).get('patchId','');print(p.removeprefix('sha:'))" 2>/dev/null)
+              HEADSHA=$(git -C "${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}" rev-parse HEAD 2>/dev/null || echo none)
+              if [ "$PHASE" = "presented" ] && [ -n "$PINSHA" ] && [ "$HEADSHA" = "$PINSHA" ]; then
+                SKIP=true
+              fi
+            fi
+          ;; esac
+          echo "skip_prove=$SKIP" >> "$GITHUB_OUTPUT"
+          if [ "$SKIP" = "true" ]; then
+            echo "proven-round: HEAD == presented round ($PINSHA) — proof exists, skipping re-prove"
+          else
+            echo "proven-round: full prove path"
+          fi
+
       # ═══ prove in the role's slot — never touches main until merge (gated on proven) ═══
       - name: commit
         id: commit
@@ -83,11 +111,13 @@ jobs:
 
       - name: build
         id: build
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # target=werk implied: builds the card's werk for the demo slot.
         run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
         id: test
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # #3190 — werk-test VERB: the BLOCKING test floor (promotes the old inline step into
         # a real verb). Runs the card's AFFECTED units only — cargo per changed crate, tsc+jest
         # per changed TS package, plus workspace clippy-ratchet + doc-coherence (the three the
@@ -136,6 +166,7 @@ jobs:
 
       - name: review
         id: review
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
@@ -183,9 +214,19 @@ jobs:
               if [ -z "${ACCEPTER}" ]; then echo "[demo] GO with no accepter — refusing (DEC-048)"; exit 1; fi
               PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ACCEPTER}" werk-demo go "${CARD_ID}" ;;
           esac
-          PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
-          drc=$?
-          if [ "$drc" != 0 ] && [ "$drc" != 2 ]; then echo "[demo] present error rc=$drc"; exit "$drc"; fi
+          # #3921 — on a proven round (skip_prove), do NOT re-present: the round
+          # Jeff saw is the round on disk (sha-equal, checked upstream). Recording
+          # the GO still goes through werk-demo, and proven still comes ONLY from
+          # the witness verdict below — no self-accept hole (#3410): a go with no
+          # recorded witness for this patch stays unproven and HELD.
+          if [ "${{ steps.provenround.outputs.skip_prove }}" = "true" ]; then
+            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}" || true
+            echo "[demo] proven-round fast path: go recorded, verdict decides"
+          else
+            PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo "${CARD_ID}" "${GO}"
+            drc=$?
+            if [ "$drc" != 0 ] && [ "$drc" != 2 ]; then echo "[demo] present error rc=$drc"; exit "$drc"; fi
+          fi
           vout=$(PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ROLE}" werk-demo verdict "${CARD_ID}" 2>&1)
           vrc=$?
           set -e
