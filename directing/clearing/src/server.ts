@@ -186,6 +186,36 @@ const io = new Server(server, {
   pingTimeout: 30000,    // 30s tolerance for pong response (#1964)
 });
 
+// #3872 — the upside-down URL is retired.
+//
+// Jeff, 2026-08-14: "having clearing.lightlifeurbangardens.com is upside down.
+// That's not the normal way you form URLs. You go from general to specific."
+//
+// cloudflared cannot redirect — it proxies or 404s — so deleting the hostname
+// would break every old link instead of retiring it. The subdomain already
+// points here, and the Host header survives the tunnel (measured, not assumed),
+// so the app answers: anything arriving on the subdomain is sent to the apex
+// path, permanently, preserving the requested path and query.
+//
+// FIRST middleware on purpose: before cookies, before auth. A redirect that
+// happens after a login challenge would show the old URL in the browser bar,
+// which is the thing being retired.
+const LEGACY_CLEARING_HOST = /^clearing\./i;
+const APEX_CLEARING = 'https://lightlifeurbangardens.com/clearing';
+
+export function legacyRedirectTarget(host: string | undefined, url: string): string | null {
+  if (!host || !LEGACY_CLEARING_HOST.test(host)) return null;
+  // '/' on the subdomain means the room itself; anything deeper keeps its path.
+  const rest = url === '/' ? '' : url;
+  return `${APEX_CLEARING}${rest}`;
+}
+
+app.use((req: Request, res, next) => {
+  const target = legacyRedirectTarget(req.headers.host, req.originalUrl);
+  if (target === null) { next(); return; }
+  res.redirect(308, target);
+});
+
 // Cookie parser (minimal — just need bridge_token) — must be before auth
 app.use((req: Request, _res, next) => {
   const r = req as Request & { cookies?: Record<string, string> };

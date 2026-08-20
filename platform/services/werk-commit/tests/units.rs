@@ -150,37 +150,42 @@ fn resolve_trace_mints_then_persists_so_one_trace_threads() {
     assert_eq!(resolve_trace_in(card, None, &dir), minted);
 }
 
-// #3937 — the three tests here asserted that `knowledge/doc-coherence.md` is a
-// GENERATED file that self-resolves. #3928 deleted that file from git, which
-// turned the accommodation lethal: `checkout --ours` has no "ours" for a path
-// deleted upstream, so it errored and killed the commit. Three of Kade's died
-// that way on 2026-08-19. The tests kept passing because they asserted the
-// tolerance, not the outcome — they could not tell "self-resolves" from
-// "explodes". Inverted here: the list is empty, everything is source, and the
-// #3304 human hold is the only path.
+// #3928 — the generated-exception class is GONE. These three tests pinned the
+// tolerance: a conflict in doc-coherence.md was flagged "GENERATED" and resolved
+// on the human's behalf. The file is gitignored now, and the list that outlived
+// it kept matching a deleted path and wedging unrelated commits.
+//
+// NEGATIVE PROOF: with the list empty, a conflict in ANY file — including the
+// one formerly excused — is held for a human and named. If someone re-adds an
+// entry to buy convenience, these invert again and say so.
 #[test]
-fn nothing_is_auto_resolved_anymore() {
+fn conflict_hold_message_never_excuses_a_file() {
+    let m = werk_commit::conflict_hold_message(
+        2588,
+        "kade",
+        &["knowledge/doc-coherence.md".to_string(), "src/real.rs".to_string()],
+    );
+    assert!(!m.contains("GENERATED"), "nothing is excused as generated: {}", m);
+    assert!(m.contains("--continue"), "the verb recovery is still named: {}", m);
+}
+
+#[test]
+fn partition_generated_treats_every_conflict_as_source() {
     use werk_commit::partition_generated;
     let files = vec![
         "knowledge/doc-coherence.md".to_string(),
         "platform/api/src/server.ts".to_string(),
     ];
     let (generated, source) = partition_generated(&files);
-    assert!(generated.is_empty(), "no path may self-resolve: {:?}", generated);
-    assert_eq!(source.len(), 2, "every conflict is a human decision now");
+    assert!(generated.is_empty(), "no file is auto-resolvable");
+    assert_eq!(source.len(), 2, "both are held for a human");
 }
 
-// NEGATIVE PROOF (#3734): the hold message must NOT claim a generated class
-// that no longer exists. A message promising a self-resolve that cannot happen
-// is how someone waits for a rebase that is never coming.
 #[test]
-fn the_hold_message_no_longer_promises_a_generated_self_resolve() {
-    let m = werk_commit::conflict_hold_message(
-        2588,
-        "kade",
-        &["knowledge/doc-coherence.md".to_string(), "src/real.rs".to_string()],
-    );
-    assert!(!m.contains("GENERATED"), "no generated class remains: {}", m);
-    assert!(m.contains("knowledge/doc-coherence.md"), "still names the file: {}", m);
-    assert!(m.contains("--continue"), "still names the recovery: {}", m);
+fn partition_generated_holds_the_formerly_excused_file() {
+    use werk_commit::partition_generated;
+    let (generated, source): (Vec<String>, Vec<String>) =
+        partition_generated(&["knowledge/doc-coherence.md".to_string()]);
+    assert!(generated.is_empty());
+    assert_eq!(source.len(), 1, "the once-excused file is now held like any other");
 }

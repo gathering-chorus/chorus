@@ -78,3 +78,30 @@ test.describe('#3878 — the public path topology Jeff specified', () => {
     expect(res.status()).toBeLessThan(400);
   });
 });
+
+/**
+ * #3872 — the subdomain is RETIRED, not merely bypassed.
+ *
+ * #3878 made lightlifeurbangardens.com/clearing work. It left the old
+ * clearing.lightlifeurbangardens.com hostname in place as a bridge, which means
+ * the upside-down URL Jeff objected to is still live and still linkable — the
+ * thing he asked us to stop doing, kept working.
+ *
+ * NEGATIVE PROOF (#3734): this is born RED. The subdomain answers 200 today.
+ * A redirect (301/302/308) to the apex path PASSES — old links keep working,
+ * which is why this asserts a redirect rather than an outage. What must NOT
+ * happen is the subdomain serving the room itself.
+ */
+test.describe('#3872 — the upside-down URL is retired', () => {
+  test('the old subdomain redirects to the apex path, it does not serve the room', async ({ request }) => {
+    const res = await request.get('https://clearing.lightlifeurbangardens.com/', {
+      maxRedirects: 0,
+      failOnStatusCode: false,
+    });
+    const status = res.status();
+    expect([301, 302, 307, 308], `subdomain still serves the room (got ${status})`).toContain(status);
+    const location = res.headers()['location'] ?? '';
+    expect(location, 'redirect must point at the apex path').toContain('/clearing');
+    expect(location, 'redirect must not point back at the subdomain').not.toContain('clearing.lightlifeurbangardens.com');
+  });
+});
