@@ -229,6 +229,12 @@ mod tests {
     use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
+    /// How many times the cost of simply reading the file fetch_unread may
+    /// take. Generous on purpose — the budget is here to catch an order-of-
+    /// magnitude regression, not to police a few percent.
+    const BUDGET_FACTOR: u32 = 12;
 
     fn fixture_path(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -372,15 +378,37 @@ mod tests {
         }
     }
 
-    /// AC 0.1 latency budget on a CONTROLLED input: 50k synthetic lines in a
-    /// tmp fixture, so the measurement is the algorithm — not whatever size
-    /// the live log happens to be or what else the box is doing. Wall-clock
-    /// assert skipped under coverage instrumentation (cfg(coverage), set by
-    /// cargo-llvm-cov) where timing is meaningless; the parse still runs
-    /// there so coverage is collected.
-    #[test]
-    fn latency_budget_on_synthetic_50k() {
-        let log = fixture_path("latency-50k");
+    /// Is the measured work within `factor`× a reference pass over the SAME
+    /// input in the SAME process?
+    ///
+    /// #3424 — the absolute wall-clock version of this budget reddened a land
+    /// at load average 86. It was measuring the machine, not the algorithm:
+    /// the box was 4× oversubscribed, so a 40ms parse clocked 392ms against a
+    /// 200ms ceiling. #3606 had already moved the INPUT off the live log for
+    /// exactly this reason and kept the clock, which only narrowed the window.
+    ///
+    /// A ratio is load-invariant where an absolute is not: contention slows
+    /// the reference pass and the measured pass alike, so it divides out. What
+    /// survives is the thing the budget exists to protect — that fetch_unread
+    /// stays within a constant factor of the cost of simply reading the file.
+    fn within_ratio(reference: Duration, actual: Duration, factor: u32) -> bool {
+        // Floor the reference: a sub-millisecond baseline would otherwise make
+        // the bound absurdly tight and reintroduce timer noise as a gate.
+        let reference = reference.max(Duration::from_micros(500));
+        actual <= reference * factor
+    }
+
+    /// The reference pass: read the file and touch every line, doing the
+    /// cheapest per-line work that still forces the same I/O and iteration.
+    fn reference_scan(path: &PathBuf) -> Duration {
+        let t = Instant::now();
+        let raw = fs::read_to_string(path).expect("read fixture");
+        let n = raw.lines().filter(|l| l.contains("nudge.emitted")).count();
+        std::hint::black_box(n);
+        t.elapsed()
+    }
+
+    fn synthetic_50k(log: &PathBuf) {
         let mut lines: Vec<String> = Vec::with_capacity(50_000);
         for i in 0..49_999 {
             lines.push(format!(
@@ -390,20 +418,66 @@ mod tests {
         }
         lines.push(emitted("wren", "silas", "ntr-latency", "one real nudge in the noise"));
         let refs: Vec<&str> = lines.iter().map(|s| s.as_str()).collect();
-        write_log(&log, &refs);
+        write_log(log, &refs);
+    }
 
-        let t = std::time::Instant::now();
+    /// AC 0.1 budget on a CONTROLLED input, measured as a RATIO against a
+    /// reference pass over the same 50k lines. Under coverage instrumentation
+    /// the comparison still holds (both passes are instrumented), so unlike
+    /// the old absolute assert there is nothing to skip.
+    #[test]
+    fn latency_budget_on_synthetic_50k() {
+        let log = fixture_path("latency-50k");
+        synthetic_50k(&log);
+
+        let reference = reference_scan(&log);
+        let t = Instant::now();
         let unread = fetch_unread("silas", &log, 50_000);
-        let elapsed_ms = t.elapsed().as_millis();
+        let actual = t.elapsed();
 
         assert_eq!(unread.len(), 1, "the one real nudge must be found among 50k lines");
-        if !cfg!(coverage) {
-            assert!(
-                elapsed_ms < 200,
-                "fetch_unread(silas, 50k synthetic) took {}ms — AC 0.1 budget is 100ms p95 / 200ms hard ceiling",
-                elapsed_ms
-            );
+        assert!(
+            within_ratio(reference, actual, BUDGET_FACTOR),
+            "fetch_unread(silas, 50k synthetic) took {actual:?} against a {reference:?} reference \
+             pass over the same file — over the {BUDGET_FACTOR}× budget. This ratio is \
+             load-invariant, so a red here is an algorithmic regression, not a busy box."
+        );
+    }
+
+    /// NEGATIVE PROOF (#3734) for the ratio check itself: a pass that IS
+    /// superlinear over the same fixture must be caught. Without this, a
+    /// green above proves only that the assert ran.
+    #[test]
+    fn the_ratio_budget_catches_a_superlinear_pass() {
+        let log = fixture_path("latency-50k-negative");
+        synthetic_50k(&log);
+
+        let reference = reference_scan(&log);
+        let t = Instant::now();
+        // Deliberately quadratic-ish: re-scan a prefix of the file per line.
+        let raw = fs::read_to_string(&log).expect("read fixture");
+        let lines: Vec<&str> = raw.lines().collect();
+        let mut hits = 0usize;
+        for (i, _) in lines.iter().enumerate().take(2_000) {
+            hits += lines[..i].iter().filter(|l| l.contains("nudge.emitted")).count();
         }
+        std::hint::black_box(hits);
+        let actual = t.elapsed();
+
+        assert!(
+            !within_ratio(reference, actual, BUDGET_FACTOR),
+            "the budget must FAIL on a superlinear pass ({actual:?} vs {reference:?} reference) — \
+             a check that cannot go red on the state it guards is not a check"
+        );
+    }
+
+    /// The floor exists so timer noise on a fast machine cannot make the bound
+    /// unmeetable; it must not swallow a genuine blowup.
+    #[test]
+    fn the_reference_floor_does_not_open_the_bound() {
+        let tiny = Duration::from_nanos(1);
+        assert!(within_ratio(tiny, Duration::from_millis(2), BUDGET_FACTOR));
+        assert!(!within_ratio(tiny, Duration::from_millis(500), BUDGET_FACTOR));
     }
 
     // --- format_unread_block: pure formatter tests ---
