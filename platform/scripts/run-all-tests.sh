@@ -174,15 +174,16 @@ fi
 
 if [ -z "$ONLY" ] || [ "$ONLY" = "ts" ]; then
   [ "$JSON_MODE" = "0" ] && echo "-- TypeScript --"
-  for dir in \
-    "$CHORUS_ROOT/directing/products/cards" \
-    "$CHORUS_ROOT/directing/clearing" \
-    "$CHORUS_ROOT/platform/workflow-engine" \
-    "$CHORUS_ROOT/platform/tests" \
-    "$CHORUS_ROOT/platform/chorus-sdk" \
-    "$CHORUS_ROOT/roles/wren/scripts"; do
-    run_ts "$dir"
-  done
+  # #3930 — DISCOVERED, not listed: every tracked package.json is a candidate;
+  # run_ts's own guards (package.json + "test" script) skip the rest. The old
+  # six-dir list was stale — platform/api and platform/pulse were missing, so
+  # "run ALL tests" silently ran SOME. Root package.json excluded: its test
+  # script aggregates children and would double-count here.
+  while IFS= read -r pj; do
+    d="$(dirname "$pj")"
+    [ "$d" = "." ] && continue
+    run_ts "$CHORUS_ROOT/$d"
+  done < <(git -C "$CHORUS_ROOT" ls-files '*package.json' | grep -v node_modules | sort)
 fi
 
 if [ -z "$ONLY" ] || [ "$ONLY" = "shell" ]; then

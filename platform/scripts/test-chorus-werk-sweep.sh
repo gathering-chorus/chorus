@@ -161,8 +161,12 @@ OUT4=$(CHORUS_CARDS_BIN="$STUBS/cards-done" "$SWEEP" 2>&1)
 assert "Done+dirty werk flagged as DIRTY" bash -c 'grep -q "DIRTY" <<< "$1" && grep -q "107" <<< "$1"' _ "$OUT4"
 assert "Done+dirty werk untouched" test -f "$WERK_BASE/kade-107/dirt.txt"
 
-# generated-only churn on a Done werk is discarded (the #3638 carve-out mirrored)
-# and the werk sweeps; REAL dirt still refuses (kade-107 above stays flagged).
+# #3638 carve-out RETIRED (#3930, 2026-08-20): GENERATED_FILES is empty — its
+# one entry, knowledge/doc-coherence.md, is gitignored at source (#3928) and can
+# no longer dirty a real werk. In this fixture (no gitignore) the churn is
+# ORDINARY dirt, and the sweeper must refuse it like any other — a "generated"
+# class that discards files by name no longer exists. NEGATIVE PROOF the
+# tolerance stays dead: churn on the retired filename must NOT sweep clean.
 mkwerk kade 108
 mkdir -p "$WERK_BASE/kade-108/knowledge"
 echo "seed" > "$WERK_BASE/kade-108/knowledge/doc-coherence.md"
@@ -173,7 +177,8 @@ git -C "$CANONICAL" commit -q --allow-empty -m "#108 (kade) (#999)"
 git -C "$CANONICAL" update-ref refs/remotes/origin/main "$(git -C "$CANONICAL" rev-parse main)"
 echo "regenerated churn" > "$WERK_BASE/kade-108/knowledge/doc-coherence.md"
 OUT5=$(CHORUS_CARDS_BIN="$STUBS/cards-done" "$SWEEP" 2>&1)
-assert "Done werk with generated-only churn sweeps clean" test ! -d "$WERK_BASE/kade-108"
+assert "churn on the retired generated filename is REAL dirt — werk preserved" test -d "$WERK_BASE/kade-108"
+assert "and flagged DIRTY like any other dirt" bash -c 'grep -q "DIRTY" <<< "$1" && grep -q "108" <<< "$1"' _ "$OUT5"
 
 # launchd-bare-env regression (Jeff's live kickstart, 2026-07-14): with PATH
 # stripped to /usr/bin:/bin the sweeper must still resolve its tools and read

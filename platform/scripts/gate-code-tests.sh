@@ -104,15 +104,15 @@ for arg in "$@"; do
   esac
 done
 
-# Projects with jest.config.js — keep in sync with #2225
-PROJECTS=(
-  "platform/api"
-  "platform/chorus-sdk"
-  "platform/pulse"
-  "platform/workflow-engine"
-  "directing/clearing"
-  "directing/products/cards"
-)
+# #3930 — DISCOVERED, not listed. A jest project IS a tracked jest.config.js;
+# the old hand list ("keep in sync with #2225") was the five-drifting-lists
+# disease — it drifted, and one package landed with no tests asked of it.
+# Derived from disk, a new package is covered the commit it appears and a
+# removed one stops being asked about, with no human remembering to edit here.
+PROJECTS=()
+while IFS= read -r cfg; do
+  PROJECTS+=("$(dirname "$cfg")")
+done < <(git -C "$REPO" ls-files '*jest.config.js' | grep -v node_modules | sort)
 
 cd "$REPO"
 
