@@ -229,7 +229,14 @@ test.describe('the journey — one sign-in, land where you asked', () => {
       await signIn(page);
       await passConsent(page);
     }
-    await expect(page.locator('body')).not.toContainText(/connecting…|connecting\.\.\./i, { timeout: 20000 });
+    // #3872 — was `page.locator('body')`, which reads the whole room INCLUDING
+    // the messages in it. The team discusses connection problems in this room, so
+    // the check went red whenever someone typed the word — it could not tell a
+    // dead socket from a chat log, and it reported a hang the status element said
+    // was fine. Assert the status element, the only surface that means anything
+    // about the socket.
+    await expect(page.locator('#connection-status'))
+      .not.toContainText(/connecting…|connecting\.\.\./i, { timeout: 20000 });
 
     const text = `flow-probe ${Date.now()}`;
     // The composer, by the words printed in it. "the first text box on the page"

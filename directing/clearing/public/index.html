@@ -593,7 +593,22 @@ if (window.BRIDGE_USER && window.BRIDGE_USER !== 'jeff') {
 // Pass auth token to Socket.IO for remote connections (#1719)
 const bridgeCookie = document.cookie.match(/bridge_token=([^;]+)/);
 const bridgeToken = bridgeCookie ? bridgeCookie[1] : (new URLSearchParams(location.search).get('token') || '');
+// #3872 — every fetch in this page is written root-absolute ('/api/...'). Under
+// the /clearing mount those resolve against the apex and 404. One wrapper fixes
+// all of them at once, rather than 16 call sites where the 17th would be missed.
+// Empty base (subdomain, localhost) leaves fetch untouched.
+const CLEARING_BASE = window.CLEARING_BASE || '';
+if (CLEARING_BASE) {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (u, o) =>
+    _fetch(typeof u === 'string' && u.startsWith('/') && !u.startsWith(CLEARING_BASE + '/')
+      ? CLEARING_BASE + u : u, o);
+}
 const socket = io({
+  // Without this the client dials <apex>/socket.io/, which is not routed to the
+  // Clearing at all — the handshake 404s and socket.io retries a 404 in silence,
+  // leaving the room on "connecting…" forever. That was Jeff's phone, 08-20.
+  path: CLEARING_BASE + '/socket.io',
   auth: { token: bridgeToken },
   reconnection: true,
   reconnectionAttempts: Infinity,

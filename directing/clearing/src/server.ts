@@ -216,6 +216,55 @@ app.use((req: Request, res, next) => {
   res.redirect(308, target);
 });
 
+// #3872 — the Clearing is reached at lightlifeurbangardens.com/clearing, and
+// cloudflared does NOT strip that prefix (measured: `/clearing/room-key.js`
+// arrives here verbatim and 404s). Only the page route itself listed '/clearing';
+// every asset, every /api call, and socket.io were mounted at '/' alone. So the
+// page rendered and then hung on "connecting…" forever — the exact symptom Jeff
+// reported on his phone, because the socket handshake 404'd and socket.io
+// retries a 404 silently rather than surfacing it.
+//
+// Strip the prefix here, before anything routes, so every existing route serves
+// under BOTH '/' (subdomain, localhost) and '/clearing' (the apex) with no
+// per-route duplication. `basePath` is stashed for the page render below, which
+// tells the browser which prefix to build its own URLs with.
+export const CLEARING_BASE = '/clearing';
+
+export function stripBase(url: string): { url: string; base: string } {
+  if (url !== CLEARING_BASE && !url.startsWith(`${CLEARING_BASE}/`)) {
+    return { url, base: '' };
+  }
+  return { url: url.slice(CLEARING_BASE.length) || '/', base: CLEARING_BASE };
+}
+
+app.use((req: Request, _res, next) => {
+  const { url, base } = stripBase(req.url);
+  req.url = url;
+  (req as Request & { basePath?: string }).basePath = base;
+  next();
+});
+
+// socket.io does NOT go through express — engine.io attaches its own 'request'
+// and 'upgrade' listeners to the raw http server, so the middleware above never
+// sees a handshake. Strip the prefix for socket.io traffic ONLY, ahead of
+// engine.io (prependListener), and leave page requests alone so the render above
+// can still tell which mount it was reached through.
+const SOCKET_PREFIXED = `${CLEARING_BASE}/socket.io`;
+
+export function stripSocketBase(url: string | undefined): string | undefined {
+  if (url === undefined) return url;
+  const tail = url.slice(SOCKET_PREFIXED.length);
+  if (!url.startsWith(SOCKET_PREFIXED)) return url;
+  if (tail !== '' && !tail.startsWith('/') && !tail.startsWith('?')) return url;
+  return url.slice(CLEARING_BASE.length);
+}
+
+for (const ev of ['request', 'upgrade'] as const) {
+  server.prependListener(ev, (req: { url?: string }) => {
+    req.url = stripSocketBase(req.url);
+  });
+}
+
 // Cookie parser (minimal — just need bridge_token) — must be before auth
 app.use((req: Request, _res, next) => {
   const r = req as Request & { cookies?: Record<string, string> };
@@ -611,8 +660,20 @@ app.get(['/', '/clearing'], async (req: Request, res) => {
   // unauthenticated visitor gets an empty string and the room refuses to mint
   // a key rather than making one that belongs to nobody.
   const sessionWebId = sessionWebid(req) ?? '';
+  // #3872 — the page must build its own URLs with the prefix it was served
+  // under, or socket.io dials the apex root and 404s into a permanent
+  // "connecting…". Empty on the subdomain and localhost, '/clearing' on the apex.
+  const basePath = (req as Request & { basePath?: string }).basePath ?? '';
   html = html.replace('</head>', `<script>window.BRIDGE_USER="${userName.replace(/"/g, '')}";`
+    + `window.CLEARING_BASE="${basePath}";`
     + `window.CHORUS_WEBID="${sessionWebId.replace(/"/g, '')}";</script></head>`);
+  // Root-absolute src/href in the markup (socket.io.js, room-key.js, /account,
+  // /logout, /vendor/...) resolve against the apex, not the mount, so each one
+  // 404s under /clearing. Rewriting them here is safe precisely because the
+  // stripBase middleware above dual-mounts every route: '/x' and '/clearing/x'
+  // are now the same route. No protocol-relative URLs exist in this page
+  // (asserted by test), so `="/` cannot match an external host.
+  if (basePath) html = html.replace(/(src|href)="\//g, `$1="${basePath}/`);
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('Content-Type', 'text/html');
   res.send(html);
