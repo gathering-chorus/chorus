@@ -2089,6 +2089,19 @@
         "script": "Repo-relative path of the uncovered script"
       }
     },
+    "test.selection": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `test` verb (#3931) — the jest selection as EVIDENCE, not a count: which test files the runner picked and the reason each was chosen (related-file+registered), or the full-fallback reason in the same shape. Emitted so an under-selection is inspectable from the record alone — the log used to print only a count, and nobody could see whether the runner picked the RIGHT files. Verb-substep event (#3513 naming law).",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "card": "Card the run belongs to",
+        "count": "Number of selection rows (files, or 1 for a fallback row)",
+        "files": "Up to 8 selected file paths, semicolon-joined ('*' for fallback)",
+        "reason": "Why the first row was selected — uniform across rows today"
+      }
+    },
     "test.scoped": {
       "vertebra": "proving",
       "source": "werk",

@@ -1,3 +1,4 @@
+// @test-type: integration — in-process MCP server + stubbed fetch; hermetic (no live pulse)
 // #3001 — integration test for the chorus-mcp → silas push path.
 // node:test runner (Node 20+). Replaces global fetch with a capture stub,
 // triggers an MCP error via in-process MCP, asserts the stub received a
@@ -57,7 +58,14 @@ function setupChorusLog(): { logPath: string; cleanup: () => void } {
   };
 }
 
-test('integration: mcp.tool.error fires nudge POST to silas via pulse', async () => {
+// #3931 (2026-08-20) — INVERTED from its #3001 original. The old assertion
+// ("unknown tool fires a nudge to silas") pinned exactly the behavior #3904
+// retired: caller-side refusals (Unknown tool:, Invalid arguments, refused:)
+// no longer nudge ops — they caused 03:10 nudge storms three nights running.
+// The positive wire-path (systemic error → POST) is covered by the
+// shouldNotifyOps units + dispatch-error-integration; THIS test is now the
+// integration-level negative proof that a caller-side refusal stays silent.
+test('integration: caller-side unknown-tool error does NOT nudge ops (#3904)', async () => {
   const fetchCapture = setupFetchCapture();
   const logCapture = setupChorusLog();
   try {
@@ -77,15 +85,10 @@ test('integration: mcp.tool.error fires nudge POST to silas via pulse', async ()
     await sleep(250);
 
     const nudgePosts = fetchCapture.captured.filter((r) => r.url.includes('/api/nudge'));
-    assert.ok(
-      nudgePosts.length >= 1,
-      `expected at least one /api/nudge POST, got ${fetchCapture.captured.length} total: ${JSON.stringify(fetchCapture.captured.map((r) => r.url))}`,
+    assert.equal(
+      nudgePosts.length, 0,
+      `caller-side refusal must stay silent (#3904); got: ${JSON.stringify(nudgePosts.map((r) => r.body))}`,
     );
-    const body = nudgePosts[0].body as { from: string; to: string; content: string };
-    assert.equal(body.to, 'silas', 'nudge must route to silas (ops role)');
-    assert.equal(body.from, 'chorus-mcp');
-    assert.match(body.content, /\[mcp\.error\]/);
-    assert.match(body.content, /chorus_nonexistent_tool/);
   } finally {
     fetchCapture.restore();
     logCapture.cleanup();

@@ -174,6 +174,20 @@ fn run(args: &[String]) -> Result<i32, String> {
         let n: usize = sels.iter().map(|s| s.test_files.len()).sum();
         println!("jest-select: {} registered unit test file(s) cover the diff (registry-answered)", n);
     }
+    // #3931 — the selection is EVIDENCE, not a count: name every selected file
+    // with its reason (or the fallback's reason) on stdout and the spine, so an
+    // under-selection is inspectable from the record alone.
+    let sel_details = werk_test::selection_details(&jplan);
+    for d in &sel_details {
+        println!("jest-select:   {} ({})", d.file, d.reason);
+    }
+    if !sel_details.is_empty() {
+        let sample = sel_details.iter().take(8).map(|d| d.file.as_str())
+            .collect::<Vec<_>>().join(";");
+        let reason0 = sel_details[0].reason.clone();
+        emit_spine("test.selection", &role, &card, &trace,
+            &[("count", &sel_details.len().to_string()), ("files", &sample), ("reason", &reason0)]);
+    }
 
     // #3661 AC3 — the on-disk-but-undeclared surface: test files in the planned
     // units that the tests domain does not declare are NAMED (stdout + spine),
