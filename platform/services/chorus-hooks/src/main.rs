@@ -422,6 +422,35 @@ async fn pre_tool_use_inner(
         }
     }
 
+    // #2645 — outbound twin of write_scrubber: refuse credentials in
+    // EMITTED text (nudge bodies, chat, card comments, commit messages)
+    // before they leave the session. Bypass: CHORUS_ALLOW_SECRET_PATTERN
+    // (audited via the emit below — never silent).
+    _last_module = "emit_guard".into();
+    {
+        let tool = input.tool_name_str();
+        let cmd = input.get_tool_input_str("command");
+        let msg = input.get_tool_input_str("message");
+        if let Some(text) = hooks::emit_guard::emitted_text(tool, &cmd, &msg) {
+            if let Some(kind) = hooks::emit_guard::detect(&text) {
+                let allow = std::env::var("CHORUS_ALLOW_SECRET_PATTERN").ok();
+                if hooks::emit_guard::bypass_allows(&text, allow.as_deref()) {
+                    crate::state::chorus_log("emit.guard.bypassed", "silas", &[
+                        ("tool", tool), ("pattern", kind),
+                    ]).await;
+                } else {
+                    crate::state::chorus_log("emit.guard.refused", "silas", &[
+                        ("tool", tool), ("pattern", kind),
+                    ]).await;
+                    return (_last_module.clone(), crate::types::HookResponse::deny(&crate::types::permission_deny_json(&format!(
+                        "BLOCKED: outbound text matches a {} — redact it and retry. A credential said in a nudge/comment/commit reaches other sessions verbatim (#2645). Legitimate pattern-discussion: scope CHORUS_ALLOW_SECRET_PATTERN=<regex> for one command (audited).",
+                        kind
+                    ))));
+                }
+            }
+        }
+    }
+
     match tool.as_str() {
         "Bash" => {
             // sparql guard
@@ -544,34 +573,6 @@ async fn pre_tool_use_inner(
                                     )),
                                 );
                             }
-                        }
-                    }
-                }
-            }
-            // #2645 — outbound twin of write_scrubber: refuse credentials in
-            // EMITTED text (nudge bodies, chat, card comments, commit messages)
-            // before they leave the session. Bypass: CHORUS_ALLOW_SECRET_PATTERN
-            // (audited via the emit below — never silent).
-            _last_module = "emit_guard".into();
-            {
-                let tool = input.tool_name_str();
-                let cmd = input.get_tool_input_str("command");
-                let msg = input.get_tool_input_str("message");
-                if let Some(text) = hooks::emit_guard::emitted_text(tool, &cmd, &msg) {
-                    if let Some(kind) = hooks::emit_guard::detect(&text) {
-                        let allow = std::env::var("CHORUS_ALLOW_SECRET_PATTERN").ok();
-                        if hooks::emit_guard::bypass_allows(&text, allow.as_deref()) {
-                            crate::state::chorus_log("emit.guard.bypassed", "silas", &[
-                                ("tool", tool), ("pattern", kind),
-                            ]).await;
-                        } else {
-                            crate::state::chorus_log("emit.guard.refused", "silas", &[
-                                ("tool", tool), ("pattern", kind),
-                            ]).await;
-                            return (_last_module.clone(), crate::types::HookResponse::deny(&crate::types::permission_deny_json(&format!(
-                                "BLOCKED: outbound text matches a {} — redact it and retry. A credential said in a nudge/comment/commit reaches other sessions verbatim (#2645). Legitimate pattern-discussion: scope CHORUS_ALLOW_SECRET_PATTERN=<regex> for one command (audited).",
-                                kind
-                            ))));
                         }
                     }
                 }
@@ -1291,4 +1292,51 @@ async fn stop_hook(
     // #3252 — uniform hook.decision emit for the stop hook.
     emit_hook_decision("stop_hook", &input, "autonomy_guard", &response, start).await;
     Json(response)
+}
+
+#[cfg(test)]
+mod emit_guard_dispatch_3945 {
+    use super::*;
+    use serde_json::json;
+
+    fn nudge_input(message: &str) -> HookInput {
+        HookInput {
+            tool_name: Some("mcp__chorus-api__chorus_nudge_message".to_string()),
+            tool_input: Some(json!({ "to": "kade", "message": message })),
+            tool_response: None,
+            session_id: None,
+            cwd: None,
+            prompt: None,
+            stop_hook_active: None,
+            hook_type: None,
+            deploy_role: None,
+            trace_id: None,
+            tool_output_is_error: None,
+        }
+    }
+
+    /// NEGATIVE PROOF (#3734), at the layer that actually failed: the REAL
+    /// dispatch, given the REAL tool name from the 17:51 live probe, must DENY.
+    /// The pure fns were green while this exact call was allowed — only the
+    /// dispatch path counts.
+    #[tokio::test]
+    async fn the_1751_probe_is_refused_at_the_dispatch() {
+        let tok = format!("ghp_{}{}", "abcdefghijklmnopqrstuvwxyz", "1234567890");
+        let input = nudge_input(&format!("live-fire probe — this nudge carries {tok}"));
+        let (module, resp) = pre_tool_use_inner(&crate::state::AppState::new(), &input).await;
+        assert_eq!(module, "emit_guard", "the guard must be the decider, got {module}");
+        let out = resp.stdout.unwrap_or_default();
+        assert!(out.contains("deny"), "must deny, got: {out}");
+    }
+
+    /// An ordinary nudge still flows — the guard is not a mute on coordination.
+    #[tokio::test]
+    async fn an_ordinary_nudge_is_not_refused() {
+        let input = nudge_input("probe verdict recorded; #3945 pulled, dispatch relocated");
+        let (module, resp) = pre_tool_use_inner(&crate::state::AppState::new(), &input).await;
+        assert!(
+            module != "emit_guard" || resp.stdout.is_none(),
+            "ordinary traffic must pass, refused by {module}"
+        );
+    }
 }
