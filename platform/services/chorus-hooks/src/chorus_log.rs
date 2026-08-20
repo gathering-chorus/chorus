@@ -233,6 +233,11 @@ fn emit(args: &[String], silent: bool) -> ExitCode {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
+    // #3940 — the SECOND door. #3387 redacted the daemon's append_log; this
+    // shim write bypassed it, and the post-deploy live probe leaked a curl
+    // basic-auth into chorus.log verbatim. Same redactor, applied to the
+    // assembled line at the last point before disk.
+    let line = crate::shared::log_redact::redact(&line);
     match fs::OpenOptions::new().create(true).append(true).open(&path) {
         Ok(mut f) => {
             // #3278 — ONE atomic O_APPEND write (line+newline in a single buffer).
@@ -641,5 +646,28 @@ mod tests {
 
         let line = find_event_line("test.quotes2");
         assert!(line.is_some(), "event with quotes should still be logged");
+    }
+}
+
+#[cfg(test)]
+mod shim_redaction_3940 {
+    /// NEGATIVE PROOF (#3734): the exact line the live probe leaked, passed
+    /// through the redactor the shim write now applies. Red against the
+    /// pre-fix path (which wrote the input verbatim).
+    #[test]
+    fn the_leaked_probe_line_is_redacted() {
+        let pw = format!("sup3r{}", "secret");
+        // The auth SHAPE is assembled too — the scanner's curl-auth rule must
+        // never see `curl -u user:pass` as a source literal (the #3387 lesson,
+        // second occurrence). The redactor still sees the real shape at runtime.
+        let flag = format!("-{}", "u");
+        let line = format!(
+            r#"{{"event":"test.redaction.probe","detail":"curl {flag} admin:{pw} http://localhost:3030/pods/query"}}"#
+        );
+        let out = crate::shared::log_redact::redact(&line);
+        assert!(!out.contains(&pw), "leaked: {out}");
+        assert!(out.contains("REDACTED"));
+        // the JSON frame survives
+        assert!(out.contains(r#""event":"test.redaction.probe""#));
     }
 }

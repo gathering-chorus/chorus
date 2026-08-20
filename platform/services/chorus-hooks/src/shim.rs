@@ -289,8 +289,10 @@ mod daemon_unreachable_tests {
 fn log_debug(msg: &str) {
     use std::fs::OpenOptions;
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open("/Users/jeffbridwell/Library/Logs/Chorus/chorus-shim-debug.log") {
+        // #3940 — argv echoes can carry credentials; strip before disk.
         let _ = writeln!(f, "[{}] {}", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(), msg);
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs(),
+            crate::shared::log_redact::redact(msg));
     }
 }
 
