@@ -2,7 +2,7 @@
 //! Each test maps to an AC: affected-unit detection on the diff, the bootstrap
 //! escape, and the advisory→blocking gate decision.
 use werk_test::{
-    affected_units, cargo_skip_args, check_plan, expired_cases, gate_outcome, is_self_modifying,
+    affected_units, check_plan, expired_cases, gate_outcome, is_self_modifying,
     parse_quarantine_rows, quarantine_report, spine_args, CheckKind, GateOutcome, PlannedCheck,
     Quarantined, TestUnit,
 };
@@ -211,21 +211,6 @@ fn plan_clippy_and_doc_are_workspace_level_no_unit() {
 }
 
 // --- quarantine: skip flaky cases at the gate, report them visibly (#2530 absorbed) ---
-
-#[test]
-fn cargo_skip_args_empty_when_nothing_quarantined() {
-    // no quarantine → the normal `cargo test` invocation is unchanged (no trailing `--`).
-    assert!(cargo_skip_args(&[]).is_empty());
-}
-
-#[test]
-fn cargo_skip_args_builds_one_skip_per_quarantined_case() {
-    let got = cargo_skip_args(&["acquire_lock_reclaims_stale", "flaky_net_timeout"]);
-    assert_eq!(
-        got,
-        s(&["--", "--skip", "acquire_lock_reclaims_stale", "--skip", "flaky_net_timeout"])
-    );
-}
 
 #[test]
 fn quarantine_report_none_is_explicit_not_silent() {
@@ -671,21 +656,6 @@ fn parse_case_tsv_maps_jest_statuses_and_drops_incomplete_rows() {
 }
 
 #[test]
-fn parse_cargo_cases_extracts_bare_name_and_result() {
-    use werk_test::parse_cargo_cases;
-    let out = "running 3 tests\n\
-               test payload::suite_run_payload_escapes ... ok\n\
-               test deep::module::path::fails_hard ... FAILED\n\
-               test held_case ... ignored\n\
-               test result: FAILED. 1 passed; 1 failed; 1 ignored\n";
-    let cases = parse_cargo_cases(out);
-    assert_eq!(cases.len(), 3);
-    assert_eq!(cases[0], ("suite_run_payload_escapes".to_string(), "pass".to_string()));
-    assert_eq!(cases[1], ("fails_hard".to_string(), "fail".to_string()));
-    assert_eq!(cases[2], ("held_case".to_string(), "skip".to_string()));
-}
-
-#[test]
 fn match_cargo_case_requires_unique_match_within_crate() {
     use werk_test::match_cargo_case;
     let rows = vec![
@@ -884,4 +854,78 @@ fn unmapped_file_falls_back_to_full_suite() {
     let (units, edges) = test_world();
     let v = werk_test::scoped_test_units(&[sg("tsconfig.base.json")], &units, &edges);
     assert_eq!(v, None, "unknown means run everything, never means skip");
+}
+
+// ---- #3929 — nextest is the ONLY cargo lane; absence is a loud red ----------
+
+#[test]
+fn nextest_args_base_selects_lib_and_bins() {
+    let args = werk_test::nextest_run_args(&[]);
+    assert_eq!(args, vec!["nextest", "run", "--lib", "--bins"]);
+}
+
+#[test]
+fn nextest_args_translate_quarantine_to_exact_filterset() {
+    let args = werk_test::nextest_run_args(&["flaky_a", "flaky_b"]);
+    let e = args.iter().position(|a| a == "-E").expect("filterset flag");
+    assert_eq!(args[e + 1], "not test(=flaky_a) and not test(=flaky_b)");
+    // never the cargo-test style trailing `-- --skip` form
+    assert!(!args.iter().any(|a| a == "--skip"), "cargo-test skip leaked into nextest args");
+}
+
+#[test]
+fn nextest_case_lines_parse_pass_fail_skip() {
+    let out = "\
+    Starting 3 tests across 1 binary\n\
+        PASS [   0.005s] werk-test units::alpha_ok\n\
+        FAIL [   0.102s] werk-test units::beta_broken\n\
+        SKIP [         ] werk-test units::gamma_quarantined\n\
+     Summary [   0.110s] 3 tests run: 1 passed, 1 failed, 1 skipped\n";
+    let cases = werk_test::parse_nextest_cases(out);
+    assert_eq!(
+        cases,
+        vec![
+            ("alpha_ok".to_string(), "pass".to_string()),
+            ("beta_broken".to_string(), "fail".to_string()),
+            ("gamma_quarantined".to_string(), "skip".to_string()),
+        ]
+    );
+}
+
+/// NEGATIVE PROOF (#3734): the fixture below is the VERBATIM output this
+/// machine produced with nextest absent (captured 2026-08-20, pre-install).
+/// The guarded condition — no nextest — must classify as a refusal, never Ok.
+#[test]
+fn negative_proof_absent_nextest_refuses_loudly() {
+    let real_absence = "error: no such command: `nextest`\n\n\
+help: a command with a similar name exists: `test`\n";
+    let v = werk_test::classify_nextest_probe(false, real_absence, (0, 9, 143));
+    let err = v.expect_err("absent nextest classified Ok — vacuous whole-crate green is back");
+    assert!(err.contains("nextest-missing"), "refusal must be named, got: {}", err);
+}
+
+#[test]
+fn present_nextest_at_or_above_pin_is_ok() {
+    assert!(werk_test::classify_nextest_probe(true, "cargo-nextest 0.9.143\n", (0, 9, 143)).is_ok());
+    assert!(werk_test::classify_nextest_probe(true, "cargo-nextest 0.10.0\n", (0, 9, 143)).is_ok());
+}
+
+#[test]
+fn present_but_older_than_pin_refuses() {
+    let err = werk_test::classify_nextest_probe(true, "cargo-nextest 0.9.72\n", (0, 9, 143))
+        .expect_err("stale nextest passed the pin");
+    assert!(err.contains("nextest-older-than-pin"), "got: {}", err);
+}
+
+#[test]
+fn failed_probe_with_other_error_is_still_a_refusal_not_a_pass() {
+    // e.g. broken rustup shim — anything non-ok refuses; there is NO fallback lane
+    assert!(werk_test::classify_nextest_probe(false, "error: toolchain hosed", (0, 9, 143)).is_err());
+}
+
+#[test]
+fn pin_parses_from_config_and_absence_of_pin_is_none() {
+    let toml = "# comment\nnextest-version = \"0.9.143\"\n";
+    assert_eq!(werk_test::parse_nextest_pin(toml), Some((0, 9, 143)));
+    assert_eq!(werk_test::parse_nextest_pin("store.dir = \"x\""), None);
 }

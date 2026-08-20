@@ -237,25 +237,75 @@ pub struct Quarantined {
     pub until: String,
 }
 
-/// Build the cargo args that EXCLUDE quarantined cases from a `cargo test` run:
-/// `cargo test --lib --bins -- --skip <case> --skip <case>`. Empty in → empty out,
-/// with NO trailing `--`, so an un-quarantined run is byte-identical to today's
-/// invocation. cargo's libtest harness matches each `--skip` value as a substring
-/// against the test path, so the case's `testName` is the right handle.
-///
-/// Rust-only by design: jest has no clean exclude-by-name CLI, so jest enforcement
-/// is a separate mechanism (a generated skip-list the jest setup reads) — an
-/// explicit follow-on, not faked here.
-pub fn cargo_skip_args(quarantined: &[&str]) -> Vec<String> {
-    if quarantined.is_empty() {
-        return Vec::new();
-    }
-    let mut v = vec!["--".to_string()];
-    for c in quarantined {
-        v.push("--skip".to_string());
-        v.push((*c).to_string());
+/// #3929 — nextest run args for a crate. Quarantine translates to an exact-name
+/// filterset (`-E "not test(=a) and not test(=b)"`) instead of libtest's
+/// substring `--skip`; empty quarantine adds no filterset at all.
+pub fn nextest_run_args(quarantined: &[&str]) -> Vec<String> {
+    let mut v: Vec<String> = ["nextest", "run", "--lib", "--bins"]
+        .iter().map(|s| s.to_string()).collect();
+    if !quarantined.is_empty() {
+        let expr = quarantined.iter()
+            .map(|c| format!("not test(={})", c))
+            .collect::<Vec<_>>().join(" and ");
+        v.push("-E".to_string());
+        v.push(expr);
     }
     v
+}
+
+/// Parse the pinned nextest version out of `.config/nextest.toml` — the ONE
+/// home of the pin (Wren's call, 2026-08-20). None = file missing or no
+/// `nextest-version` line, which the caller must treat as a refusal, not a
+/// free pass: an unpinned lane cannot prove it runs what the team pinned.
+pub fn parse_nextest_pin(toml: &str) -> Option<(u32, u32, u32)> {
+    let line = toml.lines().map(str::trim)
+        .find(|l| l.starts_with("nextest-version"))?;
+    let ver = line.split('"').nth(1)?;
+    let mut it = ver.split('.').map(|p| p.parse::<u32>().ok());
+    Some((it.next()??, it.next()??, it.next()??))
+}
+
+/// Classify a `cargo nextest --version` probe against the pin. Absence and
+/// staleness are both LOUD refusals — there is no fallback lane to plain
+/// `cargo test` (Silas's ruling on the card: never a vacuous whole-crate green).
+pub fn classify_nextest_probe(ok: bool, out: &str, pin: (u32, u32, u32)) -> Result<(), String> {
+    let pin_s = format!("{}.{}.{}", pin.0, pin.1, pin.2);
+    if !ok {
+        if out.contains("no such command") {
+            return Err(format!(
+                "nextest-missing: cargo has no `nextest` subcommand — install with \
+                 `cargo install cargo-nextest --locked --version {}`; the cargo lane \
+                 refuses rather than fall back to whole-crate `cargo test`", pin_s));
+        }
+        return Err(format!("nextest-probe-failed: {}",
+            out.lines().next().unwrap_or("(no output)")));
+    }
+    let ver = out.split_whitespace().nth(1).unwrap_or("");
+    let mut it = ver.split('.').filter_map(|p| p.parse::<u32>().ok());
+    let got = (it.next().unwrap_or(0), it.next().unwrap_or(0), it.next().unwrap_or(0));
+    if got < pin {
+        return Err(format!("nextest-older-than-pin: installed {} < pinned {}", ver, pin_s));
+    }
+    Ok(())
+}
+
+/// #3929 — per-case lines from nextest's human output:
+/// `    PASS [   0.005s] <binary-id> path::to::case`. Bare fn name is the
+/// handle the inventory join uses, same as parse_cargo_cases.
+pub fn parse_nextest_cases(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            let verdict = if t.starts_with("PASS ") { "pass" }
+                else if t.starts_with("FAIL ") { "fail" }
+                else if t.starts_with("SKIP ") { "skip" }
+                else { return None };
+            let after = t.split(']').nth(1)?.trim();
+            let path = after.split_whitespace().last()?;
+            let bare = path.rsplit("::").next().unwrap_or(path).to_string();
+            Some((bare, verdict.to_string()))
+        })
+        .collect()
 }
 
 /// Parse the `curl … | jq -r '… | @tsv'` output (one `testName\treason\tuntil`
@@ -615,30 +665,6 @@ pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
                 }),
                 _ => None,
             }
-        })
-        .collect()
-}
-
-/// Parse `cargo test` human output: `test mod::path::name ... ok|FAILED|ignored`.
-/// The graph registers cargo tests by BARE fn name (last :: segment), so that is
-/// what we key on; the crate dir narrows the join (match_cargo_case).
-pub fn parse_cargo_cases(out: &str) -> Vec<(String, String)> {
-    out.lines()
-        .filter_map(|l| {
-            let l = l.trim();
-            let rest = l.strip_prefix("test ")?;
-            // "test result: FAILED. ..." summary line is not a case
-            if rest.starts_with("result:") {
-                return None;
-            }
-            let (path, verdict) = rest.rsplit_once(" ... ")?;
-            let bare = path.rsplit("::").next().unwrap_or(path).trim().to_string();
-            let result = match verdict.trim() {
-                "ok" => "pass",
-                "FAILED" => "fail",
-                _ => "skip",
-            };
-            Some((bare, result.to_string()))
         })
         .collect()
 }
