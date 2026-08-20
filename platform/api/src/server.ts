@@ -21,6 +21,12 @@ import fs from 'fs';
 // initialized before the `app.use(makeRequestOpMiddleware())` call below
 // (CJS compile evaluates imports in source order → TDZ if used before).
 import { startEventloopAlert, setCurrentOp, makeRequestOpMiddleware, firstAppFrame } from './eventloop-alert';
+// #3742 — cross-process episode gate; the probe worker opens the same file.
+import { FileEpisodeGate } from './eventloop-episode';
+const EVENTLOOP_EPISODE_GATE = new FileEpisodeGate(
+  process.env.CHORUS_EVENTLOOP_EPISODE_STATE ??
+    `${process.env.HOME ?? ''}/.chorus/eventloop-episode.json`,
+);
 
 const execAsync = promisify(exec);
 // #3197 — single root source. Replaces a wrong inline default
@@ -3851,7 +3857,24 @@ if (require.main === module) {
         ...(a.stack ? [`blocked_at=${firstAppFrame(a.stack)}`] : [])], () => {}),
     // #3407 — route the event-loop-block ALERT to wren (chorus-api is her layer);
     // spine-emit role above stays the chorus-api emitter context.
-    nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
+    // #3742 — one freeze must read as ONE incident. Both detectors run in
+    // SEPARATE processes and each throttled its nudges independently, so a
+    // single ~20s freeze delivered two alarms (probe capped at 8000ms, then
+    // this detector with the true length ~15s later). The gate is shared state
+    // on disk: the first reading of an episode announces, the rest are absorbed
+    // and counted. It fails OPEN — a broken claim file means announce, never
+    // go quiet. The spine `emit` above is untouched: every block is still
+    // recorded, only the human-facing alarm collapses.
+    nudge: (a) => {
+      const reading = {
+        ts: a.ts,
+        duration_ms: a.duration_ms,
+        source: 'in-process' as const,
+        op: a.op,
+      };
+      if (!EVENTLOOP_EPISODE_GATE.shouldAnnounce(reading)) return;
+      execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {});
+    },
     threshold: 3000,
     // #3610 — bounded diagnostic window only (blocked-at async-hooks overhead is
     // NOT prod-default; #3050's decision stands). Set CHORUS_EVENTLOOP_STACKS=1

@@ -14,6 +14,7 @@
 // one (same spine contract, same human message) — only the vantage changes.
 
 import { formatBlockAlert, BlockAlert } from './eventloop-alert';
+import { FileEpisodeGate } from './eventloop-episode';
 
 export interface ProbeEval {
   latencyMs: number;
@@ -153,7 +154,25 @@ if (require.main === module) {
         `duration_ms=${a.duration_ms}`, `ts=${a.ts}`, `op=${a.op}`, 'detector=probe'], () => {}),
     // #3407 — chorus-api is Wren's layer; route the event-loop-block ALERT to wren
     // (the spine-emit role above stays the chorus-api emitter context).
-    nudge: (a) => execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {}),
+    // #3742 — the OTHER half of the shared gate. This worker and chorus-api's
+    // in-process detector are separate processes watching one loop, and each
+    // throttled independently, so one freeze delivered two alarms. Both now
+    // claim the same episode file: first reading announces, the rest are
+    // absorbed. Fails open — an unreadable claim announces rather than going
+    // quiet. The spine emit above is untouched; only the alarm collapses.
+    nudge: (a) => {
+      const gate = new FileEpisodeGate(
+        process.env.CHORUS_EVENTLOOP_EPISODE_STATE ??
+          `${os.homedir()}/.chorus/eventloop-episode.json`,
+      );
+      if (!gate.shouldAnnounce({
+        ts: a.ts,
+        duration_ms: a.duration_ms,
+        source: 'probe',
+        op: a.op,
+      })) return;
+      execFile('bash', [OPS_NUDGE, 'wren', a.message], () => {});
+    },
     threshold: 3000,
   });
 }
