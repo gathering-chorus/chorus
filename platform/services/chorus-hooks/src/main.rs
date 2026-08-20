@@ -51,7 +51,8 @@ fn log_decision(hook: &str, tool: &str, role: &str, module: &str, decision: &str
     }
 
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(HOOK_LOG) {
-        let _ = writeln!(f, "{}", line);
+        // #3940 — reasons can carry tool-input snippets; strip credentials.
+        let _ = writeln!(f, "{}", crate::shared::log_redact::redact(&line));
     }
 }
 
