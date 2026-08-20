@@ -2135,6 +2135,11 @@ export function shouldNotifyOps(errorMessage: string, cardId: string, synthetic:
   // ratchet blocked every land. Behavior identical, proven by the suite.
   if (/^(Invalid (arguments|option)|expected one of|Unknown tool:|refused:)/i.test(errorMessage)) return false;
   if (/^\w+ refused:/i.test(errorMessage)) return false;
+  // #3938 — Jeff, 2026-08-20: word-cap bounces are routine stop-hook checks and
+  // "i dont want these nudges in anyones session." The refusal already reached
+  // its caller in the tool result; broadcasting it to ops taxed every session
+  // (8 in one hour). Suppress the NUDGE only — the spine event is written.
+  if (/^word-cap: \d+ words?, cap is \d+/i.test(errorMessage)) return false;
   return true;
 }
 

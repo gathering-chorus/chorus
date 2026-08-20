@@ -58,3 +58,22 @@ test('#3904 NEGATIVE PROOF: systemic failures still notify', () => {
   // "refused" as a bare word inside a systemic message must NOT suppress:
   assert.equal(shouldNotifyOps('spawn failed; connection refused by kernel', '', false), true);
 });
+
+// #3938 — Jeff's directive: routine word-cap bounces never broadcast into
+// sessions. The refusal reaches its caller in the tool result; ops hears
+// nothing. Spine event untouched (suppress the nudge, never the record).
+
+test('#3938 word-cap bounce → no ops nudge', () => {
+  assert.equal(shouldNotifyOps(
+    'word-cap: 57 words, cap is 50. Rewrite shorter and resend — nothing was sent', '3872', false), false);
+  assert.equal(shouldNotifyOps('word-cap: 104 words, cap is 100', '', false), false);
+});
+
+test('#3938 NEGATIVE: word-cap text MID-message still notifies (anchor is the guard)', () => {
+  assert.equal(shouldNotifyOps(
+    'werk-commit: commit failed: hook crashed while printing word-cap: 55 words, cap is 50', '3872', false), true);
+});
+
+test('#3938 NEGATIVE: real tool errors still notify — suppression is not a mute', () => {
+  assert.equal(shouldNotifyOps('werk-merge-fail — reason=work-fail exit=1', '3911', false), true);
+});
