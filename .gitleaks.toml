@@ -17,6 +17,11 @@ useDefault = true
 description = "Paths that are test fixtures or generated, not real secrets"
 paths = [
   '''platform/services/chorus-hooks/src/hooks/write_scrubber\.rs''',  # the scrubber's own test patterns
+  # #3387 — the log-emit redactor: same class as write_scrubber. Its tests MUST
+  # contain the shapes it redacts (curl -u, Bearer, ghp_) — values are assembled
+  # at runtime, but the scanner's curl-auth-user rule matches the command SHAPE
+  # itself. Allowlisted by path; a real credential elsewhere is still caught.
+  '''platform/services/chorus-hooks/src/shared/log_redact\.rs''',
   '''.*/seed_steps\.ts''',                                            # cucumber seed fixtures
   '''roles/silas/scripts/seed-probe\.sh''',                           # seed probe fixture
   '''platform/tests/2709-gitleaks-baseline\.bats''',                  # this card's own test fixture (intentional fake secret)

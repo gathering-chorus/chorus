@@ -433,6 +433,11 @@ fn is_transient_append_error(e: &std::io::Error) -> bool {
 /// longer SILENT — it goes to stderr naming the path and the error. Best-effort
 /// is a promise about what we do next, not a licence to lose the event quietly.
 pub async fn append_log(path: &std::path::Path, line: &str) {
+    // #3387 — credentials are stripped on the path INTO the log, at the last
+    // shared point before disk. write_scrubber cannot see daemon-side emits;
+    // 28/35 of the secret-scan history findings arrived exactly here.
+    let line = crate::shared::log_redact::redact(line);
+    let line = line.as_str();
     if let Err(e) = append_log_result(path, line).await {
         eprintln!("chorus-hooks: DROPPED log append to {} — {e}", path.display());
     }
