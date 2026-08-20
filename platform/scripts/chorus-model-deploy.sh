@@ -83,6 +83,10 @@ else
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-jobs.ttl"
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-wave2.ttl"
     "$CHORUS_ROOT/roles/silas/ontology/security-3619-surfaces-final.ttl"
+    # #3691 — the Nostr-credential shape enters MODEL_SET. The file existed and
+    # 5 credentials were live, but the shape was never deployed, so nothing
+    # enforced it (the DECLARED-but-not-SERVED gap the 2026-08-02 audit named).
+    "$CHORUS_ROOT/roles/silas/ontology/nostr-credential-shape-3691.ttl"
     # #3749 — the loom model's serving layer: PrincipleShape (first of the trio),
     # minted through athena-model's TBox verbs, never hand-edited. Day-authored
     # MODEL_SET discipline (#3654/#3675/#3686): in the manifest before anything
