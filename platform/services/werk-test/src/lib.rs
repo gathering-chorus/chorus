@@ -1511,3 +1511,75 @@ mod land_lane_telemetry_3918 {
         }
     }
 }
+
+// ── #3931 — the selection is VISIBLE: what ran, and why each thing ran ───────
+//
+// The runner used to print a count ("3 registered unit test file(s) cover the
+// diff") — nobody could see whether it selected the RIGHT three. This record
+// names every selected file with its reason, and names a fallback's reason in
+// the same shape, so an under-selection is inspectable from the record alone.
+
+/// One line of selection evidence: test file + why it was chosen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionDetail {
+    pub file: String,
+    pub reason: String, // "related-file+registered" | "full-fallback: <why>"
+}
+
+/// Flatten a jest plan into its per-file evidence. Pure — the emit site just
+/// serializes this. A Selected plan yields one row per file (the only path
+/// into a selection today is jest --findRelatedTests ∩ registry, so the
+/// reason is uniform); a FullFallback yields ONE row with the fallback reason
+/// so the record never reads as "nothing happened".
+pub fn selection_details(plan: &JestPlan) -> Vec<SelectionDetail> {
+    match plan {
+        JestPlan::Selected(sels) => sels
+            .iter()
+            .flat_map(|s| s.test_files.iter().map(|f| SelectionDetail {
+                file: f.clone(),
+                reason: "related-file+registered".to_string(),
+            }))
+            .collect(),
+        JestPlan::FullFallback { reason } => vec![SelectionDetail {
+            file: "*".to_string(),
+            reason: format!("full-fallback: {}", reason),
+        }],
+    }
+}
+
+#[cfg(test)]
+mod selection_visibility_tests {
+    use super::*;
+
+    #[test]
+    fn selected_plan_names_every_file_with_its_reason() {
+        let plan = JestPlan::Selected(vec![JestSelection {
+            package: "platform/api".into(),
+            test_files: vec!["platform/api/tests/a.test.ts".into(), "platform/api/tests/b.test.ts".into()],
+        }]);
+        let d = selection_details(&plan);
+        assert_eq!(d.len(), 2);
+        assert!(d.iter().all(|r| r.reason == "related-file+registered"));
+        assert!(d.iter().any(|r| r.file.ends_with("a.test.ts")));
+    }
+
+    #[test]
+    fn fallback_names_its_reason_never_empty() {
+        // NEGATIVE PROOF (#3734): the failure mode this exists for is a record
+        // that reads as empty when the runner actually ran EVERYTHING. A
+        // fallback must produce a row carrying why.
+        let plan = JestPlan::FullFallback { reason: "tests-domain-unreachable".into() };
+        let d = selection_details(&plan);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].file, "*");
+        assert!(d[0].reason.contains("tests-domain-unreachable"));
+    }
+
+    #[test]
+    fn empty_selection_is_a_valid_visible_answer() {
+        // Zero files selected is an ANSWER (no registered unit test covers the
+        // diff) — the record is empty-by-truth, distinct from fallback.
+        let d = selection_details(&JestPlan::Selected(vec![]));
+        assert!(d.is_empty());
+    }
+}
