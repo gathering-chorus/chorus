@@ -94,6 +94,27 @@ def covers_for(path):
         if re.search(pat, b): return dom
     return "services"
 
+# #3924 — the AUTHORED declaration wins. The @test-type header (enforced at
+# commit by gate-test-type.ts, #3442) was thrown away at ingest: classify()
+# re-guessed every layer from path/content regexes, so the runner selected on
+# a heuristic while the author's declaration sat unread at line 1. Grammar
+# mirrors gate-test-type.ts exactly: layer[:concern] after "@test-type:",
+# comment leader // or # or *. Returns (layer, concern) or None.
+DECLARED_RE = re.compile(
+    r"""^\s*(?:\/\/|#|\*)\s*@test-type:\s*([a-z0-9-]+)(?::([a-z0-9-]+))?""",
+    re.I | re.M)
+VALID_LAYERS = {'unit','integration','bdd','e2e','contract','fitness','smoke'}
+VALID_CONCERNS = {'api','ui','perf','security'}
+
+def declared(c):
+    m = DECLARED_RE.search(c[:2000])
+    if not m: return None
+    layer = m.group(1).lower()
+    concern = (m.group(2) or '').lower() or None
+    if layer not in VALID_LAYERS: return None          # junk header -> heuristic, inferred
+    if concern and concern not in VALID_CONCERNS: concern = None
+    return layer, concern
+
 def classify(path, c):
     pc = path + "\n" + c
     concern = None
@@ -121,15 +142,25 @@ def case_names(path):
     else: r = []
     return (r or [os.path.basename(path)]), c
 
-def discover(root="platform"):
+# #3924 (with Wren) — discovery walks every test-bearing root, not just
+# platform/. proving/ (browser flows) and directing/ (product tests) were
+# invisible: SPARQL showed ZERO browser tests in the graph, which is how a
+# green land could skip Jeff's phone entirely (#3872). Roots are explicit so
+# a new test-bearing tree is a one-line, reviewed widening.
+TEST_ROOTS = ("platform", "proving", "directing", "skills")
+
+def discover(roots=TEST_ROOTS):
     excl = re.compile(r'node_modules|/dist/|/spikes/|/target/|/\.git/')
     out = []
-    for d, _, fs in os.walk(root):
+    for root in roots:
+      if not os.path.isdir(root): continue
+      for d, _, fs in os.walk(root):
         if excl.search(d + '/'): continue
         for f in fs:
             p = os.path.join(d, f)
             if excl.search(p): continue
-            if re.search(r'\.bats$|\.(test|spec)\.[tj]s$|\.test\.sh$|(_test|test_).*\.py$', f): out.append(p)
+            # .spec.cjs/.mjs were missing — playwright flows are .spec.cjs (#3872)
+            if re.search(r'\.bats$|\.(test|spec)\.[cm]?[tj]s$|\.test\.sh$|(_test|test_).*\.py$', f): out.append(p)
             elif f.endswith('.rs') and re.search(r'#\[(?:tokio::)?test\]', open(p, errors='ignore').read()): out.append(p)
     return out
 
@@ -177,6 +208,13 @@ def main():
     for p in files:
         cs, c = case_names(p)
         layer, herm, concern = classify(p, c)
+        inferred = "true"
+        d = declared(c)
+        if d:
+            # authored beats heuristic — even when the path signal disagrees
+            layer = d[0]
+            if d[1]: concern = d[1]
+            inferred = "false"
         cov = "security" if concern == 'security' else covers_for(p)
         assert cov.lower() in GEN_CI, f"covers target {cov!r} is not a generated V2 domain"   # no invented domains
         cov = GEN_CI[cov.lower()]
@@ -187,7 +225,7 @@ def main():
             if ti in seen: continue
             seen.add(ti)
             t = (f'<{ti}> a chorus:Test ; chorus:filePath "{esc(p)}" ; chorus:testName "{esc(nm[:160])}" ; '
-                 f'chorus:pyramidLayer "{layer}" ; chorus:hermeticity "{herm}" ; '
+                 f'chorus:pyramidLayer "{layer}" ; chorus:hermeticity "{herm}" ; chorus:inferred "{inferred}" ; '
                  f'chorus:inFile <{sf}> ; chorus:inDomain <{HOME}> ; chorus:covers <{NS}{cov}>')
             if concern: t += f' ; chorus:testConcern "{concern}"'
             batch.append(t + " .")
