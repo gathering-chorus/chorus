@@ -984,6 +984,16 @@
         "title": "Decision title"
       }
     },
+    "binary.install.refused": {
+      "vertebra": "operations",
+      "source": "werk",
+      "description": "chorus-bin-install (#3939) — a candidate werk verb FAILED its pre-install smoke (or verb-smoke was missing) and was REFUSED: the previous binary stays in place; the running system never sees the broken candidate. Exists because a Jul-24 werk-commit served the live pipeline a month past its source fix — landed and running had no reconciler at the install door.",
+      "fields": {
+        "role": "Acting role (DEPLOY_ROLE at install time)",
+        "binary": "Verb binary that was refused",
+        "reason": "smoke-fail | smoke-missing"
+      }
+    },
     "deploy.artifact.verified": {
       "vertebra": "operations",
       "legacy_name": null,

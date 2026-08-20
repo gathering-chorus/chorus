@@ -97,6 +97,40 @@ DEST_TMP="$DEST.tmp.$$"
 
 mkdir -p "$BIN_DIR"
 
+# #3939 — SMOKE BEFORE INSTALL: run the CANDIDATE against a throwaway repo.
+# A verb that fails its own fixture never becomes the running verb — the
+# month-old-binary class (a Jul-24 werk-commit live for a month past its fix)
+# dies at this door instead of in Jeff's land. A refusal keeps the previous
+# binary untouched and emits binary.install.refused. CHORUS_BIN_SKIP_SMOKE=1
+# is the bootstrap escape (verb-smoke itself broken) — loud, never silent.
+smoke_refuse_emit() {
+  local reason="$1"
+  if [ -n "${CHORUS_BIN_SPINE_LOG:-}" ]; then
+    echo "binary.install.refused | ${DEPLOY_ROLE:-${CHORUS_ROLE:-system}} binary=$NAME reason=$reason" >> "$CHORUS_BIN_SPINE_LOG"
+  elif command -v chorus-log >/dev/null 2>&1; then
+    chorus-log binary.install.refused "${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}" "binary=$NAME" "reason=$reason" >/dev/null 2>&1 || true
+  fi
+}
+SMOKE="$(cd "$(dirname "$0")" && pwd)/verb-smoke"
+case "$NAME" in
+  werk-*)
+    if [ "${CHORUS_BIN_SKIP_SMOKE:-}" = "1" ]; then
+      echo "chorus-bin-install: SMOKE SKIPPED for $NAME (CHORUS_BIN_SKIP_SMOKE=1)" >&2
+    elif [ -x "$SMOKE" ]; then
+      if ! SMOKE_OUT=$("$SMOKE" "$SRC" 2>&1); then
+        smoke_refuse_emit "smoke-fail"
+        echo "chorus-bin-install: REFUSED — candidate $NAME fails its smoke; previous binary kept" >&2
+        echo "$SMOKE_OUT" >&2
+        exit 8
+      fi
+    else
+      # a guard whose target is missing must fail loudly, never pass vacuously
+      smoke_refuse_emit "smoke-missing"
+      echo "chorus-bin-install: verb-smoke missing at $SMOKE — refusing blind install (CHORUS_BIN_SKIP_SMOKE=1 to override)" >&2
+      exit 9
+    fi ;;
+esac
+
 # Atomic: cp to .tmp.$$, then mv. mv is atomic within a filesystem;
 # concurrent callers never observe a half-written binary.
 if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
