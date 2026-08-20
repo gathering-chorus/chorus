@@ -10,8 +10,8 @@
 use std::path::Path;
 use std::process::Command;
 use werk_test::{
-    affected_units, cargo_skip_args, check_plan, gap_report, gate_outcome, is_self_modifying,
-    match_cargo_case, model_units, parse_cargo_cases, parse_case_tsv, parse_quarantine_rows,
+    affected_units, check_plan, gap_report, gate_outcome, is_self_modifying,
+    match_cargo_case, model_units, parse_case_tsv, parse_quarantine_rows,
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
@@ -537,14 +537,40 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
     }
 }
 
+/// #3929 — probe `cargo nextest --version` ONCE per process against the pin in
+/// `<werk>/.config/nextest.toml`. Absence, staleness, or a missing pin all
+/// refuse the whole cargo lane loudly; there is no fallback to `cargo test`.
+fn nextest_gate(werk: &str) -> &'static Result<(), String> {
+    static GATE: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+    GATE.get_or_init(|| {
+        let pin_path = format!("{}/.config/nextest.toml", werk);
+        let pin = std::fs::read_to_string(&pin_path).ok()
+            .and_then(|t| werk_test::parse_nextest_pin(&t))
+            .ok_or_else(|| format!("nextest-pin-missing: no nextest-version in {}", pin_path))?;
+        let mut cmd = Command::new("cargo");
+        cmd.args(["nextest", "--version"]).current_dir(werk);
+        match cmd.output() {
+            Ok(o) => {
+                let text = format!("{}{}",
+                    String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+                werk_test::classify_nextest_probe(o.status.success(), &text, pin)
+            }
+            Err(e) => Err(format!("nextest-probe-spawn-failed: {}", e)),
+        }
+    })
+}
+
 /// gate; an empty quarantine set leaves the invocation byte-identical.
 fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String, String)>) {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return (true, Vec::new());
     }
-    let mut args: Vec<String> = vec!["test".into(), "--lib".into(), "--bins".into()];
-    args.extend(cargo_skip_args(quarantined));
+    if let Err(reason) = nextest_gate(werk) {
+        eprintln!("REFUSED cargo lane for {}: {}", name, reason);
+        return (false, Vec::new());
+    }
+    let args: Vec<String> = werk_test::nextest_run_args(quarantined);
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
     let mut cmd = Command::new("cargo");
@@ -565,7 +591,7 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String
                 let start = lines.len().saturating_sub(60);
                 eprintln!("{}", lines[start..].join("\n"));
             }
-            (ok, parse_cargo_cases(&text))
+            (ok, werk_test::parse_nextest_cases(&text))
         }
         Err(_) => (false, Vec::new()),
     }

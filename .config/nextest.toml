@@ -1,0 +1,4 @@
+# #3929 — the ONE home of the nextest pin. werk-test's probe parses this file
+# and refuses the cargo lane when nextest is absent or older; nextest itself
+# also enforces it (nextest-version) when run under a workspace that sees it.
+nextest-version = "0.9.143"
