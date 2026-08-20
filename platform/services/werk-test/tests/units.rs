@@ -861,7 +861,9 @@ fn unmapped_file_falls_back_to_full_suite() {
 #[test]
 fn nextest_args_base_selects_lib_and_bins() {
     let args = werk_test::nextest_run_args(&[]);
-    assert_eq!(args, vec!["nextest", "run", "--lib", "--bins"]);
+    assert_eq!(args, vec!["nextest", "run", "--no-tests=fail"]);
+    // (c): no --lib/--bins — tests/ suites are IN the gate now, and zero-tests is red
+    assert!(!args.iter().any(|a| a == "--lib" || a == "--bins"));
 }
 
 #[test]

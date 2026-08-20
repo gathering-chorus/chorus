@@ -237,11 +237,14 @@ pub struct Quarantined {
     pub until: String,
 }
 
-/// #3929 — nextest run args for a crate. Quarantine translates to an exact-name
-/// filterset (`-E "not test(=a) and not test(=b)"`) instead of libtest's
+/// #3929 — nextest run args for a crate. ALL targets, not `--lib --bins`
+/// (Wren's (c), 2026-08-20): the old lane never ran tests/ suites — the gate
+/// could not see integration tests. `--no-tests=fail` is nextest's default,
+/// spelled out: a selected crate with zero tests is a red, not a silence.
+/// Quarantine translates to an exact-name filterset instead of libtest's
 /// substring `--skip`; empty quarantine adds no filterset at all.
 pub fn nextest_run_args(quarantined: &[&str]) -> Vec<String> {
-    let mut v: Vec<String> = ["nextest", "run", "--lib", "--bins"]
+    let mut v: Vec<String> = ["nextest", "run", "--no-tests=fail"]
         .iter().map(|s| s.to_string()).collect();
     if !quarantined.is_empty() {
         let expr = quarantined.iter()
