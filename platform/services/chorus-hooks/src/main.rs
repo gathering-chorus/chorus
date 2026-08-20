@@ -548,6 +548,34 @@ async fn pre_tool_use_inner(
                     }
                 }
             }
+            // #2645 — outbound twin of write_scrubber: refuse credentials in
+            // EMITTED text (nudge bodies, chat, card comments, commit messages)
+            // before they leave the session. Bypass: CHORUS_ALLOW_SECRET_PATTERN
+            // (audited via the emit below — never silent).
+            _last_module = "emit_guard".into();
+            {
+                let tool = input.tool_name_str();
+                let cmd = input.get_tool_input_str("command");
+                let msg = input.get_tool_input_str("message");
+                if let Some(text) = hooks::emit_guard::emitted_text(tool, &cmd, &msg) {
+                    if let Some(kind) = hooks::emit_guard::detect(&text) {
+                        let allow = std::env::var("CHORUS_ALLOW_SECRET_PATTERN").ok();
+                        if hooks::emit_guard::bypass_allows(&text, allow.as_deref()) {
+                            crate::state::chorus_log("emit.guard.bypassed", "silas", &[
+                                ("tool", tool), ("pattern", kind),
+                            ]).await;
+                        } else {
+                            crate::state::chorus_log("emit.guard.refused", "silas", &[
+                                ("tool", tool), ("pattern", kind),
+                            ]).await;
+                            return (_last_module.clone(), crate::types::HookResponse::deny(&crate::types::permission_deny_json(&format!(
+                                "BLOCKED: outbound text matches a {} — redact it and retry. A credential said in a nudge/comment/commit reaches other sessions verbatim (#2645). Legitimate pattern-discussion: scope CHORUS_ALLOW_SECRET_PATTERN=<regex> for one command (audited).",
+                                kind
+                            ))));
+                        }
+                    }
+                }
+            }
             // Sensitive paths — block writes to .env, credentials, SSH keys
             _last_module = "sensitive_paths".into(); let r = hooks::sensitive_paths::check(input).await;
             if r.stdout.is_some() {
