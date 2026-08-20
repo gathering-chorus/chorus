@@ -59,4 +59,47 @@ test.describe('#1778 chorus pages render real data', () => {
     await expect(page.locator('#assessment-grid > *').first()).toBeVisible({ timeout: 15000 });
     expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
   });
+
+  test('/flow renders board lanes with counts', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE}/flow`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#next-count')).toHaveText(/\d+/, { timeout: 15000 });
+    await expect(page.locator('#done-count')).toHaveText(/\d+/, { timeout: 15000 });
+    expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
+  });
+
+  test('/harvesting/icd renders the domains container', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE}/harvesting/icd`, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#domains-container > *').first()).toBeVisible({ timeout: 15000 });
+    expect(errors, `page threw: ${errors.join('; ')}`).toEqual([]);
+  });
+
+  test('/model-data serves its page (HONEST floor: a stub by design — #3361)', async ({ page }) => {
+    // The page is a declared placeholder; asserting rich folds would fabricate
+    // behavior it does not have. The floor: it loads, titles itself, throws
+    // nothing. When #3361 wires live data, THIS test must be raised with it.
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto(`${BASE}/model-data`, { waitUntil: 'load' });
+    await expect(page).toHaveTitle(/Model Data/i);
+    expect(errors).toEqual([]);
+  });
+
+  test('board (Vikunja) serves its app shell', async ({ page }) => {
+    const BOARD = process.env.UI_BOARD_URL || 'http://localhost:3456';
+    await page.goto(BOARD, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#app, .app, [id=app]').first()).toBeAttached({ timeout: 15000 });
+  });
+
+  test('cost dashboard (Grafana) resolves and mounts', async ({ page }) => {
+    const GRAF = process.env.UI_GRAFANA_URL || 'http://localhost:3100';
+    await page.goto(`${GRAF}/d/cost-dashboard`, { waitUntil: 'domcontentloaded' });
+    // Grafana redirects to login or renders the dashboard — both are a LIVE
+    // mount; a 404 page or a dead server is the failure this guards.
+    await expect(page.locator('.grafana-app, #reactRoot, [class*=grafana]').first())
+      .toBeAttached({ timeout: 15000 });
+  });
 });
