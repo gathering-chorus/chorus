@@ -51,3 +51,20 @@ PY
   [ "$status" -eq 0 ]
   [[ "$output" != *FAIL* ]]
 }
+
+@test "discovery reaches proving/ and .spec.cjs — the zero-browser-tests hole (#3872)" {
+  cd "$BATS_TEST_DIRNAME/../.."
+  run python3 -c "
+import importlib.util
+spec = importlib.util.spec_from_file_location('t','platform/scripts/tag-tests-domain.py')
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+files = m.discover()
+assert any(f.startswith('proving/') for f in files), 'proving/ invisible again'
+assert any(f.endswith('.spec.cjs') for f in files), '.spec.cjs invisible again'
+# NEGATIVE PROOF anchor: the exact spec that went green without running
+assert 'proving/flows/clearing-base-path-3872.spec.cjs' in files
+print('ok')
+"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *ok* ]]
+}

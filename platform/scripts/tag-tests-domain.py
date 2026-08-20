@@ -142,15 +142,25 @@ def case_names(path):
     else: r = []
     return (r or [os.path.basename(path)]), c
 
-def discover(root="platform"):
+# #3924 (with Wren) — discovery walks every test-bearing root, not just
+# platform/. proving/ (browser flows) and directing/ (product tests) were
+# invisible: SPARQL showed ZERO browser tests in the graph, which is how a
+# green land could skip Jeff's phone entirely (#3872). Roots are explicit so
+# a new test-bearing tree is a one-line, reviewed widening.
+TEST_ROOTS = ("platform", "proving", "directing", "skills")
+
+def discover(roots=TEST_ROOTS):
     excl = re.compile(r'node_modules|/dist/|/spikes/|/target/|/\.git/')
     out = []
-    for d, _, fs in os.walk(root):
+    for root in roots:
+      if not os.path.isdir(root): continue
+      for d, _, fs in os.walk(root):
         if excl.search(d + '/'): continue
         for f in fs:
             p = os.path.join(d, f)
             if excl.search(p): continue
-            if re.search(r'\.bats$|\.(test|spec)\.[tj]s$|\.test\.sh$|(_test|test_).*\.py$', f): out.append(p)
+            # .spec.cjs/.mjs were missing — playwright flows are .spec.cjs (#3872)
+            if re.search(r'\.bats$|\.(test|spec)\.[cm]?[tj]s$|\.test\.sh$|(_test|test_).*\.py$', f): out.append(p)
             elif f.endswith('.rs') and re.search(r'#\[(?:tokio::)?test\]', open(p, errors='ignore').read()): out.append(p)
     return out
 
