@@ -1000,3 +1000,54 @@ fn jest_ignore_args_scope_to_files_under_the_package() {
     assert_eq!(args, vec!["--testPathIgnorePatterns", "tests/z.test.ts"]);
     assert!(werk_test::jest_ignore_args(&["a/b.test.ts"], "platform/pulse").is_empty());
 }
+
+// ---- #3953 — the test phase pays for what it selects: 600s budget enforced --
+
+#[test]
+fn budget_verdict_in_budget_passes_and_over_budget_is_red() {
+    assert!(werk_test::budget_verdict(420.0, 600.0, None).is_ok());
+    let err = werk_test::budget_verdict(1102.0, 600.0, None)
+        .expect_err("over-budget must be RED, not advisory");
+    assert!(err.contains("1102") && err.contains("600"), "both numbers named: {}", err);
+}
+
+#[test]
+fn budget_waiver_is_visible_never_silent() {
+    // a NAMED waiver passes but the verdict says so — visible when used (#3443)
+    let ok = werk_test::budget_verdict(1102.0, 600.0, Some("3810-covers-union-sweep"))
+        .expect("named waiver must pass");
+    assert!(ok.contains("WAIVED") && ok.contains("3810-covers-union-sweep"), "got: {}", ok);
+    // an EMPTY waiver is not a waiver — red stands
+    assert!(werk_test::budget_verdict(1102.0, 600.0, Some("")).is_err());
+}
+
+/// NEGATIVE PROOF (#3734): the report must point at the UNIT that blew the
+/// budget, sorted by cost — a red phase with no culprit is unactionable.
+#[test]
+fn unit_cost_report_names_the_largest_units_first() {
+    let costs = vec![
+        ("cargo-test:werk-test".to_string(), 41.2),
+        ("jest:platform/api".to_string(), 512.7),
+        ("cargo-test:chorus-hooks".to_string(), 388.1),
+    ];
+    let r = werk_test::unit_cost_report(&costs);
+    let api = r.find("jest:platform/api").expect("largest unit present");
+    let hooks = r.find("cargo-test:chorus-hooks").expect("second unit present");
+    assert!(api < hooks, "largest cost first: {}", r);
+    assert!(r.contains("512.7"), "cost visible: {}", r);
+}
+
+#[test]
+fn budget_from_table_reads_the_test_row_and_missing_is_none() {
+    let tsv = "phase\tbudget_s\ncommit\t60\ntest\t600\ndemo\t480\n";
+    assert_eq!(werk_test::phase_budget(tsv, "test"), Some(600.0));
+    assert_eq!(werk_test::phase_budget(tsv, "absent-phase"), None);
+}
+
+#[test]
+fn phase_target_reads_col3_and_p95_col_is_untouched() {
+    let tsv = "test\t1650\t600\nbuild\t360\n";
+    assert_eq!(werk_test::phase_target(tsv, "test"), Some(600.0));
+    assert_eq!(werk_test::phase_target(tsv, "build"), None); // no target declared
+    assert_eq!(werk_test::phase_budget(tsv, "test"), Some(1650.0)); // detector ceiling intact
+}

@@ -1762,3 +1762,63 @@ pub fn jest_ignore_args(needs_stack: &[&str], pkg: &str) -> Vec<String> {
     }
     vec!["--testPathIgnorePatterns".to_string(), rel.join("|")]
 }
+
+/// #3953 — parse a phase's budget (seconds) from werk-phase-budgets.tsv
+/// (#3921's measured table). None = phase not in the table; the caller treats
+/// that as no-budget rather than inventing one.
+pub fn phase_budget(tsv: &str, phase: &str) -> Option<f64> {
+    tsv.lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            match (it.next(), it.next()) {
+                (Some(p), Some(b)) if p.trim() == phase => b.trim().parse::<f64>().ok(),
+                _ => None,
+            }
+        })
+        .next()
+}
+
+/// #3953 — the IN-RUN enforcement target (col3, only where declared). The
+/// p95 column is the nightly drift ceiling; this is the gate werk-test holds
+/// the phase to while running.
+pub fn phase_target(tsv: &str, phase: &str) -> Option<f64> {
+    tsv.lines()
+        .filter_map(|l| {
+            let mut it = l.split('\t');
+            match (it.next(), it.next(), it.next()) {
+                (Some(p), Some(_), Some(t)) if p.trim() == phase => {
+                    t.split('#').next().unwrap_or("").trim().parse::<f64>().ok()
+                }
+                _ => None,
+            }
+        })
+        .next()
+}
+
+/// #3953 — the budget verdict. Over-budget is RED unless a NAMED waiver is
+/// present; a waiver is always visible in the verdict text, never silent.
+/// Ok(text) carries what to print; Err(text) is the red reason.
+pub fn budget_verdict(elapsed_s: f64, budget_s: f64, waiver: Option<&str>) -> Result<String, String> {
+    if elapsed_s <= budget_s {
+        return Ok(format!("budget: {:.1}s of {:.0}s — within", elapsed_s, budget_s));
+    }
+    match waiver {
+        Some(w) if !w.trim().is_empty() => Ok(format!(
+            "budget: {:.1}s over {:.0}s — WAIVED ({}) — visible, not silent", elapsed_s, budget_s, w)),
+        _ => Err(format!(
+            "budget-blown: test phase took {:.1}s against a {:.0}s budget — see per-unit costs; \
+             waive ONLY with WERK_BUDGET_WAIVE=<named-reason>", elapsed_s, budget_s)),
+    }
+}
+
+/// #3953 — per-unit cost table, largest first: a red phase must point at the
+/// unit that blew it, not shrug at the total.
+pub fn unit_cost_report(costs: &[(String, f64)]) -> String {
+    let mut sorted: Vec<&(String, f64)> = costs.iter().collect();
+    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = String::from("per-unit cost (largest first):\n");
+    for (name, secs) in sorted {
+        out.push_str(&format!("   {:7.1}s  {}\n", secs, name));
+    }
+    out
+}

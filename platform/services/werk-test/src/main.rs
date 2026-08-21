@@ -276,8 +276,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     // loud counter for cargo cases that can't be joined unambiguously.
     let mut all_cases: Vec<CaseResult> = Vec::new();
     let mut unmatched_cargo: usize = 0;
+    let phase_started = std::time::Instant::now();
+    let mut unit_costs: Vec<(String, f64)> = Vec::new();
     for check in &plan {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
+        let check_started = std::time::Instant::now();
         let ok = match (&check.kind, &check.unit) {
             (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => {
                 // stack-down: this crate's needs-stack integration binaries
@@ -343,6 +346,8 @@ fn run(args: &[String]) -> Result<i32, String> {
             (CheckKind::DocCoherence, None) => run_doc_coherence(&werk),
             _ => true, // unreachable given check_plan's construction
         };
+        unit_costs.push((format!("{}:{}", check.kind.label(), target),
+            check_started.elapsed().as_secs_f64()));
         println!("   {}:{} … {}", check.kind.label(), target, if ok { "ok" } else { "FAIL" });
         if !ok {
             any_failed = true;
@@ -357,7 +362,33 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    let outcome = gate_outcome(units.len(), any_failed, self_mod);
+    // #3953 — the test phase pays for what it selects: elapsed vs the table's
+    // in-run target (col3). Over-target is RED unless WERK_BUDGET_WAIVE names a
+    // reason; the per-unit cost table makes the culprit visible either way.
+    let phase_elapsed = phase_started.elapsed().as_secs_f64();
+    let budgets_path = format!("{}/platform/config/werk-phase-budgets.tsv",
+        std::env::var("CHORUS_HOME").unwrap_or_default());
+    let target = std::fs::read_to_string(&budgets_path).ok()
+        .and_then(|t| werk_test::phase_target(&t, "test"));
+    let mut budget_red = false;
+    if let Some(budget) = target {
+        let waiver = std::env::var("WERK_BUDGET_WAIVE").ok();
+        match werk_test::budget_verdict(phase_elapsed, budget, waiver.as_deref()) {
+            Ok(text) => println!("{}", text),
+            Err(red) => {
+                eprintln!("{}", red);
+                print!("{}", werk_test::unit_cost_report(&unit_costs));
+                emit_spine("test.budget.blown", &role, &card, &trace,
+                    &[("elapsed_s", &format!("{:.0}", phase_elapsed)),
+                      ("target_s", &format!("{:.0}", budget)),
+                      ("largest", unit_costs.iter()
+                          .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                          .map(|(n, _)| n.as_str()).unwrap_or(""))]);
+                budget_red = true;
+            }
+        }
+    }
+    let outcome = gate_outcome(units.len(), any_failed || budget_red, self_mod);
     let extras = werk_test::completed_extras(
         &outcome,
         units.len(),
