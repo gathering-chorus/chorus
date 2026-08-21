@@ -21,19 +21,16 @@ export type NightlyRun = {
 
 /** Parse the LAST run block (RUN|start … RUN|complete) from the nightly log. */
 export function parseNightlyLog(text: string): NightlyRun | null {
-  const lines = text.split('\n');
-  let start = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].startsWith('RUN|start|')) { start = i; break; }
-  }
+  const all = text.split('\n');
+  const start = all.reduce((acc, l, i) => (l.startsWith('RUN|start|') ? i : acc), -1);
   if (start === -1) return null;
+  const startLine = all.slice(start, start + 1).join('');
   const run: NightlyRun = {
-    startedAt: lines[start].split('|')[2] ?? '?',
+    startedAt: startLine.split('|')[2] ?? '?',
     completed: false,
     rows: [],
   };
-  for (let i = start + 1; i < lines.length; i++) {
-    const l = lines[i];
+  for (const l of all.slice(start + 1)) {
     if (l.startsWith('RUN|complete|')) {
       run.completed = true;
       run.completedAt = l.split('|')[2];
@@ -62,7 +59,7 @@ const esc = (s: string): string =>
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null): string {
   if (!run) {
-    return page('Nightly', `<div class="banner empty">No nightly run recorded yet — first run lands at 03:00.</div>`);
+    return page('Nightly', '<div class="banner empty">No nightly run recorded yet — first run lands at 03:00.</div>');
   }
   const reds = run.rows.filter((r) => r.status === 'fail');
   const skips = run.rows.filter((r) => r.status === 'skip');
