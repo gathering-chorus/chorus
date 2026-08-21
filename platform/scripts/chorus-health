@@ -344,6 +344,21 @@ else
   fail "mcp-round-trip" "MCP tools/list failed: ${mcp_result#fail:}"
 fi
 
+# #3960 — authn coverage: one number for "can an unverified actor mutate a
+# live surface?" WARN (never FAIL) while surfaces are known-open — this is a
+# progress gauge toward closure, not a red-on-boot gate. A DROP in coverage is
+# the real signal (a surface that was closed reopened), surfaced by the %.
+authn_cov=$(bash "${SCRIPTS}/authn-coverage.sh" 2>/dev/null | grep '^COVERAGE_PCT=' | cut -d= -f2)
+if [ -n "$authn_cov" ]; then
+  if [ "$authn_cov" -ge 100 ] 2>/dev/null; then
+    pass "authn-coverage" "100% — every probed mutating surface refuses an unverified actor"
+  else
+    warn "authn-coverage" "${authn_cov}% of mutating surfaces refuse an unverified actor (see authn-coverage.sh for the OPEN rows)"
+  fi
+else
+  warn "authn-coverage" "authn-coverage.sh produced no COVERAGE_PCT — probe or a store may be down"
+fi
+
 # #3001 — mcp-error-rate probe retired. Was added in #3000 as pull-model
 # polling on a schedule. Replaced by push-model: chorus-mcp directly nudges
 # silas (the ops role) when mcp.*.error events emit. The probe was redundant
