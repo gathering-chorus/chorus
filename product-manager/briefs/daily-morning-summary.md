@@ -1,37 +1,31 @@
-# Daily Morning Summary — 2026-08-20
+# Morning Summary — 2026-08-21
 
-**HEADLINE:** The `npm ci` blocker hits day 72 with no owner — now the longest-running unresolved blocker on the board — and type error rate accelerated (+2 today to 233); the two 133-day WIP cards still need a close decision.
+**HEADLINE:** Quality signal is blind for the 73rd day — `npm ci` has never been run in this repo and is now the single biggest risk on the board.
 
 ---
 
-**OPS:** YELLOW/RED (1 red, 3 yellow, 3 green)
-- RED: 2 WIP cards stale 133 days (now +1) — "OWL entity model" + "Restore chorus product boundary." No movement. Decide today.
-- YELLOW: Hooks warnings stable at 8 (not shrinking); dead-code cleanup card open but no progress.
-- YELLOW: LaunchAgent `/tmp` refs at 17 plists — no migration card filed, no movement.
-- YELLOW: Ops-review prompt path stale (`messages/claudemd/` → should be `designing/claudemd/`); minor but self-corrupting.
-- GREEN: Git working tree clean; detached HEAD resolved — normal clone today.
-- GREEN: Domain context fresh (all 5 domains at 2026-08-15; within threshold; refresh `chorus` soon).
-- GREEN: CSC compliance clean.
+**OPS:** RED
+- RED: 5 domain-context files all 14 days stale (threshold: 7 days). Chorus and infrastructure are highest priority given recent Silas lands (#3947, #3940, #3938).
+- RED: 2 WIP cards stale 134 days — "Framework service design — OWL entity model" and "Restore chorus product boundary" — dead weight, need close or requeue today.
+- YELLOW: 7 cargo warnings in chorus-hooks, stable but not shrinking. Cleanup card open.
+- YELLOW: 17+ LaunchAgent plist files still log to `/tmp` — no migration to `~/.chorus/logs/`.
 
-**QUALITY:** RED (all lanes blocked)
-- Tests: 0 run — 4 suites blocked (`ts-jest preset not found`), **day 70**
-- Lint: blocked (`@eslint/js`), **day 72**
-- Build: 233 type errors (+2 today; was +1/day; six-day total: +16)
-- Root cause: `npm ci` unrun at repo root — **72 days. Escalation warranted.**
+**QUALITY:** RED
+- All 4 TS test suites blocked: `ts-jest preset not found` — **day 71**.
+- Lint blocked: `@eslint/js` not found — **day 73**. Root cause: `npm ci` never run at repo root.
+- Build: 235 type errors, up from 233 yesterday. Trend is +2/day for two consecutive days; +18 over the past week. Accelerating.
+- 0 tests have run in 71 days. Coverage data is stale from June.
 
-**YESTERDAY (2026-08-19):** 7 cards shipped
-- silas: #3934, #3937, #3742
-- wren: #3928 (stop committing generated report — cause removed, tests inverted), #3872
-- kade: #3932, #3936
+**YESTERDAY:** High-velocity day — 18+ cards shipped across all three roles.
+- Kade: #3943 (werk-demo witness fix — go reads witness, not launcher pin), #3925 (TestResultShape gains runTs+cardId; werk-domains 0.3.0), #3921, #3939, #3931, #3930, #1778 (×2), #3924, #3929
+- Silas: #3947, #3948, #3945, #2645, #3940, #3387, #3938
+- Wren: #3944, #3941
 
-**TODAY: Recommended priorities**
-1. **Jeff** — assign owner to `npm ci` (day 72) or formally close the test lane; 72 days is a statement about team priority, not an oversight
-2. **Jeff** — decide on the two 133-day WIP cards; close or requeue; they distort the board
-3. **Jeff/Wren** — type error rate accelerated today (+2); needs an owner before 233 becomes 300
-4. **Silas** — file LaunchAgent `/tmp` migration card; 17 plists confirmed, no card
-5. **Silas** — refresh `domain-context-chorus.md`; recent ships (#3742, #3937) make it stale
+**TODAY:**
+1. Kade or Silas: `npm ci` at repo root — unblock 4 test suites and lint. 73 days is too long.
+2. Silas: refresh `chorus` and `infrastructure` domain-context files first; then remaining 3.
+3. Wren: close or requeue the two 134-day WIP cards — get them off the board.
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` — day 72, no owner; tests + lint + coverage all dark; hardest to ignore
-- Build errors at 233 and accelerating — needs an owner or explicit acceptance
-- Two WIP cards 133 days stale — a board decision, not a fix
+- `npm ci` root: Is there a reason this has never been run? If it's a deliberate choice (remote-only CI), that needs to be documented so quality review can stop flagging it.
+- 134-day WIP cards: close them or assign them to a role and set a date.
