@@ -2041,19 +2041,52 @@ pub fn pluralize(s: &str) -> String {
 /// #3902 — read the vocabulary semver once per process from the ontology graph
 /// (chorus:model chorus:vocabVersion, written by the pen's generated projection).
 /// Cached: deploys restart this service, so the cache lifetime IS the deploy.
+/// #3947 — TTL cache, NOT OnceLock. The original OnceLock cached at startup
+/// forever, so after a model-deploy changed the store the envelope served the
+/// pre-deploy version until someone bounced the process (observed live
+/// 2026-08-20: served 1.1.0 while the store held 1.0.0; the restart "fix"
+/// just swapped which staleness was served). 60s of staleness is honest;
+/// forever is the cached-at-startup defect class.
+fn versioned_cached(slot: &std::sync::Mutex<Option<(std::time::Instant, String)>>, q: &str) -> String {
+    const TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    if let Ok(g) = slot.lock() {
+        if let Some((at, v)) = g.as_ref() {
+            if at.elapsed() < TTL {
+                return v.clone();
+            }
+        }
+    }
+    let fresh = sparql_json(q).ok()
+        .map(|r| select_v(&r))
+        .and_then(|v| v.into_iter().next())
+        .unwrap_or_else(|| "unversioned".to_string());
+    if let Ok(mut g) = slot.lock() {
+        *g = Some((std::time::Instant::now(), fresh.clone()));
+    }
+    fresh
+}
+
 fn vocab_version_cached() -> String {
-    use std::sync::OnceLock;
-    static VV: OnceLock<String> = OnceLock::new();
-    VV.get_or_init(|| {
-        let q = format!(
-            "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ chorus:model chorus:vocabVersion ?v }} }} LIMIT 1",
-            ns = NS, g = ONTOLOGY_GRAPH
-        );
-        sparql_json(&q).ok()
-            .map(|r| select_v(&r))
-            .and_then(|v| v.into_iter().next())
-            .unwrap_or_else(|| "unversioned".to_string())
-    }).clone()
+    static VV: std::sync::Mutex<Option<(std::time::Instant, String)>> = std::sync::Mutex::new(None);
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ chorus:model chorus:vocabVersion ?v }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH
+    );
+    versioned_cached(&VV, &q)
+}
+
+/// #3947 — the ONTOLOGY's own version (owl:versionInfo on the chorus# node),
+/// distinct from per-class modelVersion (review state, #3704) and from the
+/// vocabulary ledger's vocabVersion (#3902). Three versions, three questions;
+/// this one answers "which ontology release is this store serving?". ABSENT
+/// reads "unversioned" LOUDLY — never an empty string a consumer can misparse.
+fn ontology_version_cached() -> String {
+    static OV: std::sync::Mutex<Option<(std::time::Instant, String)>> = std::sync::Mutex::new(None);
+    let q = format!(
+        "PREFIX owl: <http://www.w3.org/2002/07/owl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <https://jeffbridwell.com/chorus#> owl:versionInfo ?v }} }} LIMIT 1",
+        g = ONTOLOGY_GRAPH
+    );
+    versioned_cached(&OV, &q)
 }
 
 fn json_escape(s: &str) -> String {
@@ -2540,6 +2573,11 @@ pub fn envelope(
     // model changes. "unversioned" = the projection is absent from the store —
     // loud, never defaulted to a number.
     p.push(format!("\"vocabVersion\": \"{}\"", json_escape(&vocab_version_cached())));
+    // #3947 — the ontology RELEASE (owl:versionInfo on chorus#). Third version
+    // axis: modelVersion = per-class review state, vocabVersion = ledger semver,
+    // ontologyVersion = which ontology release this store serves. Kade's 422
+    // triage conflated the first and third; naming them separately ends that.
+    p.push(format!("\"ontologyVersion\": \"{}\"", json_escape(&ontology_version_cached())));
     if let Some(i) = id {
         p.push(format!("\"id\": \"{}\"", json_escape(i)));
     }
@@ -4871,5 +4909,47 @@ mod dispatch_effective_3845 {
         );
         // and the genuinely-unknown path is still unknown, in the same model
         assert_eq!(dispatch_for("/nonsense", &t), Dispatch::NotFound);
+    }
+}
+
+#[cfg(test)]
+mod version_axes_3947 {
+    use super::*;
+
+    /// The three version axes must never collapse into one field again —
+    /// Kade's 422 triage read per-class review state as the ontology release.
+    /// Asserted against the prelude builder's source: each axis is PUSHED
+    /// (the escaped literal as it appears in the format! call).
+    #[test]
+    fn envelope_prelude_carries_all_three_axes() {
+        let src = include_str!("lib.rs");
+        for axis in ["modelVersion", "vocabVersion", "ontologyVersion"] {
+            let pushed = format!("p.push(format!(\"\\\"{axis}\\\"");
+            assert!(src.contains(&pushed), "axis {axis} not pushed in the prelude");
+        }
+    }
+
+    /// NEGATIVE PROOF (#3734): absence is LOUD. With no store reachable the
+    /// version reads "unversioned" — never empty, never a fabricated number.
+    #[test]
+    fn unreachable_store_reads_unversioned_not_empty() {
+        let v = versioned_cached(
+            &std::sync::Mutex::new(None),
+            "PREFIX owl: <http://nowhere> SELECT ?v WHERE { GRAPH <urn:none> { <urn:x> owl:nothing ?v } }",
+        );
+        assert_eq!(v, "unversioned");
+    }
+
+    /// The TTL cache re-reads after expiry — the cached-at-startup defect
+    /// (served 1.1.0 while the store held 1.0.0) cannot recur structurally.
+    #[test]
+    fn ttl_cache_expires_rather_than_caching_forever() {
+        let slot: std::sync::Mutex<Option<(std::time::Instant, String)>> =
+            std::sync::Mutex::new(Some((
+                std::time::Instant::now() - std::time::Duration::from_secs(120),
+                "stale-value".to_string(),
+            )));
+        let v = versioned_cached(&slot, "SELECT ?v WHERE { }");
+        assert_ne!(v, "stale-value", "a 120s-old entry must be re-read, not served");
     }
 }
