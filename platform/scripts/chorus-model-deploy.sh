@@ -554,6 +554,12 @@ if [ -z "${TTL:-}" ]; then
   SECURITY_SET=(
     "$CHORUS_ROOT/roles/silas/ontology/identity-principals-3613.ttl"
     "$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"
+    # #3729 — posture ABox: SecurityProbe rows mirror probes.d/ one-to-one;
+    # AuthBoundary rows name the verify doors AND their bypass paths. Serve
+    # reads resolve these classes to urn:chorus:domains:security (#3570), so
+    # they ride the security leg, not MODEL_SET (rows in the ontology graph
+    # would serve 0 — the products-incident shape of miss).
+    "$CHORUS_ROOT/roles/silas/ontology/security-posture-3729.ttl"
   )
   for ttl in "${SECURITY_SET[@]}"; do
     [ -f "$ttl" ] || { echo "chorus-model-deploy: SECURITY_SET TTL not found: $ttl" >&2; exit 1; }

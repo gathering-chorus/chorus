@@ -1,0 +1,128 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3729 — the security posture PROJECTED into the graph (Phase C, #2659 audit).
+# SecurityProbe instances mirror platform/security/probes.d/ one-to-one — the
+# scripts are the truth, these rows make them queryable. AuthBoundary instances
+# name the live verify doors AND their bypass paths, so a bypass is a visible
+# graph fact, not folklore. Deploys via MODEL_SET into urn:chorus:instances.
+#
+# AC4 decision (recorded, not auto-populated): Credential and Permission stay
+# DEFERRED. KeyRegistryEntry rows already realize the credential inventory and
+# hasScope realizes grants at the door; duplicating them as Credential/
+# Permission instances now would create a second home for the same fact
+# (no-competing-implementations). Revisit when a rotation workflow needs
+# per-credential lifecycle state that KeyRegistryEntry cannot carry.
+
+# --- SecurityProbes: one per probes.d script (9) ---
+
+chorus:security-probe-allow-set-populated a chorus:SecurityProbe ;
+    rdfs:label "allow-set populated" ;
+    chorus:target "urn:chorus:domains:security principal allow-set (>=7 webIds)" ;
+    chorus:signalType "sparql-count" ;
+    chorus:framingClass "cause" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Empty allow-set = every door refuses every token — the CSS SPOF alarm half of #3729/#3900. probes.d/allow-set-populated.sh" .
+
+chorus:security-probe-token-verify-bogus a chorus:SecurityProbe ;
+    rdfs:label "bogus token refused" ;
+    chorus:target "athena-model DAL door (identity-token-invalid)" ;
+    chorus:signalType "live-negative-probe" ;
+    chorus:framingClass "status" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Fail-closed proof: a present-but-invalid token is refused by name, never degraded to anonymous. probes.d/token-verify-bogus.sh" .
+
+chorus:security-probe-identity-gate-unauth a chorus:SecurityProbe ;
+    rdfs:label "unauthenticated write refused" ;
+    chorus:target "athena-model DAL door (identity-token-required)" ;
+    chorus:signalType "live-negative-probe" ;
+    chorus:framingClass "status" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "The DAL refuses a tokenless write, naming the gate. probes.d/identity-gate-unauth.sh" .
+
+chorus:security-probe-dpop-enforced a chorus:SecurityProbe ;
+    rdfs:label "public surface refuses unauthenticated" ;
+    chorus:target "public clearing hostname (protected API, expects 401/403)" ;
+    chorus:signalType "http-probe" ;
+    chorus:framingClass "status" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Probes the PUBLIC surface — localhost 200s prove nothing (isLocal trust by design). probes.d/dpop-enforced.sh" .
+
+chorus:security-probe-key-custody a chorus:SecurityProbe ;
+    rdfs:label "nostr key custody 0600" ;
+    chorus:target "~/.chorus/identity/<actor>/nostr.json for the full roster" ;
+    chorus:signalType "fs-mode-check" ;
+    chorus:framingClass "cause" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Every roster actor holds a 0600 nostr key; RED names the missing actor. probes.d/key-custody.sh" .
+
+chorus:security-probe-secret-custody a chorus:SecurityProbe ;
+    rdfs:label "shared secrets 0600 only" ;
+    chorus:target "~/.chorus/buzz/room-secret + identity/*/cred.json" ;
+    chorus:signalType "fs-mode-check" ;
+    chorus:framingClass "cause" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "probes.d/secret-custody.sh" .
+
+chorus:security-probe-history-disposition a chorus:SecurityProbe ;
+    rdfs:label "git history carries no live credential" ;
+    chorus:target "repo history vs #3386 baseline (35 dead findings)" ;
+    chorus:signalType "history-scan" ;
+    chorus:framingClass "status" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Durable only if a NEW long credential entering history reds. probes.d/history-disposition.sh" .
+
+chorus:security-probe-recovery-ungated a chorus:SecurityProbe ;
+    rdfs:label "recovery path carries no identity gate" ;
+    chorus:target "recovery-path-ungated-3785.bats (the #3785 invariant)" ;
+    chorus:signalType "bats-invariant" ;
+    chorus:framingClass "status" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Lockout recovery must never require the identity system that just failed. probes.d/recovery-ungated.sh" .
+
+chorus:security-probe-vocab-version-ledger a chorus:SecurityProbe ;
+    rdfs:label "served vocabVersion equals ledger head" ;
+    chorus:target "owl-api envelope vocabVersion vs model-version-ledger.jsonl (#3902)" ;
+    chorus:signalType "http-probe" ;
+    chorus:framingClass "symptom" ;
+    chorus:ownedBy chorus:role-silas ;
+    rdfs:comment "Hand-edit-around-the-pen detector. probes.d/vocab-version-ledger.sh" .
+
+# --- AuthBoundaries: the live verify doors + bypass paths ---
+
+chorus:auth-boundary-owl-api-seam a chorus:AuthBoundary ;
+    rdfs:label "owl-api identity seam" ;
+    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainB chorus:athena-domain ;
+    chorus:checkType "signature" ;
+    chorus:bypassEnvs "" ;
+    chorus:bypassAudit true ;
+    rdfs:comment "ES256 token verified against JWKS + TTL'd allow-set (#3613). No bypass env — fail closed; refusals emit security.envelope.refused." .
+
+chorus:auth-boundary-dal-write a chorus:AuthBoundary ;
+    rdfs:label "DAL governed-write door" ;
+    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainB chorus:knowledge-domain ;
+    chorus:checkType "signature" ;
+    chorus:bypassEnvs "" ;
+    chorus:bypassAudit true ;
+    rdfs:comment "athena-model verifies CHORUS_IDENTITY_TOKEN before any store write. Known non-env bypass: raw SPARQL to :3030 from LAN (Fuseki anon) — the residual the Shiro spike (#3564) left open; visible here, not folklore." .
+
+chorus:auth-boundary-chorus-api-envelope a chorus:AuthBoundary ;
+    rdfs:label "chorus-api security envelope" ;
+    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainB chorus:chorus-domain ;
+    chorus:checkType "header" ;
+    chorus:bypassEnvs "CHORUS_MCP_BYPASS" ;
+    chorus:bypassAudit true ;
+    rdfs:comment "MCP/API calls carry the envelope; attempts and refusals both land on the spine (security.envelope.attempt/refused)." .
+
+chorus:auth-boundary-commit-gate a chorus:AuthBoundary ;
+    rdfs:label "pre-commit gate" ;
+    chorus:betweenDomainA chorus:roles-domain ;
+    chorus:betweenDomainB chorus:version-control-domain ;
+    chorus:checkType "ad-hoc" ;
+    chorus:bypassEnvs "flag:--no-verify" ;
+    chorus:bypassAudit false ;
+    rdfs:comment "Skippable by design (ADR-026 layer 1); --no-verify is silent — recorded as the known unaudited bypass. The werk pipeline's blocking gates still run on every land." .
