@@ -270,6 +270,13 @@ fn run(args: &[String]) -> Result<i32, String> {
         emit_spine("test.integration.skipped", &role, &card, &trace,
             &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
     }
+    // #3920 — the browser lane: registered testConcern=ui files run as ONE
+    // workspace check when the diff touches a ui surface. Stack-gated like any
+    // needs-stack tier; zero registered = explicit absence, never vacuous.
+    let ui_set = werk_test::ui_files(&rows);
+    let ui_fired = werk_test::ui_lane_fires(&changed)
+        || std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
+    let ui_check = werk_test::ui_plan(ui_fired, ui_set.len());
     let mut any_failed = false;
     let mut failed_count: usize = 0;
     // #3592 — every executed case, keyed to the registered identity, plus the
@@ -362,6 +369,24 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
+    if let Some(kind) = ui_check {
+        if let Some(down) = &stack_down_ui(&selected_ns, &ns_all) {
+            println!("   {}: SKIPPED (stack-down: {}) — {} registered ui file(s) not run; typed skip", kind.label(), down, ui_set.len());
+            emit_spine("test.integration.skipped", &role, &card, &trace,
+                &[("count", &ui_set.len().to_string()), ("stack_down", down), ("lane", "ui")]);
+        } else {
+            let (ok, summary) = run_ui_flows(&werk, &ui_set);
+            println!("   {}:workspace … {}{}", kind.label(), if ok { "ok" } else { "FAIL" }, summary);
+            if !ok {
+                any_failed = true;
+                failed_count += 1;
+                emit_spine("test.failed", &role, &card, &trace,
+                    &[("check", kind.label()), ("unit", "workspace")]);
+            }
+        }
+    } else if ui_fired {
+        println!("   ui-flows: none registered testConcern=ui — explicit absence (#3443)");
+    }
     // #3953/#3955 — the test phase reports what it selects cost: elapsed vs the
     // table's in-run target (col3). Over-target WARNS LOUDLY (spine event + the
     // per-unit culprit table) and NEVER blocks a green run — Jeff's ruling after
@@ -959,7 +984,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
     // The jq filter emits one TSV row PER covers value, so a multi-valued covers
     // (array in a future TestShape) fans out instead of being dropped silently.
-    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | .hermeticity as $h | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // "")] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | .hermeticity as $h | .testConcern as $tc | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // ""),($tc // "")] | @tsv"#;
     let curl = Command::new("curl")
         .args(["-sf", "--max-time", "10", &endpoint])
         .output();
@@ -1304,5 +1329,43 @@ mod suite_coverage_3917 {
     #[test]
     fn missing_tests_dir_is_empty_not_fatal() {
         assert!(build_suite_coverage("/nonexistent/werk/root").is_empty());
+    }
+}
+
+/// #3920 — the ui lane's stack verdict. The lane is needs-stack by nature
+/// (browser against live pages); reuse the SAME probe machinery so up/down has
+/// one definition. Probes only when the lane actually fires.
+fn stack_down_ui(_selected_ns: &[String], _ns_all: &std::collections::BTreeSet<String>) -> Option<String> {
+    match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
+        Ok(()) => None,
+        Err(down) => Some(down),
+    }
+}
+
+/// #3920 — run the registered ui specs via playwright, from the werk (variant
+/// URLs injectable via env; local defaults inside the specs). One invocation,
+/// all files — playwright parallelizes internally.
+fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool, String) {
+    let mut cmd = Command::new("npx");
+    cmd.arg("playwright").arg("test");
+    for f in files {
+        cmd.arg(f);
+    }
+    cmd.current_dir(werk);
+    cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
+    match cmd.output() {
+        Ok(o) => {
+            let text = format!("{}{}",
+                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            match werk_test::parse_playwright_summary(&text) {
+                Some((p, f)) => (o.status.success() && f == 0, format!(" ({} passed, {} failed)", p, f)),
+                None => {
+                    let tail: Vec<&str> = text.lines().rev().take(15).collect();
+                    eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+                    (false, " (no playwright summary — crashed before running, fail loud)".to_string())
+                }
+            }
+        }
+        Err(e) => (false, format!(" (spawn failed: {})", e)),
     }
 }
