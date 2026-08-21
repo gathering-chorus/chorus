@@ -148,9 +148,32 @@ function parseActivityEntry(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
-function parseLogEntry(entry: LogEntry): StreamLine | null {
+/** #3959 — why a line was dropped. Until now every rejection collapsed to
+ *  `null`, so 26,000 unattributed events a day disappeared with no record and
+ *  the pane looked identical to a quiet team. A drop is data. */
+export type DropReason = 'no-role' | 'unknown-role' | 'event-not-rendered';
+
+export interface SpineReadStats {
+  lines: number;
+  rendered: number;
+  dropped: Record<DropReason, number>;
+  spanFrom: string;
+  spanTo: string;
+}
+
+function classifyLogEntry(entry: LogEntry): { line: StreamLine | null; drop: DropReason | null } {
   const role = entry.role ?? '';
-  if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
+  if (!role) return { line: null, drop: 'no-role' };
+  if (!['wren', 'silas', 'kade'].includes(role)) return { line: null, drop: 'unknown-role' };
+  const line = parseKnownRoleEntry(entry, role);
+  return { line, drop: line ? null : 'event-not-rendered' };
+}
+
+function parseLogEntry(entry: LogEntry): StreamLine | null {
+  return classifyLogEntry(entry).line;
+}
+
+function parseKnownRoleEntry(entry: LogEntry, role: string): StreamLine | null {
   const event = entry.event ?? '';
   if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
@@ -207,15 +230,41 @@ export function spinePath(env: Record<string, string | undefined>): string {
 }
 
 export function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
+  return readSpineWithStats(fs, logFile, limit).lines;
+}
+
+/** #3959 — the same read, but it REPORTS what it threw away and the wall-clock
+ *  span it actually covered. The window is bounded in bytes; at high volume that
+ *  silently shrinks, and a shrinking window looks exactly like an idle team.
+ *  Never let a loss be inferred from an absence. */
+export function readSpineWithStats(
+  fs: typeof fs_node,
+  logFile: string,
+  limit: number,
+): { lines: StreamLine[]; stats: SpineReadStats } {
   const out: StreamLine[] = [];
+  const dropped: Record<DropReason, number> = { 'no-role': 0, 'unknown-role': 0, 'event-not-rendered': 0 };
   const logLines = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
   let count = 0;
+  let spanFrom = '';
+  let spanTo = '';
   for (let i = logLines.length - 1; i >= 0 && count < limit * 2; i--) {
     try {
       // eslint-disable-next-line security/detect-object-injection -- i is the bounded loop index over logLines, never untrusted input (#3606)
-      const line = parseLogEntry(JSON.parse(logLines[i]));
+      const entry = JSON.parse(logLines[i]) as LogEntry;
+      const ts = entry.timestamp ?? '';
+      if (ts) {
+        if (!spanTo) spanTo = ts;
+        spanFrom = ts;
+      }
+      const { line, drop } = classifyLogEntry(entry);
       if (line) { out.push(line); count++; }
+      // eslint-disable-next-line security/detect-object-injection -- drop is a DropReason union, not untrusted input
+      else if (drop) dropped[drop] += 1;
     } catch { /* ignored */ }
   }
-  return out;
+  return {
+    lines: out,
+    stats: { lines: logLines.length, rendered: out.length, dropped, spanFrom, spanTo },
+  };
 }

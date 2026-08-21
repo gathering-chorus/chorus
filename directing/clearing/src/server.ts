@@ -857,7 +857,7 @@ try {
 
 // Ensure upload directory survives /tmp cleanup across reboots
 import fs_node from 'fs';
-import { readSpineLines, spinePath, type StreamLine } from './spine-tail';
+import { readSpineWithStats, spinePath, type StreamLine } from './spine-tail';
 if (!fs_node.existsSync('/tmp/bridge-uploads')) {
   fs_node.mkdirSync('/tmp/bridge-uploads', { recursive: true });
 }
@@ -1059,8 +1059,21 @@ export function dedupeLines(lines: StreamLine[]): StreamLine[] {
 app.get('/api/stream', (req, res) => {
   const fs = require('fs');
   const limit = parseInt(req.query.lines as string) || 60;
+  // #3959 — read WITH stats. What this endpoint discards is the thing nobody
+  // could see: on 2026-08-21 it rendered 160 lines and silently dropped 872,
+  // most of them events whose role never resolved. The counts ride out on
+  // headers so a loss is visible without a probe, and so a shrinking window
+  // (bounded in bytes, against a log that keeps growing) cannot pass for a
+  // quiet team.
+  const spine = readSpineWithStats(fs, spinePath(process.env), limit);
+  const d = spine.stats.dropped;
+  res.set('X-Chorus-Spine-Scanned', String(spine.stats.lines));
+  res.set('X-Chorus-Spine-Rendered', String(spine.stats.rendered));
+  res.set('X-Chorus-Spine-Dropped', String(d['no-role'] + d['unknown-role'] + d['event-not-rendered']));
+  res.set('X-Chorus-Spine-Dropped-Unattributed', String(d['no-role'] + d['unknown-role']));
+  res.set('X-Chorus-Spine-Span', `${spine.stats.spanFrom}..${spine.stats.spanTo}`);
   const lines = [
-    ...readSpineLines(fs, spinePath(process.env), limit), // #3884: the durable spine, not platform/logs
+    ...spine.lines, // #3884: the durable spine, not platform/logs
     ...readRoleObservations(fs),
   ];
   lines.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
