@@ -127,8 +127,15 @@ chorus:streams a owl:Class, chorus:Domain ;
   chorus:purpose "Carry the event streams and pub/sub channels the team coordinates over." ;
   chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-clearing ;
   chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "directing/clearing/src/tailer.ts" .
+  chorus:repoTarget "directing/clearing/src/tailer.ts" ;
+  chorus:hasDesignDoc "designing/docs/streams-service-design.html" .
   # FLAG: no real owl:Class vocab (no chorus:Stream class) — omitted, not faked.
+  # #3885 — design doc authored 2026-08-21 (Jeff: "we need to write a proper service
+  # design for the streams domain"). It records what streams IS and, more usefully,
+  # what it is NOT: three cards (#3852/#3853/#3884) each fixed a stream symptom from a
+  # different idea of the domain, and none reached the 200-line /tmp ring buffer that
+  # is the actual retention defect. repoTarget still points at a RENDERER (tailer.ts);
+  # whether streams gets its own service is an open question in the doc, not settled here.
 
 chorus:spine a owl:Class, chorus:Domain ;
   rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
