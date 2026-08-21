@@ -1880,3 +1880,93 @@ pub fn parse_playwright_summary(out: &str) -> Option<(usize, usize)> {
     }
     passed.map(|p| (p, failed))
 }
+
+/// #3920 fold — the nightly's cargo lane plan: every Rust crate holding a
+/// REGISTERED test. This IS the "full selection" — the registry is the one
+/// selection engine; there is no glob fallback (a fallback would be the second
+/// walker this fold retires).
+pub fn nightly_cargo_crates(rows: &[TestRow]) -> Vec<String> {
+    plan_units_from_rows(rows)
+        .into_iter()
+        .filter_map(|u| match u {
+            TestUnit::RustCrate(c) => Some(c),
+            _ => None,
+        })
+        .collect()
+}
+
+/// #3920 fold — one selection engine means the nightly REFUSES without the
+/// model. Degrading to discovery globs would silently reintroduce the second
+/// walker; a refused nightly is a red the morning read can see.
+pub fn nightly_requires_model(plan_source: &str) -> bool {
+    plan_source != "model"
+}
+
+/// #3920 fold — the machine line nightly-suites.sh folds into its SUITE report.
+/// Verdict vocabulary is the gate's own (pass/fail from gate-counted cases;
+/// stack-down is the #3919 typed skip), so the nightly summary and the werk
+/// gate can never disagree on what red means.
+pub fn nightly_unit_line(crate_name: &str, ok: bool, passed: usize, failed: usize, ns_skipped: usize) -> String {
+    let verdict = if ok { "pass" } else { "fail" };
+    let skip = if ns_skipped > 0 {
+        format!(", {} SKIPPED (stack-down, typed #3919)", ns_skipped)
+    } else {
+        String::new()
+    };
+    format!(
+        "nightly-unit|cargo|{}|{}|{} pass, {} fail{}",
+        crate_name, verdict, passed, failed, skip
+    )
+}
+
+#[cfg(test)]
+mod nightly_via_runner_3920 {
+    use super::*;
+
+    fn row(path: &str) -> TestRow {
+        TestRow {
+            file_path: path.to_string(),
+            covers: String::new(),
+            pyramid_layer: String::new(),
+            hermeticity: String::new(),
+            test_concern: String::new(),
+        }
+    }
+
+    #[test]
+    fn full_selection_is_every_registered_crate_deduped() {
+        let rows = vec![
+            row("platform/services/werk-test/src/lib.rs"),
+            row("platform/services/chorus-hooks/tests/guard.rs"),
+            row("platform/services/werk-test/tests/cli.rs"),
+            row("platform/api/tests/x.test.ts"), // TS — not the cargo lane
+        ];
+        assert_eq!(nightly_cargo_crates(&rows), vec!["chorus-hooks", "werk-test"]);
+    }
+
+    #[test]
+    fn nightly_refuses_without_the_model_no_glob_fallback() {
+        assert!(nightly_requires_model("fallback"));
+        assert!(!nightly_requires_model("model"));
+    }
+
+    #[test]
+    fn red_under_werk_test_is_red_in_the_nightly_line() {
+        // NEGATIVE PROOF (#3734): the guarded condition — a suite red under the
+        // runner — must be VISIBLY red in the line the nightly folds. A pass
+        // line and a fail line must be distinguishable by the |fail| token the
+        // nightly's SUITE parser keys on.
+        let red = nightly_unit_line("chorus-hooks", false, 40, 2, 0);
+        let green = nightly_unit_line("chorus-hooks", true, 42, 0, 0);
+        assert!(red.contains("|fail|"), "red line carries the fail verdict: {red}");
+        assert!(!green.contains("|fail|"), "green line must not: {green}");
+        assert_eq!(red, "nightly-unit|cargo|chorus-hooks|fail|40 pass, 2 fail");
+    }
+
+    #[test]
+    fn stack_down_is_the_typed_skip_never_a_verdict_change() {
+        let line = nightly_unit_line("chorus-api-client", true, 10, 0, 3);
+        assert!(line.contains("3 SKIPPED (stack-down, typed #3919)"), "{line}");
+        assert!(line.contains("|pass|"), "typed skip is not a fail: {line}");
+    }
+}

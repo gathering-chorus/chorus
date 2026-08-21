@@ -39,6 +39,12 @@ fn run(args: &[String]) -> Result<i32, String> {
     if args.iter().any(|a| a == "--reconcile") {
         return run_reconcile();
     }
+    // #3920 fold — `werk-test --nightly`: the 03:00 cargo lane runs through THIS
+    // verb, so nextest (#3929), the needs-stack typed skips (#3919), and the
+    // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
+    if args.iter().any(|a| a == "--nightly") {
+        return run_nightly(args);
+    }
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();
     let card = positional
         .first()
@@ -438,6 +444,135 @@ fn run(args: &[String]) -> Result<i32, String> {
         emit_spine("testresult.unregistered", &role, &card, &trace,
             &[("count", &unregistered.to_string())]);
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
+    }
+    post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
+    Ok(outcome.exit_code())
+}
+
+/// #3920 fold — the nightly cargo lane, through the ONE runner. Full selection
+/// from the registry (every registered Rust crate), nextest execution, the
+/// #3919 needs-stack typed skips, quarantine holds, and per-case TestResult
+/// posts — identical mechanics to the gate, run against canonical with cardId
+/// OMITTED (typed absence). `--crate=<name>` narrows to one crate so a red has
+/// a one-command reproduction (`nightly-suites.sh --run-one cargo <dir>`).
+/// Emits one machine line per crate (`nightly-unit|cargo|…`) that
+/// nightly-suites.sh folds into its SUITE report — same verdict vocabulary,
+/// no second walker.
+fn run_nightly(args: &[String]) -> Result<i32, String> {
+    let root = std::env::var("CHORUS_ROOT")
+        .or_else(|_| std::env::var("CHORUS_HOME"))
+        .map_err(|_| "nightly mode needs CHORUS_ROOT or CHORUS_HOME".to_string())?;
+    if !Path::new(&root).is_dir() {
+        return Err(format!("nightly root not found: {}", root));
+    }
+    let role = "system".to_string();
+    let card = String::new(); // typed absence — a nightly run has no card
+    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
+    let only = flag_value(args, "--crate");
+
+    let (rows, row_names, row_entities, plan_source) = fetch_test_rows();
+    if werk_test::nightly_requires_model(plan_source) {
+        // One selection engine: no glob fallback here — a degrade WOULD be the
+        // second walker this mode retires. Refuse loudly; the shell wrapper
+        // renders this as a red SUITE line the morning read can see.
+        emit_spine("test.nightly.refused", &role, &card, &trace,
+            &[("reason", "tests-domain-unreachable")]);
+        return Err("nightly run requires the tests domain (one selection engine, no glob fallback) — fetch failed or empty; refusing loudly".into());
+    }
+    let crates: Vec<String> = werk_test::nightly_cargo_crates(&rows)
+        .into_iter()
+        .filter(|c| only.as_deref().map(|o| o == c).unwrap_or(true))
+        .collect();
+    if let Some(o) = &only {
+        if crates.is_empty() {
+            return Err(format!("--crate={} holds no registered tests", o));
+        }
+    }
+
+    let quarantined = quarantined_cases();
+    let q_names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
+    println!("{}", quarantine_report(&quarantined));
+
+    // #3919 — the same typed integration tier as the gate: probe once, and a
+    // down stack turns registered needs-stack tests into a counted SKIPPED
+    // state per crate, never a fail and never silence.
+    let ns_all = werk_test::needs_stack_files(&rows);
+    let ns_total = rows.iter().filter(|r| r.hermeticity == "needs-stack").count();
+    let stack_down: Option<String> = if ns_all.is_empty() {
+        None
+    } else {
+        match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
+            Ok(()) => None,
+            Err(down) => Some(down),
+        }
+    };
+    println!("{}", werk_test::integration_report(ns_total, stack_down.as_deref()));
+
+    println!("-- werk-test --nightly — {} registered crate(s), full selection --", crates.len());
+    let started_at = std::time::Instant::now();
+    let run_epoch_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    emit_spine("test.started", &role, &card, &trace,
+        &[("units", &crates.len().to_string()),
+          ("checks_planned", &crates.len().to_string()),
+          ("plan_source", plan_source),
+          ("lane", "nightly-cargo")]);
+
+    let mut any_failed = false;
+    let mut failed_count = 0usize;
+    let mut all_cases: Vec<CaseResult> = Vec::new();
+    let mut unmatched_cargo = 0usize;
+    for c in &crates {
+        let crate_prefix = format!("platform/services/{}/tests/", c);
+        let ns_bins: Vec<String> = if stack_down.is_some() {
+            ns_all.iter()
+                .filter_map(|f| f.strip_prefix(&crate_prefix))
+                .filter_map(|rest| rest.strip_suffix(".rs"))
+                .filter(|stem| !stem.contains('/'))
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
+        let (ok, cases) = run_cargo(&root, c, &q_names, &ns_refs);
+        let passed = cases.iter().filter(|(_, r)| r == "pass").count();
+        let case_failed = cases.iter().filter(|(_, r)| r != "pass").count();
+        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_refs.len()));
+        let crate_dir = format!("platform/services/{}", c);
+        for (bare, result) in cases {
+            match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
+                Some(fp) => all_cases.push(CaseResult { file_path: fp, test_name: bare, result }),
+                None => unmatched_cargo += 1,
+            }
+        }
+        if !ok {
+            any_failed = true;
+            failed_count += 1;
+            emit_spine("test.failed", &role, &card, &trace,
+                &[("check", "cargo"), ("unit", c)]);
+        }
+    }
+
+    let outcome = gate_outcome(crates.len(), any_failed, false);
+    let extras = werk_test::completed_extras(
+        &outcome, crates.len(), crates.len(), failed_count,
+        started_at.elapsed().as_millis(), false);
+    let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    emit_spine("test.completed", &role, &card, &trace, &extra_refs);
+    post_suite_run(&role, &card, &trace, plan_source, crates.len(), failed_count,
+        started_at.elapsed().as_millis(), outcome.label());
+    if unmatched_cargo > 0 {
+        emit_spine("testresult.unmatched", &role, &card, &trace,
+            &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
+    }
+    let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
+    if unregistered > 0 {
+        emit_spine("testresult.unregistered", &role, &card, &trace,
+            &[("count", &unregistered.to_string())]);
     }
     post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());

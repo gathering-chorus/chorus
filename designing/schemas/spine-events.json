@@ -987,7 +987,7 @@
     "binary.install.refused": {
       "vertebra": "operations",
       "source": "werk",
-      "description": "chorus-bin-install (#3939) — a candidate werk verb FAILED its pre-install smoke (or verb-smoke was missing) and was REFUSED: the previous binary stays in place; the running system never sees the broken candidate. Exists because a Jul-24 werk-commit served the live pipeline a month past its source fix — landed and running had no reconciler at the install door.",
+      "description": "chorus-bin-install (#3939) \u2014 a candidate werk verb FAILED its pre-install smoke (or verb-smoke was missing) and was REFUSED: the previous binary stays in place; the running system never sees the broken candidate. Exists because a Jul-24 werk-commit served the live pipeline a month past its source fix \u2014 landed and running had no reconciler at the install door.",
       "fields": {
         "role": "Acting role (DEPLOY_ROLE at install time)",
         "binary": "Verb binary that was refused",
@@ -2102,14 +2102,14 @@
     "test.selection": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk `test` verb (#3931) — the jest selection as EVIDENCE, not a count: which test files the runner picked and the reason each was chosen (related-file+registered), or the full-fallback reason in the same shape. Emitted so an under-selection is inspectable from the record alone — the log used to print only a count, and nobody could see whether the runner picked the RIGHT files. Verb-substep event (#3513 naming law).",
+      "description": "Werk `test` verb (#3931) \u2014 the jest selection as EVIDENCE, not a count: which test files the runner picked and the reason each was chosen (related-file+registered), or the full-fallback reason in the same shape. Emitted so an under-selection is inspectable from the record alone \u2014 the log used to print only a count, and nobody could see whether the runner picked the RIGHT files. Verb-substep event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
         "card": "Card the run belongs to",
         "count": "Number of selection rows (files, or 1 for a fallback row)",
         "files": "Up to 8 selected file paths, semicolon-joined ('*' for fallback)",
-        "reason": "Why the first row was selected — uniform across rows today"
+        "reason": "Why the first row was selected \u2014 uniform across rows today"
       }
     },
     "werk.leg.carried": {
@@ -2953,7 +2953,7 @@
     "merge.already_landed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `merge` verb (#3932) — `gh pr merge` refused because the PR is already merged, so the work is IN rather than lost. The run falls through to the post-merge content verify (state == MERGED plus the merge commit present on origin/main) instead of refusing; nothing is claimed on the strength of this event alone. Before #3932 this case reported \"Failure - Main merge\" and skipped sync/deploy/accept on a land that had already succeeded. Verb-substep event (#3513 naming law).",
+      "description": "Werk `merge` verb (#3932) \u2014 `gh pr merge` refused because the PR is already merged, so the work is IN rather than lost. The run falls through to the post-merge content verify (state == MERGED plus the merge commit present on origin/main) instead of refusing; nothing is claimed on the strength of this event alone. Before #3932 this case reported \"Failure - Main merge\" and skipped sync/deploy/accept on a land that had already succeeded. Verb-substep event (#3513 naming law).",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -3632,6 +3632,19 @@
       ],
       "fields": {
         "reason": "why it refused \u2014 zero principals, or the store did not answer"
+      }
+    },
+    "test.nightly.refused": {
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "The nightly cargo lane (#3920 fold: werk-test --nightly) REFUSED to run because the tests domain was unreachable \u2014 one selection engine means no glob fallback; nightly-suites.sh folds this as a red SUITE row the morning read can see.",
+      "keys": [
+        "reason"
+      ],
+      "fields": {
+        "reason": "Refusal cause (tests-domain-unreachable)",
+        "role": "Acting role (system for the 03:00 agent)",
+        "trace_id": "Trace join key, if any"
       }
     }
   }
