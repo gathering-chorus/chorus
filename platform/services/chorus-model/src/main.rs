@@ -199,9 +199,22 @@ fn run() -> Result<String, String> {
                 }
                 _ => {
                     let class = get("--class").ok_or("shape: --class <ClassLocal> is required")?;
-                    let required: Vec<String> = get("--required")
-                        .map(|s| s.split(',').filter(|x| !x.is_empty()).map(str::to_string).collect())
-                        .unwrap_or_default();
+                    // #3885 — collect EVERY --required, not just the first. `get`
+                    // returns one occurrence, so `--required a --required b --required c`
+                    // silently became `a`: the shape emitted a one-property floor while
+                    // the caller believed they had asked for four. The writer already
+                    // refuses a shape with NO floor ("the appearance of validation, not
+                    // validation") — accepting a floor narrower than requested is the
+                    // same failure one step quieter. Comma form still works.
+                    let required: Vec<String> = rest
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, a)| a.as_str() == "--required")
+                        .filter_map(|(i, _)| rest.get(i + 1))
+                        .flat_map(|s| s.split(','))
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string)
+                        .collect();
                     let ig = get("--instances-graph");
                     let spec = athena_model::tbox::ShapeSpec {
                         class: &class, required: &required, target_file: &file,
@@ -230,7 +243,20 @@ fn run() -> Result<String, String> {
             // real reasoning — and silently, which is the failure mode we spent
             // the week removing.
             use std::io::Write;
-            let path = format!("{}/{}", std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string()), file);
+            // #3885 — an ABSOLUTE --file is honored as given; only a relative one
+            // is resolved against CHORUS_ROOT. Before this, a relative path typed
+            // from inside a werk silently wrote to READ-ONLY CANONICAL and then
+            // reported the same relative path back, which reads as "your werk".
+            // Wren hit it live on 2026-08-21 cutting the StreamEvent class: six
+            // properties and a shape landed in canonical, git-clean werk, no
+            // refusal — the canonical_write_guard blocks a ROLE's edit, not a
+            // verb writing on the role's behalf. Same CHORUS_ROOT-unpinned trap
+            // that made the clippy ratchet grade the wrong tree the day before.
+            let path = if std::path::Path::new(&file).is_absolute() {
+                file.clone()
+            } else {
+                format!("{}/{}", std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string()), file)
+            };
             let mut f = std::fs::OpenOptions::new().append(true).open(&path)
                 .map_err(|e| format!("cannot append to {}: {}", path, e))?;
             write!(f, "
@@ -657,4 +683,70 @@ fn today_utc() -> String {
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+#[cfg(test)]
+mod pen_write_target_tests_3885 {
+    // #3885 — both defects found by USING the pen on 2026-08-21, not by reading it.
+
+    /// A relative --file resolves against CHORUS_ROOT; an absolute one is honored.
+    /// Before the fix, a relative path typed from inside a werk wrote to READ-ONLY
+    /// canonical and reported the same relative path back — which reads as "your werk".
+    /// Six properties and a shape landed in the wrong tree with no refusal.
+    fn resolve(file: &str, root: &str) -> String {
+        if std::path::Path::new(file).is_absolute() {
+            file.to_string()
+        } else {
+            format!("{}/{}", root, file)
+        }
+    }
+
+    #[test]
+    fn relative_file_resolves_against_chorus_root() {
+        assert_eq!(resolve("roles/wren/o.ttl", "/chorus"), "/chorus/roles/wren/o.ttl");
+    }
+
+    /// NEGATIVE PROOF — an absolute werk path must NOT be rewritten into canonical.
+    /// This is the exact 2026-08-21 miswrite.
+    #[test]
+    fn absolute_werk_path_is_not_redirected_to_canonical() {
+        let werk = "/Users/j/CascadeProjects/chorus-werk/wren-3885/roles/wren/o.ttl";
+        assert_eq!(resolve(werk, "/Users/j/CascadeProjects/chorus"), werk);
+    }
+
+    /// Every --required is collected. `get()` returns ONE occurrence, so three flags
+    /// silently became one and the shape emitted a one-property floor while the caller
+    /// believed they had four. The writer refuses a shape with NO floor; accepting a
+    /// floor narrower than requested is the same failure one step quieter.
+    fn required_from(rest: &[String]) -> Vec<String> {
+        rest.iter()
+            .enumerate()
+            .filter(|(_, a)| a.as_str() == "--required")
+            .filter_map(|(i, _)| rest.get(i + 1))
+            .flat_map(|s| s.split(','))
+            .filter(|x| !x.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn every_required_flag_is_collected() {
+        let args: Vec<String> = ["--required", "a", "--required", "b", "--required", "c"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(required_from(&args), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn comma_form_still_works_and_mixes() {
+        let args: Vec<String> = ["--required", "a,b", "--required", "c"]
+            .iter().map(|s| s.to_string()).collect();
+        assert_eq!(required_from(&args), vec!["a", "b", "c"]);
+    }
+
+    /// NEGATIVE PROOF — no --required yields an EMPTY floor, so the writer's
+    /// shape-with-no-floor refusal still fires. A silent default here would defeat it.
+    #[test]
+    fn absent_required_yields_no_floor_so_the_refusal_still_fires() {
+        assert!(required_from(&[]).is_empty());
+    }
 }

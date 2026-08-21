@@ -235,3 +235,57 @@ chorus:metrics a owl:Class, chorus:Domain ;
   chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/metrics.ts" ; chorus:definesVocabulary chorus:Metric .
+
+chorus:StreamEvent a owl:Class ;
+    rdfs:label "StreamEvent" ;
+    rdfs:comment "One observed agent action: who did what, when, in which session." .
+chorus:streams chorus:definesVocabulary chorus:StreamEvent .
+
+chorus:streamRole a owl:ObjectProperty ;
+    rdfs:label "streamRole" ;
+    rdfs:comment "The role that performed the action — resolved from the werk slot, never guessed." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:streamTool a owl:ObjectProperty ;
+    rdfs:label "streamTool" ;
+    rdfs:comment "The tool invoked, carried through the composing phase so a beat always names an action." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:streamPhase a owl:ObjectProperty ;
+    rdfs:label "streamPhase" ;
+    rdfs:comment "started, running or thinking — never claims a finished tool is still running." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:streamSession a owl:ObjectProperty ;
+    rdfs:label "streamSession" ;
+    rdfs:comment "The session that acted — a role can hold two at once." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:streamTs a owl:ObjectProperty ;
+    rdfs:label "streamTs" ;
+    rdfs:comment "When the action RAN, not when the row was written; the two diverge." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:streamCard a owl:ObjectProperty ;
+    rdfs:label "streamCard" ;
+    rdfs:comment "The card the action belongs to, when derivable from the werk slot." ;
+    rdfs:domain chorus:StreamEvent ;
+    rdfs:range chorus:string .
+
+chorus:StreamEventShape a sh:NodeShape ;
+    sh:targetClass chorus:StreamEvent ;
+    sh:property [ sh:path chorus:streamRole ; sh:minCount 1 ] ;
+    chorus:generatedBy "athena-model" .
+
+chorus:StreamEventShape a sh:NodeShape ;
+    sh:targetClass chorus:StreamEvent ;
+    sh:property [ sh:path chorus:streamRole ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:streamTool ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:streamPhase ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:streamTs ; sh:minCount 1 ] ;
+    chorus:generatedBy "athena-model" .
