@@ -257,6 +257,33 @@ fn run() -> Result<String, String> {
             } else {
                 format!("{}/{}", std::env::var("CHORUS_ROOT").unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string()), file)
             };
+            // #3885 — ENSURE THE PREFIXES THE OUTPUT USES. The shape verb emits
+            // `sh:` turtle; domains-wren-silas.ttl declared only chorus:/owl:/rdfs:.
+            // The write "succeeded", riot refused the file at deploy, and
+            // model-deploy was blocked TEAM-WIDE with the change already merged —
+            // landed-but-not-live, found by Silas, not by the writer. A governed
+            // writer that emits a prefix it has not declared is writing something
+            // it cannot itself parse.
+            {
+                let existing = std::fs::read_to_string(&path).unwrap_or_default();
+                let mut header = String::new();
+                for (p, iri) in [
+                    ("sh:", "http://www.w3.org/ns/shacl#"),
+                    ("owl:", "http://www.w3.org/2002/07/owl#"),
+                    ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
+                ] {
+                    let used = turtle.contains(p);
+                    let declared = existing.contains(&format!("@prefix {}", p));
+                    if used && !declared {
+                        header.push_str(&format!("@prefix {:<7} <{}> .\n", p, iri));
+                    }
+                }
+                if !header.is_empty() {
+                    let merged = format!("{}{}", header, existing);
+                    std::fs::write(&path, merged)
+                        .map_err(|e| format!("cannot add prefixes to {}: {}", path, e))?;
+                }
+            }
             let mut f = std::fs::OpenOptions::new().append(true).open(&path)
                 .map_err(|e| format!("cannot append to {}: {}", path, e))?;
             write!(f, "

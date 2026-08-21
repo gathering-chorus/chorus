@@ -1,6 +1,7 @@
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix owl:    <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
 
 # #3581 — materialize the V2 domains as real chorus:Domain entities, the proven
 # TTL-deploy way (matching chorus:Properties, the sole surviving template), authored
