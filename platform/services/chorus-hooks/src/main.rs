@@ -297,6 +297,26 @@ async fn pre_tool_use_inner(
     // #3853 — a command is now in flight; the heartbeat ticker beats "running <tool>"
     // if it outlives the threshold, so a long command is never a silent window.
     state.mark_running(input.session_id.as_deref().unwrap_or(""), role.as_str(), &tool);
+    // #3885 — EMIT THE ACTION ITSELF, not just a heartbeat. mark_running only sets
+    // state; the 10s ticker was the ONLY emitter, so any call shorter than 10s never
+    // reached the stream at all. Long `Bash` runs survived to a beat and everything
+    // else — Read, Grep, Edit, every MCP verb — vanished. That is why the pane read as
+    // "only bash" (Jeff, 2026-08-20) and why a working role looked stopped: the stream
+    // was sampling the SLOW parts of the work, not the work.
+    //
+    // One line per tool call, with the role and session already resolved above. Cheap
+    // (an append) and additive: the heartbeat still covers the long-running case, this
+    // covers the short one, and clear_activity still makes silence mean idle.
+    {
+        let sid = input.session_id.as_deref().unwrap_or("");
+        let sid = if sid.len() > 8 { &sid[..8] } else { sid };
+        crate::state::chorus_log(
+            "agent.action",
+            role.as_str(),
+            &[("tool", tool.as_str()), ("session_id", sid), ("phase", "started")],
+        )
+        .await;
+    }
     trace!(hook = "pre_tool_use", phase = "receive", %tool, role = role.as_str(), "dispatching");
 
     // #3278 — record test-file edits live, the instant the daemon sees them, so the
