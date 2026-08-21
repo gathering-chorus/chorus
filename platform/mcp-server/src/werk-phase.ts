@@ -111,11 +111,17 @@ export function bostonOffsetIso(d: Date = new Date()): string {
  * transition — the pipeline becomes visible in Jeff's streams (#3883). Reads
  * incrementally from a byte offset; emission is append-only best-effort.
  */
+/** #3956 — the pre-present legs whose proofs are worth carrying on resume. */
+const RESUMABLE_LEGS = new Set(['build', 'test', 'review', 'deploy-werk', 'env-up']);
+
 export function wireRunFollower(
   logFile: string,
   meta: { card: number; role: string; runId: string },
   spinePath: string = process.env.CHORUS_LOG_FILE
     || path.join(os.homedir(), '.chorus', 'chorus.log'),
+  // #3956 — single-writer leg recording: the follower (not the launcher, not
+  // the steps) stamps each resumable leg's verdict onto the run pin.
+  onLeg?: (leg: string, verdict: 'pass' | 'fail') => void,
 ): () => void {
   let offset = 0;
   const readNew: ReadNew = async () => {
@@ -132,6 +138,9 @@ export function wireRunFollower(
     } catch { return ''; } // log not created yet — next tick
   };
   const emitPhase: EmitPhase = async (e) => {
+    if (onLeg && RESUMABLE_LEGS.has(e.phase) && (e.state === 'pass' || e.state === 'fail')) {
+      try { onLeg(e.phase, e.state); } catch { /* recording is best-effort, never sinks the run */ }
+    }
     const line = JSON.stringify({
       timestamp: bostonOffsetIso(), event: 'werk.phase', role: meta.role,
       card_id: meta.card, run_id: meta.runId,

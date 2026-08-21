@@ -108,6 +108,49 @@ export function markPhase(
 }
 
 /** Clear a card's run record (e.g. on accept/close so the next card starts clean). */
+/** #3956 — record one leg's verdict + the werk tree hash onto the run pin.
+ *  Called ONLY from the run follower (one writer; the launcher never touches
+ *  legs except to carry them at relaunch). Last write per leg wins. */
+export function recordLeg(
+  card: number,
+  leg: string,
+  verdict: 'pass' | 'fail',
+  treeHash: string,
+  dir: string = RUNS_DIR,
+): void {
+  const cur = readRun(card, dir);
+  if (!cur) return; // pin gone (cleared/superseded) — nothing to record against
+  const legs = (cur.legs ?? []).filter((l) => l.leg !== leg);
+  legs.push({ leg, verdict, tree_hash: treeHash });
+  writeRun({ ...cur, legs }, dir);
+}
+
+/** #3956 — the werk TREE hash including uncommitted edits: add -A into a
+ *  throwaway index copy, write-tree. Mirrors platform/scripts/werk-resume-check
+ *  tree_hash() — the two sides must agree byte-for-byte on the key. */
+export function currentWerkTreeHash(werkDir: string): string {
+  try {
+    const tmp = path.join(os.tmpdir(), `wt-index-${process.pid}-${Date.now()}`);
+    try {
+      const real = path.join(werkDir, '.git', 'index');
+      if (existsSync(real)) {
+        writeFileSync(tmp, readFileSync(real));
+      }
+      execFileSync('git', ['-C', werkDir, 'add', '-A'], {
+        env: { ...process.env, GIT_INDEX_FILE: tmp },
+      });
+      return execFileSync('git', ['-C', werkDir, 'write-tree'], {
+        env: { ...process.env, GIT_INDEX_FILE: tmp },
+        encoding: 'utf8',
+      }).trim();
+    } finally {
+      try { rmSync(tmp, { force: true }); } catch { /* best-effort */ }
+    }
+  } catch {
+    return '';
+  }
+}
+
 export function clearRun(card: number, dir: string = RUNS_DIR): void {
   try {
     rmSync(runPath(dir, card), { force: true });
