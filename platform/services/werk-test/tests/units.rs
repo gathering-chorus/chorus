@@ -499,6 +499,7 @@ fn row(path: &str, covers: &str, layer: &str) -> werk_test::TestRow {
         covers: covers.to_string(),
         pyramid_layer: layer.to_string(),
         hermeticity: String::new(),
+        test_concern: String::new(),
     }
 }
 
@@ -1047,4 +1048,54 @@ fn phase_target_reads_col3_and_p95_col_is_untouched() {
     assert_eq!(werk_test::phase_target(tsv, "test"), Some(600.0));
     assert_eq!(werk_test::phase_target(tsv, "build"), None); // no target declared
     assert_eq!(werk_test::phase_budget(tsv, "test"), Some(1650.0)); // detector ceiling intact
+}
+
+// ---- #3920 — UI tests are a pipeline, not ad-hoc npx invocations ----------
+
+#[test]
+fn test_concern_parses_as_seventh_column_and_defaults_empty() {
+    let tsv = "proving/flows/x.spec.cjs\tsvc\te2e\tcase\tent\tneeds-stack\tui\n\
+               a/y.rs\tsvc\tunit\tc2\te2\thermetic\n";
+    let (rows, _, _) = werk_test::parse_rows_and_names(tsv);
+    assert_eq!(rows[0].test_concern, "ui");
+    assert_eq!(rows[1].test_concern, "");
+}
+
+#[test]
+fn ui_rows_selects_only_declared_ui_files_deduped() {
+    let tsv = "proving/flows/a.spec.cjs\tsvc\te2e\tc1\te1\tneeds-stack\tui\n\
+               proving/flows/a.spec.cjs\tsvc\te2e\tc2\te2\tneeds-stack\tui\n\
+               proving/flows/b.spec.cjs\tsvc\te2e\tc3\te3\tneeds-stack\t\n";
+    let (rows, _, _) = werk_test::parse_rows_and_names(tsv);
+    let files = werk_test::ui_files(&rows);
+    assert_eq!(files.iter().cloned().collect::<Vec<_>>(), vec!["proving/flows/a.spec.cjs"]);
+}
+
+/// NEGATIVE PROOF (#3734/AC3): a Clearing diff fires the ui lane; an unrelated
+/// crate diff must NOT — the two states the selection exists to separate.
+#[test]
+fn negative_proof_ui_lane_fires_on_clearing_diff_not_unrelated() {
+    let clearing = vec!["directing/clearing/public/room.js".to_string()];
+    let pages = vec!["platform/api/public/chorus-pages/loom.html".to_string()];
+    let specs = vec!["proving/flows/chorus-home-3886.spec.cjs".to_string()];
+    let unrelated = vec!["platform/services/werk-sync/src/lib.rs".to_string()];
+    assert!(werk_test::ui_lane_fires(&clearing));
+    assert!(werk_test::ui_lane_fires(&pages));
+    assert!(werk_test::ui_lane_fires(&specs), "editing a spec runs the spec");
+    assert!(!werk_test::ui_lane_fires(&unrelated), "unrelated diff must not pay the browser lane");
+}
+
+#[test]
+fn ui_plan_adds_one_workspace_check_when_fired_and_files_exist() {
+    let plan = werk_test::ui_plan(true, 3);
+    assert_eq!(plan, Some(werk_test::CheckKind::UiFlows));
+    assert_eq!(werk_test::ui_plan(false, 3), None, "not fired → no browser cost");
+    assert_eq!(werk_test::ui_plan(true, 0), None, "no registered ui tests → explicit absence, not a vacuous check");
+}
+
+#[test]
+fn playwright_summary_parses_pass_and_fail_counts() {
+    assert_eq!(werk_test::parse_playwright_summary("  10 passed (12.3s)\n"), Some((10, 0)));
+    assert_eq!(werk_test::parse_playwright_summary("  2 failed\n    x\n  8 passed (9s)\n"), Some((8, 2)));
+    assert_eq!(werk_test::parse_playwright_summary("garbage"), None);
 }

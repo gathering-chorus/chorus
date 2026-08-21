@@ -152,6 +152,8 @@ pub enum CheckKind {
     DocCoherence,
     /// `bats <suite>` — per changed bats suite (#3917).
     Bats,
+    /// #3920 — `npx playwright test <registered ui files>` — workspace-level, once.
+    UiFlows,
 }
 
 impl CheckKind {
@@ -164,6 +166,7 @@ impl CheckKind {
             CheckKind::LintRatchet => "lint-ratchet",
             CheckKind::DocCoherence => "doc-coherence",
             CheckKind::Bats => "bats",
+            CheckKind::UiFlows => "ui-flows",
         }
     }
 }
@@ -443,6 +446,9 @@ pub struct TestRow {
     /// #3919 — the model's hermeticity ("hermetic" / "needs-stack"). Empty on
     /// legacy rows; only the literal "needs-stack" gates on the live stack.
     pub hermeticity: String,
+    /// #3920 — the model's testConcern ("ui"/"security"/…). Empty on legacy rows;
+    /// "ui" routes the file into the browser lane.
+    pub test_concern: String,
 }
 
 /// Parse `filePath\tcovers[\tpyramidLayer]` TSV rows; incomplete rows are
@@ -458,6 +464,7 @@ pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
                         covers: c.trim().to_string(),
                         pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
                         hermeticity: String::new(),
+                        test_concern: String::new(),
                     })
                 }
                 _ => None,
@@ -838,12 +845,18 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
                     covers: c.trim().to_string(),
                     pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
                     hermeticity: String::new(),
+                    test_concern: String::new(),
                 });
                 names.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
                 entities.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
                 if let Some(h) = it.next() {
                     if let Some(r) = rows.last_mut() {
                         r.hermeticity = h.trim().to_string();
+                    }
+                }
+                if let Some(tc) = it.next() {
+                    if let Some(r) = rows.last_mut() {
+                        r.test_concern = tc.trim().to_string();
                     }
                 }
             }
@@ -1173,7 +1186,7 @@ mod jest_selection_3912 {
     use super::*;
 
     fn row(f: &str, layer: &str) -> TestRow {
-        TestRow { file_path: f.into(), covers: "messages-domain".into(), pyramid_layer: layer.into(), hermeticity: String::new() }
+        TestRow { file_path: f.into(), covers: "messages-domain".into(), pyramid_layer: layer.into(), hermeticity: String::new(), test_concern: String::new() }
     }
 
     #[test]
@@ -1819,4 +1832,51 @@ pub fn unit_cost_report(costs: &[(String, f64)]) -> String {
         out.push_str(&format!("   {:7.1}s  {}\n", secs, name));
     }
     out
+}
+
+/// #3920 — the registered browser-lane files (testConcern=ui), deduped+sorted.
+pub fn ui_files(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
+    rows.iter()
+        .filter(|r| r.test_concern == "ui")
+        .map(|r| r.file_path.clone())
+        .collect()
+}
+
+/// #3920 — surfaces whose diffs pay the browser lane: Clearing, the served
+/// chorus pages, and the specs themselves. Anything else skips it — a browser
+/// run on a Rust-only diff is pure cost.
+pub fn ui_lane_fires(changed: &[String]) -> bool {
+    const UI_SURFACES: [&str; 4] = [
+        "directing/clearing/",
+        "platform/api/public/",
+        "platform/pages/",
+        "proving/flows/",
+    ];
+    changed.iter().any(|f| UI_SURFACES.iter().any(|p| f.starts_with(p)))
+}
+
+/// #3920 — one workspace-level ui check, only when the lane fired AND ui tests
+/// are registered. Zero registered = None (explicit absence, never vacuous).
+pub fn ui_plan(fired: bool, registered: usize) -> Option<CheckKind> {
+    if fired && registered > 0 { Some(CheckKind::UiFlows) } else { None }
+}
+
+/// #3920 — playwright's terminal summary: "N passed" / "M failed" lines.
+/// None = no recognizable summary (crash before running — caller fails loud).
+pub fn parse_playwright_summary(out: &str) -> Option<(usize, usize)> {
+    let mut passed: Option<usize> = None;
+    let mut failed: usize = 0;
+    for l in out.lines() {
+        let t = l.trim();
+        if let Some(rest) = t.split_whitespace().next() {
+            if let Ok(n) = rest.parse::<usize>() {
+                let words: Vec<&str> = t.split_whitespace().collect();
+                if words.len() >= 2 {
+                    if words[1].starts_with("passed") { passed = Some(n); }
+                    if words[1].starts_with("failed") { failed = n; }
+                }
+            }
+        }
+    }
+    passed.map(|p| (p, failed))
 }
