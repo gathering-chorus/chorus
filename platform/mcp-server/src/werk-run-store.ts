@@ -133,7 +133,9 @@ export function currentWerkTreeHash(werkDir: string): string {
     const tmp = path.join(os.tmpdir(), `wt-index-${process.pid}-${Date.now()}`);
     try {
       const real = path.join(werkDir, '.git', 'index');
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkDir is a validated werk path, never user input
       if (existsSync(real)) {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- tmp = os.tmpdir()+pid+ts; real as above
         writeFileSync(tmp, readFileSync(real));
       }
       execFileSync('git', ['-C', werkDir, 'add', '-A'], {
