@@ -19,15 +19,20 @@ impl Role {
         // wren 2.0%. Jeff: "if all streams are logged with 99%+ reliability" the stream
         // becomes authoritative on who did what. It cannot be, while the busiest hours
         // are anonymous.
-        if let Some(r) = Self::from_werk_slot(cwd) {
-            return r;
-        }
+        // ORDER MATTERS, and the explicit role segment wins. A werk contains the whole
+        // repo, INCLUDING every role's directory — so `chorus-werk/wren-3885/architect`
+        // is Silas's surface inside Wren's werk. Checking the werk slot first
+        // mis-attributed it to Wren and broke search_hierarchy's retry test, which
+        // caught this on the first run. The werk slot is the FALLBACK: it answers only
+        // when no role-specific segment is present.
         if cwd.contains("product-manager") || cwd.contains("roles/wren") {
             Role::Wren
         } else if cwd.contains("architect") || cwd.contains("roles/silas") {
             Role::Silas
         } else if cwd.contains("engineer") || cwd.contains("roles/kade") {
             Role::Kade
+        } else if let Some(r) = Self::from_werk_slot(cwd) {
+            r
         } else {
             Role::Unknown
         }
