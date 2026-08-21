@@ -1,14 +1,12 @@
-use chorus_hooks::shared::state_paths::chorus_root;
-#[test]
-fn inject_binary_exists() {
-    let path = &format!("{}/platform/services/chorus-inject/target/release/chorus-inject", chorus_root());
-    assert!(std::path::Path::new(path).exists(), "chorus-inject binary must exist at {}", path);
-}
-
-#[test]
-fn inject_binary_is_executable() {
-    use std::os::unix::fs::PermissionsExt;
-    let path = &format!("{}/platform/services/chorus-inject/target/release/chorus-inject", chorus_root());
-    let meta = std::fs::metadata(path).expect("chorus-inject binary must exist");
-    assert!(meta.permissions().mode() & 0o111 != 0, "chorus-inject must be executable");
-}
+//! #3949 — RETIRED as cargo tests, replaced by the runtime lane.
+//!
+//! These asserted a RELEASE binary exists at chorus-inject/target/release —
+//! ambient build-state, not code under test (#3528: a test brings its own
+//! world; a fresh werk has no target/ and can never satisfy this, so the
+//! blocking gate went red on every chorus-hooks card). The deploy-state
+//! question they asked is already owned by chorus-health's
+//! deployed-equals-running check against ~/.chorus/bin (#2734's actual
+//! deploy location — target/release was never it).
+//!
+//! Kept as a file (not deleted) so the retirement is legible; the module
+//! intentionally contains no #[test].
