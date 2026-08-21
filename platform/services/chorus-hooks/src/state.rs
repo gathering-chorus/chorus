@@ -136,12 +136,20 @@ impl AppState {
     }
 
     /// #3853 — a command ended; the session is now composing/thinking.
+    ///
+    /// #3885 — CARRY THE LAST TOOL. This used to blank the tool, so 76% of
+    /// agent.activity beats (measured 2026-08-20 over 3000 events) said only
+    /// "thinking" with no action attached — a stream that cannot answer "what is it
+    /// doing". Composing AFTER a Bash run is not the same as composing after an Edit;
+    /// keeping the last tool makes the beat legible without claiming a tool is still
+    /// running (phase already says "thinking", so the two never contradict).
     pub fn mark_thinking(&self, session_id: &str, role: &str) {
         if session_id.is_empty() { return; }
         let now = Self::now_secs();
         if let Ok(mut m) = self.activity.lock() {
+            let last_tool = m.get(session_id).map(|a| a.tool.clone()).unwrap_or_default();
             m.insert(session_id.to_string(), Activity {
-                role: role.to_string(), tool: String::new(),
+                role: role.to_string(), tool: last_tool,
                 phase: "thinking", started: now, last_beat: now,
             });
         }
@@ -572,5 +580,57 @@ mod activity_heartbeat_tests {
         let s = AppState::new();
         s.mark_running("", "silas", "Bash");
         assert!(s.activity_due(0).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod stream_legibility_tests_3885 {
+    use super::*;
+
+    /// A beat after a command must still name the command. Measured before #3885:
+    /// tool was blank on 76% of agent.activity events, so the stream could say a role
+    /// was thinking but never about what.
+    #[test]
+    fn thinking_carries_the_last_tool() {
+        let s = AppState::new();
+        s.mark_running("sess-1", "wren", "Bash");
+        s.mark_thinking("sess-1", "wren");
+        let due = s.activity_due(0);
+        let beat = due.iter().find(|b| b.0 == "sess-1").expect("a beat is due");
+        assert_eq!(beat.3, "thinking", "phase still says thinking");
+        assert_eq!(beat.2, "Bash", "the tool that just ran is still named");
+    }
+
+    /// NEGATIVE PROOF — the phase must never claim the tool is STILL RUNNING. If this
+    /// regressed to "running", a watcher could not tell a live command from a finished
+    /// one, which is the exact confusion this card exists to end.
+    #[test]
+    fn carrying_the_tool_does_not_claim_it_is_running() {
+        let s = AppState::new();
+        s.mark_running("sess-2", "wren", "Edit");
+        s.mark_thinking("sess-2", "wren");
+        let due = s.activity_due(0);
+        let beat = due.iter().find(|b| b.0 == "sess-2").unwrap();
+        assert_ne!(beat.3, "running");
+    }
+
+    /// NEGATIVE PROOF — a session that never ran a tool has nothing to carry, and must
+    /// report an honest blank rather than inventing one.
+    #[test]
+    fn thinking_with_no_prior_tool_stays_blank() {
+        let s = AppState::new();
+        s.mark_thinking("sess-3", "wren");
+        let due = s.activity_due(0);
+        let beat = due.iter().find(|b| b.0 == "sess-3").unwrap();
+        assert_eq!(beat.2, "", "no prior tool → blank, never a guess");
+    }
+
+    /// A finished turn is genuinely idle — silence must mean idle, not lost.
+    #[test]
+    fn a_cleared_session_emits_no_beats() {
+        let s = AppState::new();
+        s.mark_running("sess-4", "wren", "Bash");
+        s.clear_activity("sess-4");
+        assert!(s.activity_due(0).iter().all(|b| b.0 != "sess-4"));
     }
 }

@@ -12,6 +12,16 @@ pub enum Role {
 
 impl Role {
     pub fn from_cwd(cwd: &str) -> Self {
+        // #3885 — WERK PATHS COUNT. The old rule matched only `roles/<name>`, but a
+        // role does its actual work in `chorus-werk/<role>-<card>/...`, which contains
+        // no such segment. So identity collapsed to Unknown exactly while building:
+        // measured 2026-08-20 over 3000 agent.activity events — role=unknown 70.8%,
+        // wren 2.0%. Jeff: "if all streams are logged with 99%+ reliability" the stream
+        // becomes authoritative on who did what. It cannot be, while the busiest hours
+        // are anonymous.
+        if let Some(r) = Self::from_werk_slot(cwd) {
+            return r;
+        }
         if cwd.contains("product-manager") || cwd.contains("roles/wren") {
             Role::Wren
         } else if cwd.contains("architect") || cwd.contains("roles/silas") {
@@ -20,6 +30,25 @@ impl Role {
             Role::Kade
         } else {
             Role::Unknown
+        }
+    }
+
+    /// The owning role of a werk path: `chorus-werk/<role>-<card>/...`. The role is the
+    /// segment BEFORE the first `-`, matching canonical_write_guard's cross-role rule,
+    /// so two places can't disagree about who owns a werk.
+    ///
+    /// Returns None for a non-werk path OR an unrecognised owner — never a guess. A
+    /// wrong attribution is worse than an honest Unknown: it would put one role's work
+    /// on another's stream.
+    fn from_werk_slot(cwd: &str) -> Option<Self> {
+        let after = cwd.split("chorus-werk/").nth(1)?;
+        let slot = after.split('/').next()?;
+        let owner = slot.split('-').next()?;
+        match owner {
+            "wren" => Some(Role::Wren),
+            "silas" => Some(Role::Silas),
+            "kade" => Some(Role::Kade),
+            _ => None,
         }
     }
 
@@ -371,5 +400,54 @@ mod trace_id_tests {
         let a = HookInput::default().trace_id_or_mint();
         let b = HookInput::default().trace_id_or_mint();
         assert_ne!(a, b, "minted fallback ids must be unique per dispatch");
+    }
+}
+
+#[cfg(test)]
+mod werk_attribution_tests_3885 {
+    use super::*;
+
+    // The real paths every role builds in. Before #3885 all of these were Unknown —
+    // 70.8% of agent.activity events, measured 2026-08-20.
+    #[test]
+    fn a_werk_path_names_its_owner() {
+        for (cwd, want) in [
+            ("/Users/j/CascadeProjects/chorus-werk/wren-3885", Role::Wren),
+            ("/Users/j/CascadeProjects/chorus-werk/wren-3885/platform/services", Role::Wren),
+            ("/Users/j/CascadeProjects/chorus-werk/silas-3387/roles", Role::Silas),
+            ("/Users/j/CascadeProjects/chorus-werk/kade-3929", Role::Kade),
+        ] {
+            assert_eq!(Role::from_cwd(cwd), want, "werk path must name its owner: {cwd}");
+        }
+    }
+
+    #[test]
+    fn canonical_role_paths_still_resolve() {
+        assert_eq!(Role::from_cwd("/chorus/roles/wren"), Role::Wren);
+        assert_eq!(Role::from_cwd("/chorus/roles/silas"), Role::Silas);
+        assert_eq!(Role::from_cwd("/chorus/roles/kade"), Role::Kade);
+    }
+
+    // NEGATIVE PROOF — attribution must never GUESS. A wrong role is worse than
+    // Unknown: it files one role's work onto another's stream, and the stream is
+    // meant to be authoritative about who did what.
+    #[test]
+    fn an_unrecognised_werk_owner_stays_unknown() {
+        assert_eq!(
+            Role::from_cwd("/Users/j/CascadeProjects/chorus-werk/mallory-1234"),
+            Role::Unknown
+        );
+        assert_eq!(
+            Role::from_cwd("/Users/j/CascadeProjects/chorus-werk/"),
+            Role::Unknown
+        );
+    }
+
+    // NEGATIVE PROOF — a path that merely CONTAINS a role name in the wrong place
+    // must not be attributed by the werk rule.
+    #[test]
+    fn a_non_werk_path_is_not_attributed_by_the_werk_rule() {
+        assert_eq!(Role::from_cwd("/tmp/scratch"), Role::Unknown);
+        assert_eq!(Role::from_cwd("/Users/j/Downloads"), Role::Unknown);
     }
 }
