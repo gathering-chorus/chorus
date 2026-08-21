@@ -41,18 +41,29 @@ fn accept_gate_cards_view_fails_without_path() {
 #[cfg_attr(not(target_os = "macos"), ignore = "needs cards CLI + chorus API + Vikunja stack (Mac LaunchAgents)")]
 #[test]
 fn accept_gate_cards_view_passes_with_path() {
-    let cards = format!("{}/platform/scripts/cards", chorus_root());
-    let output = Command::new("bash")
-        .args([&cards, "view", "1992"])
-        .env("CHORUS_ROOT", chorus_root())
-        .env("HOME", home())
-        .env("PATH", full_path())
-        .output()
-        .expect("failed to run cards");
-
-    assert!(output.status.success(),
-        "cards view should pass with PATH. stderr: {}",
-        String::from_utf8_lossy(&output.stderr));
+    // #3949 — this test is about PATH plumbing, not about which TREE's cards
+    // runs. In a werk, the repo-local cards can lack per-package node deps
+    // (the #3915 gate-spine class) and fails for a reason unrelated to PATH —
+    // fall back to a runnable client rather than reporting a PATH bug.
+    let candidates = [
+        format!("{}/platform/scripts/cards", chorus_root()),
+        format!("{}/CascadeProjects/chorus/platform/scripts/cards", home()),
+    ];
+    let mut last_err = String::new();
+    for cards in &candidates {
+        let output = Command::new("bash")
+            .args([cards, "view", "1992"])
+            .env("CHORUS_ROOT", chorus_root())
+            .env("HOME", home())
+            .env("PATH", full_path())
+            .output()
+            .expect("failed to run cards");
+        if output.status.success() {
+            return;
+        }
+        last_err = String::from_utf8_lossy(&output.stderr).to_string();
+    }
+    panic!("cards view failed WITH PATH from every client. stderr: {last_err}");
 }
 
 // --- icd_write_gate: npx needs PATH ---

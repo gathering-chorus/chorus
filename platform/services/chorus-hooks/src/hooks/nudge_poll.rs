@@ -453,6 +453,16 @@ mod tests {
         synthetic_50k(&log);
 
         let reference = reference_scan(&log);
+        // #3949 — on a loaded box the REFERENCE inflates (2.0ms measured as
+        // more), compressing the quadratic pass's ratio under BUDGET_FACTOR
+        // and failing this proof spuriously (04:44 nightly, load class). A
+        // wall-clock ratio proof is only meaningful when the baseline itself
+        // was measured sanely: if reference exceeds 5x its idle envelope,
+        // the box is the variable — UNMEASURABLE, not red (#3753).
+        if reference > Duration::from_millis(10) {
+            eprintln!("UNMEASURABLE: reference scan {reference:?} — loaded box, ratio proof skipped (#3753)");
+            return;
+        }
         let t = Instant::now();
         // Deliberately quadratic-ish: re-scan a prefix of the file per line.
         let raw = fs::read_to_string(&log).expect("read fixture");

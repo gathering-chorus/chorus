@@ -7,7 +7,8 @@
 # the day this landed); this makes the number a RED with an owner instead of
 # a feeling. Budgets live in platform/config/werk-phase-budgets.tsv.
 set -u
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #3949 — derive, never hardcode (#3904 rule; the path guard caught this).
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SPINE="${WERK_BUDGET_SPINE:-$HOME/.chorus/chorus.log}"
 BUDGETS="${WERK_BUDGET_FILE:-$(cd "$(dirname "$0")/.." && pwd)/config/werk-phase-budgets.tsv}"
 WINDOW_H="${WERK_BUDGET_WINDOW_H:-24}"

@@ -22,6 +22,7 @@ setup() {
   cd "$REPO"
   offenders=$(grep -rlnE "[0-9]+/api/nudge" platform 2>/dev/null \
     | grep -vE 'node_modules|/dist|/coverage|\.test\.|tests/|\.bats$|\.map$|\.html$' \
+    | grep -vE '/target/|platform/logs/' \
     | grep -vE 'platform/pulse/' \
     | grep -vE 'platform/mcp-server/src/server\.ts$' \
     || true)
@@ -59,4 +60,20 @@ setup() {
   cd "$REPO"
   run grep -cE "[0-9]+/api/nudge" platform/mcp-server/src/transport.ts
   [ "$output" -eq 0 ]
+}
+
+@test "NEGATIVE: a SOURCE file referencing the nudge URL is still caught (#3949)" {
+  # The exclusions above dropped compiled binaries (target/) and runtime logs —
+  # scan artifacts, not sources (the #3915 binary-in-a-source-scan class). This
+  # proves the narrowing did not blind the sweep to real code.
+  cd "$REPO"
+  tmp="platform/probe-3949-nudge-url.sh"
+  echo 'curl http://localhost:3475/api/nudge' > "$tmp"
+  offenders=$(grep -rlnE "[0-9]+/api/nudge" platform 2>/dev/null \
+    | grep -vE 'node_modules|/dist|/coverage|\.test\.|tests/|\.bats$|\.map$|\.html$' \
+    | grep -vE '/target/|platform/logs/' \
+    | grep -vE 'platform/pulse/' \
+    | grep -vE 'platform/mcp-server/src/server\.ts$' || true)
+  rm -f "$tmp"
+  echo "$offenders" | grep -q "probe-3949-nudge-url.sh"
 }

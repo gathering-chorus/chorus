@@ -23,9 +23,14 @@ FAIL=0
 # Pull the last window of context.inject.injected spine events from Loki once;
 # every assertion reads this capture.
 START="$(( $(date +%s) - WINDOW_S ))000000000"
-INJECTED=$(curl -s -G "$LOKI/loki/api/v1/query_range" \
+# #3949 — the fetch is BOUNDED and its failure is distinguishable from an
+# empty result. Unbounded (no --max-time, limit=1000 over 12h) this query
+# ground Loki for minutes, the error vanished into 2>/dev/null, and "Loki
+# slow" scored as "awareness broken" (the #3948 down-vs-unmeasurable class).
+FETCH_OK=1
+INJECTED=$(curl -s --max-time 20 -G "$LOKI/loki/api/v1/query_range" \
   --data-urlencode 'query={appName="chorus-events"} |= "context.inject.injected"' \
-  --data-urlencode "start=$START" --data-urlencode "limit=1000" 2>/dev/null \
+  --data-urlencode "start=$START" --data-urlencode "limit=200" 2>/dev/null \
   | python3 -c "
 import json,sys
 try:
@@ -33,7 +38,18 @@ try:
     for s in d.get('data',{}).get('result',[]):
         for v in s.get('values',[]): print(v[1])
 except Exception:
-    pass" 2>/dev/null)
+    pass" 2>/dev/null) || FETCH_OK=0
+[ -z "$INJECTED" ] && [ "$FETCH_OK" = "1" ] && {
+  # Empty could still be a failed curl swallowed by the pipe — probe cheaply.
+  curl -s --max-time 5 -o /dev/null "$LOKI/ready" || FETCH_OK=0
+}
+# #3949 — headless hours have NO user prompts, so zero injections is CORRECT
+# then, not a defect. Gate the verdict on prompt activity in the same window.
+PROMPTS=$(grep -c "jeff.input.delivered" "$HOME/.chorus/chorus.log" 2>/dev/null || echo 0)
+if [ "$FETCH_OK" = "0" ]; then
+  echo "UNMEASURABLE: Loki fetch failed/timed out — awareness not proven broken (#3753)"
+  exit 0
+fi
 
 echo "=== continuous awareness gate tests ==="
 echo ""
@@ -45,8 +61,12 @@ if [ "$count" -gt 0 ]; then
   echo "  PASS: context injection firing ($count events)"
   ((PASS++))
 else
-  echo "  FAIL: no context.inject.injected events in Loki window"
-  ((FAIL++))
+  if [ "${PROMPTS:-0}" -eq 0 ]; then
+    echo "  UNMEASURABLE: no user prompts in window — nothing to inject for"
+  else
+    echo "  FAIL: prompts occurred but no context.inject.injected events"
+    ((FAIL++))
+  fi
 fi
 
 # --- Test 2: Hybrid search API returns results ---

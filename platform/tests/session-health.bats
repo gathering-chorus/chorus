@@ -73,7 +73,19 @@ HEALTH_SCRIPT="${CHORUS_ROOT}/platform/scripts/session-health.sh"
 
 @test "warns when compaction rate exceeds threshold" {
   export SESSION_HEALTH_TEST=1
-  # Use a remove-rate threshold of 0 to guarantee trigger
-  run bash "$HEALTH_SCRIPT" --role silas --remove-rate-threshold 0
+  # #3949 — the test BRINGS its session (#3528): a fixture transcript with
+  # compaction-remove events, so the assert is about the script's logic, never
+  # about whatever the live session happens to contain at 04:44.
+  FIX="$BATS_TEST_TMPDIR/projects/-Users-jeffbridwell-CascadeProjects-chorus-roles-silas"
+  mkdir -p "$FIX"
+  {
+    for i in $(seq 1 60); do
+      echo '{"type":"user","message":{"role":"user","content":"p'"$i"'"}}'
+    done
+    echo '{"type":"queue-operation","operation":"remove"}'
+    echo '{"type":"queue-operation","operation":"remove"}'
+  } > "$FIX/fixture-session.jsonl"
+  SESSION_HEALTH_SESSIONS_DIR="$BATS_TEST_TMPDIR/projects" \
+    run bash "$HEALTH_SCRIPT" --role silas --remove-rate-threshold 0
   echo "$output" | grep -qi 'compaction accelerating'
 }

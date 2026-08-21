@@ -7,7 +7,8 @@
 # the pipeline is running code someone already fixed. This is exactly the
 # condition that let a Jul-24 werk-commit serve a month past its fix.
 set -u
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# #3949 — derive, never hardcode (#3904 rule; the path guard caught this).
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SPINE="${VERB_DRIFT_SPINE:-$HOME/.chorus/chorus.log}"
 BIN_DIR="${VERB_DRIFT_BIN:-$HOME/.chorus/bin}"
 PASS=0; FAIL=0
