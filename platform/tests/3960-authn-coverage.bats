@@ -8,6 +8,9 @@
 # If any of these collapse, the gate cannot tell "auth works" from "I hit the
 # wrong URL" — the exact failure this proof exists to prevent.
 
+# Covers: platform/scripts/authn-coverage.sh  (literal path so the #3917
+# coverage linker registers this suite against the script — it greps for a
+# `platform/…​.sh` token, which a $BATS_TEST_DIRNAME-relative path hides).
 SCRIPT="${BATS_TEST_DIRNAME}/../scripts/authn-coverage.sh"
 FIXTURE_PORT=39601
 
