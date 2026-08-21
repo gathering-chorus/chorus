@@ -1173,7 +1173,7 @@ mod jest_selection_3912 {
     use super::*;
 
     fn row(f: &str, layer: &str) -> TestRow {
-        TestRow { file_path: f.into(), covers: "messages-domain".into(), pyramid_layer: layer.into() }
+        TestRow { file_path: f.into(), covers: "messages-domain".into(), pyramid_layer: layer.into(), hermeticity: String::new() }
     }
 
     #[test]

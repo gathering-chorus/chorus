@@ -663,7 +663,15 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new());
     }
-    let args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    let mut args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    // #3955 — the ONE nextest config (pin + serial-e2e groups) lives at the werk
+    // root; per-crate runs resolve config from the CRATE dir, so pass it
+    // explicitly or the serial-e2e grouping silently never applies.
+    let cfg = format!("{}/.config/nextest.toml", werk);
+    if Path::new(&cfg).is_file() {
+        args.insert(2, "--config-file".to_string());
+        args.insert(3, cfg);
+    }
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
     let mut cmd = Command::new("cargo");
