@@ -243,15 +243,16 @@ pub struct Quarantined {
 /// spelled out: a selected crate with zero tests is a red, not a silence.
 /// Quarantine translates to an exact-name filterset instead of libtest's
 /// substring `--skip`; empty quarantine adds no filterset at all.
-pub fn nextest_run_args(quarantined: &[&str]) -> Vec<String> {
+pub fn nextest_run_args(quarantined: &[&str], exclude_bins: &[&str]) -> Vec<String> {
     let mut v: Vec<String> = ["nextest", "run", "--no-tests=fail"]
         .iter().map(|s| s.to_string()).collect();
-    if !quarantined.is_empty() {
-        let expr = quarantined.iter()
-            .map(|c| format!("not test(={})", c))
-            .collect::<Vec<_>>().join(" and ");
+    let mut terms: Vec<String> = quarantined.iter()
+        .map(|c| format!("not test(={})", c)).collect();
+    // #3919 — stack-down: needs-stack integration binaries excluded, typed skip
+    terms.extend(exclude_bins.iter().map(|b| format!("not binary(={})", b)));
+    if !terms.is_empty() {
         v.push("-E".to_string());
-        v.push(expr);
+        v.push(terms.join(" and "));
     }
     v
 }
@@ -439,6 +440,9 @@ pub struct TestRow {
     /// #3661 — the model's pyramidLayer (unit/integration/bdd/e2e). Empty on a
     /// 2-col legacy row; scoping by --type needs the 3-col fetch.
     pub pyramid_layer: String,
+    /// #3919 — the model's hermeticity ("hermetic" / "needs-stack"). Empty on
+    /// legacy rows; only the literal "needs-stack" gates on the live stack.
+    pub hermeticity: String,
 }
 
 /// Parse `filePath\tcovers[\tpyramidLayer]` TSV rows; incomplete rows are
@@ -453,6 +457,7 @@ pub fn parse_test_rows(tsv: &str) -> Vec<TestRow> {
                         file_path: f.trim().to_string(),
                         covers: c.trim().to_string(),
                         pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
+                        hermeticity: String::new(),
                     })
                 }
                 _ => None,
@@ -832,9 +837,15 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
                     file_path: f.trim().to_string(),
                     covers: c.trim().to_string(),
                     pyramid_layer: it.next().map(|x| x.trim().to_string()).unwrap_or_default(),
+                    hermeticity: String::new(),
                 });
                 names.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
                 entities.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
+                if let Some(h) = it.next() {
+                    if let Some(r) = rows.last_mut() {
+                        r.hermeticity = h.trim().to_string();
+                    }
+                }
             }
         }
     }
@@ -1698,4 +1709,56 @@ mod test_result_clock_tests {
         // 2026-07-15 12:00 UTC → EDT (-04:00) 08:00
         assert_eq!(boston_offset_iso(1784116800000), "2026-07-15T08:00:00-04:00");
     }
+}
+
+/// #3919 — the registered files whose tests DECLARE needs-stack hermeticity.
+/// Deduped + sorted so lane exclusions are deterministic.
+pub fn needs_stack_files(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
+    rows.iter()
+        .filter(|r| r.hermeticity == "needs-stack")
+        .map(|r| r.file_path.clone())
+        .collect()
+}
+
+/// #3919 — the live-stack verdict from named probes. Down services are NAMED
+/// in the error; the caller renders the typed SKIPPED state from it.
+pub fn stack_verdict(probes: &[(&str, bool)]) -> Result<(), String> {
+    let down: Vec<&str> = probes.iter().filter(|(_, ok)| !ok).map(|(n, _)| *n).collect();
+    if down.is_empty() { Ok(()) } else { Err(down.join(", ")) }
+}
+
+/// #3919 — the ONE line the summary prints for the integration tier. A skip is
+/// a typed, counted state ("SKIPPED (stack-down: …)"), never silence and never
+/// a pass; zero registered needs-stack tests is its own explicit state (#3443).
+pub fn integration_report(count: usize, stack_down: Option<&str>) -> String {
+    match (count, stack_down) {
+        (0, _) => "integration: none registered needs-stack for this diff".to_string(),
+        (n, Some(down)) => format!(
+            "integration: SKIPPED (stack-down: {}) — {} registered needs-stack test(s) NOT run; typed skip, counted, not a verdict", down, n),
+        (n, None) => format!("integration: {} needs-stack test(s) ran with the live stack", n),
+    }
+}
+
+/// #3919 — exclude integration-test binaries from a nextest run: tests/foo.rs
+/// compiles to binary `foo`, so file-level exclusion is binary-level exact.
+pub fn nextest_exclude_binaries(bins: &[&str]) -> Vec<String> {
+    if bins.is_empty() {
+        return Vec::new();
+    }
+    let expr = bins.iter().map(|b| format!("not binary(={})", b))
+        .collect::<Vec<_>>().join(" and ");
+    vec!["-E".to_string(), expr]
+}
+
+/// #3919 — jest exclusion args for the needs-stack files inside one package;
+/// paths are made package-relative so jest's pattern matches its rootDir.
+pub fn jest_ignore_args(needs_stack: &[&str], pkg: &str) -> Vec<String> {
+    let prefix = format!("{}/", pkg);
+    let rel: Vec<String> = needs_stack.iter()
+        .filter_map(|f| f.strip_prefix(&prefix).map(|s| s.to_string()))
+        .collect();
+    if rel.is_empty() {
+        return Vec::new();
+    }
+    vec!["--testPathIgnorePatterns".to_string(), rel.join("|")]
 }

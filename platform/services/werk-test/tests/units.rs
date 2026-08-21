@@ -498,6 +498,7 @@ fn row(path: &str, covers: &str, layer: &str) -> werk_test::TestRow {
         file_path: path.to_string(),
         covers: covers.to_string(),
         pyramid_layer: layer.to_string(),
+        hermeticity: String::new(),
     }
 }
 
@@ -860,7 +861,7 @@ fn unmapped_file_falls_back_to_full_suite() {
 
 #[test]
 fn nextest_args_base_selects_lib_and_bins() {
-    let args = werk_test::nextest_run_args(&[]);
+    let args = werk_test::nextest_run_args(&[], &[]);
     assert_eq!(args, vec!["nextest", "run", "--no-tests=fail"]);
     // (c): no --lib/--bins — tests/ suites are IN the gate now, and zero-tests is red
     assert!(!args.iter().any(|a| a == "--lib" || a == "--bins"));
@@ -868,7 +869,7 @@ fn nextest_args_base_selects_lib_and_bins() {
 
 #[test]
 fn nextest_args_translate_quarantine_to_exact_filterset() {
-    let args = werk_test::nextest_run_args(&["flaky_a", "flaky_b"]);
+    let args = werk_test::nextest_run_args(&["flaky_a", "flaky_b"], &[]);
     let e = args.iter().position(|a| a == "-E").expect("filterset flag");
     assert_eq!(args[e + 1], "not test(=flaky_a) and not test(=flaky_b)");
     // never the cargo-test style trailing `-- --skip` form
@@ -930,4 +931,72 @@ fn pin_parses_from_config_and_absence_of_pin_is_none() {
     let toml = "# comment\nnextest-version = \"0.9.143\"\n";
     assert_eq!(werk_test::parse_nextest_pin(toml), Some((0, 9, 143)));
     assert_eq!(werk_test::parse_nextest_pin("store.dir = \"x\""), None);
+}
+
+// ---- #3919 — needs-stack tests: run with the live stack, typed SKIP without --
+
+#[test]
+fn hermeticity_parses_as_sixth_column_and_defaults_empty() {
+    let tsv = "a/tests/x.rs\tsvc\tintegration\tcase_a\tent-a\tneeds-stack\n\
+               b/src/y.test.ts\tsvc\tunit\tcase_b\tent-b\n";
+    let (rows, _, _) = werk_test::parse_rows_and_names(tsv);
+    assert_eq!(rows[0].hermeticity, "needs-stack");
+    assert_eq!(rows[1].hermeticity, "");
+}
+
+#[test]
+fn needs_stack_files_selects_only_declared_needs_stack() {
+    let tsv = "a/tests/x.rs\tsvc\tintegration\tca\tea\tneeds-stack\n\
+               a/tests/x.rs\tsvc\tintegration\tcb\teb\tneeds-stack\n\
+               b/y.test.ts\tsvc\tunit\tcc\tec\thermetic\n";
+    let (rows, _, _) = werk_test::parse_rows_and_names(tsv);
+    let files = werk_test::needs_stack_files(&rows);
+    assert_eq!(files.iter().cloned().collect::<Vec<_>>(), vec!["a/tests/x.rs"]);
+}
+
+#[test]
+fn stack_verdict_up_when_all_probes_pass_and_names_the_down_ones() {
+    assert!(werk_test::stack_verdict(&[("chorus-api", true), ("owl-api", true)]).is_ok());
+    let err = werk_test::stack_verdict(&[("chorus-api", true), ("owl-api", false)])
+        .expect_err("a down probe must not read as up");
+    assert!(err.contains("owl-api"), "down service must be NAMED, got: {}", err);
+}
+
+/// NEGATIVE PROOF (#3734): stack-down with needs-stack tests selected must
+/// produce the typed SKIPPED report — the state the old runner rendered as
+/// silence. Zero needs-stack tests is NOT the same state and says so.
+#[test]
+fn negative_proof_stack_down_reports_typed_skip_never_silence() {
+    let r = werk_test::integration_report(3, Some("owl-api"));
+    assert!(r.contains("SKIPPED"), "typed state, got: {}", r);
+    assert!(r.contains("3"), "count visible, got: {}", r);
+    assert!(r.contains("owl-api"), "cause named, got: {}", r);
+    assert!(!r.to_lowercase().contains("pass"), "a skip must never read as pass: {}", r);
+}
+
+#[test]
+fn integration_report_stack_up_counts_ran_and_none_registered_is_explicit() {
+    let up = werk_test::integration_report(2, None);
+    assert!(up.contains("2") && up.to_lowercase().contains("live stack"), "got: {}", up);
+    let none = werk_test::integration_report(0, None);
+    assert!(none.contains("none registered"), "explicit absence (#3443 bar), got: {}", none);
+}
+
+#[test]
+fn cargo_needs_stack_exclusion_is_by_integration_binary() {
+    // tests/foo.rs compiles to binary `foo` — ONE merged -E filterset with quarantine.
+    let args = werk_test::nextest_run_args(&["flaky_q"], &["foo", "slow_e2e"]);
+    let e = args.iter().position(|a| a == "-E").expect("filterset flag");
+    assert_eq!(args[e + 1], "not test(=flaky_q) and not binary(=foo) and not binary(=slow_e2e)");
+    assert_eq!(args.iter().filter(|a| *a == "-E").count(), 1, "two -E flags would shadow");
+    assert!(!werk_test::nextest_run_args(&[], &[]).contains(&"-E".to_string()));
+}
+
+#[test]
+fn jest_ignore_args_scope_to_files_under_the_package() {
+    let args = werk_test::jest_ignore_args(
+        &["directing/clearing/tests/account.test.ts", "platform/api/tests/z.test.ts"],
+        "platform/api");
+    assert_eq!(args, vec!["--testPathIgnorePatterns", "tests/z.test.ts"]);
+    assert!(werk_test::jest_ignore_args(&["a/b.test.ts"], "platform/pulse").is_empty());
 }

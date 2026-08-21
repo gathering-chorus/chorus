@@ -2112,6 +2112,15 @@
         "reason": "Why the first row was selected — uniform across rows today"
       }
     },
+    "test.integration.skipped": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `test` verb (#3919) \u2014 needs-stack tier skipped TYPED: the live stack was down, so N registered needs-stack tests did not run. Counted, named cause (stack_down), never green-by-default and never silence.",
+      "fields": {
+        "count": "How many registered needs-stack tests were skipped",
+        "stack_down": "Comma-joined names of the down services that caused the skip"
+      }
+    },
     "test.scoped": {
       "vertebra": "proving",
       "source": "werk",
