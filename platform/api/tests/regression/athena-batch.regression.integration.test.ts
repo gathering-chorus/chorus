@@ -3,7 +3,7 @@
  * #2208 — Data-driven regression for additional Athena GET handlers.
  *
  * Batches owners, blast-radius, machines, health through the same (steps retired #3702)
- * (products/subproducts retired #3603 — owl-api :3360/products serves products)
+ * (products/subproducts retired #3603 — athena-make :3360/products serves products)
  * oxigraph + TTL + golden JSON pattern. Adds blast-radius consume edge
  * to the fixture so the traversal has something to find.
  */

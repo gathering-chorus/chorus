@@ -8,7 +8,7 @@
  * stub fetch serving its JWKS, a stub sparql serving chorus:hasScope rows.
  * No live stack, no $HOME, no shared secret (there is none any more).
  *
- * Contract (mirrors the owl-api door, #3689):
+ * Contract (mirrors the athena-make door, #3689):
  *   - request matches a secured surface + no/invalid Bearer      → refuse 401
  *   - HS256 token                                                → refuse 401 hs256-retired (typed)
  *   - valid ES256 identity, Principal not granted the scope      → refuse 403

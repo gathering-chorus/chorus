@@ -1,6 +1,6 @@
 // #3580 — gate:quality dispatches checks by subdomain, consuming the generated
-// tests-domain API (owl-api :3360/tests, landed #2819). The FIRST real consumer
-// of a generated domain API: it closes the owl-api loop (generate → land →
+// tests-domain API (athena-make :3360/tests, landed #2819). The FIRST real consumer
+// of a generated domain API: it closes the athena-make loop (generate → land →
 // CONSUME) and proves the generation program pays off on the tests domain.
 //
 // This module is the PURE selection core (hermetic, no live fetch — see the
@@ -8,7 +8,7 @@
 // caller. The skill (platform/skills/gate-quality) invokes it to scope its
 // checks to the tests covering the card's subdomain instead of the whole suite.
 
-/** One test record as owl-api serves it at /tests (the real key set). */
+/** One test record as athena-make serves it at /tests (the real key set). */
 export interface TestRecord {
   testName: string;
   /** The Domain this test covers — the join key (chorus:covers → Domain). */
@@ -18,7 +18,7 @@ export interface TestRecord {
   hermeticity?: string;
 }
 
-/** The /tests response envelope owl-api returns. */
+/** The /tests response envelope athena-make returns. */
 export interface TestsApiResponse {
   data: TestRecord[];
   count?: number;
@@ -70,7 +70,7 @@ function degraded(subdomain: string): DispatchResult {
   return { subdomain, coveringTests: [], count: 0, scoped: false };
 }
 
-/** Where owl-api serves the tests vertical. Overridable for tests/other hosts. */
+/** Where athena-make serves the tests vertical. Overridable for tests/other hosts. */
 export const TESTS_API_DEFAULT = 'http://localhost:3360/tests?limit=10000';
 
 /**

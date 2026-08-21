@@ -2,13 +2,13 @@
 // #3594 — the V1→V2 migration readout: per-DOMAIN stage matrix (rebuilt from the
 // per-kind counter, which answered the wrong question — Jeff 2026-07-01). Pure logic:
 // raw graph/source facts → rows → fixed matrix text. The load-bearing invariant is
-// HONESTY: owl-api-run / v1-code-retired are never faked (render as '—'), and `done`
+// HONESTY: athena-make-run / v1-code-retired are never faked (render as '—'), and `done`
 // is never done while a stage is unproven.
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { computeMigrationRows, renderMigrationReadout } from '../src/server';
 
-test('computeMigrationRows: graph+source stages real; owl-api/v1-code not-instrumented; done honest-false', () => {
+test('computeMigrationRows: graph+source stages real; athena-make/v1-code not-instrumented; done honest-false', () => {
   const rows = computeMigrationRows({
     domains: ['search', 'code'], // unsorted input → compute sorts
     srcDomains: ['code'], // only code is declared in committed source
@@ -42,7 +42,7 @@ test('renderMigrationReadout: per-domain matrix — honest cells, real counts, d
 
   // header + column row for the 7 stages
   assert.match(out, /per-domain stage matrix/);
-  assert.match(out, /domain +created owl-src loaded owl-api v1-retired v1-code done/);
+  assert.match(out, /domain +created owl-src loaded athena-make v1-retired v1-code done/);
   // both domains appear as rows
   assert.match(out, /\n {2}code /);
   assert.match(out, /\n {2}search /);
@@ -55,7 +55,7 @@ test('renderMigrationReadout: per-domain matrix — honest cells, real counts, d
   // summary line reflects the REAL counts (created 2/2, owl-src 1/2, v1-retired 1/2)
   assert.match(out, /2 domains — created 2\/2 · owl-src 1\/2 · loaded 2\/2 · v1-retired 1\/2/);
   // legend names the uninstrumented stages explicitly
-  assert.match(out, /not-yet-instrumented \(owl-api-run, v1-code-retired\)/);
+  assert.match(out, /not-yet-instrumented \(athena-make-run, v1-code-retired\)/);
 
   // determinism: identical input → identical output
   const render = (): string =>

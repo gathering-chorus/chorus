@@ -7,10 +7,10 @@
 //!
 //! Deliberately hermetic — no Fuseki, no I/O, no graph. The graph-walk that
 //! BUILDS the chain (ownership edges from #3433: a node's single-parent
-//! Service > Domain > Product > ValueStream/Step) and the owl-api projection
+//! Service > Domain > Product > ValueStream/Step) and the athena-make projection
 //! (`/properties/effective?node=X&key=Y`) wire on top of this core. Keeping the
 //! precedence logic pure makes it unit-testable in isolation and linkable by any
-//! consumer (owl-api, werk-test, tagging-lift) without a live graph.
+//! consumer (athena-make, werk-test, tagging-lift) without a live graph.
 //!
 //! Contract pinned with Kade (navigator, 2026-06-16):
 //!  - total-ordering is a PRECONDITION — a malformed chain is an error, never a

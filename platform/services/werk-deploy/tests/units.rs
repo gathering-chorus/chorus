@@ -659,7 +659,7 @@ fn health_timeout_err_names_url_and_last_body() {
 
 fn full_checkout_werk(base: &std::path::Path, name: &str) {
     // models reality: EVERY werk contains EVERY crate dir
-    for c in ["werk-demo", "werk-merge", "werk-deploy", "owl-api"] {
+    for c in ["werk-demo", "werk-merge", "werk-deploy", "athena-make"] {
         std::fs::create_dir_all(base.join(name).join("platform/services").join(c)).unwrap();
     }
 }

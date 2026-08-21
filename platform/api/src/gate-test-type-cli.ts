@@ -20,7 +20,9 @@ if (blocked.length > 0) {
     process.stderr.write(`  ${b.path}\n    ${b.result.reason}\n`);
   }
   process.stderr.write(
-    '\nEach test file needs a header `// @test-type: <unit|integration|api|ui|perf|security|bdd|e2e>`.\n' +
+    '\nEach test file needs a header `// @test-type: <unit|integration|bdd|e2e|contract|fitness|smoke>`,\n' +
+    'optionally with a concern: `// @test-type: integration:api` (concerns: api|ui|perf|security).\n' +
+    'A concern on its own (`@test-type: api`) is NOT a layer and reports as no declaration.\n' +
     'If a content signal is fixture-data (a test ABOUT a domain carrying its words), justify the override:\n' +
     '  // @test-type: unit — signal:security is fixture-data\n',
   );

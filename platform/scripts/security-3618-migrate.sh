@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# #3726 SUPERSEDED — the security substrate now deploys via chorus-model-deploy.sh
+# #3726 SUPERSEDED — the security substrate now deploys via athena-deploy-model.sh
 # (MODEL_SET security schema/surfaces → ontology; SECURITY_SET identity/scopes →
 # urn:chorus:domains:security). A fresh load reproduces it; this one-time migration
 # is kept for history only. Do NOT hand-run — the deploy set is the source of truth.
@@ -9,7 +9,7 @@
 #
 #   generate  (default) — read the LIVE graph, emit the typed-slot DEL/INS batch
 #               to stdout. Read-only; lets a human eyeball exactly what will land.
-#   apply     — POST the generated body to the governed door (owl-api /batch).
+#   apply     — POST the generated body to the governed door (athena-make /batch).
 #               REFUSES unless CHORUS_WRITE_DOOR_TOKEN is set (mint via
 #               chorus-identity-token — #3719; scope is model data now scope urn:chorus:ontology). Never writes
 #               to Fuseki directly. Requires the #3609 body fix (batch > 4KB).

@@ -1,5 +1,6 @@
+// @test-type: integration
 /**
- * #3644 — same-origin /owl proxy: the Athena page family reaches owl-api
+ * #3644 — same-origin /owl proxy: the Athena page family reaches athena-make
  * through chorus-api instead of hardcoding hostname:3360 (which broke every
  * off-LAN origin, live specimen: the share tunnel).
  * Hermetic: OWL_UPSTREAM points at a stub server in this test — no live :3360.
@@ -65,7 +66,7 @@ describe('#3644 — /owl same-origin proxy', () => {
     }
   });
 
-  test('write verbs are 405 at the proxy — never reach owl-api', async () => {
+  test('write verbs are 405 at the proxy — never reach athena-make', async () => {
     const srv = app.listen(0);
     try {
       for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {

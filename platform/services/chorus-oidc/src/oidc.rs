@@ -1,4 +1,4 @@
-//! #3613 / ADR-052 — Solid-OIDC (CSS) identity at the owl-api write seam.
+//! #3613 / ADR-052 — Solid-OIDC (CSS) identity at the athena-make write seam.
 //!
 //! CSS (:3001) is the one issuer: it signs ES256 tokens with a private key that
 //! never leaves it; this module verifies with the PUBLIC key from `/.oidc/jwks`
@@ -402,7 +402,7 @@ pub fn seam_auth_any(
 /// once and resolved by every reader, because on 2026-08-06 it was spelled by
 /// hand in twelve places across Rust, TypeScript, shell and the ontology files.
 ///
-/// That day the ten Principal records were consolidated into the graph owl-api
+/// That day the ten Principal records were consolidated into the graph athena-make
 /// SERVES from, and the copies in the graph the doors READ were retired as
 /// duplicates. They were not duplicates — they were the same records with two
 /// consumers. Jeff was locked out of the Clearing within minutes, and the

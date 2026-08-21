@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 # #3356 — the ONE CSS-token verifier (ES256/JWKS) + HS256 legacy, extracted from
-# owl-api so the DAL (chorus-model) and owl-api's door share it. No competing impl.
+# athena-make so the DAL (chorus-model) and athena-make's door share it. No competing impl.
 # Near-zero deps (ADR-032 §1): the vetted RustCrypto primitives only.
 [dependencies]
 hmac = "0.12"

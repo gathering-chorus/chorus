@@ -1,5 +1,5 @@
 /**
- * @test-type: api
+ * @test-type: integration:api
  *
  * Athena CMDB API tests — #1849, #1860
  *
@@ -41,7 +41,7 @@ describeIntegration('GET /api/athena/health', () => {
 });
 
 describeIntegration('retired product endpoints (#3603)', () => {
-  test('GET /api/athena/products is gone — owl-api :3360/products is the product API', async () => {
+  test('GET /api/athena/products is gone — athena-make :3360/products is the product API', async () => {
     const res = await fetch(`${API}/api/athena/products`);
     expect(res.status).toBe(404);
   });

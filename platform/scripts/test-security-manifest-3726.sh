@@ -6,7 +6,7 @@
 # tokens actually present, not the stale localhost scheme that would lock out
 # every role on reload.
 #
-# RED before #3726: the security TTLs are not in chorus-model-deploy.sh, and
+# RED before #3726: the security TTLs are not in athena-deploy-model.sh, and
 # identity-principals-3613.ttl carries localhost:3001 webIds that no token
 # matches. GREEN after: files in the deploy set + webIds reconciled to the
 # logical issuer + a scratch load reproduces 7 security principals / 13 scopes /
@@ -14,7 +14,7 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-DEPLOY="$ROOT/platform/scripts/chorus-model-deploy.sh"
+DEPLOY="$ROOT/platform/scripts/athena-deploy-model.sh"
 ID_TTL="$ROOT/roles/silas/ontology/identity-principals-3613.ttl"
 SCOPE_TTL="$ROOT/roles/silas/ontology/security-scopes-3689.ttl"
 FAIL=0

@@ -3,7 +3,7 @@
 #
 # Delete the duplicate chorus:Principal records from urn:chorus:domains:identity,
 # leaving the ONE home (urn:chorus:domains:security) that the doors enforce and
-# owl-api now serves. This is the step that, done wrong on 2026-08-06, locked
+# athena-make now serves. This is the step that, done wrong on 2026-08-06, locked
 # Jeff out of the Clearing — so it is guarded three ways and refuses rather than
 # guesses:
 #
@@ -11,7 +11,7 @@
 #     also exist in security. If identity holds a Principal that security does
 #     not, that record is NOT a duplicate — deleting it would lose the only
 #     copy. Refuse the whole run; name the orphan.
-#   GUARD 2 (served == home): owl-api MUST already serve from the security home
+#   GUARD 2 (served == home): athena-make MUST already serve from the security home
 #     (phase 1 live). If /principals is still on the stale graph, deleting the
 #     identity copies pulls the page out from under the running service. Refuse
 #     until phase 1 is verified live — the strict-after-phase-1 ordering, enforced
@@ -58,18 +58,18 @@ if [ -n "$ORPHANS" ]; then
 fi
 echo "retire: GUARD 1 ok — all $(printf '%s\n' "$IDN_SUBJ" | wc -l | tr -d ' ') identity Principals also exist in the security home."
 
-# GUARD 2 — served == home. owl-api must already serve from security (phase 1 live).
+# GUARD 2 — served == home. athena-make must already serve from security (phase 1 live).
 # Proof by presence: flow-probe exists ONLY in security, so if /principals serves
-# it, owl-api is reading the home. If not, phase 1 is not live — refuse.
+# it, athena-make is reading the home. If not, phase 1 is not live — refuse.
 if ! curl -s --max-time 15 "$OWL/principals" \
      | python3 -c 'import json,sys
 d=json.load(sys.stdin); rows=d.get("data",[])
 sys.exit(0 if any(r.get("webId","").endswith("/flow-probe/profile/card#me") for r in rows) else 1)'; then
-  echo "retire: REFUSING — owl-api /principals does NOT yet serve the security home (flow-probe absent)." >&2
+  echo "retire: REFUSING — athena-make /principals does NOT yet serve the security home (flow-probe absent)." >&2
   echo "        Phase 1 is not verified live; retiring now pulls the page out from under the running service." >&2
   exit 2
 fi
-echo "retire: GUARD 2 ok — owl-api serves the security home (flow-probe present on /principals)."
+echo "retire: GUARD 2 ok — athena-make serves the security home (flow-probe present on /principals)."
 
 # The DELETE — every triple whose subject is a Principal in identity, from identity only.
 DEL="PREFIX chorus: <$NS>

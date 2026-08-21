@@ -56,7 +56,7 @@ canon "$GENERATED" > "$WORK/generated.nt" \
 
 # Dangling-edge guard (caught live 2026-08-14; wren: structural, not
 # discipline): every deploys target must be a Service the STORE serves.
-# Fixture path takes a served-list file; live fetches owl-api /services;
+# Fixture path takes a served-list file; live fetches athena-make /services;
 # no source at all = refuse to write edges blind.
 DEPLOY_TARGETS="$(grep -E 'chorus#deploys>' "$WORK/generated.nt" | grep -oE 'chorus#service-[A-Za-z0-9-]+' | sed 's/.*chorus#//' | sort -u || true)"
 if [ -n "$DEPLOY_TARGETS" ]; then

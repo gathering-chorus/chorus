@@ -35,7 +35,7 @@ export interface ContextPrioritiesDeps {
    *  are treated as still-open: dropping what we cannot confirm is how parked
    *  work would silently disappear. */
   readCardStatuses?: (ids: number[]) => Promise<Map<number, string>>;
-  /** #3686 — governed read path: fetch an owl-api GENERATED route (e.g.
+  /** #3686 — governed read path: fetch an athena-make GENERATED route (e.g.
    *  '/domains?limit=500') and return its parsed JSON. Levels with a generated
    *  route read through it (Jeff's governed-paths steer); levels without one
    *  (Role — route collision; Card — thin-shape skip) stay SPARQL, labeled. */
@@ -156,7 +156,7 @@ export async function fetchContextPriorities(
 
   const unsequenced = readUnsequenced(deps.readPulse(), r, sequencedIds);
 
-  // #3686 — the upper walk levels. products/domains via the GENERATED owl-api
+  // #3686 — the upper walk levels. products/domains via the GENERATED athena-make
   // routes; rolePriority via SPARQL until the Role route collision is fixed.
   const [products, domains, rolePriority] = await Promise.all([
     readOwnedLevel(deps, '/products?limit=500', r),
@@ -177,7 +177,7 @@ export async function fetchContextPriorities(
 }
 
 /** #3686 — one ownership level (products/domains) read from a GENERATED
- *  owl-api collection route. Filters to the role's things (ownedBy carries
+ *  athena-make collection route. Filters to the role's things (ownedBy carries
  *  either the bare or role- prefixed form in the live data — match both),
  *  ordinals first (asc), the rest listed unordered. Read failure degrades the
  *  level with a note — the walk itself never 500s on a level source. */
@@ -186,7 +186,7 @@ async function readOwnedLevel(
   path: string,
   role: string,
 ): Promise<OwnedLevel> {
-  const source = `owl-api:${path}`;
+  const source = `athena-make:${path}`;
   let rows: Array<Record<string, unknown>>;
   try {
     const body = (await deps.owl(path)) as { data?: unknown };

@@ -1,10 +1,10 @@
 // @test-type: integration — in-process TestApp harness (startTestApp) + own
-// owl-api stub; no live :3360, no $HOME cache (QUALITY_CACHE_PATH → tempdir).
+// athena-make stub; no live :3360, no $HOME cache (QUALITY_CACHE_PATH → tempdir).
 /**
  * Quality endpoints + static page — #2099 lineage, reprojected by #3657.
  *
  * /api/chorus/quality/summary serves a projection of the tests domain
- * (owl-api V2 /tests collection), not a filesystem scan. The page at
+ * (athena-make V2 /tests collection), not a filesystem scan. The page at
  * /werk/quality/ (#3656 reparent) renders it.
  */
 

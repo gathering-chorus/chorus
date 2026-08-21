@@ -1,7 +1,7 @@
 /**
  * GET /api/chorus/tests, GET /api/chorus/tests/:domain (#2098, extracted #2189).
  *
- * #3657: quality-summary.ts is now a projection of the tests domain (owl-api
+ * #3657: quality-summary.ts is now a projection of the tests domain (athena-make
  * V2 /tests collection), async, and carries no api/ui kind — that was a
  * scanner heuristic the model doesn't declare. The flattened file rows carry
  * the pyramid layer as `layer`. Response envelopes otherwise unchanged:
@@ -9,7 +9,7 @@
  *   /api/chorus/tests         → domain projection, flatten pyramid.files
  *   /api/chorus/tests/:domain → per-domain filter on the model's `covers`
  *
- * Projection throws (owl-api unreachable) → 500 with error envelope.
+ * Projection throws (athena-make unreachable) → 500 with error envelope.
  */
 
 import { getQualityScan, getQualityByDomain } from '../quality-summary';

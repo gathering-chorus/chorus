@@ -1,12 +1,12 @@
-// @test-type: unit — hermetic. Brings its own owl-api stub (http.Server on an
+// @test-type: unit — hermetic. Brings its own athena-make stub (http.Server on an
 // ephemeral port) + tempdir cache; no live :3360, no $HOME.
 /**
  * #3657 — quality summary is a projection of the tests domain.
  *
- * The summary must be built from the owl-api V2 /tests collection (paginated),
+ * The summary must be built from the athena-make V2 /tests collection (paginated),
  * not from a filesystem scan. These tests pin:
  *   - pagination follows links.next, including the /v1/tests → /tests path
- *     rewrite (owl-api self-links carry a /v1 prefix its router doesn't serve)
+ *     rewrite (athena-make self-links carry a /v1 prefix its router doesn't serve)
  *   - pyramid aggregates by the model's pyramidLayer vocabulary
  *   - hermeticity counts surface per layer
  *   - per-domain filter reads the model's `covers`, not a filename heuristic
@@ -70,7 +70,7 @@ beforeAll(async () => {
       self: '/v1/tests',
       generatedFrom: GENERATED_FROM,
       data: page,
-      // Real owl-api emits /v1/tests here although only /tests is routed —
+      // Real athena-make emits /v1/tests here although only /tests is routed —
       // the client must rewrite or pagination dies on page 2.
       links: { next: nextCursor < ROWS.length ? `/v1/tests?cursor=${nextCursor}&limit=${limit}` : null },
       count: ROWS.length,

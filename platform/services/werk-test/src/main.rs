@@ -781,7 +781,7 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
 /// defaults to the two services the registered integration tests actually hit.
 fn probe_stack() -> Vec<(String, bool)> {
     let spec = std::env::var("WERK_STACK_PROBES").unwrap_or_else(|_|
-        "chorus-api=http://localhost:3340/api/chorus/context/health,owl-api=http://localhost:3360/".to_string());
+        "chorus-api=http://localhost:3340/api/chorus/context/health,athena-make=http://localhost:3360/".to_string());
     spec.split(',')
         .filter_map(|pair| pair.split_once('='))
         .map(|(name, url)| {
@@ -858,7 +858,7 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
     }
 }
 
-/// Fetch the quarantined test cases from the tests domain (owl-api `/tests`), via a
+/// Fetch the quarantined test cases from the tests domain (athena-make `/tests`), via a
 /// curl|jq subprocess so the verb stays zero-dep/std-only (ADR-032 §6, same pattern
 /// as `emit_spine`). Best-effort: any failure (endpoint down, jq absent) yields an
 /// EMPTY set — quarantine never blocks the gate from running, it only relaxes it.
@@ -867,7 +867,7 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
 fn quarantined_cases() -> Vec<Quarantined> {
     let endpoint = std::env::var("OWL_API_TESTS")
         .unwrap_or_else(|_| "http://localhost:3360/tests?limit=10000".to_string());
-    // #3766 — owl-api serves quarantined as the STRING "true" (SHACL string field),
+    // #3766 — athena-make serves quarantined as the STRING "true" (SHACL string field),
     // so a boolean-only compare NEVER matched: the quarantine gate was vacuous from
     // the day it shipped ("quarantined: none" = type mismatch, not an empty set).
     // Found live 2026-08-06 by writing a quarantine row and running this exact jq.
@@ -1315,7 +1315,7 @@ fn post_suite_run(
 
 /// Mint a write token — #3689: ES256 CSS IDENTITY, no scope in the token.
 /// Scope is model data now (chorus:hasScope on the Principal, resolved at the
-/// owl-api door per TTL). The HS256 mint script this replaced (#3689/#3719)
+/// athena-make door per TTL). The HS256 mint script this replaced (#3689/#3719)
 /// carried a SELF-DECLARED scope claim — the caller authorized itself, which
 /// is the class #3689 retires. Best-effort, same contract as before.
 fn mint_token(role: &str) -> Option<String> {

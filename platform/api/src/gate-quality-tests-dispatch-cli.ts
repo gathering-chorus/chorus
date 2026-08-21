@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // #3580 — gate:quality subdomain-dispatch CLI. The thin caller the gate-quality
 // skill invokes: resolves the tests covering a card's subdomain from the LIVE
-// tests API (owl-api :3360/tests, #2819), prints the receipt, and emits a spine
+// tests API (athena-make :3360/tests, #2819), prints the receipt, and emits a spine
 // event so the consumption is OBSERVABLE (AC4) — not a silent read. Exits 0
 // always: this consumer is fail-open and must never block the gate (AC5).
 import { spawnSync } from 'child_process';

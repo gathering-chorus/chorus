@@ -27,7 +27,7 @@ CM="${CHORUS_MODEL_BIN:-$(command -v athena-model 2>/dev/null || echo target/rel
 DRY="${DRY_RUN:-0}"
 
 # Fuseki writes require the write credential (#3630) — same sourcing as
-# chorus-model-deploy.sh; exports FUSEKI_ADMIN_USER/PASSWORD for the DAL's curl.
+# athena-deploy-model.sh; exports FUSEKI_ADMIN_USER/PASSWORD for the DAL's curl.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/fuseki-auth.sh"
 

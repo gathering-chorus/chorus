@@ -6,12 +6,12 @@
 # asserts the SERVED surface answers what the model CLAIMS — so a claimed surface
 # can be declared, generated, deployed, and never actually reachable, and no gate
 # goes red. That is exactly how /effective (the #3435 properties-cascade handler)
-# sat in the owl-api source for two months, compiled into the running binary, and
+# sat in the athena-make source for two months, compiled into the running binary, and
 # still 404'd: select_table matches only class plurals, /effective matches none,
 # and no check ever asked "does the thing we claim to serve actually serve?".
 #
 # DECLARED superset CLAIMED superset SERVED. athena-validate.ts proves the GRAPH
-# (SHACL, model-side). owl-api-conformance.sh proves ONE domain over HTTP. Neither
+# (SHACL, model-side). athena-make-conformance.sh proves ONE domain over HTTP. Neither
 # proves the FULL claimed set is served. This does: for each claimed surface it
 # asserts a live answer over :3360, and FAILS on any claimed-but-unserved route.
 #
