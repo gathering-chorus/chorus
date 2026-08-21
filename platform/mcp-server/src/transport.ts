@@ -46,6 +46,18 @@ function str(v: unknown): string {
   return JSON.stringify(v);
 }
 
+// #3958 — bounded, never-throws rendering of a request body for the
+// transport-error event. 300 chars is enough to name the method/shape.
+export function safeBodySnippet(body: unknown): string {
+  try {
+    if (body === undefined || body === null) return '';
+    const s = typeof body === 'string' ? body : JSON.stringify(body);
+    return (s ?? '').slice(0, 300);
+  } catch {
+    return '[unserializable]';
+  }
+}
+
 async function emitTransportError(fields: Record<string, unknown>): Promise<void> {
   try {
     const args = ['mcp.transport.error', str(fields['from'] ?? 'unknown')];
@@ -112,11 +124,16 @@ export function mountMcpEndpoint(app: Application): void {
     res.on('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         // Fire-and-forget; emitTransportError is best-effort.
+        // #3958 — a bare status=400 event is undiagnosable: 16 nudges in one
+        // day and no way to name the caller. Carry user-agent + a body
+        // snippet so one live occurrence identifies the client and request.
         void emitTransportError({
           from: callerRole,
           method: 'POST',
           path: '/mcp',
           status: res.statusCode,
+          user_agent: str(req.headers['user-agent'] ?? ''),
+          body: safeBodySnippet(req.body),
         });
       }
     });
