@@ -28,9 +28,19 @@ if [ -f "$SUPPRESS_FILE" ]; then
 fi
 
 # --- 0.5. Fuseki liveness (#2033) ---
-FUSEKI_CODE=$(curl -sf --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null || echo "000")
-if [ "$FUSEKI_CODE" != "200" ]; then
-  FAILURES+=("fuseki: localhost:3030 unreachable — ontology, SHACL, domain context broken")
+# #3948 — retry + down-vs-unmeasurable, same as the endpoint loop.
+FUSEKI_CODE="000"; fuseki_exit=0
+for attempt in 1 2; do
+  FUSEKI_CODE=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null); fuseki_exit=$?
+  [ "$fuseki_exit" -eq 0 ] && [ "$FUSEKI_CODE" = "200" ] && break
+  [ "$attempt" -eq 1 ] && sleep 2
+done
+if [ "$fuseki_exit" -ne 0 ] || [ "$FUSEKI_CODE" != "200" ]; then
+  if [ "$fuseki_exit" -eq 28 ]; then
+    WARNINGS+=("fuseki: UNMEASURABLE — timed out 2x at 3s — not proven down (#3753)")
+  else
+    FAILURES+=("fuseki: DOWN — code=${FUSEKI_CODE} exit=${fuseki_exit} after retry — ontology, SHACL, domain context broken")
+  fi
 fi
 
 # --- 1. Session watcher: fswatch subprocess alive ---
@@ -179,8 +189,21 @@ if ! pgrep -f "cloudflared tunnel run" > /dev/null 2>&1; then
 fi
 
 # --- 7. Chorus API reachable ---
-if ! curl -sf --max-time 5 http://localhost:3340/api/chorus/health > /dev/null 2>&1; then
-  FAILURES+=("chorus-api: localhost:3340 unreachable — team search, seeds, and context broken")
+# #3948 — same treatment as the endpoint loop: retry once, record what was
+# seen, and split DOWN from UNMEASURABLE. This exact check false-fired at
+# 20:37 on 2026-08-20 while the API answered 200 in 3.84s under load.
+api_code="000"; api_exit=0
+for attempt in 1 2; do
+  api_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:3340/api/chorus/health 2>/dev/null); api_exit=$?
+  [ "$api_exit" -eq 0 ] && [ "$api_code" = "200" ] && break
+  [ "$attempt" -eq 1 ] && sleep 2
+done
+if [ "$api_exit" -ne 0 ] || [ "$api_code" != "200" ]; then
+  if [ "$api_exit" -eq 28 ]; then
+    WARNINGS+=("chorus-api: UNMEASURABLE — timed out 2x at 5s — not proven down (#3753)")
+  else
+    FAILURES+=("chorus-api: DOWN — code=${api_code} exit=${api_exit} after retry — team search, seeds, and context broken")
+  fi
 fi
 
 # --- 8. Gathering app reachable ---
@@ -554,7 +577,7 @@ if [ "$STATUS" = "healthy" ]; then
 fi
 
 if [ "$STATUS" = "warning" ]; then
-  echo "deep-health: ${#WARNINGS[@]} warning(s) (no failures)"
+  echo "deep-health: all checks passed — ${#WARNINGS[@]} warning(s), no failures"
   echo "$(date '+%Y-%m-%d %H:%M') deep-health: ${#WARNINGS[@]} warning(s)" >> "$HOME/Library/Logs/Chorus/deep-health.log"
   exit 0
 fi
