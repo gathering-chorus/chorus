@@ -2112,6 +2112,16 @@
         "reason": "Why the first row was selected — uniform across rows today"
       }
     },
+    "test.budget.blown": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `test` verb (#3953) \u2014 the phase blew its in-run budget (target_s col of werk-phase-budgets.tsv). RED unless WERK_BUDGET_WAIVE names a reason; per-unit costs printed so the largest selection is the named culprit.",
+      "fields": {
+        "elapsed_s": "Measured wall-clock of the test phase, seconds",
+        "target_s": "The in-run target the phase was held to",
+        "largest": "The single most expensive check (label:unit) in this run"
+      }
+    },
     "test.integration.skipped": {
       "vertebra": "proving",
       "source": "werk",
