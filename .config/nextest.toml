@@ -2,3 +2,16 @@
 # and refuses the cargo lane when nextest is absent or older; nextest itself
 # also enforces it (nextest-version) when run under a workspace that sees it.
 nextest-version = "0.9.143"
+
+# #3955 — tests/-dir suites (kind=test: e2e.rs, units.rs, …) can mutate a
+# shared world (spine files, git fixtures) and were never parallel-safe; the
+# old `--lib --bins` gate simply never ran them (#3929 widened selection).
+# Serialize every integration-test binary — lib/bin unit lanes keep full
+# parallelism. (`binary(=e2e)` hard-errors on crates lacking that binary, so
+# the kind() selector is the portable form.)
+[test-groups.serial-e2e]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'kind(test)'
+test-group = 'serial-e2e'

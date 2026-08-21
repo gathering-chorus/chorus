@@ -2115,7 +2115,7 @@
     "test.budget.blown": {
       "vertebra": "proving",
       "source": "werk",
-      "description": "Werk `test` verb (#3953) \u2014 the phase blew its in-run budget (target_s col of werk-phase-budgets.tsv). RED unless WERK_BUDGET_WAIVE names a reason; per-unit costs printed so the largest selection is the named culprit.",
+      "description": "Werk `test` verb (#3953/#3955) \u2014 the phase exceeded its in-run target (target_s col of werk-phase-budgets.tsv). LOUD WARNING only, never blocks a green run (Jeff 2026-08-21); per-unit costs printed so the largest selection is the named culprit.",
       "fields": {
         "elapsed_s": "Measured wall-clock of the test phase, seconds",
         "target_s": "The in-run target the phase was held to",

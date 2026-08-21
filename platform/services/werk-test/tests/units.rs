@@ -1004,21 +1004,18 @@ fn jest_ignore_args_scope_to_files_under_the_package() {
 // ---- #3953 — the test phase pays for what it selects: 600s budget enforced --
 
 #[test]
-fn budget_verdict_in_budget_passes_and_over_budget_is_red() {
-    assert!(werk_test::budget_verdict(420.0, 600.0, None).is_ok());
-    let err = werk_test::budget_verdict(1102.0, 600.0, None)
-        .expect_err("over-budget must be RED, not advisory");
-    assert!(err.contains("1102") && err.contains("600"), "both numbers named: {}", err);
+fn budget_verdict_within_is_silent_none() {
+    assert!(werk_test::budget_verdict(420.0, 600.0).is_none());
 }
 
+/// Jeff's ruling 2026-08-21 (run 66: 1642 green failed at 701s — "worst option
+/// of all"): over-budget WARNS with both numbers named, and the warning text
+/// must never read as a failure verdict — a green run is never blocked for slow.
 #[test]
-fn budget_waiver_is_visible_never_silent() {
-    // a NAMED waiver passes but the verdict says so — visible when used (#3443)
-    let ok = werk_test::budget_verdict(1102.0, 600.0, Some("3810-covers-union-sweep"))
-        .expect("named waiver must pass");
-    assert!(ok.contains("WAIVED") && ok.contains("3810-covers-union-sweep"), "got: {}", ok);
-    // an EMPTY waiver is not a waiver — red stands
-    assert!(werk_test::budget_verdict(1102.0, 600.0, Some("")).is_err());
+fn budget_over_warns_loudly_and_never_reads_as_a_block() {
+    let w = werk_test::budget_verdict(701.0, 600.0).expect("over-budget must WARN");
+    assert!(w.contains("701") && w.contains("600"), "both numbers named: {}", w);
+    assert!(w.contains("not blocking"), "the ruling is IN the text: {}", w);
 }
 
 /// NEGATIVE PROOF (#3734): the report must point at the UNIT that blew the

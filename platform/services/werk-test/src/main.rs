@@ -362,33 +362,28 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    // #3953 — the test phase pays for what it selects: elapsed vs the table's
-    // in-run target (col3). Over-target is RED unless WERK_BUDGET_WAIVE names a
-    // reason; the per-unit cost table makes the culprit visible either way.
+    // #3953/#3955 — the test phase reports what it selects cost: elapsed vs the
+    // table's in-run target (col3). Over-target WARNS LOUDLY (spine event + the
+    // per-unit culprit table) and NEVER blocks a green run — Jeff's ruling after
+    // run 66 failed 1642 green tests at 701s.
     let phase_elapsed = phase_started.elapsed().as_secs_f64();
     let budgets_path = format!("{}/platform/config/werk-phase-budgets.tsv",
         std::env::var("CHORUS_HOME").unwrap_or_default());
     let target = std::fs::read_to_string(&budgets_path).ok()
         .and_then(|t| werk_test::phase_target(&t, "test"));
-    let mut budget_red = false;
     if let Some(budget) = target {
-        let waiver = std::env::var("WERK_BUDGET_WAIVE").ok();
-        match werk_test::budget_verdict(phase_elapsed, budget, waiver.as_deref()) {
-            Ok(text) => println!("{}", text),
-            Err(red) => {
-                eprintln!("{}", red);
-                print!("{}", werk_test::unit_cost_report(&unit_costs));
-                emit_spine("test.budget.blown", &role, &card, &trace,
-                    &[("elapsed_s", &format!("{:.0}", phase_elapsed)),
-                      ("target_s", &format!("{:.0}", budget)),
-                      ("largest", unit_costs.iter()
-                          .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                          .map(|(n, _)| n.as_str()).unwrap_or(""))]);
-                budget_red = true;
-            }
+        if let Some(warning) = werk_test::budget_verdict(phase_elapsed, budget) {
+            eprintln!("{}", warning);
+            print!("{}", werk_test::unit_cost_report(&unit_costs));
+            emit_spine("test.budget.blown", &role, &card, &trace,
+                &[("elapsed_s", &format!("{:.0}", phase_elapsed)),
+                  ("target_s", &format!("{:.0}", budget)),
+                  ("largest", unit_costs.iter()
+                      .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                      .map(|(n, _)| n.as_str()).unwrap_or(""))]);
         }
     }
-    let outcome = gate_outcome(units.len(), any_failed || budget_red, self_mod);
+    let outcome = gate_outcome(units.len(), any_failed, self_mod);
     let extras = werk_test::completed_extras(
         &outcome,
         units.len(),
@@ -668,7 +663,15 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new());
     }
-    let args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    let mut args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    // #3955 — the ONE nextest config (pin + serial-e2e groups) lives at the werk
+    // root; per-crate runs resolve config from the CRATE dir, so pass it
+    // explicitly or the serial-e2e grouping silently never applies.
+    let cfg = format!("{}/.config/nextest.toml", werk);
+    if Path::new(&cfg).is_file() {
+        args.insert(2, "--config-file".to_string());
+        args.insert(3, cfg);
+    }
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
     let mut cmd = Command::new("cargo");
