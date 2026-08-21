@@ -1795,20 +1795,18 @@ pub fn phase_target(tsv: &str, phase: &str) -> Option<f64> {
         .next()
 }
 
-/// #3953 — the budget verdict. Over-budget is RED unless a NAMED waiver is
-/// present; a waiver is always visible in the verdict text, never silent.
-/// Ok(text) carries what to print; Err(text) is the red reason.
-pub fn budget_verdict(elapsed_s: f64, budget_s: f64, waiver: Option<&str>) -> Result<String, String> {
+/// #3953/#3955 — the budget verdict. Jeff's ruling (2026-08-21, after run 66
+/// blocked a 1642-green suite at 701s): over-budget WARNS LOUDLY — spine event,
+/// cost table, named number — but NEVER blocks a green run. "Let it run 10
+/// minutes then fail" is the worst option of all; the fix for slow is faster
+/// tests, not a wasted run. Some(text) = over-budget warning to shout; None = within.
+pub fn budget_verdict(elapsed_s: f64, budget_s: f64) -> Option<String> {
     if elapsed_s <= budget_s {
-        return Ok(format!("budget: {:.1}s of {:.0}s — within", elapsed_s, budget_s));
+        return None;
     }
-    match waiver {
-        Some(w) if !w.trim().is_empty() => Ok(format!(
-            "budget: {:.1}s over {:.0}s — WAIVED ({}) — visible, not silent", elapsed_s, budget_s, w)),
-        _ => Err(format!(
-            "budget-blown: test phase took {:.1}s against a {:.0}s budget — see per-unit costs; \
-             waive ONLY with WERK_BUDGET_WAIVE=<named-reason>", elapsed_s, budget_s)),
-    }
+    Some(format!(
+        "!! budget-over: test phase took {:.1}s against the {:.0}s target — LOUD, not blocking          (Jeff 2026-08-21: a green run is never failed for being slow); the fix is faster selection",
+        elapsed_s, budget_s))
 }
 
 /// #3953 — per-unit cost table, largest first: a red phase must point at the
