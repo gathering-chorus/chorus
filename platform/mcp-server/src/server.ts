@@ -33,6 +33,7 @@ import { executeDesignRefresh } from './design-refresh';
 import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
 import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun } from './werk-run-store';
 import { wireRunFollower, bostonOffsetIso } from './werk-phase';
+import { recordLeg, currentWerkTreeHash } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -2565,15 +2566,27 @@ async function executeChorusWerk(
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter}`;
   const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
+  // #3956 — RESUME: relaunching a FAILED run whose werk tree is byte-identical
+  // (uncommitted edits included) lets passed legs carry. Anything else runs full.
+  const resumeEnv = (() => {
+    if (existingRun?.phase !== 'failed' || !existingRun.legs?.length) return false;
+    const now = currentWerkTreeHash(pathMod.join(werkBase, `${args.role}-${args.card_id}`));
+    const prior = existingRun.legs[existingRun.legs.length - 1]?.tree_hash;
+    return Boolean(now) && now === prior;
+  })();
   const child = spawnFn('bash', ['-c', wrapped], {
-    env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+    env: { ...werkRunnerEnv(home, werkBase, args.role, runnerPath), ...(resumeEnv ? { WERK_RESUME: '1' } : {}) },
     detached: true,
     stdio: 'ignore',
   });
   child.unref();
   // #3883 — pipeline visible in streams: follow this run's log and stamp
-  // werk.phase on the spine at every phase transition.
-  wireRunFollower(log, { card: args.card_id, role: args.role, runId });
+  // werk.phase on the spine at every phase transition. #3956 — the follower is
+  // also the ONE writer of per-leg proofs onto the pin (launcher only carries).
+  const treeHashAtLaunch = currentWerkTreeHash(pathMod.join(werkBase, `${args.role}-${args.card_id}`));
+  wireRunFollower(log, { card: args.card_id, role: args.role, runId }, undefined, (leg, verdict) => {
+    recordLeg(args.card_id, leg, verdict, treeHashAtLaunch, runsDir);
+  });
   writeRun({
     runId, card: args.card_id, role: args.role, go: false,
     phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
@@ -2582,6 +2595,9 @@ async function executeChorusWerk(
     // can compare when THIS run presents.
     prevPresentedAt: existingRun?.presentedAt,
     prevPatchId: existingRun?.patchId,
+    // #3956 — carry the failed run's leg proofs so werk-resume-check can honor
+    // them; a non-resume launch drops them (fresh proof discipline).
+    ...(resumeEnv ? { legs: existingRun?.legs } : {}),
     logFile: log, // #3664 — reconcile reads THIS run's own log
   }, runsDir);
   return mcpJson({

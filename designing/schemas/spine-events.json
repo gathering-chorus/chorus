@@ -2112,6 +2112,16 @@
         "reason": "Why the first row was selected — uniform across rows today"
       }
     },
+    "werk.leg.carried": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk resume (#3956) \u2014 this leg passed in a prior run against the SAME werk tree hash, so its proof carries forward instead of re-executing. A silent skip would be indistinguishable from a leg that never ran; this event is the legibility.",
+      "fields": {
+        "leg": "Pipeline leg carried (build/test/review/deploy-werk/env-up)",
+        "prior_run": "run_id whose proof is cited",
+        "tree_hash": "The werk tree hash both runs share"
+      }
+    },
     "test.budget.blown": {
       "vertebra": "proving",
       "source": "werk",
