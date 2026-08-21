@@ -30,12 +30,26 @@ __chorus_env_root="$(cd "$__chorus_env_dir/../.." && pwd -P)"
 # --- export CHORUS_ROOT (authoritative, ignores prior env) -------------------
 export CHORUS_ROOT="$__chorus_env_root"
 
-# --- derive CHORUS_ROLE from cwd (if in a role dir) --------------------------
+# --- derive CHORUS_ROLE from cwd --------------------------------------------
+# Two shapes, because a role works in two places (#3959):
+#   roles/<role>/...                     — session anchor, role state
+#   chorus-werk/<role>-<card>/...        — the WERK, where building happens
+#
+# Only the first was matched until 2026-08-21. Since every card is built in a
+# werk, the variable was absent for exactly the work Jeff was trying to see:
+# the shim had no DEPLOY_ROLE to inject (shim.rs:386, env does not cross the
+# socket), so HookInput::role() fell to Role::Unknown (types.rs:37) and ~26,000
+# events a day were written with no owner. The werk slot's owner is the segment
+# before the first "-" — the same rule from_werk_slot() applies (types.rs:48).
 case "$PWD" in
-  */roles/wren*)  export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
-  */roles/silas*) export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
-  */roles/kade*)  export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
+  */roles/wren*)          export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
+  */roles/silas*)         export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
+  */roles/kade*)          export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
+  */chorus-werk/wren-*)   export CHORUS_ROLE=wren  DEPLOY_ROLE=wren  ;;
+  */chorus-werk/silas-*)  export CHORUS_ROLE=silas DEPLOY_ROLE=silas ;;
+  */chorus-werk/kade-*)   export CHORUS_ROLE=kade  DEPLOY_ROLE=kade  ;;
 esac
+export DEPLOY_ROLE
 
 # --- werk + bin (#2735) -----------------------------------------------------
 # CHORUS_HOME is the canonical chorus checkout (the read-only-during-sessions

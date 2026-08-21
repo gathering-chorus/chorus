@@ -17,8 +17,16 @@ import type fs_node from 'fs';
 
 export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
 
-/** Last ~256KB of the log — thousands of lines; the page asks for ≤ ~80. */
-export const TAIL_BYTES = 256 * 1024;
+/** #3959 — the window is stated in TIME, not bytes, because bytes are a lie that
+ *  drifts. 256 KB was written when it meant "thousands of lines"; at 2026-08-21
+ *  volume (~50k events/day, 1.26 GB log) it measured **51 seconds**. Anything a
+ *  role did a minute ago was already unreachable — which is what "no streams for
+ *  20+ minutes" actually looked like from the inside.
+ *
+ *  8 MB holds roughly half an hour at that rate. If volume doubles the window
+ *  halves, so the reader ALSO reports the span it actually covered (see
+ *  readSpineLines) rather than letting a silent shrink look like a quiet team. */
+export const TAIL_BYTES = 8 * 1024 * 1024;
 
 const TURN_SKIP_PREFIXES = ['[nudge from', '[feedback]', '[response]', '[reply]', '[ack]', '[direction]', '[correction]'];
 const TURN_SKIP_CONTAINS = ['<command-', 'Base directory for this skill', '[Request interrupted', '[Image:', '/var/folders'];
@@ -35,6 +43,8 @@ interface LogEntry {
   tool_count?: string | number;
   from?: string;
   target?: string;
+  tool?: string;
+  elapsed_s?: string | number;
 }
 
 function formatToolDisplay(summary: string, action: string): string | null {
@@ -117,6 +127,27 @@ function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
+/** #3959 — the running/thinking beat. #3853 built it, wired it to the spine
+ *  (12,787/day), and never wired it to the pane: parseLogEntry had no branch,
+ *  so every beat returned null at the fallthrough. The beat exists precisely so
+ *  Jeff can see a role is alive during a long tool call; dropping it here is the
+ *  reason a working role looked dead for 70 minutes. */
+function parseActivityEntry(entry: LogEntry, role: string): StreamLine | null {
+  const phase = entry.phase ?? '';
+  if (phase !== 'running' && phase !== 'thinking') return null;
+  const tool = entry.tool ? String(entry.tool) : '';
+  const elapsed = entry.elapsed_s != null ? `${entry.elapsed_s}s` : '';
+  const verb = phase === 'running' ? '⏳ running' : '💭 thinking';
+  const text = [verb, tool, elapsed && `(${elapsed})`].filter(Boolean).join(' ');
+  return {
+    ts: entry.timestamp ?? '',
+    role,
+    type: 'activity',
+    text,
+    card: entry.card_id ? String(entry.card_id) : null,
+  };
+}
+
 function parseLogEntry(entry: LogEntry): StreamLine | null {
   const role = entry.role ?? '';
   if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
@@ -125,6 +156,7 @@ function parseLogEntry(entry: LogEntry): StreamLine | null {
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
   if (event === 'werk.phase' || WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
+  if (event === 'agent.activity') return parseActivityEntry(entry, role);
   return null;
 }
 

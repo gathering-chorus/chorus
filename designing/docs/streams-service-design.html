@@ -38,164 +38,119 @@
 <body>
 
 <h1>Service Design — Streams</h1>
-<div class="subtitle">Wren · 2026-08-21 · domain <code>chorus:streams</code>, served generated at <code>:3360/domains/streams</code> · target of <code>chorus:hasDesignDoc</code> · sibling to Pulse and The Clearing</div>
-
-<h2>1. Experience</h2>
+<div class="subtitle">Wren · rewritten 2026-08-21 evening · domain <code>chorus:streams</code> · supersedes the morning draft</div>
 
 <div class="exp">
-"streams is authoritative on time and action — if all streams are logged with 99%+ reliability."<br>
-— Jeff, 2026-08-20
+"u show busy yet no streams for 20+ minutes if i ask u u will say u have been working the whole time." — Jeff, 2026-08-21
 </div>
 
-<p>The day this design comes from: Jeff asked "are you working?" six times. Each time he was
-looking at a Streams pane that could not answer. He waited from 13:44 to 13:51 on a silent role,
-asked, and was told work was underway when it was not.</p>
-
-<p>After this design holds, he does not ask. He looks at three columns on one clock and sees who
-is doing what — right now, and last Tuesday.</p>
-
-<h2>2. Identity</h2>
-
-<p><b>A stream is the record of what a role DID.</b> One row per action, attributed, timestamped,
-durable. It is evidence, not narration: the role does not write it, the substrate observes it.
-That is the property that makes it able to contradict a role's own account.</p>
-
-<table>
-<tr><th>Property</th><th>Value</th></tr>
-<tr><td>Domain</td><td><code>chorus:streams</code> — "Event streams and pub/sub channels the team uses to coordinate"</td></tr>
-<tr><td>Served</td><td>Generated from <code>urn:chorus:ontology</code> via <code>chorus:DomainShape</code>. This document is the target of <code>chorus:hasDesignDoc</code>, not a free-standing file</td></tr>
-<tr><td>Owner</td><td>Wren (interaction layer)</td></tr>
-<tr><td>repoTarget (declared)</td><td><code>directing/clearing/src/tailer.ts</code> — see Open Questions; a renderer is not a service</td></tr>
-<tr><td>Grain</td><td>One row per tool call. Not per turn, not per card</td></tr>
-<tr><td>Retention</td><td>Forever. Same ruling as the spine — never rotate, never truncate</td></tr>
-</table>
-
-<h2>3. What Is NOT Streams</h2>
-
-<p>Three cards fixed three stream symptoms in two weeks — #3852, #3853, #3884 — and none touched
-the real defect, because each was written from a different idea of what streams IS. This section
-exists to stop the fourth.</p>
-
-<div class="two-col">
-<div class="col">
-<h3>Not the spine</h3>
-<p>The spine (<code>~/.chorus/chorus.log</code>) carries every event the system emits — gates,
-merges, refusals, nudges. Streams is the subset that answers "what is this role doing", projected
-for a human reading a column.</p>
-</div>
-<div class="col">
-<h3>Not pulse</h3>
-<p>Pulse is heartbeat plus nerve impulse: <i>is the system alive, and did something notable
-happen?</i> Streams is the activity record: <i>what did each role do, in order?</i> Pulse answers
-health. Streams answers history.</p>
-</div>
-</div>
-
-<div class="two-col">
-<div class="col">
-<h3>Not messages</h3>
-<p>Messages are what a role <i>said</i>. Streams is what a role <i>did</i>. The Clearing shows both
-in different tabs, and conflating them is how "I was working" survived as an unfalsifiable claim.</p>
-</div>
-<div class="col">
-<h3>Not role-state</h3>
-<p>Role-state is a declaration — a role typing <code>building</code>. Streams is observation. When
-the two disagree, streams wins; that is the entire reason to have it.</p>
-</div>
-</div>
-
-<h2>4. Current State — 2026-08-21</h2>
-
-<p>Measured against the live store this morning, not assumed.</p>
-
-<table>
-<tr><th>Leg</th><th>State</th><th>Evidence</th></tr>
-<tr><td>Emit — heartbeat</td><td>Partial</td><td><code>agent.activity</code> every 10s per active session (#3853)</td></tr>
-<tr><td>Emit — per action</td><td><b>Missing</b></td><td>Only the ticker emitted, so any call under 10s never reached the stream. Long <code>Bash</code> runs survived a beat; <code>Read</code>, <code>Grep</code>, <code>Edit</code> and every MCP verb did not — hence "streams show only bash"</td></tr>
-<tr><td>Attribution</td><td><b>Broken</b></td><td><code>role=unknown</code> on 70.8% of 3000 events. <code>Role::from_cwd</code> matched only <code>roles/&lt;name&gt;</code>; every werk path is <code>chorus-werk/&lt;role&gt;-&lt;card&gt;</code>, so identity collapsed exactly while building</td></tr>
-<tr><td>Action detail</td><td><b>Broken</b></td><td><code>tool</code> blank on 76%: <code>mark_thinking</code> cleared it, so most beats said "thinking" about nothing</td></tr>
-<tr><td>Durable store</td><td>Partial</td><td>The spine holds the poor version (1.1GB, never rotated). The RICH version — <code>editing</code>, <code>mcp: werk-commit</code>, <code>skill: /gate-product</code> — lives in <code>/tmp/claude-team-scan/&lt;role&gt;-observations.jsonl</code></td></tr>
-<tr><td>Retention of the rich version</td><td><b>Broken</b></td><td>200-line ring buffer in <code>/tmp</code>. Oldest surviving line: 17 hours. macOS evicts <code>/tmp</code>; a reboot wipes it. The pane reads only the last 30</td></tr>
-<tr><td>Index / query</td><td><b>Missing</b></td><td><code>index.db</code> carries <code>session:*</code> (chat) only — no <code>stream:*</code> channel. Nothing can answer "what was Wren doing at 13:51" once the buffer rolls</td></tr>
-<tr><td>Render</td><td>Works</td><td>The pane does show varied actions — verified against Jeff's 05:59 screenshot</td></tr>
-</table>
+<h2>1. The one-line finding</h2>
+<p><b>Streams are not missing. They are unattributed.</b> The morning draft of this document assumed we had no capture and no store, and proposed building both. Two shell commands disproved it. What is actually broken is that a quarter of every day's events lose the name of who produced them.</p>
 
 <div class="fail">
-<b>The headline.</b> The good data is the data we throw away. The spine keeps the anonymous version
-forever; the attributed, human-readable version lives 200 lines deep in temp storage. Nothing
-usable for ML, flake analysis, or "what happened last week" exists today.
+<b>Measured 2026-08-21.</b> Events written to the spine today, by role field:
+<table>
+<tr><th>role value</th><th>events</th><th>what it is</th></tr>
+<tr><td><code>silas</code></td><td>23,884</td><td>attributed</td></tr>
+<tr><td><code>unattributed</code></td><td>14,130</td><td><b>lost</b></td></tr>
+<tr><td><code>unknown</code></td><td>11,765</td><td><b>lost</b></td></tr>
+<tr><td><code>kade</code></td><td>10,339</td><td>attributed</td></tr>
+<tr><td><code>wren</code></td><td>5,687</td><td>attributed</td></tr>
+<tr><td><code>&lt;missing&gt;</code></td><td>594</td><td><b>lost</b></td></tr>
+</table>
+<b>26,489 events a day carry no role.</b> During Wren's apparent 70-minute silence starting 11:56 — real work, the athena rename — 950 events were written as <code>unknown</code> and zero as <code>wren</code>.
 </div>
 
-<h2>5. Target Path</h2>
-
+<h2>2. What already exists</h2>
 <div class="path">
-<div class="pn">tool call<small>PreToolUse</small></div><span class="pa">&rarr;</span>
-<div class="pn">agent.action<small>one row, attributed</small></div><span class="pa">&rarr;</span>
-<div class="pn">spine<small>durable, forever</small></div><span class="pa">&rarr;</span>
-<div class="pn">index<small>stream:&lt;role&gt;</small></div><span class="pa">&rarr;</span>
-<div class="pn">pane + query<small>live and historical</small></div>
+<div class="pn">emitters<small>hooks, verbs, sessions</small></div><div class="pa">→</div>
+<div class="pn">chorus.log<small>append-only, first + only write</small></div><div class="pa">→</div>
+<div class="pn">promtail → Loki<small>7-day window</small></div>
+</div>
+<div class="path">
+<div class="pn">chorus.log</div><div class="pa">→</div>
+<div class="pn">Clearing tail<small>display</small></div>
 </div>
 
-<p>One emitter, one store, two readers. The <code>/tmp</code> ring buffer disappears — it exists
-only because the emit leg was too thin to be useful and the pane needed something richer.</p>
-
-<h2>6. Signal Grain</h2>
-
 <table>
-<tr><th>Row carries</th><th>Why</th></tr>
-<tr><td><code>role</code></td><td>Who. Resolved from the werk slot when no explicit role segment is present — never guessed. An unrecognised owner stays <code>unknown</code> rather than mis-filing one role's work onto another's stream</td></tr>
-<tr><td><code>tool</code></td><td>What. Carried through the composing phase so "thinking" still names the last action</td></tr>
-<tr><td><code>phase</code></td><td><code>started</code> / <code>running</code> / <code>thinking</code>. Never claims a finished tool is still running</td></tr>
-<tr><td><code>session_id</code></td><td>Which session — a role can have two</td></tr>
-<tr><td><code>card</code></td><td>Which card, when derivable. This is what <code>wip.drift</code> needs and currently cannot see</td></tr>
-<tr><td><code>ts</code></td><td>When it RAN, not when the row was written. Those diverge: #3941's results posted ~20 minutes after the suite finished</td></tr>
+<tr><th>fact</th><th>value</th><th>source</th></tr>
+<tr><td>spine span</td><td>2026-07-23 → now, 1,511,664 lines, 1.2 GB</td><td><code>head -1</code> / <code>wc -l</code></td></tr>
+<tr><td>rate</td><td>~50k events/day, 5.5k/hour</td><td>spine, 2026-08-21</td></tr>
+<tr><td>the one write</td><td><code>OpenOptions::new().append(true)</code> on <code>~/.chorus/chorus.log</code></td><td><code>membrane.rs:246</code></td></tr>
+<tr><td>Loki retention</td><td><code>retention_period: 168h</code>, deletes enabled</td><td><code>loki-config.yaml</code></td></tr>
+<tr><td>log pipeline cost</td><td>promtail 2.5% CPU / 34 MB · loki 4.3% / 148 MB</td><td><code>ps</code>, under load 23</td></tr>
 </table>
 
-<h2>7. Night Gaps Are Not Defects</h2>
+<div class="ok"><b>So capture works and the corpus exists.</b> July 23 is the day Jeff ruled the spine must never be rotated; everything since has been kept. What is absent is a queryable copy that outlives Loki's 7 days — an index, not a new capture path.</div>
 
-<div class="note">
-<b>Jeff, 2026-08-21:</b> "the reason there are gaps at night is bc i am sleeping and the roles
-quickly stop and go idle — it is what i have been telling u for weeks."
+<h2>3. Where the role is lost</h2>
+<table>
+<tr><th>site</th><th>behaviour when CHORUS_ROLE is unset</th></tr>
+<tr><td><code>membrane.rs:240</code></td><td><code>unwrap_or_else(|_| "unattributed")</code> — writes the event anyway</td></tr>
+<tr><td><code>types.rs:255</code></td><td>returns <code>"unknown"</code> when the role has 0 or &gt;1 WIP cards</td></tr>
+<tr><td><code>chorus-env-setup.sh:33</code></td><td>derives the role <b>from <code>$PWD</code></b> — matches <code>*/roles/&lt;role&gt;*</code> only</td></tr>
+</table>
+
+<div class="fail"><b>The mechanism.</b> The role is derived from the working directory. Building happens in <code>chorus-werk/&lt;role&gt;-&lt;card&gt;/</code>, which matches none of those patterns — so during real work the variable is simply absent, and every reader substitutes its own default.</div>
+
+<div class="fail"><b>The shape of the sprawl.</b> 4 files SET <code>CHORUS_ROLE</code>; 43 files READ it. The fallbacks when it is missing: <code>:-system</code> (9 sites), empty (7 sites), <code>:-silas</code> (2 sites). Two places hardcode a specific teammate as the default, which is part of why one role's event count is four times another's.</div>
+
+<h2>4. The model already ruled on this</h2>
+<p><code>StreamEventShape</code>, cut through the athena-model pen on 2026-08-21 and deployed to <code>urn:chorus:ontology</code>:</p>
+<table>
+<tr><th>property</th><th>constraint</th></tr>
+<tr><td><code>chorus:streamRole</code></td><td><code>sh:minCount 1</code></td></tr>
+<tr><td><code>chorus:streamTool</code></td><td><code>sh:minCount 1</code></td></tr>
+<tr><td><code>chorus:streamPhase</code></td><td><code>sh:minCount 1</code></td></tr>
+<tr><td><code>chorus:streamTs</code></td><td><code>sh:minCount 1</code></td></tr>
+</table>
+<div class="fail"><b>And the emitter has never heard of it.</b> <code>StreamEvent</code>, <code>streamRole</code> and <code>StreamEventShape</code> appear <b>zero times</b> in <code>chorus-hooks</code>. The model says absence is a violation; the code says absence is a default. Nothing connects them, because the write target is a text file that validates nothing.</div>
+
+<h2>5. Target design</h2>
+<h3>5.1 One resolver, absence is an error</h3>
+<p>A single function owns role resolution. Every one of the 43 readers calls it. It resolves in a declared order and <b>refuses</b> rather than inventing a value:</p>
+<div class="path">
+<div class="pn">CHORUS_ROLE<small>explicit env</small></div><div class="pa">→</div>
+<div class="pn">werk slot<small>&lt;role&gt;-&lt;card&gt;</small></div><div class="pa">→</div>
+<div class="pn">role dir<small>roles/&lt;role&gt;</small></div><div class="pa">→</div>
+<div class="pn">session registry</div><div class="pa">→</div>
+<div class="pn">REFUSE<small>typed error, loud</small></div>
 </div>
+<div class="note"><b>No <code>:-system</code>, no <code>:-silas</code>, no empty string.</b> A default is a judgment nobody made. An unattributable event is a defect in the emitter, and it must say so where someone will see it.</div>
 
-<p>A stream with no rows overnight is <b>correct</b>. Roles idle when nobody directs them. This
-design must not treat silence as loss, or it will manufacture noise to fill it and every future
-reader will mistrust the record.</p>
+<h3>5.2 The emitter validates against its own shape</h3>
+<p>The four <code>minCount 1</code> properties become a check at the write site, projected from the model rather than hand-copied. An event missing any of them is refused and counted — never silently written with a substituted value.</p>
 
-<p>What the stream owes instead: silence must be <i>distinguishable</i>. An idle role and a crashed
-role look identical today. <code>clear_activity</code> on turn-end already means "genuinely idle" —
-the pane should say so rather than showing nothing.</p>
+<h3>5.3 Index, do not duplicate</h3>
+<p><code>chorus.log</code> stays the first write. A reader indexes it into <code>streams.db</code> (SQLite, WAL) so the corpus is queryable past Loki's 7 days. DuckDB attaches the same file for columnar reads when we want ML — one file on disk, two engines:</p>
+<p><code>INSTALL sqlite; LOAD sqlite; SELECT role, count(*) FROM sqlite_scan('streams.db','events') GROUP BY role;</code></p>
+<div class="note"><b>Rejected.</b> <b>Fuseki</b> — 50k events/day at ~8 triples each is ~400k triples/day into a 62 GB store, for data with no graph shape. <b>CockroachDB</b> — Raft consensus and a resident server to solve multi-node problems we do not have on one Mac already at load 23. <b>DuckDB as writer</b> — single-writer-process, which our fleet of short-lived emitters violates by design.</div>
 
-<h2>8. Consumers</h2>
+<h2>6. Night gaps are not defects</h2>
+<div class="ok">Jeff sleeps; roles go idle. A gap at 03:00 is the system telling the truth. Any reliability measure must read an idle role and a broken emitter <b>differently</b> — a check that cannot separate those two states is the defect it was built to catch.</div>
 
+<h2>7. Measurement</h2>
 <table>
-<tr><th>Consumer</th><th>Needs</th><th>Today</th></tr>
-<tr><td>The Clearing — Streams pane</td><td>Live rows, three roles, one clock</td><td>Works, from the ring buffer</td></tr>
-<tr><td>Jeff, asking "are you working"</td><td>Last row per role plus its age</td><td>Cannot answer — 71% anonymous</td></tr>
-<tr><td>Derived role-state</td><td><code>phase</code> + recency &rarr; building / idle</td><td>Not built; <code>derived_state</code> is null on every role</td></tr>
-<tr><td>wip.drift watcher (#3879)</td><td>Card-attributed activity</td><td>False positives — werk work carries no card</td></tr>
-<tr><td>ML / analysis</td><td>Months of attributed history</td><td><b>Nothing.</b> 17 hours, in <code>/tmp</code></td></tr>
+<tr><th>question</th><th>how it is answered</th><th>today</th></tr>
+<tr><td>What fraction of events carry a role?</td><td>count by role field over a window</td><td><b>~64%</b> (26,489 of ~74k lost)</td></tr>
+<tr><td>Did a working role go dark?</td><td>longest per-role silence vs. declared state</td><td>wren 69.9 min, kade 73.0 min, silas 2.1 min</td></tr>
+<tr><td>Is capture lossy?</td><td>rows indexed vs. spine lines read</td><td>not yet measured</td></tr>
 </table>
+<div class="note"><b>Publish the attribution rate.</b> It is one number, it is currently ~64%, and it should be visible without anyone asking. The point of streams is that Jeff never has to ask whether we are working.</div>
 
-<h2>9. Open Questions</h2>
-
+<h2>8. Design gate</h2>
 <ul>
-<li><b>Volume.</b> One row per tool call across three roles — what is the real daily rate, and does the spine absorb it without degrading search? Measure before widening.</li>
-<li><b>Card attribution.</b> Derive from the werk slot (<code>wren-3885</code> &rarr; #3885) or thread the card through the hook? The slot is free and already parsed.</li>
-<li><b>Detail retention.</b> Full command text, or truncated? The 05:59 screenshot shows commands mid-truncation — legible, not replayable.</li>
-<li><b>Does streams get its own service?</b> Or stay a projection the Clearing owns? The declared <code>repoTarget</code> points at <code>tailer.ts</code>, which is a renderer.</li>
+<li>Attribution rate is published and rises to 100% — the target is not "better", it is that an unattributed event cannot be written.</li>
+<li>One resolver, called by all 43 readers; the <code>:-system</code> / <code>:-silas</code> / empty defaults are deleted, not deprecated.</li>
+<li>Negative proof: an emit with no resolvable role FAILS, shown against a fixture where the environment is stripped.</li>
+<li>Negative proof: an idle role and a broken emitter produce different readings, shown with both fixtures.</li>
+<li>The shape's four <code>minCount 1</code> properties are enforced at the write site, projected from the model.</li>
+<li>Jeff names a role and a window and gets the actions back.</li>
 </ul>
 
-<h2>10. Design Gate</h2>
-
-<div class="ok">
-<b>Accepted when</b> a query answers "what was each role doing at 13:51 yesterday" from durable
-storage, with named actions and correct attribution — and when a night with no rows reads as
-<i>idle</i> rather than <i>missing</i>.
-</div>
-
 <div class="meta">
-Wren · 2026-08-21 · #3885 · siblings: service-design-pulse.html · clearing-service-design.html · chorus-service-design.html
+Wren · 2026-08-21 · #3959 · supersedes the morning draft, which was written before the spine was measured<br>
+siblings: service-design-pulse.html · clearing-service-design.html · chorus-service-design.html
 </div>
 
 </body>
