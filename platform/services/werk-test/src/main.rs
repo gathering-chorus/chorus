@@ -246,13 +246,16 @@ fn run(args: &[String]) -> Result<i32, String> {
     // selected units run ONLY with the live stack; without it they are a TYPED,
     // counted SKIPPED state — never green-by-default, never silence.
     let ns_all = werk_test::needs_stack_files(&rows);
-    let selected_ns: Vec<String> = ns_all.iter()
-        .filter(|f| units.iter().any(|u| match u {
-            TestUnit::RustCrate(c) => f.starts_with(&format!("platform/services/{}/", c)),
-            TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
-            TestUnit::BatsSuite(_) => false,
-        }))
-        .cloned().collect();
+    let in_units = |f: &str| units.iter().any(|u| match u {
+        TestUnit::RustCrate(c) => f.starts_with(&format!("platform/services/{}/", c)),
+        TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
+        TestUnit::BatsSuite(_) => false,
+    });
+    let selected_ns: Vec<String> = ns_all.iter().filter(|f| in_units(f)).cloned().collect();
+    // count REGISTERED TESTS (rows), not files — the report must count what it names
+    let selected_ns_tests = rows.iter()
+        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
+        .count();
     let stack_down: Option<String> = if selected_ns.is_empty() {
         None
     } else {
@@ -262,10 +265,10 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     };
     let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
-    println!("{}", werk_test::integration_report(selected_ns.len(), stack_down.as_deref()));
+    println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
     if let Some(down) = &stack_down {
         emit_spine("test.integration.skipped", &role, &card, &trace,
-            &[("count", &selected_ns.len().to_string()), ("stack_down", down)]);
+            &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
     }
     let mut any_failed = false;
     let mut failed_count: usize = 0;
