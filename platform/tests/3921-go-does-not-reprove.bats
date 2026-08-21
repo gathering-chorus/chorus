@@ -99,7 +99,29 @@ pin() { printf '{"phase":"%s","patchId":"sha:%s"}' "$1" "$2" > "$HOME/.chorus/we
   grep -q 'skip_prove=true' "$GITHUB_OUTPUT"
 }
 
-@test "present-only runs (no go) never take the fast path and never refuse" {
+@test "present-only with NO witness takes the full path and never refuses" {
+  GO=false run bash -e "$T/step.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'skip_prove=false' "$GITHUB_OUTPUT"
+}
+
+@test "content-identical re-present skips the prove (#3955 AC3 — ceremony not re-paid)" {
+  witness demo.presented 42 "$SHA"
+  GO=false run bash -e "$T/step.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'skip_prove=true' "$GITHUB_OUTPUT"
+}
+
+@test "NEGATIVE PROOF: dirty werk re-present takes the FULL path (commit will change content)" {
+  witness demo.presented 42 "$SHA"
+  echo dirty >> "$CHORUS_WERK_BASE/kade-42/f"
+  GO=false run bash -e "$T/step.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'skip_prove=false' "$GITHUB_OUTPUT"
+}
+
+@test "NEGATIVE PROOF: changed-content re-present takes the FULL path" {
+  witness demo.presented 42 "1111111111111111111111111111111111111111"
   GO=false run bash -e "$T/step.sh"
   [ "$status" -eq 0 ]
   grep -q 'skip_prove=false' "$GITHUB_OUTPUT"
@@ -111,4 +133,24 @@ pin() { printf '{"phase":"%s","patchId":"sha:%s"}' "$1" "$2" > "$HOME/.chorus/we
   GO=true run bash -e "$T/step.sh"
   [ "$status" -ne 0 ]
   echo "$output" | grep -q 'go-refused: werk has uncommitted changes'
+}
+
+@test "already-landed werk (tree == origin/main) sets already_landed and skips nothing else" {
+  # #3955 AC1 — run 53's wedge: a retry AFTER its own squash-merge rebase-conflicts
+  # forever. When the werk tree is content-identical to origin/main the land must
+  # jump commit/push/merge (already_landed=true) and go straight to deploy+accept.
+  witness demo.presented 42 "$SHA"
+  # simulate the squash landing: origin/main advances to the werk's exact tree
+  git -C "$CHORUS_WERK_BASE/kade-42" update-ref refs/remotes/origin/main HEAD
+  GO=true run bash -e "$T/step.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'already_landed=true' "$GITHUB_OUTPUT"
+  grep -q 'skip_prove=true' "$GITHUB_OUTPUT"
+}
+
+@test "NEGATIVE PROOF: divergent tree does not claim already_landed" {
+  witness demo.presented 42 "$SHA"
+  GO=true run bash -e "$T/step.sh"
+  [ "$status" -eq 0 ]
+  grep -q 'already_landed=false' "$GITHUB_OUTPUT"
 }

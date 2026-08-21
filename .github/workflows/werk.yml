@@ -84,7 +84,22 @@ jobs:
         id: provenround
         run: |
           SKIP=false
+          LANDED=false
           case "${GO}" in true|go|yes)
+            WERKDIR0="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
+            # #3955 AC1 — a retry after its own squash-merge: the werk tree is
+            # content-identical to origin/main, so commit/push/merge have nothing
+            # to do (a rebase would only conflict — run 53's wedge). The land's
+            # remaining job is deploy+accept.
+            if git -C "$WERKDIR0" diff --quiet origin/main HEAD 2>/dev/null                && [ -z "$(git -C "$WERKDIR0" status --porcelain 2>/dev/null | head -1)" ]; then
+              LANDED=true
+              SKIP=true
+              echo "already_landed=true" >> "$GITHUB_OUTPUT"
+              echo "skip_prove=true" >> "$GITHUB_OUTPUT"
+              echo "proven-round: werk tree == origin/main — content landed; deploy+accept only"
+              exit 0
+            fi
+            echo "already_landed=false" >> "$GITHUB_OUTPUT"
             WITNESS="${CHORUS_HOME}/ops/logs/werk-demo.jsonl"
             # witness patch_id is a CONTENT hash (git patch-id of merge-base..HEAD),
             # NOT a commit sha — first live go (#3919 run 46) refused on that
@@ -129,6 +144,43 @@ jobs:
             fi
             SKIP=true
           ;; esac
+          # #3955 AC3 — a content-identical RE-PRESENT re-pays nothing: gates and
+          # gathers are patch-keyed (#3454), so if the witness already presented
+          # this exact patch and the tree is clean, the prove is already paid.
+          # Half of all presents were identical re-presents (measured 2026-08-21:
+          # #3911 14/7, #1778 13/5, #3606 25/11). Dirty tree or changed content
+          # takes the full path — commit may change the patch.
+          if [ "$SKIP" = "false" ] && [ -z "${GO}" -o "${GO}" = "false" ]; then
+            WERKDIR="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
+            if [ -z "$(git -C "$WERKDIR" status --porcelain 2>/dev/null | head -1)" ]; then
+              WITNESS="${CHORUS_HOME}/ops/logs/werk-demo.jsonl"
+              BASE=$(git -C "$WERKDIR" merge-base origin/main HEAD 2>/dev/null || echo "")
+              CURID=""
+              if [ -n "$BASE" ]; then
+                CURID=$(git -C "$WERKDIR" diff "$BASE..HEAD" 2>/dev/null | git patch-id --stable | awk '{print $1}')
+              fi
+              LASTID=$(python3 -c '
+          import json, sys
+          path, card = sys.argv[1], sys.argv[2]
+          last = ""
+          try:
+              for line in open(path):
+                  try:
+                      d = json.loads(line)
+                  except ValueError:
+                      continue
+                  if d.get("event") == "demo.presented" and str(d.get("card_id")) == card:
+                      last = d.get("patch_id", "")
+              print(last)
+          except OSError:
+              print("")
+          ' "$WITNESS" "${CARD_ID}" 2>/dev/null)
+              if [ -n "$CURID" ] && [ "$CURID" = "$LASTID" ]; then
+                SKIP=true
+                echo "proven-round: re-present of the SAME patch ($CURID) — prove already paid, re-announcing"
+              fi
+            fi
+          fi
           echo "skip_prove=$SKIP" >> "$GITHUB_OUTPUT"
           if [ "$SKIP" = "true" ]; then
             echo "proven-round: HEAD == last presented witness ($PRESENTED) — proof exists, land is merge→deploy→accept"
@@ -139,12 +191,14 @@ jobs:
       # ═══ prove in the role's slot — never touches main until merge (gated on proven) ═══
       - name: commit
         id: commit
+        if: ${{ steps.provenround.outputs.already_landed != 'true' }}
         # werk-commit, via MCP. Stages add-A in the card's werk + commits. Rebase onto
         # origin/main happens INSIDE commit under flock (#3186) — no separate rebase step.
         run: chorus-mcp-call.sh "${ROLE}" werk-commit "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: push
         id: push
+        if: ${{ steps.provenround.outputs.already_landed != 'true' }}
         run: chorus-mcp-call.sh "${ROLE}" werk-push "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: build
@@ -257,6 +311,21 @@ jobs:
               if [ -z "${ACCEPTER}" ]; then echo "[demo] GO with no accepter — refusing (DEC-048)"; exit 1; fi
               PATH="$HOME/.local/bin:$PATH" DEPLOY_ROLE="${ACCEPTER}" werk-demo go "${CARD_ID}" ;;
           esac
+          # #3955 — already-landed retry: the content is ON main, and merge is
+          # verdict-gated, so presence on main IS the completed proof. Verdict
+          # can't re-check here (patch-id of a merged werk is empty — approvals
+          # are keyed to the pre-merge patch). Record the go, verify the witness
+          # holds a demo.decision go for this card, and pass proven through.
+          if [ "${{ steps.provenround.outputs.already_landed }}" = "true" ]; then
+            if grep -q "\"event\":\"demo.decision\",\"role\":\"[a-z]*\",\"card_id\":${CARD_ID}," "${CHORUS_HOME}/ops/logs/werk-demo.jsonl" 2>/dev/null; then
+              echo "proven=true" >> "$GITHUB_OUTPUT"
+              echo "[demo] already-landed retry: content on main (merge is verdict-gated) + recorded go — deploy+accept proceed"
+              exit 0
+            fi
+            echo "[demo] already-landed but NO recorded demo.decision for #${CARD_ID} — refusing (no self-accept, #3410)"
+            echo "proven=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # #3921 — on a proven round (skip_prove), do NOT re-present: the round
           # Jeff saw is the round on disk (sha-equal, checked upstream). Recording
           # the GO still goes through werk-demo, and proven still comes ONLY from
@@ -290,7 +359,9 @@ jobs:
       # ═══ land to prod — prod is a build of MAIN. Runs ONLY if the demo proved (go==true). ═══
       - name: merge
         id: merge
-        if: ${{ steps.demo.outputs.proven == 'true' }}
+        # #3955 — an already-landed retry has no open PR to merge; deploy+accept
+        # are the remaining land. Witness verdict still gated the go upstream.
+        if: ${{ steps.demo.outputs.proven == 'true' && steps.provenround.outputs.already_landed != 'true' }}
         # werk-merge (#3175), via MCP. Resolves the OPEN PR for the current HEAD oid, squash-merges,
         # content-verifies. #3499: werk-merge no longer reads a demo witness — reaching this step
         # MEANS the in-run demo proved (the only-door is structural: this step is gated on proven).
@@ -357,7 +428,26 @@ jobs:
             echo "::error::#3574: canonical not synced to origin/main (SYNC_OK=${SYNC_OK:-unset}) — REFUSING to deploy stale binaries. Fix canonical ('werk-sync recover') and re-land." >&2
             exit 1
           fi
-          chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landedCommit":"%s"}' "${ROLE}" "${CARD_ID}" "${LANDED_COMMIT}")"
+          # #3955 — already-landed retry: merge was skipped so LANDED_COMMIT is empty;
+          # the landed sha IS origin/main (tree-equality proven at proven-round).
+          if [ -z "${LANDED_COMMIT}" ] && [ "${{ steps.provenround.outputs.already_landed }}" = "true" ]; then
+            LANDED_COMMIT=$(git -C "${CHORUS_HOME}" rev-parse origin/main)
+            echo "   [#3955] already-landed retry: landedCommit := origin/main ${LANDED_COMMIT}"
+          fi
+          # #3955 AC2 — the werk build lock is shared across roles; losing the race
+          # was a hard fail at 60s (run 51). Bounded, NAMED retries instead.
+          for attempt in 1 2 3; do
+            out=$(chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landedCommit":"%s"}' "${ROLE}" "${CARD_ID}" "${LANDED_COMMIT}")") && rc=0 || rc=$?
+            echo "$out"
+            if [ "$rc" = "0" ]; then break; fi
+            case "$out" in
+              *"holds the werk lock"*)
+                if [ "$attempt" = "3" ]; then echo "::error::deploy-canonical: lock still held after 3 attempts (~3min) — failing NAMED" >&2; exit "$rc"; fi
+                echo "   [#3955] build lock held (attempt $attempt/3) — waiting 90s for the peer build" ;;
+              *) exit "$rc" ;;
+            esac
+            sleep 90
+          done
 
       - name: accept
         id: accept
