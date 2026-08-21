@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# #3956 — per-leg resume decision: a flake costs the flake, not the pipeline.
+#
+#   werk-resume-check <card> <role> <leg>     → exit 0 CARRY / 1 RUN / 2 REFUSE
+#   werk-resume-check --tree-hash <card> <role> → print the werk tree hash
+#
+# CARRY: WERK_RESUME=1 AND the run pin records this leg pass against the SAME
+#        werk tree hash — the proof exists; cite it, emit werk.leg.carried.
+# RUN:   not resuming, or no pass recorded for this leg.
+# REFUSE (loud): resuming but the tree changed (both hashes named) or the pin
+#        is missing — a resume that can't verify its proof must never silently
+#        degrade to claiming one (#3734).
+#
+# Tree hash covers UNCOMMITTED edits (the common relaunch state): add -A into a
+# throwaway index, write-tree — the real index is never touched (Silas's note,
+# pair 3956).
+set -euo pipefail
+
+tree_hash() {
+  local werk="$1" tmp
+  tmp=$(mktemp)
+  cp "$werk/.git/index" "$tmp" 2>/dev/null || true
+  GIT_INDEX_FILE="$tmp" git -C "$werk" add -A 2>/dev/null
+  GIT_INDEX_FILE="$tmp" git -C "$werk" write-tree
+  rm -f "$tmp"
+}
+
+if [ "${1:-}" = "--tree-hash" ]; then
+  CARD="$2"; ROLE="$3"
+  WERK="${CHORUS_WERK_BASE:?}/${ROLE}-${CARD}"
+  tree_hash "$WERK"
+  exit 0
+fi
+
+CARD="${1:?usage: werk-resume-check <card> <role> <leg>}"
+ROLE="${2:?role}"
+LEG="${3:?leg}"
+WERK="${CHORUS_WERK_BASE:?}/${ROLE}-${CARD}"
+PIN="$HOME/.chorus/werk-runs/${CARD}.json"
+
+# resume is opt-in by the launcher; a normal run never consults proofs
+[ "${WERK_RESUME:-0}" = "1" ] || exit 1
+
+if [ ! -f "$PIN" ]; then
+  echo "resume-refused: no run pin at $PIN — cannot verify any prior proof; run full (loud, never a silent resume)" >&2
+  exit 2
+fi
+
+NOW=$(tree_hash "$WERK")
+read -r VERDICT PRIOR_HASH RUN_ID <<EOF
+$(python3 - "$PIN" "$LEG" <<'PY'
+import json, sys
+pin = json.load(open(sys.argv[1]))
+leg = sys.argv[2]
+v, h = "", ""
+for entry in pin.get("legs", []):
+    if entry.get("leg") == leg:
+        v, h = entry.get("verdict", ""), entry.get("tree_hash", "")
+print(v or "-", h or "-", pin.get("runId", "-"))
+PY
+)
+EOF
+
+if [ "$VERDICT" != "pass" ]; then
+  exit 1  # failed or not recorded → run it
+fi
+if [ "$PRIOR_HASH" != "$NOW" ]; then
+  echo "resume-refused: werk tree changed since the failed run — prior=$PRIOR_HASH now=$NOW; carry invalid, full rerun" >&2
+  exit 2
+fi
+
+echo "carried: leg=$LEG passed in run $RUN_ID against tree $NOW — proof cited, not re-run"
+ts=$(($(date +%s)*1000))
+printf '{"ts":%s,"event":"werk.leg.carried","card_id":%s,"role":"%s","leg":"%s","prior_run":"%s","tree_hash":"%s"}\n' \
+  "$ts" "$CARD" "$ROLE" "$LEG" "$RUN_ID" "$NOW" \
+  >> "${CHORUS_HOME:?}/ops/logs/werk.jsonl" 2>/dev/null || true
+exit 0

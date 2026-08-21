@@ -205,7 +205,12 @@ jobs:
         id: build
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # target=werk implied: builds the card's werk for the demo slot.
-        run: chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
+        run: |
+          # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
+          # a changed tree or missing pin refuses loudly (exit 2 → red).
+          rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" build || rc=$?
+          case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
+          chorus-mcp-call.sh "${ROLE}" werk-build "$(printf '{"role":"%s","card_id":%s}' "${ROLE}" "${CARD_ID}")"
 
       - name: test
         id: test
@@ -220,6 +225,10 @@ jobs:
         # is fixing. Determinism (#3190 governing bar): same diff → same units → same gates →
         # same verdict. The pyramidLayer/hermeticity tier-selection (Silas #3540) wires in next.
         run: |
+          # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
+          # a changed tree or missing pin refuses loudly (exit 2 → red).
+          rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" test || rc=$?
+          case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
           set -o pipefail
           # #3484: pin node 20 — the verb shells jest, whose better-sqlite3 native module is
           # built for node 20's ABI; act's login PATH otherwise picks node 23 → false ABI reds.
@@ -261,6 +270,10 @@ jobs:
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         # werk-review ADVISORY floor — records review.floor + chorus/review/<card> status.
         run: |
+          # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
+          # a changed tree or missing pin refuses loudly (exit 2 → red).
+          rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" review || rc=$?
+          case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" \
             -f "context=chorus/review/${CARD_ID}" \
@@ -277,7 +290,12 @@ jobs:
         # #3943 — skipped on a proven go: the slot was deployed at present and the
         # canonical deploy (#3316 rebuild+cdhash prove) is Half B's own step.
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
-        run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
+        run: |
+          # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
+          # a changed tree or missing pin refuses loudly (exit 2 → red).
+          rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" deploy-werk || rc=$?
+          case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
+          chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
         id: env_up
@@ -285,6 +303,10 @@ jobs:
         # #3943 — skipped on a proven go: the env is still up from present.
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
+          # #3956 — resume: a passed leg with an unchanged tree carries (exit 0),
+          # a changed tree or missing pin refuses loudly (exit 2 → red).
+          rc=0; "${CHORUS_HOME}/platform/scripts/werk-resume-check" "${CARD_ID}" "${ROLE}" env-up || rc=$?
+          case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
           post pending
