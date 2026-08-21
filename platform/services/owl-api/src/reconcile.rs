@@ -132,12 +132,80 @@ pub fn chorus_root() -> String {
 /// so `classify_graph` below refuses to default, and says "unclassified"
 /// out loud instead.
 pub fn is_fixture_graph(g: &str) -> bool {
-    g.contains("-test-")
-        || g.contains("bats")
-        || g.contains("-staging")
-        || g.ends_with("-empty")
-        || g.ends_with("-bad")
-        || g.ends_with("-proving")
+    match registry_status(g) {
+        Some(GraphStatus::TestEphemeral) => true,
+        Some(GraphStatus::Sanctioned) => false,
+        // #3733 — the registry rules; the name shapes below survive ONLY for
+        // graphs the registry has no row for, because bats fixtures mint
+        // ephemeral graph names per run and cannot pre-register. A stray
+        // NON-test graph still lands UNCLASSIFIED (never silently live-or-
+        // fixture) because it matches neither.
+        None => {
+            g.contains("-test-")
+                || g.contains("bats")
+                || g.contains("-staging")
+                || g.ends_with("-empty")
+                || g.ends_with("-bad")
+                || g.ends_with("-proving")
+        }
+    }
+}
+
+/// #3733 — a graph's status per the MODEL's registry (graph-status-3733.ttl,
+/// urn:chorus:ontology). None = no row = UNCLASSIFIED, an explicit third
+/// state the caller must handle — never a default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GraphStatus {
+    Sanctioned,
+    TestEphemeral,
+}
+
+fn registry_rows() -> &'static Vec<(String, GraphStatus)> {
+    use std::sync::OnceLock;
+    static ROWS: OnceLock<Vec<(String, GraphStatus)>> = OnceLock::new();
+    // OnceLock is acceptable HERE (unlike #3947's version fields): the registry
+    // changes only via model deploy, and reconcile runs are short-lived CLI
+    // invocations — each run re-reads. A long-lived server caller would need
+    // the TTL pattern instead.
+    ROWS.get_or_init(|| {
+        // Single-var CONCAT seam — the DAL's proven zero-dep row shape.
+        let q = "PREFIX chorus: <https://jeffbridwell.com/chorus#> \
+                 SELECT (CONCAT(?iri, \"|\", ?s) AS ?v) WHERE { GRAPH <urn:chorus:ontology> { \
+                 ?g a chorus:NamedGraph ; chorus:graphIri ?iri ; chorus:graphStatus ?s } }";
+        let mut rows = Vec::new();
+        if let Ok(r) = sparql_json(q) {
+            for line in crate::select_v(&r) {
+                if let Some((iri, s)) = line.split_once('|') {
+                    let status = match s {
+                        "sanctioned" => GraphStatus::Sanctioned,
+                        "test-ephemeral" => GraphStatus::TestEphemeral,
+                        _ => continue, // no valid ruling: row ignored, graph stays unclassified
+                    };
+                    rows.push((iri.to_string(), status));
+                }
+            }
+        }
+        rows
+    })
+}
+
+pub fn registry_status(g: &str) -> Option<GraphStatus> {
+    status_from_rows(registry_rows(), g)
+}
+
+/// Pure matcher — testable without a store (#3528). Exact IRI match, or a
+/// declared `prefix:*` wildcard (matches `prefix:<anything>`).
+pub fn status_from_rows(rows: &[(String, GraphStatus)], g: &str) -> Option<GraphStatus> {
+    for (iri, status) in rows {
+        if let Some(prefix) = iri.strip_suffix(":*") {
+            if g.starts_with(&format!("{prefix}:")) {
+                return Some(*status);
+            }
+        } else if iri == g {
+            return Some(*status);
+        }
+    }
+    None
 }
 
 /// The graphs the model actually sanctions. Anything outside this and outside
@@ -145,21 +213,11 @@ pub fn is_fixture_graph(g: &str) -> bool {
 /// data), but named as unclassified so a stray graph cannot pass as model
 /// content by being unrecognized.
 pub fn is_sanctioned_graph(g: &str) -> bool {
-    g == "urn:chorus:ontology"
-        || g == "urn:chorus:instances"
-        || g == "urn:chorus:documents"
-        || g == "urn:chorus:skills"
-        || g == "urn:chorus:gates"
-        // #3732 — urn:chorus:shapes RETIRED 2026-08-05 (ADR-051 Addendum II,
-        // source exclusivity). It held a stale duplicate ProductShape (3
-        // sh:property against the live 11) plus 4 V1-only shapes serving no
-        // route. A sanctioned-but-absent graph is a vacuous pass, so the
-        // sanction is removed in the same change that retires the data.
-        || g == "urn:chorus:framework"
-        // Per-domain graphs — the end-state placement scheme. Plural `domains`
-        // only: `urn:chorus:domain:tests` is a typo, not a domain graph, and
-        // matching it here would launder the typo into sanctioned.
-        || g.starts_with("urn:chorus:domains:")
+    // #3733 — the hardcoded allowlist is RETIRED; the model's registry rules.
+    // (History: the list named ontology/instances/documents/skills/gates/
+    // framework/domains:* — those rows now live in graph-status-3733.ttl,
+    // where adding a graph is a governed model change, not a code edit.)
+    matches!(registry_status(g), Some(GraphStatus::Sanctioned))
 }
 
 /// A punned class keeps its "instances" (subclasses) in the ontology graph —
@@ -681,8 +739,18 @@ mod tests {
         // plural graph. A `starts_with("urn:chorus:domain")` prefix would have
         // swallowed it and made a typo look like a domain graph — which is how
         // strays become permanent. Pin the boundary.
-        assert!(is_sanctioned_graph("urn:chorus:domains:tests"));
-        assert!(!is_sanctioned_graph("urn:chorus:domain:tests"), "the singular typo is NOT a domain graph");
+        // #3733 — sanctioning is now the REGISTRY's ruling; unit tests feed
+        // fixture rows (the store-backed read is integration surface).
+        let rows = vec![
+            ("urn:chorus:domains:*".to_string(), GraphStatus::Sanctioned),
+            ("urn:chorus:ontology".to_string(), GraphStatus::Sanctioned),
+        ];
+        assert_eq!(status_from_rows(&rows, "urn:chorus:domains:tests"), Some(GraphStatus::Sanctioned));
+        assert_eq!(
+            status_from_rows(&rows, "urn:chorus:domain:tests"),
+            None,
+            "the singular typo matches NO row — UNCLASSIFIED, never laundered"
+        );
 
         // And the strays the name heuristic misses must land as unclassified —
         // not fixture (the heuristic can't see them) and not sanctioned.
@@ -735,5 +803,46 @@ mod tests {
         ] {
             assert!(!is_fixture_graph(g), "{} is live", g);
         }
+    }
+}
+
+#[cfg(test)]
+mod graph_registry_3733 {
+    use super::*;
+
+    fn rows() -> Vec<(String, GraphStatus)> {
+        vec![
+            ("urn:chorus:ontology".to_string(), GraphStatus::Sanctioned),
+            ("urn:chorus:domains:*".to_string(), GraphStatus::Sanctioned),
+            ("urn:chorus:verbs-sandbox".to_string(), GraphStatus::TestEphemeral),
+        ]
+    }
+
+    /// The registry rules where it has a ruling.
+    #[test]
+    fn declared_rulings_win() {
+        assert_eq!(status_from_rows(&rows(), "urn:chorus:ontology"), Some(GraphStatus::Sanctioned));
+        assert_eq!(status_from_rows(&rows(), "urn:chorus:verbs-sandbox"), Some(GraphStatus::TestEphemeral));
+        assert_eq!(status_from_rows(&rows(), "urn:chorus:domains:security"), Some(GraphStatus::Sanctioned));
+    }
+
+    /// NEGATIVE PROOF (#3734): no row → None, and None is never sanctioned.
+    /// This is the exact laundering path the heuristic had: unrecognized →
+    /// silently live. The typo graph must stay UNCLASSIFIED forever until a
+    /// human rules on it.
+    #[test]
+    fn absence_is_unclassified_never_sanctioned() {
+        for g in ["urn:chorus:domain:tests", "urn:chorus:instances-bt5", "urn:totally:new"] {
+            assert_eq!(status_from_rows(&rows(), g), None, "{g} must have no ruling");
+        }
+    }
+
+    /// NEGATIVE PROOF: the wildcard is one scheme, not a regex — a prefix
+    /// without its trailing segment does not match, and an unrelated scheme
+    /// sharing characters does not match.
+    #[test]
+    fn wildcard_is_narrow() {
+        assert_eq!(status_from_rows(&rows(), "urn:chorus:domains"), None, "bare prefix, no segment");
+        assert_eq!(status_from_rows(&rows(), "urn:chorus:domainsevil:x"), None, "not the prefix");
     }
 }
