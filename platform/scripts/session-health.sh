@@ -6,7 +6,11 @@ set -euo pipefail
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
-SESSIONS_DIR="$HOME/.claude/projects"
+# #3949 — overridable so tests bring their own session world (#3528). The
+# nightly red on "compaction accelerating" was this script reading the LIVE
+# session transcript: at 04:44 the live session had no recent removes, so the
+# warning legitimately did not fire and the test read that as a defect.
+SESSIONS_DIR="${SESSION_HEALTH_SESSIONS_DIR:-$HOME/.claude/projects}"
 HOOKS_LOG="$HOME/Library/Logs/Gathering/hooks.log"
 # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
 OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"

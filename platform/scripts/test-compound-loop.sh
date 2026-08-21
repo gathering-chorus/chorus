@@ -14,9 +14,11 @@ LOKI="${LOKI_URL:-http://localhost:3102}"
 _loki_injected() {
   local start
   start="$(( $(date +%s) - ${AWARENESS_WINDOW_S:-43200} ))000000000"
-  curl -s -G "$LOKI/loki/api/v1/query_range" \
+  # #3949 — bounded: unbounded limit=1000 over 12h ground Loki for minutes at
+  # 04:44 and the swallowed timeout scored as "loop broken" (#3948 class).
+  curl -s --max-time 20 -G "$LOKI/loki/api/v1/query_range" \
     --data-urlencode 'query={appName="chorus-events"} |= "context.inject.injected"' \
-    --data-urlencode "start=$start" --data-urlencode "limit=1000" 2>/dev/null \
+    --data-urlencode "start=$start" --data-urlencode "limit=200" 2>/dev/null \
     | python3 -c "
 import json,sys
 try:

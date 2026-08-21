@@ -94,12 +94,26 @@ start_mock() {
   write_mock
   ( exec python3 "${MOCK_DIR}/loki_mock.py" "$MOCK_PORT" >/dev/null 2>&1 ) &
   MOCK_PID=$!
-  for _ in $(seq 1 30); do
+  # #3949 — 3s of 0.1s polls was too tight for the 04:44 loaded box (python
+  # cold-start alone can exceed it), and a random port can collide with an
+  # ephemeral peer. Longer window + one port retry; a mock that STILL cannot
+  # start is an environment verdict, skipped loudly — never a red about the
+  # pipeline-health logic this suite actually guards.
+  for _ in $(seq 1 100); do
+    curl -sf "http://localhost:${MOCK_PORT}/loki/api/v1/query_range?query=x" >/dev/null 2>&1 && return 0
+    kill -0 "$MOCK_PID" 2>/dev/null || break
+    sleep 0.1
+  done
+  kill "$MOCK_PID" 2>/dev/null
+  MOCK_PORT=$(( 20000 + RANDOM % 5000 ))
+  write_mock
+  ( exec python3 "${MOCK_DIR}/loki_mock.py" "$MOCK_PORT" >/dev/null 2>&1 ) &
+  MOCK_PID=$!
+  for _ in $(seq 1 100); do
     curl -sf "http://localhost:${MOCK_PORT}/loki/api/v1/query_range?query=x" >/dev/null 2>&1 && return 0
     sleep 0.1
   done
-  echo "mock loki failed to start on $MOCK_PORT" >&2
-  return 1
+  skip "UNMEASURABLE: mock loki failed to start twice (port ${MOCK_PORT}) — environment, not pipeline-health logic (#3949)"
 }
 
 run_health() {
