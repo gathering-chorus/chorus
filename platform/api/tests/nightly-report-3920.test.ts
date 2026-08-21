@@ -1,0 +1,84 @@
+// @test-type: unit
+// #3920 — /nightly: the rendered viewing surface for the nightly run.
+// Jeff's bar: he opens ONE page and sees whether the night was green — never
+// a list of CLI steps. Hermetic: the parser/renderer are pure; the fixture is
+// the log format nightly-suites.sh actually writes (RUN|/SUITE| lines).
+import { parseNightlyLog, renderNightlyPage } from '../src/handlers/nightly-report';
+
+const GREEN_RUN = [
+  'RUN|start|2026-08-21T03:00:01',
+  'SUITE|lint|/chorus|kade|pass|1 pass, 0 fail (lint:ratchet clean)',
+  'SUITE|cargo|platform/services/werk-test|silas|pass|135 pass, 0 fail',
+  'SUITE|npm|/chorus/platform/api|silas|pass|Tests: 200 passed',
+  'RUN|complete|2026-08-21T03:41:09',
+].join('\n');
+
+const RED_RUN = [
+  'RUN|start|2026-08-22T03:00:01',
+  'SUITE|cargo|platform/services/chorus-hooks|silas|fail|30 pass, 2 fail',
+  'SUITE|cargo|platform/services/werk-test|silas|pass|135 pass, 0 fail',
+  'SUITE|shell|/x/test-api-health.sh|silas|skip|skipped — no live stack (#3557)',
+  'RUN|complete|2026-08-22T03:39:12',
+].join('\n');
+
+describe('parseNightlyLog', () => {
+  it('parses the LAST run block with its rows and completion', () => {
+    const run = parseNightlyLog(GREEN_RUN + '\n' + RED_RUN);
+    expect(run).not.toBeNull();
+    expect(run!.startedAt).toBe('2026-08-22T03:00:01');
+    expect(run!.completed).toBe(true);
+    expect(run!.rows).toHaveLength(3);
+    expect(run!.rows[0]).toEqual({
+      kind: 'cargo',
+      path: 'platform/services/chorus-hooks',
+      owner: 'silas',
+      status: 'fail',
+      summary: '30 pass, 2 fail',
+    });
+  });
+
+  it('a killed run (start without complete) is named partial, never green', () => {
+    const run = parseNightlyLog('RUN|start|2026-08-22T03:00:01\nSUITE|cargo|x|silas|pass|1 pass, 0 fail');
+    expect(run!.completed).toBe(false);
+  });
+
+  it('no runs at all is null (page renders the empty state, not a fake green)', () => {
+    expect(parseNightlyLog('')).toBeNull();
+    expect(parseNightlyLog('unrelated noise\n')).toBeNull();
+  });
+});
+
+describe('renderNightlyPage', () => {
+  it('a red night leads with the red verdict and the failing suite', () => {
+    const html = renderNightlyPage(parseNightlyLog(RED_RUN));
+    // NEGATIVE PROOF (#3734): the red state must be visibly distinct — the
+    // verdict word, the count, and the failing row all present.
+    expect(html).toContain('1 RED');
+    expect(html).toContain('chorus-hooks');
+    expect(html).toContain('30 pass, 2 fail');
+    expect(html).not.toContain('ALL GREEN');
+  });
+
+  it('a green night says so, with the zero-red bar met', () => {
+    const html = renderNightlyPage(parseNightlyLog(GREEN_RUN));
+    expect(html).toContain('ALL GREEN');
+    expect(html).not.toContain('1 RED');
+  });
+
+  it('typed skips render as skips, counted, never as pass or fail', () => {
+    const html = renderNightlyPage(parseNightlyLog(RED_RUN));
+    expect(html).toMatch(/1 skipped/i);
+  });
+
+  it('an incomplete run renders the loud partial banner', () => {
+    const html = renderNightlyPage(
+      parseNightlyLog('RUN|start|2026-08-22T03:00:01\nSUITE|cargo|x|silas|pass|1 pass, 0 fail')
+    );
+    expect(html).toMatch(/PARTIAL|never completed/i);
+  });
+
+  it('no run yet renders an honest empty state', () => {
+    const html = renderNightlyPage(null);
+    expect(html).toMatch(/no nightly run/i);
+  });
+});

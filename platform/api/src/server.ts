@@ -36,6 +36,7 @@ const execAsync = promisify(exec);
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
+import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -336,6 +337,15 @@ app.get('/harvesting/icd', sendChorusPage('icd.html'));
 app.get('/harvesting/convergence', sendChorusPage('icd.html'));
 app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301, '/harvesting/icd'));
 app.get('/werk', sendChorusPage('werk.html'));
+// #3920 — /nightly: the rendered nightly report. One page, verdict first,
+// reds on top; renders the run record the nightly writes, no re-derived verdicts.
+app.get('/nightly', (_req: Request, res: Response) => {
+  const logPath = process.env.NIGHTLY_LOG_PATH
+    || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');
+  let text = '';
+  try { text = fs.readFileSync(logPath, 'utf8'); } catch { /* no run yet — honest empty state */ }
+  res.type('html').send(renderNightlyPage(parseNightlyLog(text)));
+});
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));
 app.get('/loom/:role', sendChorusPage('loom.html'));
