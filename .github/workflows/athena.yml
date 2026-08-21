@@ -82,6 +82,8 @@ jobs:
           echo "PATH=${prefix}${PATH}" >> "$GITHUB_ENV"
           echo "verb path prefix: ${prefix:-<none — using deployed binaries>}"
           echo "minted trace=$trace for class=${CLASS} role=${ROLE} card=${CARD_ID:-<none>}"
+          "$root/platform/scripts/chorus-log" athena.run.started "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" trace="$trace" || true
 
       - name: shape
         # The TBox is written by athena-model BEFORE this pipeline runs — the pen is
@@ -96,6 +98,8 @@ jobs:
             exit 1
           fi
           echo "shape: ${CLASS}Shape found in $hit"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.shape.proven "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" file="$hit" || true
 
       - name: make
         # Generate the surfaces from the model. athena-make makes AND serves — one
@@ -105,6 +109,8 @@ jobs:
           set -euo pipefail
           athena-make generate --class "${CLASS}" > /dev/null
           echo "make: routes generated for ${CLASS}"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.made "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" || true
 
       - name: deploy
         # The governed way the model reaches Fuseki. athena-deploy riot-validates every
@@ -170,6 +176,8 @@ jobs:
             exit 1
           fi
           echo "deploy-served: ${route} answers — ${CLASS} is live, not merely landed"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.served "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" route="${route}" || true
 
       - name: validate
         # The conformance sweep over the LIVE graph (ADR-058): rows ARE violations,
@@ -179,6 +187,33 @@ jobs:
         run: |
           set -euo pipefail
           bash "${ATHENA_ROOT}/platform/scripts/athena-validate.sh" 2>&1 | tail -30
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.validated "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" || true
+
+      - name: traceable
+        # A run that cannot be reconstructed from the spine is not legible, whatever
+        # its exit code. Jeff, 2026-08-21, asked whether a trace could be pulled for an
+        # athena run: it could not — five steps minted one trace and exactly ONE of
+        # them emitted, so the trace existed and answered nothing.
+        #
+        # This step is the gate on that: it counts the run's own events and FAILS if
+        # the story has holes. It cannot pass vacuously — zero events is the loudest
+        # failure, not a silent skip.
+        run: |
+          set -euo pipefail
+          spine="${CHORUS_SPINE:-$HOME/.chorus/chorus.log}"
+          if [ ! -r "$spine" ]; then
+            echo "athena: spine not readable at $spine — this run left no legible record" >&2
+            exit 1
+          fi
+          n=$(grep -c "${CHORUS_TRACE_ID}" "$spine" || true)
+          want=5
+          if [ "${n:-0}" -lt "$want" ]; then
+            echo "athena: run emitted ${n:-0} event(s) for trace ${CHORUS_TRACE_ID}, expected >= ${want}." >&2
+            echo "  A step ran without emitting. The run is unreconstructable from the spine." >&2
+            exit 1
+          fi
+          echo "traceable: ${n} events on ${CHORUS_TRACE_ID} — the run can be replayed from the spine"
 
       - name: outcome
         if: success()
