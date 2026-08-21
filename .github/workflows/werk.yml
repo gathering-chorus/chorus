@@ -70,32 +70,61 @@ jobs:
             "$ts" "${CARD_ID}" "${ROLE}" "${GO}" "${ACCEPTER}" "$trace" \
             >> "${CHORUS_HOME}/ops/logs/werk.jsonl" 2>/dev/null || true
 
-      # ═══ #3921 — A GO DOES NOT RE-PROVE A PROVEN ROUND. ═══
-      # Before this, go=true re-ran build+test (p95 25min) on the EXACT commit
-      # the human just saw presented — every go bought a silent second loop.
-      # If the werk HEAD equals the commit of a PRESENTED round on the run pin,
-      # the proof already exists; build/test/demo are skipped and the run goes
-      # straight to merge. ANY drift (one byte) takes the full prove path.
+      # ═══ #3921/#3943 — A GO IS THREE STEPS, NOT ANOTHER LOOP. ═══
+      # go=true used to re-run build+test+demo (p95 25min) on the EXACT commit
+      # the human just saw presented. #3921's pin-based compare never fired: the
+      # go-launch rewrites the run pin (phase=running, fresh patchId) before this
+      # step reads it — observed on the #3925/#3945/#3929 lands, three full
+      # re-proves of presented rounds in one evening. #3943 moves the input to
+      # the werk-demo WITNESS (demo.presented lines), written at present time
+      # and never rewritten. On go: witness matches HEAD → Half-A is skipped and
+      # the land is merge→deploy-canonical→accept. Drift or a missing witness
+      # REFUSES the go by name (supersede guard) — a go never silently re-proves.
       - name: proven-round
         id: provenround
         run: |
           SKIP=false
           case "${GO}" in true|go|yes)
-            PIN="$HOME/.chorus/werk-runs/${CARD_ID}.json"
-            if [ -f "$PIN" ]; then
-              PHASE=$(python3 -c "import json;print(json.load(open('$PIN')).get('phase',''))" 2>/dev/null)
-              PINSHA=$(python3 -c "import json;p=json.load(open('$PIN')).get('patchId','');print(p.removeprefix('sha:'))" 2>/dev/null)
-              HEADSHA=$(git -C "${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}" rev-parse HEAD 2>/dev/null || echo none)
-              if [ "$PHASE" = "presented" ] && [ -n "$PINSHA" ] && [ "$HEADSHA" = "$PINSHA" ]; then
-                SKIP=true
-              fi
+            WITNESS="${CHORUS_HOME}/ops/logs/werk-demo.jsonl"
+            HEADSHA=$(git -C "${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}" rev-parse HEAD 2>/dev/null || echo none)
+            PRESENTED=$(python3 -c '
+          import json, sys
+          path, card = sys.argv[1], sys.argv[2]
+          last = ""
+          try:
+              for line in open(path):
+                  try:
+                      d = json.loads(line)
+                  except ValueError:
+                      continue
+                  if d.get("event") == "demo.presented" and str(d.get("card_id")) == card:
+                      last = d.get("patch_id", "")
+          except OSError:
+              pass
+          print(last)
+          ' "$WITNESS" "${CARD_ID}" 2>/dev/null)
+            if [ -z "$PRESENTED" ]; then
+              echo "go-refused: no demo.presented witness for card ${CARD_ID} — present before go" >&2
+              exit 1
             fi
+            if [ "$HEADSHA" != "$PRESENTED" ]; then
+              echo "go-refused: werk drifted since present (presented=$PRESENTED head=$HEADSHA) — supersede and re-present" >&2
+              exit 1
+            fi
+            # a dirty werk would be committed AFTER this compare — content the
+            # human never saw. Uncommitted drift refuses exactly like committed.
+            DIRTY=$(git -C "${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}" status --porcelain 2>/dev/null | head -1)
+            if [ -n "$DIRTY" ]; then
+              echo "go-refused: werk has uncommitted changes since present (${DIRTY}) — supersede and re-present" >&2
+              exit 1
+            fi
+            SKIP=true
           ;; esac
           echo "skip_prove=$SKIP" >> "$GITHUB_OUTPUT"
           if [ "$SKIP" = "true" ]; then
-            echo "proven-round: HEAD == presented round ($PINSHA) — proof exists, skipping re-prove"
+            echo "proven-round: HEAD == last presented witness ($PRESENTED) — proof exists, land is merge→deploy→accept"
           else
-            echo "proven-round: full prove path"
+            echo "proven-round: full prove path (present run)"
           fi
 
       # ═══ prove in the role's slot — never touches main until merge (gated on proven) ═══
@@ -182,11 +211,16 @@ jobs:
       - name: deploy-werk
         id: deploy_werk
         # target=werk: per-card slot for the demo, NOT canonical — main is untouched.
+        # #3943 — skipped on a proven go: the slot was deployed at present and the
+        # canonical deploy (#3316 rebuild+cdhash prove) is Half B's own step.
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
       - name: env-up
         id: env_up
         # posts chorus/env-up/<card>; fails the job if the slot doesn't come up.
+        # #3943 — skipped on a proven go: the env is still up from present.
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
           WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"; SHA=$(git -C "$WERK" rev-parse HEAD)
           post(){ gh api "repos/gathering-chorus/chorus/statuses/$SHA" -f "state=$1" -f "context=chorus/env-up/${CARD_ID}" -f "description=role=${ROLE} trace=${CHORUS_TRACE_ID:-}" >/dev/null 2>&1 || true; }
