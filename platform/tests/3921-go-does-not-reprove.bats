@@ -24,7 +24,15 @@ setup() {
   git -C "$CHORUS_WERK_BASE/kade-42" init -q -b kade/42 .
   ( cd "$CHORUS_WERK_BASE/kade-42" && echo x > f && git add . \
     && git -c user.email=t@t -c user.name=t commit -q -m "kade: #42" )
-  SHA=$(git -C "$CHORUS_WERK_BASE/kade-42" rev-parse HEAD)
+  # origin/main fixture: the werk repo's own main-less history needs a merge-base,
+  # so fabricate origin/main as the first commit and add the card commit on top.
+  git -C "$CHORUS_WERK_BASE/kade-42" update-ref refs/remotes/origin/main HEAD
+  ( cd "$CHORUS_WERK_BASE/kade-42" && echo card-work > w && git add . \
+    && git -c user.email=t@t -c user.name=t commit -q -m "kade: #42 work" )
+  # the witness records the CONTENT patch-id (git patch-id of merge-base..HEAD) —
+  # the REAL semantic (run 46's refusal was sha-vs-patch-id confusion; fixture
+  # now mirrors the captured line {"round":"<sha12>","patch_id":"<patch-id>"}).
+  SHA=$(git -C "$CHORUS_WERK_BASE/kade-42" diff origin/main..HEAD | git patch-id --stable | awk '{print $1}')
   export ROLE=kade CARD_ID=42 GITHUB_OUTPUT="$T/out"
   # extract the real step body — a copy would drift (#3701 lesson)
   awk '$0 ~ "^      - name: " {inst=($0=="      - name: proven-round"); inr=0; next}
