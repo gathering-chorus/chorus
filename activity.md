@@ -1350,3 +1350,9 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
   - Flaky set ENUMERATED — 6 suites flip between runs on identical main (all silas); 23 stably red
   - FILED: #3751 (stale run-pin, 4 occurrences incl. cross-role and a false landed/accepter:jeff), #3753 (load-aware measurement)
   - PAIR (live): #3749 principles OWL+API with Wren — I navigate shape, own Practice next leg. Caught her draft would serve 0 rows (resolve_instances_graph has no ontology fallback); she caught my broader-migration would seed dangling refs. Both fixed pre-land.
+- [Silas] 2026-08-21 → #3949 Done (attempt 7; postmortems on card; spawned #3955/#3956 fixes with Kade) → all
+- [Silas] 2026-08-21 → #3733 Done (graph-status registry, 8 NamedGraph rows live) → Wren (reconcile reads it)
+- [Silas] 2026-08-21 → paired #3956 with Kade (navigator; launcher/resume half driven by Kade) → Kade
+- [Silas] 2026-08-21 → #3729 built + live-verified (9 probes + 4 boundaries served); pipeline in flight at reboot → Jeff (demo pending)
+- [Silas] 2026-08-21 → diagnosed #3941 gate counter defect (tool results reset the count); fix queued → Wren/Kade (they get bounced too)
+- [Silas] 2026-08-21 → Wren #3561 live swap: mine, blocked on Wren's land; TCC concern dismissed (no AppleEvents) → Wren
