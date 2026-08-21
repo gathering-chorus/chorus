@@ -242,6 +242,34 @@ fn run(args: &[String]) -> Result<i32, String> {
             ("plan_source", plan_source),
         ],
     );
+    // #3919 — the integration tier. Registered needs-stack tests inside the
+    // selected units run ONLY with the live stack; without it they are a TYPED,
+    // counted SKIPPED state — never green-by-default, never silence.
+    let ns_all = werk_test::needs_stack_files(&rows);
+    let in_units = |f: &str| units.iter().any(|u| match u {
+        TestUnit::RustCrate(c) => f.starts_with(&format!("platform/services/{}/", c)),
+        TestUnit::TsPackage(p) => f.starts_with(&format!("{}/", p)),
+        TestUnit::BatsSuite(_) => false,
+    });
+    let selected_ns: Vec<String> = ns_all.iter().filter(|f| in_units(f)).cloned().collect();
+    // count REGISTERED TESTS (rows), not files — the report must count what it names
+    let selected_ns_tests = rows.iter()
+        .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
+        .count();
+    let stack_down: Option<String> = if selected_ns.is_empty() {
+        None
+    } else {
+        match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
+            Ok(()) => None,
+            Err(down) => Some(down),
+        }
+    };
+    let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
+    println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
+    if let Some(down) = &stack_down {
+        emit_spine("test.integration.skipped", &role, &card, &trace,
+            &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
+    }
     let mut any_failed = false;
     let mut failed_count: usize = 0;
     // #3592 — every executed case, keyed to the registered identity, plus the
@@ -252,7 +280,17 @@ fn run(args: &[String]) -> Result<i32, String> {
         let target = check.unit.as_ref().map(unit_name).unwrap_or("workspace");
         let ok = match (&check.kind, &check.unit) {
             (CheckKind::CargoTest, Some(TestUnit::RustCrate(c))) => {
-                let (ok, cases) = run_cargo(&werk, c, &q_names);
+                // stack-down: this crate's needs-stack integration binaries
+                // (tests/<stem>.rs → binary <stem>) drop out of the run, typed.
+                let crate_prefix = format!("platform/services/{}/tests/", c);
+                let ns_bins: Vec<String> = ns_excluded.iter()
+                    .filter_map(|f| f.strip_prefix(&crate_prefix))
+                    .filter_map(|rest| rest.strip_suffix(".rs"))
+                    .filter(|stem| !stem.contains('/'))
+                    .map(|s| s.to_string())
+                    .collect();
+                let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
+                let (ok, cases) = run_cargo(&werk, c, &q_names, &ns_refs);
                 let crate_dir = format!("platform/services/{}", c);
                 for (bare, result) in cases {
                     match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
@@ -271,7 +309,19 @@ fn run(args: &[String]) -> Result<i32, String> {
                 let (ok, cases) = match &jplan {
                     JestPlan::Selected(sels) => {
                         match sels.iter().find(|s| s.package == *p) {
-                            Some(sel) => run_jest_selected(&werk, p, &sel.test_files),
+                            Some(sel) => {
+                                // #3919 — stack-down: needs-stack files leave the
+                                // selection; the typed SKIPPED line above owns them.
+                                let files: Vec<String> = sel.test_files.iter()
+                                    .filter(|f| !ns_excluded.contains(f))
+                                    .cloned().collect();
+                                if files.is_empty() {
+                                    println!("   jest:{} — selection all needs-stack, skipped typed (stack down)", p);
+                                    (true, Vec::new())
+                                } else {
+                                    run_jest_selected(&werk, p, &files)
+                                }
+                            }
                             None => {
                                 // A valid registry answer: nothing registered
                                 // covers this diff in this package. Visible,
@@ -540,6 +590,23 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
 /// #3929 — probe `cargo nextest --version` ONCE per process against the pin in
 /// `<werk>/.config/nextest.toml`. Absence, staleness, or a missing pin all
 /// refuse the whole cargo lane loudly; there is no fallback to `cargo test`.
+/// #3919 — probe the live stack the needs-stack tier depends on. Overridable
+/// via WERK_STACK_PROBES="name=url,name=url" so tests bring their own world;
+/// defaults to the two services the registered integration tests actually hit.
+fn probe_stack() -> Vec<(String, bool)> {
+    let spec = std::env::var("WERK_STACK_PROBES").unwrap_or_else(|_|
+        "chorus-api=http://localhost:3340/api/chorus/context/health,owl-api=http://localhost:3360/".to_string());
+    spec.split(',')
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(name, url)| {
+            let ok = Command::new("curl")
+                .args(["-sf", "--max-time", "3", "-o", "/dev/null", url])
+                .status().map(|s| s.success()).unwrap_or(false);
+            (name.trim().to_string(), ok)
+        })
+        .collect()
+}
+
 fn nextest_gate(werk: &str) -> &'static Result<(), String> {
     static GATE: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
     GATE.get_or_init(|| {
@@ -561,7 +628,7 @@ fn nextest_gate(werk: &str) -> &'static Result<(), String> {
 }
 
 /// gate; an empty quarantine set leaves the invocation byte-identical.
-fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String, String)>) {
+fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> (bool, Vec<(String, String)>) {
     let dir = format!("{}/platform/services/{}", werk, name);
     if !Path::new(&format!("{}/Cargo.toml", dir)).is_file() {
         return (true, Vec::new());
@@ -570,7 +637,7 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str]) -> (bool, Vec<(String
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new());
     }
-    let args: Vec<String> = werk_test::nextest_run_args(quarantined);
+    let args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
     // #3592 — capture instead of inherit: per-case lines feed TestResult emit.
     // Failure output is still shown (tail), honest-red stays visible.
     let mut cmd = Command::new("cargo");
@@ -858,7 +925,7 @@ fn fetch_test_rows() -> (Vec<TestRow>, Vec<String>, Vec<String>, &'static str) {
     // argv-exec'd subprocesses (a hostile char in the endpoint can't become shell).
     // The jq filter emits one TSV row PER covers value, so a multi-valued covers
     // (array in a future TestShape) fans out instead of being dropped silently.
-    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // "")] | @tsv"#;
+    let jq_filter = r#".data[] | .filePath as $f | .pyramidLayer as $l | .testName as $n | .name as $e | .hermeticity as $h | (.covers | if type=="array" then .[] else . end) as $c | [$f,$c,($l // ""),($n // ""),($e // ""),($h // "")] | @tsv"#;
     let curl = Command::new("curl")
         .args(["-sf", "--max-time", "10", &endpoint])
         .output();
