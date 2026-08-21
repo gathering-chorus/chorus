@@ -1,0 +1,70 @@
+# #3733 — graph status becomes MODEL DATA. reconcile's name heuristic silently
+# defaulted every unrecognized graph to "live" (the singular-typo
+# urn:chorus:domain:tests, 58 triples, counted as model content). A graph's
+# status is a fact about the graph; it lives here, definitionally sanctioned
+# in urn:chorus:ontology, and reconcile QUERIES it. An unregistered graph is
+# UNCLASSIFIED — named as needing a ruling, never defaulted to live.
+#
+# Deploys to: urn:chorus:ontology (MODEL_SET). Feeds #3732's selective union:
+# the sanctioned set IS what a selective union unions over.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:NamedGraph a owl:Class ;
+    rdfs:label "named graph" ;
+    rdfs:comment "A named graph in the store, as a governable subject. Its graphStatus is the model's ruling on what the graph IS — sanctioned model content or test-ephemeral. Absence of a NamedGraph row for a live graph = UNCLASSIFIED, an explicit third state (#3733)." .
+
+chorus:graphStatus a owl:DatatypeProperty ;
+    rdfs:label "graph status" ;
+    rdfs:domain chorus:NamedGraph ;
+    rdfs:range xsd:string ;
+    rdfs:comment "sanctioned | test-ephemeral. There is deliberately NO 'unclassified' literal — unclassified is the ABSENCE of a ruling, so it can never be asserted into permanence (absence-stays-absent)." .
+
+chorus:graphIri a owl:DatatypeProperty ;
+    rdfs:label "graph IRI" ;
+    rdfs:domain chorus:NamedGraph ;
+    rdfs:range xsd:string ;
+    rdfs:comment "The graph's IRI as a literal key. A prefix wildcard ends with ':*' (exactly one scheme: urn:chorus:domains:*) — anything fancier belongs in the model as its own row, not in a regex." .
+
+# ── the registry ─────────────────────────────────────────────────────────────
+
+chorus:graph-ontology a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:ontology" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-instances a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:instances" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-documents a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:documents" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-skills a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:skills" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-gates a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:gates" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-framework a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:framework" ;
+    chorus:graphStatus "sanctioned" .
+
+chorus:graph-domains a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:domains:*" ;
+    chorus:graphStatus "sanctioned" .
+
+# Test-ephemeral families, from the live 2026-08-02 audit (previously matched
+# by name shape; now declared).
+chorus:graph-verbs-sandbox a chorus:NamedGraph ;
+    chorus:graphIri "urn:chorus:verbs-sandbox" ;
+    chorus:graphStatus "test-ephemeral" .
+
+# NOTE deliberately absent: urn:chorus:domain:tests (SINGULAR typo). It stays
+# UNCLASSIFIED so the readout keeps naming it until it is retired — registering
+# it either way would end the pressure to delete it.
