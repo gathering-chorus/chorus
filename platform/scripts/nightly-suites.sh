@@ -248,12 +248,70 @@ _npm_package_uses_jest() {
 # attempt: a suite passes or fails, and we believe the result.
 run_one() {
   local kind="$1" path="$2" owner="$3"
+  # #3920 fold — cargo has NO walker here: a one-crate repro runs through the
+  # same runner as the full lane (`werk-test --nightly --crate=<name>`), and
+  # werk-test carries its own typed stack gate (#3919), not #3557's.
+  if [ "$kind" = "cargo" ]; then
+    run_cargo_lane "$(basename "$path")"
+    return
+  fi
   # #3557 stack-gate: a live-stack suite with no stack is a SKIP, not a fail.
   if _needs_stack "$path" && ! _stack_up; then
     echo "SUITE|$kind|$path|$owner|skip|skipped — no live stack (#3557)"
     return
   fi
   run_one_attempt "$kind" "$path" "$owner"
+}
+
+# #3920 fold — the cargo lane, through the ONE runner. `werk-test --nightly`
+# owns selection (every registered crate — the registry, not a glob), execution
+# (nextest #3929), the needs-stack typed skips (#3919), and the per-case
+# TestResult posts (#3592), identically to the werk gate. This function only
+# FOLDS: each `nightly-unit|cargo|<crate>|verdict|summary` line the runner
+# prints becomes one SUITE row (same verdict vocabulary, same parser
+# downstream). A refusal, a missing binary, or a run that produced no unit
+# lines is a LOUD red row — the lane never silently vanishes (#3597: either
+# pass or fail, either way we know).
+run_cargo_lane() {
+  local only="${1:-}"
+  # ~/.chorus/bin is the deploy home (#2734); the LaunchAgent PATH may predate
+  # it, so resolve the installed binary explicitly before giving up.
+  local wt; wt=$(command -v werk-test || true)
+  [ -z "$wt" ] && [ -x "$HOME/.chorus/bin/werk-test" ] && wt="$HOME/.chorus/bin/werk-test"
+  if [ -z "$wt" ]; then
+    echo "SUITE|cargo|werk-test-nightly|silas|fail|0 pass, 1 fail (werk-test not on PATH — cargo lane DID NOT RUN via the one runner, #3920)"
+    return
+  fi
+  # #3484 — the nightly's own build lock: never contend with a role build.
+  local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
+  local _cap rc; _cap=$(mktemp)
+  NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_CARGO_LANE_TIMEOUT:-5400}" _run_capped "$_cap" \
+    env CARGO_TARGET_DIR="$nt" CHORUS_ROOT="$CHORUS_ROOT" \
+    "$wt" --nightly ${only:+--crate="$only"}; rc=$?
+  local out; out=$(cat "$_cap"); rm -f "$_cap"
+  local units; units=$(printf '%s\n' "$out" | grep '^nightly-unit|cargo|' || true)
+  if [ -z "$units" ]; then
+    # No unit lines at all: refused (registry down), crashed, or timed out.
+    local reason; reason=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -1 | cut -c1-160)
+    echo "SUITE|cargo|werk-test-nightly|silas|fail|0 pass, 1 fail (runner produced no unit results rc=$rc — ${reason:-no output})"
+    return
+  fi
+  local crate verdict summary
+  while IFS='|' read -r _ _ crate verdict summary; do
+    [ -z "$crate" ] && continue
+    echo "SUITE|cargo|platform/services/$crate|silas|$verdict|$summary"
+    # #3484 — persist the failing lane's output so the red explains itself;
+    # clear on green so a passing rerun drops the stale reason.
+    local _flog; _flog=$(_fail_log_path cargo "platform/services/$crate")
+    if [ "$verdict" = "fail" ]; then
+      mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
+      printf '%s\n' "$out" > "$_flog" 2>/dev/null || true
+    else
+      rm -f "$_flog" 2>/dev/null || true
+    fi
+  done <<EOF
+$units
+EOF
 }
 
 # Extract a parseable pass/fail summary from a shell test script's full stdout.
@@ -394,41 +452,9 @@ run_one_attempt() {
       rm -f "$_cap"
       [ "$rc" -ne 0 ] && status="fail"
       ;;
-    cargo)
-      # --test-threads=1: several chorus-hooks tests share global state
-      # (role-state files, hook env vars) and flake under parallel runs.
-      # Serial execution matches the nightly's isolation goal; under the
-      # budget-set workload it adds a few seconds total.
-      #
-      # #3484: isolated CARGO_TARGET_DIR. Each crate builds in its own target/
-      # (no workspace), so a role/recovery `cargo` touching the SAME crate's
-      # target/ while the nightly runs fights over the build lock — cargo
-      # returns nonzero, the synthesis below stamps "0 ok, 1 failed", and
-      # because the contention hits every crate it paints the whole run red at
-      # once (the false MASS-red: 2026-06-20 saw werk-push/owl-api/chorus-model
-      # all "red" while each was green on a standalone run). A dedicated target
-      # dir gives the nightly its own build lock — it can never contend with a
-      # role build, so the only input is the code. Warm after the first night.
-      local out rc _cap; _cap=$(mktemp)
-      local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
-      SUITE_DIR="$path" NT="$nt" _run_capped "$_cap" \
-        bash -c 'cd "$SUITE_DIR" && CARGO_TARGET_DIR="$NT" cargo test --release -- --test-threads=1'; rc=$?
-      out=$(cat "$_cap"); rm -f "$_cap"
-      local passed failed
-      passed=$(echo "$out" | grep -cE '^test result: ok\.' || true)
-      failed=$(echo "$out" | grep -cE '^test result: FAILED\.' || true)
-      if [ "$passed" -eq 0 ] && [ "$failed" -eq 0 ] && [ "$rc" -ne 0 ]; then
-        # cargo did not print test-result lines (compile error, panic, run
-        # interrupted). Surface as a real failure rather than letting the
-        # downstream parser treat a 0/0 summary as "no parseable output"
-        # and silently bucket it as DID NOT RUN.
-        summary="suites: 0 ok, 1 failed (compile/run failure rc=$rc)"
-        status="fail"
-      else
-        summary="suites: $passed ok, $failed failed"
-        [ "$failed" -gt 0 ] && status="fail"
-      fi
-      ;;
+    # #3920 fold — the cargo case is RETIRED from this walker: the cargo lane
+    # runs through `werk-test --nightly` (see run_cargo_lane). run_one routes
+    # kind=cargo there before this function is ever reached.
     shell)
       local out rc _cap; _cap=$(mktemp)
       _run_capped "$_cap" bash "$path"; rc=$?
@@ -725,10 +751,10 @@ run_all() {
     run_one npm "$d" "$(owner_for_npm "$d")"
   done < <(list_npm)
 
-  while IFS= read -r d; do
-    [ -z "$d" ] && continue
-    run_one cargo "$d" "silas"
-  done < <(list_cargo)
+  # #3920 fold — ONE runner for the cargo lane: selection from the registry,
+  # nextest (#3929), typed needs-stack skips (#3919), per-case TestResult posts
+  # (#3592), via `werk-test --nightly`. list_cargo no longer drives execution.
+  run_cargo_lane
 
   while IFS= read -r s; do
     [ -z "$s" ] && continue
