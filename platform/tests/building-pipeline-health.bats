@@ -104,7 +104,9 @@ start_mock() {
     kill -0 "$MOCK_PID" 2>/dev/null || break
     sleep 0.1
   done
-  kill "$MOCK_PID" 2>/dev/null
+  # kill exits 1 if the mock already died — the common retry case; a bare
+  # nonzero here aborts start_mock itself (run 71's red).
+  kill "$MOCK_PID" 2>/dev/null || true
   MOCK_PORT=$(( 20000 + RANDOM % 5000 ))
   write_mock
   ( exec python3 "${MOCK_DIR}/loki_mock.py" "$MOCK_PORT" >/dev/null 2>&1 ) &
