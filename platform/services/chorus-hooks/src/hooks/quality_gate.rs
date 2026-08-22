@@ -1,8 +1,11 @@
-//! Quality gate (#1717)
+//! Quality gate (#1717) — ADVISORY ONLY (#3677 honest downgrade).
 //!
-//! PreToolUse on Skill("demo"): spawns a Claude agent to review work against AC.
-//! PostToolUse on Edit/Write: lightweight pattern check for common issues.
-//! Blocks demo if AC gaps found. Warns on risky edits.
+//! This module DOCUMENTED itself as blocking ("Blocks demo if AC gaps found")
+//! while every path returns allow — one of ADR-056's three hollow modules.
+//! The blocking demo review it promised is REAL elsewhere: werk-demo's
+//! preflight gates (#3443) refuse an unproven demo. This hook only observes
+//! and logs. adr056_advisory_3677.rs pins the advisory contract: if a future
+//! edit makes this deny, that test must flip WITH a real negative fixture.
 
 use crate::state::chorus_log as emit_event;
 use crate::types::{HookInput, HookResponse};
