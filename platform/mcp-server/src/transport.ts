@@ -58,6 +58,21 @@ export function safeBodySnippet(body: unknown): string {
   }
 }
 
+// #3963 — the benign claude-code discovery probe. Claude Code's CLI POSTs a
+// `server/discover` (a method our MCP SDK does not implement), the SDK returns
+// 400, and #3001's push model then nudged silas indefinitely (16+ times/day)
+// for a request that is NOT an ops fault. Suppress the NUDGE for exactly this
+// signature — the spine event is still emitted, so observability is preserved.
+// Signature-scoped, never a blanket mute: a real error 400 still nudges.
+export function isBenignDiscoveryProbe(fields: Record<string, unknown>): boolean {
+  const status = str(fields['status'] ?? '');
+  if (status !== '400') return false;
+  const ua = str(fields['user_agent'] ?? '').toLowerCase();
+  if (!ua.includes('claude-code')) return false;
+  const body = str(fields['body'] ?? '');
+  return body.includes('server/discover');
+}
+
 async function emitTransportError(fields: Record<string, unknown>): Promise<void> {
   try {
     const args = ['mcp.transport.error', str(fields['from'] ?? 'unknown')];
@@ -69,8 +84,11 @@ async function emitTransportError(fields: Record<string, unknown>): Promise<void
   } catch {
     // best-effort; chorus-log failure must not affect the HTTP response
   }
-  // #3001 — push notify to silas in parallel with spine emit
-  void notifyTransportError(fields);
+  // #3001 — push notify to silas in parallel with spine emit.
+  // #3963 — but NOT for the benign claude-code discovery probe (spine kept).
+  if (!isBenignDiscoveryProbe(fields)) {
+    void notifyTransportError(fields);
+  }
 }
 
 async function notifyTransportError(fields: Record<string, unknown>): Promise<void> {
