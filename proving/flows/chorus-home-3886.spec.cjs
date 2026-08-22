@@ -1,3 +1,4 @@
+// @test-type: e2e:ui — playwright browser flow (chorus-home-3886), live surface
 /**
  * #3886 — the chorus home page, and the way out of it.
  *

@@ -198,12 +198,16 @@ def freshness_stamp(now_iso, commit):
 
 def main():
     files = discover()
-    clear_graph(DG)  # bounded + validated (#3560) — replaces the raw unguarded DELETE
-    batch, seen, ntests = [], set(), 0
+    # #3970 — VALIDATE BEFORE CLEAR. The old order (clear, then build+assert per
+    # file) meant one bad covers target destroyed the registry it was refilling:
+    # 2026-08-21, /domains stopped serving 'deploys' and the ingest wiped
+    # 1300+ Tests down to a partial 270. Now the ENTIRE corpus builds (and every
+    # covers assert runs) first; only a fully-valid corpus clears and writes.
+    batches, batch, seen, ntests = [], [], set(), 0
     def flush():
         nonlocal batch
         if batch:
-            post(f"PREFIX chorus: <{NS}> INSERT DATA {{ GRAPH <{DG}> {{\n" + "\n".join(batch) + "\n} }")
+            batches.append(batch)
             batch = []
     for p in files:
         cs, c = case_names(p)
@@ -238,6 +242,10 @@ def main():
               .stdout.strip() or "unknown")
     batch.append(freshness_stamp(now_iso, commit))
     flush()
+    # Every file classified, every covers target validated — NOW touch the store.
+    clear_graph(DG)  # bounded + typed (#3560/#3825) — Test/SourceFile/stamp only
+    for b in batches:
+        post(f"PREFIX chorus: <{NS}> INSERT DATA {{ GRAPH <{DG}> {{\n" + "\n".join(b) + "\n} }")
     print(f"tests-domain ingested: {len(files)} files -> {ntests} Tests in {DG} (stamp {now_iso} @ {commit[:12]})")
 
 if __name__ == "__main__":

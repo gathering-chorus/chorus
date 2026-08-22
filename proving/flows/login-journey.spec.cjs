@@ -1,3 +1,4 @@
+// @test-type: e2e:ui — playwright browser flow (login-journey), live surface
 /**
  * THE LOGIN JOURNEY — a real browser, the real door, no backdoor.
  *
