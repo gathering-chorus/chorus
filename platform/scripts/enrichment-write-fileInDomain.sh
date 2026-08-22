@@ -75,7 +75,7 @@ MINT_BIN="${CHORUS_ROOT}/platform/scripts/chorus-identity-token"   # #3689: ES25
 DOOR_WEBID="${CHORUS_AGENT_WEBID:-http://localhost:3000/pods/chorus/_agents/silas/profile/card.ttl#me}"
 door_body=""; BEARER=""
 if [ "$USE_DOOR" = "1" ]; then
-  BEARER=$("$MINT_BIN" "${CHORUS_ROLE:-silas}" 2>/dev/null)
+  BEARER=$("$MINT_BIN" "${CHORUS_ROLE:-system}" 2>/dev/null)  # #3959: was :-silas
   if [ -z "$BEARER" ]; then
     echo "enrichment-write-fileInDomain: door mint failed — falling back to raw path" >&2
     USE_DOOR=0

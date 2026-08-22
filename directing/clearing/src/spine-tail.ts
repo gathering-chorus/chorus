@@ -17,8 +17,16 @@ import type fs_node from 'fs';
 
 export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
 
-/** Last ~256KB of the log — thousands of lines; the page asks for ≤ ~80. */
-export const TAIL_BYTES = 256 * 1024;
+/** #3959 — the window is stated in TIME, not bytes, because bytes are a lie that
+ *  drifts. 256 KB was written when it meant "thousands of lines"; at 2026-08-21
+ *  volume (~50k events/day, 1.26 GB log) it measured **51 seconds**. Anything a
+ *  role did a minute ago was already unreachable — which is what "no streams for
+ *  20+ minutes" actually looked like from the inside.
+ *
+ *  8 MB holds roughly half an hour at that rate. If volume doubles the window
+ *  halves, so the reader ALSO reports the span it actually covered (see
+ *  readSpineLines) rather than letting a silent shrink look like a quiet team. */
+export const TAIL_BYTES = 8 * 1024 * 1024;
 
 const TURN_SKIP_PREFIXES = ['[nudge from', '[feedback]', '[response]', '[reply]', '[ack]', '[direction]', '[correction]'];
 const TURN_SKIP_CONTAINS = ['<command-', 'Base directory for this skill', '[Request interrupted', '[Image:', '/var/folders'];
@@ -35,6 +43,8 @@ interface LogEntry {
   tool_count?: string | number;
   from?: string;
   target?: string;
+  tool?: string;
+  elapsed_s?: string | number;
 }
 
 function formatToolDisplay(summary: string, action: string): string | null {
@@ -117,14 +127,59 @@ function parseWerkEntry(entry: LogEntry, role: string): StreamLine | null {
   };
 }
 
-function parseLogEntry(entry: LogEntry): StreamLine | null {
+/** #3959 — the running/thinking beat. #3853 built it, wired it to the spine
+ *  (12,787/day), and never wired it to the pane: parseLogEntry had no branch,
+ *  so every beat returned null at the fallthrough. The beat exists precisely so
+ *  Jeff can see a role is alive during a long tool call; dropping it here is the
+ *  reason a working role looked dead for 70 minutes. */
+function parseActivityEntry(entry: LogEntry, role: string): StreamLine | null {
+  const phase = entry.phase ?? '';
+  if (phase !== 'running' && phase !== 'thinking') return null;
+  const tool = entry.tool ? String(entry.tool) : '';
+  const elapsed = entry.elapsed_s != null ? `${entry.elapsed_s}s` : '';
+  const verb = phase === 'running' ? '⏳ running' : '💭 thinking';
+  const text = [verb, tool, elapsed && `(${elapsed})`].filter(Boolean).join(' ');
+  return {
+    ts: entry.timestamp ?? '',
+    role,
+    type: 'activity',
+    text,
+    card: entry.card_id ? String(entry.card_id) : null,
+  };
+}
+
+/** #3959 — why a line was dropped. Until now every rejection collapsed to
+ *  `null`, so 26,000 unattributed events a day disappeared with no record and
+ *  the pane looked identical to a quiet team. A drop is data. */
+export type DropReason = 'no-role' | 'unknown-role' | 'event-not-rendered';
+
+export interface SpineReadStats {
+  lines: number;
+  rendered: number;
+  dropped: Record<DropReason, number>;
+  spanFrom: string;
+  spanTo: string;
+}
+
+function classifyLogEntry(entry: LogEntry): { line: StreamLine | null; drop: DropReason | null } {
   const role = entry.role ?? '';
-  if (!role || !['wren', 'silas', 'kade'].includes(role)) return null;
+  if (!role) return { line: null, drop: 'no-role' };
+  if (!['wren', 'silas', 'kade'].includes(role)) return { line: null, drop: 'unknown-role' };
+  const line = parseKnownRoleEntry(entry, role);
+  return { line, drop: line ? null : 'event-not-rendered' };
+}
+
+function parseLogEntry(entry: LogEntry): StreamLine | null {
+  return classifyLogEntry(entry).line;
+}
+
+function parseKnownRoleEntry(entry: LogEntry, role: string): StreamLine | null {
   const event = entry.event ?? '';
   if (event === 'session_tool') return parseToolEntry(entry, role);
   if (event === 'session_turn') return parseTurnLine(entry, role);
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
   if (event === 'werk.phase' || WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
+  if (event === 'agent.activity') return parseActivityEntry(entry, role);
   return null;
 }
 
@@ -175,15 +230,41 @@ export function spinePath(env: Record<string, string | undefined>): string {
 }
 
 export function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
+  return readSpineWithStats(fs, logFile, limit).lines;
+}
+
+/** #3959 — the same read, but it REPORTS what it threw away and the wall-clock
+ *  span it actually covered. The window is bounded in bytes; at high volume that
+ *  silently shrinks, and a shrinking window looks exactly like an idle team.
+ *  Never let a loss be inferred from an absence. */
+export function readSpineWithStats(
+  fs: typeof fs_node,
+  logFile: string,
+  limit: number,
+): { lines: StreamLine[]; stats: SpineReadStats } {
   const out: StreamLine[] = [];
+  const dropped: Record<DropReason, number> = { 'no-role': 0, 'unknown-role': 0, 'event-not-rendered': 0 };
   const logLines = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
   let count = 0;
+  let spanFrom = '';
+  let spanTo = '';
   for (let i = logLines.length - 1; i >= 0 && count < limit * 2; i--) {
     try {
       // eslint-disable-next-line security/detect-object-injection -- i is the bounded loop index over logLines, never untrusted input (#3606)
-      const line = parseLogEntry(JSON.parse(logLines[i]));
+      const entry = JSON.parse(logLines[i]) as LogEntry;
+      const ts = entry.timestamp ?? '';
+      if (ts) {
+        if (!spanTo) spanTo = ts;
+        spanFrom = ts;
+      }
+      const { line, drop } = classifyLogEntry(entry);
       if (line) { out.push(line); count++; }
+      // eslint-disable-next-line security/detect-object-injection -- drop is a DropReason union, not untrusted input
+      else if (drop) dropped[drop] += 1;
     } catch { /* ignored */ }
   }
-  return out;
+  return {
+    lines: out,
+    stats: { lines: logLines.length, rendered: out.length, dropped, spanFrom, spanTo },
+  };
 }
