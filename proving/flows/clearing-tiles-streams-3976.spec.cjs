@@ -168,20 +168,54 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
       const ageText = (await tile.locator('.tile-age').innerText()).trim();
       const ageSec = ageToSeconds(ageText);
 
-      const active = state.includes('building') || state.includes('observing');
-      if (!active) continue;
-
-      // The tile claims recent activity. The pane must show SOMETHING for it.
       const mine = rows.filter((r) => r.role === role);
-      if (mine.length === 0) {
+      const active = state.includes('building') || state.includes('observing');
+
+      // 1. Active tile, empty pane — the extreme case.
+      if (active && mine.length === 0) {
         disagreements.push(
           `${role}: tile says "${state}" (age ${ageText || 'none'}) but the pane has ZERO lines for it`,
         );
         continue;
       }
-      // and the tile's age must not be wildly older than the pane's newest line
-      if (ageSec !== null && ageSec > 900) {
-        disagreements.push(`${role}: tile claims active but its age is ${ageText}`);
+
+      // 2. THE 06:19 CASE — and the one the first version of this check could
+      // NOT see, which is why it passed in production against the very defect
+      // it was written for:
+      //
+      //   tile "wren idle 10m" (=6:09)    pane's newest wren line 5:33   36m apart
+      //   tile "kade building 1m"         pane's newest kade line 6:05   14m apart
+      //
+      // Neither trips an active/empty rule: wren was not "active" so the old
+      // check skipped it entirely, and kade HAD lines so it passed. The
+      // disagreement lives in the AGES, so ages are what must be compared —
+      // for EVERY role, not only the ones a tile calls active.
+      if (ageSec === null || mine.length === 0) continue;
+      const today = new Date().toDateString();
+      const newest = mine
+        .map((r) => Date.parse(`${today} ${r.ts}`))
+        .filter((t) => !Number.isNaN(t))
+        .sort((a, b) => b - a)[0];
+      if (newest === undefined) continue;
+      const paneAgeSec = Math.round((Date.now() - newest) / 1000);
+      const skewSec = Math.abs(paneAgeSec - ageSec);
+      // NO TOLERANCE. Jeff, 2026-08-22: "if u check the role state and streams
+      // they MUST match at any given time."
+      //
+      // A 5-minute slack was here and it was wrong — inventing an allowance for
+      // a disagreement that must not exist. Both surfaces read the SAME spine;
+      // if they disagree, it is because they read different event sets, which is
+      // the defect, not an artifact of polling. Widening the assertion to make
+      // it pass is exactly what #3734 forbids.
+      //
+      // The only slack is one tile poll (120s at tiles.ts:40) — beyond that the
+      // surfaces are telling Jeff two different things about the same role.
+      const TILE_POLL_SEC = 120;
+      if (skewSec > TILE_POLL_SEC) {
+        disagreements.push(
+          `${role}: tile age ${ageText} (${ageSec}s) vs pane newest ${paneAgeSec}s — ` +
+            `${Math.round(skewSec / 60)}m apart. This is the 06:19 defect.`,
+        );
       }
     }
 
