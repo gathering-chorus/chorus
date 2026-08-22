@@ -331,7 +331,7 @@ export function projectSpine(
   const { lines, stats } = readSpineWithStats(fs, logFile, limit);
 
   // Same bytes the pane just rendered from — not a second, smaller read.
-  const activity: Record<string, { ageSecs: number; kind: string }> = {};
+  const act = new Map<string, { ageSecs: number; kind: string }>();
   for (const line of raw) {
     let e: { timestamp?: string; role?: string; event?: string };
     try {
@@ -344,8 +344,12 @@ export function projectSpine(
     const t = Date.parse(e.timestamp);
     if (Number.isNaN(t)) continue;
     const ageSecs = Math.max(0, Math.round((now - t) / 1000));
-    const prev = activity[role];
-    if (!prev || ageSecs < prev.ageSecs) activity[role] = { ageSecs, kind: e.event };
+    // A Map, not an object literal: `role` comes off a spine line, so indexing
+    // an object with it is untrusted-key access (security/detect-object-injection).
+    // The allowlist above already bounds it, but a Map has no prototype to walk
+    // into, which is the honest fix rather than a disable comment.
+    const prev = act.get(role);
+    if (!prev || ageSecs < prev.ageSecs) act.set(role, { ageSecs, kind: e.event });
   }
-  return { lines, activity, stats };
+  return { lines, activity: Object.fromEntries(act), stats };
 }
