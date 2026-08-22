@@ -10,8 +10,12 @@ if echo "$PROMPT" | grep -q '\[e2e-test\]'; then
   ROLE="${DEPLOY_ROLE:-unknown}"
   MARKER=$(echo "$PROMPT" | grep -oE 'e2e-[a-z]+-[0-9]+' | head -1)
   if [ -n "$MARKER" ]; then
+    # #3966 — /api/message requires a caller identity; present the BRIDGE_TOKEN
+    # (server path os.homedir()/.chorus/bridge-auth-token, not $CHORUS_HOME).
+    E2E_BRIDGE_TOKEN="$(cat "$HOME/.chorus/bridge-auth-token" 2>/dev/null || echo '')"
     curl -s -X POST http://localhost:3470/api/message \
       -H 'Content-Type: application/json' \
+      -H "Authorization: Bearer ${E2E_BRIDGE_TOKEN}" \
       -d "{\"from\":\"${ROLE}\",\"text\":\"[e2e-ack] ${ROLE} received ${MARKER}\",\"type\":\"role-response\"}" \
       > /dev/null 2>&1 || true
   fi

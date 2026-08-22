@@ -15,6 +15,15 @@ MARKER="probe-$(date +%s)-$$"
 MAX_WAIT=5
 ROLE="system"
 
+# #3966 — /api/message now requires a caller identity (was anonymous). The probe
+# is a server-side caller on the box, so it presents the BRIDGE_TOKEN. The path
+# is the SERVER's own (`os.homedir()/.chorus/bridge-auth-token`, server.ts) —
+# NOT $CHORUS_HOME, which chorus-env-setup.sh points at the repo, a different
+# place. If the file is absent the probe posts bare and the 401 surfaces as a
+# real failure (fail-loud, not silent).
+BRIDGE_TOKEN_FILE="$HOME/.chorus/bridge-auth-token"
+BRIDGE_TOKEN="$(cat "$BRIDGE_TOKEN_FILE" 2>/dev/null || echo '')"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$PROBE_LOG"
 }
@@ -23,6 +32,7 @@ log() {
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
   -X POST "$CLEARING/api/message" \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${BRIDGE_TOKEN}" \
   -d "{\"from\":\"probe\",\"text\":\"$MARKER\",\"type\":\"probe\"}" \
   --connect-timeout 3 --max-time 5 2>/dev/null || echo "000")
 
