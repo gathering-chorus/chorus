@@ -96,7 +96,7 @@ case "${1:-deploy}" in
     render "$RUNTIME"
     # #3630 review (Wren): witness the flip operation on the spine.
     "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/chorus-log" \
-      fuseki.shiro.deployed "${DEPLOY_ROLE:-silas}" runtime="$RUNTIME" writes=authcBasic credenv="$CRED_ENV" 2>/dev/null || true
+      fuseki.shiro.deployed "${DEPLOY_ROLE:-system}" runtime="$RUNTIME" writes=authcBasic credenv="$CRED_ENV" 2>/dev/null || true
     echo "fuseki-shiro-deploy: wrote $RUNTIME (0600) + provisioned $CRED_ENV (0600). Fuseki must reload to apply —"
     echo "  launchctl kickstart -k gui/$(id -u)/com.gathering.fuseki   (run on GO; this is the live flip)"
     ;;

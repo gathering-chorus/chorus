@@ -54,7 +54,7 @@ CHORUS_LOG="${CHORUS_LOG:-$CHORUS_ROOT/platform/scripts/chorus-log}"
 GRAPHS="urn:chorus:ontology urn:chorus:instances urn:chorus:domains:security"
 
 log(){ echo "$(date '+%F %T') [restore-drill] $*"; }
-spine(){ "$CHORUS_LOG" "$1" "${DEPLOY_ROLE:-silas}" "${@:2}" 2>/dev/null || true; }
+spine(){ "$CHORUS_LOG" "$1" "${DEPLOY_ROLE:-system}" "${@:2}" 2>/dev/null || true; }
 unmeasurable(){ log "UNMEASURABLE: $*"; spine ops.restore.drill verdict=unmeasurable reason="$1"; exit 2; }
 
 SCRATCH=""

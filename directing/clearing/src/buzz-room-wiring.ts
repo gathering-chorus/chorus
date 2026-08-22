@@ -201,7 +201,10 @@ function onAuthChallenge(st: RoomState, challenge: string): void {
   const auth = buildAuthEvent(st.connSigner, claimed, challenge);
   st.authEventId = auth.id;
   st.ws?.send(JSON.stringify(['AUTH', auth]));
-  st.deps.log('info', 'buzz.room.authenticating', { as: st.deps.authAs ?? 'wren' });
+  // #3959 — this defaulted to a specific teammate's name. Logging (or worse,
+  // authenticating) as someone who did not act is how work gets filed under
+  // the wrong person. Absence is its own value.
+  st.deps.log('info', 'buzz.room.authenticating', { as: st.deps.authAs ?? 'unidentified' });
 }
 
 function onAuthAccepted(st: RoomState, accepted: unknown): void {
