@@ -82,3 +82,33 @@ describe('renderNightlyPage', () => {
     expect(html).toMatch(/no nightly run/i);
   });
 });
+
+describe('displayPath (#3964 — readable on a phone)', () => {
+  const abs = '/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/test-api-health.sh';
+  const RUN = [
+    'RUN|start|2026-08-22T03:00:01',
+    `SUITE|shell|${abs}|silas|fail|5 pass, 2 fail`,
+    'SUITE|cargo|platform/services/werk-test|silas|pass|135 pass, 0 fail',
+    'RUN|complete|2026-08-22T03:39:12',
+  ].join('\n');
+
+  it('absolute suite paths render repo-relative; relative ones unchanged', () => {
+    const html = renderNightlyPage(parseNightlyLog(RUN));
+    // NEGATIVE PROOF (#3734): the violation — the raw /Users prefix on screen —
+    // must be absent; the readable form present.
+    expect(html).not.toContain('/Users/jeffbridwell');
+    expect(html).toContain('platform/scripts/test-api-health.sh');
+    expect(html).toContain('platform/services/werk-test');
+  });
+
+  it('app-root paths shorten too', () => {
+    const run = parseNightlyLog([
+      'RUN|start|2026-08-22T03:00:01',
+      'SUITE|npm|/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site|kade|pass|Tests: 9 passed',
+      'RUN|complete|2026-08-22T03:39:12',
+    ].join('\n'));
+    const html = renderNightlyPage(run);
+    expect(html).not.toContain('/Users/jeffbridwell');
+    expect(html).toContain('app:jeff-bridwell-personal-site');
+  });
+});
