@@ -563,7 +563,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         started_at.elapsed().as_millis(), false);
     let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("test.completed", &role, &card, &trace, &extra_refs);
-    post_suite_run(&role, &card, &trace, plan_source, crates.len(), failed_count,
+    // #3975 — the graph writes authenticate as the NIGHTLY machine principal
+    // (least-privilege scope: the tests graph only). Spine events keep role
+    // "system" — who acted vs which credential wrote are different facts.
+    let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
+    post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
         started_at.elapsed().as_millis(), outcome.label());
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", &role, &card, &trace,
@@ -574,7 +578,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         emit_spine("testresult.unregistered", &role, &card, &trace,
             &[("count", &unregistered.to_string())]);
     }
-    post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
