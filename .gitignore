@@ -163,3 +163,9 @@ playwright-report/
 # Cost: 3 rebases on #3911, a July note on #3622, and two carve-outs written to
 # tolerate it (chorus-werk-sweep, werk-teardown) instead of removing the cause.
 knowledge/doc-coherence.md
+
+# #3381 — per-werk isolated demo store. env_up provisions <werk>/.chorus-demo/
+# (index.db + lance) so a demo variant never opens production's ~/.chorus store.
+# Runtime artifact, never source; lives INSIDE the werk so werk-teardown removes
+# it with the worktree — gitignored so it doesn't trip the refuse-if-dirty check.
+.chorus-demo/

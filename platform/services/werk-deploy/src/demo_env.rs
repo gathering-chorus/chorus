@@ -410,13 +410,30 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             svc.label(role)
         );
 
+        // #3381: per-werk isolated stores. The 2026-06-12 wedge root was every
+        // variant opening PRODUCTION's ~/.chorus/index.db + lance (WAL locks,
+        // three api procs on one store). #3379 landed the seams — chorus-api
+        // reads CHORUS_DB_PATH / CHORUS_LANCE_DIR with a prod-default fallback;
+        // this env_up now PASSES them, pointing at a per-werk dir the variant
+        // owns. Provisioned here, torn down in env_stop. AC3: a variant boot
+        // makes ZERO opens of the prod store (lsof-verified).
+        let demo_store_dir = format!("{}/.chorus-demo", werk_root);
+        let demo_db_path = format!("{}/index.db", demo_store_dir);
+        let demo_lance_dir = format!("{}/lance", demo_store_dir);
+        fs::create_dir_all(&demo_lance_dir)
+            .map_err(|e| format!("env_up: mkdir {}: {}", demo_lance_dir, e))?;
+
         // Service-specific extra env. chorus-api has scheduled jobs
         // (boardCache, healthCache, reindex worker, crawler-sweep, watchdog)
         // that race on shared SQLite/Fuseki/spine — default OFF in werk-api
         // (Wren hole 2). chorus-mcp doesn't have those; keep extras empty.
         // Add new service-specific gates here, not by kind.
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
-            "chorus-api" => vec![("CHORUS_API_SCHEDULED_JOBS", "off")],
+            "chorus-api" => vec![
+                ("CHORUS_API_SCHEDULED_JOBS", "off"),
+                ("CHORUS_DB_PATH", demo_db_path.as_str()),
+                ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
+            ],
             _ => vec![],
         };
 
