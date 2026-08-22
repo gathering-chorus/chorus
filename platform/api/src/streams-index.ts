@@ -175,7 +175,12 @@ export function indexSpine(
         event: typeof d.event === 'string' ? d.event : '',
         tool: typeof d.tool === 'string' ? d.tool : null,
         phase: typeof d.phase === 'string' ? d.phase : null,
-        card_id: d.card_id != null ? String(d.card_id) : null,
+        // String(unknown) can stringify an object to "[object Object]" — a
+        // card_id that is silently garbage is worse than one that is absent.
+        card_id:
+          typeof d.card_id === 'string' || typeof d.card_id === 'number'
+            ? String(d.card_id)
+            : null,
         trace_id: typeof d.trace_id === 'string' ? d.trace_id : null,
         payload: line,
       });
