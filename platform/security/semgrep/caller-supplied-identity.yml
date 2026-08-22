@@ -1,0 +1,49 @@
+# Chorus-authored semgrep rule (#3981) — the class that produced the live
+# `from`-spoofing hole (#3980). A caller-supplied identity field reaches a
+# write/ingest/publish sink with nothing binding it to the AUTHENTICATED
+# principal. authn (a gate) proves you are someone; this pattern lets you
+# CLAIM to be anyone. The fix is to derive identity from the verified session,
+# never from req.body — so this rule flags the untrusted-field-to-sink flow.
+rules:
+  - id: chorus-caller-supplied-identity-to-sink
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >
+      Caller-supplied identity (from/role/webid/actor/sender) flows into a
+      write/ingest/publish without binding to a verified principal (#3980 class).
+      Derive the identity from the authenticated session; do not trust req.body.
+    metadata:
+      card: "3981"
+      class: "auth-attribution / assert-vs-verify"
+      references: ["#3966", "#3980"]
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: $REQ.body.from
+              - pattern: $REQ.body.role
+              - pattern: $REQ.body.webid
+              - pattern: $REQ.body.actor
+              - pattern: $REQ.body.sender
+      # destructured binding: const { from } = req.body
+      - patterns:
+          - pattern: "const { ..., $ID, ... } = $REQ.body"
+          - metavariable-regex:
+              metavariable: $ID
+              regex: ^(from|role|webid|actor|sender)$
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: $R.ingest(...)
+              - pattern: $R.write(...)
+              - pattern: $R.publish(...)
+              - pattern: $R.send(...)
+              - pattern: $R.sendNudge(...)
+    # a verify/binding on the value clears the taint
+    pattern-sanitizers:
+      - patterns:
+          - pattern-either:
+              - pattern: verifyPrincipal(...)
+              - pattern: sessionPrincipal(...)
+              - pattern: $X.webId
+              - pattern: bindToVerified(...)
