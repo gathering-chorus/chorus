@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
-import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId } from '../src/werk-run-store';
+import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId, currentWerkTreeHash, recordLeg } from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -190,5 +190,61 @@ describe('reconcileRunning — the presented round OWNS its self-commits (#3678 
     const r = reconcileRunning(3679, dir);
     assert.equal(r?.phase, 'presented');
     assert.equal(r?.patchId, 'sha:launch');
+  });
+});
+
+describe('currentWerkTreeHash — race-free measurement, typed absence (#3972)', () => {
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+  const mkRepo = () => {
+    const repo = mkdtempSync(path.join(os.tmpdir(), 'werk-tree-'));
+    git(repo, 'init', '-q');
+    git(repo, 'config', 'user.email', 't@t');
+    git(repo, 'config', 'user.name', 't');
+    writeFileSync(path.join(repo, 'a.txt'), 'one\n');
+    git(repo, 'add', 'a.txt');
+    git(repo, 'commit', '-q', '-m', 'base');
+    return repo;
+  };
+
+  test('stable, and uncommitted + untracked files change it (add -A still covers all)', () => {
+    const repo = mkRepo();
+    try {
+      const h1 = currentWerkTreeHash(repo);
+      assert.ok(h1, 'hash measured');
+      assert.equal(currentWerkTreeHash(repo), h1, 'stable across calls');
+      writeFileSync(path.join(repo, 'untracked.txt'), 'new\n');
+      const h2 = currentWerkTreeHash(repo);
+      assert.notEqual(h2, h1, 'untracked file changes the hash');
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  test('agrees byte-for-byte with werk-resume-check tree_hash()', () => {
+    const repo = mkRepo();
+    try {
+      writeFileSync(path.join(repo, 'edit.txt'), 'uncommitted\n');
+      // Drive the twin through its own CLI (--tree-hash) — no function extraction.
+      const base = mkdtempSync(path.join(os.tmpdir(), 'werk-base-'));
+      execFileSync('ln', ['-s', repo, path.join(base, 'kade-777')]);
+      const shell = execFileSync(
+        path.join(__dirname, '..', '..', 'scripts', 'werk-resume-check'),
+        ['--tree-hash', '777', 'kade'],
+        { encoding: 'utf8', env: { ...process.env, CHORUS_WERK_BASE: base } },
+      ).trim();
+      assert.equal(currentWerkTreeHash(repo), shell, 'TS and shell twins agree');
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+  });
+
+  test('NEGATIVE PROOF (#3734): a broken werk yields "" — a typed failed measurement, and recordLeg refuses to store it as a proof', () => {
+    const notRepo = mkdtempSync(path.join(os.tmpdir(), 'werk-tree-'));
+    try {
+      assert.equal(currentWerkTreeHash(notRepo), '', 'failure is empty, never a fabricated hash');
+      writeRun(run({ card: 3972, legs: [] }), dir);
+      recordLeg(3972, 'build', 'pass', '', dir);
+      assert.equal(readRun(3972, dir)?.legs?.length ?? 0, 0,
+        'an empty hash must never become a recorded proof');
+      recordLeg(3972, 'build', 'pass', 'abc123', dir);
+      assert.equal(readRun(3972, dir)?.legs?.[0]?.tree_hash, 'abc123', 'a real hash still records');
+    } finally { rmSync(notRepo, { recursive: true, force: true }); }
   });
 });
