@@ -41,6 +41,21 @@ if ! CHORUS_ROOT="$REPO" "$REPO/platform/scripts/retirement-gate.sh"; then
   exit 1
 fi
 
+# #3601 — ontology wipe guard. athena-deploy defaults ONTOLOGY_GRAPH to the
+# LIVE graph, so ONE test invoking a deploy surface without a test-graph
+# override wipes the 34 live-only domains ("there is no test env, only
+# production"). Whole-tree grep scan, ~1s; blocks the wipe-vector at source.
+# A missing scanner blocks too — a guard whose target vanished must fail
+# loudly, never pass vacuously.
+if ! "$REPO/platform/scripts/wipe-guard-scan.sh" "$REPO" >/tmp/wipe-guard.$$ 2>&1; then
+  cat /tmp/wipe-guard.$$ >&2; rm -f /tmp/wipe-guard.$$
+  echo "" >&2
+  echo "🧨 pre-commit BLOCKED: a test can reach the LIVE ontology graph (#3601)." >&2
+  echo "   Isolate with ONTOLOGY_GRAPH=<test graph>, or add: wipe-guard: exempt — <reason>." >&2
+  exit 1
+fi
+rm -f /tmp/wipe-guard.$$
+
 # #3927 — spine-emit registration gate. This check already existed and was
 # CORRECT; it just ran nowhere that could stop anything (only chorus-health,
 # every 20 min, post-land). Twice in one afternoon a new emit landed unregistered
