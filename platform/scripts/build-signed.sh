@@ -235,6 +235,25 @@ else
   else
     echo "build-signed: WARN — chorus-bin-install not found; binary signed but not installed to ~/.chorus/bin/" >&2
   fi
+
+  # #3561 — install the crate's LAUNCH SCRIPT alongside its binary.
+  #
+  # Found live at the #3561 land, 2026-08-22: the deploy shipped athena-make but
+  # not athena-make-launch.sh, so `launchctl kickstart com.chorus.athena-make`
+  # could not start — the plist execs ~/.chorus/bin/<name>-launch.sh, and NOTHING
+  # in the repo ever put a launch script there. Silas hand-installed it to unblock
+  # the land, which is exactly the state that silently re-breaks on the next
+  # deploy. A LaunchAgent whose ProgramArguments point at a file no deploy path
+  # writes is a service that works only until someone cleans ~/.chorus/bin.
+  _launcher="$(dirname "$binary")/../../${binary_name}-launch.sh"
+  _launcher_src="$ROOT/platform/services/${binary_name}/${binary_name}-launch.sh"
+  if [ -f "$_launcher_src" ]; then
+    install -m 0755 "$_launcher_src" "$HOME/.chorus/bin/${binary_name}-launch.sh"
+    echo "build-signed: installed ${binary_name}-launch.sh -> ~/.chorus/bin/"
+  elif [ -f "$_launcher" ]; then
+    install -m 0755 "$_launcher" "$HOME/.chorus/bin/${binary_name}-launch.sh"
+    echo "build-signed: installed ${binary_name}-launch.sh -> ~/.chorus/bin/"
+  fi
 fi
 
 echo "build-signed: done"

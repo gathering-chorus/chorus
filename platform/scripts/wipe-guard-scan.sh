@@ -8,7 +8,7 @@
 # this scanner makes the convention structural.
 #
 # A test file is a VIOLATION when it:
-#   (a) EXECUTES a deploy surface (chorus-model-deploy / athena-deploy — direct
+#   (a) EXECUTES a deploy surface (athena-deploy-model / athena-deploy — direct
 #       or via a $SCRIPT/$DEPLOY variable) with no ONTOLOGY_GRAPH override
 #       anywhere in the file, OR
 #   (b) sets ONTOLOGY_GRAPH to the live graph explicitly, OR
@@ -29,8 +29,10 @@ set -uo pipefail
 ROOT="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # Live graph with a boundary: never match urn:chorus:ontology-test-… prefixes.
 LIVE_B='urn:chorus:ontology([^-A-Za-z0-9]|$)'
-DEPLOY_RE='chorus-model-deploy|athena-deploy'
-EXEC_RE='(^|[;&|([:space:]])(env[[:space:]][^|;&]*)?(bash|sh)[[:space:]]+[^#]*(chorus-model-deploy|athena-deploy|\$\{?(SCRIPT|DEPLOY))'
+# #3561 — the pre-rename deploy script was RETIRED to athena-deploy-model; the scanner
+# tracks the live names, not the old ones.
+DEPLOY_RE='athena-deploy-model|athena-deploy'
+EXEC_RE='(^|[;&|([:space:]])(env[[:space:]][^|;&]*)?(bash|sh)[[:space:]]+[^#]*(athena-deploy-model|athena-deploy|\$\{?(SCRIPT|DEPLOY))'
 READER_RE='grep |sed |cat |head |awk |\[ -f '
 MUTATE_RE='CLEAR GRAPH|DROP GRAPH|INSERT DATA|DELETE DATA|DELETE WHERE|/update'
 
@@ -86,7 +88,7 @@ list_files() {
 while IFS= read -r f; do
   [ -f "$f" ] && check_file "$f"
 done < <(list_files | tr '\n' '\0' \
-  | xargs -0 grep -lE 'chorus-model-deploy|athena-deploy|urn:chorus:ontology|ONTOLOGY_GRAPH' 2>/dev/null)
+  | xargs -0 grep -lE 'athena-deploy-model|athena-deploy|urn:chorus:ontology|ONTOLOGY_GRAPH' 2>/dev/null)
 
 if [ "$violations" -gt 0 ]; then
   echo ""
