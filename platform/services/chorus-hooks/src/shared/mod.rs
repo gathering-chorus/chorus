@@ -1,3 +1,4 @@
+pub mod role;
 pub mod log_redact;
 pub mod log_tail;
 pub mod session_health;

@@ -232,12 +232,21 @@ fn emit_violation_event(v: &Violation) {
         .with_timezone(&eastern_offset())
         .format("%Y-%m-%dT%H:%M:%S%.3f%z")
         .to_string();
+    // Resolve once, keeping the failure REASON alongside the value.
+    let role_for_emit: (String, &'static str) = match super::role::resolve_caller_role() {
+        Ok(r) => (r, ""),
+        Err(e) => ("unattributed".to_string(), e.reason()),
+    };
     let line = serde_json::json!({
         "timestamp": ts,
         "level": "warn",
         "appName": "chorus-events",
         "event": "membrane.violation",
-        "role": std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "unattributed".into()),
+        // #3959 — when the role cannot be resolved, say SO and say WHY, rather
+        // than writing a name nobody chose. "unattributed" read as a role for
+        // months; role_unresolved names the reason so the gap is diagnosable.
+        "role": role_for_emit.0,
+        "role_unresolved": role_for_emit.1,
         "surface": v.surface,
         "context": v.context.to_string(),
         "marker": v.marker,
