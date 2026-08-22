@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# security-scan.sh (#3981) — OSS security scanning for Chorus. Two legs:
+# @test-type: fitness:security
+# test-security-scan.sh (#3981) — OSS security scanning for Chorus. The
+# `test-*.sh` name + fitness:security concern make it SELF-REGISTERING: the
+# #3974 tagger discovers it and routes it into the security test lane (#3922)
+# with nightly cadence + owner routing, no per-side wiring. Two legs:
 #   SAST  — semgrep over the repo with the Chorus ruleset (platform/security/semgrep/).
 #           The ruleset starts with the caller-supplied-identity rule (#3980 class).
 #   SCA   — trivy fs over the repo: dependency CVEs (npm + cargo) + secrets + config.

@@ -5,8 +5,8 @@
 # the exact #3980 caller-supplied-`from` pattern and must FAIL the scan; the
 # safe (fixed) fixture must PASS. A scanner that can't tell them apart is worthless.
 
-SCRIPT="${BATS_TEST_DIRNAME}/../scripts/security-scan.sh"
-# Covers: platform/scripts/security-scan.sh  (literal path for the #3917 linker)
+SCRIPT="${BATS_TEST_DIRNAME}/../scripts/test-security-scan.sh"
+# Covers: platform/scripts/test-security-scan.sh  (literal path for the #3917 linker)
 FIX="${BATS_TEST_DIRNAME}/../security/semgrep/fixtures"
 
 setup() {
