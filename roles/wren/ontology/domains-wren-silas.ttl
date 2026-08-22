@@ -161,13 +161,19 @@ chorus:builds a owl:Class, chorus:Domain ;
   chorus:repoTarget "builds" .
   # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
 
-chorus:deploys a owl:Class, chorus:Domain ;
-  rdfs:label "deploys" ; chorus:comment "Deployment records, rollback paths, and chorus-deploy orchestration." ;
-  chorus:purpose "Track deployments — what shipped, the rollback path, and the deploy orchestration." ;
-  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
-  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "deploys" .
-  # FLAG: no real owl:Class vocab (no chorus:Deploy class) — omitted, not faked.
+# #3976 — chorus:deploys (Domain) DELETED 2026-08-22.
+#
+# It collided with chorus:deploys (owl:ObjectProperty, silas chorus.ttl:4188,
+# load-bearing in DomainShape at :4267). Same IRI, two files, one deploy set:
+# last writer won, the Domain typing dropped, and `deploys` vanished from
+# /domains — which crashed the tests-domain ingest (1300+ rows -> 270).
+#
+# Deleted rather than renamed. chorus:deploys-domain (silas chorus.ttl:975)
+# is the canonical deployment domain and always was: real invariant, a named
+# contract test (test-deploy-invariance.sh), Operating step. This row was a
+# stub whose own FLAG admitted it had no vocabulary. Minting a third IRI for
+# one concept is how the collision happened in the first place.
+# Ruled with Silas (owner) and Kade (consumer), 2026-08-22 06:32.
 
 chorus:logs a owl:Class, chorus:Domain ;
   rdfs:label "logs" ; chorus:comment "Log aggregation and querying via Loki — structured observability." ;
