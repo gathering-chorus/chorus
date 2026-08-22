@@ -1,3 +1,4 @@
+// @test-type: e2e:ui — playwright browser flow (clearing-ui), live surface
 /**
  * #3857 — the four Clearing behaviours Jeff found by using it, 2026-08-13.
  *

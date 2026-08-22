@@ -1,3 +1,4 @@
+// @test-type: e2e:ui — playwright browser flow (clearing-no-leaked-markup-3868), live surface
 /**
  * #3868 — no code commentary renders in Jeff's room.
  *

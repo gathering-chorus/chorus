@@ -1,3 +1,4 @@
+// @test-type: e2e:ui — playwright browser flow (clearing-lifecycle), live surface
 /**
  * #3857 — MOVED from jeff-bridwell-personal-site/e2e/tests/chorus-clearing.spec.ts.
  *
