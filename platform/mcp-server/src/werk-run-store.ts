@@ -120,24 +120,32 @@ export function recordLeg(
 ): void {
   const cur = readRun(card, dir);
   if (!cur) return; // pin gone (cleared/superseded) — nothing to record against
+  // #3972 — a proof without a measured tree is no proof: an empty hash means
+  // the measurement FAILED (index race, git error), and recording it would let
+  // a later resume compare against "" and misreport 'tree changed'.
+  if (!treeHash) return;
   const legs = (cur.legs ?? []).filter((l) => l.leg !== leg);
   legs.push({ leg, verdict, tree_hash: treeHash });
   writeRun({ ...cur, legs }, dir);
 }
 
 /** #3956 — the werk TREE hash including uncommitted edits: add -A into a
- *  throwaway index copy, write-tree. Mirrors platform/scripts/werk-resume-check
- *  tree_hash() — the two sides must agree byte-for-byte on the key. */
+ *  throwaway index, write-tree. Mirrors platform/scripts/werk-resume-check
+ *  tree_hash() — the two sides must agree byte-for-byte on the key.
+ *  #3972 — the throwaway index is built with `read-tree HEAD`, NEVER by copying
+ *  .git/index: a copy taken while a concurrent run writes the index is
+ *  truncated, git aborts ("index file smaller than expected"), and the empty
+ *  result poisoned resume as a phantom 'tree changed'. add -A restages the
+ *  full working tree either way, so the hash is identical — minus the race.
+ *  '' still means MEASUREMENT FAILED; callers treat it as unmeasured, never
+ *  as a comparable value. */
 export function currentWerkTreeHash(werkDir: string): string {
   try {
     const tmp = path.join(os.tmpdir(), `wt-index-${process.pid}-${Date.now()}`);
     try {
-      const real = path.join(werkDir, '.git', 'index');
-      // eslint-disable-next-line security/detect-non-literal-fs-filename -- werkDir is a validated werk path, never user input
-      if (existsSync(real)) {
-        // eslint-disable-next-line security/detect-non-literal-fs-filename -- tmp = os.tmpdir()+pid+ts; real as above
-        writeFileSync(tmp, readFileSync(real));
-      }
+      execFileSync('git', ['-C', werkDir, 'read-tree', 'HEAD'], {
+        env: { ...process.env, GIT_INDEX_FILE: tmp },
+      });
       execFileSync('git', ['-C', werkDir, 'add', '-A'], {
         env: { ...process.env, GIT_INDEX_FILE: tmp },
       });

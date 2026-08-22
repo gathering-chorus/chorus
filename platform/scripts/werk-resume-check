@@ -16,13 +16,21 @@
 # pair 3956).
 set -euo pipefail
 
+# #3972 — the throwaway index is built with `read-tree HEAD`, NEVER by copying
+# .git/index: a copy taken while a concurrent run writes the index is truncated,
+# git aborts ("index file smaller than expected"), and the empty result poisoned
+# resume as a phantom 'tree changed'. add -A restages the full working tree
+# either way — identical hash, no race. Prints NOTHING on failure; the caller
+# treats empty as MEASUREMENT FAILED, a distinct state from 'tree changed'.
 tree_hash() {
-  local werk="$1" tmp
+  local werk="$1" tmp out
   tmp=$(mktemp)
-  cp "$werk/.git/index" "$tmp" 2>/dev/null || true
-  GIT_INDEX_FILE="$tmp" git -C "$werk" add -A 2>/dev/null
-  GIT_INDEX_FILE="$tmp" git -C "$werk" write-tree
+  GIT_INDEX_FILE="$tmp" git -C "$werk" read-tree HEAD 2>/dev/null \
+    && GIT_INDEX_FILE="$tmp" git -C "$werk" add -A 2>/dev/null \
+    && out=$(GIT_INDEX_FILE="$tmp" git -C "$werk" write-tree 2>/dev/null) \
+    || out=""
   rm -f "$tmp"
+  [ -n "$out" ] && printf '%s\n' "$out"
 }
 
 if [ "${1:-}" = "--tree-hash" ]; then
@@ -46,7 +54,14 @@ if [ ! -f "$PIN" ]; then
   exit 2
 fi
 
-NOW=$(tree_hash "$WERK")
+NOW=$(tree_hash "$WERK" || true)
+# #3972 — an empty hash is a FAILED MEASUREMENT, not a comparand. Refuse in its
+# own words: 'could not measure' and 'tree changed' are the two states this
+# check exists to separate (#3734); empty-vs-prior used to report the wrong one.
+if [ -z "$NOW" ]; then
+  echo "resume-refused: could not MEASURE the werk tree (git failed — index race or broken werk); this is a failed measurement, not a tree-drift verdict. Full rerun." >&2
+  exit 2
+fi
 read -r VERDICT PRIOR_HASH RUN_ID <<EOF
 $(python3 - "$PIN" "$LEG" <<'PY'
 import json, sys
@@ -63,6 +78,12 @@ EOF
 
 if [ "$VERDICT" != "pass" ]; then
   exit 1  # failed or not recorded → run it
+fi
+# #3972 — a recorded proof with no measured tree ('-' = absent) cannot be
+# verified; refuse in its own words rather than comparing against nothing.
+if [ "$PRIOR_HASH" = "-" ] || [ -z "$PRIOR_HASH" ]; then
+  echo "resume-refused: prior proof for leg=$LEG carries NO measured tree — cannot verify the carry; full rerun" >&2
+  exit 2
 fi
 if [ "$PRIOR_HASH" != "$NOW" ]; then
   echo "resume-refused: werk tree changed since the failed run — prior=$PRIOR_HASH now=$NOW; carry invalid, full rerun" >&2
