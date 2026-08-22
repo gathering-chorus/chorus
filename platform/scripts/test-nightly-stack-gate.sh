@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# test-nightly-stack-gate.sh — guard for #3557 (nightly stack-gate).
+# test-nightly-stack-gate.sh — #3974 RETIREMENT GUARD (was: #3557 allowlist tests).
 #
-# Live-stack suites (real HTTP / deploy / health probe) can't pass headless
-# without the stack, so the nightly must SKIP them (not FAIL) when the stack is
-# down — otherwise it prints "N env failures" that aren't regressions. This test
-# is itself HERMETIC: it sources the runner's functions and forces the stack
-# probe, so it needs no live stack and is deterministic everywhere.
-#
-# Run directly (not via Claude hook-intercepted Bash).
+# The filename allowlist this suite used to exercise is retired: hermeticity is
+# DECLARED per test in the registry and `werk-test --nightly` derives typed
+# skips from it (#3919). What remains to guard: the stubs fail LOUD (a
+# resurrected caller is a red, never a silent wrong answer), _stack_up still
+# serves the smoke tier, and the runner owns the api-integration gate (#3559).
 
 set -uo pipefail
 trap '_rc=$?; if [ $_rc -eq 0 ]; then echo "=== Results: $PASS passed, 0 failed ==="; else echo "=== Results: $PASS passed, $FAIL failed ==="; fi' EXIT
@@ -17,50 +15,31 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); }
 bad()  { FAIL=$((FAIL+1)); echo "FAIL: $1"; }
 
-# Source the runner — the dispatch guard returns on source, so we get functions only.
 source "$SCRIPT_DIR/nightly-suites.sh"
 
-# 1. needs-stack classification — the live-stack families MUST gate.
-for p in test-api-health.sh test-agent-state.sh 3369-deep-health-resilience.bats \
-         3405-deep-health-probe-truthfulness.bats alert-delivery.bats alert-suppress.bats \
-         ac4-chorus-deploy-rollback.bats ac-3270-deploy-live-main.bats \
-         ac-3232-deploy-verify-running.bats ac2-deploy-daemon-card.bats; do
-  _needs_stack "/x/$p" && ok || bad "$p should be needs-stack"
-done
+# 1. The allowlist is GONE — no filename patterns left in _needs_stack.
+grep -A4 '^_needs_stack()' "$SCRIPT_DIR/nightly-suites.sh" | grep -qE 'deep-health|alert-delivery|chorus-deploy' \
+  && bad "the #3557 filename allowlist is back" || ok
 
-# 2. hermetic suites MUST NEVER gate — gating one would HIDE a real regression.
-for p in test-no-quick-flag.sh test-hardcoded-bin-paths.sh test-deploy-invariance.sh \
-         test-skip-gates.sh test-demo.sh test-quality-health.sh; do
-  _needs_stack "/x/$p" && bad "$p must stay hermetic (never gated)" || ok
-done
+# 2. The stubs refuse loudly, never answer the old question.
+_needs_stack "/x/test-api-health.sh" 2>/dev/null && bad "_needs_stack answered — must be retired" || ok
+(_needs_stack x 2>&1 || true) | grep -q RETIRED && ok || bad "_needs_stack must name its retirement"
+_npm_jest_env "/x/platform/api" 2>/dev/null && bad "_npm_jest_env answered — must be retired" || ok
+_npm_package_uses_jest "/x/pkg" 2>/dev/null && bad "_npm_package_uses_jest answered — must be retired" || ok
 
-# 3. stack DOWN -> a needs-stack suite is SKIPPED, not run, not failed.
-_STACK_PROBE=down
-line=$(run_one shell /x/test-api-health.sh silas)
-case "$line" in
-  *"|skip|"*) ok ;;
-  *) bad "stack-down needs-stack suite should skip, got: $line" ;;
-esac
+# 3. _stack_up survives — the smoke tier still needs a live-stack probe.
+type _stack_up >/dev/null 2>&1 && ok || bad "_stack_up must survive for the smoke tier"
 
-# 4. a skip line carries status 'skip' (so notify_results' fail-count excludes it).
-case "$line" in *"|fail|"*) bad "skip must not be status=fail" ;; *) ok ;; esac
+# 4. The invariants MOVED, not vanished: the runner declares typed skips (#3919)
+#    and owns RUN_INTEGRATION (#3559).
+grep -q 'needs_stack_files' "$SCRIPT_DIR/../services/werk-test/src/main.rs" && ok || bad "runner typed-skip selection missing"
+grep -q 'RUN_INTEGRATION' "$SCRIPT_DIR/../services/werk-test/src/main.rs" && ok || bad "runner RUN_INTEGRATION gate missing"
 
-# 5. #3559 — platform/api integration project is gated on the stack via
-#    _npm_jest_env. Stack UP → RUN_INTEGRATION=true (integration project built).
-_STACK_PROBE=up
-[ "$(_npm_jest_env /x/platform/api)" = "RUN_INTEGRATION=true" ] \
-  && ok || bad "stack-up platform/api should set RUN_INTEGRATION=true"
+# 5. NEGATIVE PROOF (#3734): a fixture that RESURRECTS the allowlist makes
+#    check 1's grep fire (assembled from fragments — the #3725 self-match lesson).
+TMP=$(mktemp -d)
+printf '_needs_stack() {\n  case "$1" in\n    */%s*.bats) return 0 ;;\n  esac\n}\n' "deep-health" > "$TMP/n.sh"
+grep -A4 '^_needs_stack()' "$TMP/n.sh" | grep -qE 'deep-health' && ok || bad "guard did not fire on a resurrected allowlist"
+rm -rf "$TMP"
 
-# 6. Stack DOWN → empty → api hermetic-only, integration project never constructed
-#    (the false-red-impossible invariant).
-_STACK_PROBE=down
-[ -z "$(_npm_jest_env /x/platform/api)" ] \
-  && ok || bad "stack-down platform/api must NOT set RUN_INTEGRATION (hermetic-only)"
-
-# 7. every other npm package stays hermetic-only regardless of stack state.
-_STACK_PROBE=up
-[ -z "$(_npm_jest_env /x/jeff-bridwell-personal-site)" ] \
-  && ok || bad "non-api npm package must never set RUN_INTEGRATION"
-
-echo "stack-gate: $PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+[ "$FAIL" -eq 0 ] && exit 0 || exit 1
