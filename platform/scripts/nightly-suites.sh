@@ -693,6 +693,17 @@ notify_results() {
     return 0
   fi
 
+  # #3922 — the security lane routes to the SECURITY owner as its own signal,
+  # never buried in the per-owner wall. Owner is env-overridable; the model
+  # (security domain ownedBy) is the authority when they disagree.
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-silas}"
+  local sec_reds sec_n
+  sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
+  sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)
+  if [ "${sec_n:-0}" -gt 0 ]; then
+    "$ops_nudge" "$sec_owner" "SECURITY lane: $sec_n red — $sec_reds (#3922 — own cadence, own signal)" system >/dev/null 2>&1 || true
+  fi
+
   local owner reds n
   while IFS= read -r owner; do
     [ -z "$owner" ] && continue

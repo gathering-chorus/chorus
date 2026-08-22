@@ -2129,3 +2129,62 @@ mod shell_fold_3974 {
         assert_eq!(parse_shell_counts("script exploded"), None);
     }
 }
+
+/// #3922 — the security lane's selection: rows declared testConcern=security,
+/// mapped to their units. Runs on its OWN cadence (not the land path); an
+/// empty selection is an explicit absence line, never a vacuous green.
+pub fn security_rows(rows: &[TestRow]) -> Vec<TestRow> {
+    rows.iter().filter(|r| r.test_concern == "security").cloned().collect()
+}
+
+/// #3922 — the UNITS whose registered tests are security-declared. A unit in
+/// this set folds under the `security` lane label so the nightly report and
+/// the owner routing see one security lane, not reds scattered across tiers.
+pub fn security_units(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
+    security_rows(rows)
+        .iter()
+        .filter_map(|r| unit_of_path(&r.file_path))
+        .map(|u| match u {
+            TestUnit::RustCrate(c) => c,
+            TestUnit::TsPackage(p) => p,
+            TestUnit::BatsSuite(s) => s,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod security_lane_3922 {
+    use super::*;
+    fn row(path: &str, concern: &str) -> TestRow {
+        TestRow { file_path: path.to_string(), covers: String::new(),
+            pyramid_layer: String::new(), hermeticity: String::new(),
+            test_concern: concern.to_string() }
+    }
+    #[test]
+    fn selects_only_declared_security_rows() {
+        let rows = vec![
+            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/api/tests/a.test.ts", "ui"),
+            row("platform/tests/x.bats", ""),
+        ];
+        let sel = security_rows(&rows);
+        assert_eq!(sel.len(), 1);
+        assert!(sel[0].file_path.contains("security-manifest"));
+        // NEGATIVE PROOF (#3734): an undeclared corpus selects NOTHING —
+        // the lane can tell "no security tests declared" from "all green".
+        assert!(security_rows(&[row("a.rs", ""), row("b.rs", "perf")]).is_empty());
+    }
+
+    #[test]
+    fn security_units_relabel_whole_suites() {
+        let rows = vec![
+            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/tests/authz-3977.bats", "security"),
+            row("platform/tests/other.bats", ""),
+        ];
+        let u = security_units(&rows);
+        assert!(u.contains("platform/scripts/test-security-manifest-3726.sh"));
+        assert!(u.contains("platform/tests/authz-3977.bats"));
+        assert!(!u.contains("platform/tests/other.bats"));
+    }
+}
