@@ -41,7 +41,7 @@ export interface DispatchResult {
  * subdomain or empty data yields [] (fail-open shape — a missing join can only
  * relax the gate, never invent coverage).
  */
-export function selectCoveringTests(subdomain: string, resp: TestsApiResponse): TestRecord[] {
+export function selectCoveringTests(subdomain: string, resp: TestsApiResponse | null | undefined): TestRecord[] {
   if (!subdomain || !resp || !Array.isArray(resp.data)) return [];
   return resp.data.filter((t) => t.covers === subdomain);
 }

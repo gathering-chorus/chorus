@@ -31,9 +31,8 @@ import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
-import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun } from './werk-run-store';
+import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun, recordLeg, currentWerkTreeHash } from './werk-run-store';
 import { wireRunFollower, bostonOffsetIso } from './werk-phase';
-import { recordLeg, currentWerkTreeHash } from './werk-run-store';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
 // chorus-mcp calls it via HTTP from chorus-api instead of importing in-process.
@@ -2467,20 +2466,27 @@ function refuseIfPinStale(
   });
 }
 
-async function executeChorusWerk(
-  args: z.infer<typeof WerkRunInput>,
-  spawnFn: SpawnFn,
-  runsDir?: string,
-): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+/** #3964 — shared env/path resolution for the werk-run entrypoints (extracted
+ *  from executeChorusWerk to keep it under the max-lines ratchet). */
+function werkRunPaths() {
   const pathMod = require('path') as typeof import('path');
   const home = process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME;
   const werkBase = process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk';
   const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
   const scriptsDir = pathMod.join(home, 'platform', 'scripts');
-  const accepter = args.accepter || 'jeff';
   const workflow = pathMod.join(home, '.github', 'workflows', 'werk.yml');
   const actBin = process.env.CHORUS_ACT_BIN || 'act';
   const runnerPath = [binDir, scriptsDir, '/opt/homebrew/bin', process.env.PATH || ''].filter(Boolean).join(':');
+  return { pathMod, home, werkBase, binDir, scriptsDir, workflow, actBin, runnerPath };
+}
+
+async function executeChorusWerk(
+  args: z.infer<typeof WerkRunInput>,
+  spawnFn: SpawnFn,
+  runsDir?: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { pathMod, home, werkBase, scriptsDir, workflow, actBin, runnerPath } = werkRunPaths();
+  const accepter = args.accepter || 'jeff';
   const landCmd = `chorus_werk {role:"${args.role}", card_id:${args.card_id}, accepter:"${accepter}", go:true}`;
   // #3443 AC7 — attach-on-redrive: if a run for this card is already on record, a
   // re-invoke (e.g. after a transport drop) reads its REAL phase instead of
