@@ -51,7 +51,7 @@ HANDMAP = [("failure_class","builds"),("ac-autocheck","cicd"),("api-fragile-endp
  ("daily-signal-scan","alerts-monitors"),("domain-detail-retired","domains"),("execsync-audit","security"),
  ("ownership-partof-chain","domains"),("regression-locks","cicd"),("write-story","cards")]
 PREFIX = sorted([("platform/services/chorus-hooks","cicd"),("platform/services/owl-api","domains"),
- ("platform/services/chorus-model","domains"),("platform/services/athena-deploy","deploys-domain"),
+ ("platform/services/chorus-model","domains"),("platform/services/athena-deploy","cicd"),
  ("platform/services/chorus-inject","messages"),("platform/services/pulse-gather","messages"),
  ("platform/services/properties-resolver","properties"),("platform/services/loom-gemba","alerts-monitors"),
  ("platform/services/pair-heartbeat","roles"),("platform/services/werk-","builds"),
