@@ -323,7 +323,21 @@ pub fn card_type_for_role(role: &str) -> String {
 /// `DEPLOY_ROLE` (set by /role-state, cards CLI, agent context). Falls back
 /// to `"unknown"` when neither is set — never panic, never hardcode (#2899).
 pub(crate) fn caller_role_for_event() -> String {
-    crate::shared::role::resolve_caller_role().unwrap_or_else(|_| "unknown".to_string())
+    // #3959 — the defect was INVENTING a name when none was set, not honouring
+    // one that was. An explicitly-exported CHORUS_ROLE/DEPLOY_ROLE is a
+    // deliberate declaration — `system` for a launchd job, a synthetic role in a
+    // test — and passing it through is correct. Only ABSENCE degrades to
+    // "unknown", and `resolve_caller_role` still refuses so emit sites can count
+    // the gap.
+    //
+    // Caught by is_fix_card_override.rs, which sets a unique synthetic role to
+    // prove no teammate is hardcoded: my first version refused it as "not a
+    // role" and returned "unknown", breaking a legitimate caller.
+    match crate::shared::role::resolve_caller_role() {
+        Ok(r) => r,
+        Err(crate::shared::role::RoleUnresolved::NotARole { value }) => value,
+        Err(_) => "unknown".to_string(),
+    }
 }
 
 /// Check if ANY building role is working a fix card.
