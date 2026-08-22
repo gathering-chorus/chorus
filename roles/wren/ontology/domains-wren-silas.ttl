@@ -1,3 +1,4 @@
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix owl:    <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
@@ -56,7 +57,34 @@ chorus:skills a owl:Class, chorus:Domain ;
   chorus:purpose "Provide the team's invokable capabilities — the /skill commands that automate workflows." ;
   chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill, chorus:UtilitySkill .
+  chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill, chorus:UtilitySkill, chorus:Verb .
+
+# #3982 — chorus:Verb. Jeff, 2026-08-22: "all our werk* and athena* are verbs...
+# skills are not literally the claude feature — its a hybrid: maybe just a claude
+# skill, or a claude skill with some automation, or a highly automated verb
+# wrapped by a claude skill."
+#
+# So automation is a SPECTRUM across one domain, not two taxonomies. What the
+# spectrum needs is the far end named: the machine-invoked procedure a skill can
+# wrap, and a pipeline can call without any skill at all.
+#
+# It cannot be chorus:Skill. That class says "Invoked as /<slug>" in its own
+# comment (chorus.ttl:1688) and `werk-pull` is not invoked as /werk-pull —
+# typing it Skill makes the definition false, which is the same widen-the-meaning
+# move that put two subjects on chorus:Pipeline and two on chorus:deploys today.
+chorus:Verb a owl:Class ;
+  rdfs:label "Verb" ;
+  rdfs:comment "A machine-invoked procedure with a typed refusal contract — werk-pull, athena-make, chorus-log. Called by an ExecutionPipeline step or an MCP tool, never as /<slug>. A Skill may WRAP a Verb (chorus:wrapsVerb); a Verb needs no Skill to run. Distinct from chorus:Skill precisely because Skill is defined by its slash-command invocation (#3982)." .
+
+chorus:wrapsVerb a owl:ObjectProperty ;
+  rdfs:label "wraps verb" ;
+  rdfs:domain chorus:Skill ; rdfs:range chorus:Verb ;
+  rdfs:comment "The Verb a Skill invokes. /pull wraps werk-pull. Absence means the Skill is prompt-only — the near end of the automation spectrum, and an honest absence rather than a gap (#3982)." .
+
+chorus:automation a owl:DatatypeProperty ;
+  rdfs:label "automation" ;
+  rdfs:domain chorus:Skill ; rdfs:range xsd:string ;
+  rdfs:comment "Where a Skill sits on the spectrum: prompt | assisted | wrapped. prompt = instructions only (/cs). assisted = instructions plus some scripted steps. wrapped = a thin surface over one Verb (/pull -> werk-pull). Jeff named the spectrum 2026-08-22; it is an attribute, not a subclass, because a Skill moves along it as it is automated." .
 
 chorus:decisions a owl:Class, chorus:Domain ;
   rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
@@ -161,6 +189,39 @@ chorus:builds a owl:Class, chorus:Domain ;
   chorus:repoTarget "builds" .
   # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
 
+chorus:deployments a owl:Class, chorus:Domain ;
+  rdfs:label "deploys" ; chorus:comment "How code gets running: deploy targets, rollback paths, freeze rules, and the deploy-invariance contract — same artifact reaches the same running state." ;
+  chorus:purpose "Track how code reaches a running state — what shipped, where, the rollback path, and the invariance that proves a deploy is a deploy." ;
+  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:atStep chorus:Operating ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "deploys" ;
+  # #3982 — the supports edge. Jeff: "deploys are one domain that supports
+  # cicd pipeline instance." Domain-supports-pipeline, NOT domain-peer: a
+  # pipeline instance consumes deploys the way it consumes tests and builds,
+  # each its own subject with its own owner.
+  #
+  # Points at the ExecutionPipeline instance, not chorus:Pipeline — that IRI
+  # is already the harvest/data concept (chorus.ttl:477, hasPipeline bound to
+  # SubDomain). Kade mints chorus:ExecutionPipeline and types cicd/werk/athena
+  # as instances in #3985; this edge resolves when that lands.
+  chorus:supports chorus:cicd .
+  # FLAG: no chorus:Deploy vocab class yet — omitted, not faked.
+
+# #3982 — REINSTATED as chorus:deployments, 2026-08-22, on Jeff's overrule.
+#
+# The history, so nobody re-litigates this a third time:
+#   1. chorus:deploys (Domain) collided with chorus:deploys (ObjectProperty).
+#   2. Silas and I settled on deleting the Domain and folding into his
+#      chorus:deploys-domain SubDomain — which sits under observability-domain.
+#   3. Jeff overruled: "deploys is not cicd!" and "cicd is a pipeline instance
+#      ~ werk*". Deploys is a SUBJECT IN ITS OWN RIGHT — not a facet of
+#      observability, not a pipeline concern.
+#
+# So the Domain returns under a non-colliding IRI. The bare name stays with the
+# ObjectProperty (verbs are properties, Domains are nouns — Silas's rule, still
+# right). The label stays "deploys", so the served name and every covers map
+# keyed on it are unchanged.
+#
 # #3976 — chorus:deploys (Domain) DELETED 2026-08-22.
 #
 # It collided with chorus:deploys (owl:ObjectProperty, silas chorus.ttl:4188,
