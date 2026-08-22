@@ -49,6 +49,19 @@ score() {
 
 if [ "${1:-}" = "score" ]; then score "${2:-}"; exit 0; fi
 
+# #3979 — classify a NOT-scope-covered route by its OTHER auth mechanism. The
+# default is GAP (fail-safe): a route that is neither on Clearing's bridge/session
+# auth nor loopback-only is an unprotected mutating route, full stop. A new
+# Clearing/pulse route must be added here explicitly — silence never justifies.
+justify() { # PATH -> BRIDGE | LOOPBACK | GAP
+  case "$1" in
+    /api/chat/*|/api/message|/api/room/bind|/api/upload|/api/voice|/set-name|/api/account/password|/api/restart) echo BRIDGE ;;
+    /mcp|/nudge|/drain|/api/nudge|/api/board-event|/api/jeff-input) echo LOOPBACK ;;
+    *) echo GAP ;;
+  esac
+}
+if [ "${1:-}" = "justify" ]; then justify "${2:-}"; exit 0; fi
+
 # The store's SPARQL query endpoint is the `pods` dataset (NOT `chorus`), and it
 # requires auth even to READ. A pure ops probe shouldn't carry store keys — so
 # the DURABLE fix is a read-free chorus-api endpoint that projects the secured
@@ -130,24 +143,50 @@ done <<< "$rows"
 
 echo "-------------------------------------------------------------------------------------------"
 
-# --- the denominator: mutating routes that COULD need authz but aren't declared ---
-# Heuristic (app.post/put/delete/patch across the live TS services). A route not
-# among the DECLARED APISurfaces is OPEN by construction — the envelope never
-# matches it, so no scope is ever checked. This is the ceiling on coverage.
+# --- the denominator, done RIGHT (#3979) ---
+# The envelope matches by METHOD + PATH-PREFIX (security-envelope.ts:56,
+# `req.path.startsWith(s.pathPrefix)`) — so one declared surface covers all its
+# sub-routes. The naive count (declared surfaces vs total routes) OVER-reports
+# the gap by treating every prefix-covered sub-route as undeclared. And two live
+# services carry their OWN auth, not the scope envelope: Clearing (bridge-token /
+# CSS session, #3966/#3743) and pulse/mcp (loopback-trust, #3967/#3390). Those
+# are protected, not gaps — classify them, don't count them as holes.
 ROOT="${CHORUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-TOTAL_MUT=0
-for svc in platform/api/src platform/mcp-server/src directing/clearing/src platform/pulse/src; do
-  n=$(grep -rhoE "app\.(post|put|delete|patch)\(" "$ROOT/$svc" --include='*.ts' 2>/dev/null | grep -v test | wc -l | tr -d ' ')
-  TOTAL_MUT=$((TOTAL_MUT + ${n:-0}))
-done
-UNDECLARED=$(( TOTAL_MUT - DECLARED )); [ "$UNDECLARED" -lt 0 ] && UNDECLARED=0
-DPCT=0; [ "$TOTAL_MUT" -gt 0 ] && DPCT=$(( DECLARED * 100 / TOTAL_MUT ))
+# enumerate every mutating route as "METHOD /path"
+ALL_ROUTES=$(for svc in platform/api/src platform/mcp-server/src directing/clearing/src platform/pulse/src; do
+  grep -rhoE "app\.(post|put|delete|patch)\((['\"][^'\"]+)" "$ROOT/$svc" --include='*.ts' 2>/dev/null | grep -v test
+done | sed -E "s/app\.(post|put|delete|patch)\(['\"]/\1 /" | awk '{print toupper($1), $2}' | sort -u)
+# declared surface prefixes as "METHOD /prefix" (from the model rows already read)
+DECL_PREFIXES=$(printf '%s\n' "$rows" | awk 'NF>=2{print toupper($1), $2}')
 
-echo "SURFACE POSTURE"
-echo "  mutating routes (heuristic):          ${TOTAL_MUT}"
-echo "  declared authz-secured (APISurface):  ${DECLARED}"
-echo "  undeclared → OPEN by construction:    ${UNDECLARED}"
-echo "  DECLARED_COVERAGE_PCT=${DPCT}   (ceiling: at most this fraction can enforce authz today)"
+TOTAL_MUT=0; COVERED_PFX=0; BRIDGE=0; LOOPBACK=0; REAL_GAP=0
+REAL_GAP_LIST=""
+while read -r rm rp; do
+  [ -z "$rp" ] && continue
+  TOTAL_MUT=$((TOTAL_MUT+1))
+  # prefix-covered by a declared scope surface?
+  if printf '%s\n' "$DECL_PREFIXES" | awk -v m="$rm" -v p="$rp" '$1==m && index(p,$2)==1{f=1} END{exit !f}'; then
+    COVERED_PFX=$((COVERED_PFX+1)); continue
+  fi
+  # not scope-covered → classify by the route's OTHER auth mechanism (same
+  # justify() the negative-proof test exercises; default is GAP, fail-safe)
+  case "$(justify "$rp")" in
+    BRIDGE)   BRIDGE=$((BRIDGE+1)); continue ;;
+    LOOPBACK) LOOPBACK=$((LOOPBACK+1)); continue ;;
+  esac
+  REAL_GAP=$((REAL_GAP+1)); REAL_GAP_LIST="${REAL_GAP_LIST}\n    ${rm} ${rp}"
+done <<< "$ALL_ROUTES"
+
+echo "SURFACE POSTURE (prefix-aware, #3979)"
+echo "  mutating routes:                        ${TOTAL_MUT}"
+echo "  scope-covered (envelope prefix-match):  ${COVERED_PFX}"
+echo "  Clearing bridge-token/session auth:     ${BRIDGE}   (justified — #3966/#3743, not scope)"
+echo "  loopback-trust (mcp/pulse):             ${LOOPBACK}   (justified — DEC-093, #3390/#3967)"
+echo "  REAL GAP (unprotected mutating route):  ${REAL_GAP}"
+[ "$REAL_GAP" -gt 0 ] && printf "    the gap:${REAL_GAP_LIST}\n"
+UNDECLARED=$REAL_GAP
+DPCT=0; [ "$TOTAL_MUT" -gt 0 ] && DPCT=$(( (COVERED_PFX + BRIDGE + LOOPBACK) * 100 / TOTAL_MUT ))
+echo "  PROTECTED_PCT=${DPCT}   (scope + bridge + loopback, over all mutating routes)"
 echo ""
 
 if [ -z "$TOKEN" ]; then

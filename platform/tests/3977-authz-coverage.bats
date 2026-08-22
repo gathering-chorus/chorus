@@ -34,3 +34,25 @@ SCRIPT="${BATS_TEST_DIRNAME}/../scripts/authz-coverage.sh"
 @test "a non-403 refusal (500) is OPEN, not COVERED — only a scope 403 counts" {
   [ "$(bash "$SCRIPT" score 500)" = OPEN ]
 }
+
+# #3979 — the prefix-aware run classifies a NOT-scope-covered route by its other
+# auth mechanism. NEGATIVE PROOF (#3734): the default MUST be GAP — a route that
+# is neither Clearing (bridge) nor loopback is an unprotected mutating route. If
+# justify() defaulted to anything else, a new unguarded chorus-api route would be
+# silently absolved and "REAL GAP: 0" would become a vacuous pass.
+@test "justify(): a Clearing route is BRIDGE" {
+  [ "$(bash "$SCRIPT" justify /api/message)" = BRIDGE ]
+  [ "$(bash "$SCRIPT" justify /api/chat/x/message)" = BRIDGE ]
+}
+
+@test "justify(): a loopback route is LOOPBACK" {
+  [ "$(bash "$SCRIPT" justify /mcp)" = LOOPBACK ]
+  [ "$(bash "$SCRIPT" justify /api/nudge)" = LOOPBACK ]
+}
+
+@test "NEGATIVE PROOF: an unknown mutating route defaults to GAP, never justified" {
+  run bash "$SCRIPT" justify /api/evil/mutate
+  [ "$output" = GAP ]
+  [ "$output" != BRIDGE ]
+  [ "$output" != LOOPBACK ]
+}
