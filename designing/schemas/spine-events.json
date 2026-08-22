@@ -3646,6 +3646,24 @@
         "role": "Acting role (system for the 03:00 agent)",
         "trace_id": "Trace join key, if any"
       }
+    },
+    "werk-code.contract": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "werk-code contract check (#3677): the enforcement inventory ran \u2014 mechanisms counted, fixtures verified on disk, gaps named, violations counted. A hollow contract row (phantom fixture, duplicate binding, unknown moment) is a violation; a named GAP is honest and legal.",
+      "keys": [
+        "mechanisms",
+        "verified",
+        "gaps",
+        "violations"
+      ],
+      "fields": {
+        "mechanisms": "Total inventoried mechanisms",
+        "verified": "Fixtures verified present on disk",
+        "gaps": "Named gaps (fixture=GAP rows)",
+        "violations": "Structural violations (nonzero = red)",
+        "role": "Acting role"
+      }
     }
   }
 }

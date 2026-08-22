@@ -1,4 +1,7 @@
-//! ICD Pre-Read Hook — block data card builds without reading domain context (#1684)
+//! ICD Pre-Read Hook (#1684) — ADVISORY ONLY (#3677 honest downgrade).
+//! Documented "block data card builds without reading domain context" while its
+//! fn returns unit and CANNOT block — one of ADR-056's three hollow modules.
+//! The real ICD write refusal lives in icd-gate-hook.sh (harvester writes).
 //!
 //! PreToolUse hook on Write/Edit. If the file being written touches a data domain
 //! (photos, music, documents, people, social), verify that the domain-context file
