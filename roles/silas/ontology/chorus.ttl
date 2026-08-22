@@ -4185,7 +4185,7 @@ chorus:ServiceInstance a owl:Class ;
     rdfs:label "Service Instance" ;
     rdfs:comment "A running (or recently observed) launchd unit implementing zero or more Services — one process on one machine, harvested from launchctl + plist. Discovered, never authored (#3870). An instance with no deploys edge is the drift signal, not an error." .
 
-chorus:deploys a owl:ObjectProperty ;
+chorus:runsService a owl:ObjectProperty ;
     rdfs:label "deploys" ;
     rdfs:comment "A ServiceInstance implements a Service. OPTIONAL (Wren pin #2: unmapped must be representable or the drift check can never fire) and MULTI-VALUED (chorus-api carries endpoints of Loom, cards, and knowledge — one process, several Services; same shape as Fuseki serving two products)." ;
     rdfs:domain chorus:ServiceInstance ;
@@ -4264,7 +4264,7 @@ chorus:ServiceInstanceShape a sh:NodeShape ;
     # "absent" (Wren red-line): a vanished unit keeps its row and says so —
     # deleting it would blind the drift check to disappearances, and the two
     # legal states alone would force the harvester to write a lie.
-    sh:property [ sh:path chorus:deploys        ; sh:minCount 0 ; sh:class chorus:Service ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:runsService        ; sh:minCount 0 ; sh:class chorus:Service ; chorus:exposure chorus:public ] ;
     #                         ^^^^^^^^^^ minCount 0, DELIBERATE and load-bearing:
     # requiring the edge makes "unmapped instance" unrepresentable and the drift
     # check permanently green (Wren: "a minCount-1 there makes the whole thing

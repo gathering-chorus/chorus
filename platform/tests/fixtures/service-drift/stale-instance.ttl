@@ -10,5 +10,5 @@
     rdfs:label "com.example.stale (library)" ;
     chorus:launchdLabel "com.example.stale" ;
     chorus:runState "running" ;
-    chorus:deploys <urn:test:service-example> ;
+    chorus:runsService <urn:test:service-example> ;
     chorus:lastObserved "2001-01-01T00:00:00Z"^^xsd:dateTime .
