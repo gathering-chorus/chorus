@@ -579,7 +579,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         let (ok, cases) = run_jest(&root, p);
         let passed = cases.iter().filter(|c| c.result == "pass").count();
         let case_failed = cases.iter().filter(|c| c.result != "pass").count();
-        println!("{}", werk_test::nightly_lane_line("npm", p, ok, passed, case_failed, pkg_ns.len()));
+        let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };
+        println!("{}", werk_test::nightly_lane_line(npm_kind, p, ok, passed, case_failed, pkg_ns.len()));
         all_cases.extend(cases);
         if !ok {
             any_failed = true;
@@ -594,8 +595,12 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .into_iter()
         .filter(|b| only.as_deref().map(|o| o == b).unwrap_or(true))
         .collect();
+    // #3922 — security-declared units fold under their own lane label so the
+    // report and owner routing see ONE security lane on its own cadence.
+    let sec_units = werk_test::security_units(&rows);
     for b in &bats_suites {
-        let kind = if b.ends_with(".sh") { "shell" } else { "bats" };
+        let kind = if sec_units.contains(b) { "security" }
+            else if b.ends_with(".sh") { "shell" } else { "bats" };
         let (ok, cases, text) = run_bats_cases(&root, b);
         let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
             // shell suites report summary counts, not TAP cases
@@ -614,6 +619,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             failed_count += 1;
             emit_spine("test.failed", &role, &card, &trace, &[("check", "bats"), ("unit", b)]);
         }
+    }
+    if werk_test::security_rows(&rows).is_empty() {
+        println!("security-lane: none registered testConcern=security — explicit absence (#3443/#3922)");
     }
     let total_units = crates.len() + ts_pkgs.len() + bats_suites.len();
 
