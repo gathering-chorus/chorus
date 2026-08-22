@@ -557,9 +557,69 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    let outcome = gate_outcome(crates.len(), any_failed, false);
+    // #3974 — npm lane: every registered TS/node package, full selection.
+    // jest packages run jest; non-jest packages run their own `npm test`
+    // (never a vacuous green). needs-stack files leave the run typed when
+    // the stack is down, same vocabulary as the cargo lane.
+    let ts_pkgs: Vec<String> = werk_test::nightly_ts_packages(&rows)
+        .into_iter()
+        .filter(|p| only.as_deref().map(|o| o == p).unwrap_or(true))
+        .collect();
+    // #3559/#3974 — platform/api's INTEGRATION jest project is only
+    // constructed under RUN_INTEGRATION=true; the nightly sets it from the
+    // live stack probe so integration tests run with the stack and are
+    // typed-absent without it — the wrapper's old per-package env is retired.
+    if stack_down.is_none() {
+        std::env::set_var("RUN_INTEGRATION", "true");
+    }
+    for p in &ts_pkgs {
+        let pkg_ns: Vec<String> = if stack_down.is_some() {
+            ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
+        } else { Vec::new() };
+        let (ok, cases) = run_jest(&root, p);
+        let passed = cases.iter().filter(|c| c.result == "pass").count();
+        let case_failed = cases.iter().filter(|c| c.result != "pass").count();
+        println!("{}", werk_test::nightly_lane_line("npm", p, ok, passed, case_failed, pkg_ns.len()));
+        all_cases.extend(cases);
+        if !ok {
+            any_failed = true;
+            failed_count += 1;
+            emit_spine("test.failed", &role, &card, &trace, &[("check", "npm"), ("unit", p)]);
+        }
+    }
+
+    // #3974 — bats lane: registered suites from the registry, per-case TAP
+    // results (boolean-only bats is over).
+    let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
+        .into_iter()
+        .filter(|b| only.as_deref().map(|o| o == b).unwrap_or(true))
+        .collect();
+    for b in &bats_suites {
+        let kind = if b.ends_with(".sh") { "shell" } else { "bats" };
+        let (ok, cases, text) = run_bats_cases(&root, b);
+        let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
+            // shell suites report summary counts, not TAP cases
+            werk_test::parse_shell_counts(&text)
+                .unwrap_or(if ok { (1, 0) } else { (0, 1) })
+        } else {
+            (cases.iter().filter(|(_, r)| r == "pass").count(),
+             cases.iter().filter(|(_, r)| r != "pass").count())
+        };
+        println!("{}", werk_test::nightly_lane_line(kind, b, ok, passed, case_failed, 0));
+        for (name, result) in cases {
+            all_cases.push(CaseResult { file_path: b.clone(), test_name: name, result });
+        }
+        if !ok {
+            any_failed = true;
+            failed_count += 1;
+            emit_spine("test.failed", &role, &card, &trace, &[("check", "bats"), ("unit", b)]);
+        }
+    }
+    let total_units = crates.len() + ts_pkgs.len() + bats_suites.len();
+
+    let outcome = gate_outcome(total_units, any_failed, false);
     let extras = werk_test::completed_extras(
-        &outcome, crates.len(), crates.len(), failed_count,
+        &outcome, total_units, total_units, failed_count,
         started_at.elapsed().as_millis(), false);
     let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("test.completed", &role, &card, &trace, &extra_refs);
@@ -643,6 +703,41 @@ fn build_suite_coverage(werk: &str) -> Vec<werk_test::SuiteCoverage> {
         rows.push(werk_test::SuiteCoverage { suite, covers });
     }
     rows
+}
+
+/// #3974 — bats with per-case capture: same suite-world as run_bats, but the
+/// TAP output becomes per-case results for the wire-back.
+fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, String) {
+    let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp);
+    // #3974 — one script-suite variant, two runners: .bats via bats, .sh via
+    // bash (the shell tier's suites). Shell output is summary-grain (counted
+    // in the lane line via parse_shell_counts); TAP suites get per-case rows.
+    let mut cmd = if suite.ends_with(".sh") {
+        let mut c = Command::new("bash");
+        c.arg(suite);
+        c
+    } else {
+        let mut c = Command::new("bats");
+        c.arg(suite);
+        c
+    };
+    cmd.current_dir(werk).env("CHORUS_CONTEXT", "");
+    apply_suite_world(&mut cmd, werk);
+    match cmd.output() {
+        Ok(o) => {
+            let text = format!("{}{}",
+                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            let ok = o.status.success();
+            if !ok {
+                let tail: Vec<&str> = text.lines().rev().take(20).collect();
+                eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+            }
+            let cases = werk_test::parse_bats_cases(&text);
+            (ok, cases, text)
+        }
+        Err(_) => (false, Vec::new(), String::new()),
+    }
 }
 
 /// Run one bats suite. The suite gets its own world (#3528/#3615): CHORUS_LOG_FILE
@@ -917,7 +1012,10 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     }
     let jest = format!("{}/node_modules/.bin/jest", pkg_dir);
     if !Path::new(&jest).exists() {
-        return (true, Vec::new());
+        // #3974 — a package without jest runs its OWN runner (mcp-server:
+        // node:test via npm test). The old `return true` here was a silent
+        // vacuous green for every non-jest package.
+        return run_npm_test(werk, pkg);
     }
     let mut cmd = Command::new(&jest);
     // #3918 — test child: cleared (see child_context).
@@ -932,6 +1030,45 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
                 eprintln!("{}", String::from_utf8_lossy(&o.stderr));
             }
             (ok, jest_cases_via_jq(&o.stdout, werk))
+        }
+        Err(_) => (false, Vec::new()),
+    }
+}
+
+/// #3974 — the non-jest package runner: `npm test` (mcp-server = node:test).
+/// TAP lines become per-case results; a missing test script is FAIL LOUD,
+/// never a vacuous green.
+fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
+    let pkg_dir = format!("{}/{}", werk, pkg);
+    let has_script = std::fs::read_to_string(format!("{}/package.json", pkg_dir))
+        .map(|j| j.contains("\"test\""))
+        .unwrap_or(false);
+    if !has_script {
+        eprintln!("!! npm:{} has neither jest nor a test script — FAIL LOUD (no silent green)", pkg);
+        return (false, Vec::new());
+    }
+    let mut cmd = Command::new("npm");
+    cmd.args(["test", "--silent"]).current_dir(&pkg_dir);
+    cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
+    apply_suite_world(&mut cmd, werk);
+    match cmd.output() {
+        Ok(o) => {
+            let text = format!("{}{}",
+                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+            let ok = o.status.success();
+            if !ok {
+                let tail: Vec<&str> = text.lines().rev().take(20).collect();
+                eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+            }
+            let cases = werk_test::parse_bats_cases(&text)
+                .into_iter()
+                .map(|(name, result)| CaseResult {
+                    file_path: format!("{}/", pkg),
+                    test_name: name,
+                    result,
+                })
+                .collect();
+            (ok, cases)
         }
         Err(_) => (false, Vec::new()),
     }

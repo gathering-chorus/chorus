@@ -25,7 +25,8 @@ cleanup() { rm -rf "$TMP"; }
 
 # Fixture fragments — the deploy-surface names are ASSEMBLED, never written
 # whole in this file, so the scanner can never match its own guard test (#3725).
-DEPLOY_WORD="$(printf '%s-%s-%s.sh' chorus model deploy)"
+# (renamed chorus-model-deploy → athena-deploy-model in the #3561 sweep)
+DEPLOY_WORD="$(printf '%s-%s-%s.sh' athena deploy model)"
 LIVE_GRAPH="$(printf 'urn:%s:%s' chorus ontology)"
 
 # 1. The repo as it stands is CLEAN — every current test isolates (07-01 audit).
