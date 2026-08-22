@@ -18,7 +18,7 @@ export const SPINE_ACTIVE_WINDOW_SECS = 120;
 /** Roles whose events count as team activity. Machinery attribution (pulse,
  *  bridge, system, unknown, heartbeat-probe…) must never light a tile —
  *  that is exactly the "looks alive while dead" failure inverted. */
-const AGENT_ROLES = new Set(['jeff', 'wren', 'silas', 'kade']);
+export const AGENT_ROLES = new Set(['jeff', 'wren', 'silas', 'kade']);
 
 export interface SpineActivity {
   ageSecs: number;
