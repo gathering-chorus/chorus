@@ -11,7 +11,7 @@ SELECT ?instance ?label ?finding WHERE {
   {
     # 1. UNMAPPED — an instance no Service claims. Undocumented, or shouldn't run.
     ?instance a chorus:ServiceInstance ; rdfs:label ?label .
-    FILTER NOT EXISTS { ?instance chorus:deploys ?svc }
+    FILTER NOT EXISTS { ?instance chorus:runsService ?svc }
     # externals (observed-not-owned, evidence-derived) are counted elsewhere;
     # unmapped means OURS and unexplained — the number that trends to zero.
     FILTER NOT EXISTS { ?instance chorus:external true }

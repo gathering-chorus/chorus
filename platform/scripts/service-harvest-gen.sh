@@ -112,7 +112,7 @@ for machine in sorted(snap.get("machines", {})):
         if bp:
             lines.append(f'    chorus:binaryPath "{esc(bp)}" ;')
         if label in mapping:
-            lines.append(f"    chorus:deploys chorus:{mapping[label]} ;")
+            lines.append(f"    chorus:runsService chorus:{mapping[label]} ;")
         if is_external(rec, label):
             lines.append('    chorus:external true ;')
         elif rec.get("evidenceUnavailable") and not is_ours(rec, label):
