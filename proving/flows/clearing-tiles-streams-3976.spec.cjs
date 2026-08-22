@@ -39,6 +39,33 @@ const { test, expect } = require('@playwright/test');
 const CLEARING = process.env.CLEARING_URL || 'http://localhost:3470';
 const ROLES = ['wren', 'silas', 'kade'];
 
+/**
+ * REFUSE rather than pass when the target is not a Clearing.
+ *
+ * Silas, 2026-08-22: env-up stands up ONLY chorus-api (:334x) and chorus-mcp
+ * (:335x) — demo_env.rs:87. There is no Clearing variant, so :3343/:3345 serve
+ * the Clearing's HTML while /api/stream 404s. Pointed there, these specs
+ * "failed" for a reason that had nothing to do with the code under test.
+ *
+ * The tempting stopgap is to mark them informational until #3973 (Clearing in
+ * env-up) lands. That builds a check that cannot go red — the hollow gate this
+ * whole card exists to replace. Instead: assert the target IS a Clearing, and
+ * say plainly which service answered when it is not. A wrong target is an
+ * operator error with a name, not a silent pass and not a mystery failure.
+ */
+async function assertClearingTarget(request) {
+  const res = await request.get(`${CLEARING}/api/stream?lines=1`).catch(() => null);
+  if (res && res.ok()) return;
+  const health = await request.get(`${CLEARING}/api/chorus/health`).catch(() => null);
+  const who = health && health.ok() ? 'chorus-api' : 'something that is not the Clearing';
+  throw new Error(
+    `${CLEARING} is ${who}, not the Clearing: /api/stream did not answer.\n` +
+      '  env-up runs chorus-api + chorus-mcp only (demo_env.rs:87) — there is no\n' +
+      '  Clearing variant until #3973 lands, so a werk variant is never a valid\n' +
+      '  target for these specs. Point CLEARING_URL at a running Clearing.',
+  );
+}
+
 /** Parse "10m", "45s", "1h" → seconds. Returns null when absent/unparseable. */
 function ageToSeconds(text) {
   if (!text) return null;
@@ -49,7 +76,8 @@ function ageToSeconds(text) {
 }
 
 test.describe('#3976 tiles render what Jeff reads', () => {
-  test('every role tile shows a state, a card slot, and an age', async ({ page }) => {
+  test('every role tile shows a state, a card slot, and an age', async ({ page, request }) => {
+    await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
 
@@ -74,7 +102,8 @@ test.describe('#3976 tiles render what Jeff reads', () => {
 });
 
 test.describe('#3976 the streams pane renders the beats', () => {
-  test('opening a role fold shows stream lines attributed to that role', async ({ page }) => {
+  test('opening a role fold shows stream lines attributed to that role', async ({ page, request }) => {
+    await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
 
@@ -102,7 +131,8 @@ test.describe('#3976 the streams pane renders the beats', () => {
     }
   });
 
-  test('the running/thinking beats reach the pane', async ({ page }) => {
+  test('the running/thinking beats reach the pane', async ({ page, request }) => {
+    await assertClearingTarget(request);
     // agent.activity is 12,787/day and rendered NOWHERE until #3959. If the
     // branch is reverted this goes red, which is the point.
     const res = await page.request.get(`${CLEARING}/api/stream?lines=200`);
@@ -123,7 +153,8 @@ test.describe('#3976 the streams pane renders the beats', () => {
 });
 
 test.describe('#3976 reconciliation — tiles and streams must agree', () => {
-  test('a role the tile calls active has recent lines in the pane', async ({ page }) => {
+  test('a role the tile calls active has recent lines in the pane', async ({ page, request }) => {
+    await assertClearingTarget(request);
     await page.goto(CLEARING, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#tiles .tile', { timeout: 20000 });
 
