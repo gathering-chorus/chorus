@@ -647,6 +647,31 @@ fn run(cmd: &str, args: &[&str]) -> R<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+/// #3969 — the Clearing `/api/message` bridge is authenticated as of #3966
+/// (anonymous writes 401). Every demo bridge post below is a server-side caller
+/// on the box, so it presents the BRIDGE_TOKEN the Clearing server reads from
+/// `~/.chorus/bridge-auth-token` (os.homedir()/.chorus, NOT $CHORUS_HOME).
+/// Returns the full header string `Authorization: Bearer <tok>` so a call site
+/// can splice `"-H", &auth` into its curl args. Empty token → header with an
+/// empty bearer, which the guard refuses fail-loud (a 401 that names itself),
+/// never a silent skip.
+fn bridge_auth_header() -> String {
+    let path = format!(
+        "{}/.chorus/bridge-auth-token",
+        env::var("HOME").unwrap_or_default()
+    );
+    let tok = fs::read_to_string(path).unwrap_or_default();
+    format_bridge_auth(tok.trim())
+}
+
+/// Pure header formatter, split out so the negative proof (#3734) can exercise
+/// the empty-token case without a real file: an empty token yields an empty
+/// bearer (which the guard 401s fail-loud), NEVER an omitted header that would
+/// silently fall back to anonymous — the failure mode #3966 exposed.
+fn format_bridge_auth(token: &str) -> String {
+    format!("Authorization: Bearer {}", token)
+}
+
 /// flock guard — auto-releases on drop (and on crash, kernel-level).
 pub struct FlockGuard(std::fs::File);
 impl Drop for FlockGuard {
@@ -906,10 +931,12 @@ fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
             card, sent.join(", ")
         );
         let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
+        let auth = bridge_auth_header();
         let _ = run("curl", &[
             "-s", "-X", "POST",
             "http://localhost:3470/api/message",
             "-H", "Content-Type: application/json",
+            "-H", &auth,
             "-d", &bridge_body,
         ]);
         jsonl(home, role, card, trace, "demo.gathers.surfaced",
@@ -986,12 +1013,14 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
         r#"{{"from":"{}","text":"[demo] #{} — werk-demo: presenting the running werk variant for review"}}"#,
         role, card
     );
+    let auth = bridge_auth_header();
     let _ = run(
         "curl",
         &[
             "-s", "-X", "POST",
             "http://localhost:3470/api/message",
             "-H", "Content-Type: application/json",
+            "-H", &auth,
             "-d", &bridge_body,
         ],
     );
@@ -1318,10 +1347,12 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🧪 [TEST SURFACE READY] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nService variants: chorus-api http://localhost:{}/, chorus-mcp http://localhost:{}/mcp\nCLI verbs (if changed): resolve via {}'s session PATH (role-slot-first per #3101)\nWhat's new: read the card, the diff, then exercise the new code against the surfaces above.\nThis is the test window — substantive trial before /acp."}}"#,
         role, card, api_port, mcp_port, role
     );
+    let auth = bridge_auth_header();
     if let Err(e) = run("curl", &[
         "-s", "-f", "-X", "POST",
         "http://localhost:3470/api/message",
         "-H", "Content-Type: application/json",
+        "-H", &auth,
         "-d", &test_surface_body,
     ]) {
         jsonl(home, role, card, &trace, "demo.bridge.failed",
@@ -1356,12 +1387,14 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     );
     // -f + exit-check so the silent-success class can't recur on this surface
     // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
+    let auth = bridge_auth_header();
     if let Err(e) = run(
         "curl",
         &[
             "-s", "-f", "-X", "POST",
             "http://localhost:3470/api/message",
             "-H", "Content-Type: application/json",
+            "-H", &auth,
             "-d", &pause_body,
         ],
     ) {
@@ -1452,8 +1485,9 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         bridge_announce_line(card, &title, checked, total, gates_green, &trace)
             .replace('\\', " ").replace('"', "'")
     );
+    let auth = bridge_auth_header();
     let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
-                          "-H", "Content-Type: application/json", "-d", &surface_body]);
+                          "-H", "Content-Type: application/json", "-H", &auth, "-d", &surface_body]);
     jsonl(home, role, card, &trace, "demo.decision_surface",
           &format!(",\"ac\":\"{}/{}\"", checked, total));
 
@@ -2141,9 +2175,10 @@ fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
         card, absent.join(", ")
     );
     let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
+    let auth = bridge_auth_header();
     let _ = run("curl", &[
         "-s", "-X", "POST", "http://localhost:3470/api/message",
-        "-H", "Content-Type: application/json", "-d", &bridge_body,
+        "-H", "Content-Type: application/json", "-H", &auth, "-d", &bridge_body,
     ]);
     for peer in absent {
         run_one_review(home, role, card, peer, round);
@@ -2367,6 +2402,23 @@ pub fn run_demo() -> R<DemoOutcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // #3969 — the demo bridge posts to the now-authenticated Clearing must carry
+    // a Bearer header. NEGATIVE PROOF (#3734): an empty token must still produce
+    // a header (empty bearer → the guard 401s fail-loud), never an omitted one
+    // that silently reverts to the anonymous post #3966 broke.
+    #[test]
+    fn bridge_auth_header_carries_the_token_as_a_bearer() {
+        assert_eq!(format_bridge_auth("secret-abc"), "Authorization: Bearer secret-abc");
+    }
+
+    #[test]
+    fn bridge_auth_empty_token_is_a_present_but_empty_bearer_not_omitted() {
+        // fail-loud: the header exists (guard sees it, 401s a blank bearer),
+        // rather than vanishing and letting the post go anonymous.
+        assert_eq!(format_bridge_auth(""), "Authorization: Bearer ");
+        assert!(format_bridge_auth("").starts_with("Authorization: Bearer"));
+    }
 
     #[test]
     fn ac_counts_counts_checked_and_total() {
