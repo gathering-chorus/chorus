@@ -56,6 +56,20 @@ export function parseNightlyLog(text: string): NightlyRun | null {
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** #3964 — display form of a suite path: repo-relative, phone-readable.
+ *  Old walker rows carry absolute paths; strip the chorus root, label the
+ *  app root, and fall back to home-stripping so /Users never hits a screen. */
+export function displayPath(p: string): string {
+  const m = /^\/[^]*?\/CascadeProjects\/(chorus\/|jeff-bridwell-personal-site(\/|$)|[^/]+\/?)/.exec(p);
+  if (!m) return p;
+  if (m[1] === 'chorus/') return p.slice(m[0].length) || 'chorus';
+  if (m[1].startsWith('jeff-bridwell-personal-site')) {
+    const rest = p.slice(m[0].length);
+    return rest ? `app:${rest}` : 'app:jeff-bridwell-personal-site';
+  }
+  return p.slice(m.index + m[0].length - m[1].length);
+}
+
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null): string {
   if (!run) {
@@ -73,7 +87,7 @@ export function renderNightlyPage(run: NightlyRun | null): string {
     <tr class="${esc(r.status)}">
       <td class="st">${esc(r.status)}</td>
       <td class="kind">${esc(r.kind)}</td>
-      <td class="path">${esc(r.path)}</td>
+      <td class="path">${esc(displayPath(r.path))}</td>
       <td>${esc(r.owner)}</td>
       <td class="sum">${esc(r.summary)}</td>
     </tr>`;
