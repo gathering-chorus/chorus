@@ -69,3 +69,22 @@ teardown_file() {
   [[ "$output" == MISPROBE* ]]
   [[ "$output" != COVERED* ]]
 }
+
+# #3965 — bind scope decides whether an OPEN row is a real network hole or
+# accepted loopback-trust. The risk() classifier must keep those two apart:
+# a loopback OPEN is NOT a NET-GAP, or the tool over-counts trust as exposure.
+@test "risk(): a COVERED surface is OK regardless of scope" {
+  [ "$(bash "$SCRIPT" risk COVERED NETWORK)" = OK ]
+  [ "$(bash "$SCRIPT" risk COVERED LOOPBACK)" = OK ]
+}
+
+@test "risk(): only a NETWORK-exposed OPEN is a NET-GAP" {
+  [ "$(bash "$SCRIPT" risk OPEN NETWORK)" = NET-GAP ]
+}
+
+@test "NEGATIVE PROOF: a LOOPBACK OPEN is 'trust', NOT a NET-GAP" {
+  run bash "$SCRIPT" risk OPEN LOOPBACK
+  [ "$status" -eq 0 ]
+  [ "$output" = trust ]
+  [ "$output" != NET-GAP ]
+}
