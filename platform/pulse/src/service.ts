@@ -26,6 +26,18 @@ import * as os from 'os';
 
 const PORT = parseInt(process.env.MESSAGING_PORT || '3475');
 
+// #3967 — pulse was network-exposed by omission: `app.listen(PORT)` with no host
+// binds 0.0.0.0, so its anonymous write routes (/api/chat/:id/message,
+// /api/nudge) were reachable from the whole LAN. Every real caller uses
+// localhost (verified: no off-box writer exists), so the fix is to stop
+// listening on the network — bind loopback, the same posture ADR-042 §8 / #3390
+// gave chorus-mcp and owl-api. You cannot attack a port that isn't there. The
+// CHORUS_BIND override exists for the rare deliberate LAN case; default loopback.
+export function resolveBindHost(env: NodeJS.ProcessEnv = process.env): string {
+  return env.CHORUS_BIND || '127.0.0.1';
+}
+const BIND_HOST = resolveBindHost();
+
 // #3335 Pattern 7 — short-window dedup of identical concurrent nudges (from,to,content).
 // A retry or double-fire within DEDUP_WINDOW_MS is dropped (returns ok, deduped:true);
 // a legitimate re-send after the window goes through. Module-level, pruned on access.
@@ -531,8 +543,8 @@ if (require.main === module) {
     }
 
     const app = createApp(store, worker);
-    app.listen(PORT, () => {
-      process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, ...store.getStats() }) + '\n');
+    app.listen(PORT, BIND_HOST, () => {
+      process.stderr.write(JSON.stringify({ event: 'startup', port: PORT, bind: BIND_HOST, ...store.getStats() }) + '\n');
     });
   })();
 }
