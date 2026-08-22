@@ -1,5 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 
 const t0 = Date.now();
 const transport = new StdioClientTransport({
@@ -27,8 +29,15 @@ const text = `🪶 #3025 WITNESSED — the engine started and answered, live (no
   + `engine up: ${engineUpMs}ms · ${toolCount} tools listed · call returned in ${callMs}ms\n`
   + `chorus_ownership_lookup(chorus:cards-service) → owner=${payload.owner ?? ('('+payload.reason+')')} step=${payload.step ?? ''}\n`
   + `Before #3025 this exact call returned "not-found". Now it reads the live v2 graph. You're seeing the real payload.`;
+// #3966 — /api/message now requires a caller identity; present the BRIDGE_TOKEN
+// (server path os.homedir()/.chorus/bridge-auth-token).
+const bridgeToken = (() => {
+  try { return readFileSync(`${homedir()}/.chorus/bridge-auth-token`, 'utf-8').trim(); }
+  catch { return ''; }
+})();
 const r = await fetch('http://localhost:3470/api/message', {
-  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${bridgeToken}` },
   body: JSON.stringify({ from: 'wren', text }),
 });
 console.log('bridge POST status', r.status);

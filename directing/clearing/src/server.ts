@@ -385,6 +385,33 @@ function preAuthRoute(
  * The login already established who this is; asking again (the name page) or
  * trusting a hand-set cookie over it is the hole Mark fell through.
  */
+// #3966 — a message WRITE requires a caller identity. Two admitted paths,
+// mirroring the existing #3669 gate: (1) the BRIDGE_TOKEN, which server-side
+// callers (clearing-probe, e2e-responder, roles) present via query/cookie/
+// Bearer; (2) a CSS-authenticated browser session. Anything else is anonymous
+// and refused. Pure-ish + exported for the negative-proof test.
+// The pure decision, extracted so the negative proof (#3734) can exercise every
+// state without the module-level token or an async WebID lookup: a presented
+// token that MATCHES the expected one, OR a live session, admits; anything else
+// (no token, wrong token, no session) is anonymous and refused. An empty
+// expected token must never admit an empty presented one — that would turn a
+// missing secret into an open door.
+export function decideMessageWriteAuth(
+  presentedToken: string | undefined,
+  expectedToken: string,
+  hasSession: boolean,
+): boolean {
+  if (hasSession) return true;
+  if (!expectedToken) return false; // no configured secret → never admit on token
+  return presentedToken === expectedToken;
+}
+
+export async function isMessageWriteAuthed(req: Request): Promise<boolean> {
+  if (decideMessageWriteAuth(extractToken(req), BRIDGE_TOKEN, false)) return true;
+  if (await sessionPrincipal(req)) return true;
+  return false;
+}
+
 async function sessionPrincipal(req: Request): Promise<{ id: string; name: string } | null> {
   // #3775 — a visitor arriving on the guard's session is the same person as one
   // arriving on the Clearing's own: message attribution and jeffAuthority
@@ -1332,7 +1359,16 @@ app.get('/api/messages', (req, res) => {
 // No Bridge-side workflow surface needed.
 
 // API: receive message from role (callback endpoint)
-app.post('/api/message', (req, res) => {
+// #3966 — /api/message was anonymous: bound to *:3470, anyone on the LAN could
+// POST a message (or a fake DECISION) into the room whose transcripts index
+// into team memory. The `from` field was self-asserted, exactly the assert-vs-
+// verify gap. Require a caller identity: the BRIDGE_TOKEN (server-side callers
+// — probe, responder, roles) or a CSS-authenticated session (browser users).
+// Anonymous is refused. Read views stay open; this guards the WRITE only.
+app.post('/api/message', async (req, res) => {
+  if (!(await isMessageWriteAuthed(req))) {
+    return res.status(401).json({ error: 'authentication required to post a message' });
+  }
   const { from, text } = req.body;
   if (!from || !text) return res.status(400).json({ error: 'from and text required' });
   messageRouter.ingest({ from, text, ts: new Date().toISOString(), type: req.body.type || 'role-response', level: req.body.level || '' });
