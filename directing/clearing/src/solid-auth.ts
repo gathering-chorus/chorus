@@ -38,7 +38,7 @@ const ALLOW_TTL_MS = 60_000;
  *
  * On 2026-08-06 this string was spelled by hand in twelve places across Rust,
  * TypeScript, shell and the ontology files. The Principal records were moved to
- * the graph owl-api SERVES from, the copies in the graph the doors READ were
+ * the graph athena-make SERVES from, the copies in the graph the doors READ were
  * retired as duplicates — and they were not duplicates, they were the same
  * records with two consumers. Jeff was locked out of the Clearing in minutes.
  *
@@ -74,7 +74,7 @@ export function graphProvenance(count: number, reason: string): string {
 }
 /**
  * #3669 (Wren, gemba catch) — MUST be scoped to the security graph the seam
- * governs (`urn:chorus:domains:security`, matching owl-api oidc.rs's
+ * governs (`urn:chorus:domains:security`, matching athena-make oidc.rs's
  * PRINCIPAL_ALLOW_QUERY). An unbound `GRAPH ?g` reads Principals from ANY graph,
  * and Fuseki still takes anonymous LAN writes (#3564) — so any local writer could
  * INSERT a Principal triple into a scratch graph and mint themselves into the

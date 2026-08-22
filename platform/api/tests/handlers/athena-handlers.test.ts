@@ -125,9 +125,9 @@ describe('fetchAthenaSubdomains', () => {
   });
 });
 
-// fetchAthenaProducts RETIRED (#3603) — owl-api :3360/products is the product API.
+// fetchAthenaProducts RETIRED (#3603) — athena-make :3360/products is the product API.
 
-// fetchAthenaSteps RETIRED (#3702) — owl-api /valuestreams is the value-stream API.
+// fetchAthenaSteps RETIRED (#3702) — athena-make /valuestreams is the value-stream API.
 
 // ── fetchAthenaOwners ──
 

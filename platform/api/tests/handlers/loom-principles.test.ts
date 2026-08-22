@@ -1,7 +1,7 @@
-// @test-type: unit — injected fake fetch; no owl-api, no Fuseki, brings its own world.
+// @test-type: unit — injected fake fetch; no athena-make, no Fuseki, brings its own world.
 /**
  * fetchLoomPrinciples — #3749 rewrite. The handler now sources the generated
- * owl-api surface (list + entity reads) instead of the retired SPARQL path
+ * athena-make surface (list + entity reads) instead of the retired SPARQL path
  * that read the wrong graph for months (the 2-of-29 split). Legacy envelope
  * shape preserved for loom/principles.html + the session-boot injector.
  */
@@ -17,7 +17,7 @@ const entity = (name: string, fields: Record<string, string>) => ({
   json: async () => ({ data: { iri: `https://jeffbridwell.com/chorus#${name}`, ...fields } }),
 }) as unknown as Response;
 
-describe('#3749 fetchLoomPrinciples via owl-api', () => {
+describe('#3749 fetchLoomPrinciples via athena-make', () => {
   test('folds list + entity reads into the legacy envelope shape', async () => {
     const fetchFn = jest.fn(async (url: RequestInfo | URL) => {
       const u = String(url);
@@ -36,7 +36,7 @@ describe('#3749 fetchLoomPrinciples via owl-api', () => {
     expect(obs.parents).toEqual([]); // the 14 are peers post-#3749
   });
 
-  test('NEGATIVE: owl-api unreachable → 502 error envelope, NEVER an empty principle list', async () => {
+  test('NEGATIVE: athena-make unreachable → 502 error envelope, NEVER an empty principle list', async () => {
     const fetchFn = jest.fn(async () => { throw new Error('ECONNREFUSED'); });
     const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
     expect(r.status).toBe(502);
@@ -45,7 +45,7 @@ describe('#3749 fetchLoomPrinciples via owl-api', () => {
     expect(body.data.principles).toBeUndefined();
   });
 
-  test('NEGATIVE: owl-api non-200 on the list → 502, the status is named', async () => {
+  test('NEGATIVE: athena-make non-200 on the list → 502, the status is named', async () => {
     const fetchFn = jest.fn(async () => ({ ok: false, status: 503, json: async () => ({}) }) as unknown as Response);
     const r = await fetchLoomPrinciples({ fetchFn: fetchFn as unknown as typeof fetch, owlApiUrl: 'http://owl' });
     expect(r.status).toBe(502);

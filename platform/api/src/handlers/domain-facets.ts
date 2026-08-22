@@ -27,7 +27,7 @@ export interface DomainFacetDeps {
 }
 
 // --- tests: tests-domain projection (quality-summary.ts) ---
-// #3657: quality-summary.ts projects the owl-api /tests collection; per-file
+// #3657: quality-summary.ts projects the athena-make /tests collection; per-file
 // `type` here is the model's pyramid layer (api/ui kind was a scanner
 // heuristic the model doesn't declare).
 

@@ -7,7 +7,7 @@
 # it prevented this week's defects, for two reasons:
 #
 #   1. The model is not written through the DAL. Files are hand-edited, then
-#      chorus-model-deploy.sh POSTs turtle straight to Fuseki's graph-store
+#      athena-deploy-model.sh POSTs turtle straight to Fuseki's graph-store
 #      endpoint. The DAL is never in the path.
 #      — #3839 UPDATE: no longer true of INSTANCES. The instance leg now calls
 #      athena-model seed, so every instance is shape-checked at the door and a
@@ -69,7 +69,7 @@ fi
 # The deploy set — parsed from the deploy script, never copied. A hand-kept list
 # here would reproduce the authored-vs-deployed gap the gate exists to catch.
 DEPLOY_SET="$(grep -oE '\$CHORUS_ROOT/[A-Za-z0-9/_.-]+\.ttl' \
-  "$CHORUS_ROOT/platform/scripts/chorus-model-deploy.sh" 2>/dev/null \
+  "$CHORUS_ROOT/platform/scripts/athena-deploy-model.sh" 2>/dev/null \
   | sed 's|\$CHORUS_ROOT/||' | sort -u)"
 
 fail=0

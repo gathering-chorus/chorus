@@ -65,10 +65,10 @@ function defaultEnvelope(name: string, data: unknown, durationMs: number, extra:
 // #3749 — the SPARQL fold path (stripPrefix/buildPrincipleRow/addParentIfMissing/
 // foldBindings + loom-principles.sparql) is RETIRED: it read urn:chorus:instances
 // while the canonical principles lived elsewhere (the 2-of-29 split). The
-// handler below sources the generated owl-api surface instead.
+// handler below sources the generated athena-make surface instead.
 
 export interface LoomPrinciplesOwlDeps {
-  /** injectable for tests — defaults to global fetch against the local owl-api */
+  /** injectable for tests — defaults to global fetch against the local athena-make */
   fetchFn?: typeof fetch;
   owlApiUrl?: string;
   now?: () => number;
@@ -78,7 +78,7 @@ export interface LoomPrinciplesOwlDeps {
 // #3749 — REPOINTED to the generated surface. The old implementation ran
 // loom-principles.sparql against urn:chorus:instances while 27 of 29 canonical
 // principles sat in urn:chorus:ontology — the writer/reader graph split that
-// served 2-of-29 for months. owl-api /principles reads the shape-declared
+// served 2-of-29 for months. athena-make /principles reads the shape-declared
 // instance graph (urn:chorus:domains:principles, ADR-051), so this handler now
 // has ONE source of truth and cannot disagree with the model. The legacy
 // envelope shape (id/label/comment/readings/parents) is preserved so
@@ -98,7 +98,7 @@ export async function fetchLoomPrinciples(
       // an unreachable generated surface must never read as "no principles"
       return {
         status: 502,
-        body: envelope('principles', { error: `owl-api /principles answered ${listRes.status}` }, now() - started, { error: true }),
+        body: envelope('principles', { error: `athena-make /principles answered ${listRes.status}` }, now() - started, { error: true }),
       };
     }
     const list = (await listRes.json()) as { data?: Array<{ name?: string }> };
@@ -127,7 +127,7 @@ export async function fetchLoomPrinciples(
     const durationMs = now() - started;
     return {
       status: 200,
-      body: envelope('principles', { principles }, durationMs, { count: principles.length, servedFrom: 'owl-api:/principles' }),
+      body: envelope('principles', { principles }, durationMs, { count: principles.length, servedFrom: 'athena-make:/principles' }),
     };
   } catch (err) {
     const durationMs = now() - started;

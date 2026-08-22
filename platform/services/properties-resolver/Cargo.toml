@@ -4,9 +4,9 @@
 # Product > ValueStream/Step) and a key, decide the effective value — nearest
 # scope that sets the key wins, inherit otherwise. Hermetic: no Fuseki, no I/O.
 # The graph-walk that BUILDS the chain (ownership edges from #3433) and the
-# owl-api projection (/properties/effective) wire on top of this core — kept out
+# athena-make projection (/properties/effective) wire on top of this core — kept out
 # so the precedence logic is unit-testable in isolation and linkable by any
-# consumer (owl-api projection, werk-test, tagging-lift). Silas + Kade, 2026-06-16.
+# consumer (athena-make projection, werk-test, tagging-lift). Silas + Kade, 2026-06-16.
 [package]
 name = "properties-resolver"
 version = "0.1.0"
@@ -15,7 +15,7 @@ edition = "2021"
 [lib]
 path = "src/lib.rs"
 
-# The primary artifact is the LIB (linked by owl-api / werk-test / tagging-lift).
+# The primary artifact is the LIB (linked by athena-make / werk-test / tagging-lift).
 # The bin is a thin self-check/smoke binary — the platform/services build contract
 # signs a binary per crate (pulse-gather, a linkable lib, ships one too). It runs
 # the cascade over a documented fixture so a deployed copy is provably runnable.

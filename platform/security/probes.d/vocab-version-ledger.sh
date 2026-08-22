@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GREEN = the SERVED vocabVersion equals the ledger head — the hand-edit
 # detector (#3902). The ledger (designing/schemas/model-version-ledger.jsonl)
-# is the one home; the store projection and every owl-api envelope must agree
+# is the one home; the store projection and every athena-make envelope must agree
 # with it. A mismatch means someone edited the projection or the store around
 # the pen — exactly the drift this versioning program exists to end.
 R="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"

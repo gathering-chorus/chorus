@@ -1,5 +1,5 @@
-//! #3356 — query/webid helpers the verifier uses, RELOCATED verbatim from owl-api
-//! lib.rs (behavior-preserving; owl-api re-exports these). select_v = SPARQL-JSON
+//! #3356 — query/webid helpers the verifier uses, RELOCATED verbatim from athena-make
+//! lib.rs (behavior-preserving; athena-make re-exports these). select_v = SPARQL-JSON
 //! single-var parser. The webid→role string parse that lived beside it is GONE
 //! as of #3688 — ADR-054 §3.3 swapped the consumer to a `chorus:holdsRole`
 //! graph query (see `oidc::PRINCIPAL_ROLE_QUERY`).

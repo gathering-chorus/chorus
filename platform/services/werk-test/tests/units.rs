@@ -815,7 +815,7 @@ fn test_world() -> (Vec<werk_test::ScopeUnit>, Vec<(String, String)>) {
     let units = vec![
         su("werk-teardown", "platform/services/werk-teardown"),
         su("werk-accept", "platform/services/werk-accept"),
-        su("owl-api", "platform/services/owl-api"),
+        su("athena-make", "platform/services/athena-make"),
         su("platform/api", "platform/api"),
         su("platform/pulse", "platform/pulse"),
     ];
@@ -957,10 +957,10 @@ fn needs_stack_files_selects_only_declared_needs_stack() {
 
 #[test]
 fn stack_verdict_up_when_all_probes_pass_and_names_the_down_ones() {
-    assert!(werk_test::stack_verdict(&[("chorus-api", true), ("owl-api", true)]).is_ok());
-    let err = werk_test::stack_verdict(&[("chorus-api", true), ("owl-api", false)])
+    assert!(werk_test::stack_verdict(&[("chorus-api", true), ("athena-make", true)]).is_ok());
+    let err = werk_test::stack_verdict(&[("chorus-api", true), ("athena-make", false)])
         .expect_err("a down probe must not read as up");
-    assert!(err.contains("owl-api"), "down service must be NAMED, got: {}", err);
+    assert!(err.contains("athena-make"), "down service must be NAMED, got: {}", err);
 }
 
 /// NEGATIVE PROOF (#3734): stack-down with needs-stack tests selected must
@@ -968,10 +968,10 @@ fn stack_verdict_up_when_all_probes_pass_and_names_the_down_ones() {
 /// silence. Zero needs-stack tests is NOT the same state and says so.
 #[test]
 fn negative_proof_stack_down_reports_typed_skip_never_silence() {
-    let r = werk_test::integration_report(3, Some("owl-api"));
+    let r = werk_test::integration_report(3, Some("athena-make"));
     assert!(r.contains("SKIPPED"), "typed state, got: {}", r);
     assert!(r.contains("3"), "count visible, got: {}", r);
-    assert!(r.contains("owl-api"), "cause named, got: {}", r);
+    assert!(r.contains("athena-make"), "cause named, got: {}", r);
     assert!(!r.to_lowercase().contains("pass"), "a skip must never read as pass: {}", r);
 }
 

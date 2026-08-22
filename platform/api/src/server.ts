@@ -516,7 +516,7 @@ app.get('/api/chorus/quality/summary', async (_req, res) => {
 // #3863 — the effective-config door. Both word-cap consumers have called this
 // route since #3838 and it has never existed; they fail open to a compiled
 // constant on any non-ok response, so its absence was invisible from the call
-// site. Proxies owl-api's generated /effective — one resolver, no second
+// site. Proxies athena-make's generated /effective — one resolver, no second
 // cascade to drift against it.
 app.get('/api/chorus/properties/resolve', async (req, res) => {
   const r = await resolveProperty(
@@ -1413,7 +1413,7 @@ app.get('/api/chorus/context/board/wip', async (req: Request, res: Response) => 
 // #3683 — the /sup data source: the role's priorities walk from the #3654
 // board domain (chunks by roleSequence, cards by rank), unsequenced listed.
 // #3686 — extended to the full walk (rolePriority → products → domains →
-// chunks → cards); products/domains read the GENERATED owl-api routes.
+// chunks → cards); products/domains read the GENERATED athena-make routes.
 app.get('/api/chorus/context/priorities', async (req: Request, res: Response) => {
   const role = typeof req.query.role === 'string' ? req.query.role : '';
   const owlBase = process.env.OWL_API_URL || 'http://localhost:3360';
@@ -1423,7 +1423,7 @@ app.get('/api/chorus/context/priorities', async (req: Request, res: Response) =>
       readPulse: readPulseFile,
       owl: async (path: string) => {
         const resp = await fetch(`${owlBase}${path}`);
-        if (!resp.ok) throw new Error(`owl-api ${resp.status} on ${path}`);
+        if (!resp.ok) throw new Error(`athena-make ${resp.status} on ${path}`);
         return resp.json();
       },
       // #3885 — read each sequenced card's real status from the board, so a
@@ -2200,7 +2200,7 @@ app.get('/api/chorus/hooks/metrics', (_req: Request, res: Response) => {
 
 // crashAlert moved to src/server-helpers.ts (#2205 wave 12); imported above.
 
-// ── owl-api same-origin proxy (#3644) ────────────────────────────
+// ── athena-make same-origin proxy (#3644) ────────────────────────────
 // The Athena page family fetches the generated model API. Fetching
 // `hostname:3360` directly couples every page to LAN topology and breaks the
 // moment a page is served through any other origin (the share tunnel exposed
@@ -2221,7 +2221,7 @@ app.use('/owl', async (req: Request, res: Response) => {
     if (ct) res.type(ct);
     res.send(Buffer.from(await r.arrayBuffer()));
   } catch {
-    res.status(502).json({ error: 'owl-api unreachable through the proxy' });
+    res.status(502).json({ error: 'athena-make unreachable through the proxy' });
   }
 });
 
@@ -2262,7 +2262,7 @@ const SPARQL_DIR = path.resolve(__dirname, 'sparql');
 
 const ATHENA_QUERIES = [
   { name: 'health', path: '/api/athena/health', description: 'Ontology health — triple count, endpoint status' },
-  // #3603: products/subproducts retired from the hand-coded surface — owl-api
+  // #3603: products/subproducts retired from the hand-coded surface — athena-make
   // :3360/products (generated from chorus:ProductShape) is the product API.
   { name: 'subdomains', path: '/api/athena/subdomains', description: 'List sub-domains with owner, step. Filter: ?owner, ?step' },
   { name: 'blast-radius', path: '/api/athena/subdomains/:id/blast-radius', description: 'Which sub-products consume a given sub-domain' },
@@ -2333,7 +2333,7 @@ app.get('/api/athena/health', async (_req: Request, res: Response) => {
   res.status(r.status).json(r.body);
 });
 
-// #3603: GET /api/athena/products RETIRED — owl-api :3360/products serves products.
+// #3603: GET /api/athena/products RETIRED — athena-make :3360/products serves products.
 
 // #2940 — Athena Move 0 tree endpoints. Same Zod-validated source as
 // chorus_tree_get / chorus_ownership_lookup / chorus_blast_radius MCP tools.
@@ -2367,7 +2367,7 @@ app.get('/api/athena/blast-radius/:iri', (req: Request, res: Response) => {
 });
 
 // #3603: GET /api/chorus/products + GET /api/athena/subproducts RETIRED —
-// SubProduct is gone from the model; owl-api :3360/products (generated from
+// SubProduct is gone from the model; athena-make :3360/products (generated from
 // chorus:ProductShape) is the only product serving surface.
 
 // GET /api/athena/subdomains — list sub-domains with owner, step. Filter: ?owner, ?step
@@ -2398,9 +2398,9 @@ app.get('/api/athena/subdomains/:id', async (req: Request, res: Response) => {
 });
 
 // #3702 — v1 value-stream surface retired. The Vertebra/primaryStep spine model is
-// gone; owl-api :3360/valuestreams (proxied at /owl/valuestreams) is the only path.
+// gone; athena-make :3360/valuestreams (proxied at /owl/valuestreams) is the only path.
 app.get('/api/athena/steps', (_req: Request, res: Response) => {
-  res.status(410).json({ error: 'gone', message: 'v1 retired by #3702 — use /owl/valuestreams (owl-api :3360)' });
+  res.status(410).json({ error: 'gone', message: 'v1 retired by #3702 — use /owl/valuestreams (athena-make :3360)' });
 });
 
 // GET /api/athena/owners — owners with sub-domain counts
@@ -2431,7 +2431,7 @@ app.get('/api/loom/decisions', (_req: Request, res: Response) => {
 // Currently scoped to loom-principles; reuses the existing principle folding logic
 // (parent set, sort, envelope) from handlers/loom-principles.ts.
 app.get('/api/athena/subdomains/:id/principles', async (_req: Request, res: Response) => {
-  // #3749 — sourced from the generated owl-api surface (one implementation);
+  // #3749 — sourced from the generated athena-make surface (one implementation);
   // the loom-principles.sparql path retired with the 2-of-29 graph split.
   const r = await fetchLoomPrinciples();
   res.status(r.status).json(r.body);
@@ -3596,8 +3596,8 @@ app.get('/api/doc-catalog/tree', async (_req: Request, res: Response) => {
       return { href: doc.href, source: doc.source, title: doc.title, tags };
     });
 
-    // Compose Athena shape from owl-api (#3603: the hand-coded products/
-    // subproducts endpoints are retired; owl-api :3360/products — generated from
+    // Compose Athena shape from athena-make (#3603: the hand-coded products/
+    // subproducts endpoints are retired; athena-make :3360/products — generated from
     // chorus:ProductShape — is the product source). SubProduct is gone from the
     // model: the tree's middle level is the CHILD products (product-loom, …),
     // top level stays the hubs. SUBPRODUCT_DOMAINS remains the tagger bridge.

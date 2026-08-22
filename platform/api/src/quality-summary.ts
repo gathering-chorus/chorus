@@ -5,7 +5,7 @@
 /**
  * Quality Summary — #3657: a projection of the TESTS DOMAIN.
  *
- * Reads the owl-api V2 /tests collection (generated from chorus:TestShape)
+ * Reads the athena-make V2 /tests collection (generated from chorus:TestShape)
  * and aggregates it into the pyramid the /werk/quality/ page renders. The
  * former filesystem scanner (#2099 lineage: fs-walk + DOMAIN_MAP + api/ui
  * content heuristics) is retired — tests are model data; this module holds
@@ -16,10 +16,10 @@
  * single honest entry rather than a fabricated Gathering rollup.
  *
  * Seams (tests bring their own world):
- *   OWL_API_BASE        — owl-api origin (default http://localhost:3360)
+ *   OWL_API_BASE        — athena-make origin (default http://localhost:3360)
  *   QUALITY_CACHE_PATH  — cache file (default ~/.chorus/quality-cache.json)
  *
- * owl-api read-surface quirk: collection links.next says /v1/tests but only
+ * athena-make read-surface quirk: collection links.next says /v1/tests but only
  * /tests is routed — followNext() rewrites the prefix or page 2 404s.
  */
 
@@ -28,7 +28,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const PAGE_LIMIT = 200; // owl-api 404s above this
+const PAGE_LIMIT = 200; // athena-make 404s above this
 
 function owlApiBase(): string {
   return process.env.OWL_API_BASE || 'http://localhost:3360';

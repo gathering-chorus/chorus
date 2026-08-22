@@ -1,14 +1,14 @@
 /**
  * #3618 — the security envelope: model-declared surfaces get a generated gate.
  *
- * Architecture (the #3414 seam extended beyond owl-api's own routes):
+ * Architecture (the #3414 seam extended beyond athena-make's own routes):
  *   - The MODEL declares which surfaces are secured (APISurface instances with
  *     securedBy + requiresScope in urn:chorus:ontology).
  *   - The GENERATOR projects that into a data table (generated/security-surfaces.json)
  *     — generated data, committed in the repo, drift-checked against the graph.
  *   - THIS module is the one hand-written engine: a pure decision function
  *     (decideEnvelope) + a thin Express adapter (securityEnvelope). Verification
- *     mirrors the door's semantics (#3573 / owl-api auth.rs): HS256, aud=chorus,
+ *     mirrors the door's semantics (#3573 / athena-make auth.rs): HS256, aud=chorus,
  *     exp, non-empty scope that names the surface's requiresScope.
  *
  * Mutation-only: reads stay open by design. Mixed-state by construction: a

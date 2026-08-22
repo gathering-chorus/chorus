@@ -2,7 +2,7 @@
 # @test-type: unit
 # #3839 — NEGATIVE PROOF (#3734) for the bug that landed and did not run.
 #
-# THE FAILURE, exactly: chorus-model-deploy's instance leg deduped its TTL list
+# THE FAILURE, exactly: athena-deploy-model's instance leg deduped its TTL list
 # by reading the array back — `case " ${INSTANCE_SET[*]} " in ...` — with the
 # array still EMPTY on the first iteration. Under `set -u` in bash 3.2 that is an
 # unbound-variable error, so the deploy died at line 518 on canonical while
@@ -16,7 +16,7 @@
 #   3. the deploy script contains no reachable instance of the old pattern
 set -uo pipefail
 ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
-DEPLOY="$ROOT/platform/scripts/chorus-model-deploy.sh"
+DEPLOY="$ROOT/platform/scripts/athena-deploy-model.sh"
 fail=0
 ok()   { echo "  PASS: $1"; }
 bad()  { echo "  FAIL: $1" >&2; fail=1; }
@@ -53,18 +53,18 @@ fi
 #    read specifically — a comment that merely names the pattern must not be able
 #    to satisfy or trip this check.
 if grep -nE '^[^#]*\$\{INSTANCE_SET\[\*\]\}' "$DEPLOY" >/dev/null 2>&1; then
-  bad "chorus-model-deploy.sh still reads \${INSTANCE_SET[*]} outside a comment:"
+  bad "athena-deploy-model.sh still reads \${INSTANCE_SET[*]} outside a comment:"
   grep -nE '^[^#]*\$\{INSTANCE_SET\[\*\]\}' "$DEPLOY" >&2
 else
-  ok "no reachable \${INSTANCE_SET[*]} read in chorus-model-deploy.sh"
+  ok "no reachable \${INSTANCE_SET[*]} read in athena-deploy-model.sh"
 fi
 
 # 4. And the whole instance leg must parse under 3.2 — the crash was a runtime
 #    one, but a parse failure would be the same class of "works here, not there".
 if /bin/bash -n "$DEPLOY" 2>/dev/null; then
-  ok "chorus-model-deploy.sh parses under bash 3.2"
+  ok "athena-deploy-model.sh parses under bash 3.2"
 else
-  bad "chorus-model-deploy.sh does not parse under bash 3.2"
+  bad "athena-deploy-model.sh does not parse under bash 3.2"
 fi
 
 [ "$fail" -eq 0 ] && echo "-- 3839 deploy/bash32: all checks pass --"

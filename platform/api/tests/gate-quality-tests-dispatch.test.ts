@@ -10,7 +10,7 @@ import {
   type TestsApiResponse,
 } from '../src/gate-quality-tests-dispatch';
 
-// A stubbed /tests payload shaped exactly like owl-api serves (the real keys:
+// A stubbed /tests payload shaped exactly like athena-make serves (the real keys:
 // testName, covers, filePath, pyramidLayer). Three subdomains represented.
 const STUB: TestsApiResponse = {
   count: 4,

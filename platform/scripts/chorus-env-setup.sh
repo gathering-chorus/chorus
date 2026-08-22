@@ -200,7 +200,7 @@ export OLLAMA_BULK_URL="${OLLAMA_BULK_URL:-http://192.168.86.242:11434}"
 # CSS token verification config (the JWKS hairpin, see chorus-identity-token):
 # the token's iss is the LOGICAL issuer (for the iss-check); JWKS is fetched
 # LOCALLY because the logical origin is Cloudflare-blocked server-side. Same
-# values owl-api's door runs with. Deployment config — override per box.
+# values athena-make's door runs with. Deployment config — override per box.
 export CSS_ISSUER="${CSS_ISSUER:-https://id.lightlifeurbangardens.com/}"
 export CHORUS_JWKS_URL="${CHORUS_JWKS_URL:-http://localhost:3001/.oidc/jwks}"
 # A shell-invoked DAL call presents a fresh VERIFIED token instead of trusting

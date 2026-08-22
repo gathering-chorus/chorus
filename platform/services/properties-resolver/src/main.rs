@@ -1,6 +1,6 @@
 //! properties-resolver bin — a thin self-check/smoke over the lib (#3437).
 //!
-//! The crate's primary artifact is the LIBRARY (linked by owl-api's
+//! The crate's primary artifact is the LIBRARY (linked by athena-make's
 //! /properties/effective projection, werk-test, tagging-lift). This binary
 //! exists because the platform/services build contract signs one binary per
 //! crate; rather than a no-op, it runs the cascade over a documented fixture so

@@ -47,9 +47,31 @@ fn ok_http(code: &str) -> bool {
     matches!(code, "200" | "201" | "204")
 }
 
+/// The Fuseki write credential as curl args. Empty when unset — unauthenticated,
+/// which is the pre-Shiro behaviour `fuseki-auth.sh` is careful to preserve
+/// (#3566 "deploy the credential before requiring it").
+///
+/// #3561: the bash script this verb replaced sourced `fuseki-auth.sh`; the Rust
+/// port did not, so every write went out anonymous and Shiro answered 401. The
+/// verb then reported `staging-load-http-401` — true, and useless: a refusal that
+/// names the store's answer cannot name a missing credential.
+fn fuseki_auth() -> Vec<String> {
+    match std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        Ok(pw) if !pw.is_empty() => {
+            let user = env_or("FUSEKI_ADMIN_USER", "admin");
+            vec!["-u".to_string(), format!("{user}:{pw}")]
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// Run a curl invocation, returning its stdout (trimmed) or a failure message.
+/// The write credential is prepended HERE, at the one door, so no call site can
+/// forget it — the same "one place owns the credential" rule `fuseki-auth.sh`
+/// states for the bash writers.
 fn curl(args: &[&str]) -> Result<String, String> {
     let out = Command::new("curl")
+        .args(fuseki_auth())
         .args(args)
         .output()
         .map_err(|e| format!("curl spawn failed: {e}"))?;
@@ -107,6 +129,12 @@ pub fn run_athena_deploy() -> Result<String, String> {
             "-H", "Content-Type: text/turtle", "--data-binary", &format!("@{ttl}"),
             &format!("{gsp}?graph={staging}")])?;
         if !ok_http(&code) {
+            // Name the credential state, never just the store's answer. A bare
+            // 401 sent two roles looking at Fuseki when the cause was an empty
+            // FUSEKI_ADMIN_PASSWORD in the calling environment.
+            if code == "401" && fuseki_auth().is_empty() {
+                return Err(fail("staging-load-http-401-no-credential"));
+            }
             return Err(fail(&format!("staging-load-http-{code}")));
         }
     }

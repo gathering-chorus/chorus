@@ -1,14 +1,14 @@
 /**
  * #3719 — ES256 identity verification + model-resolved scope for the security
  * envelope. Retires the HS256/shared-secret verify path (#3618/#3619) by
- * mirroring the owl-api door's contract (chorus-oidc, #3689):
+ * mirroring the athena-make door's contract (chorus-oidc, #3689):
  *
  *   - The token is a CSS-issued ES256 at+jwt: pure IDENTITY (iss, webid, exp).
  *     Verified against the CSS JWKS — one issuer, one key model, no secret.
  *   - What the identity may write is NOT a claim in the token. It is resolved
  *     from the model: chorus:hasScope edges on the Principal in
  *     urn:chorus:domains:security, cached on the same TTL cadence as the
- *     owl-api door's allow-set (300s). Grant/revoke = a model edit, live
+ *     athena-make door's allow-set (300s). Grant/revoke = a model edit, live
  *     within one TTL.
  *   - An HS256 token is refused with a TYPED reason ('hs256-retired'), never
  *     silently accepted, never fallen back to.

@@ -10,7 +10,7 @@
 #   GUARD 1 (superset): identity holds a record NOT in security → the delete
 #     would lose the only copy → MUST refuse (exit 1).
 #   Control: identity is a strict subset of security → GUARD 1 passes (then
-#     GUARD 2 refuses because the scratch owl-api check can't see flow-probe —
+#     GUARD 2 refuses because the scratch athena-make check can't see flow-probe —
 #     which is itself the ordering guard doing its job, asserted as exit 2).
 set -u
 
@@ -38,7 +38,7 @@ pass=0; fail=0
 ok() { if eval "$2"; then echo "PASS: $1"; pass=$((pass+1)); else echo "FAIL: $1"; fail=$((fail+1)); fi; }
 
 # #3904 — FITNESS_OWL_API pinned to a dead port: GUARD 2 probes the SERVED
-# surface, and the live owl-api now serves flow-probe (phase 1 went live after
+# surface, and the live athena-make now serves flow-probe (phase 1 went live after
 # this test was written), so an unpinned run leaked live state into the fixture
 # and GUARD 2 stopped refusing. A test brings its own world (#3528): here the
 # world is "phase 1 NOT live", which a dead port states exactly.
@@ -55,7 +55,7 @@ ok "GUARD 1 REFUSES when identity holds a record security does not (exit 1)" "te
 ok "GUARD 1 names the orphan, not a count" "grep -q 'orphan: .*principal-ghost' <<<\"\$OUT\""
 
 # --- CONTROL: identity ⊆ security → GUARD 1 passes; GUARD 2 then refuses
-# because the scratch home is not what owl-api serves (the ordering guard).
+# because the scratch home is not what athena-make serves (the ordering guard).
 wipe
 seed "$SG" principal-a principal-b
 seed "$IG" principal-a

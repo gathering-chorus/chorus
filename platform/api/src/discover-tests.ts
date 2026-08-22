@@ -162,7 +162,7 @@ export function createDiscoverTests(deps: DiscoverTestsDeps) {
         const sdUri = `https://jeffbridwell.com/chorus#${t.coversDomain}`;
         const tt = t.testType.replace(/"/g, '\\"');
         // #3442: testType promoted from bare literal → declared hasProperty→Property
-        // (what owl-api /effective resolves). Named Property IRI for traceability.
+        // (what athena-make /effective resolves). Named Property IRI for traceability.
         return `<${tcUri}> a chorus:TestCoverage ; chorus:testFile "${t.testFile.replace(/"/g, '\\"')}" ; chorus:covers <${sdUri}> ; chorus:hasProperty <${propUri}> .\n`
           + `<${propUri}> a chorus:Property ; chorus:propertyKey "testType" ; chorus:propertyValue "${tt}" ; chorus:propertyValueType "string" .`;
       }).join('\n');

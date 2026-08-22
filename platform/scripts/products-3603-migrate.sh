@@ -7,7 +7,7 @@
 #   generate  (default) — read the LIVE graph, emit the full typed-slot batch
 #               body (DEL/INS tab-delimited lines) to stdout. Read-only. Lets a
 #               human review exactly what the migration will do.
-#   apply     — POST the generated body to the door (owl-api /batch) with a
+#   apply     — POST the generated body to the door (athena-make /batch) with a
 #               scoped Bearer token. REFUSES unless CHORUS_WRITE_DOOR_TOKEN is
 #               set (mint via chorus-identity-token — #3719; scope is model data now scope urn:chorus:ontology).
 #               Never writes to Fuseki directly — the door is the only write path.

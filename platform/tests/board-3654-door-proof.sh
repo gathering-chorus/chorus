@@ -8,7 +8,7 @@
 #   • loomSequence  unique class-wide        (cross-role loom axis)
 #
 # RED until BOTH land:
-#   1. board-3654.ttl deployed into urn:chorus:ontology (chorus-model-deploy.sh) so
+#   1. board-3654.ttl deployed into urn:chorus:ontology (athena-deploy-model.sh) so
 #      read_shape sees the uniqueWithin/uniqueGlobal annotations, AND
 #   2. chorus-model rebuilt with Silas's enforcement primitive (#3681 — read_shape
 #      +2 maps, write() +2 sibling-ASK loops).

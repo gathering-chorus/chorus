@@ -1,6 +1,6 @@
 // @test-type: unit
 // #3707 — the athena-health query catalog is a promise surface: every path it
-// advertises must be servable. #3702 retired /api/athena/steps (410 → owl-api
+// advertises must be servable. #3702 retired /api/athena/steps (410 → athena-make
 // /valuestreams); a catalog that still lists it points readers at a dead door.
 import { DEFAULT_QUERIES } from '../src/handlers/athena-health';
 

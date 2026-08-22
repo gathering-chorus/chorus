@@ -315,7 +315,7 @@ const PrinciplesCreateInput = z.object({
 const PRINCIPLES_LIST_TOOL_DEF = {
   name: 'chorus_principles_list',
   description:
-    'List all Chorus principles from the live graph — the 14 permaculture (PC) principles, served from the generated owl-api surface (#3749). Returns id + label + comment for each. Use to ground a decision in the canonical set or to discover what already exists before creating a new one. Do NOT use as a paraphrase target — cite by id, do not rewrite the text.',
+    'List all Chorus principles from the live graph — the 14 permaculture (PC) principles, served from the generated athena-make surface (#3749). Returns id + label + comment for each. Use to ground a decision in the canonical set or to discover what already exists before creating a new one. Do NOT use as a paraphrase target — cite by id, do not rewrite the text.',
   inputSchema: {
     type: 'object',
     properties: {},
@@ -794,14 +794,14 @@ const SUP_TOOL_DEF = {
 // #3594 — the V1→V2 Athena migration readout, REBUILT as a per-DOMAIN stage matrix.
 // The per-kind counter it started as answered the wrong question (Jeff 2026-07-01:
 // "there were 5+ attributes to track for each domain"). For each V2 domain it tracks
-// the migration stages: created / owl-src / loaded / owl-api-run / v1-data-retired /
+// the migration stages: created / owl-src / loaded / athena-make-run / v1-data-retired /
 // v1-code-retired / done. Graph- and source-derivable stages are computed truthfully;
-// owl-api-run and v1-code-retired are marked '—' (not-yet-instrumented), NEVER faked —
+// athena-make-run and v1-code-retired are marked '—' (not-yet-instrumented), NEVER faked —
 // so the scoreboard can't read more-done than it is.
 const MIGRATION_READOUT_TOOL_DEF = {
   name: 'chorus_migration_readout',
   description:
-    'Get the live V1→V2 Athena migration status as a per-DOMAIN stage matrix: for each V2 chorus:Domain, its progress across created / owl-src / loaded / owl-api-run / v1-data-retired / v1-code-retired / done. Graph- and source-derivable stages are real; owl-api-run and v1-code-retired are marked "—" (not-yet-instrumented), never faked. ONE fixed deterministic report answering "where is each domain in the V1→V2 work" — the create side is largely done; the headline is the v1-retired column filling in. No params. Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
+    'Get the live V1→V2 Athena migration status as a per-DOMAIN stage matrix: for each V2 chorus:Domain, its progress across created / owl-src / loaded / athena-make-run / v1-data-retired / v1-code-retired / done. Graph- and source-derivable stages are real; athena-make-run and v1-code-retired are marked "—" (not-yet-instrumented), never faked. ONE fixed deterministic report answering "where is each domain in the V1→V2 work" — the create side is largely done; the headline is the v1-retired column filling in. No params. Note: in focus mode the caller must paste the returned text into its own reply — that text is the only thing the human sees.',
   inputSchema: { type: 'object', properties: {} },
 } as const;
 
@@ -825,7 +825,7 @@ export interface MigrationRow {
   done: MigrationCell;
 }
 
-/** #3594 — PURE (unit-tested): raw graph/source facts → one row per domain. owl-api-run
+/** #3594 — PURE (unit-tested): raw graph/source facts → one row per domain. athena-make-run
  *  and v1-code-retired stay null (not-yet-instrumented); done stays false while any stage
  *  is unproven — the matrix never claims a domain fully migrated on partial evidence. */
 export function computeMigrationRows(inp: MigrationInputs): MigrationRow[] {
@@ -839,7 +839,7 @@ export function computeMigrationRows(inp: MigrationInputs): MigrationRow[] {
     owlApi: null, // not-yet-instrumented
     v1Retired: !stems.has(d.toLowerCase()), // no lingering V1 SubDomain twin (by stripped name)
     v1Code: null, // not-yet-instrumented
-    done: false, // honest: can't be ✓ while owl-api/v1-code unproven
+    done: false, // honest: can't be ✓ while athena-make/v1-code unproven
   }));
 }
 
@@ -848,7 +848,7 @@ export function renderMigrationReadout(rows: MigrationRow[]): string {
   const lines: string[] = [
     'V1→V2 Athena migration — per-domain stage matrix (live graph + committed source):',
     '',
-    '  domain            created owl-src loaded owl-api v1-retired v1-code done',
+    '  domain            created owl-src loaded athena-make v1-retired v1-code done',
   ];
   for (const r of rows) {
     lines.push(
@@ -860,14 +860,14 @@ export function renderMigrationReadout(rows: MigrationRow[]): string {
   lines.push(
     '',
     `${n} domains — created ${done((r) => r.created)}/${n} · owl-src ${done((r) => r.owlSrc)}/${n} · loaded ${done((r) => r.loaded)}/${n} · v1-retired ${done((r) => r.v1Retired)}/${n}`,
-    'legend: ✓ done · · not-done · — not-yet-instrumented (owl-api-run, v1-code-retired). done=✓ only when every stage is real.',
+    'legend: ✓ done · · not-done · — not-yet-instrumented (athena-make-run, v1-code-retired). done=✓ only when every stage is real.',
   );
   return lines.join('\n');
 }
 
 // #3594 — handler: gather the facts (graph via curl→Fuseki; source via grep of the
 // committed MODEL_SET .ttl), then the pure compute+render. Same subprocess pattern as
-// priorities (#2997: no fuseki/fs client in this server). owl-api-run / v1-code-retired
+// priorities (#2997: no fuseki/fs client in this server). athena-make-run / v1-code-retired
 // aren't graph- or source-derivable → left null (not-yet-instrumented) by compute.
 async function executeMigrationReadout(
   execFileAsync: ExecFileAsync,
@@ -1318,6 +1318,79 @@ const WERK_REVIEW_TOOL_DEF = {
       findings: { type: 'string', description: 'verdict mode: specific findings (file:line / AC item N). Required on fail.' },
     },
     required: ['mode', 'card_id'],
+    additionalProperties: false,
+  },
+} as const;
+
+// #3561 — THE ATHENA VERB FAMILY, callable like werk-*.
+//
+// Measured 2026-08-21: this file carried 99 werk-* references and ZERO athena
+// ones. The four verbs existed as binaries (three Rust crates + one bash) but a
+// role could only reach them by shelling out, so every athena step was hand-
+// chained and there was no athena pipeline — the exact condition chorus_werk
+// removed for werk. That absence is why `streams` sat with a domain node, no
+// vocabulary, and a 200-line ring buffer in /tmp instead of a store.
+//
+// Each verb keeps its OWN refusal taxonomy: these are typed refusals from the
+// binaries, not this layer's invention. athena-model in particular refuses rather
+// than defaulting — a defaulted field is a judgment nobody made (#3718).
+
+const ATHENA_MODEL_TOOL_DEF = {
+  name: 'athena-model',
+  description:
+    'Use this to WRITE the model through the governed pen — instances (add/set/link/delete for 30 ADR-040 kinds) and schema (class/property/shape TBox verbs, #3718). Forms IRIs itself per ADR-040; callers pass LOCAL NAMES. Refusal taxonomy: unknown-kind | caller-passed-iri | required-field-missing | property-domain-range | shape-with-no-floor | manifest-membership. It REFUSES rather than defaulting. Do NOT hand-edit a .ttl to add a class or shape — that is the ungoverned path this verb exists to replace.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role — DEPLOY_ROLE attribution + spine role field.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Verb args, e.g. ["class","--name","StreamEvent","--comment","...","--claimed-by","streams","--file","<path>"].' },
+    },
+    required: ['role', 'args'],
+    additionalProperties: false,
+  },
+} as const;
+
+const ATHENA_MAKE_TOOL_DEF = {
+  name: 'athena-make',
+  description:
+    'Use this to GENERATE surfaces from the model and to serve them — the generator for every projected surface (#3561). Ten generate-* subcommands (generate, -dal, -mcp, -page, -openapi, -dashboard, -product, -target, -tests, -verb) plus serve; it makes AND hosts its own output on :3360, one binary by decision. Do NOT hand-write a generated page or API — regenerate it.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Verb args, e.g. ["generate-page","--class","Service"].' },
+    },
+    required: ['role', 'args'],
+    additionalProperties: false,
+  },
+} as const;
+
+const ATHENA_DEPLOY_TOOL_DEF = {
+  name: 'athena-deploy',
+  description:
+    'Use this to deploy the MODEL SET to Fuseki — the governed way the model reaches the store. Validates every TTL with riot BEFORE loading and REFUSES on a parse failure rather than deploying a broken graph (proven live 2026-08-21). Deployed is not served: pair with a serve check, since a model can land and the API still answer from its pre-restart snapshot (#3577).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Verb args.' },
+    },
+    required: ['role', 'args'],
+    additionalProperties: false,
+  },
+} as const;
+
+const ATHENA_VALIDATE_TOOL_DEF = {
+  name: 'athena-validate',
+  description:
+    'Use this to sweep the LIVE graph for conformance violations — retired predicates, dangling references, untyped subjects, plus the ADR-058 GovernanceCheck registry where rows ARE violations. Counts are UNCAPPED, it cites the law each check enforces, refuses a vacuous pass, and reports a never-red check loudly. Read the graph with this, not with hand-written SPARQL, when the question is "does the model conform".',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Calling role.' },
+      args: { type: 'array', items: { type: 'string' }, description: 'Verb args.' },
+    },
+    required: ['role', 'args'],
     additionalProperties: false,
   },
 } as const;
@@ -2244,7 +2317,13 @@ async function executeServiceLifecycle(
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
 async function executeWerkVerb(
-  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-unpull' | 'werk-review' | 'loom-gemba',
+  // #3561 — the athena family joins the same exec path. These are verbs in
+  // ~/.chorus/bin exactly like werk-*, and were reachable ONLY by a role shelling
+  // out: the MCP server carried 99 werk-* references and zero athena ones, which is
+  // why every athena step was hand-chained and why there is no athena pipeline.
+  // Nothing new is plumbed — executeWerkVerb already execs binDir/<verb>.
+  verb: 'werk-build' | 'werk-deploy' | 'werk-pull' | 'werk-commit' | 'werk-push' | 'werk-merge' | 'werk-accept' | 'werk-unpull' | 'werk-review' | 'loom-gemba'
+      | 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate',
   args: string[],
   role: string,
   cardId: number | undefined,
@@ -3091,6 +3170,12 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       COMMIT_STATUS_TOOL_DEF,
       COMMIT_TOOL_DEF,
       PULL_CARD_TOOL_DEF,
+      // #3561 — the athena family, listed beside werk-* because they are peers:
+      // model -> make -> deploy -> validate.
+      ATHENA_MODEL_TOOL_DEF,
+      ATHENA_MAKE_TOOL_DEF,
+      ATHENA_DEPLOY_TOOL_DEF,
+      ATHENA_VALIDATE_TOOL_DEF,
       LOOM_GEMBA_TOOL_DEF,
       WERK_PUSH_TOOL_DEF,
       WERK_MERGE_TOOL_DEF,
@@ -3332,6 +3417,24 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const commitArgs = [String(parsed.data.card_id), parsed.data.role];
         if (parsed.data.summary) commitArgs.push(parsed.data.summary);
         return executeWerkVerb('werk-commit', commitArgs, parsed.data.role, parsed.data.card_id, {});
+      }
+      // #3561 — one dispatch arm for all four athena verbs. They share a shape:
+      // role + raw args, execed from ~/.chorus/bin like every werk verb. No
+      // per-verb parsing here on purpose — each binary owns its own refusal
+      // taxonomy, and re-implementing that parsing in this layer would create a
+      // second source of truth for what is valid.
+      case 'athena-model':
+      case 'athena-make':
+      case 'athena-deploy':
+      case 'athena-validate': {
+        const parsed = z.object({
+          role: z.enum(['kade', 'wren', 'silas']),
+          args: z.array(z.string()),
+        }).safeParse(req.params.arguments);
+        if (!parsed.success) {
+          return { content: [{ type: 'text', text: `${req.params.name}: invalid arguments — ${parsed.error.message}` }] };
+        }
+        return await executeWerkVerb(req.params.name as 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate', parsed.data.args, parsed.data.role, undefined, {});
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);

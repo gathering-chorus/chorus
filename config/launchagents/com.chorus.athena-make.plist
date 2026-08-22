@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.athena-make</string>
+    <!-- #3354 reliability ility: the generated Domain API runs SUPERVISED from
+         day one (the 2026-06-11 pulse lesson: unsupervised services become
+         landmines). Serves the installed binary from ~/.chorus/bin; KeepAlive
+         restarts on crash; localhost-bound (the gathering local-security model).
+         #3446: invokes athena-make-launch.sh (NOT athena-make directly) — the launcher
+         sources the realm secret (#3402) and waits for Fuseki readiness before
+         exec, so a clean boot no longer crash-loops while Fuseki is coming up.
+         This must match the installed plist; deploying athena-make direct re-opens
+         the boot crash-loop. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/jeffbridwell/.chorus/bin/athena-make-launch.sh</string>
+        <string>serve</string>
+        <string>--port</string>
+        <string>3360</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/athena-make.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Gathering/athena-make.log</string>
+</dict>
+</plist>

@@ -8,7 +8,7 @@
  * fact (securedBy edge), the table is its projection — not hand-maintained.
  *
  * Brings its own world (#3528): the SPARQL client is injected and returns
- * canned bindings; no live Fuseki, no owl-api.
+ * canned bindings; no live Fuseki, no athena-make.
  */
 import {
   projectSecuredSurfaces,

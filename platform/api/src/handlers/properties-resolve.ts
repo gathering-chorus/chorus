@@ -9,7 +9,7 @@
  * cap Jeff mandated has been a hardcoded number wearing the costume of a
  * governed value, and why nobody noticed for weeks.
  *
- * This PROXIES the generated cascade; it does not resolve. owl-api's
+ * This PROXIES the generated cascade; it does not resolve. athena-make's
  * `/effective/<node>/<key>` walks the real scope chain. A second cascade here
  * would be a competing implementation of the thing this card just built, and
  * the two would drift the moment either changed.

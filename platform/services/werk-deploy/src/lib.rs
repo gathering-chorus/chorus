@@ -1750,7 +1750,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // #3785 — BLOCKING allow-set gate. A deploy that would leave the doors
     // reading an empty allow-set is refused before it commits.
     //
-    // owl-api already warned about this at boot on 2026-08-06 — "Principal
+    // athena-make already warned about this at boot on 2026-08-06 — "Principal
     // allow-set is EMPTY" — and the warning went to stderr while nobody was
     // reading it. The symptom surfaced minutes later as a human being told he
     // was not on the team list, three steps from the cause. A warning is not a
@@ -1762,7 +1762,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     let touches_identity = diff.lines().any(|f| {
         f.contains("chorus-oidc") || f.contains("solid-auth")
             || f.contains("identity-principals") || f.contains("security-model")
-            || f.contains("owl-api/src/lib.rs")
+            || f.contains("athena-make/src/lib.rs")
     });
     if touches_identity {
         let gate = format!("{}/platform/scripts/chorus-allow-set-gate", canonical_root_path(home));
@@ -1874,11 +1874,11 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             Some(root_m.as_str()),
             &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
             "bash",
-            &[&format!("{}/platform/scripts/chorus-model-deploy.sh", root_m)],
+            &[&format!("{}/platform/scripts/athena-deploy-model.sh", root_m)],
         )
         .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
-            format!("chorus-model-deploy.sh failed — model changes are landed but NOT live: {}", e)))?;
-        // #3895 — the DAL-gated instance leg was split OUT of chorus-model-deploy.sh
+            format!("athena-deploy-model.sh failed — model changes are landed but NOT live: {}", e)))?;
+        // #3895 — the DAL-gated instance leg was split OUT of athena-deploy-model.sh
         // (the #3785 recovery path must never require an identity token, ADR-038:
         // no new deploy-path bash). Landing still seeds instances: mint the
         // land-role's token, then `athena-model seed --deploy` (manifest +

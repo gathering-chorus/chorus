@@ -1,0 +1,221 @@
+name: athena
+
+# athena — THE MODEL pipeline, sibling to werk.yml (#3561).
+#
+# werk.yml governs CODE: commit → build → test → demo → merge.
+# athena.yml governs THE MODEL: shape → make → deploy → validate.
+#
+# Jeff, 2026-08-21: "i think we can do an athena-model, athena-make, athena-deploy
+# pipeline with act as a runner right now." He was right — every verb already
+# existed. What was missing was the runner, so every athena step was a role
+# hand-chaining shell. That absence is why `streams` had a domain node with no
+# vocabulary and a 200-line ring buffer in /tmp instead of a store: the governed
+# path was unautomated, so code got written around it.
+#
+# ONE JOB, ONE RUN — same contract as werk.yml. No forks, no cross-run witness.
+#
+# THE STEP THAT EARNS THIS FILE IS deploy-served, NOT deploy. A model can deploy
+# and never be SERVED: athena-make answers from the snapshot it loaded at startup,
+# so a class can sit in Fuseki and be absent from the API indefinitely (#3577).
+# That gap hit the team four times in two days. deploy-served FAILS the run when a
+# class deployed but never appeared, and names it — never silent.
+
+on:
+  workflow_dispatch:
+    inputs:
+      class:
+        description: "Model class this run is about (e.g. StreamEvent). The trace key end-to-end."
+        required: true
+        type: string
+      role:
+        description: "Role whose werk holds the model change (kade / silas / wren)."
+        required: true
+        type: string
+      card_id:
+        description: "Card the model change belongs to — attribution on every emitted event."
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  athena:
+    runs-on: macos-latest
+    # CHORUS_HOME / CHORUS_WERK_BASE / PATH inherited from the local shell act runs
+    # in (chorus-env-setup.sh provides them). The workflow MUST NOT hardcode them.
+    env:
+      CLASS: ${{ inputs.class }}
+      ROLE: ${{ inputs.role }}
+      CARD_ID: ${{ inputs.card_id }}
+      # Same declaration werk.yml makes, same reason: act sets CI=true, which the
+      # #3615 membrane reads as a build context and refuses live-spine writes. This
+      # is a prod-adjacent runner whose verbs legitimately emit real events.
+      CHORUS_CONTEXT: prod
+      # Resolve the athena verbs to THIS tree's build first, falling back to the
+      # deployed copies in ~/.chorus/bin. A pre-land run must grade the artifact
+      # the card ships, not the one already installed — otherwise the pipeline
+      # reports on a binary the change never touched, which is the built-vs-
+      # deployed confusion that put a retired name in front of Jeff (#3885).
+      ATHENA_PATH_PREFIX: "platform/services/athena-make/target/release:platform/services/athena-model/target/release:platform/services/athena-deploy/target/release"
+
+    steps:
+      - name: shared-trace
+        # One trace for the whole run, propagated via $GITHUB_ENV so every verb
+        # subprocess inherits CHORUS_TRACE_ID. Mirrors werk.yml exactly — a model run
+        # and a code run must be joinable on the same key.
+        run: |
+          trace="$(date +%s%N)-$$"
+          echo "CHORUS_TRACE_ID=$trace" >> "$GITHUB_ENV"
+          # act -self-hosted runs in a cache dir with no checkout, so GITHUB_WORKSPACE
+          # is empty of the repo. werk.yml solves this by deriving the werk from
+          # CHORUS_WERK_BASE/<role>-<card>; athena.yml uses the same derivation so a
+          # pre-land run grades the card's tree, and falls back to canonical when
+          # there is no card (a run against main).
+          root="${CHORUS_WERK_BASE:-/Users/jeffbridwell/CascadeProjects/chorus-werk}/${ROLE}-${CARD_ID}"
+          [ -n "${CARD_ID}" ] && [ -d "$root" ] || root="${CHORUS_ROOT:-$PWD}"
+          echo "ATHENA_ROOT=$root" >> "$GITHUB_ENV"
+          echo "grading tree: $root"
+          prefix=""
+          IFS=':' read -ra dirs <<< "$ATHENA_PATH_PREFIX"
+          for d in "${dirs[@]}"; do
+            [ -d "$root/$d" ] && prefix="${prefix}${root}/${d}:"
+          done
+          echo "PATH=${prefix}${PATH}" >> "$GITHUB_ENV"
+          echo "verb path prefix: ${prefix:-<none — using deployed binaries>}"
+          echo "minted trace=$trace for class=${CLASS} role=${ROLE} card=${CARD_ID:-<none>}"
+          "$root/platform/scripts/chorus-log" athena.run.started "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" trace="$trace" || true
+
+      - name: shape
+        # The TBox is written by athena-model BEFORE this pipeline runs — the pen is
+        # interactive by design, refusing rather than defaulting, because a default is
+        # a judgment nobody made (#3718). This step proves the shape exists and has a
+        # floor, so a run cannot proceed on a class that declares nothing.
+        run: |
+          set -euo pipefail
+          hit=$(grep -rl "chorus:${CLASS}Shape" "${ATHENA_ROOT}/roles" 2>/dev/null | head -1 || true)
+          if [ -z "$hit" ]; then
+            echo "athena: no shape for ${CLASS} — a class with no shape validates nothing" >&2
+            exit 1
+          fi
+          echo "shape: ${CLASS}Shape found in $hit"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.shape.proven "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" file="$hit" || true
+
+      - name: make
+        # Generate the surfaces from the model. athena-make makes AND serves — one
+        # binary, decided on #3561 by reading the dispatch (ten generate-* verbs, one
+        # serve; splitting costs a crate, a LaunchAgent and a deploy path).
+        run: |
+          set -euo pipefail
+          athena-make generate --class "${CLASS}" > /dev/null
+          echo "make: routes generated for ${CLASS}"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.made "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" || true
+
+      - name: deploy
+        # The governed way the model reaches Fuseki. athena-deploy riot-validates every
+        # TTL BEFORE loading and refuses a parse failure rather than deploying a broken
+        # graph — proven live 2026-08-21, when a missing `@prefix sh:` was caught here
+        # and blocked the load instead of corrupting the store.
+        run: |
+          set -euo pipefail
+          # The write door needs its credential (#3566/#3611). athena-deploy loads
+          # over HTTP and 401s without it; act starts from a stripped environment,
+          # so the credential must be sourced here rather than assumed inherited.
+          # fuseki-auth.sh exports without ever echoing the value.
+          # shellcheck disable=SC1091
+          source "${ATHENA_ROOT}/platform/scripts/fuseki-auth.sh"
+          if [ -z "${FUSEKI_ADMIN_PASSWORD:-}" ]; then
+            echo "athena: no Fuseki write credential — the load would 401 at the door." >&2
+            echo "  Expected at \$FUSEKI_WRITE_ENV or ~/.gathering/data/fuseki-write.env (owner: Silas/ops)." >&2
+            exit 1
+          fi
+          CHORUS_ROOT="${ATHENA_ROOT}" athena-deploy 2>&1 | tail -20
+          echo "deploy: model set loaded"
+
+      - name: deploy-served
+        # #3577 — THE GATE. Deployed is not served. Bounce the service, then PROVE the
+        # class answers. Failing here names the class, rather than reporting a green
+        # deploy over an API that never changed.
+        run: |
+          set -euo pipefail
+          launchctl kickstart -k "gui/$(id -u)/com.chorus.athena-make" 2>/dev/null || true
+          for _ in $(seq 1 30); do
+            curl -sf -m 5 http://localhost:3360/domains >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # #3733 — the route is DATA, read from athena-make's own discovery
+          # document, never guessed. The lowercase+"s" guess this replaced is the
+          # same name-heuristic defect #3733 retired in reconcile: it cannot tell
+          # "the class is not served" from "my pluralisation was wrong", so a
+          # served class with an irregular route reads as a deploy failure and an
+          # absent one can read as a typo. Reading the registry separates them.
+          disco="$(curl -sf -m 10 http://localhost:3360/ 2>/dev/null || true)"
+          if [ -z "$disco" ]; then
+            echo "athena: discovery document unavailable on :3360 — cannot establish which routes are served" >&2
+            exit 1
+          fi
+          route="$(printf '%s' "$disco" | tr ',' '\n' \
+            | grep -A2 "\"kind\": \"${CLASS}\"" \
+            | grep -o '"collection": "[^"]*"' | head -1 | cut -d'"' -f4)"
+          if [ -z "$route" ]; then
+            echo "athena: ${CLASS} DEPLOYED BUT NOT SERVED — it appears in no route of the discovery document." >&2
+            echo "  The model is in the store and the API cannot see it (#3577)." >&2
+            echo "  This is not a naming guess: the served set was READ, and ${CLASS} is not in it." >&2
+            exit 1
+          fi
+          if ! curl -sf -m 10 "http://localhost:3360${route}" >/dev/null 2>&1; then
+            echo "athena: ${CLASS} is declared at ${route} but that route does not answer." >&2
+            bare="/$(basename "$route")"
+            if curl -sf -m 10 "http://localhost:3360${bare}" >/dev/null 2>&1; then
+              echo "  ${bare} DOES answer. The service advertises one path and serves another:" >&2
+              echo "  discovery says ${route}, the router only handles ${bare}." >&2
+              echo "  DECLARED != SERVED inside a single binary — anything that reads the" >&2
+              echo "  discovery document to find a route gets a 404 (#3577 family)." >&2
+            fi
+            exit 1
+          fi
+          echo "deploy-served: ${route} answers — ${CLASS} is live, not merely landed"
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.served "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" route="${route}" || true
+
+      - name: validate
+        # The conformance sweep over the LIVE graph (ADR-058): rows ARE violations,
+        # counts uncapped, a never-red check reports itself loudly. Runs AFTER
+        # deploy-served on purpose — validating a graph the API cannot serve would
+        # pass while Jeff still sees nothing.
+        run: |
+          set -euo pipefail
+          bash "${ATHENA_ROOT}/platform/scripts/athena-validate.sh" 2>&1 | tail -30
+          "${ATHENA_ROOT}/platform/scripts/chorus-log" athena.validated "${ROLE}" \
+            class="${CLASS}" card="${CARD_ID:-none}" || true
+
+      - name: traceable
+        # A run that cannot be reconstructed from the spine is not legible, whatever
+        # its exit code. Jeff, 2026-08-21, asked whether a trace could be pulled for an
+        # athena run: it could not — five steps minted one trace and exactly ONE of
+        # them emitted, so the trace existed and answered nothing.
+        #
+        # This step is the gate on that: it counts the run's own events and FAILS if
+        # the story has holes. It cannot pass vacuously — zero events is the loudest
+        # failure, not a silent skip.
+        run: |
+          set -euo pipefail
+          spine="${CHORUS_SPINE:-$HOME/.chorus/chorus.log}"
+          if [ ! -r "$spine" ]; then
+            echo "athena: spine not readable at $spine — this run left no legible record" >&2
+            exit 1
+          fi
+          n=$(grep -c "${CHORUS_TRACE_ID}" "$spine" || true)
+          want=5
+          if [ "${n:-0}" -lt "$want" ]; then
+            echo "athena: run emitted ${n:-0} event(s) for trace ${CHORUS_TRACE_ID}, expected >= ${want}." >&2
+            echo "  A step ran without emitting. The run is unreconstructable from the spine." >&2
+            exit 1
+          fi
+          echo "traceable: ${n} events on ${CHORUS_TRACE_ID} — the run can be replayed from the spine"
+
+      - name: outcome
+        if: success()
+        run: |
+          echo "athena: ${CLASS} shaped, made, deployed, SERVED and validated"

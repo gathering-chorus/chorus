@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # #3749 — the three-state proof that /principles serves the RIGHT graph, not
 # just "serves" (pair design, Wren+Kade 2026-08-05). RUN_INTEGRATION=true to
-# run against the live store + owl-api (the vocab-claim-authority.bats pattern:
+# run against the live store + athena-make (the vocab-claim-authority.bats pattern:
 # RED on live before the migration lands, GREEN after — the state transition IS
 # the proof).
 #
@@ -14,7 +14,7 @@
 #                   retired subject. "Served" and "served correctly" separated.
 set -euo pipefail
 
-[ "${RUN_INTEGRATION:-}" = "true" ] || { echo "skip: RUN_INTEGRATION not set (integration test — live store + owl-api)"; exit 0; }
+[ "${RUN_INTEGRATION:-}" = "true" ] || { echo "skip: RUN_INTEGRATION not set (integration test — live store + athena-make)"; exit 0; }
 
 FUSEKI_QUERY="${CHORUS_FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 OWL_API="${OWL_API_URL:-http://localhost:3360}"
@@ -32,11 +32,11 @@ count_q() { # SPARQL count query -> bare integer, fail-closed on no answer
 home=$(count_q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a c:Principle } }")
 [ "$home" = "14" ] || fail "domain graph urn:chorus:domains:principles holds $home Principles, want 14 (state A = 0 means the migration has not landed)"
 
-# B2 — owl-api SERVES 14 from that graph (reader = writer, one canonical graph).
+# B2 — athena-make SERVES 14 from that graph (reader = writer, one canonical graph).
 served=$(curl -s -m 10 "$OWL_API/principles" | python3 -c "import json,sys
 d=json.load(sys.stdin)
 items=d.get('data', d.get('items', d.get('principles', d if isinstance(d, list) else [])))
-print(len(items))" 2>/dev/null) || fail "owl-api /principles did not answer parseable JSON"
+print(len(items))" 2>/dev/null) || fail "athena-make /principles did not answer parseable JSON"
 [ "$served" = "14" ] || fail "/principles serves $served, want 14 — surface exists but reads the wrong graph (the 2-of-29 class)"
 
 # B3 — SOURCE DISAMBIGUATION (Silas catch): the 14 must exist ONLY in the

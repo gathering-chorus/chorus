@@ -65,7 +65,7 @@ start_ts=$(python3 -c 'import time; print(int(time.time()*1000))')
 files=0; edges=0; failures=0; batch_body=""
 
 # #3573 — governed-door migration (GATED). CHORUS_WRITE_DOOR=1 routes writes through
-# owl-api's POST /batch (minted scoped token + typed slots) instead of raw SPARQL to
+# athena-make's POST /batch (minted scoped token + typed slots) instead of raw SPARQL to
 # :3030. Default 0 = the current raw path — ZERO behavior change until cutover, and a
 # door mint/reach failure falls back to raw so a door fault never black-holes writes
 # (Wren's gated-fallback floor, 2026-07-03).
@@ -84,7 +84,7 @@ fi
 
 flush_batch() {
   if [ "$USE_DOOR" = "1" ]; then
-    # governed path: POST the typed-slot tab body to owl-api /batch (auth+scope+DAL).
+    # governed path: POST the typed-slot tab body to athena-make /batch (auth+scope+DAL).
     [ -z "$door_body" ] && return 0
     local rc; rc=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$DOOR_BASE/batch" \
       -H "Authorization: Bearer $BEARER" -H "x-target-graph: $HYDRATION_GRAPH" \

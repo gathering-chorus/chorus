@@ -10,7 +10,7 @@
  * route is indistinguishable from a working one from the caller's side, which
  * is precisely why nobody noticed.
  *
- * The route PROXIES; it does not resolve. owl-api's generated `/effective`
+ * The route PROXIES; it does not resolve. athena-make's generated `/effective`
  * walks the scope chain (#3863's other leg, landed this hour). A second
  * cascade here would compete with it and drift.
  *
@@ -30,7 +30,7 @@ const OK = (value: unknown) =>
   }) as unknown as Response;
 
 describe('#3863 — properties/resolve proxies the generated cascade', () => {
-  it('asks owl-api for the role-scoped node and returns its value', async () => {
+  it('asks athena-make for the role-scoped node and returns its value', async () => {
     const calls: string[] = [];
     const fetchImpl = async (url: string) => {
       calls.push(url);
