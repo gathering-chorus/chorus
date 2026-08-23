@@ -38,8 +38,8 @@ The frame is **invariant RULES (code) operating OVER governed DATA** — *not* t
 - **Governed = the data the rule evaluates** — which surfaces/verbs a role owns, who the principals are. Wren's authz model, evolvable.
 
 **Enforced-in-code vs norm-only — do not claim a guarantee we don't have** (Wren's sharpest catch). The invariants are *not uniformly enforced today*:
-- **Enforced in code:** `no-self-accept` (`werk-accept` `can_accept`), agent-vs-Jeff (the bouncer).
-- **Norm-only, NOT yet enforced:** `guest-cannot-authorize`. There is **no code** enforcing it — Wren upheld it *by judgment* this session (caught Mark's account-page request being dressed as owner-authorized). The ADR must not claim it is "enforced by construction." Making it enforced-in-code is a real gap → its own card (see Open).
+- **Enforced in code:** `no-self-accept` (`werk-accept` `can_accept`), agent-vs-Jeff (the bouncer), and — since #3682 (2026-08-23) — `guest-cannot-authorize`: the cards-add door (`enforceGuestCannotAuthorize`, cards SDK) refuses `DEPLOY_ROLE=jeff` attribution when `CHORUS_ORIGIN_PRINCIPAL` names a non-Jeff human Principal, emitting `card.authorization.guest_refused`. Clearing-facing surfaces set the origin WebID from the verified CSS session (post-#3669); absent origin = direct-terminal paths, unchanged. Negative-proof + regression tests: `platform/tests/3682-guest-cannot-authorize.bats`.
+- **Historical (closed by #3682):** `guest-cannot-authorize` was norm-only — no code enforced it; Wren upheld it *by judgment* (caught Mark's account-page request being dressed as owner-authorized). Residual honest scope: the accept/go-recording path (werk-demo verdict) does not yet check origin — it inherits protection from no-self-accept plus Jeff's in-person go; plumbing origin there is follow-on, not assumed done.
 
 The line "where invariant ends and governed-data begins" IS the authN/authZ seam. A *rule* that must never be editable-as-data belongs in code (at whichever door); the *data* it evaluates belongs in the roles graph.
 
@@ -60,7 +60,7 @@ The line "where invariant ends and governed-data begins" IS the authN/authZ seam
 - The seam is named once; #3356 and Wren's fresh roles-domain card stop both-owning it (the bottleneck-relief this ADR exists for).
 - The roles domain gets a real home and stops squatting in the shared instances graph — the model reads honestly (roles are a domain like any other).
 - The constitution is documented as **invariant rules (code) over governed data** — with an honest ledger of which are *enforced-in-code* (no-self-accept, agent-vs-Jeff) vs *norm-only* (guest-can't-authorize). This closes the door on "make the authz rules editable data," and surfaces the real gap rather than papering it.
-- **Surfaces a live gap:** `guest-cannot-authorize` is enforced by role judgment, not code. This ADR names it; closing it (a hook/gate that refuses a guest-originated authorization) is a follow-on card, not assumed done.
+- **Surfaces a live gap:** `guest-cannot-authorize` is enforced by role judgment, not code. This ADR names it; closing it (a hook/gate that refuses a guest-originated authorization) is a follow-on card, not assumed done. *(Closed 2026-08-23 by #3682 — see the enforced-in-code ledger above.)*
 - Cost: a graph migration (the binding + `Role` instances relocate, re-expressed as `heldBy`) with an FK-integrity proof, **the parser→query switch in owl-api (the load-bearing part)**, and an ADR-052-lane change to the MCP door. All bounded, all paired.
 
 ## Open (pending Wren's fresh roles-domain card + Jeff's continued steer)
