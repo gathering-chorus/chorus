@@ -62,10 +62,13 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
       const p = parsePayload(e.payload);
       if (!p.trace) continue;
       events.push({ kind: 'emitted', trace: p.trace, from: p.from ?? '', to: p.to ?? '', content: p.content ?? '', ts: String(e.timestamp ?? '') });
-    } else if ((e.event === 'nudge.surfaced' || e.event === 'nudge.surface.failed') && typeof e.trace_id === 'string') {
-      // surface.failed clears the fold too (Silas review, material finding 1):
-      // the worker's contract is pending = emitted − surfaced − surface.failed;
-      // without it a permanently-failed nudge reads pending until it exits the window.
+    } else if (e.event === 'nudge.surfaced' && typeof e.trace_id === 'string') {
+      events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
+    } else if (e.event === 'nudge.surface.failed' && typeof e.trace_id === 'string' && e.permanent === true) {
+      // Kade review 2026-08-23: the worker emits surface.failed with permanent:false
+      // on EVERY transient attempt before backoff-retrying (delivery-worker.ts:299)
+      // — clearing on those loses a nudge whose retries are still running. Only a
+      // permanent failure exits the fold: pending = emitted − surfaced − failed(permanent).
       events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
     }
   }

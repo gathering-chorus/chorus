@@ -84,15 +84,25 @@ describe('#2725 nudge pending fold', () => {
     expect(buildNudgeFold(log, 'testerB')[0].content).toBe(content);
   });
 
-  test('surface.failed clears the fold (Silas review: pending = emitted − surfaced − failed)', () => {
-    const failed = (trace: string, from: string, to: string) =>
-      JSON.stringify({ timestamp: TS, event: 'nudge.surface.failed', role: 'pulse', trace_id: trace, id: 2, from, to, attempt: 6, reason: 'no claude window found', permanent: true });
+  const failed = (trace: string, permanent: boolean) =>
+    JSON.stringify({ timestamp: TS, event: 'nudge.surface.failed', role: 'pulse', trace_id: trace, id: 2, from: 'testerA', to: 'testerB', attempt: permanent ? 6 : 1, reason: permanent ? 'no claude window found' : 'inject exit 1', permanent });
+
+  test('PERMANENT surface.failed clears the fold (Silas review)', () => {
     const log = fixtureLog([
       emitted('t9', 'testerA', 'testerB', 'doomed'),
-      failed('t9', 'testerA', 'testerB'),
+      failed('t9', true),
       emitted('t10', 'testerA', 'testerB', 'alive'),
     ]);
     expect(buildNudgeFold(log, 'testerB').map(n => n.trace)).toEqual(['t10']);
+  });
+
+  test('TRANSIENT surface.failed does NOT clear — retries still running (Kade review)', () => {
+    const log = fixtureLog([
+      emitted('t11', 'testerA', 'testerB', 'retrying'),
+      failed('t11', false),
+      failed('t11', false),
+    ]);
+    expect(buildNudgeFold(log, 'testerB').map(n => n.trace)).toEqual(['t11']);
   });
 
   test('AC8 negative proof: surfaced clears the trace regardless of line order', () => {
