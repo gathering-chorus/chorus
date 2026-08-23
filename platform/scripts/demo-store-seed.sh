@@ -38,7 +38,13 @@ mkdir -p "$(dirname "$DEMO_DB")"
 rm -f "$DEMO_DB" "$DEMO_DB-wal" "$DEMO_DB-shm"
 
 # 1) schema — every table/index/trigger, empty. Deterministic (prod .schema).
-sqlite3 "$PROD_DB" .schema | sqlite3 "$DEMO_DB"
+#    Drop sqlite internal tables: sqlite_sequence (autoincrement bookkeeping) and
+#    sqlite_stat* (ANALYZE) are "reserved for internal use" — sqlite REFUSES an
+#    explicit CREATE for them, so re-importing prod's .schema aborts on the first
+#    one (the real-prod failure the synthetic fixture missed). They auto-create as
+#    needed; filtering is correct, not lossy. sed (not grep) so an all-pass case
+#    can't trip pipefail.
+sqlite3 "$PROD_DB" .schema | sed -E '/^CREATE TABLE sqlite_(sequence|stat)/d' | sqlite3 "$DEMO_DB"
 
 # 2) bounded recent slice, best-effort per real (non-virtual) table.
 tables=$(sqlite3 "$PROD_DB" \

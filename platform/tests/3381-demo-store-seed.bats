@@ -14,7 +14,22 @@ setup() {
   command -v sqlite3 >/dev/null 2>&1 || skip "sqlite3 not installed"
   SRC="$BATS_TEST_TMPDIR/src.db"
   DEMO="$BATS_TEST_TMPDIR/demo/index.db"
-  sqlite3 "$SRC" "CREATE TABLE cards(id INTEGER PRIMARY KEY, title TEXT); CREATE TABLE streams(id INTEGER PRIMARY KEY, ev TEXT); CREATE INDEX ix ON cards(title); INSERT INTO cards(title) SELECT 'c'||value FROM (WITH RECURSIVE n(value) AS (SELECT 1 UNION ALL SELECT value+1 FROM n WHERE value<500) SELECT value FROM n); INSERT INTO streams(ev) VALUES('a'),('b');"
+  # cards uses AUTOINCREMENT so the source .schema emits `CREATE TABLE
+  # sqlite_sequence` — the exact real-prod shape that broke the live seed (sqlite
+  # refuses to re-create that internal table). The synthetic fixture must carry it
+  # or the negative proof is hollow.
+  sqlite3 "$SRC" "CREATE TABLE cards(id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT); CREATE TABLE streams(id INTEGER PRIMARY KEY, ev TEXT); CREATE INDEX ix ON cards(title); INSERT INTO cards(title) SELECT 'c'||value FROM (WITH RECURSIVE n(value) AS (SELECT 1 UNION ALL SELECT value+1 FROM n WHERE value<500) SELECT value FROM n); INSERT INTO streams(ev) VALUES('a'),('b');"
+}
+
+@test "NEGATIVE PROOF: an AUTOINCREMENT source (sqlite_sequence in .schema) seeds cleanly" {
+  # This is the live #3381 failure: a real prod db has AUTOINCREMENT tables, so
+  # .schema emits `CREATE TABLE sqlite_sequence`, which sqlite refuses on import
+  # → the seed aborted with "Parse error ... reserved for internal use" (exit 1).
+  # Without the sed filter this test reds; with it, green, and sqlite_sequence
+  # still auto-exists in the demo after the inserts.
+  run bash "$SEED" "$DEMO" "$SRC" 200
+  [ "$status" -eq 0 ]
+  [ "$(sqlite3 "$DEMO" "SELECT count(*) FROM sqlite_master WHERE name='sqlite_sequence';")" -eq 1 ]
 }
 
 @test "schema is fully replicated — every source table exists in the demo" {
