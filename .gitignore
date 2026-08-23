@@ -169,3 +169,10 @@ knowledge/doc-coherence.md
 # Runtime artifact, never source; lives INSIDE the werk so werk-teardown removes
 # it with the worktree — gitignored so it doesn't trip the refuse-if-dirty check.
 .chorus-demo/
+
+# #3991 — model-deploy retirement backups are RUNTIME artifacts (a fresh .nt
+# drops on every deploy run, incl. the pipeline's own test/demo legs). Untracked
+# they dirty the werk and refuse every go (the -32/-34 loop). Recovery copies
+# belong out of git per ADR-041 attrition; the committed one on this branch is
+# the audit copy for the #3916 investigation.
+platform/backups/graph-retirements/
