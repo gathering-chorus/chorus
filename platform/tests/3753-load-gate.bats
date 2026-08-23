@@ -64,3 +64,23 @@ setup() {
   NIGHTLY_LOAD_STUB=0.1 run "$NIGHTLY" --classify fail "0 pass, 1 fail (SUITE TIMEOUT: killed after 1800s)"
   [ "$output" = "fail" ]
 }
+
+# --- AC3: probe/health timeout class downgrades ONLY under load ---
+
+@test "AC3 negative proof: loaded box downgrades timeout-class failures to WARN; real errors stay FAIL" {
+  run bash -c 'printf "%s\n" \
+    "gathering-app: localhost:3002 returned 000 — app down" \
+    "chorus-api: DOWN — code=500 exit=0 after retry" \
+    | NIGHTLY_LOAD_STUB=999 "'"$BATS_TEST_DIRNAME"'/../scripts/load-reclassify.sh"'
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "WARN|unmeasurable under load (load=999"* ]]
+  [[ "${lines[1]}" == "FAIL|chorus-api: DOWN — code=500"* ]]
+}
+
+@test "AC3 negative proof: quiet box keeps timeouts as FAIL — the alert still fires" {
+  run bash -c 'printf "%s\n" \
+    "gathering-app: localhost:3002 returned 000 — app down" \
+    | NIGHTLY_LOAD_STUB=0.1 "'"$BATS_TEST_DIRNAME"'/../scripts/load-reclassify.sh"'
+  [ "$status" -eq 0 ]
+  [[ "${lines[0]}" == "FAIL|gathering-app"* ]]
+}

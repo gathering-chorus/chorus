@@ -15,6 +15,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { boston } from './time-utils';
+import { PROBE_CEILING_MS } from './eventloop-episode';
 
 /** #3096 — Request-vs-scheduled boundary for the eventloop attribution surface:
  *  TWO surfaces, TWO slots, ONE reader.
@@ -97,6 +98,12 @@ export function firstAppFrame(frames: string[]): string | undefined {
 
 export function formatBlockAlert(durationMs: number, ts: string, op: string, stack?: string[]): BlockAlert {
   const display = boston(ts);
+  // #3753 AC5 — a reading at the probe ceiling is a FLOOR, not a duration: the
+  // probe caps at PROBE_CEILING_MS (#3750's constant — one source), so "8000ms"
+  // institutionalized a misread (one ~20s freeze read as two 8s blocks, #3742).
+  const durationLabel = durationMs >= PROBE_CEILING_MS
+    ? `≥${Math.round(PROBE_CEILING_MS / 1000)}s (probe ceiling — true duration unknown)`
+    : `${durationMs}ms`;
   const frames = (stack ?? []).map((f) => f.trim()).filter((f) => f.length > 0);
   const opNote = op === 'unknown'
     ? `The slow request is in the access log at this time — grep chorus-api.log around ${display} for the route.`
@@ -110,7 +117,7 @@ export function formatBlockAlert(durationMs: number, ts: string, op: string, sta
     op,
     ...(frames.length > 0 ? { stack: frames } : {}),
     message:
-      `chorus-api event loop blocked ${durationMs}ms at ${display}. ` +
+      `chorus-api event loop blocked ${durationLabel} at ${display}. ` +
       causeNote +
       ' No cause inferred; this is the measured block only.',
   };

@@ -542,6 +542,27 @@ esac
 
 # --- Report ---
 # Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
+# #3753 AC3 — load-aware reclassify. A probe timeout on a starved box measures
+# the machine's mood, not the service (2026-08-05: "unreachable" paged for an
+# app answering in 29ms). When the box is loaded RIGHT NOW, timeout-class
+# failures downgrade to typed "unmeasurable under load" warnings — same tier
+# precedent as #3820's deferred-services warnings, complementing #3948's
+# per-probe retries. Response-code failures (real 500/404) and quiet-box
+# timeouts stay failures. One predicate shared with the nightly:
+# nightly-suites.sh --load-gate + nightly-load.conf.
+_RECLASSIFY="${CHORUS_ROOT}/platform/scripts/load-reclassify.sh"
+if [ ${#FAILURES[@]} -gt 0 ] && [ -x "$_RECLASSIFY" ]; then
+  _kept=()
+  while IFS= read -r _rl; do
+    case "$_rl" in
+      WARN\|*) WARNINGS+=("${_rl#WARN|}") ;;
+      FAIL\|*) _kept+=("${_rl#FAIL|}") ;;
+    esac
+  done < <(printf '%s\n' "${FAILURES[@]}" | "$_RECLASSIFY")
+  FAILURES=()
+  [ ${#_kept[@]} -gt 0 ] && FAILURES=("${_kept[@]}")
+fi
+
 if [ ${#FAILURES[@]} -gt 0 ]; then
   STATUS="degraded"
 elif [ ${#WARNINGS[@]} -gt 0 ]; then
