@@ -131,6 +131,27 @@ case "$NAME" in
     fi ;;
 esac
 
+# #3993 — SIGNATURE GATE for TCC/launchd-constrained binaries. 2026-08-23:
+# pipeline legs installed unsigned chorus-hooks builds into canonical six
+# times; each install's kickstart hit launchd's constraint → SIGKILL "Code
+# Signature Invalid" → team-wide fail-closed lockout until a signed rebuild.
+# These three binaries run under launch constraints, so an unsigned install
+# is never a working install — refuse it at the door, keep the previous
+# binary. CHORUS_BIN_SKIP_SIGCHECK=1 is the loud bootstrap escape (e.g.
+# non-macOS CI), mirroring the #3939 smoke escape.
+case "$NAME" in
+  chorus-hooks|chorus-inject|chorus-hook-shim)
+    if [ "${CHORUS_BIN_SKIP_SIGCHECK:-}" = "1" ]; then
+      echo "chorus-bin-install: SIGCHECK SKIPPED for $NAME (CHORUS_BIN_SKIP_SIGCHECK=1)" >&2
+    elif [ "$TARGET" = "canonical" ] && command -v codesign >/dev/null 2>&1; then
+      if ! codesign -v "$SRC" >/dev/null 2>&1; then
+        smoke_refuse_emit "unsigned"
+        echo "chorus-bin-install: REFUSED — $NAME is unsigned/invalid (codesign -v failed); launchd would SIGKILL it on spawn. Build via build-signed.sh. Previous binary kept." >&2
+        exit 10
+      fi
+    fi ;;
+esac
+
 # Atomic: cp to .tmp.$$, then mv. mv is atomic within a filesystem;
 # concurrent callers never observe a half-written binary.
 if ! cp -p "$SRC" "$DEST_TMP" 2>/dev/null; then
