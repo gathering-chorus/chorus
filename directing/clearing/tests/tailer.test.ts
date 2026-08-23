@@ -177,6 +177,25 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     }));
   });
 
+  // #2725 — CAPTURED live-spine shape: the mcp-server writer packs the kv string
+  // under `payload`, not `from`. This is the shape the production log actually
+  // carries; without reading it the tailer silently drops every live nudge.
+  test('nudge.emitted in live payload shape (captured 2026-08-23) surfaces', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      timestamp: '2026-08-23T14:56:20.414-04:00',
+      event: 'nudge.emitted',
+      role: 'wren',
+      payload: 'from=wren,to=jeff,chars=155,trace=01a02ffb,origin=mcp,content=LIVE BUBBLE demo',
+    }));
+    expect(r.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'wren',
+      text: 'LIVE BUBBLE demo',
+      type: 'role-response',
+    }));
+  });
+
   test('nudge.emitted to non-jeff is dropped', () => {
     const r = makeRouter();
     const t = new ChorusLogTailer(r as any);
@@ -220,6 +239,10 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
     // tailer reads our fixture. Read at module load, so reload after setting.
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tailer-test-'));
     logPath = path.join(tmpRoot, 'chorus.log');
+    // the resolver picks the first EXISTING candidate at module load — the
+    // fixture file must exist before the reload or it falls through to the
+    // live spine (test contract #3528: bring your own world).
+    fs.writeFileSync(logPath, '');
 
     origChorusHome = process.env.CHORUS_HOME;
     process.env.CHORUS_HOME = tmpRoot;
