@@ -56,6 +56,26 @@ if ! "$REPO/platform/scripts/wipe-guard-scan.sh" "$REPO" >/tmp/wipe-guard.$$ 2>&
 fi
 rm -f /tmp/wipe-guard.$$
 
+# #3677 — three commit gates that were BUILT and DOCUMENTED as shipped but
+# never invoked from this hook (the #3895 shape: prose claiming protection).
+# Each has a green negative suite in platform/tests; this wiring is what makes
+# them real. All three are diff-scoped and fast.
+if ! "$REPO/platform/scripts/check-catalog-oversize.sh"; then
+  echo "" >&2
+  echo "📦 pre-commit BLOCKED: an oversize file is staged into a doc-catalog source dir (#2461)." >&2
+  exit 1
+fi
+if ! "$REPO/platform/scripts/check-principle-direct-edit.sh"; then
+  echo "" >&2
+  echo "📜 pre-commit BLOCKED: a Principle instance was hand-edited — principles land through the governed writer (#2469)." >&2
+  exit 1
+fi
+if ! "$REPO/platform/scripts/check-decision-direct-edit.sh"; then
+  echo "" >&2
+  echo "⚖️  pre-commit BLOCKED: a Decision was hand-edited — decisions land through their governed path." >&2
+  exit 1
+fi
+
 # #3927 — spine-emit registration gate. This check already existed and was
 # CORRECT; it just ran nowhere that could stop anything (only chorus-health,
 # every 20 min, post-land). Twice in one afternoon a new emit landed unregistered

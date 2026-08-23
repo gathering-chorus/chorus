@@ -6,7 +6,8 @@
 set -u
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
-SCRIPT="${CHORUS_ROOT}/platform/scripts/nightly-suites.sh"
+# #3922 — sibling copy, never $CHORUS_ROOT (a werk run must test the werk's code)
+SCRIPT="$(cd "$(dirname "$0")" && pwd)/nightly-suites.sh"
 PASS=0; FAIL=0
 
 p() { PASS=$((PASS+1)); echo "✅ $*"; }
@@ -92,7 +93,9 @@ chmod +x "$TDIR/test-fd-holder.sh"
 R=$(watchdog_run fdholder 20 env NIGHTLY_SUITE_TIMEOUT=3 NIGHTLY_FAIL_DIR="$TDIR/fails" CHORUS_LOG_BIN=/usr/bin/true \
       bash "$SCRIPT" --run-one shell "$TDIR/test-fd-holder.sh")
 if [ "$R" = "done" ]; then p "fd-holder suite: runner returns (no EOF-wait wedge)"; else f "fd-holder suite: runner WEDGED >20s (the Jul 17 class)"; fi
-grep -q 'SUITE|shell|.*|pass|' "$TDIR/fdholder.out" && p "fd-holder suite: reported pass" || f "fd-holder suite: no pass line; got: $(cat "$TDIR/fdholder.out")"
+# #3922/#3974 — post-fold contract: an UNREGISTERED ad-hoc suite is a TYPED
+# refusal (the registry is the one selection engine), never a silent skip.
+grep -q 'holds no registered tests' "$TDIR/fdholder.out" && p "fd-holder suite: unregistered → typed refusal" || f "fd-holder: no typed refusal; got: $(cat "$TDIR/fdholder.out")"
 [ -f "$TDIR/holder.pid" ] && kill "$(cat "$TDIR/holder.pid")" 2>/dev/null
 
 # (b) never-exits → timeout kills the suite's whole process group, run continues
@@ -104,7 +107,17 @@ chmod +x "$TDIR/test-hang-forever.sh"
 R=$(watchdog_run hang 25 env NIGHTLY_SUITE_TIMEOUT=3 NIGHTLY_FAIL_DIR="$TDIR/fails" CHORUS_LOG_BIN=/usr/bin/true \
       bash "$SCRIPT" --run-one shell "$TDIR/test-hang-forever.sh")
 if [ "$R" = "done" ]; then p "hanging suite: runner returns within cap"; else f "hanging suite: runner WEDGED >25s despite NIGHTLY_SUITE_TIMEOUT=3"; fi
-grep -q 'SUITE|shell|.*|fail|.*TIMEOUT' "$TDIR/hang.out" && p "hanging suite: reported fail with TIMEOUT reason" || f "hanging suite: no fail+TIMEOUT line; got: $(cat "$TDIR/hang.out")"
+grep -q 'holds no registered tests' "$TDIR/hang.out" && p "hanging suite: unregistered → typed refusal (never runs, never wedges)" || f "hanging suite: no typed refusal; got: $(cat "$TDIR/hang.out")"
+
+# (c) #3974 — the wedge guard MOVED to the lane: a runner that hangs is killed
+# by the lane cap and the run continues with a loud no-results row.
+mkdir -p "$TDIR/bin"
+printf '#!/bin/bash\nsleep 100000\n' > "$TDIR/bin/werk-test"
+chmod +x "$TDIR/bin/werk-test"
+R=$(watchdog_run lanecap 25 env PATH="$TDIR/bin:$PATH" HOME="$TDIR" NIGHTLY_RUNNER_LANE_TIMEOUT=3 NIGHTLY_FAIL_DIR="$TDIR/fails" CHORUS_LOG_BIN=/usr/bin/true \
+      bash "$SCRIPT" --run-one shell "$TDIR/test-hang-forever.sh")
+if [ "$R" = "done" ]; then p "hanging RUNNER: lane cap kills it, run continues"; else f "hanging runner WEDGED >25s despite lane cap=3"; fi
+grep -q 'SUITE|runner|.*|fail|' "$TDIR/lanecap.out" && p "hanging runner: loud no-results row" || f "hanging runner: no loud row; got: $(cat "$TDIR/lanecap.out")"
 
 rm -rf "$TDIR"
 

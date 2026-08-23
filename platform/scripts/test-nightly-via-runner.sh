@@ -56,12 +56,12 @@ echo "$out" | grep -q 'SKIPPED (stack-down, typed #3919)' \
 stub_werk_test 'echo "refusing: tests domain unreachable" >&2
 exit 1'
 out=$(run_cargo_lane)
-echo "$out" | grep -q 'SUITE|cargo|.*|silas|fail|' \
+echo "$out" | grep -q 'SUITE|runner|.*|silas|fail|' \
   && ok || bad "a refused nightly run must fold as a red SUITE line, got: $out"
 
 # 5. werk-test absent from PATH → loud red, cargo lane never silently vanishes.
-out=$(PATH="/usr/bin:/bin" run_cargo_lane)
-echo "$out" | grep -q 'SUITE|cargo|.*|fail|.*werk-test' \
+out=$(PATH="/usr/bin:/bin" HOME="$TMP/nohome" run_cargo_lane)
+echo "$out" | grep -q 'SUITE|runner|.*|fail|.*werk-test' \
   && ok || bad "missing werk-test must be a loud red naming the binary, got: $out"
 
 # 6. a red unit persists its failure output so the red can explain itself (#3484).
@@ -93,6 +93,38 @@ cp "$SCRIPT_DIR/nightly-suites.sh" "$fixture"
 printf 'run_legacy() { %s %s --release; }\n' "cargo" "test" >> "$fixture"
 n=$(_walker_guard "$fixture")
 [ "$n" -gt 0 ] && ok || bad "guard did not fire on a fixture containing the retired walker"
+
+# ── #3974: every lane folds through the ONE runner ──
+
+# 10. Multi-kind lines fold with ONE owner rule: npm under directing → kade,
+#     bats/shell under platform → silas, cargo under platform/services → silas.
+stub_werk_test 'echo "nightly-unit|npm|directing/clearing|fail|10 pass, 3 fail"
+echo "nightly-unit|npm|platform/mcp-server|pass|226 pass, 0 fail"
+echo "nightly-unit|bats|platform/tests/guard.bats|pass|4 pass, 0 fail"
+echo "nightly-unit|shell|platform/scripts/test-x.sh|fail|5 pass, 2 fail"
+exit 1'
+out=$(run_cargo_lane)
+echo "$out" | grep -q 'SUITE|npm|directing/clearing|kade|fail|10 pass, 3 fail' \
+  && ok || bad "npm fold + kade routing, got: $out"
+echo "$out" | grep -q 'SUITE|bats|platform/tests/guard.bats|silas|pass|' \
+  && ok || bad "bats fold + silas routing, got: $out"
+echo "$out" | grep -q 'SUITE|shell|platform/scripts/test-x.sh|silas|fail|' \
+  && ok || bad "shell fold, got: $out"
+
+# 11. run_all has NO tier walkers left — one runner call, no run_one loops.
+body=$(sed -n '/^run_all()/,/^}/p' "$SCRIPT_DIR/nightly-suites.sh")
+echo "$body" | grep -qE 'run_one (npm|shell|bats|cucumber)' \
+  && bad "run_all still walks a tier itself (second walker)" || ok
+
+# 12. RETIREMENT GUARDS (#3557 allowlist + npm helpers): the stubs fail LOUD.
+_needs_stack "/x/test-api-health.sh" 2>/dev/null && bad "_needs_stack must be retired" || ok
+(_needs_stack "/x/anything" 2>&1 || true) | grep -q RETIRED && ok || bad "retired stub must say so"
+_npm_jest_env "/x/platform/api" 2>/dev/null && bad "_npm_jest_env must be retired" || ok
+
+# 13. The #3559 api-integration invariant moved INTO the runner: werk-test
+#     sets RUN_INTEGRATION from the live stack probe.
+grep -q 'RUN_INTEGRATION' "$SCRIPT_DIR/../services/werk-test/src/main.rs" \
+  && ok || bad "runner must own the RUN_INTEGRATION gate"
 
 cleanup
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1

@@ -5,8 +5,8 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { latestSpineActivity, projectRoleState, type SpineActivity } from './tiles-spine';
-import { spinePath } from './spine-tail';
+import { AGENT_ROLES, projectRoleState, type SpineActivity } from './tiles-spine';
+import { spinePath, projectSpine } from './spine-tail';
 
 // #2167: env-configurable so tests can point at a fixture directory.
 const SCAN_DIR = process.env.CLEARING_SCAN_DIR || '/tmp/claude-team-scan';
@@ -322,19 +322,17 @@ export class TilePoller {
 
   /** #3882 — read the durable spine's tail once per poll (same file the
    *  streams pane reads, #3884's spinePath). ~400KB covers hours of events. */
+  /** #3982 — read through the SINGLE projection, not a second private read.
+   *
+   *  This method used to open the spine itself and take the last 400 KB, while
+   *  the streams pane took 8 MB through spine-tail. Two windows, two accept
+   *  rules, one file — which is exactly why a tile could say "building 45s ago"
+   *  about a role whose pane showed nothing, 36 minutes stale (2026-08-22 06:19).
+   *
+   *  Now both come from projectSpine(). There is no second read left to drift. */
   private readSpineActivity(now: number): Record<string, SpineActivity> {
     try {
-      const fd = fs.openSync(this.spineFile, 'r');
-      try {
-        const size = fs.fstatSync(fd).size;
-        const len = Math.min(size, 400_000);
-        const buf = Buffer.alloc(len);
-        fs.readSync(fd, buf, 0, len, size - len);
-        const lines = buf.toString('utf-8').split('\n').slice(1);
-        return latestSpineActivity(lines, now);
-      } finally {
-        fs.closeSync(fd);
-      }
+      return projectSpine(fs, this.spineFile, 80, now, AGENT_ROLES).activity;
     } catch {
       return {};
     }

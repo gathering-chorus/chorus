@@ -48,7 +48,11 @@ interface LogEntry {
 }
 
 function formatToolDisplay(summary: string, action: string): string | null {
-  if (action === 'Read' || action === 'Glob' || action === 'Grep') return null;
+  // #3982 — was: drop Read/Glob/Grep. Jeff, 2026-08-22: "i want all of ur
+  // calls not a subset." A role reading for two minutes IS working; hiding
+  // that is how a busy role reads as dead.
+  if (action === 'Read') return summary.replace(/^Read: /, '\u25cb ');
+  if (action === 'Glob' || action === 'Grep') return summary.replace(/^(Glob|Grep): /, '\u25cb ');
   if (action === 'Bash') return summary.replace(/^Bash: /, '→ ');
   if (action === 'Edit') return summary.replace(/^Edit: /, '✏️ ');
   if (action === 'Write') return summary.replace(/^Write: /, '📝 ');
@@ -169,6 +173,32 @@ function classifyLogEntry(entry: LogEntry): { line: StreamLine | null; drop: Dro
   return { line, drop: line ? null : 'event-not-rendered' };
 }
 
+/** #3982 — the per-call action, which is what a BUSY role actually emits.
+ *
+ *  agent.activity is a heartbeat: it fires every 10s and ONLY when a session
+ *  has been idle >= 15s (main.rs:181). A role working in bursts under 15
+ *  seconds therefore emits agent.action + hook.decision and nothing the pane
+ *  rendered — so it looked silent exactly when it was busiest, while a role
+ *  stuck on one slow call looked alive. The pane showed the inverse of the truth.
+ *
+ *  Jeff, 2026-08-22, while I was mid-tool-call: "i see no streams for minutes
+ *  from u." */
+function parseActionEntry(entry: LogEntry, role: string): StreamLine | null {
+  const tool = entry.tool ? String(entry.tool) : '';
+  if (!tool) return null;
+  // EVERY call, no quiet class. Jeff, 2026-08-22: "i want all of ur calls not
+  // a subset." Read/Glob/Grep were dropped here as noise, but a role reading
+  // for two minutes IS working, and hiding it is how a busy role reads as dead.
+  // The pane's job is to show what happened, not to curate it.
+  return {
+    ts: entry.timestamp ?? '',
+    role,
+    type: 'action',
+    text: `\u25b8 ${tool}`,
+    card: entry.card_id ? String(entry.card_id) : null,
+  };
+}
+
 function parseLogEntry(entry: LogEntry): StreamLine | null {
   return classifyLogEntry(entry).line;
 }
@@ -180,6 +210,7 @@ function parseKnownRoleEntry(entry: LogEntry, role: string): StreamLine | null {
   if (event === 'nudge.emitted') return parseNudgeEntry(entry, role);
   if (event === 'werk.phase' || WERK_PHASE_EVENTS.has(event)) return parseWerkEntry(entry, role);
   if (event === 'agent.activity') return parseActivityEntry(entry, role);
+  if (event === 'agent.action') return parseActionEntry(entry, role);
   return null;
 }
 
@@ -267,4 +298,58 @@ export function readSpineWithStats(
     lines: out,
     stats: { lines: logLines.length, rendered: out.length, dropped, spanFrom, spanTo },
   };
+}
+
+/** #3982 — THE single projection. One read of the spine produces BOTH products:
+ *  the rendered stream lines AND per-role activity for the tiles.
+ *
+ *  They were two independent reads with different windows and different accept
+ *  rules — tiles took 400 KB and ANY event name, the pane took 8 MB and its
+ *  named set. Same file, two answers, so a tile could say "building 45s ago"
+ *  off an event the pane is built to ignore. On 2026-08-22 06:19 the two
+ *  surfaces were 36 minutes apart about the same role.
+ *
+ *  Jeff: "if u check the role state and streams they MUST match at any given
+ *  time." Not a tolerance — a shared source. With one pass there is nothing
+ *  left to disagree about.
+ */
+export interface SpineProjection {
+  lines: StreamLine[];
+  /** role -> { ageSecs, kind } for the newest role-attributed event. */
+  activity: Record<string, { ageSecs: number; kind: string }>;
+  stats: SpineReadStats;
+}
+
+export function projectSpine(
+  fs: typeof fs_node,
+  logFile: string,
+  limit: number,
+  now: number,
+  agentRoles: ReadonlySet<string>,
+): SpineProjection {
+  const raw = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
+  const { lines, stats } = readSpineWithStats(fs, logFile, limit);
+
+  // Same bytes the pane just rendered from — not a second, smaller read.
+  const act = new Map<string, { ageSecs: number; kind: string }>();
+  for (const line of raw) {
+    let e: { timestamp?: string; role?: string; event?: string };
+    try {
+      e = JSON.parse(line) as typeof e;
+    } catch {
+      continue;
+    }
+    const role = e.role ?? '';
+    if (!agentRoles.has(role) || !e.timestamp || !e.event) continue;
+    const t = Date.parse(e.timestamp);
+    if (Number.isNaN(t)) continue;
+    const ageSecs = Math.max(0, Math.round((now - t) / 1000));
+    // A Map, not an object literal: `role` comes off a spine line, so indexing
+    // an object with it is untrusted-key access (security/detect-object-injection).
+    // The allowlist above already bounds it, but a Map has no prototype to walk
+    // into, which is the honest fix rather than a disable comment.
+    const prev = act.get(role);
+    if (!prev || ageSecs < prev.ageSecs) act.set(role, { ageSecs, kind: e.event });
+  }
+  return { lines, activity: Object.fromEntries(act), stats };
 }

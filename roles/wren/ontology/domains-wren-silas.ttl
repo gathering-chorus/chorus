@@ -1,3 +1,4 @@
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix owl:    <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
@@ -58,116 +59,80 @@ chorus:skills a owl:Class, chorus:Domain ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "skills" ; chorus:definesVocabulary chorus:Skill, chorus:UtilitySkill .
 
-chorus:decisions a owl:Class, chorus:Domain ;
-  rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
-  chorus:purpose "Record the team's decisions with their context, rationale, and tradeoffs — the why behind the system." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
-  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/decisions" .
-  # FLAG: no real owl:Class vocab (no chorus:Decision/ADR class) — definesVocabulary omitted, not faked.
-
-chorus:rcas a owl:Class, chorus:Domain ;
-  rdfs:label "rcas" ; chorus:comment "Root cause analyses — what broke, why, and what changed as a result." ;
-  chorus:purpose "Hold root-cause analyses — what broke, why, and what changed so it doesn't recur." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
-  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "loom/rcas" .
-  # FLAG: no real owl:Class vocab (no chorus:RCA class) — omitted, not faked.
-
-# ── athena (Designing, ownedBy wren, partOf chorusProduct) ────────────────────
-chorus:domains a owl:Class, chorus:Domain ;
-  rdfs:label "domains" ; chorus:comment "The canonical product/domain/service structural model — this tree." ;
-  chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
-  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/domains" ; chorus:definesVocabulary chorus:Domain, chorus:SubDomain, chorus:CollectionDomain .
-
-chorus:services a owl:Class, chorus:Domain ;
-  rdfs:label "services" ; chorus:comment "Service definitions, interfaces, and ownership within the product model." ;
-  chorus:purpose "Define the system's services — their interfaces, ownership, and place in the product model." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
-  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/services" ; chorus:definesVocabulary chorus:Service, chorus:ServiceDesign .
-
-# ── chorus-service (Directing, ownedBy wren, partOf chorusProduct) ────────────
-chorus:memory a owl:Class, chorus:Domain ;
-  rdfs:label "memory" ; chorus:comment "Persistent context across sessions — indexed sessions and artifacts." ;
-  chorus:purpose "Keep persistent context across sessions — indexed sessions, artifacts, and recall." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/api/src/index-worker.ts" .
-  # FLAG: no real owl:Class vocab (no chorus:Memory class) — omitted, not faked.
-
-chorus:knowledge a owl:Class, chorus:Domain ;
-  rdfs:label "knowledge" ; chorus:comment "Structured facts about the team, products, and their history." ;
-  chorus:purpose "Hold structured, queryable facts about the team, its products, and their history." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "knowledge" .
-  # FLAG: no real owl:Class vocab (chorus:Document is doc-level, not the knowledge domain's vocab) — omitted, not faked.
-
-chorus:search a owl:Class, chorus:Domain ;
-  rdfs:label "search" ; chorus:comment "Semantic retrieval across all indexed team knowledge and session history." ;
-  chorus:purpose "Provide semantic retrieval across all the team's indexed knowledge and session history." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/api/src/handlers/chorus-search.ts" .
-  # FLAG: no real owl:Class vocab (no chorus:Search class) — omitted, not faked.
-
-# ── clearing (Directing, ownedBy wren, partOf chorusProduct) ──────────────────
-chorus:messages a owl:Class, chorus:Domain ;
-  rdfs:label "messages" ; chorus:comment "Direct role-to-role communications — nudges and the bridge messaging API." ;
-  chorus:purpose "Carry direct role-to-role communication — nudges and the bridge messaging path." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-clearing ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/api/src/handlers/chorus-conversation.ts" .
-  # FLAG: no real owl:Class vocab (no chorus:Message class) — omitted, not faked.
-
-chorus:streams a owl:Class, chorus:Domain ;
-  rdfs:label "streams" ; chorus:comment "Event streams and pub/sub channels the team uses to coordinate." ;
-  chorus:purpose "Carry the event streams and pub/sub channels the team coordinates over." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-clearing ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "directing/clearing/src/tailer.ts" ;
-  chorus:hasDesignDoc "designing/docs/streams-service-design.html" .
-  # FLAG: no real owl:Class vocab (no chorus:Stream class) — omitted, not faked.
-  # #3885 — design doc authored 2026-08-21 (Jeff: "we need to write a proper service
-  # design for the streams domain"). It records what streams IS and, more usefully,
-  # what it is NOT: three cards (#3852/#3853/#3884) each fixed a stream symptom from a
-  # different idea of the domain, and none reached the 200-line /tmp ring buffer that
-  # is the actual retention defect. repoTarget still points at a RENDERER (tailer.ts);
-  # whether streams gets its own service is an open question in the doc, not settled here.
-
-chorus:spine a owl:Class, chorus:Domain ;
-  rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
-  chorus:purpose "Be the system's audit trail — the structured event log of all activity and state changes." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-spine ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/api/src/spine-event-write.ts" ; chorus:definesVocabulary chorus:Vertebra, chorus:EmitContract, chorus:EventCategory .
-
-chorus:cards a owl:Class, chorus:Domain ;
-  rdfs:label "cards" ; chorus:comment "Kanban board and card lifecycle — the unit of work tracking for the team." ;
-  chorus:purpose "Track the team's work as cards through the board lifecycle — the unit of work." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-werk ;
-  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "directing/products/cards" ; chorus:definesVocabulary chorus:WorkItem .
-
-# ── borg (Proving, ownedBy silas, partOf borgProduct) — authored by Wren ──────
-chorus:builds a owl:Class, chorus:Domain ;
-  rdfs:label "builds" ; chorus:comment "Build artifacts, Rust binary signing, and cdhash provenance." ;
-  chorus:purpose "Account for build artifacts — binary signing, cdhash provenance, and what's actually deployed." ;
-  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
-  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "builds" .
-  # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
+# #3982 — NO Verb class minted. Jeff, 2026-08-22: "i never said i want a verb owl."
+#
+# He described verbs and a skills automation spectrum as a MODEL, out loud. I
+# read that as a mandate to mint chorus:Verb + wrapsVerb + automation and went
+# and did it. Backed out. Describing a distinction is not asking for vocabulary,
+# and vocabulary is expensive: once it deploys, other files reference it and
+# retiring costs an edge-repoint pass (see the deploys-domain retire below).
+#
+# What survives is the understanding, in the comment, where it costs nothing:
+#   Jeff, 2026-08-22, the whole thing in one line:
+#     "A VERB IS JUST AN AUTOMATED DETERMINISTIC SKILL."
+#
+#   Not a sibling of Skill — a POINT ON IT. /cs sits at no-automation,
+#   non-deterministic; werk-pull sits at fully-automated, deterministic.
+#   One subject, two positions. Minting chorus:Verb split one subject in
+#   two, which is the same error as chorus:Pipeline holding two subjects —
+#   just inverted. If the position ever needs to be QUERYABLE it is a
+#   property of Skill, never a class beside it.
 
 chorus:deploys a owl:Class, chorus:Domain ;
-  rdfs:label "deploys" ; chorus:comment "Deployment records, rollback paths, and chorus-deploy orchestration." ;
-  chorus:purpose "Track deployments — what shipped, the rollback path, and the deploy orchestration." ;
+  rdfs:label "deploys" ; chorus:comment "How code gets running: deploy targets, rollback paths, freeze rules, and the deploy-invariance contract — same artifact reaches the same running state." ;
+  chorus:purpose "Track how code reaches a running state — what shipped, where, the rollback path, and the invariance that proves a deploy is a deploy." ;
   chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
-  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "deploys" .
-  # FLAG: no real owl:Class vocab (no chorus:Deploy class) — omitted, not faked.
+  chorus:atStep chorus:Operating ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "deploys" ;
+  # #3982 — the supports edge. Jeff: "deploys are one domain that supports
+  # cicd pipeline instance." Domain-supports-pipeline, NOT domain-peer: a
+  # pipeline instance consumes deploys the way it consumes tests and builds,
+  # each its own subject with its own owner.
+  #
+  # Points at the ExecutionPipeline instance, not chorus:Pipeline — that IRI
+  # is already the harvest/data concept (chorus.ttl:477, hasPipeline bound to
+  # SubDomain). Kade mints chorus:ExecutionPipeline and types cicd/werk/athena
+  # as instances in #3985; this edge resolves when that lands.
+  chorus:supports chorus:cicd .
+  # FLAG: no chorus:Deploy vocab class yet — omitted, not faked.
+
+# #3982 — MINTED as chorus:deploys, 2026-08-22. Final name, one land.
+#
+# The history, so nobody re-litigates this a third time:
+#   1. chorus:deploys (Domain) collided with chorus:deploys (ObjectProperty).
+#   2. Silas and I settled on deleting the Domain and folding into his
+#      chorus:deploys-domain SubDomain — which sits under observability-domain.
+#   3. Jeff overruled: "deploys is not cicd!" and "cicd is a pipeline instance
+#      ~ werk*". Deploys is a SUBJECT IN ITS OWN RIGHT — not a facet of
+#      observability, not a pipeline concern.
+#
+# Jeff: the OWL name must be `deploys` — bare, matching the v2 convention
+# (cicd, pipelines, builds carry no suffix). `deployments` was the outlier.
+#
+# The bare IRI was held by an ObjectProperty until today. Silas renamed it to
+# chorus:runsService (#3986) — the noun wins, the verb-shaped property yields.
+# That took two passes: the rename landed on main while the OLD triple stayed
+# in the store (additive model-deploy never retires — his own #3587 gap), so
+# `deploys` looked free in source and was still punned in the graph.
+#
+# Verified free before minting, in the STORE, three ways:
+#   ASK { chorus:deploys a ?t }        false
+#   ASK { ?s chorus:deploys ?o }        false
+#   ASK { chorus:runsService a ?t }     true
+#
+# #3976 — chorus:deploys (Domain) DELETED 2026-08-22.
+#
+# It collided with chorus:deploys (owl:ObjectProperty, silas chorus.ttl:4188,
+# load-bearing in DomainShape at :4267). Same IRI, two files, one deploy set:
+# last writer won, the Domain typing dropped, and `deploys` vanished from
+# /domains — which crashed the tests-domain ingest (1300+ rows -> 270).
+#
+# Deleted rather than renamed. chorus:deploys-domain (silas chorus.ttl:975)
+# is the canonical deployment domain and always was: real invariant, a named
+# contract test (test-deploy-invariance.sh), Operating step. This row was a
+# stub whose own FLAG admitted it had no vocabulary. Minting a third IRI for
+# one concept is how the collision happened in the first place.
+# Ruled with Silas (owner) and Kade (consumer), 2026-08-22 06:32.
 
 chorus:logs a owl:Class, chorus:Domain ;
   rdfs:label "logs" ; chorus:comment "Log aggregation and querying via Loki — structured observability." ;

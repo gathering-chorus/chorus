@@ -29,6 +29,15 @@ pub const TS_PACKAGES: &[&str] = &[
     "platform/chorus-sdk",
     "platform/pulse",
     "platform/workflow-engine",
+    // #3974 — the packages the nightly's npm walker ran that the gate never
+    // selected: registered rows existed, unit_of_path dropped them. mcp-server
+    // runs node:test (not jest); the executor picks the runner per package.
+    "platform/mcp-server",
+    "directing/clearing",
+    "directing/products/cards",
+    // #3974 — the cucumber package: platform/tests runs cucumber-js via its
+    // own `npm test`; its .bats files resolve to script units first.
+    "platform/tests",
 ];
 
 /// The test gate's OWN surface. A card whose diff touches these is "self-
@@ -87,7 +96,10 @@ pub fn affected_units(changed: &[String]) -> Vec<TestUnit> {
     crates.sort();
     let mut units: Vec<TestUnit> = crates.into_iter().map(TestUnit::RustCrate).collect();
     for pkg in TS_PACKAGES {
-        if changed.iter().any(|f| f.starts_with(&format!("{}/", pkg))) {
+        // #3974 — a changed .bats file selects its SUITE unit, never the
+        // package around it (platform/tests holds both the cucumber package
+        // and dozens of bats suites; editing one suite must not rerun all).
+        if changed.iter().any(|f| f.starts_with(&format!("{}/", pkg)) && !f.ends_with(".bats")) {
             units.push(TestUnit::TsPackage((*pkg).to_string()));
         }
     }
@@ -537,9 +549,23 @@ pub fn unit_of_path(path: &str) -> Option<TestUnit> {
             }
         }
     }
+    // #3974 — script suites resolve BEFORE the package loop: platform/tests
+    // holds both bats suites (script units) and the cucumber package; a .bats
+    // path must never collapse into the package unit.
+    if path.ends_with(".bats") {
+        return Some(TestUnit::BatsSuite(path.to_string()));
+    }
     for pkg in TS_PACKAGES {
         if path.starts_with(&format!("{}/", pkg)) {
             return Some(TestUnit::TsPackage((*pkg).to_string()));
+        }
+    }
+    // Shell suites (platform/scripts/test-*.sh) ride the BatsSuite variant:
+    // both are "a script path run as a suite"; the executor picks bats vs
+    // bash by extension.
+    if let Some(name) = path.strip_prefix("platform/scripts/") {
+        if name.starts_with("test-") && name.ends_with(".sh") && !name.contains('/') {
+            return Some(TestUnit::BatsSuite(path.to_string()));
         }
     }
     None
@@ -1907,6 +1933,13 @@ pub fn nightly_requires_model(plan_source: &str) -> bool {
 /// stack-down is the #3919 typed skip), so the nightly summary and the werk
 /// gate can never disagree on what red means.
 pub fn nightly_unit_line(crate_name: &str, ok: bool, passed: usize, failed: usize, ns_skipped: usize) -> String {
+    nightly_lane_line("cargo", crate_name, ok, passed, failed, ns_skipped)
+}
+
+/// #3974 — the generalized fold line: every lane (cargo/npm/bats) speaks the
+/// same machine vocabulary to nightly-suites.sh. One verdict language, every
+/// tier; the wrapper only translates, never judges.
+pub fn nightly_lane_line(kind: &str, unit: &str, ok: bool, passed: usize, failed: usize, ns_skipped: usize) -> String {
     let verdict = if ok { "pass" } else { "fail" };
     let skip = if ns_skipped > 0 {
         format!(", {} SKIPPED (stack-down, typed #3919)", ns_skipped)
@@ -1914,9 +1947,75 @@ pub fn nightly_unit_line(crate_name: &str, ok: bool, passed: usize, failed: usiz
         String::new()
     };
     format!(
-        "nightly-unit|cargo|{}|{}|{} pass, {} fail{}",
-        crate_name, verdict, passed, failed, skip
+        "nightly-unit|{}|{}|{}|{} pass, {} fail{}",
+        kind, unit, verdict, passed, failed, skip
     )
+}
+
+/// #3974 — full-selection TS packages: every registered package holding tests.
+pub fn nightly_ts_packages(rows: &[TestRow]) -> Vec<String> {
+    plan_units_from_rows(rows)
+        .into_iter()
+        .filter_map(|u| match u {
+            TestUnit::TsPackage(p) => Some(p),
+            _ => None,
+        })
+        .collect()
+}
+
+/// #3974 — full-selection bats suites from the registry.
+pub fn nightly_bats_suites(rows: &[TestRow]) -> Vec<String> {
+    plan_units_from_rows(rows)
+        .into_iter()
+        .filter_map(|u| match u {
+            TestUnit::BatsSuite(s) => Some(s),
+            _ => None,
+        })
+        .collect()
+}
+
+/// #3974 — pass/fail counts from a shell suite's summary line
+/// ("=== Results: N passed, M failed ===" — the consumer-parseable form every
+/// test-*.sh emits). Shell scripts carry no per-case identities, so counts are
+/// the honest grain; None = no parseable summary (caller fails loud on rc).
+pub fn parse_shell_counts(out: &str) -> Option<(usize, usize)> {
+    for l in out.lines().rev() {
+        if let Some(i) = l.find("Results:") {
+            let rest = &l[i + 8..];
+            let nums: Vec<usize> = rest
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|t| !t.is_empty())
+                .filter_map(|t| t.parse().ok())
+                .collect();
+            if nums.len() >= 2 {
+                return Some((nums[0], nums[1]));
+            }
+        }
+    }
+    None
+}
+
+/// #3974 — per-case results from bats TAP output ("ok N desc" / "not ok N desc"),
+/// so the bats lane stops being boolean-only and its cases post like cargo/jest.
+pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
+    let mut cases = Vec::new();
+    for l in out.lines() {
+        let l = l.trim();
+        if let Some(rest) = l.strip_prefix("not ok ") {
+            if let Some((_, name)) = rest.split_once(' ') {
+                cases.push((name.trim().trim_start_matches("- ").trim().to_string(), "fail".to_string()));
+            }
+        } else if let Some(rest) = l.strip_prefix("ok ") {
+            if let Some((num, name)) = rest.split_once(' ') {
+                if num.chars().all(|c| c.is_ascii_digit()) {
+                    // bats: "ok 1 desc" · node:test TAP: "ok 1 - desc"
+                    let name = name.trim().trim_start_matches("- ").trim_start_matches("# skip").trim();
+                    cases.push((name.to_string(), "pass".to_string()));
+                }
+            }
+        }
+    }
+    cases
 }
 
 #[cfg(test)]
@@ -1968,5 +2067,124 @@ mod nightly_via_runner_3920 {
         let line = nightly_unit_line("chorus-api-client", true, 10, 0, 3);
         assert!(line.contains("3 SKIPPED (stack-down, typed #3919)"), "{line}");
         assert!(line.contains("|pass|"), "typed skip is not a fail: {line}");
+    }
+}
+
+#[cfg(test)]
+mod nightly_all_lanes_3974 {
+    use super::*;
+
+    fn row(path: &str) -> TestRow {
+        TestRow { file_path: path.to_string(), covers: String::new(),
+            pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    }
+
+    #[test]
+    fn ts_and_bats_full_selection_from_the_registry() {
+        let rows = vec![
+            row("platform/api/tests/a.test.ts"),
+            row("platform/mcp-server/tests/b.test.ts"),
+            row("platform/tests/guard.bats"),
+            row("platform/services/werk-test/tests/c.rs"),
+        ];
+        assert_eq!(nightly_ts_packages(&rows), vec!["platform/api", "platform/mcp-server"]);
+        let clearing = vec![row("directing/clearing/tests/ui.test.ts")];
+        assert_eq!(nightly_ts_packages(&clearing), vec!["directing/clearing"]);
+        assert_eq!(nightly_bats_suites(&rows), vec!["platform/tests/guard.bats"]);
+    }
+
+    #[test]
+    fn every_lane_speaks_one_fold_vocabulary() {
+        // NEGATIVE PROOF (#3734): red and green are distinguishable by the
+        // |fail| token in EVERY lane — no per-tier verdict dialects.
+        for kind in ["cargo", "npm", "bats"] {
+            let red = nightly_lane_line(kind, "u", false, 1, 2, 0);
+            let green = nightly_lane_line(kind, "u", true, 3, 0, 0);
+            assert!(red.contains(&format!("nightly-unit|{}|u|fail|", kind)), "{red}");
+            assert!(!green.contains("|fail|"), "{green}");
+        }
+    }
+
+    #[test]
+    fn bats_tap_becomes_per_case_results() {
+        let tap = "1..3\nok 1 guard fires on violation\nnot ok 2 guard passes clean repo\nok 3 fixture assembled\nrandom noise\n";
+        let cases = parse_bats_cases(tap);
+        assert_eq!(cases.len(), 3);
+        assert_eq!(cases[1], ("guard passes clean repo".to_string(), "fail".to_string()));
+        assert_eq!(cases[0].1, "pass");
+    }
+}
+
+#[cfg(test)]
+mod shell_fold_3974 {
+    use super::*;
+    #[test]
+    fn shell_suites_are_units_and_summaries_parse() {
+        assert_eq!(unit_of_path("platform/scripts/test-alert-checks.sh"),
+            Some(TestUnit::BatsSuite("platform/scripts/test-alert-checks.sh".to_string())));
+        assert_eq!(unit_of_path("platform/scripts/not-a-test.sh"), None);
+        assert_eq!(parse_shell_counts("noise\n=== Results: 21 passed, 0 failed ===\n"), Some((21, 0)));
+        assert_eq!(parse_shell_counts("=== Results: 5 passed, 2 failed ==="), Some((5, 2)));
+        // NEGATIVE PROOF (#3734): no summary = None, never invented counts.
+        assert_eq!(parse_shell_counts("script exploded"), None);
+    }
+}
+
+/// #3922 — the security lane's selection: rows declared testConcern=security,
+/// mapped to their units. Runs on its OWN cadence (not the land path); an
+/// empty selection is an explicit absence line, never a vacuous green.
+pub fn security_rows(rows: &[TestRow]) -> Vec<TestRow> {
+    rows.iter().filter(|r| r.test_concern == "security").cloned().collect()
+}
+
+/// #3922 — the UNITS whose registered tests are security-declared. A unit in
+/// this set folds under the `security` lane label so the nightly report and
+/// the owner routing see one security lane, not reds scattered across tiers.
+pub fn security_units(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
+    security_rows(rows)
+        .iter()
+        .filter_map(|r| unit_of_path(&r.file_path))
+        .map(|u| match u {
+            TestUnit::RustCrate(c) => c,
+            TestUnit::TsPackage(p) => p,
+            TestUnit::BatsSuite(s) => s,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod security_lane_3922 {
+    use super::*;
+    fn row(path: &str, concern: &str) -> TestRow {
+        TestRow { file_path: path.to_string(), covers: String::new(),
+            pyramid_layer: String::new(), hermeticity: String::new(),
+            test_concern: concern.to_string() }
+    }
+    #[test]
+    fn selects_only_declared_security_rows() {
+        let rows = vec![
+            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/api/tests/a.test.ts", "ui"),
+            row("platform/tests/x.bats", ""),
+        ];
+        let sel = security_rows(&rows);
+        assert_eq!(sel.len(), 1);
+        assert!(sel[0].file_path.contains("security-manifest"));
+        // NEGATIVE PROOF (#3734): an undeclared corpus selects NOTHING —
+        // the lane can tell "no security tests declared" from "all green".
+        assert!(security_rows(&[row("a.rs", ""), row("b.rs", "perf")]).is_empty());
+    }
+
+    #[test]
+    fn security_units_relabel_whole_suites() {
+        let rows = vec![
+            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/tests/authz-3977.bats", "security"),
+            row("platform/tests/other.bats", ""),
+        ];
+        let u = security_units(&rows);
+        assert!(u.contains("platform/scripts/test-security-manifest-3726.sh"));
+        assert!(u.contains("platform/tests/authz-3977.bats"));
+        assert!(!u.contains("platform/tests/other.bats"));
     }
 }

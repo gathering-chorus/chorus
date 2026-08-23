@@ -62,6 +62,17 @@ chorus:principal-chorus-sdk a chorus:Principal ;
     chorus:principalKind "service" ;
     chorus:canSignIn "false" .
 
+# #3975 — the 03:00 nightly runner. werk-test --nightly posts per-case
+# TestResults; without a machine principal the posts typed-skip every night
+# (witnessed 2026-08-22). Service kind, no holdsRole — the nightly is not a
+# role, it is the clock. Scope grant (tests graph ONLY) lives in
+# security-scopes-3689.ttl; the credential VALUE is never modeled.
+chorus:principal-nightly a chorus:Principal ;
+    rdfs:label "nightly (03:00 runner service principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/nightly/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:canSignIn "false" .
+
 # #3653 — Jeff joins his own security model. The human is a Principal like every
 # other actor (ADR-052: one identity mechanism for human, agent, service). Root
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is

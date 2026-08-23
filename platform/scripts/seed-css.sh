@@ -34,7 +34,7 @@ ISSUER_URL="$CSS"
 EMAIL="${CSS_EMAIL:-jeff@jeffbridwell.com}"
 ENV_FILE="${GATHERING_APP_ENV:-$HOME/CascadeProjects/jeff-bridwell-personal-site/.env}"
 IDENTITY_HOME="$HOME/.chorus/identity"
-AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk}"
+AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk nightly}"  # nightly: #3975 machine principal for the 03:00 runner
 CK="$(mktemp -t css-seed-XXXXXX)"
 trap 'rm -f "$CK"' EXIT
 

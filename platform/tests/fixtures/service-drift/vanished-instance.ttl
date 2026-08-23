@@ -10,5 +10,5 @@
     rdfs:label "com.example.gone (library)" ;
     chorus:launchdLabel "com.example.gone" ;
     chorus:runState "absent" ;
-    chorus:deploys <urn:test:service-example> ;
+    chorus:runsService <urn:test:service-example> ;
     chorus:lastObserved "2099-01-01T00:00:00Z"^^xsd:dateTime .

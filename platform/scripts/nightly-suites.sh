@@ -199,14 +199,14 @@ _stack_up() {
 # per-package (below) so api's HERMETIC project always runs while its INTEGRATION
 # project is stack-gated. A whole-suite skip here would wrongly hide the hermetic
 # half; the per-project gate is the right granularity for a mixed suite.
+# #3974 — RETIRED. The #3557 filename allowlist could not scale (every new
+# live-stack suite needed a hand edit here); hermeticity is DECLARED per test
+# in the registry and the runner derives typed skips from it (#3919). This
+# stub fails loudly so any resurrected caller is a red, never a silent
+# wrong-answer gate (a guard whose target is deleted must fail loudly).
 _needs_stack() {
-  case "$1" in
-    */test-api-health.sh|*/test-agent-state.sh)            return 0 ;;
-    *deep-health*.bats)                                    return 0 ;;
-    */alert-delivery.bats|*/alert-suppress.bats)           return 0 ;;
-    *chorus-deploy*.bats|*deploy-daemon*.bats|*deploy-live*.bats|*deploy-verify*.bats|*deploy-running*.bats|*deploy-rollback*.bats) return 0 ;;
-    *) return 1 ;;
-  esac
+  echo "_needs_stack is RETIRED (#3974): hermeticity is registry-declared; the runner owns skips" >&2
+  return 2
 }
 
 # #3559 — env prefix for an npm package's jest run. platform/api was split into
@@ -217,10 +217,8 @@ _needs_stack() {
 # Every other npm package → empty (hermetic-only). Pure + stack-probe-driven, so
 # test-nightly-stack-gate.sh can force _STACK_PROBE and assert this hermetically.
 _npm_jest_env() {
-  case "$1" in
-    */platform/api) _stack_up && { echo "RUN_INTEGRATION=true"; return; } ;;
-  esac
-  echo ""
+  echo "_npm_jest_env is RETIRED (#3974): werk-test --nightly sets RUN_INTEGRATION from the live stack probe" >&2
+  return 2
 }
 
 # #3606 — does this package actually test with jest? Discovery (has_jest_setup)
@@ -229,15 +227,8 @@ _npm_jest_env() {
 # genuinely configured: scripts.test mentions jest, a `jest` key exists, or a
 # jest.config.* file is present.
 _npm_package_uses_jest() {
-  local d="$1" pj="$1/package.json"
-  [ -f "$pj" ] || return 1
-  jq -er '.scripts.test // ""' "$pj" 2>/dev/null | grep -q "jest" && return 0
-  jq -e '.jest' "$pj" >/dev/null 2>&1 && return 0
-  local f
-  for f in jest.config.js jest.config.ts jest.config.cjs jest.config.mjs; do
-    [ -f "$d/$f" ] && return 0
-  done
-  return 1
+  echo "_npm_package_uses_jest is RETIRED (#3974): the runner picks jest vs the package runner itself" >&2
+  return 2
 }
 
 # Run a single suite — ONE attempt, deterministic result.
@@ -248,19 +239,17 @@ _npm_package_uses_jest() {
 # attempt: a suite passes or fails, and we believe the result.
 run_one() {
   local kind="$1" path="$2" owner="$3"
-  # #3920 fold — cargo has NO walker here: a one-crate repro runs through the
-  # same runner as the full lane (`werk-test --nightly --crate=<name>`), and
-  # werk-test carries its own typed stack gate (#3919), not #3557's.
-  if [ "$kind" = "cargo" ]; then
-    run_cargo_lane "$(basename "$path")"
-    return
-  fi
-  # #3557 stack-gate: a live-stack suite with no stack is a SKIP, not a fail.
-  if _needs_stack "$path" && ! _stack_up; then
-    echo "SUITE|$kind|$path|$owner|skip|skipped — no live stack (#3557)"
-    return
-  fi
-  run_one_attempt "$kind" "$path" "$owner"
+  # #3920/#3974 — NO tier has a walker here any more: every one-suite repro
+  # routes through the same runner as the full lane, keyed by the unit the
+  # registry knows (cargo = crate name; npm/bats/shell = repo-relative path).
+  # The runner carries the typed #3919 stack gate — #3557's filename allowlist
+  # is RETIRED (see the retirement guard in test-nightly-via-runner.sh).
+  local unit
+  case "$kind" in
+    cargo) unit="$(basename "$path")" ;;
+    *)     unit="${path#"$CHORUS_ROOT"/}" ;;
+  esac
+  run_cargo_lane "$unit"
 }
 
 # #3920 fold — the cargo lane, through the ONE runner. `werk-test --nightly`
@@ -273,36 +262,45 @@ run_one() {
 # lines is a LOUD red row — the lane never silently vanishes (#3597: either
 # pass or fail, either way we know).
 run_cargo_lane() {
+  # #3974 — now the WHOLE runner lane: one `werk-test --nightly` invocation
+  # covers cargo + npm/node + bats + shell + cucumber (registry selection,
+  # typed skips, per-case posts). Each `nightly-unit|<kind>|<unit>|verdict|
+  # summary` line folds to one SUITE row; ONE owner rule (owner_for) replaces
+  # the three disagreeing maps. Name kept from #3920 for its call sites.
   local only="${1:-}"
   # ~/.chorus/bin is the deploy home (#2734); the LaunchAgent PATH may predate
   # it, so resolve the installed binary explicitly before giving up.
   local wt; wt=$(command -v werk-test || true)
   [ -z "$wt" ] && [ -x "$HOME/.chorus/bin/werk-test" ] && wt="$HOME/.chorus/bin/werk-test"
   if [ -z "$wt" ]; then
-    echo "SUITE|cargo|werk-test-nightly|silas|fail|0 pass, 1 fail (werk-test not on PATH — cargo lane DID NOT RUN via the one runner, #3920)"
+    echo "SUITE|runner|werk-test-nightly|silas|fail|0 pass, 1 fail (werk-test not on PATH — runner lanes DID NOT RUN, #3920/#3974)"
     return
   fi
   # #3484 — the nightly's own build lock: never contend with a role build.
   local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
   local _cap rc; _cap=$(mktemp)
-  NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_CARGO_LANE_TIMEOUT:-5400}" _run_capped "$_cap" \
+  NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}" _run_capped "$_cap" \
     env CARGO_TARGET_DIR="$nt" CHORUS_ROOT="$CHORUS_ROOT" \
     "$wt" --nightly ${only:+--crate="$only"}; rc=$?
   local out; out=$(cat "$_cap"); rm -f "$_cap"
-  local units; units=$(printf '%s\n' "$out" | grep '^nightly-unit|cargo|' || true)
+  local units; units=$(printf '%s\n' "$out" | grep '^nightly-unit|' || true)
   if [ -z "$units" ]; then
     # No unit lines at all: refused (registry down), crashed, or timed out.
     local reason; reason=$(printf '%s\n' "$out" | grep -v '^\s*$' | tail -1 | cut -c1-160)
-    echo "SUITE|cargo|werk-test-nightly|silas|fail|0 pass, 1 fail (runner produced no unit results rc=$rc — ${reason:-no output})"
+    echo "SUITE|runner|werk-test-nightly|silas|fail|0 pass, 1 fail (runner produced no unit results rc=$rc — ${reason:-no output})"
     return
   fi
-  local crate verdict summary
-  while IFS='|' read -r _ _ crate verdict summary; do
-    [ -z "$crate" ] && continue
-    echo "SUITE|cargo|platform/services/$crate|silas|$verdict|$summary"
+  local kind unit verdict summary path
+  while IFS='|' read -r _ kind unit verdict summary; do
+    [ -z "$unit" ] && continue
+    case "$kind" in
+      cargo) path="platform/services/$unit" ;;
+      *)     path="$unit" ;;
+    esac
+    echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
-    local _flog; _flog=$(_fail_log_path cargo "platform/services/$crate")
+    local _flog; _flog=$(_fail_log_path "$kind" "$path")
     if [ "$verdict" = "fail" ]; then
       mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
       printf '%s\n' "$out" > "$_flog" 2>/dev/null || true
@@ -312,6 +310,18 @@ run_cargo_lane() {
   done <<EOF
 $units
 EOF
+}
+
+# #3974 — ONE owner-routing rule. The previous state was three disagreeing
+# maps (owner_for_npm, _cov_owner, per-tier hardcodes) plus a call to an
+# owner_for_cargo that never existed. Path in, owner out, everywhere.
+owner_for() {
+  case "$1" in
+    "$APP_ROOT"|"$APP_ROOT"/*)              echo "kade" ;;
+    directing/*|"$CHORUS_ROOT"/directing/*) echo "kade" ;;
+    platform/*|roles/*|"$CHORUS_ROOT"/platform/*|"$CHORUS_ROOT"/roles/*) echo "silas" ;;
+    *)                                      echo "kade" ;;
+  esac
 }
 
 # Extract a parseable pass/fail summary from a shell test script's full stdout.
@@ -398,126 +408,12 @@ _run_capped() {
 }
 
 # Single attempt — the original run_one body.
-run_one_attempt() {
-  local kind="$1" path="$2" owner="$3"
-  local status="pass" summary=""
-  case "$kind" in
-    npm)
-      # #2806 attempted --runInBand for determinism; reverted because
-      # serial mode triggers a hang in platform/api's open-handle tier
-      # (some test holds a server/socket and serialization changes
-      # close-order such that jest never exits — observed 50+ min hang
-      # on a single package run, vs ~30s parallel). Parallel default
-      # has a rare flake on server-unit's POST /api/chorus/embed
-      # (passes alone). Trade-off: rare flake > deterministic hang.
-      # The hang class needs root-cause investigation in platform/api's
-      # test setup before --runInBand is safe to enable.
-      # #3559 — platform/api jest is split into hermetic + integration projects.
-      # _npm_jest_env decides the env prefix: api's integration project is only
-      # CONSTRUCTED when RUN_INTEGRATION=true, gated on the live stack. Stack down
-      # → never built → api hermetic-only, can't false-red. (See _npm_jest_env.)
-      local out rc jest_env _cap; _cap=$(mktemp)
-      if _npm_package_uses_jest "$path"; then
-        jest_env=$(_npm_jest_env "$path")
-        # #3606 — --no-install: a package missing its local jest must FAIL LOUD
-        # ("jest not found"), never trigger an npx download into the shared cache
-        # at 3am (the 07-06 pulse red: canonical node_modules lacked jest → npx
-        # downloaded → corrupted-cache ENOTEMPTY → blank-summary fail).
-        SUITE_DIR="$path" JEST_ENV="$jest_env" _run_capped "$_cap" \
-          bash -c 'cd "$SUITE_DIR" && env $JEST_ENV npx --no-install jest --passWithNoTests --silent'; rc=$?
-        out=$(cat "$_cap")
-        # #3598 — keep the FULL jest output (was `tail -3`, which destroyed every
-        # failure detail at the source so the saved fail-log held nothing usable).
-        summary=$(echo "$out" | grep -E "Tests:" | head -1 | tr -d '\n')
-      else
-        # #3606 — a package whose scripts.test is NOT jest (mcp-server: tsx
-        # --test, node's runner) runs its OWN runner. Hardcoded `npx jest`
-        # here downloaded jest into the shared npx cache at 3am, died on
-        # cache corruption (ENOTEMPTY), and reported a blank-summary fail
-        # for weeks while the package's real suite passed.
-        SUITE_DIR="$path" _run_capped "$_cap" \
-          bash -c 'cd "$SUITE_DIR" && npm test --silent'; rc=$?
-        out=$(cat "$_cap")
-        # node test runner summary: "# pass N" / "# fail N"; fall back to
-        # the last non-empty line so the summary is never blank again.
-        local np nf
-        np=$(echo "$out" | grep -E '^# pass ' | tail -1 | awk '{print $3}')
-        nf=$(echo "$out" | grep -E '^# fail ' | tail -1 | awk '{print $3}')
-        if [ -n "$np" ] || [ -n "$nf" ]; then
-          summary="pass ${np:-0}, fail ${nf:-0}"
-        else
-          summary=$(echo "$out" | grep -v '^\s*$' | tail -1 | tr -d '\n' | cut -c1-160)
-        fi
-      fi
-      rm -f "$_cap"
-      [ "$rc" -ne 0 ] && status="fail"
-      ;;
-    # #3920 fold — the cargo case is RETIRED from this walker: the cargo lane
-    # runs through `werk-test --nightly` (see run_cargo_lane). run_one routes
-    # kind=cargo there before this function is ever reached.
-    shell)
-      local out rc _cap; _cap=$(mktemp)
-      _run_capped "$_cap" bash "$path"; rc=$?
-      out=$(cat "$_cap"); rm -f "$_cap"
-      summary=$(_extract_shell_summary "$out" "$rc")
-      [ "$rc" -ne 0 ] && status="fail"
-      ;;
-    bats)
-      # bats reports `ok N <desc>` per test, `not ok N <desc>` per fail,
-      # and a 1..N plan line. Last line of TAP output is the final test
-      # result. Summary extracts pass/fail counts via grep.
-      local out rc passed failed _cap; _cap=$(mktemp)
-      _run_capped "$_cap" bats "$path"; rc=$?
-      out=$(cat "$_cap"); rm -f "$_cap"
-      passed=$(echo "$out" | grep -cE '^ok ' || true)
-      failed=$(echo "$out" | grep -cE '^not ok ' || true)
-      summary="bats: $passed passed, $failed failed"
-      [ "$rc" -ne 0 ] && status="fail"
-      ;;
-    cucumber)
-      # cucumber-js's `npm test` exits non-zero on any failed scenario.
-      # Summary line is typically `N scenarios (M passed, K failed)` near
-      # the end of stdout.
-      local out rc _cap; _cap=$(mktemp)
-      SUITE_DIR="$path" _run_capped "$_cap" \
-        bash -c 'cd "$SUITE_DIR" && npm test --silent'; rc=$?
-      out=$(cat "$_cap"); rm -f "$_cap"
-      summary=$(echo "$out" | grep -E "scenarios? \(" | tail -1 | tr -d '\n')
-      [ -z "$summary" ] && summary=$(echo "$out" | tail -1)
-      [ "$rc" -ne 0 ] && status="fail"
-      ;;
-  esac
-  # #3662 — a timed-out suite is a fail whose summary names the kill, so the
-  # morning read is "X TIMED OUT", never a silent wedge or an unexplained red.
-  if [ "${rc:-0}" -eq 124 ]; then
-    status="fail"
-    summary="${summary:+$summary }(TIMEOUT — killed after ${NIGHTLY_SUITE_TIMEOUT}s, #3662)"
-  fi
-  # #3484 — persist the failure output so the red can explain itself; clear it
-  # on green so a passing rerun doesn't leave a stale reason. `out` is unset for
-  # the lint path (separate fn), so guard on it.
-  local _flog; _flog=$(_fail_log_path "$kind" "$path")
-  if [ "$status" = "fail" ]; then
-    mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
-    # #3598 — log ALL errors, not a tail. The old `tail -25` kept only the LAST
-    # ~1 failure of a multi-failure suite (cucumber emits 756 lines / 29 failures);
-    # you could never diagnose the suite from its saved log, forcing a re-run.
-    # Keep the full output so the log IS the source of truth.
-    printf '%s\n' "${out:-}" > "$_flog" 2>/dev/null || true
-  else
-    rm -f "$_flog" 2>/dev/null || true
-  fi
-  echo "SUITE|$kind|$path|$owner|$status|$summary"
-}
+# #3974 — run_one_attempt RETIRED: every tier executes via `werk-test
+# --nightly` (see run_cargo_lane). The per-tier walkers, their verdict
+# synthesis, and the #3557 filename stack-gate live in the runner now.
 
-owner_for_npm() {
-  case "$1" in
-    $APP_ROOT|$APP_ROOT/*)                              echo "kade" ;;
-    $CHORUS_ROOT/directing/*)                           echo "kade" ;;
-    $CHORUS_ROOT/platform/*|$CHORUS_ROOT/roles/*)       echo "silas" ;;
-    *)                                                  echo "kade" ;;
-  esac
-}
+# #3974 — retired map: delegates to the ONE owner rule (owner_for).
+owner_for_npm() { owner_for "$1"; }
 
 run_lint_ratchet() {
   # #2465: full-codebase ESLint ratchet. Runs every nightly so drift surfaces
@@ -552,7 +448,7 @@ run_lint_ratchet() {
 # (NIGHTLY_COVERAGE_DRY_RUN=1 + NIGHTLY_COVERAGE_FIXTURES=<dir>) reads pre-baked summary json
 # so the fold is unit-testable without real coverage. Unmeasured (no summary) = SKIP — not a
 # silent pass, not a false red.
-_cov_owner() { case "$1" in directing/*) echo kade ;; platform/*|roles/*) echo silas ;; *) echo kade ;; esac; }
+_cov_owner() { owner_for "$1"; }  # #3974 — delegates to the ONE owner rule
 run_coverage() {
   local floors="${NIGHTLY_COVERAGE_FLOORS:-$CHORUS_ROOT/coverage-floors.yml}"
   [ -f "$floors" ] || return 0
@@ -666,12 +562,31 @@ _cov_denominator() {
   local configured present unconfigured=""
   configured=$(grep -c '^  platform/services/' "$floors" 2>/dev/null | tr -d ' ')
   present=0
-  for d in "$CHORUS_ROOT"/platform/services/*/; do
-    [ -f "$d/Cargo.toml" ] || continue
+  # #3974 — the denominator reads the REGISTRY (the same selection the runner
+  # uses), so it can never disagree with the cargo lane about which crates
+  # exist. Registry unreachable → LOUD glob fallback, named in the row.
+  local _crates _src="registry"
+  _crates=$(curl -sf -m 10 "${OWLAPI:-http://localhost:3360}/tests?limit=10000" 2>/dev/null     | python3 -c "import json,sys
+rows=json.load(sys.stdin)['data']
+seen=[]
+for r in rows:
+    fp=r.get('filePath','')
+    if fp.startswith('platform/services/'):
+        c=fp.split('/')[2]
+        if c not in seen: seen.append(c)
+print('\n'.join(sorted(seen)))" 2>/dev/null)
+  if [ -z "$_crates" ]; then
+    _src="glob-fallback (registry unreachable — LOUD, #3974)"
+    _crates=$(for d in "$CHORUS_ROOT"/platform/services/*/; do
+      [ -f "$d/Cargo.toml" ] && basename "$d"; done)
+  fi
+  while IFS= read -r c; do
+    [ -z "$c" ] && continue
     present=$((present + 1))
-    local rel="platform/services/$(basename "$d")"
-    grep -q "^  ${rel}:" "$floors" 2>/dev/null || unconfigured="$unconfigured $(basename "$d")"
-  done
+    local rel="platform/services/$c"
+    grep -q "^  ${rel}:" "$floors" 2>/dev/null || unconfigured="$unconfigured $c"
+  done <<< "$_crates"
+  [ "$_src" != "registry" ] && echo "coverage-denominator: source=$_src" >&2
   [ "$present" -gt 0 ] || return 0
   local n_un; n_un=$(printf '%s' "$unconfigured" | wc -w | tr -d ' ')
 
@@ -746,34 +661,13 @@ run_all() {
   run_smoke
   run_app_eslint
 
-  while IFS= read -r d; do
-    [ -z "$d" ] && continue
-    run_one npm "$d" "$(owner_for_npm "$d")"
-  done < <(list_npm)
-
-  # #3920 fold — ONE runner for the cargo lane: selection from the registry,
-  # nextest (#3929), typed needs-stack skips (#3919), per-case TestResult posts
-  # (#3592), via `werk-test --nightly`. list_cargo no longer drives execution.
+  # #3920/#3974 — ONE runner for every registered lane: cargo (nextest), npm
+  # (jest or the package's own node:test/cucumber runner), bats, and shell —
+  # selection from the registry, typed needs-stack skips (#3919), per-case
+  # TestResult posts (#3592), via a single `werk-test --nightly`. The
+  # list_npm/list_bats/list_shell/list_cucumber globs no longer drive
+  # execution (kept for --list-* introspection only).
   run_cargo_lane
-
-  while IFS= read -r s; do
-    [ -z "$s" ] && continue
-    run_one shell "$s" "silas"
-  done < <(list_shell)
-
-  # #2806: bats + cucumber tiers were silently dormant pre-#2806. ~95 of
-  # 97 bats files and all 23 cucumber features sat dark while only
-  # whichever bats happened to be invoked from a test-*.sh wrapper got
-  # exercised. These two loops light them up.
-  while IFS= read -r b; do
-    [ -z "$b" ] && continue
-    run_one bats "$b" "silas"
-  done < <(list_bats)
-
-  while IFS= read -r d; do
-    [ -z "$d" ] && continue
-    run_one cucumber "$d" "silas"
-  done < <(list_cucumber)
 }
 
 # #3254 — close the loop: the instant the nightly finishes, ALERT each owning role of THEIR
@@ -797,6 +691,17 @@ notify_results() {
   if [ -z "$owners" ]; then
     "$ops_nudge" kade "nightly: all hermetic suites green ✅$skipmsg" system >/dev/null 2>&1 || true
     return 0
+  fi
+
+  # #3922 — the security lane routes to the SECURITY owner as its own signal,
+  # never buried in the per-owner wall. Owner is env-overridable; the model
+  # (security domain ownedBy) is the authority when they disagree.
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-silas}"
+  local sec_reds sec_n
+  sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
+  sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)
+  if [ "${sec_n:-0}" -gt 0 ]; then
+    "$ops_nudge" "$sec_owner" "SECURITY lane: $sec_n red — $sec_reds (#3922 — own cadence, own signal)" system >/dev/null 2>&1 || true
   fi
 
   local owner reds n
@@ -1048,11 +953,8 @@ PYEOF
     if [ -z "$_kind" ] || [ -z "$_path" ]; then
       echo "Usage: $0 --run-one {npm|cargo|shell|bats|cucumber} <path>" >&2; exit 2
     fi
-    case "$_kind" in
-      npm)   _owner=$(owner_for_npm "$_path") ;;
-      cargo) _owner=$(owner_for_cargo "$_path" 2>/dev/null || echo silas) ;;
-      *)     _owner="silas" ;;
-    esac
+    # #3974 — one owner rule; the dead owner_for_cargo call is gone.
+    _owner=$(owner_for "$_path")
     _line=$(run_one "$_kind" "$_path" "$_owner")
     printf '%s\n' "$_line"
     echo "$_line" | grep -q '|fail|' && exit 1 || exit 0

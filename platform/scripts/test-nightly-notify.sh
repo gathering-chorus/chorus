@@ -11,7 +11,9 @@
 
 set -u
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-SCRIPT="${CHORUS_ROOT}/platform/scripts/nightly-suites.sh"
+# #3922 — source the SIBLING copy, never $CHORUS_ROOT: a werk run must test
+# the werk's code, not canonical's (this line silently validated old code).
+SCRIPT="$(cd "$(dirname "$0")" && pwd)/nightly-suites.sh"
 PASS=0; FAIL=0
 p() { PASS=$((PASS+1)); echo "✅ $*"; }
 f() { FAIL=$((FAIL+1)); echo "❌ $*"; }
@@ -63,6 +65,19 @@ SUITE|npm|/x/b|kade|pass|ok'
 notify_results "$GREEN"
 [ "$(wc -l < "$CAP" | tr -d ' ')" = "1" ] && p "all-green → exactly one confirmation nudge" || f "all-green nudges: $(cat "$CAP")"
 grep -qi 'green' "$CAP" && p "all-green nudge says green" || f "all-green nudge content: $(cat "$CAP")"
+
+# --- #3922: a red SECURITY-lane suite routes to the security owner as its own signal ---
+: > "$CAP"
+SEC='SUITE|security|platform/scripts/authn-coverage.sh|silas|fail|0 pass, 1 fail (coverage DROPPED)
+SUITE|npm|/x/b|kade|pass|ok'
+notify_results "$SEC"
+grep '^silas|' "$CAP" | grep -q 'SECURITY lane: 1 red' && p "security red routes to the security owner, named lane" || f "no security-lane nudge: $(cat "$CAP")"
+grep '^silas|SECURITY' "$CAP" | grep -q 'authn-coverage.sh' && p "security nudge names the failing probe" || f "security nudge missing suite: $(cat "$CAP")"
+# NEGATIVE PROOF (#3734): a PASSING security suite fires NO security-lane nudge.
+: > "$CAP"
+SECOK='SUITE|security|platform/scripts/authn-coverage.sh|silas|pass|1 pass, 0 fail'
+notify_results "$SECOK"
+grep -q 'SECURITY lane' "$CAP" && f "security-lane nudge fired on green: $(cat "$CAP")" || p "green security lane stays quiet"
 
 rm -rf "$STUB"
 echo "=== Results: $PASS passed, $FAIL failed ==="

@@ -14,7 +14,11 @@
 set -euo pipefail
 
 MODE="${1:-staged}"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# GATE_ROOT: test seam (#3677) — the negative suite points the gate at a
+# fixture REPO while the CLI still runs from the TOOL home (this repo).
+# Production callers leave it unset: repo under test == tool home.
+TOOL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="${GATE_ROOT:-$TOOL}"
 cd "$ROOT"
 
 # NOTE: no `mapfile` — it's bash 4+, absent on macOS's default bash 3.2 (where
@@ -54,7 +58,7 @@ fi
 # infra gap, not a violation — SKIP rather than block work; CI/nightly gates the
 # class harder. This makes the team-wide hook safe even where deps aren't bootstrapped.
 set +e
-(cd "$ROOT/platform/api" && npx tsx src/gate-test-type-cli.ts "${CHANGED[@]/#/$ROOT/}")
+(cd "$TOOL/platform/api" && npx tsx src/gate-test-type-cli.ts "${CHANGED[@]/#/$ROOT/}")
 code=$?
 set -e
 if [ "$code" -eq 1 ]; then exit 1; fi

@@ -1,31 +1,32 @@
-# Morning Summary — 2026-08-21
+# Morning Summary — 2026-08-22
 
-**HEADLINE:** Quality signal is blind for the 73rd day — `npm ci` has never been run in this repo and is now the single biggest risk on the board.
+**HEADLINE:** Quality is still blind at day 74 and `npm ci` is 74 days overdue — escalation is overdue.
 
 ---
 
-**OPS:** RED
-- RED: 5 domain-context files all 14 days stale (threshold: 7 days). Chorus and infrastructure are highest priority given recent Silas lands (#3947, #3940, #3938).
-- RED: 2 WIP cards stale 134 days — "Framework service design — OWL entity model" and "Restore chorus product boundary" — dead weight, need close or requeue today.
-- YELLOW: 7 cargo warnings in chorus-hooks, stable but not shrinking. Cleanup card open.
-- YELLOW: 17+ LaunchAgent plist files still log to `/tmp` — no migration to `~/.chorus/logs/`.
+**OPS:** YELLOW (improved from RED)
+- YELLOW: 7 cargo warnings in chorus-hooks, stable. Cleanup card open.
+- YELLOW: LaunchAgent plists still log to `/tmp/` — no migration to `~/.chorus/logs/`.
+- YELLOW: Domain context freshened to 4 days (was 14) — Silas refreshed chorus/infrastructure. Monitor; refresh threshold is 7 days.
+- RED: 2 WIP cards stale **135 days** — "Framework service design — OWL entity model" and "Restore chorus product boundary." One more day, no action.
 
 **QUALITY:** RED
-- All 4 TS test suites blocked: `ts-jest preset not found` — **day 71**.
-- Lint blocked: `@eslint/js` not found — **day 73**. Root cause: `npm ci` never run at repo root.
-- Build: 235 type errors, up from 233 yesterday. Trend is +2/day for two consecutive days; +18 over the past week. Accelerating.
-- 0 tests have run in 71 days. Coverage data is stale from June.
+- All 4 TS test suites blocked: `ts-jest preset not found` — **day 72**.
+- Lint blocked: `@eslint/js` not found — **day 74**. Root cause: `npm ci` never run at repo root.
+- Build: 235 type errors — **first plateau** in 7 days (trend was +18 over prior week). Worth watching.
+- 0 tests have run in 72 days. Coverage data is stale from June.
 
-**YESTERDAY:** High-velocity day — 18+ cards shipped across all three roles.
-- Kade: #3943 (werk-demo witness fix — go reads witness, not launcher pin), #3925 (TestResultShape gains runTs+cardId; werk-domains 0.3.0), #3921, #3939, #3931, #3930, #1778 (×2), #3924, #3929
-- Silas: #3947, #3948, #3945, #2645, #3940, #3387, #3938
-- Wren: #3944, #3941
+**YESTERDAY:** Active day across all three roles — 15+ cards shipped.
+- Silas: #3967, #3969, #3966, #3965, #3963, #3960, #3958, #3729, #3949
+- Kade: #3972, #3970, #3601, #3964, #3920, #3956
+- Wren: #3959, #3561 (×2)
 
 **TODAY:**
-1. Kade or Silas: `npm ci` at repo root — unblock 4 test suites and lint. 73 days is too long.
-2. Silas: refresh `chorus` and `infrastructure` domain-context files first; then remaining 3.
-3. Wren: close or requeue the two 134-day WIP cards — get them off the board.
+1. **Anyone:** `npm ci` at repo root — this is now 74 days and an explicit escalation. Unblocks 4 suites and lint in one command.
+2. **Wren:** Close or requeue the two 135-day WIP cards — they are off the radar.
+3. **Silas:** Watch domain context — 3 remaining files will hit 7-day threshold by 2026-08-24.
+4. **All:** Monitor type error count — first plateau today; if it resumes climbing, investigate recent Kade/Silas lands.
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` root: Is there a reason this has never been run? If it's a deliberate choice (remote-only CI), that needs to be documented so quality review can stop flagging it.
-- 134-day WIP cards: close them or assign them to a role and set a date.
+- `npm ci`: 74 days. Is skipping it a deliberate policy (remote-only CI)? If so, document it so quality review stops flagging it. If not, this needs to run today.
+- 135-day WIP cards: close them or assign them to a role with a due date — they cannot stay on the board.

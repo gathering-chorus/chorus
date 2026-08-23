@@ -160,7 +160,10 @@ def discover(roots=TEST_ROOTS):
             p = os.path.join(d, f)
             if excl.search(p): continue
             # .spec.cjs/.mjs were missing — playwright flows are .spec.cjs (#3872)
-            if re.search(r'\.bats$|\.(test|spec)\.[cm]?[tj]s$|\.test\.sh$|(_test|test_).*\.py$', f): out.append(p)
+            # #3974: platform/scripts/test-*.sh shell suites + .feature files
+            # join the registry so the nightly's full selection covers them.
+            if re.search(r'\.bats$|\.(test|spec)\.[cm]?[tj]s$|\.test\.sh$|(_test|test_).*\.py$|\.feature$', f): out.append(p)
+            elif f.startswith('test-') and f.endswith('.sh') and d.rstrip('/').endswith('platform/scripts'): out.append(p)
             elif f.endswith('.rs') and re.search(r'#\[(?:tokio::)?test\]', open(p, errors='ignore').read()): out.append(p)
     return out
 

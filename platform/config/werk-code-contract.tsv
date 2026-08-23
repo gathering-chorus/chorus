@@ -1,0 +1,39 @@
+# werk-code contract — the enforcement inventory (#3677, design: werk-code-service-design.html)
+# mechanism<TAB>moment<TAB>fixture<TAB>note
+# moment ∈ edit|commit|pipeline-test|merge|deploy-accept|nightly (one per mechanism — the placement rule)
+# fixture = repo-relative negative-proof path, or GAP (an honest, named hole — the checker reports it, never hides it)
+canonical_write_guard	edit	platform/services/chorus-hooks/tests/canonical_write_guard.rs	canonical + cross-role werk writes
+tdd_gate	edit	platform/services/chorus-hooks/tests/tdd_gate_acceptance.rs	code before tests, building state
+test_quality_gate	edit	GAP	#2196 assertion-less tests
+log_first_gate	edit	GAP	defect fix without log read — no negative suite
+icd_write_gate	edit	GAP	post-write validator; blocking claim unproven
+story_write_gate	edit	GAP	blocks via block_with_stderr; fixture missing
+sensitive_paths	edit	platform/services/chorus-hooks/tests/hook_false_positives.rs	shared suite
+infra_guardrails	edit	platform/services/chorus-hooks/tests/hook_false_positives.rs	kill/terraform refusals
+sparql_guard	edit	platform/services/chorus-hooks/tests/hook_false_positives.rs	shared suite
+csc_guard	edit	platform/services/chorus-hooks/tests/hook_false_positives.rs	shared suite
+shim_fail_closed	edit	platform/services/chorus-hooks/tests/shim_fail_closed_pre_tool_use.rs	daemon-down = closed
+clippy_ratchet	commit	GAP	per-lint baseline
+test_type_gate	commit	platform/scripts/test-gate-test-type-negative.sh	#3442
+retirement_gate	commit	platform/scripts/test-retirement-gate-negative.sh	#3598
+gitleaks	commit	GAP	external tool; no planted-secret fixture
+catalog_oversize	commit	platform/tests/check-catalog-oversize.test.sh	#2461 — WIRED into pre-commit by #3677
+direct_edit_checks	commit	platform/tests/check-decision-direct-edit.test.sh	principle+decision — WIRED into pre-commit by #3677
+wipe_guard	commit	platform/scripts/test-ontology-wipe-guard.sh	#3601
+spine_emit_conformance	commit	platform/scripts/test-werk-emit-conformance.sh	#3927
+werk_test_floor	pipeline-test	platform/services/werk-test/tests/units.rs	blocking red floor
+eslint_ratchet	pipeline-test	platform/services/werk-test/tests/lint_ratchet_3787.rs	rule counts
+doc_coherence	pipeline-test	GAP	ratchet exists; negative fixture missing
+membrane	pipeline-test	platform/tests/membrane-guard.bats	#3615
+build_deploy_invariance	pipeline-test	platform/scripts/test-build-invariance.sh
+werk_merge_checks	merge	platform/services/werk-merge/tests/e2e.rs	branch-mismatch, content-verify
+stale_base_guard	merge	platform/tests/2944-stale-base-guard.bats	#2944
+allow_set_gate	deploy-accept	platform/tests/allow-set-gate-scope-3785.bats	#3785
+sdk_propagation_guard	deploy-accept	platform/tests/3628-sdk-propagation-guard.bats	#3628
+athena_model_gate	deploy-accept	GAP	instance-write governance; fixture unnamed
+werk_accept_checks	deploy-accept	platform/services/werk-accept/tests/e2e.rs	DEC-048, dirty-teardown
+hardcoded_bin_paths	nightly	platform/scripts/test-hardcoded-bin-paths.sh	#2734 baseline
+retired_surface_guards	nightly	platform/tests/3373-code-files-retired.bats	absence guards
+required_checks_drift	nightly	GAP	drift detector; no negative fixture
+factory_membrane	nightly	platform/scripts/test-product-membrane.sh	#3722 self-guarded
+adr056_advisory_pins	edit	platform/services/chorus-hooks/tests/adr056_advisory_3677.rs	quality_gate/pair_gate/icd_pre_read honest downgrades pinned (#3677)

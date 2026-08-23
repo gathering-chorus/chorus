@@ -55,3 +55,9 @@ chorus:principal-kade
 # self-declared.
 chorus:principal-chorus-sdk
     chorus:hasScope "urn:chorus:ops"^^xsd:anyURI .
+
+# #3975 — nightly runner: LEAST privilege, the tests graph only. It writes
+# TestResult/TestSuiteRun rows and nothing else; ontology/instances/ops stay
+# out of reach by construction.
+chorus:principal-nightly
+    chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI .

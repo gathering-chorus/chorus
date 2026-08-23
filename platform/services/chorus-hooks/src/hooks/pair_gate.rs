@@ -1,7 +1,10 @@
-//! Pair gate (#1814 AC2)
-//! PreToolUse on Edit/Write to code files: blocks building without an active pair.
-//! Checks for /tmp/pair-*.md as evidence of a pair session.
-//! Jeff's direction: "block building without pair on code cards."
+//! Pair gate (#1814 AC2) — ADVISORY ONLY (#3677 honest downgrade).
+//!
+//! Documented "blocks building without an active pair" while check()
+//! unconditionally allows — one of ADR-056's three hollow modules. Live pair
+//! discipline is enforced by pair_enforcement (wired in main.rs); this module
+//! is its dead predecessor kept for its helpers. adr056_advisory_3677.rs pins
+//! the advisory contract: a future deny here requires a real negative fixture.
 
 use crate::state::AppState;
 use crate::types::{HookInput, HookResponse};
