@@ -37,9 +37,13 @@ else
   # --require keeps the whole invocation ONE pid: kill the cards pid, nothing
   # survives. npx remains only as a fallback for a checkout with no installed
   # ts-node, run in the same process group so a signal reaps the child too.
-  TS_NODE_REG="$CLIENT_DIR/node_modules/ts-node/register"
-  if [ -d "$TS_NODE_REG" ] || [ -f "$TS_NODE_REG.js" ]; then
-    exec node --require "$TS_NODE_REG" "$CLIENT_DIR/src/cli.ts" "$@"
+  # exec the ts-node BIN, not `node --require ts-node/register`: node routes a
+  # .ts ENTRY file through the ESM loader, where a CJS --require hook never
+  # fires -> ERR_UNKNOWN_FILE_EXTENSION (this broke every cards call on land).
+  # The bin shim runs cli.ts in-process, so the invocation is still one pid.
+  TS_NODE_BIN="$CLIENT_DIR/node_modules/.bin/ts-node"
+  if [ -x "$TS_NODE_BIN" ]; then
+    exec "$TS_NODE_BIN" "$CLIENT_DIR/src/cli.ts" "$@"
   else
     npx --prefix "$CLIENT_DIR" ts-node "$CLIENT_DIR/src/cli.ts" "$@" &
     child=$!
