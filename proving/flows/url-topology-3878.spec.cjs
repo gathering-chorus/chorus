@@ -55,7 +55,9 @@ test.describe('#3878 — the public path topology Jeff specified', () => {
 
   for (const { path, what } of PATHS) {
     test(`${path} serves a page or the Access wall — ${what}`, async ({ request }) => {
-      const res = await request.get(`${PUBLIC_BASE}${path}`, { maxRedirects: 5 });
+      // browser-faithful probe: without Accept: text/html, CSS content-negotiation
+      // answers json login-controls and the check misreads the wall (Silas, 2026-08-23)
+      const res = await request.get(`${PUBLIC_BASE}${path}`, { maxRedirects: 5, headers: { Accept: 'text/html' } });
       const body = await res.text();
       if (accessWalled(res, body)) return; // auth-wall present = pass (#2646)
 
@@ -71,7 +73,7 @@ test.describe('#3878 — the public path topology Jeff specified', () => {
   // returns 200 for everything including nonsense — a wildcard catch-all reads
   // as a working topology.
   test('a path that should NOT exist still 404s — the check can tell them apart', async ({ request }) => {
-    const apex = await request.get(`${PUBLIC_BASE}/`, { maxRedirects: 5 });
+    const apex = await request.get(`${PUBLIC_BASE}/`, { maxRedirects: 5, headers: { Accept: 'text/html' } });
     const apexBody = await apex.text();
     // Behind the Access wall every anonymous probe looks identical — the
     // discriminator cannot discriminate. Typed skip, never a vacuous pass.
