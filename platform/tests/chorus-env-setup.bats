@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic: sources chorus-env-setup.sh in isolated subshells
+# (own mktemp WERK_BASE, forced cwd, unset role vars), no live service touched.
 # chorus-env-setup.bats — <ROLE>_WERK resolves to the ephemeral werk (#2923).
 #
 # #2913/#2917 moved werks to the ephemeral chorus-werk/<role>-<card>/ layout
@@ -19,14 +21,19 @@ teardown() {
 }
 
 # Source the script with a controlled role + werk base in a subshell, echo
-# the resolved <ROLE>_WERK so each test gets a clean env. The werk vars are
-# unset first — settings.json statically seeds KADE_WERK/WREN_WERK/SILAS_WERK
-# into the session env, so without unsetting them the test would see the
-# inherited value, not what chorus-env-setup.sh actually does.
+# the resolved <ROLE>_WERK so each test gets a clean env. TWO leak vectors are
+# neutralized: (1) the werk vars are unset first — settings.json statically
+# seeds KADE_WERK/WREN_WERK/SILAS_WERK into the session env; (2) cwd is forced
+# to $WERK_BASE (the mktemp fixture, matching no role pattern) because
+# chorus-env-setup.sh:44 derives CHORUS_ROLE from $PWD (#3959) and would
+# otherwise override the test's exported role when bats runs from a
+# chorus-werk/<role>-* cwd (the werk-pipeline case — clean shells matched
+# nothing, so this stayed green until a werk run exposed it).
 role_werk() {
   local role="$1"
   local var="$(echo "$role" | tr '[:lower:]' '[:upper:]')_WERK"
-  ( unset KADE_WERK WREN_WERK SILAS_WERK
+  ( cd "$WERK_BASE"
+    unset KADE_WERK WREN_WERK SILAS_WERK
     export CHORUS_ROLE="$role"
     source "$ENV_SETUP" >/dev/null 2>&1
     echo "${!var:-}" )
@@ -57,7 +64,7 @@ role_werk() {
 
 @test "only the active role's WERK var is set, not other roles'" {
   mkdir -p "$WERK_BASE/kade-2923" "$WERK_BASE/wren-3000" "$WERK_BASE/silas-3001"
-  run bash -c "unset KADE_WERK WREN_WERK SILAS_WERK; export CHORUS_ROLE=kade; source '$ENV_SETUP' >/dev/null 2>&1; echo \"\${WREN_WERK:-unset}/\${SILAS_WERK:-unset}\""
+  run bash -c "cd '$WERK_BASE'; unset KADE_WERK WREN_WERK SILAS_WERK; export CHORUS_ROLE=kade; source '$ENV_SETUP' >/dev/null 2>&1; echo \"\${WREN_WERK:-unset}/\${SILAS_WERK:-unset}\""
   [ "$output" = "unset/unset" ]
 }
 
@@ -65,7 +72,8 @@ role_werk() {
 
 mcp_port() {
   local role="$1"
-  ( unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT CHORUS_MCP_PORT_CANONICAL
+  ( cd "$WERK_BASE"
+    unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT CHORUS_MCP_PORT_CANONICAL
     export CHORUS_ROLE="$role"
     source "$ENV_SETUP" >/dev/null 2>&1
     echo "${CHORUS_MCP_PORT:-}" )
@@ -102,6 +110,6 @@ mcp_port() {
 }
 
 @test "canonical port is overridable via CHORUS_MCP_PORT_CANONICAL" {
-  run bash -c "unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT; export CHORUS_ROLE=silas CHORUS_MCP_PORT_CANONICAL=4000; source '$ENV_SETUP' >/dev/null 2>&1; echo \$CHORUS_MCP_PORT"
+  run bash -c "cd '$WERK_BASE'; unset KADE_WERK WREN_WERK SILAS_WERK CHORUS_MCP_PORT; export CHORUS_ROLE=silas CHORUS_MCP_PORT_CANONICAL=4000; source '$ENV_SETUP' >/dev/null 2>&1; echo \$CHORUS_MCP_PORT"
   [ "$output" = "4000" ]
 }

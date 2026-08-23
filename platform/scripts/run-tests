@@ -142,7 +142,16 @@ filter_by_category() {
       *.smoke.test.*|*.smoke.spec.*)             kind="smoke" ;;
       *.perf.test.*|*.perf.spec.*)               kind="perf" ;;
       *.mutation.test.*|*.mutation.spec.*)       kind="mutation" ;;
-      *.bats)                                    kind="integration" ;;  # bats default → integration
+      *.bats)
+        # #3381: classify bats by its #3442 @test-type header — a hermetic
+        # unit bats (e.g. 3989-cards-orphan-reaper.bats) must not land in the
+        # integration lane. Headerless bats keeps the old integration default.
+        case "$(head -5 "$f" 2>/dev/null | grep -o '@test-type: *[a-z]*' | head -1)" in
+          *unit)        kind="hermetic" ;;
+          *integration) kind="integration" ;;
+          *e2e)         kind="smoke" ;;
+          *)            kind="integration" ;;
+        esac ;;
       *.test.*|*.spec.*)                          kind="hermetic" ;;
       *)                                          kind="" ;;
     esac

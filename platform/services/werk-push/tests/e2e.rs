@@ -49,6 +49,12 @@ fn remote_has(home: &Path, branch: &str) -> bool {
 #[test]
 fn push_pushes_committed_branch_and_registers_gh() {
     let _env = ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+    // #3381: the werk pipeline exports CHORUS_TRACE_ID, and resolve_trace prefers
+    // that env over the /tmp carrier this test seeds — so without clearing it the
+    // trace assert sees the PIPELINE's trace, not the fixture's, and reds. (A
+    // full-scope run trips this on any card with an unmapped file.) The test
+    // brings its own world.
+    std::env::remove_var("CHORUS_TRACE_ID");
     // gh shim on PATH — logs calls, succeeds.
     let bin = tmp("bin");
     write_exec(&bin.join("gh"), "#!/bin/sh\necho \"$@\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n");

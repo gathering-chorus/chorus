@@ -192,6 +192,10 @@ fn commit_refuses_on_rebase_conflict_and_preserves_the_werk() {
 // and fresh-mints its trace, so a failed commit emits NOTHING to chorus-log.
 #[test]
 fn commit_emits_failure_to_the_spine_with_the_inherited_trace() {
+    // #3381: clear the pipeline-exported CHORUS_TRACE_ID so resolve_trace reads
+    // the seeded /tmp carrier, not the pipeline's trace — same env-leak class as
+    // werk-push's e2e. nextest is process-per-test, so this is safe.
+    std::env::remove_var("CHORUS_TRACE_ID");
     let origin = tmp("origin");
     git(&origin, &["init", "-q", "-b", "main", "."]);
     fs::write(origin.join("README"), "x").unwrap();
