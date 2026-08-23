@@ -624,7 +624,10 @@ LAST=""
 printf '%s' "$CURRENT" > "$STATE_FILE"
 
 if [ "$CURRENT" = "$LAST" ]; then
-  echo "deep-health: failure set unchanged — alert suppressed (see $STATE_FILE)"
+  # #3753: "deduped", not "suppressed" — the alert-suppress.bats contract asserts
+# "suppressed" appears ONLY for the /tmp suppress-file path; this dedup line
+# sharing the word made those tests fail on any box with a standing failure set.
+echo "deep-health: failure set unchanged — alert deduped (see $STATE_FILE)"
 else
   "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
