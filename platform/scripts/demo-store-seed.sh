@@ -46,6 +46,13 @@ rm -f "$DEMO_DB" "$DEMO_DB-wal" "$DEMO_DB-shm"
 #    can't trip pipefail.
 sqlite3 "$PROD_DB" .schema | sed -E '/^CREATE TABLE sqlite_(sequence|stat)/d' | sqlite3 "$DEMO_DB"
 
+# 1b) journal mode must mirror prod (WAL). chorus-api opens readonly handles and
+#     runs `PRAGMA journal_mode = WAL` on them (server.ts:1236) — a no-op on a
+#     WAL db, but a WRITE on a fresh delete-mode db → SQLITE_READONLY crash at
+#     boot (run -11's env_up smoke timeout). Set WAL at seed time so the
+#     variant's pragma is the same no-op it is against prod.
+sqlite3 "$DEMO_DB" "PRAGMA journal_mode=WAL;" >/dev/null
+
 # 2) bounded recent slice, best-effort per real (non-virtual) table.
 tables=$(sqlite3 "$PROD_DB" \
   "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")

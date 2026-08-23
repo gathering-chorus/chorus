@@ -71,3 +71,14 @@ setup() {
   run bash "$SEED" "$DEMO" "$BATS_TEST_TMPDIR/nope.db" 200
   [ "$status" -ne 0 ]
 }
+
+@test "seeded db is WAL — a readonly handle's journal_mode=WAL pragma is a no-op, not a write" {
+  bash "$SEED" "$DEMO" "$SRC" 50
+  [ "$(sqlite3 "$DEMO" 'PRAGMA journal_mode;')" = "wal" ]
+  # the exact chorus-api boot shape (server.ts:1236): readonly open + WAL pragma.
+  # Against a delete-mode db this is a write → SQLITE_READONLY (the run -11 crash);
+  # against the WAL-seeded db it must succeed.
+  run sqlite3 "file:$DEMO?mode=ro" "PRAGMA journal_mode=WAL;"
+  [ "$status" -eq 0 ]
+  [ "$output" = "wal" ]
+}
