@@ -20,6 +20,9 @@
 :3000 {
 	# Borg pages → chorus-api. Strip the /borg prefix and re-add so chorus-api
 	# sees the same path the upstream expects.
+	# #3991: bare /borg (no slash) fell through to the app → public 404 while
+	# /borg/ worked — redirect it into the matched form.
+	redir /borg /borg/ 308
 	handle_path /borg/* {
 		rewrite * /borg{uri}
 		reverse_proxy localhost:3340
