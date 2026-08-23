@@ -811,6 +811,16 @@
         "card_id": "Card identifier"
       }
     },
+    "card.authorization.guest_refused": {
+      "vertebra": "directing",
+      "source": "cards",
+      "description": "Guest-cannot-authorize door (#3682, ADR-054): an authorization-bearing action originated by a non-Jeff human Principal was refused",
+      "fields": {
+        "title": "Card title of the refused action",
+        "board": "Board name",
+        "origin_principal": "WebID of the originating (guest) principal"
+      }
+    },
     "card.quality.blocked": {
       "vertebra": "proving"
     },

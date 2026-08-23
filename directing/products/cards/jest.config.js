@@ -1,6 +1,10 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // #3682/#3528: pin the env world (NODE_ENV=test, no DEPLOY_ROLE) before any
+  // module loads — the werk pipeline's inherited env flipped the bouncer live
+  // inside unit tests. See tests/jest.env-setup.js.
+  setupFiles: ['<rootDir>/tests/jest.env-setup.js'],
   testMatch: ['**/tests/**/*.test.ts'],
   // #2504 (a-vikunja): tests that hit live Vikunja API require VIKUNJA_TOKEN
   // and a reachable Vikunja instance. CI has neither. Same RUN_INTEGRATION

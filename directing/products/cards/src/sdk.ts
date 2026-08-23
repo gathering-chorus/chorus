@@ -548,6 +548,8 @@ type AddOpts = {
   type?: string; origin?: string;
   // #2652 AC1+AC2 — new tag axes
   subdomain?: string; subproduct?: string;
+  // #3682 — run every gate (guest door included) but file nothing
+  validateOnly?: boolean;
 };
 
 // #2652 AC2 — subproduct closed list. Athena models 7 subproducts today; doc
@@ -1040,10 +1042,43 @@ APPROVE:  reply "approve" to file, "deny" to discard. Or DEPLOY_ROLE=jeff cards 
   process.exit(1);
 }
 
+/**
+ * #3682 — guest-cannot-authorize, enforced (ADR-054 norm → mechanism).
+ *
+ * DEPLOY_ROLE=jeff is the "Jeff authorized this" attribution. When the
+ * ORIGINATING identity of the request is known (CHORUS_ORIGIN_PRINCIPAL, a
+ * WebID set by Clearing-facing surfaces from the verified CSS session,
+ * post-#3669) and it is not Jeff's principal, that attribution is refused:
+ * a guest in the room must surface as a PROPOSAL needing Jeff's go, never
+ * as authorized work (the #3679 shape). Absent origin = direct-terminal
+ * paths, unchanged.
+ */
+function enforceGuestCannotAuthorize(title: string, boardName: string): void {
+  const origin = (process.env.CHORUS_ORIGIN_PRINCIPAL || '').trim();
+  if (!origin) return;
+  const deployRole = (process.env.DEPLOY_ROLE || '').toLowerCase();
+  if (deployRole !== 'jeff') return;
+  const jeffWebId = process.env.CHORUS_JEFF_WEBID
+    || 'http://localhost:3000/pods/jeff/profile/card.ttl#me';
+  if (origin === jeffWebId) return;
+  console.error('ERROR: authorization requires Jeff — refused (ADR-054 guest-cannot-authorize).');
+  console.error(`  Originating principal: ${origin}`);
+  console.error('  A guest request must be filed as an agent PROPOSAL (bouncer path) for Jeff\'s approval,');
+  console.error('  never with DEPLOY_ROLE=jeff attribution.');
+  emitSpineEvent('card.authorization.guest_refused', detectRole(), {
+    title, board: boardName, origin_principal: origin,
+  });
+  process.exit(1);
+}
+
 export async function addCard(
   client: BoardClient, title: string, opts: AddOpts,
 ): Promise<BoardTask> {
   warnShortTitle(title, client.boardName);
+
+  // #3682: the guest door fires before any gate — attribution is checked
+  // even when later validation would refuse for other reasons.
+  enforceGuestCannotAuthorize(title, client.boardName);
 
   // Classification gates: ALWAYS enforced (#1966).
   inferCardDefaults(title, opts);
@@ -1051,6 +1086,14 @@ export async function addCard(
   const errors = await collectRequiredFieldErrors(opts);
   validateDescription(opts, title, client.boardName, errors);
   if (errors.length > 0) reportErrorsAndExit(errors, title, client.boardName);
+
+  // #3682: --validate-only exercises every refuse-at-source gate above
+  // (guest door included) without mutating the board — the hermetic hook
+  // the negative-proof tests hang off (#3528: a test brings its own world).
+  if (opts.validateOnly) {
+    console.log(`validation OK (no card filed): ${title}`);
+    return { index: 0, status: 'validate-only', description: '', domains: [] } as unknown as BoardTask;
+  }
 
   // #2895: agent-initiated card adds route through Jeff for approval first.
   // Jeff-self (DEPLOY_ROLE=jeff or unset) bypasses the gate — files immediately.

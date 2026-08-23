@@ -27,15 +27,17 @@ export interface AddArgs {
   // #2652 AC1+AC2 — new tag axes per cards-service-design v1
   subdomain: string;
   subproduct: string;
+  // #3682 — run every gate (guest door included) but file nothing
+  validateOnly: boolean;
 }
 
 const USAGE =
   'Usage: cards add "title" [--status S] [--owner O] [--priority P] [--domain D] ' +
   '[--product P] [--chunk C] [--sequence S] [--subproduct SP] [--subdomain SD] [--type T] [--origin O] ' +
-  '[--desc D | --desc-file PATH | --desc -]';
+  '[--desc D | --desc-file PATH | --desc -] [--validate-only]';
 
 /** String-valued field names. */
-type StringField = keyof AddArgs;
+type StringField = Exclude<keyof AddArgs, 'validateOnly'>;
 
 const STRING_FLAGS: Partial<Record<string, StringField>> = {
   '--status': 'status',
@@ -71,12 +73,14 @@ export function parseAddArgs(args: string[]): AddArgs {
     title: '', status: 'later', owner: '', priority: '',
     domain: '', description: '', product: '', chunk: '', sequence: '',
     type: '', origin: '', subdomain: '', subproduct: '',
+    validateOnly: false,
   };
   let descFile = '';
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--desc-file') { descFile = args[++i]; continue; }
+    if (arg === '--validate-only') { out.validateOnly = true; continue; }
     const field = STRING_FLAGS[arg];
     if (field) {
       out[field] = args[++i];
