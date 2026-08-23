@@ -266,28 +266,48 @@ describe('server — health and basic reads', () => {
 });
 
 describe('server — POST /api/message', () => {
-  test('accepts {from, text} and returns 200', async () => {
+  // #3966 hardened the write door: anonymous is refused, so these route tests
+  // carry the machine's bridge token (same soft pattern as the tunneled-path
+  // suite below — the server generates the file at boot if missing).
+  let msgAuth: Record<string, string> = { 'Content-Type': 'application/json' };
+  beforeAll(() => {
+    try {
+      const t = fs.readFileSync(path.join(os.homedir(), '.chorus/bridge-auth-token'), 'utf-8').trim();
+      if (t) msgAuth = { ...msgAuth, Authorization: `Bearer ${t}` };
+    } catch { /* server generates it at import; absent = anonymous, tests below fail loudly */ }
+  });
+
+  test('anonymous post is refused (#3966 — the door is closed)', async () => {
     const r = await call('/api/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: 'jeff', text: 'anon marker' }),
+    });
+    expect(r.status).toBe(401);
+  });
+
+  test('authorized {from, text} returns 200', async () => {
+    const r = await call('/api/message', {
+      method: 'POST',
+      headers: msgAuth,
       body: JSON.stringify({ from: 'jeff', text: 'unit test marker' }),
     });
     expect(r.status).toBe(200);
   });
 
-  test('missing text returns 400', async () => {
+  test('authorized but missing text returns 400', async () => {
     const r = await call('/api/message', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: msgAuth,
       body: JSON.stringify({ from: 'jeff' }),
     });
     expect(r.status).toBe(400);
   });
 
-  test('empty body returns 400', async () => {
+  test('authorized but empty body returns 400', async () => {
     const r = await call('/api/message', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: msgAuth,
       body: '{}',
     });
     expect(r.status).toBe(400);
