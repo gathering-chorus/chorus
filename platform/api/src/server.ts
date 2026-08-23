@@ -984,7 +984,8 @@ const WEBID_ROLE_QUERY = fs
   .trim();
 // Silas review 2026-08-23: don't hit Fuseki per request — 300s TTL, same
 // pattern as the es256 door's scope cache.
-let webidRoleCache: { at: number; rows: any } | null = null;
+interface WebidRoleRows { results?: { bindings?: Array<{ v?: { value?: string } }> } }
+let webidRoleCache: { at: number; rows: WebidRoleRows } | null = null;
 const WEBID_ROLE_TTL_MS = 300_000;
 async function roleForWebId(webId: string): Promise<string | null> {
   if (!webidRoleCache || Date.now() - webidRoleCache.at > WEBID_ROLE_TTL_MS) {

@@ -40,6 +40,8 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
   let buf: Buffer;
   let start: number;
   let key: string;
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is the
+  // server-configured spine location (or a test fixture), never request input
   const fd = openSync(path, 'r');
   try {
     const st = fstatSync(fd);
@@ -56,8 +58,8 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
   const events: NudgeEvent[] = [];
   for (const line of lines.slice(-WINDOW_EVENTS)) {
     if (!line || !line.includes('"nudge.')) continue;
-    let e: any;
-    try { e = JSON.parse(line); } catch { continue; }
+    let e: Record<string, unknown>;
+    try { e = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
     if (e.event === 'nudge.emitted' && typeof e.payload === 'string') {
       const p = parsePayload(e.payload);
       if (!p.trace) continue;
@@ -81,8 +83,8 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
 }
 
 /** Parse "from=X,to=Y,...,content=..." — content is last and may contain , and = */
-function parsePayload(payload: string): Record<string, string> {
-  const out: Record<string, string> = {};
+function parsePayload(payload: string): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
   const contentIdx = payload.indexOf('content=');
   const head = contentIdx >= 0 ? payload.slice(0, contentIdx) : payload;
   if (contentIdx >= 0) out.content = payload.slice(contentIdx + 'content='.length);
