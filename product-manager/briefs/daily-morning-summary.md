@@ -1,32 +1,28 @@
-# Morning Summary — 2026-08-22
+# Morning Summary — 2026-08-23
 
-**HEADLINE:** Quality is still blind at day 74 and `npm ci` is 74 days overdue — escalation is overdue.
+**HEADLINE:** npm ci has been broken for 75 days — all four test suites are blocked and this needs a decision today.
 
 ---
 
-**OPS:** YELLOW (improved from RED)
-- YELLOW: 7 cargo warnings in chorus-hooks, stable. Cleanup card open.
-- YELLOW: LaunchAgent plists still log to `/tmp/` — no migration to `~/.chorus/logs/`.
-- YELLOW: Domain context freshened to 4 days (was 14) — Silas refreshed chorus/infrastructure. Monitor; refresh threshold is 7 days.
-- RED: 2 WIP cards stale **135 days** — "Framework service design — OWL entity model" and "Restore chorus product boundary." One more day, no action.
+**OPS:** YELLOW (Silas, 2026-08-22)
+- 3 yellows, 0 reds, 1 unknown
+- Top concern: 8 unused symbols in chorus-hooks (dead code from nudge retirement #2804 — prune before warnings compound)
+- Secondary: 25 scripts + 37 plist files use /tmp; need CSC/reaper coverage audit
+- Unknown: disk delta — Silas needs to run perf-baseline.sh locally and flag if >2% growth
 
-**QUALITY:** RED
-- All 4 TS test suites blocked: `ts-jest preset not found` — **day 72**.
-- Lint blocked: `@eslint/js` not found — **day 74**. Root cause: `npm ci` never run at repo root.
-- Build: 235 type errors — **first plateau** in 7 days (trend was +18 over prior week). Worth watching.
-- 0 tests have run in 72 days. Coverage data is stale from June.
+**QUALITY:** RED (Kade, 2026-08-23)
+- 0 tests run — ts-jest preset not found across all 4 suites (directing/clearing, workflow-engine, chorus-sdk, pulse) — **day 73**
+- Lint blocked (@eslint/js not found) — **day 75**
+- Build: YELLOW — 234 type errors (down 1 from 235, first decrease after 7-day plateau — encouraging)
+- Fix: `npm ci` at repo root restores everything. One command. 75 days.
 
-**YESTERDAY:** Active day across all three roles — 15+ cards shipped.
-- Silas: #3967, #3969, #3966, #3965, #3963, #3960, #3958, #3729, #3949
-- Kade: #3972, #3970, #3601, #3964, #3920, #3956
-- Wren: #3959, #3561 (×2)
+**YESTERDAY:** Active throughput — 10+ cards merged (wren: #3982, #3976; silas: #3986, #3981, #3979, #3977; kade: #3984, #3677, #3922, #3974, #3975, #3978). Notable: silas landed #3986 renaming chorus:deploys → chorus:runsService (10/10 drift bats green).
 
 **TODAY:**
-1. **Anyone:** `npm ci` at repo root — this is now 74 days and an explicit escalation. Unblocks 4 suites and lint in one command.
-2. **Wren:** Close or requeue the two 135-day WIP cards — they are off the radar.
-3. **Silas:** Watch domain context — 3 remaining files will hit 7-day threshold by 2026-08-24.
-4. **All:** Monitor type error count — first plateau today; if it resumes climbing, investigate recent Kade/Silas lands.
+1. **npm ci** — run it or decide to formally defer (but document the decision; 75 days is past the point of drift)
+2. Prune chorus-hooks dead code (Wren + Silas, small lift, high signal-to-noise)
+3. CSC audit: confirm /tmp lock/log paths are reaper-covered
+4. Watch build type-error trend — 234 is the first decrease; keep the pressure on
 
 **BLOCKERS (needs Jeff):**
-- `npm ci`: 74 days. Is skipping it a deliberate policy (remote-only CI)? If so, document it so quality review stops flagging it. If not, this needs to run today.
-- 135-day WIP cards: close them or assign them to a role with a due date — they cannot stay on the board.
+- `npm ci` at repo root — **75 days unresolved.** No tests, no lint, no coverage data. Either run it or make a call to formally skip the test layer for now.
