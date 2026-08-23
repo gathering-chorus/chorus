@@ -57,6 +57,7 @@ if $FOUND; then
   log "PASS: round-trip verified ($i s)"
   "$CHORUS_LOG" clearing.probe.passed "$ROLE" "latency=${i}s" 2>/dev/null || true
 else
+  _probe_unmeasurable_if_loaded "verify"
   log "FAIL: probe not found in messages after ${MAX_WAIT}s"
   "$CHORUS_LOG" clearing.probe.failed "$ROLE" "stage=verify" "timeout=${MAX_WAIT}s" 2>/dev/null || true
   exit 1

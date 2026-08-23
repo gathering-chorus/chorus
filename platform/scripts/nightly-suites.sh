@@ -45,6 +45,50 @@ spine_emit() {
   fi
 }
 
+# #3753 — load gate. A red suite must mean the code failed, never "the machine
+# was busy": 2026-08-05 receipts show 3 of 6 reds vanishing on a quiet box and
+# deep-health paging "unreachable" for an app answering in 29ms. Above a
+# cores-relative load threshold the run defers, then reports UNMEASURABLE — a
+# typed state distinct from pass/fail/skip. Thresholds live in config
+# (gate-ops ask), env-overridable; NIGHTLY_LOAD_STUB lets tests bring their own
+# load (#3528) so the negative proof needs no real load generator.
+NIGHTLY_LOAD_CONF="${NIGHTLY_LOAD_CONF:-$SCRIPT_DIR_NIGHTLY/nightly-load.conf}"
+[ -f "$NIGHTLY_LOAD_CONF" ] && . "$NIGHTLY_LOAD_CONF"
+NIGHTLY_LOAD_MAX_PER_CORE="${NIGHTLY_LOAD_MAX_PER_CORE:-1.5}"
+NIGHTLY_LOAD_DEFER_SECS="${NIGHTLY_LOAD_DEFER_SECS:-900}"
+NIGHTLY_LOAD_RECHECK_SECS="${NIGHTLY_LOAD_RECHECK_SECS:-60}"
+
+_load_1m() {
+  if [ -n "${NIGHTLY_LOAD_STUB:-}" ]; then printf '%s' "$NIGHTLY_LOAD_STUB"; return; fi
+  sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}'
+}
+
+# #3753 AC2 — a suite that FAILED TO START is not a code failure. Remap the
+# spawn/ABI class to the typed `unmeasurable` verdict always; remap the timeout
+# class only when the box is loaded RIGHT NOW (a timeout on a quiet box is a
+# real wedge and stays fail). Everything else passes through untouched.
+_classify_verdict() {
+  local verdict="$1" summary="$2"
+  [ "$verdict" = "fail" ] || { printf '%s' "$verdict"; return; }
+  case "$summary" in
+    *"NODE_MODULE_VERSION"*|*"Cannot find module"*|*"command not found"*|*"ERR_DLOPEN_FAILED"*|*"spawn "*ENOENT*|*"DID NOT RUN"*)
+      printf 'unmeasurable'; return ;;
+    *"SUITE TIMEOUT"*|*"rc=124"*)
+      if ! _load_gate >/dev/null; then printf 'unmeasurable'; return; fi ;;
+  esac
+  printf '%s' "$verdict"
+}
+
+# rc 0 = measurable (load under threshold); rc 1 = loaded. Prints "load=X max=Y".
+_load_gate() {
+  local cores load max
+  cores=$(sysctl -n hw.ncpu 2>/dev/null || echo 8)
+  load=$(_load_1m); load=${load:-0}
+  max=$(awk -v c="$cores" -v f="$NIGHTLY_LOAD_MAX_PER_CORE" 'BEGIN{printf "%.1f", c*f}')
+  printf 'load=%s max=%s' "$load" "$max"
+  awk -v l="$load" -v m="$max" 'BEGIN{exit (l+0 <= m+0) ? 0 : 1}'
+}
+
 # #3484 — failure-detail capture. The runner used to keep rc but discard the
 # failure OUTPUT, so a red ("compile/run failure rc=N") couldn't explain itself
 # and every morning was a fresh re-diagnosis with the evidence gone. We now
@@ -297,6 +341,7 @@ run_cargo_lane() {
       cargo) path="platform/services/$unit" ;;
       *)     path="$unit" ;;
     esac
+    verdict=$(_classify_verdict "$verdict" "$summary")
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
@@ -746,6 +791,9 @@ emit_run_summary() {
   total=$(printf '%s\n'  "$results" | awk -F'|' '$1=="SUITE" && $5=="fail"' | grep -c . | tr -d ' ')
   passed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="pass"' | grep -c . | tr -d ' ')
   skipped=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="skip"' | grep -c . | tr -d ' ')
+  # #3753 — the typed fourth state: counted separately, never folded into red
+  local unmeasurable
+  unmeasurable=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="unmeasurable"' | grep -c . | tr -d ' ')
   failed="$total"
   owners_csv=$(printf '%s\n' "$results" \
     | awk -F'|' '$1=="SUITE" && $5=="fail" {c[$4]++} END {for (o in c) printf "%s=%d;", o, c[o]}' \
@@ -753,6 +801,7 @@ emit_run_summary() {
   [ "${total:-0}" -eq 0 ] && zero_red=true || zero_red=false
   spine_emit nightly.run.summary \
     "suites=$suites" "passed=$passed" "failed=$failed" "skipped=$skipped" \
+    "unmeasurable=$unmeasurable" \
     "red_by_owner=${owners_csv:-none}" "zero_red=$zero_red"
 }
 
@@ -772,6 +821,15 @@ emit_suite_results() {
     # and "<N> failed|fail" so every runner's summary maps to the real counts.
     passed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (passed|pass|ok)' | grep -oE '[0-9]+' | head -1); passed=${passed:-0}
     failed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (failed|fail)'   | grep -oE '[0-9]+' | head -1); failed=${failed:-0}
+    # #3753 AC4 — the reporter contradiction class, closed at emit time: a
+    # SUITE row must never say status=pass while its own summary counts
+    # failures. Assert loud, emit the contradiction as its own event, and
+    # carry the row as fail — the two states must stay separable (#3734).
+    if [ "$status" = "pass" ] && [ "${failed:-0}" -gt 0 ]; then
+      echo "nightly-suites: REPORTER CONTRADICTION — $suite says pass with failed=$failed; recording fail (#3753 AC4)" >&2
+      spine_emit nightly.reporter.contradiction "suite=$suite" "kind=$kind" "failed=$failed"
+      status="fail"
+    fi
     # #3484 — for a red, attach a one-line reason from the captured failure log
     # (the most error-ish tail line), sanitized to a single pipe-free field, so
     # the spine event explains the failure instead of just rc.
@@ -959,6 +1017,19 @@ PYEOF
     printf '%s\n' "$_line"
     echo "$_line" | grep -q '|fail|' && exit 1 || exit 0
     ;;
+  --classify)
+    # #3753 — test seam for the AC2 verdict remap (same rationale as --load-gate).
+    _classify_verdict "${2:-fail}" "${3:-}"
+    echo
+    exit 0
+    ;;
+  --load-gate)
+    # #3753 — expose the gate as its own verb so tests and peers (deep-health,
+    # clearing-probe) share one predicate. rc 0 = measurable, 1 = loaded.
+    _lg=$(_load_gate); _lg_rc=$?
+    echo "$_lg"
+    exit "$_lg_rc"
+    ;;
   --run-all)
     # #3597 single-flight: refuse to run concurrently with another nightly.
     if ! acquire_single_flight_lock; then
@@ -966,6 +1037,29 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
+    # #3753 — load gate: defer while the box is busy; if it never quiets inside
+    # the defer window, the run is UNMEASURABLE (typed, logged, spine-emitted),
+    # never a wall of false red.
+    _lg=$(_load_gate); _lg_rc=$?
+    if [ "$_lg_rc" -ne 0 ]; then
+      _deferred=0
+      while [ "$_lg_rc" -ne 0 ] && [ "$_deferred" -lt "$NIGHTLY_LOAD_DEFER_SECS" ]; do
+        echo "nightly-suites: box loaded ($_lg) — deferring ${NIGHTLY_LOAD_RECHECK_SECS}s (${_deferred}/${NIGHTLY_LOAD_DEFER_SECS}s used, #3753)" >&2
+        sleep "$NIGHTLY_LOAD_RECHECK_SECS"
+        _deferred=$((_deferred + NIGHTLY_LOAD_RECHECK_SECS))
+        _lg=$(_load_gate); _lg_rc=$?
+      done
+      if [ "$_lg_rc" -ne 0 ]; then
+        _um_log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+        mkdir -p "$(dirname "$_um_log")" 2>/dev/null
+        printf 'RUN|unmeasurable|%s|%s|deferred=%ss\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$_lg" "$_deferred" >> "$_um_log" 2>/dev/null
+        spine_emit nightly.run.unmeasurable "$_lg" "deferred_s=$_deferred" "reason=load"
+        spine_emit nightly.run.summary "suites=0" "passed=0" "failed=0" "skipped=0" \
+          "unmeasurable=all" "red_by_owner=none" "zero_red=unmeasurable" "$_lg"
+        echo "nightly-suites: UNMEASURABLE — $_lg after ${_deferred}s defer; zero-red bar NOT measured tonight (#3753)" >&2
+        exit 0
+      fi
+    fi
     # #3722 — WERK ISOLATION: a run launched from a card's werk must NOT write
     # the canonical nightly log or fire the team red alert (Kade's kade-3721 run
     # did exactly that Aug 1: 34-red paged Jeff, and daily-review --last-run would
