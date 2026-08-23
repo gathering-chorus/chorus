@@ -54,6 +54,12 @@ else
     # #3675 — service definitions enter the MODEL_SET the day they're authored,
     # never live-only (the #3587/#3593 wipe class).
     "$CHORUS_ROOT/designing/data/service-instances.ttl"
+    # #3991 (closes the #3916 red) — product-instances.ttl is THE definition home
+    # for the child products (#3545/#3603) but was never in MODEL_SET, so the store
+    # held product-* with chorus.ttl's structural edges and NO types: untyped-
+    # subjects-with-edges, red on products-3603 test 7 for weeks. Same
+    # landed-but-never-deployed class as governance-checks (#3881).
+    "$CHORUS_ROOT/designing/data/product-instances.ttl"
     # #3654 — the board domain (Chunk/ChunkMembership + shapes carrying the
     # uniqueWithin/uniqueGlobal annotations). Enters MODEL_SET the day authored so
     # read_shape (which queries urn:chorus:ontology) can see the shapes and the
