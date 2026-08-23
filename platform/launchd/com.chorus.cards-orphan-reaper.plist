@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.chorus.cards-orphan-reaper — reaps orphaned cards-CLI node procs.
+
+  #3989: overnight 2026-08-23 the cards CLI (npx→ts-node child chain) leaked
+  ppid=1 orphans until the box died (313 node procs, 38GB swap, load 150,
+  hard power-cycle). The spawner fix removes the child chain; this agent is
+  the backstop for anything that still orphans (e.g. SIGKILL'd fallback path).
+  Predicate is narrow: ppid=1 + cards-CLI command marker + older than 120s
+  (the CLI's own #3347 watchdog exits at 30s, so 120s alive = wedged).
+  Emits cards.orphan.reaped spine events; JSON log via Promtail.
+
+  Runs every 10 minutes (600s) — caps any pile at one reap-window deep.
+
+  Install:
+    cp platform/launchd/com.chorus.cards-orphan-reaper.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.chorus.cards-orphan-reaper.plist
+
+  Stop:
+    launchctl bootout gui/$(id -u)/com.chorus.cards-orphan-reaper
+
+  One-shot manual run:
+    launchctl kickstart -k gui/$(id -u)/com.chorus.cards-orphan-reaper
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.cards-orphan-reaper</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/cards-orphan-reaper.sh</string>
+  </array>
+
+  <key>StartInterval</key>
+  <integer>600</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/cards-orphan-reaper.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/cards-orphan-reaper.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>DEPLOY_ROLE</key>
+    <string>system</string>
+  </dict>
+</dict>
+</plist>

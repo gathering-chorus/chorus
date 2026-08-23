@@ -31,5 +31,19 @@ fi
 if [ "$dist_is_fresh" = "1" ]; then
   exec node "$DIST_CLI" "$@"
 else
-  exec npx --prefix "$CLIENT_DIR" ts-node "$CLIENT_DIR/src/cli.ts" "$@"
+  # #3989: single-process ts-node — no npx. npx held ts-node as a CHILD, so a
+  # caller timing out and killing the cards pid orphaned the ts-node child to
+  # launchd (ppid=1); 313 of them starved the box overnight 2026-08-23. exec +
+  # --require keeps the whole invocation ONE pid: kill the cards pid, nothing
+  # survives. npx remains only as a fallback for a checkout with no installed
+  # ts-node, run in the same process group so a signal reaps the child too.
+  TS_NODE_REG="$CLIENT_DIR/node_modules/ts-node/register"
+  if [ -d "$TS_NODE_REG" ] || [ -f "$TS_NODE_REG.js" ]; then
+    exec node --require "$TS_NODE_REG" "$CLIENT_DIR/src/cli.ts" "$@"
+  else
+    npx --prefix "$CLIENT_DIR" ts-node "$CLIENT_DIR/src/cli.ts" "$@" &
+    child=$!
+    trap 'kill "$child" 2>/dev/null' INT TERM
+    wait "$child"
+  fi
 fi
