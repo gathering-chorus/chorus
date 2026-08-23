@@ -69,6 +69,9 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
       // on EVERY transient attempt before backoff-retrying (delivery-worker.ts:299)
       // — clearing on those loses a nudge whose retries are still running. Only a
       // permanent failure exits the fold: pending = emitted − surfaced − failed(permanent).
+      // Divergence note: the Rust folds (nudge_poll.rs, pulse.rs assemble_nudges)
+      // ignore surface.failed entirely — their pending can disagree with this one
+      // after a permanent failure until fold-convergence lands.
       events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
     }
   }
