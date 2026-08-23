@@ -52,7 +52,7 @@ spine_emit() {
 # typed state distinct from pass/fail/skip. Thresholds live in config
 # (gate-ops ask), env-overridable; NIGHTLY_LOAD_STUB lets tests bring their own
 # load (#3528) so the negative proof needs no real load generator.
-NIGHTLY_LOAD_CONF="${NIGHTLY_LOAD_CONF:-$CHORUS_ROOT/platform/config/nightly-load.conf}"
+NIGHTLY_LOAD_CONF="${NIGHTLY_LOAD_CONF:-$SCRIPT_DIR_NIGHTLY/nightly-load.conf}"
 [ -f "$NIGHTLY_LOAD_CONF" ] && . "$NIGHTLY_LOAD_CONF"
 NIGHTLY_LOAD_MAX_PER_CORE="${NIGHTLY_LOAD_MAX_PER_CORE:-1.5}"
 NIGHTLY_LOAD_DEFER_SECS="${NIGHTLY_LOAD_DEFER_SECS:-900}"
