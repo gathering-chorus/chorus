@@ -1,0 +1,1 @@
+PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE { GRAPH <urn:chorus:domains:security> { ?p a chorus:Principal ; chorus:webId ?w ; chorus:holdsRole ?r } BIND(CONCAT(STR(?w), " ", STR(?r)) AS ?v) }
