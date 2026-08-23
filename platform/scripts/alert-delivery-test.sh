@@ -72,15 +72,23 @@ test_alert_runner() {
   fi
 
   # 1b. Verify Bridge received the probe message
-  # Post a tagged probe directly to confirm Bridge is accepting
-  bridge_status=$(curl -sf -o /dev/null -w "%{http_code}" --max-time 5 \
+  # Post a tagged probe directly to confirm Bridge is accepting.
+  # #3968: since #3966 the bridge requires a caller identity — present the
+  # BRIDGE_TOKEN like every server-side caller (clearing-probe.sh pattern).
+  # Also: no curl -f — -f made curl exit nonzero on 4xx AFTER printing the
+  # code, so the || fallback CONCATENATED onto it (the "HTTP 401000" artifact
+  # in weeks of FAIL lines).
+  local bridge_token
+  bridge_token="$(cat "${BRIDGE_TOKEN_FILE:-$HOME/.chorus/bridge-auth-token}" 2>/dev/null || echo '')"
+  bridge_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
     -X POST "$BRIDGE/api/message" \
     -H 'Content-Type: application/json' \
+    -H "Authorization: Bearer ${bridge_token}" \
     -d "$(jq -n \
       --arg text "[synthetic] Delivery probe $PROBE_MARKER" \
       --arg from "system" \
       --arg type "probe" \
-      '{from: $from, text: $text, type: $type}')" 2>/dev/null || echo "000")
+      '{from: $from, text: $text, type: $type}')" 2>/dev/null) || bridge_status="000"
 
   if [[ "$bridge_status" == "200" ]] || [[ "$bridge_status" == "201" ]]; then
     pass "alert-runner: Bridge accepted probe message (HTTP $bridge_status)"
