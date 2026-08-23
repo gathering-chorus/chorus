@@ -63,6 +63,22 @@ _load_1m() {
   sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}'
 }
 
+# #3753 AC2 — a suite that FAILED TO START is not a code failure. Remap the
+# spawn/ABI class to the typed `unmeasurable` verdict always; remap the timeout
+# class only when the box is loaded RIGHT NOW (a timeout on a quiet box is a
+# real wedge and stays fail). Everything else passes through untouched.
+_classify_verdict() {
+  local verdict="$1" summary="$2"
+  [ "$verdict" = "fail" ] || { printf '%s' "$verdict"; return; }
+  case "$summary" in
+    *"NODE_MODULE_VERSION"*|*"Cannot find module"*|*"command not found"*|*"ERR_DLOPEN_FAILED"*|*"spawn "*ENOENT*|*"DID NOT RUN"*)
+      printf 'unmeasurable'; return ;;
+    *"SUITE TIMEOUT"*|*"rc=124"*)
+      if ! _load_gate >/dev/null; then printf 'unmeasurable'; return; fi ;;
+  esac
+  printf '%s' "$verdict"
+}
+
 # rc 0 = measurable (load under threshold); rc 1 = loaded. Prints "load=X max=Y".
 _load_gate() {
   local cores load max
@@ -325,6 +341,7 @@ run_cargo_lane() {
       cargo) path="platform/services/$unit" ;;
       *)     path="$unit" ;;
     esac
+    verdict=$(_classify_verdict "$verdict" "$summary")
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
@@ -774,6 +791,9 @@ emit_run_summary() {
   total=$(printf '%s\n'  "$results" | awk -F'|' '$1=="SUITE" && $5=="fail"' | grep -c . | tr -d ' ')
   passed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="pass"' | grep -c . | tr -d ' ')
   skipped=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="skip"' | grep -c . | tr -d ' ')
+  # #3753 — the typed fourth state: counted separately, never folded into red
+  local unmeasurable
+  unmeasurable=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="unmeasurable"' | grep -c . | tr -d ' ')
   failed="$total"
   owners_csv=$(printf '%s\n' "$results" \
     | awk -F'|' '$1=="SUITE" && $5=="fail" {c[$4]++} END {for (o in c) printf "%s=%d;", o, c[o]}' \
@@ -781,6 +801,7 @@ emit_run_summary() {
   [ "${total:-0}" -eq 0 ] && zero_red=true || zero_red=false
   spine_emit nightly.run.summary \
     "suites=$suites" "passed=$passed" "failed=$failed" "skipped=$skipped" \
+    "unmeasurable=$unmeasurable" \
     "red_by_owner=${owners_csv:-none}" "zero_red=$zero_red"
 }
 
@@ -800,6 +821,15 @@ emit_suite_results() {
     # and "<N> failed|fail" so every runner's summary maps to the real counts.
     passed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (passed|pass|ok)' | grep -oE '[0-9]+' | head -1); passed=${passed:-0}
     failed=$(printf '%s' "$summary" | grep -oE '[0-9]+ (failed|fail)'   | grep -oE '[0-9]+' | head -1); failed=${failed:-0}
+    # #3753 AC4 — the reporter contradiction class, closed at emit time: a
+    # SUITE row must never say status=pass while its own summary counts
+    # failures. Assert loud, emit the contradiction as its own event, and
+    # carry the row as fail — the two states must stay separable (#3734).
+    if [ "$status" = "pass" ] && [ "${failed:-0}" -gt 0 ]; then
+      echo "nightly-suites: REPORTER CONTRADICTION — $suite says pass with failed=$failed; recording fail (#3753 AC4)" >&2
+      spine_emit nightly.reporter.contradiction "suite=$suite" "kind=$kind" "failed=$failed"
+      status="fail"
+    fi
     # #3484 — for a red, attach a one-line reason from the captured failure log
     # (the most error-ish tail line), sanitized to a single pipe-free field, so
     # the spine event explains the failure instead of just rc.
@@ -986,6 +1016,12 @@ PYEOF
     _line=$(run_one "$_kind" "$_path" "$_owner")
     printf '%s\n' "$_line"
     echo "$_line" | grep -q '|fail|' && exit 1 || exit 0
+    ;;
+  --classify)
+    # #3753 — test seam for the AC2 verdict remap (same rationale as --load-gate).
+    _classify_verdict "${2:-fail}" "${3:-}"
+    echo
+    exit 0
     ;;
   --load-gate)
     # #3753 — expose the gate as its own verb so tests and peers (deep-health,

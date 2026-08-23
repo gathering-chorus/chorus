@@ -46,3 +46,21 @@ setup() {
   NIGHTLY_LOAD_STUB=5 NIGHTLY_LOAD_MAX_PER_CORE=100 run "$NIGHTLY" --load-gate
   [ "$status" -eq 0 ]   # 5 < cores*100 anywhere
 }
+
+# --- AC2: failed-to-START classes fold to unmeasurable, real fails stay fail ---
+
+@test "AC2: spawn/ABI failure folds to unmeasurable; real assertion failure stays fail" {
+  NIGHTLY_LOAD_STUB=0.1 run "$NIGHTLY" --classify fail "0 pass, 1 fail (npx jest: NODE_MODULE_VERSION 131 mismatch)"
+  [ "$output" = "unmeasurable" ]
+  NIGHTLY_LOAD_STUB=0.1 run "$NIGHTLY" --classify fail "3 pass, 2 fail (assertion errors)"
+  [ "$output" = "fail" ]
+  NIGHTLY_LOAD_STUB=0.1 run "$NIGHTLY" --classify pass "5 pass, 0 fail"
+  [ "$output" = "pass" ]
+}
+
+@test "AC2: timeout folds to unmeasurable ONLY under load — quiet-box timeout stays fail" {
+  NIGHTLY_LOAD_STUB=999 run "$NIGHTLY" --classify fail "0 pass, 1 fail (SUITE TIMEOUT: killed after 1800s)"
+  [ "$output" = "unmeasurable" ]
+  NIGHTLY_LOAD_STUB=0.1 run "$NIGHTLY" --classify fail "0 pass, 1 fail (SUITE TIMEOUT: killed after 1800s)"
+  [ "$output" = "fail" ]
+}
