@@ -21,19 +21,57 @@ export interface PendingNudge {
 const WINDOW_EVENTS = 50_000;
 const TAIL_BYTES = 16 * 1024 * 1024;
 
-function tailLines(path: string): string[] {
+interface NudgeEvent {
+  kind: 'emitted' | 'cleared'; // cleared = surfaced OR surface.failed (both exit the fold)
+  trace: string;
+  from: string;
+  to: string;
+  content: string;
+  ts: string;
+}
+
+// Silas review 2026-08-23: the sync 16MB read + 50k JSON.parse must not run per
+// request on chorus-api's event loop. Cache parsed nudge events keyed by
+// (path,size,mtime) — the spine is append-only, so unchanged stat = unchanged tail.
+let cacheKey = '';
+let cacheEvents: NudgeEvent[] = [];
+
+function parseNudgeEvents(path: string): NudgeEvent[] {
+  let buf: Buffer;
+  let start: number;
+  let key: string;
   const fd = openSync(path, 'r');
   try {
-    const size = fstatSync(fd).size;
-    const start = Math.max(0, size - TAIL_BYTES);
-    const buf = Buffer.alloc(size - start);
+    const st = fstatSync(fd);
+    key = `${path}:${st.size}:${st.mtimeMs}`;
+    if (key === cacheKey) return cacheEvents;
+    start = Math.max(0, st.size - TAIL_BYTES);
+    buf = Buffer.alloc(st.size - start);
     readSync(fd, buf, 0, buf.length, start);
-    const lines = buf.toString('utf8').split('\n');
-    if (start > 0) lines.shift(); // drop partial first line
-    return lines.slice(-WINDOW_EVENTS);
   } finally {
     closeSync(fd);
   }
+  const lines = buf.toString('utf8').split('\n');
+  if (start > 0) lines.shift(); // drop partial first line
+  const events: NudgeEvent[] = [];
+  for (const line of lines.slice(-WINDOW_EVENTS)) {
+    if (!line || !line.includes('"nudge.')) continue;
+    let e: any;
+    try { e = JSON.parse(line); } catch { continue; }
+    if (e.event === 'nudge.emitted' && typeof e.payload === 'string') {
+      const p = parsePayload(e.payload);
+      if (!p.trace) continue;
+      events.push({ kind: 'emitted', trace: p.trace, from: p.from ?? '', to: p.to ?? '', content: p.content ?? '', ts: String(e.timestamp ?? '') });
+    } else if ((e.event === 'nudge.surfaced' || e.event === 'nudge.surface.failed') && typeof e.trace_id === 'string') {
+      // surface.failed clears the fold too (Silas review, material finding 1):
+      // the worker's contract is pending = emitted − surfaced − surface.failed;
+      // without it a permanently-failed nudge reads pending until it exits the window.
+      events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
+    }
+  }
+  cacheKey = key;
+  cacheEvents = events;
+  return events;
 }
 
 /** Parse "from=X,to=Y,...,content=..." — content is last and may contain , and = */
@@ -49,24 +87,12 @@ function parsePayload(payload: string): Record<string, string> {
   return out;
 }
 
-/** #2725 AC5 (was AC9) — recent nudge.emitted events from the spine tail,
- *  surfaced or not: the card-story consumer wants history, not just pending. */
+/** #2725 AC5 — recent nudge.emitted events from the spine tail, cleared or not:
+ *  the card-story consumer wants history, not just pending. */
 export function recentNudges(logPath: string, limit = 100): PendingNudge[] {
   const out: PendingNudge[] = [];
-  for (const line of tailLines(logPath)) {
-    if (!line) continue;
-    let e: any;
-    try { e = JSON.parse(line); } catch { continue; }
-    if (e.event !== 'nudge.emitted' || typeof e.payload !== 'string') continue;
-    const p = parsePayload(e.payload);
-    if (!p.trace) continue;
-    out.push({
-      trace: p.trace,
-      from: p.from ?? '',
-      to: p.to ?? '',
-      content: p.content ?? '',
-      ts: String(e.timestamp ?? ''),
-    });
+  for (const e of parseNudgeEvents(logPath)) {
+    if (e.kind === 'emitted') out.push({ trace: e.trace, from: e.from, to: e.to, content: e.content, ts: e.ts });
   }
   return out.slice(-limit);
 }
@@ -77,33 +103,18 @@ export function buildNudgeFold(
   opts: { all?: boolean } = {},
 ): PendingNudge[] {
   const emitted = new Map<string, PendingNudge>();
-  const surfacedTraces = new Set<string>();
+  const cleared = new Set<string>();
 
-  for (const line of tailLines(logPath)) {
-    if (!line) continue;
-    let e: any;
-    try {
-      e = JSON.parse(line);
-    } catch {
-      continue; // non-JSON spine lines are not nudge events
-    }
-    if (e.event === 'nudge.emitted' && typeof e.payload === 'string') {
-      const p = parsePayload(e.payload);
-      if (!p.trace) continue;
-      if (opts.all || p.to === role) {
-        emitted.set(p.trace, {
-          trace: p.trace,
-          from: p.from ?? '',
-          to: p.to ?? '',
-          content: p.content ?? '',
-          ts: String(e.timestamp ?? ''),
-        });
+  for (const e of parseNudgeEvents(logPath)) {
+    if (e.kind === 'emitted') {
+      if (opts.all || e.to === role) {
+        emitted.set(e.trace, { trace: e.trace, from: e.from, to: e.to, content: e.content, ts: e.ts });
       }
-    } else if (e.event === 'nudge.surfaced' && typeof e.trace_id === 'string') {
-      surfacedTraces.add(e.trace_id);
+    } else {
+      cleared.add(e.trace);
     }
   }
 
-  // surfaced clears the trace regardless of line order within the window (AC8)
-  return [...emitted.values()].filter((n) => !surfacedTraces.has(n.trace));
+  // a cleared trace exits regardless of line order within the window (AC8)
+  return [...emitted.values()].filter((n) => !cleared.has(n.trace));
 }

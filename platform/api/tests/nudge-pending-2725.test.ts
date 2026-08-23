@@ -84,6 +84,17 @@ describe('#2725 nudge pending fold', () => {
     expect(buildNudgeFold(log, 'testerB')[0].content).toBe(content);
   });
 
+  test('surface.failed clears the fold (Silas review: pending = emitted − surfaced − failed)', () => {
+    const failed = (trace: string, from: string, to: string) =>
+      JSON.stringify({ timestamp: TS, event: 'nudge.surface.failed', role: 'pulse', trace_id: trace, id: 2, from, to, attempt: 6, reason: 'no claude window found', permanent: true });
+    const log = fixtureLog([
+      emitted('t9', 'testerA', 'testerB', 'doomed'),
+      failed('t9', 'testerA', 'testerB'),
+      emitted('t10', 'testerA', 'testerB', 'alive'),
+    ]);
+    expect(buildNudgeFold(log, 'testerB').map(n => n.trace)).toEqual(['t10']);
+  });
+
   test('AC8 negative proof: surfaced clears the trace regardless of line order', () => {
     const log = fixtureLog([
       surfaced('t7', 'testerA', 'testerB'),

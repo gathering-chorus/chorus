@@ -982,8 +982,15 @@ import { decideNudgePending } from './nudge-pending-route';
 const WEBID_ROLE_QUERY = fs
   .readFileSync(path.resolve(__dirname, 'sparql', 'webid-role.rq'), 'utf-8')
   .trim();
+// Silas review 2026-08-23: don't hit Fuseki per request — 300s TTL, same
+// pattern as the es256 door's scope cache.
+let webidRoleCache: { at: number; rows: any } | null = null;
+const WEBID_ROLE_TTL_MS = 300_000;
 async function roleForWebId(webId: string): Promise<string | null> {
-  const rows = await athenaSparqlQuery(WEBID_ROLE_QUERY);
+  if (!webidRoleCache || Date.now() - webidRoleCache.at > WEBID_ROLE_TTL_MS) {
+    webidRoleCache = { at: Date.now(), rows: await athenaSparqlQuery(WEBID_ROLE_QUERY) };
+  }
+  const rows = webidRoleCache.rows;
   for (const b of rows?.results?.bindings ?? []) {
     const v = String(b.v?.value ?? '');
     const sp = v.indexOf(' ');
