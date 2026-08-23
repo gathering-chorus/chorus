@@ -36,17 +36,17 @@ interface NudgeEvent {
 let cacheKey = '';
 let cacheEvents: NudgeEvent[] = [];
 
-function parseNudgeEvents(path: string): NudgeEvent[] {
+function readTail(path: string): { key: string; lines: string[] } | { key: string; lines: null } {
+  // path is the server-configured spine location (or a test fixture), never request input
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
+  const fd = openSync(path, 'r');
   let buf: Buffer;
   let start: number;
   let key: string;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is the
-  // server-configured spine location (or a test fixture), never request input
-  const fd = openSync(path, 'r');
   try {
     const st = fstatSync(fd);
     key = `${path}:${st.size}:${st.mtimeMs}`;
-    if (key === cacheKey) return cacheEvents;
+    if (key === cacheKey) return { key, lines: null }; // unchanged — caller uses cache
     start = Math.max(0, st.size - TAIL_BYTES);
     buf = Buffer.alloc(st.size - start);
     readSync(fd, buf, 0, buf.length, start);
@@ -55,29 +55,43 @@ function parseNudgeEvents(path: string): NudgeEvent[] {
   }
   const lines = buf.toString('utf8').split('\n');
   if (start > 0) lines.shift(); // drop partial first line
-  const events: NudgeEvent[] = [];
-  for (const line of lines.slice(-WINDOW_EVENTS)) {
-    if (!line || !line.includes('"nudge.')) continue;
-    let e: Record<string, unknown>;
-    try { e = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
-    if (e.event === 'nudge.emitted' && typeof e.payload === 'string') {
-      const p = parsePayload(e.payload);
-      if (!p.trace) continue;
-      events.push({ kind: 'emitted', trace: p.trace, from: p.from ?? '', to: p.to ?? '', content: p.content ?? '', ts: String(e.timestamp ?? '') });
-    } else if (e.event === 'nudge.surfaced' && typeof e.trace_id === 'string') {
-      events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
-    } else if (e.event === 'nudge.surface.failed' && typeof e.trace_id === 'string' && e.permanent === true) {
-      // Kade review 2026-08-23: the worker emits surface.failed with permanent:false
-      // on EVERY transient attempt before backoff-retrying (delivery-worker.ts:299)
-      // — clearing on those loses a nudge whose retries are still running. Only a
-      // permanent failure exits the fold: pending = emitted − surfaced − failed(permanent).
-      // Divergence note: the Rust folds (nudge_poll.rs, pulse.rs assemble_nudges)
-      // ignore surface.failed entirely — their pending can disagree with this one
-      // after a permanent failure until fold-convergence lands.
-      events.push({ kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' });
-    }
+  return { key, lines: lines.slice(-WINDOW_EVENTS) };
+}
+
+function classifyLine(line: string): NudgeEvent | null {
+  if (!line || !line.includes('"nudge.')) return null;
+  let e: Record<string, unknown>;
+  try { e = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
+  if (e.event === 'nudge.emitted' && typeof e.payload === 'string') {
+    const p = parsePayload(e.payload);
+    if (!p.trace) return null;
+    return { kind: 'emitted', trace: p.trace, from: p.from ?? '', to: p.to ?? '', content: p.content ?? '', ts: typeof e.timestamp === 'string' ? e.timestamp : '' };
   }
-  cacheKey = key;
+  // A cleared trace exits the fold. nudge.surfaced always clears; nudge.surface.failed
+  // clears ONLY when permanent:true (Kade review 2026-08-23): the worker emits
+  // permanent:false on every transient attempt before backoff-retrying
+  // (delivery-worker.ts:299) — clearing on those loses a nudge whose retries are
+  // still running. Divergence note: the Rust folds (nudge_poll.rs, pulse.rs
+  // assemble_nudges) ignore surface.failed entirely — their pending can disagree
+  // with this one after a permanent failure until fold-convergence lands.
+  const cleared =
+    e.event === 'nudge.surfaced' ||
+    (e.event === 'nudge.surface.failed' && e.permanent === true);
+  if (cleared && typeof e.trace_id === 'string') {
+    return { kind: 'cleared', trace: e.trace_id, from: '', to: '', content: '', ts: '' };
+  }
+  return null;
+}
+
+function parseNudgeEvents(path: string): NudgeEvent[] {
+  const tail = readTail(path);
+  if (tail.lines === null) return cacheEvents;
+  const events: NudgeEvent[] = [];
+  for (const line of tail.lines) {
+    const ev = classifyLine(line);
+    if (ev) events.push(ev);
+  }
+  cacheKey = tail.key;
   cacheEvents = events;
   return events;
 }
