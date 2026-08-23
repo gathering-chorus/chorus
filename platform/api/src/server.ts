@@ -956,13 +956,13 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
         scanSpine: () => scanTail(logPath),
         // #2725 AC5 — repointed from :3475 messages.db to the spine itself:
         // chorus-api has the log on disk; messages.db loses this reader.
-        loadNudges: async () =>
-          recentNudges(logPath, 100).map((n): NudgeMessage => ({
+        loadNudges: () =>
+          Promise.resolve(recentNudges(logPath, 100).map((n): NudgeMessage => ({
             from: n.from,
             to: n.to,
             text: n.content,
             timestamp: n.ts,
-          })),
+          }))),
       },
       req.params.id,
     );
@@ -992,8 +992,8 @@ async function roleForWebId(webId: string): Promise<string | null> {
     webidRoleCache = { at: Date.now(), rows: await athenaSparqlQuery(WEBID_ROLE_QUERY) };
   }
   const rows = webidRoleCache.rows;
-  for (const b of rows?.results?.bindings ?? []) {
-    const v = String(b.v?.value ?? '');
+  for (const b of rows.results?.bindings ?? []) {
+    const v = b.v?.value ?? '';
     const sp = v.indexOf(' ');
     if (sp <= 0) continue;
     if (v.slice(0, sp) === webId) {
