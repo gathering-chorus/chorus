@@ -5,8 +5,13 @@ import fs from 'fs';
 import { EventEmitter } from 'events';
 import { MessageRouter } from './router';
 
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
-const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
+// #2725 — repointed to the LIVE spine. The spine moved to ~/.chorus/chorus.log on
+// 2026-05-04 (#3819 class); this tailer kept reading the dead 84KB repo-local copy,
+// so nudge bubbles silently never rendered in Jeff's Clearing. Same resolution
+// order as spine-tail.ts: $CHORUS_HOME/chorus.log, else ~/.chorus/chorus.log.
+const CHORUS_LOG = process.env.CHORUS_HOME
+  ? `${process.env.CHORUS_HOME}/chorus.log`
+  : `${process.env.HOME}/.chorus/chorus.log`;
 const POLL_INTERVAL = 2000; // 2 seconds
 
 /** Spine log entry — all fields optional since entries vary by event type. */

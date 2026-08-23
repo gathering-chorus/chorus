@@ -212,18 +212,17 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
   let logPath: string;
   let tailer: ChorusLogTailer;
   let router: ReturnType<typeof makeRouter>;
-  let origChorusRoot: string | undefined;
+  let origChorusHome: string | undefined;
 
   beforeEach(() => {
-    // Point CHORUS_ROOT at a temp dir so the tailer reads our fixture, not
-    // the live chorus.log. The env var is read at module load, so we need
-    // to reload the module after setting it.
+    // #2725 — the tailer now reads the LIVE spine location resolved from
+    // CHORUS_HOME (else ~/.chorus). Point CHORUS_HOME at a temp dir so the
+    // tailer reads our fixture. Read at module load, so reload after setting.
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tailer-test-'));
-    fs.mkdirSync(path.join(tmpRoot, 'platform/logs'), { recursive: true });
-    logPath = path.join(tmpRoot, 'platform/logs/chorus.log');
+    logPath = path.join(tmpRoot, 'chorus.log');
 
-    origChorusRoot = process.env.CHORUS_ROOT;
-    process.env.CHORUS_ROOT = tmpRoot;
+    origChorusHome = process.env.CHORUS_HOME;
+    process.env.CHORUS_HOME = tmpRoot;
 
     // Force re-import after env change so the module-level constant picks up
     jest.resetModules();
@@ -234,8 +233,8 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
 
   afterEach(() => {
     tailer.stop();
-    if (origChorusRoot === undefined) delete process.env.CHORUS_ROOT;
-    else process.env.CHORUS_ROOT = origChorusRoot;
+    if (origChorusHome === undefined) delete process.env.CHORUS_HOME;
+    else process.env.CHORUS_HOME = origChorusHome;
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
