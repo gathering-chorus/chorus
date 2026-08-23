@@ -75,9 +75,11 @@ EOF
   ORPHAN_PIDFILE="$BATS_TEST_TMPDIR/orphan.pid"
   # >/dev/null and disown — a background child holding bats' stdout pipe
   # open makes the whole file hang at EOF-wait.
-  ( node "$BATS_TEST_TMPDIR/directing/products/cards/src/cli.ts" >/dev/null 2>&1 & echo $! > "$ORPHAN_PIDFILE" )
+  # 3>&- as well: a background child holding bats' FD 3 open hangs the whole
+  # file at EOF-wait even after every test passes.
+  ( node "$BATS_TEST_TMPDIR/directing/products/cards/src/cli.ts" >/dev/null 2>&1 3>&- & echo $! > "$ORPHAN_PIDFILE" )
   CONTROL_PIDFILE="$BATS_TEST_TMPDIR/control.pid"
-  ( node -e 'setInterval(function(){},1000)' >/dev/null 2>&1 & echo $! > "$CONTROL_PIDFILE" )
+  ( node -e 'setInterval(function(){},1000)' >/dev/null 2>&1 3>&- & echo $! > "$CONTROL_PIDFILE" )
   orphan=$(cat "$ORPHAN_PIDFILE"); control=$(cat "$CONTROL_PIDFILE")
   # wait until both are orphaned to ppid 1
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -93,4 +95,11 @@ EOF
   ps -p "$control" > /dev/null
   # cleanup control (it is ours; reaper must not have touched it)
   kill "$control" 2>/dev/null || true
+}
+
+teardown() {
+  # belt-and-suspenders: never leave our own orphans behind on a red run
+  [ -f "$BATS_TEST_TMPDIR/orphan.pid" ] && kill "$(cat "$BATS_TEST_TMPDIR/orphan.pid")" 2>/dev/null
+  [ -f "$BATS_TEST_TMPDIR/control.pid" ] && kill "$(cat "$BATS_TEST_TMPDIR/control.pid")" 2>/dev/null
+  return 0
 }

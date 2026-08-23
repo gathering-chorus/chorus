@@ -91,7 +91,9 @@ while IFS= read -r line; do
   [ "$ppid" = "1" ] || continue
   matches_cards_cli "$cmd" || continue
   age=$(etime_secs "$etime")
-  if [ "$age" -le "$MIN_AGE_SECS" ]; then
+  # -lt, not -le: ps etime is second-granular, so a min-age of 0 must still
+  # reap an age-0 proc (the live negative-proof test races this exact edge)
+  if [ "$age" -lt "$MIN_AGE_SECS" ]; then
     SKIPPED=$((SKIPPED+1))
     log info "skip pid=$pid age=${age}s <= min-age ${MIN_AGE_SECS}s"
     continue
@@ -101,7 +103,13 @@ while IFS= read -r line; do
     REAPED=$((REAPED+1))
     continue
   fi
-  if kill -9 "$pid" 2>/dev/null; then
+  # TERM first (Silas, gate-ops review), KILL only if still alive after 2s
+  kill -TERM "$pid" 2>/dev/null
+  for _ in 1 2 3 4; do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.5
+  done
+  if ! kill -0 "$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null; then
     REAPED=$((REAPED+1))
     log info "reaped pid=$pid age=${age}s cmd=${cmd:0:120}"
     if command -v chorus-log >/dev/null 2>&1; then
