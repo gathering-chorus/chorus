@@ -69,5 +69,5 @@ TTL
 }
 
 @test "the shape is IN the deploy set — declared is not deployed (#3691's whole lesson)" {
-  grep -q "nostr-credential-shape-3691.ttl" "$ROOT/platform/scripts/chorus-model-deploy.sh"
+  grep -q "nostr-credential-shape-3691.ttl" "$ROOT/platform/scripts/athena-deploy-model.sh"
 }

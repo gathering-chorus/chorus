@@ -58,7 +58,7 @@ canon "$GENERATED" > "$WORK/generated.nt" \
 # discipline): every deploys target must be a Service the STORE serves.
 # Fixture path takes a served-list file; live fetches athena-make /services;
 # no source at all = refuse to write edges blind.
-DEPLOY_TARGETS="$(grep -E 'chorus#deploys>' "$WORK/generated.nt" | grep -oE 'chorus#service-[A-Za-z0-9-]+' | sed 's/.*chorus#//' | sort -u || true)"
+DEPLOY_TARGETS="$(grep -E 'chorus#runsService>' "$WORK/generated.nt" | grep -oE 'chorus#service-[A-Za-z0-9-]+' | sed 's/.*chorus#//' | sort -u || true)"
 if [ -n "$DEPLOY_TARGETS" ]; then
   if [ -n "$SERVED" ]; then
     SERVED_LIST="$(cat "$SERVED")"
