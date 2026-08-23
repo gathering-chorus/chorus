@@ -26,6 +26,8 @@ describe('#3967 pulse bind host', () => {
 
   it('opens the network only on an explicit CHORUS_BIND override', () => {
     expect(resolveBindHost({ CHORUS_BIND: '0.0.0.0' } as NodeJS.ProcessEnv)).toBe('0.0.0.0');
-    expect(resolveBindHost({ CHORUS_BIND: '192.168.86.36' } as NodeJS.ProcessEnv)).toBe('192.168.86.36');
+    // #3991: fixture IP kept OFF the home-LAN subnet — the #3370 ratchet
+    // rightly flags any new literal on that range; pass-through needs any IP.
+    expect(resolveBindHost({ CHORUS_BIND: '10.20.30.40' } as NodeJS.ProcessEnv)).toBe('10.20.30.40');
   });
 });

@@ -26,7 +26,14 @@ set -uo pipefail
 # interactive/werk shell may point at canonical and miss a werk-local rule.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${CHORUS_ROOT:-$(cd "$SELF_DIR/.." && pwd)}"
-RULES="$(cd "$SELF_DIR/../security/semgrep" && pwd)"
+# #3991: under bats (werk-test) this file is COPIED to a tmpdir, so BASH_SOURCE
+# no longer sits beside the ruleset. Resolve via the real test dir first, then
+# the script's own dir, then CHORUS_ROOT — and FAIL LOUD if none holds rules.
+RULES=""
+for cand in "${BATS_TEST_DIRNAME:-}/../security/semgrep" "$SELF_DIR/../security/semgrep" "$ROOT/platform/security/semgrep"; do
+  [ -n "$cand" ] && [ -d "$cand" ] && RULES="$(cd "$cand" && pwd)" && break
+done
+[ -n "$RULES" ] || { echo "test-security-scan: semgrep ruleset dir not found (tried BATS_TEST_DIRNAME, script dir, \$CHORUS_ROOT)" >&2; exit 2; }
 MODE="${1:-full}"
 rc=0
 

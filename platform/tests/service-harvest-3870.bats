@@ -120,7 +120,7 @@ setup() {
 @test "MAPPING: mapped label emits deploys edge to its Service" {
   bash "$GEN" --snapshot "$FIX/snapshot-two-units.json" --timestamp "$T" --out "$OUT" \
       --mapping "$FIX/map-good.json" --services-ttl "$FIX/services-authored.ttl"
-  grep -A8 'com.test.api' "$OUT" | grep -q 'chorus:deploys chorus:service-example'
+  grep -A8 'com.test.api' "$OUT" | grep -q 'chorus:runsService chorus:service-example'
 }
 
 @test "MAPPING: label with NO observed instance emits a staleness row (LOUD)" {
