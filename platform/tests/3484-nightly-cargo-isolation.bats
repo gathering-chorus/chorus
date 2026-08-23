@@ -1,39 +1,46 @@
 #!/usr/bin/env bats
-# @test-type: unit — hermetic; stubs cargo on PATH, asserts target-dir isolation, no real build
-# #3484 — the nightly cargo step must run in an ISOLATED CARGO_TARGET_DIR so it
+# @test-type: unit — hermetic; stubs werk-test on PATH, asserts target-dir isolation, no real build
+# #3484 — the nightly cargo lane must run in an ISOLATED CARGO_TARGET_DIR so it
 # can never contend with a role/recovery `cargo` over a crate's shared target/
-# build lock. That cross-process contention returns nonzero, the cargo synthesis
-# stamps "0 ok, 1 failed", and because it hits every crate it paints the whole
-# run red at once (2026-06-20: werk-push/owl-api/chorus-model all "red" while
-# each was green standalone). A private target dir = the nightly's own lock.
+# build lock (2026-06-20: cross-process lock contention painted every crate red
+# at once while each was green standalone). A private target dir = the
+# nightly's own lock.
+#
+# Rewritten for #3974's architecture on #3753: run_one_attempt was retired —
+# the whole lane now routes through `werk-test --nightly` (run_cargo_lane), so
+# the isolation contract is asserted on the env the runner is handed. The old
+# tests sourced the retired function and have been red since #3974 landed.
 
 setup() {
   SCRIPT="$BATS_TEST_DIRNAME/../scripts/nightly-suites.sh"
   TMP="$BATS_TEST_TMPDIR"
-  CRATE="$TMP/fake-crate"; mkdir -p "$CRATE"
   BIN="$TMP/bin"; mkdir -p "$BIN"
   CAP="$TMP/target-capture.txt"
-  # stub cargo: record the CARGO_TARGET_DIR it was given, emit a passing result
-  cat > "$BIN/cargo" <<EOF
+  # stub werk-test: record the CARGO_TARGET_DIR it was given, emit one green
+  # nightly-unit line in the runner's fold format
+  cat > "$BIN/werk-test" <<EOF
 #!/usr/bin/env bash
 echo "\${CARGO_TARGET_DIR:-UNSET}" >> "$CAP"
-echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+echo "nightly-unit|cargo|fake-crate|pass|1 pass, 0 fail"
 exit 0
 EOF
-  chmod +x "$BIN/cargo"
+  chmod +x "$BIN/werk-test"
+  export NIGHTLY_CARGO_TARGET="$TMP/nt"
+  export PATH="$BIN:$PATH"
+  export NIGHTLY_LOAD_STUB=0.1   # #3753: gate must not interfere with this contract
 }
 
-@test "nightly cargo runs in an isolated CARGO_TARGET_DIR, not the crate's shared target/" {
-  NIGHTLY_CARGO_TARGET="$TMP/nt" PATH="$BIN:$PATH" \
-    bash -c "source '$SCRIPT'; run_one_attempt cargo '$CRATE' silas" >/dev/null
+@test "nightly runner lane gets an isolated CARGO_TARGET_DIR, not the crate's shared target/" {
+  run "$SCRIPT" --run-one cargo fake-crate
+  [ "$status" -eq 0 ]
   run cat "$CAP"
   [[ "$output" == *"$TMP/nt"* ]]
   [[ "$output" != *"UNSET"* ]]
 }
 
-@test "isolated build still reports the crate's real result (a green crate is GREEN)" {
-  NIGHTLY_CARGO_TARGET="$TMP/nt" PATH="$BIN:$PATH" \
-    run bash -c "source '$SCRIPT'; run_one_attempt cargo '$CRATE' silas"
+@test "isolated run still reports the crate's real result (a green crate is GREEN)" {
+  run "$SCRIPT" --run-one cargo fake-crate
+  [ "$status" -eq 0 ]
   [[ "$output" == *"|pass|"* ]]
-  [[ "$output" == *"1 ok"* ]]
+  [[ "$output" == *"1 pass"* ]]
 }

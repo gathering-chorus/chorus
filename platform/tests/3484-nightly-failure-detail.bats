@@ -22,15 +22,19 @@ EOF
   chmod +x "$STUB"
 }
 
+# #3753: rewritten for #3974 — run_one_attempt retired; the lane routes through
+# a stubbed werk-test and the capture is asserted on the fold's own output.
 @test "a failing cargo suite captures its output to a failure log" {
-  cat > "$BIN/cargo" <<EOF
+  cat > "$BIN/werk-test" <<EOF
 #!/usr/bin/env bash
-echo "error[E0432]: unresolved import \`foo::bar\`" >&2
-exit 101
+echo "error[E0432]: unresolved import \`foo::bar\`"
+echo "nightly-unit|cargo|fake-crate|fail|0 pass, 1 fail (compile rc=101)"
+exit 1
 EOF
-  chmod +x "$BIN/cargo"
-  PATH="$BIN:$PATH" bash -c "source '$SCRIPT'; run_one_attempt cargo '$CRATE' silas" >/dev/null
-  logp=$(bash -c "source '$SCRIPT'; _fail_log_path cargo '$CRATE'")
+  chmod +x "$BIN/werk-test"
+  NIGHTLY_LOAD_STUB=0.1 PATH="$BIN:$PATH" run "$SCRIPT" --run-one cargo fake-crate
+  [ "$status" -eq 1 ]
+  logp=$(bash -c "source '$SCRIPT'; _fail_log_path cargo platform/services/fake-crate")
   [ -f "$logp" ]
   run cat "$logp"
   [[ "$output" == *"unresolved import"* ]]
@@ -48,14 +52,15 @@ EOF
 }
 
 @test "a passing suite clears any stale failure log and emits no reason" {
-  cat > "$BIN/cargo" <<EOF
+  cat > "$BIN/werk-test" <<EOF
 #!/usr/bin/env bash
-echo "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"
+echo "nightly-unit|cargo|fake-crate|pass|1 pass, 0 fail"
 exit 0
 EOF
-  chmod +x "$BIN/cargo"
-  logp=$(bash -c "source '$SCRIPT'; _fail_log_path cargo '$CRATE'")
+  chmod +x "$BIN/werk-test"
+  logp=$(bash -c "source '$SCRIPT'; _fail_log_path cargo platform/services/fake-crate")
   mkdir -p "$(dirname "$logp")"; echo "stale error" > "$logp"   # pre-existing
-  PATH="$BIN:$PATH" bash -c "source '$SCRIPT'; run_one_attempt cargo '$CRATE' silas" >/dev/null
+  NIGHTLY_LOAD_STUB=0.1 PATH="$BIN:$PATH" run "$SCRIPT" --run-one cargo fake-crate
+  [ "$status" -eq 0 ]
   [ ! -f "$logp" ]   # green run removed the stale log
 }
