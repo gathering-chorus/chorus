@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
-# @test-type: security — asserts a property of the recovery path itself; no
-# service, store or credential is exercised.
+# @test-type: unit:security — static assertions on the recovery script itself;
+# no service, store or credential is exercised (signal:security is the subject).
 #
 # #3785 — the recovery path must never gate on identity.
 #
@@ -20,7 +20,7 @@
 
 setup() {
   ROOT="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"   # #3904: derive, never hardcode a /Users path
-  DEPLOY="$ROOT/platform/scripts/chorus-model-deploy.sh"
+  DEPLOY="$ROOT/platform/scripts/athena-deploy-model.sh"
 }
 
 @test "the recovery path exists where the incident runbook says it does" {
