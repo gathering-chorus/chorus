@@ -99,3 +99,41 @@ describe('#2725 — heartbeats are process liveness, not role activity', () => {
     expect(act.silas.kind).toBe('observer.digest');
   });
 });
+
+describe('#2725 — tile activity is the pane line, so the two cannot disagree', () => {
+  const os = require('os'); const fsx = require('fs'); const pathx = require('path');
+  const { projectSpine } = require('../src/spine-tail');
+  const now = Date.parse('2026-08-24T20:00:00Z');
+  const at = (agoSecs: number) => new Date(now - agoSecs * 1000).toISOString();
+
+  function fixture(lines: string[]): string {
+    const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'spine-2725-'));
+    const f = pathx.join(dir, 'chorus.log');
+    fsx.writeFileSync(f, lines.join('\n') + '\n');
+    return f;
+  }
+
+  it('a fresh heartbeat does not make a silent role look active', () => {
+    const f = fixture([
+      JSON.stringify({ timestamp: at(2913), role: 'silas', event: 'session_tool', summary: 'Bash: cargo test', action: 'Bash' }),
+      JSON.stringify({ timestamp: at(1), role: 'silas', event: 'system.heartbeat' }),
+    ]);
+    const { activity, lines } = projectSpine(fsx, f, 50, now, new Set(['silas']));
+    // the pane renders the tool line and not the heartbeat…
+    expect(lines.some((l: any) => l.type === 'tool')).toBe(true);
+    // …so the tile ages against the SAME line, not the timer.
+    expect(activity.silas.ageSecs).toBe(2913);
+  });
+
+  it('NEGATIVE PROOF: reconciliation is by construction — activity always equals the newest rendered line', () => {
+    const f = fixture([
+      JSON.stringify({ timestamp: at(600), role: 'wren', event: 'session_tool', summary: 'Bash: ls', action: 'Bash' }),
+      JSON.stringify({ timestamp: at(30), role: 'wren', event: 'session_turn', summary: 'a real turn', tool_count: '1' }),
+      JSON.stringify({ timestamp: at(2), role: 'wren', event: 'system.heartbeat' }),
+    ]);
+    const { activity, lines } = projectSpine(fsx, f, 50, now, new Set(['wren']));
+    const newestRendered = Math.min(...lines.filter((l: any) => l.role === 'wren')
+      .map((l: any) => Math.round((now - Date.parse(l.ts)) / 1000)));
+    expect(activity.wren.ageSecs).toBe(newestRendered);
+  });
+});

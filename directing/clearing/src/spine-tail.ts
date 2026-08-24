@@ -327,29 +327,29 @@ export function projectSpine(
   now: number,
   agentRoles: ReadonlySet<string>,
 ): SpineProjection {
-  const raw = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
   const { lines, stats } = readSpineWithStats(fs, logFile, limit);
 
-  // Same bytes the pane just rendered from — not a second, smaller read.
+  // #2725 (2026-08-24) — ONE accept rule, not two.
+  //
+  // This loop used to walk the RAW spine while the pane rendered `lines`, so
+  // the tile and the pane could still disagree about the same role from the
+  // same file: the tile counted `system.heartbeat` (a timer the process emits
+  // whether or not the role does anything) and called silas active "1s ago"
+  // while his pane sat 7 minutes silent — the #3976 reconciliation flow caught
+  // exactly that, live, three roles at once. #3982 removed the second READ;
+  // this removes the second RULE.
+  //
+  // Activity is now the newest line the pane actually renders. Tile and pane
+  // cannot drift, because there is nothing left to drift between: what Jeff
+  // sees in the stream IS what the tile is claiming.
   const act = new Map<string, { ageSecs: number; kind: string }>();
-  for (const line of raw) {
-    let e: { timestamp?: string; role?: string; event?: string };
-    try {
-      e = JSON.parse(line) as typeof e;
-    } catch {
-      continue;
-    }
-    const role = e.role ?? '';
-    if (!agentRoles.has(role) || !e.timestamp || !e.event) continue;
-    const t = Date.parse(e.timestamp);
+  for (const l of lines) {
+    if (!agentRoles.has(l.role) || !l.ts) continue;
+    const t = Date.parse(l.ts);
     if (Number.isNaN(t)) continue;
     const ageSecs = Math.max(0, Math.round((now - t) / 1000));
-    // A Map, not an object literal: `role` comes off a spine line, so indexing
-    // an object with it is untrusted-key access (security/detect-object-injection).
-    // The allowlist above already bounds it, but a Map has no prototype to walk
-    // into, which is the honest fix rather than a disable comment.
-    const prev = act.get(role);
-    if (!prev || ageSecs < prev.ageSecs) act.set(role, { ageSecs, kind: e.event });
+    const prev = act.get(l.role);
+    if (!prev || ageSecs < prev.ageSecs) act.set(l.role, { ageSecs, kind: l.type });
   }
   return { lines, activity: Object.fromEntries(act), stats };
 }
