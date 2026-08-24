@@ -386,6 +386,26 @@ def current_principals():
     if fresh:
         PRINCIPALS = fresh
     return PRINCIPALS
+
+
+def current_allow():
+    """#4003 — re-read the path allowlist per request, mirroring the allow-set.
+
+    The startup snapshot had the same defect one axis over: #4002 landed the
+    /borg entry to canonical and every Borg link kept 404ing, because the guard
+    was still serving the list it read at launch. It took a hand-run kickstart
+    to make a landed policy the running policy — landed-is-not-running on the
+    door itself. Now a governed edit takes effect on the next request.
+
+    An unreadable or emptied file returns the last known-good list rather than
+    an empty one: mid-edit truncation must never widen or close the door by
+    accident. Empty still refuses at STARTUP, where it means misconfiguration.
+    """
+    global ALLOW
+    fresh, _ = load_allow()
+    if fresh:
+        ALLOW = fresh
+    return ALLOW
 PORT = int(os.environ.get("SHARE_PORT", "8899"))
 
 # #3770 — an empty allow-set is a misconfiguration, never "everyone who can sign
@@ -842,7 +862,7 @@ Nothing is wrong with your account. Try again in a moment.</p>""")
         # sign-in path below.
         _p = self.path.split("?")[0]
         if (_p not in ("/", "") and _p not in ("/clearing", "/clearing/")
-                and route(_p, ALLOW, UPSTREAM) is None):
+                and route(_p, current_allow(), UPSTREAM) is None):
             if self._wants_html():
                 return self._page(404, "Not found", f"""
 <h1>Not found</h1>
@@ -879,7 +899,7 @@ being allowed in. Access is granted per person; ask Jeff to add you.</p>
         if self.path.split("?")[0] in ("/clearing", "/clearing/"):
             return self._redirect(CLEARING_URL)
 
-        upstream = route(self.path.split("?")[0], ALLOW, UPSTREAM)
+        upstream = route(self.path.split("?")[0], current_allow(), UPSTREAM)
 
         # #3796, revised. The rule that mattered was never "the root redirects" — it
         # was "a successful sign-in must not end in a 404". That is still enforced,
