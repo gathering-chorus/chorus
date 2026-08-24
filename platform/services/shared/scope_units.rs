@@ -70,6 +70,16 @@ pub fn scope_unit_names(
                 }
             }
         }
+        // #4000 — proving/flows is LANE-handled, not unit-built: the #3920 ui
+        // lane already fires on these paths (ui_lane_fires), so a specs-only
+        // diff scopes to the well-known "ui-flows" name instead of forcing
+        // FULL. Deliberately NOT scope_irrelevant — these are real tests and
+        // irrelevant would silently skip them. Other proving/ paths stay on
+        // the loud FULL escape (the unmapped defense is untouched).
+        if f.starts_with("proving/flows/") {
+            names.insert("ui-flows".to_string());
+            continue;
+        }
         return ScopeVerdict::Full(format!("unmapped:{}", f));
     }
     loop {
