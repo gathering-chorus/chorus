@@ -190,8 +190,17 @@ test.describe('the journey — one sign-in, land where you asked', () => {
       .not.toContainText(/loading the stream live from the model/i, { timeout: 20000 });
     await expect(page.locator('body'), 'the entrance rendered no value-stream steps')
       .toContainText(/shaping|directing|designing|building|proving|reflecting/i);
-    await expect(page.locator('#stream-block .prod').first(), 'the stream rendered no products')
-      .toBeVisible();
+    // 2026-08-24 — selector repair, not a relaxation. The entrance was replaced
+    // by the products hub (#3790 rebrand); `#stream-block .prod` is markup that
+    // exists in NO source file any more, so this assertion could only ever fail.
+    // The #3807 intent is kept exactly: the page must render the PRODUCTS the
+    // model serves, not an empty frame. Asserted on the live product cards.
+    const products = page.locator('.product');
+    await expect(products.first(), 'the entrance rendered no product cards').toBeVisible();
+    expect(await products.count(), 'the entrance rendered too few products to be the hub')
+      .toBeGreaterThanOrEqual(4);
+    await expect(page.locator('body'), 'the entrance is missing a known product')
+      .toContainText(/athena/i);
   });
 
   test('the entrance admits the entrance ONLY — being signed in is not a skeleton key', async ({ page }) => {
