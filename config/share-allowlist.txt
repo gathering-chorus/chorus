@@ -87,3 +87,14 @@
 # The one Borg page that lives outside that dir (an entrance-linked assessment
 # view under chorus-pages). Exact file — nothing beside it is shared.
 /chorus-pages/borg-assessment.html
+
+# The remaining CLAIMED sections the entrance links (#4003). Same reasoning as
+# /borg (#4002): each is a chorus-api-mounted, GET-only page directory, not an
+# express.static window onto the whole public tree (the #3815 /docs trap). The
+# API plane stays unlisted, so page data calls that write still refuse.
+/loom
+/werk
+# The entrance's own page family — /chorus-pages holds the entrance and the
+# pages it links directly (model-data hub, borg-assessment). Prefix, because a
+# section that IS the front door cannot be maintained one file at a time.
+/chorus-pages

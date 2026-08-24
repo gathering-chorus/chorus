@@ -163,6 +163,26 @@ assert "file allowlist: /about served" test "$(code_alice http://127.0.0.1:$G2_P
 assert "file allowlist: second entry served" test "$(code_alice http://127.0.0.1:$G2_PORT/extra/e.html)" = "200"
 assert "file allowlist: comments/blank lines ignored, not treated as paths" \
   test "$(code_alice http://127.0.0.1:$G2_PORT/secret/y.html)" = "404"
+
+# --- #4003: a governed edit takes effect WITHOUT a restart ---------------------
+# #4002 landed the /borg entry and every Borg link kept 404ing: the guard was
+# still serving the list it read at launch, and only a hand-run kickstart made
+# the landed policy the running one. The allow-SET already re-read per request
+# (#3770); the path allowlist did not. Reuses the live G2 guard above.
+mkdir -p "$TEST_ROOT/www/late"; echo "late page" > "$TEST_ROOT/www/late/l.html"
+assert "before the edit: /late is not shared (404)" \
+  test "$(code_alice http://127.0.0.1:$G2_PORT/late/l.html)" = "404"
+printf '# comment ignored\n/about\n\n/extra   # trailing comment\n/late\n' > "$ALLOWFILE"
+assert "#4003: governed allowlist edit serves on the NEXT request, no restart" \
+  test "$(code_alice http://127.0.0.1:$G2_PORT/late/l.html)" = "200"
+# NEGATIVE PROOF: a truncated file mid-save must not empty the policy — the
+# last known-good list keeps serving rather than the door swinging either way.
+cp "$ALLOWFILE" "$TEST_ROOT/allow.bak"; : > "$ALLOWFILE"
+assert "NEGATIVE PROOF: emptied allowlist keeps the last known-good list (no accidental close)" \
+  test "$(code_alice http://127.0.0.1:$G2_PORT/about/x.html)" = "200"
+assert "NEGATIVE PROOF: emptied allowlist still refuses an unlisted path" \
+  test "$(code_alice http://127.0.0.1:$G2_PORT/secret/y.html)" = "404"
+cp "$TEST_ROOT/allow.bak" "$ALLOWFILE"
 kill "$G2_PID" 2>/dev/null
 
 # NEGATIVE PROOF: no file and no env → REFUSE TO START. Never default to "/",
