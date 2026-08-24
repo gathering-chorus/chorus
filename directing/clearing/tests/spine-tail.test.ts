@@ -56,7 +56,7 @@ describe('readSpineLines — response shape regression (pre-#3607 semantics)', (
     const rows = [
       JSON.stringify({ timestamp: 't1', role: 'wren', event: 'session_turn', summary: 'real turn content here', tool_count: '2' }),
       JSON.stringify({ timestamp: 't2', role: 'kade', event: 'session_tool', summary: 'Bash: cargo test', action: 'Bash' }),
-      JSON.stringify({ timestamp: 't3', role: 'kade', event: 'session_tool', summary: 'Read: file.ts', action: 'Read' }), // skipped (Read)
+      JSON.stringify({ timestamp: 't3', role: 'kade', event: 'session_tool', summary: 'Read: file.ts', action: 'Read' }), // #3982: renders — every agent action shows (Jeff 2026-08-22: "i see no streams")
       JSON.stringify({ timestamp: 't4', role: 'silas', event: 'nudge.emitted', from: 'silas,to=wren,content=[gemba] watching the run' }),
       JSON.stringify({ timestamp: 't5', role: 'silas', event: 'nudge.emitted', from: 'silas,to=wren,content=plain nudge' }), // skipped (not gemba)
       JSON.stringify({ timestamp: 't6', role: 'jeffx', event: 'session_turn', summary: 'wrong role skipped' }), // skipped (role)
@@ -69,6 +69,9 @@ describe('readSpineLines — response shape regression (pre-#3607 semantics)', (
     expect(out).toEqual([
       { ts: 't7', role: 'jeff', type: 'turn', text: '→wren: jeff typed this' },
       { ts: 't4', role: 'silas', type: 'gemba', text: '[gemba] watching the run' },
+      // #3982 — Read/Glob/Grep render too (Jeff: "i see no streams"); the
+      // landed card changed the projection and this fixture was forgotten.
+      { ts: 't3', role: 'kade', type: 'tool', text: '○ file.ts' },
       { ts: 't2', role: 'kade', type: 'tool', text: '→ cargo test' },
       { ts: 't1', role: 'wren', type: 'turn', text: 'real turn content here' },
     ]);

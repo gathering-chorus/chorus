@@ -1,3 +1,4 @@
+// @test-type: integration — spawns its own Clearing on a test port; pulse dead-ported, nudge mocked (own world).
 /**
  * Clearing UI Validation Tests — #1818
  *
@@ -35,6 +36,7 @@ let clearingProc: ChildProcess | null = null;
 const MOCK_NUDGE_DIR = '/tmp/clearing-test-nudges';
 const MOCK_NUDGE_SCRIPT = '/tmp/clearing-test-mock-nudge';
 import * as fs from 'fs';
+import * as os from 'os';
 
 beforeAll(async () => {
   // Create mock nudge that logs but doesn't inject
@@ -53,6 +55,11 @@ echo "DELIVERED to $TARGET at $(TZ=America/New_York date '+%Y-%m-%d %H:%M')"
       COMMAND_CHANNEL_PORT: String(TEST_PORT),
       CLEARING_HTTPS_PORT: String(TEST_HTTPS_PORT),
       CHORUS_INJECT_DRY_RUN: '1',  // belt-and-suspenders for any inject path
+      // 2026-08-24 — the spawned Clearing inherited live routing and nudged REAL
+      // role terminals (AC1-SOCKET spray into kade's session). Dead-port pulse,
+      // point the nudge binary at the mock above. A test brings its own world.
+      PULSE_URL: 'http://127.0.0.1:1',
+      NUDGE_BINARY: MOCK_NUDGE_SCRIPT,
     },
     stdio: 'pipe',
     detached: false,
@@ -152,57 +159,60 @@ describe('Precondition: Clearing service', () => {
 // AC2: Role-to-role nudges do NOT appear in Clearing UI
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
-  test('nudge from kade to silas does not leak into Clearing messages', async () => {
+describe('AC2 (re-ruled #3862): role-to-role nudges APPEAR, typed role-to-role — Jeff 2026-08-13: no hidden nudges', () => {
+  test('nudge from kade to silas appears, typed role-to-role', async () => {
     const marker = `AC2-TEST-${Date.now()}`;
     // Post a role-to-role nudge with [nudge from] prefix — must be filtered
     const body = JSON.stringify({ from: 'kade', text: `[nudge from kade] ${marker} — test nudge that should not appear in Clearing` });
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
       req.on('error', reject); req.write(body); req.end();
     });
 
     await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(50);
-    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
-    expect(leaked).toHaveLength(0);
+    const found = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(found).toHaveLength(1);
+    expect(found[0].type).toBe('role-to-role');
   });
 
-  test('nudge from wren to kade does not leak into Clearing messages', async () => {
+  test('nudge from wren to kade appears, typed role-to-role', async () => {
     const marker = `AC2-WK-${Date.now()}`;
     const body = JSON.stringify({ from: 'wren', text: `[nudge from wren] ${marker} — wren to kade test` });
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
       req.on('error', reject); req.write(body); req.end();
     });
 
     await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(50);
-    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
-    expect(leaked).toHaveLength(0);
+    const found = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(found).toHaveLength(1);
+    expect(found[0].type).toBe('role-to-role');
   });
 
-  test('[nudge from] prefix is filtered by router classify', async () => {
+  test('[nudge from] prefix is typed role-to-role and stays visible', async () => {
     const marker = `AC2-PREFIX-${Date.now()}`;
     const body = JSON.stringify({ from: 'kade', text: `[nudge from kade] ${marker}` });
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => { res.on('data', () => {}); res.on('end', () => resolve()); });
       req.on('error', reject); req.write(body); req.end();
     });
 
     await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(50);
-    const leaked = messages.filter((m: any) => (m.text || '').includes(marker));
-    expect(leaked).toHaveLength(0);
+    const found = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(found).toHaveLength(1);
+    expect(found[0].type).toBe('role-to-role');
   });
 });
 
@@ -211,12 +221,20 @@ describe('AC2: Role-to-role nudges do NOT appear in Clearing messages', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Helper: POST a message to Clearing API (top-level, used across describes)
+// #3966 — the room's write door refuses anonymous posts; carry the machine's
+// bridge token (the spawned server generates the file at boot if missing).
+const BRIDGE_TOKEN = (() => {
+  try { return fs.readFileSync(`${os.homedir()}/.chorus/bridge-auth-token`, 'utf-8').trim(); }
+  catch { return ''; }
+})();
+const AUTH_HEADERS = BRIDGE_TOKEN ? { Authorization: `Bearer ${BRIDGE_TOKEN}` } : {};
+
 function postMessage(from: string, text: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ from, text });
     const req = http.request(`${CLEARING_URL}/api/message`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
     }, (res) => {
       res.on('data', () => {});
       res.on('end', () => resolve(res.statusCode || 0));
@@ -336,7 +354,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
     /* eslint-enable jest/no-conditional-expect */
   });
 
-  test('[chat] prefixed messages are filtered by router', async () => {
+  test('[chat] prefixed messages appear, typed role-to-role (#3862 ruling)', async () => {
     const marker = `AC3-PREFIX-${Date.now()}`;
 
     // Post a [chat] message directly to Clearing API — verify it's filtered
@@ -344,7 +362,7 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -359,7 +377,8 @@ describe('AC3: Role-to-role /chat messages do NOT appear in Clearing', () => {
     const chatMessages = messages.filter((m: any) =>
       m.from === 'silas' && (m.text || '').includes(marker)
     );
-    expect(chatMessages).toHaveLength(0);
+    expect(chatMessages).toHaveLength(1);
+    expect(chatMessages[0].type).toBe('role-to-role');
   });
 });
 
@@ -375,7 +394,7 @@ describe('AC5: Guest identity displays correctly', () => {
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -415,7 +434,7 @@ describe('AC5: Guest identity displays correctly', () => {
       await new Promise<void>((resolve, reject) => {
         const req = http.request(`${CLEARING_URL}/api/message`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
         }, (res) => {
           res.on('data', () => {});
           res.on('end', () => resolve());
@@ -525,7 +544,7 @@ describe('AC6: Reconnect after disconnect — no duplicates, no lost messages', 
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -574,7 +593,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -596,7 +615,7 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -611,14 +630,14 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
     expect(messages.some((m: any) => (m.text || '').includes(marker))).toBe(true);
   });
 
-  test('[nudge from] messages are blocked by router classify', async () => {
+  test('[nudge from] posts appear, typed role-to-role (#3862 ruling)', async () => {
     // Post a role-to-role nudge directly to Clearing API — verify it's filtered
     const marker = `AC8-NUDGE-${Date.now()}`;
     const body = JSON.stringify({ from: 'silas', text: `[nudge from silas] ${marker}`, type: 'role-to-role' });
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -630,18 +649,19 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
 
     await new Promise(r => setTimeout(r, 1000));
     const messages = await getMessages(100);
-    const allText = messages.map((m: any) => m.text || '').join('\n');
-    expect(allText).not.toContain(marker);
+    const found = messages.filter((m: any) => (m.text || '').includes(marker));
+    expect(found).toHaveLength(1);
+    expect(found[0].type).toBe('role-to-role');
   });
 
-  test('DELIVERED confirmations are blocked by router classify', async () => {
+  test('DELIVERED confirmations appear, typed role-to-role (#3862 makes role-to-role visible)', async () => {
     const marker = `AC8-DELIV-${Date.now()}`;
     // DELIVERED lines from roles are classified as role-to-role and hidden
     const body = JSON.stringify({ from: 'silas', text: `DELIVERED to wren at ${marker}` });
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -652,12 +672,15 @@ describe('AC8: Session tailer whitelist — only Jeff-facing content', () => {
     });
 
     await new Promise(r => setTimeout(r, 1000));
-    // Check only visible messages — the DELIVERED message should be hidden (visible: false)
+    // #3862 flipped role-to-role to visible; DELIVERED rides the same predicate.
+    // If product wants confirmations hidden again, that is a rule change + a
+    // ruling, not a test edit.
     const messages = await getMessages(100);
     const deliveredMessages = messages.filter((m: any) =>
       m.from === 'silas' && (m.text || '').includes(`DELIVERED to wren at ${marker}`)
     );
-    expect(deliveredMessages).toHaveLength(0);
+    expect(deliveredMessages).toHaveLength(1);
+    expect(deliveredMessages[0].type).toBe('role-to-role');
   });
 });
 
@@ -840,7 +863,7 @@ describe('Message rendering via API', () => {
     await new Promise<void>((resolve, reject) => {
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve());
@@ -870,7 +893,7 @@ describe('Message rendering via API', () => {
       await new Promise<void>((resolve, reject) => {
         const req = http.request(`${CLEARING_URL}/api/message`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
         }, (res) => {
           res.on('data', () => {});
           res.on('end', () => resolve());
@@ -924,7 +947,7 @@ describe('API endpoints', () => {
       const body = JSON.stringify({ from: 'test' }); // missing text
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve(res.statusCode || 0));
@@ -982,7 +1005,7 @@ describe('Error states', () => {
       const body = '{}';
       const req = http.request(`${CLEARING_URL}/api/message`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), ...AUTH_HEADERS },
       }, (res) => {
         res.on('data', () => {});
         res.on('end', () => resolve(res.statusCode || 0));
