@@ -232,6 +232,7 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
   let tailer: ChorusLogTailer;
   let router: ReturnType<typeof makeRouter>;
   let origChorusHome: string | undefined;
+  let origLogFile: string | undefined;
 
   beforeEach(() => {
     // #2725 — the tailer now reads the LIVE spine location resolved from
@@ -246,6 +247,11 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
 
     origChorusHome = process.env.CHORUS_HOME;
     process.env.CHORUS_HOME = tmpRoot;
+    // the runner's suite world injects CHORUS_LOG_FILE (#3615 seam), which the
+    // resolver checks FIRST — pin it to the fixture or the tailer reads the
+    // runner's temp spine and dispatches nothing (run -58's only red).
+    origLogFile = process.env.CHORUS_LOG_FILE;
+    process.env.CHORUS_LOG_FILE = logPath;
 
     // Force re-import after env change so the module-level constant picks up
     jest.resetModules();
@@ -258,6 +264,8 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
     tailer.stop();
     if (origChorusHome === undefined) delete process.env.CHORUS_HOME;
     else process.env.CHORUS_HOME = origChorusHome;
+    if (origLogFile === undefined) delete process.env.CHORUS_LOG_FILE;
+    else process.env.CHORUS_LOG_FILE = origLogFile;
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 

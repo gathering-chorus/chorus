@@ -20,15 +20,30 @@ const { test, expect } = require('@playwright/test');
 
 const BASE = process.env.FLOW_BASE || 'https://lightlifeurbangardens.com';
 
+
+// #2646 standing posture: Cloudflare Access fronts the public host. Anonymous
+// probes see the wall, not the page — link assertions need credentials there.
+// Wall detected → typed skip (same pattern as url-topology-3878), never a
+// vacuous pass and never a red that reads as a missing link.
+async function skipIfAccessWalled(page, test) {
+  const body = await page.locator('body').innerText().catch(() => '');
+  const url = page.url() || '';
+  if (url.includes('cloudflareaccess.com') || /cloudflareaccess|cf-access/i.test(body)) {
+    test.skip(true, 'public /chorus behind the Access wall — link checks need credentials');
+  }
+}
+
 test.describe('#3886 — chorus home is a way in, not a dead end', () => {
   test('the page offers a link to the Clearing', async ({ page }) => {
     await page.goto(`${BASE}/chorus`, { waitUntil: 'domcontentloaded' });
+    await skipIfAccessWalled(page, test);
     const link = page.locator('a[href*="clearing"]').first();
     await expect(link, 'no link to the Clearing on the chorus page').toHaveCount(1);
   });
 
   test('clicking it reaches the room — click, not a URL assertion', async ({ page }) => {
     await page.goto(`${BASE}/chorus`, { waitUntil: 'domcontentloaded' });
+    await skipIfAccessWalled(page, test);
     await page.locator('a[href*="clearing"]').first().click();
     // The room, or its sign-in. What must NOT happen is a 404 or an error page.
     await expect(page.locator('body')).not.toContainText('Cannot GET');
