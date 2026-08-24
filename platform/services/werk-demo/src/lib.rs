@@ -934,7 +934,7 @@ fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
         let auth = bridge_auth_header();
         let _ = run("curl", &[
             "-s", "-X", "POST",
-            "http://localhost:3470/api/message",
+            &bridge_url(),
             "-H", "Content-Type: application/json",
             "-H", &auth,
             "-d", &bridge_body,
@@ -943,6 +943,14 @@ fn fire_gathers(home: &Path, role: &str, card: u64, trace: &str, round: &str) {
               &format!(",\"peers\":\"{}\",\"round\":\"{}\"", sent.join(","), round));
         emit_spine(home, "demo.gathers.surfaced", role, card, trace);
     }
+}
+
+/// #3995 — the Bridge URL seam. Hardcoded :3470 let a test post into Jeff's
+/// live Clearing (paged him twice 2026-08-23); env-overridable so the runner's
+/// suite world can dead-port it. Default unchanged for real demos.
+fn bridge_url() -> String {
+    std::env::var("CHORUS_BRIDGE_URL")
+        .unwrap_or_else(|_| "http://localhost:3470/api/message".to_string())
 }
 
 fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
@@ -1018,7 +1026,7 @@ fn signal(card: u64, role: &str, home: &Path, trace: &str, owed: &[&str]) -> Vec
         "curl",
         &[
             "-s", "-X", "POST",
-            "http://localhost:3470/api/message",
+            &bridge_url(),
             "-H", "Content-Type: application/json",
             "-H", &auth,
             "-d", &bridge_body,
@@ -1350,7 +1358,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     let auth = bridge_auth_header();
     if let Err(e) = run("curl", &[
         "-s", "-f", "-X", "POST",
-        "http://localhost:3470/api/message",
+        &bridge_url(),
         "-H", "Content-Type: application/json",
         "-H", &auth,
         "-d", &test_surface_body,
@@ -1392,7 +1400,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         "curl",
         &[
             "-s", "-f", "-X", "POST",
-            "http://localhost:3470/api/message",
+            &bridge_url(),
             "-H", "Content-Type: application/json",
             "-H", &auth,
             "-d", &pause_body,
@@ -1486,7 +1494,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
             .replace('\\', " ").replace('"', "'")
     );
     let auth = bridge_auth_header();
-    let _ = run("curl", &["-s", "-f", "-X", "POST", "http://localhost:3470/api/message",
+    let _ = run("curl", &["-s", "-f", "-X", "POST", &bridge_url(),
                           "-H", "Content-Type: application/json", "-H", &auth, "-d", &surface_body]);
     jsonl(home, role, card, &trace, "demo.decision_surface",
           &format!(",\"ac\":\"{}/{}\"", checked, total));
@@ -2177,7 +2185,7 @@ fn run_reviews(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
     let bridge_body = format!(r#"{{"from":"{}","text":"{}"}}"#, role, text);
     let auth = bridge_auth_header();
     let _ = run("curl", &[
-        "-s", "-X", "POST", "http://localhost:3470/api/message",
+        "-s", "-X", "POST", &bridge_url(),
         "-H", "Content-Type: application/json", "-H", &auth, "-d", &bridge_body,
     ]);
     for peer in absent {

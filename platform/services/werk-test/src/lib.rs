@@ -1095,12 +1095,35 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         ("CHORUS_DB_PATH".into(), format!("{tmp}/index.db")),
         ("CHORUS_LANCE_DIR".into(), format!("{tmp}/lance")),
         ("CHORUS_MESSAGES_DB".into(), format!("{tmp}/messages.db")),
+        // #3995 — the HTTP lane: the membrane guards stores via env seams, but a
+        // suite POSTing to a live service walks around it (a werk-demo e2e paged
+        // Jeff's live Clearing twice, 2026-08-23). Dead-port every outbound-HTTP
+        // seam: 127.0.0.1:9 (discard) refuses instantly, so a leaky suite fails
+        // loudly instead of speaking with the team's live voice. Genuinely-live
+        // integration tests gate via RUN_LIVE_INTEGRATION and set their own URLs.
+        ("CHORUS_MCP_URL".into(), "http://127.0.0.1:9/mcp".into()),
+        ("CHORUS_BRIDGE_URL".into(), "http://127.0.0.1:9/api/message".into()),
     ]
 }
 
 #[cfg(test)]
 mod suite_world_tests {
     use super::suite_world_env;
+
+    /// #3995 negative proof (#3734): under the suite world, an HTTP POST to the
+    /// seam URL must REFUSE — the violation state (a suite reaching a live
+    /// service) is shown unreachable, not assumed.
+    #[test]
+    fn http_seams_are_dead_ported_and_refuse() {
+        let env = suite_world_env("/tmp/w");
+        let mcp = env.iter().find(|(k, _)| k == "CHORUS_MCP_URL").expect("mcp seam present").1.clone();
+        assert!(mcp.starts_with("http://127.0.0.1:9/"), "dead port, not a live default: {mcp}");
+        let rc = std::process::Command::new("curl")
+            .args(["-s", "-m", "2", "-X", "POST", &mcp, "-d", "{}"])
+            .status()
+            .expect("curl spawns");
+        assert!(!rc.success(), "POST to the suite-world MCP seam must refuse (got success — a suite could page Jeff)");
+    }
 
     #[test]
     fn overridable_surfaces_point_into_the_tempdir() {
@@ -1109,7 +1132,12 @@ mod suite_world_tests {
         for k in ["CHORUS_LOG_FILE", "CHORUS_SESSIONS_DIR", "CHORUS_DB_PATH", "CHORUS_LANCE_DIR", "CHORUS_MESSAGES_DB"] {
             assert!(keys.contains(&k), "missing {k}");
         }
-        assert!(env.iter().all(|(_, v)| v.starts_with("/tmp/w/")), "{env:?}");
+        // #3995 — path seams live in the tempdir; the HTTP seams are dead-ports,
+        // not paths. Every value is one or the other, nothing may point at prod.
+        assert!(
+            env.iter().all(|(_, v)| v.starts_with("/tmp/w/") || v.starts_with("http://127.0.0.1:9/")),
+            "{env:?}"
+        );
     }
 
     #[test]
