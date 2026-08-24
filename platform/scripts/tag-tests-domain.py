@@ -50,7 +50,13 @@ HANDMAP = [("failure_class","builds"),("ac-autocheck","cicd"),("api-fragile-endp
  ("chorus-inject-signed-stable","messages"),("chorus-ops-triage","alerts-monitors"),("close-out","roles"),
  ("daily-signal-scan","alerts-monitors"),("domain-detail-retired","domains"),("execsync-audit","security"),
  ("ownership-partof-chain","domains"),("regression-locks","cicd"),("write-story","cards")]
-PREFIX = sorted([("platform/services/chorus-hooks","cicd"),("platform/services/owl-api","domains"),
+PREFIX = sorted([("platform/services/chorus-hooks","cicd"),
+ # #3996 — the "services" bucket held 43% of the corpus because these trees had
+ # no rule and fell to the global default. Real homes, all generated domains:
+ ("directing/products/cards","cards"),("directing/clearing","messages"),
+ ("platform/services/athena-make","domains"),("platform/services/athena-model","domains"),
+ ("platform/services/chorus-oidc","identity"),("platform/apps","products"),
+ ("proving/flows","builds"),("platform/services/owl-api","domains"),
  ("platform/services/chorus-model","domains"),("platform/services/athena-deploy","deploys"),
  ("platform/services/chorus-inject","messages"),("platform/services/pulse-gather","messages"),
  ("platform/services/properties-resolver","properties"),("platform/services/loom-gemba","alerts-monitors"),
@@ -70,6 +76,8 @@ KW = [(r'secret|gitleaks|scrubber|sensitive|credential|leak','security'),(r'aler
  (r'git|commit|merge|branch','version-control')]
 
 def cardlookup(n):
+    if os.environ.get("TESTS_COVERS_OFFLINE") == "1":
+        return None  # hermetic mode (#3528): no network, deterministic fallback
     try:
         d = json.load(urllib.request.urlopen(f"http://localhost:3340/api/chorus/card-story/{n}", timeout=4))
         dom = str(d.get('domain') or d.get('subproduct') or '').lower()
@@ -88,10 +96,13 @@ def covers_for(path):
         for pat, dom in KW:
             if re.search(pat, b): return dom
         return "services"
-    for pre, dom in PREFIX:
-        if path.startswith(pre): return dom
+    # #3996 — basename keywords BEFORE package prefixes: an eventloop-alert test
+    # under platform/api is about alerts, not "everything the api serves". The
+    # prefix stays as the package-level fallback, not the first answer.
     for pat, dom in KW:
         if re.search(pat, b): return dom
+    for pre, dom in PREFIX:
+        if path.startswith(pre): return dom
     return "services"
 
 # #3924 — the AUTHORED declaration wins. The @test-type header (enforced at
@@ -199,6 +210,35 @@ def freshness_stamp(now_iso, commit):
             f'chorus:generatedAt "{esc(now_iso)}" ; chorus:fromCommit "{esc(commit)}" ; '
             f'chorus:inDomain <{HOME}> .')
 
+# #3996 — share gate. One domain holding an outsized share of the corpus makes
+# werk-test's covers-union select half the registry for any touching diff
+# (2026-08-23: "services" at 43% → a 2-unit run exploded to 166). The ingest
+# REFUSES to write a corpus where any domain exceeds MAX_DOMAIN_SHARE.
+# Threshold is config (tests-covers.conf beside this script), env-overridable.
+def max_domain_share():
+    v = os.environ.get("MAX_DOMAIN_SHARE")
+    if not v:
+        conf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests-covers.conf")
+        try:
+            for line in open(conf):
+                line = line.strip()
+                if line.startswith("MAX_DOMAIN_SHARE="):
+                    v = line.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+    return float(v or "0.30")
+
+def assert_shares(counts):
+    total = sum(counts.values()) or 1
+    cap = max_domain_share()
+    worst = sorted(counts.items(), key=lambda x: -x[1])
+    over = [(d, n) for d, n in worst if n / total > cap]
+    if over:
+        hist = " ".join(f"{d}={n}({n*100//total}%)" for d, n in worst[:6])
+        raise SystemExit(
+            f"covers-share gate RED (#3996): {over[0][0]} holds {over[0][1]}/{total} "
+            f"(> {cap:.0%}) — refusing to write an over-broad corpus. top: {hist}")
+
 def main():
     files = discover()
     # #3970 — VALIDATE BEFORE CLEAR. The old order (clear, then build+assert per
@@ -207,6 +247,7 @@ def main():
     # 1300+ Tests down to a partial 270. Now the ENTIRE corpus builds (and every
     # covers assert runs) first; only a fully-valid corpus clears and writes.
     batches, batch, seen, ntests = [], [], set(), 0
+    cover_counts = {}
     def flush():
         nonlocal batch
         if batch:
@@ -225,6 +266,7 @@ def main():
         cov = "security" if concern == 'security' else covers_for(p)
         assert cov.lower() in GEN_CI, f"covers target {cov!r} is not a generated V2 domain"   # no invented domains
         cov = GEN_CI[cov.lower()]
+        cover_counts[cov] = cover_counts.get(cov, 0) + len(cs)
         sf = f"{NS}sf-{slug(p)}"
         batch.append(f'<{sf}> a chorus:SourceFile ; chorus:filePath "{esc(p)}" .')
         for nm in cs:
@@ -245,11 +287,20 @@ def main():
               .stdout.strip() or "unknown")
     batch.append(freshness_stamp(now_iso, commit))
     flush()
-    # Every file classified, every covers target validated — NOW touch the store.
+    # Every file classified, every covers target validated — NOW the share gate,
+    # then the store (#3996: an over-broad corpus never lands).
+    assert_shares(cover_counts)
     clear_graph(DG)  # bounded + typed (#3560/#3825) — Test/SourceFile/stamp only
     for b in batches:
         post(f"PREFIX chorus: <{NS}> INSERT DATA {{ GRAPH <{DG}> {{\n" + "\n".join(b) + "\n} }")
     print(f"tests-domain ingested: {len(files)} files -> {ntests} Tests in {DG} (stamp {now_iso} @ {commit[:12]})")
 
 if __name__ == "__main__":
+    # #3996 — hermetic test seams (a test brings its own world, #3528):
+    #   --covers-of <path>       print the inferred domain for one path, no store
+    #   --check-shares <json>    apply the share gate to a {"domain": count} fixture
+    if len(sys.argv) >= 3 and sys.argv[1] == "--covers-of":
+        print(covers_for(sys.argv[2])); sys.exit(0)
+    if len(sys.argv) >= 3 and sys.argv[1] == "--check-shares":
+        assert_shares(json.load(open(sys.argv[2]))); print("shares ok"); sys.exit(0)
     main()
