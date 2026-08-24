@@ -83,6 +83,19 @@ classify_suite() {
       ;;
   esac
 
+  # #3999 — the FOURTH strike of the mislabel class, closed structurally:
+  # #3606's generic "N pass, N fail" parse lived only in the `*)` arm, so a
+  # KIND with its own arm whose format drifted (cargo lost "suites:", npm lost
+  # "passed/failed") set nothing, never reached `*)`, and fell to the broke
+  # verdict — 06:05 on 2026-08-24 reported cargo:chorus-hooks "BUILD BROKE"
+  # over a parseable "652 pass, 2 fail". The fallback now runs AFTER the case
+  # for every kind: only a summary with no count at all can reach broke.
+  if [ "${s_total:-0}" -eq 0 ] && echo "$summary" | grep -qE "[0-9]+ (pass|ok)"; then
+    s_passed=$(echo "$summary" | grep -oE '[0-9]+ (pass|ok)' | head -1 | grep -oE '[0-9]+' || echo 0)
+    s_failed=$(echo "$summary" | grep -oE '[0-9]+ fail' | head -1 | grep -oE '[0-9]+' || echo 0)
+    s_total=$((s_passed + s_failed))
+  fi
+
   if [ "$status" = "fail" ]; then
     if [ "${s_failed:-0}" -gt 0 ]; then
       # rc≠0 with a parseable failing count → real test failure(s)
