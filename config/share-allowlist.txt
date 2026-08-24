@@ -75,3 +75,15 @@
 # the entrance loads its frame and never its content. One exact file.
 /js/base-path.js
 /css
+
+# Borg — the observation layer the entrance links to (#4002). Fourteen live
+# links on Jeff's signed-in /chorus page 404'd because nothing here covered
+# them, while :3340 served every one of them locally. Deliberately the /borg
+# PREFIX and not fourteen exact files: unlike /docs (express.static over the
+# whole public tree — the #3815 trap), /borg is chorus-api's own mounted Borg
+# surface, GET-only pages under one dir. Its API needs stay OUT: /api/chorus/*
+# is not listed, so the pages' data calls that require writes still refuse.
+/borg
+# The one Borg page that lives outside that dir (an entrance-linked assessment
+# view under chorus-pages). Exact file — nothing beside it is shared.
+/chorus-pages/borg-assessment.html
