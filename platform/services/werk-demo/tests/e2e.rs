@@ -136,6 +136,9 @@ exit 0
     );
     std::env::set_var("CHORUS_TRACE_ID", "e2e-trace-abc123");
     // #3100 AC#5: comment window default is 60s; force 0 in tests so we don't sleep.
+    // #3995 — never speak to live services from a test: dead-port both HTTP seams.
+    std::env::set_var("CHORUS_MCP_URL", "http://127.0.0.1:9/mcp");
+    std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
     // #3100 AC#2: ack window default is 60s; force 0 in tests for fast iteration.
     std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
@@ -403,6 +406,9 @@ exit 0
     );
     write_exec(&home.join("platform/scripts/smoke-check.sh"), "#!/bin/sh\nexit 0\n");
     write_exec(&home.join("platform/scripts/chorus-log"), "#!/bin/sh\nexit 0\n");
+    // #3995 — never speak to live services from a test: dead-port both HTTP seams.
+    std::env::set_var("CHORUS_MCP_URL", "http://127.0.0.1:9/mcp");
+    std::env::set_var("CHORUS_BRIDGE_URL", "http://127.0.0.1:9/api/message");
     std::env::set_var("CHORUS_DEMO_COMMENT_WINDOW_SECS", "0");
     std::env::set_var("CHORUS_DEMO_ACK_WINDOW_SECS", "0");
     std::env::set_var("CHORUS_DEMO_GATE_WAIT_SECS", "0");
