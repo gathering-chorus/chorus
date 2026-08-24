@@ -131,6 +131,22 @@ case "$NAME" in
     fi ;;
 esac
 
+# #3997 — TEST-CONTEXT BOUNDARY. A bats-run caller may never install into the
+# REAL user's canonical bin: on 2026-08-23 a signing test under werk-test's
+# FULL fallback did exactly that six times (werk build → canonical install →
+# kickstart → launchd SIGKILL → team-wide lockout). Hermetic test fixtures are
+# unaffected — they run with a temp $HOME, so DEST is not the real bin. The
+# rule: under bats AND $HOME is the invoking user's actual home AND target is
+# canonical → refuse, witnessed, before any byte moves.
+if [ -n "${BATS_TEST_DIRNAME:-}${BATS_TEST_TMPDIR:-}" ] && [ "$TARGET" = "canonical" ]; then
+  REAL_HOME="$(eval echo "~$(id -un)")"
+  if [ "$HOME" = "$REAL_HOME" ]; then
+    smoke_refuse_emit "test-context-canonical"
+    echo "chorus-bin-install: REFUSED — bats test context may not install $NAME into the real ~/.chorus/bin (the 2026-08-23 lockout class). Give the test its own \$HOME, or set BUILD_SKIP_INSTALL=1 in the suite." >&2
+    exit 11
+  fi
+fi
+
 # #3993 — SIGNATURE GATE for TCC/launchd-constrained binaries. 2026-08-23:
 # pipeline legs installed unsigned chorus-hooks builds into canonical six
 # times; each install's kickstart hit launchd's constraint → SIGKILL "Code
