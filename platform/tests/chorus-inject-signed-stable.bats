@@ -19,6 +19,12 @@
 # Same gate also asserts chorus-hook-shim's signed build (sibling script).
 
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
+# #3997 — a test brings its own world (#3528): this suite asserts SIGNING, never
+# deployment. Without this line, werk-test's FULL fallback ran these 8 builds
+# with CHORUS_ROOT=$WERK and each INSTALLED the werk's binary into canonical
+# ~/.chorus/bin and kickstarted the live daemon — six team-wide lockouts on
+# 2026-08-23. The signing assertions below are unchanged by skipping install.
+export BUILD_SKIP_INSTALL=1
 INJECT_DIR="$CHORUS_ROOT/platform/services/chorus-inject"
 HOOKS_DIR="$CHORUS_ROOT/platform/services/chorus-hooks"
 BUILD_SIGNED="$CHORUS_ROOT/platform/scripts/build-signed.sh"
