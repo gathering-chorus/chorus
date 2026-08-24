@@ -25,6 +25,26 @@ export interface SpineActivity {
   kind: string;
 }
 
+/**
+ * #2725 (2026-08-24) — LIVENESS OF THE PROCESS IS NOT ACTIVITY OF THE ROLE.
+ *
+ * The tile and the streams pane read the same file and still disagreed: the
+ * tile called silas active "8s ago" while his pane had been silent 48 minutes
+ * (caught live by the #3976 reconciliation flow). Both windows were right; the
+ * ACCEPT RULES differed. `system.heartbeat` is emitted by the running process
+ * on a timer whether or not the role does anything, so counting it as activity
+ * turns the tile into a liveness lamp that always reads "working".
+ *
+ * These kinds are excluded from "the role did something". Everything else —
+ * turns, tool calls, replies, digests, werk phases, nudges — still counts, so
+ * a role that is thinking rather than shelling out does not fall to idle.
+ */
+const HEARTBEAT_KINDS = new Set([
+  'system.heartbeat',
+  'heartbeat.probe',
+  'pair.heartbeat.silence',
+]);
+
 /** Latest role-attributed spine event per role, ages against ONE `now`. */
 export function latestSpineActivity(
   lines: string[],
@@ -40,6 +60,7 @@ export function latestSpineActivity(
     }
     const role = e.role ?? '';
     if (!AGENT_ROLES.has(role) || !e.timestamp || !e.event) continue;
+    if (HEARTBEAT_KINDS.has(e.event)) continue;
     const ts = Date.parse(e.timestamp);
     if (Number.isNaN(ts)) continue;
     const ageSecs = Math.max(0, Math.floor((now - ts) / 1000));

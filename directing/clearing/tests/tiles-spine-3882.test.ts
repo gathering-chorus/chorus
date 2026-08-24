@@ -74,3 +74,28 @@ describe('#3882 latestSpineActivity — one clock over raw lines', () => {
     expect(acts.system).toBeUndefined();
   });
 });
+
+describe('#2725 — heartbeats are process liveness, not role activity', () => {
+  const now = Date.parse('2026-08-24T20:00:00Z');
+  const line = (event: string, agoSecs: number, role = 'silas') =>
+    JSON.stringify({ timestamp: new Date(now - agoSecs * 1000).toISOString(), role, event });
+
+  it('a fresh heartbeat over an hour-old real event does NOT read as activity', () => {
+    // the live 2026-08-24 shape: tile said "8s ago", pane had been silent 48min
+    const act = latestSpineActivity([line('agent.action', 2913), line('system.heartbeat', 8)], now);
+    expect(act.silas.ageSecs).toBe(2913);
+    expect(act.silas.kind).toBe('agent.action');
+  });
+
+  it('NEGATIVE PROOF: without the exclusion the heartbeat wins — the lie this fixes', () => {
+    // same input, heartbeat spelled as an ordinary event: it DOES become newest,
+    // which is exactly the tile-vs-pane disagreement the #3976 flow caught.
+    const act = latestSpineActivity([line('agent.action', 2913), line('reply.published', 8)], now);
+    expect(act.silas.ageSecs).toBe(8);
+  });
+
+  it('thinking still counts — a role with no tool calls is not idled by this', () => {
+    const act = latestSpineActivity([line('observer.digest', 30), line('system.heartbeat', 1)], now);
+    expect(act.silas.kind).toBe('observer.digest');
+  });
+});
