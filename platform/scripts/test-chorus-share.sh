@@ -197,6 +197,23 @@ done
 assert "committed allowlist carries /api/chorus/ui-pages" \
   sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '/api/chorus/ui-pages'"
 
+# --- #4002: the Borg observation layer -------------------------------------
+# Wren's signed-in dead-link check, 2026-08-24: all fourteen borg links the
+# entrance renders 404'd — the allowlist had no /borg entry while :3340 served
+# every one locally. Coverage, not routing.
+assert "committed allowlist carries /borg" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '/borg'"
+assert "committed allowlist carries the out-of-tree borg-assessment page" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; prefixes | grep -qx -- '/chorus-pages/borg-assessment.html'"
+
+# NEGATIVE PROOF: the widening is the Borg READ surface and nothing adjacent.
+# The pages' own API namespace stays unlisted, so a write route on :3340 is
+# still refused at the door — /borg admits pages, never the API plane.
+assert "NEGATIVE PROOF: /borg does not admit the chorus API namespace" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; ! prefixes | grep -qx -- '/api/chorus'"
+assert "NEGATIVE PROOF: prefix trickery /borgX is not admitted" \
+  sh -c "prefixes() { sed 's/#.*//' '$REPO_ALLOW' | awk 'NF {print \$1}'; }; ! prefixes | grep -qx -- '/borgX'"
+
 # NEGATIVE PROOF: the entry is an EXACT path, not a prefix. If it admitted
 # anything starting with it, one line would publish a family of endpoints
 # nobody reviewed — the /docs trap from #3815, one directory up.
