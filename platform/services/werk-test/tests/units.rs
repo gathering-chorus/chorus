@@ -858,6 +858,40 @@ fn unmapped_file_falls_back_to_full_suite() {
     assert_eq!(v, None, "unknown means run everything, never means skip");
 }
 
+// ---- #4000 — proving/flows is lane-handled, never a FULL trigger ------------
+
+#[test]
+fn flows_spec_diff_scopes_instead_of_forcing_full() {
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(
+        &[sg("proving/flows/clearing-ui.spec.cjs")], &units, &edges);
+    let scoped = v.expect("a specs-only diff must SCOPE (#4000), not fall to FULL");
+    // "ui-flows" is a well-known lane name, not a build/test unit: it maps to
+    // no ScopeUnit, so the unit list is empty — the #3920 ui lane (which fires
+    // on proving/flows/ paths independently) is the runner for these files.
+    assert!(scoped.is_empty(), "no build/test units for a specs-only diff: {:?}", scoped);
+}
+
+/// #3734 negative proof: the mapping must not widen — any OTHER proving/ path
+/// still forces FULL with the file named. The unmapped defense survives.
+#[test]
+fn other_proving_paths_still_force_full() {
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(
+        &[sg("proving/scripts/new-harness.sh")], &units, &edges);
+    assert_eq!(v, None, "unmapped proving/ paths must stay on the loud FULL escape");
+}
+
+#[test]
+fn mixed_diff_keeps_the_real_units_alongside_flows() {
+    let (units, edges) = test_world();
+    let v = werk_test::scoped_test_units(
+        &[sg("proving/flows/clearing-ui.spec.cjs"),
+          sg("platform/services/werk-teardown/src/lib.rs")], &units, &edges);
+    let scoped = v.expect("must scope");
+    assert!(scoped.contains(&su("werk-teardown", "platform/services/werk-teardown")), "{:?}", scoped);
+}
+
 // ---- #3929 — nextest is the ONLY cargo lane; absence is a loud red ----------
 
 #[test]
