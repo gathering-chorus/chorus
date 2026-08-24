@@ -1,28 +1,29 @@
-# Morning Summary — 2026-08-23
+# Morning Summary — 2026-08-24
 
-**HEADLINE:** npm ci has been broken for 75 days — all four test suites are blocked and this needs a decision today.
+**HEADLINE:** npm ci enters day 76 unresolved; 7 cards shipped yesterday after the brief — strong velocity, broken test layer.
 
 ---
 
-**OPS:** YELLOW (Silas, 2026-08-22)
-- 3 yellows, 0 reds, 1 unknown
-- Top concern: 8 unused symbols in chorus-hooks (dead code from nudge retirement #2804 — prune before warnings compound)
-- Secondary: 25 scripts + 37 plist files use /tmp; need CSC/reaper coverage audit
-- Unknown: disk delta — Silas needs to run perf-baseline.sh locally and flag if >2% growth
+**OPS:** YELLOW (Silas, 2026-08-23)
+- 3 yellows, 0 reds, 1 unknown — no change in category count
+- Improvement: chorus-hooks warnings down to 7 (was 8; shim warning pruned post-#2804). Still need to clear remaining 7.
+- Persistent: 13+ plist files log to /tmp; 14+ scripts use /tmp — werk-init.sh and bedroom-heartbeat flagged for CSC review
+- Unknown: disk delta — perf-baseline.sh needs a live run; flag if >2% growth
 
 **QUALITY:** RED (Kade, 2026-08-23)
-- 0 tests run — ts-jest preset not found across all 4 suites (directing/clearing, workflow-engine, chorus-sdk, pulse) — **day 73**
-- Lint blocked (@eslint/js not found) — **day 75**
-- Build: YELLOW — 234 type errors (down 1 from 235, first decrease after 7-day plateau — encouraging)
-- Fix: `npm ci` at repo root restores everything. One command. 75 days.
+- 0 tests run — ts-jest preset not found across all 4 suites (clearing, workflow-engine, chorus-sdk, pulse) — **day 74**
+- Lint blocked (@eslint/js not found) — **day 76**
+- Build: YELLOW — 234 type errors, holding flat after first decrease Monday. Trend is stalled.
+- Root cause: `npm ci` at repo root. One command. 76 days.
 
-**YESTERDAY:** Active throughput — 10+ cards merged (wren: #3982, #3976; silas: #3986, #3981, #3979, #3977; kade: #3984, #3677, #3922, #3974, #3975, #3978). Notable: silas landed #3986 renaming chorus:deploys → chorus:runsService (10/10 drift bats green).
+**YESTERDAY:** 7 cards shipped after the morning brief — silas: #3993 (binary signature gate in chorus-bin-install, exit 10 on unsigned, 4/4 bats), #3991, #3968 (alert-delivery-test bridge probe fix, live 6/6), #3682, #3381; kade: #3989 (cards CLI single-pid spawn, orphan-reaper narrowed, 5/5 bats), #3753. Strong ops and infra push.
 
 **TODAY:**
-1. **npm ci** — run it or decide to formally defer (but document the decision; 75 days is past the point of drift)
-2. Prune chorus-hooks dead code (Wren + Silas, small lift, high signal-to-noise)
-3. CSC audit: confirm /tmp lock/log paths are reaper-covered
-4. Watch build type-error trend — 234 is the first decrease; keep the pressure on
+1. **npm ci** — day 76. No tests, no lint, no coverage. Run it or formally decide to skip (but document it).
+2. Prune 7 remaining chorus-hooks dead symbols (#2804 cleanup) — small lift, Silas/Wren
+3. CSC audit: confirm werk-init.sh session cache + bedroom-heartbeat use $TMPDIR, not /tmp
+4. Silas: run perf-baseline.sh and check disk delta — repo at 740MB, trend unknown
+5. Monitor build type-error count — 234 for two days; want to see it move again
 
 **BLOCKERS (needs Jeff):**
-- `npm ci` at repo root — **75 days unresolved.** No tests, no lint, no coverage data. Either run it or make a call to formally skip the test layer for now.
+- `npm ci` — **day 76, no change.** All tests, lint, coverage blocked. Yesterday's call wasn't made; today's the day.
