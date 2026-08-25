@@ -17,6 +17,12 @@ export type NightlyRun = {
   completedAt?: string;
   completed: boolean;
   rows: NightlyRow[];
+  /** #4009 — liveness. A run that never completed is either working or wedged,
+   *  and the page could not tell them apart: on 2026-08-25 a lane sat silent
+   *  for 38 minutes while a human was told three different things about it.
+   *  quietForMs is the gap since the last row; the page names it. */
+  quietForMs?: number;
+  lastRowAt?: string;
 };
 
 /** Parse the LAST run block (RUN|start … RUN|complete) from the nightly log. */
@@ -50,7 +56,18 @@ export function parseNightlyLog(text: string): NightlyRun | null {
       }
     }
   }
+  // #4009 — how long has this run been silent? Rows carry no timestamps, so the
+  // honest source is the log file's own last write, supplied by the caller.
   return run;
+}
+
+/** #4009 — a run is WEDGED-LOOKING when it never completed and nothing has been
+ *  written for longer than the threshold. Not a verdict on the code — a verdict
+ *  on the RUN, which is exactly the distinction that was missing. */
+export function quietVerdict(run: NightlyRun, quietMs: number, thresholdMs = 10 * 60 * 1000):
+  'complete' | 'live' | 'quiet' {
+  if (run.completed) return 'complete';
+  return quietMs >= thresholdMs ? 'quiet' : 'live';
 }
 
 const esc = (s: string): string =>
@@ -80,9 +97,17 @@ export function renderNightlyPage(run: NightlyRun | null): string {
   const greens = run.rows.filter((r) => r.status === 'pass');
   const verdict = reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED`;
   const cls = reds.length === 0 ? 'green' : 'red';
+  // #4009 — say WHICH not-finished state this is. "PARTIAL" covered both a run
+  // still working and a run wedged 38 minutes; a reader could not act on it.
+  const quiet = run.quietForMs ?? 0;
+  const liveness = quietVerdict(run, quiet);
+  const mins = Math.round(quiet / 60000);
+  const liveBanner = liveness === 'quiet'
+    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
+    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
   const partial = run.completed
     ? ''
-    : `<div class="banner partial">PARTIAL — this run started ${esc(run.startedAt)} and never completed; results below are not a full night.</div>`;
+    : liveBanner;
   const row = (r: NightlyRow) => `
     <tr class="${esc(r.status)}">
       <td class="st">${esc(r.status)}</td>
