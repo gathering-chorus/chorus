@@ -78,8 +78,21 @@ test_alert_runner() {
   # Also: no curl -f — -f made curl exit nonzero on 4xx AFTER printing the
   # code, so the || fallback CONCATENATED onto it (the "HTTP 401000" artifact
   # in weeks of FAIL lines).
-  local bridge_token
-  bridge_token="$(cat "${BRIDGE_TOKEN_FILE:-$HOME/.chorus/bridge-auth-token}" 2>/dev/null || echo '')"
+  # #4004 — a probe that cannot read its own credential must SAY so, not blame
+  # the bridge. #3968 proved an absent token yields a real 401 (not the 401000
+  # artifact) and stopped there; the message it produces still reads "Bridge
+  # rejected probe", so the alarm names a delivery outage while delivery is fine.
+  # Six of those since 2026-08-24, interleaved with runs passing 6/6 seconds
+  # apart — the tell that the bridge was never the variable. The two states are
+  # "the bridge refused us" and "this caller has no identity here"; a check that
+  # cannot separate them is the shape #3734 exists to stop.
+  local bridge_token bridge_token_file
+  bridge_token_file="${BRIDGE_TOKEN_FILE:-$HOME/.chorus/bridge-auth-token}"
+  bridge_token="$(cat "$bridge_token_file" 2>/dev/null || echo '')"
+  if [[ -z "$bridge_token" ]]; then
+    fail "alert-runner: NO BRIDGE CREDENTIAL — $bridge_token_file unreadable or empty (HOME=$HOME). Credential state, NOT a bridge outage: the bridge was never asked."
+    return
+  fi
   bridge_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
     -X POST "$BRIDGE/api/message" \
     -H 'Content-Type: application/json' \

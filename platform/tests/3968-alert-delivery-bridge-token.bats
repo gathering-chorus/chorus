@@ -16,8 +16,29 @@ setup() {
   [[ "$output" == *"PASS: alert-runner: Bridge accepted probe"* ]]
 }
 
-@test "NEGATIVE PROOF: token missing → check FAILS with the real 401 (not 401000, not silent pass)" {
+# #4004 — the failure must NAME which state it is in. #3968 proved an absent
+# token still reds; it reported that red as "Bridge rejected probe", so the
+# alarm read as a delivery outage while delivery was fine (six such lines since
+# 2026-08-24, interleaved with runs passing 6/6 seconds apart). The bridge is
+# never asked when we have no credential, so it must not be the thing blamed.
+@test "NEGATIVE PROOF: token missing → check FAILS naming the CREDENTIAL state, not the bridge" {
   BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/absent-token" run bash "$SCRIPT"
-  [[ "$output" == *"FAIL: alert-runner: Bridge rejected probe (HTTP 401)"* ]]
+  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]]
+  [[ "$output" == *"$BATS_TEST_TMPDIR/absent-token"* ]]
+  # the misattribution this replaces, and the artifact #3968 killed
+  [[ "$output" != *"Bridge rejected probe"* ]]
   [[ "$output" != *"401000"* ]]
+}
+
+@test "NEGATIVE PROOF: an EMPTY token file is the same state as a missing one" {
+  : > "$BATS_TEST_TMPDIR/empty-token"
+  BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/empty-token" run bash "$SCRIPT"
+  [[ "$output" == *"FAIL: alert-runner: NO BRIDGE CREDENTIAL"* ]]
+}
+
+@test "NEGATIVE PROOF: a WRONG token still blames the bridge — the two states stay separable" {
+  printf 'not-the-real-token\n' > "$BATS_TEST_TMPDIR/wrong-token"
+  BRIDGE_TOKEN_FILE="$BATS_TEST_TMPDIR/wrong-token" run bash "$SCRIPT"
+  [[ "$output" == *"FAIL: alert-runner: Bridge rejected probe (HTTP 401)"* ]]
+  [[ "$output" != *"NO BRIDGE CREDENTIAL"* ]]
 }
