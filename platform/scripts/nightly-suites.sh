@@ -509,6 +509,7 @@ _run_capped() {
   perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' "$@" \
     >"$outfile" 2>&1 </dev/null &
   local pid=$! waited=0 tick=5
+  NIGHTLY_CHILD_PGID="$pid"   # #4008 — the trap reaps this group if we are killed
   [ "$NIGHTLY_SUITE_TIMEOUT" -lt 30 ] && tick=1
   # #4009 — the cap measured time-since-START, so the runner lane's 7200s meant a
   # wedge could sit two hours looking like work (2026-08-25: 90 min at 13/99).
@@ -542,6 +543,9 @@ _run_capped() {
     sleep "$tick"; waited=$((waited + tick))
   done
   wait "$pid"
+  local _rc=$?
+  NIGHTLY_CHILD_PGID=""
+  return "$_rc"
 }
 
 # Single attempt — the original run_one body.
@@ -963,7 +967,19 @@ acquire_single_flight_lock() {
   if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
   return 1
 }
-release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
+# #4008/#4009 — the trap freed the LOCK but never killed the lane, so a killed
+# wrapper left its runner alive: on 2026-08-25 an orphan ran 1h52m while a new
+# run took the freed lock and ran a second lane beside it. Kill the child's
+# process group first, then release. _run_capped already setpgrp's the child;
+# NIGHTLY_CHILD_PGID is set there so the trap knows what to reap.
+release_single_flight_lock() {
+  if [ -n "${NIGHTLY_CHILD_PGID:-}" ]; then
+    kill -TERM -- "-$NIGHTLY_CHILD_PGID" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$NIGHTLY_CHILD_PGID" 2>/dev/null || true
+  fi
+  rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true
+}
 
 # #3709 — OWN THE RESULTS FILE. Until now --run-all only printed to stdout and
 # the aggregate log existed solely because launchd redirected StandardOutPath

@@ -96,3 +96,31 @@ EOF
   ! grep -q "SUITE WEDGED" "$TMP/c.out"
   [ "$(grep -c tick "$TMP/c.out")" -eq 6 ]
 }
+
+# --- the orphan hole: a killed wrapper must not leave its lane alive ---------
+
+@test "negative proof: the trap reaps the child group, so no orphan survives" {
+  # 2026-08-25: the wrapper was killed, the trap freed the lock, and the runner
+  # lived another 1h52m beside a new run. Drive release_single_flight_lock
+  # directly with a known group rather than spawning a nested wrapper.
+  perl -e 'setpgrp(0,0); exec "sleep", "120"' >/dev/null 2>&1 &
+  child=$!
+  sleep 1
+  kill -0 "$child" 2>/dev/null
+  run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
+    NIGHTLY_LOCKDIR='$TMP/lock.d' NIGHTLY_CHILD_PGID=$child release_single_flight_lock"
+  sleep 1
+  ! kill -0 "$child" 2>/dev/null
+}
+
+@test "control: with no lane recorded the trap only frees the lock, kills nothing" {
+  perl -e 'setpgrp(0,0); exec "sleep", "20"' >/dev/null 2>&1 &
+  bystander=$!
+  sleep 1
+  mkdir -p "$TMP/lock2.d"
+  run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
+    NIGHTLY_LOCKDIR='$TMP/lock2.d' NIGHTLY_CHILD_PGID= release_single_flight_lock"
+  [ ! -d "$TMP/lock2.d" ]
+  kill -0 "$bystander" 2>/dev/null
+  kill "$bystander" 2>/dev/null || true
+}
