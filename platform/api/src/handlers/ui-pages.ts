@@ -56,10 +56,28 @@ export interface UiInventory {
  * is honest about not knowing.
  */
 export function ownerOf(page: UiPage, productLabels: string[]): string | null {
-  if (!page.dir) return null;
-  const top = page.dir.split('/')[0].toLowerCase();
-  const hit = productLabels.find((label) => label.toLowerCase() === top);
-  return hit ?? null;
+  const match = (candidate: string): string | undefined =>
+    productLabels.find((label) => label.toLowerCase() === candidate);
+
+  // Rule 1 — the folder. /athena/domains.html is Athena's, by where it lives.
+  if (page.dir) {
+    const byDir = match(page.dir.split('/')[0].toLowerCase());
+    if (byDir) return byDir;
+  }
+
+  // Rule 2 — the NAME, when the folder said nothing (#4001, Jeff 2026-08-25:
+  // "where its clear lets map them"). /chorus-pages/loom.html is Loom's page by
+  // any reading; before this it sat in the unclaimed pile purely because it is
+  // not under a /loom/ folder — a fact about the tree, not about the page. So a
+  // file whose name STARTS with a product's name is that product's.
+  //
+  // Deliberately narrow: only the first hyphen-segment of the stem, and only an
+  // exact label match. "borg-assessment" is Borg's; "doc-catalog" is nobody's
+  // by name, and guessing it into Athena would be an opinion wearing a rule.
+  // An ambiguous page stays unclaimed, which is a visible decision, not a loss.
+  const stem = page.href.split('/').pop()?.replace(/\.html$/, '').toLowerCase() ?? '';
+  if (!stem || stem === 'index') return null;
+  return match(stem) ?? match(stem.split('-')[0]) ?? null;
 }
 
 /** Group discovered pages into the claimed piles and the misc pile. */
