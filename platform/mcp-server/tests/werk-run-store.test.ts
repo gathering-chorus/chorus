@@ -7,11 +7,14 @@
 // @test-type: unit — signal is fixture-data: tests build their own throwaway git repos/tmp dirs (hermetic, no shared service or live werk)
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import { execFileSync } from 'child_process';
-import { readRun, writeRun, markPhase, clearRun, isRunStale, logPath, reconcileRunning, currentWerkPatchId, currentWerkTreeHash, recordLeg } from '../src/werk-run-store';
+import {
+  readRun, writeRun, writeRunAtomic, markPhase, clearRun, isRunStale,
+  logPath, reconcileRunning, currentWerkPatchId, currentWerkTreeHash, recordLeg,
+} from '../src/werk-run-store';
 import type { WerkRun } from '../src/werk-run-state';
 
 let dir: string;
@@ -34,6 +37,18 @@ describe('run-store persistence', () => {
     assert.equal(r?.phase, 'running');
     assert.equal(r?.pid, 4242);
     assert.equal(r?.card, 100);
+  });
+
+  test('fail-closed atomic write throws and removes its temp file when replace cannot complete', () => {
+    const card = 103;
+    // A directory at the destination forces rename(temp, card.json) to fail.
+    mkdirSync(path.join(dir, `${card}.json`));
+    assert.throws(() => writeRunAtomic(run({ card }), dir), /atomic write failed/);
+    assert.deepEqual(
+      readdirSync(dir).filter((name) => name.startsWith(`${card}.json.tmp-`)),
+      [],
+      'failed atomic replacement leaves no partial sibling behind',
+    );
   });
 
   test('markPhase advances phase + carries the failure reason, preserving identity', () => {
@@ -62,7 +77,9 @@ describe('currentWerkPatchId — never persists an empty key for a real werk (#3
   // ALWAYS yields a key (patch-id, or the `sha:<HEAD>` fallback when there is no
   // diff / patch-id fails); '' remains only for total git failure (not a repo).
   const git = (cwd: string, ...args: string[]) =>
-    execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim();
+    // Hermetic fixture commits must not inherit a developer machine's signing
+    // policy or wait on an external signing agent.
+    execFileSync('git', ['-c', 'commit.gpgsign=false', '-C', cwd, ...args], { encoding: 'utf8' }).trim();
 
   test('werk with NO diff vs origin/main -> sha:<HEAD> fallback, not empty', () => {
     const repo = mkdtempSync(path.join(os.tmpdir(), 'werk-patchid-'));
@@ -151,9 +168,10 @@ describe('reconcileRunning — poll-time transition from the detached run\'s log
   });
 });
 
-describe('isRunStale — a dead/old running record is detected (#3458 belt+suspenders)', () => {
-  test('running with a dead pid -> stale (the lost-terminal-write case)', () => {
-    assert.equal(isRunStale(run({ phase: 'running', pid: 999999 })), true);
+describe('isRunStale — PID truth outranks age; TTL is only the absent-PID backstop', () => {
+  test('running with a dead pid -> stale immediately, even when freshly started', () => {
+    const now = Date.parse('2026-06-16T12:00:00Z');
+    assert.equal(isRunStale(run({ phase: 'running', pid: 999999, startedAt: '2026-06-16T12:00:00Z' }), now), true);
   });
 
   test('running with THIS live pid + within TTL -> not stale (a genuine run is never stranded)', () => {
@@ -162,10 +180,21 @@ describe('isRunStale — a dead/old running record is detected (#3458 belt+suspe
     assert.equal(isRunStale(run({ phase: 'running', pid: process.pid, startedAt: started }), now), false);
   });
 
-  test('running past the TTL -> stale (no act run lasts this long)', () => {
+  test('running with a live pid remains live past the TTL', () => {
     const now = Date.parse('2026-06-16T12:00:00Z');
-    // started 31 min ago, default 30-min TTL, pid alive (so only TTL triggers)
     const r = run({ phase: 'running', pid: process.pid, startedAt: '2026-06-16T11:29:00Z' });
+    assert.equal(isRunStale(r, now), false);
+  });
+
+  test('running without a pid stays non-stale within the TTL (pre-spawn reservation)', () => {
+    const now = Date.parse('2026-06-16T12:00:00Z');
+    const r = run({ phase: 'running', pid: undefined, startedAt: '2026-06-16T11:59:00Z' });
+    assert.equal(isRunStale(r, now), false);
+  });
+
+  test('running without a pid becomes stale only after the TTL', () => {
+    const now = Date.parse('2026-06-16T12:00:00Z');
+    const r = run({ phase: 'running', pid: undefined, startedAt: '2026-06-16T11:29:00Z' });
     assert.equal(isRunStale(r, now), true);
   });
 

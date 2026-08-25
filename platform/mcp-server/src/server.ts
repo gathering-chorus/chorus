@@ -30,8 +30,12 @@ import { resolvePulseSecret } from './pulse-secret';
 import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
-import { announceRepeated, decideRunAction, patchSuperseded } from './werk-run-state';
-import { readRun, writeRun, isRunStale, runLogPath, reconcileRunning, currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun, recordLeg, currentWerkTreeHash } from './werk-run-store';
+import { announceRepeated, decideRunAction, patchSuperseded, type WerkRun } from './werk-run-state';
+import {
+  readRun, writeRunAtomic, isRunStale, runLogPath, reconcileRunning,
+  currentWerkPatchId, clearRun, verifyPinIntegrity, archiveRun, withRunLaunchLock,
+  recordLeg, currentWerkTreeHash,
+} from './werk-run-store';
 import { wireRunFollower, bostonOffsetIso } from './werk-phase';
 import { mintServiceToken } from './service-token';
 // #2997 — athena-tree handler stays in chorus-api for now (heavy fuseki deps).
@@ -86,12 +90,18 @@ export type ExecFileAsync = (
  *  execFileAsync — that async-launch is the whole point of #3458 (no held MCP call →
  *  no transport drop). This seam lets tests capture the spawned act argv + env the way
  *  they captured the old in-band exec. Structurally matches spawn's (command, args,
- *  options) → ChildProcess; only pid + unref are used here. */
+ *  options) → ChildProcess. Real handles expose `once`; lightweight test
+ *  handles may omit it and are treated as synchronously confirmed. */
+type SpawnEventListener = (...args: unknown[]) => void;
 export type SpawnFn = (
   command: string,
   args: string[],
   opts: { env?: NodeJS.ProcessEnv; detached?: boolean; stdio?: 'ignore' },
-) => { pid?: number; unref: () => void };
+) => {
+  pid?: number;
+  unref: () => void;
+  once?: (event: string, listener: SpawnEventListener) => unknown;
+};
 
 /** #2474 — DI seam for tests: inject mock execFile / fixed shim path.
  *  #2476 — extends with fetchImpl for tools that delegate to HTTP rather than
@@ -2511,6 +2521,63 @@ function mcpJson(payload: unknown): { content: Array<{ type: 'text'; text: strin
   return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }] };
 }
 
+/** Await Node's asynchronous spawn confirmation/error. A real ChildProcess
+ * reports ENOENT and similar launch failures through `error`, not a synchronous
+ * throw. Injected legacy handles omit `once` and remain synchronously confirmed. */
+function waitForSpawnOutcome(child: ReturnType<SpawnFn>): Promise<void> {
+  const once = child.once;
+  if (typeof once !== 'function') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    once.call(child, 'error', (...args: unknown[]) => {
+      const error = args[0];
+      reject(error instanceof Error ? error : new Error(String(error)));
+    });
+    // Keep the one-shot error listener after spawn confirmation. It consumes a
+    // later ChildProcess error instead of allowing an unhandled exception.
+    once.call(child, 'spawn', () => resolve());
+  });
+}
+
+function persistLaunchFailure(reservation: WerkRun, error: unknown, runsDir?: string): void {
+  const detail = error instanceof Error ? error.message : String(error);
+  try {
+    writeRunAtomic({
+      ...reservation,
+      phase: 'failed',
+      failureReason: `act launch failed: ${detail}`.slice(0, 500),
+    }, runsDir);
+  } catch { /* the running reservation remains: fail closed until its TTL */ }
+}
+
+/** Persist a launch reservation BEFORE spawning, await the real spawn outcome,
+ * then atomically add the child PID. If persistence cannot establish the
+ * reservation, act is never started. If the PID update fails after spawn, the
+ * complete pid-less reservation stays on disk and suppresses an immediate
+ * duplicate launch. */
+async function spawnWithDurableRunReservation(
+  reservation: WerkRun,
+  command: string,
+  commandArgs: string[],
+  options: { env?: NodeJS.ProcessEnv; detached?: boolean; stdio?: 'ignore' },
+  spawnFn: SpawnFn,
+  runsDir?: string,
+): Promise<WerkRun> {
+  writeRunAtomic(reservation, runsDir);
+  let child: ReturnType<SpawnFn>;
+  try {
+    child = spawnFn(command, commandArgs, options);
+    await waitForSpawnOutcome(child);
+  } catch (error) {
+    persistLaunchFailure(reservation, error, runsDir);
+    throw error;
+  }
+  try { child.unref(); } catch { /* child is already launched; reservation remains authoritative */ }
+  if (typeof child.pid !== 'number') return reservation;
+  const running: WerkRun = { ...reservation, pid: child.pid };
+  writeRunAtomic(running, runsDir);
+  return running;
+}
+
 /** #3751 — a pin that fails integrity is REFUSED, never reported as a phase.
  *  The attach path replayed a July pin as {phase:'landed', accepter:'jeff'} for a
  *  reopened #3606 whose branch had nothing merged — a false land under the human's
@@ -2559,7 +2626,7 @@ function werkRunPaths() {
   return { pathMod, home, werkBase, binDir, scriptsDir, workflow, actBin, runnerPath };
 }
 
-async function executeChorusWerk(
+async function executeChorusWerkLocked(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
   runsDir?: string,
@@ -2640,10 +2707,9 @@ async function executeChorusWerk(
   // above reconciles the phase from the log). Interpolated values are controlled
   // (validated card_id:number + role/accepter enums + fixed paths), so the bash -c
   // string carries no injection surface.
-  // #3664 — runId = timestamp + monotonic seq (process.pid alone collided across starts
-  // from the same server, which is exactly what let a relaunch reuse+truncate the log;
-  // Kade gather: timestamp alone still had a same-ms window — the seq closes it).
-  const runId = `${args.card_id}-${args.role}-${Date.now()}-${++werkRunSeq}`;
+  // #3664 — runId = timestamp + process PID + monotonic seq. PID separates MCP
+  // processes; seq separates same-millisecond starts inside one process.
+  const runId = `${args.card_id}-${args.role}-${Date.now()}-${process.pid}-${++werkRunSeq}`;
   // #3664 — per-RUN log: a relaunch writes its own file and can never truncate the
   // previous run's evidence (the #3660 unrecoverable-failure-reason defect).
   const log = runLogPath(args.card_id, runId, runsDir);
@@ -2659,22 +2725,10 @@ async function executeChorusWerk(
     const prior = existingRun.legs[existingRun.legs.length - 1]?.tree_hash;
     return Boolean(now) && now === prior;
   })();
-  const child = spawnFn('bash', ['-c', wrapped], {
-    env: { ...werkRunnerEnv(home, werkBase, args.role, runnerPath), ...(resumeEnv ? { WERK_RESUME: '1' } : {}) },
-    detached: true,
-    stdio: 'ignore',
-  });
-  child.unref();
-  // #3883 — pipeline visible in streams: follow this run's log and stamp
-  // werk.phase on the spine at every phase transition. #3956 — the follower is
-  // also the ONE writer of per-leg proofs onto the pin (launcher only carries).
   const treeHashAtLaunch = currentWerkTreeHash(pathMod.join(werkBase, `${args.role}-${args.card_id}`));
-  wireRunFollower(log, { card: args.card_id, role: args.role, runId }, undefined, (leg, verdict) => {
-    recordLeg(args.card_id, leg, verdict, treeHashAtLaunch, runsDir);
-  });
-  writeRun({
+  const run = await spawnWithDurableRunReservation({
     runId, card: args.card_id, role: args.role, go: false,
-    phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
+    phase: 'running', startedAt: new Date().toISOString(),
     patchId: currentPatch, // #3538 — record the patch so a later new-commit re-invoke re-demos
     // #3678 AC4 — carry the PRIOR round's present so the announce-repeat guard
     // can compare when THIS run presents.
@@ -2684,19 +2738,44 @@ async function executeChorusWerk(
     // them; a non-resume launch drops them (fresh proof discipline).
     ...(resumeEnv ? { legs: existingRun?.legs } : {}),
     logFile: log, // #3664 — reconcile reads THIS run's own log
-  }, runsDir);
+  }, 'bash', ['-c', wrapped], {
+    env: {
+      ...werkRunnerEnv(home, werkBase, args.role, runnerPath),
+      ...(resumeEnv ? { WERK_RESUME: '1' } : {}),
+    },
+    detached: true,
+    stdio: 'ignore',
+  }, spawnFn, runsDir);
+  // #3883 — pipeline visible in streams: follow this run's log and stamp
+  // werk.phase on the spine at every phase transition. #3956 — the follower is
+  // also the ONE writer of per-leg proofs onto the pin (launcher only carries).
+  wireRunFollower(log, { card: args.card_id, role: args.role, runId }, undefined, (leg, verdict) => {
+    recordLeg(args.card_id, leg, verdict, treeHashAtLaunch, runsDir);
+  });
   return mcpJson({
     ok: true, verb: 'chorus_werk', phase: 'running', launched: true,
-    run_id: runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
+    run_id: run.runId, role: args.role, card_id: args.card_id, accepter, go_command: landCmd,
     note: `Launched (#${args.card_id}) — build→demo runs DETACHED; nothing held, no transport drop. Re-invoke chorus_werk to poll: 'running' until act finishes, then 'presented' (variant up — GO with go:true to land) or 'failed' (with the reason).`,
   });
+}
+
+async function executeChorusWerk(
+  args: z.infer<typeof WerkRunInput>,
+  spawnFn: SpawnFn,
+  runsDir?: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  return withRunLaunchLock(
+    args.card_id,
+    () => executeChorusWerkLocked(args, spawnFn, runsDir),
+    runsDir,
+  );
 }
 
 // #3279/#3193 — Half B: THE GO. Runs werk.yml's go-gated `land` job synchronously (merge → ff-sync →
 // deploy-prod → finalize). Short — no human pause inside — so the call returns in
 // minutes and cannot drop. Invoked on Jeff's go after he has seen the presented variant.
 // Stop-before-accept (DEC-048): it lands to prod and prints the accept command.
-async function executeChorusWerkLand(
+async function executeChorusWerkLandLocked(
   args: z.infer<typeof WerkRunInput>,
   spawnFn: SpawnFn,
   runsDir?: string,
@@ -2777,32 +2856,42 @@ async function executeChorusWerkLand(
   // appends WERK_EXIT when done. Returns immediately; the caller polls (the attach
   // branch reconciles go:true + exit 0 → 'landed'). No held connection on the land's
   // deploy step → no drop there either.
-  // #3664 — timestamp+seq runId + per-run log, same as Half A (evidence survives retries).
-  const runId = `${args.card_id}-${args.role}-${Date.now()}-${++werkRunSeq}-land`;
+  // #3664 — timestamp+PID+seq runId + per-run log, same as Half A.
+  const runId = `${args.card_id}-${args.role}-${Date.now()}-${process.pid}-${++werkRunSeq}-land`;
   const log = runLogPath(args.card_id, runId, runsDir);
   const actCmd =
     `"${actBin}" workflow_dispatch -W "${workflow}" -P macos-latest=-self-hosted ` +
     `--input card_id=${args.card_id} --input role=${args.role} --input accepter=${accepter} --input go=true`;
   const wrapped = `{ ${actCmd} ; } > "${log}" 2>&1 ; echo "WERK_EXIT=$?" >> "${log}"`;
-  const child = spawnFn('bash', ['-c', wrapped], {
+  const run = await spawnWithDurableRunReservation({
+    runId, card: args.card_id, role: args.role, go: true,
+    phase: 'running', startedAt: new Date().toISOString(),
+    logFile: log, // #3664 — reconcile reads THIS run's own log
+  }, 'bash', ['-c', wrapped], {
     env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
     detached: true,
     stdio: 'ignore',
-  });
-  child.unref();
+  }, spawnFn, runsDir);
   // #3883 — pipeline visible in streams: follow this run's log and stamp
   // werk.phase on the spine at every phase transition.
   wireRunFollower(log, { card: args.card_id, role: args.role, runId });
-  writeRun({
-    runId, card: args.card_id, role: args.role, go: true,
-    phase: 'running', startedAt: new Date().toISOString(), pid: child.pid,
-    logFile: log, // #3664 — reconcile reads THIS run's own log
-  }, runsDir);
   return mcpJson({
         ok: true, verb: 'chorus_werk', phase: 'running', launched: true, go: true,
-        run_id: runId, role: args.role, card_id: args.card_id, accepter,
+        run_id: run.runId, role: args.role, card_id: args.card_id, accepter,
         note: `Landing (#${args.card_id}) — merge → ff-sync → deploy-prod → accept runs DETACHED; nothing held. Re-invoke chorus_werk go:true to poll: 'running' until done, then 'landed' (live + accepted) or 'failed' (with the reason).`,
       });
+}
+
+async function executeChorusWerkLand(
+  args: z.infer<typeof WerkRunInput>,
+  spawnFn: SpawnFn,
+  runsDir?: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  return withRunLaunchLock(
+    args.card_id,
+    () => executeChorusWerkLandLocked(args, spawnFn, runsDir),
+    runsDir,
+  );
 }
 
 // #3485 — exported so the plain-HTTP POST /nudge route (main.ts) routes
