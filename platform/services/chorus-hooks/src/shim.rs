@@ -38,6 +38,27 @@ use std::io::Write;
 use std::process::ExitCode;
 
 
+/// #4004 — the endpoints the hook proxy legitimately serves. Everything else
+/// reaching the proxy is a caller bug (a mistyped or retired verb), and the
+/// proxy path fails open, so it used to exit 0 in silence. Kept beside the
+/// dispatch so a new hook wiring and this list move together.
+const HOOK_ENDPOINTS: &[&str] = &[
+    "pre-tool-use",
+    "post-tool-use",
+    "post-tool-use-failure",
+    "user-prompt-submit",
+    "stop",
+    "subagent-stop",
+    "notification",
+    "pre-compact",
+    "session-end",
+];
+
+/// Pure predicate so the refusal is testable without a daemon or a socket.
+fn is_hook_endpoint(cmd: &str) -> bool {
+    HOOK_ENDPOINTS.contains(&cmd)
+}
+
 /// #2790 — daemon-unreachable response shape. Pure function so the inline
 /// tests below hammer it without touching the unix socket.
 ///
@@ -231,6 +252,41 @@ mod canonical_in_process_tests {
     }
 }
 
+/// #4004 — the shim used to proxy ANY unrecognized argument as a hook endpoint,
+/// and that path fails open, so `chorus-hook-shim nudge silas "probe"` printed
+/// nothing and exited 0 long after #2804 deleted the verb. Log evidence:
+/// `START endpoint=nudge` → `stdin=0bytes` → `HTTP/1.1 404 Not Found` → exit 0.
+/// The daemon named the error; the shim swallowed it.
+#[cfg(test)]
+mod unknown_subcommand_tests {
+    use super::*;
+
+    #[test]
+    fn a_retired_verb_is_not_a_hook_endpoint() {
+        // `nudge` (#2804) and `inject` (#2435) are the two retirements that
+        // actually got called after removal.
+        assert!(!is_hook_endpoint("nudge"));
+        assert!(!is_hook_endpoint("inject"));
+    }
+
+    #[test]
+    fn a_typo_is_not_a_hook_endpoint() {
+        assert!(!is_hook_endpoint("pre-tool-us"));
+        assert!(!is_hook_endpoint("PreToolUse"));
+        assert!(!is_hook_endpoint(""));
+    }
+
+    /// NEGATIVE PROOF (#3734): the check must still ADMIT every endpoint that is
+    /// really wired, or the refusal would take the hooks down with it. These four
+    /// are the ones in ~/.claude/settings.json today.
+    #[test]
+    fn every_wired_hook_endpoint_is_still_admitted() {
+        for wired in ["pre-tool-use", "post-tool-use", "user-prompt-submit", "stop"] {
+            assert!(is_hook_endpoint(wired), "{wired} is wired in settings.json and must proxy");
+        }
+    }
+}
+
 #[cfg(test)]
 mod daemon_unreachable_tests {
     use super::*;
@@ -359,6 +415,27 @@ fn main() -> ExitCode {
 
     // For the hook proxy path, cmd is the endpoint name (pre-tool-use, post-tool-use, etc.)
     let endpoint = cmd;
+
+    // #4004 — REFUSE an unknown verb instead of proxying it. Anything reaching
+    // here was treated as a hook endpoint, and the proxy path fails OPEN, so a
+    // retired or mistyped subcommand printed nothing and exited 0. Log evidence
+    // (chorus-shim-debug.log): `START endpoint=nudge` → `stdin=0bytes` →
+    // `response=HTTP/1.1 404 Not Found` → exit 0. The daemon NAMED the error and
+    // the shim swallowed it. Wren hit this on `chorus-hook-shim nudge` (retired
+    // in #2804): a delivery command that succeeds without delivering is the
+    // packet-drop shape. The proxy serves exactly the wired hook endpoints;
+    // anything else is a caller bug and must be loud.
+    if !is_hook_endpoint(&endpoint) {
+        eprintln!(
+            "chorus-hook-shim: unknown subcommand '{}' — not a verb and not a hook endpoint.\n\
+             Hook endpoints: {}\n\
+             (retired verbs stay gone on purpose; `nudge` left in #2804 — agents send \
+             nudges via the chorus_nudge_message MCP tool)",
+            endpoint,
+            HOOK_ENDPOINTS.join(", ")
+        );
+        return ExitCode::from(2);
+    }
     log_debug(&format!("START endpoint={}", endpoint));
 
     // Read stdin with timeout — prevents hang when called from test scripts without piped input.
