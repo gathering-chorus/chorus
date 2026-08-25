@@ -73,3 +73,26 @@ EOF
   grep -q 'nightly.lane.completed' "$NIGHTLY"
   grep -q 'nightly.suite.observed' "$NIGHTLY"
 }
+
+# --- quiet-cap: a wedge dies on silence, not on the 2-hour total cap ---------
+
+@test "negative proof: a silent child is killed on the quiet-cap, not left for hours" {
+  # The 2026-08-25 wedge: a lane alive, producing nothing, under a 7200s total
+  # cap. Time-since-last-output is what identifies it.
+  run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
+    NIGHTLY_SUITE_TIMEOUT=3600 NIGHTLY_QUIET_CAP=3 _run_capped '$TMP/q.out' sleep 60
+    echo rc=\$?"
+  [[ "$output" == *"rc=124"* ]]
+  grep -q "SUITE WEDGED: no output for 3s" "$TMP/q.out"
+}
+
+@test "control: a chatty child of the same duration is NOT killed by the quiet-cap" {
+  # Same wall-clock, but it keeps writing — the two states must stay separable.
+  run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
+    NIGHTLY_SUITE_TIMEOUT=3600 NIGHTLY_QUIET_CAP=3 _run_capped '$TMP/c.out' \
+      bash -c 'for i in 1 2 3 4 5 6; do echo tick; sleep 1; done'
+    echo rc=\$?"
+  [[ "$output" == *"rc=0"* ]]
+  ! grep -q "SUITE WEDGED" "$TMP/c.out"
+  [ "$(grep -c tick "$TMP/c.out")" -eq 6 ]
+}

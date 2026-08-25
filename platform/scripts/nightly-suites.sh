@@ -510,12 +510,31 @@ _run_capped() {
     >"$outfile" 2>&1 </dev/null &
   local pid=$! waited=0 tick=5
   [ "$NIGHTLY_SUITE_TIMEOUT" -lt 30 ] && tick=1
+  # #4009 — the cap measured time-since-START, so the runner lane's 7200s meant a
+  # wedge could sit two hours looking like work (2026-08-25: 90 min at 13/99).
+  # What identifies a wedge is time-since-LAST-OUTPUT. Track it and kill on that,
+  # keeping the total cap as the outer bound.
+  local quiet_cap="${NIGHTLY_QUIET_CAP:-600}" last_size=-1 quiet=0 now_size
+  NIGHTLY_CAPPED_REASON=""
   while kill -0 "$pid" 2>/dev/null; do
+    now_size=$(wc -c <"$outfile" 2>/dev/null | tr -d ' ')
+    if [ "${now_size:-0}" != "$last_size" ]; then last_size="${now_size:-0}"; quiet=0; else quiet=$((quiet + tick)); fi
+    if [ "$quiet_cap" -gt 0 ] && [ "$quiet" -ge "$quiet_cap" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      NIGHTLY_CAPPED_REASON="quiet"
+      printf '\nSUITE WEDGED: no output for %ss — killed (#4009 quiet-cap; total cap was %ss)\n' \
+        "$quiet_cap" "$NIGHTLY_SUITE_TIMEOUT" >>"$outfile"
+      return 124
+    fi
     if [ "$waited" -ge "$NIGHTLY_SUITE_TIMEOUT" ]; then
       kill -TERM -- "-$pid" 2>/dev/null || true
       sleep 2
       kill -KILL -- "-$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
+      NIGHTLY_CAPPED_REASON="total"
       printf '\nSUITE TIMEOUT: killed after %ss (#3662 wedge guard)\n' \
         "$NIGHTLY_SUITE_TIMEOUT" >>"$outfile"
       return 124
