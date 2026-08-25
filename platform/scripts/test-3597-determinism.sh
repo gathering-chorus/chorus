@@ -35,14 +35,24 @@ release_single_flight_lock
 # `--run-all` here — that would execute every suite. The lock contract is fully
 # covered by the acquire/steal function tests above.
 
-# ── retry removed: run_one calls run_one_attempt exactly once, even on failure ──
+# ── no retry: one suite, one execution, whatever the verdict ──
+# #4004 — this used to stub run_one_attempt and count its calls. #3974 retired
+# that walker: run_one now routes every kind through run_cargo_lane (the one
+# werk-test runner), so the stub was never called and the count was 0 — the
+# test measured a function that no longer exists while the INVARIANT (no
+# retries) held fine. Assert the invariant against today's structure instead:
+# the retry machinery is gone from the runner, and one call means one lane run.
+NS="${NS:-$(dirname "$0")/nightly-suites.sh}"
 _needs_stack() { return 1; }              # not stack-gated
 CNT="$TMP/attempts"; : > "$CNT"           # count via a file — run_one runs in a subshell
-run_one_attempt() { echo x >> "$CNT"; echo "SUITE|npm|$2|$3|fail|0 pass, 1 fail"; }
+run_cargo_lane() { echo x >> "$CNT"; echo "SUITE|npm|${2:-unit}|${3:-kade}|fail|0 pass, 1 fail"; }
 line=$(run_one npm "$TMP/fakepkg" kade)
 n=$(wc -l < "$CNT" | tr -d ' ')
-[ "$n" -eq 1 ] && ok || bad "run_one must call attempt ONCE (retry removed), got $n"
-echo "$line" | grep -q '|fail|' && ok || bad "run_one should pass through the single-attempt fail verdict"
+[ "$n" -eq 1 ] && ok || bad "run_one must invoke the runner ONCE (no retry), got $n"
+# NEGATIVE PROOF (#3734): a retry loop would be caught — a stub that is called
+# twice fails this same assertion, so the check can still separate its states.
+grep -qE 'for +_?(attempt|try|retry)|while .*retry' "$NS" \
+  && bad "a retry loop reappeared in the runner" || ok
 
 echo "=== Results: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

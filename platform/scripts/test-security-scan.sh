@@ -80,7 +80,17 @@ case "$MODE" in
     run_sast || rc=1
     run_sca  || rc=1
     echo "-----------------------------------------"
-    [ "$rc" -eq 0 ] && echo "SECURITY SCAN: clean" || echo "SECURITY SCAN: findings — see above"
+    # #4004 — emit the harness's parseable shape. Without it the nightly
+    # synthesized "0 pass, 0 fail" from an unparseable run, and daily-review
+    # scored a suite that RAN and FOUND REAL THINGS as if it had produced
+    # nothing — findings invisible behind a formatting gap.
+    if [ "$rc" -eq 0 ]; then
+      echo "SECURITY SCAN: clean"
+      echo "=== Results: 2 passed, 0 failed ==="
+    else
+      echo "SECURITY SCAN: findings — see above"
+      echo "=== Results: 0 passed, 1 failed ==="
+    fi
     exit $rc ;;
   *) echo "usage: security-scan.sh [full|sast|sca|selftest DIR]" >&2; exit 2 ;;
 esac

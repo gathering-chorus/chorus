@@ -23,8 +23,12 @@ no(){ echo "  FAIL: $1"; FAIL=1; }
 
 # 1 — source reconciled: 7 principals, ALL logical-issuer webIds, marknakib present, ZERO localhost
 np=$(grep -c "a chorus:Principal" "$ID_TTL" 2>/dev/null || echo 0)
-# #3904: 7→11 — the roster grew by reviewed cards (jeff+marknakib #3773 restore, bridge #3691, canary #3871). Exact-count stays (a ghost principal = red).
-[ "$np" -eq 11 ] && ok "identity source has all 11 security principals ($np)" || no "identity source principal count = $np, expected 11"
+# #3904: 7→11 — the roster grew by reviewed cards (jeff+marknakib #3773 restore, bridge #3691, canary #3871).
+# #4004: 11→12 — principal-nightly, added by Kade's #3975 (a3bd05d30) without moving this
+# count, so a reviewed addition read as a ghost. The exact-count discipline STAYS: it is
+# what surfaced the change at all. Moving the number is the second half of adding a
+# principal, and this comment is the receipt for which card each increment came from.
+[ "$np" -eq 12 ] && ok "identity source has all 12 security principals ($np)" || no "identity source principal count = $np, expected 12"
 if grep -qE 'webId +"http://localhost' "$ID_TTL" 2>/dev/null; then
   no "identity source STILL carries a localhost webId value — a fresh load would lock out every role"
 else
@@ -35,7 +39,7 @@ grep -q "id.lightlifeurbangardens.com" "$ID_TTL" 2>/dev/null && ok "webIds track
 
 # 2 — scope source faithful to live: 13 grants (silas/wren/kade x4 + chorus-sdk x1)
 ns=$(grep -oE '"urn:chorus:[^"]+"\^\^xsd:anyURI' "$SCOPE_TTL" 2>/dev/null | grep -c . || echo 0)
-[ "$ns" -eq 13 ] && ok "scope source has 13 grants (matches live)" || no "scope source grant count = $ns, expected 13"
+[ "$ns" -eq 14 ] && ok "scope source has 13 grants (matches live)" || no "scope source grant count = $ns, expected 14"
 
 # 3 — deploy set REFERENCES the security files (else a fresh load omits them)
 grep -q "security-model-3618.ttl" "$DEPLOY" && ok "deploy set includes the security schema" || no "security-model-3618.ttl NOT in the deploy set — fresh load has no security schema"
@@ -62,8 +66,8 @@ if [ -r "$AUTH" ] && curl -s -m4 http://localhost:3030/pods/query --data-urlenco
   sc=$(curl -s "$Q" --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?s) AS ?n) WHERE { GRAPH <$SG> { ?x c:hasScope ?s } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
   sloc=$(curl -s "$Q" --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?w) AS ?n) WHERE { GRAPH <$SG> { ?p c:webId ?w FILTER(CONTAINS(STR(?w),\"localhost\")) } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$SG" -o /dev/null 2>/dev/null || true
-  [ "${sp:-0}" -eq 11 ] && ok "scratch load reproduces 11 security principals" || no "scratch load reproduced ${sp:-?} principals, expected 11"
-  [ "${sc:-0}" -eq 13 ] && ok "scratch load reproduces 13 scope grants" || no "scratch load reproduced ${sc:-?} scopes, expected 13"
+  [ "${sp:-0}" -eq 12 ] && ok "scratch load reproduces 12 security principals" || no "scratch load reproduced ${sp:-?} principals, expected 12"
+  [ "${sc:-0}" -eq 14 ] && ok "scratch load reproduces 14 scope grants" || no "scratch load reproduced ${sc:-?} scopes, expected 14"
   [ "${sloc:-1}" -eq 0 ] && ok "reproduced allow-set has ZERO localhost webIds (matches real tokens)" || no "reproduced allow-set has ${sloc} localhost webIds — reload would lock out"
 else
   echo "  SKIP: Fuseki not reachable — behavioral scratch load not run (source + deploy-set checks stand)"

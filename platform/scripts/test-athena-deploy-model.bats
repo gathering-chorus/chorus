@@ -8,7 +8,7 @@
 # #3593 — resolve the script + model UNDER TEST beside this test file (the werk during a
 # werk run), NOT via CHORUS_ROOT (which points at canonical and would test the unedited
 # tree). A test exercises the code it ships with.
-SCRIPT="$BATS_TEST_DIRNAME/chorus-model-deploy.sh"
+SCRIPT="$BATS_TEST_DIRNAME/athena-deploy-model.sh"
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 TTL="$ROOT/roles/silas/ontology/chorus.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3509"
