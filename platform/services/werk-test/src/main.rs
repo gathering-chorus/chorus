@@ -782,8 +782,17 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
 fn run_bats(werk: &str, suite: &str) -> bool {
     let tmp = std::env::temp_dir().join(format!("werk-test-bats-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&tmp);
+    // #4004 — a .sh suite is EXECUTED by bash, never handed to bats. run_bats_cases
+    // (the nightly lane) already branches this way; this path — the diff-selected
+    // lane every werk run takes — did not, so shell suites went through `bats
+    // file.sh`. bats discovers tests by SOURCING the file (bats-gather-tests),
+    // which runs the whole suite inside bats' own errexit shell: the first
+    // recorded pass aborted it, and the red was reported against a synthetic
+    // test named "bats-gather-tests". That is why 28 suites read red in the werk
+    // pipeline while every one of them passes when run directly.
+    let runner = if suite.ends_with(".sh") { "bash" } else { "bats" };
     status_ok(
-        Command::new("bats")
+        Command::new(runner)
             .arg(suite)
             .current_dir(werk)
             // #3918 — the child is a TEST: clear the runner's prod declaration so

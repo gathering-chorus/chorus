@@ -78,8 +78,11 @@ echo ""
 echo "Test 6: bridge_post retries on failure"
 if type bridge_post &>/dev/null; then
   # Test with unreachable endpoint — should retry once, log both attempts
-  RETRY_OUTPUT=$(bridge_post "http://localhost:19999/fake" "test" "test msg" 2>&1)
-  RETRY_EXIT=$?
+  # #4004 — this call is MEANT to fail (unreachable endpoint), and under the
+  # bats wrapper's errexit a failing command substitution in an assignment aborts
+  # the suite. Capture the status explicitly so a deliberate failure stays a
+  # measurement instead of killing the run.
+  RETRY_OUTPUT=$(bridge_post "http://localhost:19999/fake" "test" "test msg" 2>&1) && RETRY_EXIT=0 || RETRY_EXIT=$?
   assert_contains "logs retry attempt" "retry" "$RETRY_OUTPUT"
   assert_eq "returns non-zero on double failure" "1" "$RETRY_EXIT"
 else
