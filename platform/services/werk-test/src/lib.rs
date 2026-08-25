@@ -1103,6 +1103,10 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         // integration tests gate via RUN_LIVE_INTEGRATION and set their own URLs.
         ("CHORUS_MCP_URL".into(), "http://127.0.0.1:9/mcp".into()),
         ("CHORUS_BRIDGE_URL".into(), "http://127.0.0.1:9/api/message".into()),
+        // #4005 — PULSE_URL escaped #3995's cage: a spawned Clearing forwards
+        // Jeff-input to it, defaulting to the LIVE pulse :3475, so a test marker
+        // reached Jeff's session 12h after the cage landed. Same dead port.
+        ("PULSE_URL".into(), "http://127.0.0.1:9".into()),
     ]
 }
 
@@ -1113,6 +1117,24 @@ mod suite_world_tests {
     /// #3995 negative proof (#3734): under the suite world, an HTTP POST to the
     /// seam URL must REFUSE — the violation state (a suite reaching a live
     /// service) is shown unreachable, not assumed.
+    /// #4005 — the cage must cover EVERY outbound seam a spawned suite can
+    /// reach, not most of them: PULSE_URL was missing and a marker walked into
+    /// Jeff's live session 12h after #3995. Negative proof: the seam value is
+    /// a dead port AND a POST to it refuses.
+    #[test]
+    fn pulse_seam_is_caged_and_refuses() {
+        let env = suite_world_env("/tmp/w");
+        let pulse = env.iter().find(|(k, _)| k == "PULSE_URL")
+            .expect("PULSE_URL must be in the suite world (#4005)").1.clone();
+        assert!(pulse.starts_with("http://127.0.0.1:9"), "dead port, not live pulse: {pulse}");
+        assert!(!pulse.contains("3475"), "the LIVE pulse must never be the suite-world default");
+        let rc = std::process::Command::new("curl")
+            .args(["-s", "-m", "2", "-X", "POST", &format!("{pulse}/api/jeff-input"), "-d", "{}"])
+            .status()
+            .expect("curl spawns");
+        assert!(!rc.success(), "POST to the suite-world pulse seam must refuse — else a test can page Jeff");
+    }
+
     #[test]
     fn http_seams_are_dead_ported_and_refuse() {
         let env = suite_world_env("/tmp/w");
@@ -1135,7 +1157,7 @@ mod suite_world_tests {
         // #3995 — path seams live in the tempdir; the HTTP seams are dead-ports,
         // not paths. Every value is one or the other, nothing may point at prod.
         assert!(
-            env.iter().all(|(_, v)| v.starts_with("/tmp/w/") || v.starts_with("http://127.0.0.1:9/")),
+            env.iter().all(|(_, v)| v.starts_with("/tmp/w/") || v.starts_with("http://127.0.0.1:9")),
             "{env:?}"
         );
     }
