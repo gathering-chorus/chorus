@@ -38,10 +38,18 @@ NIGHTLY_ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 SCRIPT_DIR_NIGHTLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_NIGHTLY/chorus-log")}"
 
+# #4009 — ONE run_id, minted once, stamped on every event this run emits and
+# exported to every child. Today a run's events could not be correlated: the
+# only way to ask "what did run X do" was to count log lines between RUN|start
+# and RUN|complete and hope nobody else wrote in between. A run that cannot
+# name itself cannot be traced, and an untraceable run cannot be trusted.
+NIGHTLY_RUN_ID="${NIGHTLY_RUN_ID:-nr-$(date +%s)-$$}"
+export NIGHTLY_RUN_ID
+
 spine_emit() {
   local event="$1"; shift
   if [ -x "$CHORUS_LOG_BIN" ]; then
-    "$CHORUS_LOG_BIN" "$event" "$NIGHTLY_ROLE" "$@" >/dev/null 2>&1 || true
+    "$CHORUS_LOG_BIN" "$event" "$NIGHTLY_ROLE" "run_id=$NIGHTLY_RUN_ID" "$@" >/dev/null 2>&1 || true
   fi
 }
 
@@ -334,9 +342,30 @@ run_cargo_lane() {
   # #3484 — the nightly's own build lock: never contend with a role build.
   local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
   local _cap rc; _cap=$(mktemp)
+  # #4009 — the lane is the long pole and it used to be SILENT for its whole
+  # duration (38 min on 2026-08-25), so "working" and "wedged" looked identical
+  # from outside. Announce entry, then stream progress from the capture file
+  # while the lane runs: one nightly.suite.observed per unit line as it appears.
+  spine_emit nightly.lane.started "lane=runner" "cap=${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}"
+  ( _seen=0
+    while [ ! -s "$_cap" ] || kill -0 $$ 2>/dev/null; do
+      sleep 10
+      [ -f "$_cap" ] || continue
+      _now=$(grep -c '^nightly-unit|' "$_cap" 2>/dev/null || echo 0)
+      if [ "$_now" -gt "$_seen" ]; then
+        printf '%s\n' "$(sed -n "$((_seen+1)),${_now}p" "$_cap" | grep '^nightly-unit|')" | while IFS='|' read -r _ k u v s; do
+          [ -n "$u" ] && spine_emit nightly.suite.observed "lane=runner" "kind=$k" "unit=$u" "verdict=$v"
+        done
+        _seen="$_now"
+      fi
+      kill -0 $$ 2>/dev/null || break
+    done ) &
+  _streamer=$!
   NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}" _run_capped "$_cap" \
     env CARGO_TARGET_DIR="$nt" CHORUS_ROOT="$CHORUS_ROOT" \
     "$wt" --nightly ${only:+--crate="$only"}; rc=$?
+  kill "$_streamer" 2>/dev/null; wait "$_streamer" 2>/dev/null
+  spine_emit nightly.lane.completed "lane=runner" "rc=$rc"
   local out; out=$(cat "$_cap"); rm -f "$_cap"
   local units; units=$(printf '%s\n' "$out" | grep '^nightly-unit|' || true)
   if [ -z "$units" ]; then
@@ -353,6 +382,15 @@ run_cargo_lane() {
       *)     path="$unit" ;;
     esac
     verdict=$(_classify_verdict "$verdict" "$summary")
+    # #4009 — a suite that produced NO counts was not measured. Reporting it as
+    # "0 pass, 0 fail" let two different states (ran-and-passed-nothing vs
+    # never-produced-output) share one row; on 2026-08-25 two such rows sat in
+    # a red list I had to caveat by hand. Name the state instead.
+    case "$summary" in
+      "0 pass, 0 fail"|"0 pass, 0 fail "*)
+        verdict="unmeasured"
+        summary="0 pass, 0 fail (UNMEASURED — suite produced no parseable output)" ;;
+    esac
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
