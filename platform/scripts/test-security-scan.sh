@@ -56,7 +56,14 @@ run_sast() {
   if [ $? -eq 0 ]; then
     echo "  SAST clean"; return 0
   else
-    echo "  SAST FINDINGS — run: semgrep --config $RULES $target"; return 1
+    # #4004 — PRINT the findings. This said only "run this command yourself",
+    # so the security lane went red every day for a week naming nothing, and
+    # nobody could tell a new finding from the same three. `$out` already holds
+    # semgrep's report; a red that cannot say what it found is not actionable.
+    echo "  SAST FINDINGS:"
+    printf '%s\n' "$out" | sed 's/^/    /'
+    echo "  reproduce: semgrep --config $RULES $target"
+    return 1
   fi
 }
 
@@ -65,10 +72,16 @@ run_sca() {
     echo "SCA: trivy not installed — SKIPPED (brew install trivy, or use osv-scanner)"; return 0
   fi
   echo "SCA: trivy fs (deps + secrets + config)"
-  if trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet "$ROOT" >/dev/null 2>&1; then
+  # #4004 — capture instead of discarding to /dev/null, so a red names its CVEs.
+  local sca_out
+  sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet "$ROOT" 2>&1)
+  if [ $? -eq 0 ]; then
     echo "  SCA clean (no HIGH/CRITICAL)"; return 0
   else
-    echo "  SCA FINDINGS — run: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $ROOT"; return 1
+    echo "  SCA FINDINGS:"
+    printf '%s\n' "$sca_out" | sed 's/^/    /' | head -60
+    echo "  reproduce: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $ROOT"
+    return 1
   fi
 }
 
