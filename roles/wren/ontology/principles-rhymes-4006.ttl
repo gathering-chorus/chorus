@@ -1,0 +1,45 @@
+# #4006 — the PC ↔ XP binding, asymmetric on purpose.
+#
+# Jeff, 2026-08-25, on the idea: "that makes sense". What makes it honest is the
+# part that stays EMPTY. Eleven XP principles have a permaculture principle that
+# says the same thing from the other side; the rest do not, and forcing a twin
+# for them would manufacture a relationship to make a table look complete.
+#
+# `chorus:rhymesWith` is the edge, and it is deliberately not owl:sameAs and not
+# a subclass: these are two vocabularies that arrived at a shared idea by
+# different routes. The relation is "reads as the same idea", nothing stronger.
+#
+# The six unmapped are asserted as unmapped in platform/tests — an absence
+# nobody records is an absence the next person quietly fills.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+chorus:rhymesWith a owl:ObjectProperty ;
+    rdfs:label "rhymes with" ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range chorus:Principle ;
+    rdfs:comment "Two principles from different lineages that read as the same idea. Not identity, not subsumption — a rhyme. Deliberately partial: a principle with no rhyme has none, and that absence is the information." .
+
+chorus:xp-improvement chorus:rhymesWith chorus:hemenway-collaborate-with-succession .
+
+chorus:xp-flow chorus:rhymesWith chorus:hemenway-get-a-yield .
+
+chorus:xp-reflection chorus:rhymesWith chorus:hemenway-observe .
+
+chorus:xp-baby-steps chorus:rhymesWith chorus:hemenway-least-change-greatest-effect .
+
+chorus:xp-opportunity chorus:rhymesWith chorus:hemenway-turn-problems-into-solutions .
+
+chorus:xp-failure chorus:rhymesWith chorus:hemenway-mistakes-are-tools-for-learning .
+
+chorus:xp-redundancy chorus:rhymesWith chorus:hemenway-function-supported-by-multiple-elements .
+
+chorus:xp-diversity chorus:rhymesWith chorus:hemenway-each-element-multiple-functions .
+
+chorus:xp-economics chorus:rhymesWith chorus:hemenway-catch-and-store .
+
+chorus:xp-mutual-benefit chorus:rhymesWith chorus:hemenway-connect .
+
+chorus:xp-self-similarity chorus:rhymesWith chorus:hemenway-small-scale-intensive-systems .

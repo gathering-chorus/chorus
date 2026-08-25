@@ -1,0 +1,35 @@
+# #4006 — the Value class and its shape: the level above Principle.
+#
+# Modelled the same way Principle is (#3749): a NodeShape athena-make's gate
+# requires before it will serve the class at all ("no shape found — land the
+# schema first", lib.rs:734), with the instances graph DECLARED ON THE SHAPE
+# per ADR-051 so reader and writer are the same graph by construction.
+#
+# expressedBy is minCount 1 deliberately. A value with no principle under it is
+# a poster on a wall — it cannot be argued with, cannot be violated, and cannot
+# be checked. Requiring the edge means the layer above stays connected to the
+# layer below or the deploy refuses.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:Value a owl:Class ;
+    rdfs:label "Value" ;
+    rdfs:comment "What the team cares about — the level the principles answer to. Universal and deliberately vague on its own; it becomes actionable only through the principles that express it." .
+
+chorus:expressedBy a owl:ObjectProperty ;
+    rdfs:label "expressed by" ;
+    rdfs:domain chorus:Value ;
+    rdfs:range chorus:Principle ;
+    rdfs:comment "The principles that carry this value into practice. A value with no expressedBy edge is unfalsifiable." .
+
+chorus:ValueShape a sh:NodeShape ;
+    sh:targetClass chorus:Value ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:expressedBy ; sh:minCount 1 ; sh:class chorus:Principle ] ;
+    chorus:instancesGraph "urn:chorus:domains:values" ;
+    chorus:generatedBy "athena-model" .

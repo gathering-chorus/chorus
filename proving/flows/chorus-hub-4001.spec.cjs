@@ -157,7 +157,7 @@ test.describe('#4001 the hub is the shape of the product', () => {
     await expect(archive, 'the Archive link carries the live unclaimed count')
       .toHaveText(/Archive — unclaimed & retired pages \(\d+\)/);
 
-    const res = await request.get(`${BASE}/archive.html`);
+    const res = await request.get(`${BASE}/chorus-pages/archive.html`);
     expect(res.ok(), 'the Archive page itself resolves').toBeTruthy();
 
     // And the hub no longer carries the pile inline.
@@ -177,7 +177,7 @@ test.describe('#4001 the hub is the shape of the product', () => {
     const counted = Number((label.match(/\((\d+)\)/) || [])[1]);
     expect(Number.isFinite(counted) && counted > 0, 'the hub counted a pile').toBe(true);
 
-    await page.goto(`${BASE}/archive.html`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${BASE}/chorus-pages/archive.html`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#unclaimed li').first(), 'the Archive rendered rows').toBeVisible();
     const listed = await page.locator('#unclaimed li').count();
     // One inventory, two renderings — a drift here means the two surfaces are
@@ -217,7 +217,7 @@ test.describe('#4001 one query, one truth', () => {
   // CALL is what is shared, and this test grades that rather than the numbers
   // agreeing on one lucky day: neither page may build the question itself.
   test('neither surface re-derives the inventory question', async ({ request }) => {
-    const files = ['/index.html', '/archive.html'];
+    const files = ['/index.html', '/chorus-pages/archive.html'];
     for (const f of files) {
       const res = await request.get(`${BASE}${f}`);
       expect(res.ok(), `${f} serves`).toBeTruthy();

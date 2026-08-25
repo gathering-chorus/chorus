@@ -1,3 +1,4 @@
+// @test-type: integration — drives the live Clearing /api/flow surface
 /**
  * Domain Fold Tests — #1963
  *
@@ -84,10 +85,17 @@ skipIfDown('Domain fold — #1963', () => {
   describe('domain counts include WIP indicator data', () => {
     test('each domain has a wip count', async () => {
       const data = await getJson('/api/flow');
+      // #4006 — `domain` was bound and never read (TS6133, which took the whole
+      // file down as "suite failed to run", not just this case). Keep the
+      // binding and USE it: collect the offenders by NAME and assert the list is
+      // empty, so a red says which domain is wrong instead of sending the reader
+      // back to the source. jest's expect takes no message argument, so the name
+      // has to travel in the value.
+      const bad: string[] = [];
       for (const [domain, d] of Object.entries(data.domains || {}) as any[]) {
-        expect(d.counts).toHaveProperty('wip');
-        expect(typeof d.counts.wip).toBe('number');
+        if (typeof d?.counts?.wip !== 'number') bad.push(`${domain}: ${JSON.stringify(d?.counts)}`);
       }
+      expect(bad).toEqual([]);
     });
   });
 

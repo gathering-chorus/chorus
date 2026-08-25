@@ -16,12 +16,35 @@
 @prefix sh: <http://www.w3.org/ns/shacl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
+
+# #4006 — principleKind as a declared property. athena-make projects DECLARED
+# vocabulary; an undeclared predicate sits in the store and never reaches the
+# read surface, which is exactly what "served 14, principleKind on zero" meant
+# — the value was there, the declaration was not.
+chorus:principleKind a owl:DatatypeProperty ;
+    rdfs:label "principle kind" ;
+    rdfs:domain chorus:Principle ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Which set this principle belongs to: pc (the permaculture principles the team designs by) or xp (the extreme-programming principles it builds by)." .
 
 chorus:PrincipleShape a sh:NodeShape ;
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Principle ;
     sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    # #4006 — WHICH KIND of principle this is. The loom holds two sets that read
+    # differently and are cited differently: the 14 permaculture principles the
+    # team designs by, and the 14 XP principles the team builds by. Served as one
+    # undifferentiated list of 14, /principles could not tell you which you were
+    # reading, and nothing could bind a Practice to the XP principle it expresses
+    # (Kade, #3754, blocked on exactly that 2026-08-25).
+    #
+    # minCount 1 is the point: an untagged principle is REFUSED at the door
+    # rather than rendered as a blank axis. The 14 PC instances carry "pc" in the
+    # same commit, so the constraint is satisfiable the moment it lands.
+    sh:property [ sh:path chorus:principleKind ; sh:minCount 1 ; sh:maxCount 1 ;
+                  sh:datatype xsd:string ; sh:in ( "pc" "xp" ) ] ;
     chorus:instancesGraph "urn:chorus:domains:principles" ;
     chorus:generatedBy "athena-model" .
