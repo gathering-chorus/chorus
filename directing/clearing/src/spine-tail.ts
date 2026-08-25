@@ -13,7 +13,9 @@
  * regression tests in tests/spine-tail.test.ts.
  */
 
-import type fs_node from 'fs';
+// #2725 — the default value import gives spinePath's existence probe a real fs;
+// the type alias keeps every other fs use injected (tests pass their own).
+import fs_node from 'fs';
 
 export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
 
@@ -257,8 +259,9 @@ export function tailReadUtf8(fs: typeof fs_node, file: string, maxBytes: number 
 export function spinePath(
   env: Record<string, string | undefined>,
   exists: (p: string) => boolean = (p) => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    try { (require('fs') as typeof fs_node).statSync(p); return true; } catch { return false; }
+    /* eslint-disable-next-line security/detect-non-literal-fs-filename --
+     * spine path candidates come from env constants, same as tailer.ts. */
+    try { fs_node.statSync(p); return true; } catch { return false; }
   },
 ): string {
   if (env.CHORUS_SPINE) return env.CHORUS_SPINE;
