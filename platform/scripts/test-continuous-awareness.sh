@@ -59,13 +59,13 @@ echo "Test 1: Context injection active (Loki spine events, last ${WINDOW_S}s)"
 count=$(echo "$INJECTED" | grep -c '"event":"context.inject.injected"')
 if [ "$count" -gt 0 ]; then
   echo "  PASS: context injection firing ($count events)"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   if [ "${PROMPTS:-0}" -eq 0 ]; then
     echo "  UNMEASURABLE: no user prompts in window — nothing to inject for"
   else
     echo "  FAIL: prompts occurred but no context.inject.injected events"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 fi
 
@@ -74,10 +74,10 @@ echo "Test 2: Hybrid search returns results for known terms"
 result=$(curl -s 'http://localhost:3340/api/chorus/search?q=compound+loop&mode=hybrid&limit=3' 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('total',0))" 2>/dev/null)
 if [ -n "$result" ] && [ "$result" -gt 0 ] 2>/dev/null; then
   echo "  PASS: hybrid search returns $result results"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: hybrid search returned no results"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 3: Context injection covers multiple roles ---
@@ -90,10 +90,10 @@ roles=$(echo "$INJECTED" | grep -oE '"role":"(wren|silas|kade)"' | sort -u | wc 
 echo "  info: $roles distinct role(s) injected in window"
 if [ "$roles" -ge 1 ]; then
   echo "  PASS: $roles roles receiving injection"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: only $roles role(s) — expected >= 2"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 4: Memory scan returns hits ---
@@ -101,10 +101,10 @@ echo "Test 4: Memory scan finds related decisions/feedback"
 memory_hits=$(echo "$INJECTED" | grep -oE '"memory_hits":[1-9][0-9]*' | head -1)
 if [ -n "$memory_hits" ]; then
   echo "  PASS: memory scan returning hits ($memory_hits)"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: no memory hits in recent injections"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 5+6: ops_awareness retirement holds (#3334) ---
@@ -115,19 +115,19 @@ fi
 echo "Test 5: ops_awareness stays retired (#3334)"
 if grep -rq "ops_awareness" "${CHORUS_ROOT}/platform/services/chorus-hooks/src/hooks/" 2>/dev/null; then
   echo "  FAIL: ops_awareness reappeared in hooks/ — retired by #3334; if intentional, update this gate"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 else
   echo "  PASS: no ops_awareness in hooks/ (retirement holds)"
-  ((PASS++))
+  PASS=$((PASS+1))
 fi
 
 echo "Test 6: no ops_awareness::check call sites"
 if grep -rq "ops_awareness::check" "${CHORUS_ROOT}/platform/services/chorus-hooks/src/" --include='*.rs' 2>/dev/null | grep -v "RETIRED" ; then
   echo "  FAIL: ops_awareness::check call site found — retired by #3334"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 else
   echo "  PASS: no ops_awareness::check call sites"
-  ((PASS++))
+  PASS=$((PASS+1))
 fi
 
 # --- Test 7: Hook server running ---
@@ -150,10 +150,10 @@ if [ -z "$pid" ]; then
 fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server PID $pid"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: hook server not running"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""

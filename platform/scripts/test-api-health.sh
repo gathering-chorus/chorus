@@ -13,10 +13,10 @@ assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if echo "$haystack" | grep -qi "$needle"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected to contain '$needle')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -24,10 +24,10 @@ assert_status() {
   local label="$1" expected="$2" actual="$3"
   if [ "$expected" = "$actual" ]; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected HTTP $expected, got $actual)"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -77,10 +77,10 @@ echo "Test 8: Vector count is positive"
 vectors=$(echo "$detail" | python3 -c "import json,sys; print(json.load(sys.stdin).get('vectors',0))" 2>/dev/null)
 if [ -n "$vectors" ] && [ "$vectors" -gt 0 ] 2>/dev/null; then
   echo "  PASS: vectors=$vectors"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: vectors should be > 0 (got '$vectors')"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 9: Has hooks field ---

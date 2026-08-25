@@ -88,10 +88,10 @@ SCAN=$(scan_fixture silas)
 if echo "$SCAN" | grep -q "\[STALE\]"; then
   echo "  FAIL: fresh state shows [STALE] flag — scan:"
   echo "$SCAN" | sed 's/^/    /'
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 else
   echo "  PASS: no [STALE] flag on fresh state"
-  ((PASS++))
+  PASS=$((PASS+1))
 fi
 
 # Test 2: Stale state + stale observation DOES show STALE.
@@ -109,11 +109,11 @@ SCAN=$(scan_fixture silas)
 # events emitted by the cards CLI for real-world card aging.
 if echo "$SCAN" | grep -q "\[STALE\]"; then
   echo "  PASS: stale state shows [STALE]"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: stale state missing [STALE] flag — scan:"
   echo "$SCAN" | sed 's/^/    /'
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # Test 3: [STALE] flag appears specifically on the stale role's line.
@@ -125,11 +125,11 @@ write_observation kade "$(iso_hours_ago 1)"
 SCAN=$(scan_fixture silas)
 if echo "$SCAN" | grep "kade" | grep -q "\[STALE\]"; then
   echo "  PASS: [STALE] on kade's line"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: [STALE] not on kade's line — scan:"
   echo "$SCAN" | sed 's/^/    /'
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""

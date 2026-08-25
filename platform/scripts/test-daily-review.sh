@@ -13,10 +13,10 @@ assert_eq() {
   local label="$1" expected="$2" actual="$3"
   if [ "$expected" = "$actual" ]; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected '$expected', got '$actual')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -24,10 +24,10 @@ assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if echo "$haystack" | grep -q "$needle"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected to contain '$needle')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -39,20 +39,20 @@ echo "Test 1: bridge-post helper exists and is sourceable"
 if [ -f "$SCRIPT_DIR/lib/bridge-post.sh" ]; then
   source "$SCRIPT_DIR/lib/bridge-post.sh"
   echo "  PASS: lib/bridge-post.sh loaded"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: lib/bridge-post.sh not found"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""
 echo "Test 2: bridge_post function available after sourcing"
 if type bridge_post &>/dev/null; then
   echo "  PASS: bridge_post function defined"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: bridge_post function not defined"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""
@@ -78,15 +78,18 @@ echo ""
 echo "Test 6: bridge_post retries on failure"
 if type bridge_post &>/dev/null; then
   # Test with unreachable endpoint — should retry once, log both attempts
-  RETRY_OUTPUT=$(bridge_post "http://localhost:19999/fake" "test" "test msg" 2>&1)
-  RETRY_EXIT=$?
+  # #4004 — this call is MEANT to fail (unreachable endpoint), and under the
+  # bats wrapper's errexit a failing command substitution in an assignment aborts
+  # the suite. Capture the status explicitly so a deliberate failure stays a
+  # measurement instead of killing the run.
+  RETRY_OUTPUT=$(bridge_post "http://localhost:19999/fake" "test" "test msg" 2>&1) && RETRY_EXIT=0 || RETRY_EXIT=$?
   assert_contains "logs retry attempt" "retry" "$RETRY_OUTPUT"
   assert_eq "returns non-zero on double failure" "1" "$RETRY_EXIT"
 else
   echo "  FAIL: bridge_post not available for retry test"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
   echo "  FAIL: (skipped exit code test)"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""
@@ -113,13 +116,13 @@ if [ -f "$ALERT_FILE" ]; then
   assert_contains "alert references daily.review.completed" "daily.review.completed" "$ALERT_CONTENT"
   assert_contains "alert has 6:30 threshold" "6:30" "$ALERT_CONTENT"
   echo "  PASS: alert file exists"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: alerting/daily-review-missing.yml not found"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
   echo "  FAIL: (skipped content checks)"
-  ((FAIL++))
-  ((FAIL++))
+  FAIL=$((FAIL+1))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""

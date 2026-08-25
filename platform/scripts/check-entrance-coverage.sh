@@ -61,3 +61,52 @@ if missing:
         print(f"  {h}", file=sys.stderr)
     sys.exit(1)
 '
+LINK_RC=$?
+
+# #4004 — ASSETS, not just links. The pass above reads ui-pages, a list of link
+# rows, so anything a page pulls in that is not a declared link is invisible to
+# it: a <script src>, a stylesheet, a fetch target. Wren found #4001 shipping
+# /ui-inventory.js and /archive.html that the tunnel 404s — the script tag fails
+# publicly and the entrance renders 2 tiles where localhost shows 10. The check
+# said 77/77 while the page was broken, because it never looked at the page.
+# So: fetch the entrance HTML and measure every same-origin path it references.
+ENTRANCE="${ENTRANCE_URL:-http://localhost:3340/chorus}"
+HTML="$(curl -sf --max-time 10 "$ENTRANCE" 2>/dev/null)" || {
+  echo "entrance-coverage: UNMEASURABLE — $ENTRANCE unreachable (refusing vacuous green)" >&2
+  exit 2; }
+
+printf '%s' "$HTML" | PREFIXES="$PREFIXES" python3 -c '
+import os, re, sys
+prefixes = [p for p in os.environ["PREFIXES"].split("\n") if p.strip()]
+html = sys.stdin.read()
+if not html.strip():
+    print("entrance-coverage: UNMEASURABLE — entrance returned an empty body", file=sys.stderr)
+    sys.exit(2)
+# Quoted same-origin paths that name a FILE — a script, a stylesheet, a data
+# document. Navigation links are deliberately left to the ui-pages pass above,
+# which has an authoritative list of them; re-measuring them from the HTML would
+# re-report the same worklist through a blurrier lens and red on paths the first
+# pass already governs. What only the HTML can tell us is what the page PULLS IN
+# to render, which is the gap Wren found.
+refs = sorted({m for m in re.findall(r"[\x27\"](/[A-Za-z0-9._/-]*\.[A-Za-z0-9]+)[\x27\"]", html)})
+def covered(h):
+    return any(h == p or (p != "/" and h.startswith(p.rstrip("/") + "/"))
+               for p in prefixes)
+if not refs:
+    print("entrance-coverage: UNMEASURABLE — entrance references zero paths", file=sys.stderr)
+    sys.exit(2)
+missing = [h for h in refs if not covered(h)]
+print(f"entrance-coverage: {len(refs) - len(missing)}/{len(refs)} referenced assets covered")
+if missing:
+    print(f"UNCOVERED ASSETS ({len(missing)}) — referenced by the entrance, not on the allowlist:",
+          file=sys.stderr)
+    for h in missing:
+        print(f"  {h}", file=sys.stderr)
+    sys.exit(1)
+'
+ASSET_RC=$?
+
+# UNMEASURABLE beats a failure: a green half must never mask a half we could not read.
+[ "$LINK_RC" = 2 ] || [ "$ASSET_RC" = 2 ] && exit 2
+[ "$LINK_RC" = 0 ] && [ "$ASSET_RC" = 0 ] && exit 0
+exit 1

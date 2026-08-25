@@ -173,8 +173,19 @@ list_cargo() {
 # com.chorus ancestor (#3722), so a stray invocation is safe too.
 NIGHTLY_DESTRUCTIVE_SUITES="test-product-membrane.sh"
 list_shell() {
+  # #4004 — exclude by BASENAME, not by canonical path. The previous grep -vF
+  # matched the literal "test-product-membrane.sh" fragment, which held for the
+  # canonical copy but the bats/shell discovery also reaches werk trees, where
+  # the same destructive suite lives under chorus-werk/<role>-<card>/... and
+  # slipped straight past the filter (seen live: a kade-3721 copy ran and was
+  # scored). Matching the basename anywhere closes that.
   find "$CHORUS_ROOT/platform/scripts" -maxdepth 1 -name "test-*.sh" -type f 2>/dev/null | sort \
-    | grep -vFf <(printf '%s\n' $NIGHTLY_DESTRUCTIVE_SUITES)
+    | while IFS= read -r _f; do
+        case " $NIGHTLY_DESTRUCTIVE_SUITES " in
+          *" $(basename "$_f") "*) continue ;;
+        esac
+        printf '%s\n' "$_f"
+      done
 }
 
 # #2806: bats discovery — find every *.bats file under chorus that isn't in
@@ -348,7 +359,21 @@ run_cargo_lane() {
     local _flog; _flog=$(_fail_log_path "$kind" "$path")
     if [ "$verdict" = "fail" ]; then
       mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
-      printf '%s\n' "$out" > "$_flog" 2>/dev/null || true
+      # #4004 — write THIS unit's slice, not the whole lane. `$out` is one
+      # werk-test blob covering every unit, so writing it per failing suite
+      # produced N byte-identical files (14 × 155245 on 2026-08-25): the logs
+      # could not tell you WHICH suite failed, which is the only question they
+      # exist to answer. The full blob is kept ONCE, referenced by name.
+      local _blob="$NIGHTLY_FAIL_DIR/_lane-output.log"
+      printf '%s\n' "$out" > "$_blob" 2>/dev/null || true
+      {
+        echo "# unit: $unit ($kind) — verdict $verdict"
+        echo "# summary: $summary"
+        echo "# full lane output: $_blob"
+        echo "---"
+        # the unit's own lines: its nightly-unit row plus anything naming it
+        printf '%s\n' "$out" | grep -F -- "$unit" || echo "(no lines in the lane output named this unit)"
+      } > "$_flog" 2>/dev/null || true
     else
       rm -f "$_flog" 2>/dev/null || true
     fi
@@ -411,8 +436,18 @@ _extract_shell_summary() {
   fi
 
   # 4. synthesize from rc
+  #
+  # #4004 — rc=3 is a suite's own SELF-REFUSAL ("I must not run here"), not a
+  # failure. test-product-membrane exits 3 when it detects a chorus-agent
+  # ancestor, exactly as #3722 designed: refusing is the correct behaviour, and
+  # scoring it "0 pass, 1 fail" made a working guard read identically to a
+  # broken suite — it sat red in the nightly for weeks while never running.
+  # A skip is not a pass either: it reports as its own state, visible, never
+  # silently green.
   if [ "$rc" -eq 0 ]; then
     echo "1 ok, 0 fail (synthesized, no parseable line)"
+  elif [ "$rc" -eq 3 ]; then
+    echo "0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)"
   else
     echo "0 pass, 1 fail (synthesized rc=$rc, no parseable line)"
   fi

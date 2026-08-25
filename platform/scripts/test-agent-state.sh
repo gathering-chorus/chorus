@@ -14,10 +14,10 @@ assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if echo "$haystack" | grep -qi "$needle"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected to contain '$needle')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -28,10 +28,10 @@ echo ""
 echo "Test 1: Script exists and is executable"
 if [ -x "$AGENT_STATE" ]; then
   echo "  PASS: agent-state.sh is executable"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: agent-state.sh not found or not executable"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 2: No args prints usage ---
@@ -59,10 +59,10 @@ output=$("$AGENT_STATE" status api 2>&1 || true)
 assert_contains "shows api" "api" "$output"
 if echo "$output" | grep -q "com.gathering.fuseki"; then
   echo "  FAIL: filter should exclude unrelated agents"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 else
   echo "  PASS: filter excludes unrelated agents"
-  ((PASS++))
+  PASS=$((PASS+1))
 fi
 
 # --- Test 6: short name resolves ---
@@ -99,10 +99,10 @@ assert_contains "unloaded agent resolves via plist" "com.chorus.test-3750-fixtur
 echo "Test 16 (#3750): resolve refuses when neither loaded nor plist exists"
 if HOME="$FAKE_HOME" "$AGENT_STATE" resolve does-not-exist-anywhere >/dev/null 2>&1; then
   echo "  FAIL: resolve should exit 1 for an unresolvable name"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 else
   echo "  PASS: unresolvable name exits non-zero"
-  ((PASS++))
+  PASS=$((PASS+1))
 fi
 rm -rf "$FAKE_HOME"
 

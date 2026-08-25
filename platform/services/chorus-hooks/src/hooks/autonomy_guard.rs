@@ -539,10 +539,25 @@ pub fn tool_calls_this_turn(transcript_path: &str) -> usize {
         };
         let msg = v.get("message").unwrap_or(&v);
         // A human message starts a new turn — reset.
-        if msg.get("role").and_then(|r| r.as_str()) == Some("user")
-            || v.get("type").and_then(|t| t.as_str()) == Some("user")
-        {
-            count = 0;
+        //
+        // #4004 — but a TOOL RESULT is also typed `user` in the transcript, so
+        // the naive check zeroed the count on every tool_use's own result: the
+        // sequence tool_use -> tool_result -> text always measured zero calls,
+        // and no amount of real work could clear the stall gate. Diagnosed
+        // 2026-08-21 (#3949), hit again by Wren 2026-08-25 across 8 replies.
+        // Only a user entry carrying NO tool_result block is a real human turn.
+        let is_user = msg.get("role").and_then(|r| r.as_str()) == Some("user")
+            || v.get("type").and_then(|t| t.as_str()) == Some("user");
+        if is_user {
+            let carries_tool_result = match msg.get("content") {
+                Some(serde_json::Value::Array(blocks)) => blocks.iter().any(|b| {
+                    b.get("type").and_then(|t| t.as_str()) == Some("tool_result")
+                }),
+                _ => false,
+            };
+            if !carries_tool_result {
+                count = 0;
+            }
             continue;
         }
         if let Some(serde_json::Value::Array(blocks)) = msg.get("content") {
@@ -1018,5 +1033,41 @@ mod real_stall_specimens {
         for (_when, text) in VERBATIM_STALLS {
             assert!(stated_intent_without_action(text, 1, &v).is_none());
         }
+    }
+    /// #4004 — a tool RESULT must not reset the turn's tool count.
+    /// Live shape: assistant tool_use -> user-typed tool_result -> assistant text.
+    /// The old reset zeroed on the result, so a turn full of real work measured
+    /// zero calls and the stall gate could never be cleared by doing the work.
+    #[test]
+    fn tool_result_does_not_reset_the_turn_count() {
+        let dir = std::env::temp_dir().join(format!("ag4004-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.jsonl");
+        let lines = [
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"do it"}]}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"ok"}]}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}"#,
+        ].join("\n");
+        std::fs::write(&p, lines).unwrap();
+        assert_eq!(tool_calls_this_turn(p.to_str().unwrap()), 1,
+            "a tool_result is not a new human turn");
+    }
+
+    /// NEGATIVE PROOF (#3734): a REAL human turn still resets, so the gate keeps
+    /// catching a turn that promised action and called nothing.
+    #[test]
+    fn a_real_human_turn_still_resets_the_count() {
+        let dir = std::env::temp_dir().join(format!("ag4004b-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.jsonl");
+        let lines = [
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash"}]}}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"next thing"}]}}"#,
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"on it"}]}}"#,
+        ].join("\n");
+        std::fs::write(&p, lines).unwrap();
+        assert_eq!(tool_calls_this_turn(p.to_str().unwrap()), 0,
+            "a genuine human message starts a fresh turn");
     }
 }

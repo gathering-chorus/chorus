@@ -32,11 +32,11 @@ echo ""
 
 FAILURES=0
 
-check_http "App" 3000 "/health" || ((FAILURES++))
-check_http "Fuseki" 3030 "/$/ping" || ((FAILURES++))
-check_http "Clearing" 3470 "/" || ((FAILURES++))
-check_http "Chorus API" 3340 "/" || ((FAILURES++))
-check_http "Vikunja" 3456 "/" || ((FAILURES++))
+check_http "App" 3000 "/health" || FAILURES=$((FAILURES+1))
+check_http "Fuseki" 3030 "/$/ping" || FAILURES=$((FAILURES+1))
+check_http "Clearing" 3470 "/" || FAILURES=$((FAILURES+1))
+check_http "Chorus API" 3340 "/" || FAILURES=$((FAILURES+1))
+check_http "Vikunja" 3456 "/" || FAILURES=$((FAILURES+1))
 
 echo ""
 if [ "$FAILURES" -gt 0 ]; then

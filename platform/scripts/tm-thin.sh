@@ -19,7 +19,7 @@ for snap in $(tmutil listlocalsnapshots / 2>/dev/null | grep "com.apple.TimeMach
     if [ "$snap_epoch" -gt 0 ]; then
         age_hours=$(( (NOW - snap_epoch) / 3600 ))
         if [ "$age_hours" -gt "$KEEP_HOURS" ]; then
-            tmutil deletelocalsnapshots "$date_str" 2>/dev/null && ((DELETED++)) || true
+            tmutil deletelocalsnapshots "$date_str" 2>/dev/null && DELETED=$((DELETED+1)) || true
         fi
     fi
 done

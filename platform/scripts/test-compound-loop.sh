@@ -34,10 +34,10 @@ assert_contains() {
   local label="$1" needle="$2" haystack="$3"
   if echo "$haystack" | grep -qi "$needle"; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected to contain '$needle')"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -62,10 +62,10 @@ if [ -z "$pid" ]; then
 fi
 if [ -n "$pid" ]; then
   echo "  PASS: hook server running (PID $pid)"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: hook server not running"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 2: settings.json has UserPromptSubmit hook ---
@@ -87,10 +87,10 @@ SHIM="$(command -v chorus-hook-shim 2>/dev/null || true)"
 [ -n "$SHIM" ] || SHIM="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hook-shim"
 if [ -x "$SHIM" ]; then
   echo "  PASS: shim binary exists and is executable ($SHIM)"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: shim binary not found at $SHIM"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 4: Context injection fired in the last 5 minutes ---
@@ -98,10 +98,10 @@ echo "Test 4: Context injection fired recently"
 recent=$(_loki_injected | head -1)
 if [ -n "$recent" ]; then
   echo "  PASS: context injection fired"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: no recent context injection events in hook log"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 5: Multiple roles receiving injection ---
@@ -112,10 +112,10 @@ roles=$(_loki_injected | grep -oE '"role":"(wren|silas|kade)"' | sort -u | wc -l
 echo "  info: $roles distinct role(s) injected in window"
 if [ "$roles" -ge 1 ]; then
   echo "  PASS: $roles roles receiving injection"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: only $roles role(s) receiving injection (expected >= 2)"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 6: Hook server socket is listening ---
@@ -123,7 +123,7 @@ echo "Test 6: Hook server socket is responding"
 health=$(curl -s http://localhost:3380/health 2>/dev/null || echo "")
 if [ -n "$health" ]; then
   echo "  PASS: hook server health endpoint responds"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   # #3721 — the control socket moved out of /tmp to ~/.chorus/run/ (#3617/#3631).
   # This still probed the retired path, so it reported "hook server not
@@ -135,10 +135,10 @@ else
   socket="${CHORUS_HOOK_SOCKET:-$HOME/.chorus/run/chorus-hooks.sock}"
   if [ -S "$socket" ]; then
     echo "  PASS: hook server socket exists at $socket"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: hook server not reachable (no HTTP health or socket)"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 fi
 
@@ -147,10 +147,10 @@ echo "Test 7: Hook server LaunchAgent is KeepAlive"
 keepalive=$(plutil -p ~/Library/LaunchAgents/com.chorus.hooks.plist 2>/dev/null | grep -i keepalive)
 if [ -n "$keepalive" ]; then
   echo "  PASS: KeepAlive configured"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: KeepAlive not set — hook server won't restart after crash"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 echo ""

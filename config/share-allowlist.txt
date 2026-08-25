@@ -98,3 +98,13 @@
 # pages it links directly (model-data hub, borg-assessment). Prefix, because a
 # section that IS the front door cannot be maintained one file at a time.
 /chorus-pages
+
+# #4001 shipped these two at the ROOT, outside the /chorus-pages prefix above, so
+# the tunnel 404s both: the script tag fails publicly and the public entrance
+# renders 2 tiles where localhost shows 10 (Wren, 2026-08-25). Read-only assets
+# on an already-public hub. Exact files — nothing beside them is shared. Carried
+# here rather than on #4006 so one land publishes them: this card widens the
+# entrance-coverage check to see exactly this class, and a check that can see a
+# gap should land with the gap closed.
+/ui-inventory.js
+/archive.html

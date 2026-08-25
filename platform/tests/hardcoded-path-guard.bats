@@ -18,7 +18,16 @@ setup() {
   # node_modules (#3665 — vendored readmes/typings legitimately mention /Users/
   # paths; the guard governs OUR test files, not dependency docs. This false-fired
   # the moment platform/tests grew a node_modules for the cucumber tier.)
-  bad=$(grep -rlE '/Users/[A-Za-z0-9._-]+/' platform/tests/ 2>/dev/null \
+  # #4004 — match a REAL account's home, not the shape of one. The rot this
+  # guard exists to stop is "green on the author's machine": a path under a home
+  # that actually exists here. A synthetic placeholder like /Users/x/ inside a
+  # fixture (Kade's #3989 bats embeds fake `ps` output whose command lines are
+  # absolute by nature) belongs to no account, cannot be machine-specific, and
+  # dereferences to nothing — flagging it taught the team to edit fixture data to
+  # appease a guard, which is how a guard loses its meaning.
+  local homes; homes=$(ls /Users 2>/dev/null | grep -vE '^(Shared|Guest)$' | paste -sd'|' -)
+  [ -n "$homes" ] || homes="$(basename "$HOME")"
+  bad=$(grep -rlE "/Users/($homes)/" platform/tests/ 2>/dev/null \
           | grep -v 'features/step_definitions/' \
           | grep -v 'node_modules/' \
           | grep -v 'fixtures/' \
@@ -32,6 +41,33 @@ setup() {
     echo "Fix: 'load test_helper' then use \$CHORUS_ROOT/... instead of the absolute path."
     false
   fi
+}
+
+# #4004 NEGATIVE PROOF (#3734) — narrowing the pattern to real accounts is only
+# safe if the guard still REDS on the state it exists to catch. These two drive
+# the matcher directly over a scratch tree: a real home must be caught, and the
+# synthetic placeholder must not be. Without the first, the narrowing could have
+# silently disarmed the guard and every check would still have been green.
+@test "the matcher CATCHES a real local home (the rot this guard exists to stop)" {
+  local homes; homes=$(ls /Users 2>/dev/null | grep -vE '^(Shared|Guest)$' | paste -sd'|' -)
+  [ -n "$homes" ] || homes="$(basename "$HOME")"
+  local scratch="$BATS_TEST_TMPDIR/real"
+  mkdir -p "$scratch"
+  printf 'load "%s/CascadeProjects/chorus/platform/tests/test_helper"\n' "$HOME" > "$scratch/offender.bats"
+  run grep -rlE "/Users/($homes)/" "$scratch"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"offender.bats"* ]]
+}
+
+@test "the matcher IGNORES a synthetic placeholder home inside fixture data" {
+  local homes; homes=$(ls /Users 2>/dev/null | grep -vE '^(Shared|Guest)$' | paste -sd'|' -)
+  [ -n "$homes" ] || homes="$(basename "$HOME")"
+  local scratch="$BATS_TEST_TMPDIR/fake"
+  mkdir -p "$scratch"
+  # the exact shape of Kade's #3989 fixture: fake `ps` output, absolute by nature
+  echo '99901 1 05:33 node /Users/x/CascadeProjects/chorus/src/cli.ts add foo' > "$scratch/fixture.bats"
+  run grep -rlE "/Users/($homes)/" "$scratch"
+  [ "$status" -ne 0 ]
 }
 
 # #3528 — the /Users/ pattern above MISSES the werk-path form that actually bit us:

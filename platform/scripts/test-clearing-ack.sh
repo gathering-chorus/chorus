@@ -19,10 +19,10 @@ assert_contains() {
   local label="$1" needle="$2" file="$3"
   if grep -q "$needle" "$file" 2>/dev/null; then
     echo "  PASS: $label"
-    ((PASS++))
+    PASS=$((PASS+1))
   else
     echo "  FAIL: $label (expected '$needle' in $(basename "$file"))"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
   fi
 }
 
@@ -40,10 +40,10 @@ assert_contains "ack callback in handler signature" "callback\|ack" "$SERVER"
 echo "Test 2: jeff-input calls the ack callback with delivery result"
 if grep -E "ack\??\.\(\{.*ok:" "$JEFF_INPUT" 2>/dev/null | grep -q .; then
   echo "  PASS: callback invoked with { ok: ... }"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: callback called with { ok: ... } (expected in jeff-input.ts)"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 3: Client emit includes callback ---
@@ -52,10 +52,10 @@ fi
 echo "Test 3: Client emit includes ack callback"
 if grep -E "socket\.emit\('jeff-message'.*(function|=>)" "$CLIENT" 2>/dev/null | grep -q .; then
   echo "  PASS: emit has callback"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: emit missing callback argument"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 4: Client shows delivery state ---

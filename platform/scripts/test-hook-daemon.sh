@@ -29,7 +29,7 @@ set -uo pipefail
 
 # #3725 AC1 — TWO fixes, both mine to own.
 #
-# (a) COUNTERS. `((PASS++))` is post-increment: bash returns the value BEFORE the
+# (a) COUNTERS. `PASS=$((PASS+1))` is post-increment: bash returns the value BEFORE the
 #     increment as the exit status, so when PASS is 0 it returns 1 — a "failure".
 #     Harmless while -e is off; fatal the moment it isn't. Now `PASS=$((PASS+1))`,
 #     which always returns 0.
@@ -38,13 +38,13 @@ set -uo pipefail
 #     Four `set +e ... set -e` pairs therefore didn't RESTORE -e, they TURNED IT ON
 #     and left it on for the rest of the run. Combined with (a) that killed the
 #     script: with the daemon down, tests 1-3 take SKIP branches, PASS stays 0,
-#     test 4 switches -e on, assert_eq does ((PASS++)) -> status 1 -> abort. Tests
+#     test 4 switches -e on, assert_eq does PASS=$((PASS+1)) -> status 1 -> abort. Tests
 #     5-7 never ran and no `=== Results: ===` line was printed, so nightly-suites
 #     fell through to rc-synthesis and reported "0 pass, 1 fail (synthesized rc=1,
 #     no parseable line)" — an unexplained red on any night the daemon is down.
 #
 #     I CAUSED THE LIVE HALF OF THIS in #3721. Before that change the skip branches
-#     did ((PASS++)), so PASS was 3 by test 4 and the increment returned success by
+#     did PASS=$((PASS+1)), so PASS was 3 by test 4 and the increment returned success by
 #     accident. Making skips stop counting as passes was right; it removed the
 #     accident that was masking a latent bug, and I shipped the result. Restores are
 #     now `set +e`, matching the header.

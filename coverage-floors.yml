@@ -29,7 +29,12 @@ ts:
 rust:
   platform/services/chorus-hooks: 45
   platform/services/chorus-inject: 80
-  platform/services/owl-api: 85       # set by #3701 (the clearing bar; delivered with the #3701 hermetic test lift)
+  # #4004 — owl-api was RENAMED athena-make by #3561; only an untracked husk
+  # (target/ + a stale llvm-cov-summary.json) remains on disk, so the coverage
+  # lane measured nothing and errored rc=101 every night — a red that could
+  # never go green because the crate no longer exists. The floor moves with the
+  # crate; the bar itself (85, set by #3701) is unchanged.
+  platform/services/athena-make: 85    # was owl-api (#3701 bar), renamed by #3561
 
 # When this file changes:
 # - The enforcing automation (run_coverage() in platform/scripts/nightly-suites.sh —
