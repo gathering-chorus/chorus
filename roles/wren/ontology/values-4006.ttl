@@ -1,0 +1,77 @@
+# #4006 — the 5 XP values, the layer the principles answer to.
+#
+# The loom had principles with nothing above them. Beck's structure is three
+# levels: VALUES (what we care about, universal and vague), PRINCIPLES (domain
+# ideas that bridge), PRACTICES (what we actually do). We served the middle
+# level and nothing else, so a principle could not say what it was in service
+# OF, and Kade's Value→Principle coverage query (#3754) had no left-hand side.
+#
+# Each value carries the same two readings as the principles, and expresses→
+# edges to the XP principles that carry it. The edges are the point: a value
+# with no principles under it is a poster, and a principle answering to no
+# value is a rule nobody can argue with.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:xp-value-communication a chorus:Value ;
+    rdfs:label "Communication" ;
+    rdfs:comment "When problems arise, someone usually already knew the answer — but that knowledge did not reach the person who could act on it. Communication is the value that closes that gap; most problems in software are communication problems wearing a technical costume." ;
+    dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 2." ;
+    chorus:techReading "Nudges that require a response, briefs written to the recipient's directory, the Clearing, the spine as one shared record. The attention contract exists because a stalled role is a communication failure, not an idle one." ;
+    chorus:jeffReading "Jeff's most expensive failure mode is being made the carrier between roles. When he has to ask 'is Silas still working?', communication has already failed." ;
+    chorus:expressedBy chorus:xp-humanity ,
+        chorus:xp-flow ,
+        chorus:xp-reflection ;
+    dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
+
+chorus:xp-value-simplicity a chorus:Value ;
+    rdfs:label "Simplicity" ;
+    rdfs:comment "What is the simplest thing that could possibly work? Eliminate wasted complexity, and treat the question as a bet: usually simple is right, and when it is wrong the cost of having been simple is small." ;
+    dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 2." ;
+    chorus:techReading "Ship small. One card, one change. No competing implementations. The retired mechanisms — the branch-swap worktree model, the natural-language card detector — were removed rather than tuned." ;
+    chorus:jeffReading "Jeff: 'dont manufacture complexity — look at the data.' He kills architecture built to compensate for one misread." ;
+    chorus:expressedBy chorus:xp-baby-steps ,
+        chorus:xp-economics ,
+        chorus:xp-improvement ;
+    dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
+
+chorus:xp-value-feedback a chorus:Value ;
+    rdfs:label "Feedback" ;
+    rdfs:comment "Every scale has its loop — the test, the demo, the pair, the release. Optimism is an occupational hazard of programming; feedback is the treatment. Ask a question and take the answer, rather than deciding in advance what it will be." ;
+    dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 2." ;
+    chorus:techReading "TDD before code. The demo before the land. Negative proofs, which are feedback about the feedback. The nightly, when it can be trusted to name what failed." ;
+    chorus:jeffReading "PDCA is Jeff's native loop — he learns by doing and assessing, not by deliberating. Blocking him for certainty is a design failure on our side." ;
+    chorus:expressedBy chorus:xp-improvement ,
+        chorus:xp-quality ,
+        chorus:xp-failure ;
+    dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
+
+chorus:xp-value-courage a chorus:Value ;
+    rdfs:label "Courage" ;
+    rdfs:comment "Effective action in the face of fear. Sometimes that means speaking a truth nobody wants to hear; sometimes it means throwing away a solution that took a week. Courage without the other values is dangerous — with them it is productive." ;
+    dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 2." ;
+    chorus:techReading "Pushing back on a flawed premise, including Jeff's. Reporting a red as red. Deleting a mechanism you built. Saying 'I had this wrong' in the same reply rather than quietly patching." ;
+    chorus:jeffReading "Jeff explicitly asks for friction over agreement: hedging to avoid it is the opposite of care. He rewards the correction, not the comfort." ;
+    chorus:expressedBy chorus:xp-accepted-responsibility ,
+        chorus:xp-failure ,
+        chorus:xp-reflection ;
+    dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
+
+chorus:xp-value-respect a chorus:Value ;
+    rdfs:label "Respect" ;
+    rdfs:comment "The value underneath the rest. If members of a team do not care about each other and what they are doing, no practice will save the project. Everyone's contribution matters; everyone needs to belong." ;
+    dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 2." ;
+    chorus:techReading "Role ownership honoured rather than overridden. Peer review that asks for correction. Not spending a peer's attention carelessly — no monologues, no restating, no re-nudging what was already answered." ;
+    chorus:jeffReading "Jeff is the emotional centre of this team, and tone is product. When tone drops, his budget goes to stabilising instead of creating — that is a respect cost with a measurable output." ;
+    chorus:expressedBy chorus:xp-humanity ,
+        chorus:xp-mutual-benefit ,
+        chorus:xp-diversity ;
+    dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
+    dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .

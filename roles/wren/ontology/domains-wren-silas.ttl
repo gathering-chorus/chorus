@@ -38,6 +38,17 @@ chorus:principles a owl:Class, chorus:Domain ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/principles" ; chorus:definesVocabulary chorus:Principle .
 
+# #4006 — values is its own domain, not a property of principles. The level
+# above the principles needed a home before anything could serve it: athena-make
+# serves EXACTLY definesVocabulary-claimed classes, so an unclaimed chorus:Value
+# is inert no matter how many instances sit in the store.
+chorus:values a owl:Class, chorus:Domain ;
+  rdfs:label "values" ; chorus:comment "What the team cares about — the level the principles answer to." ;
+  chorus:purpose "Hold the handful of values the principles serve, so a principle can say what it is in service of." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
+  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "loom/values" ; chorus:definesVocabulary chorus:Value .
+
 chorus:policies a owl:Class, chorus:Domain ;
   rdfs:label "policies" ; chorus:comment "Rules that enforce principles in practice — hooks, guards, gates." ;
   chorus:purpose "Turn principles into enforced rules — the hooks, guards, and gates that hold the line." ;

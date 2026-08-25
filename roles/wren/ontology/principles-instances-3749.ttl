@@ -19,7 +19,8 @@ chorus:hemenway-observe a chorus:Principle ;
     chorus:jeffReading "Jeff reads the board, looks at the screenshare, listens to stories before committing to a move. Decision-making starts with watching. Resists 'give me the first step' when the shape isn't clear yet." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-connect a chorus:Principle ;
     rdfs:label "Connect" ;
@@ -29,7 +30,8 @@ chorus:hemenway-connect a chorus:Principle ;
     chorus:jeffReading "Jeff uses the team as a thinking partner, not as executors. Asks all three roles and composes the answers rather than directing one." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-catch-and-store a chorus:Principle ;
     rdfs:label "Catch and store energy and materials" ;
@@ -39,7 +41,8 @@ chorus:hemenway-catch-and-store a chorus:Principle ;
     chorus:jeffReading "When Jeff has a live insight (a thought, write, reading), he cards it or stories it. The 2-month rule: capture-while-warm, not-on-discipline. Retires things — principles, cards, protocols, names — when they stop producing." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-each-element-multiple-functions a chorus:Principle ;
     rdfs:label "Each element performs multiple functions" ;
@@ -49,7 +52,8 @@ chorus:hemenway-each-element-multiple-functions a chorus:Principle ;
     chorus:jeffReading "Jeff reuses patterns he invented (briefs, demos, gates) across new problems rather than inventing new abstractions per problem. Compresses rather than proliferates." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-function-supported-by-multiple-elements a chorus:Principle ;
     rdfs:label "Each function is supported by multiple elements" ;
@@ -59,7 +63,8 @@ chorus:hemenway-function-supported-by-multiple-elements a chorus:Principle ;
     chorus:jeffReading "Jeff shaped the three roles to be distinct, not interchangeable. Their different instincts are the asset; collapsing them to one voice would make the system fragile." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-least-change-greatest-effect a chorus:Principle ;
     rdfs:label "Make the least change for the greatest effect" ;
@@ -69,7 +74,8 @@ chorus:hemenway-least-change-greatest-effect a chorus:Principle ;
     chorus:jeffReading "Jeff looks for root-cause invariants rather than surface fixes. The preference for 'fix the shape that causes the bug, not the bug.' Calls out agent-shaped solutions that mass-mutate instead of adjusting the rule." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-small-scale-intensive-systems a chorus:Principle ;
     rdfs:label "Use small-scale, intensive systems" ;
@@ -79,7 +85,8 @@ chorus:hemenway-small-scale-intensive-systems a chorus:Principle ;
     chorus:jeffReading "Jeff cards a tiny fix rather than a big reorg when he can. Prefers a pattern learned over a pattern imposed." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-optimize-edge a chorus:Principle ;
     rdfs:label "Optimize edge" ;
@@ -89,7 +96,8 @@ chorus:hemenway-optimize-edge a chorus:Principle ;
     chorus:jeffReading "Jeff's best ideas come in the margins — the 'what if' during a demo, the story dropped between cards, the side comment that reshapes a roadmap." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-collaborate-with-succession a chorus:Principle ;
     rdfs:label "Collaborate with succession" ;
@@ -99,7 +107,8 @@ chorus:hemenway-collaborate-with-succession a chorus:Principle ;
     chorus:jeffReading "Jeff rebrands things (Bridge → Clearing, multiple Werk generations, Chorus rewrites) without sentimental attachment. The name is less important than the fit." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-biological-renewable-resources a chorus:Principle ;
     rdfs:label "Use biological and renewable resources" ;
@@ -109,7 +118,8 @@ chorus:hemenway-biological-renewable-resources a chorus:Principle ;
     chorus:jeffReading "'Focus is infrastructure' is this in practice — Jeff's finite attention is the resource every protocol and automation exists to conserve." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-turn-problems-into-solutions a chorus:Principle ;
     rdfs:label "Turn problems into solutions" ;
@@ -119,7 +129,8 @@ chorus:hemenway-turn-problems-into-solutions a chorus:Principle ;
     chorus:jeffReading "Jeff's 'bugs not character' stance — treats recurring failures as design opportunities, not discipline problems. When tone drops, fix the routing; when a skill is fragile, fix the shape." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-get-a-yield a chorus:Principle ;
     rdfs:label "Get a yield" ;
@@ -129,7 +140,8 @@ chorus:hemenway-get-a-yield a chorus:Principle ;
     chorus:jeffReading "Jeff measures himself by what ships, not what he knows. The 'no dark work' principle is his." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-creativity-is-the-limit a chorus:Principle ;
     rdfs:label "The biggest limit to abundance is creativity" ;
@@ -139,7 +151,8 @@ chorus:hemenway-creativity-is-the-limit a chorus:Principle ;
     chorus:jeffReading "Jeff's friction with 'agent-shaped answers' — rejects solutions that pattern-match without imagining what a human would actually want." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
 
 chorus:hemenway-mistakes-are-tools-for-learning a chorus:Principle ;
     rdfs:label "Mistakes are tools for learning" ;
@@ -149,4 +162,5 @@ chorus:hemenway-mistakes-are-tools-for-learning a chorus:Principle ;
     chorus:jeffReading "Jeff models this — he will say 'I was wrong about X' and redirect without defending the prior position. Invites pushback rather than fending it off." ;
     dcterms:created "2026-04-24T17:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-04-24T17:00:00Z"^^xsd:dateTime ;
-    chorus:isPermacultureParent true .
+    chorus:isPermacultureParent true ;
+    chorus:principleKind "pc" .
