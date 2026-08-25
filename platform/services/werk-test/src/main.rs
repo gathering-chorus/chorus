@@ -577,6 +577,34 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
         } else { Vec::new() };
         let (ok, cases) = run_jest(&root, p);
+        // #4004 — attribute each case to the package its FILE lives in, not to
+        // the package the runner happened to invoke. Kade read "cards 7 fail /
+        // clearing 1 fail" and found the failing cases were
+        // platform/api/tests/*.integration.test.ts: jest's rootDir can reach
+        // past the package dir, so another package's results land on this row
+        // (the nightly claimed 609 tests for cards; cards alone runs 529 green).
+        // A count under the wrong name sends the wrong owner hunting through a
+        // suite that is not red.
+        let (mine, foreign): (Vec<_>, Vec<_>) = cases
+            .into_iter()
+            .partition(|c| werk_test::package_owns_case(p, &c.file_path));
+        if !foreign.is_empty() {
+            let mut owners: Vec<&str> = foreign
+                .iter()
+                .map(|c| c.file_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("?"))
+                .collect();
+            owners.sort_unstable();
+            owners.dedup();
+            println!(
+                "!! jest:{} ran {} case(s) whose files live OUTSIDE it ({}) — not counted on this row",
+                p, foreign.len(), owners.join(", ")
+            );
+        }
+        if mine.is_empty() && !foreign.is_empty() {
+            // never let a package read as simply empty when its row ran nothing of its own
+            println!("!! jest:{} produced NO cases of its own — every result came from elsewhere", p);
+        }
+        let cases = mine;
         let passed = cases.iter().filter(|c| c.result == "pass").count();
         let case_failed = cases.iter().filter(|c| c.result != "pass").count();
         let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };

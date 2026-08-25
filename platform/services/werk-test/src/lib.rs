@@ -2238,3 +2238,44 @@ mod security_lane_3922 {
         assert!(!u.contains("platform/tests/other.bats"));
     }
 }
+
+/// #4004 — does this test case's FILE live inside this package? The nightly's
+/// per-package row used to count whatever the runner produced while running in
+/// that package's directory, and jest's rootDir can reach past the package dir.
+/// Kade read "cards 7 fail / clearing 1 fail" and found the failing cases were
+/// platform/api/tests/*.integration.test.ts — another package's results wearing
+/// this package's name. Pure so the attribution rule is testable without jest.
+pub fn package_owns_case(pkg: &str, file_path: &str) -> bool {
+    file_path.starts_with(&format!("{}/", pkg))
+}
+
+#[cfg(test)]
+mod package_attribution_tests {
+    use super::package_owns_case;
+
+    #[test]
+    fn a_package_owns_the_cases_under_its_own_path() {
+        assert!(package_owns_case("platform/api", "platform/api/tests/streams.test.ts"));
+        assert!(package_owns_case("platform/pulse", "platform/pulse/src/store.test.ts"));
+    }
+
+    /// NEGATIVE PROOF (#3734): the exact misattribution Kade found must be
+    /// refused — an api integration case must never count as a cards case.
+    #[test]
+    fn a_foreign_case_is_not_owned_no_matter_who_ran_it() {
+        assert!(!package_owns_case(
+            "directing/products/cards",
+            "platform/api/tests/releases.integration.test.ts"
+        ));
+        assert!(!package_owns_case("directing/clearing", "platform/api/tests/x.test.ts"));
+    }
+
+    /// A prefix that is not a path boundary is not ownership — otherwise
+    /// platform/api would swallow platform/api-extras and the row would be
+    /// wrong in the other direction.
+    #[test]
+    fn ownership_respects_path_boundaries() {
+        assert!(!package_owns_case("platform/api", "platform/api-extras/tests/x.test.ts"));
+        assert!(!package_owns_case("platform/api", "platform/api"));
+    }
+}
