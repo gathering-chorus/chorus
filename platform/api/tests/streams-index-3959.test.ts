@@ -3,7 +3,10 @@
 // #3959 — the spine index. Every test brings its own world: a temp spine file
 // and an in-memory-adjacent temp db, never ~/.chorus and never the live store.
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+// #4004 — platform/api runs JEST, not vitest; this import made the suite fail
+// to RUN ("Cannot find module 'vitest'"), which the coverage lane reported as
+// "coverage run errored, no clean measurement" — a whole package unmeasured
+// because one file imported the wrong runner. Jest provides these globals.
 import { mkdtempSync, rmSync, writeFileSync, appendFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';

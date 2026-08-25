@@ -359,7 +359,21 @@ run_cargo_lane() {
     local _flog; _flog=$(_fail_log_path "$kind" "$path")
     if [ "$verdict" = "fail" ]; then
       mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
-      printf '%s\n' "$out" > "$_flog" 2>/dev/null || true
+      # #4004 — write THIS unit's slice, not the whole lane. `$out` is one
+      # werk-test blob covering every unit, so writing it per failing suite
+      # produced N byte-identical files (14 × 155245 on 2026-08-25): the logs
+      # could not tell you WHICH suite failed, which is the only question they
+      # exist to answer. The full blob is kept ONCE, referenced by name.
+      local _blob="$NIGHTLY_FAIL_DIR/_lane-output.log"
+      printf '%s\n' "$out" > "$_blob" 2>/dev/null || true
+      {
+        echo "# unit: $unit ($kind) — verdict $verdict"
+        echo "# summary: $summary"
+        echo "# full lane output: $_blob"
+        echo "---"
+        # the unit's own lines: its nightly-unit row plus anything naming it
+        printf '%s\n' "$out" | grep -F -- "$unit" || echo "(no lines in the lane output named this unit)"
+      } > "$_flog" 2>/dev/null || true
     else
       rm -f "$_flog" 2>/dev/null || true
     fi
