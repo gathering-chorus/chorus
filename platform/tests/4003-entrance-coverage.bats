@@ -11,11 +11,21 @@ CHECK="$BATS_TEST_DIRNAME/../scripts/check-entrance-coverage.sh"
 setup() {
   ALLOW="$BATS_TEST_TMPDIR/allow.txt"
   UI="$BATS_TEST_TMPDIR/ui.json"
+  # #4004 — the check now also reads the entrance HTML for the files it pulls in.
+  # Default fixture: a page whose one asset IS carried, so the link tests below
+  # keep measuring what they were written to measure.
+  HTML="$BATS_TEST_TMPDIR/entrance.html"
+  printf '<link rel="stylesheet" href="/css/system.css">' > "$HTML"
 }
 
-# file:// keeps the fixture hermetic — no port, no server process to leak
+# file:// keeps the fixture hermetic — no port, no server process to leak.
+# The effective allowlist is the test's own plus /css, so the default entrance
+# fixture is fully covered and the LINK tests keep measuring only links.
 run_check() {
-  SHARE_ALLOW_FILE="$ALLOW" UI_PAGES_URL="file://$UI" bash "$CHECK"
+  local eff="$BATS_TEST_TMPDIR/effective-allow.txt"
+  cat "$ALLOW" > "$eff"
+  printf '\n/css\n' >> "$eff"
+  SHARE_ALLOW_FILE="$eff" UI_PAGES_URL="file://$UI" ENTRANCE_URL="file://$HTML" bash "$CHECK"
 }
 
 @test "covered: every rendered link carried by a section prefix or exact file → exit 0" {
@@ -41,6 +51,52 @@ run_check() {
   run run_check
   [ "$status" -eq 1 ]
   [[ "$output" == *"/borgX/sneaky.html"* ]]
+}
+
+# --- #4004: the ASSET pass. The link pass reads ui-pages, a list of LINKS, so a
+# file the page pulls in is invisible to it. #4001 shipped /ui-inventory.js at the
+# root; the tunnel 404'd it, the script tag failed publicly, and the public
+# entrance rendered 2 tiles where localhost showed 10 — while this check happily
+# reported every link covered, because it never looked at the page.
+
+@test "NEGATIVE PROOF: a script the entrance pulls in but the allowlist misses REDS (#3734)" {
+  printf '/borg\n' > "$ALLOW"
+  printf '{"claimed":{},"misc":[{"href":"/borg/index.html"}]}' > "$UI"
+  printf '<script src="/ui-inventory.js"></script>' > "$HTML"
+  run run_check
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"/ui-inventory.js"* ]]
+  [[ "$output" == *"UNCOVERED ASSETS"* ]]
+}
+
+@test "an asset carried by the allowlist passes — the check can tell the two states apart" {
+  printf '/borg\n/ui-inventory.js\n' > "$ALLOW"
+  printf '{"claimed":{},"misc":[{"href":"/borg/index.html"}]}' > "$UI"
+  printf '<script src="/ui-inventory.js"></script>' > "$HTML"
+  run run_check
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"1/1 referenced assets covered"* ]]
+}
+
+@test "navigation links are NOT re-measured by the asset pass (the link pass owns them)" {
+  # /flow is a nav link, not a file. Re-reporting it here would red on paths the
+  # authoritative first pass already governs, and turn a precise check into noise.
+  printf '/borg\n' > "$ALLOW"
+  printf '{"claimed":{},"misc":[{"href":"/borg/index.html"}]}' > "$UI"
+  printf '<a href="/flow">flow</a><link href="/css/system.css">' > "$HTML"
+  run run_check
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"/flow"* ]]
+}
+
+@test "UNMEASURABLE, never vacuous green: an unreachable ENTRANCE → exit 2" {
+  printf '/borg\n' > "$ALLOW"
+  printf '{"claimed":{},"misc":[{"href":"/borg/index.html"}]}' > "$UI"
+  local eff="$BATS_TEST_TMPDIR/eff2.txt"; cat "$ALLOW" > "$eff"
+  run env SHARE_ALLOW_FILE="$eff" UI_PAGES_URL="file://$UI" \
+      ENTRANCE_URL="http://127.0.0.1:9/nope.html" bash "$CHECK"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"UNMEASURABLE"* ]]
 }
 
 @test "UNMEASURABLE, never vacuous green: unreachable ui-pages → exit 2" {
