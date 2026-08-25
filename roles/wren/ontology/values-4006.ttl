@@ -10,6 +10,13 @@
 # edges to the XP principles that carry it. The edges are the point: a value
 # with no principles under it is a poster, and a principle answering to no
 # value is a rule nobody can argue with.
+#
+# #4006 (second pass) — each value also expresses ONE permaculture principle,
+# the mapping Jeff confirmed 2026-08-25. The point is not symmetry: it is that a
+# value with feet in only one lineage reads as belonging to that lineage. XP
+# gave us the values; the PC set is how this team designs. A value that cannot
+# name a design principle it serves is an engineering value wearing a team's
+# name.
 
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
@@ -24,7 +31,8 @@ chorus:xp-value-communication a chorus:Value ;
     chorus:jeffReading "Jeff's most expensive failure mode is being made the carrier between roles. When he has to ask 'is Silas still working?', communication has already failed." ;
     chorus:expressedBy chorus:xp-humanity ,
         chorus:xp-flow ,
-        chorus:xp-reflection ;
+        chorus:xp-reflection ,
+        chorus:hemenway-connect ;
     dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
@@ -36,7 +44,8 @@ chorus:xp-value-simplicity a chorus:Value ;
     chorus:jeffReading "Jeff: 'dont manufacture complexity — look at the data.' He kills architecture built to compensate for one misread." ;
     chorus:expressedBy chorus:xp-baby-steps ,
         chorus:xp-economics ,
-        chorus:xp-improvement ;
+        chorus:xp-improvement ,
+        chorus:hemenway-least-change-greatest-effect ;
     dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
@@ -48,7 +57,8 @@ chorus:xp-value-feedback a chorus:Value ;
     chorus:jeffReading "PDCA is Jeff's native loop — he learns by doing and assessing, not by deliberating. Blocking him for certainty is a design failure on our side." ;
     chorus:expressedBy chorus:xp-improvement ,
         chorus:xp-quality ,
-        chorus:xp-failure ;
+        chorus:xp-failure ,
+        chorus:hemenway-observe ;
     dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
@@ -60,7 +70,8 @@ chorus:xp-value-courage a chorus:Value ;
     chorus:jeffReading "Jeff explicitly asks for friction over agreement: hedging to avoid it is the opposite of care. He rewards the correction, not the comfort." ;
     chorus:expressedBy chorus:xp-accepted-responsibility ,
         chorus:xp-failure ,
-        chorus:xp-reflection ;
+        chorus:xp-reflection ,
+        chorus:hemenway-turn-problems-into-solutions ;
     dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
@@ -72,6 +83,7 @@ chorus:xp-value-respect a chorus:Value ;
     chorus:jeffReading "Jeff is the emotional centre of this team, and tone is product. When tone drops, his budget goes to stabilising instead of creating — that is a respect cost with a measurable output." ;
     chorus:expressedBy chorus:xp-humanity ,
         chorus:xp-mutual-benefit ,
-        chorus:xp-diversity ;
+        chorus:xp-diversity ,
+        chorus:hemenway-function-supported-by-multiple-elements ;
     dcterms:created "2026-08-25T13:00:00Z"^^xsd:dateTime ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .

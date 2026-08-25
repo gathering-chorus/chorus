@@ -650,6 +650,9 @@ if [ -z "${TTL:-}" ]; then
     # principle layer, only the half that got authored; /principles served 14
     # and nothing could bind a Practice to the XP principle it expresses.
     "$CHORUS_ROOT/roles/wren/ontology/principles-xp-4006.ttl"
+    # #4006 — the PC↔XP rhymes ride the principles set: same graph, same
+    # additive merge, so an edge can never outlive the principles it joins.
+    "$CHORUS_ROOT/roles/wren/ontology/principles-rhymes-4006.ttl"
   )
   for ttl in "${PRINCIPLES_SET[@]}"; do
     [ -f "$ttl" ] || { echo "athena-deploy-model: PRINCIPLES_SET TTL not found: $ttl" >&2; exit 1; }
