@@ -35,9 +35,64 @@
  * was built to catch.
  */
 const { test, expect } = require('@playwright/test');
+const { spawn } = require('child_process');
+const path = require('path');
 
-const CLEARING = process.env.CLEARING_URL || 'http://localhost:3470';
 const ROLES = ['wren', 'silas', 'kade'];
+
+/**
+ * WHICH CLEARING THIS SPEC READS (#2725, 2026-08-25).
+ *
+ * The other flows read the deployed system on purpose — one environment, and it
+ * is production. This one cannot, and the reason is structural. It compares two
+ * projections of the spine against each other, so it is a check ON THE
+ * RENDERING CODE. Pointed at :3470 during a card that changes that rendering it
+ * grades the OLD code: red until the fix lands, and the fix cannot land while
+ * it is red. Measured at 05:57 on the same spine, seconds apart — werk build
+ * 8/8, deployed 1 failed (kade: tile 4m vs pane 8m). Runs 66-70 died in that
+ * loop; the land refused four times on a presented pin the retries kept moving.
+ *
+ * So the spec brings its own world (#3528): with no CLEARING_URL it starts the
+ * Clearing built from THIS tree, on its own port, against the real spine. Not
+ * one assertion changes — same tiles, same pane, same no-tolerance skew rule,
+ * same four negative proofs; a genuine disagreement still reds it. CLEARING_URL
+ * still wins when set, so grading the deployed Clearing after a land is one env
+ * var, which is the post-deploy check and belongs after the deploy.
+ */
+const CLEARING_SRC = path.resolve(__dirname, '..', '..', 'directing', 'clearing');
+const OWN_PORT = Number(process.env.TILES_SPEC_PORT || 3487);
+const CLEARING = process.env.CLEARING_URL || `http://localhost:${OWN_PORT}`;
+const BRINGS_OWN = !process.env.CLEARING_URL;
+
+let child = null;
+
+test.beforeAll(async () => {
+  if (!BRINGS_OWN) return;
+  child = spawn(process.execPath, [path.join(CLEARING_SRC, 'dist', 'server.js')], {
+    cwd: CLEARING_SRC,
+    env: {
+      ...process.env,
+      COMMAND_CHANNEL_PORT: String(OWN_PORT),
+      CLEARING_HTTPS_PORT: String(OWN_PORT + 1),
+      // A test-owned Clearing reads the spine and must not write to anyone:
+      // no pulse fetch, and nudges go nowhere near a role's terminal.
+      PULSE_URL: 'http://127.0.0.1:1',
+      NUDGE_BINARY: '/usr/bin/true',
+    },
+    stdio: 'ignore',
+  });
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    const ok = await fetch(`${CLEARING}/api/stream?lines=1`).then((r) => r.ok).catch(() => false);
+    if (ok) return;
+    if (Date.now() > deadline) throw new Error(`own Clearing did not answer on ${CLEARING} in 30s`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+});
+
+test.afterAll(() => {
+  if (child && !child.killed) child.kill();
+});
 
 /**
  * REFUSE rather than pass when the target is not a Clearing.
