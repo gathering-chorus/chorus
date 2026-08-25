@@ -25,6 +25,9 @@ if(b&&window.MutationObserver){new MutationObserver(run).observe(document.docume
 
 <meta charset="UTF-8">
 <title>Chorus</title>
+<!-- #4001 — one query, one truth: both this page and the Archive ask the
+     inventory through the same call. See ui-inventory.js. -->
+<script src="/ui-inventory.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
@@ -58,25 +61,38 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 
 <div class="products" id="products"></div>
 
+<!-- #4001 — "The Model", not "Ontology Views" as an appendix. Jeff, 2026-08-23:
+     the keeper viewers are PEERS of the products, first-class tiles off /chorus.
+     What lives here is the WHOLE-GRAPH viewers only; a view of one product
+     (Domains, Value Stream, ICD Flow) belongs on that product's tile. -->
 <div class="section">
-<h2>Ontology Views</h2>
+<h2>The Model</h2>
+<p class="subtitle" style="margin-bottom:16px">The whole-graph viewers — peers of the products.
+Product-specific views live inside their products.</p>
 <div class="products">
-  <div class="product">
-    <h2>Schema (ER Diagram)</h2>
-    <div class="desc">Entity relationships, class hierarchy, SHACL constraints. Filter by product.</div>
-    <div class="links"><a href="/chorus-er-diagram.html">Open</a></div>
-  </div>
-  <div class="product">
-    <h2>Data (Instance Explorer)</h2>
-    <div class="desc">Live graph visualization. Drag, filter, cascade. Every node from Fuseki.</div>
+  <!-- Class Atlas (#3992) is deliberately ABSENT until it has a route of its
+       own. Silas, 2026-08-25: a tile pointed at chorus-er-diagram would be a
+       tile lying about what it opens, which is the graveyard shape this row
+       exists to end. The rule for this row: a tile exists when its target
+       exists. #3992 adds it. -->
+  <div class="product athena">
+    <h2>Instance Explorer</h2>
+    <div class="owner">the data as a living graph</div>
+    <div class="desc">Drag, filter, cascade — every node live from Fuseki.</div>
     <div class="links"><a href="/chorus-instance-explorer.html">Open</a></div>
   </div>
-  <div class="product">
-    <h2>Reference (Data Model Cards)</h2>
-    <div class="desc">Per-class properties, types, descriptions. The ontology as a reference card deck.</div>
-    <div class="links"><a href="/chorus-data-model.html">Open</a></div>
+  <div class="product athena">
+    <h2>Model &amp; Data Hub</h2>
+    <div class="owner">the index of all of it</div>
+    <div class="desc">One hub page over the model and the data it holds.</div>
+    <div class="links"><a href="/athena/model.html">Open</a></div>
   </div>
 </div>
+</div>
+
+<div class="section" style="border-top:1px solid #e5e7eb;padding-top:16px">
+  <a href="/archive.html" style="font-size:0.82rem;color:#4f46e5;text-decoration:none">Archive — unclaimed &amp; retired pages</a>
+  <span style="font-size:0.75rem;color:#999;margin-left:16px">retirement notes live there, never on the tiles</span>
 </div>
 
 <div class="meta" id="meta">Loading...</div>
@@ -92,9 +108,9 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // is not this machine the fetch resolved to the VIEWER's localhost and the
     // product tiles silently never rendered — Jeff hit exactly that on his phone
     // over wifi, 2026-08-01 ("Failed to load: Load failed").
-    const bp = (path) => (window.basePath ? window.basePath(path) : path);
-    const res = await fetch(bp('/owl/products'));
-    const data = await res.json();
+    // #4001 — products AND the page inventory come from the one shared call,
+    // so the hub and the Archive can never ask the question differently.
+    const loaded = await window.loadPageInventory();
     const container = document.getElementById('products');
 
     const descriptions = {
@@ -117,10 +133,14 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // it is derived from location.hostname rather than hardcoded.
     const pageLinks = {
       'Loom': [{ label: 'Loom', href: '/loom/' }],
+      // #4001 — a product tile carries ITS OWN views. Domains and Value Stream
+      // are Athena's (Jeff, 2026-08-24: "domains and value stream are children
+      // of athena"); Model moved out to The Model row below, where the
+      // whole-graph viewers sit as peers of the products.
       'Athena': [
-        { label: 'Model', href: '/athena/model.html' },
         { label: 'Domains', href: '/athena/domains.html' },
         { label: 'Value Stream', href: '/athena/value-stream.html' },
+        { label: 'Products', href: '/athena/products.html' },
       ],
       'Werk': [
         { label: 'Werk', href: '/werk/' },
@@ -131,6 +151,10 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       // #3886 — path link, not a port link: :3470 is dead from anywhere off
       // the LAN (Jeff's phone). /clearing rides the four-URL scheme (#3878).
       'The Clearing': [{ label: 'The Clearing', href: '/clearing' }],
+      // #4001 — Convergence's own view. Jeff, 2026-08-24: "the ICD Flow is a
+      // child of Convergence". It links the page that EXISTS (#4003 allowlisted
+      // /chorus-pages/icd.html), not an invented Convergence route.
+      'Convergence': [{ label: 'ICD Flow', href: '/chorus-pages/icd.html' }],
       'Borg': [
         { label: 'Hooks Dashboard', href: '/borg/hooks/' },
       ],
@@ -139,19 +163,14 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
     // owl-api shape: { data: [{ name, label, comment, ownedBy, status, … }] }.
     // Products are flat typed chorus:Product rows (SubProduct is gone); skip the
     // parent hub card, render each product with the local description/link maps.
-    const products = data.data || [];
-    const labels = products.map(p => p.label).filter(l => l !== 'Chorus (Product)');
+    const products = loaded.products;
 
     // #3813 — the pages on disk, DISCOVERED. `pageLinks` above is a hand-written
     // map of 8 links; there are 77 pages in the tree. A hand-list cannot tell you
     // about the page you forgot, which is why most of this app was invisible from
     // its own front door. The curated links stay (they are the ones worth leading
     // with); everything else is appended from the inventory.
-    let inventory = { claimed: {}, misc: [], total: 0, miscCount: 0 };
-    try {
-      const invRes = await fetch(bp('/api/chorus/ui-pages') + '?products=' + encodeURIComponent(labels.join(',')));
-      if (invRes.ok) inventory = await invRes.json();
-    } catch (e) { /* the tiles still render from the curated map */ }
+    const inventory = loaded.inventory;
 
     const esc = (t) => String(t).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
     const linkTo = (href, label) => '<a href="' + esc(href) + '">' + esc(label) + '</a>';
@@ -163,7 +182,14 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       const owner = (p.ownedBy || '').replace(/^role-/, '');
       const curated = (pageLinks[p.label] || []);
       const curatedHrefs = new Set(curated.map(l => l.href));
-      const discovered = (inventory.claimed[p.label] || []).filter(pg => !curatedHrefs.has(pg.href));
+      // #4001 — discovery must not put back what the restructure moved. The
+      // whole-graph viewers now live in The Model row; if the inventory also
+      // appends them to the Athena tile, the hierarchy Jeff drew is undone by
+      // the very mechanism that lists pages.
+      const MODEL_ROW = new Set(['/athena/model.html', '/chorus-instance-explorer.html',
+        '/chorus-er-diagram.html', '/chorus-data-model.html']);
+      const discovered = (inventory.claimed[p.label] || [])
+        .filter(pg => !curatedHrefs.has(pg.href) && !MODEL_ROW.has(pg.href));
       const links = curated.map(l => linkTo(l.href, l.label)).join('')
         + discovered.map(pg => linkTo(pg.href, pg.title)).join('');
       div.innerHTML = '<h2>' + p.label + '</h2>'
@@ -173,17 +199,13 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
       container.appendChild(div);
     }
 
-    // The misc pile. Every attic has one; the point is that you can see it and
-    // count it, not that it is empty. It shrinks when a page is claimed or
-    // deleted — both real decisions — never by being hidden.
+    // #4001 — the misc pile still gets counted and still gets a door, but the
+    // door is the Archive page in the footer, not 47 links on the front one.
+    // Same rule as before: the count shrinks when a page is claimed or deleted,
+    // never by being hidden. Only the COUNT moves onto the hub.
     if (inventory.miscCount > 0) {
-      const section = document.createElement('div');
-      section.className = 'section';
-      section.innerHTML = '<h2>Unclaimed — ' + inventory.miscCount + ' pages</h2>'
-        + '<div class="desc">Pages on disk that no product folder claims. Not broken, not sorted.'
-        + ' Each one is waiting on a decision: give it a home, or delete it.</div>'
-        + '<div class="links">' + inventory.misc.map(pg => linkTo(pg.href, pg.title)).join('') + '</div>';
-      document.getElementById('meta').parentNode.insertBefore(section, document.getElementById('meta'));
+      const link = document.querySelector('a[href$="/archive.html"], a[href="/archive.html"]');
+      if (link) link.textContent = 'Archive — unclaimed & retired pages (' + inventory.miscCount + ')';
     }
 
     document.getElementById('meta').textContent = 'Chorus — ' + products.length + ' products from owl-api'

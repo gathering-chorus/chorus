@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<script>/* #3810 — mount-aware base path, same inline shim the hub uses. Called
+   directly, never left to a load event that has already fired. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+window.applyBasePath=function(root){if(!b)return 0;var n=0,sc=root||document;
+['href','src'].forEach(function(a){var ns=sc.querySelectorAll('['+a+'^="/"]');
+for(var i=0;i<ns.length;i++){var v=ns[i].getAttribute(a);
+if(!v||v.indexOf('//')===0)continue;if(v.indexOf(b+'/')===0||v===b)continue;
+ns[i].setAttribute(a,b+v);n++;}});return n;};
+function run(){window.applyBasePath();}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',run);}else{run();}
+window.addEventListener('load',run);
+if(b&&window.MutationObserver){new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});}}());</script>
+
+<meta charset="UTF-8">
+<title>Archive — Chorus</title>
+<script src="/ui-inventory.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
+.subtitle { font-size: 0.9rem; color: #666; margin-bottom: 32px; line-height: 1.6; }
+.back { font-size: 0.82rem; color: #4f46e5; text-decoration: none; }
+.back:hover { text-decoration: underline; }
+h2 { font-size: 1rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin: 32px 0 12px; }
+.note { font-size: 0.85rem; color: #555; line-height: 1.6; margin-bottom: 16px; }
+ul { list-style: none; }
+li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 0.88rem; }
+li a { color: #4f46e5; text-decoration: none; }
+li a:hover { text-decoration: underline; }
+li .path { color: #999; font-size: 0.78rem; margin-left: 8px; }
+.meta { font-size: 0.75rem; color: #999; margin-top: 40px; }
+</style>
+</head>
+<body>
+
+<a class="back" href="/">← Chorus</a>
+<h1>Archive</h1>
+<p class="subtitle">Pages on disk that no product claims, and pages a retirement card has closed.
+Kept visible on purpose: an unclaimed page is waiting on a decision — give it a home, or delete it —
+and a page nobody can see is a page nobody decides about. The hub links here from its footer so the
+front door stays the shape of the product, not the shape of the tree.</p>
+
+<h2 id="unclaimed-head">Unclaimed</h2>
+<p class="note">No product folder claims these. The count shrinks when a page is claimed or deleted,
+never by being hidden (#4001).</p>
+<ul id="unclaimed"></ul>
+
+<div class="meta" id="meta">Loading…</div>
+
+<script>
+(async function () {
+  const bp = (p) => (window.basePath ? window.basePath(p) : p);
+  const esc = (t) => String(t).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  const meta = document.getElementById('meta');
+  try {
+    // The SAME inventory the hub reads, WITH THE SAME QUESTION. Asking
+    // /api/chorus/ui-pages without the product list claims nothing, so every
+    // page on disk comes back "unclaimed" — the archive then listed 77 where
+    // the hub counted 47. One source is not enough; it has to be one query.
+    const inv = (await window.loadPageInventory()).inventory;
+    const misc = inv.misc || [];
+    document.getElementById('unclaimed-head').textContent = 'Unclaimed — ' + misc.length;
+    document.getElementById('unclaimed').innerHTML = misc
+      .map((p) => '<li><a href="' + esc(p.href) + '">' + esc(p.title) + '</a>'
+        + '<span class="path">' + esc(p.href) + '</span></li>')
+      .join('');
+    meta.textContent = (inv.total || 0) + ' pages on disk · ' + misc.length + ' unclaimed';
+  } catch (err) {
+    // Fail loud. An archive that renders empty on a broken fetch reads as
+    // "nothing to decide", which is the opposite of what this page is for.
+    meta.textContent = 'Could not read the page inventory: ' + err.message;
+  }
+})();
+</script>
+
+</body>
+</html>
