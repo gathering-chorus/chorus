@@ -254,10 +254,26 @@ export function tailReadUtf8(fs: typeof fs_node, file: string, maxBytes: number 
  *  the memory layer). /api/stream once read ${CHORUS_ROOT}/platform/logs/
  *  chorus.log — a stale side-file — so werk lines never rendered live.
  *  Resolution: CHORUS_SPINE explicit override > CHORUS_HOME > HOME. */
-export function spinePath(env: Record<string, string | undefined>): string {
+export function spinePath(
+  env: Record<string, string | undefined>,
+  exists: (p: string) => boolean = (p) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    try { (require('fs') as typeof fs_node).statSync(p); return true; } catch { return false; }
+  },
+): string {
   if (env.CHORUS_SPINE) return env.CHORUS_SPINE;
-  if (env.CHORUS_HOME) return `${env.CHORUS_HOME}/chorus.log`;
-  return `${env.HOME}/.chorus/chorus.log`;
+  // #2725 (2026-08-24) — CHORUS_HOME is ambiguous by convention: the repo in a
+  // shell, ~/.chorus to a service. Taken on faith it points at a path that may
+  // not exist, and the pane then renders a DEAD log — the same silent-stale
+  // shape that ate Jeff's nudges (an 84KB leftover, months old, no error).
+  // Resolve to the first candidate that EXISTS: a path that isn't there cannot
+  // be the never-rotated spine.
+  const candidates = [
+    env.CHORUS_HOME ? `${env.CHORUS_HOME}/chorus.log` : undefined,
+    env.HOME ? `${env.HOME}/.chorus/chorus.log` : undefined,
+  ].filter((p): p is string => !!p);
+  for (const p of candidates) if (exists(p)) return p;
+  return candidates[candidates.length - 1] ?? `${env.HOME}/.chorus/chorus.log`;
 }
 
 export function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {

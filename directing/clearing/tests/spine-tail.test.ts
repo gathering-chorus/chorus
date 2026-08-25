@@ -181,9 +181,20 @@ describe('#3884 spinePath resolves the durable spine', () => {
     const p = spinePath({ HOME: '/Users/x' });
     expect(p).toBe('/Users/x/.chorus/chorus.log');
   });
-  test('CHORUS_HOME wins over HOME', () => {
-    const p = spinePath({ HOME: '/Users/x', CHORUS_HOME: '/Users/x/.chorus2' });
+  test('CHORUS_HOME wins over HOME — when that path EXISTS (#2725)', () => {
+    // #2725: CHORUS_HOME is ambiguous (repo in a shell, ~/.chorus to a service),
+    // so preference is now conditional on the file being there. Injected
+    // existence probe keeps this a pure unit — no fs, own world (#3528).
+    const p = spinePath({ HOME: '/Users/x', CHORUS_HOME: '/Users/x/.chorus2' }, () => true);
     expect(p).toBe('/Users/x/.chorus2/chorus.log');
+  });
+
+  test('#2725 NEGATIVE PROOF: a CHORUS_HOME that does not exist falls through to ~/.chorus', () => {
+    // the live shape: CHORUS_HOME=<repo> in a shell → repo/chorus.log is an
+    // 84KB leftover or absent; taking it on faith renders a DEAD pane.
+    const p = spinePath({ HOME: '/Users/x', CHORUS_HOME: '/Users/x/repo' },
+      (c: string) => c === "/Users/x/.chorus/chorus.log");
+    expect(p).toBe('/Users/x/.chorus/chorus.log');
   });
   test('CHORUS_SPINE explicit override wins', () => {
     const p = spinePath({ HOME: '/Users/x', CHORUS_SPINE: '/tmp/fixture.log' });
