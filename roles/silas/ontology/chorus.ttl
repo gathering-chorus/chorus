@@ -2647,19 +2647,6 @@ chorus:policy-quality-gate a chorus:Policy ;
 
 # --- 12 Principles (7 from team-architecture.md + 5 from 2026-04-17 session) ---
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --- #2447: Hemenway permaculture parents + specialization edges ---
 # Source: /book/principles-reconstructed.html (2026-04-24), transcribed from Jeff's book
 # photos IMG_2601/IMG_2602/IMG_2603 of Hemenway, Gaia's Garden 2nd ed., Chelsea Green 2009,
@@ -2689,61 +2676,13 @@ chorus:dctermsSource a owl:AnnotationProperty ;
 
 # --- 14 Hemenway parents ---
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # --- Specialization edges: 12 Chorus principles → Hemenway parents (per HTML nesting) ---
-
-
-
-
-
-
 
 # principle-no-competing-implementations has no Hemenway parent yet — per HTML footer
 # ('did not appear in the 2026-04-21 printout — included in the graph but not rendered
 # here until its parent mapping is confirmed'). Left unedged intentionally.
 
 # --- 7 Practices (from team-architecture.md) ---
-
-chorus:practice-actor-bdd a chorus:Practice ;
-    rdfs:label "Actor-BDD" ;
-    rdfs:comment "Before code, model the actors and write the scenarios. Scenarios become the test suite." .
-
-chorus:practice-domain-first a chorus:Practice ;
-    rdfs:label "Domain first" ;
-    rdfs:comment "Register the domain before building in it. The domain exists before a line of code." .
-
-chorus:practice-service-next a chorus:Practice ;
-    rdfs:label "Service next" ;
-    rdfs:comment "After the domain, design the service. Ship the contract before the implementation." .
-
-chorus:practice-product-owner-aligned a chorus:Practice ;
-    rdfs:label "Product and owner aligned" ;
-    rdfs:comment "Every domain has an owner. Every card has an owner. They match. Ownership is routing." .
-
-chorus:practice-tdd a chorus:Practice ;
-    rdfs:label "TDD" ;
-    rdfs:comment "Tests describe Jeff's experience, not implementation details. AC → tests → code → green → demo." .
-
-chorus:practice-production-ready a chorus:Practice ;
-    rdfs:label "Production ready on every release" ;
-    rdfs:comment "Done means production ready. Full gate chain: product, code, quality, arch, ops." .
-
-chorus:practice-api-first a chorus:Practice ;
-    rdfs:label "API first" ;
-    rdfs:comment "Define the shape before populating data. API prevents snowflake domains." .
 
 # --- Contains edges — domains contain their instances ---
 
@@ -2771,10 +2710,8 @@ chorus:loom-principles chorus:contains chorus:principle-protect-attention,
     chorus:hemenway-creativity-is-the-limit,
     chorus:hemenway-mistakes-are-tools-for-learning .
 
-chorus:loom-practices chorus:contains chorus:practice-actor-bdd,
-    chorus:practice-domain-first, chorus:practice-service-next,
-    chorus:practice-product-owner-aligned, chorus:practice-tdd,
-    chorus:practice-production-ready, chorus:practice-api-first .
+# #3754 — loom-practices membership emptied with practice v1; v2 members are
+# authored in roles/kade/ontology/practices-3754-instances.ttl.
 
 # =============================================================================
 # 10. INTERACTIONS
@@ -3233,317 +3170,19 @@ chorus:abstract a owl:DatatypeProperty ;
 
 # --- Edges for the 7 pre-existing practices (additive; definitions above) ---
 
-chorus:practice-actor-bdd
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-comprehension-is-the-rate-limit ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-domain-first
-    chorus:expresses chorus:principle-no-dark-work,
-                     chorus:principle-design-from-patterns-to-details ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-service-next
-    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
-                     chorus:principle-design-from-patterns-to-details ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-product-owner-aligned
-    chorus:expresses chorus:principle-owner-sets-direction,
-                     chorus:principle-integrate-rather-than-segregate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-tdd
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-speed-and-quality-correlate ;
-    chorus:operationalizes chorus:policy-tdd-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-production-ready
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-obtain-a-yield ;
-    chorus:operationalizes chorus:policy-demo-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-api-first
-    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
-                     chorus:principle-design-from-patterns-to-details ;
-    chorus:ceremonyRisk false .
-
 # --- New practices — session lifecycle ---
-
-chorus:practice-session-opening a chorus:Practice ;
-    rdfs:label "Session opening (5-beat thesis)" ;
-    rdfs:comment "Role opens every session with a thesis-driven 5-beat prose opening: named shift, reframed active card, quiet friction with position, named flinch, single-question close. Not a status report. Skill: auto-injected via SessionStart hook." ;
-    chorus:expresses chorus:principle-observe-and-interact,
-                     chorus:principle-protect-attention,
-                     chorus:principle-obtain-a-yield ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-close-out a chorus:Practice ;
-    rdfs:label "Close-out (Hard 5)" ;
-    rdfs:comment "End-of-session discipline: journal, board audit, activity log, next-session.md, commit. Triggered on 'eod' / 'reboot' / past 5pm. Skills: /close, /reboot." ;
-    chorus:expresses chorus:principle-catch-and-store-energy,
-                     chorus:principle-produce-no-waste,
-                     chorus:principle-artifacts ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-pull-card a chorus:Practice ;
-    rdfs:label "Pull card to WIP (/pull)" ;
-    rdfs:comment "Single engineering entry point. Validate card → preflight → WIP check → domain context → design gate → TDD readiness → move + declare + signal. Hard gates emit spine events. Skill: /pull." ;
-    chorus:expresses chorus:principle-no-dark-work,
-                     chorus:principle-ship-small,
-                     chorus:principle-design-from-patterns-to-details ;
-    chorus:operationalizes chorus:policy-tdd-gate,
-                           chorus:policy-icd-write-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-demo a chorus:Practice ;
-    rdfs:label "Demo to Jeff (/demo)" ;
-    rdfs:comment "Proving gate — smoke check, prep summary, signal to Wren, builder cannot self-accept. Skill: /demo." ;
-    chorus:expresses chorus:principle-apply-self-regulation-and-accept-feedback,
-                     chorus:principle-obtain-a-yield ;
-    chorus:operationalizes chorus:policy-demo-gate,
-                           chorus:policy-demo-provenance ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-acp a chorus:Practice ;
-    rdfs:label "Accept + commit + push (werk-accept — the GO step of chorus_werk, GO=accept #3311)" ;
-    rdfs:comment "Full acceptance flow after gates pass. Ownership transfer recorded in spine + git. Implemented by werk-accept (the GO step of chorus_werk; GO=accept, #3311)." ;
-    # hasSkill edge pending (#3422): the accept verb (werk-accept) is not yet a modeled
-    # node — no verb-* nodes exist, and skill-werk is retired by #3423. Silas to add the
-    # accept-verb node + re-point practice-acp in the governed practice-accept follow-on.
-    chorus:expresses chorus:principle-artifacts,
-                     chorus:principle-no-dark-work ;
-    chorus:operationalizes chorus:policy-accept-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-reboot a chorus:Practice ;
-    rdfs:label "Reboot (save memory, write next-session, exit)" ;
-    rdfs:comment "Triggered on context-rising alert or 'reboot' directive. Writes next-session.md + commits + exits cleanly so the next session can pick up without Jeff recap. Skill: /reboot." ;
-    chorus:expresses chorus:principle-catch-and-store-energy,
-                     chorus:principle-self-healing ;
-    chorus:ceremonyRisk false .
 
 # --- New practices — coordination ---
 
-chorus:practice-brief-writing a chorus:Practice ;
-    rdfs:label "Brief writing (cross-role work exchange)" ;
-    rdfs:comment "Primary mechanism for cross-role work exchange. Briefs land in recipient's briefs/ directory with question/request + context + constraints + response needed. Logged in activity.md." ;
-    chorus:expresses chorus:principle-artifacts,
-                     chorus:principle-no-dark-work,
-                     chorus:principle-integrate-rather-than-segregate ;
-    chorus:operationalizes chorus:policy-handoff-logger,
-                           chorus:policy-demo-provenance ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-nudge a chorus:Practice ;
-    rdfs:label "Nudge (cross-role immediate delivery)" ;
-    rdfs:comment "Persist-and-deliver message to another role's active terminal. Two paths fire every time (POST + osascript). Skill: /nudge." ;
-    chorus:expresses chorus:principle-owner-sets-direction,
-                     chorus:principle-use-small-and-slow-solutions ;
-    chorus:operationalizes chorus:policy-nudge-blast-radius ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-pair a chorus:Practice ;
-    rdfs:label "Pair session (strong-style)" ;
-    rdfs:comment "Strong-style pairing with navigator scope loop, work-mode detection, rotation checkpoints. Skill: /pair." ;
-    chorus:expresses chorus:principle-comprehension-is-the-rate-limit,
-                     chorus:principle-integrate-rather-than-segregate,
-                     chorus:principle-apply-self-regulation-and-accept-feedback ;
-    chorus:operationalizes chorus:policy-pair-enforcement,
-                           chorus:policy-response-window-60s ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-clearing a chorus:Practice ;
-    rdfs:label "Clearing (multi-role browser chat)" ;
-    rdfs:comment "Browser-based group chat with Jeff + all three AI roles. Decisions marked DECISION: auto-captured. Skill: /clearing." ;
-    chorus:expresses chorus:principle-integrate-rather-than-segregate,
-                     chorus:principle-owner-sets-direction ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-chat a chorus:Practice ;
-    rdfs:label "Two-role direct chat (/chat)" ;
-    rdfs:comment "Lightweight two-role terminal channel. Jeff watches or participates. Skill: /chat." ;
-    chorus:expresses chorus:principle-integrate-rather-than-segregate,
-                     chorus:principle-use-small-and-slow-solutions ;
-    chorus:ceremonyRisk false .
-
 # --- New practices — observation ---
-
-chorus:practice-gemba a chorus:Practice ;
-    rdfs:label "Gemba (observe a role working)" ;
-    rdfs:comment "Live observation of a role's session + spine events. Jeff + observer discuss what they notice. Skill: /gemba." ;
-    chorus:expresses chorus:principle-observe-and-interact,
-                     chorus:principle-apply-self-regulation-and-accept-feedback ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-mutual-observation a chorus:Practice ;
-    rdfs:label "Mutual observation (roles watch roles)" ;
-    rdfs:comment "Roles tail each other's sessions on idle cycles. Attention is commentary, not watching. Skills: /lw /ls /lk /lc /lm. If no role observes, the system is blind and Jeff becomes the eyes (Attention Contract rule 7)." ;
-    chorus:expresses chorus:principle-observe-and-interact,
-                     chorus:principle-focus-is-infrastructure ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-interaction-pattern-detection a chorus:Practice ;
-    rdfs:label "Interaction pattern detection" ;
-    rdfs:comment "Wren detects which of 9 patterns Jeff is in (direction/ideation/demo/triage/swat/gemba/clearing/story/reflection) and emits spine event. Not announced to Jeff — silent instrumentation feeding Borg." ;
-    chorus:expresses chorus:principle-observe-and-interact,
-                     chorus:principle-interrogate-the-data ;
-    chorus:operationalizes chorus:policy-interaction-pattern ;
-    chorus:ceremonyRisk false .
 
 # --- New practices — quality / rigor ---
 
-chorus:practice-gate-product a chorus:Practice ;
-    rdfs:label "Gate: product (Wren)" ;
-    rdfs:comment "Verify AC complete, demo evidence, domain visibility, spine contract. Wren only. Skill: /gate-product." ;
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-obtain-a-yield ;
-    chorus:operationalizes chorus:policy-demo-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-gate-code a chorus:Practice ;
-    rdfs:label "Gate: code (Kade)" ;
-    rdfs:comment "Verify tests green, build clean, no new warnings. Kade only. Skill: /gate-code." ;
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-speed-and-quality-correlate ;
-    chorus:operationalizes chorus:policy-tdd-gate,
-                           chorus:policy-quality-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-gate-quality a chorus:Practice ;
-    rdfs:label "Gate: quality (Kade)" ;
-    rdfs:comment "Verify hooks pass, no regression, no console.log in production code. Kade only. Skill: /gate-quality." ;
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-produce-no-waste ;
-    chorus:operationalizes chorus:policy-quality-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-gate-arch a chorus:Practice ;
-    rdfs:label "Gate: architecture (Silas)" ;
-    rdfs:comment "Verify system fit, namespace conventions, ICD consistency, domain boundaries. Silas only. Skill: /gate-arch." ;
-    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
-                     chorus:principle-design-from-patterns-to-details ;
-    chorus:operationalizes chorus:policy-icd-write-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-gate-ops a chorus:Practice ;
-    rdfs:label "Gate: operations (Silas)" ;
-    rdfs:comment "Verify deploy safety, health checks, log flow, rollback path. Silas only. Fires at deploy, not code-complete. Skill: /gate-ops." ;
-    chorus:expresses chorus:principle-services-reliable-bounded-idempotent,
-                     chorus:principle-self-healing ;
-    chorus:operationalizes chorus:policy-ops-awareness ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-stop-the-line a chorus:Practice ;
-    rdfs:label "Stop the line" ;
-    rdfs:comment "Friction triggers a fix card in the same response. Don't work around + gripe. PostToolUse hook (planned) blocks turn on tool errors, forces resolve/card/defer. Memory: feedback_stop_the_line." ;
-    chorus:expresses chorus:principle-quality-at-source,
-                     chorus:principle-apply-self-regulation-and-accept-feedback ;
-    chorus:operationalizes chorus:policy-stop-on-error ;
-    chorus:ceremonyRisk false .
-
 # --- New practices — state / andon ---
-
-chorus:practice-andon-state a chorus:Practice ;
-    rdfs:label "Andon state declaration" ;
-    rdfs:comment "Declare state at transitions via role-state: building / blocked / waiting / observing / idle. Silence ≠ idle — idle is a declared state (Attention Contract rule 3)." ;
-    chorus:expresses chorus:principle-no-dark-work,
-                     chorus:principle-observe-and-interact ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-idle-awareness a chorus:Practice ;
-    rdfs:label "Idle awareness (no poll)" ;
-    rdfs:comment "Never idle-poll. If a background task runs: check seeds, update state files, read briefs. Don't auto-pull new cards." ;
-    chorus:expresses chorus:principle-protect-attention,
-                     chorus:principle-use-and-value-renewable-resources ;
-    chorus:operationalizes chorus:policy-autonomy-guard ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-signal-not-narrate a chorus:Practice ;
-    rdfs:label "Signal not narrate" ;
-    rdfs:comment "Narrate outcomes, not steps. Don't announce what you're about to do — execute, then report result. Terminal visual noise discipline." ;
-    chorus:expresses chorus:principle-protect-attention,
-                     chorus:principle-use-small-and-slow-solutions ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-wall-clock-refresh a chorus:Practice ;
-    rdfs:label "Wall-clock refresh per response" ;
-    rdfs:comment "Refresh the Chorus-prompt timestamp every response — never cache. Stale timestamps cascade into wrong escalation decisions (#1559)." ;
-    chorus:expresses chorus:principle-interrogate-the-data,
-                     chorus:principle-observe-and-interact ;
-    chorus:ceremonyRisk false .
 
 # --- New practices — memory / search ---
 
-chorus:practice-chorus-search-first a chorus:Practice ;
-    rdfs:label "Chorus search before filesystem" ;
-    rdfs:comment "Search order: Chorus → codebase graph → filesystem. Guard hook enforces. DEC-074. Memory: feedback_chorus_search_first." ;
-    chorus:expresses chorus:principle-catch-and-store-energy,
-                     chorus:principle-use-and-value-renewable-resources ;
-    chorus:operationalizes chorus:policy-memory-first-search ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-story-capture a chorus:Practice ;
-    rdfs:label "Story capture (personal → TTL)" ;
-    rdfs:comment "When Jeff shares something personal, capture as a story TTL linked to principles via rdfs:seeAlso. Stories feed Self ontology and Chorus narrative." ;
-    chorus:expresses chorus:principle-catch-and-store-energy,
-                     chorus:principle-use-and-value-diversity ;
-    chorus:operationalizes chorus:policy-story-write-gate ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-retro a chorus:Practice ;
-    rdfs:label "Retro (team retrospective)" ;
-    rdfs:comment "Team retrospective — surface patterns, update principles/policies/practices, retire ceremony. Skill: /retro." ;
-    chorus:expresses chorus:principle-apply-self-regulation-and-accept-feedback,
-                     chorus:principle-creatively-use-and-respond-to-change ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-board-sweep a chorus:Practice ;
-    rdfs:label "Board sweep (coherence audit)" ;
-    rdfs:comment "Find and fix untagged, duplicate, and stale cards. Scheduled or on-demand. Skill: /board-sweep." ;
-    chorus:expresses chorus:principle-produce-no-waste,
-                     chorus:principle-creatively-use-and-respond-to-change ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-werk a chorus:Practice ;
-    rdfs:label "Werk dashboard (work state)" ;
-    rdfs:comment "Live work-state dashboard — WIP, blocks, pending accepts, staleness. Skill: /werk." ;
-    chorus:expresses chorus:principle-no-dark-work,
-                     chorus:principle-observe-and-interact ;
-    chorus:ceremonyRisk false .
-
 # --- New practices — meta ---
-
-chorus:practice-context-injection a chorus:Practice ;
-    rdfs:label "Context injection (SessionStart)" ;
-    rdfs:comment "SessionStart hook assembles pulse + spine + athena into envelope, injected into role's first turn. Role reads envelope, not state files. Sync-via-artifacts, not recap." ;
-    chorus:expresses chorus:principle-catch-and-store-energy,
-                     chorus:principle-self-healing ;
-    chorus:operationalizes chorus:policy-context-inject ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-2-touch-target a chorus:Practice ;
-    rdfs:label "2-touch-per-card target" ;
-    rdfs:comment "Jeff's coordination target: 2 touches per card (start + accept). Every re-nudge = failure of the Attention Contract." ;
-    chorus:expresses chorus:principle-protect-attention ;
-    chorus:operationalizes chorus:policy-working-hours ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-domain-context-before-code a chorus:Practice ;
-    rdfs:label "Domain context before code" ;
-    rdfs:comment "Read domain state (completeness, actors, edges) before writing code. /pull step 4 enforces. No building blind." ;
-    chorus:expresses chorus:principle-design-from-patterns-to-details,
-                     chorus:principle-interrogate-the-data ;
-    chorus:ceremonyRisk false .
-
-chorus:practice-verify-before-asserting a chorus:Practice ;
-    rdfs:label "Verify before asserting" ;
-    rdfs:comment "Check the data before claiming something is fine. False assertions put Jeff in the loop. Memory: feedback_verify_before_asserting." ;
-    chorus:expresses chorus:principle-interrogate-the-data,
-                     chorus:principle-apply-self-regulation-and-accept-feedback ;
-    chorus:ceremonyRisk false .
 
 # --- Abstract principles flagged (no practice enacts them) ---
 
@@ -3552,20 +3191,8 @@ chorus:principle-use-edges-and-value-the-marginal
 
 # --- Expanded contains edges (additive) ---
 
-chorus:loom-practices chorus:contains
-    chorus:practice-session-opening, chorus:practice-close-out, chorus:practice-pull-card,
-    chorus:practice-demo, chorus:practice-acp, chorus:practice-reboot,
-    chorus:practice-brief-writing, chorus:practice-nudge, chorus:practice-pair,
-    chorus:practice-clearing, chorus:practice-chat,
-    chorus:practice-gemba, chorus:practice-mutual-observation, chorus:practice-interaction-pattern-detection,
-    chorus:practice-gate-product, chorus:practice-gate-code, chorus:practice-gate-quality,
-    chorus:practice-gate-arch, chorus:practice-gate-ops, chorus:practice-stop-the-line,
-    chorus:practice-andon-state, chorus:practice-idle-awareness, chorus:practice-signal-not-narrate,
-    chorus:practice-wall-clock-refresh,
-    chorus:practice-chorus-search-first, chorus:practice-story-capture, chorus:practice-retro,
-    chorus:practice-board-sweep, chorus:practice-werk,
-    chorus:practice-context-injection, chorus:practice-2-touch-target,
-    chorus:practice-domain-context-before-code, chorus:practice-verify-before-asserting .
+# #3754 — loom-practices membership emptied with practice v1; v2 members are
+# authored in roles/kade/ontology/practices-3754-instances.ttl.
 
 # =============================================================================
 # SKILLS, GATES, ROLE + PRACTICE EDGES
@@ -3898,98 +3525,6 @@ chorus:kade chorus:hasSkill
 
 # --- Practice authorization edges (sub-spike 2) ---
 
-chorus:practice-close-out
-    chorus:hasSkill chorus:skill-close, chorus:skill-reboot .
-
-chorus:practice-pull-card
-    chorus:hasSkill chorus:skill-pull, chorus:skill-jdi ;
-    chorus:hasGate chorus:gate-tdd, chorus:gate-icd-write,
-                   chorus:gate-fuseki-health, chorus:gate-design-wip-ready .
-
-chorus:practice-demo
-    chorus:hasSkill chorus:skill-demo ;
-    chorus:hasGate chorus:gate-demo, chorus:gate-product .
-
-chorus:practice-reboot
-    chorus:hasSkill chorus:skill-reboot .
-
-chorus:practice-brief-writing
-    chorus:hasSkill chorus:skill-nudge .
-
-chorus:practice-nudge
-    chorus:hasSkill chorus:skill-nudge .
-
-chorus:practice-pair
-    chorus:hasSkill chorus:skill-pair .
-
-chorus:practice-clearing
-    chorus:hasSkill chorus:skill-clearing .
-
-chorus:practice-chat
-    chorus:hasSkill chorus:skill-chat .
-
-chorus:practice-gemba
-    chorus:hasSkill chorus:skill-gemba, chorus:skill-gemba-tick .
-
-chorus:practice-mutual-observation
-    chorus:hasSkill chorus:skill-lw, chorus:skill-ls, chorus:skill-lk,
-                    chorus:skill-lc, chorus:skill-lm, chorus:skill-look .
-
-chorus:practice-interaction-pattern-detection
-    chorus:hasSkill chorus:skill-chorus .
-
-chorus:practice-gate-product
-    chorus:hasSkill chorus:skill-gate-product ;
-    chorus:hasGate chorus:gate-product .
-
-chorus:practice-gate-code
-    chorus:hasSkill chorus:skill-gate-code ;
-    chorus:hasGate chorus:gate-code .
-
-chorus:practice-gate-quality
-    chorus:hasSkill chorus:skill-gate-quality ;
-    chorus:hasGate chorus:gate-quality .
-
-chorus:practice-gate-arch
-    chorus:hasSkill chorus:skill-gate-arch ;
-    chorus:hasGate chorus:gate-arch .
-
-chorus:practice-gate-ops
-    chorus:hasSkill chorus:skill-gate-ops ;
-    chorus:hasGate chorus:gate-ops .
-
-chorus:practice-stop-the-line
-    chorus:hasGate chorus:gate-stop-the-line .
-
-chorus:practice-andon-state
-    chorus:hasSkill chorus:skill-pull .
-
-chorus:practice-chorus-search-first
-    chorus:hasSkill chorus:skill-chorus ;
-    chorus:hasGate chorus:gate-chorus-search-first .
-
-chorus:practice-retro
-    chorus:hasSkill chorus:skill-retro .
-
-chorus:practice-board-sweep
-    chorus:hasSkill chorus:skill-board-sweep, chorus:skill-sb, chorus:skill-ab,
-                    chorus:skill-flow, chorus:skill-golfball .
-
-chorus:practice-werk
-    chorus:hasSkill chorus:skill-werk, chorus:skill-pipeline .
-
-chorus:practice-domain-first
-    chorus:hasGate chorus:gate-design-wip-ready .
-
-chorus:practice-product-owner-aligned
-    chorus:hasGate chorus:gate-product .
-
-chorus:practice-tdd
-    chorus:hasGate chorus:gate-tdd, chorus:gate-code .
-
-chorus:practice-production-ready
-    chorus:hasGate chorus:gate-demo, chorus:gate-product, chorus:gate-ops .
-
 # =============================================================================
 # 12. HYDRATION REGISTRY (#2827) — Phase 2 of crawler-service-design
 # =============================================================================
@@ -4128,7 +3663,6 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .
 
-
 chorus:EmitContractShape a sh:NodeShape ;
     sh:targetClass chorus:EmitContract ;
     sh:property [ sh:path chorus:declaresMetric ; sh:minCount 1 ] ;
@@ -4159,7 +3693,6 @@ chorus:PropertyKeyShape a sh:NodeShape ;
     sh:property [ sh:path chorus:propertyKind ; sh:minCount 1 ] ;
     chorus:instancesGraph "urn:chorus:ontology" ;
     chorus:generatedBy "athena-model" .
-
 
 # =====================================================================
 # #3870 — Services-domain runtime vocabulary (ServiceInstance/ScheduledJob)
