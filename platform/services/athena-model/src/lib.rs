@@ -37,8 +37,10 @@ pub mod adr; // #3718 — the ADR refusal core (pure; no store, no fs)
 pub mod tbox;
 pub mod vocab_version; // #3902 — semver at the pen (ledger + TTL projection) // #3718 — the TBox half: class/property/shape, refusal-first, no defaults
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
+
+use serde::Deserialize;
 
 pub const NS: &str = "https://jeffbridwell.com/chorus#";
 pub const INSTANCES_GRAPH: &str = "urn:chorus:instances";
@@ -216,6 +218,12 @@ pub struct ShapeReq {
     pub enums: BTreeMap<String, Vec<String>>,
     /// #3467 — property local name → xsd datatype local (sh:datatype), for value-type enforcement
     pub datatypes: BTreeMap<String, String>,
+    /// Direct-path properties whose SHACL value channel is a literal field.
+    /// This includes both sh:datatype properties and plain properties with no
+    /// sh:class. Keeping the channel set separate from `datatypes` lets the DAL
+    /// refuse a modeled plain property submitted as an IRI edge without closing
+    /// the otherwise-open shape to truly unmodeled properties.
+    pub field_properties: BTreeSet<String>,
     /// #3467 — edge property local name → target class local (sh:class), for edge-target-type enforcement
     pub edge_classes: BTreeMap<String, String>,
     /// #3681 — property local name → partition property local (chorus:uniqueWithin): the
@@ -368,12 +376,16 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
     // #3467 — per-property sh:datatype (value-type enforcement) and per-edge sh:class
     // (edge-target-type enforcement). Both read from the SAME shape; local-names only.
     let mut datatypes: BTreeMap<String, String> = BTreeMap::new();
+    let mut field_properties: BTreeSet<String> = BTreeSet::new();
     for row in store.select_v(&format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:datatype ?dt . FILTER(isIRI(?path)) BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', REPLACE(STR(?dt), '.*#', '')) AS ?v) }} }}",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?edgeClass }} OPTIONAL {{ ?p sh:datatype ?dt }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?dt), REPLACE(STR(?dt), '.*#', ''), '')) AS ?v) }} }}",
         g = ONTOLOGY_GRAPH, c = class
     ))? {
         if let Some((prop, dt)) = row.split_once('|') {
-            datatypes.insert(prop.to_string(), dt.to_string());
+            field_properties.insert(prop.to_string());
+            if !dt.is_empty() {
+                datatypes.insert(prop.to_string(), dt.to_string());
+            }
         }
     }
     let mut edge_classes: BTreeMap<String, String> = BTreeMap::new();
@@ -402,7 +414,31 @@ pub fn read_shape(store: &dyn Store, class: &str) -> R<ShapeReq> {
         ns = NS, g = ONTOLOGY_GRAPH, c = class
     ))?;
 
-    Ok(ShapeReq { required, enums, datatypes, edge_classes, unique_within, unique_global })
+    // Every constrained value property is also a field unless the same shape
+    // explicitly declares it as an sh:class edge. Unioning the declarative
+    // sources keeps the channel classification complete even when a store's
+    // projection omits an unconstrained/plain row from the combined read.
+    for prop in required
+        .iter()
+        .chain(enums.keys())
+        .chain(datatypes.keys())
+        .chain(unique_within.keys())
+        .chain(unique_global.iter())
+    {
+        if !edge_classes.contains_key(prop) {
+            field_properties.insert(prop.clone());
+        }
+    }
+
+    Ok(ShapeReq {
+        required,
+        enums,
+        datatypes,
+        field_properties,
+        edge_classes,
+        unique_within,
+        unique_global,
+    })
 }
 
 /// Turtle string-literal escape.
@@ -414,23 +450,58 @@ fn esc(s: &str) -> String {
 /// an instance. Fields are datatype properties (string literals, v1);
 /// edges are object properties whose targets are (kind, name) pairs that the
 /// mint resolves — callers never pass IRIs anywhere.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WriteReq {
     /// #3718 — a stated reason for writing outside the DERIVED placement.
     /// ADR-051 x 025 allows an override, never a silent one: an unexplained
     /// override is how a placement stops matching the model without anyone
     /// noticing (11 Product instances in two wrong graphs, months unseen).
+    #[serde(default, alias = "placementOverrideReason")]
     pub placement_override_reason: Option<String>,
     pub kind: String,
     pub name: String,
+    #[serde(default)]
     pub fields: BTreeMap<String, String>,
+    #[serde(default)]
     pub edges: Vec<(String, String, String)>, // (property, target_kind, target_name)
     /// #3647 — the class's model-declared instance HOME graph (athena-make resolves it
     /// via resolve_instances_graph and passes --graph). `None` = the legacy
     /// urn:chorus:instances default (back-compat). Writing the declared home is
     /// what makes the entity readable + authorizable (no orphan): athena-make authz
     /// reads ownedBy from this same graph, so create must land here, not the bucket.
+    #[serde(default)]
     pub graph: Option<String>,
+}
+
+/// Decode the `add-batch` stdin NDJSON stream: one WriteReq-shaped object per
+/// nonblank line. Edges use the existing typed tuple representation:
+/// `["partOf","product","athena"]`. Serde rejects unknown fields, wrong
+/// value types, malformed escapes, wrong tuple cardinality, and trailing input;
+/// the error names the exact record line.
+pub fn parse_add_batch_ndjson(input: &str) -> R<Vec<WriteReq>> {
+    if input.trim().is_empty() {
+        return Err("add-batch: stdin is empty — expected one WriteReq JSON object per line".into());
+    }
+    let mut reqs = Vec::new();
+    for (index, line) in input.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let req: WriteReq = serde_json::from_str(line).map_err(|e| {
+            format!(
+                "add-batch: invalid NDJSON record at line {}, column {}: {}",
+                index + 1,
+                e.column(),
+                e
+            )
+        })?;
+        reqs.push(req);
+    }
+    if reqs.is_empty() {
+        return Err("add-batch: stdin contains no entity records".into());
+    }
+    Ok(reqs)
 }
 
 /// Validation + serialization, pure (store only consulted for shapes/integrity
@@ -440,12 +511,11 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     let class = class_iri(&req.kind)?;
     let mut lines = vec![format!("<{}> a <{}>", subject, class)];
     for (prop, val) in &req.fields {
-        if prop.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(true) {
-            return Err(format!("bad-property: '{}' — properties are camelCase (ADR-040 Level 4)", prop));
-        }
+        check_property_local(prop)?;
         lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
     }
     for (prop, tkind, tname) in &req.edges {
+        check_property_local(prop)?;
         let target = mint(tkind, tname)?;
         lines.push(format!("    <{}{}> <{}>", NS, prop, target));
     }
@@ -472,23 +542,81 @@ fn now_iso() -> String {
         })
 }
 
+/// A valid high-resolution variant used only by create-only batch commits. The
+/// existing audit predicates double as an outcome marker, avoiding any private
+/// proof predicate or graph while leaving single-write timestamp semantics
+/// unchanged.
+static CREATE_STAMP_COUNTER: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+fn create_only_stamp() -> String {
+    let clock = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    // Concurrent processes on one Fuseki host have distinct PIDs; commits in
+    // one process have distinct counters even when the wall clock exposes the
+    // same nanosecond. PID reuse cannot overlap, and the second+nanos prefix
+    // distinguishes successive process lifetimes. Fractional xsd:dateTime
+    // permits arbitrary precision, so the concatenated digits remain a valid
+    // timestamp rather than introducing a model-private transaction token.
+    let sequence = CREATE_STAMP_COUNTER
+        .fetch_update(
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+            |value| value.checked_add(1),
+        )
+        .expect("create-only audit sequence exhausted");
+    let suffix = format!(
+        "{:09}{:010}{:020}",
+        clock.subsec_nanos(),
+        std::process::id(),
+        sequence,
+    );
+    let base = now_iso();
+    if base.ends_with('Z') {
+        format!("{}.{}Z", base.trim_end_matches('Z'), suffix)
+    } else {
+        // `date` is a required production utility; this branch retains the
+        // old fail-soft behavior but cannot claim xsd:dateTime syntax.
+        format!("epoch:{}.{}", clock.as_secs(), suffix)
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A thread-local recorder keeps witness-cardinality tests hermetic and
+    /// parallel-safe. In production each `witness` invocation below is exactly
+    /// one synchronous chorus-log subprocess, so bounding calls bounds spawns.
+    static TEST_WITNESSES: std::cell::RefCell<Vec<String>> = const {
+        std::cell::RefCell::new(Vec::new())
+    };
+}
+
 /// Spine witness — every write and every refusal is logged via chorus-log
 /// (the crawler's zero-dep pattern). Best-effort: a logging failure goes to
 /// stderr but never changes the write's outcome.
 fn witness(event: &str, kvs: &[(&str, &str)]) {
-    let root = std::env::var("CHORUS_ROOT")
-        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
-    // #3651 — NEVER mint a role identity as a default. An env-less caller logs
-    // as "unattributed"; the identity gate (verify_identity) has already refused
-    // its writes, so this only labels the refusal events themselves.
-    let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "unattributed".to_string());
-    let mut args: Vec<String> = vec![event.to_string(), role];
-    for (k, v) in kvs {
-        args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
+    #[cfg(test)]
+    {
+        let _ = kvs;
+        TEST_WITNESSES.with(|events| events.borrow_mut().push(event.to_string()));
     }
-    let r = Command::new(format!("{}/platform/scripts/chorus-log", root)).args(&args).output();
-    if let Err(e) = r {
-        eprintln!("athena-model: witness emit failed ({}): {}", e, event);
+    #[cfg(not(test))]
+    {
+        let root = std::env::var("CHORUS_ROOT")
+            .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        // #3651 — NEVER mint a role identity as a default. An env-less caller logs
+        // as "unattributed"; the identity gate (verify_identity) has already refused
+        // its writes, so this only labels the refusal events themselves.
+        let role = std::env::var("DEPLOY_ROLE").unwrap_or_else(|_| "unattributed".to_string());
+        let mut args: Vec<String> = vec![event.to_string(), role];
+        for (k, v) in kvs {
+            args.push(format!("{}={}", k, v)); // the crawler's exact arg shape
+        }
+        let r = Command::new(format!("{}/platform/scripts/chorus-log", root)).args(&args).output();
+        if let Err(e) = r {
+            eprintln!("athena-model: witness emit failed ({}): {}", e, event);
+        }
     }
 }
 
@@ -797,6 +925,28 @@ fn assert_dal_writable(graph: &str) -> R<()> {
     Ok(())
 }
 
+/// The entity writer accepts only the two instance-placement forms generated by
+/// athena-make: the legacy instances bucket and a lowercase domain home. This is
+/// intentionally narrower than `seed`'s realm policy: migrations may target
+/// governed gathering graphs, but caller-authored add/add-batch requests may not
+/// interpolate arbitrary graph IRIs into SPARQL.
+fn assert_instance_graph(graph: &str) -> R<()> {
+    // Preserve the typed authorization refusal for the two reserved graphs.
+    assert_dal_writable(graph)?;
+    let domain_home = graph
+        .strip_prefix("urn:chorus:domains:")
+        .map(|local| normalize_slug(local).map(|normalized| normalized == local).unwrap_or(false))
+        .unwrap_or(false);
+    if graph != INSTANCES_GRAPH && !domain_home {
+        witness("model.refused", &[("graph", graph), ("reason", "graph-not-instance-home")]);
+        return Err(format!(
+            "graph-not-instance-home: <{}> is not urn:chorus:instances or a safe urn:chorus:domains:<name> instance graph",
+            graph
+        ));
+    }
+    Ok(())
+}
+
 /// #3718 — which domain CLAIMS this class in `definesVocabulary`. The meta-model
 /// is self-describing (Jeff, 2026-08-02): the `products` domain's
 /// `definesVocabulary` IS `chorus:Product`. So a class's instance placement is
@@ -811,208 +961,830 @@ pub fn defining_domain_of(store: &dyn Store, class_iri: &str) -> Option<String> 
     store.select_v(&q).ok()?.into_iter().next()
 }
 
-/// Full governed write: identity → per-graph authz → shape check → referential integrity → idempotent UPDATE.
-pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
-    let class = class_iri(&req.kind)?;
-    let (subject, turtle) = to_turtle(req)?;
-    // #3647 — write the class's model-declared home (or the legacy default). This
-    // is the same graph athena-make authz reads ownedBy from; a mismatch mints an orphan.
-    let g = req.graph.as_deref().unwrap_or(INSTANCES_GRAPH);
-    assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
+#[derive(Debug)]
+struct WritePlanError {
+    identity: String,
+    message: String,
+}
 
-    // #3718 — ADR-051 x 025 PLACEMENT GATE: BUILT, TESTED, NOT YET ARMED.
-    //
-    // RESOLVED 2026-08-02 (Silas, OWL-DBA): the conflict below was MY
-    // misclassification, not a contradiction. A PUNNED INDIVIDUAL IS
-    // SCHEMA-LAYER — a Domain individual IS a class (ADR-045), so it belongs in
-    // urn:chorus:ontology, and the store's 40 Domains there are correct.
-    // #3647's principle survives intact ("write the entity's home, never the
-    // legacy bucket; authz reads ownedBy from that home") — the derivation just
-    // supplies ontology as that home for punned kinds. Two layers, not three;
-    // see adr::layer_of. The #3647 test's assertion is wrong-as-written and
-    // updates with that reason when the gate arms.
-    //
-    // REMAINING PREREQUISITE, and the only one: the definesVocabulary backfill.
-    // The gate refuses a write to any class no domain claims — the correct
-    // refusal (it is how APISurface got 25 orphan instances) — but arming it
-    // before every served class is claimed would refuse legitimate writes.
-    // Silas owns the backfill audit as a security-chunk Phase-B foundation item;
-    // this gate arms after it lands. Claims are added DELIBERATELY per class,
-    // never auto-defaulted (Jeff's legibility ruling).
-    //
-    // The pure core is green (adr.rs, 10 tests). Wiring it here refused 4
-    // EXISTING write tests, and the refusals are not test bugs — they surface a
-    // real behavioural disagreement I will not settle unilaterally:
-    //
-    //   #3647 routes a write to its DECLARED home graph (domain.graph=Some(..)),
-    //   which is why `write_routes_to_declared_home_when_provided` writes a
-    //   chorus:Domain individual to urn:chorus:domains:tests.
-    //   ADR-051 x 025 says Domain is PUNNED, so its individuals derive to
-    //   urn:chorus:ontology — and the store agrees: all 40 live Domains are there.
-    //
-    // Both cannot be right. Arming the gate now would break a landed behaviour
-    // on my own reading of an ADR; that is the move Silas's Q1/Q3 rulings already
-    // caught me making twice. It goes to the OWL-DBA, then it arms.
-    //
-    // Also unresolved and load-bearing: the gate refuses writes to a class no
-    // domain claims in definesVocabulary. That is the RIGHT refusal (it is how
-    // APISurface got 25 live instances from an unbound file) but it needs the
-    // definesVocabulary backfill first, or it refuses legitimate writes today.
-    //
-    // To arm: restore the block below, decide the punned-Domain question, and
-    // update the 4 fixtures to bring their own definesVocabulary world.
-    // SHACL requirements from the ontology graph — fail-closed on missing required.
-    let shape = read_shape(store, &class)?;
-    for need in &shape.required {
-        let satisfied = req.fields.contains_key(need)
-            || req.edges.iter().any(|(p, _, _)| p == need)
-            || need == "label"; // label is auto-derived below when absent
-        if !satisfied {
-            witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", need)]);
-            return Err(format!("shape-violation: {} requires '{}' (sh:minCount 1, from {})", class, need, ONTOLOGY_GRAPH));
-        }
-    }
-    for (prop, allowed) in &shape.enums {
-        if let Some(v) = req.fields.get(prop) {
-            if !allowed.contains(v) {
-                return Err(format!("shape-violation: '{}' not in sh:in {:?} for {}", v, allowed, prop));
-            }
-        }
-    }
-    // #3467 (B) — DATATYPE enforcement: a field value must satisfy its sh:datatype.
-    // Constraint-blind no more — a wrong-type value (non-numeric for xsd:integer,
-    // bad xsd:boolean) is rejected, not silently stored. Derived from the shape.
-    for (prop, v) in &req.fields {
-        if let Some(dt) = shape.datatypes.get(prop) {
-            if !datatype_ok(v, dt) {
-                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
-                return Err(format!("shape-violation: '{}' is not a valid xsd:{} for '{}'", v, dt, prop));
-            }
-        }
+impl WritePlanError {
+    fn for_req(req: &WriteReq, message: String) -> Self {
+        Self { identity: format!("{}:{}", req.kind, req.name), message }
     }
 
-    // #3681 — UNIQUENESS-within-scope enforcement. A value declared uniqueWithin a
-    // partition property, or uniqueGlobal, must not collide with a sibling in scope.
-    // Fires after the cheap shape checks, before referential integrity (Kade's slot).
-    // Excludes self by IRI, so an idempotent re-write of the same node is NOT a dup.
-    // STR(?v) comparison sidesteps literal-datatype mismatch. Scoped to the write's
-    // home graph `g`. Mirrors the referential-integrity ASK + model.refused witness.
-    for (prop, part) in &shape.unique_within {
-        if let Some(v) = req.fields.get(prop) {
-            // Partition value = the target IRI of the edge named `part`. This REQUIRES
-            // that edge to be present on the write — guaranteed while the shape marks it
-            // minCount>=1 (the DAL is full-replace, so a floor-required edge is always in
-            // req.edges). If a partition edge is ever made optional, a node carrying `prop`
-            // WITHOUT it would skip this check — the None arm below makes that invariant
-            // break LOUD (a witness), never a silent unenforced uniqueness (Kade, #3681).
-            match req.edges.iter().find(|(p, _, _)| p == part) {
-                Some((_, tk, tn)) => {
-                    let part_iri = mint(tk, tn)?;
-                    let dup = store.ask(&format!(
-                        "ASK {{ GRAPH <{g}> {{ ?other <{ns}{prop}> ?v ; <{ns}{part}> <{pi}> . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
-                        g = g, ns = NS, prop = prop, part = part, pi = part_iri, s = subject, val = esc(v)
-                    ))?;
-                    if dup {
-                        witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
-                        return Err(format!("shape-violation: duplicate '{}' within '{}' (chorus:uniqueWithin, from {})", prop, part, ONTOLOGY_GRAPH));
-                    }
-                }
-                None => witness("model.uniqueness.skipped", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("prop", prop), ("missing_partition", part)]),
+    fn for_batch(self) -> String {
+        format!("add-batch: entity '{}': {}", self.identity, self.message)
+    }
+}
+
+#[derive(Debug)]
+struct PlannedWrite<'a> {
+    req: &'a WriteReq,
+    identity: String,
+    class: String,
+    subject: String,
+    turtle: String,
+    graph: String,
+}
+
+#[derive(Debug)]
+struct UniquenessCandidate<'a> {
+    req: &'a WriteReq,
+    prop: String,
+    partition: Option<String>,
+    graph: String,
+    class: String,
+    partition_iri: Option<String>,
+    value: String,
+}
+
+/// Successful result of one entity-generic `add-batch` transaction.
+#[derive(Debug, PartialEq, Eq)]
+pub struct AddBatchReport {
+    pub subjects: Vec<String>,
+}
+
+#[derive(Debug, Default)]
+struct ExternalTargetFacts {
+    existing: BTreeSet<String>,
+    typed: BTreeSet<(String, String)>,
+}
+
+/// Read every edge target outside the transaction in ONE query. The result
+/// encodes `subject|rdf:type`; an empty type still proves existence. This is the
+/// hot-path difference between a 200-TestResult chunk taking one Fuseki read and
+/// taking ~400 sequential ASK/curl round trips (existence + type per result).
+fn prefetch_external_targets(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+    batch_classes: &BTreeMap<String, String>,
+) -> Result<ExternalTargetFacts, WritePlanError> {
+    let mut owners: BTreeMap<String, &WriteReq> = BTreeMap::new();
+    for plan in plans {
+        for (_, target_kind, target_name) in &plan.req.edges {
+            let target = mint(target_kind, target_name)
+                .map_err(|e| WritePlanError::for_req(plan.req, e))?;
+            if !batch_classes.contains_key(&target) {
+                owners.entry(target).or_insert(plan.req);
             }
         }
     }
-    for prop in &shape.unique_global {
-        if let Some(v) = req.fields.get(prop) {
-            let dup = store.ask(&format!(
-                "ASK {{ GRAPH <{g}> {{ ?other a <{cls}> ; <{ns}{prop}> ?v . FILTER(?other != <{s}> && STR(?v) = \"{val}\") }} }}",
-                g = g, cls = class, ns = NS, prop = prop, s = subject, val = esc(v)
-            ))?;
-            if dup {
-                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
-                return Err(format!("shape-violation: duplicate '{}' across all {} (chorus:uniqueGlobal, from {})", prop, req.kind, ONTOLOGY_GRAPH));
-            }
-        }
+    if owners.is_empty() {
+        return Ok(ExternalTargetFacts::default());
     }
 
-    // Referential integrity: every edge target must already exist. Fail-closed.
-    for (prop, tkind, tname) in &req.edges {
-        let target = mint(tkind, tname)?;
-        let exists = store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", target))?;
-        if !exists {
-            witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "unknown-target"), ("edge", prop)]);
-            return Err(format!(
-                "unknown-target: {} → <{}> does not exist in the store — create the target first (referential integrity, fail-closed)",
-                prop, target
+    let values = owners
+        .keys()
+        .map(|target| format!("<{}>", target))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let query = format!(
+        "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> \
+         SELECT DISTINCT ?v WHERE {{ \
+           VALUES ?target {{ {values} }} \
+           GRAPH ?g {{ ?target ?p ?o }} \
+           OPTIONAL {{ GRAPH ?typeGraph {{ ?target rdf:type ?type }} }} \
+           BIND(CONCAT(STR(?target), '|', IF(BOUND(?type), STR(?type), '')) AS ?v) \
+         }}",
+        values = values
+    );
+    let first_owner = owners.values().next().expect("nonempty target owner set");
+    let rows = store
+        .select_v(&query)
+        .map_err(|e| WritePlanError::for_req(first_owner, e))?;
+    let mut facts = ExternalTargetFacts::default();
+    for row in rows {
+        let Some((target, class)) = row.split_once('|') else { continue };
+        if !owners.contains_key(target) {
+            continue;
+        }
+        facts.existing.insert(target.to_string());
+        if !class.is_empty() {
+            facts.typed.insert((target.to_string(), class.to_string()));
+        }
+    }
+    Ok(facts)
+}
+
+/// Render the shared O(N) store-conflict pattern. Preflight supplies a planned-
+/// subject exclusion because single writes are upserts; the atomic create-only
+/// commit supplies none because its identity-absence predicate guarantees those
+/// subjects do not exist in the successful snapshot.
+fn uniqueness_conflict_pattern(
+    candidates: &[UniquenessCandidate<'_>],
+    exclude_replacements: Option<&str>,
+) -> String {
+    let global_rows = candidates
+        .iter()
+        .enumerate()
+        .filter(|(_, candidate)| candidate.partition.is_none())
+        .map(|(index, candidate)| {
+            format!(
+                "(\"{index}\" <{graph}> <{class}> <{ns}{prop}> \"{value}\")",
+                index = index,
+                graph = candidate.graph,
+                class = candidate.class,
+                ns = NS,
+                prop = candidate.prop,
+                value = esc(&candidate.value),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let within_rows = candidates
+        .iter()
+        .enumerate()
+        .filter_map(|(index, candidate)| {
+            Some(format!(
+                "(\"{index}\" <{graph}> <{ns}{prop}> <{ns}{partition}> <{partition_iri}> \"{value}\")",
+                index = index,
+                graph = candidate.graph,
+                ns = NS,
+                prop = candidate.prop,
+                partition = candidate.partition.as_ref()?,
+                partition_iri = candidate.partition_iri.as_ref()?,
+                value = esc(&candidate.value),
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let exclude_replacements = exclude_replacements.unwrap_or("");
+    let mut branches = Vec::new();
+    if !global_rows.is_empty() {
+        branches.push(format!(
+            "{{ \
+               VALUES (?v ?graph ?class ?property ?wanted) {{ {rows} }} \
+               GRAPH ?graph {{ ?other a ?class ; ?property ?actual }} \
+               FILTER(STR(?actual) = ?wanted) \
+               {exclude} \
+             }}",
+            rows = global_rows,
+            exclude = exclude_replacements,
+        ));
+    }
+    if !within_rows.is_empty() {
+        branches.push(format!(
+            "{{ \
+               VALUES (?v ?graph ?property ?partition ?partitionIri ?wanted) {{ {rows} }} \
+               GRAPH ?graph {{ ?other ?property ?actual ; ?partition ?partitionIri }} \
+               FILTER(STR(?actual) = ?wanted) \
+               {exclude} \
+             }}",
+            rows = within_rows,
+            exclude = exclude_replacements,
+        ));
+    }
+    branches.join(" UNION ")
+}
+
+/// Resolve every store-side uniqueness candidate in one SELECT. Compact VALUES
+/// tables bind stable input-order indexes as `?v`; the caller then reports the
+/// first conflicting entity deterministically. This replaces one synchronous
+/// ASK/curl subprocess per unique field with one O(N)-sized read for the batch.
+fn prefetch_uniqueness_conflicts(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+    candidates: &[UniquenessCandidate<'_>],
+) -> Result<BTreeSet<usize>, WritePlanError> {
+    if candidates.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    let replacements = plans
+        .iter()
+        .map(|plan| format!("(<{}> <{}>)", plan.graph, plan.subject))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let exclude_replacements = format!(
+        "FILTER NOT EXISTS {{ \
+           VALUES (?replacementGraph ?replacement) {{ {replacements} }} \
+           FILTER(?replacementGraph = ?graph && ?replacement = ?other) \
+         }}",
+        replacements = replacements,
+    );
+    let pattern = uniqueness_conflict_pattern(candidates, Some(&exclude_replacements));
+    let rows = store
+        .select_v(&format!(
+            "# athena-model uniqueness candidates\nSELECT DISTINCT ?v WHERE {{ {} }}",
+            pattern
+        ))
+        .map_err(|e| WritePlanError::for_req(candidates[0].req, e))?;
+    let mut conflicts = BTreeSet::new();
+    for row in rows {
+        let index = row.parse::<usize>().map_err(|_| {
+            WritePlanError::for_req(
+                candidates[0].req,
+                format!("uniqueness-read-invalid: unexpected candidate id '{}'", row),
+            )
+        })?;
+        if index >= candidates.len() {
+            return Err(WritePlanError::for_req(
+                candidates[0].req,
+                format!("uniqueness-read-invalid: out-of-range candidate id '{}'", row),
             ));
         }
-        // #3467 (B) — EDGE-TARGET-TYPE enforcement: existence is not enough; the
-        // target's rdf:type must match the edge property's sh:class (e.g. partOf →
-        // a Product, not any node). Beyond referential integrity. Derived from the shape.
-        if let Some(want_class) = shape.edge_classes.get(prop) {
-            let typed = store.ask(&format!(
-                "ASK {{ GRAPH ?g {{ <{t}> a <{ns}{cl}> }} }}",
-                t = target, ns = NS, cl = want_class
-            ))?;
-            if !typed {
-                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("edge", prop)]);
-                return Err(format!(
-                    "shape-violation: {} → <{}> is not a {} (sh:class edge-target-type, fail-closed)",
-                    prop, target, want_class
-                ));
+        conflicts.insert(index);
+    }
+    Ok(conflicts)
+}
+
+/// Shared add planner. Every request reaches the same mint, graph, SHACL,
+/// uniqueness, referential-integrity, and audit preparation whether the caller
+/// used `add` or `add-batch`. The planner performs reads only; callers cannot
+/// observe a partial write because no Store::update occurs here.
+fn plan_writes<'a>(
+    store: &dyn Store,
+    reqs: &'a [WriteReq],
+) -> Result<(Vec<PlannedWrite<'a>>, Vec<UniquenessCandidate<'a>>), WritePlanError> {
+    let mut plans: Vec<PlannedWrite<'a>> = Vec::with_capacity(reqs.len());
+    let mut claimed: BTreeMap<String, String> = BTreeMap::new();
+
+    for req in reqs {
+        let identity = format!("{}:{}", req.kind, req.name);
+        let class = class_iri(&req.kind).map_err(|e| WritePlanError::for_req(req, e))?;
+        let (subject, turtle) = to_turtle(req).map_err(|e| WritePlanError::for_req(req, e))?;
+        let graph = req.graph.clone().unwrap_or_else(|| INSTANCES_GRAPH.to_string());
+        assert_instance_graph(&graph).map_err(|e| WritePlanError::for_req(req, e))?;
+        if let Some(first) = claimed.insert(subject.clone(), identity.clone()) {
+            witness(
+                "model.refused",
+                &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "duplicate-identity")],
+            );
+            return Err(WritePlanError::for_req(
+                req,
+                format!(
+                    "duplicate-identity: '{}' and '{}' both mint <{}> — one transaction may replace an identity only once",
+                    first, identity, subject
+                ),
+            ));
+        }
+        plans.push(PlannedWrite { req, identity, class, subject, turtle, graph });
+    }
+
+    // Shape reads are six SELECTs today. Cache by class so 1,000 entities of one
+    // kind issue those six reads once, not 6,000 times.
+    let mut shapes: BTreeMap<String, ShapeReq> = BTreeMap::new();
+    for plan in &plans {
+        if !shapes.contains_key(&plan.class) {
+            let shape = read_shape(store, &plan.class)
+                .map_err(|e| WritePlanError::for_req(plan.req, e))?;
+            shapes.insert(plan.class.clone(), shape);
+        }
+    }
+
+    // A SHACL property's value channel is part of its type contract. Accepting
+    // an sh:class property in `fields` serializes an RDF literal and bypasses
+    // referential-integrity/target-type checks; accepting a modeled field
+    // property in `edges` serializes an IRI and bypasses its literal contract.
+    // Refuse either mismatch before target or uniqueness reads, and therefore
+    // before the transaction's sole update.
+    for plan in &plans {
+        let req = plan.req;
+        let shape = &shapes[&plan.class];
+        if let Some((prop, target_class)) = req
+            .fields
+            .keys()
+            .find_map(|prop| shape.edge_classes.get(prop).map(|class| (prop, class)))
+        {
+            witness(
+                "model.refused",
+                &[
+                    ("kind", req.kind.as_str()),
+                    ("name", req.name.as_str()),
+                    ("reason", "shape-channel-violation"),
+                    ("field", prop.as_str()),
+                ],
+            );
+            return Err(WritePlanError::for_req(
+                req,
+                format!(
+                    "shape-channel-violation: '{}' declares sh:class {} and must be supplied through edges, not fields",
+                    prop, target_class
+                ),
+            ));
+        }
+        if let Some(prop) = req
+            .edges
+            .iter()
+            .map(|(prop, _, _)| prop)
+            .find(|prop| shape.field_properties.contains(*prop))
+        {
+            witness(
+                "model.refused",
+                &[
+                    ("kind", req.kind.as_str()),
+                    ("name", req.name.as_str()),
+                    ("reason", "shape-channel-violation"),
+                    ("edge", prop.as_str()),
+                ],
+            );
+            return Err(WritePlanError::for_req(
+                req,
+                format!(
+                    "shape-channel-violation: '{}' is a modeled literal property and must be supplied through fields, not edges",
+                    prop
+                ),
+            ));
+        }
+    }
+
+    // The transaction-local world: edge targets in this set will exist after
+    // the same commit. Their planned rdf:type is authoritative for sh:class.
+    let batch_classes: BTreeMap<String, String> = plans
+        .iter()
+        .map(|p| (p.subject.clone(), p.class.clone()))
+        .collect();
+    let external_targets = prefetch_external_targets(store, &plans, &batch_classes)?;
+    let mut seen_global: BTreeMap<(String, String, String, String), String> = BTreeMap::new();
+    let mut seen_within: BTreeMap<(String, String, String, String, String, String), String> = BTreeMap::new();
+    let mut uniqueness_candidates = Vec::new();
+
+    for plan in &plans {
+        let req = plan.req;
+        let shape = &shapes[&plan.class];
+
+        for need in &shape.required {
+            let satisfied = req.fields.contains_key(need)
+                || req.edges.iter().any(|(p, _, _)| p == need)
+                || need == "label";
+            if !satisfied {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", need)]);
+                return Err(WritePlanError::for_req(req, format!(
+                    "shape-violation: {} requires '{}' (sh:minCount 1, from {})",
+                    plan.class, need, ONTOLOGY_GRAPH
+                )));
+            }
+        }
+        for (prop, allowed) in &shape.enums {
+            if let Some(value) = req.fields.get(prop) {
+                if !allowed.contains(value) {
+                    return Err(WritePlanError::for_req(req, format!(
+                        "shape-violation: '{}' not in sh:in {:?} for {}", value, allowed, prop
+                    )));
+                }
+            }
+        }
+        for (prop, value) in &req.fields {
+            if let Some(datatype) = shape.datatypes.get(prop) {
+                if !datatype_ok(value, datatype) {
+                    witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
+                    return Err(WritePlanError::for_req(req, format!(
+                        "shape-violation: '{}' is not a valid xsd:{} for '{}'", value, datatype, prop
+                    )));
+                }
+            }
+        }
+
+        // Store uniqueness excludes every planned subject in its destination
+        // graph. Single write replaces its one subject; create-only add-batch
+        // separately rejects any planned identity already present. Final values
+        // are checked by seen_global/seen_within before the compact store read.
+        for (prop, partition) in &shape.unique_within {
+            let Some(value) = req.fields.get(prop) else { continue };
+            match req.edges.iter().find(|(p, _, _)| p == partition) {
+                Some((_, target_kind, target_name)) => {
+                    let partition_iri = mint(target_kind, target_name)
+                        .map_err(|e| WritePlanError::for_req(req, e))?;
+                    let key = (
+                        plan.graph.clone(), plan.class.clone(), prop.clone(), partition.clone(),
+                        partition_iri.clone(), value.clone(),
+                    );
+                    if let Some(first) = seen_within.insert(key, plan.identity.clone()) {
+                        witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
+                        return Err(WritePlanError::for_req(req, format!(
+                            "shape-violation: duplicate '{}' within '{}' inside this batch (also used by entity '{}'; chorus:uniqueWithin, from {})",
+                            prop, partition, first, ONTOLOGY_GRAPH
+                        )));
+                    }
+                    uniqueness_candidates.push(UniquenessCandidate {
+                        req,
+                        prop: prop.clone(),
+                        partition: Some(partition.clone()),
+                        graph: plan.graph.clone(),
+                        class: plan.class.clone(),
+                        partition_iri: Some(partition_iri),
+                        value: value.clone(),
+                    });
+                }
+                None => {
+                    witness(
+                        "model.refused",
+                        &[
+                            ("kind", req.kind.as_str()),
+                            ("name", req.name.as_str()),
+                            ("reason", "missing-uniqueness-partition"),
+                            ("field", prop.as_str()),
+                        ],
+                    );
+                    return Err(WritePlanError::for_req(
+                        req,
+                        format!(
+                            "shape-violation: '{}' declares chorus:uniqueWithin '{}' but entity '{}' has no '{}' edge — uniqueness cannot be scoped (fail-closed, from {})",
+                            prop, partition, plan.identity, partition, ONTOLOGY_GRAPH
+                        ),
+                    ));
+                }
+            }
+        }
+        for prop in &shape.unique_global {
+            let Some(value) = req.fields.get(prop) else { continue };
+            let key = (plan.graph.clone(), plan.class.clone(), prop.clone(), value.clone());
+            if let Some(first) = seen_global.insert(key, plan.identity.clone()) {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "uniqueness-violation"), ("field", prop)]);
+                return Err(WritePlanError::for_req(req, format!(
+                    "shape-violation: duplicate '{}' across all {} inside this batch (also used by entity '{}'; chorus:uniqueGlobal, from {})",
+                    prop, req.kind, first, ONTOLOGY_GRAPH
+                )));
+            }
+            uniqueness_candidates.push(UniquenessCandidate {
+                req,
+                prop: prop.clone(),
+                partition: None,
+                graph: plan.graph.clone(),
+                class: plan.class.clone(),
+                partition_iri: None,
+                value: value.clone(),
+            });
+        }
+
+    }
+
+    let uniqueness_conflicts =
+        prefetch_uniqueness_conflicts(store, &plans, &uniqueness_candidates)?;
+    if let Some(index) = uniqueness_conflicts.into_iter().next() {
+        let candidate = &uniqueness_candidates[index];
+        witness(
+            "model.refused",
+            &[
+                ("kind", candidate.req.kind.as_str()),
+                ("name", candidate.req.name.as_str()),
+                ("reason", "uniqueness-violation"),
+                ("field", candidate.prop.as_str()),
+            ],
+        );
+        let message = match &candidate.partition {
+            Some(partition) => format!(
+                "shape-violation: duplicate '{}' within '{}' (chorus:uniqueWithin, from {})",
+                candidate.prop, partition, ONTOLOGY_GRAPH
+            ),
+            None => format!(
+                "shape-violation: duplicate '{}' across all {} (chorus:uniqueGlobal, from {})",
+                candidate.prop, candidate.req.kind, ONTOLOGY_GRAPH
+            ),
+        };
+        return Err(WritePlanError::for_req(candidate.req, message));
+    }
+
+    for plan in &plans {
+        let req = plan.req;
+        let shape = &shapes[&plan.class];
+        for (prop, target_kind, target_name) in &req.edges {
+            let target = mint(target_kind, target_name)
+                .map_err(|e| WritePlanError::for_req(req, e))?;
+            let exists = batch_classes.contains_key(&target)
+                || external_targets.existing.contains(&target);
+            if !exists {
+                witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "unknown-target"), ("edge", prop)]);
+                return Err(WritePlanError::for_req(req, format!(
+                    "unknown-target: {} → <{}> exists neither in the store nor in this batch (referential integrity, fail-closed)",
+                    prop, target
+                )));
+            }
+            if let Some(want_class) = shape.edge_classes.get(prop) {
+                let wanted = format!("{}{}", NS, want_class);
+                let typed = if let Some(actual) = batch_classes.get(&target) {
+                    actual == &wanted
+                } else {
+                    external_targets.typed.contains(&(target.clone(), wanted))
+                };
+                if !typed {
+                    witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("edge", prop)]);
+                    return Err(WritePlanError::for_req(req, format!(
+                        "shape-violation: {} → <{}> is not a {} (sh:class edge-target-type, fail-closed)",
+                        prop, target, want_class
+                    )));
+                }
             }
         }
     }
 
-    // Idempotent: replace the subject's triples wholesale in one UPDATE.
-    // KNOWN v2 CONSTRAINT (named in the 2026-06-11 authored/derived convergence,
-    // #3345): replace-subject semantics assume ONE writer per subject. When the
-    // two-lane design lands (authored via domains API, derived via crawler), a
-    // full rewrite on a shared subject would wipe the other lane's triples —
-    // v2 scopes updates per-lane/per-property. Single-writer v1 is safe.
-    let label_extra = if req.fields.contains_key("label") {
-        String::new()
-    } else {
-        format!("<{}> <{}label> \"{}\" .\n", subject, NS, esc(&req.name))
-    };
+    Ok((plans, uniqueness_candidates))
+}
 
-    // Audit envelope (Jeff's ruling, 2026-06-11: one write path = unforgeable
-    // audit): dcterms created/modified/creator stamped on every write.
-    // created survives rewrites — read the existing value before the replace.
+/// Resolve pre-existing batch identities from the model in one bounded SELECT
+/// per destination graph. Subjects come from the DAL mint in `PlannedWrite`,
+/// never from a caller's raw name, so prefixed kinds and normalization aliases
+/// cannot evade create-only conflict detection. Any read error propagates and
+/// refuses the batch before mutation.
+fn existing_batch_subjects(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+) -> Result<BTreeSet<String>, WritePlanError> {
+    let mut by_graph: BTreeMap<&str, Vec<&PlannedWrite<'_>>> = BTreeMap::new();
+    for plan in plans {
+        by_graph.entry(plan.graph.as_str()).or_default().push(plan);
+    }
+    let mut existing = BTreeSet::new();
+    for (graph, group) in by_graph {
+        let values = group
+            .iter()
+            .map(|plan| format!("<{}>", plan.subject))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let rows = store
+            .select_v(&format!(
+                "SELECT DISTINCT ?v WHERE {{ VALUES ?candidate {{ {values} }} GRAPH <{graph}> {{ ?candidate ?p ?o }} BIND(STR(?candidate) AS ?v) }}",
+                values = values,
+                graph = graph,
+            ))
+            .map_err(|e| WritePlanError::for_req(group[0].req, e))?;
+        existing.extend(rows);
+    }
+    Ok(existing)
+}
+
+/// Load every existing dcterms:created value in one SELECT per target graph.
+/// This preserves the single-write upsert's created-once audit rule; create-only
+/// `add_batch` deliberately skips this read because every subject must be new.
+fn existing_created(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+) -> Result<BTreeMap<String, String>, WritePlanError> {
     const DCT: &str = "http://purl.org/dc/terms/";
-    let now = now_iso();
-    // #3651 — the creator stamp IS the verified identity. No env re-read, no
-    // "system" default: an unverified caller can't reach this line at all.
-    let creator = id.role().to_string();
-    let existing_created = store
-        .select_v(&format!(
-            "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
-            g = g, s = subject, d = DCT
-        ))?
-        .into_iter()
-        .next();
-    let created = existing_created.unwrap_or_else(|| now.clone());
-    let stamps = format!(
-        "<{s}> <{d}created> \"{c}\" .\n<{s}> <{d}modified> \"{m}\" .\n<{s}> <{d}creator> \"{cr}\" .\n",
-        s = subject, d = DCT, c = esc(&created), m = esc(&now), cr = esc(&creator)
-    );
+    let mut by_graph: BTreeMap<&str, Vec<&PlannedWrite<'_>>> = BTreeMap::new();
+    for plan in plans {
+        by_graph.entry(plan.graph.as_str()).or_default().push(plan);
+    }
+    let mut found = BTreeMap::new();
+    for (graph, group) in by_graph {
+        let values = group.iter().map(|p| format!("<{}>", p.subject)).collect::<Vec<_>>().join(" ");
+        let rows = store.select_v(&format!(
+            "SELECT ?v WHERE {{ VALUES ?s {{ {values} }} GRAPH <{graph}> {{ ?s <{dct}created> ?created }} BIND(CONCAT(STR(?s), '|', STR(?created)) AS ?v) }}",
+            values = values, graph = graph, dct = DCT
+        )).map_err(|e| WritePlanError::for_req(group[0].req, e))?;
+        for row in rows {
+            if let Some((subject, created)) = row.split_once('|') {
+                found.insert(subject.to_string(), created.to_string());
+            }
+        }
+    }
+    Ok(found)
+}
 
-    store.update(&format!(
-        "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\nINSERT DATA {{ GRAPH <{g}> {{ {t}{l}{a} }} }}",
-        g = g, s = subject, t = turtle, l = label_extra, a = stamps
-    ))?;
-    let (nf, ne) = (req.fields.len().to_string(), req.edges.len().to_string());
-    witness("model.write", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("iri", subject.as_str()), ("fields", nf.as_str()), ("edges", ne.as_str())]);
+/// Prove that the conditional create-only update was the writer that produced
+/// every requested subject. `created` and `modified` are stamped with the same
+/// nanosecond-resolution value only by this commit, so the proof needs no
+/// private marker predicate or proof graph. A missing row means the atomic
+/// FILTER NOT EXISTS branch did not run (normally an identity race).
+fn prove_create_only_commit(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+    uniqueness_candidates: &[UniquenessCandidate<'_>],
+    creator: &str,
+    stamp: &str,
+) -> R<()> {
+    const DCT: &str = "http://purl.org/dc/terms/";
+    let values = plans
+        .iter()
+        .map(|plan| format!("(<{}> <{}>)", plan.graph, plan.subject))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let query = format!(
+        "# athena-model create-only outcome proof\n\
+         SELECT DISTINCT ?v WHERE {{ \
+           VALUES (?candidateGraph ?candidate) {{ {values} }} \
+           GRAPH ?candidateGraph {{ \
+             ?candidate <{dct}created> \"{stamp}\" ; \
+                        <{dct}modified> \"{stamp}\" ; \
+                        <{dct}creator> \"{creator}\" . \
+           }} \
+           BIND(STR(?candidate) AS ?v) \
+         }}",
+        values = values,
+        dct = DCT,
+        stamp = esc(stamp),
+        creator = esc(creator),
+    );
+    let rows = store.select_v(&query).map_err(|error| {
+        format!(
+            "create-only-outcome-unknown: proof read failed for entity '{}': {}",
+            plans[0].identity, error
+        )
+    })?;
+    let proven = rows.into_iter().collect::<BTreeSet<_>>();
+    if plans.iter().all(|plan| proven.contains(&plan.subject)) {
+        return Ok(());
+    }
+
+    // The atomic WHERE may have refused either an identity race or a
+    // different-subject uniqueness race. Diagnose only after proof is absent;
+    // every diagnostic read is fail-closed because success is no longer an
+    // available outcome.
+    let existing = existing_batch_subjects(store, plans).map_err(|error| {
+        format!(
+            "create-only-outcome-unknown: identity-conflict diagnosis failed for entity '{}': {}",
+            error.identity, error.message
+        )
+    })?;
+    if let Some(plan) = plans.iter().find(|plan| existing.contains(&plan.subject)) {
+        return Err(format!(
+            "entity '{}': already-exists: atomic create did not insert <{}> in <{}> (commit outcome proof absent; concurrent identity race)",
+            plan.identity, plan.subject, plan.graph
+        ));
+    }
+
+    let uniqueness_conflicts = prefetch_uniqueness_conflicts(
+        store,
+        plans,
+        uniqueness_candidates,
+    )
+    .map_err(|error| {
+        format!(
+            "create-only-outcome-unknown: uniqueness-conflict diagnosis failed for entity '{}': {}",
+            error.identity, error.message
+        )
+    })?;
+    if let Some(index) = uniqueness_conflicts.into_iter().next() {
+        let candidate = &uniqueness_candidates[index];
+        let scope = match &candidate.partition {
+            Some(partition) => format!("within '{}'", partition),
+            None => format!("across all {}", candidate.req.kind),
+        };
+        return Err(format!(
+            "entity '{}:{}': concurrent-uniqueness-conflict: duplicate '{}' {} appeared before the atomic create committed (fail-closed, from {})",
+            candidate.req.kind,
+            candidate.req.name,
+            candidate.prop,
+            scope,
+            ONTOLOGY_GRAPH
+        ));
+    }
+
+    let missing = plans
+        .iter()
+        .find(|plan| !proven.contains(&plan.subject))
+        .expect("proof is incomplete");
+    Err(format!(
+        "create-only-outcome-unknown: entity '{}': conditional insert has no audit proof and no current identity/uniqueness conflict; refusing to report success",
+        missing.identity
+    ))
+}
+
+/// Commit prevalidated entity plans in exactly one Store::update. Witnessing is
+/// deliberately owned by the caller after this returns: single-add preserves
+/// its entity witness, while add-batch emits one aggregate rather than spawning
+/// chorus-log once per member inside the request's latency.
+fn commit_writes(
+    store: &dyn Store,
+    plans: &[PlannedWrite<'_>],
+    uniqueness_candidates: &[UniquenessCandidate<'_>],
+    id: &Identity,
+    replace_existing: bool,
+) -> R<Vec<String>> {
+    const DCT: &str = "http://purl.org/dc/terms/";
+    let created_by_subject = if replace_existing {
+        existing_created(store, plans).map_err(|e| e.message)?
+    } else {
+        BTreeMap::new()
+    };
+    let now = if replace_existing { now_iso() } else { create_only_stamp() };
+    let creator = id.role();
+    let mut sparql = String::new();
+    let mut inserts: BTreeMap<&str, String> = BTreeMap::new();
+
+    for plan in plans {
+        if replace_existing {
+            sparql.push_str(&format!(
+                "DELETE WHERE {{ GRAPH <{graph}> {{ <{subject}> ?p ?o }} }} ;\n",
+                graph = plan.graph, subject = plan.subject
+            ));
+        }
+        let label = if plan.req.fields.contains_key("label") {
+            String::new()
+        } else {
+            format!("<{}> <{}label> \"{}\" .\n", plan.subject, NS, esc(&plan.req.name))
+        };
+        let created = created_by_subject.get(&plan.subject).unwrap_or(&now);
+        let stamps = format!(
+            "<{s}> <{d}created> \"{c}\" .\n<{s}> <{d}modified> \"{m}\" .\n<{s}> <{d}creator> \"{creator}\" .\n",
+            s = plan.subject, d = DCT, c = esc(created), m = esc(&now), creator = esc(creator)
+        );
+        let body = inserts.entry(plan.graph.as_str()).or_default();
+        body.push_str(&plan.turtle);
+        body.push_str(&label);
+        body.push_str(&stamps);
+    }
+    if replace_existing {
+        sparql.push_str("INSERT DATA {\n");
+    } else {
+        sparql.push_str("INSERT {\n");
+    }
+    for (graph, body) in inserts {
+        sparql.push_str(&format!("GRAPH <{}> {{ {} }}\n", graph, body));
+    }
+    if replace_existing {
+        sparql.push('}');
+    } else {
+        let candidates = plans
+            .iter()
+            .map(|plan| format!("(<{}> <{}>)", plan.graph, plan.subject))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let uniqueness_guard = if uniqueness_candidates.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "# athena-model atomic uniqueness guard\n\
+                 FILTER NOT EXISTS {{ {} }}",
+                uniqueness_conflict_pattern(uniqueness_candidates, None)
+            )
+        };
+        sparql.push_str(&format!(
+            "}}\nWHERE {{ \
+               FILTER NOT EXISTS {{ \
+                 VALUES (?existingGraph ?existingSubject) {{ {candidates} }} \
+                 GRAPH ?existingGraph {{ ?existingSubject ?existingPredicate ?existingObject }} \
+               }} \
+               {uniqueness_guard} \
+             }}",
+            candidates = candidates,
+            uniqueness_guard = uniqueness_guard,
+        ));
+    }
+    store.update(&sparql)?;
+    if !replace_existing {
+        prove_create_only_commit(store, plans, uniqueness_candidates, creator, &now)?;
+    }
+    Ok(plans.iter().map(|p| p.subject.clone()).collect())
+}
+
+/// Full governed single write. This is a one-element call through the same
+/// planner and committer as `add_batch`, preserving the existing public errors,
+/// replace-subject semantics, and per-entity audit witness.
+pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
+    let (plans, uniqueness_candidates) =
+        plan_writes(store, std::slice::from_ref(req)).map_err(|e| e.message)?;
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true)?;
+    let subject = subjects.into_iter().next().expect("one request plans one subject");
+    let fields = req.fields.len().to_string();
+    let edges = req.edges.len().to_string();
+    witness("model.write", &[
+        ("kind", req.kind.as_str()), ("name", req.name.as_str()),
+        ("iri", subject.as_str()), ("fields", fields.as_str()), ("edges", edges.as_str()),
+    ]);
     Ok(subject)
+}
+
+/// Governed entity batch: validate the complete final state, authoritatively
+/// prove every minted subject absent, then insert all subjects in one update.
+/// This is deliberately NOT `seed_multi`: identities are minted from
+/// `(kind,name)`, caller IRIs are impossible, add's label/audit semantics are
+/// retained, and no migration provenance/content-hash is added.
+pub fn add_batch(store: &dyn Store, reqs: &[WriteReq], id: &Identity) -> R<AddBatchReport> {
+    if reqs.is_empty() {
+        return Err("add-batch: entities must contain at least one entity".into());
+    }
+    let (plans, uniqueness_candidates) =
+        plan_writes(store, reqs).map_err(WritePlanError::for_batch)?;
+    let existing = existing_batch_subjects(store, &plans).map_err(WritePlanError::for_batch)?;
+    if let Some(plan) = plans.iter().find(|plan| existing.contains(&plan.subject)) {
+        return Err(WritePlanError::for_req(
+            plan.req,
+            format!(
+                "already-exists: <{}> already exists in <{}> — add-batch is create-only",
+                plan.subject, plan.graph
+            ),
+        )
+        .for_batch());
+    }
+    let identities = plans.iter().map(|p| p.identity.as_str()).collect::<Vec<_>>().join(", ");
+    // Create-only commit: never DELETE a subject. The model-authoritative read
+    // above has proved every minted identity absent in its destination graph.
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, false)
+        .map_err(|e| format!("add-batch: commit failed for [{}]: {}", identities, e))?;
+    let entities = subjects.len().to_string();
+    let fields = reqs.iter().map(|req| req.fields.len()).sum::<usize>().to_string();
+    let edges = reqs.iter().map(|req| req.edges.len()).sum::<usize>().to_string();
+    let graphs = plans.iter().map(|plan| plan.graph.as_str()).collect::<BTreeSet<_>>().len().to_string();
+    let uniqueness_checks = uniqueness_candidates.len().to_string();
+    witness("model.add-batch", &[
+        ("entities", entities.as_str()), ("fields", fields.as_str()),
+        ("edges", edges.as_str()), ("graphs", graphs.as_str()),
+        ("uniqueness_checks", uniqueness_checks.as_str()), ("creator", id.role()),
+    ]);
+    Ok(AddBatchReport { subjects })
 }
 
 /// An edge property local-name must be camelCase (ADR-040 Level 4) — the same law
 /// to_turtle enforces on fields, applied to incremental edge ops.
-fn check_edge_prop(prop: &str) -> R<()> {
+fn check_property_local(prop: &str) -> R<()> {
     let ok = !prop.is_empty()
         && prop.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false)
         && prop.chars().all(|c| c.is_ascii_alphanumeric());
     if !ok {
-        return Err(format!("bad-property: '{}' — edge properties are camelCase (ADR-040 Level 4)", prop));
+        return Err(format!(
+            "bad-property: '{}' — property local names are strict camelCase ASCII (ADR-040 Level 4)",
+            prop
+        ));
     }
     Ok(())
 }
@@ -1039,7 +1811,7 @@ pub fn set_field(
     graph: Option<&str>,
     _id: &Identity,
 ) -> R<String> {
-    check_edge_prop(prop)?; // same camelCase law (ADR-040 Level 4) for field local-names
+    check_property_local(prop)?; // same camelCase law (ADR-040 Level 4) for field local-names
     let subject = mint(kind, name)?;
     if !store.ask(&format!("ASK {{ GRAPH ?g {{ <{}> ?p ?o }} }}", subject))? {
         witness("model.refused", &[("kind", kind), ("name", name), ("reason", "not-found"), ("field", prop)]);
@@ -1076,7 +1848,12 @@ pub fn set_field(
         let part_iri = match part_iri {
             Some(t) => t,
             None => {
-                witness("model.uniqueness.skipped", &[("kind", kind), ("name", name), ("field", prop), ("missing", part.as_str())]);
+                witness("model.refused", &[
+                    ("kind", kind),
+                    ("name", name),
+                    ("reason", "missing-uniqueness-partition"),
+                    ("field", prop),
+                ]);
                 return Err(format!(
                     "missing-partition: <{}> has no {} edge — cannot scope uniqueness for {} (set the {} edge first via link)",
                     subject, part, prop, part
@@ -1140,7 +1917,7 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
 /// (fail-closed). Witnesses the link. The governed replacement for athena-make's raw
 /// build_edge_update.
 pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
-    check_edge_prop(prop)?;
+    check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
     for iri in [&subject, &target] {
@@ -1163,7 +1940,7 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// removing an absent edge is a no-op success (removal toward absence is safe).
 /// The governed replacement for athena-make's raw edge-delete.
 pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
-    check_edge_prop(prop)?;
+    check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
@@ -2077,6 +2854,25 @@ mod tests {
     }
 
     #[test]
+    fn create_only_proof_stamps_are_unique_and_datetime_compatible() {
+        let stamps = (0..128).map(|_| create_only_stamp()).collect::<BTreeSet<_>>();
+        assert_eq!(stamps.len(), 128, "the process-local sequence prevents same-tick collisions");
+        let encoded_pid = format!("{:010}", std::process::id());
+        for stamp in stamps {
+            if stamp.starts_with("epoch:") {
+                continue; // fail-soft branch when the host lacks `date`
+            }
+            let fraction = stamp
+                .strip_suffix('Z')
+                .and_then(|value| value.rsplit_once('.').map(|(_, fraction)| fraction))
+                .expect("create-only stamp is an RFC3339/xsd:dateTime value");
+            assert_eq!(fraction.len(), 39, "nanos + PID + u64 sequence are fixed width");
+            assert!(fraction.chars().all(|c| c.is_ascii_digit()));
+            assert_eq!(&fraction[9..19], encoded_pid, "the process identity is encoded");
+        }
+    }
+
+    #[test]
     fn camelcase_property_refused() {
         let mut req = WriteReq { kind: "role".into(), name: "x".into(), ..Default::default() };
         req.fields.insert("OwnedBy".into(), "y".into());
@@ -2087,6 +2883,9 @@ mod tests {
     struct StubStore {
         existing: Vec<String>,
         required: Vec<String>,
+        unique_within: Vec<String>,
+        update_error: Option<String>,
+        proof_missing: bool,
         pub updates: std::cell::RefCell<Vec<String>>,
     }
     impl Store for StubStore {
@@ -2094,15 +2893,46 @@ mod tests {
             Ok(self.existing.iter().any(|e| sparql.contains(e.as_str())))
         }
         fn select_v(&self, sparql: &str) -> R<Vec<String>> {
-            if sparql.contains("sh:minCount") {
+            if sparql.contains("# athena-model create-only outcome proof") {
+                if self.proof_missing {
+                    return Ok(vec![]);
+                }
+                let block = sparql
+                    .split_once("VALUES (?candidateGraph ?candidate) {")
+                    .and_then(|(_, tail)| tail.split_once('}'))
+                    .map(|(values, _)| values)
+                    .unwrap_or("");
+                Ok(block
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .chunks(2)
+                    .filter_map(|pair| pair.get(1))
+                    .map(|term| {
+                        term.trim_matches(|c| matches!(c, '<' | '>' | '(' | ')'))
+                            .to_string()
+                    })
+                    .collect())
+            } else if sparql.contains("VALUES ?target") {
+                Ok(self
+                    .existing
+                    .iter()
+                    .filter(|iri| sparql.contains(iri.as_str()))
+                    .map(|iri| format!("{}|", iri))
+                    .collect())
+            } else if sparql.contains("sh:minCount") {
                 Ok(self.required.clone())
+            } else if sparql.contains("uniqueWithin") {
+                Ok(self.unique_within.clone())
             } else {
                 Ok(vec![])
             }
         }
         fn update(&self, sparql: &str) -> R<()> {
             self.updates.borrow_mut().push(sparql.to_string());
-            Ok(())
+            match &self.update_error {
+                Some(error) => Err(error.clone()),
+                None => Ok(()),
+            }
         }
     }
 
@@ -2114,8 +2944,86 @@ mod tests {
         StubStore {
             existing: existing.iter().map(|s| s.to_string()).collect(),
             required: required.iter().map(|s| s.to_string()).collect(),
+            unique_within: Vec::new(),
+            update_error: None,
+            proof_missing: false,
             updates: Default::default(),
         }
+    }
+
+    fn take_test_witnesses() -> Vec<String> {
+        TEST_WITNESSES.with(|events| std::mem::take(&mut *events.borrow_mut()))
+    }
+
+    #[test]
+    fn large_add_batch_emits_one_aggregate_witness_after_commit() {
+        let _ = take_test_witnesses();
+        let store = stub(&[], &[]);
+        let reqs = (0..2_000)
+            .map(|index| WriteReq {
+                kind: "role".into(),
+                name: format!("batch-member-{index}"),
+                ..Default::default()
+            })
+            .collect::<Vec<_>>();
+
+        let report = add_batch(&store, &reqs, &tid()).expect("large create-only batch commits");
+
+        assert_eq!(report.subjects.len(), 2_000);
+        assert_eq!(store.updates.borrow().len(), 1);
+        assert_eq!(
+            take_test_witnesses(),
+            vec!["model.add-batch"],
+            "one witness invocation equals one chorus-log subprocess in production",
+        );
+    }
+
+    #[test]
+    fn single_write_refuses_missing_uniqueness_partition_without_update_or_success_witness() {
+        let _ = take_test_witnesses();
+        let mut store = stub(&[], &[]);
+        store.unique_within = vec!["rank|inGroup".into()];
+        let mut req = WriteReq { kind: "domain".into(), name: "single".into(), ..Default::default() };
+        req.fields.insert("rank".into(), "1".into());
+
+        let err = write(&store, &req, &tid())
+            .expect_err("uniqueWithin without its partition edge must fail closed");
+
+        assert!(err.contains("uniqueWithin") && err.contains("inGroup") && err.contains("no 'inGroup' edge"), "{err}");
+        assert_eq!(take_test_witnesses(), vec!["model.refused"]);
+        assert!(store.updates.borrow().is_empty(), "refusal happens before any store update");
+    }
+
+    #[test]
+    fn add_batch_emits_no_success_witness_when_commit_fails() {
+        let _ = take_test_witnesses();
+        let mut store = stub(&[], &[]);
+        store.update_error = Some("fuseki-update-failed".into());
+
+        let err = add_batch(&store, &[WriteReq {
+            kind: "role".into(),
+            name: "never-committed".into(),
+            ..Default::default()
+        }], &tid()).expect_err("failed update cannot produce a success witness");
+
+        assert!(err.contains("fuseki-update-failed"), "store cause survives: {err}");
+        assert!(take_test_witnesses().is_empty(), "success witness is strictly post-commit");
+    }
+
+    #[test]
+    fn add_batch_emits_no_success_witness_without_commit_outcome_proof() {
+        let _ = take_test_witnesses();
+        let mut store = stub(&[], &[]);
+        store.proof_missing = true;
+
+        let err = add_batch(&store, &[WriteReq {
+            kind: "role".into(),
+            name: "raced".into(),
+            ..Default::default()
+        }], &tid()).expect_err("conditional no-op cannot produce a success witness");
+
+        assert!(err.contains("create-only-outcome-unknown") && err.contains("role:raced"), "{err}");
+        assert!(take_test_witnesses().is_empty(), "success witness requires outcome proof");
     }
 
     // ── #3573 batch-op security guards (the door's reason to exist) ──
@@ -2381,6 +3289,41 @@ mod tests {
         assert!(ups[0].contains("DELETE DATA"), "single-triple removal");
         assert!(ups[0].contains("partOf"));
     }
+
+    // ── Phase A1 add-batch stdin contract ─────────────────────────────────
+
+    #[test]
+    fn add_batch_ndjson_decodes_write_reqs_and_tuple_edges() {
+        let input = concat!(
+            "{\"kind\":\"product\",\"name\":\"Athena\",\"fields\":{\"vision\":\"Legible \\\"truth\\\"\"}}\n",
+            "\n",
+            "{\"kind\":\"domain\",\"name\":\"Tests\",\"edges\":[[\"partOf\",\"product\",\"Athena\"]],\"graph\":\"urn:chorus:domains:tests\"}\n",
+        );
+        let reqs = parse_add_batch_ndjson(input).expect("valid NDJSON parses");
+        assert_eq!(reqs.len(), 2);
+        assert_eq!(reqs[0].fields["vision"], "Legible \"truth\"");
+        assert_eq!(reqs[1].edges, vec![("partOf".into(), "product".into(), "Athena".into())]);
+        assert_eq!(reqs[1].graph.as_deref(), Some("urn:chorus:domains:tests"));
+    }
+
+    #[test]
+    fn add_batch_ndjson_refuses_unknown_fields_with_record_line() {
+        let input = concat!(
+            "{\"kind\":\"role\",\"name\":\"one\"}\n",
+            "{\"kind\":\"role\",\"name\":\"two\",\"fileds\":{}}\n",
+        );
+        let err = parse_add_batch_ndjson(input).unwrap_err();
+        assert!(err.contains("line 2"), "record line is named: {err}");
+        assert!(err.contains("unknown field `fileds`"), "typo is refused, not dropped: {err}");
+    }
+
+    #[test]
+    fn add_batch_ndjson_refuses_wrong_edge_tuple_cardinality() {
+        let input = "{\"kind\":\"domain\",\"name\":\"tests\",\"edges\":[[\"partOf\",\"product\"]]}\n";
+        let err = parse_add_batch_ndjson(input).unwrap_err();
+        assert!(err.contains("line 1"), "{err}");
+        assert!(err.contains("tuple of size 3"), "tuple shape is typed: {err}");
+    }
 }
 
 #[cfg(test)]
@@ -2403,6 +3346,13 @@ mod webid_uniqueness_3838 {
         fn select_v(&self, sparql: &str) -> R<Vec<String>> {
             // The shape reader asks three separate questions; answer each one
             // the way security-model-3618.ttl now does.
+            if sparql.contains("# athena-model uniqueness candidates") {
+                return Ok(if self.taken.iter().any(|value| sparql.contains(value)) {
+                    vec!["0".into()]
+                } else {
+                    vec![]
+                });
+            }
             if sparql.contains("chorus:uniqueGlobal true") {
                 return Ok(vec!["webId".into()]);
             }

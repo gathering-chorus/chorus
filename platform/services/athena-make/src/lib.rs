@@ -109,6 +109,8 @@ fn json_unescape(s: &str) -> String {
             continue;
         }
         match chars.next() {
+            Some('b') => out.push('\u{0008}'),
+            Some('f') => out.push('\u{000C}'),
             Some('n') => out.push('\n'),
             Some('r') => out.push('\r'),
             Some('t') => out.push('\t'),
@@ -274,6 +276,7 @@ pub struct RouteTable {
     pub routes: Vec<String>,     // human-readable route list (the artifact)
     pub secured: Vec<String>,    // #3414 — surfaces requiring auth, PROJECTED from the OWL annotation
     pub mandatory: Vec<String>,  // #3468 — the completeness FLOOR: properties at sh:severity sh:Violation, PROJECTED from the shape
+    pub write_required: Vec<String>, // every sh:minCount>=1 property, including required edges; drives create contracts
     pub repo_target: String,     // #3488 — repo land location for generated artifacts, from chorus:repoTarget (or class-keyed default)
     pub exposure: Vec<(String, String)>, // #3506/ADR-048 §3 — field localname → exposure level (public|internal|secret), PROJECTED from chorus:exposure. Unmarked = hidden (fail-closed).
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
@@ -577,6 +580,13 @@ pub fn generate_verb(verb_local: &str) -> R<String> {
 /// wires into verify() separately (mirrors project_secured / field_exposed).
 pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
     scope.iter().any(|g| g == target_graph)
+}
+
+/// Authentication alone is not write authority. A model Principal may exist
+/// without a holdsRole edge (guest/service identity); such a principal gets an
+/// empty resolved agent id and must never create an entity with ownedBy="".
+pub fn resolved_write_role(role: &str) -> bool {
+    !role.trim().is_empty()
 }
 
 /// #3567 SPIKE — the `generate-dal` emitter: project a STANDALONE, committable,
@@ -937,13 +947,24 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     // READ-ONLY completeness GAUGE (the migration thermometer) — it MEASURES how
     // far an instance sits below the floor; the floor itself is ENFORCED at write
     // by the DAL, not here (athena-make is read-only; writes delegate to the DAL).
-    // Edge properties (sh:class: ownedBy/atStep/membership) are excluded so the
-    // gauge measures the prose sections, not edges that have their own write paths.
+    // Edge properties (sh:class: ownedBy/atStep/membership) are excluded from the
+    // human completeness gauge, but retained in `write_required`: create bodies
+    // must advertise the same floor the DAL enforces, including required edges.
     let mq = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) FILTER NOT EXISTS {{ ?p sh:class ?cl }} BIND(REPLACE(STR(?path), '.*#', '') AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?cl), 'edge', 'field')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
-    let mut mandatory: Vec<String> = select_v(&sparql_json(&mq)?);
+    let required_rows = select_v(&sparql_json(&mq)?);
+    let mut write_required: Vec<String> = required_rows
+        .iter()
+        .filter_map(|row| row.split_once('|').map(|(name, _)| name.to_string()))
+        .collect();
+    write_required.sort();
+    write_required.dedup();
+    let mut mandatory: Vec<String> = required_rows
+        .iter()
+        .filter_map(|row| row.strip_suffix("|field").map(str::to_string))
+        .collect();
     mandatory.sort();
     mandatory.dedup();
     // #3488 — resolve the repo land location as a PROJECTION of the class's
@@ -1024,7 +1045,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "unclassified".to_string());
     routes.extend(tree_routes(&plural, &tree_edges));
-    Ok(RouteTable { class, fields, routes, secured, mandatory, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
+    Ok(RouteTable { class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -1085,7 +1106,7 @@ pub fn build_tree(root: &str, edges: &[(String, String)], ranks: &[(String, i64)
 /// unit-pinned. (The live execution + authZ + shape-rejection are the handler
 /// increment; this is the contract.)
 pub fn write_routes(plural: &str) -> Vec<String> {
-    vec![
+    let mut routes = vec![
         format!("POST /{}", plural),                  // create entity
         format!("PUT /{}/:name", plural),             // replace entity
         format!("DELETE /{}/:name", plural),          // delete entity
@@ -1095,7 +1116,14 @@ pub fn write_routes(plural: &str) -> Vec<String> {
         format!("DELETE /{}/:name/contains", plural), // remove contains edge
         format!("POST /{}/:name/has-child", plural),  // add has-child edge
         format!("DELETE /{}/:name/has-child", plural),// remove has-child edge
-    ]
+    ];
+    // Phase A exposes the bulk transport only for TestResult. The DAL primitive
+    // is entity-generic, but widening the HTTP mutation surface for every class
+    // is a separate contract change.
+    if plural == "testresults" {
+        routes.insert(1, format!("POST /{}/batch", plural));
+    }
+    routes
 }
 
 /// #3454 AC5 — the typed write-error taxonomy. ONE place maps a write outcome to
@@ -1132,6 +1160,7 @@ pub fn write_status(outcome: &str) -> (u16, &'static str) {
 #[derive(Debug, PartialEq, Eq)]
 pub enum WriteOp {
     CreateEntity,
+    CreateBatch,
     ReplaceEntity { name: String },
     DeleteEntity { name: String },
     AddEdge { name: String, edge: String },
@@ -1148,6 +1177,9 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
     }
     match (method, parts.len()) {
         ("POST", 1) => Some(WriteOp::CreateEntity),
+        ("POST", 2) if parts[1] == "batch" && plural == "testresults" => {
+            Some(WriteOp::CreateBatch)
+        }
         ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
         ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
@@ -1181,21 +1213,230 @@ pub fn authz_allows(caller_role: &str, owned_by: Option<&str>) -> bool {
 }
 
 /// Extract a JSON string field by key: { "<key>": "<value>" }. Minimal zero-dep;
-/// values are validated (is_safe_local for names) or SPARQL-literal-escaped
-/// (sparql_lit for property values) downstream, so escape-handling isn't here.
+/// values are decoded with the same escape-aware scanner used by the SPARQL JSON
+/// reader, then validated (names) or re-escaped at their output boundary.
 pub fn json_field(body: &str, key: &str) -> Option<String> {
     let needle = format!("\"{}\"", key);
     let i = body.find(&needle)? + needle.len();
     let after_colon = &body[i..][body[i..].find(':')? + 1..];
     let q = after_colon.find('"')? + 1;
     let val = &after_colon[q..];
-    let end = val.find('"')?;
-    Some(val[..end].to_string())
+    let raw = scan_json_string(val)?;
+    Some(json_unescape(raw))
+}
+
+/// Strict parser for the flat string-valued objects accepted by create and
+/// create-batch. The API deliberately has no general JSON dependency, but the
+/// write door still has to enforce JSON grammar before it projects a request
+/// into trusted NDJSON. In particular, missing commas, duplicate keys, unknown
+/// escapes, non-string values, and trailing content are refusals rather than
+/// inputs that a substring extractor can silently normalize.
+fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, String>> {
+    fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
+        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\r' | b'\n') {
+            i += 1;
+        }
+        i
+    }
+
+    fn string_at(input: &str, i: &mut usize) -> R<String> {
+        let bytes = input.as_bytes();
+        if bytes.get(*i) != Some(&b'"') {
+            return Err("expected a JSON string".to_string());
+        }
+        *i += 1;
+        let start = *i;
+        while *i < bytes.len() {
+            match bytes[*i] {
+                b'"' => {
+                    let raw = &input[start..*i];
+                    *i += 1;
+                    return Ok(json_unescape(raw));
+                }
+                b'\\' => {
+                    *i += 1;
+                    let Some(&escape) = bytes.get(*i) else {
+                        return Err("unterminated JSON escape".to_string());
+                    };
+                    match escape {
+                        b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't' => {
+                            *i += 1;
+                        }
+                        b'u' => {
+                            if *i + 4 >= bytes.len()
+                                || !bytes[*i + 1..=*i + 4].iter().all(u8::is_ascii_hexdigit)
+                            {
+                                return Err("invalid JSON unicode escape".to_string());
+                            }
+                            *i += 5;
+                        }
+                        _ => return Err("invalid JSON escape".to_string()),
+                    }
+                    continue;
+                }
+                c if c < 0x20 => return Err("unescaped control character in JSON string".to_string()),
+                _ => *i += 1,
+            }
+        }
+        Err("unterminated JSON string".to_string())
+    }
+
+    let bytes = body.as_bytes();
+    let mut i = skip_ws(bytes, 0);
+    if bytes.get(i) != Some(&b'{') {
+        return Err("create body must be a JSON object".to_string());
+    }
+    i += 1;
+    let mut out = std::collections::BTreeMap::new();
+    loop {
+        i = skip_ws(bytes, i);
+        if bytes.get(i) == Some(&b'}') {
+            i = skip_ws(bytes, i + 1);
+            return if i == bytes.len() {
+                Ok(out)
+            } else {
+                Err("create JSON object has trailing content".to_string())
+            };
+        }
+        let key = string_at(body, &mut i)?;
+        i = skip_ws(bytes, i);
+        if bytes.get(i) != Some(&b':') {
+            return Err(format!("create property '{}' must be followed by ':'", key));
+        }
+        i = skip_ws(bytes, i + 1);
+        let value = string_at(body, &mut i)
+            .map_err(|e| format!("create property '{}' must be a JSON string ({})", key, e))?;
+        if out.insert(key.clone(), value).is_some() {
+            return Err(format!("create property '{}' appears more than once", key));
+        }
+        i = skip_ws(bytes, i);
+        match bytes.get(i) {
+            Some(b',') => {
+                i = skip_ws(bytes, i + 1);
+                if bytes.get(i) == Some(&b'}') {
+                    return Err("create JSON object must not have a trailing comma".to_string());
+                }
+            }
+            Some(b'}') => {
+                i = skip_ws(bytes, i + 1);
+                return if i == bytes.len() {
+                    Ok(out)
+                } else {
+                    Err("create JSON object has trailing content".to_string())
+                };
+            }
+            Some(_) => return Err("create JSON properties must be separated by ','".to_string()),
+            None => return Err("create JSON object is not closed".to_string()),
+        }
+    }
 }
 
 /// The edge target name from a write body: { "target": "<name>" }.
 pub fn parse_body_target(body: &str) -> Option<String> {
     json_field(body, "target")
+}
+
+/// Split one JSON array whose elements must be objects, preserving each object
+/// as an exact source slice. This is deliberately string/escape/depth-aware: a
+/// property value containing `},{`, an escaped quote, or a nested object/array
+/// can never fabricate an entity boundary. Full property validation remains in
+/// the same create preparation used by the single-entity route.
+pub fn split_json_array_objects(body: &str) -> R<Vec<&str>> {
+    fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
+        while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\r' | b'\n') {
+            i += 1;
+        }
+        i
+    }
+
+    let bytes = body.as_bytes();
+    let mut i = skip_ws(bytes, 0);
+    if bytes.get(i) != Some(&b'[') {
+        return Err("batch body must be a JSON array of objects".to_string());
+    }
+    i += 1;
+    let mut out = Vec::new();
+    loop {
+        i = skip_ws(bytes, i);
+        if i >= bytes.len() {
+            return Err("batch JSON array is not closed".to_string());
+        }
+        if bytes[i] == b']' {
+            i = skip_ws(bytes, i + 1);
+            if i != bytes.len() {
+                return Err("batch JSON array has trailing content".to_string());
+            }
+            return Ok(out);
+        }
+        if bytes[i] != b'{' {
+            return Err(format!("batch item {} must be a JSON object", out.len() + 1));
+        }
+
+        let start = i;
+        let mut closers: Vec<u8> = Vec::new();
+        let mut in_string = false;
+        let mut escaped = false;
+        let mut end = None;
+        while i < bytes.len() {
+            let c = bytes[i];
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if c == b'\\' {
+                    escaped = true;
+                } else if c == b'"' {
+                    in_string = false;
+                } else if c < 0x20 {
+                    return Err(format!("batch item {} contains an unescaped control character", out.len() + 1));
+                }
+                i += 1;
+                continue;
+            }
+            match c {
+                b'"' => in_string = true,
+                b'{' => closers.push(b'}'),
+                b'[' => closers.push(b']'),
+                b'}' | b']' => {
+                    if closers.pop() != Some(c) {
+                        return Err(format!("batch item {} has mismatched JSON delimiters", out.len() + 1));
+                    }
+                    if closers.is_empty() {
+                        end = Some(i + 1);
+                        i += 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if in_string || escaped {
+            return Err(format!("batch item {} has an unterminated JSON string", out.len() + 1));
+        }
+        let Some(end) = end else {
+            return Err(format!("batch item {} JSON object is not closed", out.len() + 1));
+        };
+        out.push(&body[start..end]);
+
+        i = skip_ws(bytes, i);
+        match bytes.get(i) {
+            Some(b',') => {
+                i = skip_ws(bytes, i + 1);
+                if bytes.get(i) == Some(&b']') {
+                    return Err("batch JSON array must not have a trailing comma".to_string());
+                }
+            }
+            Some(b']') => {
+                i = skip_ws(bytes, i + 1);
+                if i != bytes.len() {
+                    return Err("batch JSON array has trailing content".to_string());
+                }
+                return Ok(out);
+            }
+            Some(_) => return Err(format!("batch item {} must be followed by ',' or ']'", out.len())),
+            None => return Err("batch JSON array is not closed".to_string()),
+        }
+    }
 }
 
 
@@ -1268,12 +1509,12 @@ pub fn completeness(present: &[(String, String)], mandatory: &[String]) -> (bool
 // write now delegates to the DAL (chorus-model), the one governed write path.
 // athena-make is read-only over Fuseki again, per its Cargo.toml contract.
 
-/// #3468 — DELEGATE a create to the DAL (chorus-model) — the ONE governed write
+/// #3468 — DELEGATE writes to the DAL (athena-model) — the ONE governed write
 /// path. Shells to the DAL CLI (the same subprocess pattern athena-make uses for curl);
 /// the DAL enforces the completeness floor (sh:minCount, fail-closed), mints the
 /// IRI, validates sh:in enums + referential integrity, and stamps the audit/spine
-/// witness. `ownedBy` is passed as a field literal so athena-make's authZ reads it back
-/// consistently. #3722 — the caller's VERIFIED bearer is forwarded as
+/// witness. Verified ownership is projected as the field or typed Role edge the
+/// class shape declares. #3722 — the caller's VERIFIED bearer is forwarded as
 /// CHORUS_IDENTITY_TOKEN so the DAL's own identity gate (#3687) verifies the
 /// SAME token this door verified: the token travels, each layer proves it.
 /// (The retired DEPLOY_ROLE env this used to set was exactly what #3687
@@ -1295,6 +1536,37 @@ fn dal_run(args: &[String], token: &str) -> R<()> {
         .env_remove("DEPLOY_ROLE")
         .output()
         .map_err(|e| format!("dal-spawn: {}", e))?;
+    dal_output(out)
+}
+
+/// Run one DAL command with a bounded document on stdin. Entity data never
+/// appears in argv (and therefore not in process listings); only the verb does.
+fn dal_run_stdin(args: &[String], token: &str, input: &str) -> R<()> {
+    let bin = dal_bin();
+    let mut child = Command::new(&bin)
+        .args(args)
+        .env("CHORUS_IDENTITY_TOKEN", token)
+        .env_remove("DEPLOY_ROLE")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("dal-spawn: {}", e))?;
+    let write_result = child
+        .stdin
+        .take()
+        .ok_or_else(|| "dal-stdin: pipe unavailable".to_string())
+        .and_then(|mut stdin| stdin.write_all(input.as_bytes()).map_err(|e| format!("dal-stdin: {}", e)));
+    if let Err(e) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(e);
+    }
+    let out = child.wait_with_output().map_err(|e| format!("dal-wait: {}", e))?;
+    dal_output(out)
+}
+
+fn dal_output(out: std::process::Output) -> R<()> {
     if out.status.success() {
         return Ok(());
     }
@@ -1325,23 +1597,23 @@ pub fn kind_of_class(class_local: &str) -> String {
     out
 }
 
-/// Create/replace an entity via the DAL `add` (full governed upsert: floor + mint
-/// + audit). ownedBy is a field literal athena-make's authZ reads back; DEPLOY_ROLE
-/// stamps the creator. #3647: `graph` = the class's MODEL-DECLARED instance home
+/// Replace an entity via the DAL `add` (full governed upsert: floor + mint +
+/// audit). Creates use the create-only `add-batch` transaction, including the
+/// one-record case. The caller supplies already-prepared fields/edges, including
+/// verified ownership. #3647: `graph` = the class's MODEL-DECLARED instance home
 /// (RouteTable.instances_graph — the same value every read + the ownedBy authz
 /// resolve), so create and authz agree on where the entity lives (the orphan fix).
 fn dal_add(
-    kind: &str, name: &str, caller: &str, token: &str,
-    props: &[(String, String)],
+    kind: &str, name: &str, token: &str,
+    fields: &[(String, String)],
     edges: &[(String, String, String)],
     graph: &str,
 ) -> R<()> {
     let mut args: Vec<String> = vec![
         "add".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
         "--graph".into(), graph.to_string(),
-        "--field".into(), format!("ownedBy={}", caller),
     ];
-    for (f, v) in props {
+    for (f, v) in fields {
         args.push("--field".into());
         args.push(format!("{}={}", f, v));
     }
@@ -1353,6 +1625,12 @@ fn dal_add(
         args.push(format!("{}={}:{}", p, tk, tn));
     }
     dal_run(&args, token)
+}
+
+/// Create many same-class entities through one atomic DAL invocation. Each
+/// newline is one WriteReq-like JSON object; the only argv token is `add-batch`.
+fn dal_add_batch(input: &str, token: &str) -> R<()> {
+    dal_run_stdin(&["add-batch".to_string()], token, input)
 }
 
 /// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
@@ -1432,12 +1710,22 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
 
 /// Map a DAL refusal string onto athena-make's typed write response.
 fn dal_err_resp(e: &str) -> (u16, String) {
-    if e.contains("shape-violation") || e.contains("unknown-endpoint") || e.contains("unknown-target") || e.contains("bad-property") || e.contains("batch:") {
+    if e.contains("conflict") || e.contains("already-exists") || e.contains("duplicate-identity") {
+        write_resp("conflict", e)
+    } else if e.contains("not-found") {
+        write_resp("not-found", e)
+    } else if e.contains("shape-violation")
+        || e.contains("shape-channel-violation")
+        || e.contains("unknown-endpoint")
+        || e.contains("unknown-target")
+        || e.contains("bad-property")
+        || e.contains("double-prefix")
+        || e.contains("empty-name")
+        || e.starts_with("batch:")
+    {
         // #3573 — a batch refusal (empty/off-realm graph, injection-shaped slot) is a
         // client-side validation reject, not a server error: return 4xx, never 502.
         write_resp("validation", e)
-    } else if e.contains("not-found") {
-        write_resp("not-found", e)
     } else {
         (502, format!("{{ \"error\": \"dal\", \"message\": \"{}\" }}", json_escape(e)))
     }
@@ -1450,7 +1738,19 @@ fn query_owned_by(entity: &str, instances_graph: &str) -> Option<String> {
         "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
         ns = NS, g = instances_graph, e = entity
     );
-    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+    sparql_json(&q)
+        .ok()
+        .and_then(|b| select_v(&b).into_iter().next())
+        .map(|owner| normalize_owned_role(&owner))
+}
+
+/// Model Role instances are minted as `role-<name>`, while verified claims
+/// intentionally expose the local role name (`wren`). Legacy literal owners
+/// already contain the local name. Normalize both storage representations onto
+/// the verifier's comparison form so a newly created edge-owned entity remains
+/// writable by its owner.
+fn normalize_owned_role(owner: &str) -> String {
+    owner.strip_prefix("role-").unwrap_or(owner).to_string()
 }
 
 /// Does the entity already have a partOf parent? (single-parent → 2nd add is 409).
@@ -1469,6 +1769,263 @@ fn entity_exists(entity: &str, instances_graph: &str) -> bool {
         ns = NS, g = instances_graph, e = entity
     );
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
+}
+
+/// The one prepared representation shared by single and batch create. At this
+/// point the name is safe, closed-shape validation has passed, fields/edges have
+/// been projected from the shape, the verified owner has been injected, and
+/// kind + graph are fixed from the selected class table. Existing-identity
+/// conflicts remain inside the governed create-only DAL transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreparedCreate {
+    kind: String,
+    name: String,
+    fields: Vec<(String, String)>,
+    edges: Vec<(String, String, String)>,
+    graph: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct CreatePrepareError {
+    tag: &'static str,
+    spine_result: &'static str,
+    entity: String,
+    message: String,
+}
+
+/// Project the verified caller into the representation declared by the shape.
+/// Most older write shapes did not declare `ownedBy`, and the established DAL
+/// contract stores the resolved role as a literal for those classes. When the
+/// model declares `ownedBy` as an object property, however, sending that value
+/// as a field bypasses the modeled edge type. Emit the corresponding typed Role
+/// edge instead. Request bodies never participate in this choice.
+fn verified_owner_projection(
+    table: &RouteTable,
+    caller_role: &str,
+) -> (Vec<(String, String)>, Vec<(String, String, String)>) {
+    let owner_annotation = table.fields.iter().find_map(|field| {
+        let (property, annotation) = field
+            .split_once('|')
+            .unwrap_or((field.as_str(), "plain"));
+        (property == "ownedBy").then_some(annotation)
+    });
+    match owner_annotation.and_then(|annotation| annotation.strip_prefix("edge:")) {
+        Some(class_local) => (
+            Vec::new(),
+            vec![(
+                "ownedBy".to_string(),
+                kind_of_class(class_local),
+                caller_role.to_string(),
+            )],
+        ),
+        None => (
+            vec![("ownedBy".to_string(), caller_role.to_string())],
+            Vec::new(),
+        ),
+    }
+}
+
+/// Purely prepare one create using exactly the checks/projections both routes
+/// need. This layer performs no existence reads: single and batch create both
+/// delegate identity conflict detection to the DAL's atomic `add-batch` path.
+fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<PreparedCreate, CreatePrepareError> {
+    let values = parse_create_object(body).map_err(|message| CreatePrepareError {
+        tag: "validation",
+        spine_result: "validation",
+        entity: String::new(),
+        message,
+    })?;
+    let name = values.get("name").cloned().ok_or_else(|| CreatePrepareError {
+        tag: "validation",
+        spine_result: "validation",
+        entity: String::new(),
+        message: "create requires a 'name' in the body".to_string(),
+    })?;
+    if !is_safe_local(&name) {
+        return Err(CreatePrepareError {
+            tag: "validation",
+            spine_result: "validation",
+            entity: name,
+            message: "invalid entity name".to_string(),
+        });
+    }
+    let declared: std::collections::HashSet<&str> = table
+        .fields
+        .iter()
+        .map(|field| field.split('|').next().unwrap_or(field))
+        .collect();
+    if let Some(bad) = values.keys().find(|key| key.as_str() != "name" && !declared.contains(key.as_str())) {
+        return Err(CreatePrepareError {
+            tag: "validation",
+            spine_result: "off-model",
+            entity: name,
+            message: format!("off-model property '{}' is not in the shape", bad),
+        });
+    }
+
+    // The caller cannot self-select ownership. Remove any body-projected copy
+    // and inject the role resolved from the verified token exactly once, in the
+    // field/edge representation declared by this class's shape.
+    let (mut fields, mut edges) = verified_owner_projection(table, caller_role);
+    for field in &table.fields {
+        let (property, annotation) = field.split_once('|').unwrap_or((field.as_str(), "plain"));
+        let Some(value) = values.get(property) else { continue };
+        if property == "ownedBy" {
+            continue;
+        }
+        if let Some(class_local) = annotation.strip_prefix("edge:") {
+            if !value.is_empty() {
+                if !is_safe_local(value) {
+                    return Err(CreatePrepareError {
+                        tag: "validation",
+                        spine_result: "validation",
+                        entity: name,
+                        message: format!(
+                            "invalid local name '{}' for edge '{}'",
+                            value, property
+                        ),
+                    });
+                }
+                edges.push((property.to_string(), kind_of_class(class_local), value.clone()));
+            }
+        } else {
+            fields.push((property.to_string(), value.clone()));
+        }
+    }
+    let class_local = table.class.rsplit('#').next().unwrap_or("");
+    Ok(PreparedCreate {
+        kind: kind_of_class(class_local),
+        name,
+        fields,
+        edges,
+        graph: table.instances_graph.clone(),
+    })
+}
+
+/// Serialize one prepared create as the DAL's WriteReq-like NDJSON record. All
+/// keys and values cross the existing JSON escaping boundary; no request data
+/// is ever interpolated into process argv.
+fn prepared_create_json(req: &PreparedCreate) -> String {
+    let fields = req
+        .fields
+        .iter()
+        .map(|(key, value)| format!("\"{}\":\"{}\"", json_escape(key), json_escape(value)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let edges = req
+        .edges
+        .iter()
+        .map(|(property, target_kind, target_name)| {
+            format!(
+                "[\"{}\",\"{}\",\"{}\"]",
+                json_escape(property),
+                json_escape(target_kind),
+                json_escape(target_name),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"kind\":\"{}\",\"name\":\"{}\",\"fields\":{{{}}},\"edges\":[{}],\"graph\":\"{}\"}}",
+        json_escape(&req.kind),
+        json_escape(&req.name),
+        fields,
+        edges,
+        json_escape(&req.graph),
+    )
+}
+
+fn prepared_create_ndjson(reqs: &[PreparedCreate]) -> String {
+    let mut out = reqs.iter().map(prepared_create_json).collect::<Vec<_>>().join("\n");
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out
+}
+
+fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
+    let req = match prepare_create(body, table, caller_role) {
+        Ok(req) => req,
+        Err(e) => {
+            emit_write_spine(caller_role, "create", &e.entity, "", e.spine_result);
+            return write_resp(e.tag, &e.message);
+        }
+    };
+    // Create must use the DAL's create-only transaction even for one record.
+    // The older `add` verb is a governed full upsert for replace; using it here
+    // left a check-then-upsert race and missed prefixed identities because the
+    // API's legacy existence read did not own the ADR-040 mint.
+    let input = prepared_create_ndjson(std::slice::from_ref(&req));
+    match dal_add_batch(&input, token) {
+        Ok(_) => {
+            emit_write_spine(caller_role, "create", &req.name, "", "ok");
+            write_resp("created", &format!("created {} via DAL (ownedBy {})", req.name, caller_role))
+        }
+        Err(e) => {
+            let outcome = if e.contains("already-exists") || e.contains("duplicate-identity") {
+                "conflict"
+            } else if e.contains("shape-violation") {
+                "incomplete"
+            } else {
+                "error"
+            };
+            emit_write_spine(caller_role, "create", &req.name, "", outcome);
+            dal_err_resp(&e)
+        }
+    }
+}
+
+fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
+    let objects = match split_json_array_objects(body) {
+        Ok(objects) => objects,
+        Err(e) => return write_resp("validation", &e),
+    };
+    if objects.is_empty() {
+        return write_resp("validation", "batch create requires at least one entity");
+    }
+
+    let mut reqs = Vec::with_capacity(objects.len());
+    for (index, object) in objects.into_iter().enumerate() {
+        let req = match prepare_create(object, table, caller_role) {
+            Ok(req) => req,
+            Err(e) => {
+                emit_write_spine(caller_role, "create-batch", &e.entity, "", e.spine_result);
+                return write_resp(e.tag, &format!("batch item {}: {}", index + 1, e.message));
+            }
+        };
+        reqs.push(req);
+    }
+
+    // In-request duplicates are knowable here without a store read. Existing
+    // identity checks belong to athena-model, which owns the ADR-040 mint (bare
+    // versus type-prefixed subjects) and can therefore reject them correctly and
+    // fail closed in the same governed add-batch operation.
+    let mut seen = std::collections::HashSet::new();
+    for (index, req) in reqs.iter().enumerate() {
+        if !seen.insert(req.name.clone()) {
+            emit_write_spine(caller_role, "create-batch", &req.name, "", "conflict");
+            return write_resp(
+                "conflict",
+                &format!("batch item {}: duplicate entity name '{}' in request", index + 1, req.name),
+            );
+        }
+    }
+
+    let input = prepared_create_ndjson(&reqs);
+    match dal_add_batch(&input, token) {
+        Ok(_) => {
+            let plural = pluralize(table.class.rsplit('#').next().unwrap_or("entity"));
+            emit_write_spine(caller_role, "create-batch", &plural, "", "ok");
+            write_resp(
+                "created",
+                &format!("created {} {} via one DAL batch (ownedBy {})", reqs.len(), plural, caller_role),
+            )
+        }
+        Err(e) => {
+            emit_write_spine(caller_role, "create-batch", &reqs.len().to_string(), "", "error");
+            dal_err_resp(&e)
+        }
+    }
 }
 
 // (created/modified stamping now lives in the DAL's audit envelope — athena-make's
@@ -1497,13 +2054,11 @@ fn write_resp(tag: &str, message: &str) -> (u16, String) {
 }
 
 /// #3454 — the generated write handler. authZ (ownedBy, fail-closed) → shape
-/// rejection (single-parent partOf → 409) → SPARQL-UPDATE execution → spine event,
-/// every outcome typed via write_status. authN is done by serve() before this is
-/// called (caller_role = the verified token's role). Entity create/replace return
-/// a typed 501 (the next slice: full-property-body shape validation); edge add/
-/// remove + entity delete are live.
-/// #3573 — max bytes for a single STRUCTURED write body. 64 KiB is generous for one
-/// entity (a Test/Quarantine row is < 1 KiB) and bounds runaway/oversized writes.
+/// rejection → governed DAL execution → spine event, every outcome typed via
+/// write_status. authN is done by serve() before this is called (caller_role =
+/// the verified token's role).
+/// #3573 — max bytes for a STRUCTURED write body, including a whole JSON batch.
+/// 64 KiB bounds runaway/oversized writes before any graph work.
 pub const MAX_WRITE_BYTES: usize = 65_536;
 
 /// #3573 — max bytes for a GSP BULK load (a TTL blob, not one entity). Larger by
@@ -1599,6 +2154,114 @@ mod bounds_closedshape_tests {
         assert!("x".repeat(MAX_WRITE_BYTES + 1).len() > MAX_WRITE_BYTES);
         assert!("x".repeat(1024).len() <= MAX_WRITE_BYTES);
     }
+
+    #[test]
+    fn json_array_object_split_is_string_escape_and_depth_aware() {
+        let body = r#" [ {"name":"a","note":"keeps },{ and \"quotes\"","nested":{"xs":[1,{"k":"v"}]}}, {"name":"b"} ] "#;
+        let got = split_json_array_objects(body).unwrap();
+        assert_eq!(got.len(), 2);
+        assert!(got[0].contains(r#""note":"keeps },{ and \"quotes\"""#));
+        assert!(got[0].contains(r#""nested":{"xs":[1,{"k":"v"}]}"#));
+        assert_eq!(got[1], r#"{"name":"b"}"#);
+    }
+
+    #[test]
+    fn json_array_object_split_rejects_wrong_framing_and_trailing_comma() {
+        assert!(split_json_array_objects("{}").unwrap_err().contains("JSON array"));
+        assert!(split_json_array_objects("[1]").unwrap_err().contains("item 1"));
+        assert!(split_json_array_objects(r#"[{"name":"a"},]"#).unwrap_err().contains("trailing comma"));
+        assert!(split_json_array_objects(r#"[{"name":"a}]"#).unwrap_err().contains("unterminated"));
+    }
+
+    #[test]
+    fn create_object_parser_is_strict_and_decodes_strings() {
+        let parsed = parse_create_object(r#" { "name": "tr-1", "testName": "a \"quote\"", "note": "\u2014" } "#)
+            .expect("valid flat create object");
+        assert_eq!(parsed.get("name").map(String::as_str), Some("tr-1"));
+        assert_eq!(parsed.get("testName").map(String::as_str), Some("a \"quote\""));
+        assert_eq!(parsed.get("note").map(String::as_str), Some("—"));
+
+        for bad in [
+            r#"{"name":"x" "filePath":"a"}"#,
+            r#"{"name":"x",}"#,
+            r#"{"name":"x","name":"y"}"#,
+            r#"{"name":42}"#,
+            r#"{"name":"bad\q"}"#,
+            r#"{"name":"x"} trailing"#,
+        ] {
+            assert!(parse_create_object(bad).is_err(), "malformed JSON must be refused: {bad}");
+        }
+    }
+
+    #[test]
+    fn prepared_create_ndjson_escapes_every_slot_and_ends_each_record() {
+        let req = PreparedCreate {
+            kind: "test-result".into(),
+            name: "tr-1".into(),
+            fields: vec![("ownedBy".into(), "wren".into()), ("testName".into(), "a \"quote\"".into())],
+            edges: vec![("ofTest".into(), "test".into(), "test-a".into())],
+            graph: "urn:chorus:domains:tests".into(),
+        };
+        assert_eq!(
+            prepared_create_ndjson(&[req]),
+            "{\"kind\":\"test-result\",\"name\":\"tr-1\",\"fields\":{\"ownedBy\":\"wren\",\"testName\":\"a \\\"quote\\\"\"},\"edges\":[[\"ofTest\",\"test\",\"test-a\"]],\"graph\":\"urn:chorus:domains:tests\"}\n",
+        );
+    }
+
+    #[test]
+    fn verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner() {
+        let mut table = RouteTable {
+            class: format!("{}Domain", NS),
+            fields: vec![
+                "comment|datatype:string".into(),
+                "ownedBy|edge:Role".into(),
+            ],
+            routes: vec![],
+            secured: vec![],
+            mandatory: vec![],
+            write_required: vec![],
+            repo_target: String::new(),
+            exposure: vec![],
+            instances_graph: INSTANCES_GRAPH.to_string(),
+            tree_edges: vec![],
+            tree_order: None,
+            model_version: "unclassified".to_string(),
+        };
+        let req = prepare_create(
+            r#"{"name":"fresh","comment":"ok","ownedBy":"attacker"}"#,
+            &table,
+            "wren",
+        )
+        .expect("shape-aware owner projection");
+        assert_eq!(req.fields, vec![("comment".into(), "ok".into())]);
+        assert_eq!(
+            req.edges,
+            vec![("ownedBy".into(), "role".into(), "wren".into())],
+        );
+
+        table.fields = vec!["comment|datatype:string".into()];
+        let legacy = prepare_create(
+            r#"{"name":"fresh","comment":"ok"}"#,
+            &table,
+            "wren",
+        )
+        .expect("legacy literal owner projection");
+        assert_eq!(
+            legacy.fields,
+            vec![("ownedBy".into(), "wren".into()), ("comment".into(), "ok".into())],
+        );
+        assert!(legacy.edges.is_empty());
+
+        table.fields.push("partOf|edge:Domain".into());
+        let invalid = prepare_create(
+            r#"{"name":"fresh","comment":"ok","partOf":"!!!"}"#,
+            &table,
+            "wren",
+        )
+        .expect_err("invalid edge target local names are client validation errors");
+        assert_eq!(invalid.tag, "validation");
+        assert!(invalid.message.contains("edge 'partOf'"));
+    }
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
@@ -1614,9 +2277,9 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         return write_resp("validation", &format!(
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
     }
-    // entity name (None for CreateEntity) + injection-safety
+    // entity name (None for create/create-batch) + injection-safety
     let entity: Option<String> = match &op {
-        WriteOp::CreateEntity => None,
+        WriteOp::CreateEntity | WriteOp::CreateBatch => None,
         WriteOp::ReplaceEntity { name }
         | WriteOp::DeleteEntity { name }
         | WriteOp::AddEdge { name, .. }
@@ -1682,52 +2345,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 }
             }
         }
-        WriteOp::CreateEntity => {
-            // CREATE: name from the body; the authenticated caller becomes the owner
-            // (you own what you create) — no prior ownedBy to check, so the top-level
-            // authZ block (entity=None here) is correctly skipped; authN was enforced
-            // by serve(). 409 if the entity already exists.
-            let name = match json_field(body, "name") {
-                Some(n) => n,
-                None => return write_resp("validation", "create requires a 'name' in the body"),
-            };
-            if !is_safe_local(&name) {
-                return write_resp("validation", "invalid entity name");
-            }
-            if entity_exists(&name, &table.instances_graph) {
-                emit_write_spine(caller_role, "create", &name, "", "conflict");
-                return write_resp("conflict", "entity already exists");
-            }
-            // #3573 AC5 — closed-shape: reject an off-model property, don't silently drop it
-            // (collect_entity_props would otherwise ignore unknown keys = silent loss).
-            if let Some(bad) = off_model_property(body, &table.fields) {
-                emit_write_spine(caller_role, "create", &name, "", "off-model");
-                return write_resp("validation", &format!("off-model property '{}' is not in the shape", bad));
-            }
-            let props = collect_entity_props(body, &table.fields);
-            let edges = collect_entity_edges(body, &table.fields);
-            // #3468 — DELEGATE THE WRITE TO THE DAL (chorus-model). athena-make is
-            // read-only by contract; the DAL is the ONE governed write path. It
-            // enforces the completeness FLOOR (sh:minCount, fail-closed), mints the
-            // IRI (ADR-040), checks sh:in enums + referential integrity, and stamps
-            // the audit/spine witness — none of which a raw SPARQL write does. The
-            // old build_create_entity + sparql_update path was a competing impl that
-            // bypassed all of it (and contradicted athena-make's own read-only contract).
-            // ownedBy is passed as a field literal (matches athena-make's authZ read) and
-            // DEPLOY_ROLE=caller stamps the creator.
-            let kind = kind_of_class(class_local);
-            match dal_add(&kind, &name, caller_role, token, &props, &edges, &table.instances_graph) {
-                Ok(_) => {
-                    emit_write_spine(caller_role, "create", &name, "", "ok");
-                    write_resp("created", &format!("created {} via DAL (ownedBy {})", name, caller_role))
-                }
-                Err(e) => {
-                    let outcome = if e.contains("shape-violation") { "incomplete" } else { "error" };
-                    emit_write_spine(caller_role, "create", &name, "", outcome);
-                    dal_err_resp(&e)
-                }
-            }
-        }
+        WriteOp::CreateEntity => handle_create(body, table, caller_role, token),
+        WriteOp::CreateBatch => handle_create_batch(body, table, caller_role, token),
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
@@ -1750,7 +2369,15 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // are not preserved). This unifies replace onto the DAL's one write
             // semantic rather than athena-make's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
-            match dal_add(&kind, name, caller_role, token, &props, &edges, &table.instances_graph) {
+            let (mut fields, mut owner_edges) = verified_owner_projection(table, caller_role);
+            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy").cloned());
+            owner_edges.extend(
+                edges
+                    .iter()
+                    .filter(|(property, _, _)| property != "ownedBy")
+                    .cloned(),
+            );
+            match dal_add(&kind, name, token, &fields, &owner_edges, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
                     write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))
@@ -1840,10 +2467,52 @@ pub fn openapi_json(t: &RouteTable) -> String {
         props.push(format!("\"{}\": {}", name, schema));
     }
     props.sort();
+    // Create bodies are not read projections. They carry a local `name` and
+    // scalar field/edge values; ownedBy is injected from the verified principal.
+    // Batch items therefore need their own schema rather than the read schema's
+    // EdgeRef objects and server-generated audit fields.
+    let mut replace_props = Vec::new();
+    for f in &t.fields {
+        let (name, _) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
+        if name != "ownedBy" {
+            replace_props.push(format!("\"{}\": {{ \"type\": \"string\" }}", name));
+        }
+    }
+    replace_props.sort();
+    let mut create_props = replace_props.clone();
+    create_props.push("\"name\": { \"type\": \"string\" }".to_string());
+    create_props.sort();
+    let mut create_required = vec!["name".to_string()];
+    create_required.extend(
+        t.write_required
+            .iter()
+            .filter(|name| name.as_str() != "ownedBy" && name.as_str() != "label")
+            .cloned(),
+    );
+    create_required.sort();
+    create_required.dedup();
+    let create_required_json = create_required
+        .iter()
+        .map(|name| format!("\"{}\"", name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut replace_required = t
+        .write_required
+        .iter()
+        .filter(|name| name.as_str() != "ownedBy" && name.as_str() != "label")
+        .cloned()
+        .collect::<Vec<_>>();
+    replace_required.sort();
+    replace_required.dedup();
+    let replace_required_json = replace_required
+        .iter()
+        .map(|name| format!("\"{}\"", name))
+        .collect::<Vec<_>>()
+        .join(", ");
     // #3454 — method-aware: group operations by path so a path with both a GET
     // (read) and POST/PUT/DELETE (generated write) emits one path object with
     // multiple operation keys (valid OpenAPI). Writes document the typed-error
-    // taxonomy (write_status) + the {target} requestBody.
+    // taxonomy (write_status) + the per-route requestBody (batch = JSON array).
     let mut by_path: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
     for r in &t.routes {
         let (method, raw) = r.split_once(' ').unwrap_or(("GET", r.as_str()));
@@ -1868,9 +2537,23 @@ pub fn openapi_json(t: &RouteTable) -> String {
             )
         } else {
             let params = if p.contains("{name}") { NAME_PARAM } else { "" };
+            let request_schema = if p.ends_with("/batch") {
+                Some(format!("{{ \"type\": \"array\", \"minItems\": 1, \"items\": {{ \"$ref\": \"#/components/schemas/{}Create\" }} }}", class_short))
+            } else if m == "post" && !p.contains("{name}") {
+                Some(format!("{{ \"$ref\": \"#/components/schemas/{}Create\" }}", class_short))
+            } else if m == "put" && p.ends_with("/{name}") {
+                Some(format!("{{ \"$ref\": \"#/components/schemas/{}Replace\" }}", class_short))
+            } else if p.contains("/{name}/") {
+                Some("{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": { \"target\": { \"type\": \"string\" } }, \"required\": [\"target\"] }".to_string())
+            } else {
+                None
+            };
+            let request_body = request_schema
+                .map(|schema| format!("\"requestBody\": {{ \"required\": true, \"content\": {{ \"application/json\": {{ \"schema\": {} }} }} }}, ", schema))
+                .unwrap_or_default();
             format!(
-                "\"{}\": {{ {}\"requestBody\": {{ \"content\": {{ \"application/json\": {{ \"schema\": {{ \"type\": \"object\", \"properties\": {{ \"target\": {{ \"type\": \"string\" }} }} }} }} }} }}, \"responses\": {{ \"200\": {{ \"description\": \"ok\" }}, \"201\": {{ \"description\": \"created\" }}, \"401\": {{ \"description\": \"authn-missing\" }}, \"403\": {{ \"description\": \"authz (ownedBy)\" }}, \"409\": {{ \"description\": \"conflict (single-parent partOf)\" }}, \"422\": {{ \"description\": \"validation\" }}, \"404\": {{ \"description\": \"not-found\" }} }} }}",
-                m, params
+                "\"{}\": {{ {}{}\"responses\": {{ \"200\": {{ \"description\": \"ok\" }}, \"201\": {{ \"description\": \"created\" }}, \"401\": {{ \"description\": \"authn-missing\" }}, \"403\": {{ \"description\": \"authz (ownedBy)\" }}, \"404\": {{ \"description\": \"not-found\" }}, \"409\": {{ \"description\": \"conflict (single-parent partOf)\" }}, \"422\": {{ \"description\": \"validation\" }}, \"502\": {{ \"description\": \"DAL unavailable or failed\" }} }} }}",
+                m, params, request_body
             )
         };
         by_path.entry(p).or_default().push(op);
@@ -1896,13 +2579,17 @@ pub fn openapi_json(t: &RouteTable) -> String {
         )
     };
     format!(
-        "{{\n  \"openapi\": \"3.1.0\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }}{required} }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Tree\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"children\": {{ \"type\": \"array\", \"items\": {{ \"$ref\": \"#/components/schemas/Tree\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
+        "{{\n  \"openapi\": \"3.1.0\",\n  \"info\": {{ \"title\": \"OWL API — generated {class_short} API\", \"version\": \"0\", \"description\": \"Generated from {class} shapes in {graph}. Regenerate, never hand-edit (#3354).\" }},\n  \"paths\": {{\n{paths}\n  }},\n  \"components\": {{ \"schemas\": {{\n    \"EdgeRef\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }} }} }},\n    \"{class_short}\": {{ \"type\": \"object\", \"properties\": {{ {props} }}{required} }},\n    \"{class_short}Create\": {{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": {{ {create_props} }}, \"required\": [{create_required}] }},\n    \"{class_short}Replace\": {{ \"type\": \"object\", \"additionalProperties\": false, \"properties\": {{ {replace_props} }}, \"required\": [{replace_required}] }},\n    \"List\": {{ \"type\": \"object\", \"properties\": {{ \"count\": {{ \"type\": \"integer\" }}, \"items\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"label\": {{ \"type\": \"string\" }}, \"status\": {{ \"type\": \"string\" }} }} }} }} }} }},\n    \"Fold\": {{ \"type\": \"object\", \"properties\": {{ \"{class_l}\": {{ \"type\": \"string\" }}, \"count\": {{ \"type\": \"integer\" }}, \"contains\": {{ \"type\": \"array\", \"items\": {{ \"type\": \"string\" }} }} }} }},\n    \"Tree\": {{ \"type\": \"object\", \"properties\": {{ \"name\": {{ \"type\": \"string\" }}, \"children\": {{ \"type\": \"array\", \"items\": {{ \"$ref\": \"#/components/schemas/Tree\" }} }} }} }},\n    \"Schema\": {{ \"type\": \"object\" }}\n  }} }}\n}}\n",
         class_short = class_short,
         required = required,
         class = t.class,
         graph = ONTOLOGY_GRAPH,
         paths = paths,
         props = props.join(", "),
+        create_props = create_props.join(", "),
+        create_required = create_required_json,
+        replace_props = replace_props.join(", "),
+        replace_required = replace_required_json,
         class_l = class_l
     )
 }
@@ -1931,9 +2618,10 @@ pub fn routes_json(t: &RouteTable) -> String {
     // #3468 — the completeness FLOOR is part of the published contract: the page
     // meter computes mandatory-met + % from this list, sourced from the model (not v1).
     let mandatory = t.mandatory.iter().map(|m| format!("\"{}\"", m)).collect::<Vec<_>>().join(", ");
+    let write_required = t.write_required.iter().map(|m| format!("\"{}\"", m)).collect::<Vec<_>>().join(", ");
     format!(
-        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}],\n  \"secured\": [{}],\n  \"mandatory\": [{}]\n}}\n",
-        t.class, ONTOLOGY_GRAPH, fields, routes, secured, mandatory
+        "{{\n  \"generatedFrom\": \"{}\",\n  \"graph\": \"{}\",\n  \"fields\": [{}],\n  \"routes\": [{}],\n  \"secured\": [{}],\n  \"mandatory\": [{}],\n  \"writeRequired\": [{}]\n}}\n",
+        t.class, ONTOLOGY_GRAPH, fields, routes, secured, mandatory, write_required
     )
 }
 
@@ -2090,7 +2778,21 @@ fn ontology_version_cached() -> String {
 }
 
 fn json_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n").replace('\r', "\\r")
+    let mut out = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000C}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c <= '\u{001F}' => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// #3435 — coerce a Property's string-encoded value to its typed JSON fragment,
@@ -2855,7 +3557,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
+        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -3681,6 +4383,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             403u16,
                             format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
                         )
+                    } else if !resolved_write_role(&claims.agent_id) {
+                        (
+                            403u16,
+                            "{ \"error\": \"authz-role\", \"message\": \"batch writes require a model-resolved role\" }".to_string(),
+                        )
                     } else {
                         let role = claims.agent_id.clone();
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
@@ -3740,23 +4447,23 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 }
                 Ok(claims) => {
                     // #3573 Part C — SCOPE enforcement (the realm-isolation control,
-                    // Silas's invariant): a token carrying a scope claim (dal_edge-minted)
-                    // may write ONLY graphs in that scope; targetGraph is VALIDATED against
-                    // it, never used to SET it. Out-of-scope → 403. Legacy/unscoped tokens
-                    // (scope empty) fall through to handle_write's ownedBy authZ — mixed-state
-                    // by construction (#3414 philosophy): existing writers don't break before
-                    // they migrate to the scoped lane (#3573 incr-2). scope_allows is #3567 (landed).
+                    // Silas's invariant): the verified principal may write ONLY graphs
+                    // named by its model-resolved grants. The presented ES256 token does
+                    // not need a scope claim; verify_any resolves Principal hasScope data
+                    // into Claims.scope. Empty resolved scope is deny-all, fail closed.
                     let target_graph = header("x-target-graph");
-                    // #3689 — an entity write's REAL target is the table's own
-                    // instances graph when no x-target-graph is sent; the scope
-                    // check validates against that, not against ''. (Under the
-                    // legacy claim-scope regime an empty header skipped into the
-                    // unscoped lane; with model-resolved scope every verified
-                    // Principal has its grants, so the check runs against what
-                    // the write actually touches.)
-                    let effective_target: &str =
-                        if target_graph.is_empty() { &table.instances_graph } else { &target_graph };
-                    if !claims.scope.is_empty() && !scope_allows(effective_target, &claims.scope) {
+                    // The selected class table owns the graph the DAL will
+                    // actually mutate. A caller-supplied header may confirm that
+                    // graph, but can never substitute a different in-scope graph
+                    // as an authorization decoy for the real write target.
+                    let effective_target = table.instances_graph.as_str();
+                    if !resolved_write_role(&claims.agent_id) {
+                        ((403u16, "{ \"error\": \"authz-role\", \"message\": \"writes require a model-resolved role\" }".to_string()),
+                         ReqMeta { route: "write-authz-role".into(), ..Default::default() })
+                    } else if !target_graph.is_empty() && target_graph != effective_target {
+                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
+                         ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
+                    } else if !scope_allows(effective_target, &claims.scope) {
                         ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573/#3689)\" }}", json_escape(effective_target))),
                          ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                     } else {
@@ -4031,6 +4738,7 @@ mod tests {
         // end-to-end contract: graph literal — → Fuseki — → select_v — →
         // json_escape leaves the multibyte char alone → page shows —
         assert_eq!(json_escape("a \u{2014} b"), "a \u{2014} b");
+        assert_eq!(json_escape("a\tb\u{0008}c\u{0000}"), "a\\tb\\bc\\u0000");
     }
 
     // #3635 — collection marshal aggregates multi-valued fields per subject.
@@ -4120,6 +4828,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec![],
+            write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
@@ -4352,6 +5061,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec![],
+            write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
@@ -4388,6 +5098,7 @@ mod tests {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
+            write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
@@ -4415,6 +5126,7 @@ mod tests {
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
+            write_required: vec!["label".into()],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(),
@@ -4456,6 +5168,57 @@ mod tests {
     }
 
     #[test]
+    fn openapi_batch_create_advertises_json_array_contract() {
+        let mut t = openapi_fixture();
+        t.class = format!("{}TestResult", NS);
+        t.fields.push("ofTest|edge:Test".into());
+        t.write_required.push("ofTest".into());
+        t.routes = vec!["POST /testresults/batch".into()];
+        let body = openapi_json(&t);
+        assert!(body.contains("\"/testresults/batch\""), "{}", body);
+        assert!(body.contains("\"type\": \"array\", \"minItems\": 1"), "{}", body);
+        assert!(body.contains("\"$ref\": \"#/components/schemas/TestResultCreate\""), "{}", body);
+        assert!(body.contains("\"TestResultCreate\""), "{}", body);
+        assert!(body.contains("\"name\": { \"type\": \"string\" }"), "{}", body);
+        assert!(body.contains("\"ofTest\": { \"type\": \"string\" }"), "edge targets are scalar local names: {}", body);
+        assert!(body.contains("\"required\": [\"name\", \"ofTest\"]"), "required edges match the DAL floor: {}", body);
+        assert!(body.contains("\"additionalProperties\": false"), "closed runtime shape is documented: {}", body);
+        assert!(body.contains("\"requestBody\": { \"required\": true"), "write bodies are required: {}", body);
+        assert!(body.contains("\"502\": { \"description\": \"DAL unavailable or failed\" }"), "runtime DAL failure is documented: {}", body);
+    }
+
+    #[test]
+    fn openapi_write_bodies_match_each_operation() {
+        let mut t = openapi_fixture();
+        t.fields.push("partOf|edge:Domain".into());
+        t.write_required.push("comment".into());
+        t.routes.extend([
+            "POST /domains".into(),
+            "PUT /domains/:name".into(),
+            "DELETE /domains/:name".into(),
+            "POST /domains/:name/partof".into(),
+            "DELETE /domains/:name/partof".into(),
+        ]);
+        let body = openapi_json(&t);
+        let entity_path = body
+            .lines()
+            .find(|line| line.trim_start().starts_with("\"/domains/{name}\":"))
+            .expect("entity path");
+        assert_eq!(entity_path.matches("\"requestBody\"").count(), 1, "DELETE has no body; PUT has one: {entity_path}");
+        assert!(entity_path.contains("#/components/schemas/DomainReplace"), "PUT uses the replace schema: {entity_path}");
+        assert!(entity_path.contains("\"delete\": { \"parameters\":"), "DELETE remains documented: {entity_path}");
+
+        let edge_path = body
+            .lines()
+            .find(|line| line.trim_start().starts_with("\"/domains/{name}/partof\":"))
+            .expect("edge path");
+        assert_eq!(edge_path.matches("\"requestBody\"").count(), 2, "both edge mutations require a target: {edge_path}");
+        assert_eq!(edge_path.matches("\"required\": [\"target\"]").count(), 2, "target is required for add and remove: {edge_path}");
+        assert!(body.contains("\"DomainReplace\": { \"type\": \"object\", \"additionalProperties\": false"), "{body}");
+        assert!(body.contains("\"required\": [\"comment\"]"), "replace schema carries the full-write floor: {body}");
+    }
+
+    #[test]
     fn openapi_human_view_is_html_shell_that_fetches_the_spec() {
         let t = openapi_fixture();
         let (code, body) = handle("/openapi", &t);
@@ -4479,6 +5242,7 @@ mod tests {
         let r = write_routes("domains");
         // entity lifecycle
         assert!(r.contains(&"POST /domains".to_string()), "create entity");
+        assert!(!r.contains(&"POST /domains/batch".to_string()), "batch is not exposed for unrelated classes");
         assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
         assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
         // per-edge add/remove (mirrors the read edges)
@@ -4486,6 +5250,7 @@ mod tests {
             assert!(r.contains(&format!("POST /domains/:name/{}", edge)), "add {} edge", edge);
             assert!(r.contains(&format!("DELETE /domains/:name/{}", edge)), "remove {} edge", edge);
         }
+        assert!(write_routes("testresults").contains(&"POST /testresults/batch".to_string()), "TestResult gets the Phase A batch route");
         // pluralization flows through (mirrors read-route generation)
         assert!(write_routes("properties").contains(&"POST /properties".to_string()));
     }
@@ -4512,6 +5277,8 @@ mod tests {
     #[test]
     fn parse_write_maps_method_and_shape() {
         assert_eq!(parse_write("POST", "/domains", "domains"), Some(WriteOp::CreateEntity));
+        assert_eq!(parse_write("POST", "/domains/batch", "domains"), None);
+        assert_eq!(parse_write("POST", "/testresults/batch", "testresults"), Some(WriteOp::CreateBatch));
         assert_eq!(parse_write("PUT", "/domains/x", "domains"), Some(WriteOp::ReplaceEntity { name: "x".into() }));
         assert_eq!(parse_write("DELETE", "/domains/x", "domains"), Some(WriteOp::DeleteEntity { name: "x".into() }));
         assert_eq!(parse_write("POST", "/domains/x/partof", "domains"), Some(WriteOp::AddEdge { name: "x".into(), edge: "partof".into() }));
@@ -4526,6 +5293,8 @@ mod tests {
         assert!(!authz_allows("wren", Some("silas")));
         assert!(!authz_allows("wren", None));        // absent ownedBy → FAIL-CLOSED
         assert!(!authz_allows("wren", Some("")));
+        assert_eq!(normalize_owned_role("role-wren"), "wren");
+        assert_eq!(normalize_owned_role("wren"), "wren");
     }
 
     #[test]
@@ -4591,6 +5360,35 @@ mod tests {
     }
 
     #[test]
+    fn add_batch_refusals_keep_conflicts_distinct_from_store_failures() {
+        assert_eq!(
+            dal_err_resp("add-batch: entity 'test-result:x': already-exists").0,
+            409,
+        );
+        assert_eq!(
+            dal_err_resp("add-batch: entity 'test-result:x': shape-violation: result").0,
+            422,
+        );
+        assert_eq!(
+            dal_err_resp("add-batch: commit failed for [test-result:x]: fuseki-update failed").0,
+            502,
+        );
+        assert_eq!(dal_err_resp("batch: invalid typed slot").0, 422);
+        assert_eq!(
+            dal_err_resp("add-batch: entity 'test-result:test-result-x': double-prefix").0,
+            422,
+        );
+        assert_eq!(
+            dal_err_resp("add-batch: entity 'test-result:x': empty-name").0,
+            422,
+        );
+        assert_eq!(
+            dal_err_resp("add-batch: entity 'domain:x': shape-channel-violation: ownedBy").0,
+            422,
+        );
+    }
+
+    #[test]
     fn routes_json_is_deterministic() {
         let t = RouteTable {
             class: format!("{}Domain", NS),
@@ -4598,6 +5396,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec!["/schema/domain".into()],
             mandatory: vec!["label".into(), "comment".into()],
+            write_required: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
@@ -4662,6 +5461,7 @@ mod tests {
             routes: vec!["GET /domains".into()],
             secured: vec![],
             mandatory: vec!["label".into(), "comment".into()],
+            write_required: vec!["label".into(), "comment".into()],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
@@ -4689,7 +5489,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
+        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -4715,6 +5515,13 @@ mod tests {
         assert!(!scope_allows("urn:chorus:domains:tests", &[]));
     }
 
+    #[test]
+    fn class_writes_require_a_model_resolved_role() {
+        assert!(resolved_write_role("wren"));
+        assert!(!resolved_write_role(""));
+        assert!(!resolved_write_role("   "));
+    }
+
     // #3567 SPIKE — the emit projects scope from the INSTANCE/write graph, never the
     // shape/ontology graph (Silas's scope-trap). And it carries the new claims.
     #[test]
@@ -4725,6 +5532,7 @@ mod tests {
             routes: vec!["PUT /tests".into()],
             secured: vec!["/schema/test".into()],
             mandatory: vec!["filePath".into(), "testName".into()],
+            write_required: vec!["filePath".into(), "testName".into()],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: "urn:chorus:domains:tests".to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
@@ -4846,6 +5654,7 @@ mod dispatch_effective_3845 {
             routes: vec![],
             secured: vec![],
             mandatory: vec![],
+            write_required: vec![],
             repo_target: String::new(),
             exposure: vec![],
             instances_graph: format!("urn:chorus:test:{}", class.to_lowercase()),

@@ -405,9 +405,14 @@ fn suite_run_payload_carries_the_run_facts() {
     // #3592 — payload is EXACTLY the deployed TestSuiteRunShape (cardId/ts/result);
     // off-model props got every prior post 422-refused by the DAL. Run context
     // lives in the test.started/test.completed spine events.
-    for needle in ["\"cardId\":\"3634\"", "\"result\":\"blocked\"", "\"ts\":", "testsuiterun-3634-"] {
+    for needle in ["\"cardId\":\"3634\"", "\"result\":\"blocked\"", "\"ts\":\"", "testsuiterun-3634-"] {
         assert!(p.contains(needle), "payload missing {}: {}", needle, p);
     }
+    assert!(
+        p.split("\"ts\":").nth(1).is_some_and(|value| value.starts_with('"')),
+        "modeled write values are strings at the governed API boundary: {}",
+        p,
+    );
     for banned in ["\"card\":", "\"role\":", "\"traceId\":", "\"planSource\":",
                    "\"checksPlanned\":", "\"durationMs\":", "\"verdict\":"] {
         assert!(!p.contains(banned), "off-model prop must not be sent {}: {}", banned, p);
@@ -792,13 +797,132 @@ fn remint_decision_reminting_exactly_once_on_401() {
 
 #[test]
 fn post_args_with_code_returns_status_and_never_uses_sf() {
-    // the per-case post must yield the HTTP code (the 401 trigger) — `-sf`
+    // the batch post must yield the HTTP code (the 401 trigger) — `-sf`
     // swallows it and forced a second diagnostic request per failure (#3725)
-    let args = werk_test::post_args_with_code("http://x/testresults", "tok", "{}");
+    let args = werk_test::post_args_with_code("http://x/testresults/batch", "tok", "[]");
     assert!(args.contains(&"%{http_code}".to_string()), "{:?}", args);
     assert!(!args.contains(&"-sf".to_string()), "{:?}", args);
     assert!(args.contains(&"Authorization: Bearer tok".to_string()));
     assert!(args.contains(&"x-target-graph: urn:chorus:domains:tests".to_string()));
+}
+
+#[test]
+fn testresult_chunks_are_byte_bounded_stable_json_arrays() {
+    let payloads = vec![
+        "{\"name\":\"a\"}".to_string(),
+        "{\"name\":\"bb\"}".to_string(),
+        "{\"name\":\"ccc\"}".to_string(),
+    ];
+    let max = payloads[0].len() + payloads[1].len() + 3; // brackets + comma
+    let got = werk_test::chunk_json_payloads(&payloads, max);
+    assert_eq!(got.oversized, 0);
+    assert_eq!(got.chunks.len(), 2);
+    assert_eq!(got.chunks[0].body, format!("[{},{}]", payloads[0], payloads[1]));
+    assert_eq!(got.chunks[0].entities, 2);
+    assert_eq!(got.chunks[1].body, format!("[{}]", payloads[2]));
+    assert!(got.chunks.iter().all(|c| c.body.len() <= max));
+}
+
+#[test]
+fn testresult_chunker_names_oversized_entities_without_splitting_them() {
+    let payloads = vec!["{\"name\":\"small\"}".to_string(), "x".repeat(100)];
+    let got = werk_test::chunk_json_payloads(&payloads, 32);
+    assert_eq!(got.oversized, 1);
+    assert_eq!(got.chunks.len(), 1);
+    assert_eq!(got.chunks[0].entities, 1);
+    assert_eq!(got.chunks[0].body, format!("[{}]", payloads[0]));
+}
+
+#[test]
+fn unsent_result_accounting_includes_oversized_and_safety_cap_drops() {
+    let mut stats = werk_test::PostStats {
+        posted: 1990,
+        failed: 10,
+        ..Default::default()
+    };
+    werk_test::account_unsent_results(&mut stats, 2, 8);
+    assert_eq!(stats.posted + stats.failed, 2010);
+    assert_eq!(stats.failed, 20);
+    assert_eq!(stats.first_fail_code.as_deref(), Some("payload-too-large"));
+
+    let mut cap_only = werk_test::PostStats::default();
+    werk_test::account_unsent_results(&mut cap_only, 0, 1);
+    assert_eq!(cap_only.failed, 1);
+    assert_eq!(cap_only.first_fail_code.as_deref(), Some("max-posts-cap"));
+}
+
+#[test]
+fn two_thousand_representative_results_need_at_most_twenty_five_http_chunks() {
+    let payloads: Vec<String> = (0..2000)
+        .map(|i| {
+            werk_test::test_result_payload(
+                "platform/services/werk-test/tests/units.rs",
+                &format!("representative_case_{}", i),
+                "pass",
+                &format!("test-werk-test-representative-case-{}", i),
+                "4000",
+                "kade",
+                "trace",
+                1_700_000_000_123,
+                i,
+            )
+        })
+        .collect();
+    let got = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);
+    assert_eq!(got.oversized, 0);
+    assert_eq!(got.chunks.iter().map(|c| c.entities).sum::<usize>(), 2000);
+    assert!(got.chunks.len() <= 25, "{} chunks", got.chunks.len());
+    assert!(got
+        .chunks
+        .iter()
+        .all(|c| c.body.len() <= werk_test::TESTRESULT_BATCH_MAX_BYTES));
+}
+
+#[test]
+fn historical_collection_override_derives_a_batch_write_route_without_breaking_gets() {
+    assert_eq!(
+        werk_test::testresult_batch_endpoint("http://owl:3360/testresults"),
+        "http://owl:3360/testresults/batch",
+    );
+    assert_eq!(
+        werk_test::testresult_batch_endpoint("http://owl:3360/testresults?limit=100000"),
+        "http://owl:3360/testresults/batch",
+    );
+    assert_eq!(
+        werk_test::testresult_batch_endpoint("http://owl:3360/testresults/batch"),
+        "http://owl:3360/testresults/batch",
+    );
+}
+
+#[test]
+fn terminal_telemetry_orders_execution_then_writeback_then_test_completed() {
+    let source = include_str!("../src/main.rs");
+    let run_flow = source
+        .split("fn unit_name")
+        .next()
+        .expect("main test flow precedes unit_name");
+    let execution = run_flow
+        .find("emit_spine(\"test.execution.completed\"")
+        .expect("execution completion event");
+    let writeback_call = run_flow
+        .find("post_test_results(&role, &card, &trace, &joined")
+        .expect("TestResult write-back call");
+    let terminal = run_flow
+        .find("emit_spine(\"test.completed\"")
+        .expect("terminal test event");
+    assert!(execution < writeback_call && writeback_call < terminal);
+
+    let writeback_fn = source
+        .split("fn post_test_results(")
+        .nth(1)
+        .expect("post_test_results implementation");
+    let post_loop = writeback_fn
+        .find("post_results_loop")
+        .expect("bounded chunk loop");
+    let writeback_completed = writeback_fn
+        .find("emit_spine(\"testresult.writeback.completed\"")
+        .expect("write-back completion event");
+    assert!(post_loop < writeback_completed);
 }
 
 // ── #3821 — the test leg scopes to the diff via the SAME shared core builds

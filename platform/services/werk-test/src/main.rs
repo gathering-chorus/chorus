@@ -415,21 +415,23 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
     }
     let outcome = gate_outcome(units.len(), any_failed, self_mod);
-    let extras = werk_test::completed_extras(
+    let execution_duration_ms = started_at.elapsed().as_millis();
+    let execution_extras = werk_test::completed_extras(
         &outcome,
         units.len(),
         plan.len(),
         failed_count,
-        started_at.elapsed().as_millis(),
+        execution_duration_ms,
         self_mod,
     );
-    let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    emit_spine("test.completed", &role, &card, &trace, &extra_refs);
+    let execution_refs: Vec<(&str, &str)> = execution_extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    emit_spine("test.execution.completed", &role, &card, &trace, &execution_refs);
+    let writeback_started = std::time::Instant::now();
     // #3634 write side — the run becomes a TestSuiteRun instance in the graph.
     // Best-effort and WITNESSED either way: the gate's verdict never depends on
     // the write, but a skipped post is a spine event, not a silence.
     post_suite_run(&role, &card, &trace, plan_source, plan.len(), failed_count,
-        started_at.elapsed().as_millis(), outcome.label());
+        execution_duration_ms, outcome.label());
     // #3592 — per-case wire-back. Unjoinable cargo cases are NAMED (spine),
     // never silently dropped.
     if unmatched_cargo > 0 {
@@ -446,6 +448,22 @@ fn run(args: &[String]) -> Result<i32, String> {
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
     }
     post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    let writeback_duration_ms = writeback_started.elapsed().as_millis();
+    let total_duration_ms = started_at.elapsed().as_millis();
+    let mut completed = werk_test::completed_extras(
+        &outcome,
+        units.len(),
+        plan.len(),
+        failed_count,
+        total_duration_ms,
+        self_mod,
+    );
+    completed.push(("execution_duration_ms".into(), execution_duration_ms.to_string()));
+    completed.push(("writeback_duration_ms".into(), writeback_duration_ms.to_string()));
+    let completed_refs: Vec<(&str, &str)> = completed.iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    emit_spine("test.completed", &role, &card, &trace, &completed_refs);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -626,17 +644,26 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let total_units = crates.len() + ts_pkgs.len() + bats_suites.len();
 
     let outcome = gate_outcome(total_units, any_failed, false);
-    let extras = werk_test::completed_extras(
-        &outcome, total_units, total_units, failed_count,
-        started_at.elapsed().as_millis(), false);
-    let extra_refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
-    emit_spine("test.completed", &role, &card, &trace, &extra_refs);
+    let execution_duration_ms = started_at.elapsed().as_millis();
+    let execution_extras = werk_test::completed_extras(
+        &outcome,
+        total_units,
+        total_units,
+        failed_count,
+        execution_duration_ms,
+        false,
+    );
+    let execution_refs: Vec<(&str, &str)> = execution_extras.iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    emit_spine("test.execution.completed", &role, &card, &trace, &execution_refs);
+    let writeback_started = std::time::Instant::now();
     // #3975 — the graph writes authenticate as the NIGHTLY machine principal
     // (least-privilege scope: the tests graph only). Spine events keep role
     // "system" — who acted vs which credential wrote are different facts.
     let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
     post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
-        started_at.elapsed().as_millis(), outcome.label());
+        execution_duration_ms, outcome.label());
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", &role, &card, &trace,
             &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
@@ -647,6 +674,22 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             &[("count", &unregistered.to_string())]);
     }
     post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
+    let writeback_duration_ms = writeback_started.elapsed().as_millis();
+    let total_duration_ms = started_at.elapsed().as_millis();
+    let mut completed = werk_test::completed_extras(
+        &outcome,
+        total_units,
+        total_units,
+        failed_count,
+        total_duration_ms,
+        false,
+    );
+    completed.push(("execution_duration_ms".into(), execution_duration_ms.to_string()));
+    completed.push(("writeback_duration_ms".into(), writeback_duration_ms.to_string()));
+    let completed_refs: Vec<(&str, &str)> = completed.iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    emit_spine("test.completed", &role, &card, &trace, &completed_refs);
     println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
     Ok(outcome.exit_code())
 }
@@ -1312,7 +1355,8 @@ fn write_token(role: &str) -> Option<String> {
 /// #3592 emit side — every executed case lands as a chorus:TestResult keyed to
 /// the registered identity (filePath+testName). Best-effort + WITNESSED: the
 /// gate verdict never depends on it; skip/truncation is a spine event, not a
-/// silence. Bounded at 2000 posts per run (no silent caps — dropped count named).
+/// silence. Bounded at 2000 entities per run and packed into byte-bounded atomic
+/// requests (no silent caps — every dropped/failed entity is accounted).
 fn post_test_results(
     role: &str,
     card: &str,
@@ -1320,16 +1364,15 @@ fn post_test_results(
     joined: &[(CaseResult, String)],
     run_epoch_ms: u128,
 ) {
-    if joined.is_empty() {
-        return;
-    }
-    let endpoint = std::env::var("OWL_API_TESTRESULTS")
-        .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
-    let Some(token) = write_token(role) else {
-        emit_spine("testresult.post.skipped", role, card, trace,
-            &[("reason", "no-write-token"), ("count", &joined.len().to_string())]);
-        return;
-    };
+    let writeback_started = std::time::Instant::now();
+    let endpoint = std::env::var("OWL_API_TESTRESULTS_BATCH")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| {
+            let collection = std::env::var("OWL_API_TESTRESULTS")
+                .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
+            werk_test::testresult_batch_endpoint(&collection)
+        });
     const MAX_POSTS: usize = 2000;
     // #3925 — the RUN's clock, threaded from run start; post time is not run time.
     let ts = run_epoch_ms;
@@ -1342,13 +1385,25 @@ fn post_test_results(
                 &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, i)
         })
         .collect();
-    // #3808 — the loop yields per-case HTTP codes (retiring #3725's second
-    // diagnostic request) and recovers a token that expires mid-stream: the
-    // first 401 re-mints ONCE and resumes from the same case. Measured cause
-    // (#3802): one token minted up front, chorus-identity-token's ~600s cache,
-    // 594 posts landed then 534 died 401. A 401 that survives the re-mint is a
-    // real refusal and fails loudly below — never an endless retry.
-    let stats = werk_test::post_results_loop(&endpoint, &token, &payloads, &|| mint_token(role));
+    let packed = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);
+    let mut stats = if packed.chunks.is_empty() {
+        werk_test::PostStats::default()
+    } else if let Some(token) = write_token(role) {
+        // The first 401 re-mints ONCE and retries the same atomic chunk. A 401
+        // that survives the re-mint is a real refusal; no per-entity fallback.
+        werk_test::post_results_loop(&endpoint, &token, &packed.chunks, &|| mint_token(role))
+    } else {
+        emit_spine("testresult.post.skipped", role, card, trace,
+            &[("reason", "no-write-token"), ("count", &payloads.len().to_string())]);
+        werk_test::PostStats {
+            failed: packed.chunks.iter().map(|c| c.entities).sum(),
+            chunks_failed: packed.chunks.len(),
+            first_fail_code: Some("no-write-token".into()),
+            ..Default::default()
+        }
+    };
+    let truncated_dropped = joined.len().saturating_sub(MAX_POSTS);
+    werk_test::account_unsent_results(&mut stats, packed.oversized, truncated_dropped);
     // #3725 AC4 — say it out loud. A run that posts ZERO results must never
     // look identical to one that posted all of them.
     if stats.failed > 0 {
@@ -1362,20 +1417,42 @@ fn post_test_results(
             }
         );
     }
+    let posted = stats.posted.to_string();
+    let failed = stats.failed.to_string();
+    let chunks_attempted = stats.chunks_attempted.to_string();
+    let chunks_succeeded = stats.chunks_succeeded.to_string();
+    let chunks_failed = stats.chunks_failed.to_string();
+    let remint_attempts = stats.remint_attempts.to_string();
     let mut extras: Vec<(String, String)> = vec![
-        ("count".into(), stats.posted.to_string()),
-        ("failed_posts".into(), stats.failed.to_string()),
+        ("count".into(), posted.clone()),
+        ("failed_posts".into(), failed.clone()),
+        ("chunks_attempted".into(), chunks_attempted.clone()),
+        ("chunks_succeeded".into(), chunks_succeeded.clone()),
+        ("chunks_failed".into(), chunks_failed.clone()),
         // #3808 AC3 — expiry frequency is observable from the spine.
-        ("remint_attempts".into(), stats.remint_attempts.to_string()),
+        ("remint_attempts".into(), remint_attempts.clone()),
     ];
     if let Some(c) = &stats.first_fail_code {
         extras.push(("first_fail_http".into(), c.clone()));
     }
     if joined.len() > MAX_POSTS {
-        extras.push(("truncated_dropped".into(), (joined.len() - MAX_POSTS).to_string()));
+        extras.push(("truncated_dropped".into(), truncated_dropped.to_string()));
     }
     let refs: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     emit_spine("testresult.posted", role, card, trace, &refs);
+    let duration_ms = writeback_started.elapsed().as_millis().to_string();
+    let truncated = truncated_dropped.to_string();
+    let completed = [
+        ("duration_ms", duration_ms.as_str()),
+        ("chunks_attempted", chunks_attempted.as_str()),
+        ("chunks_succeeded", chunks_succeeded.as_str()),
+        ("chunks_failed", chunks_failed.as_str()),
+        ("entities_posted", posted.as_str()),
+        ("entities_failed", failed.as_str()),
+        ("truncated_dropped", truncated.as_str()),
+        ("remint_attempts", remint_attempts.as_str()),
+    ];
+    emit_spine("testresult.writeback.completed", role, card, trace, &completed);
 }
 
 /// #3592 AC3 — registered ∖ executed. Reads BOTH generated collections, prints
