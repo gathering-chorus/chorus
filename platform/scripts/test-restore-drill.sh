@@ -45,4 +45,19 @@ else
   echo "restore-drill: no PASS on the spine — the restore has never been proven"
 fi
 
-exec bash "$R/platform/scripts/restore-drill.sh"
+# #4004 — translate the drill's UNMEASURABLE into the nightly's refusal code.
+# restore-drill.sh exits 2 when it declines to measure — bedroom unreachable, no
+# backup present, no scratch space, load over 12. That is "I could not look", not
+# "the restore is broken", but the nightly scored it as a plain fail: on the
+# 2026-08-25 run it went red purely because the box was at load 13.2. rc=3 is the
+# nightly's SELF-REFUSED verdict (0 pass, 0 fail), which is what an unmeasurable
+# drill honestly is. Every other exit passes through untouched, so a genuinely
+# failed restore still goes red. #3616 built the age/cadence logic above; this
+# only fixes how a refusal is reported.
+bash "$R/platform/scripts/restore-drill.sh"
+rc=$?
+if [ "$rc" -eq 2 ]; then
+  echo "restore-drill: UNMEASURABLE — declining rather than claiming a restore failure (rc=3, SELF-REFUSED)"
+  exit 3
+fi
+exit "$rc"

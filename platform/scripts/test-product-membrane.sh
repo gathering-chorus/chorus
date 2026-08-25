@@ -14,22 +14,22 @@
 #   --dry-run  list what would be stopped/probed, touch nothing
 set -uo pipefail
 
-# #3722 — SELF-GUARD: this test bootouts every com.chorus.* agent. If it is
-# ITSELF running under one (e.g. the nightly-suites LaunchAgent invoked it), it
-# would kill its own runner mid-loop — the ~13-min "untrappable" nightly killer
-# (Jul 22–Aug 2). Refuse in that case; this belongs to an ops/CI run with full
-# restore authority, not inside an agent it will stop. Walk the ancestry via ps.
+# #4004 — this suite bootouts EVERY com.chorus.* agent, so the question is not
+# "who is my parent" but "does this run hold restore authority". Inference kept
+# failing: #3722 scanned ancestry for com.chorus. / nightly-suites.sh, #3974
+# renamed the runner to werk-test and the scan went quiet — the nightly booted
+# every agent and platform/api took 246 collateral failures. The obvious repair,
+# refusing without a controlling terminal, is ALSO wrong: act allocates a pty, so
+# a pipeline run looks exactly like an operator sitting at a keyboard (proven by
+# this card's own test failing inside the pipeline while passing locally).
+#
+# So stop inferring. Running this requires an EXPLICIT grant. Unattended runs
+# self-refuse with rc=3, which the nightly scores as SELF-REFUSED rather than a
+# failure; an operator who owns the restore sets the grant and runs it. A guard
+# that must be granted cannot be defeated by a rename or a pty.
 if [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
-  _pid=$PPID
-  while [ "${_pid:-0}" -gt 1 ]; do
-    _cmd="$(ps -o command= -p "$_pid" 2>/dev/null || true)"
-    case "$_cmd" in
-      *com.chorus.*|*nightly-suites.sh*)
-        echo "REFUSED — test-product-membrane runs under a chorus agent ancestor (pid $_pid: ${_cmd%% *}); it would bootout its own runner. Run from an ops shell, or set MEMBRANE_ALLOW_UNDER_AGENT=1 if you own the restore. (#3722)" >&2
-        exit 3 ;;
-    esac
-    _pid="$(ps -o ppid= -p "$_pid" 2>/dev/null | tr -d ' ')"
-  done
+  echo "REFUSED — test-product-membrane bootouts every com.chorus.* agent and needs explicit restore authority. It never runs unattended: set MEMBRANE_ALLOW_UNDER_AGENT=1 from an ops shell where you own the restore. (#4004)" >&2
+  exit 3
 fi
 
 UID_N="$(id -u)"
