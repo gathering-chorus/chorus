@@ -9,11 +9,13 @@ import request from 'supertest';
 import { createApp } from './service';
 import { MessageStore } from './store';
 
+const SECRET = 'drain-secret-4004';
+
 describe('#4004 POST /drain — the queued last mile', () => {
   afterEach(() => { delete process.env.CHORUS_PULSE_SECRET; });
 
   it('refuses an unauthenticated caller — 403, and nothing is released', async () => {
-    process.env.CHORUS_PULSE_SECRET = 'drain-secret-4004';
+    process.env.CHORUS_PULSE_SECRET = SECRET;
     const store = new MessageStore(':memory:');
     const app = createApp(store);
     const res = await request(app).post('/drain').send({ role: 'silas' });
@@ -22,7 +24,7 @@ describe('#4004 POST /drain — the queued last mile', () => {
   });
 
   it('refuses a WRONG secret — a near-miss is still a refusal', async () => {
-    process.env.CHORUS_PULSE_SECRET = 'drain-secret-4004';
+    process.env.CHORUS_PULSE_SECRET = SECRET;
     const store = new MessageStore(':memory:');
     const app = createApp(store);
     const res = await request(app)
@@ -33,35 +35,35 @@ describe('#4004 POST /drain — the queued last mile', () => {
   });
 
   it('refuses a malformed role rather than draining something unintended', async () => {
-    process.env.CHORUS_PULSE_SECRET = 'drain-secret-4004';
+    process.env.CHORUS_PULSE_SECRET = SECRET;
     const store = new MessageStore(':memory:');
     const app = createApp(store);
     const res = await request(app)
       .post('/drain')
-      .set('X-Chorus-Pulse-Secret', 'drain-secret-4004')
+      .set('X-Chorus-Pulse-Secret', SECRET)
       .send({ role: '../../etc' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('bad role');
   });
 
   it('refuses a missing role', async () => {
-    process.env.CHORUS_PULSE_SECRET = 'drain-secret-4004';
+    process.env.CHORUS_PULSE_SECRET = SECRET;
     const store = new MessageStore(':memory:');
     const app = createApp(store);
     const res = await request(app)
       .post('/drain')
-      .set('X-Chorus-Pulse-Secret', 'drain-secret-4004')
+      .set('X-Chorus-Pulse-Secret', SECRET)
       .send({});
     expect(res.status).toBe(400);
   });
 
   it('NEGATIVE PROOF: the authorized caller with a valid role IS served (#3734)', async () => {
-    process.env.CHORUS_PULSE_SECRET = 'drain-secret-4004';
+    process.env.CHORUS_PULSE_SECRET = SECRET;
     const store = new MessageStore(':memory:');
     const app = createApp(store);
     const res = await request(app)
       .post('/drain')
-      .set('X-Chorus-Pulse-Secret', 'drain-secret-4004')
+      .set('X-Chorus-Pulse-Secret', SECRET)
       .send({ role: 'silas' });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, role: 'silas' });

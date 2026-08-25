@@ -1,3 +1,4 @@
+/* eslint-disable security/detect-non-literal-fs-filename -- every path here is built from this test's own mkdtemp dir; the variability IS the fixture */
 // @test-type: unit — temp dirs only; no ~/.chorus, no live sessions, no spine
 //
 // #4004 — session-registry's uncovered lines were precisely its safety net:

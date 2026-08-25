@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract the watcher awaits */
 // @test-type: unit — fake timers + injected readers; no board, no spine, no clock
 //
 // #4004 — wip-drift.ts sat at 45% function coverage. The pure rule was tested;
@@ -99,6 +100,11 @@ describe('#4004 wip-drift watch loop', () => {
     stop();
     expect(fired).toHaveLength(1);
   });
+
+});
+
+describe('#4004 wip-drift watch loop — resilience', () => {
+  afterEach(() => { jest.useRealTimers(); });
 
   it('a silent ROLE is not drift — nothing fires when the role itself is idle', async () => {
     jest.useFakeTimers();

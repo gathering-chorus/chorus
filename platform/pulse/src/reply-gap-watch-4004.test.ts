@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await -- injected async doubles document the Promise contract the watcher awaits */
 // @test-type: unit — pure functions + a fake-timer watch loop; no spine, no fs, no clock
 //
 // #4004 — reply-gap.ts sat at 28.57% function coverage while its watcher has
