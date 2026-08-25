@@ -27,10 +27,10 @@ clean_file() {
     log "info" "DRY RUN: would remove $path ($reason)"
   else
     rm -f "$path" 2>/dev/null && {
-      ((CLEANED++))
+      CLEANED=$((CLEANED+1))
       return 0
     } || {
-      ((ERRORS++))
+      ERRORS=$((ERRORS+1))
       log "warn" "Failed to remove $path"
       return 1
     }
@@ -43,10 +43,10 @@ clean_dir() {
     log "info" "DRY RUN: would remove dir $path ($reason)"
   else
     rm -rf "$path" 2>/dev/null && {
-      ((CLEANED++))
+      CLEANED=$((CLEANED+1))
       return 0
     } || {
-      ((ERRORS++))
+      ERRORS=$((ERRORS+1))
       log "warn" "Failed to remove dir $path"
       return 1
     }

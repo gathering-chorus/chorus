@@ -28,20 +28,20 @@ AFTER=$(wc -l < "$CHORUS_LOG" 2>/dev/null | tr -d ' ')
 NEW_LINES=$(tail -n +$((BEFORE + 1)) "$CHORUS_LOG" 2>/dev/null | grep "role.state.changed" | grep "silas")
 if [ -n "$NEW_LINES" ]; then
   echo "  PASS: role.state.changed emitted for silas"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: no role.state.changed event after state transition"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 2: Event contains state value ---
 echo "Test 2: Event contains the new state"
 if echo "$NEW_LINES" | grep -q "waiting"; then
   echo "  PASS: event contains state=waiting"
-  ((PASS++))
+  PASS=$((PASS+1))
 else
   echo "  FAIL: event missing state value"
-  ((FAIL++))
+  FAIL=$((FAIL+1))
 fi
 
 # --- Test 3: retired by #2467/#2629 ---
