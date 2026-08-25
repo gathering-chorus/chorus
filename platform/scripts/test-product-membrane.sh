@@ -19,6 +19,23 @@ set -uo pipefail
 # would kill its own runner mid-loop — the ~13-min "untrappable" nightly killer
 # (Jul 22–Aug 2). Refuse in that case; this belongs to an ops/CI run with full
 # restore authority, not inside an agent it will stop. Walk the ancestry via ps.
+# #4004 — the ancestry scan below is a NAME LIST, and name lists drift. #3974
+# moved suite execution into the werk-test binary, so the parent command became
+# `werk-test` and matched neither pattern. Log evidence from the 17:44 run: this
+# suite scored "verdict fail — 0 pass, 1 fail" and NOT the SELF-REFUSED rc=3 line
+# a firing guard produces, while the same run's api row read "1862 pass, 246
+# fail" — the bootout-collateral signature this card is named after. #3722's
+# guard was defeated not by a hole in its logic but by a rename underneath it.
+# Kade's ask, and he is right: match something that cannot be renamed.
+#
+# A controlling terminal is that invariant. An ops run has one; every automated
+# runner — werk-test, launchd, act, cron — does not, and no future rename changes
+# that. The name scan stays underneath as a second net.
+if [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ] && [ ! -t 0 ]; then
+  echo "REFUSED — test-product-membrane has no controlling terminal, so it is running under an automated runner; it would bootout that runner and every other com.chorus.* agent. Run it from an ops shell, or set MEMBRANE_ALLOW_UNDER_AGENT=1 if you own the restore. (#4004)" >&2
+  exit 3
+fi
+
 if [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
   _pid=$PPID
   while [ "${_pid:-0}" -gt 1 ]; do
