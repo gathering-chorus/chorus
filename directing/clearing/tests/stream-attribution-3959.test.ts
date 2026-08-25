@@ -19,7 +19,8 @@
 // role comes out the other end. Pure-function round trip over real spine JSON —
 // no live server, no clock, no network.
 
-import { describe, it, expect } from 'vitest';
+// jest provides describe/it/expect as globals — the vitest import was a wrong-framework
+// line that made the whole suite fail to LOAD (nightly red 2026-08-24, never ran before)
 import { readSpineWithStats, TAIL_BYTES } from '../src/spine-tail';
 
 /** A spine line exactly as chorus-hooks writes it (state.rs:464-476). */

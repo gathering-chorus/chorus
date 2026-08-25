@@ -35,9 +35,64 @@
  * was built to catch.
  */
 const { test, expect } = require('@playwright/test');
+const { spawn } = require('child_process');
+const path = require('path');
 
-const CLEARING = process.env.CLEARING_URL || 'http://localhost:3470';
 const ROLES = ['wren', 'silas', 'kade'];
+
+/**
+ * WHICH CLEARING THIS SPEC READS (#2725, 2026-08-25).
+ *
+ * The other flows read the deployed system on purpose — one environment, and it
+ * is production. This one cannot, and the reason is structural. It compares two
+ * projections of the spine against each other, so it is a check ON THE
+ * RENDERING CODE. Pointed at :3470 during a card that changes that rendering it
+ * grades the OLD code: red until the fix lands, and the fix cannot land while
+ * it is red. Measured at 05:57 on the same spine, seconds apart — werk build
+ * 8/8, deployed 1 failed (kade: tile 4m vs pane 8m). Runs 66-70 died in that
+ * loop; the land refused four times on a presented pin the retries kept moving.
+ *
+ * So the spec brings its own world (#3528): with no CLEARING_URL it starts the
+ * Clearing built from THIS tree, on its own port, against the real spine. Not
+ * one assertion changes — same tiles, same pane, same no-tolerance skew rule,
+ * same four negative proofs; a genuine disagreement still reds it. CLEARING_URL
+ * still wins when set, so grading the deployed Clearing after a land is one env
+ * var, which is the post-deploy check and belongs after the deploy.
+ */
+const CLEARING_SRC = path.resolve(__dirname, '..', '..', 'directing', 'clearing');
+const OWN_PORT = Number(process.env.TILES_SPEC_PORT || 3487);
+const CLEARING = process.env.CLEARING_URL || `http://localhost:${OWN_PORT}`;
+const BRINGS_OWN = !process.env.CLEARING_URL;
+
+let child = null;
+
+test.beforeAll(async () => {
+  if (!BRINGS_OWN) return;
+  child = spawn(process.execPath, [path.join(CLEARING_SRC, 'dist', 'server.js')], {
+    cwd: CLEARING_SRC,
+    env: {
+      ...process.env,
+      COMMAND_CHANNEL_PORT: String(OWN_PORT),
+      CLEARING_HTTPS_PORT: String(OWN_PORT + 1),
+      // A test-owned Clearing reads the spine and must not write to anyone:
+      // no pulse fetch, and nudges go nowhere near a role's terminal.
+      PULSE_URL: 'http://127.0.0.1:1',
+      NUDGE_BINARY: '/usr/bin/true',
+    },
+    stdio: 'ignore',
+  });
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    const ok = await fetch(`${CLEARING}/api/stream?lines=1`).then((r) => r.ok).catch(() => false);
+    if (ok) return;
+    if (Date.now() > deadline) throw new Error(`own Clearing did not answer on ${CLEARING} in 30s`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+});
+
+test.afterAll(() => {
+  if (child && !child.killed) child.kill();
+});
 
 /**
  * REFUSE rather than pass when the target is not a Clearing.
@@ -192,8 +247,20 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
       // for EVERY role, not only the ones a tile calls active.
       if (ageSec === null || mine.length === 0) continue;
       const today = new Date().toDateString();
+      // The pane renders a CLOCK TIME ("8:47 PM"), not a date, so today's date
+      // is stamped on it to compare. Across midnight that is wrong in a way
+      // that reads as the very defect this checks for: a line from 20:47
+      // yesterday becomes 20:47 TODAY — fifteen hours in the future — and the
+      // skew comes out negative and enormous. It made the check red at 05:40
+      // and green at 20:40 on identical surfaces (#2725, 2026-08-25). A time
+      // that lands ahead of now belongs to yesterday.
+      const DAY_MS = 86400000;
+      const stamp = (r) => {
+        const t = Date.parse(`${today} ${r.ts}`);
+        return Number.isNaN(t) ? NaN : t > Date.now() ? t - DAY_MS : t;
+      };
       const newest = mine
-        .map((r) => Date.parse(`${today} ${r.ts}`))
+        .map(stamp)
         .filter((t) => !Number.isNaN(t))
         .sort((a, b) => b - a)[0];
       if (newest === undefined) continue;
@@ -249,6 +316,31 @@ test.describe('#3976 reconciliation — tiles and streams must agree', () => {
       .filter((t) => streamRows.filter((r) => r.role === t.role).length === 0)
       .map((t) => t.role);
     expect(disagreements, 'an idle team is not a disagreement').toEqual([]);
+  });
+
+  // NEGATIVE PROOF 4 — the midnight rule must not swallow a real disagreement.
+  // The rule above rolls a future-looking clock time back one day. That is the
+  // right reading for "8:47 PM seen at 05:40", and it must NOT also excuse a
+  // line that is genuinely hours stale within the same day, which is the 06:19
+  // defect itself. Both cases are graded here (#2725, 2026-08-25).
+  test('the midnight rollback fixes the wrap WITHOUT excusing a real skew', () => {
+    const DAY_MS = 86400000;
+    const at = (h, m) => new Date(2026, 7, 25, h, m).getTime();
+    const now = at(5, 40);
+    const roll = (t) => (t > now ? t - DAY_MS : t);
+
+    // a. the wrap: 8:47 PM stamped with today's date, read at 05:40. Rolled
+    //    back it is ~9h old — not 15h in the future, and not a disagreement
+    //    the tile's 120s poll should be graded against as negative time.
+    const wrapped = roll(at(20, 47));
+    expect(wrapped < now, 'a wrapped time lands in the PAST once rolled back').toBe(true);
+    expect(Math.round((now - wrapped) / 3600000), 'and reads as ~9h old').toBe(9);
+
+    // b. the real skew: a 05:04 line read at 05:40 stays 36 minutes stale, well
+    //    past one tile poll. The rollback must leave it exactly where it was.
+    const stale = roll(at(5, 4));
+    expect(Math.round((now - stale) / 60000), 'a same-day stale line is untouched').toBe(36);
+    expect((now - stale) / 1000 > 120, 'and still trips the 120s rule').toBe(true);
   });
 
   // NEGATIVE PROOF 3 — a stale age on an "active" tile is itself the failure.

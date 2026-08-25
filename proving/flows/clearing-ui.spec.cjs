@@ -24,8 +24,21 @@ const CLEARING = process.env.CLEARING_URL || 'http://localhost:3470';
  *
  * /api/message is the room's ingest (server.ts:1228 -> messageRouter.ingest).
  */
+// #3966 hardened the room's write door: BRIDGE_TOKEN or CSS session, anonymous
+// refused. The flow posts as a server-side caller, so it carries the same token
+// the probe/responder/roles present — read from the file the server reads.
+const fs = require('fs');
+// CHORUS_HOME means the repo in shell env but ~/.chorus to the Clearing server —
+// try both locations the server could have read its token from.
+const BRIDGE_TOKEN = [
+  `${process.env.CHORUS_HOME || ''}/bridge-auth-token`,
+  `${process.env.HOME}/.chorus/bridge-auth-token`,
+].map((p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } })
+ .find(Boolean) || '';
+
 async function postAs(request, from, text, type) {
   return request.post(`${CLEARING}/api/message`, {
+    headers: { Authorization: `Bearer ${BRIDGE_TOKEN}` },
     data: type ? { from, text, type } : { from, text },
   });
 }

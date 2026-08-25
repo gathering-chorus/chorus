@@ -74,3 +74,66 @@ describe('#3882 latestSpineActivity — one clock over raw lines', () => {
     expect(acts.system).toBeUndefined();
   });
 });
+
+describe('#2725 — heartbeats are process liveness, not role activity', () => {
+  const now = Date.parse('2026-08-24T20:00:00Z');
+  const line = (event: string, agoSecs: number, role = 'silas') =>
+    JSON.stringify({ timestamp: new Date(now - agoSecs * 1000).toISOString(), role, event });
+
+  it('a fresh heartbeat over an hour-old real event does NOT read as activity', () => {
+    // the live 2026-08-24 shape: tile said "8s ago", pane had been silent 48min
+    const act = latestSpineActivity([line('agent.action', 2913), line('system.heartbeat', 8)], now);
+    expect(act.silas.ageSecs).toBe(2913);
+    expect(act.silas.kind).toBe('agent.action');
+  });
+
+  it('NEGATIVE PROOF: without the exclusion the heartbeat wins — the lie this fixes', () => {
+    // same input, heartbeat spelled as an ordinary event: it DOES become newest,
+    // which is exactly the tile-vs-pane disagreement the #3976 flow caught.
+    const act = latestSpineActivity([line('agent.action', 2913), line('reply.published', 8)], now);
+    expect(act.silas.ageSecs).toBe(8);
+  });
+
+  it('thinking still counts — a role with no tool calls is not idled by this', () => {
+    const act = latestSpineActivity([line('observer.digest', 30), line('system.heartbeat', 1)], now);
+    expect(act.silas.kind).toBe('observer.digest');
+  });
+});
+
+describe('#2725 — tile activity is the pane line, so the two cannot disagree', () => {
+  const os = require('os'); const fsx = require('fs'); const pathx = require('path');
+  const { projectSpine } = require('../src/spine-tail');
+  const now = Date.parse('2026-08-24T20:00:00Z');
+  const at = (agoSecs: number) => new Date(now - agoSecs * 1000).toISOString();
+
+  function fixture(lines: string[]): string {
+    const dir = fsx.mkdtempSync(pathx.join(os.tmpdir(), 'spine-2725-'));
+    const f = pathx.join(dir, 'chorus.log');
+    fsx.writeFileSync(f, lines.join('\n') + '\n');
+    return f;
+  }
+
+  it('a fresh heartbeat does not make a silent role look active', () => {
+    const f = fixture([
+      JSON.stringify({ timestamp: at(2913), role: 'silas', event: 'session_tool', summary: 'Bash: cargo test', action: 'Bash' }),
+      JSON.stringify({ timestamp: at(1), role: 'silas', event: 'system.heartbeat' }),
+    ]);
+    const { activity, lines } = projectSpine(fsx, f, 50, now, new Set(['silas']));
+    // the pane renders the tool line and not the heartbeat…
+    expect(lines.some((l: any) => l.type === 'tool')).toBe(true);
+    // …so the tile ages against the SAME line, not the timer.
+    expect(activity.silas.ageSecs).toBe(2913);
+  });
+
+  it('NEGATIVE PROOF: reconciliation is by construction — activity always equals the newest rendered line', () => {
+    const f = fixture([
+      JSON.stringify({ timestamp: at(600), role: 'wren', event: 'session_tool', summary: 'Bash: ls', action: 'Bash' }),
+      JSON.stringify({ timestamp: at(30), role: 'wren', event: 'session_turn', summary: 'a real turn', tool_count: '1' }),
+      JSON.stringify({ timestamp: at(2), role: 'wren', event: 'system.heartbeat' }),
+    ]);
+    const { activity, lines } = projectSpine(fsx, f, 50, now, new Set(['wren']));
+    const newestRendered = Math.min(...lines.filter((l: any) => l.role === 'wren')
+      .map((l: any) => Math.round((now - Date.parse(l.ts)) / 1000)));
+    expect(activity.wren.ageSecs).toBe(newestRendered);
+  });
+});

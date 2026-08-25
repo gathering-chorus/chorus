@@ -923,6 +923,7 @@ app.get('/api/chorus/conversation', async (req: Request, res: Response) => {
 // Memory domain — join six data sources into a card timeline. #1947
 
 import { fetchChorusCardStory, type CardMeta, type NudgeMessage } from './handlers/chorus-card-story';
+import { recentNudges } from './nudge-fold';
 import { safeReadFile, readFileTail } from './lib/log-reader';
 
 // #3406 — tail budget for the /context/spine log read. 4MB holds ~8x MAX_LIMIT(500)
@@ -931,7 +932,6 @@ import { safeReadFile, readFileTail } from './lib/log-reader';
 const SPINE_TAIL_BYTES = 4 * 1024 * 1024;
 app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
   const cardsScript = path.resolve(__dirname, '../../scripts/cards');
-  const MESSAGING_URL = 'http://localhost:3475';
   // #3819 — the SPINE, which moved to ~/.chorus/chorus.log on 2026-05-04 when
   // branch checkouts were clobbering the in-repo copy. These handlers were
   // never repointed, so they read a 57KB leftover and returned no events —
@@ -954,11 +954,15 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
         },
         db,
         scanSpine: () => scanTail(logPath),
-        loadNudges: async () => {
-          const resp = await fetch(`${MESSAGING_URL}/api/messages?limit=100`);
-          if (!resp.ok) return [];
-          return (await resp.json()) as NudgeMessage[];
-        },
+        // #2725 AC5 — repointed from :3475 messages.db to the spine itself:
+        // chorus-api has the log on disk; messages.db loses this reader.
+        loadNudges: () =>
+          Promise.resolve(recentNudges(logPath, 100).map((n): NudgeMessage => ({
+            from: n.from,
+            to: n.to,
+            text: n.content,
+            timestamp: n.ts,
+          }))),
       },
       req.params.id,
     );
@@ -966,6 +970,50 @@ app.get('/api/chorus/card-story/:id', async (req: Request, res: Response) => {
   } finally {
     if (db) db.close();
   }
+});
+
+// --- GET /api/nudge/:role/pending --- #2725 AC1
+// Read projection of the spine (nudge.emitted minus nudge.surfaced). Declared
+// as an APISurface (requiresScope nudge-read) AND enforced in-route: role-lane
+// scoped per Silas's 2026-08-23 ruling — a role reads only its own pending,
+// jeff (role param 'all') reads every lane. Enforcement lives here so it holds
+// even while the #3618 envelope flag is off. Refusals name their state.
+import { decideNudgePending } from './nudge-pending-route';
+const WEBID_ROLE_QUERY = fs
+  .readFileSync(path.resolve(__dirname, 'sparql', 'webid-role.rq'), 'utf-8')
+  .trim();
+// Silas review 2026-08-23: don't hit Fuseki per request — 300s TTL, same
+// pattern as the es256 door's scope cache.
+interface WebidRoleRows { results?: { bindings?: Array<{ v?: { value?: string } }> } }
+let webidRoleCache: { at: number; rows: WebidRoleRows } | null = null;
+const WEBID_ROLE_TTL_MS = 300_000;
+async function roleForWebId(webId: string): Promise<string | null> {
+  if (!webidRoleCache || Date.now() - webidRoleCache.at > WEBID_ROLE_TTL_MS) {
+    webidRoleCache = { at: Date.now(), rows: await athenaSparqlQuery(WEBID_ROLE_QUERY) };
+  }
+  const rows = webidRoleCache.rows;
+  for (const b of rows.results?.bindings ?? []) {
+    const v = b.v?.value ?? '';
+    const sp = v.indexOf(' ');
+    if (sp <= 0) continue;
+    if (v.slice(0, sp) === webId) {
+      const roleIri = v.slice(sp + 1);
+      const slug = roleIri.split('#').pop() ?? '';
+      return slug.startsWith('role-') ? slug.slice('role-'.length) : slug || null;
+    }
+  }
+  return null;
+}
+app.get('/api/nudge/:role/pending', async (req: Request, res: Response) => {
+  const d = await decideNudgePending(
+    { role: req.params.role, authorization: req.headers.authorization ?? '' },
+    {
+      verify: verifyIdentity,
+      roleForWebId,
+      logPath: `${process.env.HOME}/.chorus/chorus.log`,
+    },
+  );
+  res.status(d.status).json(d.body);
 });
 
 // --- GET /api/chorus/domain-story/:domain ---

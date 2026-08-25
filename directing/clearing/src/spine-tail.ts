@@ -13,7 +13,9 @@
  * regression tests in tests/spine-tail.test.ts.
  */
 
-import type fs_node from 'fs';
+// #2725 — the default value import gives spinePath's existence probe a real fs;
+// the type alias keeps every other fs use injected (tests pass their own).
+import fs_node from 'fs';
 
 export type StreamLine = { ts: string; role: string; type: string; text: string; card?: string | null };
 
@@ -254,10 +256,27 @@ export function tailReadUtf8(fs: typeof fs_node, file: string, maxBytes: number 
  *  the memory layer). /api/stream once read ${CHORUS_ROOT}/platform/logs/
  *  chorus.log — a stale side-file — so werk lines never rendered live.
  *  Resolution: CHORUS_SPINE explicit override > CHORUS_HOME > HOME. */
-export function spinePath(env: Record<string, string | undefined>): string {
+export function spinePath(
+  env: Record<string, string | undefined>,
+  exists: (p: string) => boolean = (p) => {
+    /* eslint-disable-next-line security/detect-non-literal-fs-filename --
+     * spine path candidates come from env constants, same as tailer.ts. */
+    try { fs_node.statSync(p); return true; } catch { return false; }
+  },
+): string {
   if (env.CHORUS_SPINE) return env.CHORUS_SPINE;
-  if (env.CHORUS_HOME) return `${env.CHORUS_HOME}/chorus.log`;
-  return `${env.HOME}/.chorus/chorus.log`;
+  // #2725 (2026-08-24) — CHORUS_HOME is ambiguous by convention: the repo in a
+  // shell, ~/.chorus to a service. Taken on faith it points at a path that may
+  // not exist, and the pane then renders a DEAD log — the same silent-stale
+  // shape that ate Jeff's nudges (an 84KB leftover, months old, no error).
+  // Resolve to the first candidate that EXISTS: a path that isn't there cannot
+  // be the never-rotated spine.
+  const candidates = [
+    env.CHORUS_HOME ? `${env.CHORUS_HOME}/chorus.log` : undefined,
+    env.HOME ? `${env.HOME}/.chorus/chorus.log` : undefined,
+  ].filter((p): p is string => !!p);
+  for (const p of candidates) if (exists(p)) return p;
+  return candidates[candidates.length - 1] ?? `${env.HOME}/.chorus/chorus.log`;
 }
 
 export function readSpineLines(fs: typeof fs_node, logFile: string, limit: number): StreamLine[] {
@@ -327,29 +346,29 @@ export function projectSpine(
   now: number,
   agentRoles: ReadonlySet<string>,
 ): SpineProjection {
-  const raw = tailReadUtf8(fs, logFile).trim().split('\n').filter(Boolean);
   const { lines, stats } = readSpineWithStats(fs, logFile, limit);
 
-  // Same bytes the pane just rendered from — not a second, smaller read.
+  // #2725 (2026-08-24) — ONE accept rule, not two.
+  //
+  // This loop used to walk the RAW spine while the pane rendered `lines`, so
+  // the tile and the pane could still disagree about the same role from the
+  // same file: the tile counted `system.heartbeat` (a timer the process emits
+  // whether or not the role does anything) and called silas active "1s ago"
+  // while his pane sat 7 minutes silent — the #3976 reconciliation flow caught
+  // exactly that, live, three roles at once. #3982 removed the second READ;
+  // this removes the second RULE.
+  //
+  // Activity is now the newest line the pane actually renders. Tile and pane
+  // cannot drift, because there is nothing left to drift between: what Jeff
+  // sees in the stream IS what the tile is claiming.
   const act = new Map<string, { ageSecs: number; kind: string }>();
-  for (const line of raw) {
-    let e: { timestamp?: string; role?: string; event?: string };
-    try {
-      e = JSON.parse(line) as typeof e;
-    } catch {
-      continue;
-    }
-    const role = e.role ?? '';
-    if (!agentRoles.has(role) || !e.timestamp || !e.event) continue;
-    const t = Date.parse(e.timestamp);
+  for (const l of lines) {
+    if (!agentRoles.has(l.role) || !l.ts) continue;
+    const t = Date.parse(l.ts);
     if (Number.isNaN(t)) continue;
     const ageSecs = Math.max(0, Math.round((now - t) / 1000));
-    // A Map, not an object literal: `role` comes off a spine line, so indexing
-    // an object with it is untrusted-key access (security/detect-object-injection).
-    // The allowlist above already bounds it, but a Map has no prototype to walk
-    // into, which is the honest fix rather than a disable comment.
-    const prev = act.get(role);
-    if (!prev || ageSecs < prev.ageSecs) act.set(role, { ageSecs, kind: e.event });
+    const prev = act.get(l.role);
+    if (!prev || ageSecs < prev.ageSecs) act.set(l.role, { ageSecs, kind: l.type });
   }
   return { lines, activity: Object.fromEntries(act), stats };
 }

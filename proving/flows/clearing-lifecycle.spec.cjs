@@ -21,6 +21,15 @@
  */
 const { test: base, expect } = require('@playwright/test');
 
+// #3966 — room writes require BRIDGE_TOKEN; read from either location the server uses.
+const fs = require('fs');
+const BRIDGE_TOKEN = [
+  `${process.env.CHORUS_HOME || ''}/bridge-auth-token`,
+  `${process.env.HOME}/.chorus/bridge-auth-token`,
+].map((p) => { try { return fs.readFileSync(p, 'utf8').trim(); } catch { return ''; } })
+ .find(Boolean) || '';
+const AUTH = { Authorization: `Bearer ${BRIDGE_TOKEN}` };
+
 const BRIDGE_URL = 'http://localhost:3470';
 
 base.describe('Clearing: chat session lifecycle', () => {
@@ -59,10 +68,11 @@ base.describe('Clearing: chat session lifecycle', () => {
   });
 
   base('messages sent during clearing appear in message list', async ({ request }) => {
-    const uniqueText = `[e2e-clearing] decision-${Date.now()}`;
+    const uniqueText = `e2e clearing decision ${Date.now()}`;
 
     await base.step('Post clearing message via main message API', async () => {
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
+        headers: AUTH,
         data: { from: 'wren', text: uniqueText },
       });
       expect(response.status()).toBe(200);
@@ -82,6 +92,7 @@ base.describe('Clearing: chat session lifecycle', () => {
 
     await base.step('Send decision message', async () => {
       const response = await request.post(`${BRIDGE_URL}/api/message`, {
+        headers: AUTH,
         data: { from: 'jeff', text: decisionText },
       });
       expect(response.status()).toBe(200);

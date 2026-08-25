@@ -5,8 +5,25 @@ import fs from 'fs';
 import { EventEmitter } from 'events';
 import { MessageRouter } from './router';
 
-const CHORUS_ROOT = process.env.CHORUS_ROOT || '/Users/jeffbridwell/CascadeProjects';
-const CHORUS_LOG = `${CHORUS_ROOT}/platform/logs/chorus.log`;
+// #2725 — repointed to the LIVE spine. The spine moved to ~/.chorus/chorus.log on
+// 2026-05-04 (#3819 class); this tailer kept reading the dead 84KB repo-local copy,
+// so nudge bubbles silently never rendered in Jeff's Clearing.
+// CHORUS_HOME is ambiguous by convention (the repo in shell envs, ~/.chorus to
+// services), so resolve to the FIRST CANDIDATE THAT EXISTS — a path that doesn't
+// exist cannot be the never-rotated spine. CHORUS_LOG_FILE (#3615 membrane seam)
+// wins outright when set.
+function resolveSpinePath(): string {
+  const candidates = [
+    process.env.CHORUS_LOG_FILE,
+    process.env.CHORUS_HOME ? `${process.env.CHORUS_HOME}/chorus.log` : undefined,
+    `${process.env.HOME}/.chorus/chorus.log`,
+  ].filter((p): p is string => !!p);
+  for (const p of candidates) {
+    try { fs.statSync(p); return p; } catch { /* next candidate */ }
+  }
+  return candidates[candidates.length - 1];
+}
+const CHORUS_LOG = resolveSpinePath();
 const POLL_INTERVAL = 2000; // 2 seconds
 
 /** Spine log entry — all fields optional since entries vary by event type. */
@@ -138,7 +155,11 @@ export class ChorusLogTailer extends EventEmitter {
   // live inside entry.from. For back-compat during parallel-run the older
   // role.nudge.sent packed them under entry.target; accept both.
   private handleNudgeSent(parsed: SpineEntry, role: string): void {
-    const packed: string = parsed.from || parsed.target || '';
+    // #2725 — the LIVE spine's nudge.emitted (mcp-server appendChorusLog) packs
+    // the kv string under `payload`; the older chorus-log CLI shape packed it
+    // under `from`/`target`. Repointing to the live file without reading the
+    // live field would be the same silent-stale defect one layer down.
+    const packed: string = (parsed as { payload?: string }).payload || parsed.from || parsed.target || '';
     // On nudge.emitted: "from" value starts with "<sender>,to=<target>,..."; the
     // target role is after "to=". On role.nudge.sent: "target" value starts with
     // "<target>,chars=..." — first segment is the target.

@@ -40,21 +40,30 @@ const PATHS = [
 ];
 
 test.describe('#3878 — the public path topology Jeff specified', () => {
-  for (const { path, what } of PATHS) {
-    test(`${path} serves a page — ${what}`, async ({ request }) => {
-      const res = await request.get(`${PUBLIC_BASE}${path}`, { maxRedirects: 5 });
-      // A redirect that lands somewhere real is fine — he asked to reach the
-      // thing, not to forbid redirects. A 404 or a 5xx is not.
-      expect(res.status(), `${PUBLIC_BASE}${path} → ${res.status()}`).toBeLessThan(400);
+  // #2646 standing posture (Silas ruling 2026-08-23): Cloudflare Access sits in
+  // front of the public host. Anonymous probes see the wall, not the page — and
+  // the wall IS the correct state. A path passes if it serves the page (HTML)
+  // OR lands on the Access wall. Tunnel-dead states (530/1033, connection
+  // refused) still fail: the wall and the outage are different states.
+  const accessWalled = (res, body) => {
+    const finalUrl = res.url() || '';
+    const server = (res.headers()['server'] || '').toLowerCase();
+    return finalUrl.includes('cloudflareaccess.com')
+      || /cloudflareaccess|cf-access/i.test(body)
+      || (res.status() === 401 && server.includes('cloudflare'));
+  };
 
-      // Status alone is a hollow check, and this file caught itself being one:
-      // /chorus answered 200 with a CSS account-controls JSON blob, not a page.
-      // "Something replied" is not "the surface is there" — the same two states
-      // every defect this week collapsed into one. Assert we got HTML.
+  for (const { path, what } of PATHS) {
+    test(`${path} serves a page or the Access wall — ${what}`, async ({ request }) => {
+      // browser-faithful probe: without Accept: text/html, CSS content-negotiation
+      // answers json login-controls and the check misreads the wall (Silas, 2026-08-23)
+      const res = await request.get(`${PUBLIC_BASE}${path}`, { maxRedirects: 5, headers: { Accept: 'text/html' } });
+      const body = await res.text();
+      if (accessWalled(res, body)) return; // auth-wall present = pass (#2646)
+
+      expect(res.status(), `${PUBLIC_BASE}${path} → ${res.status()}`).toBeLessThan(400);
       const type = res.headers()['content-type'] || '';
       expect(type, `${path} content-type: ${type}`).toContain('html');
-
-      const body = await res.text();
       expect(body.length, `${path} body length ${body.length}`).toBeGreaterThan(200);
       expect(body.toLowerCase(), `${path} does not look like a document`).toContain('<html');
     });
@@ -64,6 +73,11 @@ test.describe('#3878 — the public path topology Jeff specified', () => {
   // returns 200 for everything including nonsense — a wildcard catch-all reads
   // as a working topology.
   test('a path that should NOT exist still 404s — the check can tell them apart', async ({ request }) => {
+    const apex = await request.get(`${PUBLIC_BASE}/`, { maxRedirects: 5, headers: { Accept: 'text/html' } });
+    const apexBody = await apex.text();
+    // Behind the Access wall every anonymous probe looks identical — the
+    // discriminator cannot discriminate. Typed skip, never a vacuous pass.
+    test.skip(accessWalled(apex, apexBody), 'apex behind Access wall — 404 discriminator needs credentials');
     const res = await request.get(`${PUBLIC_BASE}/definitely-not-a-real-surface-3878`, {
       maxRedirects: 5,
     });
@@ -76,7 +90,8 @@ test.describe('#3878 — the public path topology Jeff specified', () => {
     const res = await request.get('https://clearing.lightlifeurbangardens.com/', {
       maxRedirects: 5,
     });
-    expect(res.status()).toBeLessThan(400);
+    const body = await res.text();
+    if (!accessWalled(res, body)) expect(res.status()).toBeLessThan(400);
   });
 });
 

@@ -177,6 +177,25 @@ describe('ChorusLogTailer.processLine — event dispatch', () => {
     }));
   });
 
+  // #2725 — CAPTURED live-spine shape: the mcp-server writer packs the kv string
+  // under `payload`, not `from`. This is the shape the production log actually
+  // carries; without reading it the tailer silently drops every live nudge.
+  test('nudge.emitted in live payload shape (captured 2026-08-23) surfaces', () => {
+    const r = makeRouter();
+    const t = new ChorusLogTailer(r as any);
+    (t as any).processLine(JSON.stringify({
+      timestamp: '2026-08-23T14:56:20.414-04:00',
+      event: 'nudge.emitted',
+      role: 'wren',
+      payload: 'from=wren,to=jeff,chars=155,trace=01a02ffb,origin=mcp,content=LIVE BUBBLE demo',
+    }));
+    expect(r.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      from: 'wren',
+      text: 'LIVE BUBBLE demo',
+      type: 'role-response',
+    }));
+  });
+
   test('nudge.emitted to non-jeff is dropped', () => {
     const r = makeRouter();
     const t = new ChorusLogTailer(r as any);
@@ -212,18 +231,27 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
   let logPath: string;
   let tailer: ChorusLogTailer;
   let router: ReturnType<typeof makeRouter>;
-  let origChorusRoot: string | undefined;
+  let origChorusHome: string | undefined;
+  let origLogFile: string | undefined;
 
   beforeEach(() => {
-    // Point CHORUS_ROOT at a temp dir so the tailer reads our fixture, not
-    // the live chorus.log. The env var is read at module load, so we need
-    // to reload the module after setting it.
+    // #2725 — the tailer now reads the LIVE spine location resolved from
+    // CHORUS_HOME (else ~/.chorus). Point CHORUS_HOME at a temp dir so the
+    // tailer reads our fixture. Read at module load, so reload after setting.
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'tailer-test-'));
-    fs.mkdirSync(path.join(tmpRoot, 'platform/logs'), { recursive: true });
-    logPath = path.join(tmpRoot, 'platform/logs/chorus.log');
+    logPath = path.join(tmpRoot, 'chorus.log');
+    // the resolver picks the first EXISTING candidate at module load — the
+    // fixture file must exist before the reload or it falls through to the
+    // live spine (test contract #3528: bring your own world).
+    fs.writeFileSync(logPath, '');
 
-    origChorusRoot = process.env.CHORUS_ROOT;
-    process.env.CHORUS_ROOT = tmpRoot;
+    origChorusHome = process.env.CHORUS_HOME;
+    process.env.CHORUS_HOME = tmpRoot;
+    // the runner's suite world injects CHORUS_LOG_FILE (#3615 seam), which the
+    // resolver checks FIRST — pin it to the fixture or the tailer reads the
+    // runner's temp spine and dispatches nothing (run -58's only red).
+    origLogFile = process.env.CHORUS_LOG_FILE;
+    process.env.CHORUS_LOG_FILE = logPath;
 
     // Force re-import after env change so the module-level constant picks up
     jest.resetModules();
@@ -234,8 +262,10 @@ describe('ChorusLogTailer.poll — file tailing against fixture', () => {
 
   afterEach(() => {
     tailer.stop();
-    if (origChorusRoot === undefined) delete process.env.CHORUS_ROOT;
-    else process.env.CHORUS_ROOT = origChorusRoot;
+    if (origChorusHome === undefined) delete process.env.CHORUS_HOME;
+    else process.env.CHORUS_HOME = origChorusHome;
+    if (origLogFile === undefined) delete process.env.CHORUS_LOG_FILE;
+    else process.env.CHORUS_LOG_FILE = origLogFile;
     try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
