@@ -598,6 +598,30 @@ pub fn test_result_recorded_for_trace(witness: &str, card: u64, trace: &str) -> 
         .find_map(|l| json_str_field(l, "result"))
 }
 
+/// #4012 — the `demo.test_result` recorded for THIS CONTENT, if any. Measured
+/// 2026-08-25: 631 of 1375 demo.test_ran rows were self-runs and every one said
+/// "fail"; 58 cards had a real pass overwritten. Cause: the lookup above is
+/// TRACE-scoped, and #3955's fast path re-presents identical content under a NEW
+/// trace, so the verdict already paid for that patch was invisible.
+///
+/// Patch-keying is strictly STRONGER than trace-keying for what #3638 was
+/// protecting. #3638 wanted "a record from an earlier round must not satisfy
+/// this"; what actually matters is that a record for DIFFERENT CONTENT must not
+/// satisfy it. Same content across rounds is the case we want to reuse, and an
+/// empty patch id matches nothing rather than everything (absence refuses).
+pub fn test_result_recorded_for_patch(witness: &str, card: u64, patch_id: &str) -> Option<String> {
+    if patch_id.is_empty() {
+        return None;
+    }
+    let card_key = format!("\"card_id\":{},", card);
+    witness
+        .lines()
+        .rev()
+        .filter(|l| l.contains("\"event\":\"demo.test_result\"") && l.contains(&card_key))
+        .filter(|l| extract_field(l, "patch_id") == Some(patch_id))
+        .find_map(|l| json_str_field(l, "result"))
+}
+
 /// What the demo step returns to the act pipeline: a human-facing message + the
 /// process exit code act gates the merge on (Decision::exit_code, or a clean
 /// exit 2 for gates-missing). main() turns Err into exit 1 (real error).
@@ -1187,7 +1211,13 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
     // record from an earlier round never masks an unrun suite.
     if !std::env::var("CHORUS_DEMO_SKIP_TEST_RUN").map(|v| v == "1").unwrap_or(false) {
         let witness_now = fs::read_to_string(home.join("ops/logs/werk-demo.jsonl")).unwrap_or_default();
-        if let Some(res) = test_result_recorded_for_trace(&witness_now, card, &trace) {
+        // #4012 — CONTENT first, trace as the fallback. A re-present of identical
+        // content reuses the verdict already paid for that patch; only genuinely
+        // new content re-runs. The trace arm stays for witness rows written before
+        // this card, which carry no patch_id.
+        let paid = test_result_recorded_for_patch(&witness_now, card, &patch)
+            .or_else(|| test_result_recorded_for_trace(&witness_now, card, &trace));
+        if let Some(res) = paid {
             jsonl(home, role, card, &trace, "demo.test_ran",
                   &format!(",\"result\":\"{}\",\"source\":\"werk-test\"", res));
         } else {
@@ -1195,7 +1225,7 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
                 format!("{}/CascadeProjects/chorus-werk", env::var("HOME").unwrap_or_default())
             });
             let werk = format!("{}/{}-{}", werk_base, role, card);
-            let res = if run_card_tests(&werk) { "pass" } else { "fail" };
+            let res = card_test_verdict(&werk);
             record_test_result(home, role, card, res);
             jsonl(home, role, card, &trace, "demo.test_ran", &format!(",\"result\":\"{}\"", res));
         }
@@ -2216,8 +2246,12 @@ fn run_gates(home: &Path, role: &str, card: u64, round: &str, trace: &str) {
 /// result existing at all is what makes "I didn't/can't test" unreachable for a go.
 fn record_test_result(home: &Path, role: &str, card: u64, result: &str) {
     let trace = env::var("CHORUS_TRACE_ID").unwrap_or_else(|_| trace_id());
+    // #4012 — stamp the CONTENT this verdict was measured against, so a later
+    // round at the same patch can reuse it instead of re-running (and so a round
+    // at DIFFERENT content cannot).
+    let patch = current_patch_id(card);
     jsonl(home, role, card, &trace, "demo.test_result",
-          &format!(",\"result\":\"{}\"", result));
+          &format!(",\"result\":\"{}\",\"patch_id\":\"{}\"", result, patch));
     emit_spine(home, "demo.test_result", role, card, &trace);
 }
 
@@ -2230,6 +2264,21 @@ fn run_card_tests(werk: &str) -> bool {
         .unwrap_or_else(|_| "cargo test --lib --bins --quiet".to_string());
     let script = format!("cd '{}' && {}", werk, cmd);
     run("bash", &["-c", &script]).is_ok()
+}
+
+/// #4012 — three states, not two. The default command is `cargo test`, and a werk
+/// with no Cargo.toml cannot produce a cargo verdict at all; reporting that as
+/// "fail" is an ABSENT measurement dressed as a failing one, which is the 631-row
+/// lie this card exists to end. UNMEASURED is the honest third state — the same
+/// distinction #4009 established for the nightly, applied to the demo surface.
+/// An explicit CHORUS_DEMO_TEST_CMD means the caller named something runnable, so
+/// we run it and report what it measured.
+fn card_test_verdict(werk: &str) -> &'static str {
+    let overridden = env::var("CHORUS_DEMO_TEST_CMD").is_ok();
+    if !overridden && !Path::new(werk).join("Cargo.toml").is_file() {
+        return "unmeasured";
+    }
+    if run_card_tests(werk) { "pass" } else { "fail" }
 }
 
 /// CLI shim: parse args/env only, then call the testable core (blueprint pattern).
@@ -3069,5 +3118,104 @@ mod announce_truncation_3892 {
         let line = bridge_announce_line(3892, title, 1, 2, true, "t");
         assert!(line.contains("#3892"));
         assert!(!line.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod test_badge_4012 {
+    use super::*;
+    use std::fs;
+    // === #4012 — the test badge must report the state it measured ===
+    //
+    // Measured 2026-08-25 over the whole witness: 1375 demo.test_ran rows, 744
+    // sourced from werk-test, 631 self-run — and every self-run recorded "fail".
+    // 58 cards had a real pass overwritten by one. The cause is that the
+    // suppression below was keyed on TRACE while #3955's fast path re-presents
+    // identical content under a NEW trace, so the verdict already paid for that
+    // patch was invisible and the generic cargo default ran in its place.
+    //
+    // Patch-keying is strictly stronger than trace-keying for what #3638 was
+    // protecting (a stale record from DIFFERENT content must not suppress), and
+    // the control below is what proves that rather than asserting it.
+
+    fn tr_line(card: u64, trace: &str, patch: &str, result: &str) -> String {
+        format!(
+            r#"{{"ts":1,"event":"demo.test_result","role":"kade","card_id":{},"trace_id":"{}","patch_id":"{}","result":"{}"}}"#,
+            card, trace, patch, result
+        )
+    }
+
+    #[test]
+    fn negative_proof_a_new_trace_at_the_same_patch_reuses_the_paid_verdict() {
+        // The exact #4011 shape: round 29 recorded pass under trace t29; round 30
+        // re-presents identical content under t30. Before #4012 this returned None
+        // and the demo self-ran, recording a false fail over the pass.
+        let w = tr_line(4011, "t29", "fe82611b", "pass");
+        assert_eq!(
+            test_result_recorded_for_patch(&w, 4011, "fe82611b").as_deref(),
+            Some("pass"),
+            "same patch under a new trace must reuse the verdict already paid for it"
+        );
+    }
+
+    #[test]
+    fn control_a_different_patch_does_not_reuse_it_so_the_states_stay_separable() {
+        // Without this the fix could return the last result unconditionally and
+        // still pass the proof above — which would reintroduce exactly the stale
+        // masking #3638 was written to prevent.
+        let w = tr_line(4011, "t29", "fe82611b", "pass");
+        assert_eq!(
+            test_result_recorded_for_patch(&w, 4011, "aaaa1111"), None,
+            "a verdict recorded against DIFFERENT content must never suppress the self-run"
+        );
+    }
+
+    #[test]
+    fn a_verdict_for_another_card_at_the_same_patch_is_not_borrowed() {
+        let w = tr_line(9999, "t29", "fe82611b", "pass");
+        assert_eq!(test_result_recorded_for_patch(&w, 4011, "fe82611b"), None);
+    }
+
+    #[test]
+    fn an_empty_patch_id_never_matches_rather_than_matching_everything() {
+        // The dangerous degenerate case: if empty meant "any", every card would
+        // reuse every verdict. Absence must refuse, not wildcard.
+        let w = tr_line(4011, "t29", "", "pass");
+        assert_eq!(test_result_recorded_for_patch(&w, 4011, ""), None);
+    }
+
+    #[test]
+    fn the_latest_verdict_for_a_patch_wins_over_an_earlier_one() {
+        let w = format!(
+            "{}\n{}",
+            tr_line(4011, "t1", "fe82611b", "fail"),
+            tr_line(4011, "t2", "fe82611b", "pass")
+        );
+        assert_eq!(test_result_recorded_for_patch(&w, 4011, "fe82611b").as_deref(), Some("pass"));
+    }
+
+    #[test]
+    fn negative_proof_an_unrunnable_suite_reads_unmeasured_not_fail() {
+        // A werk with no Cargo.toml cannot produce a cargo verdict. Reporting that
+        // as "fail" is the 631-row lie: an absent measurement dressed as a failing
+        // one. UNMEASURED is the honest third state (#4009 established it for the
+        // nightly; this is the same distinction on the demo surface).
+        let dir = std::env::temp_dir().join("werk-demo-4012-nocargo");
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::remove_file(dir.join("Cargo.toml"));
+        assert_eq!(card_test_verdict(dir.to_str().unwrap()), "unmeasured");
+    }
+
+    #[test]
+    fn control_a_runnable_suite_still_reports_a_real_pass_or_fail() {
+        // The control for the proof above: with a runnable command the verdict is
+        // measured, so "unmeasured" cannot be a constant the code always returns.
+        let dir = std::env::temp_dir().join("werk-demo-4012-runnable");
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::write(dir.join("Cargo.toml"), "[package]\nname=\"x\"\n");
+        std::env::set_var("CHORUS_DEMO_TEST_CMD", "true");
+        let v = card_test_verdict(dir.to_str().unwrap());
+        std::env::remove_var("CHORUS_DEMO_TEST_CMD");
+        assert_eq!(v, "pass", "a suite that actually ran must report what it measured");
     }
 }

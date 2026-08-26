@@ -1,3 +1,5 @@
+// @test-type: integration — drives the real cards CLI via execSync and asserts
+// on its stderr warnings; gated behind RUN_INTEGRATION.
 /**
  * #2024 AC #7 — CLI completeness tests
  * Integration tests for tag error, untag, bulk-move, add --sequence warn.
@@ -75,7 +77,7 @@ describe('CLI completeness (#2024)', () => {
 
   // AC #5: add without --sequence warns on stderr
   test('add without --sequence warns on stderr', () => {
-    const result = run('add "CLI test card" --owner kade --priority P3 --domain chorus --type chore --chunk ops --quick');
+    const result = run('add "CLI test card" --owner kade --priority P3 --domain chorus --type chore --chunk ops');
     const combined = result.stdout + result.stderr;
     expect(combined).toContain('WARN: No --sequence');
 
@@ -87,7 +89,7 @@ describe('CLI completeness (#2024)', () => {
   });
 
   test('add with --sequence does not warn', () => {
-    const result = run('add "CLI test card seq" --owner kade --priority P3 --domain chorus --type chore --chunk ops --sequence hardening --quick');
+    const result = run('add "CLI test card seq" --owner kade --priority P3 --domain chorus --type chore --chunk ops --sequence hardening');
     const combined = result.stdout + result.stderr;
     expect(combined).not.toContain('WARN: No --sequence');
 

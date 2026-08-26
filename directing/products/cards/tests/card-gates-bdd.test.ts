@@ -1,3 +1,6 @@
+// @test-type: integration — drives the real cards CLI and asserts the gate
+// refusals a human sees; gated behind RUN_INTEGRATION. Error paths only, so
+// no card is created.
 /**
  * BDD tests for card gates — creation validation and Now gate
  *
@@ -68,15 +71,15 @@ describe('Card creation enforces mandatory fields', () => {
 
   test('Quick card still requires type, domain, priority', () => {
     if (skip()) return console.log(skipMsg);
-    const noType = run('add "BDD quick test" -q --domain chorus --priority P2');
+    const noType = run('add "BDD quick test" --domain chorus --priority P2');
     expect(noType.exitCode).not.toBe(0);
     expect(noType.stderr + noType.stdout).toMatch(/type/i);
 
-    const noDomain = run('add "BDD quick test" -q --type fix --priority P2');
+    const noDomain = run('add "BDD quick test" --type fix --priority P2');
     expect(noDomain.exitCode).not.toBe(0);
     expect(noDomain.stderr + noDomain.stdout).toMatch(/domain/i);
 
-    const noPriority = run('add "BDD quick test" -q --type fix --domain chorus');
+    const noPriority = run('add "BDD quick test" --type fix --domain chorus');
     expect(noPriority.exitCode).not.toBe(0);
     expect(noPriority.stderr + noPriority.stdout).toMatch(/priority/i);
   });
