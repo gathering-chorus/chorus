@@ -1845,12 +1845,35 @@
     "testresult.posted": {
       "vertebra": "building",
       "source": "werk",
-      "description": "werk-test wire-back (#3592): per-case TestResults POSTed to owl-api. Registered by #3688.",
+      "description": "werk-test wire-back: TestResults POSTed to athena-make in byte-bounded atomic chunks. Kept as the compatibility result summary; testresult.writeback.completed owns duration and complete accounting.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
         "count": "Cases posted",
+        "failed_posts": "Joined cases not posted: refused/unconfirmed chunks, oversized payloads, or MAX_POSTS drops",
+        "chunks_attempted": "Logical HTTP chunks attempted",
+        "chunks_succeeded": "Chunks confirmed by a 2xx response",
+        "chunks_failed": "Chunks not confirmed, including chunks skipped when no write token was available",
+        "remint_attempts": "Token refresh attempts after the first 401",
+        "first_fail_http": "First failure code or reason; HTTP status, no-write-token, payload-too-large, or max-posts-cap",
         "truncated_dropped": "Cases dropped past the MAX_POSTS cap, when truncated"
+      }
+    },
+    "testresult.writeback.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Terminal TestResult reflection measurement after all byte-bounded chunks returned or were loudly skipped. Failures remain best-effort and never change the test verdict.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "duration_ms": "Wall-clock duration of TestResult write-back",
+        "chunks_attempted": "Logical chunks sent",
+        "chunks_succeeded": "Chunks confirmed by a 2xx response",
+        "chunks_failed": "Chunks not confirmed, including chunks skipped when no write token was available",
+        "entities_posted": "Entities in confirmed chunks",
+        "entities_failed": "Joined entities not posted: unconfirmed chunks, oversized payloads, or MAX_POSTS drops",
+        "truncated_dropped": "Joined entities beyond MAX_POSTS",
+        "remint_attempts": "Token refresh attempts after the first 401"
       }
     },
     "testresult.unmatched": {
@@ -2373,10 +2396,10 @@
         "checks_planned": "Checks the plan will run"
       }
     },
-    "test.completed": {
+    "test.execution.completed": {
       "vertebra": "building",
       "source": "werk",
-      "description": "Werk `test` verb \u2014 `completed` phase (#3621 always-emit, the canonical wide test event): verdict + counts + duration on EVERY run, green included; failureClass only on red; advisory flag on self-modifying cards. Verb-phase event (#3513 naming law).",
+      "description": "Werk test execution completed: the blocking checks have a verdict, but durable TestSuiteRun/TestResult reflection may still be in progress. Separates test execution time from write-back latency.",
       "fields": {
         "trace_id": "Werk trace join key",
         "role": "Acting role",
@@ -2384,7 +2407,25 @@
         "units": "Affected test units",
         "checks_run": "Checks executed",
         "checks_failed": "Checks that failed",
-        "duration_ms": "Wall-clock duration of the gate",
+        "duration_ms": "Wall-clock duration of test execution only",
+        "failureClass": "change when checks_failed > 0",
+        "advisory": "true when self-modifying (non-blocking)"
+      }
+    },
+    "test.completed": {
+      "vertebra": "building",
+      "source": "werk",
+      "description": "Werk test terminal phase: execution and best-effort model write-back have both returned. Verdict + counts + total duration are emitted on every run; execution_duration_ms and writeback_duration_ms expose the former hidden persistence tail.",
+      "fields": {
+        "trace_id": "Werk trace join key",
+        "role": "Acting role",
+        "verdict": "pass | BLOCK | advisory-fail (self-modifying) | no-affected-units",
+        "units": "Affected test units",
+        "checks_run": "Checks executed",
+        "checks_failed": "Checks that failed",
+        "duration_ms": "Total wall-clock duration from test start through write-back",
+        "execution_duration_ms": "Wall-clock duration of checks only",
+        "writeback_duration_ms": "Wall-clock duration of TestSuiteRun and TestResult reflection",
         "failureClass": "change | tooling (closed DORA enum; present only when checks_failed > 0 \u2014 a red check on the card diff is change-caused)",
         "advisory": "true when self-modifying (non-blocking)"
       }

@@ -9,8 +9,12 @@
  * malformed file reads as null (→ the decision core treats it as "no run", so
  * the worst case degrades to today's start-fresh behavior, never a throw).
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync, statSync } from 'fs';
+import {
+  readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, renameSync, statSync,
+  openSync, closeSync, fsyncSync, unlinkSync, linkSync,
+} from 'fs';
 import { execFileSync } from 'child_process';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import os from 'os';
 import { parseExitSentinel, parseHeldSentinel, extractFailureReason, FAILURE_REASON_MAX, type WerkRun, type WerkRunPhase } from './werk-run-state';
@@ -68,6 +72,45 @@ function runPath(dir: string, card: number): string {
   return path.join(dir, `${card}.json`);
 }
 
+/**
+ * Atomically replace a run record, surfacing every failure to the caller.
+ *
+ * Launch paths use this fail-closed variant: write+fsync a unique sibling,
+ * then rename it over the card record. A crash can leave an old complete
+ * record or a complete new record, never truncated JSON that readRun() would
+ * silently interpret as "no run" and turn into a duplicate launch.
+ */
+export function writeRunAtomic(run: WerkRun, dir: string = RUNS_DIR): void {
+  assertCardId(run.card);
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- dir is RUNS_DIR or a test-injected runs dir
+  mkdirSync(dir, { recursive: true });
+  const dest = runPath(dir, run.card);
+  const temp = `${dest}.tmp-${process.pid}-${randomUUID()}`;
+  let fd: number | undefined;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- unique sibling of validated card record
+    fd = openSync(temp, 'wx', 0o600);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fd is our unique sibling opened immediately above
+    writeFileSync(fd, JSON.stringify(run, null, 2), { encoding: 'utf8' });
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+    // POSIX rename within one directory is atomic and replaces the old record.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- controlled sibling paths described above
+    renameSync(temp, dest);
+  } catch (error) {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* preserve the original write error */ }
+    }
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- cleanup of our unique temp only
+      unlinkSync(temp);
+    } catch { /* absent after a successful rename, or best-effort cleanup */ }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`werk-run-store: atomic write failed for card ${run.card}: ${detail}`, { cause: error });
+  }
+}
+
 /** Read the run record for a card, or null (missing/malformed → null, never throws). */
 export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
   try {
@@ -84,10 +127,7 @@ export function readRun(card: number, dir: string = RUNS_DIR): WerkRun | null {
 /** Write/overwrite the run record. Best-effort (a write failure must not break the verb). */
 export function writeRun(run: WerkRun, dir: string = RUNS_DIR): void {
   try {
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- dir is the constant RUNS_DIR (test-injected dir only in unit tests)
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    // eslint-disable-next-line security/detect-non-literal-fs-filename -- path is RUNS_DIR + `${card}.json`; card asserted positive-int (assertCardId), zero string interpolation → no traversal
-    writeFileSync(runPath(dir, run.card), JSON.stringify(run, null, 2));
+    writeRunAtomic(run, dir);
   } catch {
     /* best-effort: a lost record degrades to start-fresh, never throws */
   }
@@ -344,15 +384,221 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-/** #3458 (+ Wren #2) — is a run STALE: a 'running' record whose pid is dead, or
- *  past the TTL? Only 'running' can be stale (terminal phases are final). The
- *  impure liveness probe lives here; decideRunAction stays pure and takes the
- *  boolean. Belt+suspenders for the rare case where act's own durable terminal
- *  write was lost (e.g. an mcp-server churn mid-act). */
+/** #3458 (+ Wren #2) — is a run STALE? PID truth outranks age:
+ *  - a live PID is never stale, however old the run record is;
+ *  - a dead PID is stale immediately;
+ *  - a record with no usable PID gets the TTL backstop.
+ * Only 'running' can be stale (terminal phases are final). The absent-PID case
+ * is also the launch reservation window: persistence happens before spawn, so
+ * a daemon crash there must suppress duplicate launch until the TTL expires. */
 export function isRunStale(run: WerkRun, nowMs: number = Date.now(), ttlMs: number = RUN_TTL_MS): boolean {
   if (run.phase !== 'running') return false;
-  if (typeof run.pid === 'number' && !pidAlive(run.pid)) return true;
+  if (typeof run.pid === 'number' && Number.isInteger(run.pid) && run.pid > 0) {
+    return !pidAlive(run.pid);
+  }
   const started = Date.parse(run.startedAt);
   if (!Number.isNaN(started) && nowMs - started > ttlMs) return true;
   return false;
+}
+
+export interface RunLaunchLockOptions {
+  /** Maximum time to wait for another daemon's launch decision to finish. */
+  timeoutMs?: number;
+  /** Retry cadence while another daemon owns the card lock. */
+  pollMs?: number;
+}
+
+const DEFAULT_LAUNCH_LOCK_TIMEOUT_MS = 30_000;
+const DEFAULT_LAUNCH_LOCK_POLL_MS = 25;
+
+type LaunchLockOwner = { token: string; pid: number; acquiredAt: string };
+
+function launchLockPath(card: number, dir: string): string {
+  assertCardId(card);
+  return path.join(dir, `${card}.launch.lock`);
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Only a complete lock whose recorded owner is positively dead is stale.
+ * Malformed state is never stolen: fail-closed beats two launchers. */
+function launchLockIsStale(lockFile: string): boolean {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated per-card lock path
+    const owner = JSON.parse(readFileSync(lockFile, 'utf8')) as Partial<LaunchLockOwner>;
+    if (typeof owner.pid === 'number' && Number.isInteger(owner.pid) && owner.pid > 0) {
+      return !pidAlive(owner.pid);
+    }
+  } catch { /* malformed or disappearing lock: never infer ownership */ }
+  return false;
+}
+
+/** Serialize stale-lock reclamation itself. Without this second exclusive file,
+ * two waiters can both judge the old owner dead; one can unlink+reacquire while
+ * the other then unlinks the NEW owner's lock. A crashed reaper intentionally
+ * leaves this file behind and future launches time out fail-closed rather than
+ * risk a duplicate act. */
+function unlinkStaleLaunchLock(lockFile: string): boolean {
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated per-card lock path
+    unlinkSync(lockFile);
+    return true;
+  } catch (error) {
+    // A concurrent release also clears the way for the next acquire.
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    throw error;
+  }
+}
+
+function reclaimStaleLaunchLock(lockFile: string): boolean {
+  const reaperFile = `${lockFile}.reaper`;
+  let fd: number | undefined;
+  let reclaimed = false;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- sibling of validated per-card lock path
+    fd = openSync(reaperFile, 'wx', 0o600);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fd is our exclusive reaper file opened immediately above
+    writeFileSync(fd, JSON.stringify({ pid: process.pid, acquiredAt: new Date().toISOString() }), { encoding: 'utf8' });
+    fsyncSync(fd);
+    if (launchLockIsStale(lockFile)) {
+      // Any non-ENOENT unlink failure surfaces instead of creating a busy loop.
+      reclaimed = unlinkStaleLaunchLock(lockFile);
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* release remains best-effort */ }
+      try {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- our exclusive reaper file
+        unlinkSync(reaperFile);
+      } catch { /* a crash/recovery race leaves launch fail-closed */ }
+    }
+  }
+  return reclaimed;
+}
+
+function releaseRunLaunchLock(lockFile: string, token: string): () => void {
+  return () => {
+    try {
+      // Token check prevents an old owner from unlinking a successor's lock.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated per-card lock path
+      const current = JSON.parse(readFileSync(lockFile, 'utf8')) as Partial<LaunchLockOwner>;
+      // Token is an ownership identifier, not a secret; constant-time comparison is irrelevant.
+      // eslint-disable-next-line security/detect-possible-timing-attacks
+      if (current.token === token) {
+        // eslint-disable-next-line security/detect-non-literal-fs-filename -- validated per-card lock path
+        unlinkSync(lockFile);
+      }
+    } catch { /* already reclaimed/removed: release is idempotent */ }
+  };
+}
+
+/** Write a complete owner record at a unique, non-lock candidate path. */
+function writeRunLaunchLockCandidate(candidate: string, owner: LaunchLockOwner, card: number): void {
+  let fd: number | undefined;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- unique candidate includes UUID token
+    fd = openSync(candidate, 'wx', 0o600);
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- fd is our unique candidate opened immediately above
+    writeFileSync(fd, JSON.stringify(owner), { encoding: 'utf8' });
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+  } catch (error) {
+    if (fd !== undefined) {
+      try { closeSync(fd); } catch { /* preserve the persistence error */ }
+    }
+    try {
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- cleanup of our unique candidate only
+      unlinkSync(candidate);
+    } catch { /* absent or best-effort candidate cleanup */ }
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`werk-run-store: launch lock candidate failed for card ${card}: ${detail}`, { cause: error });
+  }
+}
+
+/** Publish a fully-written owner record with one no-clobber hard-link operation.
+ * A paused writer is safe at every point:
+ * - before link: only its unique candidate exists and does not block anyone;
+ * - after link: the fixed lock path already exposes the complete PID+token.
+ * There is no empty fixed-path window another process could reap by age. */
+function tryCreateRunLaunchLock(lockFile: string, token: string, card: number): (() => void) | null {
+  const candidate = `${lockFile}.candidate-${process.pid}-${token}`;
+  const owner: LaunchLockOwner = { token, pid: process.pid, acquiredAt: new Date().toISOString() };
+  writeRunLaunchLockCandidate(candidate, owner, card);
+  try {
+    // link(2) fails with EEXIST and never overwrites the current owner's path.
+    // eslint-disable-next-line security/detect-non-literal-fs-filename -- complete unique candidate to validated fixed lock path
+    linkSync(candidate, lockFile);
+    return releaseRunLaunchLock(lockFile, token);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return null;
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`werk-run-store: launch lock publish failed for card ${card}: ${detail}`, { cause: error });
+  } finally {
+    try {
+      // The fixed hard link, when published, owns the inode independently.
+      // eslint-disable-next-line security/detect-non-literal-fs-filename -- cleanup of our unique candidate only
+      unlinkSync(candidate);
+    } catch { /* crash-safe orphan candidate is not an active lock */ }
+  }
+}
+
+function reclaimLaunchLockIfStale(
+  lockFile: string,
+  card: number,
+): boolean {
+  if (!launchLockIsStale(lockFile)) return false;
+  try {
+    return reclaimStaleLaunchLock(lockFile);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`werk-run-store: stale launch-lock recovery failed for card ${card}: ${detail}`, { cause: error });
+  }
+}
+
+export async function acquireRunLaunchLock(
+  card: number,
+  dir: string = RUNS_DIR,
+  options: RunLaunchLockOptions = {},
+): Promise<() => void> {
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- dir is RUNS_DIR or a test-injected runs dir
+  mkdirSync(dir, { recursive: true });
+  const lockFile = launchLockPath(card, dir);
+  const token = randomUUID();
+  const timeoutMs = options.timeoutMs ?? DEFAULT_LAUNCH_LOCK_TIMEOUT_MS;
+  const pollMs = options.pollMs ?? DEFAULT_LAUNCH_LOCK_POLL_MS;
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const release = tryCreateRunLaunchLock(lockFile, token, card);
+    if (release) return release;
+    if (reclaimLaunchLockIfStale(lockFile, card)) continue;
+    if (Date.now() >= deadline) {
+      throw new Error(`werk-run-store: timed out waiting ${timeoutMs}ms for card ${card} launch lock`);
+    }
+    await sleepMs(Math.max(1, pollMs));
+  }
+}
+
+/**
+ * Cross-process per-card launch critical section. Callers must put the entire
+ * re-read → reconcile → decide → reserve → spawn → PID-record sequence inside.
+ */
+export async function withRunLaunchLock<T>(
+  card: number,
+  criticalSection: () => T | Promise<T>,
+  dir: string = RUNS_DIR,
+  options: RunLaunchLockOptions = {},
+): Promise<T> {
+  const release = await acquireRunLaunchLock(card, dir, options);
+  try {
+    return await criticalSection();
+  } finally {
+    release();
+  }
 }

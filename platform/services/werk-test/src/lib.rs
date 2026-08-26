@@ -626,7 +626,7 @@ pub fn suite_run_payload(
     // so call-sites/tests don't churn when the shape grows.
     let _ = (role, trace, plan_source, checks_planned, checks_failed, duration_ms);
     format!(
-        "{{\"name\":\"testsuiterun-{}-{}\",\"cardId\":\"{}\",\"ts\":{},\"result\":\"{}\"}}",
+        "{{\"name\":\"testsuiterun-{}-{}\",\"cardId\":\"{}\",\"ts\":\"{}\",\"result\":\"{}\"}}",
         json_escape(card), ts, json_escape(card), ts, json_escape(verdict),
     )
 }
@@ -959,7 +959,83 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
     cmd.status().map(|s| s.success()).unwrap_or(false)
 }
 
-// ---- #3808 — wire-back token re-mint: expiry mid-stream is recoverable ----
+// ---- TestResult batch wire-back: bounded chunks + one token re-mint ----
+
+/// Derive the batch-create route from the historical TestResult collection
+/// override. The old variable is also used by reconcile for GET, so callers can
+/// keep configuring one collection URL while writes append the batch suffix.
+pub fn testresult_batch_endpoint(collection: &str) -> String {
+    let base = collection
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(collection)
+        .trim_end_matches('/');
+    if base.ends_with("/batch") {
+        base.to_string()
+    } else {
+        format!("{}/batch", base)
+    }
+}
+
+/// Leave headroom below athena-make's 64 KiB governed-write ceiling for HTTP framing
+/// and future envelope fields. The bound is on the serialized JSON array body,
+/// not an approximate entity count.
+pub const TESTRESULT_BATCH_MAX_BYTES: usize = 48 * 1024;
+
+/// One atomic TestResult batch. `entities` is carried beside the body so a
+/// failed chunk is accounted in entity units without parsing JSON on the client.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostChunk {
+    pub body: String,
+    pub entities: usize,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ChunkedPayloads {
+    pub chunks: Vec<PostChunk>,
+    /// An individual entity larger than the chunk ceiling cannot be sent without
+    /// violating athena-make's request bound. It is failed loudly, never truncated.
+    pub oversized: usize,
+}
+
+/// Pack already-serialized flat JSON entities into JSON-array request bodies.
+/// Every returned body is `<= max_bytes`, input order is stable, and an entity
+/// is never split across requests (the server's transaction boundary).
+pub fn chunk_json_payloads(payloads: &[String], max_bytes: usize) -> ChunkedPayloads {
+    let mut out = ChunkedPayloads::default();
+    if max_bytes < 2 {
+        out.oversized = payloads.len();
+        return out;
+    }
+    let mut current: Vec<&str> = Vec::new();
+    let mut current_bytes = 2usize; // '[' + ']'
+    let flush = |items: &mut Vec<&str>, bytes: &mut usize, chunks: &mut Vec<PostChunk>| {
+        if items.is_empty() {
+            return;
+        }
+        chunks.push(PostChunk {
+            body: format!("[{}]", items.join(",")),
+            entities: items.len(),
+        });
+        items.clear();
+        *bytes = 2;
+    };
+    for payload in payloads {
+        let standalone = payload.len().saturating_add(2);
+        if standalone > max_bytes {
+            out.oversized += 1;
+            continue;
+        }
+        let addition = payload.len() + usize::from(!current.is_empty());
+        if current_bytes + addition > max_bytes {
+            flush(&mut current, &mut current_bytes, &mut out.chunks);
+        }
+        current_bytes += payload.len() + usize::from(!current.is_empty());
+        current.push(payload);
+    }
+    flush(&mut current, &mut current_bytes, &mut out.chunks);
+    out
+}
 
 /// What to do with one case-post's HTTP status (#3808). Decision table, not
 /// policy-in-the-loop: 2xx accepts; the FIRST 401 of a run re-mints (the token
@@ -984,9 +1060,8 @@ pub fn remint_decision(http_code: &str, reminted_already: bool) -> PostStep {
     PostStep::Fail
 }
 
-/// #3808 — per-case POST argv that YIELDS the status code (`-w %{http_code}`,
-/// stdout) instead of `-sf`'s swallow-and-exit — the 401 trigger needs the code,
-/// and this retires #3725's second diagnostic request per failure.
+/// Batch POST argv that yields the status code (`-w %{http_code}`, stdout).
+/// One curl process now represents a byte-bounded atomic chunk, not one case.
 pub fn post_args_with_code(endpoint: &str, token: &str, payload: &str) -> Vec<String> {
     vec![
         "-s".into(), "-o".into(), "/dev/null".into(), "-w".into(), "%{http_code}".into(),
@@ -1007,38 +1082,62 @@ pub fn post_args_with_code(endpoint: &str, token: &str, payload: &str) -> Vec<St
 pub struct PostStats {
     pub posted: usize,
     pub failed: usize,
+    pub chunks_attempted: usize,
+    pub chunks_succeeded: usize,
+    pub chunks_failed: usize,
     pub remint_attempts: usize,
     pub first_fail_code: Option<String>,
 }
 
-/// #3808 — the posting loop with expired-token recovery. Pure orchestration
-/// over curl: posts each payload, and on the first 401 asks `mint` for a fresh
-/// token ONCE, retries the same case, and resumes. A 401 that survives the
-/// re-mint — or a `mint` that refuses — is a real refusal: every remaining case
-/// counts failed (loud banner + spine at the caller), never an endless retry.
+/// Fold entities that never reached an HTTP chunk into the same entity-level
+/// accounting as refused chunks. `truncated_dropped` remains separately emitted
+/// by the caller, but the invariant stays complete: posted + failed equals the
+/// number of joined results presented to the write-back stage.
+pub fn account_unsent_results(stats: &mut PostStats, oversized: usize, truncated: usize) {
+    if oversized > 0 {
+        stats.failed += oversized;
+        if stats.first_fail_code.is_none() {
+            stats.first_fail_code = Some("payload-too-large".into());
+        }
+    }
+    if truncated > 0 {
+        stats.failed += truncated;
+        if stats.first_fail_code.is_none() {
+            stats.first_fail_code = Some("max-posts-cap".into());
+        }
+    }
+}
+
+/// Chunk-level posting with expired-token recovery. The first 401 re-mints once
+/// and retries the same atomic chunk. No path falls back to per-entity requests.
 pub fn post_results_loop(
     endpoint: &str,
     initial_token: &str,
-    payloads: &[String],
+    chunks: &[PostChunk],
     mint: &dyn Fn() -> Option<String>,
 ) -> PostStats {
     let mut stats = PostStats::default();
     let mut token = initial_token.to_string();
     let mut reminted_already = false;
-    for payload in payloads {
-        let mut code = post_once(endpoint, &token, payload);
+    for chunk in chunks {
+        stats.chunks_attempted += 1;
+        let mut code = post_once(endpoint, &token, &chunk.body);
         if remint_decision(&code, reminted_already) == PostStep::Remint {
             stats.remint_attempts += 1;
             reminted_already = true;
             if let Some(fresh) = mint() {
                 token = fresh;
-                code = post_once(endpoint, &token, payload);
+                code = post_once(endpoint, &token, &chunk.body);
             }
         }
         match remint_decision(&code, reminted_already) {
-            PostStep::Accept => stats.posted += 1,
+            PostStep::Accept => {
+                stats.posted += chunk.entities;
+                stats.chunks_succeeded += 1;
+            }
             _ => {
-                stats.failed += 1;
+                stats.failed += chunk.entities;
+                stats.chunks_failed += 1;
                 if stats.first_fail_code.is_none() {
                     stats.first_fail_code = Some(code);
                 }

@@ -14,6 +14,13 @@ edition = "2021"
 # whole purpose). Pulls the crypto (p256/sha2/hmac) transitively; nothing else.
 chorus-oidc = { path = "../chorus-oidc" }
 
+# Phase A1 — `athena-model add-batch` accepts typed NDJSON records on stdin.
+# Derive-backed decoding is deliberate here: unknown fields, wrong JSON types,
+# malformed escaping, and trailing input are refused by one maintained parser
+# instead of a hand-rolled protocol at the governed write boundary.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
 # #3718 — RENAMED chorus-model -> athena-model (Jeff, 2026-07-31): "i feel we
 # rename chorus-model to athena-model - to me the model part is a strong analog
 # to coding - why i mention werk-code". werk-* is the governed writer for CODE;

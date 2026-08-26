@@ -22,6 +22,7 @@ fn fixture() -> RouteTable {
         ],
         secured: vec!["/schema/domain".into()],
         mandatory: vec!["label".into(), "comment".into()],
+        write_required: vec!["label".into(), "comment".into()],
         repo_target: "generated/domain".into(),  // #3488 — repo land location
         exposure: vec![],
         instances_graph: "urn:chorus:instances".into(),  // #3570 — default home (back-compat)

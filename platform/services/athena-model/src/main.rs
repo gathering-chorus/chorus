@@ -7,13 +7,15 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_edge, batch, delete_entity, delete_iri, mint, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, mint, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use std::io::Read;
 use std::process::ExitCode;
 
 fn usage() -> String {
     "athena-model — the governed RDF/OWL writer (ADR-040 Rule 0; #3257)\n\
      usage:\n\
        athena-model add    --kind <kind> --name <name> [--field k=v]... [--edge prop=kind:name]... [--dry-run]\n\
+       athena-model add-batch    # NDJSON WriteReq objects on stdin; one atomic transaction\n\
        athena-model delete --kind <kind> --name <name>\n\
        athena-model set    --kind <kind> --name <name> --field k=v [--graph <g>]\n\
        athena-model link   --kind <kind> --name <name> --edge prop=kind:name\n\
@@ -379,6 +381,29 @@ fn run() -> Result<String, String> {
                 let subject = write(&store, &req, &id)?;
                 Ok(format!("written: {}", subject))
             }
+        }
+        // Phase A1 — entity-generic bulk add. The stdin protocol is NDJSON, one
+        // WriteReq-shaped object per line; robust decoding lives in the library
+        // so direct callers and this CLI share the exact same wire contract.
+        // Identity resolves only after the entire stream parses, and add_batch
+        // validates every entity before its single Store::update.
+        Some("add-batch") => {
+            if args.len() != 1 {
+                return Err("add-batch: no command-line arguments; pipe one WriteReq JSON object per line on stdin".into());
+            }
+            let mut input = String::new();
+            std::io::stdin()
+                .read_to_string(&mut input)
+                .map_err(|e| format!("add-batch: cannot read stdin: {}", e))?;
+            let reqs = parse_add_batch_ndjson(&input)?;
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?; // same verified identity gate as add
+            let report = add_batch(&store, &reqs, &id)?;
+            Ok(format!(
+                "written-batch: {} entity(s)\n{}",
+                report.subjects.len(),
+                report.subjects.join("\n")
+            ))
         }
         // #3468 — delete / link / unlink: the governed verbs athena-make delegates to,
         // so every entity-delete and edge-mutation rides ONE audited write path.
