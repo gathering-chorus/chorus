@@ -87,18 +87,28 @@ errors=0
 # per hop — this script fires 4+ hops per domain across 30+ domains per cycle,
 # and the tokenless version was the live refusal source that kept
 # EnvelopeRefusalRegression firing on a real caller.
+CHORUS_ROOT_FOR_TOKEN="${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}"
+# #4004 — DO NOT cache the token in a variable. It lives 600s, and minting it
+# once per run meant every call after ten minutes carried an expired token: the
+# pain board shows 4,153 of 4,997 failures in 14 days — 83% of all recorded pain
+# — as authn-missing on this exact surface, a steady ~5,000/day since 2026-07-29,
+# and because the POST is fire-and-forget nothing errored: the traces were simply
+# never recorded. chorus-identity-token ALREADY caches on disk and re-mints only
+# near expiry, so calling it per call is one cheap local read, not a mint storm.
+trace_auth() { "$CHORUS_ROOT_FOR_TOKEN/platform/scripts/chorus-identity-token" chorus-sdk 2>/dev/null || true; }
 TRACE_AUTH=""
 if [ -f "$HOME/.chorus/secrets/chorus-realm.env" ]; then
   # #3689 — ES256 identity; scope (urn:chorus:ops) is a chorus:hasScope grant
   # on principal-chorus-sdk in the model, not a claim.
-  TRACE_AUTH=$("$HOME/CascadeProjects/chorus/platform/scripts/chorus-identity-token" chorus-sdk 2>/dev/null || true)
+    :  # token is fetched per call by trace_auth (see below)
 fi
 
 trace_hop() {
   local corr="$1" hop="$2" src="$3" dst="$4" domain="$5" ms="${6:-}"
+  _TA="$(trace_auth)"
   curl -s -X POST "$API_URL/api/chorus/trace" \
     -H 'Content-Type: application/json' \
-    ${TRACE_AUTH:+-H "Authorization: Bearer ${TRACE_AUTH}"} \
+    ${_TA:+-H "Authorization: Bearer ${_TA}"} \
     -d "{\"correlationId\":\"$corr\",\"hop\":$hop,\"callStack\":\"batch\",\"source\":{\"domain\":\"$domain\",\"service\":\"$src\"},\"destination\":{\"domain\":\"$domain\",\"service\":\"$dst\"}${ms:+,\"latencyMs\":$ms}}" \
     --max-time 3 > /dev/null 2>&1 &
 }
