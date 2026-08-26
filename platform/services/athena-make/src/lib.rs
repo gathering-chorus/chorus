@@ -3440,8 +3440,25 @@ pub fn read_http_request<Rd: std::io::Read>(r: &mut Rd, max_body: usize) -> Stri
     String::from_utf8_lossy(&data).into_owned()
 }
 
+/// #4004 — the bind host, loopback unless an operator says otherwise. Jeff's
+/// 2026-08-25 phone photo showed the ontology ER page rendering its frame and
+/// then "Failed to load": the PAGE is served LAN-wide on :3340 while the data it
+/// fetches was pinned to 127.0.0.1:3360, so it works on the laptop and is broken
+/// on every other device. Same shape as #3965's bind-scope gap.
+///
+/// The default stays loopback deliberately — this surface is read-only but
+/// unauthenticated, and widening it is a reachability change, not a config tweak
+/// (the same rule the share-guard allowlist holds itself to). An operator who
+/// wants it on the LAN says so explicitly, and the value is auditable.
+pub fn bind_host() -> String {
+    std::env::var("ATHENA_MAKE_BIND").ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "127.0.0.1".to_string())
+}
+
 pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
-    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|e| format!("bind {}: {}", port, e))?;
+    let host = bind_host();
+    let listener = TcpListener::bind((host.as_str(), port)).map_err(|e| format!("bind {}:{}: {}", host, port, e))?;
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
     eprintln!("athena-make: serving {} generated API(s) on :{} [{}] (read-only; writes go through athena-model)", tables.len(), port, classes.join(", "));
     let mut req_counter: u64 = 0;
@@ -5002,5 +5019,35 @@ mod version_axes_3947 {
             )));
         let v = versioned_cached(&slot, "SELECT ?v WHERE { }");
         assert_ne!(v, "stale-value", "a 120s-old entry must be re-read, not served");
+    }
+}
+
+#[cfg(test)]
+mod bind_scope_tests_4004 {
+    use super::bind_host;
+
+    /// NEGATIVE PROOF — the default must stay LOOPBACK. This surface is
+    /// read-only but unauthenticated; a change that quietly bound it to every
+    /// interface would "fix" Jeff's phone by publishing the model to the LAN.
+    /// Absent, empty, and whitespace-only all mean "not configured".
+    #[test]
+    fn the_default_is_loopback_and_blank_is_not_a_value() {
+        for v in [None, Some(""), Some("   ")] {
+            match v {
+                None => std::env::remove_var("ATHENA_MAKE_BIND"),
+                Some(x) => std::env::set_var("ATHENA_MAKE_BIND", x),
+            }
+            assert_eq!(bind_host(), "127.0.0.1", "unset/blank must not widen the bind");
+        }
+        std::env::remove_var("ATHENA_MAKE_BIND");
+    }
+
+    /// The other state: an operator CAN widen it, deliberately and auditably.
+    /// Without this the check could pass by always answering loopback.
+    #[test]
+    fn an_operator_can_widen_it_explicitly() {
+        std::env::set_var("ATHENA_MAKE_BIND", "0.0.0.0");
+        assert_eq!(bind_host(), "0.0.0.0");
+        std::env::remove_var("ATHENA_MAKE_BIND");
     }
 }
