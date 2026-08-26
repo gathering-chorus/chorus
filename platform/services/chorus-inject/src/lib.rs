@@ -312,9 +312,44 @@ pub trait OsaRunner {
 /// Production runner — invokes `osascript -e <script>`.
 pub struct RealOsaRunner;
 
+/// #4016 — osascript is BOUNDED. Unbounded, it blocks forever when AppleEvents
+/// cannot be delivered — no GUI session, TCC not granted, a dead Terminal — and
+/// the caller waits with it. In the 2026-08-26 nightly that is exactly what
+/// happened: `count_windows_cli_returns_zero_for_nonmatching_pattern` hung, the
+/// cargo lane stopped at test 70 of 92, and the board reported "69 pass, 2 fail"
+/// as if it were a complete run. Twenty-two tests never executed and nothing
+/// said so. The same command takes 0.48s interactively.
+///
+/// A bounded call turns an invisible hang into a nameable failure, which is the
+/// only form a test can report honestly.
+const OSA_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 impl OsaRunner for RealOsaRunner {
     fn run(&self, script: &str) -> io::Result<Output> {
-        Command::new("osascript").args(["-e", script]).output()
+        let mut child = Command::new("osascript")
+            .args(["-e", script])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        let deadline = std::time::Instant::now() + OSA_TIMEOUT;
+        loop {
+            if child.try_wait()?.is_some() {
+                return child.wait_with_output();
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    format!(
+                        "osascript did not answer within {}s — AppleEvents unavailable \
+                         (no GUI session, or Automation permission not granted)",
+                        OSA_TIMEOUT.as_secs()
+                    ),
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 
