@@ -1,3 +1,6 @@
+// @test-type: integration — shells out to the real cards CLI (execSync) and
+// asserts on its refusal messages; gated behind RUN_INTEGRATION. Creates no
+// cards: every case is an error path.
 /**
  * #2101 — Origin tag required at card creation.
  * Validates CLI parsing, inference, and error messages.
@@ -20,7 +23,7 @@ describe('Origin required at card creation', () => {
   test('cards add without --origin and non-inferable type (chore) fails with clear error', () => {
     try {
       execSync(
-        `node ${CLI} add "Clean up test artifacts" --owner silas --priority P2 --domain chorus --type chore --quick 2>&1`,
+        `node ${CLI} add "Clean up test artifacts" --owner silas --priority P2 --domain chorus --type chore 2>&1`,
         { encoding: 'utf-8', timeout: 10000 }
       );
       throw new Error('Should have exited non-zero');
