@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Product Design — Pulse</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'Helvetica Neue',sans-serif; background:#fafafa; color:#1a1a2e; padding:40px 1in; max-width:1100px; margin:0 auto; line-height:1.6; }
+h1 { font-size:1.4rem; margin-bottom:4px; }
+.subtitle { font-size:0.82rem; color:#666; margin-bottom:24px; }
+h2 { font-size:1.1rem; color:#2d4a7a; margin-top:28px; margin-bottom:10px; border-bottom:1px solid #ddd; padding-bottom:4px; }
+p { margin-bottom:10px; font-size:0.88rem; }
+table { width:100%; border-collapse:collapse; margin:12px 0; font-size:0.84rem; }
+th { text-align:left; padding:8px 12px; background:#e0e7ff; color:#2d4a7a; font-size:0.78rem; }
+td { padding:8px 12px; border-bottom:1px solid #e5e7eb; vertical-align:top; }
+table.identity th { width:150px; }
+.exp { font-size:1.05rem; font-style:italic; color:#92400e; background:#fffbeb; border-left:4px solid #f59e0b; padding:16px 20px; border-radius:0 8px 8px 0; margin:16px 0; }
+.note { background:#eff6ff; border-left:3px solid #3b82f6; padding:10px 14px; border-radius:0 6px 6px 0; margin:8px 0; font-size:0.84rem; }
+.fail { background:#fef2f2; border-left:3px solid #dc2626; padding:10px 14px; border-radius:0 6px 6px 0; margin:8px 0; font-size:0.84rem; }
+code { background:#f3f4f6; padding:1px 5px; border-radius:3px; font-size:0.82rem; }
+.muted { color:#666; font-size:0.8rem; }
+.meta { font-size:0.68rem; color:#555; margin-top:30px; text-align:center; padding-top:16px; border-top:1px solid #ddd; }
+</style>
+</head>
+<body>
+
+<h1>Product Design — Pulse</h1>
+<div class="subtitle">Wren · #4010 · 2026-08-25 · companion to <a href="service-design-pulse.html">Service Design — Pulse</a></div>
+
+<!-- BEGIN generated-identity (#4010) — athena-make projection, do not hand-edit -->
+  <p class="muted">Identity below is generated from the model — <code>GET http://localhost:3360/products/pulse</code>. Edit the model, not this block.</p>
+  <table class="identity">
+    <tr><th>label</th><td>Pulse</td></tr>
+    <tr><th>comment</th><td>Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing.</td></tr>
+    <tr><th>audience</th><td>Jeff at a glance, the roles for mutual observation, alerting as a consumer.</td></tr>
+  </table>
+<!-- END generated-identity -->
+
+<h2>1. The experience</h2>
+
+<div class="exp">Jeff looks once and knows whether his team is working — without asking
+anyone, and without being lied to.</div>
+
+<p>That is the whole product. Everything below exists to make that one sentence true, and
+the measure of the product is not uptime or latency: it is how many times in a day Jeff has
+to type <em>"are you working?"</em> On 2026-08-25 he asked six times, and each time the
+answer was already in the log.</p>
+
+<h2>2. Who it is for</h2>
+
+<table>
+  <tr><th>Jeff</th><td>At a glance, on a phone, often off the LAN. He is the only consumer whose time is irreplaceable, so a reading he cannot reach is a reading that does not exist.</td></tr>
+  <tr><th>The roles</th><td>Mutual observation. A role should read a peer's state rather than message them to ask — the war-room rule (Jeff, 2026-08-25): <em>"we definitely are not messaging each other to see if we are working or not."</em></td></tr>
+  <tr><th>Alerting</th><td>A consumer, not an owner. Alerts read pulse; pulse never decides what an alert is allowed to say.</td></tr>
+</table>
+
+<h2>3. What Pulse is — and is not</h2>
+
+<p>Pulse is a <b>product</b>, not a domain. Jeff, 2026-08-25: <em>"pulse is a product not a
+domain — maybe domain is memory (short term)."</em> Until that day one IRI carried both
+<code>chorus:Domain</code> and <code>chorus:Product</code>, so <code>/domains/pulse</code>
+and <code>/products/pulse</code> answered differently about the same subject. The Domain
+typing was retired on #4010; the IRI and its 228 inbound references stayed.</p>
+
+<p>Its domain is the short-term layer of Memory — what is true right now and decays —
+alongside long-term memory and knowledge (#4010, <code>chorus:ShortTermMemory</code>).</p>
+
+<div class="note"><b>Pulse is a read-through cache with freshness, not an aggregator.</b>
+Silas established this in the service design on 2026-04-21 and it remains the governing
+thesis: every section has its own producer and cadence; pulse reads, annotates with age,
+and exposes. It never decides what a consumer may see.</div>
+
+<h2>4. The product bet</h2>
+
+<p>Chorus already emits everything needed to answer "who is doing what" — the spine carries
+<code>agent.activity</code> every ten seconds with phase, tool, elapsed and session. The bet
+is that <b>observation beats declaration</b>: a state derived from what a role did cannot go
+stale the way a state a role promised to update does.</p>
+
+<p>142 cards have been spent on the declaration side of that bet as of 2026-08-25, and the
+state field is still wrong when it matters. That is the evidence for the bet, not against
+it.</p>
+
+<h2>5. What "good" looks like</h2>
+
+<table>
+  <tr><th>Signal</th><th>Today</th><th>Good</th></tr>
+  <tr><td>Times Jeff asks "are you working?"</td><td>6 in one day</td><td>0</td></tr>
+  <tr><td>Declared vs derived disagreement</td><td>unmeasured</td><td>measured daily, trending to 0</td></tr>
+  <tr><td>Anonymous activity beats</td><td>19%</td><td>0% — every beat bound to a principal</td></tr>
+  <tr><td>Reading reachable off-LAN</td><td>no</td><td>yes</td></tr>
+  <tr><td>"Who is blocked on whom"</td><td>unanswerable</td><td>one hop in the stack</td></tr>
+</table>
+
+<h2>6. Boundaries</h2>
+
+<p>Pulse does not own cards, messages, alerts or events — those live in their own domains and
+pulse holds only the hot register over each. It does not persist: anything worth keeping
+belongs to long-term memory. And it does not decide identity — who a principal is belongs to
+the identity seam; pulse only reports what that principal did.</p>
+
+<div class="fail"><b>Known and unfixed as of 2026-08-25.</b> The state field is wrong by
+construction (<code>pulse.rs:162</code>), role messages are a count rather than content,
+there is no relation between roles, and machine load is absent — so a reading taken while the
+box was at load 363 is indistinguishable from one taken at load 7. Each is stated in the
+service design with its measurement.</div>
+
+<p class="meta">Product design · Pulse · Wren · #4010 · identity block generated from the model</p>
+</body>
+</html>
