@@ -256,3 +256,44 @@ mod subagent_inheritance_tests_4004 {
         assert_eq!(r.inherited_from_pid, None);
     }
 }
+
+
+/// #4004 — the live wiring for `resolve_role_with_ancestry`: walk this process's
+/// real ancestry and look each pid up in the session registry
+/// (`~/.chorus/sessions/<role>-<pid>.json`). Best-effort by construction — a
+/// missing registry or an unreadable `ps` returns None, which leaves the caller
+/// exactly where it was rather than inventing a name.
+pub fn inherited_role_from_ancestry() -> Option<String> {
+    let ancestry = process_ancestry(std::process::id(), 12);
+    let r = resolve_role_with_ancestry(None, None, "", &ancestry, &session_role_of_pid).ok()?;
+    r.inherited_from_pid.map(|_| r.role)
+}
+
+/// Registered session for this pid, if any. The registry names the owner in the
+/// filename, so no parse of the body is needed to answer "whose session is this".
+pub fn session_role_of_pid(pid: u32) -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let dir = std::path::Path::new(&home).join(".chorus").join("sessions");
+    for role in ["wren", "silas", "kade"] {
+        if dir.join(format!("{role}-{pid}.json")).exists() {
+            return Some(role.to_string());
+        }
+    }
+    None
+}
+
+/// Parent chain, nearest first, bounded so a cycle or a deep tree cannot hang a
+/// hook call (a stalled hook fails the whole team closed — the #3218 shape).
+pub fn process_ancestry(start: u32, max_depth: usize) -> Vec<u32> {
+    let mut out = Vec::new();
+    let mut pid = start;
+    for _ in 0..max_depth {
+        let Ok(o) = std::process::Command::new("ps").args(["-o", "ppid=", "-p", &pid.to_string()]).output() else { break };
+        let Ok(txt) = String::from_utf8(o.stdout) else { break };
+        let Ok(ppid) = txt.trim().parse::<u32>() else { break };
+        if ppid <= 1 { break; }
+        out.push(ppid);
+        pid = ppid;
+    }
+    out
+}
