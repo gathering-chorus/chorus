@@ -48,6 +48,12 @@ type SparqlBinding = Record<string, { value: string; type?: string; datatype?: s
 
 const app = express();
 app.use(express.json());
+// #4004/#4016 — the SPARQL read proxy receives `Content-Type:
+// application/sparql-query`, which express.json() does not parse, so req.body
+// was {} and every real page call answered 400 "a SPARQL query is required".
+// Unit tests passed because they call the pure guards; the DEMO ENV caught it.
+// Scoped to that one content type so nothing else changes shape.
+app.use(express.text({ type: ['application/sparql-query', 'text/plain'], limit: '256kb' }));
 
 // #3089: name every request so eventloop.blocked alerts attribute to a route
 // (`op=GET /api/chorus/search`) instead of `op=unknown`. Must come BEFORE any
