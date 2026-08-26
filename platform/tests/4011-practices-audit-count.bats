@@ -32,6 +32,14 @@ EOF
 # Pull the audit query out of the PRACTICES_SET block as the script will run it.
 # Reading it from source is the point: if someone edits the script, this test
 # follows the edit instead of asserting against a copy that can drift.
+#
+# FRAGILITY, named because both reviewers found it (#4011 gate): this is text
+# surgery over one source line. It assumes the query stays on a single line
+# inside the curl --data-urlencode argument. Split that line across two, or
+# rename PRACTICES_GRAPH, and the extractor returns empty — the first test
+# below fails FIRST and says so, so the breakage reads as "the extractor lost
+# the query," not as a logic regression in the deploy. If you are here because
+# test 1 went red, fix this function, not the script.
 practices_audit_query() {
   awk '/^# PRACTICES_SET \(#3754\)/,0' "$SCRIPT" \
     | grep -o 'PREFIX c: <[^"]*COUNT(DISTINCT ?p)[^"]*}' \
