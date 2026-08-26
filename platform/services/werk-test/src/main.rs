@@ -1679,7 +1679,17 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool
             let text = format!("{}{}",
                 String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
             match werk_test::parse_playwright_summary(&text) {
-                Some((p, f)) => (o.status.success() && f == 0, format!(" ({} passed, {} failed)", p, f)),
+                Some((p, f)) => {
+                    // #4004 — a red that will not NAME itself is unactionable. When
+                    // the summary parsed we printed only "(60 passed, 1 failed)" and
+                    // swallowed the output, so the same ui-flows red survived two
+                    // rounds with nobody able to say which flow it was — and it does
+                    // not reproduce locally, so the log was the only witness.
+                    for line in werk_test::playwright_failure_lines(&text) {
+                        eprintln!("{}", line);
+                    }
+                    (o.status.success() && f == 0, format!(" ({} passed, {} failed)", p, f))
+                }
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();
                     eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
