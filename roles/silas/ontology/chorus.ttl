@@ -634,18 +634,39 @@ chorus:hasOwner a owl:ObjectProperty ;
     rdfs:range chorus:Role .
 
 # SHACL: every Document must have at least one domain tag
+# #4010 — WHY THERE WERE ZERO DOCUMENTS FOR MONTHS.
+#
+# Every product in this file carries `gaps "hasDesignDoc unfilled (no Document
+# instances in graph)"`, and ProductShape/ServiceShape both require hasDesignDoc
+# minCount 1. The shape below is why nobody could satisfy it: it demanded
+# hasDomain of class chorus:SubDomain, and SubDomain was re-levelled away by
+# #3509 — so the shape asked for a class no live instance can hold. An
+# unsatisfiable shape does not fail loudly; the set just stays empty and the gap
+# text gets copied onto the next product.
+#
+# hasDomain now ranges over chorus:Domain (the level that survived). docHref is
+# required because a document nobody can open is a row, not a document. The
+# instances graph is DECLARED here per ADR-051 so reader and writer are the same
+# graph by construction.
 chorus:DocumentShape a sh:NodeShape ;
     sh:targetClass chorus:Document ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
-        sh:class chorus:SubDomain ;
+        sh:class chorus:Domain ;
     ] ;
     sh:property [
         sh:path chorus:docTitle ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-    ] .
+    ] ;
+    sh:property [
+        sh:path chorus:docHref ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    chorus:instancesGraph "urn:chorus:domains:documents" ;
+    chorus:generatedBy "athena-model" .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)

@@ -105,6 +105,8 @@ else
     # MODEL_SET the day it is authored, never live-only (the #3587/#3593 wipe
     # class), and athena-make will not serve the class without it.
     "$CHORUS_ROOT/roles/wren/ontology/values-shape-4006.ttl"
+    # #4010 — the repaired DocumentShape rides MODEL_SET; the Document instances
+    # themselves go to their own graph in the DOCUMENTS_SET section below.
     # #3754 — leg 3 of the loom quartet: PracticeShape. Same day-authored
     # MODEL_SET discipline as #3749 — in the manifest before anything is
     # written to it, so the shape is never live-only. The constraint it
@@ -871,6 +873,92 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _pn="?"
   echo "athena-deploy-model: hydrated ${#PRACTICES_SET[@]} practices file(s) -> <$PRACTICES_GRAPH> (http $pmcode, $_pn practices live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$PRACTICES_GRAPH" practices="${_pn}" 2>/dev/null || true
+fi
+
+# =============================================================================
+# DOCUMENTS_SET (#4010) — the doc catalog as DATA. Jeff, 2026-08-26: "im confused
+# about why we made html when i asked to put in the graph."
+#
+# Same SAFE-BY-CONSTRUCTION shape as PRINCIPLES_SET/VALUES_SET: riot-validate,
+# staged load, per-subject additive merge, single-request-truth verify that fails
+# CLOSED when it cannot ask. Plus a DANGLING-HREF gate: a Document whose docHref
+# points at no served page is a catalog row for a document nobody can open.
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  DOCS_GRAPH="${DOCS_GRAPH:-urn:chorus:domains:documents}"
+  DOCS_STAGING="${DOCS_GRAPH}-staging-deploy"
+  DOCUMENTS_SET=(
+    "$CHORUS_ROOT/roles/wren/ontology/documents-4010.ttl"
+  )
+  for ttl in "${DOCUMENTS_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "athena-deploy-model: DOCUMENTS_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "athena-deploy-model: riot validate FAILED for DOCUMENTS_SET $ttl — NOT deploying documents" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="riot-invalid-documents" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${DOCUMENTS_SET[@]}"; do
+    dcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-doc-resp.txt -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$DOCS_STAGING" 2>/dev/null) || dcode="000"
+    if [ "$dcode" != "200" ] && [ "$dcode" != "201" ] && [ "$dcode" != "204" ]; then
+      echo "athena-deploy-model: DOCUMENTS_SET staging load failed for $ttl (http $dcode)" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-staging-http-$dcode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+
+  # DANGLING-HREF GATE — every Document must declare a docHref. Asked against
+  # STAGING before the merge, so a hrefless row never reaches the served graph.
+  _dmiss=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAPH <$DOCS_STAGING> { ?d a c:Document } FILTER NOT EXISTS { GRAPH <$DOCS_STAGING> { ?d c:docHref ?h } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  if ! printf '%s' "$_dmiss" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: DOCUMENTS-HREF-GATE could not ask — refusing to pass a blind check (#3726)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-href-gate-unanswered" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  _dn=$(printf '%s\n' "$_dmiss" | tail -1 | tr -dc '0-9')
+  if [ "${_dn:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: DOCUMENTS-HREF-GATE FAILED — ${_dn} Document(s) with no docHref" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-missing-href" missing="${_dn}" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+
+  DOCS_MERGE="DELETE { GRAPH <$DOCS_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$DOCS_STAGING> { ?s ?sp ?so } GRAPH <$DOCS_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$DOCS_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$DOCS_STAGING> { ?s ?p ?o } }"
+  dmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-doc-merge.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$DOCS_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || dmcode="000"
+  if [ "$dmcode" != "200" ] && [ "$dmcode" != "204" ]; then
+    echo "athena-deploy-model: DOCUMENTS_SET merge failed (http $dmcode)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-merge-http-$dmcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  _dresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$DOCS_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$DOCS_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$DOCS_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_dresp" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: DOCUMENTS-VERIFY could not ask — refusing a blind verify (#3726)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _dmissing=$(printf '%s\n' "$_dresp" | tail -1 | tr -dc '0-9')
+  if [ "${_dmissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: DOCUMENTS-VERIFY FAILED — ${_dmissing} staged subject(s) absent post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$DOCS_GRAPH" reason="documents-verify-missing" 2>/dev/null || true
+    exit 1
+  fi
+  _dcount=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?d) AS ?n) WHERE { GRAPH <$DOCS_GRAPH> { ?d a c:Document } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _dcount="?"
+  echo "athena-deploy-model: hydrated ${#DOCUMENTS_SET[@]} documents file(s) -> <$DOCS_GRAPH> (http $dmcode, $_dcount documents live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$DOCS_GRAPH" documents="${_dcount}" 2>/dev/null || true
 fi
 
 exit 0
