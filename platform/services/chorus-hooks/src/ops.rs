@@ -351,8 +351,24 @@ fn save_state(path: &Path, state: &OpsState) {
 
 // --- Lock file ---
 
+/// #4004 — the lock path, overridable so a test can bring its OWN world (#3528).
+/// Four tests in this module wrote and deleted the SAME `/tmp/chorus-ops.lock`,
+/// and cargo runs tests in parallel threads: they raced each other, and the
+/// loser was reported as a red. It was called a flake for two days; it is a
+/// shared-mutable-state bug that reproduces on any machine busy enough to
+/// interleave them. Production behaviour is unchanged — the default is the
+/// same path it always was.
+fn ops_lock_path() -> std::path::PathBuf {
+    std::env::var("CHORUS_OPS_LOCK")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("/tmp/chorus-ops.lock"))
+}
+
 fn acquire_lock() -> Result<(), String> {
-    let lock_path = Path::new("/tmp/chorus-ops.lock");
+    let lock_owned = ops_lock_path();
+    let lock_path = lock_owned.as_path();
     if lock_path.exists() {
         if let Ok(pid_str) = fs::read_to_string(lock_path) {
             let pid_str = pid_str.trim();
@@ -373,7 +389,7 @@ fn acquire_lock() -> Result<(), String> {
 }
 
 fn release_lock() {
-    let _ = fs::remove_file("/tmp/chorus-ops.lock");
+    let _ = fs::remove_file(ops_lock_path());
 }
 
 /// Check if a process is alive (signal 0)
@@ -3938,10 +3954,14 @@ mod orchestrator_tests {
 
     #[test]
     fn acquire_and_release_lock_roundtrip() {
-        // Lock path is hardcoded (/tmp/chorus-ops.lock). Make sure any prior
-        // state is cleared so this test reflects the acquire → release cycle,
-        // and doesn't leave residue for other tests.
-        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        // #4004 — its OWN lock file. This test shared /tmp/chorus-ops.lock with
+        // three others while cargo ran them in parallel threads; it was the red
+        // on 2026-08-25 and its neighbour was the red on 08-26. Same bug, two
+        // names, called a flake both times.
+        let _lp = std::env::temp_dir()
+            .join(format!("chorus-ops-roundtrip-{}.lock", std::process::id()));
+        std::env::set_var("CHORUS_OPS_LOCK", &_lp);
+        let lock = _lp.as_path();
         let _ = fs::remove_file(lock);
 
         acquire_lock().expect("acquire should succeed from a clean state");
@@ -3953,7 +3973,9 @@ mod orchestrator_tests {
 
     #[test]
     fn acquire_lock_refuses_when_live_pid_holds_lock() {
-        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _lp = std::env::temp_dir().join(format!("chorus-ops-acquire_lock_refuses_when_live_pid_holds_lock-{}.lock", std::process::id()));
+        std::env::set_var("CHORUS_OPS_LOCK", &_lp);
+        let lock = _lp.as_path();
         let _ = fs::remove_file(lock);
         // Write our own pid as the lock holder — it's alive, so acquire
         // should see a live holder and refuse.
@@ -3969,7 +3991,9 @@ mod orchestrator_tests {
 
     #[test]
     fn acquire_lock_reclaims_stale_lock_from_dead_pid() {
-        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _lp = std::env::temp_dir().join(format!("chorus-ops-acquire_lock_reclaims_stale_lock_from_dead_pid-{}.lock", std::process::id()));
+        std::env::set_var("CHORUS_OPS_LOCK", &_lp);
+        let lock = _lp.as_path();
         let _ = fs::remove_file(lock);
         // An impossible pid → libc_kill returns false → acquire_lock
         // deletes the stale file and writes our pid.
@@ -3984,7 +4008,9 @@ mod orchestrator_tests {
 
     #[test]
     fn acquire_lock_handles_empty_pid_file() {
-        let lock = std::path::Path::new("/tmp/chorus-ops.lock");
+        let _lp = std::env::temp_dir().join(format!("chorus-ops-acquire_lock_handles_empty_pid_file-{}.lock", std::process::id()));
+        std::env::set_var("CHORUS_OPS_LOCK", &_lp);
+        let lock = _lp.as_path();
         let _ = fs::remove_file(lock);
         // Empty pid file → skip the kill check, reclaim.
         fs::write(lock, "").unwrap();

@@ -2,7 +2,7 @@ var N=[], E=[];
 
 // Fetch live data from Fuseki SPARQL endpoint
 (async function loadFromFuseki() {
-  const FUSEKI = 'http://localhost:3030/pods/sparql';
+  const FUSEKI = '/sparql-read?dataset=pods'  /* #4004 — same-origin; 'localhost' meant the PHONE */;
   const GRAPH = 'urn:chorus:ontology';
   const PREFIX = 'https://jeffbridwell.com/chorus#';
   const FW_PREFIX = 'https://jeffbridwell.com/framework#';

@@ -2281,6 +2281,63 @@ app.use('/owl', async (req: Request, res: Response) => {
   }
 });
 
+// ── same-origin SPARQL read proxy (#4004) ────────────────────────────
+// Jeff's 2026-08-25 phone photo: the ontology ER page renders its frame and then
+// "Failed to load". The cause was not bind scope — the page hardcodes
+// `http://localhost:3030/pods/sparql`, and on a phone `localhost` IS the phone.
+// It works on the Mac and nowhere else, publicly included, since the page is on
+// the share allowlist. Same coupling the #3644 /owl proxy was built to end.
+//
+// READ ONLY, and it proves it rather than trusting the caller: an update verb in
+// the body is refused, so this cannot become a write door. Deliberately NOT added
+// to the share allowlist — LAN and laptop are fixed; publishing raw query to the
+// tunnel is a reachability decision for Jeff, not a side effect of fixing a page.
+export function isReadOnlySparql(q: string): boolean {
+  return !/\b(INSERT|DELETE|DROP|CLEAR|LOAD|CREATE|COPY|MOVE|ADD)\b/i.test(q);
+}
+
+export function sparqlDataset(raw: unknown): string {
+  // #4004 — narrow before coercing. `String(unknown)` trips no-base-to-string and,
+  // worse, would happily stringify an object into a nonsense dataset name.
+  const name = typeof raw === 'string' ? raw : '';
+  return name.replace(/[^a-zA-Z0-9_-]/g, '') || 'pods';
+}
+
+app.post('/sparql-read', async (req: Request, res: Response) => {
+  // narrow rather than coerce: a non-string query is absent, not "[object Object]"
+  // narrow rather than coerce: a non-string query is absent, not "[object Object]"
+  const body: unknown = req.body;
+  let q = '';
+  if (typeof body === 'string') {
+    q = body;
+  } else if (body !== null && typeof body === 'object' && 'query' in body) {
+    const raw = (body as Record<string, unknown>).query;
+    if (typeof raw === 'string') q = raw;
+  }
+  if (!q.trim()) return res.status(400).json({ error: 'a SPARQL query is required' });
+  if (!isReadOnlySparql(q)) {
+    return res.status(405).json({ error: 'sparql-read is read-only (SELECT/ASK/CONSTRUCT/DESCRIBE)' });
+  }
+  const upstream = process.env.FUSEKI_UPSTREAM || 'http://127.0.0.1:3030';
+  const dataset = sparqlDataset(req.query.dataset);
+  try {
+    const r = await fetch(`${upstream}/${dataset}/sparql`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/sparql-query',
+        Accept: String(req.headers.accept || 'application/sparql-results+json'),
+      },
+      body: q,
+    });
+    res.status(r.status);
+    const ct = r.headers.get('content-type');
+    if (ct) res.type(ct);
+    res.send(Buffer.from(await r.arrayBuffer()));
+  } catch {
+    res.status(502).json({ error: 'fuseki unreachable through the proxy' });
+  }
+});
+
 // ── Athena CMDB API ──────────────────────────────────────────────
 // Named SPARQL queries against the Chorus ontology in Fuseki.
 // Access layer for agents — no raw SPARQL, no port guessing.

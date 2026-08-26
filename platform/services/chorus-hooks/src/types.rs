@@ -112,6 +112,20 @@ impl HookInput {
                 _ => {}
             }
         }
+        // #4004 — before falling back to a directory string, ask who SPAWNED us.
+        // A subagent carries none of its parent's environment, so DEPLOY_ROLE is
+        // absent and its cwd is a scratch dir in no werk: 122 of 300 beats on
+        // 2026-08-25 were stamped unknown this way, and every guard that decides
+        // what an agent may do reads this same value. A subagent is not anonymous;
+        // it acts FOR the role that launched it.
+        if let Some(role) = crate::shared::role::inherited_role_from_ancestry() {
+            return match role.as_str() {
+                "silas" => Role::Silas,
+                "wren" => Role::Wren,
+                "kade" => Role::Kade,
+                _ => Role::from_cwd(self.cwd.as_deref().unwrap_or("")),
+            };
+        }
         Role::from_cwd(self.cwd.as_deref().unwrap_or(""))
     }
 

@@ -2279,3 +2279,43 @@ mod package_attribution_tests {
         assert!(!package_owns_case("platform/api", "platform/api"));
     }
 }
+
+
+/// #4004 — the lines worth surfacing when a playwright run reports failures.
+/// The runner used to print the summary alone, so a red flow never named itself
+/// and the same "60 passed, 1 failed" survived two rounds unidentifiable.
+pub fn playwright_failure_lines(out: &str) -> Vec<&str> {
+    out.lines()
+        .filter(|l| {
+            l.contains('\u{2718}')
+                || l.trim_start().starts_with("1)")
+                || l.contains("Error:")
+                || l.contains("expect(")
+        })
+        .take(20)
+        .collect()
+}
+
+#[cfg(test)]
+mod playwright_failure_naming_4004 {
+    use super::playwright_failure_lines;
+
+    const OUT: &str = "Running 61 tests\n  \u{2713} clearing-ui.spec.cjs:12 \u{203a} room renders\n  \u{2718} chorus-hub-4001.spec.cjs:31 \u{203a} hub tiles render\n    Error: expect(received).toBe(expected)\n  60 passed\n  1 failed";
+
+    /// NEGATIVE PROOF — a run WITH a failure must yield the failing flow's name.
+    #[test]
+    fn a_failing_run_names_the_flow() {
+        let lines = playwright_failure_lines(OUT);
+        assert!(lines.iter().any(|l| l.contains("chorus-hub-4001.spec.cjs")),
+            "the red must name its file: {lines:?}");
+        assert!(lines.iter().any(|l| l.contains("Error:")), "and its reason: {lines:?}");
+    }
+
+    /// NEGATIVE PROOF — and a GREEN run must stay quiet, or the surfacing becomes
+    /// noise printed on every pass and gets ignored like everything else.
+    #[test]
+    fn a_green_run_prints_nothing() {
+        let green = "Running 68 tests\n  \u{2713} a.spec.cjs:1 \u{203a} ok\n  68 passed (1.3m)";
+        assert!(playwright_failure_lines(green).is_empty());
+    }
+}

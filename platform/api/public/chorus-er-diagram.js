@@ -1,7 +1,7 @@
 // chorus-er-diagram.js — Dynamic ER diagram from Fuseki ontology (#2107)
 mermaid.initialize({ startOnLoad: false, theme: 'neutral', er: { useMaxWidth: false, fontSize: 12 } });
 
-var FUSEKI = 'http://localhost:3030/pods/sparql';
+var FUSEKI = '/sparql-read?dataset=pods'  /* #4004 — same-origin; 'localhost' meant the PHONE */;
 var allClasses = {};
 var allObjProps = [];
 var productDomains = {};
