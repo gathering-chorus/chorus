@@ -1,0 +1,194 @@
+# #3754 — practice v2 instances, into their ADR-051 home urn:chorus:domains:practices.
+#
+# v1 was thrown away (Jeff, 2026-08-25): its 40 subjects are staged in
+# model-retirements.jsonl and its source blocks are gone from chorus.ttl. The
+# labels were sound; the model was fiction — 100% of its chorus:expresses
+# targets pointed at principle-* IRIs that do not exist, while the live
+# principles are hemenway-* in urn:chorus:domains:principles.
+#
+# Every edge below resolves to a principle that IS in that graph today. That is
+# the whole point: PracticeShape (expresses sh:class chorus:Principle,
+# minCount 1) makes any other state a validation failure.
+#
+# chorus:enactedBy names the verb, gate or hook that RUNS the practice. Where a
+# practice is real but nothing enforces it, enactedBy is ABSENT — declared, not
+# enacted. That is a legitimate modeled state (proven in the shape's test), and
+# the coverage query reports it rather than the model pretending otherwise.
+#
+# Both principle kinds are bound: the 14 PC (hemenway-*) and the 14 XP
+# (chorus:xp-*, landed by Wren's #4006 on 2026-08-25, principleKind mandatory).
+# A practice expresses whichever principles it actually enacts in either
+# vocabulary; the asymmetry is real and practice-coverage.sh reports it.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+
+# --- XP core practices, enacted by our verbs ---------------------------------
+
+chorus:practice-tdd a chorus:Practice ;
+    rdfs:label "Test-driven development" ;
+    rdfs:comment "AC first, then tests that describe what Jeff sees, then code. Tests ship with the change; a check that gates anything carries a negative proof (#3734)." ;
+    chorus:expresses chorus:hemenway-mistakes-are-tools-for-learning,
+                     chorus:hemenway-observe ,
+                     chorus:xp-quality,
+                     chorus:xp-baby-steps,
+                     chorus:xp-failure;
+    chorus:enactedBy "werk-test" .
+
+chorus:practice-small-releases a chorus:Practice ;
+    rdfs:label "Small releases" ;
+    rdfs:comment "One card, one landable change. A go lands a card that is done — legs split rather than batched (the #3749/#3754/#3755 split is the worked example)." ;
+    chorus:expresses chorus:hemenway-least-change-greatest-effect,
+                     chorus:hemenway-small-scale-intensive-systems ,
+                     chorus:xp-baby-steps,
+                     chorus:xp-flow,
+                     chorus:xp-economics;
+    chorus:enactedBy "werk-pull" .
+
+chorus:practice-continuous-integration a chorus:Practice ;
+    rdfs:label "Continuous integration" ;
+    rdfs:comment "Every land runs build, the blocking test floor, deploy and demo through one pipeline; main is the integration point, not a branch that diverges." ;
+    chorus:expresses chorus:hemenway-connect,
+                     chorus:hemenway-collaborate-with-succession ,
+                     chorus:xp-flow,
+                     chorus:xp-improvement;
+    chorus:enactedBy "chorus_werk" .
+
+chorus:practice-pair-programming a chorus:Practice ;
+    rdfs:label "Pair programming" ;
+    rdfs:comment "Two roles on one problem with a named navigator scope, rotation checkpoints, and the partner's judgment treated as the partner's lane." ;
+    chorus:expresses chorus:hemenway-function-supported-by-multiple-elements,
+                     chorus:hemenway-connect ,
+                     chorus:xp-humanity,
+                     chorus:xp-mutual-benefit,
+                     chorus:xp-diversity;
+    chorus:enactedBy "pair" .
+
+chorus:practice-whole-team a chorus:Practice ;
+    rdfs:label "Whole team" ;
+    rdfs:comment "Three roles and Jeff work one board with one WIP discipline; ownership is per-lane but the red list is the team's." ;
+    chorus:expresses chorus:hemenway-each-element-multiple-functions,
+                     chorus:hemenway-connect ,
+                     chorus:xp-humanity,
+                     chorus:xp-accepted-responsibility;
+    chorus:enactedBy "cards" .
+
+chorus:practice-informative-workspace a chorus:Practice ;
+    rdfs:label "Informative workspace" ;
+    rdfs:comment "Run state is a surface, not a tail: the nightly page reports PARTIAL runs, per-suite results and owners while the run is still going." ;
+    chorus:expresses chorus:hemenway-observe,
+                     chorus:hemenway-get-a-yield ,
+                     chorus:xp-reflection,
+                     chorus:xp-opportunity;
+    chorus:enactedBy "nightly-suites.sh" .
+
+chorus:practice-continuous-improvement a chorus:Practice ;
+    rdfs:label "Continuous improvement" ;
+    rdfs:comment "Retro turns friction into a named change; a recurring false alarm is a defect to fix or retire, never weather." ;
+    chorus:expresses chorus:hemenway-turn-problems-into-solutions,
+                     chorus:hemenway-mistakes-are-tools-for-learning ,
+                     chorus:xp-improvement,
+                     chorus:xp-reflection;
+    chorus:enactedBy "retro" .
+
+chorus:practice-root-cause-analysis a chorus:Practice ;
+    rdfs:label "Root-cause analysis" ;
+    rdfs:comment "Chase the instrument before the symptom: a red that cannot distinguish a correct refusal from a failure is the defect, not the suite it accuses." ;
+    chorus:expresses chorus:hemenway-turn-problems-into-solutions,
+                     chorus:hemenway-observe ,
+                     chorus:xp-reflection,
+                     chorus:xp-failure;
+    chorus:enactedBy "chorus-hooks" .
+
+# --- our own practices, enacted ----------------------------------------------
+
+chorus:practice-demo-before-accept a chorus:Practice ;
+    rdfs:label "Demo before accept" ;
+    rdfs:comment "No card is Done without a demo Jeff saw; the builder cannot self-accept. GO is the accept (DEC-048)." ;
+    chorus:expresses chorus:hemenway-get-a-yield,
+                     chorus:hemenway-observe ,
+                     chorus:xp-quality,
+                     chorus:xp-accepted-responsibility;
+    chorus:enactedBy "werk-demo" .
+
+chorus:practice-negative-proof a chorus:Practice ;
+    rdfs:label "No gate without a negative proof" ;
+    rdfs:comment "A check that gates anything ships with a fixture where the guarded condition is violated and the check is shown to FAIL (#3734)." ;
+    chorus:expresses chorus:hemenway-mistakes-are-tools-for-learning,
+                     chorus:hemenway-least-change-greatest-effect ,
+                     chorus:xp-quality,
+                     chorus:xp-failure;
+    chorus:enactedBy "werk-code-contract.sh" .
+
+chorus:practice-hermetic-tests a chorus:Practice ;
+    rdfs:label "A test brings its own world" ;
+    rdfs:comment "Suites run against injected stores and dead-ported service URLs; a test can neither read live state by accident nor speak with the team's live voice (#3615/#3995/#4005)." ;
+    chorus:expresses chorus:hemenway-small-scale-intensive-systems,
+                     chorus:hemenway-least-change-greatest-effect ,
+                     chorus:xp-self-similarity,
+                     chorus:xp-quality;
+    chorus:enactedBy "werk-test" .
+
+chorus:practice-one-werk-per-card a chorus:Practice ;
+    rdfs:label "One werk per card" ;
+    rdfs:comment "Each card gets an ephemeral worktree off origin/main, torn down on accept; canonical stays read-only during a session." ;
+    chorus:expresses chorus:hemenway-small-scale-intensive-systems,
+                     chorus:hemenway-optimize-edge ,
+                     chorus:xp-self-similarity,
+                     chorus:xp-baby-steps;
+    chorus:enactedBy "werk-pull" .
+
+chorus:practice-staged-retirement a chorus:Practice ;
+    rdfs:label "Staged retirement" ;
+    rdfs:comment "Model subjects retire through a ledgered, idempotent, fail-closed path with the source re-authored in the same land, so a redeploy cannot resurrect them." ;
+    chorus:expresses chorus:hemenway-collaborate-with-succession,
+                     chorus:hemenway-least-change-greatest-effect ,
+                     chorus:xp-accepted-responsibility,
+                     chorus:xp-economics;
+    chorus:enactedBy "athena-deploy-model.sh" .
+
+chorus:practice-andon a chorus:Practice ;
+    rdfs:label "Andon — declare state at transitions" ;
+    rdfs:comment "A role declares building, blocked, waiting, observing or idle; silence is not a state the system can read." ;
+    chorus:expresses chorus:hemenway-observe,
+                     chorus:hemenway-connect ,
+                     chorus:xp-reflection,
+                     chorus:xp-accepted-responsibility;
+    chorus:enactedBy "role-state" .
+
+chorus:practice-nudge a chorus:Practice ;
+    rdfs:label "Roles exchange work directly" ;
+    rdfs:comment "A nudge persists and delivers; Jeff is never the carrier between two roles." ;
+    chorus:expresses chorus:hemenway-connect,
+                     chorus:hemenway-each-element-multiple-functions ,
+                     chorus:xp-flow,
+                     chorus:xp-humanity;
+    chorus:enactedBy "chorus_nudge_message" .
+
+chorus:practice-search-before-filesystem a chorus:Practice ;
+    rdfs:label "Search shared memory before the filesystem" ;
+    rdfs:comment "Chorus first, then the codebase graph, then grep — so prior work is found rather than rebuilt." ;
+    chorus:expresses chorus:hemenway-catch-and-store,
+                     chorus:hemenway-least-change-greatest-effect ,
+                     chorus:xp-economics,
+                     chorus:xp-redundancy;
+    chorus:enactedBy "chorus-hooks" .
+
+# --- declared, NOT enacted ---------------------------------------------------
+# Real XP practices we do not run. Modeled honestly rather than omitted (which
+# would hide the gap) or given a false binding (which would fake coverage).
+# No chorus:enactedBy — the coverage query reports these as unenforced.
+
+chorus:practice-energized-work a chorus:Practice ;
+    rdfs:label "Energized work" ;
+    rdfs:comment "Sustainable pace. DECLARED, NOT ENACTED: nothing in Chorus measures or protects working hours, and the 3am incidents are the evidence." ;
+    chorus:expresses chorus:hemenway-get-a-yield ,
+                     chorus:xp-humanity.
+
+chorus:practice-slack a chorus:Practice ;
+    rdfs:label "Slack" ;
+    rdfs:comment "Deliberate unallocated capacity so a plan can absorb surprise. DECLARED, NOT ENACTED: no mechanism reserves it; every hour is carded." ;
+    chorus:expresses chorus:hemenway-creativity-is-the-limit ,
+                     chorus:xp-opportunity,
+                     chorus:xp-improvement.

@@ -1,0 +1,40 @@
+# #3754 — the loom model's serving layer, leg 3: Practice.
+#
+# Mirrors #3749's PrincipleShape idiom exactly (same file shape, same
+# instancesGraph-on-the-shape placement per ADR-051, same generatedBy pen).
+#
+# The constraint that matters is `expresses`: sh:class chorus:Principle +
+# minCount 1. Its ABSENCE is what let 11 of 23 current expresses targets rot
+# into dangling IRIs — validation could not tell a live principle from a
+# retired one, or from a typo. With the constraint, that rot becomes a
+# validation FAILURE instead of a silent lie on the page (#3734: the two
+# states must be separable, and the negative proofs below prove they are).
+#
+# `operationalizes` (Practice -> Policy) carries the same class constraint but
+# stays OPTIONAL: a practice may enact a principle without a written policy,
+# and requiring one would force policy-shaped fiction. Absent means absent.
+#
+# `enactedBy` binds a practice to the verb/gate that actually runs it — the
+# card's "every practice bound to the verb/gate that enacts it". Optional at
+# the shape (a DECLARED-not-enacted practice is legitimate and must be
+# modelable — Energized Work and Slack are exactly that), so the coverage
+# query, not the shape, is what reports unenforced practices.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+
+chorus:PracticeShape a sh:NodeShape ;
+    sh:targetClass chorus:Practice ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    # the anti-rot constraint (11/23 dangling before this existed)
+    sh:property [ sh:path chorus:expresses ; sh:minCount 1 ; sh:class chorus:Principle ] ;
+    # optional, but when present it must BE a Policy
+    sh:property [ sh:path chorus:operationalizes ; sh:class chorus:Policy ] ;
+    # optional: absent = declared-not-enacted, reported by the coverage query
+    sh:property [ sh:path chorus:enactedBy ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    chorus:instancesGraph "urn:chorus:domains:practices" ;
+    chorus:generatedBy "athena-model" .
