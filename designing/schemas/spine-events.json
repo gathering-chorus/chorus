@@ -3547,7 +3547,9 @@
       "fields": {
         "graph": "Target named graph",
         "triples": "Post-merge triple count (ontology/instances sections)",
-        "principals": "Post-merge principal count (security section)"
+        "principals": "Post-merge principal count (security section)",
+        "principles": "Post-merge principle count (PRINCIPLES_SET section)",
+        "practices": "Post-merge practice count (PRACTICES_SET section, #4011 \u2014 was mis-emitted as principles= until the audit query was corrected to c:Practice)"
       }
     },
     "model.deploy.failed": {

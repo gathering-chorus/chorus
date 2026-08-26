@@ -714,7 +714,8 @@ if [ -z "${TTL:-}" ]; then
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$PRINCIPLES_GRAPH" principles="${_pn}" 2>/dev/null || true
 fi
 
-# ======================================================================# VALUES_SET (#4006) — the 5 XP value instances into urn:chorus:domains:values.
+# =============================================================================
+# VALUES_SET (#4006) — the 5 XP value instances into urn:chorus:domains:values.
 # Same SAFE-BY-CONSTRUCTION shape as PRINCIPLES_SET: riot-validate first, staged
 # load, per-subject ADDITIVE merge, then a single-request-truth verify that
 # fails CLOSED when it cannot ask (#3726 — a blind verify never passes).
@@ -843,7 +844,7 @@ if [ -z "${TTL:-}" ]; then
   pmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prac-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$PRACTICES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || pmcode="000"
   if [ "$pmcode" != "200" ] && [ "$pmcode" != "204" ]; then
-    echo "athena-deploy-model: PRACTICES_SET merge staging->principles failed (http $pmcode)" >&2
+    echo "athena-deploy-model: PRACTICES_SET merge staging->practices failed (http $pmcode)" >&2
     head -3 /tmp/chorus-model-prac-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="practices-merge-http-$pmcode" 2>/dev/null || true
     curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
@@ -861,15 +862,15 @@ if [ -z "${TTL:-}" ]; then
   _pmissing=$(printf '%s\n' "$_presp" | tail -1 | tr -dc '0-9')
   if [ "${_pmissing:-1}" -ne 0 ] 2>/dev/null; then
     echo "athena-deploy-model: PRACTICES-VERIFY FAILED — ${_pmissing:-?} staged subject(s) absent from <$PRACTICES_GRAPH> post-merge" >&2
-    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="principles-verify-missing" missing="${_pmissing:-unknown}" 2>/dev/null || true
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="practices-verify-missing" missing="${_pmissing:-unknown}" 2>/dev/null || true
     exit 1
   fi
   _pn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
-    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <$PRACTICES_GRAPH> { ?p a c:Principle } }" \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <$PRACTICES_GRAPH> { ?p a c:Practice } }" \
     -H "Accept: application/sparql-results+json" 2>/dev/null \
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _pn="?"
-  echo "athena-deploy-model: hydrated ${#PRACTICES_SET[@]} principles file(s) -> <$PRACTICES_GRAPH> (http $pmcode, $_pn principles live)"
-  "$CHORUS_LOG" model.deployed "$ROLE" graph="$PRACTICES_GRAPH" principles="${_pn}" 2>/dev/null || true
+  echo "athena-deploy-model: hydrated ${#PRACTICES_SET[@]} practices file(s) -> <$PRACTICES_GRAPH> (http $pmcode, $_pn practices live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$PRACTICES_GRAPH" practices="${_pn}" 2>/dev/null || true
 fi
 
 exit 0
