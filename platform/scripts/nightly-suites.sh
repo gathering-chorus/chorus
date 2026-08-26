@@ -746,7 +746,13 @@ _reconcile_leg() {
     return 0
   fi
   local out rc
-  out=$("$bin" reconcile 2>&1); rc=$?
+  # #4015 — the FLAG form, `werk-test --reconcile` (main.rs:39), not a positional
+  # subcommand: a bare `reconcile` is parsed as a CARD and the verb goes looking
+  # for a werk called kade-reconcile. Found by running it, twice — the footer
+  # honestly reported unmeasured both times, which is correct behaviour and a
+  # useless report. This is the difference between a check that refuses and a
+  # check that works.
+  out=$(ROLE="${NIGHTLY_ROLE:-kade}" "$bin" --reconcile 2>&1); rc=$?
   local registered; registered=$(printf '%s' "$out" | sed -n 's/.*registered \([0-9][0-9]*\).*/\1/p' | head -1)
   if [ "$rc" -ne 0 ] || [ -z "$registered" ]; then
     local why; why=$(printf '%s' "$out" | grep -v '^\s*$' | head -1 | cut -c1-110)
