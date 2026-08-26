@@ -7,7 +7,7 @@ import * as https from 'http';
 import { execSync } from 'child_process';
 import { VikunjaTask, VikunjaBucket, BoardConfig, BoardTask } from './types';
 import { LABELS, resolveBucket } from './config';
-import { fileTaskCache, TaskCache } from './task-cache';
+import { fileTaskCache, cacheIdentity, TaskCache } from './task-cache';
 
 const VIKUNJA_DB = process.env.VIKUNJA_DB || `${process.env.HOME || '/Users/jeffbridwell'}/.chorus/vikunja/db/vikunja.db`;
 
@@ -128,7 +128,9 @@ export class BoardClient {
 
   // #3625 AC3 — lazy so env overrides (tests) and projectId are read at use time.
   private sweepCache(): TaskCache {
-    return fileTaskCache(this.board.projectId);
+    // #4010 — identity in the key: a different credential must MISS and be
+    // forced to ask Vikunja, which refuses it. Never share an authorized pool.
+    return fileTaskCache(this.board.projectId, cacheIdentity(this.token));
   }
 
   async resolveIndex(index: number): Promise<number> {

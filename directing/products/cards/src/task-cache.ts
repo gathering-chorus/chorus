@@ -15,6 +15,7 @@
  */
 import * as fs from 'fs';
 import * as os from 'os';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import { VikunjaTask } from './types';
 
@@ -33,8 +34,26 @@ function cacheDir(): string {
   );
 }
 
-export function fileTaskCache(projectId: number): TaskCache {
-  const file = () => path.join(cacheDir(), `tasks-${projectId}.json`);
+/**
+ * #4010 — the cache key carries the CALLER'S IDENTITY, not just the project.
+ *
+ * Before this, the key was `tasks-${projectId}.json` and `list()` read it
+ * BEFORE any API call. A client built with a bad credential therefore returned
+ * the entire board out of a cache someone else's authorized read had filled —
+ * never contacting Vikunja, never seeing the 401 Vikunja was perfectly willing
+ * to give. The client could not tell "you are allowed to see this" from "I
+ * remember seeing this", which is the same defect class as a write door that
+ * authenticates SOMEONE and then trusts the body for WHO.
+ *
+ * `identity` is a short SHA-256 prefix of the bearer token. The token itself is
+ * never written, logged, or included in a path — only its digest, so a
+ * different credential simply misses the cache and is forced to ask Vikunja,
+ * which refuses it properly. An absent identity keys as "anon" rather than
+ * silently sharing the authorized pool.
+ */
+export function fileTaskCache(projectId: number, identity?: string): TaskCache {
+  const who = identity && identity.length ? identity : 'anon';
+  const file = () => path.join(cacheDir(), `tasks-${projectId}-${who}.json`);
   const disabled = () => !!process.env.CARDS_CACHE_DISABLE;
   const ttlMs = () => Number(process.env.CARDS_CACHE_TTL_MS) || DEFAULT_TTL_MS;
 
@@ -79,4 +98,15 @@ export function fileTaskCache(projectId: number): TaskCache {
       }
     },
   };
+}
+
+/**
+ * The cache identity for a bearer token: a short digest, never the token.
+ * Exported so the client and its tests derive it the same way — two
+ * derivations would be two identities, and the bug would come back wearing a
+ * different key.
+ */
+export function cacheIdentity(token: string | undefined): string {
+  if (!token) return 'anon';
+  return crypto.createHash('sha256').update(token).digest('hex').slice(0, 12);
 }

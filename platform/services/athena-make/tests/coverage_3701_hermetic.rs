@@ -71,6 +71,22 @@ fn urldecode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+
+/// Apply the query's own LIMIT/OFFSET to fixture rows — the store's job, modelled.
+fn apply_limit_offset(q: &str, rows: Vec<String>) -> Vec<String> {
+    let num_after = |kw: &str| -> Option<usize> {
+        let i = q.find(kw)?;
+        q[i + kw.len()..].split_whitespace().next()?.parse::<usize>().ok()
+    };
+    let offset = num_after("OFFSET ").unwrap_or(0);
+    let limit = num_after("LIMIT ");
+    let sliced: Vec<String> = rows.into_iter().skip(offset).collect();
+    match limit {
+        Some(n) => sliced.into_iter().take(n).collect(),
+        None => sliced,
+    }
+}
+
 /// The model fixture: dispatch a decoded SPARQL query to its canned rows.
 fn rows_for(q: &str) -> Vec<String> {
     let s = |v: &str| v.to_string();
@@ -107,6 +123,16 @@ fn rows_for(q: &str) -> Vec<String> {
             format!("{} urn:test:instances", ROLELESS_SCOPED_WEBID),
             format!("{} urn:chorus:domains:tests", ROLELESS_SCOPED_WEBID),
         ];
+    }
+    // #4010 — the collection COUNT. The serve path now asks the store for the
+    // total separately and pushes LIMIT/OFFSET down, so the fixture must answer
+    // the count query too. Answered BEFORE the shape branches because it also
+    // mentions the class IRI.
+    //
+    // The reason the split exists: the old path fetched every row to count them,
+    // which on the tests domain meant 190,941 rows / 74.6MB / 22.3s and a 502.
+    if q.contains("COUNT(DISTINCT ?s)") && q.contains("?s a <") {
+        return vec![s("2")];
     }
     // ---- generate()-time shape queries ----
     if q.contains("OPTIONAL { ?p sh:datatype") {
@@ -325,7 +351,11 @@ fn stub_handle(stream: &mut TcpStream) {
     let body = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
     let resp_body = if let Some(idx) = body.find("query=") {
         let q = urldecode(&body[idx + 6..]);
-        sparql_rows(&rows_for(&q))
+        // #4010 — the fixture now SLICES, because the real store does.
+        // athena-make pushes LIMIT/OFFSET into SPARQL rather than fetching every
+        // row and paginating in memory; a stub that ignored them would answer a
+        // full page for `?limit=1` and let a broken push-down pass.
+        sparql_rows(&apply_limit_offset(&q, rows_for(&q)))
     } else if req.contains("/.oidc/jwks") {
         // #3689 — the fixture CSS publishes the test key: ES256 replaced the
         // HS256 fixtures when the legacy arm was deleted.

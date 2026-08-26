@@ -3619,9 +3619,44 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         let cat: String = (0..extra.len())
             .map(|i| format!(", \"|\", COALESCE(STR(?f{i}), \"\")", i = i))
             .collect();
-        let q = format!(
-            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?clabel, ?rlabel, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }} }} ORDER BY ?v",
+        // #4010 — LIMIT/OFFSET pushed into SPARQL, and the total asked separately.
+        //
+        // Before this the collection query fetched EVERY row and paginated in
+        // memory. On the tests domain that is 190,941 chorus:TestResult rows —
+        // 74.6MB and 22.3s, past the 20s client deadline at lib.rs:47, so
+        // GET /testresults answered 502 and six months of test results were
+        // unreadable. The same shape degrades every collection as it grows: the
+        // cost of asking for ONE row was the cost of asking for all of them.
+        //
+        // The cursor is already a plain integer offset (see `paginate`), so
+        // pushing it down preserves the response contract exactly — same
+        // envelope, same links.next, same meaning — while the store does the
+        // slicing it is built to do.
+        let limit = query_param(query, "limit")
+            .and_then(|l| l.parse::<usize>().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(100);
+        let offset = query_param(query, "cursor")
+            .and_then(|c| c.parse::<usize>().ok())
+            .unwrap_or(0);
+        let where_body = format!(
+            "GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?clabel, ?rlabel, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }}",
             g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
+        );
+        // The TOTAL is a COUNT over subjects only — no OPTIONALs, no CONCAT, so
+        // it stays cheap as the collection grows. `count` in the envelope keeps
+        // meaning "how many exist", not "how many this page holds".
+        let count_q = format!(
+            "SELECT (COUNT(DISTINCT ?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }}",
+            g = table.instances_graph, c = table.class
+        );
+        let total: i64 = match sparql_json(&count_q) {
+            Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
+            Err(_) => 0,
+        };
+        let q = format!(
+            "SELECT ?v WHERE {{ {where_body} }} ORDER BY ?v LIMIT {limit} OFFSET {offset}",
+            where_body = where_body, limit = limit, offset = offset
         );
         return match sparql_json(&q) {
             Ok(body) => {
@@ -3632,13 +3667,13 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                     // kind = the item class, no `id`, `data` = the page, `count` = the
                     // TOTAL, `links.next` = the cursor URL when more remain. Uniform
                     // with the entity read; consumers learn ONE shape.
-                    let total = items.len() as i64;
-                    let limit = query_param(query, "limit")
-                        .and_then(|l| l.parse::<usize>().ok())
-                        .filter(|n| *n > 0)
-                        .unwrap_or(100);
-                    let cursor = query_param(query, "cursor");
-                    let (page, next) = paginate(&items, cursor.as_deref(), limit);
+                    // #4010 — the store already sliced. `items` IS the page.
+                    let page: &[String] = &items;
+                    let next: Option<usize> = if (offset + page.len()) < (total as usize) {
+                        Some(offset + page.len())
+                    } else {
+                        None
+                    };
                     meta.result_count = page.len() as i64;
                     let data = format!("[\n  {}\n]", page.join(",\n  "));
                     let kind = table.class.rsplit('#').next().unwrap_or("Domain");
