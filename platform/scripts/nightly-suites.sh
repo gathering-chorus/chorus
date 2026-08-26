@@ -384,13 +384,10 @@ run_cargo_lane() {
     verdict=$(_classify_verdict "$verdict" "$summary")
     # #4009 — a suite that produced NO counts was not measured. Reporting it as
     # "0 pass, 0 fail" let two different states (ran-and-passed-nothing vs
-    # never-produced-output) share one row; on 2026-08-25 two such rows sat in
-    # a red list I had to caveat by hand. Name the state instead.
-    case "$summary" in
-      "0 pass, 0 fail"|"0 pass, 0 fail "*)
-        verdict="unmeasured"
-        summary="0 pass, 0 fail (UNMEASURED — suite produced no parseable output)" ;;
-    esac
+    # never-produced-output) share one row. #4013 — extracted to a function so
+    # the proof drives the REAL logic instead of a copy that can drift.
+    local _r; _r=$(_remap_unmeasured "$verdict" "$summary")
+    verdict="${_r%%|*}"; summary="${_r#*|}"
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
@@ -489,6 +486,35 @@ _extract_shell_summary() {
   else
     echo "0 pass, 1 fail (synthesized rc=$rc, no parseable line)"
   fi
+}
+
+# #4013 — the UNMEASURED remap, as a function so its proof drives the real logic.
+#
+# #4004 and #4009 landed hours apart on 2026-08-26 and collided here. #4004 makes
+# a suite that DECLINES to run say so ("SELF-REFUSED rc=3 — suite declined to run
+# here"); #4009 matched "0 pass, 0 fail"* and overwrote it with "UNMEASURED —
+# produced no parseable output". Both cards exist to stop one row meaning two
+# things, and landing them separately re-merged the two states they each split:
+# "working as designed" and "produced nothing readable" have different owners and
+# must not share a row.
+#
+# The rule: a summary that already carries a parenthesised state has named itself
+# and is left alone. A BARE "0 pass, 0 fail" has not, and still becomes
+# UNMEASURED — the skip must not be a blanket "never rewrite", or it would
+# silently undo #4009 while looking like a fix.
+#
+# Prints "<verdict>|<summary>".
+_remap_unmeasured() {
+  local verdict="$1" summary="$2"
+  case "$summary" in
+    "0 pass, 0 fail"|"0 pass, 0 fail "*)
+      case "$summary" in
+        *"("*")"*) : ;;   # already names its own state — leave it
+        *) verdict="unmeasured"
+           summary="0 pass, 0 fail (UNMEASURED — suite produced no parseable output)" ;;
+      esac ;;
+  esac
+  printf '%s|%s\n' "$verdict" "$summary"
 }
 
 # #3662 — per-suite wedge guard. The Jul 17 03:00 run hung 4 days on one bats
