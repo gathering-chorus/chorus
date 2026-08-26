@@ -37,7 +37,29 @@ impl Store for Cfg {
         }
     }
     fn select_v(&self, sparql: &str) -> R<Vec<String>> {
-        if sparql.contains("sh:minCount") {
+        if sparql.contains("# athena-model uniqueness candidates") {
+            return Ok(if self.dup { vec!["0".into()] } else { vec![] });
+        }
+        if sparql.contains("VALUES ?target") {
+            let mut rows = Vec::new();
+            for iri in &self.exists {
+                if !sparql.contains(iri) {
+                    continue;
+                }
+                let prefix = format!("<{}> a <", iri);
+                let classes: Vec<&str> = self
+                    .typed
+                    .iter()
+                    .filter_map(|assertion| assertion.strip_prefix(&prefix)?.strip_suffix('>'))
+                    .collect();
+                if classes.is_empty() {
+                    rows.push(format!("{}|", iri));
+                } else {
+                    rows.extend(classes.into_iter().map(|class| format!("{}|{}", iri, class)));
+                }
+            }
+            Ok(rows)
+        } else if sparql.contains("sh:minCount") {
             Ok(self.required.clone())
         } else if sparql.contains("sh:datatype") {
             Ok(self.datatypes.iter().map(|(p, d)| format!("{}|{}", p, d)).collect())

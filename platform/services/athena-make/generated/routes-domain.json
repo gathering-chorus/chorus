@@ -4,5 +4,6 @@
   "fields": ["atStep|edge:ValueStreamStep", "atStream|edge:ValueStream", "comment|datatype:string", "definesVocabulary|edge:Class", "gaps|datatype:string", "hasDesignDoc|edge:Document", "label|datatype:string", "ownedBy|edge:Role", "purpose|datatype:string", "status|plain"],
   "routes": ["GET /domains", "GET /domains/:name", "GET /domains/:name/contains", "GET /domains/:name/partof", "GET /domains/:name/has-child", "GET /domains/:name/completeness", "GET /schema/domain", "POST /domains", "PUT /domains/:name", "DELETE /domains/:name", "POST /domains/:name/partof", "DELETE /domains/:name/partof", "POST /domains/:name/contains", "DELETE /domains/:name/contains", "POST /domains/:name/has-child", "DELETE /domains/:name/has-child"],
   "secured": [],
-  "mandatory": ["comment", "gaps", "label", "purpose", "status"]
+  "mandatory": ["comment", "gaps", "label", "purpose", "status"],
+  "writeRequired": ["atStep", "atStream", "comment", "definesVocabulary", "gaps", "hasDesignDoc", "label", "ownedBy", "purpose", "status"]
 }

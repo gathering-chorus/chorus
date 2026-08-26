@@ -14,8 +14,11 @@ use std::sync::OnceLock;
 
 const NS: &str = "https://jeffbridwell.com/chorus#";
 const NOBODY_WEBID: &str = "http://localhost:3000/pods/chorus/_agents/nobody/profile/card.ttl#me";
+const ROLELESS_SCOPED_WEBID: &str =
+    "http://localhost:3000/pods/chorus/_agents/roleless-scoped/profile/card.ttl#me";
+const UNSCOPED_ROLE_WEBID: &str =
+    "http://localhost:3000/pods/chorus/_agents/unscoped-role/profile/card.ttl#me";
 const WREN_WEBID: &str = "http://localhost:3000/pods/chorus/_agents/wren/profile/card.ttl#me";
-
 // ───────────────────────── the SPARQL fixture stub ─────────────────────────
 
 fn sparql_rows(vals: &[String]) -> String {
@@ -77,10 +80,18 @@ fn rows_for(q: &str) -> Vec<String> {
     // #3689 — the ES256 door needs the allow-set (HS256 used the KeyRegistry
     // and never asked). The fixture registers wren as a Principal.
     if q.contains("chorus:Principal") && q.contains("chorus:webId") && !q.contains("chorus:holdsRole") && !q.contains("chorus:hasScope") {
-        return vec![WREN_WEBID.to_string(), NOBODY_WEBID.to_string()];
+        return vec![
+            WREN_WEBID.to_string(),
+            NOBODY_WEBID.to_string(),
+            ROLELESS_SCOPED_WEBID.to_string(),
+            UNSCOPED_ROLE_WEBID.to_string(),
+        ];
     }
     if q.contains("chorus:holdsRole") {
-        return vec![format!("{} {}role-wren", WREN_WEBID, NS)];
+        return vec![
+            format!("{} {}role-wren", WREN_WEBID, NS),
+            format!("{} {}role-wren", UNSCOPED_ROLE_WEBID, NS),
+        ];
     }
     // #3689 — hasScope: the door resolves write grants from the model. The
     // fixture grants wren the graphs the write tests exercise.
@@ -91,11 +102,14 @@ fn rows_for(q: &str) -> Vec<String> {
         return vec![
             format!("{} urn:chorus:instances", WREN_WEBID),
             format!("{} urn:test:instances", WREN_WEBID),
+            format!("{} urn:chorus:domains:tests", WREN_WEBID),
             format!("{} urn:chorus:ontology", WREN_WEBID),
+            format!("{} urn:test:instances", ROLELESS_SCOPED_WEBID),
+            format!("{} urn:chorus:domains:tests", ROLELESS_SCOPED_WEBID),
         ];
     }
     // ---- generate()-time shape queries ----
-    if q.contains("FILTER(isIRI(?path)) OPTIONAL") {
+    if q.contains("OPTIONAL { ?p sh:datatype") {
         return if q.contains("#Domain>") {
             vec![
                 s("comment|datatype:string"),
@@ -106,6 +120,13 @@ fn rows_for(q: &str) -> Vec<String> {
             ]
         } else if q.contains("#Product>") {
             vec![s("hasDomain|edge:Domain"), s("label|plain"), s("status|plain")]
+        } else if q.contains("#TestResult>") {
+            vec![
+                s("filePath|plain"),
+                s("ofTest|edge:Test"),
+                s("result|plain"),
+                s("testName|plain"),
+            ]
         } else if q.contains("#Orphan>") {
             vec![s("label|plain")]
         } else if q.contains("#Weird>") {
@@ -118,7 +139,13 @@ fn rows_for(q: &str) -> Vec<String> {
         return if q.contains("#Domain>") { vec![s("secured")] } else { vec![] };
     }
     if q.contains("sh:minCount") {
-        return if q.contains("#Domain>") { vec![s("comment")] } else { vec![] };
+        return if q.contains("#Domain>") {
+            vec![s("comment|field")]
+        } else if q.contains("#TestResult>") {
+            vec![s("filePath|field"), s("ofTest|edge"), s("result|field"), s("testName|field")]
+        } else {
+            vec![]
+        };
     }
     if q.contains("chorus:exposure") {
         return if q.contains("#Domain>") {
@@ -147,7 +174,13 @@ fn rows_for(q: &str) -> Vec<String> {
         return vec![s("loom")];
     }
     if q.contains("chorus:instancesGraph") {
-        return if q.contains("#Domain>") { vec![s("urn:test:instances")] } else { vec![] };
+        return if q.contains("#Domain>") {
+            vec![s("urn:test:instances")]
+        } else if q.contains("#TestResult>") {
+            vec![s("urn:chorus:domains:tests")]
+        } else {
+            vec![]
+        };
     }
     if q.contains("SELECT DISTINCT ?v") && q.contains("definesVocabulary ?c") {
         return vec![s("Domain"), s("Product")];
@@ -155,6 +188,8 @@ fn rows_for(q: &str) -> Vec<String> {
     if q.contains("definesVocabulary <") {
         return if q.contains("#Product>") || q.contains("#Domain>") {
             vec![s("athena")]
+        } else if q.contains("#TestResult>") {
+            vec![s("tests")]
         } else {
             vec![]
         };
@@ -244,7 +279,7 @@ fn rows_for(q: &str) -> Vec<String> {
     }
     if q.contains("?p ?o . BIND('y'") {
         // entity_exists
-        for e in ["pulse", "hasparent", "borg", "dalboom"] {
+        for e in ["pulse", "hasparent", "borg", "dalboom", "testresult-existing"] {
             if q.contains(&format!("#{e}>")) {
                 return vec![s("y")];
             }
@@ -382,7 +417,9 @@ struct World {
     port: u16,
     domain: RouteTable,
     product: RouteTable,
+    test_result: RouteTable,
     home: std::path::PathBuf,
+    dal_batch_log: std::path::PathBuf,
 }
 
 static WORLD: OnceLock<World> = OnceLock::new();
@@ -393,11 +430,17 @@ fn world() -> &'static World {
         let stub_base = format!("http://127.0.0.1:{}", stub_port);
         let home = std::env::temp_dir().join(format!("owl3701-home-{}", std::process::id()));
         std::fs::create_dir_all(&home).unwrap();
-        // stub DAL: succeeds unless the argv names a poison entity
+        // stub DAL: succeeds unless the argv names a poison entity; add-batch
+        // records its exact argv, forwarded token, and raw stdin for assertions.
         let dal = home.join("dal-stub.sh");
+        let dal_batch_log = home.join("dal-add-batch.log");
+        let dal_script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"add-batch\" ]; then\n  batch_input=$(cat)\n  {{\n    printf 'ARGV\\t%s\\n' \"$*\"\n    printf 'TOKEN\\t%s\\n' \"$CHORUS_IDENTITY_TOKEN\"\n    printf 'STDIN\\n%s\\nEND\\n' \"$batch_input\"\n  }} > '{}'\n  case \"$batch_input\" in\n    *testresult-existing*) echo \"add-batch: entity 'test-result:testresult-existing': already-exists\" >&2; exit 1;;\n    *\\\"name\\\":\\\"pulse\\\"*) echo \"add-batch: entity 'domain:pulse': already-exists: entity already exists\" >&2; exit 1;;\n    *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n    *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\n  esac\nfi\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
+            dal_batch_log.display(),
+        );
         std::fs::write(
             &dal,
-            "#!/bin/sh\ncase \"$*\" in\n  *shapefail*) echo 'shape-violation: comment missing' >&2; exit 1;;\n  *dalboom*) echo kaboom >&2; exit 1;;\n  *retiredstub*) echo 'chorus-model is RETIRED (#3718) - use athena-model instead.' >&2; exit 1;;\nesac\nexit 0\n",
+            dal_script,
         )
         .unwrap();
         {
@@ -412,12 +455,13 @@ fn world() -> &'static World {
         // generate() against the stub — the same tables serve() mounts
         let domain = generate("Domain").expect("generate Domain");
         let product = generate("Product").expect("generate Product");
+        let test_result = generate("TestResult").expect("generate TestResult");
         // OS-assigned free port for the real serve loop
         let port = {
             let l = TcpListener::bind("127.0.0.1:0").unwrap();
             l.local_addr().unwrap().port()
         };
-        let tables = vec![domain.clone(), product.clone()];
+        let tables = vec![domain.clone(), product.clone(), test_result.clone()];
         std::thread::spawn(move || {
             let _ = serve(port, &tables);
         });
@@ -433,7 +477,7 @@ fn world() -> &'static World {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
         assert!(ready, "hermetic athena-make serve did not come up on :{}", port);
-        World { port, domain, product, home }
+        World { port, domain, product, test_result, home, dal_batch_log }
     })
 }
 
@@ -487,6 +531,7 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert!(t.routes.contains(&"GET /domains/:name/tree".to_string()), "treeEdge opt-in emits the tree route");
     assert_eq!(t.secured, vec!["/schema/domain".to_string()]);
     assert_eq!(t.mandatory, vec!["comment".to_string()]);
+    assert_eq!(t.write_required, vec!["comment".to_string()]);
     assert_eq!(t.instances_graph, "urn:test:instances");
     // repoTarget projected from the containment chain (no declared override)
     assert_eq!(t.repo_target, "designing/products/loom/domains/domain");
@@ -496,6 +541,10 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert!(w.product.secured.is_empty());
     assert_eq!(w.product.instances_graph, "urn:chorus:domains:athena");
     assert!(w.product.tree_edges.is_empty());
+    assert_eq!(w.test_result.instances_graph, "urn:chorus:domains:tests");
+    assert!(w.test_result.fields.contains(&"ofTest|edge:Test".to_string()));
+    assert!(w.test_result.write_required.contains(&"ofTest".to_string()));
+    assert!(w.test_result.routes.contains(&"POST /testresults/batch".to_string()));
 }
 
 #[test]
@@ -556,9 +605,10 @@ fn serve_discovery_health_and_liveness() {
     assert!(b.contains("\"kind\": \"Discovery\""));
     assert!(b.contains("\"collection\": \"/v1/domains\""), "{}", b);
     assert!(b.contains("\"collection\": \"/v1/products\""), "{}", b);
+    assert!(b.contains("\"collection\": \"/v1/testresults\""), "{}", b);
     let (c, _, b) = http("GET", "/v1", &[], "");
     assert_eq!(c, 200);
-    assert!(b.contains("\"count\": 2"));
+    assert!(b.contains("\"count\": 3"));
 }
 
 #[test]
@@ -682,7 +732,9 @@ fn serve_openapi_schema_and_composed_surfaces() {
     // unknown resource → typed 404 listing the served roots
     let (c, _, b) = http("GET", "/widgets", &[], "");
     assert_eq!(c, 404);
-    assert!(b.contains("\"served\": [\"/domains\", \"/products\"]"), "{}", b);
+    for root in ["/domains", "/products", "/testresults"] {
+        assert!(b.contains(&format!("\"{}\"", root)), "served roots must include {}: {}", root, b);
+    }
 }
 
 #[test]
@@ -734,6 +786,16 @@ fn writes_require_authn_and_respect_scope() {
     );
     assert_eq!(c, 403);
     assert!(b.contains("out-of-scope"), "{}", b);
+    // Even an allowed graph cannot be used as a decoy header for a class whose
+    // generated route writes a different instances graph.
+    let (c, _, b) = http(
+        "POST",
+        "/domains",
+        &[("Authorization", &bearer(&tok)), ("x-target-graph", "urn:chorus:instances")],
+        "{\"name\":\"x\"}",
+    );
+    assert_eq!(c, 403);
+    assert!(b.contains("does not match this class's write graph"), "{}", b);
 }
 
 #[test]
@@ -811,6 +873,144 @@ fn write_lifecycle_create_replace_edge_delete() {
 }
 
 #[test]
+fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call() {
+    let w = world();
+    let tok = mint_token(WREN_WEBID, None);
+    let auth = bearer(&tok);
+    let valid_single = r#"{"name":"tr-auth","filePath":"platform/a.rs","testName":"a","result":"pass","ofTest":"test-a"}"#;
+    let valid_batch = format!("[{}]", valid_single);
+
+    // Class dispatch happens before the normal non-GET seam, so single and
+    // batch create receive byte-for-byte identical authn/scope refusals.
+    let (single_code, _, single_body) = http("POST", "/testresults", &[], valid_single);
+    let (batch_code, _, batch_body) = http("POST", "/testresults/batch", &[], &valid_batch);
+    assert_eq!((batch_code, &batch_body), (single_code, &single_body));
+    assert_eq!(batch_code, 401);
+    assert!(batch_body.contains("authn-missing"), "{}", batch_body);
+
+    let out_of_scope = [("Authorization", auth.as_str()), ("x-target-graph", "urn:other:graph")];
+    let (single_code, _, single_body) = http("POST", "/testresults", &out_of_scope, valid_single);
+    let (batch_code, _, batch_body) = http("POST", "/testresults/batch", &out_of_scope, &valid_batch);
+    assert_eq!((batch_code, &batch_body), (single_code, &single_body));
+    assert_eq!(batch_code, 403);
+    assert!(batch_body.contains("out-of-scope"), "{}", batch_body);
+
+    let decoy_scope = [("Authorization", auth.as_str()), ("x-target-graph", "urn:chorus:instances")];
+    let (single_code, _, single_body) = http("POST", "/testresults", &decoy_scope, valid_single);
+    let (batch_code, _, batch_body) = http("POST", "/testresults/batch", &decoy_scope, &valid_batch);
+    assert_eq!((batch_code, &batch_body), (single_code, &single_body));
+    assert_eq!(batch_code, 403);
+    assert!(batch_body.contains("does not match this class's write graph"), "{}", batch_body);
+
+    // A role-bearing Principal whose final graph grant is absent/revoked must
+    // fail closed. Neither class route may treat an empty resolved scope as a
+    // legacy allow-all state.
+    let unscoped_auth = bearer(&mint_token(UNSCOPED_ROLE_WEBID, None));
+    let unscoped_headers = [("Authorization", unscoped_auth.as_str())];
+    let (single_code, _, single_body) =
+        http("POST", "/testresults", &unscoped_headers, valid_single);
+    let (batch_code, _, batch_body) =
+        http("POST", "/testresults/batch", &unscoped_headers, &valid_batch);
+    assert_eq!((batch_code, &batch_body), (single_code, &single_body));
+    assert_eq!(batch_code, 403);
+    assert!(batch_body.contains("not in this token's scope"), "{}", batch_body);
+
+    // A registered and scoped Principal without holdsRole may authenticate,
+    // but cannot create ownerless records. Single and batch share the refusal.
+    let nobody_auth = bearer(&mint_token(ROLELESS_SCOPED_WEBID, None));
+    let nobody_headers = [("Authorization", nobody_auth.as_str())];
+    let (single_code, _, single_body) = http("POST", "/testresults", &nobody_headers, valid_single);
+    let (batch_code, _, batch_body) = http("POST", "/testresults/batch", &nobody_headers, &valid_batch);
+    assert_eq!((batch_code, &batch_body), (single_code, &single_body));
+    assert_eq!(batch_code, 403);
+    assert!(batch_body.contains("model-resolved role"), "{}", batch_body);
+
+    let hdrs = [("Authorization", auth.as_str())];
+    std::fs::write(&w.dal_batch_log, "").unwrap();
+
+    // JSON-array framing is typed before preparation. The splitter must not
+    // mistake punctuation inside strings for item boundaries.
+    for (body, want) in [
+        ("{}", "JSON array"),
+        ("[42]", "item 1 must be a JSON object"),
+        ("[{\"name\":\"x\"},]", "trailing comma"),
+        ("[{\"name\":\"x\" \"filePath\":\"a.rs\"}]", "separated by"),
+    ] {
+        let (code, _, response) = http("POST", "/testresults/batch", &hdrs, body);
+        assert_eq!(code, 422, "{}", response);
+        assert!(response.contains(want), "want {:?}: {}", want, response);
+    }
+    let malformed_single = r#"{"name":"x" "filePath":"a.rs"}"#;
+    let (code, _, response) = http("POST", "/testresults", &hdrs, malformed_single);
+    assert_eq!(code, 422, "{}", response);
+    assert!(response.contains("separated by"), "{}", response);
+
+    // The same prepare_create rejects the same defect on both surfaces. Batch
+    // names the first failing item and makes no partial DAL call.
+    let invalid_single = r#"{"name":"tr-invalid","filePath":"a.rs","evil":"x"}"#;
+    let (single_code, _, single_body) = http("POST", "/testresults", &hdrs, invalid_single);
+    let invalid_batch = format!("[{},{}]", valid_single, invalid_single);
+    let (batch_code, _, batch_body) = http("POST", "/testresults/batch", &hdrs, &invalid_batch);
+    assert_eq!(single_code, 422, "{}", single_body);
+    assert_eq!(batch_code, single_code, "{}", batch_body);
+    assert!(single_body.contains("off-model property 'evil'"), "{}", single_body);
+    assert!(batch_body.contains("batch item 2: off-model property 'evil'"), "{}", batch_body);
+    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "validation must delegate zero writes");
+
+    let conflict_batch = format!(
+        "[{},{{\"name\":\"testresult-existing\",\"filePath\":\"b.rs\",\"testName\":\"b\",\"result\":\"pass\",\"ofTest\":\"test-b\"}}]",
+        valid_single,
+    );
+    let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &conflict_batch);
+    assert_eq!(code, 409, "{}", body);
+    assert!(body.contains("test-result:testresult-existing") && body.contains("already-exists"), "{}", body);
+    let conflict_log = std::fs::read_to_string(&w.dal_batch_log).unwrap();
+    assert_eq!(conflict_log.matches("ARGV\tadd-batch").count(), 1, "the governed DAL owns minted-identity conflict checks");
+
+    std::fs::write(&w.dal_batch_log, "").unwrap();
+    let duplicate = format!("[{},{}]", valid_single, valid_single);
+    let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &duplicate);
+    assert_eq!(code, 409, "{}", body);
+    assert!(body.contains("batch item 2: duplicate entity name 'tr-auth'"), "{}", body);
+    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "duplicate must delegate zero writes");
+
+    let oversized = format!(
+        "[{{\"name\":\"tr-big\",\"filePath\":\"{}\",\"testName\":\"big\",\"result\":\"pass\",\"ofTest\":\"test-big\"}}]",
+        "x".repeat(athena_make::MAX_WRITE_BYTES),
+    );
+    let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &oversized);
+    assert_eq!(code, 422, "{}", body);
+    assert!(body.contains("exceeds 65536-byte cap"), "{}", body);
+    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "oversize must delegate zero writes");
+
+    // A normal single create still succeeds through the same prepared fields.
+    let (code, _, body) = http(
+        "POST",
+        "/testresults",
+        &hdrs,
+        r#"{"name":"tr-single-parity","filePath":"single.rs","testName":"single","result":"pass","ofTest":"test-single"}"#,
+    );
+    assert_eq!(code, 201, "{}", body);
+
+    // Two validated entities cross the DAL boundary exactly once. No entity
+    // data appears in argv; stdin is strict WriteReq-like NDJSON in input order.
+    let success = r#"[
+      {"name":"tr-batch-a","filePath":"platform/a.rs","testName":"keeps },{ and \"quoted\"","result":"pass","ofTest":"test-a"},
+      {"name":"tr-batch-b","filePath":"platform/b.rs","testName":"second","result":"fail","ofTest":"test-b"}
+    ]"#;
+    let (code, _, body) = http("POST", "/testresults/batch", &hdrs, success);
+    assert_eq!(code, 201, "{}", body);
+    assert!(body.contains("created 2 testresults via one DAL batch (ownedBy wren)"), "{}", body);
+
+    let line_a = r#"{"kind":"test-result","name":"tr-batch-a","fields":{"ownedBy":"wren","filePath":"platform/a.rs","result":"pass","testName":"keeps },{ and \"quoted\""},"edges":[["ofTest","test","test-a"]],"graph":"urn:chorus:domains:tests"}"#;
+    let line_b = r#"{"kind":"test-result","name":"tr-batch-b","fields":{"ownedBy":"wren","filePath":"platform/b.rs","result":"fail","testName":"second"},"edges":[["ofTest","test","test-b"]],"graph":"urn:chorus:domains:tests"}"#;
+    let expected = format!("ARGV\tadd-batch\nTOKEN\t{}\nSTDIN\n{}\n{}\nEND\n", tok, line_a, line_b);
+    let log = std::fs::read_to_string(&w.dal_batch_log).unwrap();
+    assert_eq!(log, expected, "exact argv/stdin contract; one ARGV marker means one DAL process");
+    assert_eq!(log.matches("ARGV\t").count(), 1, "batch must delegate once");
+}
+
+#[test]
 fn negative_proof_3774_write_path_wired_to_a_retired_dal_fails_loudly() {
     // #3734 negative proof for #3774: the guarded condition VIOLATED — the
     // write path shelling to a DAL that answers like the retired chorus-model
@@ -844,6 +1044,17 @@ fn batch_route_is_gated_and_delegates_typed_slots() {
     );
     assert_eq!(c, 403);
     assert!(b.contains("scoped token"), "{}", b);
+    // Scope alone is not write authority: a scoped Principal without a
+    // model-resolved holdsRole edge is refused before delegation.
+    let tok = mint_token(ROLELESS_SCOPED_WEBID, None);
+    let (c, _, b) = http(
+        "POST",
+        "/batch",
+        &[("Authorization", &bearer(&tok)), ("x-target-graph", "urn:test:instances")],
+        "INS\turn:s\turn:p\to",
+    );
+    assert_eq!(c, 403);
+    assert!(b.contains("model-resolved role"), "{}", b);
     // scoped + in-scope: applies via the DAL
     let tok = mint_token(WREN_WEBID, Some(&["urn:test:instances"]));
     let auth = bearer(&tok);

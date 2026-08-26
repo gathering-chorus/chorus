@@ -210,7 +210,7 @@ mod cli_tests {
     /// to succeed (mirrors the tests/coverage_3701_hermetic.rs fixture, trimmed).
     fn rows_for(q: &str) -> Vec<String> {
         let s = |v: &str| v.to_string();
-        if q.contains("FILTER(isIRI(?path)) OPTIONAL") {
+        if q.contains("OPTIONAL { ?p sh:datatype") {
             return if q.contains("#Domain>") {
                 vec![s("comment|datatype:string"), s("label|plain"), s("ownedBy|edge:Role")]
             } else {
@@ -221,7 +221,7 @@ mod cli_tests {
             return vec![];
         }
         if q.contains("sh:minCount") {
-            return vec![s("comment")];
+            return vec![s("comment|field")];
         }
         if q.contains("chorus:atStep") {
             return vec![s("value-stream-step-designing")];
