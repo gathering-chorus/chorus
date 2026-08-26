@@ -38,10 +38,18 @@ NIGHTLY_ROLE="${DEPLOY_ROLE:-${CHORUS_ROLE:-system}}"
 SCRIPT_DIR_NIGHTLY="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_NIGHTLY/chorus-log")}"
 
+# #4009 — ONE run_id, minted once, stamped on every event this run emits and
+# exported to every child. Today a run's events could not be correlated: the
+# only way to ask "what did run X do" was to count log lines between RUN|start
+# and RUN|complete and hope nobody else wrote in between. A run that cannot
+# name itself cannot be traced, and an untraceable run cannot be trusted.
+NIGHTLY_RUN_ID="${NIGHTLY_RUN_ID:-nr-$(date +%s)-$$}"
+export NIGHTLY_RUN_ID
+
 spine_emit() {
   local event="$1"; shift
   if [ -x "$CHORUS_LOG_BIN" ]; then
-    "$CHORUS_LOG_BIN" "$event" "$NIGHTLY_ROLE" "$@" >/dev/null 2>&1 || true
+    "$CHORUS_LOG_BIN" "$event" "$NIGHTLY_ROLE" "run_id=$NIGHTLY_RUN_ID" "$@" >/dev/null 2>&1 || true
   fi
 }
 
@@ -334,9 +342,30 @@ run_cargo_lane() {
   # #3484 — the nightly's own build lock: never contend with a role build.
   local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
   local _cap rc; _cap=$(mktemp)
+  # #4009 — the lane is the long pole and it used to be SILENT for its whole
+  # duration (38 min on 2026-08-25), so "working" and "wedged" looked identical
+  # from outside. Announce entry, then stream progress from the capture file
+  # while the lane runs: one nightly.suite.observed per unit line as it appears.
+  spine_emit nightly.lane.started "lane=runner" "cap=${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}"
+  ( _seen=0
+    while [ ! -s "$_cap" ] || kill -0 $$ 2>/dev/null; do
+      sleep 10
+      [ -f "$_cap" ] || continue
+      _now=$(grep -c '^nightly-unit|' "$_cap" 2>/dev/null || echo 0)
+      if [ "$_now" -gt "$_seen" ]; then
+        printf '%s\n' "$(sed -n "$((_seen+1)),${_now}p" "$_cap" | grep '^nightly-unit|')" | while IFS='|' read -r _ k u v s; do
+          [ -n "$u" ] && spine_emit nightly.suite.observed "lane=runner" "kind=$k" "unit=$u" "verdict=$v"
+        done
+        _seen="$_now"
+      fi
+      kill -0 $$ 2>/dev/null || break
+    done ) &
+  _streamer=$!
   NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}" _run_capped "$_cap" \
     env CARGO_TARGET_DIR="$nt" CHORUS_ROOT="$CHORUS_ROOT" \
     "$wt" --nightly ${only:+--crate="$only"}; rc=$?
+  kill "$_streamer" 2>/dev/null; wait "$_streamer" 2>/dev/null
+  spine_emit nightly.lane.completed "lane=runner" "rc=$rc"
   local out; out=$(cat "$_cap"); rm -f "$_cap"
   local units; units=$(printf '%s\n' "$out" | grep '^nightly-unit|' || true)
   if [ -z "$units" ]; then
@@ -353,6 +382,15 @@ run_cargo_lane() {
       *)     path="$unit" ;;
     esac
     verdict=$(_classify_verdict "$verdict" "$summary")
+    # #4009 — a suite that produced NO counts was not measured. Reporting it as
+    # "0 pass, 0 fail" let two different states (ran-and-passed-nothing vs
+    # never-produced-output) share one row; on 2026-08-25 two such rows sat in
+    # a red list I had to caveat by hand. Name the state instead.
+    case "$summary" in
+      "0 pass, 0 fail"|"0 pass, 0 fail "*)
+        verdict="unmeasured"
+        summary="0 pass, 0 fail (UNMEASURED — suite produced no parseable output)" ;;
+    esac
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
@@ -471,13 +509,33 @@ _run_capped() {
   perl -e 'setpgrp(0,0); exec @ARGV or die "exec failed: $!"' "$@" \
     >"$outfile" 2>&1 </dev/null &
   local pid=$! waited=0 tick=5
+  NIGHTLY_CHILD_PGID="$pid"   # #4008 — the trap reaps this group if we are killed
   [ "$NIGHTLY_SUITE_TIMEOUT" -lt 30 ] && tick=1
+  # #4009 — the cap measured time-since-START, so the runner lane's 7200s meant a
+  # wedge could sit two hours looking like work (2026-08-25: 90 min at 13/99).
+  # What identifies a wedge is time-since-LAST-OUTPUT. Track it and kill on that,
+  # keeping the total cap as the outer bound.
+  local quiet_cap="${NIGHTLY_QUIET_CAP:-600}" last_size=-1 quiet=0 now_size
+  NIGHTLY_CAPPED_REASON=""
   while kill -0 "$pid" 2>/dev/null; do
+    now_size=$(wc -c <"$outfile" 2>/dev/null | tr -d ' ')
+    if [ "${now_size:-0}" != "$last_size" ]; then last_size="${now_size:-0}"; quiet=0; else quiet=$((quiet + tick)); fi
+    if [ "$quiet_cap" -gt 0 ] && [ "$quiet" -ge "$quiet_cap" ]; then
+      kill -TERM -- "-$pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL -- "-$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      NIGHTLY_CAPPED_REASON="quiet"
+      printf '\nSUITE WEDGED: no output for %ss — killed (#4009 quiet-cap; total cap was %ss)\n' \
+        "$quiet_cap" "$NIGHTLY_SUITE_TIMEOUT" >>"$outfile"
+      return 124
+    fi
     if [ "$waited" -ge "$NIGHTLY_SUITE_TIMEOUT" ]; then
       kill -TERM -- "-$pid" 2>/dev/null || true
       sleep 2
       kill -KILL -- "-$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
+      NIGHTLY_CAPPED_REASON="total"
       printf '\nSUITE TIMEOUT: killed after %ss (#3662 wedge guard)\n' \
         "$NIGHTLY_SUITE_TIMEOUT" >>"$outfile"
       return 124
@@ -485,6 +543,9 @@ _run_capped() {
     sleep "$tick"; waited=$((waited + tick))
   done
   wait "$pid"
+  local _rc=$?
+  NIGHTLY_CHILD_PGID=""
+  return "$_rc"
 }
 
 # Single attempt — the original run_one body.
@@ -906,7 +967,19 @@ acquire_single_flight_lock() {
   if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
   return 1
 }
-release_single_flight_lock() { rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true; }
+# #4008/#4009 — the trap freed the LOCK but never killed the lane, so a killed
+# wrapper left its runner alive: on 2026-08-25 an orphan ran 1h52m while a new
+# run took the freed lock and ran a second lane beside it. Kill the child's
+# process group first, then release. _run_capped already setpgrp's the child;
+# NIGHTLY_CHILD_PGID is set there so the trap knows what to reap.
+release_single_flight_lock() {
+  if [ -n "${NIGHTLY_CHILD_PGID:-}" ]; then
+    kill -TERM -- "-$NIGHTLY_CHILD_PGID" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$NIGHTLY_CHILD_PGID" 2>/dev/null || true
+  fi
+  rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true
+}
 
 # #3709 — OWN THE RESULTS FILE. Until now --run-all only printed to stdout and
 # the aggregate log existed solely because launchd redirected StandardOutPath

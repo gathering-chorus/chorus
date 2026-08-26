@@ -343,8 +343,16 @@ app.get('/nightly', (_req: Request, res: Response) => {
   const logPath = process.env.NIGHTLY_LOG_PATH
     || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');
   let text = '';
-  try { text = fs.readFileSync(logPath, 'utf8'); } catch { /* no run yet — honest empty state */ }
-  res.type('html').send(renderNightlyPage(parseNightlyLog(text)));
+  let quietForMs = 0;
+  try {
+    text = fs.readFileSync(logPath, 'utf8');
+    // #4009 — the log's own mtime is the only honest "when did this run last
+    // say anything". Without it the page cannot tell working from wedged.
+    quietForMs = Date.now() - fs.statSync(logPath).mtimeMs;
+  } catch { /* no run yet — honest empty state */ }
+  const parsed = parseNightlyLog(text);
+  if (parsed) parsed.quietForMs = quietForMs;
+  res.type('html').send(renderNightlyPage(parsed));
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));
