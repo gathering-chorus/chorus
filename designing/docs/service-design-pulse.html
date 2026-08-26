@@ -33,11 +33,25 @@
   ul { margin: 8px 0 12px 20px; font-size: 0.84rem; }
   li { margin-bottom: 4px; }
   @media print { body { padding: 20px 1in; } .two-col { grid-template-columns: 1fr; } }
+  table.identity { width:100%; border-collapse:collapse; margin:12px 0 20px; font-size:0.84rem; }
+  table.identity th { text-align:left; width:150px; background:#eef2ff; color:#2d4a7a; font-size:0.78rem; padding:6px 12px; }
+  table.identity td { padding:6px 12px; border-bottom:1px solid #e5e7eb; }
+  .muted { color:#666; font-size:0.8rem; }
 </style>
 </head>
 <body>
 
 <h1>Service Design — Pulse</h1>
+
+<!-- BEGIN generated-identity (#4010) — athena-make projection, do not hand-edit -->
+  <p class="muted">Identity below is generated from the model — <code>GET http://localhost:3360/products/pulse</code>. Edit the model, not this block.</p>
+  <table class="identity">
+    <tr><th>label</th><td>Pulse</td></tr>
+    <tr><th>comment</th><td>Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing.</td></tr>
+    <tr><th>audience</th><td>Jeff at a glance, the roles for mutual observation, alerting as a consumer.</td></tr>
+  </table>
+<!-- END generated-identity -->
+
 <p class="subtitle">DRAFT &bull; Owner: Wren (design) / Silas (implementation) &bull; Domain: observability &bull; From Jeff's metaphor (2026-03-31)</p>
 
 <!-- 1. EXPERIENCE -->
@@ -197,17 +211,55 @@
 <!-- 8. CURRENT STATE -->
 <h2>8. Current State</h2>
 
+<p class="muted">Measured 2026-08-25, against the running system — not against the card
+history. Every row below was checked the day it was written; where a thing was designed
+and never shipped, that is said, because a design doc that implies delivery is how
+<b>1 of 8</b> becomes "we did that."</p>
+
+<div class="fail"><b>The through-line.</b> Pulse assembles the team's state in 18
+milliseconds and gets the most important field wrong. On 2026-08-25 it printed
+<code>kade: idle</code> while Kade was running the nightly suite, and printed
+<code>inferred_stale: true</code> in the same breath — the system knowing its own answer
+was wrong and having no authority to override it.</div>
+
 <table>
-  <tr><th>Component</th><th>Status</th><th>Gap</th></tr>
-  <tr><td>chorus-log.sh emission</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>—</td></tr>
-  <tr><td>Loki ingestion</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>—</td></tr>
-  <tr><td>Bridge POST (medium-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Fixed today (#1887)</b></td><td>Card lifecycle events now flow</td></tr>
-  <tr><td>team-scan injection (short-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>Shows nudges + role activity, not card events</td></tr>
-  <tr><td>Chorus search (long-term)</td><td class="ok" style="border:none; padding:4px 12px;"><b>Working</b></td><td>97K messages indexed</td></tr>
-  <tr><td>Heartbeat monitoring</td><td class="fail" style="border:none; padding:4px 12px;"><b>Partial</b></td><td>Daily review agents run but no missed-heartbeat alert yet</td></tr>
-  <tr><td>Signal hierarchy enforcement</td><td class="fail" style="border:none; padding:4px 12px;"><b>Not built</b></td><td>All nudges use osascript; no critical vs informational distinction</td></tr>
-  <tr><td>Pulse dashboard</td><td class="fail" style="border:none; padding:4px 12px;"><b>Not built</b></td><td>No unified view of heartbeats + nerve impulses</td></tr>
+  <tr><th>Component</th><th>Status</th><th>Measured</th></tr>
+  <tr><td>Assembly latency</td><td class="ok" style="border:none;padding:4px 12px;"><b>Working</b></td><td>18ms whole-stack gather</td></tr>
+  <tr><td>chorus-log emission → spine</td><td class="ok" style="border:none;padding:4px 12px;"><b>Working</b></td><td>continuous</td></tr>
+  <tr><td>Board / health / alerts / events sections</td><td class="ok" style="border:none;padding:4px 12px;"><b>Working</b></td><td>all four present in pulse-latest.json</td></tr>
+  <tr><td>Alert suppression removed (#2442)</td><td class="ok" style="border:none;padding:4px 12px;"><b>Shipped</b></td><td>assemble_alerts filter is gone</td></tr>
+  <tr><td>Per-source timestamps (#2442)</td><td class="fail" style="border:none;padding:4px 12px;"><b>Not shipped</b></td><td><code>sources</code> ABSENT from pulse-latest.json</td></tr>
+  <tr><td>schema_version (#2442)</td><td class="fail" style="border:none;padding:4px 12px;"><b>Not shipped</b></td><td>ABSENT</td></tr>
+  <tr><td>Consumer age-awareness (#2442)</td><td class="fail" style="border:none;padding:4px 12px;"><b>Not shipped</b></td><td>no consumer reads an age; agents still read pulse as atomic</td></tr>
+  <tr><td>Role state accuracy</td><td class="fail" style="border:none;padding:4px 12px;"><b>Wrong by construction</b></td><td><code>pulse.rs:162</code> — <code>composed = declared.clone()</code></td></tr>
+  <tr><td>Role messages in the stack</td><td class="fail" style="border:none;padding:4px 12px;"><b>Absent</b></td><td><code>nudges</code> carries a COUNT; bodies live only in the message store</td></tr>
+  <tr><td>Relations between roles</td><td class="fail" style="border:none;padding:4px 12px;"><b>Absent</b></td><td>no <code>waiting_on</code>; "who is blocked on whom" is unanswerable</td></tr>
+  <tr><td>Machine capacity</td><td class="fail" style="border:none;padding:4px 12px;"><b>Absent</b></td><td>no load anywhere in pulse; a reading taken at load 363 looks like one taken at load 7</td></tr>
 </table>
+
+<h3>Why 129 cards did not fix the state field</h3>
+
+<p>Cards mentioning role-state, andon, pulse or heartbeat: <b>142</b> as of 2026-08-25.
+Every one of them added another way for a role to <em>declare</em>. The composition they
+all fed reads:</p>
+
+<pre style="background:#f3f4f6;padding:10px 14px;border-radius:6px;font-size:0.82rem">let mut composed = declared.clone();          // pulse.rs:162
+// inference only ADDS card_inferred + divergent + inferred_stale
+// it can never override `state`</pre>
+
+<p>Declared wins by construction. A better declaration mechanism cannot fix a composition
+where declaration is the base — which is why the count kept climbing and the field stayed
+wrong. The fix is not a 143rd declaration path; it is deriving state from
+<code>agent.activity</code>, which the stream already emits every ten seconds with
+<code>phase</code>, <code>tool</code>, <code>elapsed_s</code> and <code>session_id</code>.
+Jeff, 2026-08-25: <em>"wtf cant we derive state from streams — no more 'i forgot to
+register my state change oops'."</em></p>
+
+<div class="note"><b>Prerequisite, not a sibling.</b> Derivation is worthless while beats
+are anonymous: 19% of <code>agent.activity</code> carried <code>role=unknown</code> when
+measured on 2026-08-25 (down from 70.8% on 08-20), and the remainder are subagent children
+that never bound to their spawning role. Attribution lands first (Silas, propagation at the
+emit), then derivation shadows the declared field before replacing it.</div>
 
 <!-- 9. OPEN QUESTIONS -->
 <h2>9. Open Questions (for team review)</h2>

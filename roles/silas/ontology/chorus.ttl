@@ -908,10 +908,18 @@ chorus:product-pulse
     chorus:partOf chorus:product-clearing ;
     chorus:hasDomain chorus:pulse .
 
-# The pulse DOMAIN — authored in #3603 because pulseProduct's bounded context is
-# real and running (platform/pulse, role-state, heartbeats, andon) but had no
-# Domain entity. Same authored form as the #3581 V2 domains.
-chorus:pulse a owl:Class, chorus:Domain ;
+# The pulse DOMAIN is RETIRED (#4010, Jeff 2026-08-25: "pulse is a product not a
+# domain... we remove the domains and keep the product compositions").
+#
+# It was authored in #3603 to give pulseProduct a bounded context. The result
+# was ONE IRI typed as both chorus:Domain and chorus:Product, so /domains/pulse
+# and /products/pulse answered with different comments for the same subject.
+#
+# The IRI stays — 228 inbound references resolve through it — and keeps its
+# Product typing. Only the Domain typing goes. Pulse is a composition; the
+# domains it composes are the memory layers (#4010 Memory/ShortTerm/LongTerm/
+# Knowledge), not a domain named after the product.
+chorus:pulse a owl:Class ;
     rdfs:label "pulse" ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
     chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;

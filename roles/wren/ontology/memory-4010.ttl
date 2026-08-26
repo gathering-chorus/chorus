@@ -1,0 +1,51 @@
+# #4010 — Memory, modelled. Jeff, 2026-08-25: "we must model our memory owl it
+# has both short and long term and knowledge children" / "memory owl must model
+# short term long term and knowledge classes".
+#
+# Until now the team's memory existed as five flat sibling domains — memory,
+# knowledge, pulse, spine, search — with no parent and no statement of how they
+# relate. That flatness is why "pulse" ended up typed as BOTH a Domain and a
+# Product on one IRI: there was no level above it for the domain sense to live.
+#
+# Three children, exactly as named. Nothing else is invented here: where spine
+# and search sit is NOT decided in this file, because Jeff has not said.
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+chorus:Memory a owl:Class ;
+    rdfs:label "Memory" ;
+    rdfs:comment "What the team carries forward — the whole of it, across every timescale. Parent of the short-term, long-term, and knowledge layers." .
+
+chorus:ShortTermMemory a owl:Class ;
+    rdfs:subClassOf chorus:Memory ;
+    rdfs:label "Short-term memory" ;
+    rdfs:comment "What is true right now and decays — role states, heartbeats, the live board, in-flight runs. Read constantly, kept briefly, never the record." .
+
+chorus:LongTermMemory a owl:Class ;
+    rdfs:subClassOf chorus:Memory ;
+    rdfs:label "Long-term memory" ;
+    rdfs:comment "What persists across sessions — indexed sessions, artifacts, decisions, the recall a role boots with. Written once, read for months." .
+
+chorus:Knowledge a owl:Class ;
+    rdfs:subClassOf chorus:Memory ;
+    rdfs:label "Knowledge" ;
+    rdfs:comment "What the team holds as structured fact — the model itself, products, domains, services, and their history. Not a recollection; an assertion." .
+
+# The layer a memory-bearing subject belongs to. Declared, because a surface
+# that cannot say which timescale it serves is how a short-term reading gets
+# quoted as a long-term fact.
+chorus:memoryLayer a owl:ObjectProperty ;
+    rdfs:label "memory layer" ;
+    rdfs:range chorus:Memory ;
+    rdfs:comment "Which layer of Memory this subject belongs to: short-term, long-term, or knowledge." .
+
+chorus:MemoryShape a sh:NodeShape ;
+    sh:targetClass chorus:Memory ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:domains:memory" ;
+    chorus:generatedBy "athena-model" .
