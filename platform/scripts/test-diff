@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# test-diff — which tests CHANGED VERDICT between two runs.
+#
+# #4015. Jeff, 2026-08-26: "the numbers from run to run are always < 100 yet we
+# never can repeat anything and its always called a flake or whatever."
+#
+# That is what a per-suite count buys you. A run going 8 fail -> 5 fail says a
+# number moved; it cannot say WHICH test moved, so the difference gets called a
+# flake because nobody can name it. The ledger to answer it already exists —
+# 190,941 chorus:TestResult rows, each carrying filePath, testName, result and
+# (since #3925) runTs — and nothing has ever read runTs. Every occurrence in the
+# repo is the writer, the backfill, or a unit test. No consumer has ever compared
+# two runs.
+#
+# This is that consumer. A flake stops being a word and becomes a row:
+#   same test, same content, different verdict.
+#
+# Usage:
+#   test-diff                      the two most recent runs
+#   test-diff <runTs-a> <runTs-b>  two explicit runs (ISO, as stored)
+#   test-diff --runs [N]           list recent runs and their case counts
+#
+# Exit: 0 = no verdict changed · 1 = at least one changed · 2 = could not ask.
+# Exit 2 matters: a diff that cannot reach the store must not read as "nothing
+# changed" — that is the same defect this whole card exists to remove.
+set -uo pipefail
+
+FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
+TESTS_GRAPH="${TESTS_GRAPH:-urn:chorus:domains:tests}"
+P='PREFIX c: <https://jeffbridwell.com/chorus#>'
+
+# Seam: tests stub this to drive the pure logic without a store.
+ask() {
+  if [ -n "${TEST_DIFF_STUB:-}" ]; then
+    "$TEST_DIFF_STUB" "$1"
+    return
+  fi
+  curl -s -m "${TEST_DIFF_TIMEOUT:-180}" -G "$FUSEKI_QUERY" --data-urlencode "query=$1" -H 'Accept: text/csv' 2>/dev/null
+}
+
+# A CSV header is the proof the store answered. Absent header = it did not, and
+# an unanswered diff is exit 2, never an empty (and therefore reassuring) result.
+#
+# NO PIPELINE HERE, deliberately. The obvious `printf | head -1 | grep -q` is
+# wrong under `set -o pipefail`: grep -q exits the moment it matches, head then
+# takes SIGPIPE, and the pipeline's status becomes 141 — so a 185KB answer that
+# DID arrive reads as "the store did not answer". Caught live on 2026-08-26
+# against two real runs. Parameter expansion has no pipe and no early exit.
+answered() {
+  local first="${1%%$'\n'*}"
+  case "$first" in [?a-zA-Z]*) return 0 ;; *) return 1 ;; esac
+}
+
+list_runs() {
+  local n="${1:-10}"
+  local out; out=$(ask "$P SELECT ?t (COUNT(?r) AS ?n) WHERE {
+    GRAPH <$TESTS_GRAPH> { ?r a c:TestResult ; c:runTs ?t } }
+    GROUP BY ?t ORDER BY DESC(?t) LIMIT $n")
+  answered "$out" || { echo "test-diff: the tests domain did not answer — refusing to report a blind result" >&2; exit 2; }
+  printf '%s' "$out" | tail -n +2 | sed 's/,/  /' | sed 's/^/  /'
+}
+
+# filePath|testName,result for one run.
+verdicts_for() {
+  ask "$P SELECT ?k ?res WHERE {
+    GRAPH <$TESTS_GRAPH> {
+      ?r a c:TestResult ; c:runTs \"$1\" ; c:result ?res ;
+         c:filePath ?f ; c:testName ?tn .
+      BIND(CONCAT(?f, \"|\", ?tn) AS ?k) } } ORDER BY ?k"
+}
+
+recent_two() {
+  local out; out=$(ask "$P SELECT DISTINCT ?t WHERE {
+    GRAPH <$TESTS_GRAPH> { ?r a c:TestResult ; c:runTs ?t } }
+    ORDER BY DESC(?t) LIMIT 2")
+  answered "$out" || return 1
+  printf '%s' "$out" | tail -n +2 | sed 's/^"//; s/"$//'
+}
+
+case "${1:-}" in
+  --runs) list_runs "${2:-10}"; exit 0 ;;
+esac
+
+if [ $# -ge 2 ]; then
+  A="$1"; B="$2"
+else
+  mapfile -t _r < <(recent_two) || true
+  if [ "${#_r[@]}" -lt 2 ]; then
+    echo "test-diff: could not read two runs from the tests domain — nothing to compare" >&2
+    exit 2
+  fi
+  B="${_r[0]}"; A="${_r[1]}"   # newest is B, the one we are asking about
+fi
+
+VA=$(verdicts_for "$A"); VB=$(verdicts_for "$B")
+if ! answered "$VA" || ! answered "$VB"; then
+  echo "test-diff: the tests domain did not answer — refusing to report a blind 'no change'" >&2
+  exit 2
+fi
+
+# Pure comparison, so the interesting part is testable without a store.
+CHANGED=$(python3 - "$VA" "$VB" <<'PY'
+import csv, io, sys
+def rows(s):
+    r = csv.reader(io.StringIO(s))
+    try: next(r)
+    except StopIteration: return {}
+    return {c[0]: c[1] for c in r if len(c) >= 2}
+a, b = rows(sys.argv[1]), rows(sys.argv[2])
+for k in sorted(set(a) | set(b)):
+    va, vb = a.get(k), b.get(k)
+    if va == vb:
+        continue
+    if va is None:   print(f"NEW      {k}  -> {vb}")
+    elif vb is None: print(f"GONE     {k}  (was {va})")
+    else:            print(f"CHANGED  {k}  {va} -> {vb}")
+PY
+)
+
+echo "test-diff  $A  ->  $B"
+if [ -z "$CHANGED" ]; then
+  echo "  no verdict changed"
+  exit 0
+fi
+printf '%s\n' "$CHANGED" | sed 's/^/  /'
+printf '  %s test(s) differ\n' "$(printf '%s\n' "$CHANGED" | grep -c .)"
+exit 1
