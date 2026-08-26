@@ -1666,7 +1666,32 @@ fn stack_down_ui(_selected_ns: &[String], _ns_all: &std::collections::BTreeSet<S
 /// #3920 — run the registered ui specs via playwright, from the werk (variant
 /// URLs injectable via env; local defaults inside the specs). One invocation,
 /// all files — playwright parallelizes internally.
+/// #4004 — a ui flow that brings its own service needs that service BUILT. The
+/// tiles spec spawns directing/clearing/dist/server.js; a werk has no dist until
+/// the package is compiled, so the spawn died instantly and the only symptom was
+/// a 30s wait ending in "own Clearing did not answer on :3487" — the port blamed
+/// for a missing build, and two rounds lost to it. Build it here, where the lane
+/// that depends on it runs, rather than hoping an earlier phase happened to.
+fn ensure_ui_service_built(werk: &str, pkg: &str, artifact: &str) {
+    if Path::new(&format!("{}/{}/{}", werk, pkg, artifact)).exists() {
+        return;
+    }
+    if !ensure_ts_deps(werk, pkg) {
+        eprintln!("!! ui-flows: {} deps unavailable — its flows will fail loud", pkg);
+        return;
+    }
+    let out = Command::new("npm")
+        .args(["run", "build", "--silent"])
+        .current_dir(format!("{}/{}", werk, pkg))
+        .output();
+    match out {
+        Ok(o) if o.status.success() => println!("   ui-flows: built {} for its own-service flows", pkg),
+        _ => eprintln!("!! ui-flows: {} build FAILED — flows needing it will name that", pkg),
+    }
+}
+
 fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool, String) {
+    ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
     cmd.arg("playwright").arg("test");
     for f in files {

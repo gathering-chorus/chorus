@@ -37,6 +37,7 @@
 const { test, expect } = require('@playwright/test');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const ROLES = ['wren', 'silas', 'kade'];
 
@@ -68,7 +69,21 @@ let child = null;
 
 test.beforeAll(async () => {
   if (!BRINGS_OWN) return;
-  child = spawn(process.execPath, [path.join(CLEARING_SRC, 'dist', 'server.js')], {
+  // #4004 — NAME THE REAL CAUSE. A werk has no directing/clearing/dist until the
+  // package is built, spawn() with stdio:'ignore' swallowed node's "cannot find
+  // module", and the only symptom was a 30s wait ending in "own Clearing did not
+  // answer on :3487" — which blames the port and sent two people hunting a
+  // service that was never going to start. Check the artifact first, and keep
+  // the child's stderr so the next failure explains itself.
+  const entry = path.join(CLEARING_SRC, 'dist', 'server.js');
+  if (!fs.existsSync(entry)) {
+    throw new Error(
+      `clearing is not built: ${entry} is missing. This spec brings its own ` +
+      `Clearing, so the package must be compiled first (npm run build in ` +
+      `directing/clearing), or point CLEARING_URL at a running one.`,
+    );
+  }
+  child = spawn(process.execPath, [entry], {
     cwd: CLEARING_SRC,
     env: {
       ...process.env,
@@ -79,13 +94,20 @@ test.beforeAll(async () => {
       PULSE_URL: 'http://127.0.0.1:1',
       NUDGE_BINARY: '/usr/bin/true',
     },
-    stdio: 'ignore',
+    stdio: ['ignore', 'ignore', 'pipe'],
   });
+  let childErr = '';
+  child.stderr?.on('data', (d) => { childErr += String(d).slice(0, 2000); });
   const deadline = Date.now() + 30000;
   for (;;) {
     const ok = await fetch(`${CLEARING}/api/stream?lines=1`).then((r) => r.ok).catch(() => false);
     if (ok) return;
-    if (Date.now() > deadline) throw new Error(`own Clearing did not answer on ${CLEARING} in 30s`);
+    if (child.exitCode !== null) {
+      throw new Error(`own Clearing exited immediately (code ${child.exitCode}): ${childErr.trim() || 'no stderr'}`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`own Clearing did not answer on ${CLEARING} in 30s: ${childErr.trim() || 'no stderr'}`);
+    }
     await new Promise((r) => setTimeout(r, 500));
   }
 });
