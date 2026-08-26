@@ -721,8 +721,16 @@ print('\n'.join(sorted(seen)))" 2>/dev/null)
     _crates=$(for d in "$CHORUS_ROOT"/platform/services/*/; do
       [ -f "$d/Cargo.toml" ] && basename "$d"; done)
   fi
+  # #4012 — a crate is a directory with a Cargo.toml. The registry yields crate
+  # names from test filePaths, and platform/services/shared/ is a SOURCE directory
+  # included by other crates, not a crate: it has no Cargo.toml and can never
+  # carry a coverage floor. #4000 added tests referencing shared/scope_units.rs,
+  # so it entered as a 21st "crate" and reddened this ratchet every night from
+  # 08-22 on — a permanent red for a floor that is impossible to configure. The
+  # detector must count what it actually means to count.
   while IFS= read -r c; do
     [ -z "$c" ] && continue
+    [ -f "$CHORUS_ROOT/platform/services/$c/Cargo.toml" ] || continue
     present=$((present + 1))
     local rel="platform/services/$c"
     grep -q "^  ${rel}:" "$floors" 2>/dev/null || unconfigured="$unconfigured $c"
