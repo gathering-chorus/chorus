@@ -2297,11 +2297,23 @@ export function isReadOnlySparql(q: string): boolean {
 }
 
 export function sparqlDataset(raw: unknown): string {
-  return String(raw ?? 'pods').replace(/[^a-zA-Z0-9_-]/g, '') || 'pods';
+  // #4004 — narrow before coercing. `String(unknown)` trips no-base-to-string and,
+  // worse, would happily stringify an object into a nonsense dataset name.
+  const name = typeof raw === 'string' ? raw : '';
+  return name.replace(/[^a-zA-Z0-9_-]/g, '') || 'pods';
 }
 
 app.post('/sparql-read', async (req: Request, res: Response) => {
-  const q = typeof req.body === 'string' ? req.body : String(req.body?.query ?? '');
+  // narrow rather than coerce: a non-string query is absent, not "[object Object]"
+  // narrow rather than coerce: a non-string query is absent, not "[object Object]"
+  const body: unknown = req.body;
+  let q = '';
+  if (typeof body === 'string') {
+    q = body;
+  } else if (body !== null && typeof body === 'object' && 'query' in body) {
+    const raw = (body as Record<string, unknown>).query;
+    if (typeof raw === 'string') q = raw;
+  }
   if (!q.trim()) return res.status(400).json({ error: 'a SPARQL query is required' });
   if (!isReadOnlySparql(q)) {
     return res.status(405).json({ error: 'sparql-read is read-only (SELECT/ASK/CONSTRUCT/DESCRIBE)' });
