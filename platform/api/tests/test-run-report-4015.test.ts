@@ -24,7 +24,7 @@ const RECONCILED = {
     registered: 100, selected: 100, notSelected: 0,
     executed: 90, notExecuted: 10,
     passed: 88, failed: 2, unmeasured: 0,
-    recorded: 90, dropped: 0,
+    storable: 90, recorded: 90, dropped: 0,
   },
   byKind: [{ kind: 'cargo', suites: 1, passed: 88, failed: 2, cases: 90, caseMeaning: 'one #[test] fn' }],
   cases: [],
@@ -38,7 +38,7 @@ const REAL = {
     registered: 7624, selected: 7624, notSelected: 0,
     executed: 7347, notExecuted: 277,
     passed: 7089, failed: 258, unmeasured: 0,
-    recorded: 1535, dropped: 5812,
+    storable: 7347, recorded: 1535, dropped: 5812,
   },
 };
 
@@ -70,13 +70,13 @@ describe('#4015 cross-foot — the report must add up or say it does not', () =>
   });
 
   it('negative proof: results stored must equal results produced, and last night none were', () => {
-    const check = crossFootChecks(REAL.crossFoot).find(c => c.name === 'results stored');
+    const check = crossFootChecks(REAL.crossFoot).find(c => c.name.startsWith('results stored'));
     expect(check!.ok).toBe(false);
     expect(REAL.crossFoot.dropped).toBe(5812);
   });
 
   it('control: results stored reconciles when nothing was dropped', () => {
-    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name === 'results stored');
+    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name.startsWith('results stored'));
     expect(check!.ok).toBe(true);
   });
 });
@@ -161,5 +161,24 @@ describe('#4015 review fix — unmeasured plan fields are null, never fabricated
     const html = renderTestRun(doc as never);
     expect(html).toContain('—');
     expect(html).not.toContain('>-1<');
+  });
+});
+
+
+describe('#4015 demo finding — recorded measures against STORABLE, not executed', () => {
+  it('negative proof: a perfect run with unstorable kinds still goes green', () => {
+    // The 2026-08-27 10:25 run: shell assertions, probes and ratchets can never
+    // be stored per-case. Before this fix the storage row was un-greenable by
+    // construction — found by running a real credentialed nightly, not review.
+    const cf = { ...RECONCILED.crossFoot, executed: 100, passed: 98, failed: 2,
+                 storable: 60, recorded: 60, dropped: 0 };
+    const check = crossFootChecks(cf).find(c => c.name.startsWith('results stored'));
+    expect(check!.state).toBe('ok');
+  });
+
+  it('control: storable results that were NOT stored still fail the row', () => {
+    const cf = { ...RECONCILED.crossFoot, storable: 60, recorded: 10, dropped: 50 };
+    const check = crossFootChecks(cf).find(c => c.name.startsWith('results stored'));
+    expect(check!.state).toBe('fail');
   });
 });

@@ -30,9 +30,18 @@ export interface CrossFoot {
   passed: number;
   failed: number;
   unmeasured: number;
+  /** cases from per-case-capable lanes only — the honest denominator for `recorded` */
+  storable: number;
   recorded: number;
   dropped: number;
 }
+
+/** Which kinds can produce per-case stored results at all. Shell suites carry
+ *  counts only, security probes and ratchets are checks not cases — comparing
+ *  `recorded` against a total that includes them makes the storage row
+ *  structurally un-greenable. Found by RUNNING the report against a real
+ *  credentialed nightly on 2026-08-27, not by review. */
+export const STORABLE_KINDS = new Set(['cargo', 'npm', 'jest', 'bats']);
 
 export interface KindTotal {
   kind: string;
@@ -108,8 +117,11 @@ export function crossFootChecks(c: CrossFoot): Check[] {
     // Jeff, reading the live page: "recorded 7,411 | 7,411 | ✗" — two identical
     // numbers marked wrong, because the row displayed recorded+dropped (equal to
     // executed BY CONSTRUCTION) while failing on dropped>0. Show the comparison
-    // the row is actually making: results stored vs results produced.
-    eq('results stored', c.recorded, c.executed),
+    // the row is actually making: results stored vs results the run COULD store.
+    // vs STORABLE, not executed — shell assertions, probes and ratchets carry no
+    // per-case identity, so the executed denominator made this row un-greenable
+    // by construction. Found by running a real credentialed nightly (2026-08-27).
+    eq('results stored (of storable)', c.recorded, c.storable),
   ];
 }
 
@@ -269,6 +281,8 @@ export function buildTestRunReport(input: {
   const last = lastRunSuites(input.logText);
   if (!last) return null;
   const { byKind, unmeasured } = foldByKind(last.rows);
+  const storable = byKind.filter(k => STORABLE_KINDS.has(k.kind))
+    .reduce((s2, k) => s2 + k.cases, 0);
   // #4009 — a suite that produced no counts is UNMEASURED, and the document says
   // so; it must never be folded into `passed` where it reads as a clean zero.
   const passed = byKind.reduce((s, k) => s + k.passed, 0);
@@ -290,14 +304,15 @@ export function buildTestRunReport(input: {
       notExecuted: input.notExecuted,
       passed, failed, unmeasured,
       recorded: input.recorded,
-      dropped: Math.max(0, executed - input.recorded),
+      storable,
+      dropped: Math.max(0, storable - input.recorded),
     },
     byKind,
     cases: [],
     footer: {
       neverExecuted: [],
       failed: last.rows.filter(r => r.status === 'fail').map(r => `${r.kind} ${r.path}`),
-      dropped: Math.max(0, executed - input.recorded),
+      dropped: Math.max(0, storable - input.recorded),
       changedSinceLastRun: [],
     },
   };
