@@ -929,9 +929,41 @@ pub fn join_cases(
     let mut joined = Vec::new();
     let mut unjoined = 0usize;
     for c in cases {
-        match index.get(&(c.file_path.as_str(), c.test_name.as_str())) {
-            Some(e) => joined.push((c.clone(), (*e).to_string())),
-            None => unjoined += 1,
+        if let Some(e) = index.get(&(c.file_path.as_str(), c.test_name.as_str())) {
+            joined.push((c.clone(), (*e).to_string()));
+            continue;
+        }
+        // #4015 — the describe-prefix miss. The registry holds the bare it()
+        // name ("getRecent default filters hidden"); jest reports fullName
+        // ("MessageRouter — ingest basics getRecent default filters hidden").
+        // The exact join missed EVERY jest case inside a describe block:
+        // 5,617 of 7,624 registered tests had never stored a result, and each
+        // nightly lane counted ~451 "unregistered" that were registered all
+        // along. Fall back to a UNIQUE suffix match within the same file; an
+        // ambiguous suffix stays unjoined — identities are never guessed.
+        let suffix_hits: Vec<&&str> = index.iter()
+            .filter(|((f, n), _)| *f == c.file_path.as_str()
+                && c.test_name.len() > n.len()
+                && c.test_name.ends_with(n)
+                // the char before the suffix must be a separator, so the
+                // registered name "run" cannot claim the case "dry-run"
+                && c.test_name.as_bytes()[c.test_name.len() - n.len() - 1] == b' ')
+            .map(|(_, e)| e)
+            .collect();
+        match suffix_hits.as_slice() {
+            [one] => {
+                let mut rc = c.clone();
+                // post under the REGISTERED identity — ofTest demands it, and
+                // one name per test keeps test-diff's run-to-run keys stable
+                if let Some(((_, reg_name), _)) = index.iter()
+                    .find(|((f, n), _)| *f == c.file_path.as_str()
+                        && c.test_name.ends_with(n) && ***one == **index.get(&(*f, *n)).unwrap())
+                {
+                    rc.test_name = (*reg_name).to_string();
+                }
+                joined.push((rc, (**one).to_string()));
+            }
+            _ => unjoined += 1,
         }
     }
     (joined, unjoined)
@@ -2472,5 +2504,77 @@ mod results_survival_4015 {
     fn storing_more_than_expected_is_not_negative_loss() {
         assert_eq!(results_lost(5, 9), 0);
         assert_eq!(run_exit_code(0, 5, 9), 0);
+    }
+}
+
+#[cfg(test)]
+mod describe_prefix_join_4015 {
+    use super::*;
+
+    fn row(fp: &str) -> TestRow {
+        TestRow { file_path: fp.into(), covers: "chorus".into(), pyramid_layer: "unit".into(),
+                  hermeticity: String::new(), test_concern: String::new() }
+    }
+    fn world() -> (Vec<TestRow>, Vec<String>, Vec<String>) {
+        (vec![row("a.test.ts"), row("a.test.ts")],
+         vec!["getRecent default filters hidden".into(), "run".into()],
+         vec!["test-a-1".into(), "test-a-2".into()])
+    }
+
+    #[test]
+    fn negative_proof_a_describe_prefixed_case_joins_its_registered_identity() {
+        // The 5,617-test hole: registry holds the bare it() name, jest reports
+        // fullName. Before this, every such case counted "unregistered".
+        let (rows, names, ents) = world();
+        let cases = vec![CaseResult { file_path: "a.test.ts".into(),
+            test_name: "MessageRouter — ingest basics getRecent default filters hidden".into(),
+            result: "pass".into() }];
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 0);
+        assert_eq!(joined.len(), 1);
+        assert_eq!(joined[0].1, "test-a-1");
+        // posted under the REGISTERED name, so run-to-run keys stay stable
+        assert_eq!(joined[0].0.test_name, "getRecent default filters hidden");
+    }
+
+    #[test]
+    fn control_an_exact_match_still_wins_untouched() {
+        let (rows, names, ents) = world();
+        let cases = vec![CaseResult { file_path: "a.test.ts".into(),
+            test_name: "getRecent default filters hidden".into(), result: "pass".into() }];
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!((joined.len(), unjoined), (1, 0));
+    }
+
+    #[test]
+    fn a_substring_without_a_separator_does_not_claim_the_case() {
+        // registered "run" must not claim the case "…dry-run" — the byte before
+        // the suffix must be a space. Identities are never guessed.
+        let (rows, names, ents) = world();
+        let cases = vec![CaseResult { file_path: "a.test.ts".into(),
+            test_name: "suite dry-run".into(), result: "pass".into() }];
+        let (_, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 1);
+    }
+
+    #[test]
+    fn an_ambiguous_suffix_stays_unjoined_not_guessed() {
+        let rows = vec![row("b.test.ts"), row("b.test.ts")];
+        let names = vec!["saves the file".into(), "also saves the file".into()];
+        let ents = vec!["e1".into(), "e2".into()];
+        let cases = vec![CaseResult { file_path: "b.test.ts".into(),
+            test_name: "suite also saves the file".into(), result: "pass".into() }];
+        // exact-misses; suffix matches BOTH "saves the file" and "also saves the file"
+        let (_, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 1, "two candidate identities must never be resolved by guessing");
+    }
+
+    #[test]
+    fn a_case_from_another_file_never_borrows_this_files_identity() {
+        let (rows, names, ents) = world();
+        let cases = vec![CaseResult { file_path: "other.test.ts".into(),
+            test_name: "x getRecent default filters hidden".into(), result: "pass".into() }];
+        let (_, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 1);
     }
 }
