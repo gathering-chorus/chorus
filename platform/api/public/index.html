@@ -24,6 +24,7 @@ window.addEventListener('load',run);
 if(b&&window.MutationObserver){new MutationObserver(run).observe(document.documentElement,{childList:true,subtree:true});}}());</script>
 
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chorus</title>
 <!-- #4001 — one query, one truth: both this page and the Archive ask the
      inventory through the same call. See ui-inventory.js. -->
@@ -31,6 +32,7 @@ if(b&&window.MutationObserver){new MutationObserver(run).observe(document.docume
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, sans-serif; background: #fafafa; color: #1a1a1a; padding: 40px; max-width: 1200px; margin: 0 auto; }
+@media (max-width: 600px) { body { padding: 16px; } }
 h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 .subtitle { font-size: 0.9rem; color: #666; margin-bottom: 40px; }
 .products { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
