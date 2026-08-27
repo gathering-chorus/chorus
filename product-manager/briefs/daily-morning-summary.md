@@ -1,30 +1,26 @@
-# Morning Summary — 2026-08-26
+# Morning Summary — 2026-08-27
 
-**HEADLINE:** Test suite is on day 77 blocked — `npm ci` is an escalation-overdue item that needs a dedicated card this sprint, not another day of watching.
+**HEADLINE:** TS build spiked overnight from 238 → 946 errors (+708, @types/jest regression) — new fire on top of a strong 6-card day yesterday.
 
 ---
 
-**OPS:** YELLOW — 4 yellows, no reds.
-- Hooks cargo check: 7 stale warnings (dead code), no new errors.
-- domain-context-infrastructure.md: 4 days old, 2 infra cards landed unreflected, 3 days to 7-day threshold.
-- CSC: `athena-deploy-model.sh` still has 6 hardcoded `/tmp` paths (flag at next touch).
-- Disk delta: no baseline data — Silas to run `perf-baseline.sh`.
+**OPS:** YELLOW (4 yellows, 0 reds)
+Top concern: domain-context files are 5 days old, 2 days from the 7-day threshold, and yesterday's update action (infra + chorus) was not completed — 6+ cards unreflected. Hooks dead-code warnings are now in their 5th consecutive day. `athena-deploy-model.sh` /tmp violations unchanged since #3991.
 
-**QUALITY:** RED — all 4 test suites blocked, lint blocked.
-- Tests: 0 run in `clearing`, `workflow-engine`, `chorus-sdk`, `pulse` — **day 75** (ts-jest preset missing).
-- Lint: `@eslint/js` not found — **day 77**.
-- Build: 238 TypeScript errors, **+4 from yesterday** after two-day plateau — watch trend.
-- Root jest now surfacing 439 suites (438 failing) — partial signal, still blocked overall.
-- Fix: `npm ci` at repo root + all sub-packages.
+**QUALITY:** RED
+- TS build: 238 → **946 errors (+708)** — all `@types/jest` type errors; new regression as of today. Needs immediate investigation (`npm ls @types/jest`).
+- 4 test suites (clearing, workflow-engine, chorus-sdk, pulse): BLOCKED — `ts-jest` preset not found. **Day 76.** Escalation overdue.
+- Lint: BLOCKED — ESLint wrong path. **Day 78.**
+- Tests run: 0 (all suites blocked).
 
-**YESTERDAY:** 7 cards landed — #4009, #3754, #4004, #4006, #4001, #4005, #2725 (kade 3, wren 2, silas 2). Highlights: kade #4005 caged PULSE_URL seam that missed #3995 (probe reached Jeff 12h later — seam found and closed); silas #4004 and #4001 (entrance coverage, allowlist).
+**YESTERDAY:** 6 cards shipped — #4016 (silas), #4013 (kade: UNMEASURED remap guard), #4012 (kade), #4011 (kade), #4010 (wren), #4004 (silas additional commit). Strong throughput.
 
-**TODAY:**
-1. Cut a card for `npm ci` repair — day 77 is past the "watch it" phase.
-2. Silas: update `domain-context-infrastructure.md` before the 7-day red fires.
-3. Silas: run `perf-baseline.sh` to close the UNKNOWN disk-delta signal.
-4. Monitor TypeScript error trend — if +4 again tomorrow, bisect the uptick.
+**TODAY (recommended priorities):**
+1. **[Wren/Silas/Kade]** Investigate `@types/jest` removal — `npm ls @types/jest`, check if root `package.json` changed. Fix before errors compound further.
+2. **[Silas]** Update `domain-context-infrastructure.md` + `domain-context-chorus.md` today — 2 days to threshold.
+3. **[Silas]** Prune dead code in `process.rs` and `word_cap.rs` (hooks warnings, day 5).
+4. **[Silas]** Fix `athena-deploy-model.sh` 6 hardcoded `/tmp` paths at next touch.
 
-**BLOCKERS:**
-- `npm ci` rot (day 77): Jeff's call — assign a dedicated fix card or the test floor stays dark.
-- TypeScript +4 uptick: not yet a blocker, but first increase after plateau; needs a name by end of day.
+**BLOCKERS (needs Jeff):**
+- **TS build spike** (+708 errors overnight) is a new regression — root cause unknown. If `@types/jest` was intentionally removed, test files need updating; if accidental, restore it.
+- **Test suite blocker at day 76** — `npm ci` has not been run in sub-packages for over 10 weeks. Decision needed: who owns this fix, and when?
