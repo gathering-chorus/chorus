@@ -37,6 +37,7 @@ const execAsync = promisify(exec);
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
+import { classAtlasHandler } from './handlers/class-atlas';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -272,6 +273,10 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
 // chorus ranges only) joined through definesVocabulary into domain-level edges.
 // Isolated domains are served by name — an ERD that hides them hides the finding.
 app.get('/api/athena/model-relationships', modelRelationshipsHandler());
+
+// #3992 — the Class Atlas data: classes + attributes + SHACL multiplicities +
+// object edges + subclass edges, grouped per domain, one SPARQL round trip.
+app.get('/api/athena/class-atlas', classAtlasHandler());
 
 // #3724 — THE OWL ITSELF, per domain. Jeff, 2026-08-03: "i want to be able to
 // see the owl for each domain."
