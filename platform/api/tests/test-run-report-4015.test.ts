@@ -126,3 +126,28 @@ describe('#4015 api and ui match — the view holds no arithmetic', () => {
     expect(renderTestRun(RECONCILED)).not.toContain('dropped-row');
   });
 });
+
+describe('#4015 review fixes — unknown is not a pass and not a failure', () => {
+  it('negative proof: an unverifiable check never reports ok', () => {
+    // Silas and Wren both caught `selected` reading ✓ while it was true by
+    // construction. It must not silently pass.
+    const sel = crossFootChecks(RECONCILED.crossFoot).find(c => c.name.startsWith('selected'));
+    expect(sel!.state).toBe('unknown');
+  });
+
+  it('control: an unknown check does NOT make the report BROKEN', () => {
+    // The other half. If unknown forced BROKEN, every report would be broken
+    // forever and the state would stop meaning anything.
+    expect(reportVerdict(RECONCILED)).toBe('FAIL');
+  });
+
+  it('negative proof: a genuinely failing check still forces BROKEN REPORT', () => {
+    expect(reportVerdict(REAL)).toBe('BROKEN REPORT');
+  });
+
+  it('the view renders ? for unknown, distinct from ✓ and ✗', () => {
+    const html = renderTestRun(REAL);
+    expect(html).toContain('?</td>');
+    expect(html).toContain('✗</td>');
+  });
+});

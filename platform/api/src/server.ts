@@ -36,7 +36,7 @@ const execAsync = promisify(exec);
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
-import { buildTestRunReport, renderTestRun, TEST_RUN_CSS } from './handlers/test-run-report';
+import { buildTestRunReport, lastRunSuites, renderTestRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -373,7 +373,21 @@ async function buildLatestTestRun() {
   const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
   const G = '<urn:chorus:domains:tests>';
   const registered = await ask(`${P} SELECT (COUNT(DISTINCT ?t) AS ?n) WHERE { GRAPH ${G} { ?t a c:Test } }`);
-  const recorded = await ask(`${P} SELECT (COUNT(?r) AS ?n) WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts } }`);
+  // #4015 — bind runTs to THIS run. Silas and Wren both caught the first version
+  // leaving ?ts unbound, which counted all 190k historical results: `recorded`
+  // came back 188,982, `dropped` computed to 0, and the page could never reach
+  // BROKEN REPORT — the precise failure this card exists to prevent, in the code
+  // written to prevent it. The run's own start time is the boundary.
+  const block = lastRunSuites(logText);
+  const started = block?.startedAt ?? '';
+  // Bound BOTH ends. A lower bound alone sweeps in every later run's results —
+  // today that was 7,197 instead of this run's own, which understates the drop.
+  const ended = block?.endedAt ?? '9999';
+  const recorded = started
+    ? await ask(`${P} SELECT (COUNT(?r) AS ?n) WHERE { GRAPH ${G} {`
+        + ` ?r a c:TestResult ; c:runTs ?ts`
+        + ` FILTER(STR(?ts) >= "${started}" && STR(?ts) <= "${ended}") } }`)
+    : null;
   return buildTestRunReport({
     runId: 'latest', trigger: 'nightly', scope: 'full selection',
     logText, registered: registered ?? 0, recorded: recorded ?? 0, notExecuted: 0,

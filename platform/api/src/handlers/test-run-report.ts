@@ -48,19 +48,46 @@ export interface TestRunReport {
   footer: { neverExecuted: string[]; failed: string[]; dropped: number; changedSinceLastRun: string[] };
 }
 
-export interface Check { name: string; lhs: number; rhs: number; ok: boolean }
+/** Three states, not two. UNKNOWN is what a check reports when the input it needs
+ *  was never supplied — distinct from a check that ran and disagreed. Collapsing
+ *  them either hides a real break (unknown read as ok) or cries wolf forever
+ *  (unknown read as fail), and a check that always fails gets ignored like one
+ *  that always passes. */
+export interface Check { name: string; lhs: number; rhs: number; ok: boolean; state: 'ok' | 'fail' | 'unknown' }
+
+
+const eq = (name: string, lhs: number, rhs: number): Check =>
+  ({ name, lhs, rhs, ok: lhs === rhs, state: lhs === rhs ? 'ok' : 'fail' });
+
+/** `selected` can only be verified against a plan the runner reports. Until it
+ *  does, this is UNKNOWN — never a silent ✓. */
+const selectedCheck = (c: CrossFoot): Check => ({
+  name: 'selected (plan not reported — cannot verify)',
+  lhs: c.selected, rhs: c.registered - c.notSelected,
+  ok: true, state: 'unknown',
+});
 
 /** The four equations that make the document trustworthy. Every one is stated in
  *  the JSON so the page can show its working instead of asserting a total. */
 export function crossFootChecks(c: CrossFoot): Check[] {
   return [
-    { name: 'selected', lhs: c.selected, rhs: c.registered - c.notSelected, ok: c.selected === c.registered - c.notSelected },
-    { name: 'scope', lhs: c.executed + c.notExecuted, rhs: c.selected, ok: c.executed + c.notExecuted === c.selected },
-    { name: 'executed', lhs: c.passed + c.failed + c.unmeasured, rhs: c.executed, ok: c.passed + c.failed + c.unmeasured === c.executed },
+    // #4015 review (Silas, Wren): this read as a tautology while the builder set
+    // selected=registered and notSelected=0 — a check that cannot fail (#3734).
+    // The run's plan is not in the log, so the honest state is UNKNOWN: refuse
+    // rather than pass vacuously. It goes green when the runner reports its plan.
+    // #4015 review (Silas, Wren): this read as a tautology while the builder set
+    // selected=registered and notSelected=0 — a check that cannot fail (#3734).
+    // The run's plan is not in the log, so it reports UNKNOWN until the runner
+    // says what it planned. Unknown is not a pass and not a failure.
+    selectedCheck(c),
+    eq('scope', c.executed + c.notExecuted, c.selected),
+    eq('executed', c.passed + c.failed + c.unmeasured, c.executed),
     // Silas, reviewing #4015: this row demands MORE than a balance — dropped must be
     // zero. Named so, because 'recorded' reading ✓ while results were lost is the
     // exact false comfort this document exists to remove.
-    { name: 'recorded (and nothing dropped)', lhs: c.recorded + c.dropped, rhs: c.executed, ok: c.recorded + c.dropped === c.executed && c.dropped === 0 },
+    { name: 'recorded (and nothing dropped)', lhs: c.recorded + c.dropped, rhs: c.executed,
+      ok: c.recorded + c.dropped === c.executed && c.dropped === 0,
+      state: c.recorded + c.dropped === c.executed && c.dropped === 0 ? 'ok' : 'fail' },
   ];
 }
 
@@ -68,7 +95,7 @@ export function crossFootChecks(c: CrossFoot): Check[] {
  *  PASS and FAIL: on 2026-08-26 the 03:00 run computed 7,347 verdicts, stored
  *  1,535, and still printed a verdict — that must be impossible to read as green. */
 export function reportVerdict(r: TestRunReport): 'PASS' | 'FAIL' | 'BROKEN REPORT' {
-  if (crossFootChecks(r.crossFoot).some(c => !c.ok)) return 'BROKEN REPORT';
+  if (crossFootChecks(r.crossFoot).some(c => c.state === 'fail')) return 'BROKEN REPORT';
   return r.crossFoot.failed > 0 ? 'FAIL' : 'PASS';
 }
 
@@ -110,9 +137,9 @@ export function renderTestRun(r: TestRunReport): string {
   const c = r.crossFoot;
 
   const foot = checks.map(k =>
-    `<tr class="${k.ok ? 'ok' : 'bad'}"><td>${esc(k.name)}</td>` +
+    `<tr class="${k.state === 'ok' ? 'ok' : k.state === 'fail' ? 'bad' : 'unk'}"><td>${esc(k.name)}</td>` +
     `<td class="n">${n(k.lhs)}</td><td class="n">${n(k.rhs)}</td>` +
-    `<td>${k.ok ? '✓' : '✗'}</td></tr>`).join('');
+    `<td>${k.state === 'ok' ? '✓' : k.state === 'fail' ? '✗' : '?'}</td></tr>`).join('');
 
   const kinds = r.byKind.map(k =>
     `<tr><td>${esc(k.kind)}</td><td class="n">${n(k.suites)}</td>` +
