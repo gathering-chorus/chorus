@@ -70,13 +70,13 @@ describe('#4015 cross-foot — the report must add up or say it does not', () =>
   });
 
   it('negative proof: recorded + dropped must equal executed, and last night it did not', () => {
-    const check = crossFootChecks(REAL.crossFoot).find(c => c.name === 'recorded');
+    const check = crossFootChecks(REAL.crossFoot).find(c => c.name.startsWith('recorded'));
     expect(check!.ok).toBe(false);
     expect(REAL.crossFoot.dropped).toBe(5812);
   });
 
   it('control: recorded reconciles when nothing was dropped', () => {
-    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name === 'recorded');
+    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name.startsWith('recorded'));
     expect(check!.ok).toBe(true);
   });
 });
@@ -119,7 +119,10 @@ describe('#4015 api and ui match — the view holds no arithmetic', () => {
   });
 
   it('the dropped line is rendered when there is a drop, and not when there is not', () => {
-    expect(renderTestRun(REAL)).toContain('dropped');
-    expect(renderTestRun(RECONCILED)).not.toContain('dropped');
+    // Key on the ROW, not the word — the cross-foot label now also contains
+    // 'dropped' (Silas asked for it), and a proof that matches the label instead
+    // of the row would pass while the row itself vanished.
+    expect(renderTestRun(REAL)).toContain('dropped-row');
+    expect(renderTestRun(RECONCILED)).not.toContain('dropped-row');
   });
 });

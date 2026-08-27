@@ -355,7 +355,9 @@ app.get('/werk', sendChorusPage('werk.html'));
 async function buildLatestTestRun() {
   const logPath = process.env.NIGHTLY_LOG_PATH
     || path.join(process.env.HOME || '', 'Library/Logs/Chorus/nightly-suites.log');
-  let logText = '';
+  // No pre-seeded '' — the catch returns, so the initial value is never read and
+  // the ratchet is right to call it dead.
+  let logText: string;
   try { logText = fs.readFileSync(logPath, 'utf8'); } catch { return null; }
   const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
   const ask = async (q: string): Promise<number | null> => {

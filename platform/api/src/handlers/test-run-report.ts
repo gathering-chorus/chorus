@@ -57,7 +57,10 @@ export function crossFootChecks(c: CrossFoot): Check[] {
     { name: 'selected', lhs: c.selected, rhs: c.registered - c.notSelected, ok: c.selected === c.registered - c.notSelected },
     { name: 'scope', lhs: c.executed + c.notExecuted, rhs: c.selected, ok: c.executed + c.notExecuted === c.selected },
     { name: 'executed', lhs: c.passed + c.failed + c.unmeasured, rhs: c.executed, ok: c.passed + c.failed + c.unmeasured === c.executed },
-    { name: 'recorded', lhs: c.recorded + c.dropped, rhs: c.executed, ok: c.recorded + c.dropped === c.executed && c.dropped === 0 },
+    // Silas, reviewing #4015: this row demands MORE than a balance — dropped must be
+    // zero. Named so, because 'recorded' reading ✓ while results were lost is the
+    // exact false comfort this document exists to remove.
+    { name: 'recorded (and nothing dropped)', lhs: c.recorded + c.dropped, rhs: c.executed, ok: c.recorded + c.dropped === c.executed && c.dropped === 0 },
   ];
 }
 
@@ -84,10 +87,20 @@ th{text-align:left;font-size:.72rem;letter-spacing:.06em;text-transform:uppercas
 td{padding:.32rem .5rem;border-bottom:1px solid var(--line)}
 td.n,th.n{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
 tr.bad td{color:var(--fail)}tr.ok td:last-child{color:var(--pass)}
-</style>`
+</style>`;
 
-const esc = (s: string) => s.replace(/[&<>"]/g, ch =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
+// A switch, not a keyed lookup: eslint's security/detect-object-injection fires on
+// `map[ch]` even when `ch` comes from the regex itself, and adopting a baseline
+// bump to silence a lint on MY new code is how baselines stop meaning anything.
+const esc = (s: string): string => s.replace(/[&<>"]/g, ch => {
+  switch (ch) {
+    case '&': return '&amp;';
+    case '<': return '&lt;';
+    case '>': return '&gt;';
+    case '"': return '&quot;';
+    default: return ch;
+  }
+});
 const n = (v: number) => v.toLocaleString('en-US');
 
 /** The view. Prints only what the document carries — no arithmetic here. */
@@ -109,9 +122,9 @@ export function renderTestRun(r: TestRunReport): string {
   // The dropped line renders ONLY when something was dropped — its presence is
   // the signal, so it must never be a permanent row that readers learn to skip.
   const droppedRow = c.dropped > 0
-    ? `<tr class="bad"><td>dropped</td><td class="n">${n(c.dropped)}</td>` +
-      `<td>executed, verdict computed, never stored — this report is missing ` +
-      `${n(c.dropped)} of its own results</td></tr>`
+    ? `<tr class="bad dropped-row"><td>dropped</td><td class="n">${n(c.dropped)}</td>`
+      + '<td>executed, verdict computed, never stored — this report is missing '
+      + `${n(c.dropped)} of its own results</td></tr>`
     : '';
 
   return `<h1>Test run ${esc(r.run.id)}</h1>
@@ -155,10 +168,11 @@ export function lastRunSuites(text: string): { startedAt: string; endedAt?: stri
   for (const l of all.slice(start + 1)) {
     if (l.startsWith('RUN|complete|')) { endedAt = l.split('|')[2]; break; }
     if (!l.startsWith('SUITE|')) continue;
-    const p = l.split('|');
-    if (p.length >= 6) out.push({ kind: p[1], path: p[2], owner: p[3], status: p[4], summary: p.slice(5).join('|') });
+    const [, kind, path, owner, status, ...rest] = l.split('|');
+    if (rest.length >= 1) out.push({ kind, path, owner, status, summary: rest.join('|') });
   }
-  return { startedAt: all[start].split('|')[2] ?? '?', endedAt, rows: out };
+  const [, , startedAt] = all.slice(start, start + 1).join('').split('|');
+  return { startedAt: startedAt || '?', endedAt, rows: out };
 }
 
 /** Fold the suite rows into per-kind totals. Counts come from each row's own
