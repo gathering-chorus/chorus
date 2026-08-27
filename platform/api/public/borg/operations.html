@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Operations | Gathering</title>
+<title>Operations — Dashboards &amp; Monitoring | Borg</title>
 <link rel="stylesheet" href="/css/gathering.css">
 <style>
   .ops-container { max-width: 1200px; margin: 0 auto; padding: 20px; }
@@ -209,5 +209,17 @@
 
 </div>
 <script src="/gathering-docs/doc-chrome.js"></script>
+<script>
+// The service links are authored against localhost, but this page is also read
+// from other devices on the LAN (phone in the garden). Rebind them to whatever
+// host actually served the page so the same HTML works from both.
+(function () {
+  var host = window.location.hostname;
+  if (host === 'localhost' || host === '127.0.0.1') return;
+  document.querySelectorAll('a[href^="http://localhost:"]').forEach(function (a) {
+    a.href = a.href.replace('//localhost:', '//' + host + ':');
+  });
+})();
+</script>
 </body>
 </html>
