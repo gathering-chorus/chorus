@@ -31,10 +31,10 @@ const ROWS = [
 
 // class→home-domain map the handler derives from definesVocabulary; the atlas
 // needs it to mark an edge cross-domain (Document lives in documents, not services).
-const HOMES: Record<string, string> = {
+const HOMES = new Map(Object.entries({
   Chunk: 'board', ChunkMembership: 'board', Card: 'cards', Service: 'services',
   Domain: 'domains', Document: 'documents', Test: 'tests', SourceFile: 'code', Hydratable: 'code',
-};
+}));
 
 const domain = (name: string) => {
   const d = buildClassAtlas(ROWS, HOMES).domains.find((x) => x.name === name);
@@ -72,6 +72,6 @@ describe('buildClassAtlas (#3992)', () => {
   });
 
   it('never invents content: empty bindings yield empty domains, not defaults', () => {
-    expect(buildClassAtlas([] as SparqlBinding[], {}).domains).toEqual([]);
+    expect(buildClassAtlas([] as SparqlBinding[], new Map()).domains).toEqual([]);
   });
 });

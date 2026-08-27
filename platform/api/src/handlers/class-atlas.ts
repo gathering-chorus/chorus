@@ -26,7 +26,7 @@ const multiplicity = (min: number, max: number | null): string => `${min}..${max
 
 export function buildClassAtlas(
   rows: SparqlBinding[],
-  classHomes: Record<string, string>
+  classHomes: ReadonlyMap<string, string>
 ): Atlas {
   // domain → class → accumulated view. A property can appear in several rows
   // (one per OPTIONAL combination); merge by name, never duplicate.
@@ -58,7 +58,7 @@ export function buildClassAtlas(
 
     if (rangeClass) {
       if (!entry.edges.some((e) => e.name === name && e.to === rangeClass)) {
-        const home = classHomes[rangeClass];
+        const home = classHomes.get(rangeClass);
         entry.edges.push({
           name, to: rangeClass,
           multiplicity: multiplicity(min, max),
@@ -113,10 +113,10 @@ export function classAtlasHandler() {
       const body = (await r.json()) as { results?: { bindings?: SparqlBinding[] } };
       const rows = body.results?.bindings ?? [];
       // class → home domain, derived from the same rows (definesVocabulary).
-      const homes: Record<string, string> = {};
+      const homes = new Map<string, string>();
       for (const row of rows) {
         const cls = local(row.class?.value);
-        if (cls && !(cls in homes)) homes[cls] = local(row.domain?.value);
+        if (cls && !homes.has(cls)) homes.set(cls, local(row.domain?.value));
       }
       res.json({ storeReachable: true, graph: 'urn:chorus:ontology', ...buildClassAtlas(rows, homes) });
     } catch {
