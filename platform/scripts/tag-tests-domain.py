@@ -72,7 +72,7 @@ KW = [(r'secret|gitleaks|scrubber|sensitive|credential|leak','security'),(r'aler
  (r'ci-|nightly','cicd'),(r'hook|gate|guard|bouncer','cicd'),(r'demo|werk|run-tests|manifest|jest-randomize','builds'),
  (r'env-setup|building|pipeline|act-','builds'),(r'deploy|launch','deploys'),(r'promtail','logs'),(r'search|fts','search'),
  (r'force-push','version-control'),(r'filedependson|fileindomain','search'),(r'crawl|index|convergence','search'),
- (r'session|correlation|frustration','pulse'),(r'operating-model|reference-model','domains'),
+ (r'session|correlation|frustration','messages'),(r'operating-model|reference-model','domains'),
  (r'git|commit|merge|branch','version-control')]
 
 def cardlookup(n):
