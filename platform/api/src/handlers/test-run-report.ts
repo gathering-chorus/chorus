@@ -17,8 +17,14 @@
  *  that need it report UNKNOWN rather than compare against 0 (Silas, #4015). */
 export interface CrossFoot {
   registered: number;
-  selected: number;
-  notSelected: number;
+  /** null = the runner has not reported its plan. Wren, reviewing #4015: the
+   *  checks marked these UNKNOWN but the raw JSON still carried fabricated
+   *  selected=registered / notSelected=0, which look authoritative to any
+   *  consumer that reads fields instead of checks. Unmeasured is null, not a
+   *  plausible default — the same rule that makes the route 503 instead of
+   *  substituting 0 for a store that did not answer. */
+  selected: number | null;
+  notSelected: number | null;
   executed: number;
   notExecuted: number;
   passed: number;
@@ -66,13 +72,13 @@ const eq = (name: string, lhs: number, rhs: number): Check =>
  *  does, this is UNKNOWN — never a silent ✓. */
 const scopeCheck = (c: CrossFoot): Check => ({
   name: 'scope (plan not reported — cannot verify)',
-  lhs: c.executed + c.notExecuted, rhs: c.selected,
+  lhs: c.executed + c.notExecuted, rhs: c.selected ?? -1,
   ok: true, state: 'unknown',
 });
 
 const selectedCheck = (c: CrossFoot): Check => ({
   name: 'selected (plan not reported — cannot verify)',
-  lhs: c.selected, rhs: c.registered - c.notSelected,
+  lhs: c.selected ?? -1, rhs: c.registered - (c.notSelected ?? 0),
   ok: true, state: 'unknown',
 });
 
@@ -155,7 +161,8 @@ export function renderTestRun(r: TestRunReport): string {
 
   const foot = checks.map(k =>
     `<tr class="${k.state === 'ok' ? 'ok' : k.state === 'fail' ? 'bad' : 'unk'}"><td>${esc(k.name)}</td>` +
-    `<td class="n">${n(k.lhs)}</td><td class="n">${n(k.rhs)}</td>` +
+    // an UNKNOWN row's figures were never measured — an em dash, not a sentinel
+    `<td class="n">${k.state === 'unknown' ? '—' : n(k.lhs)}</td><td class="n">${k.state === 'unknown' ? '—' : n(k.rhs)}</td>` +
     `<td>${k.state === 'ok' ? '✓' : k.state === 'fail' ? '✗' : '?'}</td></tr>`).join('');
 
   // Jeff: the cases column summed to 7,409 while `executed` said 7,411 — the two
@@ -275,8 +282,10 @@ export function buildTestRunReport(input: {
     },
     crossFoot: {
       registered: input.registered,
-      selected: input.registered,
-      notSelected: 0,
+      // Not measured — the runner does not report its plan yet. null, never a
+      // fabricated registered/0 pair (Wren's review catch).
+      selected: null,
+      notSelected: null,
       executed,
       notExecuted: input.notExecuted,
       passed, failed, unmeasured,

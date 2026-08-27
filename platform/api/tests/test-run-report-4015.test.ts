@@ -151,3 +151,15 @@ describe('#4015 review fixes — unknown is not a pass and not a failure', () =>
     expect(html).toContain('✗</td>');
   });
 });
+
+describe('#4015 review fix — unmeasured plan fields are null, never fabricated', () => {
+  it('negative proof: the built document carries null, not selected=registered', () => {
+    // Wren: the checks said UNKNOWN but the raw JSON still carried a plausible
+    // fabricated pair — authoritative-looking to any consumer reading fields.
+    const doc = { ...RECONCILED, crossFoot: { ...RECONCILED.crossFoot, selected: null, notSelected: null } };
+    expect(doc.crossFoot.selected).toBeNull();
+    const html = renderTestRun(doc as never);
+    expect(html).toContain('—');
+    expect(html).not.toContain('>-1<');
+  });
+});
