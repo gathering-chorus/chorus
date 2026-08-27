@@ -118,11 +118,24 @@ fn count_windows_cli_returns_zero_for_nonmatching_pattern() {
     // Exercises the PrintOut arm in main.rs via the real binary. Uses a
     // pattern that can't appear in a Terminal window name, so stdout is "0::"
     // regardless of host state.
+    // #4016 — this test talks to Terminal.app through AppleEvents, so it needs
+    // a logged-in GUI session. At 03:00 nobody is logged in: the call used to
+    // hang two minutes, the lane stopped at test 70 of 92, and the board printed
+    // "69 pass, 2 fail" as if that were the whole suite. A test that CANNOT pass
+    // unattended must say so, not fail — a red nobody can act on is noise, and
+    // the 22 tests behind it never ran at all.
     let output = Command::new(INJECT_BIN)
         .env("_NUDGE_PULSE_INTERNAL", "1")
         .args(["--count-windows", "zzzz_no_such_window_zzzz"])
         .output()
         .expect("failed to run chorus-inject");
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        if err.contains("AppleEvents unavailable") {
+            eprintln!("SKIP: no GUI session — AppleEvents cannot be delivered here");
+            return;
+        }
+    }
     assert!(output.status.success(), "--count-windows should exit 0");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
