@@ -396,7 +396,9 @@ async function buildLatestTestRun() {
   if (registered === null || recorded === null) return null;
   return buildTestRunReport({
     runId: 'latest', trigger: 'nightly', scope: 'full selection',
-    logText, registered, recorded, notExecuted: 0,
+    // null, not 0 — the runner does not report its plan, so notExecuted is
+    // unmeasured (Wren's review: a 0 here is a fabricated denominator).
+    logText, registered, recorded, notExecuted: null,
   });
 }
 

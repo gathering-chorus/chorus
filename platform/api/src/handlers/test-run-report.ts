@@ -26,7 +26,10 @@ export interface CrossFoot {
   selected: number | null;
   notSelected: number | null;
   executed: number;
-  notExecuted: number;
+  /** null = the runner has not reported its plan, so "how many were not
+   *  executed" is unmeasurable — same rule as `selected` (Wren, #4015: a
+   *  hardcoded 0 here is the fabricated-denominator shape this card removes). */
+  notExecuted: number | null;
   passed: number;
   failed: number;
   unmeasured: number;
@@ -81,7 +84,7 @@ const eq = (name: string, lhs: number, rhs: number): Check =>
  *  does, this is UNKNOWN — never a silent ✓. */
 const scopeCheck = (c: CrossFoot): Check => ({
   name: 'scope (plan not reported — cannot verify)',
-  lhs: c.executed + c.notExecuted, rhs: c.selected ?? -1,
+  lhs: c.notExecuted === null ? -1 : c.executed + c.notExecuted, rhs: c.selected ?? -1,
   ok: true, state: 'unknown',
 });
 
@@ -91,14 +94,12 @@ const selectedCheck = (c: CrossFoot): Check => ({
   ok: true, state: 'unknown',
 });
 
-/** The four equations that make the document trustworthy. Every one is stated in
- *  the JSON so the page can show its working instead of asserting a total. */
+/** Four checks: two verified equations (executed, results stored) and two that
+ *  are UNKNOWN until the runner reports its plan (selected, scope). Every one is
+ *  stated in the JSON so the page can show its working instead of asserting a
+ *  total — and the UNKNOWN pair is named as unverified, not counted as green. */
 export function crossFootChecks(c: CrossFoot): Check[] {
   return [
-    // #4015 review (Silas, Wren): this read as a tautology while the builder set
-    // selected=registered and notSelected=0 — a check that cannot fail (#3734).
-    // The run's plan is not in the log, so the honest state is UNKNOWN: refuse
-    // rather than pass vacuously. It goes green when the runner reports its plan.
     // #4015 review (Silas, Wren): this read as a tautology while the builder set
     // selected=registered and notSelected=0 — a check that cannot fail (#3734).
     // The run's plan is not in the log, so it reports UNKNOWN until the runner
@@ -276,7 +277,7 @@ export function foldByKind(rows: SuiteRow[]): { byKind: KindTotal[]; unmeasured:
  *  run unreportable. */
 export function buildTestRunReport(input: {
   runId: string; trigger: string; scope: string; card?: string; role?: string;
-  logText: string; registered: number; recorded: number; notExecuted: number;
+  logText: string; registered: number; recorded: number; notExecuted: number | null;
 }): TestRunReport | null {
   const last = lastRunSuites(input.logText);
   if (!last) return null;

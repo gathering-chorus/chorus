@@ -16,6 +16,7 @@ import {
   crossFootChecks,
   reportVerdict,
   renderTestRun,
+  buildTestRunReport,
 } from '../src/handlers/test-run-report';
 
 const RECONCILED = {
@@ -160,6 +161,21 @@ describe('#4015 review fix — unmeasured plan fields are null, never fabricated
     expect(doc.crossFoot.selected).toBeNull();
     const html = renderTestRun(doc as never);
     expect(html).toContain('—');
+    expect(html).not.toContain('>-1<');
+  });
+
+  it('negative proof: the built document carries notExecuted null, not a fabricated 0', () => {
+    // Wren, second pass: notExecuted was hardcoded 0 at the builder call site —
+    // the same fabricated-denominator shape, masked by scopeCheck being UNKNOWN.
+    const log = 'RUN|start|2026-08-26T03:00:05\nSUITE|cargo|platform/x|kade|pass|2 pass, 0 fail\nRUN|complete|2026-08-26T03:36:40\n';
+    const doc = buildTestRunReport({
+      runId: 'r', trigger: 'nightly', scope: 'full',
+      logText: log, registered: 2, recorded: 2, notExecuted: null,
+    });
+    expect(doc!.crossFoot.notExecuted).toBeNull();
+    const scope = crossFootChecks(doc!.crossFoot).find(c => c.name.startsWith('scope'));
+    expect(scope!.state).toBe('unknown');
+    const html = renderTestRun(doc!);
     expect(html).not.toContain('>-1<');
   });
 });
