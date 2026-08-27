@@ -69,14 +69,14 @@ describe('#4015 cross-foot — the report must add up or say it does not', () =>
     expect(check!.ok).toBe(false);
   });
 
-  it('negative proof: recorded + dropped must equal executed, and last night it did not', () => {
-    const check = crossFootChecks(REAL.crossFoot).find(c => c.name.startsWith('recorded'));
+  it('negative proof: results stored must equal results produced, and last night none were', () => {
+    const check = crossFootChecks(REAL.crossFoot).find(c => c.name === 'results stored');
     expect(check!.ok).toBe(false);
     expect(REAL.crossFoot.dropped).toBe(5812);
   });
 
-  it('control: recorded reconciles when nothing was dropped', () => {
-    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name.startsWith('recorded'));
+  it('control: results stored reconciles when nothing was dropped', () => {
+    const check = crossFootChecks(RECONCILED.crossFoot).find(c => c.name === 'results stored');
     expect(check!.ok).toBe(true);
   });
 });
@@ -84,7 +84,7 @@ describe('#4015 cross-foot — the report must add up or say it does not', () =>
 describe('#4015 verdict — a broken report never reads green', () => {
   it('negative proof: dropped results suppress the verdict entirely', () => {
     // A run that loses four fifths of its results cannot tell anyone nothing is wrong.
-    expect(reportVerdict(REAL)).toBe('BROKEN REPORT');
+    expect(reportVerdict(REAL)).toBe('RESULTS LOST');
   });
 
   it('control: a reconciled run with failures reads FAIL, not BROKEN', () => {
@@ -141,8 +141,8 @@ describe('#4015 review fixes — unknown is not a pass and not a failure', () =>
     expect(reportVerdict(RECONCILED)).toBe('FAIL');
   });
 
-  it('negative proof: a genuinely failing check still forces BROKEN REPORT', () => {
-    expect(reportVerdict(REAL)).toBe('BROKEN REPORT');
+  it('negative proof: a genuinely failing check still forces RESULTS LOST', () => {
+    expect(reportVerdict(REAL)).toBe('RESULTS LOST');
   });
 
   it('the view renders ? for unknown, distinct from ✓ and ✗', () => {

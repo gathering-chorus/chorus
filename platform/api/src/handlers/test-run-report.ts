@@ -99,17 +99,20 @@ export function crossFootChecks(c: CrossFoot): Check[] {
     // Silas, reviewing #4015: this row demands MORE than a balance — dropped must be
     // zero. Named so, because 'recorded' reading ✓ while results were lost is the
     // exact false comfort this document exists to remove.
-    { name: 'recorded (and nothing dropped)', lhs: c.recorded + c.dropped, rhs: c.executed,
-      ok: c.recorded + c.dropped === c.executed && c.dropped === 0,
-      state: c.recorded + c.dropped === c.executed && c.dropped === 0 ? 'ok' : 'fail' },
+    // Jeff, reading the live page: "recorded 7,411 | 7,411 | ✗" — two identical
+    // numbers marked wrong, because the row displayed recorded+dropped (equal to
+    // executed BY CONSTRUCTION) while failing on dropped>0. Show the comparison
+    // the row is actually making: results stored vs results produced.
+    eq('results stored', c.recorded, c.executed),
   ];
 }
 
-/** A run that lost results cannot report on itself. BROKEN REPORT outranks both
- *  PASS and FAIL: on 2026-08-26 the 03:00 run computed 7,347 verdicts, stored
- *  1,535, and still printed a verdict — that must be impossible to read as green. */
-export function reportVerdict(r: TestRunReport): 'PASS' | 'FAIL' | 'BROKEN REPORT' {
-  if (crossFootChecks(r.crossFoot).some(c => c.state === 'fail')) return 'BROKEN REPORT';
+/** A run that lost results cannot report on itself, so this outranks PASS and
+ *  FAIL. It is named for what happened to THE RUN, not for the page: Jeff read
+ *  "BROKEN REPORT" in red at the top and concluded the page was broken, which is
+ *  the only fair reading of those words. The verdict describes the nightly. */
+export function reportVerdict(r: TestRunReport): 'PASS' | 'FAIL' | 'RESULTS LOST' {
+  if (crossFootChecks(r.crossFoot).some(c => c.state === 'fail')) return 'RESULTS LOST';
   return r.crossFoot.failed > 0 ? 'FAIL' : 'PASS';
 }
 
@@ -155,6 +158,17 @@ export function renderTestRun(r: TestRunReport): string {
     `<td class="n">${n(k.lhs)}</td><td class="n">${n(k.rhs)}</td>` +
     `<td>${k.state === 'ok' ? '✓' : k.state === 'fail' ? '✗' : '?'}</td></tr>`).join('');
 
+  // Jeff: the cases column summed to 7,409 while `executed` said 7,411 — the two
+  // unmeasured suites were counted in the total and rendered nowhere, so no reader
+  // could reproduce the figure from the rows above it. A total you cannot add up
+  // from what is on the page is the same defect as a total that is wrong.
+  const unmeasuredRow = c.unmeasured > 0
+    ? `<tr><td>unmeasured</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>`
+      + `<td class="n">${n(c.unmeasured)}</td><td>suite produced no counts — ran, said nothing</td></tr>`
+    : '';
+  const totalRow = `<tr class="total"><td><strong>total</strong></td><td class="n">—</td>`
+    + `<td class="n">${n(c.passed)}</td><td class="n">${n(c.failed)}</td>`
+    + `<td class="n">${n(c.executed)}</td><td></td></tr>`;
   const kinds = r.byKind.map(k =>
     `<tr><td>${esc(k.kind)}</td><td class="n">${n(k.suites)}</td>` +
     `<td class="n">${n(k.passed)}</td><td class="n">${n(k.failed)}</td>` +
@@ -164,15 +178,15 @@ export function renderTestRun(r: TestRunReport): string {
   // the signal, so it must never be a permanent row that readers learn to skip.
   const droppedRow = c.dropped > 0
     ? `<tr class="bad dropped-row"><td>dropped</td><td class="n">${n(c.dropped)}</td>`
-      + '<td>executed, verdict computed, never stored — this report is missing '
-      + `${n(c.dropped)} of its own results</td></tr>`
+      + '<td>the run computed a verdict for each of these and saved none of them, '
+      + 'so nothing here can say whether the code is healthy</td></tr>'
     : '';
 
   return `<h1>Test run ${esc(r.run.id)}</h1>
 <p class="verdict ${v === 'PASS' ? 'ok' : 'bad'}">${v}</p>
 <p>${esc(r.run.trigger)} · ${esc(r.run.scope)} · ${esc(r.run.startedAt)} → ${esc(r.run.endedAt)}</p>
 <table class="crossfoot"><tr><th>check</th><th class="n">is</th><th class="n">should be</th><th></th></tr>${foot}</table>
-<table class="kinds"><tr><th>kind</th><th class="n">suites</th><th class="n">passed</th><th class="n">failed</th><th class="n">cases</th><th>a case is</th></tr>${kinds}</table>
+<table class="kinds"><tr><th>kind</th><th class="n">suites</th><th class="n">passed</th><th class="n">failed</th><th class="n">cases</th><th>a case is</th></tr>${kinds}${unmeasuredRow}${totalRow}</table>
 <table class="footer">${droppedRow}</table>`;
 }
 
