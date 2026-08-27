@@ -74,3 +74,14 @@ chorus:knowledge a owl:Class, chorus:Domain ;
     chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "knowledge" ;
     chorus:definesVocabulary chorus:Knowledge .
+
+# #3860 — Knowledge gets its OWN shape. Without one, athena-make advertises
+# the route (/knowledge lists api:/knowledges from the claim) but mounts
+# nothing — advertised-but-not-served. A class serves when a sh:targetClass
+# shape exists; modeled here, not special-cased in the generator.
+chorus:KnowledgeShape a sh:NodeShape ;
+    sh:targetClass chorus:Knowledge ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:domains:knowledge" ;
+    chorus:generatedBy "athena-model" .
