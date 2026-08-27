@@ -636,6 +636,11 @@ chorus:hasOwner a owl:ObjectProperty ;
 # SHACL: every Document must have at least one domain tag
 chorus:DocumentShape a sh:NodeShape ;
     sh:targetClass chorus:Document ;
+    # #3860 — declared home (#3647). Without this pin the pen defaulted Document
+    # writes to urn:chorus:instances while athena-make serves Documents from
+    # urn:chorus:domains:documents: written-but-never-served. Pin makes pen and
+    # serve agree. TBox edit in Wren's round (paired card) — flagged for gate-arch.
+    chorus:instancesGraph "urn:chorus:domains:documents" ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
@@ -649,6 +654,28 @@ chorus:DocumentShape a sh:NodeShape ;
         sh:path chorus:docTitle ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
+    ] ;
+    # #3860 — the shape said Documents are title+domain only, but every LIVE
+    # Document carries docHref/comment/ownedBy (written pre-generator). The
+    # generated write door refuses off-shape props, so the catalog-link card
+    # could not write the href that makes a Document reachable. Model the
+    # properties the data already has; don't loosen the gate around them.
+    sh:property [
+        sh:path chorus:docHref ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:comment ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:class chorus:Role ;
+    ] ;
+    sh:property [
+        sh:path chorus:hasProduct ;
+        sh:class chorus:Product ;
     ] .
 
 # =============================================================================
