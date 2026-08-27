@@ -287,10 +287,10 @@ export class TilePoller {
       // surfaces disagree by construction: tile "3m ago" off a `cards view`
       // call the pane refuses to show, pane newest 11m. Same predicate, both
       // readers — the reconciliation flow (#3976) is the proof it stays that way.
-      let last: any = null;
-      for (let i = lines.length - 1; i >= 0; i--) {
+      let last: { ts?: string; digest?: string } | null = null;
+      for (const raw of [...lines].reverse()) {
         try {
-          const cand = JSON.parse(lines[i]);
+          const cand = JSON.parse(raw) as { ts?: string; digest?: string };
           if (isRenderableDigest(cand.digest || '')) { last = cand; break; }
         } catch { /* skip unparseable */ }
       }
