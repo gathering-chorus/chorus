@@ -81,6 +81,7 @@ const JOURNEY_RUNGS = [
   { key: 'chorus', label: 'Chorus', href: '/' },
   { key: 'value-stream', label: 'Value stream', href: '/athena/value-stream.html' },
   { key: 'products', label: 'Products', href: '/athena/products.html' },
+  { key: 'services', label: 'Services', href: '/athena/services.html' },   // #4010 — services had an API and no page for months
   { key: 'domains', label: 'Domains', href: '/athena/domains.html' },
   { key: 'model', label: 'Model (ERD)', href: '/athena/model.html' },
   { key: 'instances', label: 'Instances', href: '/domains' },

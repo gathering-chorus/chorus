@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Services — Athena</title>
+<!-- #4010 — the services collection. Products got a page in #3635; services got
+     the API and stopped there, so nine Service records with full designs in the
+     graph had no reader. Same pattern as products.html: fetch owl-api LIVE, the
+     page IS the API's answer, including what the API withholds. -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+</head>
+<body><div class="wrap">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; services</div>
+<h1>Services <span class="kind">&mdash; Chorus</span></h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  try {
+    const env = await fetchJSON('/services');
+    const rows = env.data || [];
+    // The collection row is thin by design (ADR-048 exposure). Per-service reads
+    // carry the edges, so fetch them rather than inventing an owner column.
+    const details = await Promise.all(rows.map(r =>
+      fetchJSON(`/services/${encodeURIComponent(r.name)}`).catch(() => null)));
+    rows.forEach((r, i) => {
+      const d = details[i];
+      r._links = (d && d.links) || {};
+      r._data = (d && d.data) || {};
+    });
+
+    // What the shape declares vs what the API actually returned. Honest, not
+    // guessed: DESIGN_FIELDS is the ServiceShape design set; anything absent
+    // from the response is withheld by exposure, not missing from the graph.
+    const DESIGN_FIELDS = ['overview', 'asIs', 'toBe', 'gaps', 'notInScope', 'pathToClose'];
+    const served = new Set();
+    rows.forEach(r => DESIGN_FIELDS.forEach(f => { if (r._data[f]) served.add(f); }));
+    const withheld = DESIGN_FIELDS.filter(f => !served.has(f));
+
+    const byStep = {};
+    rows.forEach(r => {
+      const s = r._links.atStep || 'unplaced';
+      (byStep[s] = byStep[s] || []).push(r);
+    });
+
+    function card(s) {
+      const owner = s._links.ownedBy || '';
+      return `<div class="pcard" id="s-${esc(s.name)}">
+  <div class="phead"><h2><a class="edge" href="service.html?s=${encodeURIComponent(s.name)}">${esc(s.label || s.name)}</a> <span class="kind">Service</span></h2>
+    <div class="pmeta">${ownerDot(owner)} &middot; ${stepBadge(s._links.atStep)} &middot; <span class="status">${esc(s.status || 'no status')}</span></div></div>
+  ${s._data.overview ? `<p class="vp">${esc(s._data.overview)}</p>`
+                     : `<p class="vp"><em>overview withheld &mdash; ADR-048 marks it internal; this page reads unauthenticated.</em></p>`}
+</div>`;
+    }
+
+    const steps = Object.keys(byStep).sort();
+    main.innerHTML = `
+<div class="stats">
+  <div class="stat"><div class="v">${rows.length}</div><div class="l">Services</div></div>
+  <div class="stat"><div class="v">${rows.filter(r => (r.status || '') === 'operating').length}</div><div class="l">Operating</div></div>
+  <div class="stat"><div class="v">${steps.length}</div><div class="l">Value-stream steps</div></div>
+</div>
+${withheld.length ? `<p class="src-note">Design fields present in ServiceShape but not returned by the API for any service: ${withheld.map(esc).join(', ')}. These are unmarked in the shape, so exposure is fail-closed &mdash; the text exists in the graph and no caller can read it. Not a gap in the data; a gap in what is published.</p>` : ''}
+${steps.map(st => `<h2 class="kind">${esc(String(st).replace(/^.*[#-]/, ''))}</h2>
+<div class="pgrid">${byStep[st].sort((a, b) => a.name.localeCompare(b.name)).map(card).join('\n')}</div>`).join('\n')}
+${srcNote('GET /services')}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>

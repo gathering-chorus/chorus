@@ -2396,17 +2396,17 @@ chorus:ServiceShape a sh:NodeShape ;
     #   · UNMARKED = hidden (fail-closed). Proven live: unauth→label/status; authed adds
     #   overview; implementationPlan (secret) + every unmarked field absent in both.
     sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4010 (Silas's split, his lane): overview/asIs/toBe are public — they say what the service IS and where it is going. gaps/notInScope/pathToClose are signed-in: a list of what we have not covered reads as a roadmap to anyone hostile.
     sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
     sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:secret ] ;
-    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
 
 # the properties domain-class itself (punned)
