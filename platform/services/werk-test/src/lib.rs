@@ -895,6 +895,25 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
 /// (filePath, testName) → the registered entity name (for the mandatory ofTest
 /// edge). Unjoined cases come back separately — counted loudly, never posted
 /// with a fabricated identity.
+
+/// #4015 — did this run's evidence survive? The nightly executed 7,411 tests on
+/// 2026-08-27, stored zero, and exited 0 with a verdict; the writeback's result
+/// was computed and discarded at the call site. A run that cannot save what it
+/// measured has not measured anything anyone can check.
+///
+/// Pure so the proof does not need a store: given what we tried to write and what
+/// the writeback says it wrote, how many were lost.
+pub fn results_lost(expected: usize, stored: usize) -> usize {
+    expected.saturating_sub(stored)
+}
+
+/// The run's exit code, folding evidence survival into the test verdict. Kept
+/// separate from `results_lost` so the two questions — "did tests fail?" and
+/// "did we keep the answers?" — stay separable in the code as well as the report.
+pub fn run_exit_code(test_exit: i32, expected: usize, stored: usize) -> i32 {
+    if results_lost(expected, stored) > 0 { 1 } else { test_exit }
+}
+
 pub fn join_cases(
     cases: &[CaseResult],
     rows: &[TestRow],
@@ -2416,5 +2435,42 @@ mod playwright_failure_naming_4004 {
     fn a_green_run_prints_nothing() {
         let green = "Running 68 tests\n  \u{2713} a.spec.cjs:1 \u{203a} ok\n  68 passed (1.3m)";
         assert!(playwright_failure_lines(green).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod results_survival_4015 {
+    use super::*;
+
+    #[test]
+    fn negative_proof_a_run_that_stored_nothing_fails_even_with_zero_test_failures() {
+        // 2026-08-27 exactly: 7,411 executed, 0 stored, every test green, exit 0.
+        assert_eq!(results_lost(7411, 0), 7411);
+        assert_eq!(run_exit_code(0, 7411, 0), 1, "green tests must not rescue a run that lost its evidence");
+    }
+
+    #[test]
+    fn control_a_run_that_stored_everything_keeps_its_own_verdict() {
+        // Without this the gate could fail every run and still pass the proof above.
+        assert_eq!(results_lost(7411, 7411), 0);
+        assert_eq!(run_exit_code(0, 7411, 7411), 0);
+    }
+
+    #[test]
+    fn a_partial_write_is_a_loss_too_not_a_rounding_error() {
+        // The 2026-08-26 shape: 7,320 executed, 1,535 stored, reported clean.
+        assert_eq!(results_lost(7320, 1535), 5785);
+        assert_eq!(run_exit_code(0, 7320, 1535), 1);
+    }
+
+    #[test]
+    fn a_real_test_failure_still_fails_when_everything_was_stored() {
+        assert_eq!(run_exit_code(1, 10, 10), 1);
+    }
+
+    #[test]
+    fn storing_more_than_expected_is_not_negative_loss() {
+        assert_eq!(results_lost(5, 9), 0);
+        assert_eq!(run_exit_code(0, 5, 9), 0);
     }
 }

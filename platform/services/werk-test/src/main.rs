@@ -447,7 +447,19 @@ fn run(args: &[String]) -> Result<i32, String> {
             &[("count", &unregistered.to_string())]);
         println!("executed-but-unregistered: {} case(s) (no registered Test identity — not posted)", unregistered);
     }
-    post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    // #4015 — same rule on the card path as on the nightly: a run whose evidence
+    // did not survive has not proven anything, so it must not exit clean.
+    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    let lost = werk_test::results_lost(joined.len(), stored);
+    if lost > 0 {
+        println!(
+            "!! werk-test: {} of {} results were NOT stored — this run cannot report on itself",
+            lost, joined.len()
+        );
+        emit_spine("testresult.lost", &role, &card, &trace,
+            &[("lost", &lost.to_string()), ("expected", &joined.len().to_string()),
+              ("stored", &stored.to_string())]);
+    }
     let writeback_duration_ms = writeback_started.elapsed().as_millis();
     let total_duration_ms = started_at.elapsed().as_millis();
     let mut completed = werk_test::completed_extras(
@@ -464,8 +476,13 @@ fn run(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
-    println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
-    Ok(outcome.exit_code())
+    let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
+    if lost > 0 {
+        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
+        return Ok(exit);
+    }
+    println!("werk-test: {} (exit {})", outcome.label(), exit);
+    Ok(exit)
 }
 
 /// #3920 fold — the nightly cargo lane, through the ONE runner. Full selection
@@ -701,7 +718,22 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         emit_spine("testresult.unregistered", &role, &card, &trace,
             &[("count", &unregistered.to_string())]);
     }
-    post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
+    // #4015 — the run's verdict now depends on its evidence surviving. Until
+    // today this call's result was discarded: on 2026-08-27 the nightly executed
+    // 7,411 tests, stored NONE of them, and still exited 0 with a verdict. A run
+    // that cannot save what it measured has not measured anything anyone can
+    // check, so it fails — loudly, naming the gap.
+    let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
+    let lost = werk_test::results_lost(joined.len(), stored);
+    if lost > 0 {
+        println!(
+            "!! werk-test: {} of {} results were NOT stored — this run cannot report on itself",
+            lost, joined.len()
+        );
+        emit_spine("testresult.lost", &role, &card, &trace,
+            &[("lost", &lost.to_string()), ("expected", &joined.len().to_string()),
+              ("stored", &stored.to_string())]);
+    }
     let writeback_duration_ms = writeback_started.elapsed().as_millis();
     let total_duration_ms = started_at.elapsed().as_millis();
     let mut completed = werk_test::completed_extras(
@@ -718,8 +750,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
-    println!("werk-test: {} (exit {})", outcome.label(), outcome.exit_code());
-    Ok(outcome.exit_code())
+    let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
+    if lost > 0 {
+        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
+        return Ok(exit);
+    }
+    println!("werk-test: {} (exit {})", outcome.label(), exit);
+    Ok(exit)
 }
 
 fn unit_name(u: &TestUnit) -> &str {
@@ -1413,7 +1450,7 @@ fn post_test_results(
     trace: &str,
     joined: &[(CaseResult, String)],
     run_epoch_ms: u128,
-) {
+) -> usize {
     let writeback_started = std::time::Instant::now();
     let endpoint = std::env::var("OWL_API_TESTRESULTS_BATCH")
         .ok()
@@ -1503,6 +1540,7 @@ fn post_test_results(
         ("remint_attempts", remint_attempts.as_str()),
     ];
     emit_spine("testresult.writeback.completed", role, card, trace, &completed);
+    stats.posted
 }
 
 /// #3592 AC3 — registered ∖ executed. Reads BOTH generated collections, prints
