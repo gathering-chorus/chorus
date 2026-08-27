@@ -24,6 +24,36 @@ const local = (v: string | undefined): string => String(v || '').split(/[#/]/).p
 /** min..max as UML multiplicity; missing max is unbounded (*). */
 const multiplicity = (min: number, max: number | null): string => `${min}..${max === null ? '*' : max}`;
 
+function addPropertyRow(
+  entry: AtlasClass,
+  row: SparqlBinding,
+  dom: string,
+  classHomes: ReadonlyMap<string, string>
+): void {
+  if (!row.prop) return;
+  // A blank-node path is an inverse-path constraint — a real requirement
+  // that authoring cannot satisfy, so it is SHOWN and labelled, not dropped.
+  const name = row.prop.type === 'bnode' ? '(inverse path)' : local(row.prop.value);
+  if (!name) return;
+
+  const min = row.min?.value ? Number(row.min.value) : 0;
+  const max = row.max?.value ? Number(row.max.value) : null;
+  const rangeClass = local(row.rc?.value);
+
+  if (rangeClass) {
+    if (entry.edges.some((e) => e.name === name && e.to === rangeClass)) return;
+    // cross-domain when the target class's home domain is not this one;
+    // an unknown home is treated as cross — an honest "elsewhere".
+    entry.edges.push({
+      name, to: rangeClass,
+      multiplicity: multiplicity(min, max),
+      crossDomain: classHomes.get(rangeClass) !== dom,
+    });
+  } else if (!entry.attributes.some((a) => a.name === name)) {
+    entry.attributes.push({ name, type: local(row.dt?.value), min, max });
+  }
+}
+
 export function buildClassAtlas(
   rows: SparqlBinding[],
   classHomes: ReadonlyMap<string, string>
@@ -46,32 +76,7 @@ export function buildClassAtlas(
     const parent = local(row.parent?.value);
     if (parent && !entry.parents.includes(parent)) entry.parents.push(parent);
 
-    if (!row.prop) continue;
-    // A blank-node path is an inverse-path constraint — a real requirement
-    // that authoring cannot satisfy, so it is SHOWN and labelled, not dropped.
-    const name = row.prop.type === 'bnode' ? '(inverse path)' : local(row.prop.value);
-    if (!name) continue;
-
-    const min = row.min?.value ? Number(row.min.value) : 0;
-    const max = row.max?.value ? Number(row.max.value) : null;
-    const rangeClass = local(row.rc?.value);
-
-    if (rangeClass) {
-      if (!entry.edges.some((e) => e.name === name && e.to === rangeClass)) {
-        const home = classHomes.get(rangeClass);
-        entry.edges.push({
-          name, to: rangeClass,
-          multiplicity: multiplicity(min, max),
-          // cross-domain when the target class's home domain is not this one;
-          // an unknown home is treated as cross — an honest "elsewhere".
-          crossDomain: home !== dom,
-        });
-      }
-    } else {
-      if (!entry.attributes.some((a) => a.name === name)) {
-        entry.attributes.push({ name, type: local(row.dt?.value), min, max });
-      }
-    }
+    addPropertyRow(entry, row, dom, classHomes);
   }
 
   return {
