@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Service — Athena</title>
+<!-- #4010 — the per-service page. This is where a service DESIGN is read: the
+     ServiceShape design fields (overview / asIs / toBe / gaps / notInScope /
+     pathToClose) live in the graph and had no reader until now. The page shows
+     what the API serves and names what it withholds, per the ADR-048 tiers
+     Silas set: public = overview/asIs/toBe, signed-in = gaps/notInScope/
+     pathToClose, secret = implementationPlan. -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+</head>
+<body><div class="wrap">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="services.html">services</a> &rarr; <span id="crumb"></span></div>
+<h1 id="title">Service</h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  const s = new URLSearchParams(location.search).get('s') || '';
+  document.getElementById('crumb').textContent = s;
+  if (!s) { main.innerHTML = '<p class="empty">no service named &mdash; try <a href="services.html">the services list</a>.</p>'; return; }
+  try {
+    const env = await fetchJSON(`/services/${encodeURIComponent(s)}`);
+    const e = env.data || {};
+    const links = env.links || {};
+    document.getElementById('title').innerHTML = `${esc(e.label || s)} <span class="kind">&mdash; Service</span>`;
+
+    // The design, in the order it is read: what it is, where it stands, where
+    // it is going, what is missing, what it deliberately is not, how it closes.
+    const SECTIONS = [
+      ['overview',    'Overview',      'chorus:overview',    'public'],
+      ['asIs',        'As is',         'chorus:asIs',        'public'],
+      ['toBe',        'To be',         'chorus:toBe',        'public'],
+      ['gaps',        'Gaps',          'chorus:gaps',        'signed-in'],
+      ['notInScope',  'Not in scope',  'chorus:notInScope',  'signed-in'],
+      ['pathToClose', 'Path to close', 'chorus:pathToClose', 'signed-in'],
+    ];
+    const folds = SECTIONS.map(([k, label, path, tier]) => e[k]
+      ? `<details class="fold" open><summary>${esc(label)} <span class="src">${esc(path)}</span></summary><div class="body"><p>${esc(e[k])}</p></div></details>`
+      : `<details class="fold"><summary>${esc(label)} <span class="src">${esc(path)} &mdash; withheld (${esc(tier)})</span></summary><div class="body"><p class="empty">Present in the model, not returned to this caller. ADR-048 exposure, not a missing field.</p></div></details>`
+    );
+
+    main.innerHTML = `
+<div class="stats">
+  <div class="stat"><div class="v">${ownerDot(links.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
+  <div class="stat"><div class="v">${stepBadge(links.atStep)}</div><div class="l">Step (atStep)</div></div>
+  <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
+  <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
+</div>
+${folds.join('\n')}
+${srcNote(`GET /services/${esc(s)}`)}`;
+  } catch (e) { fetchFailed(main, e); }
+})();
+</script>
+</body></html>

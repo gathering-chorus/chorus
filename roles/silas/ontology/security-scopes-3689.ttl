@@ -31,23 +31,33 @@ chorus:hasScope a owl:DatatypeProperty ;
     rdfs:comment "A graph URI this Principal may write through the governed door. Resolved at verify time from the security graph (TTL'd, fail-closed); never carried in a token. Grant/revoke is a model edit. #3689." ;
     rdfs:range xsd:anyURI .
 
+# #4010 — "urn:chorus:domains:documents" added for all three roles:
+# ServiceShape and ProductShape both REQUIRE hasDesignDoc -> a Document, so a
+# role that can create a service but not its Document row is stuck by
+# construction — the shape demands what the scope forbids. (A services-graph
+# scope was briefly here too; Service instances ended up in
+# urn:chorus:instances, already in every role's scope, after the first home
+# turned out to be the harvester's PUT-replaced graph.)
 chorus:principal-silas
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
-                    "urn:chorus:instances"^^xsd:anyURI .
+                    "urn:chorus:instances"^^xsd:anyURI ,
+                    "urn:chorus:domains:documents"^^xsd:anyURI .
 
 chorus:principal-wren
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
-                    "urn:chorus:instances"^^xsd:anyURI .
+                    "urn:chorus:instances"^^xsd:anyURI ,
+                    "urn:chorus:domains:documents"^^xsd:anyURI .
 
 chorus:principal-kade
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
-                    "urn:chorus:instances"^^xsd:anyURI .
+                    "urn:chorus:instances"^^xsd:anyURI ,
+                    "urn:chorus:domains:documents"^^xsd:anyURI .
 
 # chorus-sdk: the three TRACE_AUTH ops scripts (ontology-validate,
 # index-crawler-snapshots, shim-wrapper) have always written ops as this

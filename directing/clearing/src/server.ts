@@ -6,6 +6,7 @@
  * any sink.
  */
 import express, { Request, Response, NextFunction } from 'express';
+import { isRenderableDigest } from './observations';
 import { checkCap } from './word-cap';
 import { createServer } from 'http';
 import { createServer as createHttpsServer } from 'https';
@@ -1000,7 +1001,8 @@ app.get('/api/commands/:role', (req, res) => {
 
 // #3607 — spine parsing + TAIL-READ moved to src/spine-tail.ts (was a full
 // readFileSync of the 117MB log per 3s poll; see that module + its tests).
-const OBS_SKIP_TOKENS = ['nudge', 'chorus-log', 'role-state', 'cards', 'smoke-check'];
+// #4010 — moved to observations.ts so the tile's age and the pane's render
+// share ONE skip predicate (the 06:19 two-event-sets defect).
 
 function parseObservation(line: string, seen: Set<string>): StreamLine | null {
   try {
@@ -1009,7 +1011,7 @@ function parseObservation(line: string, seen: Set<string>): StreamLine | null {
     if (seen.has(key)) return null;
     seen.add(key);
     const digest = obs.digest || '';
-    if (OBS_SKIP_TOKENS.some((t) => digest.includes(t))) return null;
+    if (!isRenderableDigest(digest)) return null;
     return { ts: obs.ts, role: obs.role, type: 'obs', text: digest, card: obs.card || null };
   } catch {
     return null;
@@ -1048,12 +1050,21 @@ function readRoleObservations(fs: typeof fs_node): StreamLine[] {
  * information: "all commands run by agent roles must show in streams."
  */
 export function dedupeLines(lines: StreamLine[]): StreamLine[] {
+  // #4010 — keep the NEWEST occurrence, not the oldest. This walked in with
+  // the exact-match narrowing: keeping the FIRST of a repeated digest meant a
+  // command re-run at 9:34 rendered with its 9:19 timestamp, so the pane's
+  // newest line for a role could read minutes older than the role's actual
+  // newest renderable activity — the last leg of the 06:19 tile/pane skew
+  // (the #3976 reconciliation flow is the proof). Lines arrive ts-ascending,
+  // so scanning from the end and keeping first-seen keeps each text once,
+  // stamped with the time it LAST happened.
   const out: StreamLine[] = [];
-  for (const line of lines) {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
     const dominated = out.some((prev) => prev.role === line.role && prev.text === line.text);
     if (!dominated) out.push(line);
   }
-  return out;
+  return out.reverse();
 }
 
 app.get('/api/stream', (req, res) => {

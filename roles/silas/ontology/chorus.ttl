@@ -639,7 +639,11 @@ chorus:DocumentShape a sh:NodeShape ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
-        sh:class chorus:SubDomain ;
+        # #4010 — was chorus:SubDomain, a class retired by #3509. An edge typed
+        # to a retired class is unsatisfiable: the generator mapped it to kind
+        # 'sub-domain', which the DAL refuses as unknown, so no Document could
+        # ever be created through the API — one reason zero Documents existed.
+        sh:class chorus:Domain ;
     ] ;
     sh:property [
         sh:path chorus:docTitle ;
@@ -2368,24 +2372,38 @@ chorus:DomainShape a sh:NodeShape ;
 chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Service ;
-    chorus:instancesGraph "urn:chorus:ontology" ;   # #3675: serve Service instances from the ontology graph where they live (ABox-in-ontology per the #3587/#3593 wipe-protection convention) — else the serve read defaults to the empty urn:chorus:instances and /services=0. Mirrors DomainShape's #3581 steward call.
+    # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
+    # urn:chorus:ontology to fix a READ (the serve defaulted to the empty
+    # urn:chorus:instances and /services returned 0). But athena-model:916
+    # refuses every DAL write to the ontology graph by design — an instance
+    # writer must not be able to mutate the shapes that validate it. The two
+    # rules are each correct and together made Service readable-but-unwritable:
+    # POST /services answered 502 graph-dba-only, so a service design could not
+    # be posted through the API that generates its own page.
+    # First fix pointed here at urn:chorus:domains:services — WRONG: that graph
+    # belongs to service-harvest-load.sh, which rebuilds it by wholesale GSP PUT
+    # ("safe by construction" assumed sole tenancy), so the next harvest cycle
+    # wiped all nine Service records. Proven live 2026-08-27 10:12.
+    # The home is urn:chorus:instances — the graph Product already uses:
+    # DAL-writable, additively merged, no replace-semantics tenant.
+    chorus:instancesGraph "urn:chorus:instances" ;
     # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
     # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
     #   public = emitted to everyone · internal = authed callers only · secret = never
     #   · UNMARKED = hidden (fail-closed). Proven live: unauth→label/status; authed adds
     #   overview; implementationPlan (secret) + every unmarked field absent in both.
     sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4010 — Silas's tiers (his lane, his call): overview/asIs/toBe public; gaps/notInScope/pathToClose signed-in (a list of what is uncovered reads as a roadmap to anyone hostile); implementationPlan stays secret.
     sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
     sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:status             ; sh:minCount 1 ; sh:in ( "exploring" "building" "operating" "retiring" ) ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:asIs               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:toBe               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
     sh:property [ sh:path chorus:implementationPlan ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:secret ] ;
-    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:pathToClose        ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
+    sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
 
 # the properties domain-class itself (punned)

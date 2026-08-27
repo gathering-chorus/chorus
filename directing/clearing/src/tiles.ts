@@ -5,6 +5,7 @@
  */
 import fs from 'fs';
 import path from 'path';
+import { isRenderableDigest } from './observations';
 import { AGENT_ROLES, projectRoleState, type SpineActivity } from './tiles-spine';
 import { spinePath, projectSpine } from './spine-tail';
 
@@ -280,7 +281,20 @@ export class TilePoller {
       const lines = fs.readFileSync(path.join(this.scanDir, `${role}-observations.jsonl`), 'utf-8')
         .trim().split('\n').filter(Boolean);
       if (lines.length === 0) return;
-      const last = JSON.parse(lines[lines.length - 1]);
+      // #4010 — age from the newest observation the PANE would render, not the
+      // raw last line. Machinery digests (cards/nudge/role-state/...) are
+      // skipped by the streams pane, so aging the tile from one made the two
+      // surfaces disagree by construction: tile "3m ago" off a `cards view`
+      // call the pane refuses to show, pane newest 11m. Same predicate, both
+      // readers — the reconciliation flow (#3976) is the proof it stays that way.
+      let last: { ts?: string; digest?: string } | null = null;
+      for (const raw of [...lines].reverse()) {
+        try {
+          const cand = JSON.parse(raw) as { ts?: string; digest?: string };
+          if (isRenderableDigest(cand.digest || '')) { last = cand; break; }
+        } catch { /* skip unparseable */ }
+      }
+      if (!last) return;
       tile.lastAction = last.digest || '';
       if (last.ts) {
         const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
