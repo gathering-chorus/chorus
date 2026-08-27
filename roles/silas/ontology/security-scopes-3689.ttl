@@ -31,20 +31,18 @@ chorus:hasScope a owl:DatatypeProperty ;
     rdfs:comment "A graph URI this Principal may write through the governed door. Resolved at verify time from the security graph (TTL'd, fail-closed); never carried in a token. Grant/revoke is a model edit. #3689." ;
     rdfs:range xsd:anyURI .
 
-# #4010 — two scopes added for all three roles:
-# - "urn:chorus:domains:services": Service instances moved to their own domain
-#   graph (readable AND writable, ADR-051); the roles that post service designs
-#   need the write scope to follow them.
-# - "urn:chorus:domains:documents": ServiceShape and ProductShape both REQUIRE
-#   hasDesignDoc -> a Document, so a role that can create a service but not its
-#   Document row is stuck by construction — the shape demands what the scope
-#   forbids.
+# #4010 — "urn:chorus:domains:documents" added for all three roles:
+# ServiceShape and ProductShape both REQUIRE hasDesignDoc -> a Document, so a
+# role that can create a service but not its Document row is stuck by
+# construction — the shape demands what the scope forbids. (A services-graph
+# scope was briefly here too; Service instances ended up in
+# urn:chorus:instances, already in every role's scope, after the first home
+# turned out to be the harvester's PUT-replaced graph.)
 chorus:principal-silas
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
-                    "urn:chorus:domains:services"^^xsd:anyURI ,
                     "urn:chorus:domains:documents"^^xsd:anyURI .
 
 chorus:principal-wren
@@ -52,7 +50,6 @@ chorus:principal-wren
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
-                    "urn:chorus:domains:services"^^xsd:anyURI ,
                     "urn:chorus:domains:documents"^^xsd:anyURI .
 
 chorus:principal-kade
@@ -60,7 +57,6 @@ chorus:principal-kade
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
-                    "urn:chorus:domains:services"^^xsd:anyURI ,
                     "urn:chorus:domains:documents"^^xsd:anyURI .
 
 # chorus-sdk: the three TRACE_AUTH ops scripts (ontology-validate,

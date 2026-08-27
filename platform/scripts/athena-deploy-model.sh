@@ -821,7 +821,7 @@ fi
 # cannot ask (#3726 — a blind verify never passes).
 # =============================================================================
 if [ -z "${TTL:-}" ]; then
-  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:domains:services}"
+  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:instances}"   # NOT domains:services — service-harvest-load.sh PUT-replaces that graph wholesale; co-tenants wiped every cycle (proven 2026-08-27)
   SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
   SERVICES_SET=(
     "$CHORUS_ROOT/designing/data/service-instances.ttl"

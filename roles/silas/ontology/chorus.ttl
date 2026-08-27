@@ -2380,10 +2380,13 @@ chorus:ServiceShape a sh:NodeShape ;
     # rules are each correct and together made Service readable-but-unwritable:
     # POST /services answered 502 graph-dba-only, so a service design could not
     # be posted through the API that generates its own page.
-    # The fix is the one Document, Principle and Value already use: instances
-    # live in their own domain graph, which is readable AND writable (ADR-051 —
-    # reader = writer = one graph).
-    chorus:instancesGraph "urn:chorus:domains:services" ;
+    # First fix pointed here at urn:chorus:domains:services — WRONG: that graph
+    # belongs to service-harvest-load.sh, which rebuilds it by wholesale GSP PUT
+    # ("safe by construction" assumed sole tenancy), so the next harvest cycle
+    # wiped all nine Service records. Proven live 2026-08-27 10:12.
+    # The home is urn:chorus:instances — the graph Product already uses:
+    # DAL-writable, additively merged, no replace-semantics tenant.
+    chorus:instancesGraph "urn:chorus:instances" ;
     # ADR-048 §3 field-exposure (Silas's spec; #3506 carries his name/port/authToken
     # example onto real ServiceShape fields — re-classify freely, it's a 1-line model edit):
     #   public = emitted to everyone · internal = authed callers only · secret = never
