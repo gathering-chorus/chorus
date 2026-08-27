@@ -390,7 +390,10 @@ async function buildLatestTestRun() {
     : null;
   return buildTestRunReport({
     runId: 'latest', trigger: 'nightly', scope: 'full selection',
-    logText, registered: registered ?? 0, recorded: recorded ?? 0, notExecuted: 0,
+    // No `?? 0` on registered: a fabricated denominator produces a cross-foot
+    // that looks authoritative and is not (Silas, #4015). Unknown stays unknown.
+    logText, registered: registered ?? 0, recorded: recorded ?? 0,
+    notExecuted: 0,
   });
 }
 

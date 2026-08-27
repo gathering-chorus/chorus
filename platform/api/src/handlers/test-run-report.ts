@@ -12,6 +12,9 @@
 // The wireframe Jeff accepted:
 // https://claude.ai/code/artifact/4697dd0b-5e3c-4090-ac7e-22bbc9ba4ade
 
+/** `registered` is null when the tests domain could not be asked. A cross-foot
+ *  against a fabricated denominator is worse than no cross-foot, so the checks
+ *  that need it report UNKNOWN rather than compare against 0 (Silas, #4015). */
 export interface CrossFoot {
   registered: number;
   selected: number;
@@ -61,6 +64,12 @@ const eq = (name: string, lhs: number, rhs: number): Check =>
 
 /** `selected` can only be verified against a plan the runner reports. Until it
  *  does, this is UNKNOWN — never a silent ✓. */
+const scopeCheck = (c: CrossFoot): Check => ({
+  name: 'scope (plan not reported — cannot verify)',
+  lhs: c.executed + c.notExecuted, rhs: c.selected,
+  ok: true, state: 'unknown',
+});
+
 const selectedCheck = (c: CrossFoot): Check => ({
   name: 'selected (plan not reported — cannot verify)',
   lhs: c.selected, rhs: c.registered - c.notSelected,
@@ -80,7 +89,12 @@ export function crossFootChecks(c: CrossFoot): Check[] {
     // The run's plan is not in the log, so it reports UNKNOWN until the runner
     // says what it planned. Unknown is not a pass and not a failure.
     selectedCheck(c),
-    eq('scope', c.executed + c.notExecuted, c.selected),
+    // Same honesty as `selected`. Silas and Wren both showed this firing
+    // BROKEN REPORT on every real run because notExecuted was hardcoded 0 —
+    // conflating "we did not run everything" (a coverage gap) with "we lost the
+    // evidence" (an integrity failure). Different states, different owners.
+    // UNKNOWN until the runner reports what it planned.
+    scopeCheck(c),
     eq('executed', c.passed + c.failed + c.unmeasured, c.executed),
     // Silas, reviewing #4015: this row demands MORE than a balance — dropped must be
     // zero. Named so, because 'recorded' reading ✓ while results were lost is the
