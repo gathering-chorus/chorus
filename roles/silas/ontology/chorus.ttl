@@ -732,7 +732,13 @@ chorus:talk a chorus:Tool ;
     chorus:color "#22d3ee" ;
     chorus:status "planned" .
 
-chorus:clearing a chorus:Tool ;
+# #3860 — the Tool typing MOVED off chorus:clearing. One IRI carried
+# chorus:Tool (label "/clearing", a route) AND chorus:Product (label "The
+# Clearing") — dual-typed, so every surface reading "the Clearing product" got
+# a Tool named after its URL path (gc-one-home-per-subject flagged it). The
+# viz entry keeps its own IRI; the product keeps the bare one (ADR-040 bare
+# grain for products).
+chorus:clearing-tool a chorus:Tool ;
     rdfs:label "/clearing" ;
     rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
     chorus:toolType chorus:Interaction ;
@@ -3047,8 +3053,8 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 chorus:look chorus:feeds chorus:Capturing .
 chorus:listen chorus:feeds chorus:Capturing .
 chorus:talk chorus:feeds chorus:Directing .
-chorus:clearing chorus:feeds chorus:Directing .
-chorus:clearing chorus:indexes chorus:chorusTool .
+chorus:clearing-tool chorus:feeds chorus:Directing .   # #3860 — tool edges follow the tool IRI
+chorus:clearing-tool chorus:indexes chorus:chorusTool .
 chorus:borg chorus:feeds chorus:Designing .
 chorus:borg chorus:decomposes chorus:gathering .
 
