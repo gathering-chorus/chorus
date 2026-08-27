@@ -51,9 +51,12 @@ else
     # below has the FULL domain set in staging (its safety precondition).
     "$CHORUS_ROOT/roles/wren/ontology/domains-wren-silas.ttl"
     "$CHORUS_ROOT/roles/kade/ontology/domains-kade-3581.ttl"
-    # #3675 — service definitions enter the MODEL_SET the day they're authored,
-    # never live-only (the #3587/#3593 wipe class).
-    "$CHORUS_ROOT/designing/data/service-instances.ttl"
+    # #4010 — service-instances.ttl LEFT the MODEL_SET. It used to load Service
+    # ABox into urn:chorus:ontology (#3675). That graph is DBA-only on the write
+    # side (athena-model:916), so parking instances there made every Service
+    # unwritable through the generated API. They now hydrate into
+    # urn:chorus:domains:services in the SERVICES_SET section below — the same
+    # shape Principle/Value/Practice/Document already use.
     # #3991 (closes the #3916 red) — product-instances.ttl is THE definition home
     # for the child products (#3545/#3603) but was never in MODEL_SET, so the store
     # held product-* with chorus.ttl's structural edges and NO types: untyped-
@@ -803,6 +806,75 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _vn="?"
   echo "athena-deploy-model: hydrated ${#VALUES_SET[@]} values file(s) -> <$VALUES_GRAPH> (http $vmcode, $_vn values live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$VALUES_GRAPH" values="${_vn}" 2>/dev/null || true
+fi
+# =============================================================================
+# SERVICES_SET (#4010) — the 9 Service instances into urn:chorus:domains:services.
+#
+# WHY THIS SECTION EXISTS. ServiceShape used to declare the ontology graph as its
+# instancesGraph, which fixed a read (/services served 0) and broke every write:
+# the DAL refuses the ontology graph outright (athena-model:916, #3356 AC4), so
+# `POST /services` answered 502 graph-dba-only and a service design could not be
+# posted through the API that generates the service's own page.
+#
+# Same SAFE-BY-CONSTRUCTION shape as VALUES_SET: riot-validate first, staged
+# load, per-subject ADDITIVE merge, then a verify that fails CLOSED when it
+# cannot ask (#3726 — a blind verify never passes).
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  SERVICES_GRAPH="${SERVICES_GRAPH:-urn:chorus:domains:services}"
+  SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
+  SERVICES_SET=(
+    "$CHORUS_ROOT/designing/data/service-instances.ttl"
+  )
+  for ttl in "${SERVICES_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "athena-deploy-model: SERVICES_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "athena-deploy-model: riot validate FAILED for SERVICES_SET $ttl — NOT deploying services" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="riot-invalid-services" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${SERVICES_SET[@]}"; do
+    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-resp.txt -w '%{http_code}' -X POST -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SERVICES_STAGING" 2>/dev/null) || scode="000"
+    if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
+      echo "athena-deploy-model: SERVICES_SET staging load failed for $ttl (http $scode)" >&2
+      head -3 /tmp/chorus-model-svc-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-staging-http-$scode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  SERVICES_MERGE="DELETE { GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SERVICES_STAGING> { ?s ?sp ?so } GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SERVICES_STAGING> { ?s ?p ?o } }"
+  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-merge.txt -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' --data-binary "$SERVICES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
+  if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
+    echo "athena-deploy-model: SERVICES_SET merge staging->services failed (http $smcode)" >&2
+    head -3 /tmp/chorus-model-svc-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-merge-http-$smcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SERVICES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SERVICES_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: SERVICES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _smissing=$(printf '%s\n' "$_sresp" | tail -1 | tr -dc '0-9')
+  if [ "${_smissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: SERVICES-VERIFY FAILED — ${_smissing:-?} staged subject(s) absent from <$SERVICES_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-verify-missing" missing="${_smissing:-unknown}" 2>/dev/null || true
+    exit 1
+  fi
+  _sn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SERVICES_GRAPH> { ?s a c:Service } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
+  echo "athena-deploy-model: hydrated ${#SERVICES_SET[@]} services file(s) -> <$SERVICES_GRAPH> (http $smcode, $_sn services live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$SERVICES_GRAPH" services="${_sn}" 2>/dev/null || true
 fi
 # PRACTICES_SET (#3754) — practice v2 instances into their ADR-051 home
 # urn:chorus:domains:practices, declared on PracticeShape's instancesGraph so
