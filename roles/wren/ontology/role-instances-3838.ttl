@@ -65,7 +65,8 @@ chorus:role-silas a chorus:Role, chorus:AgentRole ;
 # exact self-attribution hole #3651 closed. Plain chorus:Role, deliberately:
 # no new subclass minted for one member.
 chorus:role-nightly a chorus:Role ;
-    rdfs:label "nightly" ;
+    rdfs:label "nightly" ; chorus:label "nightly" ;
+    chorus:roleKind "automation" ;
     chorus:comment "The 03:00 automation identity — runs the suites, posts the results. Least-privilege principal (#3975); writes attributed to nightly, never to an agent." .
 
 chorus:role-kade a chorus:Role, chorus:AgentRole ;
