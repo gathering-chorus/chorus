@@ -807,12 +807,25 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
         Ok(o) => {
             let text = format!("{}{}",
                 String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-            let ok = o.status.success();
+            // #4016 — rc=3 is a suite's SELF-REFUSAL ("I must not run here"),
+            // not a failure. nightly-suites.sh learned this in #4004; this
+            // runner never did, and the nightly uses THIS one — so a correctly
+            // refusing suite (test-product-membrane, which bootouts every agent
+            // and needs explicit authority) kept reporting "0 pass, 1 fail".
+            // Two scorers, one taught. Both must agree or the fix is invisible.
+            let refused = o.status.code() == Some(3);
+            let ok = o.status.success() || refused;
             if !ok {
                 let tail: Vec<&str> = text.lines().rev().take(20).collect();
                 eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
             }
-            let cases = werk_test::parse_bats_cases(&text);
+            let mut cases = werk_test::parse_bats_cases(&text);
+            if refused && cases.is_empty() {
+                cases.push((
+                    format!("SELF-REFUSED rc=3 — {} declined to run here", suite),
+                    "skip".to_string(),
+                ));
+            }
             (ok, cases, text)
         }
         Err(_) => (false, Vec::new(), String::new()),
