@@ -54,6 +54,7 @@ var host = window.location.hostname;
 var grafana = 'http://' + host + ':3100';
 
 var DASHBOARDS = [
+  { slug: '/d/chorus-operations', name: 'Chorus Operations', desc: 'chorus-api request/error/latency, envelope refusals, spine by role, probes' },
   { slug: '/d/alerts-overview', name: 'Alerts Overview', desc: 'All alerts — firing, history, timeline, trends' },
   { slug: '/d/chorus-activity', name: 'Chorus Activity', desc: 'Team events, card-commit linking, session activity' },
   { slug: '/d/cost-dashboard', name: 'Cost', desc: 'Claude burn rate, per-role breakdown, monthly totals' },
