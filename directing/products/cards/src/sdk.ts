@@ -447,7 +447,15 @@ export async function auditStart(client: BoardClient, role: string): Promise<{
   return { staleNow: staleNow.length, staleNext: staleNext.length, nowCount: nowTasks.length };
 }
 
-// cog-override: auditClose: snapshot diff with multi-bucket per-card classification — pre-existing complexity, refactor candidate not in #2652 scope.
+// Prints a header + one line per task; silent when the list is empty.
+function printCardLines(header: string, tasks: BoardTask[], line: (t: BoardTask) => string): void {
+  if (tasks.length === 0) return;
+  console.log(header);
+  for (const t of tasks) {
+    console.log(line(t));
+  }
+}
+
 export async function auditClose(client: BoardClient, role: string): Promise<{
   newCards: number; newlyDone: number; retroactive: number;
 }> {
@@ -470,14 +478,10 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
   const newlyDone = currentDone.filter(t => !startDoneIds.has(t.index));
   const retroactive = newCards.filter(t => t.status === 'Done');
 
-  if (newlyDone.length > 0) {
-    console.log(`\nCompleted this session (${newlyDone.length}):`);
-    for (const t of newlyDone) {
-      const isNew = newCards.some(n => n.index === t.index);
-      const flag = isNew ? ' ⚠ RETROACTIVE' : '';
-      console.log(`  #${t.index}  ${t.title}${flag}`);
-    }
-  }
+  printCardLines(`\nCompleted this session (${newlyDone.length}):`, newlyDone, t => {
+    const flag = newCards.some(n => n.index === t.index) ? ' ⚠ RETROACTIVE' : '';
+    return `  #${t.index}  ${t.title}${flag}`;
+  });
 
   if (retroactive.length > 0) {
     console.log(`\n  WARN: ${retroactive.length} card(s) created AND completed in same session.`);
@@ -485,23 +489,15 @@ export async function auditClose(client: BoardClient, role: string): Promise<{
   }
 
   const nonDoneNew = newCards.filter(t => t.status !== 'Done');
-  if (nonDoneNew.length > 0) {
-    console.log(`\nNew cards created (${nonDoneNew.length}):`);
-    for (const t of nonDoneNew) {
-      console.log(`  [${t.status}] #${t.index}  ${t.title}`);
-    }
-  }
+  printCardLines(`\nNew cards created (${nonDoneNew.length}):`, nonDoneNew,
+    t => `  [${t.status}] #${t.index}  ${t.title}`);
 
   const startNowIds = new Set(
     startSnap.tasks.filter((t: BoardTask) => t.status === 'Now').map((t: BoardTask) => t.index)
   );
   const stillNow = currentTasks.filter(t => t.status === 'Now' && startNowIds.has(t.index));
-  if (stillNow.length > 0) {
-    console.log('\nStill In Progress (started before this session):');
-    for (const t of stillNow) {
-      console.log(`  #${t.index}  ${t.title}`);
-    }
-  }
+  printCardLines('\nStill In Progress (started before this session):', stillNow,
+    t => `  #${t.index}  ${t.title}`);
 
   emitSpineEvent('board.audit.closed', role, {
     board: boardName,

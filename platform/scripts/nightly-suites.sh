@@ -723,6 +723,50 @@ PYEOF
   _cov_denominator "$floors"
 }
 
+# #4015 — THE FOOTER. Jeff, 2026-08-26: "reports have headers and lines and data
+# and at the end everything must cross reference — its not something u just throw
+# away and start from scratch on every run."
+#
+# The ledger already exists: chorus:TestSuiteRun is the header (636 rows),
+# chorus:TestResult the lines (190,941 rows), and `werk-test reconcile` computes
+# registered-minus-executed — the cross-foot. It was built by #3592 in July and
+# NOTHING has ever called it: no caller in this script, werk.yml, any plist or
+# skill, and zero `tests.reconcile` events in the spine. So every night we recompute
+# a summary string from scratch and never ask the ledger whether it adds up.
+#
+# Three states, kept separable (#3734). A footer that cannot fail is worse than no
+# footer, because it certifies a ledger it never read:
+#   pass        the census answered and every registered test ran
+#   fail        the census answered and named tests that never ran
+#   unmeasured  the census could not be taken (domain down, binary absent)
+_reconcile_leg() {
+  local bin="${NIGHTLY_RECONCILE_BIN:-$(command -v werk-test 2>/dev/null)}"
+  if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+    echo "SUITE|reconcile|tests-domain|kade|unmeasured|0 pass, 0 fail (reconciler not found — the ledger was not cross-footed)"
+    return 0
+  fi
+  local out rc
+  # #4015 — the FLAG form, `werk-test --reconcile` (main.rs:39), not a positional
+  # subcommand: a bare `reconcile` is parsed as a CARD and the verb goes looking
+  # for a werk called kade-reconcile. Found by running it, twice — the footer
+  # honestly reported unmeasured both times, which is correct behaviour and a
+  # useless report. This is the difference between a check that refuses and a
+  # check that works.
+  out=$(ROLE="${NIGHTLY_ROLE:-kade}" "$bin" --reconcile 2>&1); rc=$?
+  local registered; registered=$(printf '%s' "$out" | sed -n 's/.*registered \([0-9][0-9]*\).*/\1/p' | head -1)
+  if [ "$rc" -ne 0 ] || [ -z "$registered" ]; then
+    local why; why=$(printf '%s' "$out" | grep -v '^\s*$' | head -1 | cut -c1-110)
+    echo "SUITE|reconcile|tests-domain|kade|unmeasured|0 pass, 0 fail (census could not be taken — ${why:-no output})"
+    return 0
+  fi
+  local never; never=$(printf '%s' "$out" | sed -n 's/.*never-run (\([0-9][0-9]*\)).*/\1/p' | head -1)
+  if [ -n "$never" ] && [ "$never" -gt 0 ] 2>/dev/null; then
+    echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — the ledger does not cross-foot)"
+  else
+    echo "SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (${registered} registered, every one executed — ledger cross-foots)"
+  fi
+}
+
 _cov_denominator() {
   local floors="$1"
   [ -d "$CHORUS_ROOT/platform/services" ] || return 0
@@ -843,6 +887,11 @@ run_all() {
   # list_npm/list_bats/list_shell/list_cucumber globs no longer drive
   # execution (kept for --list-* introspection only).
   run_cargo_lane
+
+  # #4015 — THE FOOTER, LAST. Every leg above reports what it ran; this one asks
+  # the ledger whether what ran accounts for what is registered. It goes last
+  # because a footer cross-foots the lines above it.
+  _reconcile_leg
 }
 
 # #3254 — close the loop: the instant the nightly finishes, ALERT each owning role of THEIR

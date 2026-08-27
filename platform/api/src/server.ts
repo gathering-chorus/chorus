@@ -36,6 +36,7 @@ const execAsync = promisify(exec);
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
+import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -345,6 +346,119 @@ app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301
 app.get('/werk', sendChorusPage('werk.html'));
 // #3920 — /nightly: the rendered nightly report. One page, verdict first,
 // reds on top; renders the run record the nightly writes, no re-derived verdicts.
+// #4015 — the test-run report: ONE document, two renderings. JSON at
+// /api/chorus/test-run/latest, the SAME document rendered at /test-run.
+// Jeff, 2026-08-26: "api and ui match" — the view computes nothing, so the two
+// cannot drift. `registered` and `recorded` come from the tests domain; when it
+// cannot be reached they are reported as unknown rather than guessed, because a
+// cross-foot against a fabricated denominator is worse than no cross-foot.
+async function buildLatestTestRun() {
+  const logPath = process.env.NIGHTLY_LOG_PATH
+    || path.join(process.env.HOME || '', 'Library/Logs/Chorus/nightly-suites.log');
+  // No pre-seeded '' — the catch returns, so the initial value is never read and
+  // the ratchet is right to call it dead.
+  let logText: string;
+  try { logText = fs.readFileSync(logPath, 'utf8'); } catch { return null; }
+  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+  const ask = async (q: string): Promise<number | null> => {
+    try {
+      const r = await fetch(`${fuseki}?query=${encodeURIComponent(q)}`, {
+        headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return null;
+      const last = (await r.text()).trim().split('\n').pop() || '';
+      const v = Number(last.replace(/[^0-9]/g, ''));
+      return Number.isFinite(v) ? v : null;
+    } catch { return null; }
+  };
+  const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
+  const G = '<urn:chorus:domains:tests>';
+  const registered = await ask(`${P} SELECT (COUNT(DISTINCT ?t) AS ?n) WHERE { GRAPH ${G} { ?t a c:Test } }`);
+  // #4015 — bind runTs to THIS run. Silas and Wren both caught the first version
+  // leaving ?ts unbound, which counted all 190k historical results: `recorded`
+  // came back 188,982, `dropped` computed to 0, and the page could never reach
+  // BROKEN REPORT — the precise failure this card exists to prevent, in the code
+  // written to prevent it. The run's own start time is the boundary.
+  const block = lastRunSuites(logText);
+  const started = block?.startedAt ?? '';
+  // Bound BOTH ends. A lower bound alone sweeps in every later run's results —
+  // today that was 7,197 instead of this run's own, which understates the drop.
+  const ended = block?.endedAt ?? '9999';
+  const recorded = started
+    ? await ask(`${P} SELECT (COUNT(?r) AS ?n) WHERE { GRAPH ${G} {`
+        + ` ?r a c:TestResult ; c:runTs ?ts`
+        + ` FILTER(STR(?ts) >= "${started}" && STR(?ts) <= "${ended}") } }`)
+    : null;
+  // Both reviewers caught this line contradicting the comment above it: a
+  // `?? 0` here ships a FABRICATED denominator inside a document whose entire
+  // point is that its numbers are real. There is no honest default for "the
+  // tests domain did not answer", so the route refuses — the same way it
+  // refuses when the nightly log is missing.
+  if (registered === null || recorded === null) return null;
+  return buildTestRunReport({
+    runId: 'latest', trigger: 'nightly', scope: 'full selection',
+    // null, not 0 — the runner does not report its plan, so notExecuted is
+    // unmeasured (Wren's review: a 0 here is a fabricated denominator).
+    logText, registered, recorded, notExecuted: null,
+  });
+}
+
+// #4015 — the newest run group actually IN the store, any trigger. Jeff,
+// 2026-08-27, reading the page after a day of runs: "that makes no sense to
+// show data from last night." The log-derived view above can only show runs
+// that wrote the official nightly log; this one reads the store the results
+// were saved into, so today's run is visible the moment its rows land — and a
+// run that saved nothing cannot appear here at all.
+async function latestStoredRun(): Promise<StoredRun | null> {
+  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+  const csv = async (q: string): Promise<string[] | null> => {
+    try {
+      const r = await fetch(`${fuseki}?query=${encodeURIComponent(q)}`, {
+        headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return null;
+      // Fuseki CSV lines end \r\n — an untrimmed \r made result "pass\r",
+      // which read as FAILED and showed Jeff 168 red rows on an all-green run.
+      return (await r.text()).trim().split('\n').map(l => l.replace(/\r$/, '')).slice(1);
+    } catch { return null; }
+  };
+  const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
+  const G = '<urn:chorus:domains:tests>';
+  const maxRow = await csv(`${P} SELECT (MAX(STR(?ts)) AS ?m) WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts } }`);
+  const runTs = (maxRow?.[0] || '').replace(/^"|"$/g, '');
+  if (!runTs) return null;
+  const rows = await csv(`${P} SELECT ?fp ?res WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts ; c:filePath ?fp ; c:result ?res FILTER(STR(?ts) = "${runTs.replace(/"/g, '')}") } }`);
+  if (!rows) return null;
+  const kindOf = (fp: string): string =>
+    fp.endsWith('.bats') ? 'bats'
+      : /\.test\.(ts|js)$/.test(fp) ? 'npm'
+        : fp.endsWith('.sh') ? 'shell'
+          : 'cargo';
+  const byKind = new Map<string, { kind: string; total: number; passed: number; failed: number }>();
+  let passed = 0, failed = 0;
+  for (const line of rows) {
+    const cut = line.lastIndexOf(',');
+    if (cut < 0) continue;
+    const fp = line.slice(0, cut).replace(/^"|"$/g, '');
+    const result = line.slice(cut + 1).replace(/^"|"$/g, '');
+    const k = byKind.get(kindOf(fp)) ?? { kind: kindOf(fp), total: 0, passed: 0, failed: 0 };
+    k.total += 1;
+    if (result === 'pass') { k.passed += 1; passed += 1; } else { k.failed += 1; failed += 1; }
+    byKind.set(k.kind, k);
+  }
+  return { runTs, total: rows.length, passed, failed, byKind: [...byKind.values()].sort((a, b) => b.total - a.total) };
+}
+
+app.get('/api/chorus/test-run/latest', async (_req: Request, res: Response) => {
+  const doc = await buildLatestTestRun();
+  if (!doc) { res.status(503).json({ error: 'cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers' }); return; }
+  res.json({ ...doc, latestStored: await latestStoredRun() });
+});
+
+app.get('/test-run', async (_req: Request, res: Response) => {
+  const doc = await buildLatestTestRun();
+  if (!doc) { res.status(503).send('cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers'); return; }
+  res.type('html').send(TEST_RUN_CSS + renderStoredRun(await latestStoredRun()) + '<hr>' + renderTestRun(doc));
+});
+
 app.get('/nightly', (_req: Request, res: Response) => {
   const logPath = process.env.NIGHTLY_LOG_PATH
     || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');

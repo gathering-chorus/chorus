@@ -1842,6 +1842,16 @@
         "count": "Joined cases that went unposted"
       }
     },
+    "testresult.lost": {
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "A run computed verdicts it could not store. Emitted when the writeback returns fewer entities than were joined — the run then exits 1, because a run that cannot save what it measured has not measured anything anyone can check. Found 2026-08-27: the nightly executed 7,411 tests, stored 0, and exited 0 with a verdict (#4015).",
+      "fields": {
+        "expected": "Cases the run tried to store",
+        "stored": "Cases the writeback confirmed",
+        "lost": "expected minus stored"
+      }
+    },
     "testresult.posted": {
       "vertebra": "building",
       "source": "werk",

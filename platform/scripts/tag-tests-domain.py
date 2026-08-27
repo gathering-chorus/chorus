@@ -40,6 +40,17 @@ def esc(s):
     return s.replace('\\', '\\\\').replace('"', '\\"')
 def slug(s): return re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-')[:90]
 
+def local_cap(local):
+    # athena-make's write door refuses local names >128 bytes (is_safe_local).
+    # This SPARQL path must mint within the same law, or TestResults can never
+    # reference the minted Test (ofTest edge 422s and the whole chunk is lost).
+    # rstrip: a truncation ending in '-' would mint 'x--hash'; the serve collapses
+    # runs of '-', so the stored name and the served name would disagree and every
+    # TestResult referencing it would 422 (seen live 2026-08-27).
+    if len(local) <= 128: return local
+    import hashlib
+    return local[:118].rstrip('-') + '-' + hashlib.sha1(local.encode()).hexdigest()[:9]
+
 # the generated V2 domains: the ONLY legal covers targets (no invented domains)
 GEN = {x['name'] for x in json.load(urllib.request.urlopen(f"{OWLAPI}/domains", timeout=6))['data']}
 # #3825 — one live domain is served capitalized ('Properties'); resolve config
@@ -72,7 +83,7 @@ KW = [(r'secret|gitleaks|scrubber|sensitive|credential|leak','security'),(r'aler
  (r'ci-|nightly','cicd'),(r'hook|gate|guard|bouncer','cicd'),(r'demo|werk|run-tests|manifest|jest-randomize','builds'),
  (r'env-setup|building|pipeline|act-','builds'),(r'deploy|launch','deploys'),(r'promtail','logs'),(r'search|fts','search'),
  (r'force-push','version-control'),(r'filedependson|fileindomain','search'),(r'crawl|index|convergence','search'),
- (r'session|correlation|frustration','pulse'),(r'operating-model|reference-model','domains'),
+ (r'session|correlation|frustration','messages'),(r'operating-model|reference-model','domains'),
  (r'git|commit|merge|branch','version-control')]
 
 def cardlookup(n):
@@ -270,7 +281,7 @@ def main():
         sf = f"{NS}sf-{slug(p)}"
         batch.append(f'<{sf}> a chorus:SourceFile ; chorus:filePath "{esc(p)}" .')
         for nm in cs:
-            ti = f"{NS}test-{slug(p)}-{slug(nm)}"
+            ti = f"{NS}{local_cap(f'test-{slug(p)}-{slug(nm)}')}"
             if ti in seen: continue
             seen.add(ti)
             t = (f'<{ti}> a chorus:Test ; chorus:filePath "{esc(p)}" ; chorus:testName "{esc(nm[:160])}" ; '
