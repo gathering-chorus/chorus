@@ -415,7 +415,9 @@ async function latestStoredRun(): Promise<StoredRun | null> {
       const r = await fetch(`${fuseki}?query=${encodeURIComponent(q)}`, {
         headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
       if (!r.ok) return null;
-      return (await r.text()).trim().split('\n').slice(1);
+      // Fuseki CSV lines end \r\n — an untrimmed \r made result "pass\r",
+      // which read as FAILED and showed Jeff 168 red rows on an all-green run.
+      return (await r.text()).trim().split('\n').map(l => l.replace(/\r$/, '')).slice(1);
     } catch { return null; }
   };
   const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
