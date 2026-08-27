@@ -388,24 +388,27 @@ async function buildLatestTestRun() {
         + ` ?r a c:TestResult ; c:runTs ?ts`
         + ` FILTER(STR(?ts) >= "${started}" && STR(?ts) <= "${ended}") } }`)
     : null;
+  // Both reviewers caught this line contradicting the comment above it: a
+  // `?? 0` here ships a FABRICATED denominator inside a document whose entire
+  // point is that its numbers are real. There is no honest default for "the
+  // tests domain did not answer", so the route refuses — the same way it
+  // refuses when the nightly log is missing.
+  if (registered === null || recorded === null) return null;
   return buildTestRunReport({
     runId: 'latest', trigger: 'nightly', scope: 'full selection',
-    // No `?? 0` on registered: a fabricated denominator produces a cross-foot
-    // that looks authoritative and is not (Silas, #4015). Unknown stays unknown.
-    logText, registered: registered ?? 0, recorded: recorded ?? 0,
-    notExecuted: 0,
+    logText, registered, recorded, notExecuted: 0,
   });
 }
 
 app.get('/api/chorus/test-run/latest', async (_req: Request, res: Response) => {
   const doc = await buildLatestTestRun();
-  if (!doc) { res.status(503).json({ error: 'no nightly log — cannot build a report' }); return; }
+  if (!doc) { res.status(503).json({ error: 'cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers' }); return; }
   res.json(doc);
 });
 
 app.get('/test-run', async (_req: Request, res: Response) => {
   const doc = await buildLatestTestRun();
-  if (!doc) { res.status(503).send('no nightly log — cannot build a report'); return; }
+  if (!doc) { res.status(503).send('cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers'); return; }
   res.type('html').send(TEST_RUN_CSS + renderTestRun(doc));
 });
 
