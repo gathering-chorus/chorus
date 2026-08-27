@@ -36,7 +36,7 @@ const execAsync = promisify(exec);
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
-import { buildTestRunReport, lastRunSuites, renderTestRun, TEST_RUN_CSS } from './handlers/test-run-report';
+import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -402,16 +402,59 @@ async function buildLatestTestRun() {
   });
 }
 
+// #4015 — the newest run group actually IN the store, any trigger. Jeff,
+// 2026-08-27, reading the page after a day of runs: "that makes no sense to
+// show data from last night." The log-derived view above can only show runs
+// that wrote the official nightly log; this one reads the store the results
+// were saved into, so today's run is visible the moment its rows land — and a
+// run that saved nothing cannot appear here at all.
+async function latestStoredRun(): Promise<StoredRun | null> {
+  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+  const csv = async (q: string): Promise<string[] | null> => {
+    try {
+      const r = await fetch(`${fuseki}?query=${encodeURIComponent(q)}`, {
+        headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return null;
+      return (await r.text()).trim().split('\n').slice(1);
+    } catch { return null; }
+  };
+  const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
+  const G = '<urn:chorus:domains:tests>';
+  const maxRow = await csv(`${P} SELECT (MAX(STR(?ts)) AS ?m) WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts } }`);
+  const runTs = (maxRow?.[0] || '').replace(/^"|"$/g, '');
+  if (!runTs) return null;
+  const rows = await csv(`${P} SELECT ?fp ?res WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts ; c:filePath ?fp ; c:result ?res FILTER(STR(?ts) = "${runTs.replace(/"/g, '')}") } }`);
+  if (!rows) return null;
+  const kindOf = (fp: string): string =>
+    fp.endsWith('.bats') ? 'bats'
+      : /\.test\.(ts|js)$/.test(fp) ? 'npm'
+        : fp.endsWith('.sh') ? 'shell'
+          : 'cargo';
+  const byKind = new Map<string, { kind: string; total: number; passed: number; failed: number }>();
+  let passed = 0, failed = 0;
+  for (const line of rows) {
+    const cut = line.lastIndexOf(',');
+    if (cut < 0) continue;
+    const fp = line.slice(0, cut).replace(/^"|"$/g, '');
+    const result = line.slice(cut + 1).replace(/^"|"$/g, '');
+    const k = byKind.get(kindOf(fp)) ?? { kind: kindOf(fp), total: 0, passed: 0, failed: 0 };
+    k.total += 1;
+    if (result === 'pass') { k.passed += 1; passed += 1; } else { k.failed += 1; failed += 1; }
+    byKind.set(k.kind, k);
+  }
+  return { runTs, total: rows.length, passed, failed, byKind: [...byKind.values()].sort((a, b) => b.total - a.total) };
+}
+
 app.get('/api/chorus/test-run/latest', async (_req: Request, res: Response) => {
   const doc = await buildLatestTestRun();
   if (!doc) { res.status(503).json({ error: 'cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers' }); return; }
-  res.json(doc);
+  res.json({ ...doc, latestStored: await latestStoredRun() });
 });
 
 app.get('/test-run', async (_req: Request, res: Response) => {
   const doc = await buildLatestTestRun();
   if (!doc) { res.status(503).send('cannot build a report — the nightly log or the tests domain did not answer; refusing to report fabricated numbers'); return; }
-  res.type('html').send(TEST_RUN_CSS + renderTestRun(doc));
+  res.type('html').send(TEST_RUN_CSS + renderStoredRun(await latestStoredRun()) + '<hr>' + renderTestRun(doc));
 });
 
 app.get('/nightly', (_req: Request, res: Response) => {

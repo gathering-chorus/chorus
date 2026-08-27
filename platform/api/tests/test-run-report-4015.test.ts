@@ -16,6 +16,7 @@ import {
   crossFootChecks,
   reportVerdict,
   renderTestRun,
+  renderStoredRun,
   buildTestRunReport,
 } from '../src/handlers/test-run-report';
 
@@ -196,5 +197,26 @@ describe('#4015 demo finding — recorded measures against STORABLE, not execute
     const cf = { ...RECONCILED.crossFoot, storable: 60, recorded: 10, dropped: 50 };
     const check = crossFootChecks(cf).find(c => c.name.startsWith('results stored'));
     expect(check!.state).toBe('fail');
+  });
+});
+
+describe('#4015 — the store-derived "most recent stored run" section', () => {
+  it('renders the newest stored run from row counts alone', () => {
+    // Jeff, 2026-08-27: "that makes no sense to show data from last night."
+    // This section reads the store, so a run is visible the moment its rows land.
+    const html = renderStoredRun({
+      runTs: '2026-08-27T16:38:00-04:00', total: 218, passed: 211, failed: 7,
+      byKind: [{ kind: 'npm', total: 160, passed: 158, failed: 2 },
+               { kind: 'cargo', total: 58, passed: 53, failed: 5 }],
+    });
+    expect(html).toContain('2026-08-27T16:38:00-04:00');
+    expect(html).toContain('218');
+    expect(html).toContain('reads the store, not the log');
+  });
+
+  it('negative proof: an empty store yields a refusal, never an invented run', () => {
+    const html = renderStoredRun(null);
+    expect(html).toContain('will not invent one');
+    expect(html).not.toContain('<table');
   });
 });

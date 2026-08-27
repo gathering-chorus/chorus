@@ -210,6 +210,33 @@ export function renderTestRun(r: TestRunReport): string {
 <table class="footer">${droppedRow}</table>`;
 }
 
+/** The newest run group actually IN the store, regardless of trigger — every
+ *  figure here is a count of saved rows, so this section can never show a run
+ *  whose evidence was lost. Exists because the nightly-log view above showed
+ *  Jeff yesterday's run after a day of runs whose results never reached the
+ *  log (2026-08-27). */
+export interface StoredRun {
+  runTs: string;
+  total: number;
+  passed: number;
+  failed: number;
+  byKind: Array<{ kind: string; total: number; passed: number; failed: number }>;
+}
+
+export function renderStoredRun(sr: StoredRun | null): string {
+  if (!sr) {
+    return '<h2 class="stored">Most recent stored run</h2>'
+      + '<p>the tests domain holds no stored runs — nothing to show, and this page will not invent one</p>';
+  }
+  const rows = sr.byKind.map(k =>
+    `<tr><td>${esc(k.kind)}</td><td class="n">${n(k.passed)}</td>` +
+    `<td class="n">${n(k.failed)}</td><td class="n">${n(k.total)}</td></tr>`).join('');
+  return `<h2 class="stored">Most recent stored run — ${esc(sr.runTs)}</h2>
+<p>every row counted here is a result row saved in the model at that timestamp — this section reads the store, not the log, so a run that saved nothing cannot appear on it</p>
+<table class="storedrun"><tr><th>kind</th><th class="n">passed</th><th class="n">failed</th><th class="n">stored</th></tr>${rows}
+<tr class="total"><td><strong>total</strong></td><td class="n">${n(sr.passed)}</td><td class="n">${n(sr.failed)}</td><td class="n">${n(sr.total)}</td></tr></table>`;
+}
+
 // ── building the document from a real run ──────────────────────────────────────
 
 /** One SUITE row as the nightly log writes it. */
