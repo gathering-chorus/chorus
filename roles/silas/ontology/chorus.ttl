@@ -636,6 +636,11 @@ chorus:hasOwner a owl:ObjectProperty ;
 # SHACL: every Document must have at least one domain tag
 chorus:DocumentShape a sh:NodeShape ;
     sh:targetClass chorus:Document ;
+    # #3860 — declared home (#3647). Without this pin the pen defaulted Document
+    # writes to urn:chorus:instances while athena-make serves Documents from
+    # urn:chorus:domains:documents: written-but-never-served. Pin makes pen and
+    # serve agree. TBox edit in Wren's round (paired card) — flagged for gate-arch.
+    chorus:instancesGraph "urn:chorus:domains:documents" ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
@@ -649,6 +654,28 @@ chorus:DocumentShape a sh:NodeShape ;
         sh:path chorus:docTitle ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
+    ] ;
+    # #3860 — the shape said Documents are title+domain only, but every LIVE
+    # Document carries docHref/comment/ownedBy (written pre-generator). The
+    # generated write door refuses off-shape props, so the catalog-link card
+    # could not write the href that makes a Document reachable. Model the
+    # properties the data already has; don't loosen the gate around them.
+    sh:property [
+        sh:path chorus:docHref ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:comment ;
+        sh:datatype xsd:string ;
+    ] ;
+    sh:property [
+        sh:path chorus:ownedBy ;
+        sh:class chorus:Role ;
+    ] ;
+    sh:property [
+        sh:path chorus:hasProduct ;
+        sh:class chorus:Product ;
     ] .
 
 # =============================================================================
@@ -732,7 +759,13 @@ chorus:talk a chorus:Tool ;
     chorus:color "#22d3ee" ;
     chorus:status "planned" .
 
-chorus:clearing a chorus:Tool ;
+# #3860 — the Tool typing MOVED off chorus:clearing. One IRI carried
+# chorus:Tool (label "/clearing", a route) AND chorus:Product (label "The
+# Clearing") — dual-typed, so every surface reading "the Clearing product" got
+# a Tool named after its URL path (gc-one-home-per-subject flagged it). The
+# viz entry keeps its own IRI; the product keeps the bare one (ADR-040 bare
+# grain for products).
+chorus:clearing-tool a chorus:Tool ;
     rdfs:label "/clearing" ;
     rdfs:comment "Multi-party chat — Jeff + all roles in browser. Real-time alignment." ;
     chorus:toolType chorus:Interaction ;
@@ -3047,8 +3080,8 @@ chorus:kade chorus:operatesAt chorus:Building, chorus:Proving, chorus:Designing 
 chorus:look chorus:feeds chorus:Capturing .
 chorus:listen chorus:feeds chorus:Capturing .
 chorus:talk chorus:feeds chorus:Directing .
-chorus:clearing chorus:feeds chorus:Directing .
-chorus:clearing chorus:indexes chorus:chorusTool .
+chorus:clearing-tool chorus:feeds chorus:Directing .   # #3860 — tool edges follow the tool IRI
+chorus:clearing-tool chorus:indexes chorus:chorusTool .
 chorus:borg chorus:feeds chorus:Designing .
 chorus:borg chorus:decomposes chorus:gathering .
 

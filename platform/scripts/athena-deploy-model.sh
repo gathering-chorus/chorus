@@ -67,6 +67,15 @@ else
     # uniqueWithin/uniqueGlobal annotations). Enters MODEL_SET the day authored so
     # read_shape (which queries urn:chorus:ontology) can see the shapes and the
     # retire-guard doesn't wipe the live-only domain (#3587/#3593 wipe class).
+    # #3860 — the Clearing's four domains get vocabulary: SpineEvent (events),
+    # Message/Nudge (messages), and the definesVocabulary claims for cards.
+    # Day-authored MODEL_SET discipline (#3654/#3686) — never live-only.
+    "$CHORUS_ROOT/roles/wren/ontology/clearing-domains-3860.ttl"
+    # #3860 — the #4010 memory OWL (Memory/ShortTerm/LongTerm/Knowledge) was
+    # landed-but-never-deployed (#3881 class; chorus:Memory reached the store by
+    # an ungoverned side path). Joins MODEL_SET with the memory/knowledge domain
+    # floors (previously live-only, #3587 wipe class) + their vocab claims.
+    "$CHORUS_ROOT/roles/wren/ontology/memory-4010.ttl"
     "$CHORUS_ROOT/roles/wren/ontology/board-3654.ttl"
     # #3686 — role-level hard priorities: rolePriority (Role, uniqueGlobal) +
     # ownerSequence (Product/Domain, uniqueWithin ownedBy) as ADDITIVE shapes.

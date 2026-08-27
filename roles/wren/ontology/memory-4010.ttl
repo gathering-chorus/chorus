@@ -49,3 +49,39 @@ chorus:MemoryShape a sh:NodeShape ;
     sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
     chorus:instancesGraph "urn:chorus:domains:memory" ;
     chorus:generatedBy "athena-model" .
+
+# --- #3860 demo-bar leg: the memory and knowledge DOMAINS claim this vocabulary,
+# and their floors move from live-only into the MODEL_SET (this file joins
+# MODEL_SET with this change — it was landed-but-never-deployed, the #3881
+# class; chorus:Memory reached the store by an ungoverned side path).
+# Floors are copied verbatim from the live store (measured 13:12) so bringing
+# the subjects into a deployed file cannot wipe them (#3587 wipe class).
+
+chorus:memory a owl:Class, chorus:Domain ;
+    rdfs:label "memory" ;
+    chorus:comment "Persistent context across sessions — indexed sessions and artifacts." ;
+    chorus:purpose "Keep persistent context across sessions — indexed sessions, artifacts, and recall." ;
+    chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:repoTarget "platform/api/src/index-worker.ts" ;
+    chorus:definesVocabulary chorus:Memory, chorus:ShortTermMemory, chorus:LongTermMemory .
+
+chorus:knowledge a owl:Class, chorus:Domain ;
+    rdfs:label "knowledge" ;
+    chorus:comment "Structured facts about the team, products, and their history." ;
+    chorus:purpose "Hold structured, queryable facts about the team, its products, and their history." ;
+    chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
+    chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+    chorus:repoTarget "knowledge" ;
+    chorus:definesVocabulary chorus:Knowledge .
+
+# #3860 — Knowledge gets its OWN shape. Without one, athena-make advertises
+# the route (/knowledge lists api:/knowledges from the claim) but mounts
+# nothing — advertised-but-not-served. A class serves when a sh:targetClass
+# shape exists; modeled here, not special-cased in the generator.
+chorus:KnowledgeShape a sh:NodeShape ;
+    sh:targetClass chorus:Knowledge ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path rdfs:comment ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:domains:knowledge" ;
+    chorus:generatedBy "athena-model" .

@@ -1,0 +1,120 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #3860 — the Clearing's four domains get their VOCABULARY.
+#
+# Measured 2026-08-27: all four bare Domain instances (cards, events, messages,
+# streams) exist with the full floor — owner, step, purpose, partOf
+# product-clearing. What three of them lacked was definesVocabulary, and
+# athena-make serves EXACTLY definesVocabulary-claimed classes — so cards,
+# events and messages were domains with empty shelves: real labels, nothing a
+# caller could reach.
+#
+#   cards      Card + Chunk classes EXISTED, unclaimed by any domain
+#   events     no class at all — the spine's own domain, unmodelled
+#   messages   no class at all — nudges/bridge messages, unmodelled
+#   streams    already claims StreamEvent (the one that was done right)
+#
+# This file adds the missing classes + claims. Jeff, same morning: "we have
+# similar use cases for clearing and athena and chorus/pulse... pulse
+# especially around the shared awareness case" — messages and events ARE the
+# raw material of shared awareness; Pulse's own vocabulary rides #4018.
+
+# --- cards: claim the classes that already exist --------------------------
+chorus:cards chorus:definesVocabulary chorus:Card , chorus:Chunk .
+
+# --- events: the spine event, modelled ------------------------------------
+# One class for the one thing the spine holds. Properties mirror the envelope
+# every emitter already writes (spine-events.json is the ground truth #3143
+# will later enforce by construction).
+chorus:SpineEvent a owl:Class ;
+    rdfs:label "SpineEvent" ;
+    rdfs:comment "One line of the spine (~/.chorus/chorus.log): a timestamped, role-attributed event with a dotted-name kind. The unit of the team's observable history — never rotated, never truncated." .
+
+chorus:eventKind a owl:DatatypeProperty ;
+    rdfs:label "eventKind" ; rdfs:domain chorus:SpineEvent ;
+    rdfs:comment "The dotted event name (e.g. card.pulled, demo.presented, agent.activity)." .
+
+chorus:emittedBy a owl:ObjectProperty ;
+    rdfs:label "emittedBy" ; rdfs:domain chorus:SpineEvent ; rdfs:range chorus:Role ;
+    rdfs:comment "The role the event is attributed to. Unattributed events are the drop-class #3959 made visible." .
+
+chorus:SpineEventShape a sh:NodeShape ;
+    sh:targetClass chorus:SpineEvent ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:eventKind ; sh:minCount 1 ; sh:datatype xsd:string ] .
+
+chorus:events chorus:definesVocabulary chorus:SpineEvent .
+
+# --- messages: the nudge and its parent, modelled -------------------------
+chorus:Message a owl:Class ;
+    rdfs:label "Message" ;
+    rdfs:comment "A direct role-to-role or Jeff-to-role communication carried by the bridge/messaging API (localhost:3475) — persisted, attributable, deliverable." .
+
+chorus:Nudge a owl:Class ;
+    rdfs:subClassOf chorus:Message ;
+    rdfs:label "Nudge" ;
+    rdfs:comment "A Message that REQUIRES a response or action (DEC-1571 rule 5): the sender is waiting. Persist AND deliver, both paths, every time (DEC-107)." .
+
+chorus:sentBy a owl:ObjectProperty ;
+    rdfs:label "sentBy" ; rdfs:domain chorus:Message ; rdfs:range chorus:Role .
+
+chorus:sentTo a owl:ObjectProperty ;
+    rdfs:label "sentTo" ; rdfs:domain chorus:Message ; rdfs:range chorus:Role .
+
+chorus:MessageShape a sh:NodeShape ;
+    sh:targetClass chorus:Message ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path rdfs:label    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:sentBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:sentTo ; sh:minCount 1 ; sh:class chorus:Role ] .
+
+chorus:messages chorus:definesVocabulary chorus:Message , chorus:Nudge .
+
+# --- #3860 demo-bar leg (Jeff, 2026-08-27): the four domains get their FLOOR --
+# Measured 12:41: cards/events/messages/streams hold ONLY definesVocabulary in
+# urn:chorus:ontology — no type, label, owner, step, product. The floor this
+# morning's measurement saw was live-only, and the vocab deploy's additive merge
+# replaced those subjects (#3587 wipe class). Day-authored MODEL_SET discipline
+# (#3654/#3686): the floor lives HERE so no future deploy can wipe it again.
+# Template = domains-wren-silas.ttl / live spine+memory floors.
+
+chorus:cards a owl:Class, chorus:Domain ;
+  rdfs:label "cards" ;
+  chorus:comment "Work items and their chunks — the team's one board." ;
+  chorus:purpose "Hold the team's work as cards and chunks — one board, one WIP discipline, every commitment visible." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-werk ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "directing/products/cards" .
+  # partOf product-werk per #3603 ("work tracking is the werk pipeline's bounded
+  # context; cheap model edit if overruled") — chorus.ttl already claims it.
+
+chorus:events a owl:Class, chorus:Domain ;
+  rdfs:label "events" ;
+  chorus:comment "The spine's event lines — timestamped, role-attributed history of everything the team does." ;
+  chorus:purpose "Make the team's history observable as data: one event vocabulary every emitter shares." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-spine ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/scripts/chorus-log" .
+
+chorus:messages a owl:Class, chorus:Domain ;
+  rdfs:label "messages" ;
+  chorus:comment "Direct role-to-role and Jeff-to-role communication — persisted, attributable, deliverable." ;
+  chorus:purpose "Carry the team's conversations as data: every message persisted and attributed, every nudge answerable." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-clearing ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/api" .
+
+chorus:streams a owl:Class, chorus:Domain ;
+  rdfs:label "streams" ;
+  chorus:comment "Live event streams — the Clearing's real-time feed of spine, session, and log flow." ;
+  chorus:purpose "Turn the spine into something watchable live — streams a person or role can sit on." ;
+  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:product-clearing ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/api" .
+  # ownedBy silas — observation layer (CLAUDE.md ownership split), matching the
+  # V1 streams-domain SubDomain attribution.

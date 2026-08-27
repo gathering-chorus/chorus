@@ -57,6 +57,17 @@ chorus:role-silas a chorus:Role, chorus:AgentRole ;
     chorus:comment "Architect. Observation layer, identity, authN." ;
     chorus:rolePriority 2 .
 
+# #3860/#3985 — the nightly runs as its OWN role, not borrowed agent identity.
+# The write door resolves agent_id from holdsRole; principal-nightly had
+# identity + scope but no role, so every batch write 403'd and the test ledger
+# stored nothing. A distinct role keeps nightly writes attributed as "nightly"
+# — reusing an agent role would let automation masquerade as a person, the
+# exact self-attribution hole #3651 closed. Plain chorus:Role, deliberately:
+# no new subclass minted for one member.
+chorus:role-nightly a chorus:Role ;
+    rdfs:label "nightly" ;
+    chorus:comment "The 03:00 automation identity — runs the suites, posts the results. Least-privilege principal (#3975); writes attributed to nightly, never to an agent." .
+
 chorus:role-kade a chorus:Role, chorus:AgentRole ;
     chorus:roleKind "agent" ;
     rdfs:label "Kade" ; chorus:label "Kade" ;
