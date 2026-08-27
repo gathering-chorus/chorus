@@ -1,44 +1,44 @@
-# Daily Quality Review — 2026-08-26
+# Daily Quality Review — 2026-08-27
 
 > **Path map:** `directing/clearing` → app; `platform/{workflow-engine,chorus-sdk,pulse}` → suites. `jeff-bridwell-personal-site` and `messages/*` do not exist in this repo.
 
 ## App Tests (`directing/clearing`)
-**RED** — BLOCKED: `ts-jest` preset not found (package-level node_modules incomplete). **Day 75.**
-- Root-level jest discovers 439 suites repo-wide: **438 failed, 1 passed, 4 tests run.** (New signal — root jest now loading suites.)
-- Package-level jest in `directing/clearing` still blocked: 0 tests run.
-- **Action:** `npm ci` across all packages to restore node_modules.
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 76.**
+- Package-level jest blocked; 0 tests run.
+- **Action:** `npm ci` in `directing/clearing`.
 
 ## Lint
-**RED** — BLOCKED: `@eslint/js` not found in root node_modules. **Day 77.**
-- Persistent since 2026-06-09. No change.
-- **Action:** `npm ci` at repo root.
+**RED** — BLOCKED: ESLint `src/` pattern not found at repo root. **Day 78.**
+- `src/` exists inside `directing/clearing/` but not at root; lint command targets wrong path.
+- **Action:** Fix ESLint target path OR run from `directing/clearing`.
 
 ## Build (TypeScript)
-**YELLOW** — 238 type errors (root tsconfig). **Up +4 from yesterday's 234.**
-- Error trend: … → 235 → 235 → 234 → 234 → **238**. Small uptick; watch for continuation.
-- **Action:** Monitor. If trend continues upward tomorrow, investigate new commits.
+**RED** — **946 errors** (up from ~238 yesterday, **+708 new errors**).
+- Error trend: 234 → 235 → 234 → 238 → **946**. Massive spike today.
+- All new errors: `@types/jest` missing — `describe`/`test`/`expect` not found in test files.
+- Root cause likely: `@types/jest` removed from root `node_modules` or tsconfig now includes test files.
+- **Action (urgent):** Investigate `@types/jest` removal. Run `npm ls @types/jest` to confirm. This is a new regression as of 2026-08-27.
 
 ## Board-Client
-**N/A** — No `messages/board-client` in this repo. Maps to `platform/` suites.
+**N/A** — No `messages/board-client` in this repo.
 
 ## Workflow-Engine (`platform/workflow-engine`)
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 75.**
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 76.**
 - **Action:** `npm ci` in `platform/workflow-engine`.
 
 ## Chorus-SDK (`platform/chorus-sdk`)
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 75.**
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 76.**
 - **Action:** `npm ci` in `platform/chorus-sdk`.
 
 ## Slack-Bridge → Pulse (`platform/pulse`)
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 75.**
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 76.**
 - **Action:** `npm ci` in `platform/pulse`.
 
 ## Coverage
-**N/A** — All suites blocked; no data. Last known: clearing YELLOW, workflow-engine GREEN, chorus-sdk RED (funcs 62%), pulse GREEN (2026-06-09).
+**N/A** — All suites blocked; no data.
 
-## Failure Delta (vs 2026-08-25)
-- **BUILD:** Type errors +4 (234 → **238**). First increase after two-day plateau. Watch.
-- **NEW SIGNAL:** Root-level jest now surfaces 439 suites repo-wide (438 failing). Previously reported as 0 run. Root ts-jest may be partially resolving.
-- **UNCHANGED:** All 4 package-level test suites blocked by `ts-jest preset not found` — **day 75**.
-- **UNCHANGED:** Lint blocked (`@eslint/js`) — **day 77**.
-- **Primary blocker:** `npm ci` at repo root + all sub-packages. **77 days unresolved. Escalation overdue.**
+## Failure Delta (vs 2026-08-26)
+- **BUILD: NEW REGRESSION** — TS errors spiked 238 → **946** (+708). All `@types/jest` type errors. Investigate immediately.
+- **UNCHANGED:** All 4 package-level test suites blocked (`ts-jest preset not found`) — **day 76**.
+- **UNCHANGED:** Lint blocked (`ESLint src/ not found`) — **day 78**.
+- **Root blocker (76 days):** `npm ci` at repo root + all sub-packages. Escalation overdue.
