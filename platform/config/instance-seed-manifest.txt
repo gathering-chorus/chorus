@@ -14,9 +14,3 @@ value-stream-step:designing/data/value-stream-step-instances.ttl
 # #3838 — the four roles: before this they existed only in the live store, so
 # no deploy could reproduce ownedBy/holdsRole targets.
 role:roles/wren/ontology/role-instances-3838.ttl
-# #4010 — Pulse's product record. ProductShape's instancesGraph is
-# urn:chorus:instances, but the eight served products were live-only while
-# product-instances.ttl authored `product-*` twins into urn:chorus:ontology,
-# which /products never reads. Editing the design there deployed and changed
-# nothing. This line makes the served record the authored one.
-product:designing/data/product-abox-pulse-4010.ttl

@@ -66,7 +66,7 @@ chorus:product-pulse a chorus:Product ;
     chorus:audience "Jeff at a glance, the roles for mutual observation, alerting as a consumer." ;
     chorus:valueProposition "Silence becomes a signal: heartbeats and declared states let the roles watch each other, so Jeff is never the first to notice a stall." ;
     chorus:vision "The running team is legible at a glance — who is alive, building, blocked, or dark, without anyone asking." ;
-    chorus:gaps "NOT THE SERVED RECORD (#4010). ProductShape reads urn:chorus:instances; this file deploys to urn:chorus:ontology, so nothing here reaches /products/pulse. Pulse's design text lives on chorus:pulse, authored in designing/data/product-abox-pulse-4010.ttl. Edit there. This record survives only for the structural edges other subjects point at, pending the IRI convergence (#1772)." .
+    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Nudge-delivery health (no-window failures) still alerts. Pulse domain newly authored in #3603." .
 
 chorus:product-convergence a chorus:Product ;
     rdfs:label "Convergence" ; chorus:label "Convergence" ;

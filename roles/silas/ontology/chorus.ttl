@@ -634,39 +634,18 @@ chorus:hasOwner a owl:ObjectProperty ;
     rdfs:range chorus:Role .
 
 # SHACL: every Document must have at least one domain tag
-# #4010 — WHY THERE WERE ZERO DOCUMENTS FOR MONTHS.
-#
-# Every product in this file carries `gaps "hasDesignDoc unfilled (no Document
-# instances in graph)"`, and ProductShape/ServiceShape both require hasDesignDoc
-# minCount 1. The shape below is why nobody could satisfy it: it demanded
-# hasDomain of class chorus:SubDomain, and SubDomain was re-levelled away by
-# #3509 — so the shape asked for a class no live instance can hold. An
-# unsatisfiable shape does not fail loudly; the set just stays empty and the gap
-# text gets copied onto the next product.
-#
-# hasDomain now ranges over chorus:Domain (the level that survived). docHref is
-# required because a document nobody can open is a row, not a document. The
-# instances graph is DECLARED here per ADR-051 so reader and writer are the same
-# graph by construction.
 chorus:DocumentShape a sh:NodeShape ;
     sh:targetClass chorus:Document ;
     sh:property [
         sh:path chorus:hasDomain ;
         sh:minCount 1 ;
-        sh:class chorus:Domain ;
+        sh:class chorus:SubDomain ;
     ] ;
     sh:property [
         sh:path chorus:docTitle ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path chorus:docHref ;
-        sh:minCount 1 ;
-        sh:datatype xsd:string ;
-    ] ;
-    chorus:instancesGraph "urn:chorus:domains:documents" ;
-    chorus:generatedBy "athena-model" .
+    ] .
 
 # =============================================================================
 # 2d. SERVICES (from product ontology)
@@ -2396,7 +2375,7 @@ chorus:ServiceShape a sh:NodeShape ;
     #   · UNMARKED = hidden (fail-closed). Proven live: unauth→label/status; authed adds
     #   overview; implementationPlan (secret) + every unmarked field absent in both.
     sh:property [ sh:path rdfs:label                ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
-    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4010 (Silas's split, his lane): overview/asIs/toBe are public — they say what the service IS and where it is going. gaps/notInScope/pathToClose are signed-in: a list of what we have not covered reads as a roadmap to anyone hostile.
+    sh:property [ sh:path chorus:overview           ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4010 — Silas's tiers (his lane, his call): overview/asIs/toBe public; gaps/notInScope/pathToClose signed-in (a list of what is uncovered reads as a roadmap to anyone hostile); implementationPlan stays secret.
     sh:property [ sh:path chorus:ownedBy            ; sh:minCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path [ sh:inversePath chorus:hosts ] ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain ] ;  # exactly one hosting Domain
     sh:property [ sh:path chorus:atStep             ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;

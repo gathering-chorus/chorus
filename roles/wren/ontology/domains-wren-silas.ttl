@@ -49,17 +49,6 @@ chorus:values a owl:Class, chorus:Domain ;
   chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "loom/values" ; chorus:definesVocabulary chorus:Value .
 
-# #4010 — documents is a domain so chorus:Document can be SERVED. athena-make
-# serves exactly definesVocabulary-claimed classes, so an unclaimed Document
-# class is inert no matter how many instances exist — which is the second half
-# of why /documents 404s and hasDesignDoc reads ABSENT everywhere.
-chorus:documents a owl:Class, chorus:Domain ;
-  rdfs:label "documents" ; chorus:comment "The doc catalog as data — service designs, product designs, ADRs, research notes, tagged by product, domain and step." ;
-  chorus:purpose "Hold the team's documents as first-class instances so a product can point at its design and the page can be projected from the model." ;
-  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
-  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/docs" ; chorus:definesVocabulary chorus:Document .
-
 chorus:policies a owl:Class, chorus:Domain ;
   rdfs:label "policies" ; chorus:comment "Rules that enforce principles in practice — hooks, guards, gates." ;
   chorus:purpose "Turn principles into enforced rules — the hooks, guards, and gates that hold the line." ;
