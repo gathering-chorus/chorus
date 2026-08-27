@@ -69,6 +69,23 @@ export function reportVerdict(r: TestRunReport): 'PASS' | 'FAIL' | 'BROKEN REPOR
   return r.crossFoot.failed > 0 ? 'FAIL' : 'PASS';
 }
 
+
+/** Minimal styling for the rendered view. Presentation only — it carries no
+ *  numbers, which is what keeps "api and ui match" true by construction. */
+export const TEST_RUN_CSS = `<style>
+:root{--paper:#fbfbfc;--ink:#16181d;--muted:#626a78;--line:#e3e5ea;--pass:#1c7c34;--fail:#c0392b}
+@media(prefers-color-scheme:dark){:root{--paper:#121317;--ink:#e9eaee;--muted:#9aa2b1;--line:#292b33;--pass:#5dd879;--fail:#ff7568}}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 -apple-system,system-ui,sans-serif;max-width:64rem;margin:0 auto;padding:2rem 1rem}
+h1{font-size:1.3rem;margin:0 0 .3rem}
+.verdict{font:600 1.6rem/1.2 ui-monospace,monospace;margin:.2rem 0 1rem}
+.verdict.ok{color:var(--pass)}.verdict.bad{color:var(--fail)}
+table{width:100%;border-collapse:collapse;font-size:.88rem;margin:1.2rem 0}
+th{text-align:left;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:.35rem .5rem;border-bottom:1px solid var(--line)}
+td{padding:.32rem .5rem;border-bottom:1px solid var(--line)}
+td.n,th.n{text-align:right;font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums}
+tr.bad td{color:var(--fail)}tr.ok td:last-child{color:var(--pass)}
+</style>`
+
 const esc = (s: string) => s.replace(/[&<>"]/g, ch =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch] as string));
 const n = (v: number) => v.toLocaleString('en-US');
@@ -103,4 +120,107 @@ export function renderTestRun(r: TestRunReport): string {
 <table class="crossfoot"><tr><th>check</th><th class="n">is</th><th class="n">should be</th><th></th></tr>${foot}</table>
 <table class="kinds"><tr><th>kind</th><th class="n">suites</th><th class="n">passed</th><th class="n">failed</th><th class="n">cases</th><th>a case is</th></tr>${kinds}</table>
 <table class="footer">${droppedRow}</table>`;
+}
+
+// ── building the document from a real run ──────────────────────────────────────
+
+/** One SUITE row as the nightly log writes it. */
+interface SuiteRow { kind: string; path: string; owner: string; status: string; summary: string }
+
+/** What a case means, per kind — stated in the document so the page never has to
+ *  know. A kind that cannot name individual cases says so here instead of
+ *  inventing rows (shell suites carry counts only). */
+const CASE_MEANING: Record<string, string> = {
+  cargo: 'one #[test] fn',
+  npm: 'one it()',
+  bats: 'one @test',
+  shell: 'one assertion in a .sh — this kind carries no per-case names',
+  security: 'one probe against one route',
+  coverage: 'one package measured against its floor',
+  lint: 'one ratchet against its baseline',
+  'app-eslint': 'one ratchet against its baseline',
+  'coverage-denominator': 'crates carrying a coverage floor',
+  smoke: 'one live-stack probe',
+  ui: 'one playwright flow',
+  reconcile: 'the registered-vs-executed census',
+};
+
+/** Pull the LAST complete run block out of the nightly log. */
+export function lastRunSuites(text: string): { startedAt: string; endedAt?: string; rows: SuiteRow[] } | null {
+  const all = text.split('\n');
+  const start = all.reduce((acc, l, i) => (l.startsWith('RUN|start|') ? i : acc), -1);
+  if (start === -1) return null;
+  const out: SuiteRow[] = [];
+  let endedAt: string | undefined;
+  for (const l of all.slice(start + 1)) {
+    if (l.startsWith('RUN|complete|')) { endedAt = l.split('|')[2]; break; }
+    if (!l.startsWith('SUITE|')) continue;
+    const p = l.split('|');
+    if (p.length >= 6) out.push({ kind: p[1], path: p[2], owner: p[3], status: p[4], summary: p.slice(5).join('|') });
+  }
+  return { startedAt: all[start].split('|')[2] ?? '?', endedAt, rows: out };
+}
+
+/** Fold the suite rows into per-kind totals. Counts come from each row's own
+ *  summary; a row that produced no parseable counts contributes to `unmeasured`
+ *  rather than silently reading as a clean zero (#4009). */
+export function foldByKind(rows: SuiteRow[]): { byKind: KindTotal[]; unmeasured: number } {
+  const acc = new Map<string, KindTotal>();
+  let unmeasured = 0;
+  for (const r of rows) {
+    const m = r.summary.match(/(\d+) pass, (\d+) fail/);
+    const k = acc.get(r.kind) ?? { kind: r.kind, suites: 0, passed: 0, failed: 0, cases: 0, caseMeaning: CASE_MEANING[r.kind] ?? 'one check' };
+    k.suites += 1;
+    if (m) {
+      k.passed += Number(m[1]);
+      k.failed += Number(m[2]);
+      k.cases += Number(m[1]) + Number(m[2]);
+    }
+    if (r.status === 'unmeasured' || (m && m[1] === '0' && m[2] === '0')) unmeasured += 1;
+    acc.set(r.kind, k);
+  }
+  return { byKind: [...acc.values()].sort((a, b) => b.cases - a.cases), unmeasured };
+}
+
+/** Assemble the document. `registered` and `recorded` come from the tests domain;
+ *  everything else from the run's own suite rows. `dropped` is not a judgement —
+ *  it is executed minus recorded, and it is the number that made the 2026-08-26
+ *  run unreportable. */
+export function buildTestRunReport(input: {
+  runId: string; trigger: string; scope: string; card?: string; role?: string;
+  logText: string; registered: number; recorded: number; notExecuted: number;
+}): TestRunReport | null {
+  const last = lastRunSuites(input.logText);
+  if (!last) return null;
+  const { byKind, unmeasured } = foldByKind(last.rows);
+  // #4009 — a suite that produced no counts is UNMEASURED, and the document says
+  // so; it must never be folded into `passed` where it reads as a clean zero.
+  const passed = byKind.reduce((s, k) => s + k.passed, 0);
+  const failed = byKind.reduce((s, k) => s + k.failed, 0);
+  const executed = passed + failed + unmeasured;
+  return {
+    run: {
+      id: input.runId, trigger: input.trigger, scope: input.scope,
+      card: input.card, role: input.role,
+      startedAt: last.startedAt, endedAt: last.endedAt ?? '',
+    },
+    crossFoot: {
+      registered: input.registered,
+      selected: input.registered,
+      notSelected: 0,
+      executed,
+      notExecuted: input.notExecuted,
+      passed, failed, unmeasured,
+      recorded: input.recorded,
+      dropped: Math.max(0, executed - input.recorded),
+    },
+    byKind,
+    cases: [],
+    footer: {
+      neverExecuted: [],
+      failed: last.rows.filter(r => r.status === 'fail').map(r => `${r.kind} ${r.path}`),
+      dropped: Math.max(0, executed - input.recorded),
+      changedSinceLastRun: [],
+    },
+  };
 }

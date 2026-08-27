@@ -36,6 +36,7 @@ const execAsync = promisify(exec);
 // have been removed.
 import { CHORUS_ROOT } from './lib/chorus-paths';
 import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athena-model-relationships';
+import { buildTestRunReport, renderTestRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -345,6 +346,50 @@ app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301
 app.get('/werk', sendChorusPage('werk.html'));
 // #3920 — /nightly: the rendered nightly report. One page, verdict first,
 // reds on top; renders the run record the nightly writes, no re-derived verdicts.
+// #4015 — the test-run report: ONE document, two renderings. JSON at
+// /api/chorus/test-run/latest, the SAME document rendered at /test-run.
+// Jeff, 2026-08-26: "api and ui match" — the view computes nothing, so the two
+// cannot drift. `registered` and `recorded` come from the tests domain; when it
+// cannot be reached they are reported as unknown rather than guessed, because a
+// cross-foot against a fabricated denominator is worse than no cross-foot.
+async function buildLatestTestRun() {
+  const logPath = process.env.NIGHTLY_LOG_PATH
+    || path.join(process.env.HOME || '', 'Library/Logs/Chorus/nightly-suites.log');
+  let logText = '';
+  try { logText = fs.readFileSync(logPath, 'utf8'); } catch { return null; }
+  const fuseki = process.env.FUSEKI_QUERY || 'http://localhost:3030/pods/query';
+  const ask = async (q: string): Promise<number | null> => {
+    try {
+      const r = await fetch(`${fuseki}?query=${encodeURIComponent(q)}`, {
+        headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(20000) });
+      if (!r.ok) return null;
+      const last = (await r.text()).trim().split('\n').pop() || '';
+      const v = Number(last.replace(/[^0-9]/g, ''));
+      return Number.isFinite(v) ? v : null;
+    } catch { return null; }
+  };
+  const P = 'PREFIX c: <https://jeffbridwell.com/chorus#>';
+  const G = '<urn:chorus:domains:tests>';
+  const registered = await ask(`${P} SELECT (COUNT(DISTINCT ?t) AS ?n) WHERE { GRAPH ${G} { ?t a c:Test } }`);
+  const recorded = await ask(`${P} SELECT (COUNT(?r) AS ?n) WHERE { GRAPH ${G} { ?r a c:TestResult ; c:runTs ?ts } }`);
+  return buildTestRunReport({
+    runId: 'latest', trigger: 'nightly', scope: 'full selection',
+    logText, registered: registered ?? 0, recorded: recorded ?? 0, notExecuted: 0,
+  });
+}
+
+app.get('/api/chorus/test-run/latest', async (_req: Request, res: Response) => {
+  const doc = await buildLatestTestRun();
+  if (!doc) { res.status(503).json({ error: 'no nightly log — cannot build a report' }); return; }
+  res.json(doc);
+});
+
+app.get('/test-run', async (_req: Request, res: Response) => {
+  const doc = await buildLatestTestRun();
+  if (!doc) { res.status(503).send('no nightly log — cannot build a report'); return; }
+  res.type('html').send(TEST_RUN_CSS + renderTestRun(doc));
+});
+
 app.get('/nightly', (_req: Request, res: Response) => {
   const logPath = process.env.NIGHTLY_LOG_PATH
     || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');
