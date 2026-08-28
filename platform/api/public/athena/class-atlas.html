@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Class Atlas — Athena</title>
+<script>/* #4024 — the mount resolver every Chorus page carries (#3798): the page must
+   know its own mount (llug.com/chorus) before any root-absolute src/href/fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
 <!-- #3992 — the OWL model as UML, per domain, generated from the store on every
      load. One diagram per domain (classes as boxes with datatype attributes,
      object properties as labelled edges with SHACL multiplicities, subclass
@@ -9,7 +17,7 @@
      /api/athena/class-atlas returns, which walks definesVocabulary live —
      "see our domains and relationships, not take-your-word-for-it" (Jeff). -->
 <link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('class-atlas');</script>
-<script src="/js/vendor/mermaid.min.js"></script>
+<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>
 <style>
   .anav{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 16px}
   .anav a{font:500 11.5px system-ui,sans-serif;padding:5px 9px;border:1px solid var(--line,#cdd5de);
@@ -63,7 +71,7 @@ function domainDiagram(dom) {
   const out = document.getElementById('out');
   let atlas;
   try {
-    const r = await fetch('/api/athena/class-atlas');
+    const r = await fetch(window.basePath('/api/athena/class-atlas'));
     atlas = await r.json();
     if (!r.ok || atlas.storeReachable === false) throw new Error('store-unreachable');
   } catch {
