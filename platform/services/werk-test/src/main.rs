@@ -878,18 +878,60 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     };
     cmd.current_dir(werk).env("CHORUS_CONTEXT", "");
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
-        Ok(o) => {
-            let text = format!("{}{}",
-                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    // #4022 / TD-028 — suite output goes to a FILE and the runner waits on
+    // CHILD EXIT with a deadline, never on pipe-EOF. Twice today a finished
+    // suite's leaked server (test-share-path-prefix's http.server, the crawler
+    // bats wedge) inherited the output pipe and hung the run for as long as
+    // anyone let it; a file leaves nothing to hold, and a suite that outlives
+    // its budget is killed and scored failed, loudly.
+    let suite_slug: String = suite.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let out_path = tmp.join(format!("suite-{}.out", suite_slug));
+    let timeout_secs: u64 = std::env::var("NIGHTLY_SUITE_TIMEOUT").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(600);
+    let spawned = std::fs::File::create(&out_path)
+        .map_err(|e| e.to_string())
+        .and_then(|f| {
+            let ferr = f.try_clone().map_err(|e| e.to_string())?;
+            cmd.stdout(f).stderr(ferr);
+            cmd.spawn().map_err(|e| e.to_string())
+        });
+    let outcome = spawned.and_then(|mut child| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Ok((status.code(), status.success(), false)),
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Ok((None, false, true));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    });
+    match outcome {
+        Ok((code, success, timed_out)) => {
+            let mut text = std::fs::read_to_string(&out_path).unwrap_or_default();
+            let _ = std::fs::remove_file(&out_path);
+            if timed_out {
+                text.push_str(&format!(
+                    "\nSUITE TIMED OUT after {}s — killed by the runner (deadline is child-exit, not pipe-EOF)\n",
+                    timeout_secs));
+                eprintln!("!! {} timed out after {}s — killed", suite, timeout_secs);
+                return (false, werk_test::parse_bats_cases(&text), text);
+            }
             // #4016 — rc=3 is a suite's SELF-REFUSAL ("I must not run here"),
             // not a failure. nightly-suites.sh learned this in #4004; this
             // runner never did, and the nightly uses THIS one — so a correctly
             // refusing suite (test-product-membrane, which bootouts every agent
             // and needs explicit authority) kept reporting "0 pass, 1 fail".
             // Two scorers, one taught. Both must agree or the fix is invisible.
-            let refused = o.status.code() == Some(3);
-            let ok = o.status.success() || refused;
+            let refused = code == Some(3);
+            let ok = success || refused;
             if !ok {
                 let tail: Vec<&str> = text.lines().rev().take(20).collect();
                 eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
@@ -1889,5 +1931,46 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool
             }
         }
         Err(e) => (false, format!(" (spawn failed: {})", e)),
+    }
+}
+
+#[cfg(test)]
+mod suite_deadline_tests {
+    use super::*;
+
+    fn world(name: &str, body: &str) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("wt-deadline-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), body).unwrap();
+        (dir, name.to_string())
+    }
+
+    #[test]
+    fn a_leaked_pipe_holding_child_cannot_outlive_the_suite() {
+        // TD-028 live shape: the suite FINISHES but leaves `sleep &` holding
+        // stdout. Under cmd.output() this call blocked until the leak died
+        // (24 minutes on 2026-08-27); under child-exit waiting it returns now.
+        let (dir, s) = world("leaker.sh",
+            "( sleep 300 & )\necho '=== Results: 1 passed, 0 failed ==='\nexit 0\n");
+        let t0 = std::time::Instant::now();
+        let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        assert!(t0.elapsed().as_secs() < 30, "runner waited on the leaked pipe");
+        assert!(ok);
+        assert!(text.contains("1 passed"));
+    }
+
+    #[test]
+    fn negative_proof_a_hung_suite_is_killed_and_scored_failed() {
+        // #4022 AC4's runner half: a suite that never exits breaches its budget,
+        // dies, and reads as a loud fail — never a silent forever-wait.
+        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "2");
+        let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
+        let t0 = std::time::Instant::now();
+        let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
+        assert!(!ok);
+        assert!(t0.elapsed().as_secs() < 30);
+        assert!(text.contains("SUITE TIMED OUT"));
     }
 }
