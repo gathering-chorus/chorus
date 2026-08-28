@@ -35,8 +35,6 @@
   <key>StartInterval</key>
   <integer>900</integer>
 
-  <key>RunAtLoad</key>
-  <true/>
 
   <key>StandardOutPath</key>
   <string>/Users/jeffbridwell/Library/Logs/Chorus/chorus-health.log</string>

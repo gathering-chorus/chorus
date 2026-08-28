@@ -11,8 +11,6 @@
 	</array>
 	<key>StartInterval</key>
 	<integer>600</integer>
-	<key>RunAtLoad</key>
-	<true/>
 	<key>StandardOutPath</key>
 	<string>/Users/jeffbridwell/Library/Logs/Gathering/bedroom-health.log</string>
 	<key>StandardErrorPath</key>

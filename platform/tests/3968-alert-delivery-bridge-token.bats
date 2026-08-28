@@ -44,3 +44,13 @@ setup() {
   [[ "$output" == *"FAIL: alert-runner: Bridge rejected probe (HTTP 401)"* ]]
   [[ "$output" != *"NO BRIDGE CREDENTIAL"* ]]
 }
+
+# #4027 — a transport miss (000) is not the bridge's verdict. Under load the
+# probe read 000 against a bridge answering /health in 11ms, and the log said
+# "rejected". Point the probe at a closed port: the check must still FAIL, and
+# name UNREACHABLE, never "rejected".
+@test "NEGATIVE PROOF: bridge unreachable → check FAILS naming TRANSPORT, not a rejection" {
+  BRIDGE="http://127.0.0.1:1" run bash "$SCRIPT"
+  [[ "$output" == *"FAIL: alert-runner: Bridge UNREACHABLE"* ]]
+  [[ "$output" != *"Bridge rejected probe"* ]]
+}

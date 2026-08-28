@@ -13,8 +13,6 @@
 	<integer>900</integer>
 	<key>StandardErrorPath</key>
 	<string>/tmp/harvest-exporter.err</string>
-	<key>RunAtLoad</key>
-	<true/>
 	<key>EnvironmentVariables</key>
 	<dict>
 		<key>CHORUS_ROOT</key>

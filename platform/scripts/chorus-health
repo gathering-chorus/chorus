@@ -98,22 +98,35 @@ fi
 # Red here is a red boot — ops' first task (DEC-022), the standing teeth.
 if curl -s --max-time 3 "http://localhost:3360/health" | grep -q '"ok": true'; then
   pass "owl-api-up" "generated Domain API answering on :3360"
-  if drift_out=$(bash "${SCRIPTS}/../tests/owl-api-drift-check.sh" 2>&1); then
-    pass "owl-api-drift" "generated artifacts match committed baselines"
+  # #4027 — #3561 renamed these to athena-make-* (2026-08-22); this block kept
+  # calling the owl-api-* names for six days, read bash's "No such file" as a
+  # failed check, and nudged "owl-api-drift owl-api-conformance" 600+ times
+  # about nothing. A guard whose target is gone must FAIL LOUD under its own
+  # name, never pass its absence off as the finding it exists to make.
+  # CHORUS_TESTS_DIR is the seam the negative proof uses (4027-*.bats).
+  TESTS_DIR="${CHORUS_TESTS_DIR:-${SCRIPTS}/../tests}"
+  DRIFT_SH="${TESTS_DIR}/athena-make-drift-check.sh"
+  CONF_SH="${TESTS_DIR}/athena-make-conformance.sh"
+  if [ ! -f "$DRIFT_SH" ] || [ ! -f "$CONF_SH" ]; then
+    fail "owl-api-checks-missing" "drift/conformance check script(s) absent under ${TESTS_DIR} (athena-make-drift-check.sh / athena-make-conformance.sh) — the monitor is broken, drift is UNKNOWN"
   else
-    # #3539 — ADVISORY: drift is the expected transient between a model-deploy and
-    # a baseline-regen (flagged 2026-06-19). It is NOT a release-blocker and must
-    # not hard-fail the gate for cards that touch zero owl-api surface. WARN so the
-    # signal stays visible without blocking the team (regen the baseline when worth it).
-    warn "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1) (advisory: regen baseline when worth it)"
-  fi
-  if conf_out=$(bash "${SCRIPTS}/../tests/owl-api-conformance.sh" 2>&1); then
-    pass "owl-api-conformance" "$(echo "$conf_out" | tail -1)"
-  else
-    # #3539 — ADVISORY: a generated-API conformance gap is an owl-api issue (Silas's
-    # lane), not a blocker for cards touching zero owl-api surface. WARN; the gap is
-    # tracked + fixed on its own owl-api card, not by blocking every unrelated verdict.
-    warn "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1) (advisory: owl-api gap, tracked separately)"
+    if drift_out=$(bash "$DRIFT_SH" 2>&1); then
+      pass "owl-api-drift" "generated artifacts match committed baselines"
+    else
+      # #3539 — ADVISORY: drift is the expected transient between a model-deploy and
+      # a baseline-regen (flagged 2026-06-19). It is NOT a release-blocker and must
+      # not hard-fail the gate for cards that touch zero owl-api surface. WARN so the
+      # signal stays visible without blocking the team (regen the baseline when worth it).
+      warn "owl-api-drift" "$(echo "$drift_out" | grep DRIFT | head -1) (advisory: regen baseline when worth it)"
+    fi
+    if conf_out=$(bash "$CONF_SH" 2>&1); then
+      pass "owl-api-conformance" "$(echo "$conf_out" | tail -1)"
+    else
+      # #3539 — ADVISORY: a generated-API conformance gap is an owl-api issue (Silas's
+      # lane), not a blocker for cards touching zero owl-api surface. WARN; the gap is
+      # tracked + fixed on its own owl-api card, not by blocking every unrelated verdict.
+      warn "owl-api-conformance" "$(echo "$conf_out" | grep FAIL | head -1) (advisory: owl-api gap, tracked separately)"
+    fi
   fi
 else
   fail "owl-api-up" "generated Domain API not answering on :3360 (launchctl kickstart gui/501/com.chorus.owl-api)"
@@ -697,7 +710,10 @@ except Exception:
 " "$STICKY_WARN_N" "$FAILS_CSV" "$WARNS_CSV")
 fi
 
-# emit spine event
+# emit spine event — CHORUS_HEALTH_NO_EMIT=1 mutes it (#4027): the negative-proof
+# bats runs this script with a deliberately broken fixture, and a test's FAIL must
+# not become a real chorus.health event → real nudge (#3528: a test brings its own world).
+[ "${CHORUS_HEALTH_NO_EMIT:-0}" = "1" ] || \
 "${CHORUS_ROOT}/platform/scripts/chorus-log" chorus.health silas \
   result="$RESULT" \
   pass="$PASS_COUNT" \

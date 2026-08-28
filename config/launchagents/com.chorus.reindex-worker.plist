@@ -11,8 +11,6 @@
     </array>
     <key>StartInterval</key>
     <integer>900</integer>
-    <key>RunAtLoad</key>
-    <true/>
     <key>StandardOutPath</key>
     <string>/Users/jeffbridwell/.chorus/reindex-worker.log</string>
     <key>StandardErrorPath</key>
