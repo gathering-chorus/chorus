@@ -23,7 +23,7 @@ DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
 OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
-BRIDGE="http://localhost:3470"
+BRIDGE="${BRIDGE:-http://localhost:3470}"
 # Test runs (bats) MUST set ALERT_DELIVERY_LOG — otherwise fixture reds land in the
 # production log that deep-health reads as "latest run" (false deep-health fail 2026-08-28).
 LOG="${ALERT_DELIVERY_LOG:-$HOME/Library/Logs/Chorus/alert-delivery-test.log}"
@@ -95,18 +95,29 @@ test_alert_runner() {
     fail "alert-runner: NO BRIDGE CREDENTIAL — $bridge_token_file unreadable or empty (HOME=$HOME). Credential state, NOT a bridge outage: the bridge was never asked."
     return
   fi
-  bridge_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-    -X POST "$BRIDGE/api/message" \
-    -H 'Content-Type: application/json' \
-    -H "Authorization: Bearer ${bridge_token}" \
-    -d "$(jq -n \
-      --arg text "[synthetic] Delivery probe $PROBE_MARKER" \
-      --arg from "system" \
-      --arg type "probe" \
-      '{from: $from, text: $text, type: $type}')" 2>/dev/null) || bridge_status="000"
+  # #4027 — retry once on a transport miss (000), same as #3948's endpoint
+  # loop: 2026-08-28 12:50 the probe read 000 against a bridge answering
+  # /health in 11ms while the box sat at load 106. A 000 after retry is named
+  # UNREACHABLE (transport), never "rejected" (which is the bridge's verdict).
+  bridge_status="000"
+  for attempt in 1 2; do
+    bridge_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+      -X POST "$BRIDGE/api/message" \
+      -H 'Content-Type: application/json' \
+      -H "Authorization: Bearer ${bridge_token}" \
+      -d "$(jq -n \
+        --arg text "[synthetic] Delivery probe $PROBE_MARKER" \
+        --arg from "system" \
+        --arg type "probe" \
+        '{from: $from, text: $text, type: $type}')" 2>/dev/null) || bridge_status="000"
+    [[ "$bridge_status" != "000" ]] && break
+    [[ $attempt -eq 1 ]] && sleep 2
+  done
 
   if [[ "$bridge_status" == "200" ]] || [[ "$bridge_status" == "201" ]]; then
     pass "alert-runner: Bridge accepted probe message (HTTP $bridge_status)"
+  elif [[ "$bridge_status" == "000" ]]; then
+    fail "alert-runner: Bridge UNREACHABLE — no HTTP response from $BRIDGE after retry (transport/timeout, not a rejection)"
   else
     fail "alert-runner: Bridge rejected probe (HTTP $bridge_status)"
   fi
