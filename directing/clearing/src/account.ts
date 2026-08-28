@@ -76,7 +76,9 @@ async function authenticate(
 
 export async function changePassword(
   p: ChangeParams,
-  cssBase = 'http://localhost:3001',
+  // #3837 — the local hairpin base is deployment config, not a code constant:
+  // the identity server moved to shared-security (same port today; env wins).
+  cssBase = process.env.CSS_LOCAL_BASE || 'http://localhost:3001',
   fetchImpl: typeof fetch = fetch,
 ): Promise<ChangeResult> {
   const bad = rejectBadArguments(p);
