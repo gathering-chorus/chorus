@@ -3392,21 +3392,40 @@ pub fn query_param(query: &str, key: &str) -> Option<String> {
 /// #3506 / ADR-047 §7 — opaque-cursor pagination (AIP-158). The cursor is the next
 /// offset into the ordered, stable-per-request list; returns the page slice + the
 /// next cursor (None at the end). Pure + unit-pinned.
-/// #4022 — the collection page query. The page is chosen by a SUBQUERY over
-/// subjects only (`ORDER BY ?s LIMIT/OFFSET`), and the projection (labels,
-/// status, exposed fields, CONCAT) runs on just that page. The previous shape
-/// — `... BIND(CONCAT(...) AS ?v) } ORDER BY ?v LIMIT n` — made the store build
-/// and sort the CONCAT string for EVERY row before it could take the first n:
-/// on 219,366 chorus:TestResult rows that was 20s+ and GET /testresults answered
-/// 502 (measured 2026-08-28: 10.4s for the sort vs 8ms without it). #4010 pushed
-/// LIMIT into SPARQL but left the ORDER BY on the projected column, so the
-/// pushdown bought nothing once the collection grew. Ordering by subject IRI is
-/// still a total, stable order, so cursor pagination keeps its meaning.
-pub fn collection_page_query(graph: &str, class: &str, where_body: &str, limit: usize, offset: usize) -> String {
+/// #4022 — the collection page is TWO store round-trips, both cheap:
+///   1. `collection_page_query`  — subjects only: `?s a <C>` ORDER BY ?s LIMIT/OFFSET
+///   2. `collection_project_query` — the projection (labels, status, exposed
+///      fields, CONCAT) with `VALUES ?s { <page> }` INSIDE the GRAPH block.
+/// The previous shape — one query, `... BIND(CONCAT(...) AS ?v) } ORDER BY ?v LIMIT n`
+/// — made the store evaluate every OPTIONAL for every row and sort the CONCAT
+/// string before it could take the first n. On 219,366 chorus:TestResult rows that
+/// was 20s+ and GET /testresults answered 502 while the same page answered in
+/// milliseconds once the subjects were bound. #4010 pushed LIMIT into SPARQL but
+/// the OPTIONALs and the sort still ran over the whole collection.
+/// Measured 2026-08-28 against the live store (219k rows, page of 20):
+///   subjects-only page 0.14s · VALUES-inside-GRAPH projection 0.005s
+///   VALUES OUTSIDE the graph block 6.3s · subquery-join 5.8s · old shape 5.2–20s
+/// so the placement of VALUES is the fix, not the subquery. Ordering by subject IRI
+/// is a total, stable order, so cursor pagination keeps its meaning.
+pub fn collection_page_query(graph: &str, class: &str, limit: usize, offset: usize) -> String {
     format!(
-        "SELECT ?v WHERE {{ {{ SELECT ?s WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset} }} {where_body} }}",
-        g = graph, c = class, where_body = where_body, limit = limit, offset = offset
+        "SELECT (STR(?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset}",
+        g = graph, c = class, limit = limit, offset = offset
     )
+}
+
+/// The projection for ONE page: `where_body` is the collection's GRAPH block
+/// (`GRAPH <g> { ?s a <C> . OPTIONAL ... BIND(CONCAT(...) AS ?v) }`); the page's
+/// subjects are bound with VALUES placed just inside the block so every OPTIONAL
+/// is an index lookup on a bound ?s. Empty page → caller must not query.
+pub fn collection_project_query(graph: &str, where_body: &str, subjects: &[String]) -> String {
+    let open = format!("GRAPH <{}> {{ ", graph);
+    let values: String = subjects.iter()
+        .filter(|s| !s.contains(['<', '>', ' ', '"']))
+        .map(|s| format!("<{}> ", s)).collect();
+    let bound = format!("{}VALUES ?s {{ {}}} ", open, values);
+    let body = where_body.replacen(&open, &bound, 1);
+    format!("SELECT ?v WHERE {{ {} }} ORDER BY ?s", body)
 }
 
 pub fn paginate<'a>(items: &'a [String], cursor: Option<&str>, limit: usize) -> (&'a [String], Option<usize>) {
@@ -3671,9 +3690,17 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
             Err(_) => 0,
         };
-        let q = collection_page_query(
-            &table.instances_graph, &table.class, &where_body, limit, offset);
-        return match sparql_json(&q) {
+        let page_q = collection_page_query(&table.instances_graph, &table.class, limit, offset);
+        let subjects: Vec<String> = match sparql_json(&page_q) {
+            Ok(body) => select_v(&body),
+            Err(e) => return (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
+        };
+        let projected: R<String> = if subjects.is_empty() {
+            Ok(String::new())
+        } else {
+            sparql_json(&collection_project_query(&table.instances_graph, &where_body, &subjects))
+        };
+        return match projected {
             Ok(body) => {
                 let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
                 let items = collection_items(select_v(&body), &extra_names);
@@ -4849,19 +4876,26 @@ mod tests {
         assert!(items[0].contains("\"f2\": [\"v1\", \"v2\"]"), "{}", items[0]);
     }
 
-    /// #4022 — the page is picked by a subject-only subquery; the sort key is
-    /// the subject IRI, never the projected CONCAT column.
+    /// #4022 — the page is two queries: subjects first, then a projection whose
+    /// VALUES sits INSIDE the GRAPH block. The old one-query shape is the negative
+    /// fixture: it fails the same assertions.
     #[test]
-    fn collection_page_query_sorts_subjects_not_projection() {
+    fn collection_page_is_subjects_then_values_bound_projection() {
         let body = "GRAPH <urn:g> { ?s a <urn:C> . OPTIONAL { ?s <urn:p> ?x } BIND(CONCAT(STR(?s), \"|\", COALESCE(?x, \"\")) AS ?v) }";
-        let q = collection_page_query("urn:g", "urn:C", body, 20, 40);
-        let inner = "{ SELECT ?s WHERE { GRAPH <urn:g> { ?s a <urn:C> } } ORDER BY ?s LIMIT 20 OFFSET 40 }";
-        assert!(q.contains(inner), "page chosen by subject subquery: {}", q);
-        assert!(q.find(inner).unwrap() < q.find("OPTIONAL").unwrap(), "projection runs AFTER the page is chosen: {}", q);
-        assert!(!q.contains("ORDER BY ?v"), "must never sort the projected column: {}", q);
+        let page = collection_page_query("urn:g", "urn:C", 20, 40);
+        assert_eq!(page, "SELECT (STR(?s) AS ?v) WHERE { GRAPH <urn:g> { ?s a <urn:C> } } ORDER BY ?s LIMIT 20 OFFSET 40");
+        assert!(!page.contains("OPTIONAL") && !page.contains("CONCAT"), "the page query carries no projection: {}", page);
+        let subs = vec!["urn:a".to_string(), "urn:b".to_string(), "urn:evil> } <urn:x".to_string()];
+        let proj = collection_project_query("urn:g", body, &subs);
+        let values_at = proj.find("VALUES ?s { <urn:a> <urn:b> }").expect("VALUES bound to the page");
+        assert!(values_at > proj.find("GRAPH <urn:g> {").unwrap(), "VALUES is INSIDE the graph block: {}", proj);
+        assert!(values_at < proj.find("OPTIONAL").unwrap(), "VALUES precedes every OPTIONAL: {}", proj);
+        assert!(!proj.contains("urn:evil"), "a subject carrying IRI/SPARQL metachars is dropped, never interpolated");
+        assert!(proj.ends_with("ORDER BY ?s") && !proj.contains("LIMIT"), "page order by subject, no second LIMIT: {}", proj);
         // NEGATIVE PROOF — the #4010 shape this replaces fails the same checks.
         let old = format!("SELECT ?v WHERE {{ {} }} ORDER BY ?v LIMIT 20 OFFSET 40", body);
-        assert!(old.contains("ORDER BY ?v") && !old.contains(inner), "the old shape must be distinguishable from the new one");
+        assert!(!old.contains("VALUES ?s"), "old shape has no bound page");
+        assert!(old.contains("ORDER BY ?v") && old.contains("OPTIONAL"), "old shape sorts the projection over the whole collection");
     }
 
     #[test]
