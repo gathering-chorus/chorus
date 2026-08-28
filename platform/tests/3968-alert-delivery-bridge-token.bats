@@ -8,6 +8,8 @@
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/alert-delivery-test.sh"
 
 setup() {
+  # A test brings its own world (#3528): never write fixture results into the real log.
+  export ALERT_DELIVERY_LOG="$BATS_TEST_TMPDIR/alert-delivery-test.log"
   curl -s -o /dev/null --max-time 3 http://localhost:3475/health || skip "bridge not running"
 }
 

@@ -538,6 +538,16 @@ fi
 # deploy-path bash); werk-deploy runs this script THEN that verb at land, so
 # landing still seeds instances. Recovery contexts run this script alone.
 # Guarded by platform/tests/recovery-path-ungated-3785.bats.
+#
+# RECOVERY SEQUENCE (#4026 rider, 2026-08-28) — run BOTH legs, in this order:
+#   1. platform/scripts/athena-deploy-model.sh        # MODEL_SET + SECURITY_SET
+#   2. athena-model seed --deploy                     # instances (roles, cards...)
+# Why: SECURITY_SET carries `principal-nightly holdsRole role-nightly`, but
+# role-nightly itself lives in role-instances-3838.ttl, which rides ONLY leg 2.
+# Leg 1 alone reloads the edge to a role the store no longer has — a DANGLING
+# edge, silent: the door resolves by edge IRI (oidc.rs role_name), so nothing
+# 403s and no daytime check sees it. seed --deploy is idempotent + output-
+# verified, so running it after a recovery is always safe.
 # =============================================================================
 
 # =============================================================================

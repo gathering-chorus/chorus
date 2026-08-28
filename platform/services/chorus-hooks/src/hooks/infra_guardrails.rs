@@ -4,6 +4,10 @@ use crate::types::{permission_ask_json, permission_deny_json, HookInput, HookRes
 use regex::Regex;
 use std::sync::LazyLock;
 
+/// #4025 — first time this guard ran in this process; a lower bound on daemon
+/// uptime for the deny message (the daemon has been alive at least this long).
+static DAEMON_FIRST_SEEN: LazyLock<std::time::Instant> = LazyLock::new(std::time::Instant::now);
+
 static KILL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(kill|pkill|killall)\s").unwrap()
 });
@@ -103,6 +107,28 @@ pub async fn check(input: &HookInput) -> HookResponse {
         || first_line.starts_with("cat <<")
     {
         return HookResponse::allow();
+    }
+
+    // #4025 — a restart of THIS daemon, arriving at THIS daemon. The daemon is
+    // answering the request, so it is alive; the only thing the command can do
+    // is SIGTERM a working guard and fail-close the whole team until launchd
+    // brings it back (5 deaths in 2 days, every one a role obeying the shim's
+    // old "unreachable → kickstart" recipe after a timeout under load). The
+    // genuine recovery path is untouched: when the daemon is DOWN the shim
+    // cannot reach this code and its connect-failure carve-out lets the same
+    // command through (shared::recovery). Checked BEFORE the agent-state allow
+    // below, or `agent-state.sh chorus-hooks restart` would slip past.
+    if crate::shared::recovery::is_hooks_restart_command(&cmd) {
+        log_guardrail("deny", "hooks-restart-while-alive").await;
+        let uptime = DAEMON_FIRST_SEEN.elapsed().as_secs();
+        return HookResponse::deny(&permission_deny_json(&format!(
+            "BLOCKED: chorus-hooks is ALIVE (pid {}, answering for {}s) — it just evaluated this command. \
+             Restarting it SIGTERMs a working guard and locks every role out until launchd respawns it (#4025). \
+             A shim timeout under load means BUSY, not dead: retry the tool call. \
+             If the daemon is truly down, this exact command is allowed by the shim's connect-failure carve-out; \
+             a new binary deploys via `chorus-deploy chorus-hooks` / `agent-state.sh chorus-hooks deploy`.",
+            std::process::id(), uptime
+        )));
     }
 
     // Allow service-lifecycle.sh (absorbed from app_state_guard #1862)
@@ -315,6 +341,42 @@ mod tests {
             hook_type: None,
             deploy_role: None,
             trace_id: None, tool_output_is_error: None,}
+    }
+
+    // === #4025 — restart of the LIVE daemon is refused; deploy + other agents pass ===
+
+    #[tokio::test]
+    async fn test_4025_kickstart_of_live_hooks_daemon_is_denied_naming_alive_state() {
+        let r = check(&kade_bash("launchctl kickstart -k gui/$UID/com.chorus.hooks")).await;
+        let out = r.stdout.expect("must deny");
+        assert!(out.contains("\"permissionDecision\":\"deny\""), "{out}");
+        assert!(out.contains("ALIVE"), "refusal must name the daemon's state: {out}");
+        assert!(out.contains("#4025"), "{out}");
+    }
+
+    #[tokio::test]
+    async fn test_4025_agent_state_restart_of_hooks_is_denied_before_the_agent_state_allow() {
+        let r = check(&silas_bash("bash platform/scripts/agent-state.sh chorus-hooks restart")).await;
+        assert!(r.stdout.is_some(), "agent-state restart of hooks must not slip past the agent-state allow");
+    }
+
+    #[tokio::test]
+    async fn test_4025_negative_proof_deploy_of_hooks_still_allowed() {
+        // A new binary legitimately restarts the service — deploy is not a restart.
+        let r = check(&silas_bash("bash platform/scripts/agent-state.sh chorus-hooks deploy")).await;
+        assert!(r.stdout.is_none(), "deploy must pass: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4025_negative_proof_kickstart_of_another_agent_still_allowed() {
+        let r = check(&silas_bash("launchctl kickstart -k gui/$UID/com.chorus.athena-make")).await;
+        assert!(r.stdout.is_none(), "other agents are not this daemon: {:?}", r.stdout);
+    }
+
+    #[tokio::test]
+    async fn test_4025_negative_proof_bare_mention_is_not_a_restart() {
+        let r = check(&silas_bash("grep -n com.chorus.hooks ~/Library/LaunchAgents/com.chorus.hooks.plist")).await;
+        assert!(r.stdout.is_none(), "reading the plist is not a restart: {:?}", r.stdout);
     }
 
     // === heredoc/echo skip (absorbed from app_state_guard #1862) ===

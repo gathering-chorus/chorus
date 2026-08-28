@@ -24,7 +24,9 @@ DEEP_HEALTH="${CHORUS_ROOT}/platform/scripts/deep-health.sh"
 OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
 CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
 BRIDGE="http://localhost:3470"
-LOG="$HOME/Library/Logs/Chorus/alert-delivery-test.log"
+# Test runs (bats) MUST set ALERT_DELIVERY_LOG — otherwise fixture reds land in the
+# production log that deep-health reads as "latest run" (false deep-health fail 2026-08-28).
+LOG="${ALERT_DELIVERY_LOG:-$HOME/Library/Logs/Chorus/alert-delivery-test.log}"
 PROBE_MARKER="synthetic-delivery-$(date +%s)"
 
 mkdir -p "$(dirname "$LOG")"

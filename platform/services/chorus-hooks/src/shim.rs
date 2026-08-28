@@ -76,9 +76,26 @@ fn daemon_unreachable_response_json(endpoint: &str, reason: &str) -> Option<Stri
     if endpoint != "pre-tool-use" {
         return None;
     }
+    // #4025 — two states, two messages. The old text prescribed `kickstart -k`
+    // for EVERY failure, including a 15s read timeout on a daemon that was
+    // connected and merely busy; roles obeyed it and SIGTERM'd a live guard
+    // five times in two days. A refusal must name its state: connect failed =
+    // DOWN (restart is right); connected but no reply = BUSY (retry is right).
+    if is_busy_reason(reason) {
+        return Some(format!(
+            r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon BUSY, not down ({reason}) — the socket connected, the daemon is alive and did not answer in time (box under load). Do NOT restart it: kickstart -k SIGTERMs a working guard and locks the whole team out (#4025). Retry the tool call. See #2790."}}}}"#
+        ));
+    }
     Some(format!(
-        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable ({reason}). Restart: launchctl kickstart -k gui/$UID/com.chorus.hooks (any role can run this; unblocks the whole team). All security guards are off while daemon is down — tool calls denied until restart. See #2790."}}}}"#
+        r#"{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED: chorus-hooks daemon unreachable — DOWN ({reason}), the socket did not connect. Restart: launchctl kickstart -k gui/$UID/com.chorus.hooks (any role can run this; unblocks the whole team). All security guards are off while daemon is down — tool calls denied until restart. See #2790."}}}}"#
     ))
+}
+
+/// #4025 — PURE: a reason produced AFTER connect() succeeded (write/read on a
+/// live socket) means the daemon is alive and slow, never absent. Only the
+/// connect failure is "down".
+fn is_busy_reason(reason: &str) -> bool {
+    reason.starts_with("write ") || reason.starts_with("read ") || reason.starts_with("malformed ")
 }
 
 /// Wrapper that emits the deny JSON to stdout (so Claude sees it) and returns
@@ -340,6 +357,31 @@ mod daemon_unreachable_tests {
         assert!(deny.contains("nohup ~/.chorus/bin/chorus-hooks") || deny.contains("Restart"),
             "deny must name the restart path: {}", deny);
     }
+    // === #4025 — busy vs down are different refusals ===
+
+    #[test]
+    fn test_4025_read_timeout_is_busy_and_never_prescribes_a_restart() {
+        let out = daemon_unreachable_response_json("pre-tool-use", "read response: timed out").unwrap();
+        assert!(out.contains("BUSY"), "{out}");
+        assert!(!out.contains("kickstart -k gui"), "a busy daemon must not be told to restart: {out}");
+        assert!(out.contains("Retry"), "{out}");
+    }
+
+    #[test]
+    fn test_4025_connect_failure_is_down_and_keeps_the_recovery_recipe() {
+        let out = daemon_unreachable_response_json("pre-tool-use", "connect: No such file or directory").unwrap();
+        assert!(out.contains("DOWN"), "{out}");
+        assert!(out.contains("kickstart -k gui/$UID/com.chorus.hooks"), "down must still say how to recover: {out}");
+    }
+
+    #[test]
+    fn test_4025_negative_proof_busy_predicate_separates_the_two_states() {
+        assert!(is_busy_reason("read response: timed out"));
+        assert!(is_busy_reason("write body: Broken pipe"));
+        assert!(!is_busy_reason("connect: Connection refused"));
+        assert!(!is_busy_reason("connect: No such file or directory"));
+    }
+
 }
 
 fn log_debug(msg: &str) {
