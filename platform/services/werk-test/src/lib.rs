@@ -2578,3 +2578,181 @@ mod describe_prefix_join_4015 {
         assert_eq!(unjoined, 1);
     }
 }
+
+// ── #4022 — the parallel nightly plan ──────────────────────────────────────────
+//
+// Jeff's bar (2026-08-27): "the nightly tests run is no more than 10-15m of
+// elapsed time." The serial reality that set it: 33-37m full runs, and today's
+// live rerun showed the long poles are independent suites executed one after
+// another. The plan is data, computed here, so the split is testable without
+// running anything: a unit whose registered files include a needs-stack case,
+// or that appears in the explicit isolation list, runs SERIALIZED after the
+// parallel pool drains; everything else fans out.
+
+pub struct NightlyPlan {
+    pub parallel: Vec<String>,
+    pub serialized: Vec<String>,
+}
+
+/// `units` in execution order; `isolated` answers "must this unit run alone".
+/// Order within each half is preserved (stable), duplicates dropped — a unit
+/// scheduled twice would double-post its results.
+pub fn plan_parallel_units(units: &[String], isolated: &dyn Fn(&str) -> bool) -> NightlyPlan {
+    let mut seen = std::collections::HashSet::new();
+    let mut parallel = Vec::new();
+    let mut serialized = Vec::new();
+    for u in units {
+        if !seen.insert(u.clone()) { continue; }
+        if isolated(u) { serialized.push(u.clone()); } else { parallel.push(u.clone()); }
+    }
+    NightlyPlan { parallel, serialized }
+}
+
+/// A unit is isolation-declared when any of its registered files carries
+/// hermeticity "needs-stack" (they share the one live stack) or it is named in
+/// `explicit` (the conf line a suite writes to declare "I must run alone").
+pub fn unit_is_isolated(unit: &str, rows: &[TestRow], explicit: &[String]) -> bool {
+    if explicit.iter().any(|e| e == unit) { return true; }
+    rows.iter().any(|r| r.hermeticity == "needs-stack"
+        && (r.file_path == *unit || r.file_path.starts_with(&format!("{}/", unit))))
+}
+
+/// #4022 AC3/AC4 — the bar is a number the run reports against, not a wish.
+/// Some(reason) = breach, rendered loudly by the caller; None = within bar.
+pub fn elapsed_breach(elapsed_secs: u64, bar_secs: u64) -> Option<String> {
+    if elapsed_secs > bar_secs {
+        Some(format!(
+            "NIGHTLY OVER BAR — {}m{}s elapsed against the {}m bar",
+            elapsed_secs / 60, elapsed_secs % 60, bar_secs / 60))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod parallel_plan_tests {
+    use super::*;
+
+    fn row(fp: &str, herm: &str) -> TestRow {
+        TestRow { file_path: fp.into(), covers: String::new(),
+            pyramid_layer: String::new(), hermeticity: herm.into(),
+            test_concern: String::new() }
+    }
+
+    #[test]
+    fn hermetic_units_fan_out_and_order_is_preserved() {
+        let units: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|_| false);
+        assert_eq!(plan.parallel, units);
+        assert!(plan.serialized.is_empty());
+    }
+
+    #[test]
+    fn negative_proof_an_isolated_unit_never_reaches_the_parallel_pool() {
+        // #3734 — the state this split exists to prevent: a suite that mutates
+        // the shared stack running concurrently with anything.
+        let units: Vec<String> = ["a", "iso", "b"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|u| u == "iso");
+        assert!(!plan.parallel.contains(&"iso".to_string()));
+        assert_eq!(plan.serialized, vec!["iso".to_string()]);
+    }
+
+    #[test]
+    fn a_unit_scheduled_twice_runs_once() {
+        let units: Vec<String> = ["a", "a"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|_| false);
+        assert_eq!(plan.parallel.len(), 1);
+    }
+
+    #[test]
+    fn needs_stack_file_marks_its_unit_isolated() {
+        let rows = vec![row("platform/api/tests/live.integration.test.ts", "needs-stack")];
+        assert!(unit_is_isolated("platform/api", &rows, &[]));
+        assert!(!unit_is_isolated("directing/products/cards", &rows, &[]));
+    }
+
+    #[test]
+    fn explicit_isolation_list_wins_even_for_hermetic_units() {
+        assert!(unit_is_isolated("platform/tests/product-membrane.bats", &[], &["platform/tests/product-membrane.bats".to_string()]));
+    }
+
+    #[test]
+    fn negative_proof_a_slow_run_breaches_the_bar_loudly() {
+        // #4022 AC4 — an artificially slow run must be reported, not absorbed.
+        let breach = elapsed_breach(16 * 60, 15 * 60);
+        assert!(breach.is_some());
+        assert!(breach.unwrap().contains("OVER BAR"));
+    }
+
+    #[test]
+    fn control_a_run_within_the_bar_is_silent() {
+        assert!(elapsed_breach(14 * 60, 15 * 60).is_none());
+    }
+}
+
+/// #4022 — bounded worker pool over units. Results come back in INPUT order
+/// regardless of completion order, so the per-suite report lines and the case
+/// accumulation stay deterministic — a shuffled report would make two runs of
+/// the same night diff against each other.
+pub fn run_pool<T, F>(units: &[String], workers: usize, f: F) -> Vec<(String, T)>
+where
+    T: Send + 'static,
+    F: Fn(&str) -> T + Send + Sync,
+{
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    if units.is_empty() { return Vec::new(); }
+    let workers = workers.max(1).min(units.len());
+    let next = AtomicUsize::new(0);
+    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
+        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                if i >= units.len() { break; }
+                let unit = &units[i];
+                let out = f(unit);
+                slots.lock().unwrap()[i] = Some((unit.clone(), out));
+            });
+        }
+    });
+    Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
+        .into_iter().flatten().collect()
+}
+
+#[cfg(test)]
+mod run_pool_tests {
+    use super::*;
+
+    #[test]
+    fn results_come_back_in_input_order_despite_uneven_durations() {
+        let units: Vec<String> = ["slow", "fast", "mid"].iter().map(|s| s.to_string()).collect();
+        let out = run_pool(&units, 3, |u| {
+            let ms = match u { "slow" => 60, "mid" => 20, _ => 1 };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            u.len()
+        });
+        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["slow", "fast", "mid"]);
+    }
+
+    #[test]
+    fn negative_proof_every_unit_runs_exactly_once() {
+        // The state a broken pool produces: a dropped or double-run unit.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        let units: Vec<String> = (0..37).map(|i| format!("u{}", i)).collect();
+        let out = run_pool(&units, 5, |_| { CALLS.fetch_add(1, Ordering::SeqCst); });
+        assert_eq!(out.len(), 37);
+        assert_eq!(CALLS.load(Ordering::SeqCst), 37);
+    }
+
+    #[test]
+    fn a_pool_of_one_is_just_the_serial_order() {
+        let units: Vec<String> = ["a", "b"].iter().map(|s| s.to_string()).collect();
+        let out = run_pool(&units, 1, |u| u.to_string());
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "a");
+    }
+}

@@ -661,10 +661,35 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3922 — security-declared units fold under their own lane label so the
     // report and owner routing see ONE security lane on its own cadence.
     let sec_units = werk_test::security_units(&rows);
-    for b in &bats_suites {
+    // #4022 — the lane's suites are independent subprocesses; fan them out.
+    // A suite is serialized when a registered file of its is needs-stack or it
+    // is named in the isolation conf (a suite that mutates the shared stack
+    // must never overlap anything). Report order stays the plan's order —
+    // run_pool returns input order regardless of completion order.
+    let iso_conf = std::fs::read_to_string(
+        Path::new(&root).join("platform/scripts/nightly-isolation.conf"))
+        .unwrap_or_default();
+    let explicit_iso: Vec<String> = iso_conf.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    let plan = werk_test::plan_parallel_units(&bats_suites,
+        &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
+    let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().saturating_sub(2).max(1)).unwrap_or(4));
+    println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} serialized --",
+        plan.parallel.len(), workers, plan.serialized.len());
+    let pool_root = root.clone();
+    let mut lane_results: Vec<(String, (bool, Vec<(String, String)>, String))> =
+        werk_test::run_pool(&plan.parallel, workers, move |b| run_bats_cases(&pool_root, b));
+    for b in &plan.serialized {
+        lane_results.push((b.clone(), run_bats_cases(&root, b)));
+    }
+    for (b, (ok, cases, text)) in lane_results {
+        let b = &b;
         let kind = if sec_units.contains(b) { "security" }
             else if b.ends_with(".sh") { "shell" } else { "bats" };
-        let (ok, cases, text) = run_bats_cases(&root, b);
         let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
             // shell suites report summary counts, not TAP cases
             werk_test::parse_shell_counts(&text)
@@ -750,6 +775,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
+    // #4022 AC3/AC4 — elapsed against Jeff's bar (default 15m), on the spine so
+    // drift is visible, and a breach is loud in the run's own output.
+    let bar_secs: u64 = std::env::var("NIGHTLY_ELAPSED_BAR_SECS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(900);
+    let elapsed_secs = (total_duration_ms / 1000) as u64;
+    emit_spine("test.nightly.elapsed", &role, &card, &trace,
+        &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string()),
+          ("over_bar", if elapsed_secs > bar_secs { "true" } else { "false" })]);
+    if let Some(breach) = werk_test::elapsed_breach(elapsed_secs, bar_secs) {
+        println!("!! {}", breach);
+        emit_spine("test.nightly.over_bar", &role, &card, &trace,
+            &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string())]);
+    }
     let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
     if lost > 0 {
         println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
