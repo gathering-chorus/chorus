@@ -94,6 +94,17 @@ pub fn werk_bin_dir(role: &str) -> String {
 /// athena-make, not production's: an athena-make change is otherwise invisible
 /// in the demo env (found 2026-08-28 — the presented variant proxied /owl to
 /// prod :3360, which still 502'd on the very route the card fixed).
+/// #4022 — where a nightly run FROM a werk writes its log: nightly-suites.sh
+/// isolates a werk run to `/tmp/nightly-<werk basename>.log` (#3722) so it never
+/// touches the 03:00 log. The api variant's /test-run report must read that
+/// same file, or the demo shows production's last nightly, never the card's.
+pub fn werk_nightly_log_path(werk_root: &str) -> String {
+    let base = Path::new(werk_root).file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| werk_root.to_string());
+    format!("/tmp/nightly-{}.log", base)
+}
+
 pub fn owl_upstream_for(role: &str) -> R<String> {
     let athena = env_services().into_iter().find(|s| s.name == "athena-make")
         .ok_or_else(|| "env: athena-make is not an env service".to_string())?;
@@ -500,6 +511,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // (Wren hole 2). chorus-mcp doesn't have those; keep extras empty.
         // Add new service-specific gates here, not by kind.
         let owl_upstream = owl_upstream_for(role)?;
+        let nightly_log = werk_nightly_log_path(werk_root);
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
             "chorus-api" => vec![
                 ("CHORUS_API_SCHEDULED_JOBS", "off"),
@@ -507,6 +519,8 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
                 // #4022 — /owl proxies to the werk's athena-make, not prod's.
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
+                // #4022 — /test-run reads the WERK's nightly log, not prod's.
+                ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
             ],
             _ => vec![],
         };
@@ -664,6 +678,18 @@ mod tests {
         let plist = generate_plist(api, "wren", "/werk/wren-1", 3345, &[("OWL_UPSTREAM", up.as_str())]);
         assert!(plist.contains("<key>OWL_UPSTREAM</key><string>http://127.0.0.1:3365</string>"), "{}", plist);
         assert!(!plist.contains("3360") && !plist.contains("3364"), "wren's variant must not reach prod or kade's athena: {}", plist);
+    }
+
+    /// #4022 — the api variant's /test-run reads the werk's isolated nightly log
+    /// (the path nightly-suites.sh uses for a WERK RUN), never the 03:00 log.
+    #[test]
+    fn api_variant_reads_the_werks_nightly_log_not_prods() {
+        assert_eq!(werk_nightly_log_path("/x/chorus-werk/kade-4022"), "/tmp/nightly-kade-4022.log");
+        let api = &env_services()[0];
+        let p = werk_nightly_log_path("/x/chorus-werk/silas-9");
+        let plist = generate_plist(api, "silas", "/x/chorus-werk/silas-9", 3343, &[("NIGHTLY_LOG_PATH", p.as_str())]);
+        assert!(plist.contains("<key>NIGHTLY_LOG_PATH</key><string>/tmp/nightly-silas-9.log</string>"), "{}", plist);
+        assert!(!plist.contains("Library/Logs/Chorus"), "never production's nightly log: {}", plist);
     }
 
     /// #4022 — athena-make runs from the role's deploy-werk bin slot with
