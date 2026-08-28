@@ -1540,7 +1540,13 @@ fn post_test_results(
                 .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
             werk_test::testresult_batch_endpoint(&collection)
         });
-    const MAX_POSTS: usize = 2000;
+    // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first
+    // full parallel nightly joined 6,712 cases and the cap silently outranked
+    // the storage promise: 4,712 computed verdicts dropped, caught only because
+    // #4015's results-lost gate now fails the run. 10k clears the current
+    // battery (~6.7k) with headroom; the chunker already byte-bounds requests,
+    // so a bigger cap costs more chunks, not bigger ones.
+    const MAX_POSTS: usize = 10_000;
     // #3925 — the RUN's clock, threaded from run start; post time is not run time.
     let ts = run_epoch_ms;
     let payloads: Vec<String> = joined
