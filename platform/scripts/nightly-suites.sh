@@ -351,7 +351,7 @@ run_cargo_lane() {
     while [ ! -s "$_cap" ] || kill -0 $$ 2>/dev/null; do
       sleep 10
       [ -f "$_cap" ] || continue
-      _now=$(grep -c '^nightly-unit|' "$_cap" 2>/dev/null || echo 0)
+      _now=$(grep -c '^nightly-unit|' "$_cap" 2>/dev/null); _now=${_now:-0}
       if [ "$_now" -gt "$_seen" ]; then
         printf '%s\n' "$(sed -n "$((_seen+1)),${_now}p" "$_cap" | grep '^nightly-unit|')" | while IFS='|' read -r _ k u v s; do
           [ -n "$u" ] && spine_emit nightly.suite.observed "lane=runner" "kind=$k" "unit=$u" "verdict=$v"
@@ -1257,13 +1257,18 @@ PYEOF
     # read a werk snapshot as the canonical record). If CHORUS_ROOT is a werk
     # path and no explicit NIGHTLY_LOG_PATH was set, auto-isolate to a werk-local
     # log and skip the team nudge.
+    # #4022 — the two halves were coupled: an EXPLICIT NIGHTLY_LOG_PATH skipped
+    # the whole block, so a werk run with its own log path still paged the team
+    # (2026-08-28 13:17, "30 red across the board" from kade-4022's demo run —
+    # the exact page #3722 exists to prevent). Isolation of the log and silence
+    # toward the team are separate facts; a werk root implies both.
     case "$CHORUS_ROOT" in
       *"/chorus-werk/"*)
         if [ -z "${NIGHTLY_LOG_PATH:-}" ]; then
           export NIGHTLY_LOG_PATH="/tmp/nightly-$(basename "$CHORUS_ROOT").log"
-          export NIGHTLY_NO_NUDGE=1
-          echo "nightly-suites: WERK RUN — isolated to $NIGHTLY_LOG_PATH, team nudge suppressed (#3722)" >&2
-        fi ;;
+        fi
+        export NIGHTLY_NO_NUDGE=1
+        echo "nightly-suites: WERK RUN — isolated to $NIGHTLY_LOG_PATH, team nudge suppressed (#3722)" >&2 ;;
     esac
     # #3720 — INCREMENTAL persistence: every SUITE line lands in the log AS IT
     # COMPLETES (tee is the single writer), so a killed run leaves its partial

@@ -1676,22 +1676,50 @@ fn run_reconcile() -> Result<i32, String> {
     registered.dedup(); // covers fan-out duplicates one row per covers value
     let endpoint = std::env::var("OWL_API_TESTRESULTS")
         .unwrap_or_else(|_| "http://localhost:3360/testresults?limit=100000".to_string());
-    let jq = r#".data[] | [.filePath, .testName] | @tsv"#;
-    let pipe = format!("curl -sf --max-time 15 '{}' | jq -r '{}'", endpoint, jq);
-    let out = Command::new("bash")
-        .args(["-c", &pipe])
-        .output()
-        .map_err(|e| format!("testresults fetch failed: {}", e))?;
-    let mut executed: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let mut it = l.split('\t');
-            match (it.next(), it.next()) {
-                (Some(f), Some(n)) if !f.is_empty() => Some((f.to_string(), n.to_string())),
-                _ => None,
+    // #4022 — `pipefail`, and a failed fetch is an ERROR, not an empty ledger.
+    // On 2026-08-28 /testresults 502'd, `curl -sf` printed nothing, and this
+    // function reported "7,794 registered tests never ran" — every test the
+    // nightly had just executed and stored (7,269 posted, 49/49 chunks). A
+    // census that cannot reach the ledger must say so, never "nothing ran".
+    // The ledger is larger than one page (229k rows, 100k page cap), so the
+    // walk follows `links.next` until the collection is exhausted.
+    let jq = r#"(.data[] | [.filePath, .testName] | @tsv), ("__NEXT__\t" + (.links.next // ""))"#;
+    let mut executed: Vec<(String, String)> = Vec::new();
+    let mut page = endpoint.clone();
+    let mut pages = 0usize;
+    loop {
+        pages += 1;
+        let pipe = format!("set -o pipefail; curl -sf --max-time 120 '{}' | jq -r '{}'", page, jq);
+        let out = Command::new("bash")
+            .args(["-c", &pipe])
+            .output()
+            .map_err(|e| format!("testresults fetch failed: {}", e))?;
+        if !out.status.success() {
+            return Err(format!(
+                "testresults fetch failed: {} unreachable or refused (rc={}, page {}) — census not taken",
+                page,
+                out.status.code().unwrap_or(-1),
+                pages
+            ));
+        }
+        let mut next = String::new();
+        for l in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some(n) = l.strip_prefix("__NEXT__\t") {
+                next = n.to_string();
+                continue;
             }
-        })
-        .collect();
+            let mut it = l.split('\t');
+            if let (Some(f), Some(n)) = (it.next(), it.next()) {
+                if !f.is_empty() {
+                    executed.push((f.to_string(), n.to_string()));
+                }
+            }
+        }
+        match werk_test::next_page_url(&page, &next) {
+            Some(n) if pages < 50 => page = n,
+            _ => break,
+        }
+    }
     executed.sort();
     executed.dedup();
     let gap = reconcile_gap(&registered, &executed);

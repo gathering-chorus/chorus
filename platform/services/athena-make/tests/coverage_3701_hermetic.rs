@@ -370,8 +370,12 @@ fn stub_handle(stream: &mut TcpStream) {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let req = athena_make::read_http_request(stream, 1 << 20);
     let body = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-    let resp_body = if let Some(idx) = body.find("query=") {
-        let q = urldecode(&body[idx + 6..]);
+    // #4022 — the client POSTs a raw application/sparql-query body (the query
+    // outgrew argv and url-encoding); the form shape is kept for older callers.
+    let raw_sparql = req.to_ascii_lowercase().contains("content-type: application/sparql-query");
+    let form_query = if raw_sparql { None } else { body.find("query=") };
+    let resp_body = if raw_sparql || form_query.is_some() {
+        let q = if raw_sparql { body.to_string() } else { urldecode(&body[form_query.unwrap() + 6..]) };
         // #4010 — the fixture now SLICES, because the real store does.
         // athena-make pushes LIMIT/OFFSET into SPARQL rather than fetching every
         // row and paginating in memory; a stub that ignored them would answer a

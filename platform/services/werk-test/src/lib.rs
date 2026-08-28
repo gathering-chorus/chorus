@@ -853,6 +853,28 @@ pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> St
     out
 }
 
+/// #4022 — resolve a collection's `links.next` (a root-relative `/v1/...` path)
+/// against the page URL it came from. The ledger is 229k rows and a page caps
+/// at 100k, so the census walks pages; a next link that is absent, empty, or
+/// identical to the current page ends the walk (no self-loop on a broken link).
+pub fn next_page_url(current: &str, next: &str) -> Option<String> {
+    let next = next.trim();
+    if next.is_empty() {
+        return None;
+    }
+    let resolved = if next.starts_with("http://") || next.starts_with("https://") {
+        next.to_string()
+    } else {
+        let after_scheme = current.find("://").map(|i| i + 3).unwrap_or(0);
+        let origin_end = current[after_scheme..].find('/').map(|i| i + after_scheme).unwrap_or(current.len());
+        // the generated API mounts at "/" and self-links as "/v1/<coll>": strip
+        // the version prefix the server does not actually route.
+        let path = next.strip_prefix("/v1").unwrap_or(next);
+        format!("{}{}", &current[..origin_end], path)
+    };
+    if resolved == current { None } else { Some(resolved) }
+}
+
 /// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
 /// Returns rows + the PARALLEL testName vec + the PARALLEL minted entity-name
 /// vec (same filter → same length, always aligned). Shorter rows get empty

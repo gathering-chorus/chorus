@@ -41,16 +41,43 @@ fn fuseki() -> String {
     std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| "http://localhost:3030/pods".to_string())
 }
 
+/// #4022 — the curl argv for a SPARQL query. The query text travels on STDIN as
+/// a raw `application/sparql-query` POST body (SPARQL 1.1 protocol §2.1.3),
+/// never on argv and never url-encoded: `GET /testresults?limit=100000` builds
+/// a VALUES block over 100k subjects (~10 MB). On argv that failed at spawn with
+/// `Argument list too long (os error 7)`; url-encoded through curl it failed with
+/// `--data-urlencode: out of memory`. Both were 502s whose cause was the
+/// transport, not the store. Pure so the proof can assert the query is absent
+/// from argv without a Fuseki.
+pub fn sparql_curl_args(endpoint: &str) -> Vec<String> {
+    vec![
+        "-sf".into(), "--max-time".into(), "60".into(),
+        "-H".into(), "Accept: application/sparql-results+json".into(),
+        "-H".into(), "Content-Type: application/sparql-query".into(),
+        "--data-binary".into(), "@-".into(),
+        format!("{}/query", endpoint),
+    ]
+}
+
 pub fn sparql_json(query: &str) -> R<String> {
-    let out = Command::new("curl")
-        .args([
-            "-sf", "--max-time", "20",
-            "-H", "Accept: application/sparql-results+json",
-            "--data-urlencode", &format!("query={}", query),
-            &format!("{}/query", fuseki()),
-        ])
-        .output()
+    sparql_json_at(&fuseki(), query)
+}
+
+pub fn sparql_json_at(endpoint: &str, query: &str) -> R<String> {
+    use std::io::Write;
+    let mut child = Command::new("curl")
+        .args(sparql_curl_args(endpoint))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("curl-spawn: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // A closed pipe (curl already gone) surfaces below as a failed status,
+        // with curl's own stderr — not as a spawn error.
+        let _ = stdin.write_all(query.as_bytes());
+    }
+    let out = child.wait_with_output().map_err(|e| format!("curl-spawn: {}", e))?;
     if !out.status.success() {
         return Err(format!("fuseki-query failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -5957,5 +5984,46 @@ mod bind_scope_tests_4004 {
         std::env::set_var("ATHENA_MAKE_BIND", "0.0.0.0");
         assert_eq!(bind_host(), "0.0.0.0");
         std::env::remove_var("ATHENA_MAKE_BIND");
+    }
+}
+
+#[cfg(test)]
+mod sparql_argv_4022 {
+    use super::*;
+
+    /// Negative proof (#3734): the OLD shape — query on argv — cannot even spawn
+    /// once the query outgrows ARG_MAX. This is the state the fix exists to
+    /// separate from a real store error; keep it red-able here so the module
+    /// cannot pass vacuously if someone puts the query back on argv.
+    #[test]
+    fn negative_proof_a_5mb_query_on_argv_fails_at_spawn_with_e2big() {
+        let big = "x".repeat(5 * 1024 * 1024);
+        let err = Command::new("curl")
+            .args(["-sf", "--data-urlencode", &format!("query={}", big), "http://127.0.0.1:1/query"])
+            .output()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("Argument list too long"), "expected E2BIG on argv, got: {:?}", err);
+    }
+
+    #[test]
+    fn the_query_is_never_on_argv() {
+        let args = sparql_curl_args("http://127.0.0.1:1");
+        assert!(args.iter().any(|a| a == "@-"), "query must be read from stdin: {:?}", args);
+        assert!(!args.iter().any(|a| a.starts_with("query=")), "query text leaked onto argv: {:?}", args);
+        assert!(!args.iter().any(|a| a == "--data-urlencode"), "url-encoding a 10 MB body is curl's OOM: {:?}", args);
+        assert!(args.iter().any(|a| a == "Content-Type: application/sparql-query"), "raw SPARQL POST body: {:?}", args);
+        assert_eq!(args.last().map(String::as_str), Some("http://127.0.0.1:1/query"));
+    }
+
+    /// Control: the same 5 MB query through the fixed path gets PAST spawn and
+    /// fails at the (dead) endpoint — a store error, not a process-table error.
+    #[test]
+    fn control_a_5mb_query_reaches_the_endpoint_via_stdin() {
+        let big = "x".repeat(5 * 1024 * 1024);
+        let err = sparql_json_at("http://127.0.0.1:1/pods", &big).unwrap_err();
+        assert!(err.starts_with("fuseki-query failed"), "expected an endpoint failure, got: {}", err);
+        assert!(!err.contains("Argument list too long"), "{}", err);
     }
 }
