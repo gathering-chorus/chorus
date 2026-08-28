@@ -20,7 +20,7 @@ setup() {
 # single execution path) may reference the pulse nudge URL.
 @test "only the MCP path references the pulse nudge URL (3475/api/nudge)" {
   cd "$REPO"
-  offenders=$(grep -rlnE "[0-9]+/api/nudge" platform 2>/dev/null \
+  offenders=$(grep -rlnE --exclude-dir={node_modules,target,dist,coverage,logs} "[0-9]+/api/nudge" platform 2>/dev/null \
     | grep -vE 'node_modules|/dist|/coverage|\.test\.|tests/|\.bats$|\.map$|\.html$' \
     | grep -vE '/target/|platform/logs/' \
     | grep -vE 'platform/pulse/' \
@@ -69,7 +69,7 @@ setup() {
   cd "$REPO"
   tmp="platform/probe-3949-nudge-url.sh"
   echo 'curl http://localhost:3475/api/nudge' > "$tmp"
-  offenders=$(grep -rlnE "[0-9]+/api/nudge" platform 2>/dev/null \
+  offenders=$(grep -rlnE --exclude-dir={node_modules,target,dist,coverage,logs} "[0-9]+/api/nudge" platform 2>/dev/null \
     | grep -vE 'node_modules|/dist|/coverage|\.test\.|tests/|\.bats$|\.map$|\.html$' \
     | grep -vE '/target/|platform/logs/' \
     | grep -vE 'platform/pulse/' \

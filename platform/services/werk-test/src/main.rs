@@ -621,11 +621,18 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if stack_down.is_none() {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
-    for p in &ts_pkgs {
+    // #4022 — npm lane pooled at 2: jest is internally parallel, so two
+    // concurrent packages already saturate; more just multiplies load (the
+    // 6-worker take pegged the box to 194).
+    let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(2);
+    let npm_root = root.clone();
+    let npm_results = werk_test::run_pool(&ts_pkgs, npm_workers, |p| run_jest(&npm_root, p));
+    for (p, (ok, cases)) in npm_results {
+        let p = &p;
         let pkg_ns: Vec<String> = if stack_down.is_some() {
             ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
         } else { Vec::new() };
-        let (ok, cases) = run_jest(&root, p);
         // #4004 — attribute each case to the package its FILE lives in, not to
         // the package the runner happened to invoke. Kade read "cards 7 fail /
         // clearing 1 fail" and found the failing cases were
