@@ -560,9 +560,16 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let mut failed_count = 0usize;
     let mut all_cases: Vec<CaseResult> = Vec::new();
     let mut unmatched_cargo = 0usize;
-    for c in &crates {
-        let crate_prefix = format!("platform/services/{}/tests/", c);
-        let ns_bins: Vec<String> = if stack_down.is_some() {
+    // #4022 — the cargo lane was 24 serial `cargo nextest` invocations against
+    // an already-warm shared target dir; pool them. cargo's own flock still
+    // serializes any cold BUILD, so contention degrades to the old timing,
+    // never to corruption. Worker count is deliberately smaller than the bats
+    // pool — nextest is internally parallel, so crates multiply CPU.
+    let cargo_workers: usize = std::env::var("NIGHTLY_CARGO_WORKERS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(3);
+    let ns_bins_for = |c: &str| -> Vec<String> {
+        if stack_down.is_some() {
+            let crate_prefix = format!("platform/services/{}/tests/", c);
             ns_all.iter()
                 .filter_map(|f| f.strip_prefix(&crate_prefix))
                 .filter_map(|rest| rest.strip_suffix(".rs"))
@@ -571,12 +578,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 .collect()
         } else {
             Vec::new()
-        };
+        }
+    };
+    let cargo_root = root.clone();
+    let cargo_results = werk_test::run_pool(&crates, cargo_workers, |c| {
+        let ns_bins = ns_bins_for(c);
         let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
-        let (ok, cases) = run_cargo(&root, c, &q_names, &ns_refs);
+        (run_cargo(&cargo_root, c, &q_names, &ns_refs), ns_bins.len())
+    });
+    for (c, ((ok, cases), ns_len)) in cargo_results {
+        let c = &c;
         let passed = cases.iter().filter(|(_, r)| r == "pass").count();
         let case_failed = cases.iter().filter(|(_, r)| r != "pass").count();
-        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_refs.len()));
+        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_len));
         let crate_dir = format!("platform/services/{}", c);
         for (bare, result) in cases {
             match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
