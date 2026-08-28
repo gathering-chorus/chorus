@@ -704,7 +704,7 @@ fi
   fail="$FAIL_COUNT" \
   warn="$WARN_COUNT" \
   total="$TOTAL" \
-  failures="$(IFS=,; echo "${FAIL_NAMES[*]}")" \
+  failures="$FAILS_CSV" \
   warns="$WARNS_CSV" \
   2>/dev/null || true
 
