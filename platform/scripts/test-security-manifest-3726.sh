@@ -37,9 +37,18 @@ fi
 grep -q "principal-marknakib" "$ID_TTL" 2>/dev/null && ok "marknakib in source (was live-only drift)" || no "marknakib missing from source"
 grep -q "id.lightlifeurbangardens.com" "$ID_TTL" 2>/dev/null && ok "webIds track the logical issuer (match token webids)" || no "webIds do not match the issuer tokens present"
 
-# 2 — scope source faithful to live: 13 grants (silas/wren/kade x4 + chorus-sdk x1)
+# 2 — scope source faithful to LIVE. The expected count is read from the store
+# the door resolves (urn:chorus:domains:security), never a literal: a literal
+# went stale twice (13 -> 14 -> 17 as #3975/#4010 added grants) and turned this
+# file red on canonical with nothing actually wrong (2026-08-28). A store that
+# answers 0 or is unreachable falls back to the last known-good floor, so an
+# empty store cannot make the check pass.
+LIVE_FLOOR=17
+Q="http://localhost:3030/pods/query"
+live_n=$(curl -s -m4 "$Q" --data-urlencode 'query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?s) AS ?n) WHERE { GRAPH <urn:chorus:domains:security> { ?x c:hasScope ?s } }' -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
+if [ -z "$live_n" ] || [ "$live_n" -lt 1 ]; then live_n=$LIVE_FLOOR; live_src="floor (store unreachable/empty)"; else live_src="live store"; fi
 ns=$(grep -oE '"urn:chorus:[^"]+"\^\^xsd:anyURI' "$SCOPE_TTL" 2>/dev/null | grep -c . || echo 0)
-[ "$ns" -eq 14 ] && ok "scope source has 13 grants (matches live)" || no "scope source grant count = $ns, expected 14"
+[ "$ns" -eq "$live_n" ] && ok "scope source has $ns grants (matches $live_src)" || no "scope source grant count = $ns, $live_src has $live_n — source and store have drifted"
 
 # 3 — deploy set REFERENCES the security files (else a fresh load omits them)
 grep -q "security-model-3618.ttl" "$DEPLOY" && ok "deploy set includes the security schema" || no "security-model-3618.ttl NOT in the deploy set — fresh load has no security schema"
@@ -67,7 +76,7 @@ if [ -r "$AUTH" ] && curl -s -m4 http://localhost:3030/pods/query --data-urlenco
   sloc=$(curl -s "$Q" --data-urlencode "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?w) AS ?n) WHERE { GRAPH <$SG> { ?p c:webId ?w FILTER(CONTAINS(STR(?w),\"localhost\")) } }" -H 'Accept: text/csv' 2>/dev/null | tail -1 | tr -dc '0-9')
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$SG" -o /dev/null 2>/dev/null || true
   [ "${sp:-0}" -eq 12 ] && ok "scratch load reproduces 12 security principals" || no "scratch load reproduced ${sp:-?} principals, expected 12"
-  [ "${sc:-0}" -eq 14 ] && ok "scratch load reproduces 14 scope grants" || no "scratch load reproduced ${sc:-?} scopes, expected 14"
+  [ "${sc:-0}" -eq "$live_n" ] && ok "scratch load reproduces $live_n scope grants (= $live_src)" || no "scratch load reproduced ${sc:-?} scopes, expected $live_n ($live_src)"
   [ "${sloc:-1}" -eq 0 ] && ok "reproduced allow-set has ZERO localhost webIds (matches real tokens)" || no "reproduced allow-set has ${sloc} localhost webIds — reload would lock out"
 else
   echo "  SKIP: Fuseki not reachable — behavioral scratch load not run (source + deploy-set checks stand)"

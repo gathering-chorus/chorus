@@ -1,6 +1,7 @@
 mod hooks;
 mod hook_obs;
 mod session_cache;
+mod signal_witness;
 pub mod shared;
 mod state;
 mod types;
@@ -218,13 +219,27 @@ async fn main() {
 
     info!("chorus-hooks listening on {}", socket_path);
 
+    // #4025 — arm the terminator witness BEFORE tokio's signal() registers
+    // (that happens when shutdown_signal() is first polled, inside serve).
+    // signal-hook-registry chains to whatever sigaction it finds installed.
+    signal_witness::install();
+    let started_at = std::time::Instant::now();
+    let pid = std::process::id().to_string();
+    let ppid = unsafe { libc::getppid() }.to_string();
+    crate::state::chorus_log(
+        "hooks.started",
+        "system",
+        &[("pid", &pid), ("ppid", &ppid), ("socket", &socket_path)],
+    )
+    .await;
+
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(started_at))
         .await
         .expect("Server failed");
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(started_at: std::time::Instant) {
     // #2559: handle both SIGINT (Ctrl+C, terminal) and SIGTERM (launchctl bootout,
     // systemd, kill default). ctrl_c() alone leaves the daemon's cleanup unrun
     // when launchd restarts it, which is the actual prod path.
@@ -253,7 +268,36 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 
-    info!("Shutting down...");
+    // #4025 — name the terminator on the spine BEFORE any cleanup. This is the
+    // whole point of the card: three exit -15 deaths under load with no record
+    // of who sent the signal. The witness recorded si_pid/si_uid in the handler;
+    // here we resolve the sender's name and write the event. Absence of this
+    // event after a death = SIGKILL (uncatchable) or a crash, never a polite ask.
+    let w = signal_witness::observed();
+    let sender_pid = w.sender_pid.to_string();
+    let sender_uid = w.sender_uid.to_string();
+    let sender_comm = signal_witness::sender_comm(w.sender_pid);
+    let pid = std::process::id().to_string();
+    let ppid = unsafe { libc::getppid() }.to_string();
+    let uptime_s = started_at.elapsed().as_secs().to_string();
+    crate::state::chorus_log(
+        "hooks.terminating",
+        "system",
+        &[
+            ("signal", w.signal_name()),
+            ("sender_pid", &sender_pid),
+            ("sender_uid", &sender_uid),
+            ("sender_comm", &sender_comm),
+            ("pid", &pid),
+            ("ppid", &ppid),
+            ("uptime_s", &uptime_s),
+        ],
+    )
+    .await;
+    info!(
+        "Shutting down... {} from pid {} ({}) uid {}",
+        w.signal_name(), sender_pid, sender_comm, sender_uid
+    );
     // #3631 — clean shutdown removes the durable socket + pid in lockstep. The
     // flock is released automatically when the process exits (no manual unlock);
     // clearing the socket lets the next start bind without a stale-file race.

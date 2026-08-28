@@ -29,14 +29,35 @@ pub fn is_recovery_command(raw_input: &str) -> bool {
     };
 
     // A recovery VERB paired with the chorus-hooks target. Not a bare mention.
+    let rebuild = cmd.contains("build-signed.sh chorus-hooks");
+    let agent_state_deploy = cmd.contains("agent-state.sh")
+        && cmd.contains("chorus-hooks")
+        && cmd.contains("deploy");
+
+    is_hooks_restart_command(cmd) || rebuild || agent_state_deploy
+}
+
+/// #4025 — the commands that RESTART the hooks daemon (SIGTERM it and let
+/// launchd bring it back): `launchctl kickstart -k / bootout / bootstrap` of
+/// com.chorus.hooks, or `agent-state.sh chorus-hooks restart|start`. A deploy
+/// (`agent-state.sh chorus-hooks deploy`, `chorus-deploy chorus-hooks`) is NOT
+/// in this set — a new binary legitimately restarts the service.
+///
+/// Two callers, two opposite answers, by design:
+///   - the shim's connect-failure carve-out (daemon DOWN) lets these through —
+///     that is the recovery path (#2790/#3631);
+///   - the live daemon's infra_guardrails DENIES them — a daemon that is
+///     answering the request is provably alive, and every exit -15 death on
+///     2026-08-27/28 (13:53, 21:03, 06:50, 09:40) was a role running exactly
+///     this after a 15s timeout under load. Busy is not dead.
+pub fn is_hooks_restart_command(cmd: &str) -> bool {
     let launchctl_restart = (cmd.contains("kickstart")
         || cmd.contains("bootstrap")
         || cmd.contains("bootout"))
         && cmd.contains("com.chorus.hooks");
-    let rebuild = cmd.contains("build-signed.sh chorus-hooks");
-    let agent_state = cmd.contains("agent-state.sh")
+    let agent_state_restart = cmd.contains("agent-state.sh")
         && cmd.contains("chorus-hooks")
-        && (cmd.contains("restart") || cmd.contains("start") || cmd.contains("deploy"));
-
-    launchctl_restart || rebuild || agent_state
+        && (cmd.contains("restart") || cmd.contains(" start"))
+        && !cmd.contains("deploy");
+    launchctl_restart || agent_state_restart
 }
