@@ -512,6 +512,9 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Add new service-specific gates here, not by kind.
         let owl_upstream = owl_upstream_for(role)?;
         let nightly_log = werk_nightly_log_path(werk_root);
+        let css_issuer = css_issuer_for_variant();
+        let chorus_home = std::env::var("CHORUS_HOME")
+            .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
             "chorus-api" => vec![
                 ("CHORUS_API_SCHEDULED_JOBS", "off"),
@@ -521,6 +524,19 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
+            ],
+            // #4022 — the athena variant verifies write tokens against CSS's
+            // JWKS, and the issuer URL reaches the binary ONLY through env
+            // (CSS_ISSUER; prod gets it from athena-make-launch.sh). Without it
+            // the variant defaults to http://localhost:3001/, CSS answers 500
+            // for that identifier, ES256 verifies fail closed, and every
+            // nightly writeback to the demo store 401s (2026-08-28 14:37:
+            // 0 of 7,289 stored, first_fail_http=401 — the same token was
+            // accepted by prod). Same for CHORUS_HOME: the model-resolved
+            // allow-set and the identity scripts live under it.
+            "athena-make" => vec![
+                ("CSS_ISSUER", css_issuer.as_str()),
+                ("CHORUS_HOME", chorus_home.as_str()),
             ],
             _ => vec![],
         };
@@ -648,8 +664,38 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
 
 // --- unit tests for the pure helpers (no IO, no subprocess) ---
 
+/// #4022 — the CSS issuer the athena variant must verify against: the
+/// builder's env if set, else the same default `athena-make-launch.sh` gives
+/// prod. Never the bare-binary default (`http://localhost:3001/`), which CSS
+/// rejects as "outside the configured identifier".
+pub fn css_issuer_for_variant() -> String {
+    std::env::var("CSS_ISSUER")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "https://id.lightlifeurbangardens.com/".to_string())
+}
+
 #[cfg(test)]
 mod tests {
+    /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
+    /// way prod's launch script does; the bare-binary default is the 401.
+    #[test]
+    fn athena_variant_plist_carries_the_css_issuer_never_the_bare_default() {
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let issuer = css_issuer_for_variant();
+        assert!(issuer.starts_with("https://"), "issuer must be the real CSS, got {}", issuer);
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", 3364,
+            &[("CSS_ISSUER", issuer.as_str()), ("CHORUS_HOME", "/Users/x/chorus")]);
+        assert!(plist.contains(&format!("<key>CSS_ISSUER</key><string>{}</string>", issuer)), "{}", plist);
+        assert!(plist.contains("<key>CHORUS_HOME</key><string>/Users/x/chorus</string>"), "{}", plist);
+        assert!(!plist.contains("localhost:3001"), "the bare default is the 401: {}", plist);
+        // negative proof (#3734): the plist shape WITHOUT the pair is exactly what
+        // was deployed on 2026-08-28 — make sure this test can see that state.
+        let bare = generate_plist(&athena, "kade", "/werk/kade-4022", 3364, &[]);
+        assert!(!bare.contains("CSS_ISSUER"), "a bare plist must be distinguishable: {}", bare);
+    }
+
     use super::*;
 
     #[test]
