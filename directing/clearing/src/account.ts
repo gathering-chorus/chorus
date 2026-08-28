@@ -26,6 +26,9 @@ export interface ChangeParams {
 }
 
 const CSS_HOST = 'id.lightlifeurbangardens.com';
+// #3837 — the local hairpin base is deployment config, not a code constant: the
+// identity server moved to shared-security (same port today; env wins).
+const CSS_LOCAL_BASE = process.env.CSS_LOCAL_BASE || 'http://localhost:3001';
 
 /** Host-override headers: reach localhost CSS while it thinks it's serving the public
  *  origin — the same trick seed-css.sh + the #3669 cutover used. */
@@ -76,9 +79,7 @@ async function authenticate(
 
 export async function changePassword(
   p: ChangeParams,
-  // #3837 — the local hairpin base is deployment config, not a code constant:
-  // the identity server moved to shared-security (same port today; env wins).
-  cssBase = process.env.CSS_LOCAL_BASE || 'http://localhost:3001',
+  cssBase = CSS_LOCAL_BASE,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ChangeResult> {
   const bad = rejectBadArguments(p);
