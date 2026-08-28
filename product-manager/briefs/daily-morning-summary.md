@@ -1,26 +1,31 @@
-# Morning Summary — 2026-08-27
+# Morning Summary — 2026-08-28
 
-**HEADLINE:** TS build spiked overnight from 238 → 946 errors (+708, @types/jest regression) — new fire on top of a strong 6-card day yesterday.
+**HEADLINE:** Build fire out overnight (946→238 TS errors, -708 recovered); domain-context-chorus hits the 7-day staleness threshold today, and chorus-api is still down.
 
 ---
 
-**OPS:** YELLOW (4 yellows, 0 reds)
-Top concern: domain-context files are 5 days old, 2 days from the 7-day threshold, and yesterday's update action (infra + chorus) was not completed — 6+ cards unreflected. Hooks dead-code warnings are now in their 5th consecutive day. `athena-deploy-model.sh` /tmp violations unchanged since #3991.
+**OPS:** YELLOW/RED (1 red, 4 yellows)
+Top concern: 16+ LaunchAgent plist files use hardcoded `/tmp/` for log paths — CSC non-compliant. No card exists yet. File one today.
+- 🔴 RED: LaunchAgent `/tmp/` refs in `proving/config/launchagents/` + `chorus-hooks/` — CSC violation, needs card + migration to `$TMPDIR` or `$CHORUS_HOME/logs/`.
+- 🟡 chorus-api OFFLINE (ConnectionRefused) — board state unavailable; confirm it's up before stand-up.
+- 🟡 domain-context-chorus: 6 days old as of today, 1,287 file touches in 7 days — **at threshold, refresh today**.
+- 🟡 Hooks: 7 `cargo check` warnings in chorus-hooks (`probe_role_session` + others) — accumulated tech debt.
+- 🟡 Perf baseline data: scripts exist but no captured data visible remotely; confirm host is capturing.
 
 **QUALITY:** RED
-- TS build: 238 → **946 errors (+708)** — all `@types/jest` type errors; new regression as of today. Needs immediate investigation (`npm ls @types/jest`).
-- 4 test suites (clearing, workflow-engine, chorus-sdk, pulse): BLOCKED — `ts-jest` preset not found. **Day 76.** Escalation overdue.
-- Lint: BLOCKED — ESLint wrong path. **Day 78.**
-- Tests run: 0 (all suites blocked).
+- 4 test suites (clearing, workflow-engine, chorus-sdk, pulse): BLOCKED — `ts-jest` preset not found. **Day 77.** Root fix: `npm ci` in each sub-package.
+- Lint: BLOCKED — `@eslint/js` not found (root `node_modules` missing). **Day 79.**
+- Build: **238 TS errors** — recovered from yesterday's 946 (-708). @types/jest spike resolved; back to prior baseline.
+- Tests run: **0**. Coverage: N/A.
 
-**YESTERDAY:** 6 cards shipped — #4016 (silas), #4013 (kade: UNMEASURED remap guard), #4012 (kade), #4011 (kade), #4010 (wren), #4004 (silas additional commit). Strong throughput.
+**YESTERDAY (2026-08-27):** 5 cards shipped — #3860 (wren ×2 commits), #3992 (silas), #4015 (kade), #4020 (silas), #4021 (silas). Strong throughput. Build spike resolved itself overnight (no explicit fix needed).
 
 **TODAY (recommended priorities):**
-1. **[Wren/Silas/Kade]** Investigate `@types/jest` removal — `npm ls @types/jest`, check if root `package.json` changed. Fix before errors compound further.
-2. **[Silas]** Update `domain-context-infrastructure.md` + `domain-context-chorus.md` today — 2 days to threshold.
-3. **[Silas]** Prune dead code in `process.rs` and `word_cap.rs` (hooks warnings, day 5).
-4. **[Silas]** Fix `athena-deploy-model.sh` 6 hardcoded `/tmp` paths at next touch.
+1. **[Wren]** Refresh `domain-context-chorus.md` — at the 7-day cliff, high-activity domain.
+2. **[Silas]** File card for LaunchAgent `/tmp/` → `$TMPDIR` migration; 16+ files, CSC blocking.
+3. **[Silas]** Bring chorus-api back online — board is blind without it.
+4. **[Jeff decision]** Test suite + lint blocker at day 77/79: who owns `npm ci` across sub-packages? Escalation is overdue.
 
 **BLOCKERS (needs Jeff):**
-- **TS build spike** (+708 errors overnight) is a new regression — root cause unknown. If `@types/jest` was intentionally removed, test files need updating; if accidental, restore it.
-- **Test suite blocker at day 76** — `npm ci` has not been run in sub-packages for over 10 weeks. Decision needed: who owns this fix, and when?
+- **chorus-api down** — board state unavailable; stand-up is flying blind on WIP.
+- **npm ci blocker, day 77** — 4 test suites and lint blocked for 11 weeks. No owner, no timeline. Needs a decision.
