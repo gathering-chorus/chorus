@@ -64,13 +64,20 @@ chorus:principal-chorus-sdk a chorus:Principal ;
 
 # #3975 — the 03:00 nightly runner. werk-test --nightly posts per-case
 # TestResults; without a machine principal the posts typed-skip every night
-# (witnessed 2026-08-22). Service kind, no holdsRole — the nightly is not a
-# role, it is the clock. Scope grant (tests graph ONLY) lives in
+# (witnessed 2026-08-22). Scope grant (tests graph ONLY) lives in
 # security-scopes-3689.ttl; the credential VALUE is never modeled.
+#
+# #4026 — holdsRole → role-nightly. The earlier position here ("no holdsRole —
+# the nightly is not a role, it is the clock") predates the door requiring a
+# model-resolved role for every write; without the edge the 2026-08-28 nightly
+# stored 0/4,229. role-nightly exists exactly for this attribution (#3860
+# rider): writes say "nightly", never an agent. Position updated, not
+# silently contradicted.
 chorus:principal-nightly a chorus:Principal ;
     rdfs:label "nightly (03:00 runner service principal)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/nightly/profile/card#me" ;
     chorus:principalKind "service" ;
+    chorus:holdsRole chorus:role-nightly ;
     chorus:canSignIn "false" .
 
 # #3653 — Jeff joins his own security model. The human is a Principal like every

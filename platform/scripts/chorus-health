@@ -510,6 +510,18 @@ else
   warn "spine-one-clock" "spine missing at $SPINE_CLOCK_LOG — cannot verify (never a vacuous pass)"
 fi
 
+# write-principals-resolve-role (#4026): every Principal holding an athena-make
+# write scope must resolve a role through chorus:holdsRole, asked of the STORE
+# the door reads. The 2026-08-28 nightly stored 0/4,229 because principal-nightly
+# had scope + identity and no edge, and the only verifier was the door at 03:00.
+# This runs every 15 minutes, so the class fails in daylight. FAIL, not WARN:
+# a red here means tonight's results will not store.
+if wp_out=$(bash "${SCRIPTS}/test-write-principals-resolve-role-4026.sh" 2>&1); then
+  pass "write-principals-resolve-role" "$(echo "$wp_out" | grep -c 'live: ok') door-writing principal(s) resolve a role"
+else
+  fail "write-principals-resolve-role" "$(echo "$wp_out" | grep -E 'live: RED|FAIL: live' | head -1)"
+fi
+
 # ─── INTERACTION / CONTEXT ───────────────────────────────────────────────────
 
 # session-start envelope completeness (principles_inject not stale in last 24h)
