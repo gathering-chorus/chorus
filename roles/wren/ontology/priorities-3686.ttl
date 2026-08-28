@@ -113,7 +113,7 @@ chorus:RoleShape a sh:NodeShape ;
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:roleKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                sh:pattern "^(agent|human)$" ] ;
+                sh:pattern "^(agent|human|automation)$" ] ;
   sh:property [ sh:path chorus:rolePriority ; sh:maxCount 1 ; sh:datatype xsd:integer ;
                 chorus:uniqueGlobal true ] .
 
