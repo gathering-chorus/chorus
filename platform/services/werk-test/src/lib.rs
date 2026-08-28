@@ -2756,3 +2756,38 @@ mod run_pool_tests {
         assert_eq!(out[0].0, "a");
     }
 }
+
+/// #4022 — the serialized tail split. needs-stack marks a suite as TOUCHING the
+/// live stack, but most such suites only READ it (probes, health checks) and can
+/// safely overlap each other at low width. Only the isolation-conf list names
+/// MUTATORS (stop agents, rebind ports) — those run strictly alone. Readers
+/// pool at width 2 after the hermetic pool drains; mutators run last, serial.
+pub fn split_serialized(serialized: &[String], mutators: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut readers = Vec::new();
+    let mut alone = Vec::new();
+    for s in serialized {
+        if mutators.iter().any(|m| m == s) { alone.push(s.clone()); } else { readers.push(s.clone()); }
+    }
+    (readers, alone)
+}
+
+#[cfg(test)]
+mod serialized_split_tests {
+    use super::*;
+
+    #[test]
+    fn readers_pool_and_mutators_stay_alone() {
+        let ser: Vec<String> = ["probe.bats", "membrane.sh", "health.bats"].iter().map(|s| s.to_string()).collect();
+        let (readers, alone) = split_serialized(&ser, &["membrane.sh".to_string()]);
+        assert_eq!(readers, vec!["probe.bats".to_string(), "health.bats".to_string()]);
+        assert_eq!(alone, vec!["membrane.sh".to_string()]);
+    }
+
+    #[test]
+    fn negative_proof_a_conf_listed_mutator_never_lands_in_the_reader_pool() {
+        let ser: Vec<String> = vec!["membrane.sh".to_string()];
+        let (readers, alone) = split_serialized(&ser, &["membrane.sh".to_string()]);
+        assert!(readers.is_empty());
+        assert_eq!(alone.len(), 1);
+    }
+}

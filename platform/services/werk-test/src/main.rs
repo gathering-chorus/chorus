@@ -699,12 +699,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().saturating_sub(2).max(1)).unwrap_or(4));
-    println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} serialized --",
-        plan.parallel.len(), workers, plan.serialized.len());
+    // #4022 second cut — the serialized tail was 50 suites at width 1. Only
+    // conf-listed MUTATORS truly need to run alone; needs-stack READERS
+    // (probes, health checks) overlap each other safely at width 2.
+    let (stack_readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
+    println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
+        plan.parallel.len(), workers, stack_readers.len(), mutators.len());
     let pool_root = root.clone();
     let mut lane_results: Vec<(String, (bool, Vec<(String, String)>, String))> =
-        werk_test::run_pool(&plan.parallel, workers, move |b| run_bats_cases(&pool_root, b));
-    for b in &plan.serialized {
+        werk_test::run_pool(&plan.parallel, workers, |b| run_bats_cases(&pool_root, b));
+    let reader_root = root.clone();
+    lane_results.extend(
+        werk_test::run_pool(&stack_readers, 2, |b| run_bats_cases(&reader_root, b)));
+    for b in &mutators {
         lane_results.push((b.clone(), run_bats_cases(&root, b)));
     }
     for (b, (ok, cases, text)) in lane_results {
