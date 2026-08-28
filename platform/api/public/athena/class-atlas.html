@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Class Atlas — Athena</title>
+<!-- #3992 — the OWL model as UML, per domain, generated from the store on every
+     load. One diagram per domain (classes as boxes with datatype attributes,
+     object properties as labelled edges with SHACL multiplicities, subclass
+     triangles); cross-domain edges render dashed with the target's home domain
+     named. Zero hardcoded model content: the page draws whatever
+     /api/athena/class-atlas returns, which walks definesVocabulary live —
+     "see our domains and relationships, not take-your-word-for-it" (Jeff). -->
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('class-atlas');</script>
+<script src="/js/vendor/mermaid.min.js"></script>
+<style>
+  .anav{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 16px}
+  .anav a{font:500 11.5px system-ui,sans-serif;padding:5px 9px;border:1px solid var(--line,#cdd5de);
+          border-radius:2px;color:var(--muted,#5b6675);text-decoration:none;background:var(--panel,#fff)}
+  .anav a:hover{border-color:#0d6a89;color:#0d6a89}
+  .anav a small{color:var(--muted,#a8b0bb);margin-left:4px}
+  .adom{border:1px solid var(--line,#d8dee6);border-radius:4px;background:var(--panel,#fff);
+        margin-bottom:18px;overflow:hidden}
+  .adom h2{font:600 13px ui-monospace,Menlo,monospace;padding:9px 13px;margin:0;
+           border-bottom:1px solid var(--line,#e6eaef);background:var(--hover,#f6f8fa)}
+  .adom h2 small{font-weight:400;color:var(--muted,#8a94a3);margin-left:8px}
+  .adia{padding:10px;overflow-x:auto}
+  .astatus{font:400 12.5px system-ui,sans-serif;color:var(--muted,#5b6675);padding:14px}
+  .astatus.err{color:#a8226b;font-weight:600}
+  .alegend{font:400 11px system-ui,sans-serif;color:var(--muted,#8a94a3);margin:0 0 14px}
+</style></head>
+<body>
+<main style="max-width:1200px;margin:0 auto;padding:16px">
+<h1 style="font:300 26px system-ui,sans-serif;margin:6px 0 2px">Class Atlas</h1>
+<p class="alegend">UML per domain, live from <code>urn:chorus:ontology</code> —
+solid edges stay in-domain, <em>dashed edges leave the domain</em> (target's home in the label),
+<code>*</code> marks a SHACL-required attribute, multiplicities are <code>min..max</code>.</p>
+<nav class="anav" id="nav"></nav>
+<div id="out" class="astatus">Loading the model…</div>
+</main>
+<script>
+mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
+
+// mermaid identifiers must be bare words; labels carry the truth.
+const ident = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_');
+
+function domainDiagram(dom) {
+  const L = ['classDiagram'];
+  for (const cls of dom.classes) {
+    L.push(`class ${ident(cls.name)} {`);
+    for (const a of cls.attributes) {
+      const req = a.min >= 1 ? '*' : '';
+      L.push(`  ${a.type || 'any'} ${ident(a.name)}${req}`);
+    }
+    L.push('}');
+    for (const p of cls.parents) L.push(`${ident(p)} <|-- ${ident(cls.name)}`);
+    for (const e of cls.edges) {
+      const arrow = e.crossDomain ? '..>' : '-->';
+      L.push(`${ident(cls.name)} ${arrow} "${e.multiplicity}" ${ident(e.to)} : ${ident(e.name)}`);
+    }
+  }
+  return L.join('\n');
+}
+
+(async () => {
+  const out = document.getElementById('out');
+  let atlas;
+  try {
+    const r = await fetch('/api/athena/class-atlas');
+    atlas = await r.json();
+    if (!r.ok || atlas.storeReachable === false) throw new Error('store-unreachable');
+  } catch {
+    // The store said nothing — say THAT, never render an empty model as truth.
+    out.className = 'astatus err';
+    out.textContent = 'Store unreachable — the atlas cannot be drawn (this is a finding, not an empty model).';
+    return;
+  }
+  const nav = document.getElementById('nav');
+  out.className = ''; out.textContent = '';
+  for (const dom of atlas.domains) {
+    const a = document.createElement('a');
+    a.href = '#dom-' + ident(dom.name);
+    a.textContent = dom.name;
+    const n = document.createElement('small');
+    n.textContent = String(dom.classes.length);
+    a.appendChild(n);
+    nav.appendChild(a);
+
+    const sec = document.createElement('section');
+    sec.className = 'adom'; sec.id = 'dom-' + ident(dom.name);
+    const h = document.createElement('h2');
+    h.textContent = dom.name;
+    const hs = document.createElement('small');
+    hs.textContent = dom.classes.length + ' class' + (dom.classes.length === 1 ? '' : 'es');
+    h.appendChild(hs);
+    const div = document.createElement('div'); div.className = 'adia';
+    sec.appendChild(h); sec.appendChild(div);
+    out.appendChild(sec);
+    try {
+      const { svg } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom));
+      div.innerHTML = svg;
+    } catch (e) {
+      div.textContent = 'diagram failed for ' + dom.name + ': ' + e.message;
+    }
+  }
+})();
+</script>
+</body></html>
