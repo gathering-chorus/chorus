@@ -76,6 +76,28 @@ pub enum ProgramArgsTemplate {
     Node { entry: String },
     /// Run `<werk>/<source_dir_rel>/target/release/<binary>` from the werk.
     Rust { binary: String },
+    /// #4022 — a deploy-werk artifact (`<CHORUS_WERK_BASE>/<role>-bin/<binary>`)
+    /// run with fixed args plus `--port <role port>`. athena-make takes its port
+    /// as an argument, not an env, and the werk pipeline installs the built
+    /// binary into the role's bin slot, not the crate's target dir.
+    WerkBin { binary: String, args: Vec<String> },
+}
+
+/// #4022 — where deploy-werk installs a werk's built binaries.
+pub fn werk_bin_dir(role: &str) -> String {
+    let base = std::env::var("CHORUS_WERK_BASE")
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus-werk".to_string());
+    format!("{}/{}-bin", base, role)
+}
+
+/// #4022 — the chorus-api variant's `/owl` proxy must reach the WERK's
+/// athena-make, not production's: an athena-make change is otherwise invisible
+/// in the demo env (found 2026-08-28 — the presented variant proxied /owl to
+/// prod :3360, which still 502'd on the very route the card fixed).
+pub fn owl_upstream_for(role: &str) -> R<String> {
+    let athena = env_services().into_iter().find(|s| s.name == "athena-make")
+        .ok_or_else(|| "env: athena-make is not an env service".to_string())?;
+    Ok(format!("http://127.0.0.1:{}", athena.port_for(role)?))
 }
 
 /// The canonical role list — silas, kade, wren. Adding a fourth role would
@@ -120,6 +142,23 @@ pub fn env_services() -> Vec<EnvService> {
             port_env: "CHORUS_MCP_PORT".to_string(),
             smoke_path: "/mcp".to_string(),
             smoke_kind: SmokeKind::McpInitialize,
+        },
+        // #4022 — the werk's own athena-make, so the api variant's /owl proxy
+        // (and every Athena page through it) shows THIS card's model API.
+        EnvService {
+            name: "athena-make".to_string(),
+            kind: EnvServiceKind::RustService,
+            silas_port: 3363,
+            kade_port: 3364,
+            wren_port: 3365,
+            source_dir_rel: "platform/services/athena-make".to_string(),
+            program_args_template: ProgramArgsTemplate::WerkBin {
+                binary: "athena-make".to_string(),
+                args: vec!["serve".to_string()],
+            },
+            port_env: "ATHENA_MAKE_PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
         },
     ]
 }
@@ -227,6 +266,13 @@ pub fn generate_plist(
         }
         ProgramArgsTemplate::Rust { binary } => {
             vec![format!("{}/target/release/{}", working_dir, binary)]
+        }
+        ProgramArgsTemplate::WerkBin { binary, args } => {
+            let mut v = vec![format!("{}/{}", werk_bin_dir(role), binary)];
+            v.extend(args.iter().cloned());
+            v.push("--port".to_string());
+            v.push(port.to_string());
+            v
         }
     };
 
@@ -362,7 +408,7 @@ fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
 /// Build dist for one service inside the werk. TS services run `npm run build`;
 /// future Rust-built TS services would extend this. Cheap (~2s); env_up calls
 /// this per service before bootstrapping the variant.
-fn build_service_dist(svc: &EnvService, werk_root: &str) -> R<()> {
+fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
     let svc_dir = format!("{}/{}", werk_root, svc.source_dir_rel);
     if !Path::new(&svc_dir).is_dir() {
         return Err(format!("env_up: service dir not found at {} (werk-pull first?)", svc_dir));
@@ -380,6 +426,14 @@ fn build_service_dist(svc: &EnvService, werk_root: &str) -> R<()> {
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
         }
+        ProgramArgsTemplate::WerkBin { ref binary, .. } => {
+            // #4022 — deploy-werk already built + installed the binary into the
+            // role's bin slot; env_up only refuses loudly if it is not there.
+            let bin = format!("{}/{}", werk_bin_dir(role), binary);
+            if Path::new(&bin).is_file() { Ok(()) } else {
+                Err(format!("env_up: {} not found at {} (deploy-werk installs it; run werk-deploy first)", svc.name, bin))
+            }
+        }
     }
 }
 
@@ -396,7 +450,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
         // failed to build, not "env_up failed."
-        build_service_dist(&svc, werk_root)?;
+        build_service_dist(&svc, werk_root, role)?;
 
         // Phase 2: generate plist + bootstrap launchd unit.
         let port = svc.port_for(role)?;
@@ -445,11 +499,14 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // that race on shared SQLite/Fuseki/spine — default OFF in werk-api
         // (Wren hole 2). chorus-mcp doesn't have those; keep extras empty.
         // Add new service-specific gates here, not by kind.
+        let owl_upstream = owl_upstream_for(role)?;
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
             "chorus-api" => vec![
                 ("CHORUS_API_SCHEDULED_JOBS", "off"),
                 ("CHORUS_DB_PATH", demo_db_path.as_str()),
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
+                // #4022 — /owl proxies to the werk's athena-make, not prod's.
+                ("OWL_UPSTREAM", owl_upstream.as_str()),
             ],
             _ => vec![],
         };
@@ -592,6 +649,36 @@ mod tests {
         let names: Vec<&str> = svcs.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"chorus-api"), "expected chorus-api in env services");
         assert!(names.contains(&"chorus-mcp"), "expected chorus-mcp in env services");
+        assert!(names.contains(&"athena-make"), "expected athena-make in env services (#4022)");
+    }
+
+    /// #4022 — the api variant's /owl proxy points at the SAME role's athena
+    /// variant; the negative half: never at another role's port, never at prod.
+    #[test]
+    fn api_variant_owl_upstream_is_the_roles_athena_variant() {
+        assert_eq!(owl_upstream_for("kade").unwrap(), "http://127.0.0.1:3364");
+        assert_eq!(owl_upstream_for("silas").unwrap(), "http://127.0.0.1:3363");
+        assert!(owl_upstream_for("ghost").is_err());
+        let api = &env_services()[0];
+        let up = owl_upstream_for("wren").unwrap();
+        let plist = generate_plist(api, "wren", "/werk/wren-1", 3345, &[("OWL_UPSTREAM", up.as_str())]);
+        assert!(plist.contains("<key>OWL_UPSTREAM</key><string>http://127.0.0.1:3365</string>"), "{}", plist);
+        assert!(!plist.contains("3360") && !plist.contains("3364"), "wren's variant must not reach prod or kade's athena: {}", plist);
+    }
+
+    /// #4022 — athena-make runs from the role's deploy-werk bin slot with
+    /// `serve --port <role port>`; the crate's target dir is never the program.
+    #[test]
+    fn athena_variant_runs_from_werk_bin_with_serve_and_port() {
+        std::env::set_var("CHORUS_WERK_BASE", "/wb");
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", athena.port_for("kade").unwrap(), &[]);
+        std::env::remove_var("CHORUS_WERK_BASE");
+        assert!(plist.contains("<string>/wb/kade-bin/athena-make</string>"), "{}", plist);
+        assert!(plist.contains("<string>serve</string>"), "{}", plist);
+        assert!(plist.contains("<string>--port</string>") && plist.contains("<string>3364</string>"), "{}", plist);
+        assert!(!plist.contains("target/release"), "never the crate build dir: {}", plist);
+        assert!(plist.contains("com.chorus.athena-make.werk.kade"), "{}", plist);
     }
 
     #[test]
