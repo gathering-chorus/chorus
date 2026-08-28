@@ -513,6 +513,8 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let owl_upstream = owl_upstream_for(role)?;
         let nightly_log = werk_nightly_log_path(werk_root);
         let css_issuer = css_issuer_for_variant();
+        let model_bin = format!("{}/athena-model", werk_bin_dir(role));
+        let variant_path = variant_path_for(role);
         let chorus_home = std::env::var("CHORUS_HOME")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
@@ -534,9 +536,17 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             // 0 of 7,289 stored, first_fail_http=401 — the same token was
             // accepted by prod). Same for CHORUS_HOME: the model-resolved
             // allow-set and the identity scripts live under it.
+            // ...and the DAL: every write shells to `athena-model`, resolved via
+            // PATH (launchd's default PATH has no chorus bin) — the presented
+            // variant answered `dal-spawn: No such file or directory` → 502 on
+            // every batch. The variant now names its DAL explicitly (the same
+            // deploy-werk bin slot its own binary runs from) and carries prod's
+            // PATH shape so subprocesses (curl, jq, node) resolve the same way.
             "athena-make" => vec![
                 ("CSS_ISSUER", css_issuer.as_str()),
                 ("CHORUS_HOME", chorus_home.as_str()),
+                ("CHORUS_MODEL_BIN", model_bin.as_str()),
+                ("PATH", variant_path.as_str()),
             ],
             _ => vec![],
         };
@@ -668,6 +678,14 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
 /// builder's env if set, else the same default `athena-make-launch.sh` gives
 /// prod. Never the bare-binary default (`http://localhost:3001/`), which CSS
 /// rejects as "outside the configured identifier".
+/// #4022 — PATH for a werk variant: its own bin slot first, then prod's shape
+/// (`~/.chorus/bin`, homebrew, system). Subprocesses a variant spawns (the DAL,
+/// curl, jq, node) resolve exactly as they do under prod's plist.
+pub fn variant_path_for(role: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    format!("{}:{}/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", werk_bin_dir(role), home)
+}
+
 pub fn css_issuer_for_variant() -> String {
     std::env::var("CSS_ISSUER")
         .ok()
@@ -694,6 +712,24 @@ mod tests {
         // was deployed on 2026-08-28 — make sure this test can see that state.
         let bare = generate_plist(&athena, "kade", "/werk/kade-4022", 3364, &[]);
         assert!(!bare.contains("CSS_ISSUER"), "a bare plist must be distinguishable: {}", bare);
+    }
+
+    /// #4022 — the variant names its DAL and carries a PATH; the bare plist
+    /// (what was presented at 15:40 and 502'd every batch) has neither.
+    #[test]
+    fn athena_variant_names_its_dal_and_path_from_its_own_bin_slot() {
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let model_bin = format!("{}/athena-model", werk_bin_dir("kade"));
+        let path = variant_path_for("kade");
+        assert!(path.starts_with(&werk_bin_dir("kade")), "{}", path);
+        assert!(path.contains("/.chorus/bin:") && path.ends_with("/usr/bin:/bin"), "{}", path);
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", 3364,
+            &[("CHORUS_MODEL_BIN", model_bin.as_str()), ("PATH", path.as_str())]);
+        assert!(plist.contains(&format!("<key>CHORUS_MODEL_BIN</key><string>{}</string>", model_bin)), "{}", plist);
+        assert!(plist.contains("<key>PATH</key><string>"), "{}", plist);
+        assert!(!model_bin.contains("target/release"), "the DAL comes from the bin slot, never a build dir: {}", model_bin);
+        let bare = generate_plist(&athena, "kade", "/werk/kade-4022", 3364, &[]);
+        assert!(!bare.contains("CHORUS_MODEL_BIN") && !bare.contains("<key>PATH</key>"), "{}", bare);
     }
 
     use super::*;
