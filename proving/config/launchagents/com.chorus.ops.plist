@@ -15,8 +15,6 @@
     <string>/tmp/chorus-ops.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/chorus-ops.log</string>
-    <key>RunAtLoad</key>
-    <true/>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>

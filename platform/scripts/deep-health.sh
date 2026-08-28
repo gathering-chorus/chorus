@@ -542,6 +542,20 @@ esac
 
 # --- Report ---
 # Determine status: degraded (real failures), warning (only log-freshness), healthy (nothing)
+# --- 19. Boot herd (#4027) ---
+# Interval agents carrying RunAtLoad=true fire at boot alongside every service;
+# 18 of them put the Library at load 527 on 2026-08-28 (3 hard crashes/2 days).
+# Warning, not failure: nothing is down, the next boot is what it endangers.
+_BOOT_AUDIT="${CHORUS_ROOT}/platform/scripts/launchagent-boot-audit.sh"
+if [ -x "$_BOOT_AUDIT" ]; then
+  _herd=$("$_BOOT_AUDIT" 2>/dev/null); _herd_rc=$?
+  if [ "$_herd_rc" -eq 1 ]; then
+    WARNINGS+=("boot-herd: $(grep -c '^boot-herd:' <<<"$_herd") interval LaunchAgent(s) RunAtLoad=true — fires at boot (#4027). Fix: launchagent-boot-audit.sh --fix")
+  elif [ "$_herd_rc" -ne 0 ]; then
+    WARNINGS+=("boot-herd: audit could not read ~/Library/LaunchAgents (rc=$_herd_rc)")
+  fi
+fi
+
 # #3753 AC3 — load-aware reclassify. A probe timeout on a starved box measures
 # the machine's mood, not the service (2026-08-05: "unreachable" paged for an
 # app answering in 29ms). When the box is loaded RIGHT NOW, timeout-class

@@ -16,8 +16,6 @@
     <string>/tmp/nudge-health.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/nudge-health.log</string>
-    <key>RunAtLoad</key>
-    <true/>
     <key>EnvironmentVariables</key>
     <dict>
         <key>CHORUS_ROOT</key>
