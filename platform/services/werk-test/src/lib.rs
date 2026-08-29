@@ -2782,14 +2782,34 @@ where
     L: Fn() -> Option<f64> + Send + Sync,
 {
     use std::sync::{Arc, Mutex};
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     if units.is_empty() { return (Vec::new(), 0); }
     let workers = workers.max(1).min(units.len());
     let next = AtomicUsize::new(0);
     let waits = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let finished = AtomicBool::new(false);
     let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
         Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
     std::thread::scope(|s| {
+        // #4022 — heartbeat. The nightly's wedge guard kills a lane that prints
+        // nothing for NIGHTLY_QUIET_CAP (600s). A narrow pool prints only when a
+        // unit finishes, and one long bats suite is silent for longer than that:
+        // 2026-08-29 11:45 the whole bats lane died that way at load 5. Progress
+        // is not a wedge; say so once a minute while anything is in flight.
+        s.spawn(|| {
+            let mut ticks = 0u32;
+            while !finished.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                ticks += 1;
+                if ticks % 60 == 0 {
+                    println!("-- pool heartbeat: {}/{} done, {} in flight, {} gate hold(s) --",
+                        done.load(Ordering::SeqCst), units.len(),
+                        next.load(Ordering::SeqCst).min(units.len()) - done.load(Ordering::SeqCst),
+                        waits.load(Ordering::SeqCst));
+                }
+            }
+        });
         for _ in 0..workers {
             s.spawn(|| loop {
                 let i = next.fetch_add(1, Ordering::SeqCst);
@@ -2804,9 +2824,13 @@ where
                 let unit = &units[i];
                 let out = f(unit);
                 slots.lock().unwrap()[i] = Some((unit.clone(), out));
+                if done.fetch_add(1, Ordering::SeqCst) + 1 == units.len() {
+                    finished.store(true, Ordering::SeqCst);
+                }
             });
         }
     });
+    finished.store(true, Ordering::SeqCst);
     let out = Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
         .into_iter().flatten().collect();
     (out, waits.load(Ordering::SeqCst))
