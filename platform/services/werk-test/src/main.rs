@@ -565,8 +565,23 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // serializes any cold BUILD, so contention degrades to the old timing,
     // never to corruption. Worker count is deliberately smaller than the bats
     // pool — nextest is internally parallel, so crates multiply CPU.
+    // #4022 — load-aware widths: each lane gets a share of the box, and no pool
+    // takes a new unit while the 1-minute load is over cap (2× cores). Env
+    // overrides keep the old knobs; the defaults are the box's.
+    let budget = werk_test::cpu_budget();
+    let (cw_default, nextest_threads, nw_default, jest_workers, bats_default) = werk_test::lane_widths(budget);
+    let cap: f64 = std::env::var("NIGHTLY_LOAD_CAP").ok().and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| werk_test::load_cap(budget));
+    let gate_wait = std::time::Duration::from_secs(
+        std::env::var("NIGHTLY_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
+    let gate_tick = std::time::Duration::from_secs(5);
+    println!("-- #4022 load-aware: budget {} cores, cap load {:.0}, cargo {}×{} threads, npm {}×{} jest workers, bats {} --",
+        budget, cap, cw_default, nextest_threads, nw_default, jest_workers, bats_default);
     let cargo_workers: usize = std::env::var("NIGHTLY_CARGO_WORKERS").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(3);
+        .and_then(|v| v.parse().ok()).unwrap_or(cw_default);
+    if std::env::var("NIGHTLY_NEXTEST_THREADS").is_err() {
+        std::env::set_var("NIGHTLY_NEXTEST_THREADS", nextest_threads.to_string());
+    }
     let ns_bins_for = |c: &str| -> Vec<String> {
         if stack_down.is_some() {
             let crate_prefix = format!("platform/services/{}/tests/", c);
@@ -581,7 +596,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
     };
     let cargo_root = root.clone();
-    let cargo_results = werk_test::run_pool(&crates, cargo_workers, |c| {
+    let (cargo_results, cargo_waits) = werk_test::run_pool_gated(&crates, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |c| {
         let ns_bins = ns_bins_for(c);
         let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
         (run_cargo(&cargo_root, c, &q_names, &ns_refs), ns_bins.len())
@@ -625,9 +640,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // concurrent packages already saturate; more just multiplies load (the
     // 6-worker take pegged the box to 194).
     let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(2);
+        .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
     let npm_root = root.clone();
-    let npm_results = werk_test::run_pool(&ts_pkgs, npm_workers, |p| run_jest(&npm_root, p));
+    let (npm_results, npm_waits) = werk_test::run_pool_gated(&ts_pkgs, npm_workers, cap, read_loadavg, gate_wait, gate_tick,
+        |p| run_jest_with(&npm_root, p, Some(jest_workers)));
     for (p, (ok, cases)) in npm_results {
         let p = &p;
         let pkg_ns: Vec<String> = if stack_down.is_some() {
@@ -698,7 +714,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
     let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get().saturating_sub(2).max(1)).unwrap_or(4));
+        .unwrap_or(bats_default);
     // #4022 second cut — the serialized tail was 50 suites at width 1. Only
     // conf-listed MUTATORS truly need to run alone; needs-stack READERS
     // (probes, health checks) overlap each other safely at width 2.
@@ -706,11 +722,14 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
         plan.parallel.len(), workers, stack_readers.len(), mutators.len());
     let pool_root = root.clone();
-    let mut lane_results: Vec<(String, (bool, Vec<(String, String)>, String))> =
-        werk_test::run_pool(&plan.parallel, workers, |b| run_bats_cases(&pool_root, b));
+    let (mut lane_results, bats_waits): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
+        werk_test::run_pool_gated(&plan.parallel, workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&pool_root, b));
     let reader_root = root.clone();
-    lane_results.extend(
-        werk_test::run_pool(&stack_readers, 2, |b| run_bats_cases(&reader_root, b)));
+    let (reader_results, reader_waits) =
+        werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&reader_root, b));
+    lane_results.extend(reader_results);
+    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
+        cargo_waits + npm_waits + bats_waits + reader_waits, cap, cargo_waits, npm_waits, bats_waits + reader_waits);
     for b in &mutators {
         lane_results.push((b.clone(), run_bats_cases(&root, b)));
     }
@@ -1168,7 +1187,10 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new());
     }
-    let mut args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    // #4022 — each crate gets its share of the CPU budget (see lane_widths);
+    // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
+    let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
+    let mut args: Vec<String> = werk_test::nextest_run_args_threads(quarantined, ns_bins, threads);
     // #3955 — the ONE nextest config (pin + serial-e2e groups) lives at the werk
     // root; per-crate runs resolve config from the CRATE dir, so pass it
     // explicitly or the serial-e2e grouping silently never applies.
@@ -1251,6 +1273,12 @@ fn run_tsc(werk: &str, pkg: &str) -> bool {
 /// #3592 — `--json` capture: stdout is the machine result (per-case identity →
 /// TestResult emit), progress/failures stay on stderr and are echoed on red.
 fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
+    run_jest_with(werk, pkg, None)
+}
+
+/// #4022 — jest with its share of the CPU budget (`--maxWorkers N`); None keeps
+/// jest's default (a worker per core), which is what pegged the box.
+fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
@@ -1268,6 +1296,9 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
         .current_dir(&pkg_dir);
+    if let Some(n) = max_workers {
+        cmd.arg(format!("--maxWorkers={}", n.max(1)));
+    }
     apply_suite_world(&mut cmd, werk);
     match cmd.output() {
         Ok(o) => {
@@ -2035,4 +2066,19 @@ mod suite_deadline_tests {
         assert!(t0.elapsed().as_secs() < 30);
         assert!(text.contains("SUITE TIMED OUT"));
     }
+}
+
+
+/// #4022 — the box's 1-minute load, via `sysctl -n vm.loadavg` (macOS) with an
+/// `uptime` fallback. None when neither answers: no data must never gate.
+fn read_loadavg() -> Option<f64> {
+    let try_cmd = |c: &str, a: &[&str]| -> Option<String> {
+        let o = Command::new(c).args(a).output().ok()?;
+        if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).to_string()) } else { None }
+    };
+    try_cmd("sysctl", &["-n", "vm.loadavg"]).and_then(|t| werk_test::parse_loadavg(&t))
+        .or_else(|| try_cmd("uptime", &[]).and_then(|t| {
+            let tail = t.rsplit("load average").next().unwrap_or("");
+            werk_test::parse_loadavg(tail.trim_start_matches('s').trim_start_matches(':'))
+        }))
 }

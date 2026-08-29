@@ -259,8 +259,20 @@ pub struct Quarantined {
 /// Quarantine translates to an exact-name filterset instead of libtest's
 /// substring `--skip`; empty quarantine adds no filterset at all.
 pub fn nextest_run_args(quarantined: &[&str], exclude_bins: &[&str]) -> Vec<String> {
+    nextest_run_args_threads(quarantined, exclude_bins, None)
+}
+
+/// #4022 — same args with an explicit `--test-threads N`. nextest's default is
+/// one thread per core, and the nightly runs several crates at once, so the
+/// default multiplied: 3 crates × 8 threads on an 8-core box before a single
+/// jest or bats process started. The runner now hands each crate its share.
+pub fn nextest_run_args_threads(quarantined: &[&str], exclude_bins: &[&str], threads: Option<usize>) -> Vec<String> {
     let mut v: Vec<String> = ["nextest", "run", "--no-tests=fail"]
         .iter().map(|s| s.to_string()).collect();
+    if let Some(t) = threads {
+        v.push("--test-threads".to_string());
+        v.push(t.max(1).to_string());
+    }
     let mut terms: Vec<String> = quarantined.iter()
         .map(|c| format!("not test(={})", c)).collect();
     // #3919 — stack-down: needs-stack integration binaries excluded, typed skip
@@ -2709,6 +2721,157 @@ mod parallel_plan_tests {
     #[test]
     fn control_a_run_within_the_bar_is_silent() {
         assert!(elapsed_breach(14 * 60, 15 * 60).is_none());
+    }
+}
+
+// ── #4022 — load-aware dispatch ──────────────────────────────────────────
+// Three daytime runs (08-28 15:40, 08-28 17:24, 08-29 09:31) took an 8-core box
+// from load 7 to 300+ within nine minutes and the runner then died of its own
+// wedge guard with 38 of 302 suites done and nothing saved. The pools were
+// bounded by WORKERS but not by what each worker spawned (nextest: a thread
+// per core; jest: a worker per core), so 3 cargo + 2 npm workers alone asked
+// for ~40 cores. Two fixes: every spawned runner gets its share of the CPU
+// budget, and no pool takes a new unit while the 1-minute load is above the
+// cap. The gate WAITS (bounded), it never skips a unit — a skipped suite would
+// be a vacuous green (#3734).
+
+/// `sysctl -n vm.loadavg` prints `{ 7.16 8.68 8.28 }`; `uptime` prints three
+/// comma- or space-separated numbers. Take the first.
+pub fn parse_loadavg(text: &str) -> Option<f64> {
+    text.split(|c: char| c == '{' || c == '}' || c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty())
+        .find_map(|t| t.parse::<f64>().ok())
+}
+
+/// The CPU budget the whole nightly may ask for at once: the box's cores.
+pub fn cpu_budget() -> usize {
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1)
+}
+
+/// Per-lane widths that sum to roughly one budget. Returned as
+/// (cargo_workers, nextest_threads_each, npm_workers, jest_workers_each, bats_workers).
+pub fn lane_widths(budget: usize) -> (usize, usize, usize, usize, usize) {
+    let b = budget.max(2);
+    let cargo_workers = (b / 4).max(1);
+    let nextest_threads = (b / (cargo_workers * 2)).max(1);
+    let npm_workers = 2usize.min(b);
+    let jest_workers = (b / (npm_workers * 2)).max(1);
+    let bats_workers = (b / 2).max(1);
+    (cargo_workers, nextest_threads, npm_workers, jest_workers, bats_workers)
+}
+
+/// The load above which a pool stops taking new units: twice the core count.
+/// Below it the box still answers; above it probes time out and the runner's
+/// own quiet-cap starts killing lanes.
+pub fn load_cap(budget: usize) -> f64 {
+    (budget as f64) * 2.0
+}
+
+/// #4022 — `run_pool` with a load gate. Before each unit a worker reads
+/// `load()`; while it exceeds `cap` the worker sleeps `tick` up to `max_wait`
+/// total, then proceeds regardless (bounded: the gate slows a run, it cannot
+/// wedge one). Returns the results in INPUT order plus the number of gate
+/// waits taken, so the report can say "held N times at load > cap".
+pub fn run_pool_gated<T, F, L>(units: &[String], workers: usize, cap: f64, load: L,
+    max_wait: std::time::Duration, tick: std::time::Duration, f: F) -> (Vec<(String, T)>, usize)
+where
+    T: Send + 'static,
+    F: Fn(&str) -> T + Send + Sync,
+    L: Fn() -> Option<f64> + Send + Sync,
+{
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    if units.is_empty() { return (Vec::new(), 0); }
+    let workers = workers.max(1).min(units.len());
+    let next = AtomicUsize::new(0);
+    let waits = AtomicUsize::new(0);
+    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
+        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                if i >= units.len() { break; }
+                // the gate: hold while the box is over cap, bounded
+                let started = std::time::Instant::now();
+                while let Some(l) = load() {
+                    if l <= cap || started.elapsed() >= max_wait { break; }
+                    waits.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(tick);
+                }
+                let unit = &units[i];
+                let out = f(unit);
+                slots.lock().unwrap()[i] = Some((unit.clone(), out));
+            });
+        }
+    });
+    let out = Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
+        .into_iter().flatten().collect();
+    (out, waits.load(Ordering::SeqCst))
+}
+
+#[cfg(test)]
+mod load_aware_4022 {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn parses_sysctl_and_uptime_shapes() {
+        assert_eq!(parse_loadavg("{ 7.16 8.68 8.28 }"), Some(7.16));
+        assert_eq!(parse_loadavg("328.63 402.49 369.23"), Some(328.63));
+        assert_eq!(parse_loadavg("load averages: 3.61, 3.45, 4.02").map(|v| v as u32), Some(3));
+        assert_eq!(parse_loadavg(""), None);
+    }
+
+    #[test]
+    fn lane_widths_fit_one_budget() {
+        // 8 cores (Library): cargo 2×2 + npm 2×2 + bats 4 = 12 nominal threads,
+        // versus the old 3×8 + 2×7 + 6 = 44.
+        let (cw, nt, nw, jw, bw) = lane_widths(8);
+        assert_eq!((cw, nt, nw, jw, bw), (2, 2, 2, 2, 4));
+        assert!(cw * nt + nw * jw + bw <= 8 * 2, "lanes must not ask for more than 2× cores");
+        let (cw, nt, nw, jw, bw) = lane_widths(2);
+        assert!(cw >= 1 && nt >= 1 && nw >= 1 && jw >= 1 && bw >= 1);
+    }
+
+    #[test]
+    fn nextest_args_carry_the_thread_share() {
+        let a = nextest_run_args_threads(&[], &[], Some(2));
+        let i = a.iter().position(|x| x == "--test-threads").expect("--test-threads present");
+        assert_eq!(a[i + 1], "2");
+        assert!(!nextest_run_args(&[], &[]).contains(&"--test-threads".to_string()), "legacy shape unchanged");
+    }
+
+    /// Negative proof (#3734): the state the gate exists for — a box over cap —
+    /// must be observable as waits, and must NOT drop or skip a unit.
+    #[test]
+    fn negative_proof_over_cap_holds_but_never_skips() {
+        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
+        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(999.0),
+            Duration::from_millis(30), Duration::from_millis(10), |u| u.len());
+        assert!(waits > 0, "over cap must register as waits");
+        assert_eq!(out.len(), 6, "bounded gate: every unit still runs");
+        assert_eq!(out.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(),
+            units.iter().map(String::as_str).collect::<Vec<_>>(), "input order kept");
+    }
+
+    /// Control: under cap the gate is invisible — zero waits, same results.
+    #[test]
+    fn control_under_cap_never_waits() {
+        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
+        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(1.5),
+            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
+        assert_eq!(waits, 0);
+        assert_eq!(out.len(), 6);
+    }
+
+    /// An unreadable load must not hold the run (no data ≠ over cap).
+    #[test]
+    fn unreadable_load_does_not_gate() {
+        let units: Vec<String> = vec!["a".into(), "b".into()];
+        let (out, waits) = run_pool_gated(&units, 2, 16.0, || None,
+            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
+        assert_eq!((out.len(), waits), (2, 0));
     }
 }
 
