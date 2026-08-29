@@ -155,12 +155,29 @@ def classify(path, c):
     if EXEC and not in_crate: return 'integration', 'needs-stack', concern
     return 'unit', 'hermetic', concern
 
+# #4022 — a jest name is the WHOLE first string argument. The old pattern
+# stopped at the first quote of any kind inside the name, so
+#   it('eventFrame is NIP-01 ["EVENT", event]')  registered as  'eventFrame is NIP-01 ['
+#   it(`has zero = ${n}`)                        registered as  'has zero = ${n'
+# and the runner's fullName could never join them: 887 "never ran" in the
+# census and 594 results per nightly with no identity to save under. Match a
+# real string literal (same-quote delimited, backslash escapes honoured).
+JEST_NAME_RE = re.compile(
+    r'\b(?:it|test)(?:\.(?:only|skip|each|concurrent))?\s*\(\s*'
+    r"(?:'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|`((?:[^`\\]|\\.)*)`)")
+def jest_case_names(source):
+    out = []
+    for m in JEST_NAME_RE.finditer(source):
+        nm = next(g for g in m.groups() if g is not None)
+        out.append(nm.replace("\\'", "'").replace('\\"', '"').replace('\\`', '`'))
+    return out
+
 def case_names(path):
     try: c = open(path, errors='ignore').read()
     except Exception: return [os.path.basename(path)], ''
     if path.endswith('.rs'): r = re.findall(r'#\[(?:tokio::)?test\][^\n]*\n\s*(?:async\s+)?fn\s+(\w+)', c)
     elif path.endswith('.bats'): r = re.findall(r'@test\s+"([^"]+)"', c)
-    elif re.search(r'\.(test|spec)\.[tj]s$', path): r = re.findall(r'\b(?:it|test)\s*\(\s*[\'"`]([^\'"`]+)', c)
+    elif re.search(r'\.(test|spec)\.[tj]s$', path): r = jest_case_names(c)
     else: r = []
     return (r or [os.path.basename(path)]), c
 
@@ -239,8 +256,16 @@ def max_domain_share():
             pass
     return float(v or "0.30")
 
+# #4022 — the share gate is about CORPUS shape, and a corpus of one file is
+# always 100% one domain. The tagger's own validate-first test (one fixture
+# test) tripped the gate on 2026-08-29 (services 1/1 > 30%) and went red in
+# the nightly. Below MIN_CORPUS_FOR_SHARES the gate has no meaning and stands down.
+MIN_CORPUS_FOR_SHARES = int(os.environ.get("MIN_CORPUS_FOR_SHARES", "20"))
+
 def assert_shares(counts):
     total = sum(counts.values()) or 1
+    if total < MIN_CORPUS_FOR_SHARES:
+        return
     cap = max_domain_share()
     worst = sorted(counts.items(), key=lambda x: -x[1])
     over = [(d, n) for d, n in worst if n / total > cap]
@@ -314,4 +339,8 @@ if __name__ == "__main__":
         print(covers_for(sys.argv[2])); sys.exit(0)
     if len(sys.argv) >= 3 and sys.argv[1] == "--check-shares":
         assert_shares(json.load(open(sys.argv[2]))); print("shares ok"); sys.exit(0)
+    #   --names-of <path>        print the case names the registry would hold, no store (#4022)
+    if len(sys.argv) >= 3 and sys.argv[1] == "--names-of":
+        for nm in case_names(sys.argv[2])[0]: print(nm)
+        sys.exit(0)
     main()

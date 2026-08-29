@@ -330,17 +330,38 @@ fn rows_for(q: &str) -> Vec<String> {
     }
     if q.contains("?s a <") {
         // collection list: subj|label|status|extra…
-        if q.contains("#Domain>") {
-            return vec![format!("{NS}borg|Borg|active|wren"), format!("{NS}pulse|Pulse|active|wren")];
-        }
-        if q.contains("#Product>") {
-            return vec![
+        let canned: Vec<String> = if q.contains("#Domain>") {
+            vec![format!("{NS}borg|Borg|active|wren"), format!("{NS}pulse|Pulse|active|wren")]
+        } else if q.contains("#Product>") {
+            vec![
                 format!("{NS}loom|Loom|active|athena"),
                 format!("{NS}loom|Loom|active|borg"),
                 format!("{NS}solo|Solo||"),
-            ];
+            ]
+        } else {
+            vec![]
+        };
+        // #4022 — the page is two round-trips, and the fixture answers each the
+        // way the store does: the SUBJECT page (`SELECT (STR(?s) AS ?v)`, sliced by
+        // LIMIT/OFFSET in stub_handle) is the subject column only; the PROJECTION
+        // (`VALUES ?s { <…> }` inside the GRAPH block) is every canned row whose
+        // subject is in the VALUES list — multi-valued edges keep all their rows.
+        if q.contains("SELECT (STR(?s) AS ?v)") {
+            let mut subs: Vec<String> = canned.iter()
+                .map(|r| r.split('|').next().unwrap_or("").to_string()).collect();
+            subs.dedup();
+            return subs;
         }
-        return vec![];
+        if let Some(i) = q.find("VALUES ?s {") {
+            let list = &q[i + "VALUES ?s {".len()..];
+            let list = &list[..list.find('}').unwrap_or(list.len())];
+            let wanted: Vec<&str> = list.split_whitespace()
+                .map(|t| t.trim_start_matches('<').trim_end_matches('>')).collect();
+            return canned.into_iter()
+                .filter(|r| wanted.contains(&r.split('|').next().unwrap_or("")))
+                .collect();
+        }
+        return canned;
     }
     vec![] // principals / JWKS-adjacent / anything else → empty bindings
 }
@@ -349,8 +370,12 @@ fn stub_handle(stream: &mut TcpStream) {
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
     let req = athena_make::read_http_request(stream, 1 << 20);
     let body = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-    let resp_body = if let Some(idx) = body.find("query=") {
-        let q = urldecode(&body[idx + 6..]);
+    // #4022 — the client POSTs a raw application/sparql-query body (the query
+    // outgrew argv and url-encoding); the form shape is kept for older callers.
+    let raw_sparql = req.to_ascii_lowercase().contains("content-type: application/sparql-query");
+    let form_query = if raw_sparql { None } else { body.find("query=") };
+    let resp_body = if raw_sparql || form_query.is_some() {
+        let q = if raw_sparql { body.to_string() } else { urldecode(&body[form_query.unwrap() + 6..]) };
         // #4010 — the fixture now SLICES, because the real store does.
         // athena-make pushes LIMIT/OFFSET into SPARQL rather than fetching every
         // row and paginating in memory; a stub that ignored them would answer a

@@ -76,6 +76,39 @@ pub enum ProgramArgsTemplate {
     Node { entry: String },
     /// Run `<werk>/<source_dir_rel>/target/release/<binary>` from the werk.
     Rust { binary: String },
+    /// #4022 — a deploy-werk artifact (`<CHORUS_WERK_BASE>/<role>-bin/<binary>`)
+    /// run with fixed args plus `--port <role port>`. athena-make takes its port
+    /// as an argument, not an env, and the werk pipeline installs the built
+    /// binary into the role's bin slot, not the crate's target dir.
+    WerkBin { binary: String, args: Vec<String> },
+}
+
+/// #4022 — where deploy-werk installs a werk's built binaries.
+pub fn werk_bin_dir(role: &str) -> String {
+    let base = std::env::var("CHORUS_WERK_BASE")
+        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus-werk".to_string());
+    format!("{}/{}-bin", base, role)
+}
+
+/// #4022 — the chorus-api variant's `/owl` proxy must reach the WERK's
+/// athena-make, not production's: an athena-make change is otherwise invisible
+/// in the demo env (found 2026-08-28 — the presented variant proxied /owl to
+/// prod :3360, which still 502'd on the very route the card fixed).
+/// #4022 — where a nightly run FROM a werk writes its log: nightly-suites.sh
+/// isolates a werk run to `/tmp/nightly-<werk basename>.log` (#3722) so it never
+/// touches the 03:00 log. The api variant's /test-run report must read that
+/// same file, or the demo shows production's last nightly, never the card's.
+pub fn werk_nightly_log_path(werk_root: &str) -> String {
+    let base = Path::new(werk_root).file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| werk_root.to_string());
+    format!("/tmp/nightly-{}.log", base)
+}
+
+pub fn owl_upstream_for(role: &str) -> R<String> {
+    let athena = env_services().into_iter().find(|s| s.name == "athena-make")
+        .ok_or_else(|| "env: athena-make is not an env service".to_string())?;
+    Ok(format!("http://127.0.0.1:{}", athena.port_for(role)?))
 }
 
 /// The canonical role list — silas, kade, wren. Adding a fourth role would
@@ -120,6 +153,23 @@ pub fn env_services() -> Vec<EnvService> {
             port_env: "CHORUS_MCP_PORT".to_string(),
             smoke_path: "/mcp".to_string(),
             smoke_kind: SmokeKind::McpInitialize,
+        },
+        // #4022 — the werk's own athena-make, so the api variant's /owl proxy
+        // (and every Athena page through it) shows THIS card's model API.
+        EnvService {
+            name: "athena-make".to_string(),
+            kind: EnvServiceKind::RustService,
+            silas_port: 3363,
+            kade_port: 3364,
+            wren_port: 3365,
+            source_dir_rel: "platform/services/athena-make".to_string(),
+            program_args_template: ProgramArgsTemplate::WerkBin {
+                binary: "athena-make".to_string(),
+                args: vec!["serve".to_string()],
+            },
+            port_env: "ATHENA_MAKE_PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
         },
     ]
 }
@@ -227,6 +277,13 @@ pub fn generate_plist(
         }
         ProgramArgsTemplate::Rust { binary } => {
             vec![format!("{}/target/release/{}", working_dir, binary)]
+        }
+        ProgramArgsTemplate::WerkBin { binary, args } => {
+            let mut v = vec![format!("{}/{}", werk_bin_dir(role), binary)];
+            v.extend(args.iter().cloned());
+            v.push("--port".to_string());
+            v.push(port.to_string());
+            v
         }
     };
 
@@ -362,7 +419,7 @@ fn wait_for_smoke(url: &str, kind: &SmokeKind, timeout: Duration) -> R<()> {
 /// Build dist for one service inside the werk. TS services run `npm run build`;
 /// future Rust-built TS services would extend this. Cheap (~2s); env_up calls
 /// this per service before bootstrapping the variant.
-fn build_service_dist(svc: &EnvService, werk_root: &str) -> R<()> {
+fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
     let svc_dir = format!("{}/{}", werk_root, svc.source_dir_rel);
     if !Path::new(&svc_dir).is_dir() {
         return Err(format!("env_up: service dir not found at {} (werk-pull first?)", svc_dir));
@@ -380,6 +437,14 @@ fn build_service_dist(svc: &EnvService, werk_root: &str) -> R<()> {
                 .map(|_| ())
                 .map_err(|e| format!("env_up: cargo build in {} failed: {}", svc_dir, e))
         }
+        ProgramArgsTemplate::WerkBin { ref binary, .. } => {
+            // #4022 — deploy-werk already built + installed the binary into the
+            // role's bin slot; env_up only refuses loudly if it is not there.
+            let bin = format!("{}/{}", werk_bin_dir(role), binary);
+            if Path::new(&bin).is_file() { Ok(()) } else {
+                Err(format!("env_up: {} not found at {} (deploy-werk installs it; run werk-deploy first)", svc.name, bin))
+            }
+        }
     }
 }
 
@@ -396,7 +461,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
         // failed to build, not "env_up failed."
-        build_service_dist(&svc, werk_root)?;
+        build_service_dist(&svc, werk_root, role)?;
 
         // Phase 2: generate plist + bootstrap launchd unit.
         let port = svc.port_for(role)?;
@@ -445,11 +510,43 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // that race on shared SQLite/Fuseki/spine — default OFF in werk-api
         // (Wren hole 2). chorus-mcp doesn't have those; keep extras empty.
         // Add new service-specific gates here, not by kind.
+        let owl_upstream = owl_upstream_for(role)?;
+        let nightly_log = werk_nightly_log_path(werk_root);
+        let css_issuer = css_issuer_for_variant();
+        let model_bin = format!("{}/athena-model", werk_bin_dir(role));
+        let variant_path = variant_path_for(role);
+        let chorus_home = std::env::var("CHORUS_HOME")
+            .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
             "chorus-api" => vec![
                 ("CHORUS_API_SCHEDULED_JOBS", "off"),
                 ("CHORUS_DB_PATH", demo_db_path.as_str()),
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
+                // #4022 — /owl proxies to the werk's athena-make, not prod's.
+                ("OWL_UPSTREAM", owl_upstream.as_str()),
+                // #4022 — /test-run reads the WERK's nightly log, not prod's.
+                ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
+            ],
+            // #4022 — the athena variant verifies write tokens against CSS's
+            // JWKS, and the issuer URL reaches the binary ONLY through env
+            // (CSS_ISSUER; prod gets it from athena-make-launch.sh). Without it
+            // the variant defaults to http://localhost:3001/, CSS answers 500
+            // for that identifier, ES256 verifies fail closed, and every
+            // nightly writeback to the demo store 401s (2026-08-28 14:37:
+            // 0 of 7,289 stored, first_fail_http=401 — the same token was
+            // accepted by prod). Same for CHORUS_HOME: the model-resolved
+            // allow-set and the identity scripts live under it.
+            // ...and the DAL: every write shells to `athena-model`, resolved via
+            // PATH (launchd's default PATH has no chorus bin) — the presented
+            // variant answered `dal-spawn: No such file or directory` → 502 on
+            // every batch. The variant now names its DAL explicitly (the same
+            // deploy-werk bin slot its own binary runs from) and carries prod's
+            // PATH shape so subprocesses (curl, jq, node) resolve the same way.
+            "athena-make" => vec![
+                ("CSS_ISSUER", css_issuer.as_str()),
+                ("CHORUS_HOME", chorus_home.as_str()),
+                ("CHORUS_MODEL_BIN", model_bin.as_str()),
+                ("PATH", variant_path.as_str()),
             ],
             _ => vec![],
         };
@@ -577,8 +674,64 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
 
 // --- unit tests for the pure helpers (no IO, no subprocess) ---
 
+/// #4022 — the CSS issuer the athena variant must verify against: the
+/// builder's env if set, else the same default `athena-make-launch.sh` gives
+/// prod. Never the bare-binary default (`http://localhost:3001/`), which CSS
+/// rejects as "outside the configured identifier".
+/// #4022 — PATH for a werk variant: its own bin slot first, then prod's shape
+/// (`~/.chorus/bin`, homebrew, system). Subprocesses a variant spawns (the DAL,
+/// curl, jq, node) resolve exactly as they do under prod's plist.
+pub fn variant_path_for(role: &str) -> String {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
+    format!("{}:{}/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", werk_bin_dir(role), home)
+}
+
+pub fn css_issuer_for_variant() -> String {
+    std::env::var("CSS_ISSUER")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "https://id.lightlifeurbangardens.com/".to_string())
+}
+
 #[cfg(test)]
 mod tests {
+    /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
+    /// way prod's launch script does; the bare-binary default is the 401.
+    #[test]
+    fn athena_variant_plist_carries_the_css_issuer_never_the_bare_default() {
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let issuer = css_issuer_for_variant();
+        assert!(issuer.starts_with("https://"), "issuer must be the real CSS, got {}", issuer);
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", 3364,
+            &[("CSS_ISSUER", issuer.as_str()), ("CHORUS_HOME", "/Users/x/chorus")]);
+        assert!(plist.contains(&format!("<key>CSS_ISSUER</key><string>{}</string>", issuer)), "{}", plist);
+        assert!(plist.contains("<key>CHORUS_HOME</key><string>/Users/x/chorus</string>"), "{}", plist);
+        assert!(!plist.contains("localhost:3001"), "the bare default is the 401: {}", plist);
+        // negative proof (#3734): the plist shape WITHOUT the pair is exactly what
+        // was deployed on 2026-08-28 — make sure this test can see that state.
+        let bare = generate_plist(&athena, "kade", "/werk/kade-4022", 3364, &[]);
+        assert!(!bare.contains("CSS_ISSUER"), "a bare plist must be distinguishable: {}", bare);
+    }
+
+    /// #4022 — the variant names its DAL and carries a PATH; the bare plist
+    /// (what was presented at 15:40 and 502'd every batch) has neither.
+    #[test]
+    fn athena_variant_names_its_dal_and_path_from_its_own_bin_slot() {
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let model_bin = format!("{}/athena-model", werk_bin_dir("kade"));
+        let path = variant_path_for("kade");
+        assert!(path.starts_with(&werk_bin_dir("kade")), "{}", path);
+        assert!(path.contains("/.chorus/bin:") && path.ends_with("/usr/bin:/bin"), "{}", path);
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", 3364,
+            &[("CHORUS_MODEL_BIN", model_bin.as_str()), ("PATH", path.as_str())]);
+        assert!(plist.contains(&format!("<key>CHORUS_MODEL_BIN</key><string>{}</string>", model_bin)), "{}", plist);
+        assert!(plist.contains("<key>PATH</key><string>"), "{}", plist);
+        assert!(!model_bin.contains("target/release"), "the DAL comes from the bin slot, never a build dir: {}", model_bin);
+        let bare = generate_plist(&athena, "kade", "/werk/kade-4022", 3364, &[]);
+        assert!(!bare.contains("CHORUS_MODEL_BIN") && !bare.contains("<key>PATH</key>"), "{}", bare);
+    }
+
     use super::*;
 
     #[test]
@@ -592,6 +745,48 @@ mod tests {
         let names: Vec<&str> = svcs.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"chorus-api"), "expected chorus-api in env services");
         assert!(names.contains(&"chorus-mcp"), "expected chorus-mcp in env services");
+        assert!(names.contains(&"athena-make"), "expected athena-make in env services (#4022)");
+    }
+
+    /// #4022 — the api variant's /owl proxy points at the SAME role's athena
+    /// variant; the negative half: never at another role's port, never at prod.
+    #[test]
+    fn api_variant_owl_upstream_is_the_roles_athena_variant() {
+        assert_eq!(owl_upstream_for("kade").unwrap(), "http://127.0.0.1:3364");
+        assert_eq!(owl_upstream_for("silas").unwrap(), "http://127.0.0.1:3363");
+        assert!(owl_upstream_for("ghost").is_err());
+        let api = &env_services()[0];
+        let up = owl_upstream_for("wren").unwrap();
+        let plist = generate_plist(api, "wren", "/werk/wren-1", 3345, &[("OWL_UPSTREAM", up.as_str())]);
+        assert!(plist.contains("<key>OWL_UPSTREAM</key><string>http://127.0.0.1:3365</string>"), "{}", plist);
+        assert!(!plist.contains("3360") && !plist.contains("3364"), "wren's variant must not reach prod or kade's athena: {}", plist);
+    }
+
+    /// #4022 — the api variant's /test-run reads the werk's isolated nightly log
+    /// (the path nightly-suites.sh uses for a WERK RUN), never the 03:00 log.
+    #[test]
+    fn api_variant_reads_the_werks_nightly_log_not_prods() {
+        assert_eq!(werk_nightly_log_path("/x/chorus-werk/kade-4022"), "/tmp/nightly-kade-4022.log");
+        let api = &env_services()[0];
+        let p = werk_nightly_log_path("/x/chorus-werk/silas-9");
+        let plist = generate_plist(api, "silas", "/x/chorus-werk/silas-9", 3343, &[("NIGHTLY_LOG_PATH", p.as_str())]);
+        assert!(plist.contains("<key>NIGHTLY_LOG_PATH</key><string>/tmp/nightly-silas-9.log</string>"), "{}", plist);
+        assert!(!plist.contains("Library/Logs/Chorus"), "never production's nightly log: {}", plist);
+    }
+
+    /// #4022 — athena-make runs from the role's deploy-werk bin slot with
+    /// `serve --port <role port>`; the crate's target dir is never the program.
+    #[test]
+    fn athena_variant_runs_from_werk_bin_with_serve_and_port() {
+        std::env::set_var("CHORUS_WERK_BASE", "/wb");
+        let athena = env_services().into_iter().find(|s| s.name == "athena-make").unwrap();
+        let plist = generate_plist(&athena, "kade", "/werk/kade-4022", athena.port_for("kade").unwrap(), &[]);
+        std::env::remove_var("CHORUS_WERK_BASE");
+        assert!(plist.contains("<string>/wb/kade-bin/athena-make</string>"), "{}", plist);
+        assert!(plist.contains("<string>serve</string>"), "{}", plist);
+        assert!(plist.contains("<string>--port</string>") && plist.contains("<string>3364</string>"), "{}", plist);
+        assert!(!plist.contains("target/release"), "never the crate build dir: {}", plist);
+        assert!(plist.contains("com.chorus.athena-make.werk.kade"), "{}", plist);
     }
 
     #[test]

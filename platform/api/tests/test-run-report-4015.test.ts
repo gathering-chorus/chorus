@@ -18,6 +18,7 @@ import {
   renderTestRun,
   renderStoredRun,
   buildTestRunReport,
+  STORABLE_KINDS,
 } from '../src/handlers/test-run-report';
 
 const RECONCILED = {
@@ -218,5 +219,34 @@ describe('#4015 — the store-derived "most recent stored run" section', () => {
     const html = renderStoredRun(null);
     expect(html).toContain('will not invent one');
     expect(html).not.toContain('<table');
+  });
+});
+
+describe('#4022 — security cases are storable (run 6, 2026-08-29)', () => {
+  const LOG = [
+    'RUN|start|2026-08-29T12:10:21|pid=87534',
+    'SUITE|cargo|platform/services/werk-test|kade|pass|100 pass, 0 fail',
+    'SUITE|security|platform/tests/3924-declared-wins.bats|silas|fail|0 pass, 2 fail',
+    'SUITE|shell|platform/scripts/test-x.sh|silas|pass|5 pass, 0 fail',
+    'RUN|complete|2026-08-29T13:09:31|suites=3',
+  ].join('\n');
+
+  it('negative proof: the run-6 shape — security stored but not counted as storable — reads as RESULTS LOST', () => {
+    // What Jeff saw on his phone at 13:14: "stored 7,293 of 5,721 ✗". The runner
+    // saves security cases (bats with registered identities); the page did not
+    // count them, so stored outran its own denominator and the verdict lied.
+    expect(STORABLE_KINDS.has('security')).toBe(true);
+    expect(STORABLE_KINDS.has('shell')).toBe(false);
+    const r = buildTestRunReport({ runId: 'nr', trigger: 'nightly', scope: 'full',
+      logText: LOG, registered: 200, recorded: 102, notExecuted: null })!;
+    expect(r.crossFoot.storable).toBe(102);   // 100 cargo + 2 security; shell's 5 excluded
+    expect(reportVerdict(r)).not.toBe('RESULTS LOST');
+  });
+
+  it('control: storable cases that were NOT stored still read as lost', () => {
+    const r = buildTestRunReport({ runId: 'nr', trigger: 'nightly', scope: 'full',
+      logText: LOG, registered: 200, recorded: 100, notExecuted: null })!;
+    expect(r.crossFoot.dropped).toBe(2);
+    expect(reportVerdict(r)).toBe('RESULTS LOST');
   });
 });

@@ -1257,3 +1257,70 @@ fn playwright_summary_parses_pass_and_fail_counts() {
     assert_eq!(werk_test::parse_playwright_summary("  2 failed\n    x\n  8 passed (9s)\n"), Some((8, 2)));
     assert_eq!(werk_test::parse_playwright_summary("garbage"), None);
 }
+
+/// #4022 — the census must name "ledger unreachable" as its own state. Driven
+/// through the real binary with file:// URLs for the tests domain, so no store
+/// is needed; the results endpoint is a dead port for the negative proof and a
+/// file for the control.
+mod reconcile_unreachable_4022 {
+    use std::process::Command;
+
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("werk-test-4022-{}-{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn tests_fixture(dir: &std::path::Path) -> String {
+        let p = dir.join("tests.json");
+        std::fs::write(&p, r#"{"data":[{"filePath":"a.ts","covers":"x","pyramidLayer":"unit","testName":"one","name":"test-a-one"}]}"#).unwrap();
+        format!("file://{}", p.display())
+    }
+
+    #[test]
+    fn negative_proof_dead_ledger_is_an_error_not_7794_never_ran() {
+        let dir = scratch("dead");
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(["--reconcile"])
+            .env("OWL_API_TESTS", tests_fixture(&dir))
+            .env("OWL_API_TESTRESULTS", "http://127.0.0.1:1/testresults?limit=100000")
+            .env("CHORUS_HOME", dir.display().to_string())
+            .output()
+            .unwrap();
+        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+        assert!(!out.status.success(), "a dead ledger must not yield a verdict: {}", text);
+        assert!(text.contains("fetch failed"), "must name the unreachable ledger: {}", text);
+        assert!(!text.contains("never-run"), "must NOT report tests as never-run: {}", text);
+    }
+
+    #[test]
+    fn control_reachable_ledger_cross_foots() {
+        let dir = scratch("ok");
+        let r = dir.join("results.json");
+        std::fs::write(&r, r#"{"data":[{"filePath":"a.ts","testName":"one"}]}"#).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
+            .args(["--reconcile"])
+            .env("OWL_API_TESTS", tests_fixture(&dir))
+            .env("OWL_API_TESTRESULTS", format!("file://{}", r.display()))
+            .env("CHORUS_HOME", dir.display().to_string())
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        assert!(out.status.success(), "{}", text);
+        assert!(text.contains("registered 1, never-run: none"), "{}", text);
+    }
+}
+
+#[test]
+fn next_page_url_walks_the_ledger_and_stops_honestly_4022() {
+    use werk_test::next_page_url;
+    let cur = "http://localhost:3360/testresults?limit=100000";
+    assert_eq!(
+        next_page_url(cur, "/v1/testresults?cursor=100000&limit=100000").as_deref(),
+        Some("http://localhost:3360/testresults?cursor=100000&limit=100000")
+    );
+    assert_eq!(next_page_url(cur, ""), None, "no next link = last page");
+    assert_eq!(next_page_url(cur, "/v1/testresults?limit=100000"), None, "a self-link must not loop");
+    assert!(next_page_url("file:///tmp/r.json", "").is_none());
+}
