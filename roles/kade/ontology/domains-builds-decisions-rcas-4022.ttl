@@ -40,3 +40,40 @@ chorus:builds a owl:Class, chorus:Domain ;
   chorus:repoTarget "builds" .
   # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
 
+
+# ---- the other four dropped by #3982 in the same diff, verbatim ---------------
+chorus:domains a owl:Class, chorus:Domain ;
+  rdfs:label "domains" ; chorus:comment "The canonical product/domain/service structural model — this tree." ;
+  chorus:purpose "Hold the canonical structural model of the system — products, domains, services and their edges." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "designing/domains" ; chorus:definesVocabulary chorus:Domain, chorus:SubDomain, chorus:CollectionDomain .
+
+
+chorus:services a owl:Class, chorus:Domain ;
+  rdfs:label "services" ; chorus:comment "Service definitions, interfaces, and ownership within the product model." ;
+  chorus:purpose "Define the system's services — their interfaces, ownership, and place in the product model." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "designing/services" ; chorus:definesVocabulary chorus:Service, chorus:ServiceDesign .
+
+# ── chorus-service (Directing, ownedBy wren, partOf chorusProduct) ────────────
+
+chorus:search a owl:Class, chorus:Domain ;
+  rdfs:label "search" ; chorus:comment "Semantic retrieval across all indexed team knowledge and session history." ;
+  chorus:purpose "Provide semantic retrieval across all the team's indexed knowledge and session history." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/api/src/handlers/chorus-search.ts" .
+  # FLAG: no real owl:Class vocab (no chorus:Search class) — omitted, not faked.
+
+# ── clearing (Directing, ownedBy wren, partOf chorusProduct) ──────────────────
+
+chorus:spine a owl:Class, chorus:Domain ;
+  rdfs:label "spine" ; chorus:comment "The audit trail — structured log of all team activity and state changes." ;
+  chorus:purpose "Be the system's audit trail — the structured event log of all activity and state changes." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-spine ;
+  chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "platform/api/src/spine-event-write.ts" ; chorus:definesVocabulary chorus:Vertebra, chorus:EmitContract, chorus:EventCategory .
+
+
