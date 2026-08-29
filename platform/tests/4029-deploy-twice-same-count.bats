@@ -40,7 +40,10 @@ count() {
   curl -s "$Q" --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$GRAPH> { ?s ?p ?o } }" -H 'Accept: text/csv' | tail -1 | tr -dc '0-9'
 }
 
-deploy() { env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL" "$@" bash "$SCRIPT" >/dev/null 2>&1; }
+# The assertions are on COUNTS, never on the script's exit code: with the cleanup
+# switched off the script may legitimately refuse its own post-merge verify (that
+# is the defect), and a refusal must not abort the test before the count is read.
+deploy() { env ONTOLOGY_GRAPH="$GRAPH" TTL="$TTL" "$@" bash "$SCRIPT" >> "$BATS_TEST_TMPDIR/deploy.log" 2>&1 || true; }
 
 @test "deploy twice from the same source: the second count equals the first" {
   deploy; a=$(count)
