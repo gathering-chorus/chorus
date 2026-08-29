@@ -2751,20 +2751,22 @@ pub fn cpu_budget() -> usize {
 /// Per-lane widths that sum to roughly one budget. Returned as
 /// (cargo_workers, nextest_threads_each, npm_workers, jest_workers_each, bats_workers).
 pub fn lane_widths(budget: usize) -> (usize, usize, usize, usize, usize) {
+    // Jeff, 2026-08-29: "maybe u need less in parallel". Nominal threads now
+    // sum to ONE core count, not two: on 8 cores cargo 2×2 + npm 1×2 + bats 2.
     let b = budget.max(2);
     let cargo_workers = (b / 4).max(1);
     let nextest_threads = (b / (cargo_workers * 2)).max(1);
-    let npm_workers = 2usize.min(b);
-    let jest_workers = (b / (npm_workers * 2)).max(1);
-    let bats_workers = (b / 2).max(1);
+    let npm_workers = 1usize;
+    let jest_workers = (b / 4).max(1);
+    let bats_workers = (b / 4).max(1);
     (cargo_workers, nextest_threads, npm_workers, jest_workers, bats_workers)
 }
 
-/// The load above which a pool stops taking new units: twice the core count.
-/// Below it the box still answers; above it probes time out and the runner's
-/// own quiet-cap starts killing lanes.
+/// The load above which a pool stops taking new units: the core count. At
+/// load = cores every core has a runnable thread; past it the box queues, the
+/// probes time out, and the runner's own quiet-cap starts killing lanes.
 pub fn load_cap(budget: usize) -> f64 {
-    (budget as f64) * 2.0
+    budget as f64
 }
 
 /// #4022 — `run_pool` with a load gate. Before each unit a worker reads
@@ -2825,11 +2827,12 @@ mod load_aware_4022 {
 
     #[test]
     fn lane_widths_fit_one_budget() {
-        // 8 cores (Library): cargo 2×2 + npm 2×2 + bats 4 = 12 nominal threads,
+        // 8 cores (Library): cargo 2×2 + npm 1×2 + bats 2 = 8 nominal threads,
         // versus the old 3×8 + 2×7 + 6 = 44.
         let (cw, nt, nw, jw, bw) = lane_widths(8);
-        assert_eq!((cw, nt, nw, jw, bw), (2, 2, 2, 2, 4));
-        assert!(cw * nt + nw * jw + bw <= 8 * 2, "lanes must not ask for more than 2× cores");
+        assert_eq!((cw, nt, nw, jw, bw), (2, 2, 1, 2, 2));
+        assert!(cw * nt + nw * jw + bw <= 8, "lanes must not ask for more than the cores");
+        assert_eq!(load_cap(8), 8.0);
         let (cw, nt, nw, jw, bw) = lane_widths(2);
         assert!(cw >= 1 && nt >= 1 && nw >= 1 && jw >= 1 && bw >= 1);
     }
