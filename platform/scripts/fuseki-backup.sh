@@ -85,7 +85,12 @@ fi
 # 5. release the snapshot + prune old remote backups (keep last $KEEP)
 sudo -n umount "$MNT" 2>/dev/null || true
 tmutil deletelocalsnapshots "$SNAP_DATE" 2>/dev/null || true
-ssh -o ConnectTimeout=10 "$REMOTE" "ls -1dt '$DEST_BASE'/fuseki-pods-* 2>/dev/null | tail -n +$((KEEP+1)) | xargs -I{} rm -rf {}" 2>/dev/null || true
+# #3837 (2026-08-28) — prune by NAME, never by mtime: rsync -a preserves the source
+# directory's mtime, so `ls -t` ranked five fresh snapshots as OLDER than 08-22/23 and
+# deleted every backup from 08-24 through 08-28 while the log said "OK: 43 files".
+# The day the model graph was wiped, the 03:00 snapshot was already gone.
+# Names are ISO-dated, so lexical sort IS chronological.
+ssh -o ConnectTimeout=10 "$REMOTE" "ls -1d '$DEST_BASE'/fuseki-pods-* 2>/dev/null | sort -r | tail -n +$((KEEP+1)) | xargs -I{} rm -rf {}" 2>/dev/null || true
 
 log "OK: $SRC_N files → ${REMOTE}:${DEST}"
 spine ops.backup.fuseki.completed files="$SRC_N" dest="$DEST"
