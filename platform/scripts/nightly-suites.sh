@@ -656,7 +656,11 @@ run_coverage() {
         # comment exists so "unblocked" is never misread as "resolved".
         _cov_timeout="${NIGHTLY_COVERAGE_TIMEOUT_S:-600}"
         (cd "$dir" && _t0=$(date +%s)
-         npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent --forceExit >/dev/null 2>&1 &
+         # #4022 — jest's default is a worker per core; nine coverage packages in a row
+         # at that width took the box to load 100 (2026-08-29 11:14) before the
+         # load-aware runner lane even started. Coverage gets the same share.
+         npx --no-install jest --coverage --coverageReporters=json-summary --passWithNoTests --silent --forceExit \
+           --maxWorkers="${NIGHTLY_COVERAGE_WORKERS:-2}" >/dev/null 2>&1 &
          _jp=$!
          while kill -0 "$_jp" 2>/dev/null; do
            if [ $(( $(date +%s) - _t0 )) -ge "$_cov_timeout" ]; then
