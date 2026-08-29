@@ -1,102 +1,42 @@
-@prefix rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-@prefix rdfs:    <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix owl:     <http://www.w3.org/2002/07/owl#> .
-@prefix xsd:     <http://www.w3.org/2001/XMLSchema#> .
-@prefix chorus:  <https://jeffbridwell.com/chorus#> .
-@prefix sh:      <http://www.w3.org/ns/shacl#> .
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
 
 # =============================================================================
-# builds · decisions · rcas — re-authored as SOURCE (#4022, 2026-08-29)
+# builds · decisions · rcas — RESTORED FROM GIT (#4022, 2026-08-29)
 #
-# These three domains existed only in the live model graph: authored through
-# the pen, never written back to a MODEL_SET file. The 15:48–16:15 wipe on
-# 2026-08-28 took them, no backup held them (08-23 copy incomplete, later ones
-# post-wipe), and a deploy from source cannot restore what source never held.
-# Silas's call (14:08): re-author them here, never through the pen; he places
-# the file in MODEL_SET and deploys with the deploy-twice check.
-#
-# What is faithful: the names, their steps, the tagger's covers targets
-# (werk-*, proving/flows, failure_class → builds). What is re-decided:
-# definesVocabulary, because the served set this morning had no Build/Decision/
-# RCA class — the domains claimed record classes that already carry shapes in
-# source (builds) or nothing served at all (decisions, rcas). Each claim below
-# MOUNTS a surface (#3726: claiming is not backfill), so decisions and rcas get
-# a minimal typed class + shape here rather than an invented claim on someone
-# else's class. Owners are set by lane; adjust by edit, never by pen.
+# These three domains had source: authored in roles/wren/ontology/
+# domains-wren-silas.ttl (#3581), dropped from that file by #3982 on 2026-08-22
+# while the live graph kept serving them, then lost with the graph on
+# 2026-08-28. Wren's find (14:13): `git show 98ba14cb3^:roles/wren/ontology/
+# domains-wren-silas.ttl` holds the authored text. The blocks below are that
+# text VERBATIM (owners, products, steps, FLAGs untouched) — a restore, not a
+# re-authoring. Silas places this file in MODEL_SET; nothing goes through the pen.
 # =============================================================================
-
-# ---- builds — the Building step's own records ------------------------------
-chorus:builds a owl:Class, chorus:Domain ;
-    rdfs:label "builds" ;
-    rdfs:comment "The set of all build-lane records: verb runs, werk slots, merge events, demo verdicts, gate results, pipeline runs and the land witnesses that tie them together — one werk run, traceable end to end." ;
-    chorus:ownedBy chorus:role-kade ;
-    chorus:purpose "Make every werk run queryable as records rather than log lines: which verb ran, in which slot, what the demo said, what the gate said, and the witness the land was proven against." ;
-    chorus:definesVocabulary chorus:VerbRun , chorus:WerkSlot , chorus:MergeEvent , chorus:DemoVerdict , chorus:GateResult , chorus:PipelineRun , chorus:Witness ;
-    chorus:atStream chorus:chorusStream ;
-    chorus:partOf chorus:chorusProduct ;
-    chorus:atStep chorus:Building ;
-    chorus:status "building" ;
-    chorus:gaps "Re-authored from memory of the served set after the 2026-08-28 wipe; the original pen-authored claims are unrecoverable. Instances are still emitted as spine events, not written as records." ;
-    chorus:hasDesignDoc "designing/docs/version-control-service-design.html" .
-
-chorus:chorusProduct chorus:hasDomain chorus:builds .
-
-# ---- decisions — DEC-* records, the Directing step ---------------------------
-chorus:Decision a owl:Class ;
-    rdfs:label "Decision" ;
-    rdfs:comment "One team decision (DEC-nnn): what was decided, when, by whom, and whether it still stands." .
-
-chorus:decisionId a owl:DatatypeProperty ; rdfs:domain chorus:Decision ; rdfs:range xsd:string ; rdfs:label "decision id" .
-chorus:decidedOn  a owl:DatatypeProperty ; rdfs:domain chorus:Decision ; rdfs:range xsd:date   ; rdfs:label "decided on" .
-
-chorus:DecisionShape a sh:NodeShape ;
-    sh:targetClass chorus:Decision ;
-    sh:property [ sh:path chorus:decisionId ; sh:minCount 1 ; sh:maxCount 1 ] ;
-    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:decidedOn ; sh:minCount 1 ; sh:maxCount 1 ] ;
-    sh:property [ sh:path chorus:status ; sh:minCount 1 ; sh:in ( "standing" "superseded" "retired" ) ] .
 
 chorus:decisions a owl:Class, chorus:Domain ;
-    rdfs:label "decisions" ;
-    rdfs:comment "The set of all team decisions — the DEC-* ledger as records, so a rule can be cited by id, dated, and shown standing or superseded." ;
-    chorus:ownedBy chorus:role-wren ;
-    chorus:purpose "Give every DEC a home the tooling can read: gates cite the decision they enforce, and a superseded decision stops being cited." ;
-    chorus:definesVocabulary chorus:Decision ;
-    chorus:atStream chorus:chorusStream ;
-    chorus:partOf chorus:chorusProduct ;
-    chorus:atStep chorus:Directing ;
-    chorus:status "building" ;
-    chorus:gaps "Re-authored after the 2026-08-28 wipe. The DEC ledger still lives in markdown; no Decision records are written yet." ;
-    chorus:hasDesignDoc "designing/docs/chorus-decisions.md" .
-
-chorus:chorusProduct chorus:hasDomain chorus:decisions .
-
-# ---- rcas — root-cause analyses, the Reflecting step -------------------------
-chorus:RootCauseAnalysis a owl:Class ;
-    rdfs:label "Root cause analysis" ;
-    rdfs:comment "One incident's analysis: what Jeff experienced, the proven cause, the open trigger, and the fixes by owner." .
-
-chorus:incidentOn a owl:DatatypeProperty ; rdfs:domain chorus:RootCauseAnalysis ; rdfs:range xsd:date   ; rdfs:label "incident on" .
-chorus:rootCause  a owl:DatatypeProperty ; rdfs:domain chorus:RootCauseAnalysis ; rdfs:range xsd:string ; rdfs:label "root cause" .
-
-chorus:RootCauseAnalysisShape a sh:NodeShape ;
-    sh:targetClass chorus:RootCauseAnalysis ;
-    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:incidentOn ; sh:minCount 1 ; sh:maxCount 1 ] ;
-    sh:property [ sh:path chorus:rootCause ; sh:minCount 1 ] ;
-    sh:property [ sh:path chorus:status ; sh:minCount 1 ; sh:in ( "open" "proven" "closed" ) ] .
+  rdfs:label "decisions" ; chorus:comment "Decision log with context, rationale, and tradeoffs recorded." ;
+  chorus:purpose "Record the team's decisions with their context, rationale, and tradeoffs — the why behind the system." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
+  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "designing/decisions" .
+  # FLAG: no real owl:Class vocab (no chorus:Decision/ADR class) — definesVocabulary omitted, not faked.
 
 chorus:rcas a owl:Class, chorus:Domain ;
-    rdfs:label "rcas" ;
-    rdfs:comment "The set of all root-cause analyses — each incident as a record with its proven cause and its open questions, so the next one can be answered from the last." ;
-    chorus:ownedBy chorus:role-silas ;
-    chorus:purpose "Stop re-deriving incidents from timing and memory: an RCA is a record with a cause, a trigger state, and fixes by owner, readable by the tooling that watches for the same shape again." ;
-    chorus:definesVocabulary chorus:RootCauseAnalysis ;
-    chorus:atStream chorus:chorusStream ;
-    chorus:partOf chorus:chorusProduct ;
-    chorus:atStep chorus:Reflecting ;
-    chorus:status "building" ;
-    chorus:gaps "Re-authored after the 2026-08-28 wipe. RCAs still live as pages and artifacts; no RootCauseAnalysis records are written yet." ;
-    chorus:hasDesignDoc "designing/docs/model-graph-wipe-rca-2026-08-28.html" .
+  rdfs:label "rcas" ; chorus:comment "Root cause analyses — what broke, why, and what changed as a result." ;
+  chorus:purpose "Hold root-cause analyses — what broke, why, and what changed so it doesn't recur." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-loom ;
+  chorus:atStep chorus:Shaping ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "loom/rcas" .
+  # FLAG: no real owl:Class vocab (no chorus:RCA class) — omitted, not faked.
 
-chorus:chorusProduct chorus:hasDomain chorus:rcas .
+
+chorus:builds a owl:Class, chorus:Domain ;
+  rdfs:label "builds" ; chorus:comment "Build artifacts, Rust binary signing, and cdhash provenance." ;
+  chorus:purpose "Account for build artifacts — binary signing, cdhash provenance, and what's actually deployed." ;
+  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
+  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "builds" .
+  # FLAG: no real owl:Class vocab (no chorus:Build class) — omitted, not faked.
+
