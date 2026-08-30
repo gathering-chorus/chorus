@@ -24,13 +24,17 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.local/bin:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin:/Users/jeffbridwell/.local/bin:/Users/jeffbridwell/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>/Users/jeffbridwell</string>
         <key>CHORUS_ROOT</key>
         <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
         <key>APP_ROOT</key>
         <string>/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site</string>
+        <key>CARGO_TARGET_DIR</key>
+        <string>/Users/jeffbridwell/.chorus/nightly-cargo-target</string>
     </dict>
 </dict>
 </plist>
