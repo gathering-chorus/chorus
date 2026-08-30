@@ -415,6 +415,38 @@ run_cargo_lane() {
   done <<EOF
 $units
 EOF
+  # #4030 AC4 — planned units that never produced a unit line are RED rows.
+  _never_ran_rows "$out" "$rc"
+}
+
+# #4030 AC4 — NEVER RAN is red, not absent. The runner prints its plan
+# (`nightly-plan|kind|unit`, one per unit, before any lane runs); every planned
+# unit without a matching `nightly-unit|kind|unit|` line gets a fail row here.
+# 2026-08-30 03:00: the npm lane hung, the 7200s cap killed the runner, five
+# npm packages and every bats suite never ran — and the morning nudge said
+# "3 red", counting only the units the run had reached. A report that omits
+# what did not run certifies a ledger it never read (#3734).
+#   $1 = the runner's captured output   $2 = the lane's rc (124 = killed at cap)
+_never_ran_rows() {
+  local out="$1" rc="${2:-0}"
+  local plans; plans=$(printf '%s\n' "$out" | grep '^nightly-plan|' || true)
+  [ -z "$plans" ] && return 0
+  local ran; ran=$(printf '%s\n' "$out" | grep '^nightly-unit|' || true)
+  local why="the runner lane ended before this unit (rc=$rc)"
+  [ "$rc" = "124" ] && why="the runner was killed at the lane cap before this unit (rc=124)"
+  local pkind punit ppath
+  while IFS='|' read -r _ pkind punit; do
+    [ -z "$punit" ] && continue
+    if ! printf '%s\n' "$ran" | grep -qF -- "nightly-unit|$pkind|$punit|"; then
+      case "$pkind" in
+        cargo) ppath="platform/services/$punit" ;;
+        *)     ppath="$punit" ;;
+      esac
+      echo "SUITE|$pkind|$ppath|$(owner_for "$ppath")|fail|0 pass, 1 fail (NEVER RAN — $why)"
+    fi
+  done <<EOF
+$plans
+EOF
 }
 
 # #3974 — ONE owner-routing rule. The previous state was three disagreeing
@@ -745,6 +777,11 @@ PYEOF
 #   unmeasured  the census could not be taken (domain down, binary absent)
 _reconcile_leg() {
   local bin="${NIGHTLY_RECONCILE_BIN:-$(command -v werk-test 2>/dev/null)}"
+  # #4030 — the 03:00 launchd PATH predates ~/.chorus/bin (#2734): every
+  # scheduled census since the runner moved there said "reconciler not found",
+  # so never-ran read as UNMEASURED, never as red. Same fallback the runner
+  # lane already had.
+  [ -z "$bin" ] && [ -x "$HOME/.chorus/bin/werk-test" ] && bin="$HOME/.chorus/bin/werk-test"
   if [ -z "$bin" ] || [ ! -x "$bin" ]; then
     echo "SUITE|reconcile|tests-domain|kade|unmeasured|0 pass, 0 fail (reconciler not found — the ledger was not cross-footed)"
     return 0

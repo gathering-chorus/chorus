@@ -112,3 +112,27 @@ describe('displayPath (#3964 — readable on a phone)', () => {
     expect(html).toContain('app:jeff-bridwell-personal-site');
   });
 });
+
+// #4030 AC4 — /nightly: a planned-but-unreached suite is a red row with its
+// reason, so "was the night green?" cannot answer yes over units that never ran.
+describe('#4030 never-ran suites render red on /nightly', () => {
+  const log = [
+    'RUN|start|2026-08-30T03:00:00',
+    'SUITE|cargo|platform/services/werk-test|silas|pass|191 pass, 0 fail',
+    'SUITE|npm|platform/api|silas|fail|0 pass, 1 fail (NEVER RAN — the runner was killed at the lane cap before this unit (rc=124))',
+    'RUN|complete|2026-08-30T05:15:54',
+  ].join('\n');
+
+  it('counts the unreached unit as RED and shows why', () => {
+    const run = parseNightlyLog(log)!;
+    const html = renderNightlyPage(run);
+    expect(html).toContain('1 RED');
+    expect(html).toContain('NEVER RAN');
+    expect(html).not.toContain('ALL GREEN');
+  });
+
+  it('control: without the row the night is ALL GREEN', () => {
+    const run = parseNightlyLog(log.split('\n').filter(l => !l.includes('NEVER RAN')).join('\n'))!;
+    expect(renderNightlyPage(run)).toContain('ALL GREEN');
+  });
+});
