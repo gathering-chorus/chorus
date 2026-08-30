@@ -349,6 +349,14 @@ app.get('/harvesting/icd', sendChorusPage('icd.html'));
 app.get('/harvesting/convergence', sendChorusPage('icd.html'));
 app.get('/harvesting/mapper', (_req: Request, res: Response) => res.redirect(301, '/harvesting/icd'));
 app.get('/werk', sendChorusPage('werk.html'));
+// #4031 — The Clearing's door on the hub is the path /clearing (#3886: a path
+// link, never a port link — :3470 is dead off the LAN). On the public
+// hostname the ingress routes /clearing to the room before chorus-api sees it
+// (#3878); on localhost and the LAN nothing did, so the one link on the tile
+// answered 404 ("Cannot GET /clearing"). Same host, the room's port: a redirect
+// that works wherever chorus-api itself is reachable.
+app.get('/clearing', (req: Request, res: Response) =>
+  res.redirect(302, `${req.protocol}://${req.hostname}:3470/`));
 // #3920 — /nightly: the rendered nightly report. One page, verdict first,
 // reds on top; renders the run record the nightly writes, no re-derived verdicts.
 // #4015 — the test-run report: ONE document, two renderings. JSON at

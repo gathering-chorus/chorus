@@ -1,0 +1,41 @@
+/* #4031 — legacy token bridge for the pages that came over from Gathering.
+ *
+ * loom.html and werk.html were written against Gathering's token names
+ * (--space-md, --font-size-sm, --primary-color, --text-muted …) and its
+ * .page-container / .page-card / .page-title layout classes. chorus-api's
+ * system.css (#3415) carries a different, portable vocabulary
+ * (--space-3, --fs-sm, --accent, --text-muted …) and none of those classes,
+ * so on chorus-api the two doors opened with the lights off: browser-default
+ * everything. This file maps the old names onto the portable tokens and
+ * gives the three layout classes a home. One bridge, two pages; delete it
+ * the day the pages speak system.css natively.
+ */
+:root {
+  --space-sm: var(--space-2);
+  --space-md: var(--space-3);
+  --space-lg: var(--space-4);
+  --space-xl: var(--space-5);
+  --font-size-xs: var(--fs-xs);
+  --font-size-sm: var(--fs-sm);
+  --font-size-base: var(--fs-md);
+  --font-size-lg: var(--fs-lg);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --primary-color: var(--accent);
+  --accent-color: var(--accent-2);
+  --tile-color: var(--accent-2);
+  --text-color: var(--text);
+  --text-primary: var(--text);
+  --border-color: var(--border);
+  --card-bg: var(--surface);
+  --bg-muted: var(--surface-2);
+}
+.page-container { max-width: 960px; margin: 0 auto; padding: var(--space-4) var(--space-3) var(--space-6); }
+.page-container.wide { max-width: 1200px; }
+.page-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--space-4); }
+.page-title { font-size: var(--fs-3xl); font-weight: var(--fw-regular); margin: 0 0 var(--space-3); }
+.back-link { font-size: var(--fs-sm); color: var(--accent); text-decoration: none; display: inline-block; margin-bottom: var(--space-3); }
+.back-link:hover { text-decoration: underline; }

@@ -35,6 +35,7 @@ const DATA_ORIGIN = process.env.CHORUS_API || 'http://localhost:3340';
 const OWN_PORT = Number(process.env.HUB_SPEC_PORT || 3492);
 const BASE = process.env.FLOW_BASE || `http://127.0.0.1:${OWN_PORT}`;
 const BRINGS_OWN = !process.env.FLOW_BASE;
+const CLEARING = process.env.CLEARING_ORIGIN || 'http://localhost:3470';
 
 // The routes chorus-api serves from chorus-pages/ (server.ts sendChorusPage).
 const ROUTE_ALIAS = { '/loom': 'chorus-pages/loom.html', '/werk': 'chorus-pages/werk.html' };
@@ -52,12 +53,22 @@ test.beforeAll(async () => {
       }).on('error', () => { res.writeHead(502).end('data origin unreachable'); });
       return;
     }
+    // chorus-api answers /clearing with a redirect to the room (#4031); the
+    // harness does the same so a click on the tile is graded end to end.
+    if (url === '/clearing') { res.writeHead(302, { location: `${CLEARING}/` }).end(); return; }
     let rel = url === '/' ? 'index.html' : url.replace(/^\/+/, '');
     if (ROUTE_ALIAS[url]) rel = ROUTE_ALIAS[url];
     if (rel.endsWith('/')) rel += 'index.html';
     const file = path.join(PUBLIC_DIR, rel);
     if (!file.startsWith(PUBLIC_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-      res.writeHead(404).end('not found');
+      // Not a file in this tree: a chorus-api ROUTE (/loom, /werk, /domains,
+      // /loom/:role, /chorus …) or nothing at all. Ask the running system,
+      // which answers 200 for its routes and 404 for the rest — so a dead
+      // link is graded by the system that would serve it, not by this shim.
+      http.get(`${DATA_ORIGIN}${req.url}`, (up) => {
+        res.writeHead(up.statusCode || 502, up.headers);
+        up.pipe(res);
+      }).on('error', () => { res.writeHead(502).end('data origin unreachable'); });
       return;
     }
     res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
@@ -190,6 +201,74 @@ test.describe('#4031 the moved links landed on their product pages', () => {
   });
 });
 
+test.describe('#4031 page flow and links — the next dead one names itself', () => {
+  // Jeff, 2026-08-30: "update the ui automation to validate page flow and
+  // links". Two things a structure check cannot see: does the DOOR OPEN when
+  // clicked, and does every link on the page behind it go somewhere. The
+  // first demo of this card had /clearing answering "Cannot GET" from the one
+  // link on its tile, and /loom rendering with no stylesheet tokens.
+  const DOOR_PAGES = ['/', '/borg/', '/athena/value-stream.html', '/loom', '/werk', '/chorus-pages/icd.html', '/chorus-pages/archive.html'];
+
+  test('every tile door opens a real page when clicked', async ({ page }) => {
+    for (const name of Object.keys(DOORS)) {
+      await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
+      const link = tile(page, name).locator('.links a');
+      await expect(link, `${name} has its door`).toHaveCount(1);
+      const [res] = await Promise.all([
+        page.waitForResponse((r) => r.request().isNavigationRequest() && r.status() !== 302 && r.status() !== 301, { timeout: 15000 }).catch(() => null),
+        link.click(),
+      ]);
+      await page.waitForLoadState('domcontentloaded');
+      const body = await page.locator('body').innerText().catch(() => '');
+      // An error PAGE, not a page that mentions errors: express's "Cannot GET /x"
+      // is the whole body, and so is a bare "Not Found".
+      expect(body.trim(), `${name}'s door must not land on an error page`).not.toMatch(/^(Cannot GET |Not Found$|Error$)/);
+      expect(res && res.status(), `${name}'s door answers 200 (got ${res && res.status()})`).toBe(200);
+      // The Clearing is another service (its own markup, its own sign-in);
+      // reaching it without an error is the grade. Our own pages must show a heading.
+      if (page.url().startsWith(BASE)) {
+        await expect(page.locator('h1').first(), `${name}'s page has a heading`).toBeVisible();
+      }
+    }
+  });
+
+  test('every link on the hub and on each door page resolves', async ({ page, request }) => {
+    const seen = new Map();
+    const dead = [];
+    for (const p of DOOR_PAGES) {
+      await page.goto(`${BASE}${p}`, { waitUntil: 'networkidle' });
+      const hrefs = await page.locator('a[href]').evaluateAll((as) =>
+        as.map((a) => a.getAttribute('href')).filter((h) => h && !h.startsWith('#') && !h.startsWith('mailto:') && !h.startsWith('javascript:')));
+      expect(hrefs.length, `${p} has links`).toBeGreaterThan(0);
+      for (const href of hrefs) {
+        const url = new URL(href, `${BASE}${p}`).toString();
+        if (!url.startsWith(BASE) && !url.startsWith(CLEARING)) continue; // off-origin: not this card's to grade
+        if (seen.has(url)) continue;
+        const res = await request.get(url, { maxRedirects: 5 }).catch(() => null);
+        const status = res ? res.status() : 0;
+        seen.set(url, status);
+        // 401 is a sign-in door, not a dead link (same rule as #3886).
+        if (!res || status === 404 || status >= 500) dead.push(`${href} → ${status || 'unreachable'}  (on ${p})`);
+      }
+    }
+    expect(dead, `dead links:\n${dead.join('\n')}`).toEqual([]);
+  });
+
+  test('the Loom and Werk doors render with their stylesheet tokens', async ({ page }) => {
+    // An unstyled page is a door that opens onto a hallway with the lights
+    // off. The pages were written against Gathering's token names; on
+    // chorus-api those must resolve, or every spacing and colour on the page
+    // falls back to browser defaults. (system.css itself is serif by design.)
+    for (const p of ['/loom', '/werk']) {
+      await page.goto(`${BASE}${p}`, { waitUntil: 'domcontentloaded' });
+      const title = page.locator('h1.page-title').first();
+      await expect(title, `${p} has its page title`).toBeVisible();
+      const space = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--space-md').trim());
+      expect(space, `${p} resolves the --space-md token`).not.toBe('');
+    }
+  });
+});
+
 test.describe('#4031 the checks can fail', () => {
   // NEGATIVE PROOF 1 — a two-link tile must RED. The words are right, the
   // door is right, there is just one link too many; a text check passes it.
@@ -211,6 +290,16 @@ test.describe('#4031 the checks can fail', () => {
   });
 
   // NEGATIVE PROOF 3 — the discovered-append check REDs on the old hub code.
+  // NEGATIVE PROOF 4 — the dead-link check REDs on a 404. Served by the
+  // harness itself, which answers 404 for anything not on disk.
+  test('the link check REDs on a link that answers 404', async ({ request }) => {
+    const res = await request.get(`${BASE}/this-page-does-not-exist-4031.html`);
+    expect(res.status(), 'the harness answers 404 for an absent page').toBe(404);
+    const dead = [];
+    if (res.status() === 404) dead.push('/this-page-does-not-exist-4031.html → 404');
+    expect(dead.length, 'and the crawl rule counts it as dead').toBe(1);
+  });
+
   test('the no-append check REDs on the old tile builder', () => {
     const old = "const discovered = (inventory.claimed[p.label] || []).filter(pg => !curatedHrefs.has(pg.href));";
     expect(/inventory\.claimed\[/.test(old), 'the old append shape is detected').toBe(true);
