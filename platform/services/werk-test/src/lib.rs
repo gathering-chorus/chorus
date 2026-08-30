@@ -755,6 +755,21 @@ pub fn rel_path(abs: &str, werk_root: &str) -> String {
 /// chorus:TestResult write payload — identity fields (filePath+testName) + the
 /// verdict + run context. `name` is mint-unique per (card, run-ts, index).
 #[allow(clippy::too_many_arguments)]
+/// #4033 — the per-unit store's claim on the run's index space. Result names
+/// are `testresult-<card>-<run ts>-<idx>`; the run ts is shared by every unit,
+/// so idx must be unique across units. Each unit claims `n` indices with one
+/// atomic fetch_add and numbers its payloads from the returned base. Two units
+/// that both start at 0 mint the same names and the store answers 409 for the
+/// whole chunk (2026-08-30 12:45: 190 units, 3 stored).
+pub fn claim_index_base(counter: &std::sync::atomic::AtomicUsize, n: usize) -> usize {
+    counter.fetch_add(n, std::sync::atomic::Ordering::SeqCst)
+}
+
+/// The minted name for a result — the identity the store keys a create on.
+pub fn test_result_name(card: &str, ts_millis: u128, idx: usize) -> String {
+    format!("testresult-{}-{}-{}", card, ts_millis, idx)
+}
+
 pub fn test_result_payload(
     file_path: &str,
     test_name: &str,
