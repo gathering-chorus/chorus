@@ -558,8 +558,66 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
     let mut any_failed = false;
     let mut failed_count = 0usize;
-    let mut all_cases: Vec<CaseResult> = Vec::new();
-    let mut unmatched_cargo = 0usize;
+    // #4030 AC3 — results are stored PER UNIT, the moment a unit finishes, not
+    // in one batch after the last lane. On 2026-08-30 03:00 the run executed
+    // 1,127 cargo cases, then hung in the npm lane and was killed at the lane
+    // cap: every verdict it had computed died with it ("stored 0"). Now a
+    // killed run keeps everything it finished. The totals are atomics because
+    // the pools post from their worker threads.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let expected_total = AtomicUsize::new(0);
+    let stored_total = AtomicUsize::new(0);
+    let unregistered_total = AtomicUsize::new(0);
+    let unmatched_cargo = AtomicUsize::new(0);
+    // #3975 — the graph writes authenticate as the NIGHTLY machine principal
+    // (least-privilege scope: the tests graph only). Spine events keep role
+    // "system" — who acted vs which credential wrote are different facts.
+    let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
+    let store_unit = |unit: &str, cases: &[CaseResult]| {
+        if cases.is_empty() {
+            return;
+        }
+        let (joined, unregistered) = werk_test::join_cases(cases, &rows, &row_names, &row_entities);
+        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
+        expected_total.fetch_add(joined.len(), Ordering::SeqCst);
+        stored_total.fetch_add(stored, Ordering::SeqCst);
+        unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
+        println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
+    };
+    // #3974 — npm lane: every registered TS/node package, full selection.
+    // jest packages run jest; non-jest packages run their own `npm test`
+    // (never a vacuous green). needs-stack files leave the run typed when
+    // the stack is down, same vocabulary as the cargo lane.
+    let ts_pkgs: Vec<String> = werk_test::nightly_ts_packages(&rows)
+        .into_iter()
+        .filter(|p| only.as_deref().map(|o| o == p).unwrap_or(true))
+        .collect();
+    // #3974 — bats lane: registered suites from the registry, per-case TAP
+    // results (boolean-only bats is over).
+    let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
+        .into_iter()
+        .filter(|b| only.as_deref().map(|o| o == b).unwrap_or(true))
+        .collect();
+    // #3922 — security-declared units fold under their own lane label so the
+    // report and owner routing see ONE security lane on its own cadence.
+    let sec_units = werk_test::security_units(&rows);
+    let bats_kind = |b: &str| -> &'static str {
+        if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
+    };
+    // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
+    // never produces its `nightly-unit|` line is folded by nightly-suites.sh
+    // into a red NEVER RAN row (`never_ran_units`): a run killed at a cap can
+    // no longer report only the units it got to and read as "3 red".
+    for c in &crates {
+        println!("{}", werk_test::nightly_plan_line("cargo", c));
+    }
+    for p in &ts_pkgs {
+        let k = if sec_units.contains(p) { "security" } else { "npm" };
+        println!("{}", werk_test::nightly_plan_line(k, p));
+    }
+    for b in &bats_suites {
+        println!("{}", werk_test::nightly_plan_line(bats_kind(b), b));
+    }
     // #4022 — the cargo lane was 24 serial `cargo nextest` invocations against
     // an already-warm shared target dir; pool them. cargo's own flock still
     // serializes any cold BUILD, so contention degrades to the old timing,
@@ -599,20 +657,24 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let (cargo_results, cargo_waits) = werk_test::run_pool_gated(&crates, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |c| {
         let ns_bins = ns_bins_for(c);
         let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
-        (run_cargo(&cargo_root, c, &q_names, &ns_refs), ns_bins.len())
+        let (ok, cases) = run_cargo(&cargo_root, c, &q_names, &ns_refs);
+        // #4030 AC3 — join + store THIS crate's cases now, in the worker
+        let crate_dir = format!("platform/services/{}", c);
+        let mut matched: Vec<CaseResult> = Vec::new();
+        for (bare, result) in &cases {
+            match match_cargo_case(bare, &crate_dir, &rows, &row_names) {
+                Some(fp) => matched.push(CaseResult { file_path: fp, test_name: bare.clone(), result: result.clone() }),
+                None => { unmatched_cargo.fetch_add(1, Ordering::SeqCst); }
+            }
+        }
+        store_unit(c, &matched);
+        ((ok, cases), ns_bins.len())
     });
     for (c, ((ok, cases), ns_len)) in cargo_results {
         let c = &c;
         let passed = cases.iter().filter(|(_, r)| r == "pass").count();
         let case_failed = cases.iter().filter(|(_, r)| r != "pass").count();
         println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_len));
-        let crate_dir = format!("platform/services/{}", c);
-        for (bare, result) in cases {
-            match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
-                Some(fp) => all_cases.push(CaseResult { file_path: fp, test_name: bare, result }),
-                None => unmatched_cargo += 1,
-            }
-        }
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -621,14 +683,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    // #3974 — npm lane: every registered TS/node package, full selection.
-    // jest packages run jest; non-jest packages run their own `npm test`
-    // (never a vacuous green). needs-stack files leave the run typed when
-    // the stack is down, same vocabulary as the cargo lane.
-    let ts_pkgs: Vec<String> = werk_test::nightly_ts_packages(&rows)
-        .into_iter()
-        .filter(|p| only.as_deref().map(|o| o == p).unwrap_or(true))
-        .collect();
     // #3559/#3974 — platform/api's INTEGRATION jest project is only
     // constructed under RUN_INTEGRATION=true; the nightly sets it from the
     // live stack probe so integration tests run with the stack and are
@@ -643,7 +697,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
     let npm_root = root.clone();
     let (npm_results, npm_waits) = werk_test::run_pool_gated(&ts_pkgs, npm_workers, cap, read_loadavg, gate_wait, gate_tick,
-        |p| run_jest_with(&npm_root, p, Some(jest_workers)));
+        |p| {
+            let (ok, cases) = run_jest_with(&npm_root, p, Some(jest_workers));
+            // #4030 AC3 — stored the moment the package finishes (foreign-file
+            // cases included: they join by their own file path)
+            store_unit(p, &cases);
+            (ok, cases)
+        });
     for (p, (ok, cases)) in npm_results {
         let p = &p;
         let pkg_ns: Vec<String> = if stack_down.is_some() {
@@ -681,7 +741,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         let case_failed = cases.iter().filter(|c| c.result != "pass").count();
         let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };
         println!("{}", werk_test::nightly_lane_line(npm_kind, p, ok, passed, case_failed, pkg_ns.len()));
-        all_cases.extend(cases);
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -689,15 +748,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         }
     }
 
-    // #3974 — bats lane: registered suites from the registry, per-case TAP
-    // results (boolean-only bats is over).
-    let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
-        .into_iter()
-        .filter(|b| only.as_deref().map(|o| o == b).unwrap_or(true))
-        .collect();
-    // #3922 — security-declared units fold under their own lane label so the
-    // report and owner routing see ONE security lane on its own cadence.
-    let sec_units = werk_test::security_units(&rows);
+    // #4030 AC3 — one bats runner for the three pools: run, then store now.
+    let run_bats_stored = |werk: &str, b: &str| -> (bool, Vec<(String, String)>, String) {
+        let r = run_bats_cases(werk, b);
+        let cases: Vec<CaseResult> = r.1.iter()
+            .map(|(n, res)| CaseResult { file_path: b.to_string(), test_name: n.clone(), result: res.clone() })
+            .collect();
+        store_unit(b, &cases);
+        r
+    };
     // #4022 — the lane's suites are independent subprocesses; fan them out.
     // A suite is serialized when a registered file of its is needs-stack or it
     // is named in the isolation conf (a suite that mutates the shared stack
@@ -723,20 +782,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         plan.parallel.len(), workers, stack_readers.len(), mutators.len());
     let pool_root = root.clone();
     let (mut lane_results, bats_waits): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
-        werk_test::run_pool_gated(&plan.parallel, workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&pool_root, b));
+        werk_test::run_pool_gated(&plan.parallel, workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&pool_root, b));
     let reader_root = root.clone();
     let (reader_results, reader_waits) =
-        werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&reader_root, b));
+        werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_stored(&reader_root, b));
     lane_results.extend(reader_results);
     println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
         cargo_waits + npm_waits + bats_waits + reader_waits, cap, cargo_waits, npm_waits, bats_waits + reader_waits);
     for b in &mutators {
-        lane_results.push((b.clone(), run_bats_cases(&root, b)));
+        lane_results.push((b.clone(), run_bats_stored(&root, b)));
     }
     for (b, (ok, cases, text)) in lane_results {
         let b = &b;
-        let kind = if sec_units.contains(b) { "security" }
-            else if b.ends_with(".sh") { "shell" } else { "bats" };
+        let kind = bats_kind(b);
         let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
             // shell suites report summary counts, not TAP cases
             werk_test::parse_shell_counts(&text)
@@ -746,9 +804,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
              cases.iter().filter(|(_, r)| r != "pass").count())
         };
         println!("{}", werk_test::nightly_lane_line(kind, b, ok, passed, case_failed, 0));
-        for (name, result) in cases {
-            all_cases.push(CaseResult { file_path: b.clone(), test_name: name, result });
-        }
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -775,37 +830,34 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .collect();
     emit_spine("test.execution.completed", &role, &card, &trace, &execution_refs);
     let writeback_started = std::time::Instant::now();
-    // #3975 — the graph writes authenticate as the NIGHTLY machine principal
-    // (least-privilege scope: the tests graph only). Spine events keep role
-    // "system" — who acted vs which credential wrote are different facts.
-    let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
     post_suite_run(&mint_role, &card, &trace, plan_source, crates.len(), failed_count,
         execution_duration_ms, outcome.label());
+    let unmatched_cargo = unmatched_cargo.load(Ordering::SeqCst);
     if unmatched_cargo > 0 {
         emit_spine("testresult.unmatched", &role, &card, &trace,
             &[("count", &unmatched_cargo.to_string()), ("kind", "cargo-ambiguous-or-unregistered")]);
     }
-    let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
+    let unregistered = unregistered_total.load(Ordering::SeqCst);
     if unregistered > 0 {
         emit_spine("testresult.unregistered", &role, &card, &trace,
             &[("count", &unregistered.to_string())]);
     }
-    // #4015 — the run's verdict now depends on its evidence surviving. Until
-    // today this call's result was discarded: on 2026-08-27 the nightly executed
-    // 7,411 tests, stored NONE of them, and still exited 0 with a verdict. A run
-    // that cannot save what it measured has not measured anything anyone can
-    // check, so it fails — loudly, naming the gap.
-    let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
-    let lost = werk_test::results_lost(joined.len(), stored);
+    // #4015 — the run's verdict depends on its evidence surviving: on
+    // 2026-08-27 the nightly executed 7,411 tests, stored NONE, and exited 0.
+    // #4030 — the posts already happened per unit; this is the ledger of them.
+    let expected = expected_total.load(Ordering::SeqCst);
+    let stored = stored_total.load(Ordering::SeqCst);
+    let lost = werk_test::results_lost(expected, stored);
     if lost > 0 {
         println!(
             "!! werk-test: {} of {} results were NOT stored — this run cannot report on itself",
-            lost, joined.len()
+            lost, expected
         );
         emit_spine("testresult.lost", &role, &card, &trace,
-            &[("lost", &lost.to_string()), ("expected", &joined.len().to_string()),
+            &[("lost", &lost.to_string()), ("expected", &expected.to_string()),
               ("stored", &stored.to_string())]);
     }
+    println!("nightly-stored|run|{} of {}", stored, expected);
     let writeback_duration_ms = writeback_started.elapsed().as_millis();
     let total_duration_ms = started_at.elapsed().as_millis();
     let mut completed = werk_test::completed_extras(
@@ -835,9 +887,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         emit_spine("test.nightly.over_bar", &role, &card, &trace,
             &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string())]);
     }
-    let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
+    let exit = werk_test::run_exit_code(outcome.exit_code(), expected, stored);
     if lost > 0 {
-        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
+        println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, expected, exit);
         return Ok(exit);
     }
     println!("werk-test: {} (exit {})", outcome.label(), exit);
@@ -936,30 +988,16 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     let out_path = tmp.join(format!("suite-{}.out", suite_slug));
     let timeout_secs: u64 = std::env::var("NIGHTLY_SUITE_TIMEOUT").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(600);
-    let spawned = std::fs::File::create(&out_path)
+    // #4030 — the ONE deadline primitive (process-group kill, so a suite's
+    // forked children die with it); jest and npm-test units share it.
+    let outcome = std::fs::File::create(&out_path)
         .map_err(|e| e.to_string())
         .and_then(|f| {
             let ferr = f.try_clone().map_err(|e| e.to_string())?;
             cmd.stdout(f).stderr(ferr);
-            cmd.spawn().map_err(|e| e.to_string())
-        });
-    let outcome = spawned.and_then(|mut child| {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
-        loop {
-            match child.try_wait() {
-                Ok(Some(status)) => return Ok((status.code(), status.success(), false)),
-                Ok(None) => {
-                    if std::time::Instant::now() >= deadline {
-                        let _ = child.kill();
-                        let _ = child.wait();
-                        return Ok((None, false, true));
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(250));
-                }
-                Err(e) => return Err(e.to_string()),
-            }
-        }
-    });
+            werk_test::run_with_deadline(&mut cmd, std::time::Duration::from_secs(timeout_secs))
+        })
+        .map(|fin| (fin.code, fin.success, fin.timed_out));
     match outcome {
         Ok((code, success, timed_out)) => {
             let mut text = std::fs::read_to_string(&out_path).unwrap_or_default();
@@ -1300,16 +1338,51 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
         cmd.arg(format!("--maxWorkers={}", n.max(1)));
     }
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
-        Ok(o) => {
-            let ok = o.status.success();
+    // #4030 — a per-unit wall cap. `cmd.output()` had no deadline: on
+    // 2026-08-30 03:00 platform/api's jest sat two hours (a test waiting on a
+    // blocked box) until the 7200s LANE cap killed the whole run — five
+    // packages and every bats suite never ran. Now the unit dies at its own
+    // cap, scored failed and named, and the lane goes on.
+    match run_capped_unit(&mut cmd, &format!("jest:{}", pkg)) {
+        Some((ok, stdout, stderr)) => {
             if !ok {
-                eprintln!("{}", String::from_utf8_lossy(&o.stderr));
+                eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(&o.stdout, werk))
+            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
         }
-        Err(_) => (false, Vec::new()),
+        None => (false, Vec::new()),
     }
+}
+
+/// #4030 — run one npm-side unit under `unit_timeout()`, output captured to
+/// files (wait on child exit, never pipe-EOF). Returns (ok, stdout, stderr);
+/// None when the child could not be spawned. A capped unit is `ok=false` with
+/// the cap named in stderr, so the lane line and the failure log both say why.
+fn run_capped_unit(cmd: &mut Command, label: &str) -> Option<(bool, String, String)> {
+    let tmp = std::env::temp_dir().join(format!("werk-test-unit-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&tmp);
+    let slug: String = label.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let out_path = tmp.join(format!("{}.out", slug));
+    let err_path = tmp.join(format!("{}.err", slug));
+    let timeout = werk_test::unit_timeout();
+    let fin = std::fs::File::create(&out_path).ok().and_then(|f| {
+        let e = std::fs::File::create(&err_path).ok()?;
+        cmd.stdout(f).stderr(e);
+        werk_test::run_with_deadline(cmd, timeout).ok()
+    })?;
+    let stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
+    let mut stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
+    let _ = std::fs::remove_file(&out_path);
+    let _ = std::fs::remove_file(&err_path);
+    if fin.timed_out {
+        let note = format!("!! {} killed after {}s — per-unit wall cap (NIGHTLY_UNIT_TIMEOUT, #4030)",
+            label, timeout.as_secs());
+        eprintln!("{}", note);
+        stderr.push('\n');
+        stderr.push_str(&note);
+        return Some((false, stdout, stderr));
+    }
+    Some((fin.success, stdout, stderr))
 }
 
 /// #3974 — the non-jest package runner: `npm test` (mcp-server = node:test).
@@ -1328,11 +1401,9 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     cmd.args(["test", "--silent"]).current_dir(&pkg_dir);
     cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
-        Ok(o) => {
-            let text = format!("{}{}",
-                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-            let ok = o.status.success();
+    match run_capped_unit(&mut cmd, &format!("npm:{}", pkg)) {
+        Some((ok, stdout, stderr)) => {
+            let text = format!("{}{}", stdout, stderr);
             if !ok {
                 let tail: Vec<&str> = text.lines().rev().take(20).collect();
                 eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
@@ -1347,7 +1418,7 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
                 .collect();
             (ok, cases)
         }
-        Err(_) => (false, Vec::new()),
+        None => (false, Vec::new()),
     }
 }
 
@@ -1374,15 +1445,19 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
         .args(&rel)
         .current_dir(&pkg_dir);
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
-        Ok(o) => {
-            let ok = o.status.success();
+    // #4030 — a per-unit wall cap. `cmd.output()` had no deadline: on
+    // 2026-08-30 03:00 platform/api's jest sat two hours (a test waiting on a
+    // blocked box) until the 7200s LANE cap killed the whole run — five
+    // packages and every bats suite never ran. Now the unit dies at its own
+    // cap, scored failed and named, and the lane goes on.
+    match run_capped_unit(&mut cmd, &format!("jest:{}", pkg)) {
+        Some((ok, stdout, stderr)) => {
             if !ok {
-                eprintln!("{}", String::from_utf8_lossy(&o.stderr));
+                eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(&o.stdout, werk))
+            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
         }
-        Err(_) => (false, Vec::new()),
+        None => (false, Vec::new()),
     }
 }
 

@@ -2186,6 +2186,168 @@ pub fn nightly_lane_line(kind: &str, unit: &str, ok: bool, passed: usize, failed
     )
 }
 
+/// #4030 — the runner's PLAN, one line per unit, printed before any lane runs.
+/// The wrapper (nightly-suites.sh `_never_ran_rows`) folds a planned unit that
+/// never produced a `nightly-unit|` line into a red NEVER RAN row, so a lane
+/// killed at its cap (2026-08-30 03:00: five npm packages and every bats suite
+/// never ran, and the morning read said "3 red") can no longer read as clean.
+/// Same kind vocabulary as `nightly_lane_line`, so the two lines join.
+pub fn nightly_plan_line(kind: &str, unit: &str) -> String {
+    format!("nightly-plan|{}|{}", kind, unit)
+}
+
+/// #4030 — planned units with no unit line, (kind, unit), in plan order.
+pub fn never_ran_units(output: &str) -> Vec<(String, String)> {
+    let ran: std::collections::HashSet<(&str, &str)> = output
+        .lines()
+        .filter_map(|l| l.strip_prefix("nightly-unit|"))
+        .filter_map(|rest| {
+            let mut it = rest.split('|');
+            Some((it.next()?, it.next()?))
+        })
+        .collect();
+    output
+        .lines()
+        .filter_map(|l| l.strip_prefix("nightly-plan|"))
+        .filter_map(|rest| {
+            let (kind, unit) = rest.split_once('|')?;
+            if ran.contains(&(kind, unit)) { None } else { Some((kind.to_string(), unit.to_string())) }
+        })
+        .collect()
+}
+
+/// #4030 — how a capped child ended.
+pub struct Finished {
+    pub code: Option<i32>,
+    pub success: bool,
+    pub timed_out: bool,
+}
+
+/// #4030 — run a child to completion OR a wall-clock deadline, in its own
+/// process group so the kill reaches every worker the child forked (jest's
+/// workers, a suite's leaked server). The caller redirects output to FILES
+/// first: the wait is on child exit, never on pipe-EOF (#4022 / TD-028).
+/// On 2026-08-30 03:00 the `platform/api` jest sat two hours under
+/// `cmd.output()` — no deadline at all — until the 7200s lane cap killed the
+/// whole run, and five packages plus every bats suite never ran.
+pub fn run_with_deadline(
+    cmd: &mut std::process::Command,
+    timeout: std::time::Duration,
+) -> Result<Finished, String> {
+    use std::os::unix::process::CommandExt;
+    cmd.process_group(0);
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+    let pid = child.id();
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                return Ok(Finished { code: status.code(), success: status.success(), timed_out: false })
+            }
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    kill_group(pid);
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(Finished { code: None, success: false, timed_out: true });
+                }
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+}
+
+/// SIGKILL a whole process group (pgid == the leader's pid after
+/// `process_group(0)`). `kill` runs as a subprocess: zero-dep (ADR-032 §1).
+pub fn kill_group(pid: u32) {
+    let _ = std::process::Command::new("kill")
+        .args(["-9", &format!("-{}", pid)])
+        .status();
+}
+
+/// #4030 — the per-unit wall cap for jest / npm-test units:
+/// `NIGHTLY_UNIT_TIMEOUT` seconds, default 20 minutes. Jeff, 2026-08-29:
+/// "20 min beats a reboot" — a unit that needs longer is a defect, not a wait.
+pub fn unit_timeout() -> std::time::Duration {
+    let secs: u64 = std::env::var("NIGHTLY_UNIT_TIMEOUT").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(1200);
+    std::time::Duration::from_secs(secs)
+}
+
+#[cfg(test)]
+mod deadline_4030 {
+    use super::*;
+
+    /// Negative proof (#3734): the violating state — a unit that outlives its
+    /// cap — is killed, along with the children it forked, inside the cap plus
+    /// a small margin. Under `cmd.output()` this test would never return.
+    #[test]
+    fn a_unit_past_its_cap_is_killed_with_its_whole_process_group() {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.args(["-c", "sleep 600 & sleep 600 & wait"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        let started = std::time::Instant::now();
+        let fin = run_with_deadline(&mut cmd, std::time::Duration::from_secs(1)).expect("spawn");
+        assert!(fin.timed_out, "the cap must fire");
+        assert!(!fin.success);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "killed promptly, not at 600s");
+        // the forked sleeps are gone too — a cap that only kills the leader
+        // leaves jest workers pegging the box (the 2026-08-29 11:15 shape)
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let left = std::process::Command::new("pgrep").args(["-f", "sleep 600"]).output().expect("pgrep");
+        assert!(
+            String::from_utf8_lossy(&left.stdout).trim().is_empty(),
+            "process group survivors: {}", String::from_utf8_lossy(&left.stdout)
+        );
+    }
+
+    /// Control: a unit that finishes inside the cap reports its own exit.
+    #[test]
+    fn a_unit_inside_its_cap_reports_its_own_exit() {
+        let mut ok = std::process::Command::new("true");
+        let fin = run_with_deadline(&mut ok, std::time::Duration::from_secs(5)).expect("spawn");
+        assert!(fin.success && !fin.timed_out && fin.code == Some(0));
+        let mut bad = std::process::Command::new("bash");
+        bad.args(["-c", "exit 3"]);
+        let fin = run_with_deadline(&mut bad, std::time::Duration::from_secs(5)).expect("spawn");
+        assert!(!fin.success && !fin.timed_out && fin.code == Some(3));
+    }
+
+    #[test]
+    fn unit_timeout_defaults_to_twenty_minutes() {
+        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        assert_eq!(unit_timeout(), std::time::Duration::from_secs(1200));
+    }
+
+    /// The plan/unit join: a planned unit with no unit line is NEVER RAN;
+    /// kinds must match (a `security` plan is not satisfied by an `npm` line).
+    #[test]
+    fn planned_units_without_a_unit_line_are_never_ran() {
+        let out = [
+            nightly_plan_line("cargo", "werk-test"),
+            nightly_plan_line("npm", "platform/api"),
+            nightly_plan_line("security", "platform/tests/x.bats"),
+            nightly_plan_line("bats", "platform/tests/y.bats"),
+            nightly_unit_line("werk-test", true, 3, 0, 0),
+            nightly_lane_line("bats", "platform/tests/x.bats", true, 1, 0, 0),
+        ].join("\n");
+        let never = never_ran_units(&out);
+        assert_eq!(never, vec![
+            ("npm".to_string(), "platform/api".to_string()),
+            ("security".to_string(), "platform/tests/x.bats".to_string()),
+            ("bats".to_string(), "platform/tests/y.bats".to_string()),
+        ]);
+        // control: every planned unit reported → nothing never-ran
+        let full = [
+            nightly_plan_line("npm", "platform/api"),
+            nightly_lane_line("npm", "platform/api", false, 1, 2, 0),
+        ].join("\n");
+        assert!(never_ran_units(&full).is_empty());
+    }
+}
+
 /// #3974 — full-selection TS packages: every registered package holding tests.
 pub fn nightly_ts_packages(rows: &[TestRow]) -> Vec<String> {
     plan_units_from_rows(rows)
