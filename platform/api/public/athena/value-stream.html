@@ -23,10 +23,17 @@ return b+(x.charAt(0)==='/'?x:'/'+x);};
 /* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
    it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<style>.collections { margin: 4px 0 20px; } .collections h2 { font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 6px; } .collections .links a { margin-right: 16px; }</style>
 </head>
 <body><div class="wrap wide">
 <div class="crumb">chorus &rarr; value stream</div>
 <h1>Chorus <span class="kind">&mdash; the value stream</span></h1>
+<!-- #4031 — the three lists that used to sit on the front-door tile. Record
+     pages (one domain, one product, one service) are reached by walking the
+     stream below, never linked from here. -->
+<div class="section collections"><h2>Collections</h2>
+<p class="links"><a href="domains.html">Domains</a> <a href="products.html">Products</a> <a href="services.html">Services</a></p>
+</div>
 <div id="main"><p class="empty">loading live from the model&hellip;</p></div>
 </div>
 <script>

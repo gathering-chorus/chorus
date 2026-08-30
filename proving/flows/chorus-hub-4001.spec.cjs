@@ -122,8 +122,11 @@ test.describe('#4001 the hub is the shape of the product', () => {
     await page.goto(HUB, { waitUntil: 'domcontentloaded' });
     const conv = page.locator('#products .product.convergence');
     await expect(conv, 'the Convergence product tile rendered').toHaveCount(1);
-    const icd = conv.locator('.links a', { hasText: /icd flow/i });
-    await expect(icd, 'Convergence carries ICD Flow (Jeff, 2026-08-24)').toHaveCount(1);
+    // #4031 — one tile, one door: the link reads "Open" now, and the door is
+    // still the ICD page. Graded by WHERE it goes, not what it says.
+    const icd = conv.locator('.links a');
+    await expect(icd, 'Convergence carries one door (Jeff, 2026-08-24 / 2026-08-30)').toHaveCount(1);
+    await expect(icd, 'and the door is the ICD Flow page').toHaveAttribute('href', /icd\.html$/);
     const href = await icd.getAttribute('href');
     const res = await request.get(href.startsWith('http') ? href : `${BASE}${href}`);
     expect(res.ok(), `ICD Flow points at a live page, got ${res.status()} for ${href}`).toBeTruthy();
@@ -135,9 +138,11 @@ test.describe('#4001 the hub is the shape of the product', () => {
     await expect(athena, 'the Athena product tile rendered').toHaveCount(1);
 
     const hrefs = await athena.locator('.links a').evaluateAll((as) => as.map((a) => a.getAttribute('href')));
-    for (const child of ['domains.html', 'value-stream.html']) {
-      expect(hrefs.some((h) => h && h.includes(child)), `Athena links ${child}`).toBe(true);
-    }
+    // #4031 — one tile, one door: the Athena door is the value stream. Domains
+    // (and Products, Services) moved from the tile to the Athena page's
+    // Collections row — chorus-hub-4031.spec.cjs grades that landing.
+    expect(hrefs.some((h) => h && h.includes('value-stream.html')), 'Athena links value-stream.html').toBe(true);
+    expect(hrefs.some((h) => h && h.includes('domains.html')), 'Domains no longer sits on the tile (#4031)').toBe(false);
     // Model is a view of the graph, not of Athena — it moved to The Model row.
     // Asserted as ABSENCE on the tile, which is the half a "does it appear
     // anywhere" check cannot see.

@@ -45,6 +45,8 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 .product .links { margin-top: 16px; padding-top: 12px; border-top: 1px solid #f0f0f0; }
 .product .links a { font-size: 0.82rem; color: #4f46e5; margin-right: 12px; text-decoration: none; }
 .product .links a:hover { text-decoration: underline; }
+.product .links .where { font-size: 0.72rem; color: #999; font-family: ui-monospace, Menlo, monospace; margin-left: 10px; }
+.product .links .nodoor { font-size: 0.82rem; color: #b45309; }
 .product.borg { border-color: #a78bfa; }
 .product.loom { border-color: #4f46e5; }
 .product.athena { border-color: #4f46e5; }
@@ -133,71 +135,52 @@ Product-specific views live inside their products.</p>
     // device except this machine, which is how the tiles broke on Jeff's phone.
     // The Clearing is a separate service (:3470) with no chorus-api route, so
     // it is derived from location.hostname rather than hardcoded.
-    const pageLinks = {
-      'Loom': [{ label: 'Loom', href: '/loom/' }],
-      // #4001 — a product tile carries ITS OWN views. Domains and Value Stream
-      // are Athena's (Jeff, 2026-08-24: "domains and value stream are children
-      // of athena"); Model moved out to The Model row below, where the
-      // whole-graph viewers sit as peers of the products.
-      'Athena': [
-        { label: 'Domains', href: '/athena/domains.html' },
-        { label: 'Value Stream', href: '/athena/value-stream.html' },
-        { label: 'Products', href: '/athena/products.html' },
-      ],
-      'Werk': [
-        { label: 'Werk', href: '/werk/' },
-        // #3656: quality is part of werk (Jeff's call) and served by chorus-api
-        // itself — relative href so it also works through the share tunnel.
-        { label: 'Quality Service', href: '/werk/quality/' },
-      ],
+    // #4031 — ONE TILE, ONE DOOR. Jeff, 2026-08-29 (Front Door canvas) and
+    // 2026-08-30 (product-page mocks, carded): a product tile carries the one
+    // page it opens. Everything the tile used to list — the curated views AND
+    // whatever discovery found under the product's folder — now lives on the
+    // product's own page, in named sections (Athena › Collections, Borg › Live
+    // / Reports / Jeff, Loom › Principles …), or in The Model row, or in the
+    // Archive by name. The pile Jeff saw on his phone (13 links on Athena, 15
+    // on Borg) was the discovered-pages append below; it is gone. The
+    // inventory is still loaded — the Archive count in the footer needs it.
+    // A product with no page says so instead of pretending (Pulse).
+    // Borg's door is /borg/, not /borg/hooks/ — Jeff, 2026-08-30 11:01; Hooks
+    // is the first view on the Borg page.
+    const doors = {
+      'Loom': { label: 'Open', href: '/loom/' },
+      'Athena': { label: 'Open', href: '/athena/value-stream.html' },
+      'Werk': { label: 'Open', href: '/werk/' },
       // #3886 — path link, not a port link: :3470 is dead from anywhere off
       // the LAN (Jeff's phone). /clearing rides the four-URL scheme (#3878).
-      'The Clearing': [{ label: 'The Clearing', href: '/clearing' }],
-      // #4001 — Convergence's own view. Jeff, 2026-08-24: "the ICD Flow is a
-      // child of Convergence". It links the page that EXISTS (#4003 allowlisted
-      // /chorus-pages/icd.html), not an invented Convergence route.
-      'Convergence': [{ label: 'ICD Flow', href: '/chorus-pages/icd.html' }],
-      'Borg': [
-        { label: 'Hooks Dashboard', href: '/borg/hooks/' },
-      ],
+      'The Clearing': { label: 'Open', href: '/clearing' },
+      // #4001 — Jeff, 2026-08-24: "the ICD Flow is a child of Convergence".
+      'Convergence': { label: 'Open', href: '/chorus-pages/icd.html' },
+      'Borg': { label: 'Open', href: '/borg/' },
     };
 
     // owl-api shape: { data: [{ name, label, comment, ownedBy, status, … }] }.
     // Products are flat typed chorus:Product rows (SubProduct is gone); skip the
-    // parent hub card, render each product with the local description/link maps.
+    // parent hub card, render each product with the local description map.
     const products = loaded.products;
-
-    // #3813 — the pages on disk, DISCOVERED. `pageLinks` above is a hand-written
-    // map of 8 links; there are 77 pages in the tree. A hand-list cannot tell you
-    // about the page you forgot, which is why most of this app was invisible from
-    // its own front door. The curated links stay (they are the ones worth leading
-    // with); everything else is appended from the inventory.
     const inventory = loaded.inventory;
 
     const esc = (t) => String(t).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
     const linkTo = (href, label) => '<a href="' + esc(href) + '">' + esc(label) + '</a>';
 
     for (const p of products) {
-      if (p.label === 'Chorus (Product)') continue;
+      if (p.label === 'Chorus (Product)' || p.label === 'Chorus') continue;
       const div = document.createElement('div');
       div.className = 'product ' + p.label.toLowerCase().replace(/[^a-z]/g, '');
       const owner = (p.ownedBy || '').replace(/^role-/, '');
-      const curated = (pageLinks[p.label] || []);
-      const curatedHrefs = new Set(curated.map(l => l.href));
-      // #4001 — discovery must not put back what the restructure moved. The
-      // whole-graph viewers now live in The Model row; if the inventory also
-      // appends them to the Athena tile, the hierarchy Jeff drew is undone by
-      // the very mechanism that lists pages.
-      const MODEL_ROW = new Set(['/athena/model.html', '/chorus-instance-explorer.html',
-        '/chorus-er-diagram.html', '/chorus-data-model.html']);
-      const discovered = (inventory.claimed[p.label] || [])
-        .filter(pg => !curatedHrefs.has(pg.href) && !MODEL_ROW.has(pg.href));
-      const links = curated.map(l => linkTo(l.href, l.label)).join('')
-        + discovered.map(pg => linkTo(pg.href, pg.title)).join('');
-      div.innerHTML = '<h2>' + p.label + '</h2>'
-        + (owner ? '<div class="owner">' + owner + '</div>' : '')
+      const door = doors[p.label];
+      const links = door
+        ? '<div class="links">' + linkTo(door.href, door.label) + '<span class="where">' + esc(door.href) + '</span></div>'
+        : '<div class="links"><span class="nodoor">no door yet</span></div>';
+      div.innerHTML = '<h2>' + esc(p.label) + '</h2>'
+        + (owner ? '<div class="owner">' + esc(owner) + '</div>' : '')
         + '<div class="desc">' + (descriptions[p.label] || p.comment || '') + '</div>'
-        + (links ? '<div class="links">' + links + '</div>' : '');
+        + links;
       container.appendChild(div);
     }
 
