@@ -339,6 +339,11 @@ run_cargo_lane() {
     echo "SUITE|runner|werk-test-nightly|silas|fail|0 pass, 1 fail (werk-test not on PATH — runner lanes DID NOT RUN, #3920/#3974)"
     return
   fi
+  # #4032 — the runner mints its write credential from $CHORUS_HOME
+  # (chorus-identity-token lives there). launchd never sets it, so every
+  # 03:00 run since #4015 posted nothing ("no-write-token", 190/190 units on
+  # 2026-08-30) while a role-shell run of the same binary stored 6,120. Hand
+  # the runner the variable explicitly; CHORUS_ROOT is the same tree.
   # #3484 — the nightly's own build lock: never contend with a role build.
   local nt="${NIGHTLY_CARGO_TARGET:-$HOME/.chorus/nightly-cargo-target}"
   local _cap rc; _cap=$(mktemp)
@@ -363,6 +368,7 @@ run_cargo_lane() {
   _streamer=$!
   NIGHTLY_SUITE_TIMEOUT="${NIGHTLY_RUNNER_LANE_TIMEOUT:-${NIGHTLY_CARGO_LANE_TIMEOUT:-7200}}" _run_capped "$_cap" \
     env CARGO_TARGET_DIR="$nt" CHORUS_ROOT="$CHORUS_ROOT" \
+      CHORUS_HOME="${CHORUS_HOME:-$CHORUS_ROOT}" \
     "$wt" --nightly ${only:+--crate="$only"}; rc=$?
   kill "$_streamer" 2>/dev/null; wait "$_streamer" 2>/dev/null
   spine_emit nightly.lane.completed "lane=runner" "rc=$rc"
