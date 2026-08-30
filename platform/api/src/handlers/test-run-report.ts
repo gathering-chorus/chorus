@@ -40,11 +40,17 @@ export interface CrossFoot {
 }
 
 /** Which kinds can produce per-case stored results at all. Shell suites carry
- *  counts only, security probes and ratchets are checks not cases — comparing
- *  `recorded` against a total that includes them makes the storage row
- *  structurally un-greenable. Found by RUNNING the report against a real
- *  credentialed nightly on 2026-08-27, not by review. */
-export const STORABLE_KINDS = new Set(['cargo', 'npm', 'jest', 'bats']);
+ *  counts only and ratchets are checks not cases — comparing `recorded`
+ *  against a total that includes them makes the storage row structurally
+ *  un-greenable. Found by RUNNING the report against a real credentialed
+ *  nightly on 2026-08-27, not by review.
+ *  #4022 — `security` IS storable: its suites are bats files with registered
+ *  per-case identities (3924-declared-wins.bats, 3682-guest-cannot-authorize.bats…)
+ *  and the runner posts them. Run 6 (2026-08-29 12:10) stored 7,293 results
+ *  against a page-side "storable" of 5,721 — the page had excluded the 2,166
+ *  security cases the runner saved, and told Jeff RESULTS LOST for a run that
+ *  lost nothing. Found by Jeff, on his phone, from the demo. */
+export const STORABLE_KINDS = new Set(['cargo', 'npm', 'jest', 'bats', 'security']);
 
 export interface KindTotal {
   kind: string;

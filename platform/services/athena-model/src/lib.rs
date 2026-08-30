@@ -282,13 +282,11 @@ impl FusekiStore {
             "-H".into(), "Accept: application/sparql-results+json".into(),
             "--data-urlencode".into(), format!("{}@{}", data_param, body_file.display()),
         ];
-        if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
-            if !pw.is_empty() {
-                let user = std::env::var("FUSEKI_ADMIN_USER")
-                    .unwrap_or_else(|_| "admin".to_string());
-                args.push("-u".into());
-                args.push(format!("{}:{}", user, pw));
-            }
+        if let Some(pw) = fuseki_admin_password() {
+            let user = std::env::var("FUSEKI_ADMIN_USER")
+                .unwrap_or_else(|_| "admin".to_string());
+            args.push("-u".into());
+            args.push(format!("{}:{}", user, pw));
         }
         args.push(format!("{}{}", self.endpoint, path));
         let out = Command::new("curl")
@@ -879,12 +877,10 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
         "--data-urlencode".into(),
         format!("query={}", sparql),
     ];
-    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
-        if !pw.is_empty() {
-            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
-            args.push("-u".into());
-            args.push(format!("{}:{}", user, pw));
-        }
+    if let Some(pw) = fuseki_admin_password() {
+        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+        args.push("-u".into());
+        args.push(format!("{}:{}", user, pw));
     }
     args.push(format!("{}/query", endpoint));
     let out = Command::new("curl")
@@ -3887,5 +3883,80 @@ mod seed_multi_3839 {
             .expect_err("the DAL must refuse a DBA-path graph");
             assert!(st.updates.borrow().is_empty(), "nothing written to {g}: {e}");
         }
+    }
+}
+
+/// #4022 — the Fuseki write credential, resolved by the DAL itself: the env
+/// (`FUSEKI_ADMIN_PASSWORD`) when a launcher exported it, else the 0600 cred
+/// file (`FUSEKI_WRITE_ENV`, default `~/.gathering/data/fuseki-write.env`).
+/// Until now only `athena-make-launch.sh` sourced that file, so every OTHER
+/// caller — the demo-env athena variant, a launchd-domain setenv that a reboot
+/// wiped (2026-08-27 21:xx, Silas), a role shell — wrote unauthenticated and
+/// 401'd. The value never leaves this process except on curl's argv.
+pub fn fuseki_admin_password() -> Option<String> {
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            return Some(pw);
+        }
+    }
+    fuseki_admin_password_from_file(&fuseki_write_env_path())
+}
+
+pub fn fuseki_write_env_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("FUSEKI_WRITE_ENV") {
+        if !p.trim().is_empty() {
+            return std::path::PathBuf::from(p);
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    std::path::PathBuf::from(format!("{}/.gathering/data/fuseki-write.env", home))
+}
+
+/// The cred file is `KEY=value` lines; only `FUSEKI_ADMIN_PASSWORD` is read.
+/// Absent file, unreadable file, or no such line → None (the write goes out
+/// unauthenticated and Fuseki's 401 says so — never a fabricated credential).
+pub fn fuseki_admin_password_from_file(path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    text.lines()
+        .map(str::trim)
+        .find_map(|l| l.strip_prefix("FUSEKI_ADMIN_PASSWORD="))
+        .map(|v| v.trim().trim_matches('"').trim_matches('\'').to_string())
+        .filter(|v| !v.is_empty())
+}
+
+#[cfg(test)]
+mod fuseki_cred_4022 {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!("athena-model-4022-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d.join(name)
+    }
+
+    #[test]
+    fn negative_proof_no_file_no_line_means_no_credential() {
+        assert_eq!(fuseki_admin_password_from_file(std::path::Path::new("/nonexistent/fuseki-write.env")), None);
+        let p = scratch("empty.env");
+        std::fs::write(&p, "FUSEKI_ADMIN_USER=admin
+# no password line
+").unwrap();
+        assert_eq!(fuseki_admin_password_from_file(&p), None);
+        let q = scratch("blank.env");
+        std::fs::write(&q, "FUSEKI_ADMIN_PASSWORD=
+").unwrap();
+        assert_eq!(fuseki_admin_password_from_file(&q), None, "an empty value is not a credential");
+    }
+
+    #[test]
+    fn control_the_cred_file_line_is_read_quoted_or_bare() {
+        let p = scratch("ok.env");
+        std::fs::write(&p, "FUSEKI_ADMIN_USER=admin
+FUSEKI_ADMIN_PASSWORD=\"s3cret-fixture\"
+").unwrap();
+        assert_eq!(fuseki_admin_password_from_file(&p).as_deref(), Some("s3cret-fixture"));
+        let q = scratch("bare.env");
+        std::fs::write(&q, "FUSEKI_ADMIN_PASSWORD=bare-fixture").unwrap();
+        assert_eq!(fuseki_admin_password_from_file(&q).as_deref(), Some("bare-fixture"));
     }
 }

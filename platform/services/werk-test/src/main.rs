@@ -560,9 +560,31 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     let mut failed_count = 0usize;
     let mut all_cases: Vec<CaseResult> = Vec::new();
     let mut unmatched_cargo = 0usize;
-    for c in &crates {
-        let crate_prefix = format!("platform/services/{}/tests/", c);
-        let ns_bins: Vec<String> = if stack_down.is_some() {
+    // #4022 — the cargo lane was 24 serial `cargo nextest` invocations against
+    // an already-warm shared target dir; pool them. cargo's own flock still
+    // serializes any cold BUILD, so contention degrades to the old timing,
+    // never to corruption. Worker count is deliberately smaller than the bats
+    // pool — nextest is internally parallel, so crates multiply CPU.
+    // #4022 — load-aware widths: each lane gets a share of the box, and no pool
+    // takes a new unit while the 1-minute load is over cap (2× cores). Env
+    // overrides keep the old knobs; the defaults are the box's.
+    let budget = werk_test::cpu_budget();
+    let (cw_default, nextest_threads, nw_default, jest_workers, bats_default) = werk_test::lane_widths(budget);
+    let cap: f64 = std::env::var("NIGHTLY_LOAD_CAP").ok().and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| werk_test::load_cap(budget));
+    let gate_wait = std::time::Duration::from_secs(
+        std::env::var("NIGHTLY_GATE_MAX_WAIT_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(180));
+    let gate_tick = std::time::Duration::from_secs(5);
+    println!("-- #4022 load-aware: budget {} cores, cap load {:.0}, cargo {}×{} threads, npm {}×{} jest workers, bats {} --",
+        budget, cap, cw_default, nextest_threads, nw_default, jest_workers, bats_default);
+    let cargo_workers: usize = std::env::var("NIGHTLY_CARGO_WORKERS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(cw_default);
+    if std::env::var("NIGHTLY_NEXTEST_THREADS").is_err() {
+        std::env::set_var("NIGHTLY_NEXTEST_THREADS", nextest_threads.to_string());
+    }
+    let ns_bins_for = |c: &str| -> Vec<String> {
+        if stack_down.is_some() {
+            let crate_prefix = format!("platform/services/{}/tests/", c);
             ns_all.iter()
                 .filter_map(|f| f.strip_prefix(&crate_prefix))
                 .filter_map(|rest| rest.strip_suffix(".rs"))
@@ -571,12 +593,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
                 .collect()
         } else {
             Vec::new()
-        };
+        }
+    };
+    let cargo_root = root.clone();
+    let (cargo_results, cargo_waits) = werk_test::run_pool_gated(&crates, cargo_workers, cap, read_loadavg, gate_wait, gate_tick, |c| {
+        let ns_bins = ns_bins_for(c);
         let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
-        let (ok, cases) = run_cargo(&root, c, &q_names, &ns_refs);
+        (run_cargo(&cargo_root, c, &q_names, &ns_refs), ns_bins.len())
+    });
+    for (c, ((ok, cases), ns_len)) in cargo_results {
+        let c = &c;
         let passed = cases.iter().filter(|(_, r)| r == "pass").count();
         let case_failed = cases.iter().filter(|(_, r)| r != "pass").count();
-        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_refs.len()));
+        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_len));
         let crate_dir = format!("platform/services/{}", c);
         for (bare, result) in cases {
             match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
@@ -607,11 +636,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     if stack_down.is_none() {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
-    for p in &ts_pkgs {
+    // #4022 — npm lane pooled at 2: jest is internally parallel, so two
+    // concurrent packages already saturate; more just multiplies load (the
+    // 6-worker take pegged the box to 194).
+    let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
+    let npm_root = root.clone();
+    let (npm_results, npm_waits) = werk_test::run_pool_gated(&ts_pkgs, npm_workers, cap, read_loadavg, gate_wait, gate_tick,
+        |p| run_jest_with(&npm_root, p, Some(jest_workers)));
+    for (p, (ok, cases)) in npm_results {
+        let p = &p;
         let pkg_ns: Vec<String> = if stack_down.is_some() {
             ns_all.iter().filter(|f| f.starts_with(&format!("{}/", p))).cloned().collect()
         } else { Vec::new() };
-        let (ok, cases) = run_jest(&root, p);
         // #4004 — attribute each case to the package its FILE lives in, not to
         // the package the runner happened to invoke. Kade read "cards 7 fail /
         // clearing 1 fail" and found the failing cases were
@@ -661,10 +698,45 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3922 — security-declared units fold under their own lane label so the
     // report and owner routing see ONE security lane on its own cadence.
     let sec_units = werk_test::security_units(&rows);
-    for b in &bats_suites {
+    // #4022 — the lane's suites are independent subprocesses; fan them out.
+    // A suite is serialized when a registered file of its is needs-stack or it
+    // is named in the isolation conf (a suite that mutates the shared stack
+    // must never overlap anything). Report order stays the plan's order —
+    // run_pool returns input order regardless of completion order.
+    let iso_conf = std::fs::read_to_string(
+        Path::new(&root).join("platform/scripts/nightly-isolation.conf"))
+        .unwrap_or_default();
+    let explicit_iso: Vec<String> = iso_conf.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
+    let plan = werk_test::plan_parallel_units(&bats_suites,
+        &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
+    let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(bats_default);
+    // #4022 second cut — the serialized tail was 50 suites at width 1. Only
+    // conf-listed MUTATORS truly need to run alone; needs-stack READERS
+    // (probes, health checks) overlap each other safely at width 2.
+    let (stack_readers, mutators) = werk_test::split_serialized(&plan.serialized, &explicit_iso);
+    println!("-- #4022 parallel plan: {} suites fan out across {} workers, {} stack-readers at 2, {} mutators alone --",
+        plan.parallel.len(), workers, stack_readers.len(), mutators.len());
+    let pool_root = root.clone();
+    let (mut lane_results, bats_waits): (Vec<(String, (bool, Vec<(String, String)>, String))>, usize) =
+        werk_test::run_pool_gated(&plan.parallel, workers, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&pool_root, b));
+    let reader_root = root.clone();
+    let (reader_results, reader_waits) =
+        werk_test::run_pool_gated(&stack_readers, 2, cap, read_loadavg, gate_wait, gate_tick, |b| run_bats_cases(&reader_root, b));
+    lane_results.extend(reader_results);
+    println!("-- #4022 load gate: held {} time(s) at load > {:.0} (cargo {}, npm {}, bats {}) --",
+        cargo_waits + npm_waits + bats_waits + reader_waits, cap, cargo_waits, npm_waits, bats_waits + reader_waits);
+    for b in &mutators {
+        lane_results.push((b.clone(), run_bats_cases(&root, b)));
+    }
+    for (b, (ok, cases, text)) in lane_results {
+        let b = &b;
         let kind = if sec_units.contains(b) { "security" }
             else if b.ends_with(".sh") { "shell" } else { "bats" };
-        let (ok, cases, text) = run_bats_cases(&root, b);
         let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
             // shell suites report summary counts, not TAP cases
             werk_test::parse_shell_counts(&text)
@@ -750,6 +822,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
     emit_spine("test.completed", &role, &card, &trace, &completed_refs);
+    // #4022 AC3/AC4 — elapsed against Jeff's bar (default 15m), on the spine so
+    // drift is visible, and a breach is loud in the run's own output.
+    let bar_secs: u64 = std::env::var("NIGHTLY_ELAPSED_BAR_SECS").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(900);
+    let elapsed_secs = (total_duration_ms / 1000) as u64;
+    emit_spine("test.nightly.elapsed", &role, &card, &trace,
+        &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string()),
+          ("over_bar", if elapsed_secs > bar_secs { "true" } else { "false" })]);
+    if let Some(breach) = werk_test::elapsed_breach(elapsed_secs, bar_secs) {
+        println!("!! {}", breach);
+        emit_spine("test.nightly.over_bar", &role, &card, &trace,
+            &[("elapsed_secs", &elapsed_secs.to_string()), ("bar_secs", &bar_secs.to_string())]);
+    }
     let exit = werk_test::run_exit_code(outcome.exit_code(), joined.len(), stored);
     if lost > 0 {
         println!("werk-test: RESULTS LOST — {} of {} (exit {})", lost, joined.len(), exit);
@@ -840,18 +925,60 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     };
     cmd.current_dir(werk).env("CHORUS_CONTEXT", "");
     apply_suite_world(&mut cmd, werk);
-    match cmd.output() {
-        Ok(o) => {
-            let text = format!("{}{}",
-                String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
+    // #4022 / TD-028 — suite output goes to a FILE and the runner waits on
+    // CHILD EXIT with a deadline, never on pipe-EOF. Twice today a finished
+    // suite's leaked server (test-share-path-prefix's http.server, the crawler
+    // bats wedge) inherited the output pipe and hung the run for as long as
+    // anyone let it; a file leaves nothing to hold, and a suite that outlives
+    // its budget is killed and scored failed, loudly.
+    let suite_slug: String = suite.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let out_path = tmp.join(format!("suite-{}.out", suite_slug));
+    let timeout_secs: u64 = std::env::var("NIGHTLY_SUITE_TIMEOUT").ok()
+        .and_then(|v| v.parse().ok()).unwrap_or(600);
+    let spawned = std::fs::File::create(&out_path)
+        .map_err(|e| e.to_string())
+        .and_then(|f| {
+            let ferr = f.try_clone().map_err(|e| e.to_string())?;
+            cmd.stdout(f).stderr(ferr);
+            cmd.spawn().map_err(|e| e.to_string())
+        });
+    let outcome = spawned.and_then(|mut child| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => return Ok((status.code(), status.success(), false)),
+                Ok(None) => {
+                    if std::time::Instant::now() >= deadline {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return Ok((None, false, true));
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+    });
+    match outcome {
+        Ok((code, success, timed_out)) => {
+            let mut text = std::fs::read_to_string(&out_path).unwrap_or_default();
+            let _ = std::fs::remove_file(&out_path);
+            if timed_out {
+                text.push_str(&format!(
+                    "\nSUITE TIMED OUT after {}s — killed by the runner (deadline is child-exit, not pipe-EOF)\n",
+                    timeout_secs));
+                eprintln!("!! {} timed out after {}s — killed", suite, timeout_secs);
+                return (false, werk_test::parse_bats_cases(&text), text);
+            }
             // #4016 — rc=3 is a suite's SELF-REFUSAL ("I must not run here"),
             // not a failure. nightly-suites.sh learned this in #4004; this
             // runner never did, and the nightly uses THIS one — so a correctly
             // refusing suite (test-product-membrane, which bootouts every agent
             // and needs explicit authority) kept reporting "0 pass, 1 fail".
             // Two scorers, one taught. Both must agree or the fix is invisible.
-            let refused = o.status.code() == Some(3);
-            let ok = o.status.success() || refused;
+            let refused = code == Some(3);
+            let ok = success || refused;
             if !ok {
                 let tail: Vec<&str> = text.lines().rev().take(20).collect();
                 eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
@@ -1060,7 +1187,10 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
         eprintln!("REFUSED cargo lane for {}: {}", name, reason);
         return (false, Vec::new());
     }
-    let mut args: Vec<String> = werk_test::nextest_run_args(quarantined, ns_bins);
+    // #4022 — each crate gets its share of the CPU budget (see lane_widths);
+    // NIGHTLY_NEXTEST_THREADS is set by the nightly lane, absent for card runs.
+    let threads = std::env::var("NIGHTLY_NEXTEST_THREADS").ok().and_then(|v| v.parse().ok());
+    let mut args: Vec<String> = werk_test::nextest_run_args_threads(quarantined, ns_bins, threads);
     // #3955 — the ONE nextest config (pin + serial-e2e groups) lives at the werk
     // root; per-crate runs resolve config from the CRATE dir, so pass it
     // explicitly or the serial-e2e grouping silently never applies.
@@ -1143,6 +1273,12 @@ fn run_tsc(werk: &str, pkg: &str) -> bool {
 /// #3592 — `--json` capture: stdout is the machine result (per-case identity →
 /// TestResult emit), progress/failures stay on stderr and are echoed on red.
 fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
+    run_jest_with(werk, pkg, None)
+}
+
+/// #4022 — jest with its share of the CPU budget (`--maxWorkers N`); None keeps
+/// jest's default (a worker per core), which is what pegged the box.
+fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Vec<CaseResult>) {
     let pkg_dir = format!("{}/{}", werk, pkg);
     if !ensure_ts_deps(werk, pkg) {
         eprintln!("!! jest:{} CHANGED but deps unavailable — FAIL LOUD", pkg);
@@ -1160,6 +1296,9 @@ fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
         .current_dir(&pkg_dir);
+    if let Some(n) = max_workers {
+        cmd.arg(format!("--maxWorkers={}", n.max(1)));
+    }
     apply_suite_world(&mut cmd, werk);
     match cmd.output() {
         Ok(o) => {
@@ -1460,7 +1599,13 @@ fn post_test_results(
                 .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
             werk_test::testresult_batch_endpoint(&collection)
         });
-    const MAX_POSTS: usize = 2000;
+    // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first
+    // full parallel nightly joined 6,712 cases and the cap silently outranked
+    // the storage promise: 4,712 computed verdicts dropped, caught only because
+    // #4015's results-lost gate now fails the run. 10k clears the current
+    // battery (~6.7k) with headroom; the chunker already byte-bounds requests,
+    // so a bigger cap costs more chunks, not bigger ones.
+    const MAX_POSTS: usize = 10_000;
     // #3925 — the RUN's clock, threaded from run start; post time is not run time.
     let ts = run_epoch_ms;
     let payloads: Vec<String> = joined
@@ -1562,22 +1707,50 @@ fn run_reconcile() -> Result<i32, String> {
     registered.dedup(); // covers fan-out duplicates one row per covers value
     let endpoint = std::env::var("OWL_API_TESTRESULTS")
         .unwrap_or_else(|_| "http://localhost:3360/testresults?limit=100000".to_string());
-    let jq = r#".data[] | [.filePath, .testName] | @tsv"#;
-    let pipe = format!("curl -sf --max-time 15 '{}' | jq -r '{}'", endpoint, jq);
-    let out = Command::new("bash")
-        .args(["-c", &pipe])
-        .output()
-        .map_err(|e| format!("testresults fetch failed: {}", e))?;
-    let mut executed: Vec<(String, String)> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let mut it = l.split('\t');
-            match (it.next(), it.next()) {
-                (Some(f), Some(n)) if !f.is_empty() => Some((f.to_string(), n.to_string())),
-                _ => None,
+    // #4022 — `pipefail`, and a failed fetch is an ERROR, not an empty ledger.
+    // On 2026-08-28 /testresults 502'd, `curl -sf` printed nothing, and this
+    // function reported "7,794 registered tests never ran" — every test the
+    // nightly had just executed and stored (7,269 posted, 49/49 chunks). A
+    // census that cannot reach the ledger must say so, never "nothing ran".
+    // The ledger is larger than one page (229k rows, 100k page cap), so the
+    // walk follows `links.next` until the collection is exhausted.
+    let jq = r#"(.data[] | [.filePath, .testName] | @tsv), ("__NEXT__\t" + (.links.next // ""))"#;
+    let mut executed: Vec<(String, String)> = Vec::new();
+    let mut page = endpoint.clone();
+    let mut pages = 0usize;
+    loop {
+        pages += 1;
+        let pipe = format!("set -o pipefail; curl -sf --max-time 120 '{}' | jq -r '{}'", page, jq);
+        let out = Command::new("bash")
+            .args(["-c", &pipe])
+            .output()
+            .map_err(|e| format!("testresults fetch failed: {}", e))?;
+        if !out.status.success() {
+            return Err(format!(
+                "testresults fetch failed: {} unreachable or refused (rc={}, page {}) — census not taken",
+                page,
+                out.status.code().unwrap_or(-1),
+                pages
+            ));
+        }
+        let mut next = String::new();
+        for l in String::from_utf8_lossy(&out.stdout).lines() {
+            if let Some(n) = l.strip_prefix("__NEXT__\t") {
+                next = n.to_string();
+                continue;
             }
-        })
-        .collect();
+            let mut it = l.split('\t');
+            if let (Some(f), Some(n)) = (it.next(), it.next()) {
+                if !f.is_empty() {
+                    executed.push((f.to_string(), n.to_string()));
+                }
+            }
+        }
+        match werk_test::next_page_url(&page, &next) {
+            Some(n) if pages < 50 => page = n,
+            _ => break,
+        }
+    }
     executed.sort();
     executed.dedup();
     let gap = reconcile_gap(&registered, &executed);
@@ -1852,4 +2025,60 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool
         }
         Err(e) => (false, format!(" (spawn failed: {})", e)),
     }
+}
+
+#[cfg(test)]
+mod suite_deadline_tests {
+    use super::*;
+
+    fn world(name: &str, body: &str) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("wt-deadline-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(name), body).unwrap();
+        (dir, name.to_string())
+    }
+
+    #[test]
+    fn a_leaked_pipe_holding_child_cannot_outlive_the_suite() {
+        // TD-028 live shape: the suite FINISHES but leaves `sleep &` holding
+        // stdout. Under cmd.output() this call blocked until the leak died
+        // (24 minutes on 2026-08-27); under child-exit waiting it returns now.
+        let (dir, s) = world("leaker.sh",
+            "( sleep 300 & )\necho '=== Results: 1 passed, 0 failed ==='\nexit 0\n");
+        let t0 = std::time::Instant::now();
+        let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        assert!(t0.elapsed().as_secs() < 30, "runner waited on the leaked pipe");
+        assert!(ok);
+        assert!(text.contains("1 passed"));
+    }
+
+    #[test]
+    fn negative_proof_a_hung_suite_is_killed_and_scored_failed() {
+        // #4022 AC4's runner half: a suite that never exits breaches its budget,
+        // dies, and reads as a loud fail — never a silent forever-wait.
+        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "2");
+        let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
+        let t0 = std::time::Instant::now();
+        let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
+        assert!(!ok);
+        assert!(t0.elapsed().as_secs() < 30);
+        assert!(text.contains("SUITE TIMED OUT"));
+    }
+}
+
+
+/// #4022 — the box's 1-minute load, via `sysctl -n vm.loadavg` (macOS) with an
+/// `uptime` fallback. None when neither answers: no data must never gate.
+fn read_loadavg() -> Option<f64> {
+    let try_cmd = |c: &str, a: &[&str]| -> Option<String> {
+        let o = Command::new(c).args(a).output().ok()?;
+        if o.status.success() { Some(String::from_utf8_lossy(&o.stdout).to_string()) } else { None }
+    };
+    try_cmd("sysctl", &["-n", "vm.loadavg"]).and_then(|t| werk_test::parse_loadavg(&t))
+        .or_else(|| try_cmd("uptime", &[]).and_then(|t| {
+            let tail = t.rsplit("load average").next().unwrap_or("");
+            werk_test::parse_loadavg(tail.trim_start_matches('s').trim_start_matches(':'))
+        }))
 }

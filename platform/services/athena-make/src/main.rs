@@ -294,9 +294,14 @@ mod cli_tests {
                     let _ = c.set_read_timeout(Some(std::time::Duration::from_secs(5)));
                     let req = athena_make::read_http_request(&mut c, 1 << 20);
                     let body = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                    let rows = body
-                        .find("query=")
-                        .map(|i| rows_for(&urldecode(&body[i + 6..])))
+                    // #4022 — the client now POSTs a raw application/sparql-query
+                    // body (no `query=` form field); the stub answers both shapes.
+                    let raw_sparql = req.to_ascii_lowercase().contains("content-type: application/sparql-query");
+                    let rows = if raw_sparql {
+                        Some(rows_for(body))
+                    } else {
+                        body.find("query=").map(|i| rows_for(&urldecode(&body[i + 6..])))
+                    }
                         .unwrap_or_default();
                     let bindings = rows
                         .iter()

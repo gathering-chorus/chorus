@@ -1356,3 +1356,4 @@ Real session content was meta: throughput-halved post Apr 17 (arc + CI, not mode
 - [Silas] 2026-08-21 → #3729 built + live-verified (9 probes + 4 boundaries served); pipeline in flight at reboot → Jeff (demo pending)
 - [Silas] 2026-08-21 → diagnosed #3941 gate counter defect (tool results reset the count); fix queued → Wren/Kade (they get bounced too)
 - [Silas] 2026-08-21 → Wren #3561 live swap: mine, blocked on Wren's land; TCC concern dismissed (no AppleEvents) → Wren
+- [Silas] → Library: com.gathering.css crash loop (658 respawns since 12:32 boot, EADDRINUSE :3001 held by com.security.css) — Jeff booted it out 15:16 (load 233→3.6); Silas parked the plist as com.gathering.css.plist.disabled-4027 so it can't reload at boot. Booted out 08-27 21:48 too; came back because the plist stayed. Record was dropped from the #4027 land to go on Jeff's go; landing here. → Wren, Kade

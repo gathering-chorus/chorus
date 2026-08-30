@@ -41,16 +41,43 @@ fn fuseki() -> String {
     std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| "http://localhost:3030/pods".to_string())
 }
 
+/// #4022 — the curl argv for a SPARQL query. The query text travels on STDIN as
+/// a raw `application/sparql-query` POST body (SPARQL 1.1 protocol §2.1.3),
+/// never on argv and never url-encoded: `GET /testresults?limit=100000` builds
+/// a VALUES block over 100k subjects (~10 MB). On argv that failed at spawn with
+/// `Argument list too long (os error 7)`; url-encoded through curl it failed with
+/// `--data-urlencode: out of memory`. Both were 502s whose cause was the
+/// transport, not the store. Pure so the proof can assert the query is absent
+/// from argv without a Fuseki.
+pub fn sparql_curl_args(endpoint: &str) -> Vec<String> {
+    vec![
+        "-sf".into(), "--max-time".into(), "60".into(),
+        "-H".into(), "Accept: application/sparql-results+json".into(),
+        "-H".into(), "Content-Type: application/sparql-query".into(),
+        "--data-binary".into(), "@-".into(),
+        format!("{}/query", endpoint),
+    ]
+}
+
 pub fn sparql_json(query: &str) -> R<String> {
-    let out = Command::new("curl")
-        .args([
-            "-sf", "--max-time", "20",
-            "-H", "Accept: application/sparql-results+json",
-            "--data-urlencode", &format!("query={}", query),
-            &format!("{}/query", fuseki()),
-        ])
-        .output()
+    sparql_json_at(&fuseki(), query)
+}
+
+pub fn sparql_json_at(endpoint: &str, query: &str) -> R<String> {
+    use std::io::Write;
+    let mut child = Command::new("curl")
+        .args(sparql_curl_args(endpoint))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("curl-spawn: {}", e))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        // A closed pipe (curl already gone) surfaces below as a failed status,
+        // with curl's own stderr — not as a spawn error.
+        let _ = stdin.write_all(query.as_bytes());
+    }
+    let out = child.wait_with_output().map_err(|e| format!("curl-spawn: {}", e))?;
     if !out.status.success() {
         return Err(format!("fuseki-query failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
@@ -3392,6 +3419,42 @@ pub fn query_param(query: &str, key: &str) -> Option<String> {
 /// #3506 / ADR-047 §7 — opaque-cursor pagination (AIP-158). The cursor is the next
 /// offset into the ordered, stable-per-request list; returns the page slice + the
 /// next cursor (None at the end). Pure + unit-pinned.
+/// #4022 — the collection page is TWO store round-trips, both cheap:
+///   1. `collection_page_query`  — subjects only: `?s a <C>` ORDER BY ?s LIMIT/OFFSET
+///   2. `collection_project_query` — the projection (labels, status, exposed
+///      fields, CONCAT) with `VALUES ?s { <page> }` INSIDE the GRAPH block.
+/// The previous shape — one query, `... BIND(CONCAT(...) AS ?v) } ORDER BY ?v LIMIT n`
+/// — made the store evaluate every OPTIONAL for every row and sort the CONCAT
+/// string before it could take the first n. On 219,366 chorus:TestResult rows that
+/// was 20s+ and GET /testresults answered 502 while the same page answered in
+/// milliseconds once the subjects were bound. #4010 pushed LIMIT into SPARQL but
+/// the OPTIONALs and the sort still ran over the whole collection.
+/// Measured 2026-08-28 against the live store (219k rows, page of 20):
+///   subjects-only page 0.14s · VALUES-inside-GRAPH projection 0.005s
+///   VALUES OUTSIDE the graph block 6.3s · subquery-join 5.8s · old shape 5.2–20s
+/// so the placement of VALUES is the fix, not the subquery. Ordering by subject IRI
+/// is a total, stable order, so cursor pagination keeps its meaning.
+pub fn collection_page_query(graph: &str, class: &str, limit: usize, offset: usize) -> String {
+    format!(
+        "SELECT (STR(?s) AS ?v) WHERE {{ GRAPH <{g}> {{ ?s a <{c}> }} }} ORDER BY ?s LIMIT {limit} OFFSET {offset}",
+        g = graph, c = class, limit = limit, offset = offset
+    )
+}
+
+/// The projection for ONE page: `where_body` is the collection's GRAPH block
+/// (`GRAPH <g> { ?s a <C> . OPTIONAL ... BIND(CONCAT(...) AS ?v) }`); the page's
+/// subjects are bound with VALUES placed just inside the block so every OPTIONAL
+/// is an index lookup on a bound ?s. Empty page → caller must not query.
+pub fn collection_project_query(graph: &str, where_body: &str, subjects: &[String]) -> String {
+    let open = format!("GRAPH <{}> {{ ", graph);
+    let values: String = subjects.iter()
+        .filter(|s| !s.contains(['<', '>', ' ', '"']))
+        .map(|s| format!("<{}> ", s)).collect();
+    let bound = format!("{}VALUES ?s {{ {}}} ", open, values);
+    let body = where_body.replacen(&open, &bound, 1);
+    format!("SELECT ?v WHERE {{ {} }} ORDER BY ?s", body)
+}
+
 pub fn paginate<'a>(items: &'a [String], cursor: Option<&str>, limit: usize) -> (&'a [String], Option<usize>) {
     let start = cursor.and_then(|c| c.parse::<usize>().ok()).unwrap_or(0).min(items.len());
     let end = start.saturating_add(limit.max(1)).min(items.len());
@@ -3654,11 +3717,17 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             Ok(body) => select_v(&body).first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0),
             Err(_) => 0,
         };
-        let q = format!(
-            "SELECT ?v WHERE {{ {where_body} }} ORDER BY ?v LIMIT {limit} OFFSET {offset}",
-            where_body = where_body, limit = limit, offset = offset
-        );
-        return match sparql_json(&q) {
+        let page_q = collection_page_query(&table.instances_graph, &table.class, limit, offset);
+        let subjects: Vec<String> = match sparql_json(&page_q) {
+            Ok(body) => select_v(&body),
+            Err(e) => return (502, error_envelope(table, "", 502, "upstream", &json_escape(&e), &[])),
+        };
+        let projected: R<String> = if subjects.is_empty() {
+            Ok(String::new())
+        } else {
+            sparql_json(&collection_project_query(&table.instances_graph, &where_body, &subjects))
+        };
+        return match projected {
             Ok(body) => {
                 let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
                 let items = collection_items(select_v(&body), &extra_names);
@@ -4834,6 +4903,28 @@ mod tests {
         assert!(items[0].contains("\"f2\": [\"v1\", \"v2\"]"), "{}", items[0]);
     }
 
+    /// #4022 — the page is two queries: subjects first, then a projection whose
+    /// VALUES sits INSIDE the GRAPH block. The old one-query shape is the negative
+    /// fixture: it fails the same assertions.
+    #[test]
+    fn collection_page_is_subjects_then_values_bound_projection() {
+        let body = "GRAPH <urn:g> { ?s a <urn:C> . OPTIONAL { ?s <urn:p> ?x } BIND(CONCAT(STR(?s), \"|\", COALESCE(?x, \"\")) AS ?v) }";
+        let page = collection_page_query("urn:g", "urn:C", 20, 40);
+        assert_eq!(page, "SELECT (STR(?s) AS ?v) WHERE { GRAPH <urn:g> { ?s a <urn:C> } } ORDER BY ?s LIMIT 20 OFFSET 40");
+        assert!(!page.contains("OPTIONAL") && !page.contains("CONCAT"), "the page query carries no projection: {}", page);
+        let subs = vec!["urn:a".to_string(), "urn:b".to_string(), "urn:evil> } <urn:x".to_string()];
+        let proj = collection_project_query("urn:g", body, &subs);
+        let values_at = proj.find("VALUES ?s { <urn:a> <urn:b> }").expect("VALUES bound to the page");
+        assert!(values_at > proj.find("GRAPH <urn:g> {").unwrap(), "VALUES is INSIDE the graph block: {}", proj);
+        assert!(values_at < proj.find("OPTIONAL").unwrap(), "VALUES precedes every OPTIONAL: {}", proj);
+        assert!(!proj.contains("urn:evil"), "a subject carrying IRI/SPARQL metachars is dropped, never interpolated");
+        assert!(proj.ends_with("ORDER BY ?s") && !proj.contains("LIMIT"), "page order by subject, no second LIMIT: {}", proj);
+        // NEGATIVE PROOF — the #4010 shape this replaces fails the same checks.
+        let old = format!("SELECT ?v WHERE {{ {} }} ORDER BY ?v LIMIT 20 OFFSET 40", body);
+        assert!(!old.contains("VALUES ?s"), "old shape has no bound page");
+        assert!(old.contains("ORDER BY ?v") && old.contains("OPTIONAL"), "old shape sorts the projection over the whole collection");
+    }
+
     #[test]
     fn collection_items_empty_field_renders_empty_string() {
         let rows = vec!["https://x#d|D|ok|".to_string()];
@@ -5893,5 +5984,46 @@ mod bind_scope_tests_4004 {
         std::env::set_var("ATHENA_MAKE_BIND", "0.0.0.0");
         assert_eq!(bind_host(), "0.0.0.0");
         std::env::remove_var("ATHENA_MAKE_BIND");
+    }
+}
+
+#[cfg(test)]
+mod sparql_argv_4022 {
+    use super::*;
+
+    /// Negative proof (#3734): the OLD shape — query on argv — cannot even spawn
+    /// once the query outgrows ARG_MAX. This is the state the fix exists to
+    /// separate from a real store error; keep it red-able here so the module
+    /// cannot pass vacuously if someone puts the query back on argv.
+    #[test]
+    fn negative_proof_a_5mb_query_on_argv_fails_at_spawn_with_e2big() {
+        let big = "x".repeat(5 * 1024 * 1024);
+        let err = Command::new("curl")
+            .args(["-sf", "--data-urlencode", &format!("query={}", big), "http://127.0.0.1:1/query"])
+            .output()
+            .err()
+            .map(|e| e.to_string())
+            .unwrap_or_default();
+        assert!(err.contains("Argument list too long"), "expected E2BIG on argv, got: {:?}", err);
+    }
+
+    #[test]
+    fn the_query_is_never_on_argv() {
+        let args = sparql_curl_args("http://127.0.0.1:1");
+        assert!(args.iter().any(|a| a == "@-"), "query must be read from stdin: {:?}", args);
+        assert!(!args.iter().any(|a| a.starts_with("query=")), "query text leaked onto argv: {:?}", args);
+        assert!(!args.iter().any(|a| a == "--data-urlencode"), "url-encoding a 10 MB body is curl's OOM: {:?}", args);
+        assert!(args.iter().any(|a| a == "Content-Type: application/sparql-query"), "raw SPARQL POST body: {:?}", args);
+        assert_eq!(args.last().map(String::as_str), Some("http://127.0.0.1:1/query"));
+    }
+
+    /// Control: the same 5 MB query through the fixed path gets PAST spawn and
+    /// fails at the (dead) endpoint — a store error, not a process-table error.
+    #[test]
+    fn control_a_5mb_query_reaches_the_endpoint_via_stdin() {
+        let big = "x".repeat(5 * 1024 * 1024);
+        let err = sparql_json_at("http://127.0.0.1:1/pods", &big).unwrap_err();
+        assert!(err.starts_with("fuseki-query failed"), "expected an endpoint failure, got: {}", err);
+        assert!(!err.contains("Argument list too long"), "{}", err);
     }
 }

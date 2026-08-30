@@ -259,8 +259,20 @@ pub struct Quarantined {
 /// Quarantine translates to an exact-name filterset instead of libtest's
 /// substring `--skip`; empty quarantine adds no filterset at all.
 pub fn nextest_run_args(quarantined: &[&str], exclude_bins: &[&str]) -> Vec<String> {
+    nextest_run_args_threads(quarantined, exclude_bins, None)
+}
+
+/// #4022 — same args with an explicit `--test-threads N`. nextest's default is
+/// one thread per core, and the nightly runs several crates at once, so the
+/// default multiplied: 3 crates × 8 threads on an 8-core box before a single
+/// jest or bats process started. The runner now hands each crate its share.
+pub fn nextest_run_args_threads(quarantined: &[&str], exclude_bins: &[&str], threads: Option<usize>) -> Vec<String> {
     let mut v: Vec<String> = ["nextest", "run", "--no-tests=fail"]
         .iter().map(|s| s.to_string()).collect();
+    if let Some(t) = threads {
+        v.push("--test-threads".to_string());
+        v.push(t.max(1).to_string());
+    }
     let mut terms: Vec<String> = quarantined.iter()
         .map(|c| format!("not test(={})", c)).collect();
     // #3919 — stack-down: needs-stack integration binaries excluded, typed skip
@@ -851,6 +863,28 @@ pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> St
         out.push_str(&format!("\n  … +{} more", gap.len() - 20));
     }
     out
+}
+
+/// #4022 — resolve a collection's `links.next` (a root-relative `/v1/...` path)
+/// against the page URL it came from. The ledger is 229k rows and a page caps
+/// at 100k, so the census walks pages; a next link that is absent, empty, or
+/// identical to the current page ends the walk (no self-loop on a broken link).
+pub fn next_page_url(current: &str, next: &str) -> Option<String> {
+    let next = next.trim();
+    if next.is_empty() {
+        return None;
+    }
+    let resolved = if next.starts_with("http://") || next.starts_with("https://") {
+        next.to_string()
+    } else {
+        let after_scheme = current.find("://").map(|i| i + 3).unwrap_or(0);
+        let origin_end = current[after_scheme..].find('/').map(|i| i + after_scheme).unwrap_or(current.len());
+        // the generated API mounts at "/" and self-links as "/v1/<coll>": strip
+        // the version prefix the server does not actually route.
+        let path = next.strip_prefix("/v1").unwrap_or(next);
+        format!("{}{}", &current[..origin_end], path)
+    };
+    if resolved == current { None } else { Some(resolved) }
 }
 
 /// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
@@ -2576,5 +2610,396 @@ mod describe_prefix_join_4015 {
             test_name: "x getRecent default filters hidden".into(), result: "pass".into() }];
         let (_, unjoined) = join_cases(&cases, &rows, &names, &ents);
         assert_eq!(unjoined, 1);
+    }
+}
+
+// ── #4022 — the parallel nightly plan ──────────────────────────────────────────
+//
+// Jeff's bar (2026-08-27): "the nightly tests run is no more than 10-15m of
+// elapsed time." The serial reality that set it: 33-37m full runs, and today's
+// live rerun showed the long poles are independent suites executed one after
+// another. The plan is data, computed here, so the split is testable without
+// running anything: a unit whose registered files include a needs-stack case,
+// or that appears in the explicit isolation list, runs SERIALIZED after the
+// parallel pool drains; everything else fans out.
+
+pub struct NightlyPlan {
+    pub parallel: Vec<String>,
+    pub serialized: Vec<String>,
+}
+
+/// `units` in execution order; `isolated` answers "must this unit run alone".
+/// Order within each half is preserved (stable), duplicates dropped — a unit
+/// scheduled twice would double-post its results.
+pub fn plan_parallel_units(units: &[String], isolated: &dyn Fn(&str) -> bool) -> NightlyPlan {
+    let mut seen = std::collections::HashSet::new();
+    let mut parallel = Vec::new();
+    let mut serialized = Vec::new();
+    for u in units {
+        if !seen.insert(u.clone()) { continue; }
+        if isolated(u) { serialized.push(u.clone()); } else { parallel.push(u.clone()); }
+    }
+    NightlyPlan { parallel, serialized }
+}
+
+/// A unit is isolation-declared when any of its registered files carries
+/// hermeticity "needs-stack" (they share the one live stack) or it is named in
+/// `explicit` (the conf line a suite writes to declare "I must run alone").
+pub fn unit_is_isolated(unit: &str, rows: &[TestRow], explicit: &[String]) -> bool {
+    if explicit.iter().any(|e| e == unit) { return true; }
+    rows.iter().any(|r| r.hermeticity == "needs-stack"
+        && (r.file_path == *unit || r.file_path.starts_with(&format!("{}/", unit))))
+}
+
+/// #4022 AC3/AC4 — the bar is a number the run reports against, not a wish.
+/// Some(reason) = breach, rendered loudly by the caller; None = within bar.
+pub fn elapsed_breach(elapsed_secs: u64, bar_secs: u64) -> Option<String> {
+    if elapsed_secs > bar_secs {
+        Some(format!(
+            "NIGHTLY OVER BAR — {}m{}s elapsed against the {}m bar",
+            elapsed_secs / 60, elapsed_secs % 60, bar_secs / 60))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod parallel_plan_tests {
+    use super::*;
+
+    fn row(fp: &str, herm: &str) -> TestRow {
+        TestRow { file_path: fp.into(), covers: String::new(),
+            pyramid_layer: String::new(), hermeticity: herm.into(),
+            test_concern: String::new() }
+    }
+
+    #[test]
+    fn hermetic_units_fan_out_and_order_is_preserved() {
+        let units: Vec<String> = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|_| false);
+        assert_eq!(plan.parallel, units);
+        assert!(plan.serialized.is_empty());
+    }
+
+    #[test]
+    fn negative_proof_an_isolated_unit_never_reaches_the_parallel_pool() {
+        // #3734 — the state this split exists to prevent: a suite that mutates
+        // the shared stack running concurrently with anything.
+        let units: Vec<String> = ["a", "iso", "b"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|u| u == "iso");
+        assert!(!plan.parallel.contains(&"iso".to_string()));
+        assert_eq!(plan.serialized, vec!["iso".to_string()]);
+    }
+
+    #[test]
+    fn a_unit_scheduled_twice_runs_once() {
+        let units: Vec<String> = ["a", "a"].iter().map(|s| s.to_string()).collect();
+        let plan = plan_parallel_units(&units, &|_| false);
+        assert_eq!(plan.parallel.len(), 1);
+    }
+
+    #[test]
+    fn needs_stack_file_marks_its_unit_isolated() {
+        let rows = vec![row("platform/api/tests/live.integration.test.ts", "needs-stack")];
+        assert!(unit_is_isolated("platform/api", &rows, &[]));
+        assert!(!unit_is_isolated("directing/products/cards", &rows, &[]));
+    }
+
+    #[test]
+    fn explicit_isolation_list_wins_even_for_hermetic_units() {
+        assert!(unit_is_isolated("platform/tests/product-membrane.bats", &[], &["platform/tests/product-membrane.bats".to_string()]));
+    }
+
+    #[test]
+    fn negative_proof_a_slow_run_breaches_the_bar_loudly() {
+        // #4022 AC4 — an artificially slow run must be reported, not absorbed.
+        let breach = elapsed_breach(16 * 60, 15 * 60);
+        assert!(breach.is_some());
+        assert!(breach.unwrap().contains("OVER BAR"));
+    }
+
+    #[test]
+    fn control_a_run_within_the_bar_is_silent() {
+        assert!(elapsed_breach(14 * 60, 15 * 60).is_none());
+    }
+}
+
+// ── #4022 — load-aware dispatch ──────────────────────────────────────────
+// Three daytime runs (08-28 15:40, 08-28 17:24, 08-29 09:31) took an 8-core box
+// from load 7 to 300+ within nine minutes and the runner then died of its own
+// wedge guard with 38 of 302 suites done and nothing saved. The pools were
+// bounded by WORKERS but not by what each worker spawned (nextest: a thread
+// per core; jest: a worker per core), so 3 cargo + 2 npm workers alone asked
+// for ~40 cores. Two fixes: every spawned runner gets its share of the CPU
+// budget, and no pool takes a new unit while the 1-minute load is above the
+// cap. The gate WAITS (bounded), it never skips a unit — a skipped suite would
+// be a vacuous green (#3734).
+
+/// `sysctl -n vm.loadavg` prints `{ 7.16 8.68 8.28 }`; `uptime` prints three
+/// comma- or space-separated numbers. Take the first.
+pub fn parse_loadavg(text: &str) -> Option<f64> {
+    text.split(|c: char| c == '{' || c == '}' || c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty())
+        .find_map(|t| t.parse::<f64>().ok())
+}
+
+/// The CPU budget the whole nightly may ask for at once: the box's cores.
+pub fn cpu_budget() -> usize {
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).max(1)
+}
+
+/// Per-lane widths that sum to roughly one budget. Returned as
+/// (cargo_workers, nextest_threads_each, npm_workers, jest_workers_each, bats_workers).
+pub fn lane_widths(budget: usize) -> (usize, usize, usize, usize, usize) {
+    // Jeff, 2026-08-29: "maybe u need less in parallel". Nominal threads now
+    // sum to ONE core count, not two: on 8 cores cargo 2×2 + npm 1×2 + bats 2.
+    let b = budget.max(2);
+    let cargo_workers = (b / 4).max(1);
+    let nextest_threads = (b / (cargo_workers * 2)).max(1);
+    let npm_workers = 1usize;
+    let jest_workers = (b / 4).max(1);
+    let bats_workers = (b / 4).max(1);
+    (cargo_workers, nextest_threads, npm_workers, jest_workers, bats_workers)
+}
+
+/// The load above which a pool stops taking new units: the core count. At
+/// load = cores every core has a runnable thread; past it the box queues, the
+/// probes time out, and the runner's own quiet-cap starts killing lanes.
+pub fn load_cap(budget: usize) -> f64 {
+    budget as f64
+}
+
+/// #4022 — `run_pool` with a load gate. Before each unit a worker reads
+/// `load()`; while it exceeds `cap` the worker sleeps `tick` up to `max_wait`
+/// total, then proceeds regardless (bounded: the gate slows a run, it cannot
+/// wedge one). Returns the results in INPUT order plus the number of gate
+/// waits taken, so the report can say "held N times at load > cap".
+pub fn run_pool_gated<T, F, L>(units: &[String], workers: usize, cap: f64, load: L,
+    max_wait: std::time::Duration, tick: std::time::Duration, f: F) -> (Vec<(String, T)>, usize)
+where
+    T: Send + 'static,
+    F: Fn(&str) -> T + Send + Sync,
+    L: Fn() -> Option<f64> + Send + Sync,
+{
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    if units.is_empty() { return (Vec::new(), 0); }
+    let workers = workers.max(1).min(units.len());
+    let next = AtomicUsize::new(0);
+    let waits = AtomicUsize::new(0);
+    let done = AtomicUsize::new(0);
+    let finished = AtomicBool::new(false);
+    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
+        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
+    std::thread::scope(|s| {
+        // #4022 — heartbeat. The nightly's wedge guard kills a lane that prints
+        // nothing for NIGHTLY_QUIET_CAP (600s). A narrow pool prints only when a
+        // unit finishes, and one long bats suite is silent for longer than that:
+        // 2026-08-29 11:45 the whole bats lane died that way at load 5. Progress
+        // is not a wedge; say so once a minute while anything is in flight.
+        s.spawn(|| {
+            let mut ticks = 0u32;
+            while !finished.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                ticks += 1;
+                if ticks % 60 == 0 {
+                    println!("-- pool heartbeat: {}/{} done, {} in flight, {} gate hold(s) --",
+                        done.load(Ordering::SeqCst), units.len(),
+                        next.load(Ordering::SeqCst).min(units.len()) - done.load(Ordering::SeqCst),
+                        waits.load(Ordering::SeqCst));
+                }
+            }
+        });
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                if i >= units.len() { break; }
+                // the gate: hold while the box is over cap, bounded
+                let started = std::time::Instant::now();
+                while let Some(l) = load() {
+                    if l <= cap || started.elapsed() >= max_wait { break; }
+                    waits.fetch_add(1, Ordering::SeqCst);
+                    std::thread::sleep(tick);
+                }
+                let unit = &units[i];
+                let out = f(unit);
+                slots.lock().unwrap()[i] = Some((unit.clone(), out));
+                if done.fetch_add(1, Ordering::SeqCst) + 1 == units.len() {
+                    finished.store(true, Ordering::SeqCst);
+                }
+            });
+        }
+    });
+    finished.store(true, Ordering::SeqCst);
+    let out = Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
+        .into_iter().flatten().collect();
+    (out, waits.load(Ordering::SeqCst))
+}
+
+#[cfg(test)]
+mod load_aware_4022 {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn parses_sysctl_and_uptime_shapes() {
+        assert_eq!(parse_loadavg("{ 7.16 8.68 8.28 }"), Some(7.16));
+        assert_eq!(parse_loadavg("328.63 402.49 369.23"), Some(328.63));
+        assert_eq!(parse_loadavg("load averages: 3.61, 3.45, 4.02").map(|v| v as u32), Some(3));
+        assert_eq!(parse_loadavg(""), None);
+    }
+
+    #[test]
+    fn lane_widths_fit_one_budget() {
+        // 8 cores (Library): cargo 2×2 + npm 1×2 + bats 2 = 8 nominal threads,
+        // versus the old 3×8 + 2×7 + 6 = 44.
+        let (cw, nt, nw, jw, bw) = lane_widths(8);
+        assert_eq!((cw, nt, nw, jw, bw), (2, 2, 1, 2, 2));
+        assert!(cw * nt + nw * jw + bw <= 8, "lanes must not ask for more than the cores");
+        assert_eq!(load_cap(8), 8.0);
+        let (cw, nt, nw, jw, bw) = lane_widths(2);
+        assert!(cw >= 1 && nt >= 1 && nw >= 1 && jw >= 1 && bw >= 1);
+    }
+
+    #[test]
+    fn nextest_args_carry_the_thread_share() {
+        let a = nextest_run_args_threads(&[], &[], Some(2));
+        let i = a.iter().position(|x| x == "--test-threads").expect("--test-threads present");
+        assert_eq!(a[i + 1], "2");
+        assert!(!nextest_run_args(&[], &[]).contains(&"--test-threads".to_string()), "legacy shape unchanged");
+    }
+
+    /// Negative proof (#3734): the state the gate exists for — a box over cap —
+    /// must be observable as waits, and must NOT drop or skip a unit.
+    #[test]
+    fn negative_proof_over_cap_holds_but_never_skips() {
+        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
+        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(999.0),
+            Duration::from_millis(30), Duration::from_millis(10), |u| u.len());
+        assert!(waits > 0, "over cap must register as waits");
+        assert_eq!(out.len(), 6, "bounded gate: every unit still runs");
+        assert_eq!(out.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(),
+            units.iter().map(String::as_str).collect::<Vec<_>>(), "input order kept");
+    }
+
+    /// Control: under cap the gate is invisible — zero waits, same results.
+    #[test]
+    fn control_under_cap_never_waits() {
+        let units: Vec<String> = (0..6).map(|i| format!("u{}", i)).collect();
+        let (out, waits) = run_pool_gated(&units, 3, 16.0, || Some(1.5),
+            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
+        assert_eq!(waits, 0);
+        assert_eq!(out.len(), 6);
+    }
+
+    /// An unreadable load must not hold the run (no data ≠ over cap).
+    #[test]
+    fn unreadable_load_does_not_gate() {
+        let units: Vec<String> = vec!["a".into(), "b".into()];
+        let (out, waits) = run_pool_gated(&units, 2, 16.0, || None,
+            Duration::from_secs(1), Duration::from_millis(10), |u| u.len());
+        assert_eq!((out.len(), waits), (2, 0));
+    }
+}
+
+/// #4022 — bounded worker pool over units. Results come back in INPUT order
+/// regardless of completion order, so the per-suite report lines and the case
+/// accumulation stay deterministic — a shuffled report would make two runs of
+/// the same night diff against each other.
+pub fn run_pool<T, F>(units: &[String], workers: usize, f: F) -> Vec<(String, T)>
+where
+    T: Send + 'static,
+    F: Fn(&str) -> T + Send + Sync,
+{
+    use std::sync::{Arc, Mutex};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    if units.is_empty() { return Vec::new(); }
+    let workers = workers.max(1).min(units.len());
+    let next = AtomicUsize::new(0);
+    let slots: Arc<Mutex<Vec<Option<(String, T)>>>> =
+        Arc::new(Mutex::new((0..units.len()).map(|_| None).collect()));
+    std::thread::scope(|s| {
+        for _ in 0..workers {
+            s.spawn(|| loop {
+                let i = next.fetch_add(1, Ordering::SeqCst);
+                if i >= units.len() { break; }
+                let unit = &units[i];
+                let out = f(unit);
+                slots.lock().unwrap()[i] = Some((unit.clone(), out));
+            });
+        }
+    });
+    Arc::try_unwrap(slots).ok().unwrap().into_inner().unwrap()
+        .into_iter().flatten().collect()
+}
+
+#[cfg(test)]
+mod run_pool_tests {
+    use super::*;
+
+    #[test]
+    fn results_come_back_in_input_order_despite_uneven_durations() {
+        let units: Vec<String> = ["slow", "fast", "mid"].iter().map(|s| s.to_string()).collect();
+        let out = run_pool(&units, 3, |u| {
+            let ms = match u { "slow" => 60, "mid" => 20, _ => 1 };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            u.len()
+        });
+        let names: Vec<&str> = out.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, vec!["slow", "fast", "mid"]);
+    }
+
+    #[test]
+    fn negative_proof_every_unit_runs_exactly_once() {
+        // The state a broken pool produces: a dropped or double-run unit.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CALLS: AtomicUsize = AtomicUsize::new(0);
+        let units: Vec<String> = (0..37).map(|i| format!("u{}", i)).collect();
+        let out = run_pool(&units, 5, |_| { CALLS.fetch_add(1, Ordering::SeqCst); });
+        assert_eq!(out.len(), 37);
+        assert_eq!(CALLS.load(Ordering::SeqCst), 37);
+    }
+
+    #[test]
+    fn a_pool_of_one_is_just_the_serial_order() {
+        let units: Vec<String> = ["a", "b"].iter().map(|s| s.to_string()).collect();
+        let out = run_pool(&units, 1, |u| u.to_string());
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].0, "a");
+    }
+}
+
+/// #4022 — the serialized tail split. needs-stack marks a suite as TOUCHING the
+/// live stack, but most such suites only READ it (probes, health checks) and can
+/// safely overlap each other at low width. Only the isolation-conf list names
+/// MUTATORS (stop agents, rebind ports) — those run strictly alone. Readers
+/// pool at width 2 after the hermetic pool drains; mutators run last, serial.
+pub fn split_serialized(serialized: &[String], mutators: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut readers = Vec::new();
+    let mut alone = Vec::new();
+    for s in serialized {
+        if mutators.iter().any(|m| m == s) { alone.push(s.clone()); } else { readers.push(s.clone()); }
+    }
+    (readers, alone)
+}
+
+#[cfg(test)]
+mod serialized_split_tests {
+    use super::*;
+
+    #[test]
+    fn readers_pool_and_mutators_stay_alone() {
+        let ser: Vec<String> = ["probe.bats", "membrane.sh", "health.bats"].iter().map(|s| s.to_string()).collect();
+        let (readers, alone) = split_serialized(&ser, &["membrane.sh".to_string()]);
+        assert_eq!(readers, vec!["probe.bats".to_string(), "health.bats".to_string()]);
+        assert_eq!(alone, vec!["membrane.sh".to_string()]);
+    }
+
+    #[test]
+    fn negative_proof_a_conf_listed_mutator_never_lands_in_the_reader_pool() {
+        let ser: Vec<String> = vec!["membrane.sh".to_string()];
+        let (readers, alone) = split_serialized(&ser, &["membrane.sh".to_string()]);
+        assert!(readers.is_empty());
+        assert_eq!(alone.len(), 1);
     }
 }

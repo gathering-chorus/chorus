@@ -1,26 +1,25 @@
 # Current Work
 
-Last updated: 2026-08-02 06:20 Boston
+Last updated: 2026-08-27 17:50 Boston
 
 ## WIP
-- **#3721** "no failures period, no non-determinism" — 15 commits on `kade/3721`, **CI 39/39 green (0 skipped) on `662dfc2e6`**. Wren reviewed and approved; Silas took his lane. **Waiting on Jeff's go to land** (DEC-048 — not self-accepting).
+- **#4022** "parallelize the nightly runner — 10–15m elapsed" (Jeff's bar, set 2026-08-27; filed by Silas, Jeff-initiated). Pulled 17:48, werk `kade/4022`. Shape: run suites concurrently, isolation-declared suites serialized, elapsed on the spine. Design targets from today's live run: `test-chorus-share.sh` 8m, `nudge-single-mcp-path.bats` ~14m/test (full-tree grep, filters after the crawl), `crawler-bespoke-hydrator` wedge. Sibling: #4017 (fold shell suites into typed cases).
+  - **Measured 2026-08-27 22:27:** parallel bats pool (4 workers) + per-suite 600s child-exit deadline → **49m12s** full run vs 2.4h serial (3×). OVER BAR alarm fired live (`test.nightly.over_bar`, bar 900s). 0 hangs in 286 units.
+  - **2026-08-28 09:20, Jeff's question: why parallelize before removing the bash?** Honest answer: I pulled P2 #4022 ahead of P1 #4017 ("eliminate the bash") because #4022 had a number on it and looked like the faster lever. Wrong order. Take-4 measured 52m with every lane pooled; the tail that remains is the 59 shell suites (serialized isolation/needs-stack), which is exactly what #4017 folds away. AC1 unchecked on the card; #4022 lands what it proved (3x, hang-kill, elapsed on spine), #4017 is the path to 15m and goes next.
+  - **To reach 15m:** parallelize cargo lane (one workspace nextest instead of 24 serial crate invocations) + npm lane (bounded jest concurrency); raise the writeback MAX_POSTS=2000 cap (dropped 4,712 of 6,712 — #4015's gate caught it). Worker budget matters: 6 workers pegged load 194; 4 peaked 68 during jest.
 
-  The unlock was a CI gate, not a test: four jobs (ESLint ratchet, tsc, clippy, clippy ratchet) were gated `if: github.event_name == 'schedule'`, so every `workflow_dispatch` skipped all four **and still reported the run as success**. "Green" meant a third of the static analysis never ran. Opening them to dispatch immediately surfaced a real ESLint ratchet breach that had been sitting on main.
+## Landed today
+- **#4015** (merge `93552e529`, Jeff's go 17:47) — per-test results store end-to-end. The whole chain closed live: join fix (describe-prefixed names), Test-name minting under the door's 128-byte cap (+ no `--`, the door collapses hyphen runs when resolving `ofTest`), RESULTS LOST exits 1 loudly, `/test-run` gains the store-derived "Most recent stored run" section (a run that saved nothing cannot appear on it). Pipeline's own run: 218/218 stored. **Tonight's 03:00 nightly is the first full-scale run under the fixed runner — check the page in the morning.**
 
-  Three were genuine shipped defects, not stale tests:
-  - **`append_log` silently dropped spine events.** `tokio::fs::File` buffers and does not flush on drop, so `write_all` returned `Ok` while the bytes never reached the OS. That is #3278's "199 of 200 lines, zero corrupt" — a silent-drop problem wearing corruption's clothes. One `f.flush()`. (I first blamed fd pressure and said so in a commit; my own unit test disproved it on CI and I superseded that explanation rather than leaving it standing.)
-  - **The #1846 empty-context alarm could not fire.** It counted `content.lines()` at the end of the function, where `content` already includes principles + Athena tree + next-session notes — those clear the 10-line threshold alone. Staleness was mtime-only, so an empty-but-fresh cache was never rebuilt. Verified: zero-byte cache → no error, no repair, still empty 10s later. A role would boot on nothing, silently. Now 0 → 9688 bytes.
-  - **The cards "1/529 flake" was a live-production hazard.** `client-3600.test.ts` stubbed `.api`, but `fetchAllTasks()` reads the #3625 short-TTL disk cache first. Cache warm → 3662 real tasks, fails. Cache cold → passes, then writes its two fake tasks *into the live shared cache*, so every real `cards` invocation sees a 2-task board for the TTL window. Fixed via `CARDS_CACHE_DISABLE`; verified 6/6 deterministic AND live cache byte/mtime-identical after the run. Wren owns the seam cleanup.
-
-## Waiting
-- **Jeff's go on #3721**, plus his call on the two debt items below. Wren is holding her own seam card behind this one.
+## Waiting / handoffs
+- Silas re-runs his atlas land after #4015 (cognitive-complexity ratchet unblocked — `auditClose` refactor landed with it). Wren's #3860 queue behind that.
+- Cage-escape class folded into **#4005** (mine), bars agreed with Silas: fixtures bring their own world (#3528), fix ships a negative proof (caged run visibly unable to reach a live session). Instances logged as TD-028.
 
 ## Open debt — deliberately left red rather than faked green
-- **`coverage:clearing`** — all 426 tests pass; `src/server.ts` is 73.04% stmts / 56.72% branches against 80/60 floors. Needs real tests, not a lowered floor.
-- **`npm:jeff-bridwell-personal-site` 2/4671** — 83 API endpoints have no swagger tags/summaries against a 116 ratchet. Auto-generating 83 summaries would satisfy the ratchet with documentation theater.
+- 199 security-probe failures in the nightly = authz-coverage program (59 undeclared routes), not new breakage.
+- **`coverage:clearing`** — floors unmet in `src/server.ts`; needs real tests, not a lowered floor.
+- **`npm:jeff-bridwell-personal-site`** — 83 API endpoints without swagger tags (TD-027); no documentation theater.
 
 ## Context
-- Canonical 03:00 nightly (2026-08-02) was 4 red: `lint:chorus`, `npm:cards`, `coverage:clearing`, `npm:jeff-bridwell-personal-site`. Landing #3721 clears the first two.
-- Silas owns the remaining chorus reds (the hardcoded-LAN-IP nine, service-design suites, coverage floors) and is triaging against the canonical run, not my werk snapshot.
-- **My error, logged:** my first nightly run from the werk wrote to the shared `~/Library/Logs/Chorus/nightly-suites.log` and fired a team-wide "34 red" alert at Jeff. Silas caught it. Use `NIGHTLY_LOG_PATH=<werk-local>` for any werk validation run; he's guarding the default.
-- Prior WIP #3663 / #3662 (2026-07-22) both closed out; nothing carried.
+- Report page reads: nightly section from the official log; "Most recent stored run" from the store. Never write a validation run to the shared log (`NIGHTLY_LOG_PATH=<werk-local>` — the July "34 red" lesson).
+- Status-loop discipline (today's lesson, in memory): every tick ends visible; two ticks without new output = say STALLED and sample the process, never narrate "probably fine."
