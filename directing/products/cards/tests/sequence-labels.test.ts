@@ -1,3 +1,4 @@
+// @test-type: integration:api — reads the LIVE Vikunja label list; gated by RUN_INTEGRATION (jest.config testPathIgnorePatterns)
 /**
  * #2024 AC #1 — Sequence labels must have `sequence:` prefix in Vikunja.
  * Verifies that all label IDs in LABELS.sequence correspond to Vikunja labels
@@ -35,13 +36,13 @@ describe('Sequence label naming (#2024 AC #1)', () => {
     expect(errors).toEqual([]);
   });
 
-  test('cards set sequence=X produces sequence:X label on card', async () => {
-    const card = await client.view(1794);
-    const seqLabels = card.domains.filter(d => d.startsWith('sequence:'));
-    const bareSeqNames = Object.keys(LABELS.sequence);
-    const bareLabels = card.domains.filter(d => bareSeqNames.includes(d) && !d.includes(':'));
-
-    expect(bareLabels).toEqual([]);
-    expect(seqLabels.length).toBeGreaterThanOrEqual(1);
-  });
+  // #4030 — the second case here ("cards set sequence=X produces sequence:X
+  // label on card") read live card #1794 and asserted it CURRENTLY carries a
+  // sequence label. It never ran `set`; it depended on a real card nobody
+  // promised to keep tagged, and went red in run 7 (2026-08-29 16:53) on a
+  // transient empty read while the label was in place. The behaviour it
+  // named — tag passes category + value through to the board — is proven
+  // hermetically in sdk-lifecycle.test.ts ("tagCard passes category + value
+  // through"). A test that cannot fail for the reason it claims is retired,
+  // not softened (#3734).
 });

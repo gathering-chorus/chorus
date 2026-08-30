@@ -868,7 +868,7 @@ mod stated_intent_tests {
     use super::*;
 
     fn vocab() -> Vec<Commitment> {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let p = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("../../config/stated-intent-vocabulary.json");
         let c = load_commitments(&p);
         assert!(!c.is_empty(), "vocabulary must load from the declared file");
@@ -1012,7 +1012,7 @@ mod real_stall_specimens {
 
     #[test]
     fn every_real_stall_is_caught() {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let p = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("../../config/stated-intent-vocabulary.json");
         let v = load_commitments(&p);
         for (when, text) in VERBATIM_STALLS {
@@ -1027,7 +1027,7 @@ mod real_stall_specimens {
     /// the gate punishes the behaviour it exists to produce.
     #[test]
     fn none_of_them_block_when_the_work_happened() {
-        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        let p = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("../../config/stated-intent-vocabulary.json");
         let v = load_commitments(&p);
         for (_when, text) in VERBATIM_STALLS {

@@ -14,7 +14,7 @@ fn fixtures_path() -> std::path::PathBuf {
     if let Ok(p) = std::env::var("REPLY_HASH_FIXTURES") {
         return p.into();
     }
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("../../../config/reply-hash-fixtures.json")
 }
 

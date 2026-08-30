@@ -250,3 +250,44 @@ describe('#4022 — security cases are storable (run 6, 2026-08-29)', () => {
     expect(reportVerdict(r)).toBe('RESULTS LOST');
   });
 });
+
+// #4030 AC4 — suites the run planned and never reached are RED on this page,
+// listed by name, never silently absent. 2026-08-30 03:00: the runner was
+// killed at its lane cap with five npm packages and every bats suite unrun;
+// the report counted 3 red. nightly-suites.sh now folds each unreached unit
+// into a `NEVER RAN` fail row; the document names them and fails.
+describe('#4030 never-ran suites are red', () => {
+  const HEAD = 'RUN|start|2026-08-30T03:00:00';
+  const RAN = 'SUITE|cargo|platform/services/werk-test|silas|pass|191 pass, 0 fail';
+  const NEVER = 'SUITE|npm|platform/api|silas|fail|0 pass, 1 fail (NEVER RAN — the runner was killed at the lane cap before this unit (rc=124))';
+  const REAL_FAIL = 'SUITE|shell|platform/scripts/test-x.sh|silas|fail|0 pass, 1 fail (synthesized rc=1, no parseable line)';
+  const TAIL = 'RUN|complete|2026-08-30T05:15:54';
+  const build = (lines: string[]) => buildTestRunReport({
+    runId: 'latest', trigger: 'nightly', scope: 'full selection',
+    logText: lines.join('\n'), registered: 191, recorded: 191, notExecuted: null,
+  })!;
+
+  it('negative proof: a NEVER RAN row makes the verdict FAIL and is named in the footer', () => {
+    const doc = build([HEAD, RAN, NEVER, TAIL]);
+    expect(reportVerdict(doc)).toBe('FAIL');
+    expect(doc.footer.neverExecuted).toEqual(['npm platform/api']);
+    expect(doc.footer.failed).toEqual([]);
+    const html = renderTestRun(doc);
+    expect(html).toContain('never ran');
+    expect(html).toContain('npm platform/api');
+  });
+
+  it('control: the same run without the row is PASS with nothing never-ran', () => {
+    const doc = build([HEAD, RAN, TAIL]);
+    expect(reportVerdict(doc)).toBe('PASS');
+    expect(doc.footer.neverExecuted).toEqual([]);
+    expect(renderTestRun(doc)).not.toContain('never ran');
+  });
+
+  it('a real one-assertion failure is failed, not never-ran — the marker decides, not the counts', () => {
+    const doc = build([HEAD, RAN, REAL_FAIL, TAIL]);
+    expect(reportVerdict(doc)).toBe('FAIL');
+    expect(doc.footer.failed).toEqual(['shell platform/scripts/test-x.sh']);
+    expect(doc.footer.neverExecuted).toEqual([]);
+  });
+});

@@ -12,7 +12,7 @@ fn role_settings_path(role: &str) -> String {
     // roles/<role>/.claude/settings.json lives three levels up.
     format!(
         "{}/../../../roles/{}/.claude/settings.json",
-        env!("CARGO_MANIFEST_DIR"),
+        std::env::var("CARGO_MANIFEST_DIR").unwrap(),
         role
     )
 }

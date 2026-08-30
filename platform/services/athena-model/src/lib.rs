@@ -3952,11 +3952,11 @@ mod fuseki_cred_4022 {
     fn control_the_cred_file_line_is_read_quoted_or_bare() {
         let p = scratch("ok.env");
         std::fs::write(&p, "FUSEKI_ADMIN_USER=admin
-FUSEKI_ADMIN_PASSWORD=\"s3cret-fixture\"
+FUSEKI_ADMIN_PASSWORD=\"FIXTURE-NOT-A-PASSWORD-1\"
 ").unwrap();
-        assert_eq!(fuseki_admin_password_from_file(&p).as_deref(), Some("s3cret-fixture"));
+        assert_eq!(fuseki_admin_password_from_file(&p).as_deref(), Some("FIXTURE-NOT-A-PASSWORD-1"));
         let q = scratch("bare.env");
-        std::fs::write(&q, "FUSEKI_ADMIN_PASSWORD=bare-fixture").unwrap();
-        assert_eq!(fuseki_admin_password_from_file(&q).as_deref(), Some("bare-fixture"));
+        std::fs::write(&q, "FUSEKI_ADMIN_PASSWORD=FIXTURE-NOT-A-PASSWORD-2").unwrap();
+        assert_eq!(fuseki_admin_password_from_file(&q).as_deref(), Some("FIXTURE-NOT-A-PASSWORD-2"));
     }
 }

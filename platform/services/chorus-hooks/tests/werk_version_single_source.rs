@@ -16,14 +16,15 @@ fn skip_unless_integration(reason: &str) -> bool {
     false
 }
 
-const PROTOCOL_VERSION_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../designing/claudemd/PROTOCOL_VERSION"
-);
-const MANIFEST_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../../designing/claudemd/manifest.json"
-);
+// #4030 — resolved at RUN time, never baked in at compile time: the nightly
+// shares one cargo target dir across werks, so a test binary compiled in one
+// werk runs in another and a compile-time path points at a tree that is gone.
+fn protocol_version_path() -> String {
+    format!("{}/../../../designing/claudemd/PROTOCOL_VERSION", std::env::var("CARGO_MANIFEST_DIR").unwrap())
+}
+fn manifest_path() -> String {
+    format!("{}/../../../designing/claudemd/manifest.json", std::env::var("CARGO_MANIFEST_DIR").unwrap())
+}
 
 const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 
@@ -32,7 +33,7 @@ const SHIM: &str = env!("CARGO_BIN_EXE_chorus-hook-shim");
 /// lives under "_build".
 #[test]
 fn manifest_has_no_version_key() {
-    let content = fs::read_to_string(MANIFEST_PATH).expect("manifest.json readable");
+    let content = fs::read_to_string(manifest_path()).expect("manifest.json readable");
     let v: serde_json::Value = serde_json::from_str(&content)
         .expect("manifest.json parseable");
 
@@ -53,7 +54,7 @@ fn context_cache_renders_protocol_version_not_manifest_build() {
     // Force cache refresh by removing existing file
     let _ = fs::remove_file("/tmp/session-context-silas.md");
 
-    let protocol_version = fs::read_to_string(PROTOCOL_VERSION_PATH)
+    let protocol_version = fs::read_to_string(protocol_version_path())
         .expect("PROTOCOL_VERSION readable")
         .trim()
         .to_string();
@@ -78,7 +79,7 @@ fn context_cache_renders_protocol_version_not_manifest_build() {
     // Negative: must NOT render the manifest build counter as a Werk version.
     // Read whatever _build is and prove it isn't in the Werk v render.
     let manifest: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(MANIFEST_PATH).unwrap()
+        &fs::read_to_string(manifest_path()).unwrap()
     ).unwrap();
     if let Some(build_str) = manifest.get("_build").and_then(|v| v.as_str()) {
         // Parse only if non-trivial (e.g., 217)

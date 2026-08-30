@@ -138,7 +138,9 @@ export function crossFootChecks(c: CrossFoot): Check[] {
  *  the only fair reading of those words. The verdict describes the nightly. */
 export function reportVerdict(r: TestRunReport): 'PASS' | 'FAIL' | 'RESULTS LOST' {
   if (crossFootChecks(r.crossFoot).some(c => c.state === 'fail')) return 'RESULTS LOST';
-  return r.crossFoot.failed > 0 ? 'FAIL' : 'PASS';
+  // #4030 — a suite the run never reached is a FAIL even when every case that
+  // did run passed: the night did not prove what it planned to prove.
+  return r.crossFoot.failed > 0 || r.footer.neverExecuted.length > 0 ? 'FAIL' : 'PASS';
 }
 
 
@@ -208,10 +210,19 @@ export function renderTestRun(r: TestRunReport): string {
       + 'so nothing here can say whether the code is healthy</td></tr>'
     : '';
 
+  // #4030 — never-ran suites are listed by name, red, above the kind table.
+  // Presence is the signal (same rule as `dropped`): no permanent empty row.
+  const neverRanRows = r.footer.neverExecuted.length > 0
+    ? `<table class="never-ran"><tr><th>never ran</th><th></th></tr>`
+      + r.footer.neverExecuted.map(u =>
+        `<tr class="bad"><td>${esc(u)}</td><td>planned, never reached — counted as failed</td></tr>`).join('')
+      + '</table>'
+    : '';
+
   return `<h1>Test run ${esc(r.run.id)}</h1>
 <p class="verdict ${v === 'PASS' ? 'ok' : 'bad'}">${v}</p>
 <p>${esc(r.run.trigger)} · ${esc(r.run.scope)} · ${esc(r.run.startedAt)} → ${esc(r.run.endedAt)}</p>
-<table class="crossfoot"><tr><th>check</th><th class="n">is</th><th class="n">should be</th><th></th></tr>${foot}</table>
+${neverRanRows}<table class="crossfoot"><tr><th>check</th><th class="n">is</th><th class="n">should be</th><th></th></tr>${foot}</table>
 <table class="kinds"><tr><th>kind</th><th class="n">suites</th><th class="n">passed</th><th class="n">failed</th><th class="n">cases</th><th>a case is</th></tr>${kinds}${unmeasuredRow}${totalRow}</table>
 <table class="footer">${droppedRow}</table>`;
 }
@@ -266,6 +277,12 @@ const CASE_MEANING: Record<string, string> = {
   reconcile: 'the registered-vs-executed census',
 };
 
+/** #4030 — a suite row the run planned and never reached. Matched on the
+ *  wrapper's own marker, not on counts: "0 pass, 1 fail" is also what a real
+ *  one-assertion failure looks like. */
+export const isNeverRan = (r: SuiteRow): boolean =>
+  r.status === 'fail' && r.summary.includes('NEVER RAN');
+
 /** Pull the LAST complete run block out of the nightly log. */
 export function lastRunSuites(text: string): { startedAt: string; endedAt?: string; rows: SuiteRow[] } | null {
   const all = text.split('\n');
@@ -286,13 +303,20 @@ export function lastRunSuites(text: string): { startedAt: string; endedAt?: stri
 /** Fold the suite rows into per-kind totals. Counts come from each row's own
  *  summary; a row that produced no parseable counts contributes to `unmeasured`
  *  rather than silently reading as a clean zero (#4009). */
-export function foldByKind(rows: SuiteRow[]): { byKind: KindTotal[]; unmeasured: number } {
+export function foldByKind(rows: SuiteRow[]): { byKind: KindTotal[]; unmeasured: number; neverRan: number } {
   const acc = new Map<string, KindTotal>();
   let unmeasured = 0;
+  let neverRan = 0;
   for (const r of rows) {
     const m = r.summary.match(/(\d+) pass, (\d+) fail/);
     const k = acc.get(r.kind) ?? { kind: r.kind, suites: 0, passed: 0, failed: 0, cases: 0, caseMeaning: CASE_MEANING[r.kind] ?? 'one check' };
     k.suites += 1;
+    // #4030 — a planned suite the run never reached executed NOTHING: it is
+    // a suite in the plan, not a case in any count. Folding its "0 pass, 1
+    // fail" marker into `cases` made `storable` one larger than anything the
+    // run could have saved, and the page said RESULTS LOST for a run that
+    // lost nothing (caught by this card's own negative proof).
+    if (isNeverRan(r)) { neverRan += 1; acc.set(r.kind, k); continue; }
     if (m) {
       k.passed += Number(m[1]);
       k.failed += Number(m[2]);
@@ -301,7 +325,7 @@ export function foldByKind(rows: SuiteRow[]): { byKind: KindTotal[]; unmeasured:
     if (r.status === 'unmeasured' || (m && m[1] === '0' && m[2] === '0')) unmeasured += 1;
     acc.set(r.kind, k);
   }
-  return { byKind: [...acc.values()].sort((a, b) => b.cases - a.cases), unmeasured };
+  return { byKind: [...acc.values()].sort((a, b) => b.cases - a.cases), unmeasured, neverRan };
 }
 
 /** Assemble the document. `registered` and `recorded` come from the tests domain;
@@ -344,8 +368,12 @@ export function buildTestRunReport(input: {
     byKind,
     cases: [],
     footer: {
-      neverExecuted: [],
-      failed: last.rows.filter(r => r.status === 'fail').map(r => `${r.kind} ${r.path}`),
+      // #4030 AC4 — the runner now reports its plan and nightly-suites.sh folds
+      // every planned unit the run never reached into a `NEVER RAN` fail row.
+      // Named here so the page can list them; they are already counted in
+      // `failed` (one fail each), so the verdict is FAIL, never a quiet PASS.
+      neverExecuted: last.rows.filter(r => isNeverRan(r)).map(r => `${r.kind} ${r.path}`),
+      failed: last.rows.filter(r => r.status === 'fail' && !isNeverRan(r)).map(r => `${r.kind} ${r.path}`),
       dropped: Math.max(0, storable - input.recorded),
       changedSinceLastRun: [],
     },
