@@ -3938,7 +3938,8 @@ chorus:ScheduledJobShape a sh:NodeShape ;
 
 # Claim the runtime vocabulary so owl-api mounts /serviceinstances
 # (DECLARED ⊃ CLAIMED ⊃ SERVED — claiming MOUNTS the surface).
-chorus:services-domain chorus:definesVocabulary chorus:Service , chorus:ServiceInstance , chorus:ScheduledJob .
+chorus:services-domain chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob .
+# chorus:Service is claimed by the V2 services Domain (domains-builds-decisions-rcas-4022.ttl) — one claimer per served class (vocab-claim-authority, #4029).
 
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
 # FLAG(silas): hosting-domain choices are kade's best mapping to existing

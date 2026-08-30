@@ -213,6 +213,26 @@ chorus:metrics a owl:Class, chorus:Domain ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
   chorus:repoTarget "platform/api/src/metrics.ts" ; chorus:definesVocabulary chorus:Metric .
 
+# ── athena (Designing, ownedBy wren, partOf product-athena) — restored 2026-08-29 ──
+# products: restored from the 08-03 live dump (#3724 session; the domain was pen-only,
+# never in a MODEL_SET file). value-streams: no dump survived; authored to the same shape
+# from chorus.ttl's ValueStream / ValueStreamStep vocabulary. Both were among the 10
+# domains lost in the 08-28 graph wipe (see RCA).
+
+chorus:products a owl:Class, chorus:Domain ;
+  rdfs:label "products" ; chorus:comment "The set of all Products — the product tree from the chorus parent down, each with what it claims." ;
+  chorus:purpose "Hold the product tree — the products, their children, and what each claims — so structure questions resolve to one answer." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product .
+
+chorus:value-streams a owl:Class, chorus:Domain ;
+  rdfs:label "value-streams" ; chorus:comment "The value streams and their ordered steps — Chorus's Shaping → Directing → Designing → Building → Proving → Reflecting, and the child streams a step composes." ;
+  chorus:purpose "Hold the value streams and their steps — the ordered shape every product and domain hangs off — so the walk from stream to product to domain resolves to one answer." ;
+  chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
+  chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
+  chorus:repoTarget "designing/value-streams" ; chorus:definesVocabulary chorus:ValueStream, chorus:ValueStreamStep .
+
 chorus:StreamEvent a owl:Class ;
     rdfs:label "StreamEvent" ;
     rdfs:comment "One observed agent action: who did what, when, in which session." .

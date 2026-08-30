@@ -51,6 +51,10 @@ else
     # below has the FULL domain set in staging (its safety precondition).
     "$CHORUS_ROOT/roles/wren/ontology/domains-wren-silas.ttl"
     "$CHORUS_ROOT/roles/kade/ontology/domains-kade-3581.ttl"
+    # #4029 — the seven Domain blocks #3982 dropped from domains-wren-silas.ttl (builds,
+    # decisions, rcas, domains, services, search, spine), restored verbatim from git by
+    # #4022; the file existed but was never in MODEL_SET, so #4022's land deployed none of it.
+    "$CHORUS_ROOT/roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl"
     # #4010 — service-instances.ttl LEFT the MODEL_SET. It used to load Service
     # ABox into urn:chorus:ontology (#3675). That graph is DBA-only on the write
     # side (athena-model:916), so parking instances there made every Service
@@ -229,7 +233,33 @@ if [ "$RETIRE_ABSENT" = "1" ]; then
   fi
   RETIRE_CLAUSE=" ; DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?s a ?t ; ?p ?o . FILTER(?t IN (<${NS_CHORUS}Domain>, <${NS_CHORUS}SubDomain>)) } FILTER NOT EXISTS { GRAPH <$STAGING> { ?s ?sp ?so } } }"
 fi
-MERGE_SPARQL="DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
+# #4029 — the merge deletes a staged subject's OWN triples before re-inserting, but a
+# shape body is a blank-node tree (sh:property [ ... ]) whose nodes get a fresh identity
+# on every load: nothing in staging ever matched them, so every deploy left the old
+# bodies behind and added new ones — 92 deploys, ~+880 triples each, 5,230 → 77,770.
+# Delete the blank-node trees hanging off staged subjects FIRST (three levels deep,
+# which covers sh:property → sh:or/sh:in lists), then the subjects, then insert.
+# DEPLOY_BNODE_CLEANUP=0 disables it — only so the negative proof can show the growth.
+BNODE_CLEANUP=""
+if [ "${DEPLOY_BNODE_CLEANUP:-1}" = "1" ]; then
+  # One DELETE per depth, deepest first (a leaf must go before the node that points at
+  # it, or the next level's pattern no longer matches). Six levels covers
+  # sh:property → sh:or → list node → list node → member → nested constraint.
+  for _d in 6 5 4 3 2 1; do
+    _chain="?s ?p0 ?b1 ."; _filt="isBlank(?b1)"
+    for _i in $( [ "$_d" -ge 2 ] && seq 2 "$_d" ); do   # `seq 2 1` counts DOWN — guard it
+      _chain="$_chain ?b$((_i-1)) ?p$((_i-1)) ?b$_i ."; _filt="$_filt && isBlank(?b$_i)"
+    done
+    BNODE_CLEANUP="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?b$_d ?pl ?ol } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { $_chain ?b$_d ?pl ?ol FILTER($_filt) } } ; "
+  done
+  # Bodies left behind by EARLIER deploys are no longer linked to any subject, so the
+  # walk above cannot reach them. A blank node nothing points at is garbage by
+  # definition in this graph; sweep it. Six passes: removing a parent orphans its children.
+  for _i in 1 2 3 4 5 6; do
+    BNODE_CLEANUP="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?ob ?op ?oo } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?ob ?op ?oo FILTER(isBlank(?ob)) FILTER NOT EXISTS { GRAPH <$ONTOLOGY_GRAPH> { ?ox ?oy ?ob } } } } ; "
+  done
+fi
+MERGE_SPARQL="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
 ccode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
   --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
