@@ -57,11 +57,25 @@ fn with_env<F: FnOnce()>(canonical: &str, role: &str, role_werk: &str, body: F) 
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
+    // #4030 — a test brings its own world (#3528). Since #4004 the role
+    // resolver asks the PROCESS ANCESTRY who spawned us (via
+    // $HOME/.chorus/sessions/<role>-<pid>.json) before trusting CHORUS_ROLE,
+    // so under a live role session these tests read the developer's role
+    // instead of the fixture's and six of them went red locally while the
+    // (session-less) nightly stayed green. An empty HOME makes ancestry
+    // resolve to nothing, and CHORUS_ROLE is the only role in the world.
+    let prev_home = std::env::var_os("HOME");
+    let fake_home = std::env::temp_dir().join(format!("cwg-home-{}-{}", std::process::id(), role));
+    std::fs::create_dir_all(&fake_home).unwrap();
+    std::env::set_var("HOME", &fake_home);
+    std::env::remove_var("DEPLOY_ROLE");
     std::env::set_var("CHORUS_HOME", canonical);
     std::env::set_var("CHORUS_ROLE", role);
     std::env::set_var(&role_var, role_werk);
     std::env::set_var("CHORUS_WERK_BASE", &werk_base);
     body();
+    match prev_home { Some(h) => std::env::set_var("HOME", h), None => std::env::remove_var("HOME") }
+    let _ = std::fs::remove_dir_all(&fake_home);
     std::env::remove_var("CHORUS_HOME");
     std::env::remove_var("CHORUS_ROLE");
     std::env::remove_var(&role_var);
@@ -283,11 +297,19 @@ fn guard_active_regardless_of_feature_flag() {
 /// match `<role>-*` (no-WIP /reboot or no card pulled this session).
 fn with_no_wip_env<F: FnOnce()>(canonical: &str, role: &str, werk_base: &str, body: F) {
     let role_var = format!("{}_WERK", role.to_uppercase());
+    // #4030 — same own-world as with_env: ancestry must not out-vote the fixture role.
+    let prev_home = std::env::var_os("HOME");
+    let fake_home = std::env::temp_dir().join(format!("cwg-nowip-home-{}-{}", std::process::id(), role));
+    std::fs::create_dir_all(&fake_home).unwrap();
+    std::env::set_var("HOME", &fake_home);
+    std::env::remove_var("DEPLOY_ROLE");
     std::env::set_var("CHORUS_HOME", canonical);
     std::env::set_var("CHORUS_ROLE", role);
     std::env::set_var("CHORUS_WERK_BASE", werk_base);
     std::env::remove_var(&role_var);
     body();
+    match prev_home { Some(h) => std::env::set_var("HOME", h), None => std::env::remove_var("HOME") }
+    let _ = std::fs::remove_dir_all(&fake_home);
     std::env::remove_var("CHORUS_HOME");
     std::env::remove_var("CHORUS_ROLE");
     std::env::remove_var("CHORUS_WERK_BASE");

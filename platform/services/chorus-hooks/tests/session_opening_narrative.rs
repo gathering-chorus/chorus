@@ -122,7 +122,7 @@ fn boot_header_not_mechanical() {
 // unreachable on CI — two layers of green over a file nobody opened.
 
 fn boot_source() -> String {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let src = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("src/commands/context_cache.rs");
     fs::read_to_string(&src)
         .unwrap_or_else(|e| panic!("boot source unreadable at {}: {e}", src.display()))

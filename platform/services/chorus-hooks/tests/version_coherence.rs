@@ -15,7 +15,7 @@ fn tree_root() -> String {
     // CARGO_MANIFEST_DIR = <tree>/platform/services/chorus-hooks — resolve
     // the tree under test, not canonical, so the gate proves the committed
     // state of the code it ships with.
-    format!("{}/../../..", env!("CARGO_MANIFEST_DIR"))
+    format!("{}/../../..", std::env::var("CARGO_MANIFEST_DIR").unwrap())
 }
 
 #[test]

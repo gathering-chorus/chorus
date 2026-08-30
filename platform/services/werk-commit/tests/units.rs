@@ -64,7 +64,7 @@ fn conflict_hold_message_names_files_and_both_verb_follow_ups() {
 // behavior, not source text. The marker is the cheap, intent-based v1.)
 #[test]
 fn infra_guardrails_has_no_new_raw_git_carve_out() {
-    let guard_src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let guard_src = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("../chorus-hooks/src/hooks/infra_guardrails.rs");
     let src = std::fs::read_to_string(&guard_src)
         .unwrap_or_else(|e| panic!("guard source must exist at {}: {}", guard_src.display(), e));

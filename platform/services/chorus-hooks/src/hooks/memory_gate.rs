@@ -594,7 +594,7 @@ mod tests {
         // pre-commit caught it). CARGO_MANIFEST_DIR resolves at COMPILE TIME, invariant
         // under runtime env mutation. Matches #2558 (parameter > shared state) and
         // #2505 (explicit > silent env fallback) patterns.
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
+        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let path = format!("{}/src/hooks/memory_gate.rs", manifest_dir);
         let has = file_has_git_history(&path);
         assert!(has, "memory_gate.rs should have git history");

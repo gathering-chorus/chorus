@@ -9,7 +9,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn services_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+    PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).parent().unwrap().to_path_buf()
 }
 
 /// Parse a Cargo.toml's [dependencies] section; return entries that are NOT

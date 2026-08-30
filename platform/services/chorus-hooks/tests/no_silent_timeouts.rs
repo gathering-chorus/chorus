@@ -13,7 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn src() -> String {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/hooks/context_inject.rs");
+    let p = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("src/hooks/context_inject.rs");
     fs::read_to_string(&p).expect("read context_inject.rs")
 }
 

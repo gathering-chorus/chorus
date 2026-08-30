@@ -132,7 +132,7 @@ function classifyArtifactType(title: string, filename: string): ArtifactType {
   if (/service.design/.test(t)) return 'service-design';
   if (/^dec-|decision/.test(t)) return 'decision';
   if (/^adr-|architecture.decision.record/.test(t)) return 'adr';
-  if (/^domain\s*[—–-]\s/.test(title)) return 'domain-page';
+  if (/^domain\s*[—–-]\s/i.test(title)) return 'domain-page'; // #4030 — "Domain — Board" titles are capitalised; case-sensitive never matched one
   if (/ontology|owl|rdf|predicate|class.diagram/.test(t)) return 'ontology';
   if (/c4|architecture|system.model|hexagonal|convergence.arch|memory.arch|attention.arch|protocol.stack|nervous.system/.test(t)) return 'architecture';
   if (/research|homeostasis|position|explained.for.humans/.test(t)) return 'research';

@@ -342,7 +342,7 @@ mod tests {
     /// fails loudly — it must never pass vacuously.
     #[test]
     fn enum_matches_schema() {
-        let manifest = env!("CARGO_MANIFEST_DIR");
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
         let path = format!("{}/../../../designing/schemas/membrane-surfaces.json", manifest);
         let raw = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("membrane-surfaces.json unreadable at {path}: {e} — the drift guard's target moved; fix the path or the schema, do not delete this test"));

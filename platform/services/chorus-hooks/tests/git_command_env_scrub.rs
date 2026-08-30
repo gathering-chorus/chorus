@@ -17,7 +17,7 @@ fn helper_removes_git_dir_from_spawned_command() {
     // The helper must build a Command that strips GIT_DIR.
     let mut cmd = git_command();
     cmd.args(["rev-parse", "--show-toplevel"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+        .current_dir(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let output = cmd.output().expect("git rev-parse must run");
 
     // Cleanup before assertion to avoid leaking sticky state.
@@ -43,7 +43,7 @@ fn helper_removes_git_index_file_too() {
     std::env::set_var("GIT_INDEX_FILE", "/tmp/nonexistent-index-from-test");
     let mut cmd = git_command();
     cmd.args(["status", "--porcelain"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+        .current_dir(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let output = cmd.output().expect("git status must run");
     std::env::remove_var("GIT_INDEX_FILE");
 
@@ -59,7 +59,7 @@ fn helper_removes_git_work_tree_too() {
     std::env::set_var("GIT_WORK_TREE", "/tmp/nonexistent-work-tree-from-test");
     let mut cmd = git_command();
     cmd.args(["rev-parse", "--is-inside-work-tree"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"));
+        .current_dir(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let output = cmd.output().expect("git rev-parse must run");
     std::env::remove_var("GIT_WORK_TREE");
 

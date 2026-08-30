@@ -25,7 +25,7 @@ fn write_exec(path: &Path, content: &str) {
 fn fixture(werk: &Path, eslint_json: &str, baseline: &str) {
     std::fs::create_dir_all(werk.join("platform/scripts")).unwrap();
     // The real script under test — copied from this werk's tree, not a mock.
-    let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/lint-ratchet.js");
+    let real = Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../scripts/lint-ratchet.js");
     std::fs::copy(&real, werk.join("platform/scripts/lint-ratchet.js")).unwrap();
     std::fs::write(werk.join(".eslint-baseline.json"), baseline).unwrap();
     write_exec(

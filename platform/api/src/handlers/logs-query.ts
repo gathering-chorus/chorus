@@ -63,8 +63,12 @@ function resolveTimeRange(deps: LogsQueryDeps, start?: string, end?: string, win
     if (isNaN(startMs) || isNaN(endMs)) return { error: 'unparseable timestamp' };
     if (endMs <= startMs) return { error: 'end must be after start' };
   } else if (window) {
+    // #4030 — an unknown window ("fortnight") used to produce a NaN start and
+    // an ok:true empty result; a typo must be refused, not answered with nothing.
+    const secs = Object.prototype.hasOwnProperty.call(TIME_WINDOW_SECONDS, window) ? TIME_WINDOW_SECONDS[window] : undefined;
+    if (secs === undefined) return { error: `unknown time_window "${window}" (5m|15m|1h|6h|1d|7d)` };
     endMs = nowMs;
-    startMs = nowMs - TIME_WINDOW_SECONDS[window] * 1000;
+    startMs = nowMs - secs * 1000;
   } else {
     endMs = nowMs;
     startMs = nowMs - 3600 * 1000;
