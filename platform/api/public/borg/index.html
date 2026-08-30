@@ -17,6 +17,9 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 .surface .status { font-size: 0.72rem; color: #999; margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
 .surface.pending { border-left-color: #d4d4d8; }
 .surface.pending .status { color: #b4b4b8; }
+.group { margin-bottom: 36px; }
+.group-title { font-size: 1rem; font-weight: 500; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px; }
+.group-sub { font-size: 0.8rem; color: #999; margin-bottom: 14px; }
 .meta { font-size: 0.75rem; color: #999; margin-top: 40px; text-align: center; }
 .meta a { color: #4f46e5; text-decoration: none; }
 </style>
@@ -24,83 +27,107 @@ h1 { font-size: 2rem; font-weight: 300; margin-bottom: 8px; }
 <body>
 
 <h1>Borg</h1>
-<p class="subtitle">Reflection — observability, heralds, behavioral drift, health. How the system sees itself. Ten surfaces, one shaping API.</p>
+<p class="subtitle">Reflection — observability, heralds, behavioral drift, health. How the system sees itself.</p>
 
+<!-- #4031 — the front-door tile used to list every page under /borg/; the
+     tile now carries one door (this page) and the surfaces live here in three
+     groups. Quality Service is Werk's (#3656) and lives on /werk; the
+     instance-explorer copy is a twin of The Model row's Instance Explorer and
+     is named in the Archive. -->
+<section class="group">
+<h2 class="group-title">Live</h2>
+<p class="group-sub">dashboards — what the system is doing now</p>
 <div class="surfaces">
-
+  <a class="surface" href="/borg/hooks/">
+    <h2>Hooks Dashboard</h2>
+    <div class="slug">/borg/hooks</div>
+    <div class="desc">Gate blocks, flags, nudges — the harness working. The first view.</div>
+    <div class="status">live</div>
+  </a>
+  <a class="surface" href="/borg/operations.html">
+    <h2>Operations</h2>
+    <div class="slug">/borg/operations.html</div>
+    <div class="desc">Dashboards and monitoring — the service map, one screen.</div>
+    <div class="status">live</div>
+  </a>
   <a class="surface" href="/borg/pain.html">
     <h2>Pain Board</h2>
     <div class="slug">/borg/pain.html</div>
-    <div class="desc">Failures grouped by class (role · event · reason), ranked by count — kill the top class, not the next red line. Plus per-card pipeline-run trace.</div>
+    <div class="desc">Failures grouped by class (role · event · reason), ranked by count — kill the top class, not the next red line.</div>
     <div class="status">live</div>
   </a>
-
-  <a class="surface" href="/borg/assessment/">
-    <h2>Borg Assessment</h2>
-    <div class="slug">/borg/assessment</div>
-    <div class="desc">Capability maturity — where the model meets reality.</div>
+  <a class="surface" href="/borg/trace.html">
+    <h2>Trace Reader</h2>
+    <div class="slug">/borg/trace.html</div>
+    <div class="desc">One trace, every event on it, in order.</div>
     <div class="status">live</div>
   </a>
-
-  <a class="surface" href="/borg/instance-explorer/">
-    <h2>Instance Explorer</h2>
-    <div class="slug">/borg/instance-explorer</div>
-    <div class="desc">Graph viz of ontology instances and their relationships.</div>
-    <div class="status">live</div>
-  </a>
-
-  <a class="surface" href="/borg/patterns/">
-    <h2>Interaction Patterns</h2>
-    <div class="slug">/borg/patterns</div>
-    <div class="desc">Spine pattern detection — how Jeff and roles actually work.</div>
-    <div class="status">live</div>
-  </a>
-
-  <a class="surface" href="/borg/jeff/">
-    <h2>Jeff Dashboard</h2>
-    <div class="slug">/borg/jeff</div>
-    <div class="desc">Posture, voice, attention analytics — the human signal.</div>
-    <div class="status">live</div>
-  </a>
-
   <a class="surface" href="/borg/replay/">
     <h2>Session Replay</h2>
     <div class="slug">/borg/replay</div>
     <div class="desc">rrweb playback of role sessions — see what happened.</div>
     <div class="status">live</div>
   </a>
-
-  <a class="surface" href="/werk/quality/">
-    <h2>Quality Service</h2>
-    <div class="slug">/werk/quality</div>
-    <div class="desc">Test pyramid by domain — where coverage breathes. Part of Werk.</div>
+  <a class="surface" href="/borg/hook-friction.html">
+    <h2>Hook Friction</h2>
+    <div class="slug">/borg/hook-friction.html</div>
+    <div class="desc">Where the guards get in the way — blocks that cost a turn.</div>
     <div class="status">live</div>
   </a>
+</div>
+</section>
 
-  <a class="surface" href="/borg/fitness/">
-    <h2>Fitness Functions</h2>
-    <div class="slug">/borg/fitness</div>
-    <div class="desc">Per-role quality rates — gate pass, regression, escape.</div>
+<section class="group">
+<h2 class="group-title">Reports</h2>
+<p class="group-sub">measured once, read later</p>
+<div class="surfaces">
+  <a class="surface" href="/borg/assessment/">
+    <h2>Borg Assessment</h2>
+    <div class="slug">/borg/assessment</div>
+    <div class="desc">Capability maturity — where the model meets reality.</div>
     <div class="status">live</div>
   </a>
-
   <a class="surface" href="/borg/cost/">
     <h2>Cost Dashboard</h2>
     <div class="slug">/borg/cost</div>
     <div class="desc">Burn rate, variable cost, per-role spend.</div>
     <div class="status">live</div>
   </a>
-
-  <a class="surface" href="/borg/hooks/">
-    <h2>Hooks Dashboard</h2>
-    <div class="slug">/borg/hooks</div>
-    <div class="desc">Gate blocks, flags, nudges — the harness working.</div>
+  <a class="surface" href="/borg/fitness/">
+    <h2>Fitness Functions</h2>
+    <div class="slug">/borg/fitness</div>
+    <div class="desc">Per-role quality rates — gate pass, regression, escape.</div>
     <div class="status">live</div>
   </a>
-
+  <a class="surface" href="/borg/logging-coverage-findings.html">
+    <h2>Logging Coverage Findings</h2>
+    <div class="slug">/borg/logging-coverage-findings.html</div>
+    <div class="desc">Logging / invariant-observability findings — what the system cannot yet see about itself.</div>
+    <div class="status">live</div>
+  </a>
 </div>
+</section>
 
-<p class="meta">Chorus API &middot; localhost:3340/borg &middot; <a href="/docs/">&larr; Chorus landing</a></p>
+<section class="group">
+<h2 class="group-title">Jeff</h2>
+<p class="group-sub">the human in the loop</p>
+<div class="surfaces">
+  <a class="surface" href="/borg/jeff/">
+    <h2>Jeff Dashboard</h2>
+    <div class="slug">/borg/jeff</div>
+    <div class="desc">Posture, voice, attention analytics — the human signal.</div>
+    <div class="status">live</div>
+  </a>
+  <a class="surface" href="/borg/patterns/">
+    <h2>Interaction Patterns</h2>
+    <div class="slug">/borg/patterns</div>
+    <div class="desc">Spine pattern detection — how Jeff and roles actually work.</div>
+    <div class="status">live</div>
+  </a>
+</div>
+</section>
+
+<p class="meta">Chorus API &middot; localhost:3340/borg &middot; <a href="/">&larr; Chorus</a></p>
 
 </body>
 </html>
