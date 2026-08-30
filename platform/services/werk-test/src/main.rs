@@ -449,7 +449,7 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
     // #4015 — same rule on the card path as on the nightly: a run whose evidence
     // did not survive has not proven anything, so it must not exit clean.
-    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms);
+    let stored = post_test_results(&role, &card, &trace, &joined, run_epoch_ms, 0);
     let lost = werk_test::results_lost(joined.len(), stored);
     if lost > 0 {
         println!(
@@ -578,8 +578,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             return;
         }
         let (joined, unregistered) = werk_test::join_cases(cases, &rows, &row_names, &row_entities);
-        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms);
-        expected_total.fetch_add(joined.len(), Ordering::SeqCst);
+        // #4033 — claim this unit's slice of the run's index space first, so
+        // concurrent units never mint the same name (fetch_add is the claim).
+        let idx_base = werk_test::claim_index_base(&expected_total, joined.len());
+        let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms, idx_base);
         stored_total.fetch_add(stored, Ordering::SeqCst);
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
         println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
@@ -1664,6 +1666,7 @@ fn post_test_results(
     trace: &str,
     joined: &[(CaseResult, String)],
     run_epoch_ms: u128,
+    idx_base: usize,
 ) -> usize {
     let writeback_started = std::time::Instant::now();
     let endpoint = std::env::var("OWL_API_TESTRESULTS_BATCH")
@@ -1688,8 +1691,12 @@ fn post_test_results(
         .take(MAX_POSTS)
         .enumerate()
         .map(|(i, (c, of_test))| {
+            // #4033 — names are testresult-<card>-<ts>-<idx>; with the per-unit
+            // store (#4030) every unit restarted i at 0 under the run's shared
+            // ts, so unit two's names were unit one's and the store answered
+            // 409 for the whole chunk. idx_base makes idx run-unique.
             test_result_payload(
-                &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, i)
+                &c.file_path, &c.test_name, &c.result, of_test, card, role, trace, ts, idx_base + i)
         })
         .collect();
     let packed = werk_test::chunk_json_payloads(&payloads, werk_test::TESTRESULT_BATCH_MAX_BYTES);
