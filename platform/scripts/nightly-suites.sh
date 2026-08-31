@@ -1086,6 +1086,20 @@ emit_suite_results() {
 # band-aid used to absorb. A stale lock (holder crashed mid-run) is stolen: if the
 # recorded pid is no longer alive, reclaim it so a crash can't wedge the nightly.
 NIGHTLY_LOCKDIR="${NIGHTLY_LOCKDIR:-${TMPDIR:-/tmp}/chorus-nightly-suites.lock.d}"
+# #4037 — a slot that loses the single-flight lock to a LIVE earlier run must
+# be LOUD: with two calendar slots a day, a long 03:00 straggler would
+# otherwise eat the 13:30 run and nobody would know a run was skipped
+# (Kade's check). Same ops-nudge primitive as notify_results; env-overridable
+# so the negative proof can capture the call.
+refuse_single_flight() {
+  local holder; holder=$(cat "$NIGHTLY_LOCKDIR/pid" 2>/dev/null)
+  echo "nightly-suites: another run holds $NIGHTLY_LOCKDIR (pid $holder) — exiting cleanly (single-flight, #3597)" >&2
+  local ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
+  if [ -x "$ops_nudge" ]; then
+    "$ops_nudge" silas "nightly-suites: scheduled run SKIPPED — pid $holder still holds the single-flight lock (#4037). The run did not happen; check the straggler." || true
+  fi
+}
+
 acquire_single_flight_lock() {
   local d="$NIGHTLY_LOCKDIR"
   if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
@@ -1290,7 +1304,7 @@ PYEOF
   --run-all)
     # #3597 single-flight: refuse to run concurrently with another nightly.
     if ! acquire_single_flight_lock; then
-      echo "nightly-suites: another run holds $NIGHTLY_LOCKDIR (pid $(cat "$NIGHTLY_LOCKDIR/pid" 2>/dev/null)) — exiting cleanly (single-flight, #3597)" >&2
+      refuse_single_flight
       exit 0
     fi
     trap release_single_flight_lock EXIT

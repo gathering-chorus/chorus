@@ -10,13 +10,24 @@
         <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nightly-suites.sh</string>
         <string>--run-all</string>
     </array>
+    <!-- #4037: Jeff wants a DAILY run, not only 03:00 — one agent, two
+         calendar slots, same runner/log/lock. The afternoon slot lets a
+         noon fix see its proof the same day. -->
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>3</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>3</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>13</integer>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+    </array>
     <key>StandardOutPath</key>
     <string>/Users/jeffbridwell/Library/Logs/Chorus/nightly-suites.log</string>
     <key>StandardErrorPath</key>
