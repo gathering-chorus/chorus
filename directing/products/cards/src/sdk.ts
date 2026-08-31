@@ -76,8 +76,12 @@ export function __resetTestPaths(): void {
   BRIEF_DIRS = DEFAULT_BRIEF_DIRS;
 }
 
-// Import from compiled dist to avoid rootDir conflicts
-const { WorkflowEngine } = require('../../../../platform/workflow-engine/dist/engine');
+// #4035 — the workflow engine is required LAZILY (inside triggerWorkflow), not
+// at module load. The eager require made every importer of sdk.ts fail with
+// "Cannot find module …/dist/engine" wherever the engine wasn't built (31 werk
+// suites), and its load-order interplay with jest's module registry made the
+// engine mock flaky under full-suite runs (the recurring 3 triggerWorkflow
+// nightly reds). Import from compiled dist to avoid rootDir conflicts.
 
 /** Minimal shape of WorkflowManifest used here — full type lives in platform/workflow-engine. */
 interface WorkflowManifestLite {
@@ -173,6 +177,7 @@ export function reconcileWorkflows(cardIndex: number, role: string): void {
 // ── Workflow trigger ──
 
 export async function triggerWorkflow(client: BoardClient, cardIndex: number): Promise<void> {
+  const { WorkflowEngine } = require('../../../../platform/workflow-engine/dist/engine');
   const engine = new WorkflowEngine();
 
   const existing = engine.scanWorkflows().find((wf: WorkflowManifestLite) => wf.card === cardIndex);

@@ -988,8 +988,12 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     let suite_slug: String = suite.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
     let out_path = tmp.join(format!("suite-{}.out", suite_slug));
-    let timeout_secs: u64 = std::env::var("NIGHTLY_SUITE_TIMEOUT").ok()
-        .and_then(|v| v.parse().ok()).unwrap_or(600);
+    // #4035 — the UNIT cap, never the wrapper's LANE vocabulary. nightly-suites.sh
+    // env-prefixes NIGHTLY_SUITE_TIMEOUT=<lane cap, 7200s> onto the werk-test
+    // invocation for its own _run_capped, and the export reaches this process:
+    // reading it here gave EVERY suite a 2-hour deadline. 2026-08-30: trivy hung,
+    // burned hours inside the 2-wide pool, and three daytime runs went ~2h.
+    let timeout_secs: u64 = werk_test::unit_timeout().as_secs();
     // #4030 — the ONE deadline primitive (process-group kill, so a suite's
     // forked children die with it); jest and npm-test units share it.
     let outcome = std::fs::File::create(&out_path)
@@ -2136,13 +2140,23 @@ mod suite_deadline_tests {
     }
 
     #[test]
-    fn negative_proof_a_hung_suite_is_killed_and_scored_failed() {
-        // #4022 AC4's runner half: a suite that never exits breaches its budget,
-        // dies, and reads as a loud fail — never a silent forever-wait.
-        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "2");
+    fn negative_proof_unit_cap_fires_and_the_lane_cap_never_reaches_a_suite() {
+        // #4035 two-caps-separate proof (#3734), one fixture, two legs.
+        // Leg 1 — the LEAKED lane cap alone (1s) must NOT kill a 3s suite:
+        // under the pre-#4035 read this leg dies at 1s and the test goes red.
+        std::env::set_var("NIGHTLY_SUITE_TIMEOUT", "1");
+        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
+        let (dir, s) = world("slowish.sh",
+            "sleep 3\necho '=== Results: 1 passed, 0 failed ==='\n");
+        let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        assert!(ok, "a suite inside the UNIT cap must survive a lane-cap leak: {}", text);
+        // Leg 2 — the UNIT cap (2s) kills a hung suite, loud (#4022 AC4's half):
+        // a suite that never exits breaches its budget, dies, reads as a fail.
+        std::env::set_var("NIGHTLY_UNIT_TIMEOUT", "2");
         let (dir, s) = world("hung.sh", "echo started\nsleep 300\n");
         let t0 = std::time::Instant::now();
         let (ok, _, text) = run_bats_cases(dir.to_str().unwrap(), &s);
+        std::env::remove_var("NIGHTLY_UNIT_TIMEOUT");
         std::env::remove_var("NIGHTLY_SUITE_TIMEOUT");
         assert!(!ok);
         assert!(t0.elapsed().as_secs() < 30);

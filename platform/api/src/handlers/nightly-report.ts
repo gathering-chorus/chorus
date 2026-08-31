@@ -16,6 +16,10 @@ export type NightlyRun = {
   startedAt: string;
   completedAt?: string;
   completed: boolean;
+  /** #4035 — the run was STOPPED (a person or agent-state ended it). Distinct
+   *  from wedged (no output, nobody ended it) and from still-running. */
+  stoppedAt?: string;
+  stoppedDetail?: string;
   rows: NightlyRow[];
   /** #4009 — liveness. A run that never completed is either working or wedged,
    *  and the page could not tell them apart: on 2026-08-25 a lane sat silent
@@ -40,6 +44,12 @@ export function parseNightlyLog(text: string): NightlyRun | null {
     if (l.startsWith('RUN|complete|')) {
       run.completed = true;
       run.completedAt = l.split('|')[2];
+      break;
+    }
+    if (l.startsWith('RUN|stopped|')) {
+      // #4035 — the wrapper's stop handler wrote this; the block ends here.
+      run.stoppedAt = l.split('|')[2];
+      run.stoppedDetail = l.split('|')[3] ?? '';
       break;
     }
     if (l.startsWith('SUITE|')) {
@@ -102,12 +112,15 @@ export function renderNightlyPage(run: NightlyRun | null): string {
   const quiet = run.quietForMs ?? 0;
   const liveness = quietVerdict(run, quiet);
   const mins = Math.round(quiet / 60000);
+  const stoppedBanner = run.stoppedAt
+    ? `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`
+    : '';
   const liveBanner = liveness === 'quiet'
     ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
     : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
   const partial = run.completed
     ? ''
-    : liveBanner;
+    : (stoppedBanner || liveBanner);
   const row = (r: NightlyRow) => `
     <tr class="${esc(r.status)}">
       <td class="st">${esc(r.status)}</td>
