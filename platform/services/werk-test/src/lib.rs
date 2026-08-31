@@ -1306,6 +1306,11 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         // Jeff-input to it, defaulting to the LIVE pulse :3475, so a test marker
         // reached Jeff's session 12h after the cage landed. Same dead port.
         ("PULSE_URL".into(), "http://127.0.0.1:9".into()),
+        // #4039 — ops-nudge's ONLY delivery path. It was the last uncaged
+        // outbound: alert-delivery-test.sh and chorus-health shell ops-nudge,
+        // which paged Jeff from inside every daily run (11+ pages in 3 days:
+        // "[synthetic] Delivery probe", "chorus-health: owl-api-checks-missing").
+        ("CHORUS_MCP_NUDGE_URL".into(), "http://127.0.0.1:9/nudge".into()),
     ]
 }
 
