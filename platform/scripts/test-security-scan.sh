@@ -67,28 +67,65 @@ run_sast() {
   fi
 }
 
+# #4034 — the scoped flag set. The unscoped walk covered 17GB (12GB one
+# target/ dir, 1GB .git, 10 node_modules trees); under nightly contention that
+# I/O ran 72+ minutes and blew the lane cap (2026-08-30). npm/cargo CVEs come
+# from lockfiles at package ROOTS, so skipping build artifacts loses no
+# dependency coverage; the WEEKLY deep scan (mode `deep`) still walks
+# everything so secrets in artifacts are found on cadence, not never.
+SCA_SCOPE=(--skip-dirs "**/target" --skip-dirs "**/node_modules" --skip-dirs ".git" --skip-dirs "platform/security/sca-fixtures")
+
+sca_flags() {
+  # Cached DB: skip the update when the local DB is <24h old — the nightly
+  # must never pay a download, and a stale-DB skip self-heals next day.
+  local meta="$HOME/Library/Caches/trivy/db/metadata.json"
+  if [ -f "$meta" ] && [ -n "$(find "$meta" -mtime -1 2>/dev/null)" ]; then
+    echo "--skip-db-update"
+  fi
+}
+
 run_sca() {
   if ! command -v trivy >/dev/null 2>&1; then
     echo "SCA: trivy not installed — SKIPPED (brew install trivy, or use osv-scanner)"; return 0
   fi
-  echo "SCA: trivy fs (deps + secrets + config)"
+  local target="${1:-$ROOT}" depth="${2:-scoped}"
+  local scope=()
+  if [ "$depth" = "scoped" ]; then scope=("${SCA_SCOPE[@]}"); fi
+  echo "SCA: trivy fs (deps + secrets + config) — $depth"
   # #4004 — capture instead of discarding to /dev/null, so a red names its CVEs.
+  # NOTE bash 3.2 + set -u: never expand an empty array unguarded.
   local sca_out
-  sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet "$ROOT" 2>&1)
+  if [ ${#scope[@]} -gt 0 ]; then
+    sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "${scope[@]}" "$target" 2>&1)
+  else
+    sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "$target" 2>&1)
+  fi
   if [ $? -eq 0 ]; then
     echo "  SCA clean (no HIGH/CRITICAL)"; return 0
   else
     echo "  SCA FINDINGS:"
     printf '%s\n' "$sca_out" | sed 's/^/    /' | head -60
-    echo "  reproduce: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $ROOT"
+    echo "  reproduce: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $target"
     return 1
   fi
 }
 
 case "$MODE" in
   selftest) run_sast "${2:?selftest needs a DIR}" include-fixtures; exit $? ;;
-  sast) run_sast; exit $? ;;
+  # #4034 — the negative-proof seams: run the SAME scoped/deep flag sets
+  # against a caller-supplied dir, so a fixture can prove the scope still
+  # catches a planted HIGH (not blinder) and that skip-dirs really skips.
+  sca-selftest)      run_sca "${2:?sca-selftest needs a DIR}" scoped; exit $? ;;
+  sca-selftest-deep) run_sca "${2:?sca-selftest-deep needs a DIR}" deep; exit $? ;;
   sca)  run_sca;  exit $? ;;
+  deep)
+    run_sast || rc=1
+    run_sca "$ROOT" deep || rc=1
+    echo "-----------------------------------------"
+    if [ "$rc" -eq 0 ]; then echo "SECURITY SCAN (deep): clean"; echo "=== Results: 2 passed, 0 failed ==="
+    else echo "SECURITY SCAN (deep): findings — see above"; echo "=== Results: 0 passed, 1 failed ==="; fi
+    exit $rc ;;
+  sast) run_sast; exit $? ;;
   full)
     run_sast || rc=1
     run_sca  || rc=1
@@ -105,5 +142,5 @@ case "$MODE" in
       echo "=== Results: 0 passed, 1 failed ==="
     fi
     exit $rc ;;
-  *) echo "usage: security-scan.sh [full|sast|sca|selftest DIR]" >&2; exit 2 ;;
+  *) echo "usage: security-scan.sh [full|deep|sast|sca|selftest DIR|sca-selftest DIR|sca-selftest-deep DIR]" >&2; exit 2 ;;
 esac
