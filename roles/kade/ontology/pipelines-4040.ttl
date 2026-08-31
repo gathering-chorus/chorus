@@ -1,0 +1,83 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# #4040 — Pipelines modeled (Jeff 2026-08-31): pipelines are the automation
+# workflows for our value-stream steps; steps blend executors (human / agent /
+# deterministic — the demo GO is a designed human step); runs and steps emit
+# metrics. Two REAL pipelines today (cicd, athena); clearing + borg planned.
+# TBox + shapes here (MODEL_SET); instances in pipeline-instances.ttl
+# (instance-seed-manifest). chorus:Pipeline itself is declared in chorus.ttl
+# (#1925); Jeff's definition supersedes its data-pipeline reading.
+# =============================================================================
+
+chorus:PipelineStep a owl:Class ;
+    rdfs:label "Pipeline Step" ;
+    rdfs:comment "One step of a pipeline: what runs, in what order, executed by whom — human, agent, or deterministic automation." .
+
+chorus:hasStep a owl:ObjectProperty ;
+    rdfs:label "has step" ;
+    rdfs:domain chorus:Pipeline ;
+    rdfs:range chorus:PipelineStep .
+
+chorus:stepOrder a owl:DatatypeProperty ;
+    rdfs:label "step order" ;
+    rdfs:domain chorus:PipelineStep ;
+    rdfs:range xsd:integer .
+
+chorus:executor a owl:DatatypeProperty ;
+    rdfs:label "executor" ;
+    rdfs:comment "Who runs this step: human | agent | deterministic. Every pipeline blends these (Jeff 16:05) — cicd's demo GO is the human step." ;
+    rdfs:domain chorus:PipelineStep .
+
+chorus:implementedBy a owl:DatatypeProperty ;
+    rdfs:label "implemented by" ;
+    rdfs:comment "The mechanism that runs the step (verb, script, service)." ;
+    rdfs:domain chorus:PipelineStep .
+
+chorus:forPipeline a owl:ObjectProperty ;
+    rdfs:label "for pipeline" ;
+    rdfs:comment "Links a PipelineRun to its Pipeline. Required — a run row with no pipeline link refuses at the door (#4040 negative proof)." ;
+    rdfs:domain chorus:PipelineRun ;
+    rdfs:range chorus:Pipeline .
+
+# Run metrics (AC5): duration, outcome, and the pipeline's own numbers.
+chorus:runOutcome a owl:DatatypeProperty ;
+    rdfs:label "outcome" ; rdfs:domain chorus:PipelineRun .
+chorus:runDurationMs a owl:DatatypeProperty ;
+    rdfs:label "duration ms" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsRun a owl:DatatypeProperty ;
+    rdfs:label "tests run" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsFailed a owl:DatatypeProperty ;
+    rdfs:label "tests failed" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:testsStored a owl:DatatypeProperty ;
+    rdfs:label "tests stored" ; rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+chorus:triplesWritten a owl:DatatypeProperty ;
+    rdfs:label "triples written" ;
+    rdfs:comment "athena's own number — triples a run landed in the store." ;
+    rdfs:domain chorus:PipelineRun ; rdfs:range xsd:integer .
+
+# ── Shapes ──────────────────────────────────────────────────────────────────
+# Pure-ABox instances → urn:chorus:instances (ADR-025, #3698 pattern).
+
+chorus:PipelineShape a sh:NodeShape ;
+    sh:targetClass chorus:Pipeline ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:pipelineStatus ; sh:minCount 1 ] .
+
+chorus:PipelineStepShape a sh:NodeShape ;
+    sh:targetClass chorus:PipelineStep ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path chorus:executor ; sh:minCount 1 ] ;
+    sh:property [ sh:path chorus:stepOrder ; sh:minCount 1 ] .
+
+# Tightens the existing chorus:PipelineRunShape (werk-domains.ttl — traceId):
+# triples on the same subject merge in the store; both constraints apply.
+chorus:PipelineRunShape a sh:NodeShape ;
+    sh:targetClass chorus:PipelineRun ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path chorus:forPipeline ; sh:minCount 1 ] .

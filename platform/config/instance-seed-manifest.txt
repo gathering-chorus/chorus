@@ -14,3 +14,7 @@ value-stream-step:designing/data/value-stream-step-instances.ttl
 # #3838 — the four roles: before this they existed only in the live store, so
 # no deploy could reproduce ownedBy/holdsRole targets.
 role:roles/wren/ontology/role-instances-3838.ttl
+# #4040 — the two real pipelines (cicd, athena) + their steps; clearing/borg
+# planned instances, no steps. Same two-kinds-one-file shape as #3839.
+pipeline:roles/kade/ontology/pipeline-instances.ttl
+pipeline-step:roles/kade/ontology/pipeline-instances.ttl

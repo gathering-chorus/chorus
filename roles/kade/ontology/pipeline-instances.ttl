@@ -1,0 +1,61 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# =============================================================================
+# #4040 — the pipeline INSTANCES. Exactly the two REAL pipelines with their
+# steps (cicd, athena); clearing + borg as planned instances with NO invented
+# steps (Jeff 16:03: cicd is ONE instance of the pipelines domain, never the
+# archetype). Pure ABox → urn:chorus:instances via instance-seed-manifest.
+# Every step declares its executor blend: human | agent | deterministic
+# (Jeff 16:05 — cicd's demo GO is the designed human step).
+# =============================================================================
+
+# ── cicd — implemented by werk: commit→build→test→demo→land ─────────────────
+chorus:pipeline-cicd a chorus:Pipeline ;
+    rdfs:label "cicd" ;
+    chorus:pipelineStatus "operating" ;
+    chorus:hasStep chorus:step-cicd-commit , chorus:step-cicd-build ,
+                   chorus:step-cicd-test , chorus:step-cicd-demo ,
+                   chorus:step-cicd-land .
+
+chorus:step-cicd-commit a chorus:PipelineStep ;
+    rdfs:label "commit" ; chorus:stepOrder 1 ;
+    chorus:executor "agent" ; chorus:implementedBy "werk-commit" .
+chorus:step-cicd-build a chorus:PipelineStep ;
+    rdfs:label "build" ; chorus:stepOrder 2 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-build (act werk.yml)" .
+chorus:step-cicd-test a chorus:PipelineStep ;
+    rdfs:label "test" ; chorus:stepOrder 3 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-test" .
+chorus:step-cicd-demo a chorus:PipelineStep ;
+    rdfs:label "demo" ; chorus:stepOrder 4 ;
+    chorus:executor "human" ; chorus:implementedBy "werk-demo — Jeff's GO is the land authority (DEC-048)" .
+chorus:step-cicd-land a chorus:PipelineStep ;
+    rdfs:label "land" ; chorus:stepOrder 5 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-accept (werk-teardown)" .
+
+# ── athena — shape→forge→seed→validate ──────────────────────────────────────
+chorus:pipeline-athena a chorus:Pipeline ;
+    rdfs:label "athena" ;
+    chorus:pipelineStatus "operating" ;
+    chorus:hasStep chorus:step-athena-shape , chorus:step-athena-forge ,
+                   chorus:step-athena-seed , chorus:step-athena-validate .
+
+chorus:step-athena-shape a chorus:PipelineStep ;
+    rdfs:label "shape" ; chorus:stepOrder 1 ;
+    chorus:executor "agent" ; chorus:implementedBy "athena-model (role-authored TTL)" .
+chorus:step-athena-forge a chorus:PipelineStep ;
+    rdfs:label "forge" ; chorus:stepOrder 2 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-make" .
+chorus:step-athena-seed a chorus:PipelineStep ;
+    rdfs:label "seed" ; chorus:stepOrder 3 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-model seed --deploy" .
+chorus:step-athena-validate a chorus:PipelineStep ;
+    rdfs:label "validate" ; chorus:stepOrder 4 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-validate" .
+
+# ── under construction — instances only, no invented steps ──────────────────
+chorus:pipeline-clearing a chorus:Pipeline ;
+    rdfs:label "clearing" ; chorus:pipelineStatus "planned" .
+chorus:pipeline-borg a chorus:Pipeline ;
+    rdfs:label "borg" ; chorus:pipelineStatus "planned" .

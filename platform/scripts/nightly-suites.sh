@@ -1011,6 +1011,24 @@ notify_results() {
 # queryable instead of stdout-only; the run itself was still only ever a count in
 # a nudge. Emitted for GREEN runs too — "0 red" is the measurement that proves the
 # bar was met, and a bar you only hear about when it breaks cannot be shown held.
+# #4040 — the daily test run IS a pipeline run: one PipelineRun row lands in
+# the graph via the GENERATED write API (POST /pipelineruns), carrying the
+# metrics Jeff asked for (duration, outcome, tests run/failed/stored) and its
+# REQUIRED forPipeline link (the door refuses a row without it — the #4040
+# negative proof). Best-effort: a down owl-api never reds the run itself.
+emit_pipeline_run() {
+  local results="$1" duration_ms="$2" owl="${OWL_URL:-http://localhost:3360}"
+  local run failed passed stored outcome
+  failed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="fail"' | grep -c . | tr -d ' ')
+  passed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="pass"' | grep -c . | tr -d ' ')
+  run=$((passed + failed)); stored=$(printf '%s\n' "$results" | grep -c '^SUITE|' | tr -d ' ')
+  [ "$failed" -eq 0 ] && outcome=green || outcome=red
+  curl -sf --max-time 10 -X POST "$owl/pipelineruns" -H 'Content-Type: application/json' -d "$(printf \
+    '{"label":"nightly %s","forPipeline":"pipeline-cicd","runOutcome":"%s","runDurationMs":%s,"testsRun":%s,"testsFailed":%s,"testsStored":%s}' \
+    "$(date '+%Y-%m-%dT%H:%M:%S')" "$outcome" "${duration_ms:-0}" "$run" "$failed" "$stored")" \
+    >/dev/null 2>&1 || echo "nightly-suites: pipeline-run emit skipped (owl-api unreachable)" >&2
+}
+
 emit_run_summary() {
   local results="$1" total suites passed failed skipped owners_csv zero_red
   suites=$(printf '%s\n' "$results" | grep -c '^SUITE|' | tr -d ' ')
@@ -1367,6 +1385,7 @@ PYEOF
     mkdir -p "$(dirname "$_run_log")" 2>/dev/null
     if printf 'RUN|start|%s|pid=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$$" >> "$_run_log" 2>/dev/null; then
       NIGHTLY_RUN_OPEN=1
+      _t0=$(date +%s)
       out=$(run_all | tee -a "$_run_log")
       printf 'RUN|complete|%s|suites=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$(printf '%s\n' "$out" | grep -c '^SUITE|' | tr -d ' ')" >> "$_run_log"
       NIGHTLY_RUN_OPEN=0
@@ -1380,6 +1399,7 @@ PYEOF
     # log and printing here would duplicate what tee already wrote.
     [ -t 1 ] && printf '%s\n' "$out"
     emit_run_summary "$out"
+    emit_pipeline_run "$out" "$(( ($(date +%s) - ${_t0:-$(date +%s)}) * 1000 ))"
     emit_suite_results "$out"; [ "${NIGHTLY_NO_NUDGE:-0}" = "1" ] || notify_results "$out"
     ;;
   *)
