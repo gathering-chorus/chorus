@@ -83,6 +83,7 @@ sq() {
   grep -q '^pipeline-step:roles/kade/ontology/pipeline-step-instances.ttl' "$MANIFEST"
   # two kinds share no file: the seeder refuses a subject claimed by two kinds
   # in one batch (proven at the #4040 land 19:23)
+  [ "$(grep -cE '^(pipeline|pipeline-step):' "$MANIFEST")" = "2" ]
   [ "$(grep -E '^(pipeline|pipeline-step):' "$MANIFEST" | cut -d: -f2 | sort -u | wc -l | tr -d ' ')" = "2" ]
 }
 
