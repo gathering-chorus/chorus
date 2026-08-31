@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chorus.security-scan-weekly</string>
+    <!-- #4034: the DEEP security scan — unscoped trivy walk (build artifacts,
+         node_modules, .git included). The nightly runs the SCOPED scan; this
+         weekly slot keeps full coverage on cadence instead of never. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/test-security-scan.sh</string>
+        <string>deep</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key>
+        <integer>0</integer>
+        <key>Hour</key>
+        <integer>4</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/jeffbridwell/.chorus/bin:/Users/jeffbridwell/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/jeffbridwell</string>
+        <key>CHORUS_ROOT</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+        <key>CHORUS_HOME</key>
+        <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/security-scan-weekly.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeffbridwell/Library/Logs/Chorus/security-scan-weekly.log</string>
+</dict>
+</plist>
