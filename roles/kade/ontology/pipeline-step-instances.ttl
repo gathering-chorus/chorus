@@ -1,0 +1,38 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# =============================================================================
+# #4040 — PipelineStep instances, split from pipeline-instances.ttl: the seeder
+# refuses a subject claimed by two kinds in one batch (proven live at the #4040
+# land, 19:23 — pipeline-cicd hit both the 'pipeline' and 'pipeline-step'
+# groups). Two kinds, two files — the value-stream / value-stream-step pattern.
+# =============================================================================
+
+chorus:step-cicd-commit a chorus:PipelineStep ;
+    rdfs:label "commit" ; chorus:stepOrder 1 ;
+    chorus:executor "agent" ; chorus:implementedBy "werk-commit" .
+chorus:step-cicd-build a chorus:PipelineStep ;
+    rdfs:label "build" ; chorus:stepOrder 2 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-build (act werk.yml)" .
+chorus:step-cicd-test a chorus:PipelineStep ;
+    rdfs:label "test" ; chorus:stepOrder 3 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-test" .
+chorus:step-cicd-demo a chorus:PipelineStep ;
+    rdfs:label "demo" ; chorus:stepOrder 4 ;
+    chorus:executor "human" ; chorus:implementedBy "werk-demo — Jeff's GO is the land authority (DEC-048)" .
+chorus:step-cicd-land a chorus:PipelineStep ;
+    rdfs:label "land" ; chorus:stepOrder 5 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "werk-accept (werk-teardown)" .
+
+chorus:step-athena-shape a chorus:PipelineStep ;
+    rdfs:label "shape" ; chorus:stepOrder 1 ;
+    chorus:executor "agent" ; chorus:implementedBy "athena-model (role-authored TTL)" .
+chorus:step-athena-forge a chorus:PipelineStep ;
+    rdfs:label "forge" ; chorus:stepOrder 2 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-make" .
+chorus:step-athena-seed a chorus:PipelineStep ;
+    rdfs:label "seed" ; chorus:stepOrder 3 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-model seed --deploy" .
+chorus:step-athena-validate a chorus:PipelineStep ;
+    rdfs:label "validate" ; chorus:stepOrder 4 ;
+    chorus:executor "deterministic" ; chorus:implementedBy "athena-validate" .

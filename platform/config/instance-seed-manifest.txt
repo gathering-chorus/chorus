@@ -15,6 +15,8 @@ value-stream-step:designing/data/value-stream-step-instances.ttl
 # no deploy could reproduce ownedBy/holdsRole targets.
 role:roles/wren/ontology/role-instances-3838.ttl
 # #4040 — the two real pipelines (cicd, athena) + their steps; clearing/borg
-# planned instances, no steps. Same two-kinds-one-file shape as #3839.
+# planned instances, no steps. Two kinds, TWO files: the seeder refuses a
+# subject claimed by two kinds in one batch (proven at the #4040 land 19:23),
+# so the two-kinds-one-file shape #3839 describes does not survive contact.
 pipeline:roles/kade/ontology/pipeline-instances.ttl
-pipeline-step:roles/kade/ontology/pipeline-instances.ttl
+pipeline-step:roles/kade/ontology/pipeline-step-instances.ttl

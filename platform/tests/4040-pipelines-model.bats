@@ -13,6 +13,7 @@ setup() {
   DOMAINS="$REPO/roles/kade/ontology/domains-kade-3581.ttl"
   PIPES="$REPO/roles/kade/ontology/pipeline-instances.ttl"
   SHAPES="$REPO/roles/kade/ontology/pipelines-4040.ttl"
+  STEPS="$REPO/roles/kade/ontology/pipeline-step-instances.ttl"
   MANIFEST="$REPO/platform/config/instance-seed-manifest.txt"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
 }
@@ -69,16 +70,21 @@ sq() {
 
 # ── AC4: every step declares its executor blend ──
 @test "AC4 every declared step carries an executor (human|agent|deterministic)" {
-  run sq "$PIPES" 'SELECT (COUNT(?s) AS ?n) WHERE { ?s a c:PipelineStep . FILTER NOT EXISTS { ?s c:executor ?e } }'
+  run sq "$STEPS" 'SELECT (COUNT(?s) AS ?n) WHERE { ?s a c:PipelineStep . FILTER NOT EXISTS { ?s c:executor ?e } }'
   [[ "$output" == *'"0"'* || "$output" == *"| 0 "* ]]
-  run sq "$PIPES" 'ASK { c:step-cicd-demo c:executor "human" }'
+  run sq "$STEPS" 'ASK { c:step-cicd-demo c:executor "human" }'
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
 # ── AC1/AC5 wiring: instances are governed-deployed (wipe-safe, #3895 lane) ──
 @test "AC1 pipeline-instances.ttl is in the instance-seed manifest" {
   [ -f "$MANIFEST" ]
-  grep -q 'pipeline-instances.ttl' "$MANIFEST"
+  grep -q '^pipeline:roles/kade/ontology/pipeline-instances.ttl' "$MANIFEST"
+  grep -q '^pipeline-step:roles/kade/ontology/pipeline-step-instances.ttl' "$MANIFEST"
+  # two kinds share no file: the seeder refuses a subject claimed by two kinds
+  # in one batch (proven at the #4040 land 19:23)
+  [ "$(grep -cE '^(pipeline|pipeline-step):' "$MANIFEST")" = "2" ]
+  [ "$(grep -E '^(pipeline|pipeline-step):' "$MANIFEST" | cut -d: -f2 | sort -u | wc -l | tr -d ' ')" = "2" ]
 }
 
 # ── AC6 (live): the generated API serves both collections from the claims ──
