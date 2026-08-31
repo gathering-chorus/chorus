@@ -14,16 +14,16 @@
 chorus:pipeline-cicd a chorus:Pipeline ;
     rdfs:label "cicd" ;
     chorus:pipelineStatus "operating" ;
-    chorus:hasStep chorus:step-cicd-commit , chorus:step-cicd-build ,
-                   chorus:step-cicd-test , chorus:step-cicd-demo ,
-                   chorus:step-cicd-land .
+    chorus:hasStep chorus:pipeline-step-cicd-commit , chorus:pipeline-step-cicd-build ,
+                   chorus:pipeline-step-cicd-test , chorus:pipeline-step-cicd-demo ,
+                   chorus:pipeline-step-cicd-land .
 
 # ── athena — shape→forge→seed→validate ──────────────────────────────────────
 chorus:pipeline-athena a chorus:Pipeline ;
     rdfs:label "athena" ;
     chorus:pipelineStatus "operating" ;
-    chorus:hasStep chorus:step-athena-shape , chorus:step-athena-forge ,
-                   chorus:step-athena-seed , chorus:step-athena-validate .
+    chorus:hasStep chorus:pipeline-step-athena-shape , chorus:pipeline-step-athena-forge ,
+                   chorus:pipeline-step-athena-seed , chorus:pipeline-step-athena-validate .
 
 # ── under construction — instances only, no invented steps ──────────────────
 chorus:pipeline-clearing a chorus:Pipeline ;
