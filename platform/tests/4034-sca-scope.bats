@@ -10,10 +10,15 @@
 SCRIPT="${BATS_TEST_DIRNAME}/../scripts/test-security-scan.sh"
 # Covers: platform/scripts/test-security-scan.sh  (literal path for the #3917 linker)
 FIX="${BATS_TEST_DIRNAME}/../security/sca-fixtures/vulnerable"
-ART="${BATS_TEST_DIRNAME}/../security/sca-fixtures/artifact-only"
 
 setup() {
   command -v trivy >/dev/null 2>&1 || skip "trivy not installed"
+  # The artifact-only tree is BUILT here, not committed: .gitignore ignores
+  # target/ everywhere (the reviewers' catch — a committed copy silently
+  # vanishes from the diff), and a test brings its own world (#3528) anyway.
+  ART="$BATS_TEST_TMPDIR/artifact-only"
+  mkdir -p "$ART/target/nested"
+  cp "$FIX/package-lock.json" "$ART/target/nested/package-lock.json"
 }
 
 @test "NEGATIVE PROOF: scoped scan still fails on the planted HIGH CVE (lodash 4.17.15)" {
