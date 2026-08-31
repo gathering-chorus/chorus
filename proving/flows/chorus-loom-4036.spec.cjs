@@ -146,6 +146,44 @@ test.describe('#4036 the hub page is Chorus-native', () => {
   });
 });
 
+test.describe('#4036 Analytics — the migrated #2116 instrument', () => {
+  const FIXTURE = {
+    range: '30d', totalCards: 7,
+    flow: { Done: 4, WIP: 1, Next: 2 },
+    throughput: 3,
+    dailyThroughput: [{ date: '2026-08-29', count: 1 }, { date: '2026-08-30', count: 2 }],
+    roleFitness: [{ role: 'wren', shipped: 2, avgLeadHours: 108, maxLeadHours: 144 }],
+    bottleneck: { status: 'Next', count: 2 },
+  };
+
+  test('the section renders fitness, flow, bottleneck, and the daily series', async ({ page }) => {
+    await page.route('**/api/loom-analytics*', (r) => r.fulfill({ json: FIXTURE }));
+    await page.goto(`${BASE}/loom`, { waitUntil: 'networkidle' });
+    for (const id of ['an-fitness-card', 'an-flow-card', 'an-daily-card']) {
+      await expect(page.locator(`#${id}`), `${id} present`).toHaveCount(1);
+    }
+    await expect(page.locator('#an-fitness'), 'role fitness carries lead time').toContainText('lead avg 108h');
+    await expect(page.locator('#an-fitness'), 'and the shipped count').toContainText('2 shipped');
+    await expect(page.locator('#an-flow'), 'cumulative flow counts by stage').toContainText('Done');
+    await expect(page.locator('#an-bottleneck'), 'the bottleneck is named').toContainText('Bottleneck: Next (2 open cards)');
+    await expect(page.locator('#an-daily div[title="2026-08-30: 2"]'), 'daily bars carry the data').toHaveCount(1);
+  });
+
+  test('an empty range says so; a dead endpoint fails LOUD (negative proofs)', async ({ page }) => {
+    await page.route('**/api/loom-analytics*', (r) => r.fulfill({
+      json: { ...FIXTURE, roleFitness: [], dailyThroughput: [], bottleneck: null },
+    }));
+    await page.goto(`${BASE}/loom`, { waitUntil: 'networkidle' });
+    await expect(page.locator('#an-fitness')).toContainText('Nothing shipped in range');
+    await expect(page.locator('#an-daily')).toContainText('No cards done in range');
+
+    await page.unroute('**/api/loom-analytics*');
+    await page.route('**/api/loom-analytics*', (r) => r.fulfill({ status: 500, json: { error: 'down' } }));
+    await page.goto(`${BASE}/loom`, { waitUntil: 'networkidle' });
+    await expect(page.locator('#an-bottleneck'), 'a broken fetch reads as broken, never as all-quiet').toContainText('Could not load analytics');
+  });
+});
+
 test.describe('#4036 the role pages are real', () => {
   test('each /loom/<role> renders that role, not the hub', async ({ page }) => {
     for (const [key, name, phrase] of [

@@ -348,6 +348,26 @@ window.basePath = window.basePath || function (p) {
         </details>
 
         <!-- Operations -->
+        <!-- Analytics — the migrated #2116 instrument (#4036): lead time, flow, bottleneck -->
+        <details style="margin-bottom:var(--space-lg);">
+            <summary class="section-header" style="color:#0891b2; border-left:3px solid #0891b2;">Analytics</summary>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: var(--space-md);">
+                <div class="metric-card" id="an-fitness-card">
+                    <h4 title="Shipped cards + lead time (created to done), per role, in range">Role Fitness</h4>
+                    <div id="an-fitness"></div>
+                </div>
+                <div class="metric-card" id="an-flow-card">
+                    <h4 title="Every board card counted by its current stage">Cumulative Flow</h4>
+                    <div id="an-flow" style="display:flex; gap:0.75rem; font-size:var(--font-size-sm); flex-wrap:wrap;"></div>
+                    <div id="an-bottleneck" style="font-size:var(--font-size-xs); color:var(--text-muted); margin-top:0.5rem;"></div>
+                </div>
+            </div>
+            <div class="metric-card" id="an-daily-card" style="margin-top:var(--space-md);">
+                <h4 title="Cards done per day in the selected range">Daily Throughput</h4>
+                <div id="an-daily" style="display:flex; align-items:flex-end; gap:2px; height:3rem;"></div>
+            </div>
+        </details>
+
         <details style="margin-bottom:var(--space-md);">
             <summary class="section-header" style="color:var(--text-muted); border-left:3px solid var(--text-muted);">Operations</summary>
             <div class="metric-card" id="ops-card">
@@ -423,8 +443,55 @@ window.basePath = window.basePath || function (p) {
       loading.style.display = 'none';
       label.textContent = 'Could not load metrics: ' + err.message;
     });
+    loadAnalytics(days);
   }
   load(30);
+
+  /* #4036 — the migrated #2116 instrument: /api/loom-analytics computes flow,
+     per-role lead time, daily throughput, and the bottleneck on read from the
+     board. Same fail-loud rule as the pulse fetch. */
+  function loadAnalytics(days) {
+    var range = days > 0 ? days + 'd' : 'all';
+    fetch(bp('/api/loom-analytics') + '?range=' + range).then(function(r) {
+      if (!r.ok) throw new Error('loom-analytics answered ' + r.status);
+      return r.json();
+    }).then(renderAnalytics).catch(function(err) {
+      var el = $('an-bottleneck');
+      if (el) el.textContent = 'Could not load analytics: ' + err.message;
+    });
+  }
+
+  function renderAnalytics(a) {
+    var fit = $('an-fitness');
+    if (fit) {
+      var rows = (a.roleFitness || []).map(function(r) {
+        return '<div style="display:flex; gap:0.5rem; font-size:var(--font-size-sm); margin-bottom:0.3rem;">'
+          + '<span style="width:3.5rem; font-weight:600; text-transform:capitalize;">' + r.role + '</span>'
+          + '<span style="width:4.5rem;">' + r.shipped + ' shipped</span>'
+          + '<span style="color:var(--text-muted);">lead avg ' + r.avgLeadHours + 'h &middot; max ' + r.maxLeadHours + 'h</span>'
+          + '</div>';
+      });
+      fit.innerHTML = rows.length ? rows.join('') : '<span style="color:var(--text-muted); font-size:var(--font-size-sm);">Nothing shipped in range</span>';
+    }
+    var flowEl = $('an-flow');
+    if (flowEl) {
+      flowEl.innerHTML = Object.keys(a.flow || {}).sort(function(x, y) { return a.flow[y] - a.flow[x]; }).map(function(s) {
+        return '<div><span style="font-weight:700;">' + a.flow[s] + '</span> <span style="color:var(--text-muted);">' + s + '</span></div>';
+      }).join('');
+    }
+    var bn = $('an-bottleneck');
+    if (bn) bn.textContent = a.bottleneck ? 'Bottleneck: ' + a.bottleneck.status + ' (' + a.bottleneck.count + ' open cards)' : '';
+    var daily = $('an-daily');
+    if (daily) {
+      var series = a.dailyThroughput || [];
+      var peak = 1;
+      series.forEach(function(d) { if (d.count > peak) peak = d.count; });
+      daily.innerHTML = series.map(function(d) {
+        var h = Math.max(8, Math.round((d.count / peak) * 100));
+        return '<div title="' + d.date + ': ' + d.count + '" style="flex:1; max-width:14px; height:' + h + '%; background:#0891b2; border-radius:2px 2px 0 0;"></div>';
+      }).join('') || '<span style="color:var(--text-muted); font-size:var(--font-size-sm);">No cards done in range</span>';
+    }
+  }
 
   function $(id) { return document.getElementById(id); }
 
