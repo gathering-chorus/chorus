@@ -489,7 +489,14 @@ app.get('/nightly', (_req: Request, res: Response) => {
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));
-app.get('/loom/:role', sendChorusPage('loom.html'));
+// #4036 — the per-role pages are real again. This route used to serve the hub
+// back for every role URL, so all four "Read more" links led nowhere new.
+// Static per-role renders (render-chorus-pages.cjs) keep it one mechanism.
+app.get('/loom/:role', (req: Request, res: Response, next: NextFunction) => {
+  const role = String(req.params.role).toLowerCase();
+  if (!['jeff', 'wren', 'silas', 'kade'].includes(role)) return next();
+  return sendChorusPage(`loom-${role}.html`)(req, res);
+});
 app.get('/flow', sendChorusPage('flow.html'));
 app.get('/model-data', sendChorusPage('model-data.html'));
 app.get('/ontology-views/:domain', sendChorusPage('model-data.html'));

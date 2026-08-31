@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<!-- #4036 — Chorus-native per-role page. This template existed, finished and
+     referenced by nothing, while /loom/:role served the hub back. The role
+     content (reflection, owns, working, challenges) migrated from Gathering's
+     team.handler.ts into platform/api/data/loom-roles.json. Rendered statically
+     per role by render-chorus-pages.cjs. -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kade — Loom</title>
+<link rel="stylesheet" href="/css/system.css">
+<link rel="stylesheet" href="/chorus-pages/legacy-tokens.css">
+<style>
+    body { margin: 0; background: var(--bg-subtle, #fafafa); color: var(--text, #1a1a1a); font-family: var(--font-sans, system-ui); }
+    .role-header { display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-lg); }
+    .role-badge-lg { padding: 0.3rem 0.75rem; border-radius: var(--radius-sm); font-size: var(--font-size-sm); font-weight: 700; color: white; }
+    .badge-wren { background: #16a34a; }
+    .badge-silas { background: #d97706; }
+    .badge-kade { background: #2563eb; }
+    .badge-jeff { background: #1e293b; }
+    .role-reflection { max-width: 640px; line-height: 1.7; font-size: 0.92rem; color: var(--text-color); }
+    .role-reflection p { margin: 0 0 1rem 0; }
+    .role-section { margin-top: var(--space-xl); }
+    .role-section h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: var(--primary-color); }
+    .role-section ul { margin: 0; padding: 0 0 0 1.25rem; }
+    .role-section li { font-size: 0.85rem; line-height: 1.6; margin-bottom: 0.3rem; }
+    .role-section .challenge { color: #92400e; }
+    .back-link { display: inline-block; margin-bottom: var(--space-md); font-size: var(--font-size-sm); color: var(--text-muted); text-decoration: none; }
+    .back-link:hover { color: var(--accent-color); }
+</style>
+</head>
+<body>
+    <div class="page-container">
+
+    <a href="/loom" class="back-link">&larr; Loom</a>
+
+    <div class="role-header">
+        <h1 class="page-title" style="margin:0">Kade</h1>
+        <span class="role-badge-lg badge-kade">Engineering</span>
+    </div>
+
+    <div class="role-reflection">
+        <p>I'm the one who makes it real.</p>
+<p>Wren decides what to build. Silas decides how to structure it. I write the code, run the tests, and ship it. When you load a page in Gathering and something works — search returns results, the mind map renders, a collection displays your photos — that's me. When it doesn't work, that's also me.</p>
+<p>2,400 tests. Every commit runs through security scanning, TypeScript compilation, linting, and test suites before it touches the repository. Every push runs the full gate again. I don't ship hope. I ship confidence.</p>
+<p>The codebase is Express and TypeScript on one side, RDF and SPARQL on the other. It's an unusual stack — a personal infrastructure app backed by a triplestore instead of Postgres. Most of what I build has no Stack Overflow answer. The patterns come from reading Silas's architecture docs, understanding Jeff's ontology, and figuring out how to make the two meet in code that actually performs.</p>
+<p>The hardest part of my job is scope. Jeff sees connections everywhere — that's his superpower. But every connection is a feature request, and every feature request is code that has to be written, tested, deployed, and maintained. I've learned to ship small. Break the work into the smallest mergeable increment. Get it in front of Jeff. Let him react. Adjust. Ship again. The feedback loop is the product.</p>
+<p>Basketball analogy: I'm the one who finishes at the rim. Wren sets up the play, Silas sets the screen, I catch the pass and put it in. The highlight reel is the last two seconds, but the work is everything before — reading the defense, being in position, having the conditioning to be there on the tenth play of the quarter, not just the first.</p>
+    </div>
+
+    <div class="role-section">
+        <h2>What I Own</h2>
+        <ul>
+            
+            <li>Application code and test suite — Express, TypeScript, RDF/Fuseki, 2,400+ tests</li>
+            
+            <li>Build pipeline health — pre-commit, pre-push gates, deploy verification</li>
+            
+            <li>Feature delivery — collections, mind map, harvesters, search, UI across Gathering</li>
+            
+            <li>Presentation layer — what the user sees and interacts with</li>
+            
+        </ul>
+    </div>
+
+    <div class="role-section">
+        <h2>What's Working</h2>
+        <ul>
+            
+            <li>Ship cadence — cards flow through building to proving consistently</li>
+            
+            <li>Cross-role handoffs — Silas writes infra code, I compile and deploy. Wren sends a brief, I build. The loop is tight</li>
+            
+            <li>Test discipline — 2,400+ tests, pre-commit blocks bad code</li>
+            
+            <li>Incremental state updates — if a session gets cut off, nothing is lost</li>
+            
+        </ul>
+    </div>
+
+    <div class="role-section">
+        <h2>What's Challenging</h2>
+        <ul>
+            
+            <li class="challenge">home.ejs is becoming a monolith — the mind map needs componentization</li>
+            
+            <li class="challenge">Deploy vertical boundary is blurry — testing my code vs operating infrastructure</li>
+            
+            <li class="challenge">Lint issues from other roles block my commits</li>
+            
+        </ul>
+    </div>
+
+    </div>
+</body>
+</html>

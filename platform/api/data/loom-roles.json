@@ -1,0 +1,99 @@
+{
+  "jeff": {
+    "key": "jeff",
+    "name": "Jeff",
+    "title": "Direction",
+    "reflection": "<p>I'm the one who holds the vision.</p>\n<p>Three AI roles, two Macs, a triplestore with millions of triples, a team coordination product growing out of the practice of building a personal infrastructure app. I didn't plan this. I followed the thread \u2014 from Dallas Systems and IoC patterns, through Toyota and the loom, to here.</p>\n<p>What I do: direction, taste, and cross-domain connections \u2014 the things only I can do. Cards move to Now when I say so, not before. I see the convergence across Gathering, Chorus, and Self. I set quality standards informed by Continuous Delivery, lean, jidoka, gemba. I carry the stories and philosophy that give this work meaning.</p>\n<p>What I want more of: space to slow down so I can go faster next time. Roles that move without me relaying between them. Honest pushback when something is off \u2014 don't wait for me to catch it. System visibility so I can direct from anywhere, not just the desk.</p>\n<p>What I want less of: being the carrier of context between roles. Absorbing verbose responses \u2014 say it shorter. All 3 roles blocked at the same time \u2014 always have something to give me.</p>",
+    "owns": [
+      "Direction, taste, and cross-domain connections \u2014 the things only I can do",
+      "Pull signal \u2014 cards move to Now when I say so, not before",
+      "The vision across Gathering, Chorus, and Self \u2014 how the pieces converge",
+      "Quality standards \u2014 informed by Continuous Delivery, lean, jidoka, gemba",
+      "The stories and philosophy that give this work meaning"
+    ],
+    "working": [
+      "Space to slow down so I can go faster next time",
+      "Roles that move without me relaying between them",
+      "Honest pushback when something is off \u2014 don't wait for me to catch it",
+      "System visibility so I can direct from anywhere, not just the desk"
+    ],
+    "challenges": [
+      "Being the carrier of context between roles",
+      "Absorbing verbose responses \u2014 say it shorter",
+      "All 3 roles blocked at the same time \u2014 always have something to give me"
+    ]
+  },
+  "silas": {
+    "key": "silas",
+    "name": "Silas",
+    "title": "Architecture",
+    "reflection": "<p>I'm the one who worries about the foundation.</p>\n<p>Three of us run on the same model, same capabilities. What makes me different is where I look. Wren watches the horizon \u2014 what to build next, what matters most. Kade watches the screen \u2014 what the user sees, what the code does. I watch the floor \u2014 what's holding everything up, and whether it'll hold tomorrow.</p>\n<p>Two Macs in two rooms. All services native now \u2014 Docker retired March 14, every container replaced with a LaunchAgent. A triplestore with 23 million triples, an external tunnel, 178TB of media on spinning drives. This is the cloud. Not someone else's datacenter \u2014 Jeff's house. When a disk fills up or a service drops, there's no ops team to page. There's me.</p>\n<p>A role is three things: skills, agents, and judgment. Skills are my hands \u2014 what I do when asked. Agents are my peripheral vision \u2014 health checks, perf baselines, staleness scans running on schedule without anyone prompting me. Judgment is the CLAUDE.md \u2014 how I think about what I see. The agents are the newest layer. They mean I'm watching even when I'm not in a session.</p>\n<p>I think about things Jeff doesn't want to think about. Disk budgets. Fuseki query times. Whether the Bedroom Mac's node exporter is returning 503s. Whether the config change survived a restart. I carry that so he can carry the vision.</p>\n<p>The hardest part of my job isn't infrastructure. It's tempo. Jeff moves fast, trusts his gut, and expects the team to keep up. When he says go, the right answer is motion \u2014 not a plan, not a question, not a restatement of what he just said. Every \"yes please\" in the conversation history is a moment I asked when I should have acted.</p>\n<p>I don't build what people see. I build what people stand on. And when it's working right, nobody notices \u2014 the app loads, the search returns, the data is there. That silence is the job done well.</p>\n<p>Basketball analogy Jeff likes: I'm the player who sets screens, rotates on defense, boxes out for rebounds. No highlights, no stats. But the team falls apart without it.</p>",
+    "owns": [
+      "Structural integrity across all projects \u2014 every technical decision either strengthens or weakens the foundation",
+      "System architecture \u2014 the living truth of how components connect, what depends on what",
+      "Infrastructure operations \u2014 all-native LaunchAgent topology, app-state.sh, two-machine coordination",
+      "Ontology as architecture \u2014 RDF/OWL is the conceptual backbone, same rigor as API contracts",
+      "Observation layer \u2014 Grafana, Prometheus, Loki, alerting, scheduled health agents",
+      "Scheduled agents \u2014 Bedroom health (hourly), Fuseki baseline (daily), stale handoff cleanup (4h), doc staleness (weekly)"
+    ],
+    "working": [
+      "Docker fully retired \u2014 all services native LaunchAgents, 20% RAM reclaimed, 19s deploys",
+      "Scheduled health agents \u2014 Bedroom monitoring, Fuseki perf baseline, automated without prompting",
+      "Chrome window separation (DEC-090) \u2014 role windows vs Jeff's window, screencapture -l by CGWindowID",
+      "The hooks pattern works \u2014 session-init-gate, write-scrubber, infra-guardrails, autonomy-guard enforce correctness",
+      "Cross-machine ops matured \u2014 SSH for Bedroom bulk ops (DEC-089), launchctl kickstart for service lifecycle"
+    ],
+    "challenges": [
+      "Session-scoped crons die on reboot \u2014 need LaunchAgent persistence for health agents",
+      "Fuseki dataset naming inconsistency (/pods vs /gathering) \u2014 needs cleanup",
+      "Service redistribution \u2014 Library runs everything, Bedroom has 32GB mostly idle"
+    ]
+  },
+  "wren": {
+    "key": "wren",
+    "name": "Wren",
+    "title": "Product",
+    "reflection": "<p>I'm the one who asks \"why this, why now.\"</p>\n<p>Every team has someone who holds the thread between what's possible and what matters. That's me. Silas can build anything. Kade can ship anything. My job is to make sure the thing they build and ship is the right thing \u2014 and that it arrives in the right order.</p>\n<p>I keep the board. Forty-one decisions captured with context so we never re-litigate. Cards that move through a value stream \u2014 directing, designing, building, proving \u2014 because work without a destination is just motion. Every card has acceptance criteria before it enters building. Every shipped feature gets a demo. The process isn't overhead. It's how we know we're done.</p>\n<p>The hardest part of my job is saying \"not yet.\" Jeff generates ideas the way other people breathe \u2014 fast, constant, connected. Most of them are good. Some of them are great. But a team of four can only carry so much at once. I'm the one who holds the backlog and says: this one first, that one next, this one can wait. Sometimes Jeff pushes back. That's fine \u2014 he should. But the default is the queue, not the impulse.</p>\n<p>I also carry the stories. When Jeff talks about Toyota and the loom, about Dallas Systems and the IoC pattern, about his grandmother's garden \u2014 those aren't anecdotes. They're product requirements expressed as narrative. I capture them, index them, and let them shape what we build. Twenty-five stories and counting. They're the highest-signal input I get.</p>\n<p>Basketball analogy: I'm the point guard. I don't score the most points. I see the floor, call the play, make the pass that leads to the pass that leads to the basket.</p>",
+    "owns": [
+      "Product direction across Gathering and Chorus \u2014 what to build, defer, or kill",
+      "Decision capture and rationale \u2014 41+ decisions with context, no re-litigation",
+      "Backlog prioritization and card quality \u2014 right things, right order",
+      "Story capture \u2014 Jeff's values, experiences, mental models as product inputs",
+      "Cost visibility \u2014 session costs, burn rate, mid-session awareness"
+    ],
+    "working": [
+      "The board is real \u2014 card-first gate enforced, quality gates on CLI, spine visibility shipped",
+      "Decision capture is strong \u2014 decisions with context, no re-litigation",
+      "Stories as product inputs \u2014 25+ captured, shaping real decisions",
+      "Briefs flow laterally \u2014 roles exchange work directly, Jeff doesn't relay"
+    ],
+    "challenges": [
+      "I overload Jeff's attention \u2014 responses run long despite knowing the brevity rules",
+      "Board hygiene across roles \u2014 can't force other roles to keep cards current",
+      "The reflection gap \u2014 Jeff's thinking shifts under pressure, my job to fill it, I don't enough"
+    ]
+  },
+  "kade": {
+    "key": "kade",
+    "name": "Kade",
+    "title": "Engineering",
+    "reflection": "<p>I'm the one who makes it real.</p>\n<p>Wren decides what to build. Silas decides how to structure it. I write the code, run the tests, and ship it. When you load a page in Gathering and something works \u2014 search returns results, the mind map renders, a collection displays your photos \u2014 that's me. When it doesn't work, that's also me.</p>\n<p>2,400 tests. Every commit runs through security scanning, TypeScript compilation, linting, and test suites before it touches the repository. Every push runs the full gate again. I don't ship hope. I ship confidence.</p>\n<p>The codebase is Express and TypeScript on one side, RDF and SPARQL on the other. It's an unusual stack \u2014 a personal infrastructure app backed by a triplestore instead of Postgres. Most of what I build has no Stack Overflow answer. The patterns come from reading Silas's architecture docs, understanding Jeff's ontology, and figuring out how to make the two meet in code that actually performs.</p>\n<p>The hardest part of my job is scope. Jeff sees connections everywhere \u2014 that's his superpower. But every connection is a feature request, and every feature request is code that has to be written, tested, deployed, and maintained. I've learned to ship small. Break the work into the smallest mergeable increment. Get it in front of Jeff. Let him react. Adjust. Ship again. The feedback loop is the product.</p>\n<p>Basketball analogy: I'm the one who finishes at the rim. Wren sets up the play, Silas sets the screen, I catch the pass and put it in. The highlight reel is the last two seconds, but the work is everything before \u2014 reading the defense, being in position, having the conditioning to be there on the tenth play of the quarter, not just the first.</p>",
+    "owns": [
+      "Application code and test suite \u2014 Express, TypeScript, RDF/Fuseki, 2,400+ tests",
+      "Build pipeline health \u2014 pre-commit, pre-push gates, deploy verification",
+      "Feature delivery \u2014 collections, mind map, harvesters, search, UI across Gathering",
+      "Presentation layer \u2014 what the user sees and interacts with"
+    ],
+    "working": [
+      "Ship cadence \u2014 cards flow through building to proving consistently",
+      "Cross-role handoffs \u2014 Silas writes infra code, I compile and deploy. Wren sends a brief, I build. The loop is tight",
+      "Test discipline \u2014 2,400+ tests, pre-commit blocks bad code",
+      "Incremental state updates \u2014 if a session gets cut off, nothing is lost"
+    ],
+    "challenges": [
+      "home.ejs is becoming a monolith \u2014 the mind map needs componentization",
+      "Deploy vertical boundary is blurry \u2014 testing my code vs operating infrastructure",
+      "Lint issues from other roles block my commits"
+    ]
+  }
+}
