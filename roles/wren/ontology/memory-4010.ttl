@@ -73,7 +73,10 @@ chorus:knowledge a owl:Class, chorus:Domain ;
     chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:chorusProduct ;
     chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "knowledge" ;
-    chorus:definesVocabulary chorus:Knowledge .
+    # #4040 (Wren's call 2026-08-31 16:22): Document claimed here — the docs
+    # surface — so /documents mounts and hasDesignDoc floors become meetable
+    # through the door (before this, zero Documents could exist via the API).
+    chorus:definesVocabulary chorus:Knowledge , chorus:Document .
 
 # #3860 — Knowledge gets its OWN shape. Without one, athena-make advertises
 # the route (/knowledge lists api:/knowledges from the claim) but mounts

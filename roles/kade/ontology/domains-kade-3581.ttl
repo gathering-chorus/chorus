@@ -25,7 +25,7 @@ chorus:pipelines a owl:Class, chorus:Domain ;
   chorus:purpose "Own how a change travels from commit to running production — the typed, composable build->land pipeline — so every card follows one proven path with witnesses at each step, not ad-hoc scripting." ;
   chorus:ownedBy chorus:role-kade ; chorus:partOf chorus:chorusProduct ;
   chorus:atStep chorus:Building ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline ;
+  chorus:repoTarget "platform/services" ; chorus:definesVocabulary chorus:Pipeline , chorus:PipelineRun ;
   chorus:hasChild chorus:cicd .
 
 chorus:cicd a owl:Class, chorus:Domain ;

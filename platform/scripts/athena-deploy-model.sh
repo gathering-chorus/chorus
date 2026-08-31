@@ -132,6 +132,11 @@ else
     # pen; ledger at designing/schemas/model-version-ledger.jsonl is the home).
     # In MODEL_SET so the STORE carries chorus:vocabVersion and athena-make serves it.
     "$CHORUS_ROOT/designing/data/model-version.ttl"
+    # #4040 — pipelines TBox + shapes (PipelineStep/hasStep/executor/forPipeline,
+    # run metrics; PipelineShape/PipelineStepShape/PipelineRunShape tighten).
+    # Day-authored MODEL_SET discipline (#3654/#3686); instances ride the
+    # instance-seed-manifest (pipeline / pipeline-step kinds).
+    "$CHORUS_ROOT/roles/kade/ontology/pipelines-4040.ttl"
   )
 fi
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
