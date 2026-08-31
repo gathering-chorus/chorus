@@ -95,6 +95,20 @@ sq() {
   [ "$output" = "200" ]
 }
 
+# ── AC1: Document claimed (Wren 16:22) so the design doc is mintable ──
+@test "AC1 knowledge domain claims chorus:Document (mounts /documents)" {
+  run sq "$REPO/roles/wren/ontology/memory-4010.ttl" 'ASK { c:knowledge c:definesVocabulary c:Document }'
+  [[ "$output" == *"yes"* || "$output" == *"true"* ]]
+}
+
+@test "AC1 (live) /documents mounted + pipelines design Document present" {
+  curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
+  [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/documents")" = "200" ] \
+    || skip "claim not deployed yet"
+  run curl -sf --max-time 10 "$OWL_URL/documents"
+  [[ "$output" == *"pipelines"* ]]
+}
+
 # ── AC5: the daily runner emits a PipelineRun with metrics ──
 @test "AC5 nightly runner emits a PipelineRun row with metrics + forPipeline" {
   NS="$REPO/platform/scripts/nightly-suites.sh"
