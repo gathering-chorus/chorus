@@ -273,6 +273,22 @@ describe('#3343 CHECK-constraint rebuild migration', () => {
 });
 
 describe('#3615 test/prod membrane — messages-db write surface', () => {
+  // #4038 — the runner's suite world sets CHORUS_MESSAGES_DB to a caged tmp
+  // path (werk-test lib.rs suite_world_env), and the seam legitimately
+  // satisfies the membrane — so these refusal tests went red in every
+  // runner-driven run (five straight) while green everywhere else. A test
+  // brings its own world (#3528): observe the DEFAULT path with the seam
+  // cleared, restore whatever the environment had.
+  let savedSeam: string | undefined;
+  beforeEach(() => {
+    savedSeam = process.env.CHORUS_MESSAGES_DB;
+    delete process.env.CHORUS_MESSAGES_DB;
+  });
+  afterEach(() => {
+    if (savedSeam === undefined) delete process.env.CHORUS_MESSAGES_DB;
+    else process.env.CHORUS_MESSAGES_DB = savedSeam;
+  });
+
   // NEGATIVE PROOF (#3734): the violated state — a test context opening the
   // production messages.db by default path — must REFUSE, typed. Jest sets
   // NODE_ENV=test, so this test process IS the offending context.
