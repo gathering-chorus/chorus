@@ -39,6 +39,7 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { classAtlasHandler } from './handlers/class-atlas';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
+import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
 function errMsg(e: unknown): string {
@@ -489,7 +490,14 @@ app.get('/nightly', (_req: Request, res: Response) => {
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));
-app.get('/loom/:role', sendChorusPage('loom.html'));
+// #4036 — the per-role pages are real again. This route used to serve the hub
+// back for every role URL, so all four "Read more" links led nowhere new.
+// Static per-role renders (render-chorus-pages.cjs) keep it one mechanism.
+app.get('/loom/:role', (req: Request, res: Response, next: NextFunction) => {
+  const role = String(req.params.role).toLowerCase();
+  if (!['jeff', 'wren', 'silas', 'kade'].includes(role)) return next();
+  return sendChorusPage(`loom-${role}.html`)(req, res);
+});
 app.get('/flow', sendChorusPage('flow.html'));
 app.get('/model-data', sendChorusPage('model-data.html'));
 app.get('/ontology-views/:domain', sendChorusPage('model-data.html'));
@@ -595,6 +603,40 @@ app.get('/api/loom-metrics', (_req: Request, res: Response) => {
     reject_stats: { rate: acc.demoTotal > 0 ? Math.round((demoNoGo / acc.demoTotal) * 1000) / 10 : 0, deploys: acc.deploys },
     operations: { deploys: acc.deploys },
   });
+});
+// #4036 — /api/loom-analytics: the stranded #2116 instrument migrated. Board
+// analytics computed on read from the Vikunja DB (read-only), no new store:
+// cumulative flow, throughput + daily series, per-role lead time, bottleneck.
+app.get('/api/loom-analytics', (req: Request, res: Response) => {
+  const range = typeof req.query.range === 'string' ? req.query.range : 'all';
+  const r = fetchLoomAnalytics({
+    readCards: () => {
+      const db = new Database(VIKUNJA_DB_PATH, { readonly: true, fileMustExist: true });
+      try {
+        return db.prepare(
+          `SELECT t."index" AS id,
+                  COALESCE(b.title, '') AS status,
+                  COALESCE((SELECT REPLACE(l.title, 'owner:', '') FROM labels l
+                              JOIN label_tasks lt ON lt.label_id = l.id
+                             WHERE lt.task_id = t.id AND l.title LIKE 'owner:%' LIMIT 1), '') AS owner,
+                  t.created AS created,
+                  t.done AS done,
+                  COALESCE(t.done_at, '') AS doneAt
+             FROM tasks t
+             LEFT JOIN task_buckets tb ON tb.task_id = t.id
+             LEFT JOIN buckets b ON tb.bucket_id = b.id`,
+        ).all().map((row) => {
+          const c = row as { id: number; status: string; owner: string; created: string; done: number; doneAt: string };
+          // Vikunja stores '0001-01-01…' as the not-done sentinel for done_at.
+          const doneAt = c.doneAt.startsWith('0001') ? '' : c.doneAt;
+          return { ...c, doneAt, done: !!c.done && doneAt !== '' } as LoomCardRow;
+        });
+      } finally {
+        db.close();
+      }
+    },
+  }, range);
+  res.status(r.status).json(r.body);
 });
 // #2994 — additional role mounts. doc-catalog registered these paths but
 // chorus-api had no static mounts; files exist on disk, hrefs 404'd.
