@@ -83,6 +83,7 @@ sq() {
 
 # ── AC6 (live): the generated API serves both collections from the claims ──
 @test "AC6 GET /pipelines serves cicd + athena (live owl-api)" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   run curl -sf --max-time 10 "$OWL_URL/pipelines"
   [ "$status" -eq 0 ]
@@ -90,6 +91,7 @@ sq() {
 }
 
 @test "AC6 GET /pipelineruns is mounted (live owl-api)" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$OWL_URL/pipelineruns"
   [ "$output" = "200" ]
@@ -102,6 +104,7 @@ sq() {
 }
 
 @test "AC1 (live) /documents mounted + pipelines design Document present" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/documents")" = "200" ] \
     || skip "claim not deployed yet"
@@ -119,6 +122,7 @@ sq() {
 }
 
 @test "AC5/AC7 negative (live): POST /pipelineruns without forPipeline refuses" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   # skip unless the route is MOUNTED — a 404 on an absent route also matches 4*
   # and would pass this vacuously (#3734: the check must fail only at the door)
@@ -132,6 +136,7 @@ sq() {
 
 # ── AC7 negative proofs ──
 @test "AC7 negative: an unclaimed class stays unmounted (Witness has no route)" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run; blocking-leg runs predate the model deploy by construction"
   curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
   run curl -s --max-time 10 -o /dev/null -w '%{http_code}' "$OWL_URL/witnesses"
   [ "$output" != "200" ]
