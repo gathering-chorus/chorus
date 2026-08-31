@@ -291,3 +291,21 @@ describe('#4030 never-ran suites are red', () => {
     expect(doc.footer.neverExecuted).toEqual([]);
   });
 });
+
+// #4035 — a stopped run's block ends at RUN|stopped: its rows stay its own and
+// endedAt is the stop time, so `recorded` binds to the right window.
+describe('#4035 RUN|stopped ends the block', () => {
+  it('endedAt is the stop time and later runs are not swallowed', () => {
+    const doc = buildTestRunReport({
+      runId: 'latest', trigger: 'nightly', scope: 'full selection',
+      logText: [
+        'RUN|start|2026-08-31T03:00:01',
+        'SUITE|cargo|platform/services/werk-test|silas|pass|191 pass, 0 fail',
+        'RUN|stopped|2026-08-31T03:21:44|signal=TERM pid=17545',
+      ].join('\n'),
+      registered: 191, recorded: 191, notExecuted: null,
+    })!;
+    expect(doc.run.endedAt).toBe('2026-08-31T03:21:44');
+    expect(doc.byKind).toHaveLength(1);
+  });
+});

@@ -1144,6 +1144,25 @@ persist_run_results() {
   return 0
 }
 
+# #4035 — a stopped run says so, and takes its runner with it. agent-state stop
+# (launchctl bootout) TERMs the wrapper: with only an EXIT trap bash dies
+# without running it, the runner's process group is orphaned (2026-08-31 03:21:
+# the runner ran on alone to 05:53) and the log keeps a RUN|start with nothing
+# after it — /nightly showed a blank morning. This handler writes RUN|stopped,
+# reaps the runner's group (release_single_flight_lock), and frees the lock.
+_on_stop() {
+  local sig="${1:-TERM}"
+  local _log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
+  if [ "${NIGHTLY_RUN_OPEN:-0}" = "1" ]; then
+    printf 'RUN|stopped|%s|signal=%s pid=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$sig" "$$" >> "$_log" 2>/dev/null || true
+    NIGHTLY_RUN_OPEN=0
+  fi
+  release_single_flight_lock
+  trap - EXIT
+  if [ "$sig" = "INT" ]; then exit 130; fi
+  exit 143
+}
+
 # --- Dispatch ---
 # Below = dispatch-only (CLI entry, exits on unknown arg).
 # Above = sourceable (function definitions safe for unit tests to import).
@@ -1275,6 +1294,10 @@ PYEOF
       exit 0
     fi
     trap release_single_flight_lock EXIT
+    # #4035 — a TERM/INT (agent-state stop, ctrl-c) must reap the runner and
+    # name the stop in the log; without these, bash skips the EXIT trap.
+    trap '_on_stop TERM' TERM
+    trap '_on_stop INT' INT
     # #3753 — load gate: defer while the box is busy; if it never quiets inside
     # the defer window, the run is UNMEASURABLE (typed, logged, spine-emitted),
     # never a wall of false red.
@@ -1329,8 +1352,10 @@ PYEOF
     _run_log="${NIGHTLY_LOG_PATH:-$HOME/Library/Logs/Chorus/nightly-suites.log}"
     mkdir -p "$(dirname "$_run_log")" 2>/dev/null
     if printf 'RUN|start|%s|pid=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$$" >> "$_run_log" 2>/dev/null; then
+      NIGHTLY_RUN_OPEN=1
       out=$(run_all | tee -a "$_run_log")
       printf 'RUN|complete|%s|suites=%s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$(printf '%s\n' "$out" | grep -c '^SUITE|' | tr -d ' ')" >> "$_run_log"
+      NIGHTLY_RUN_OPEN=0
     else
       # log unappendable: run anyway, fall back to the buffered writer, say so
       echo "nightly-suites: WARNING — cannot append to $_run_log; no incremental persistence this run" >&2

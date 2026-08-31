@@ -292,6 +292,9 @@ export function lastRunSuites(text: string): { startedAt: string; endedAt?: stri
   let endedAt: string | undefined;
   for (const l of all.slice(start + 1)) {
     if (l.startsWith('RUN|complete|')) { endedAt = l.split('|')[2]; break; }
+    // #4035 — a stopped run's block ends at the stop marker, same as complete;
+    // without this a stopped block bleeds into the next run's rows.
+    if (l.startsWith('RUN|stopped|')) { endedAt = l.split('|')[2]; break; }
     if (!l.startsWith('SUITE|')) continue;
     const [, kind, path, owner, status, ...rest] = l.split('|');
     if (rest.length >= 1) out.push({ kind, path, owner, status, summary: rest.join('|') });

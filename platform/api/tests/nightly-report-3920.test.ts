@@ -136,3 +136,38 @@ describe('#4030 never-ran suites render red on /nightly', () => {
     expect(renderNightlyPage(run)).toContain('ALL GREEN');
   });
 });
+
+// #4035 — a STOPPED run names itself. The wrapper's TERM handler writes
+// RUN|stopped; the page must say STOPPED (who-ended-it), never the wedge
+// banner ("treat it as wedged") and never a blank.
+describe('#4035 stopped runs say so', () => {
+  const log = [
+    'RUN|start|2026-08-31T03:00:01',
+    'SUITE|cargo|platform/services/werk-test|silas|pass|191 pass, 0 fail',
+    'RUN|stopped|2026-08-31T03:21:44|signal=TERM pid=17545',
+  ].join('\n');
+
+  it('negative proof: the stop marker renders a STOPPED banner, not wedged/blank', () => {
+    const run = parseNightlyLog(log)!;
+    expect(run.completed).toBe(false);
+    expect(run.stoppedAt).toBe('2026-08-31T03:21:44');
+    const html = renderNightlyPage({ ...run, quietForMs: 60 * 60 * 1000 });
+    expect(html).toContain('STOPPED at 2026-08-31T03:21:44');
+    expect(html).toContain('signal=TERM');
+    expect(html).not.toContain('Treat it as wedged');
+  });
+
+  it('control: without the marker the same quiet run still reads as wedged', () => {
+    const run = parseNightlyLog(log.split('\n').slice(0, 2).join('\n'))!;
+    const html = renderNightlyPage({ ...run, quietForMs: 60 * 60 * 1000 });
+    expect(html).toContain('wedged');
+    expect(html).not.toContain('STOPPED at');
+  });
+
+  it('a stopped block does not swallow rows from the next run', () => {
+    const two = log + '\n' + 'RUN|start|2026-08-31T09:00:00\nSUITE|lint|/x|kade|pass|1 pass, 0 fail';
+    const run = parseNightlyLog(two)!;
+    expect(run.startedAt).toBe('2026-08-31T09:00:00');
+    expect(run.rows).toHaveLength(1);
+  });
+});
