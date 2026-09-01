@@ -1023,10 +1023,30 @@ emit_pipeline_run() {
   passed=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="pass"' | grep -c . | tr -d ' ')
   run=$((passed + failed)); stored=$(printf '%s\n' "$results" | grep -c '^SUITE|' | tr -d ' ')
   [ "$failed" -eq 0 ] && outcome=green || outcome=red
-  curl -sf --max-time 10 -X POST "$owl/pipelineruns" -H 'Content-Type: application/json' -d "$(printf \
-    '{"label":"nightly %s","forPipeline":"pipeline-cicd","runOutcome":"%s","runDurationMs":%s,"testsRun":%s,"testsFailed":%s,"testsStored":%s}' \
-    "$(date '+%Y-%m-%dT%H:%M:%S')" "$outcome" "${duration_ms:-0}" "$run" "$failed" "$stored")" \
-    >/dev/null 2>&1 || echo "nightly-suites: pipeline-run emit skipped (owl-api unreachable)" >&2
+  # #4047 — three reasons no row ever landed, all fixed here:
+  #   1. no Bearer token: the write door 401s, and the old message called that
+  #      "owl-api unreachable" — a mislabel that hid the real refusal a whole night
+  #   2. numbers as JSON numbers: the door expects JSON STRINGS for literals
+  #   3. "label" is not on the shape: off-model property, refused
+  # The failure line now prints the door's own body, so a refusal names itself.
+  local tok body code out
+  tok=$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" kade 2>/dev/null)
+  if [ -z "$tok" ]; then
+    echo "nightly-suites: pipeline-run emit SKIPPED — no identity token minted" >&2
+    return 0
+  fi
+  body=$(printf \
+    '{"name":"nightly-%s","forPipeline":"pipeline-cicd","traceId":"%s","runOutcome":"%s","runDurationMs":"%s","testsRun":"%s","testsFailed":"%s","testsStored":"%s"}' \
+    "$(date '+%Y-%m-%dT%H-%M-%S')" "${CHORUS_TRACE_ID:-nightly-$(date +%s)}" \
+    "$outcome" "${duration_ms:-0}" "$run" "$failed" "$stored")
+  out=$(mktemp "${TMPDIR:-/tmp}/pipelinerun.XXXXXX")
+  code=$(curl -s --max-time 10 -o "$out" -w '%{http_code}' -X POST "$owl/pipelineruns" \
+    -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' -d "$body")
+  case "$code" in
+    2*) echo "nightly-suites: pipeline-run recorded ($outcome, ${run} suites, ${failed} failed)" >&2 ;;
+    *)  echo "nightly-suites: pipeline-run emit REFUSED HTTP $code — $(head -c 300 "$out")" >&2 ;;
+  esac
+  rm -f "$out"
 }
 
 emit_run_summary() {

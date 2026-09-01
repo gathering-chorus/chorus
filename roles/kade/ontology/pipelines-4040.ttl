@@ -80,4 +80,13 @@ chorus:PipelineStepShape a sh:NodeShape ;
 chorus:PipelineRunShape a sh:NodeShape ;
     sh:targetClass chorus:PipelineRun ;
     chorus:instancesGraph "urn:chorus:instances" ;
-    sh:property [ sh:path chorus:forPipeline ; sh:minCount 1 ] .
+    sh:property [ sh:path chorus:forPipeline ; sh:minCount 1 ] ;
+    # #4047 — the metrics were TBox-only, so the door refused every one as
+    # off-model and no run row could carry a number. Declared here, optional:
+    # a run that dies mid-flight still records its link and trace.
+    sh:property [ sh:path chorus:runOutcome ] ;
+    sh:property [ sh:path chorus:runDurationMs ] ;
+    sh:property [ sh:path chorus:testsRun ] ;
+    sh:property [ sh:path chorus:testsFailed ] ;
+    sh:property [ sh:path chorus:testsStored ] ;
+    sh:property [ sh:path chorus:triplesWritten ] .

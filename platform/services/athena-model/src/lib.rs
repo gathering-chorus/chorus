@@ -104,6 +104,11 @@ const KINDS: &[(&str, &str, bool)] = &[
     // pending Silas's ADR-040/OWL-DBA blessing (nudged 2026-08-31).
     ("pipeline", "Pipeline", false),
     ("pipeline-step", "PipelineStep", false),
+    // #4047 — the run rows themselves. #4040 admitted the two authored kinds and
+    // stopped there, so the nightly's emit could never mint: unknown-kind 502 on
+    // every attempt while the collection served an empty list. PROVISIONAL, same
+    // ADR-040 lineage Silas blessed 2026-08-31.
+    ("pipeline-run", "PipelineRun", false),
     // #3773 (Silas, Wren-blessed 2026-08-06) — the generate-vs-write drift again,
     // and this time it is the WHOLE SECURITY DOMAIN. athena-make serves 24 classes;
     // this table admitted 19. The 11 missing: the seven security classes below,
@@ -2767,6 +2772,11 @@ mod tests {
         assert_eq!(
             mint("pipeline-step", "cicd-demo").unwrap(),
             format!("{}pipeline-step-cicd-demo", NS)
+        );
+        // #4047 — run rows mint too; without this the nightly emit 502'd nightly
+        assert_eq!(
+            mint("pipeline-run", "nightly-2026-09-01").unwrap(),
+            format!("{}pipeline-run-nightly-2026-09-01", NS)
         );
     }
 
