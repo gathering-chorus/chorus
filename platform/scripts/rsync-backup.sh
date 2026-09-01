@@ -30,17 +30,29 @@ backup() {
     return
   fi
   log "START: $name ($src)"
-  if rsync -az --delete --timeout=300 \
-    --exclude='data/loki/' \
-    --exclude='node_modules/' \
-    --exclude='.git/objects/' \
-    --exclude='target/release/' \
-    --exclude='target/debug/' \
-    -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1; then
+  # #4043 — one retry: live dirs (.chorus especially) mutate under the copy and
+  # rsync exits 1/23/24 on "unexpected end of file" / vanished files. A second
+  # pass over the mostly-synced tree is fast and usually lands clean; a target
+  # that fails TWICE is a real failure and still reports FAIL.
+  local attempt rc=1
+  for attempt in 1 2; do
+    if rsync -az --delete --timeout=300 \
+      --exclude='data/loki/' \
+      --exclude='node_modules/' \
+      --exclude='.git/objects/' \
+      --exclude='target/release/' \
+      --exclude='target/debug/' \
+      -e "ssh -o ConnectTimeout=10" "$src" "${REMOTE}:${DEST}/${name}/" 2>&1; then
+      rc=0; break
+    fi
+    rc=$?
+    [ "$attempt" = 1 ] && { log "RETRY: $name (rsync exit $rc — files changed under the copy?)"; sleep 15; }
+  done
+  if [ "$rc" = 0 ]; then
     log "OK: $name"
     SYNCED=$((SYNCED + 1))
   else
-    log "FAIL: $name (rsync exit $?)"
+    log "FAIL: $name (rsync exit $rc after 2 attempts)"
     FAILED=$((FAILED + 1))
   fi
 }

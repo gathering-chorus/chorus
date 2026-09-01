@@ -16,10 +16,12 @@ set -euo pipefail
 # OFF-MACHINE target = BEDROOM. `Jeffs-Mac-mini.local` resolves to 192.168.86.242 (bedroom, the M2 Pro) —
 # NOT this box (Library = `Jeffs-Mac-Mini-M1-3` / 192.168.86.36, where Fuseki + this script run). The two
 # hostnames are near-identical; verify with `ping Jeffs-Mac-mini.local` (→ .242) before assuming it's local.
+# #4043 — the lot's home is chorus-env-setup.sh; the plist env still overrides.
+. "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh" >/dev/null 2>&1 || true
 REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
 STORE_VOL="/System/Volumes/Data"
 SNAP_REL="Users/jeffbridwell/.gathering/data/fuseki-pods"   # path to the TDB2 dir within the snapshot
-DEST_BASE="${FUSEKI_BACKUP_DEST:-/Users/jeffbridwell/Backups/library/fuseki}"
+DEST_BASE="${FUSEKI_BACKUP_DEST:?FUSEKI_BACKUP_DEST unset — chorus-env-setup.sh missing?}"
 # #3799 — was 3 fulls; each full is ~450G (store not yet right-sized), so 3-4
 # copies = 1.4-1.7T and Bedroom fills (tomorrow FAILS, measured 2026-08-13).
 # Drop to 2 recovery points until the compact fix (AC1) shrinks the store ~7x.
