@@ -107,15 +107,21 @@ export function tallyTests(rows: NightlyRow[]): {
 } {
   let passed = 0, failed = 0, unparsed = 0;
   for (const r of rows) {
-    const s = r.summary ?? '';
-    // jest/vitest: "Tests: 74 failed, 27 skipped, 4562 passed, 4663 total"
-    const jest = s.match(/Tests:\s+(?:(\d+) failed,\s*)?(?:(\d+) skipped,\s*)?(\d+) passed/);
+    const s = r.summary;
+    // jest/vitest: "Tests: 74 failed, 27 skipped, 4562 passed, 4663 total".
+    // Read the two numbers independently rather than with chained optional
+    // groups — that form is what security/detect-unsafe-regex flagged, and it
+    // is also easier to read than one pattern spanning an optional middle.
+    const jestPassed = s.startsWith('Tests:') ? /(\d+) passed/.exec(s) : null;
+    const jestFailed = s.startsWith('Tests:') ? /(\d+) failed/.exec(s) : null;
     // bats: "bats: 10 passed, 4 failed"
-    const bats = s.match(/bats:\s*(\d+) passed,\s*(\d+) failed/);
+    const bats = /bats: *(\d+) passed, *(\d+) failed/.exec(s);
     // shell/cargo/reconcile: "13 pass, 1 fail"
-    const plain = s.match(/(\d+)\s+pass(?:ed)?,\s*(\d+)\s+fail/);
-    if (jest) { failed += Number(jest[1] ?? 0); passed += Number(jest[3]); }
-    else if (bats) { passed += Number(bats[1]); failed += Number(bats[2]); }
+    const plain = /(\d+) +pass(?:ed)?, *(\d+) +fail/.exec(s);
+    if (jestPassed) {
+      passed += Number(jestPassed[1]);
+      if (jestFailed) failed += Number(jestFailed[1]);
+    } else if (bats) { passed += Number(bats[1]); failed += Number(bats[2]); }
     else if (plain) { passed += Number(plain[1]); failed += Number(plain[2]); }
     else unparsed += 1;
   }
