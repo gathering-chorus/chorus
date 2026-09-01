@@ -26,8 +26,12 @@ echo "=== deep-health tests ==="
 # 1. Script exists and is executable
 run_test "script exists and is executable" test -x "$SCRIPT"
 
-# 2. Script runs without crashing
-run_test "script runs" bash "$SCRIPT"
+# 2. Script runs without crashing.
+# #4057: this asserted exit 0, which quietly meant "and the machine is healthy".
+# Now that a silent LaunchAgent is a failure, deep-health legitimately exits 1 on
+# a box with a real problem, and this test would fail for the wrong reason. Ran
+# = exited 0 (healthy) or 1 (degraded). A crash is anything else.
+run_test "script runs" bash -c 'bash "$0" >/dev/null 2>&1; rc=$?; [ "$rc" -le 1 ]' "$SCRIPT"
 
 # 3. Output contains either "all checks passed" or "failure(s)"
 OUTPUT=$(bash "$SCRIPT" 2>/dev/null || true)
@@ -42,21 +46,28 @@ if [ -f "$JSON_FILE" ]; then
   # 5. JSON has warnings array (separate from failures)
   run_test "JSON has warnings array" python3 -c "import json; d=json.load(open('$JSON_FILE')); assert 'warnings' in d and isinstance(d['warnings'], list)"
 
-  # 6. Log-freshness issues go to warnings, not failures
-  run_test "log-freshness in warnings not failures" python3 -c "
+  # 6. #4057 INVERTED. This used to assert log-freshness could only be a
+  # warning. That rule is what made health say "warning, 28" forever: 20 of
+  # those were logs belonging to LaunchAgents retired months ago, and a warning
+  # nobody can clear means the lamp never goes green and never goes red.
+  # deep-health now measures LOADED agents, so a stale log means a live agent
+  # went silent — which is a failure.
+  run_test "log-freshness is a failure, never a warning" python3 -c "
 import json
 d = json.load(open('$JSON_FILE'))
-for f in d.get('details', []):
-    assert 'log-freshness' not in f, f'log-freshness in failures: {f}'
+for w in d.get('warnings', []):
+    assert 'log-freshness' not in w, f'log-freshness still in warnings: {w}'
 "
 
-  # 7. Status is not degraded when only warnings exist
-  run_test "warnings-only does not degrade status" python3 -c "
+  # 7. #4057 INVERTED. A log-freshness finding IS a real failure now, so it must
+  # degrade the status on its own. The old assertion explicitly excused it, which
+  # is how a dead agent could sit unobserved without the status ever moving.
+  run_test "a log-freshness failure degrades status" python3 -c "
 import json
 d = json.load(open('$JSON_FILE'))
-real_failures = [f for f in d.get('details', []) if 'log-freshness' not in f]
-if len(real_failures) == 0:
-    assert d['status'] != 'degraded', 'status is degraded with no real failures'
+stale = [f for f in d.get('details', []) if 'log-freshness' in f]
+if stale:
+    assert d['status'] == 'degraded', f'log-freshness failure did not degrade status: {stale}'
 "
 
   # 8. Nudge path resolves correctly (CHORUS_ROOT includes chorus/)

@@ -6,8 +6,8 @@ set -euo pipefail
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
-OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
-CHORUS_LOG="${CHORUS_ROOT}/platform/scripts/chorus-log"
+OPS_NUDGE="${HEALTH_OPS_NUDGE:-${CHORUS_ROOT}/platform/scripts/ops-nudge}"
+CHORUS_LOG="${HEALTH_CHORUS_LOG:-${CHORUS_ROOT}/platform/scripts/chorus-log}"
 ALERT_ROLE="silas"
 FAILURES=()
 WARNINGS=()
@@ -60,27 +60,119 @@ if [ ! -x "$SHIM_BIN" ]; then
   FAILURES+=("chorus-hooks: shim binary missing or not executable")
 fi
 
-# --- 3. Log freshness: alert if 0 bytes or >2h stale ---
-LOG_DIR="$HOME/Library/Logs/Chorus"
+# --- 3. Log freshness: a LOADED agent that stopped writing (#4057) ---
+# Was: walk every *.log on disk and warn on mtime. That made the check a
+# function of the FILESYSTEM, not of what is running — 20 of 28 warnings on
+# 2026-09-01 were logs belonging to agents retired months ago (werk-sync 2759h,
+# posture-capture 3526h, session-health 3295h). A warning nobody can clear means
+# health never goes green and never goes red. Jeff: "grey does not work for me."
+#
+# Now: launchctl is the source of truth. For each LOADED com.chorus.* /
+# com.gathering.* agent we resolve its own StandardOutPath from its plist and
+# ask whether IT went silent. A log file with no loaded agent is not a finding
+# at all — it is a file to delete, and deep-health is not the deleter.
+LOG_DIR="${HEALTH_LOG_DIR:-$HOME/Library/Logs/Chorus}"
+HEALTH_PLIST_DIR="${HEALTH_PLIST_DIR:-$HOME/Library/LaunchAgents}"
+# Test seam: a file of labels, one per line, standing in for `launchctl list`.
+# Without it these checks can only be exercised against the real machine, which
+# is how the old ones went years without anyone noticing they measured nothing.
+HEALTH_AGENT_LIST="${HEALTH_AGENT_LIST:-}"
+# Test seam: never let a fixture run clobber the live pulse artifact (#3528 —
+# a test brings its own world).
+HEALTH_JSON_OUT="${HEALTH_JSON_OUT:-/tmp/deep-health-latest.json}"
 STALE_2H=$((now - 7200))
 STALE_25H=$((now - 90000))
 STALE_8D=$((now - 691200))
 
-# Skip: stderr-only logs, own log, orphaned logs, agents that don't use stdout
+# Skip: stderr-only logs, own log, agents that don't use stdout
 SKIP_LOGS="deep-health.log inject-health.log watchdog.log jeff-input-monitor.log launchagent-metrics.log chorus-bridge.stdout.log chorus-api.log chorus-hooks.stdout.log clearing-probe-stdout.log inject-watcher.log harvest-exporter.log"
 STDERR_LOGS="clearing-probe-stderr.log chorus-bridge.stderr.log chorus-hooks.stderr.log"
 # Persistent daemons — silence is healthy when the process is alive.
 # Format: "logname:launchctl_label" — check PID via launchctl, skip mtime.
-# bridge-subscriber-{silas,wren,kade} retired by #3352 (always-inject); their
-# leftover logs must not resurrect a liveness expectation (#3369).
 LIVENESS_LOGS="chorus-bridge.log:com.chorus.clearing shim-wrapper.log:com.chorus.hooks"
 # Daily jobs — 25h threshold instead of 2h
 DAILY_LOGS="context-cache-daily.log fuseki-perf.log perf-baseline-nightly.log alert-notifier.log alert-runner.log rsync-backup.log lance-maintain.log"
 # Weekly / multi-day jobs — 8 day threshold
 WEEKLY_LOGS="context-cache-weekly.log disk-trend.log fuseki-compact.log alert-delivery-test.log cruft-scan.log"
 
-for log in "$LOG_DIR"/*.log; do
-  [ -f "$log" ] || continue
+# Labels currently LOADED in launchd. Empty output is itself a finding.
+loaded_agent_labels() {
+  if [ -n "$HEALTH_AGENT_LIST" ]; then
+    cat "$HEALTH_AGENT_LIST" 2>/dev/null || true
+  else
+    launchctl list 2>/dev/null | awk 'NR>1 {print $3}' \
+      | grep -E '^com\.(chorus|gathering)\.' || true
+  fi
+}
+
+# A loaded agent's own declared stdout path, read from its plist. No guessing a
+# filename from the label — the plist is the only thing that knows.
+# An agent's own declared cadence, in seconds. StartInterval is explicit;
+# StartCalendarInterval means "on a clock" which in this stack is always daily
+# or weekly, so it gets the day bound. RunAtLoad-only daemons have neither and
+# fall through to the default.
+#
+# WHY DERIVE. The DAILY_LOGS / WEEKLY_LOGS lists below are hand-maintained, and
+# the day this check started FAILING instead of warning, that gap got loud:
+# tm-thin, seed-probe and the daily-* jobs are all on 12h/24h cadences and none
+# of them were on the list, so a normal 11h gap read as an outage. A threshold
+# that has to be remembered is a threshold that is wrong — the same defect as
+# the five hand-kept package lists in the test runner. The plist already knows.
+agent_interval_s() {
+  local plist="$HEALTH_PLIST_DIR/$1.plist"
+  [ -f "$plist" ] || return 1
+  local iv
+  iv=$(/usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist" 2>/dev/null || true)
+  if [ -n "$iv" ]; then echo "$iv"; return 0; fi
+  if /usr/libexec/PlistBuddy -c "Print :StartCalendarInterval" "$plist" >/dev/null 2>&1; then
+    echo 86400; return 0
+  fi
+  return 1
+}
+
+# Is this a PERSISTENT daemon rather than a scheduled job? KeepAlive, or no
+# cadence at all, means it is meant to sit there running. For those, silence in
+# a stdout log is not evidence of anything — loki, fuseki, mysql and the werk
+# MCP daemons all log elsewhere or only on events. The right question is whether
+# the process is alive, which launchctl answers directly.
+#
+# This is the same move as the cadence threshold above: LIVENESS_LOGS was a
+# TWO-ENTRY hand list, and everything not on it got mtime-judged whether that
+# made sense or not. The plist already says which kind of thing it is.
+agent_is_persistent() {
+  local plist="$HEALTH_PLIST_DIR/$1.plist"
+  [ -f "$plist" ] || return 1
+  /usr/libexec/PlistBuddy -c "Print :KeepAlive" "$plist" >/dev/null 2>&1 && return 0
+  /usr/libexec/PlistBuddy -c "Print :StartInterval" "$plist" >/dev/null 2>&1 && return 1
+  /usr/libexec/PlistBuddy -c "Print :StartCalendarInterval" "$plist" >/dev/null 2>&1 && return 1
+  return 0
+}
+
+# Is the label actually running right now? "-" in column 1 means loaded but not
+# running. #3369: a missing label must never be fatal under set -e.
+agent_pid() {
+  launchctl list 2>/dev/null | awk -v l="$1" '$3==l {print $1}' | head -1 || true
+}
+
+agent_stdout_path() {
+  local plist="$HEALTH_PLIST_DIR/$1.plist"
+  [ -f "$plist" ] || return 1
+  /usr/libexec/PlistBuddy -c "Print :StandardOutPath" "$plist" 2>/dev/null
+}
+
+_loaded_labels=$(loaded_agent_labels)
+if [ -z "$_loaded_labels" ]; then
+  FAILURES+=("log-freshness: launchctl listed no com.chorus.* agents — cannot measure any log")
+fi
+
+while IFS= read -r label; do
+  [ -n "$label" ] || continue
+
+  log=$(agent_stdout_path "$label") || {
+    FAILURES+=("log-freshness: $label is loaded but its plist declares no StandardOutPath — it cannot be observed")
+    continue
+  }
+  [ -n "$log" ] || continue
   name=$(basename "$log")
 
   # Skip own log and stderr-only logs
@@ -100,33 +192,52 @@ for log in "$LOG_DIR"/*.log; do
   if [ -n "$liveness_match" ]; then
     # grep no-match exits 1; under set -e that killed the whole script with
     # zero output (#3369 — the 6am daily-signal-scan crash). Never let a
-    # missing label be fatal; it's a WARNING, not a crash.
+    # missing label be fatal.
     pid=$(launchctl list 2>/dev/null | grep "$liveness_match" | awk '{print $1}' || true)
     if [ "$pid" = "-" ] || [ -z "$pid" ]; then
-      WARNINGS+=("liveness: $name — process $liveness_match not running")
+      FAILURES+=("liveness: $name — process $liveness_match not running")
     fi
+    continue
+  fi
+
+  # Persistent daemon: ask launchd whether it is alive, not whether it spoke.
+  if agent_is_persistent "$label"; then
+    _p=$(agent_pid "$label")
+    if [ -z "$_p" ] || [ "$_p" = "-" ]; then
+      FAILURES+=("liveness: $label is loaded but not running")
+    fi
+    continue
+  fi
+
+  # A loaded agent whose log does not exist has never written. That is silence.
+  if [ ! -f "$log" ]; then
+    FAILURES+=("log-freshness: $label is loaded but $name does not exist — never wrote")
     continue
   fi
 
   size=$(stat -f %z "$log" 2>/dev/null || echo 0)
   mtime=$(stat -f %m "$log" 2>/dev/null || echo 0)
 
-  # Pick threshold based on job type
+  # Threshold: the agent's own cadence first, hand lists only as override.
+  # Two missed runs is the bar — one missed run is a slow box, two is a stop.
+  interval_s=$(agent_interval_s "$label" || true)
   if [[ " $WEEKLY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_8D
   elif [[ " $DAILY_LOGS " == *" $name "* ]]; then
     threshold=$STALE_25H
+  elif [ -n "$interval_s" ] && [ "$interval_s" -gt 0 ] 2>/dev/null; then
+    threshold=$(( now - (interval_s * 2) - 3600 ))
   else
     threshold=$STALE_2H
   fi
 
   if [ "$size" -eq 0 ]; then
-    WARNINGS+=("log-freshness: $name is 0 bytes — agent running but silent")
+    FAILURES+=("log-freshness: $name is 0 bytes — $label loaded but silent")
   elif [ "$mtime" -lt "$threshold" ]; then
     age_h=$(( (now - mtime) / 3600 ))
-    WARNINGS+=("log-freshness: $name is ${age_h}h stale")
+    FAILURES+=("log-freshness: $name is ${age_h}h stale — $label is loaded")
   fi
-done
+done <<< "$_loaded_labels"
 
 # --- 4. Loki reachability from Bedroom (direct LAN, no tunnel — #1988) ---
 # #3714 — three states, not one. This was a single string compare with `|| true`
@@ -604,7 +715,7 @@ fi
     done
   fi
   echo -n '],"timestamp":"'"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"'"}'
-} > /tmp/deep-health-latest.json
+} > "${HEALTH_JSON_OUT:-/tmp/deep-health-latest.json}"
 
 if [ "$STATUS" = "healthy" ]; then
   echo "deep-health: all checks passed"
@@ -631,7 +742,7 @@ echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HOME/Library/Logs/Chorus/deep-health.
 # Only nudge when the failure set changes (new failure added or existing one
 # resolved). Steady-state repeated failures are logged but not re-injected —
 # they're already tracked by swat cards and the status is visible in pulse.
-STATE_FILE="/tmp/deep-health-last-failures.txt"
+STATE_FILE="${HEALTH_STATE_FILE:-/tmp/deep-health-last-failures.txt}"
 CURRENT=$(printf '%s\n' "${FAILURES[@]}" | sort)
 LAST=""
 [ -f "$STATE_FILE" ] && LAST=$(cat "$STATE_FILE")
