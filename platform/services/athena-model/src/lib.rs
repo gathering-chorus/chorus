@@ -95,6 +95,15 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("card", "Card", false),
     ("chunk", "Chunk", false),
     ("chunkmembership", "ChunkMembership", false),
+    // #4040 (Kade, Jeff-GO'd 2026-08-31) — the pipelines domain's kinds. Same
+    // generate-vs-write drift as #3522/#3592/#3654: Pipeline + PipelineStep are
+    // modeled with SHACL shapes and claimed on the pipelines domain, but the
+    // land's seed lane refused unknown-kind. Type-prefixed (mints
+    // pipeline-<name>; pipeline-step is its own kind so a subject is never
+    // claimed by two kinds in one batch — the 19:23 refusal). PROVISIONAL
+    // pending Silas's ADR-040/OWL-DBA blessing (nudged 2026-08-31).
+    ("pipeline", "Pipeline", false),
+    ("pipeline-step", "PipelineStep", false),
     // #3773 (Silas, Wren-blessed 2026-08-06) — the generate-vs-write drift again,
     // and this time it is the WHOLE SECURITY DOMAIN. athena-make serves 24 classes;
     // this table admitted 19. The 11 missing: the seven security classes below,
@@ -2753,6 +2762,12 @@ mod tests {
         );
         assert_eq!(mint("service", "crawler").unwrap(), format!("{}service-crawler", NS));
         assert_eq!(mint("principle", "be direct").unwrap(), format!("{}principle-be-direct", NS));
+        // #4040 — the pipelines domain's kinds (the fifth generate-vs-write drift)
+        assert_eq!(mint("pipeline", "cicd").unwrap(), format!("{}pipeline-cicd", NS));
+        assert_eq!(
+            mint("pipeline-step", "cicd-demo").unwrap(),
+            format!("{}pipeline-step-cicd-demo", NS)
+        );
     }
 
     #[test]

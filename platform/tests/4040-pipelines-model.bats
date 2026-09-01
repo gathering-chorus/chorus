@@ -72,7 +72,7 @@ sq() {
 @test "AC4 every declared step carries an executor (human|agent|deterministic)" {
   run sq "$STEPS" 'SELECT (COUNT(?s) AS ?n) WHERE { ?s a c:PipelineStep . FILTER NOT EXISTS { ?s c:executor ?e } }'
   [[ "$output" == *'"0"'* || "$output" == *"| 0 "* ]]
-  run sq "$STEPS" 'ASK { c:step-cicd-demo c:executor "human" }'
+  run sq "$STEPS" 'ASK { c:pipeline-step-cicd-demo c:executor "human" }'
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
 
