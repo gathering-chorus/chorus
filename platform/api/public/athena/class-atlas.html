@@ -55,7 +55,11 @@ function domainDiagram(dom) {
     L.push(`class ${ident(cls.name)} {`);
     for (const a of cls.attributes) {
       const req = a.min >= 1 ? '*' : '';
-      L.push(`  ${a.type || 'any'} ${ident(a.name)}${req}`);
+      // #4053 — an enum names its legal values. Drawing `any status` when the
+      // shape says sh:in (exploring building operating retiring) told the reader
+      // the constraint was absent; the tightest field must not read as the loosest.
+      const type = a.allowed && a.allowed.length ? a.allowed.join('|') : (a.type || 'any');
+      L.push(`  ${type} ${ident(a.name)}${req}`);
     }
     L.push('}');
     for (const p of cls.parents) L.push(`${ident(p)} <|-- ${ident(cls.name)}`);

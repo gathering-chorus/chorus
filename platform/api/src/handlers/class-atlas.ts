@@ -11,9 +11,12 @@ export interface SparqlTerm { type: string; value: string; datatype?: string }
 export interface SparqlBinding {
   domain?: SparqlTerm; class?: SparqlTerm; prop?: SparqlTerm;
   min?: SparqlTerm; max?: SparqlTerm; dt?: SparqlTerm; rc?: SparqlTerm; parent?: SparqlTerm;
+  // #4053 — one row per sh:in list member (rdf:rest*/rdf:first), so a four-value
+  // enum arrives as four rows that must fold into one attribute.
+  inValue?: SparqlTerm;
 }
 
-export interface AtlasAttribute { name: string; type: string; min: number; max: number | null }
+export interface AtlasAttribute { name: string; type: string; min: number; max: number | null; allowed?: string[] }
 export interface AtlasEdge { name: string; to: string; multiplicity: string; crossDomain: boolean }
 export interface AtlasClass { name: string; attributes: AtlasAttribute[]; edges: AtlasEdge[]; parents: string[] }
 export interface AtlasDomain { name: string; classes: AtlasClass[] }
@@ -49,9 +52,40 @@ function addPropertyRow(
       multiplicity: multiplicity(min, max),
       crossDomain: classHomes.get(rangeClass) !== dom,
     });
-  } else if (!entry.attributes.some((a) => a.name === name)) {
-    entry.attributes.push({ name, type: local(row.dt?.value), min, max });
+    return;
   }
+
+  addAttributeRow(entry, name, row, min, max);
+}
+
+/** #4053 — sh:in members arrive one row each, so an attribute accumulates its
+ *  allowed values across rows. Split out to keep addPropertyRow under the
+ *  complexity ratchet. */
+function addAttributeRow(
+  entry: AtlasClass,
+  name: string,
+  row: SparqlBinding,
+  min: number,
+  max: number | null
+): void {
+  const member = row.inValue?.value;
+  const existing = entry.attributes.find((a) => a.name === name);
+  if (existing) {
+    if (member !== undefined && !existing.allowed?.includes(member)) {
+      existing.allowed = [...(existing.allowed ?? []), member];
+    }
+    return;
+  }
+  // A shape may constrain values without declaring a datatype (ProductShape's
+  // status does exactly that); an enum IS the type in that case.
+  const declared = local(row.dt?.value);
+  entry.attributes.push({
+    name,
+    type: declared || (member !== undefined ? 'enum' : ''),
+    min,
+    max,
+    ...(member !== undefined ? { allowed: [member] } : {}),
+  });
 }
 
 export function buildClassAtlas(
@@ -91,12 +125,14 @@ export function buildClassAtlas(
 
 const ATLAS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent WHERE { GRAPH <urn:chorus:ontology> {
+SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue WHERE { GRAPH <urn:chorus:ontology> {
   ?domain chorus:definesVocabulary ?class .
   OPTIONAL { ?shp sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
     OPTIONAL { ?b sh:minCount ?min } OPTIONAL { ?b sh:maxCount ?max }
-    OPTIONAL { ?b sh:datatype ?dt } OPTIONAL { ?b sh:class ?rc } }
+    OPTIONAL { ?b sh:datatype ?dt } OPTIONAL { ?b sh:class ?rc }
+    OPTIONAL { ?b sh:in ?inList . ?inList rdf:rest*/rdf:first ?inValue } }
   OPTIONAL { ?class rdfs:subClassOf ?parent FILTER(!isBlank(?parent)) }
 } }`;
 
