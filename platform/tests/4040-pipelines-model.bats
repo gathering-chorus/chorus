@@ -157,3 +157,34 @@ sq() {
   run sq "$SHAPES" 'ASK { c:PipelineRunShape <http://www.w3.org/ns/shacl#property> ?p . ?p <http://www.w3.org/ns/shacl#path> c:forPipeline ; <http://www.w3.org/ns/shacl#minCount> 1 }'
   [[ "$output" == *"yes"* || "$output" == *"true"* ]]
 }
+
+# ── #4047: the POSITIVE write path. #4040 proved only refusals, which is how a
+# door that rejects EVERY run row shipped looking green. This test writes a real
+# row and reads it back; it is the check that would have caught it.
+@test "AC4047 (live) a valid PipelineRun POSTs and reads back with its metrics" {
+  [ "${RUN_INTEGRATION:-}" = "true" ] || skip "integration (live owl-api serve) — RUN_INTEGRATION=true to run"
+  curl -sf --max-time 5 "$OWL_URL/health" >/dev/null || skip "owl-api absent (#3528)"
+  [ "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "$OWL_URL/pipelineruns")" = "200" ] \
+    || skip "route not deployed yet"
+  TOK="$("$REPO/platform/scripts/chorus-identity-token" kade 2>/dev/null)"
+  [ -n "$TOK" ]
+  NAME="probe-4047-$$"
+  run curl -s --max-time 15 -o /dev/null -w '%{http_code}' -X POST "$OWL_URL/pipelineruns" \
+    -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$NAME\",\"forPipeline\":\"pipeline-cicd\",\"traceId\":\"probe-4047\",\"runOutcome\":\"green\",\"runDurationMs\":\"1000\",\"testsRun\":\"3\",\"testsFailed\":\"0\",\"testsStored\":\"3\"}"
+  [ "$output" = "201" ]
+  # read it back — a 201 the collection never shows is not a write
+  run curl -sf --max-time 10 "$OWL_URL/pipelineruns"
+  [[ "$output" == *"$NAME"* ]]
+}
+
+@test "AC4047 nightly emit authenticates and reports the real refusal" {
+  NS="$REPO/platform/scripts/nightly-suites.sh"
+  grep -q 'chorus-identity-token' "$NS"
+  grep -q 'Authorization: Bearer' "$NS"
+  # The mislabel that hid a 401 for a whole night must be gone from the CODE.
+  # Grepping the whole file is the #3734 trap in reverse: the comment explaining
+  # the fix contains the string, so a naive grep fails on a correct file. Strip
+  # comments first, then assert no emitted message still says it.
+  ! sed 's/#.*//' "$NS" | grep -q 'owl-api unreachable' 
+}
