@@ -454,9 +454,87 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
 /// "deploy a change to demo" path; no separate verb needed).
 ///
 /// Returns a summary like `env_up role=silas chorus-api=:3343 chorus-mcp=:3351`.
+/// #4047 — create the werk's in-memory dataset (idempotent: an existing one is
+/// left alone) and load the WERK's model into it, so the variant serves the
+/// shapes and claims of the branch under demo rather than prod's. Best-effort
+/// by design: a store that cannot be prepared must not block env-up, but it
+/// says so loudly instead of silently falling back to prod's data.
+fn prepare_werk_store(role: &str, werk_root: &str) -> String {
+    let ds = werk_dataset_name(role);
+    let base = werk_fuseki_for(role);
+    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
+    let admin = format!("{}/$/datasets", base);
+    let out = Command::new("curl")
+        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
+               "--data", &format!("dbName={}&dbType=mem", ds)])
+        .output();
+    let created = match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        Err(e) => format!("curl-failed:{}", e),
+    };
+    // 200 = created, 409 = already there; both are usable.
+    let deploy = format!("{}/platform/scripts/athena-deploy-model.sh", werk_root);
+    let seeded = if Path::new(&deploy).exists() {
+        let st = Command::new("bash")
+            .arg(&deploy)
+            .env("FUSEKI_GSP", format!("{}/{}/data", base, ds))
+            .env("FUSEKI_QUERY", format!("{}/{}/query", base, ds))
+            .env("FUSEKI_UPDATE", format!("{}/{}/update", base, ds))
+            .env("CHORUS_ROOT", werk_root)
+            .status();
+        match st { Ok(s) if s.success() => "model-seeded".to_string(),
+                   Ok(s) => format!("model-seed-FAILED rc={}", s.code().unwrap_or(-1)),
+                   Err(e) => format!("model-seed-FAILED {}", e) }
+    } else { "model-seed-SKIPPED (no deploy script in werk)".to_string() };
+    // #4047 — the TBox alone is not a demo: instances (pipelines, roles, value
+    // streams) come from the instance-seed-manifest via the DAL, which needs a
+    // minted identity token (env-trust retired #3687). Without this leg the
+    // variant serves empty collections and a model card still cannot be shown.
+    let token = Command::new(format!("{}/platform/scripts/chorus-identity-token", werk_root))
+        .arg(role)
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let instances = if token.is_empty() {
+        "instances-SKIPPED (no identity token)".to_string()
+    } else {
+        let st = Command::new(format!("{}/athena-model", werk_bin_dir(role)))
+            .args(["seed", "--deploy"])
+            .env("CHORUS_FUSEKI", format!("{}/{}", base, ds))
+            .env("CHORUS_ROOT", werk_root)
+            .env("CHORUS_IDENTITY_TOKEN", &token)
+            .output();
+        match st {
+            Ok(o) if o.status.success() =>
+                format!("instances-seeded ({})", String::from_utf8_lossy(&o.stdout).lines().last().unwrap_or("").trim()),
+            Ok(o) => format!("instances-FAILED {}", String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim()),
+            Err(e) => format!("instances-FAILED {}", e),
+        }
+    };
+    format!("store={} create_http={} {} {}", ds, created, seeded, instances)
+}
+
+/// #4047 — drop the werk's dataset at env-down so no per-card store outlives
+/// its demo. In-memory, so the drop is the whole cleanup.
+fn drop_werk_store(role: &str) -> String {
+    let ds = werk_dataset_name(role);
+    let base = werk_fuseki_for(role);
+    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
+    let out = Command::new("curl")
+        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
+               &format!("{}/$/datasets/{}", base, ds)])
+        .output();
+    match out { Ok(o) => format!("store_dropped={} http={}", ds, String::from_utf8_lossy(&o.stdout).trim()),
+                Err(e) => format!("store_drop_failed={}", e) }
+}
+
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
+    // #4047 — the werk's own store, prepared BEFORE the services boot so
+    // athena-make finds a seeded dataset on first query.
+    summary.push(prepare_werk_store(role, werk_root));
     for svc in env_services() {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
@@ -514,6 +592,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let nightly_log = werk_nightly_log_path(werk_root);
         let css_issuer = css_issuer_for_variant();
         let model_bin = format!("{}/athena-model", werk_bin_dir(role));
+        let werk_fuseki = werk_fuseki_for(role);
         let variant_path = variant_path_for(role);
         let chorus_home = std::env::var("CHORUS_HOME")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
@@ -542,10 +621,15 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             // every batch. The variant now names its DAL explicitly (the same
             // deploy-werk bin slot its own binary runs from) and carries prod's
             // PATH shape so subprocesses (curl, jq, node) resolve the same way.
+            // #4047 — CHORUS_FUSEKI points the variant at the WERK's own
+            // dataset (athena-make/lib.rs:41 reads exactly this var, defaulting
+            // to prod's /pods). This is what makes a model change demonstrable
+            // before it lands.
             "athena-make" => vec![
                 ("CSS_ISSUER", css_issuer.as_str()),
                 ("CHORUS_HOME", chorus_home.as_str()),
                 ("CHORUS_MODEL_BIN", model_bin.as_str()),
+                ("CHORUS_FUSEKI", werk_fuseki.as_str()),
                 ("PATH", variant_path.as_str()),
             ],
             _ => vec![],
@@ -669,7 +753,9 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
             &[("svc", &svc.name), ("label", &label)]);
         stopped.push(label);
     }
-    Ok(format!("env_down role={} stopped={}", role, stopped.join(",")))
+    // #4047 — the werk's store dies with its env; nothing per-card outlives the demo.
+    let dropped = drop_werk_store(role);
+    Ok(format!("env_down role={} stopped={} {}", role, stopped.join(","), dropped))
 }
 
 // --- unit tests for the pure helpers (no IO, no subprocess) ---
@@ -684,6 +770,23 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
 pub fn variant_path_for(role: &str) -> String {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/jeffbridwell".to_string());
     format!("{}:{}/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", werk_bin_dir(role), home)
+}
+
+/// #4047 — the werk's OWN Fuseki dataset. Until this, the demo variant ran its
+/// own athena-make but pointed it at prod's `/pods`, so a card that CHANGES THE
+/// MODEL could never be demonstrated: the variant served yesterday's shapes and
+/// the only way to see the change was to land it. That is the gap Jeff's
+/// 2026-08-26 rule ("no go if you cannot show it working in demo") kept hitting.
+/// One in-memory dataset per role, created at env-up and dropped at env-down —
+/// isolated by construction, so a model deploy into it can never touch prod.
+pub fn werk_dataset_name(role: &str) -> String {
+    format!("werk-{}", role)
+}
+
+pub fn werk_fuseki_for(role: &str) -> String {
+    let base = std::env::var("CHORUS_FUSEKI_BASE")
+        .unwrap_or_else(|_| "http://localhost:3030".to_string());
+    format!("{}/{}", base.trim_end_matches('/'), werk_dataset_name(role))
 }
 
 pub fn css_issuer_for_variant() -> String {
@@ -833,5 +936,41 @@ mod tests {
         // or env values.
         assert_eq!(xml_escape("a&b"), "a&amp;b");
         assert_eq!(xml_escape("<x>"), "&lt;x&gt;");
+    }
+}
+
+#[cfg(test)]
+mod store_4047 {
+    use super::*;
+
+    /// #4047 — the variant must point at the WERK's dataset, never prod's
+    /// /pods. This is the whole reason a model change can be demoed.
+    #[test]
+    fn werk_fuseki_is_per_role_and_never_pods() {
+        let u = werk_fuseki_for("kade");
+        assert!(u.ends_with("/werk-kade"), "{}", u);
+        assert!(!u.contains("/pods"), "a werk store must never be prod's dataset: {}", u);
+        assert_ne!(werk_fuseki_for("kade"), werk_fuseki_for("silas"),
+            "two roles demoing at once must not share a store");
+    }
+
+    /// #3734 negative proof: if the athena-make env block ever loses
+    /// CHORUS_FUSEKI, the variant silently reads prod again — exactly the
+    /// failure this card exists to end. The plist must carry it.
+    #[test]
+    fn plist_carries_chorus_fuseki_or_the_variant_reads_prod() {
+        let f = werk_fuseki_for("kade");
+        let with = generate_plist(
+            &env_services().into_iter().find(|s| s.name == "athena-make").unwrap(),
+            "kade", "/tmp/werk", 3364,
+            &[("CHORUS_FUSEKI", f.as_str())]);
+        assert!(with.contains("<key>CHORUS_FUSEKI</key>"), "{}", with);
+        assert!(with.contains(&f), "{}", with);
+        // the violation: same plist without the var — the guard must see it missing
+        let without = generate_plist(
+            &env_services().into_iter().find(|s| s.name == "athena-make").unwrap(),
+            "kade", "/tmp/werk", 3364, &[]);
+        assert!(!without.contains("CHORUS_FUSEKI"),
+            "fixture is bogus if the var appears without being passed");
     }
 }
