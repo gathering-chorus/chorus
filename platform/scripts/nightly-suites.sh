@@ -414,6 +414,14 @@ run_cargo_lane() {
         echo "---"
         # the unit's own lines: its nightly-unit row plus anything naming it
         printf '%s\n' "$out" | grep -F -- "$unit" || echo "(no lines in the lane output named this unit)"
+        # #3484 restored: the unit slice above carries the VERDICT but not the
+        # ERROR. A compiler line ("error[E0432]: unresolved import ...") never
+        # names the unit, so #4004's grep dropped exactly the text the reason
+        # field exists to quote, and every red read as its own summary row.
+        # Keep the slice distinct per unit AND carry the diagnosis.
+        echo "--- error lines from this lane ---"
+        printf '%s\n' "$out" | grep -iE 'error|panic|assertion|unresolved' | tail -20 \
+          || echo "(no error-shaped lines in the lane output)"
       } > "$_flog" 2>/dev/null || true
     else
       rm -f "$_flog" 2>/dev/null || true

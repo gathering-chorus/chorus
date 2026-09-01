@@ -31,7 +31,7 @@ count() { # $1 = graph, $2 = WHERE body
 
 teardown() {
   # shellcheck disable=SC1091
-  source "${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+  source "${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
 }
 
@@ -80,7 +80,7 @@ teardown() {
   # treats 401 as "loaded" would then ask an EMPTY graph and read 0 dangling,
   # passing for the wrong reason. So the load is asserted before the query runs.
   # shellcheck disable=SC1091
-  source "${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
+  source "${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
   code=$(printf '%s\n' \
     '@prefix chorus: <https://jeffbridwell.com/chorus#> .' \
     '@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .' \

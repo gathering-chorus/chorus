@@ -35,7 +35,10 @@
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # shellcheck source=/dev/null
 . "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-SCRIPT="$ROOT/platform/scripts/chorus-model-deploy.sh"
+# #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
+# athena-deploy-model.sh. The old path still resolved to nothing, so all eight
+# tests below failed on exit 127 (command not found) rather than on the schema.
+SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
 TEST_GRAPH="urn:chorus:ontology-test-bats-3540"
 Q="http://localhost:3030/pods/query"

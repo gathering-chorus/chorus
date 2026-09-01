@@ -15,7 +15,9 @@ setup() {
   CT="$REPO/roles/silas/ontology/chorus.ttl"
   VSI="$REPO/designing/data/value-stream-instances.ttl"
   VSS="$REPO/designing/data/value-stream-step-instances.ttl"   # #3904 — the #3839 split
-  DEPLOY="$REPO/platform/scripts/chorus-model-deploy.sh"
+  # #3991 repoint, missed here: #3561 renamed chorus-model-deploy.sh →
+  # athena-deploy-model.sh.
+  DEPLOY="$REPO/platform/scripts/athena-deploy-model.sh"
   OWL_URL="${OWL_URL:-http://localhost:3360}"
 }
 

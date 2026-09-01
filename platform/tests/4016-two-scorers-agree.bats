@@ -16,9 +16,11 @@
 
 @test "NEGATIVE PROOF: the rust runner treats exit 3 as refused, everything else as failure" {
   cd "$BATS_TEST_DIRNAME/../services/werk-test"
-  run grep -c 'o.status.code() == Some(3)' src/main.rs
+  # The two lines were extracted into locals after #4016 landed; grep the
+  # expressions that exist, not the inlined form they used to have.
+  run grep -c 'let refused = code == Some(3);' src/main.rs
   [ "$output" -ge 1 ]
-  run grep -c 'o.status.success() || refused' src/main.rs
+  run grep -c 'let ok = success || refused;' src/main.rs
   [ "$output" -ge 1 ]
 }
 

@@ -4,7 +4,7 @@
 #
 # The 2026-08-31 incident: fuseki-backup's plist shipped nightly snapshots to
 # /Volumes/VideosNew/... while restore-drill.sh fell back to the abandoned
-# /Users/jeffbridwell/Backups/... lot — 24 minutes restoring a 16-day-old
+# $HOME/Backups/... lot — 24 minutes restoring a 16-day-old
 # leftover, then a red that read as "backups dead". Two fixes under test here:
 #   1. chorus-env-setup.sh is the ONE home for FUSEKI_BACKUP_DEST/REMOTE.
 #   2. restore-drill.sh's drill_lot_check refuses when the newest
@@ -23,11 +23,11 @@ setup() {
   run bash -c "unset FUSEKI_BACKUP_DEST; source '$SCRIPTS/chorus-env-setup.sh' >/dev/null 2>&1; printf %s \"\$FUSEKI_BACKUP_DEST\""
   [ "$status" -eq 0 ]
   [ -n "$output" ]
-  [[ "$output" != "/Users/jeffbridwell/Backups/library/fuseki" ]]
+  [[ "$output" != "$HOME/Backups/library/fuseki" ]]
 }
 
 @test "NEGATIVE PROOF: agent dest outside the drill's base → check FAILS" {
-  run drill_lot_check "/Users/jeffbridwell/Backups/library/fuseki" \
+  run drill_lot_check "$HOME/Backups/library/fuseki" \
     "/Volumes/VideosNew/backups/library/fuseki/fuseki-pods-2026-08-31-030001"
   [ "$status" -eq 1 ]
 }
