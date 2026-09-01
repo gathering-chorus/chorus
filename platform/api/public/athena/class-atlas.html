@@ -49,8 +49,20 @@ mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutra
 // mermaid identifiers must be bare words; labels carry the truth.
 const ident = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_');
 
-function domainDiagram(dom) {
+// #4053 AC3 — a cross-domain target draws as an EMPTY box, so from this diagram
+// you cannot tell a rich class from a stub. Carry each class's size across the
+// whole atlas and stamp it on the referenced box.
+function classSizes(atlas) {
+  const sizes = new Map();
+  for (const d of atlas.domains) {
+    for (const c of d.classes) sizes.set(c.name, { props: c.attributes.length + c.edges.length, home: d.name });
+  }
+  return sizes;
+}
+
+function domainDiagram(dom, sizes) {
   const L = ['classDiagram'];
+  const drawn = new Set(dom.classes.map((c) => c.name));
   for (const cls of dom.classes) {
     L.push(`class ${ident(cls.name)} {`);
     for (const a of cls.attributes) {
@@ -79,6 +91,15 @@ function domainDiagram(dom) {
     for (const e of cls.edges) {
       const arrow = e.crossDomain ? '..>' : '-->';
       L.push(`${ident(cls.name)} ${arrow} "${e.multiplicity}" ${ident(e.to)} : ${ident(e.name)}`);
+      // #4053 AC3 — say how big the target is and where it lives, once, so an
+      // empty box means "drawn elsewhere", never "nothing there".
+      if (!drawn.has(e.to) && sizes && sizes.has(e.to)) {
+        drawn.add(e.to);
+        const s = sizes.get(e.to);
+        L.push(`class ${ident(e.to)} {`);
+        L.push(`  «${s.props} properties · ${s.home}»`);
+        L.push('}');
+      }
     }
   }
   return L.join('\n');
@@ -109,6 +130,7 @@ function domainDiagram(dom) {
       ' — served status and row counts are UNKNOWN below, not absent.';
     out.appendChild(warn);
   }
+  const SIZES = classSizes(atlas);
   for (const dom of atlas.domains) {
     const a = document.createElement('a');
     a.href = '#dom-' + ident(dom.name);
@@ -129,7 +151,7 @@ function domainDiagram(dom) {
     sec.appendChild(h); sec.appendChild(div);
     out.appendChild(sec);
     try {
-      const { svg } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom));
+      const { svg } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom, SIZES));
       div.innerHTML = svg;
     } catch (e) {
       div.textContent = 'diagram failed for ' + dom.name + ': ' + e.message;
