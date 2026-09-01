@@ -38,20 +38,31 @@ count() { # $1 = WHERE body -> prints integer
   done
 }
 
-@test "spine and pulse: pulse is a typed product; spine is NOT (it is a domain)" {
-  # #3915 — asserting spine-as-product was the same pre-mint assumption. Live:
-  # pulse is one of the 8 served products; spine is modeled as a DOMAIN. This
-  # asserts the distinction rather than the old shape, so a regression in
-  # either direction reds.
+@test "pulse and spine are both typed products" {
+  # #3915 asserted spine was a DOMAIN, not a product. Wren minted the spine
+  # Product on 2026-09-01 (#4045) — a deliberate model change, so the old
+  # assertion is stale, not a regression. Both are products now.
   [ "$(ask 'chorus:pulse a chorus:Product')" = "True" ]
-  [ "$(ask 'chorus:spine a chorus:Product')" = "False" ]
+  [ "$(ask 'chorus:spine a chorus:Product')" = "True" ]
 }
 
-@test "#3915: exactly 8 products are served (a silent disappearance still reds)" {
-  n="$(curl -sf --max-time 10 http://localhost:3360/products \
-    | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("data",[])))' 2>/dev/null)"
-  [ -n "$n" ] || skip "UNMEASURABLE: owl-api not answering"
-  [ "$n" -eq 8 ]
+@test "#3915: the served products are exactly the named set (a silent disappearance still reds)" {
+  # Was `-eq 8`, which reds on any deliberate addition and cannot say WHICH
+  # product vanished. Naming the set keeps the disappearance proof and turns an
+  # intentional change into a one-line edit that states what changed.
+  want="athena borg chorus clearing convergence loom pulse spine werk"
+  got="$(curl -sf --max-time 10 http://localhost:3360/products \
+    | python3 -c 'import json,sys; d=json.load(sys.stdin).get("data",[]); print(" ".join(sorted(x.get("name","") for x in d)))' 2>/dev/null)"
+  [ -n "$got" ] || skip "UNMEASURABLE: owl-api not answering"
+  [ "$got" = "$want" ]
+}
+
+@test "NEGATIVE PROOF: the named-set check REDS when a product disappears" {
+  # #3734 — the set comparison must be able to fail. Drop one name from the
+  # served side and prove the same comparison rejects it.
+  want="athena borg chorus clearing convergence loom pulse spine werk"
+  got="athena borg chorus clearing convergence loom pulse spine"
+  [ "$got" != "$want" ]
 }
 
 @test "quality-product and the product-borg dup are retired (gone)" {
