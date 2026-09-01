@@ -28,6 +28,27 @@ last_pass_epoch() {
   date -j -f '%Y-%m-%dT%H:%M:%S' "$ts" '+%s' 2>/dev/null || echo ""
 }
 
+# #4043 — backup FRESHNESS is its own daily red, separate from drill cadence:
+# a backup agent that stops producing must page within 2 days, not wait for the
+# weekly drill. Reads the newest ops.backup.fuseki.completed from the spine.
+backup_fresh_check() { # $1=spine file, $2=now epoch, $3=max age hours → 0 fresh, 1 stale, 0 if never
+  local spine="$1" now="$2" max_h="$3" line ts ep
+  line="$(grep -a '"ops.backup.fuseki.completed"' "$spine" 2>/dev/null | tail -1)"
+  [ -n "$line" ] || return 0   # never backed up on this box — drill's no-backup path owns that
+  ts="$(printf '%s' "$line" | sed -E 's/.*"timestamp":"([^"]+)".*/\1/' | cut -c1-19)"
+  ep="$(date -j -f '%Y-%m-%dT%H:%M:%S' "$ts" '+%s' 2>/dev/null || echo 0)"
+  [ "${ep:-0}" -gt 0 ] || return 0
+  [ $(( (now - ep) / 3600 )) -le "$max_h" ]
+}
+
+# Sourceable for tests (#3528): functions above, work below.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0 2>/dev/null || true; fi
+
+if ! backup_fresh_check "$SPINE" "$(date +%s)" "${FUSEKI_BACKUP_MAX_AGE_HOURS:-48}"; then
+  echo "restore-drill: RED — newest fuseki backup on the spine is older than ${FUSEKI_BACKUP_MAX_AGE_HOURS:-48}h (backup agent stopped producing)"
+  exit 1
+fi
+
 LAST="$(last_pass_epoch)"
 NOW="$(date +%s)"
 if [ -n "$LAST" ]; then

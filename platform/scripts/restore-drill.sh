@@ -39,8 +39,12 @@
 # not met: no backup, no disk, box too loaded) — never a false red (#3753).
 set -uo pipefail
 
+# #4043 — the backup lot has ONE home: chorus-env-setup.sh. The 08-31 red was
+# this script falling back to the abandoned lot while the agent's plist shipped
+# nightly snapshots elsewhere — the drill graded a 16-day-old leftover.
+. "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh" >/dev/null 2>&1 || true
 REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
-DEST_BASE="${FUSEKI_BACKUP_DEST:-/Users/jeffbridwell/Backups/library/fuseki}"
+DEST_BASE="${FUSEKI_BACKUP_DEST:?FUSEKI_BACKUP_DEST unset — chorus-env-setup.sh missing?}"
 LIVE_STORE="${FUSEKI_LIVE_STORE:-$HOME/.gathering/data/fuseki-pods}"
 LIVE_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 SCRATCH_BASE="${RESTORE_DRILL_SCRATCH:-/tmp/restore-drill}"
@@ -56,6 +60,20 @@ GRAPHS="urn:chorus:ontology urn:chorus:instances urn:chorus:domains:security"
 log(){ echo "$(date '+%F %T') [restore-drill] $*"; }
 spine(){ "$CHORUS_LOG" "$1" "${DEPLOY_ROLE:-system}" "${@:2}" 2>/dev/null || true; }
 unmeasurable(){ log "UNMEASURABLE: $*"; spine ops.restore.drill verdict=unmeasurable reason="$1"; exit 2; }
+
+# #4043 — the drill must grade the lot the backup agent actually fills. $2 is
+# the dest= of the newest ops.backup.fuseki.completed spine event; if it lives
+# outside the drill's base, the drill is pointed at the wrong lot and any
+# verdict it produces grades the wrong artifact. Empty $2 (no completed event
+# on this box's spine, e.g. fresh install) is not a mismatch.
+drill_lot_check(){
+  local base="$1" agent_dest="$2"
+  [ -n "$agent_dest" ] || return 0
+  case "$agent_dest" in "$base"/*) return 0 ;; *) return 1 ;; esac
+}
+
+# Sourceable for tests (#3528): functions above, work below.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0 2>/dev/null || true; fi
 
 SCRATCH=""
 cleanup(){
@@ -74,8 +92,28 @@ esac
 
 # ── Preconditions (UNMEASURABLE, not red) ────────────────────────────────────
 ssh -o ConnectTimeout=10 "$REMOTE" true 2>/dev/null || unmeasurable "bedroom-unreachable"
-NEWEST="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -t '$DEST_BASE' 2>/dev/null | head -1")"
+# Newest by NAME, not mtime — rsync preserves source times, so `ls -t` can rank
+# an older snapshot first (same trap as the #3837 mtime-prune; dates in the
+# dir names sort correctly lexically).
+NEWEST="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -1 '$DEST_BASE' 2>/dev/null | sort -r | head -1")"
 [ -n "$NEWEST" ] || unmeasurable "no-backup-on-bedroom"
+
+# #4043 — wrong-lot guard: the newest ops.backup.fuseki.completed names where
+# the agent actually writes; grading any other lot is a wrong answer, red or
+# green. This is what the 08-31 red really was.
+AGENT_DEST="$(grep -a '"ops.backup.fuseki.completed"' "${CHORUS_SPINE:-$HOME/.chorus/chorus.log}" 2>/dev/null | tail -1 | sed -nE 's/.*dest=([^ ",}]+).*/\1/p')"
+if ! drill_lot_check "$DEST_BASE" "$AGENT_DEST"; then
+  log "FAILED: wrong lot — agent writes to '$AGENT_DEST' but the drill reads '$DEST_BASE'"
+  spine ops.restore.drill verdict=fail reason=wrong-lot drill_base="$DEST_BASE" agent_dest="$AGENT_DEST"
+  exit 1
+fi
+# And the drill must be able to SEE the agent's newest snapshot — a lot that
+# matches by path but is missing last night's write is stale the same way.
+if [ -n "$AGENT_DEST" ] && ! ssh -o ConnectTimeout=10 "$REMOTE" "test -d '$AGENT_DEST'" 2>/dev/null; then
+  log "FAILED: agent's newest snapshot '$AGENT_DEST' not present on $REMOTE"
+  spine ops.restore.drill verdict=fail reason=agent-snapshot-missing agent_dest="$AGENT_DEST"
+  exit 1
+fi
 FREE_GB="$(df -g "${TMPDIR:-/tmp}" | tail -1 | awk '{print $4}')"
 [ "${FREE_GB:-0}" -ge "$MIN_FREE_GB" ] || unmeasurable "insufficient-scratch-space (${FREE_GB}G < ${MIN_FREE_GB}G)"
 command -v fuseki-server >/dev/null 2>&1 || FUSEKI_BIN=""

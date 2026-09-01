@@ -241,5 +241,14 @@ if [ -n "${CHORUS_ROLE:-}" ] && [ -f "$HOME/.chorus/identity/${CHORUS_ROLE}/cred
   }
 fi
 
+# --- fuseki backup lot (#4043) -----------------------------------------------
+# The ONE home for where fuseki backups live. Before this, the destination was
+# set only in com.gathering.fuseki-backup's plist while restore-drill.sh fell
+# back to the abandoned lot (/Users/jeffbridwell/Backups/...) — so the drill
+# spent 24 minutes restoring a 16-day-old leftover and graded the wrong thing
+# (2026-08-31). Writer and drill both read these; per-box override via env.
+export FUSEKI_BACKUP_REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
+export FUSEKI_BACKUP_DEST="${FUSEKI_BACKUP_DEST:-/Volumes/VideosNew/backups/library/fuseki}"
+
 # --- cleanup tmp vars --------------------------------------------------------
 unset __chorus_env_self __chorus_env_dir __chorus_env_root
