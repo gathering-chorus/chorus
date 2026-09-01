@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine — Service Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 1in; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #059669; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  h4 { font-size: 0.92em; margin-top: 1em; color: #065f46; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  .promise { background: #d1fae5; padding: 12px 16px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #059669; font-style: italic; font-size: 0.9em; }
+  .source-note { background: #eff6ff; border-left: 4px solid #2563eb; padding: 10px 14px; margin: 16px 0; border-radius: 4px; font-size: 0.85em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #d1fae5; color: #065f46; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.88em; }
+  pre { background: #f6f8fa; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 14px; margin: 10px 0; overflow-x: auto; font-size: 0.82em; line-height: 1.4; }
+  .component { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; margin: 12px 0; }
+  .component h3 { margin-top: 0; color: #065f46; }
+  .open-q { background: #fef9c3; border-left: 4px solid #ca8a04; padding: 10px 14px; margin: 12px 0; border-radius: 4px; font-size: 0.86em; }
+  .open-q strong { color: #854d0e; }
+  ul, ol { margin: 8px 0 12px 20px; font-size: 0.88em; }
+  li { margin-bottom: 4px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; font-size: 0.82em; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for the Spine</strong> — the event log. Related: <a href="/designing/docs/logs-service-design.html">Logs</a> (the emit substrate) · <a href="/designing/docs/pulse-service-design.md">Pulse</a> (a reader) · <a href="/designing/docs/chorus-spine.html">The Chorus Spine — Value Stream</a> (<em>a different sense of the word — see below</em>).</div>
+
+<h1>Spine <span>— Service Design</span></h1>
+<p class="date">2026-09-01 — Wren (#4044). Origin: Jeff, this morning — <em>"mcp is ~ spine at its core tho all products are visible via it"</em> — followed by <em>"do we have a spine service design"</em>. We did not. Thirty-five service designs existed and none of them was the thing every other one writes to. This is that doc.</p>
+
+<div class="source-note">
+<strong>Source of truth.</strong> This doc narrates <em>structure, contracts, reach, and intent</em>. It duplicates no field definitions.
+<ul style="margin-top: 6px;">
+  <li><code>designing/schemas/spine-events.json</code> — the canonical registry: 345 event types, each with its vertebra, join keys, and field definitions.</li>
+  <li><code>~/.chorus/chorus.log</code> — the log itself. Append-only, never rotated (DEC, Jeff, 2026-07-23).</li>
+  <li><a href="/designing/docs/logs-service-design.html">logs-service-design.html</a> — the <em>writer's</em> contract (adapters, envelope, trace lifecycle). This doc owns everything downstream of the write.</li>
+</ul>
+</div>
+
+<div class="promise">
+<strong>Designed target state.</strong> The spine is the single append-only record of everything the team does, and it is <em>reachable</em>. Four guarantees: (1) <strong>one log</strong> — every emitter, in every language, appends to one file; there is no second spine; (2) <strong>one registry</strong> — an event that is not in <code>spine-events.json</code> cannot be written, so the registry enumerates what the system can do; (3) <strong>unbounded retention, bounded-by-query reach</strong> — the file is never rotated, and readers ask for a <em>time range</em> that the substrate can actually serve, rather than silently receiving whatever fits in a fixed byte tail; (4) <strong>the spine and MCP are one surface seen from two sides</strong> — MCP is the door an action goes through, the spine is the record that it happened, and neither list is authored independently of the other.</div>
+
+<h2>First: the word means two things</h2>
+
+<p>Chorus uses "spine" for two unrelated structures, and both have docs in the catalog. Any conversation about the spine should say which one it means.</p>
+
+<table>
+<tr><th>Sense</th><th>What it is</th><th>Doc</th><th>Owns the word here?</th></tr>
+<tr><td><strong>Spine as value stream</strong></td><td>How work flows through the team — Jeff pulls, the three roles carry Capturing · Directing · Designing / Building / Proving. "He is not the relay between roles — the spine is."</td><td><a href="/designing/docs/chorus-spine.html">chorus-spine.html</a> (2026-04-24)</td><td>No</td></tr>
+<tr><td><strong>Spine as event log</strong></td><td>The append-only JSONL record at <code>~/.chorus/chorus.log</code>. Every verb, hook decision, deploy, nudge, and demo writes a line. The memory layer.</td><td><em>this doc</em></td><td><strong>Yes</strong></td></tr>
+</table>
+
+<p>The two are related — the event log is how the value stream becomes observable — but they are not the same artifact, and the older doc has the better claim on the metaphor. Where this doc says "the spine" it means the log.</p>
+
+<h2>Architecture</h2>
+
+<pre class="mermaid">
+flowchart LR
+  subgraph W["Writers — three adapters, one envelope"]
+    B["bash<br/>chorus-log"]
+    T["TypeScript<br/>SpineEmitter (Pino)"]
+    R["Rust<br/>chorus-hooks"]
+  end
+  REG["spine-events.json<br/>345 types"]
+  LOG[("~/.chorus/chorus.log<br/>append-only, never rotated")]
+  subgraph RD["Readers"]
+    API["chorus-api<br/>/context/spine · /loom-metrics · /werk/activity"]
+    PULSE["pulse<br/>delivery + session registry"]
+    MCP["chorus-mcp<br/>werk phase, verb results"]
+    SDK["chorus-sdk<br/>subscribe()"]
+    LOKI["Loki / Grafana<br/>via promtail"]
+  end
+  B --> LOG
+  T --> LOG
+  R --> LOG
+  REG -. declares shape .-> W
+  LOG --> API
+  LOG --> PULSE
+  LOG --> MCP
+  LOG --> SDK
+  LOG --> LOKI
+</pre>
+
+<h2>Contracts</h2>
+
+<h3>The envelope</h3>
+<p>Every line is one JSON object. The registry declares ten envelope fields — <code>timestamp</code>, <code>level</code>, <code>appName</code>, <code>component</code>, <code>event</code>, <code>role</code>, <code>product</code>, <code>domain</code>, <code>value_stream</code>, <code>value_stream_step</code> — and each event adds its own. Two further fields are the join keys that make the log a causal record rather than a pile:</p>
+<ul>
+  <li><code>trace</code> — transaction scope. One filter returns an entire flow: the werk run, its hook decisions, its deploy, its demo.</li>
+  <li><code>card_id</code> — work scope. Threads every event produced in service of one card, across roles and days.</li>
+</ul>
+
+<h3>The registry is the enumeration</h3>
+<p>Each of the 345 entries declares a <code>vertebra</code> (which stage of the value stream the event belongs to), its join <code>keys</code>, a prose <code>description</code>, and per-field meanings. This is what makes the registry more than validation: <strong>it is the list of things the system is able to do</strong>, in the system's own words. That property is the basis of the MCP relationship below, and it is why an unregistered emit is a defect rather than a warning.</p>
+
+<h3>Retention — never rotate</h3>
+<p>Jeff's ruling (2026-07-23, after a rotation destroyed reach): the spine is a memory layer, not an operational log. <strong>It is never rotated and never truncated.</strong> Disk is cheaper than a lost month. The file currently holds 1.71&nbsp;GB / 2,097,133 events back to 2026-07-23 — the date of the rotation that prompted the ruling.</p>
+
+<h2>Reach — the gap between retained and readable</h2>
+
+<p>Retention is honoured. Reach is not. Every <code>chorus-api</code> spine reader calls <code>readFileTail(chorus.log, SPINE_TAIL_BYTES)</code> with <code>SPINE_TAIL_BYTES = 4&nbsp;MB</code> (<code>platform/api/src/server.ts:1115</code>). Measured on the live log at 2026-09-01 07:05:</p>
+
+<table>
+<tr><th>Property</th><th>Value</th></tr>
+<tr><td>Retained on disk</td><td>1.71 GB · 2,097,133 events · back to 2026-07-23 (40 days)</td></tr>
+<tr><td>Readable through chorus-api</td><td>4 MB · 5,313 events · back to 03:47 the same morning (<strong>3h 17m</strong>)</td></tr>
+<tr><td>Proportion of the record reachable</td><td>~0.25%</td></tr>
+</table>
+
+<div class="gap"><strong>Gap 1 — the range tabs are decoration.</strong> <code>/api/loom-metrics</code> backs the Team Pulse 7d / 30d / 90d / All buttons and reads the same 4 MB tail. Every one of those buttons returns the same ~3 hours. The page is honest about what it fetched, but the control implies a window the substrate cannot serve.</div>
+
+<div class="gap"><strong>Gap 2 — "never rotate" currently buys nothing.</strong> The ruling preserves 40 days of history that no served surface can reach. The value of the ruling is unrealised until a reader can ask for a time range instead of a byte count.</div>
+
+<h3>Why a byte tail, and what replaces it</h3>
+<p>The byte tail is a correct answer to a real problem — an unbounded read of a 1.7&nbsp;GB file on the request path would block the event loop, which is the failure class already firing nightly. The replacement is not "read more"; it is <strong>read by time, from an index</strong>: a periodically-built offset index (day → byte offset) so a reader seeks to the start of its window and scans forward, keeping the per-request cost bounded by the <em>window</em> rather than by the file. Until that exists, every spine-derived metric should state the window it actually covers.</p>
+
+<h2>Writers</h2>
+
+<div class="component">
+<h3>Three adapters, one shape</h3>
+<p>bash emits via <code>chorus-log &lt;event&gt; &lt;role&gt; k=v…</code>; TypeScript via the <code>SpineEmitter</code> closure over Pino; Rust via the <code>chorus-hooks</code> daemon. Raw <code>echo</code>, <code>println!</code>, and <code>console.log</code> are forbidden for spine events — the adapter is what guarantees the envelope. Full adapter contracts live in <a href="/designing/docs/logs-service-design.html">logs-service-design.html</a>.</p>
+</div>
+
+<div class="gap"><strong>Gap 3 — there is a second spine, and nothing reads it.</strong> <code>platform/chorus-sdk/src/emit.ts</code> resolves <code>LOG_FILE</code> to <code>platform/logs/chorus.log</code>, while every reader listed above reads <code>~/.chorus/chorus.log</code>. The SDK file exists, is 106 KB, and holds 485 events across 4 distinct types (mostly <code>session.context.built</code>), most recently at 03:50 today. Anything emitted through the SDK is written correctly, validated correctly, and <em>invisible to every consumer</em>. This is the single most consequential defect this design surfaces: guarantee (1), one log, does not hold today.</div>
+
+<h2>Readers</h2>
+
+<table>
+<tr><th>Reader</th><th>Surface</th><th>Window</th></tr>
+<tr><td>chorus-api</td><td><code>/api/chorus/context/spine</code> — the boot envelope + agent context</td><td>4 MB tail</td></tr>
+<tr><td>chorus-api</td><td><code>/api/loom-metrics</code> — Team Pulse throughput, deploys, demos</td><td>4 MB tail</td></tr>
+<tr><td>chorus-api</td><td><code>/api/werk/activity</code> — the werk cockpit feed</td><td>4 MB tail, response capped at 500</td></tr>
+<tr><td>pulse</td><td>delivery worker + session registry</td><td>tail follow</td></tr>
+<tr><td>chorus-mcp</td><td>werk phase resolution, verb outcomes</td><td>targeted grep</td></tr>
+<tr><td>chorus-sdk</td><td><code>subscribe(filter, cb)</code> — polled tail, 1 s</td><td>from current size forward</td></tr>
+<tr><td>Loki / Grafana</td><td>promtail scrape → LogQL</td><td>Loki's own retention</td></tr>
+</table>
+
+<p>Across the repo, 105 source files reference <code>chorus.log</code>. That count is itself an argument for this document: a substrate with a hundred call sites and no design is a substrate whose contract lives in whoever last read the code.</p>
+
+<h2>The spine and MCP — one surface, two faces</h2>
+
+<p>Jeff's framing, this morning: <em>"mcp is ~ spine at its core tho all products are visible via it."</em> Stated precisely:</p>
+
+<ul>
+  <li><strong>MCP is the door</strong> — the typed, governed entry point for every action an agent can take.</li>
+  <li><strong>The spine is the record</strong> — what came through the door, in order, with its trace.</li>
+</ul>
+
+<p>If that duality holds, then the tool list and the event registry describe the same system from opposite ends, and each should be derivable from the other. Today they are authored independently: ~57 tool definitions hand-maintained in <code>platform/mcp-server/src/server.ts</code>, 345 event types hand-maintained in <code>spine-events.json</code>, with no check that a tool leaves an event or that an event has a door.</p>
+
+<div class="open-q"><strong>The test this design proposes.</strong> For every MCP tool, name the spine event it emits; for every event whose vertebra implies an action, name the tool that produces it. Both directions produce a list of holes, and the size of those lists is the honest measure of "all products are visible via MCP" — a claim we currently assert and never check.</div>
+
+<h2>As-Is — 2026-09-01</h2>
+<ul>
+  <li>Retention ruling honoured: 1.71 GB, never rotated, 40 days retained.</li>
+  <li>Registry healthy: 345 types, each with vertebra, keys, and field docs.</li>
+  <li>Writer normalisation good: three adapters, one envelope, enforced by review and by the emit gate.</li>
+  <li>Reach broken: 0.25% of the record is served; range controls over spine data are decorative.</li>
+  <li>Log unity broken: an SDK-written second file that no consumer reads.</li>
+  <li>MCP↔spine correspondence: asserted, never verified.</li>
+</ul>
+
+<h2>Path to close</h2>
+<ol>
+  <li><strong>One log.</strong> Point <code>chorus-sdk</code>'s <code>LOG_FILE</code> at the same path every reader uses (<code>CHORUS_LOG</code>, defaulting to <code>~/.chorus/chorus.log</code>), and add a check that fails when two spine paths are writable — with a fixture proving it fails, per the negative-proof rule (#3734).</li>
+  <li><strong>Read by time.</strong> Build the day→offset index; give the spine readers a <code>since</code> parameter; make the Team Pulse range buttons mean what they say. Until then, every spine-derived number states its true window.</li>
+  <li><strong>Correspondence check.</strong> Emit the tool↔event mapping as data and report both hole lists. This is the mechanical form of Jeff's claim.</li>
+  <li><strong>Register this doc</strong> in the doc catalog under Architecture &amp; Design, and cross-link it from <code>chorus-spine.html</code> and <code>logs-service-design.html</code> with the two-senses note.</li>
+</ol>
+
+<h2>Not in scope</h2>
+<ul>
+  <li>Field-level event schema — owned by <code>spine-events.json</code>.</li>
+  <li>Adapter internals and promtail scrape config — owned by <a href="/designing/docs/logs-service-design.html">Logs</a>.</li>
+  <li>The value-stream sense of "spine" — owned by <a href="/designing/docs/chorus-spine.html">chorus-spine.html</a>.</li>
+  <li>Pulse's own delivery semantics — owned by the Pulse service and product designs.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li><a href="/designing/docs/logs-service-design.html">Logs — Service Design</a> (#2848) — the writer's contract.</li>
+  <li><a href="/designing/docs/chorus-spine.html">The Chorus Spine — Value Stream Architecture</a> — the other sense.</li>
+  <li><a href="/designing/docs/spine-observability.html">Spine Observability — WF-057 debrief</a> (2026-02-24) — the first measurement of dark events; 11 of 17 signals invisible.</li>
+  <li><code>designing/schemas/spine-events.json</code> — the registry.</li>
+  <li><code>platform/api/src/server.ts:1115</code> — <code>SPINE_TAIL_BYTES</code>, the reach limit.</li>
+  <li><code>platform/chorus-sdk/src/emit.ts:9</code> — the second log path.</li>
+</ul>
+
+<div class="footer">Chorus · designing/docs/spine-service-design.html · #4044 · Wren · 2026-09-01</div>
+</body>
+</html>

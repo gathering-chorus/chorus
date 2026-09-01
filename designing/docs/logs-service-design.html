@@ -39,7 +39,7 @@
 <link rel="stylesheet" href="/css/doc-responsive.css">
 </head>
 <body>
-<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for Logs.</strong> Related: <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> · <a href="/designing/docs/version-control-service-design.html">Version Control</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
+<div style="background:#e0e7ff;border:1px solid #6366f1;border-radius:6px;padding:12px 16px;margin:20px 0;font-family:-apple-system,sans-serif;font-size:0.9em"><strong>Service design for Logs.</strong> This doc owns the <em>writer's</em> contract — adapters, envelope, trace lifecycle. Everything downstream of the write (retention, reach, readers, the MCP correspondence) is owned by <a href="/designing/docs/spine-service-design.html">Spine — Service Design</a>. Related: <a href="/designing/docs/build-and-deploy-service-design.html">Build + Deploy</a> · <a href="/designing/docs/version-control-service-design.html">Version Control</a> · <a href="/designing/docs/nudge-service-design.html">Nudge</a>.</div>
 
 <h1>Logs <span>— Service Design</span></h1>
 <p class="date">2026-05-08 — Silas (#2848). Names logs as a first-class Chorus domain. Origin: Jeff (2026-05-08): <em>"we are trying to normalize our interaction with logs."</em> That's the through-line of this blueprint — one emit shape, one query surface, one trace_id concept, used the same way by every actor (agent, dashboard, alert, human, MCP). Today's substrate matches at ~80%; the remaining 20% is the normalization gap, named in Path-to-close.</p>
