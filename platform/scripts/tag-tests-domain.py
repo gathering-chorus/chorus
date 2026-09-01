@@ -189,7 +189,11 @@ def case_names(path):
 TEST_ROOTS = ("platform", "proving", "directing", "skills")
 
 def discover(roots=TEST_ROOTS):
-    excl = re.compile(r'node_modules|/dist/|/spikes/|/target/|/\.git/')
+    # `/dist/` alone missed every SIBLING build directory — platform/pulse has
+    # dist.prev/, dist.prev-3130/ and dist.prev-l2/, and their compiled .js
+    # copies registered as 338 real tests that nothing runs and nothing can run.
+    # They were a third of the nightly's "registered tests never ran" gap.
+    excl = re.compile(r'node_modules|/dist(\.[-\w]+)?/|/spikes/|/target/|/\.git/')
     out = []
     for root in roots:
       if not os.path.isdir(root): continue
