@@ -1,40 +1,41 @@
-# Daily Morning Summary — 2026-08-31
+# Daily Morning Summary — 2026-09-01
 
-**HEADLINE:** Silas shipped 4 cards yesterday fixing the nightly runner — now the hooks binary won't compile, deploy is blocked, and DEC-048 is 28 days stale.
+**HEADLINE:** chorus-hooks compile failure enters day 2 unpatched and mcp-server tests are newly all-red — quality footprint is growing, not shrinking.
 
 ---
 
-**OPS:** 🔴 RED (two hard reds)
-- 🔴 `chorus-hooks` binary broken — `cargo check` fails, 2 compile errors at `signal_witness.rs:55` (`si_pid`/`si_uid` are methods, not fields). Binary won't build; deploy blocked until fixed.
-- 🔴 chorus-api offline — board scan blocked; #3721 (kade) stale 28 days, Wren's seam card still blocked; DEC-048 decision pending
-- 🟡 Root CLAUDE.md 7 days old — refresh due today (Wren action)
-- 🟡 Domain-context files 7 days old — Silas refresh due (10+ cards shipped to chorus/infra domains since last update)
-- 🟡 168 `/tmp/` refs in scripts; 35 LaunchAgent plists unmigraded — CSC cards open, no regression
+**OPS:** 🔴 RED
+- 🔴 `chorus-hooks` compile: `signal_witness.rs:55` — `si_pid`/`si_uid` are methods, not fields. **Day 2.** Deploy blocked.
+- 🟡 Root CLAUDE.md and domain-context files at 8-day staleness — Wren + Silas refresh both due today
+- 🟡 WIP board blind — chorus-api still offline; #3721 disposition unconfirmed
+- 🟢 Git working tree clean; LaunchAgent plists: no `/tmp` refs
 
-**QUALITY:** 🔴 RED across the board (no change)
-- Tests: 0 run — `ts-jest` preset not found, **day 80** (4 suites: clearing, workflow-engine, chorus-sdk, pulse)
-- Lint: blocked — `@eslint/js` not found, **day 82** (root `node_modules` absent)
-- Build: **239 TS errors** — stable, no new regression
-- Root fix (still open): `npm ci` at repo root + each sub-package
+**QUALITY:** 🔴 RED (deepening)
+- Tests: 0 run — `ts-jest` blocked **day 81** (clearing, workflow-engine, chorus-sdk, pulse)
+- **NEW:** `platform/mcp-server` — 31 suites, 0 run; babel TS syntax errors (separate root cause from ts-jest)
+- Lint: blocked — `@eslint/js` not found, **day 83**
+- Build TS errors: clearing 239 · mcp-server 250 · chorus-sdk 28 · workflow-engine 11 · **pulse 952** (first measure — alarming)
+- Root fix: `npm ci` at repo root + each sub-package; babel TS preset needed in mcp-server after
 
-**YESTERDAY:** 5 cards shipped
-- #4032 (silas) — launchd runner CHORUS_HOME fix (190/190 nightly units were refused; now wired correctly)
-- #4033 (silas) — per-unit store index collision fix (only 3 of 190 units stored; now all land)
-- #4029, #4030 (silas) — merged
-- #4031 (wren) — merged
+**YESTERDAY:** 7 cards shipped (4034–4040)
+- #4037 (silas) — nightly agent dual-slot: 03:00 + 13:30, one runner, no second impl
+- #4038 (silas) — pulse membrane test: fixed runner-vs-role seam collision (201/201)
+- #4039 (silas) — ops-nudge caged: stopped 11+ daily false pages to Jeff from test runs
+- #4040 (kade) — ADR-040 KINDS: pipeline + pipeline-step added (PROVISIONAL; 5th generate-vs-write drift)
 
 **TODAY:** Recommended priorities
-1. 🔴 Silas: Fix `signal_witness.rs:55` — `si_pid()` / `si_uid()` (add parens); rebuild and deploy
-2. 🔴 Jeff: Decision on #3721 (DEC-048) — 28 days stale, Wren's seam card blocked
-3. Silas: Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md`
-4. Wren: Refresh root CLAUDE.md (at 7-day threshold)
-5. Any role: `npm ci` at repo root to unblock quality infra (day 80/82 chronic)
+1. 🔴 Silas: Fix `signal_witness.rs:55` — add `()` to `si_pid`/`si_uid`; rebuild and deploy
+2. 🔴 Any role: `npm ci` at repo root + sub-packages — unblocks all test suites (day 81/83)
+3. Kade: Fix babel TS plugin in `platform/mcp-server` once `npm ci` lands
+4. Silas + Kade: Triage `pulse` 952 TS errors — first reading, severity unknown
+5. Wren: Refresh root CLAUDE.md + bump version ledger; Silas: refresh domain-context files
 
-**BLOCKERS (needs Jeff):**
-- 🔴 **#3721 (kade) — 28 days stale, DEC-048 decision still pending; Wren's seam card remains blocked**
-- 🔴 **`chorus-hooks` compile broken — deploy blocked until Silas lands fix**
-- 🔴 **chorus-api offline — board blind; full stale WIP count unknown**
+**BLOCKERS — needs Jeff:**
+- 🔴 `chorus-hooks` compile broken (day 2) — no deploy until green
+- 🔴 `npm ci` blocker (day 81/83) — all test suites blind; needs an owner
+- ⚠️ `pulse` 952 TS errors — first measurement; warrants triage before it compounds
+- 🟡 chorus-api offline — #3721 disposition still unconfirmed; board snapshot 5 months stale
 
 ---
-_Sources: ops-review 2026-08-30 · quality-review 2026-08-31 · git log -20 · backlog.md absent · activity.md absent_
-_Compiled by wren · 2026-08-31_
+_Sources: ops-review 2026-08-31 · quality-review 2026-09-01 · git log -20 · backlog.md absent · activity.md absent_
+_Compiled by wren · 2026-09-01_
