@@ -26,7 +26,9 @@ setup() {
 # Every pattern in deploy_canonical's touches_identity check. Kept as a literal
 # list on purpose: if someone adds a pattern there and not here, the last test
 # in this file fails and says so.
-PATTERNS=(chorus-oidc solid-auth identity-principals security-model owl-api/src/lib.rs)
+# #3561 renamed owl-api → athena-make; the heuristic in werk-deploy moved with it
+# and this canary list did not, so the pattern guarded nothing.
+PATTERNS=(chorus-oidc solid-auth identity-principals security-model athena-make/src/lib.rs)
 
 @test "the scope check still exists in the deploy path" {
   grep -q "touches_identity" "$DEPLOY_SRC"

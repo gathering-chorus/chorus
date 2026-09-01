@@ -34,8 +34,13 @@ teardown() { rm -rf "$TMP"; }
 # prose and the model moves on without it.
 @test "a doc whose block DRIFTED from the model fails" {
   { echo "<h1>Pulse</h1>"; python3 "$GEN" --class Product --name pulse; } > "$TMP/doc.html"
-  # the drift: a stale purpose line, the shape this card was filed about
-  sed -i '' 's#Agent vital signs#Agent vital signs and long-term recall#' "$TMP/doc.html"
+  cp "$TMP/doc.html" "$TMP/doc.before"
+  # the drift: a stale purpose line, the shape this card was filed about.
+  # It used to sed on 'Agent vital signs', which the model no longer says — so
+  # the edit was a no-op and this test failed because the FIXTURE never drifted,
+  # not because the check was broken. Edit the label, then prove it changed.
+  sed -i '' 's#<td>Pulse</td>#<td>Pulse and long-term recall</td>#' "$TMP/doc.html"
+  ! cmp -s "$TMP/doc.html" "$TMP/doc.before"
   run python3 "$GEN" --class Product --name pulse --check "$TMP/doc.html"
   [ "$status" -eq 1 ]
   [[ "$output" == *"DRIFT"* ]]

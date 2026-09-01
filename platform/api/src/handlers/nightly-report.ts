@@ -97,6 +97,37 @@ export function displayPath(p: string): string {
   return p.slice(m.index + m[0].length - m[1].length);
 }
 
+/** Two different things get counted on this page and they were never labelled:
+ *  a SUITE is one file or project that runs; a TEST is one check inside it.
+ *  The headline counted suites, the rows printed tests, and "13 failed" sat
+ *  next to "179 fail" with no unit on either. This adds the test-level tally
+ *  so both units are on the page, each named. */
+export function tallyTests(rows: NightlyRow[]): {
+  passed: number; failed: number; unparsed: number;
+} {
+  let passed = 0, failed = 0, unparsed = 0;
+  for (const r of rows) {
+    const s = r.summary;
+    // jest/vitest: "Tests: 74 failed, 27 skipped, 4562 passed, 4663 total".
+    // Read the two numbers independently rather than with chained optional
+    // groups — that form is what security/detect-unsafe-regex flagged, and it
+    // is also easier to read than one pattern spanning an optional middle.
+    const jestPassed = s.startsWith('Tests:') ? /(\d+) passed/.exec(s) : null;
+    const jestFailed = s.startsWith('Tests:') ? /(\d+) failed/.exec(s) : null;
+    // bats: "bats: 10 passed, 4 failed"
+    const bats = /bats: *(\d+) passed, *(\d+) failed/.exec(s);
+    // shell/cargo/reconcile: "13 pass, 1 fail"
+    const plain = /(\d+) +pass(?:ed)?, *(\d+) +fail/.exec(s);
+    if (jestPassed) {
+      passed += Number(jestPassed[1]);
+      if (jestFailed) failed += Number(jestFailed[1]);
+    } else if (bats) { passed += Number(bats[1]); failed += Number(bats[2]); }
+    else if (plain) { passed += Number(plain[1]); failed += Number(plain[2]); }
+    else unparsed += 1;
+  }
+  return { passed, failed, unparsed };
+}
+
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null): string {
   if (!run) {
@@ -105,7 +136,14 @@ export function renderNightlyPage(run: NightlyRun | null): string {
   const reds = run.rows.filter((r) => r.status === 'fail');
   const skips = run.rows.filter((r) => r.status === 'skip');
   const greens = run.rows.filter((r) => r.status === 'pass');
-  const verdict = reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED`;
+  // A suite that reported neither pass, fail nor skip produced no parseable
+  // output. It was silently absent from the counts, so 317 suites rendered as
+  // 314 and three red-or-green-unknown suites read as nothing at all.
+  const silent = run.rows.filter(
+    (r) => !['pass', 'fail', 'skip'].includes(r.status),
+  );
+  const tests = tallyTests(run.rows);
+  const verdict = reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED SUITES`;
   const cls = reds.length === 0 ? 'green' : 'red';
   // #4009 — say WHICH not-finished state this is. "PARTIAL" covered both a run
   // still working and a run wedged 38 minutes; a reader could not act on it.
@@ -129,12 +167,13 @@ export function renderNightlyPage(run: NightlyRun | null): string {
       <td>${esc(r.owner)}</td>
       <td class="sum">${esc(r.summary)}</td>
     </tr>`;
-  const ordered = [...reds, ...skips, ...greens];
+  const ordered = [...reds, ...silent, ...skips, ...greens];
   const body = `
   ${partial}
   <div class="banner ${cls}">
     <span class="verdict">${verdict}</span>
-    <span class="counts">${greens.length} passed · ${reds.length} failed · ${skips.length} skipped</span>
+    <span class="counts">SUITES: ${greens.length} passed · ${reds.length} failed · ${skips.length} skipped${silent.length ? ' · ' + silent.length + ' produced no output' : ''} · ${run.rows.length} total</span>
+    <span class="counts">TESTS: ${tests.passed} passed · ${tests.failed} failed${tests.unparsed ? ' (' + tests.unparsed + ' suite(s) report no test counts)' : ''}</span>
     <span class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt) : ''}</span>
   </div>
   <table>

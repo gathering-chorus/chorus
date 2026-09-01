@@ -41,8 +41,11 @@ setup() {
 @test "each role carries a kind as data, not as a comment string" {
   # The store held "kind=agent" inside chorus:comment. A string in a prose field
   # cannot be constrained, queried reliably, or trusted.
+  # Count roles, not a magic constant: the file had 4 roles when this was
+  # written and has 5 now, so a hardcoded 4 reds on every role we add.
+  n_roles=$(grep -cE '^chorus:role-[a-z-]+ a ' "$ROLES_TTL")
   run grep -c 'chorus:roleKind "' "$ROLES_TTL"
-  [ "$output" -eq 4 ]
+  [ "$output" -eq "$n_roles" ]
   ! grep -q 'chorus:comment "kind=' "$ROLES_TTL"
 }
 
