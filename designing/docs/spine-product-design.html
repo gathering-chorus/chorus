@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spine — Product Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Georgia, serif; margin: 40px 5%; color: #1a1a1a; line-height: 1.6; }
+  h1 { font-size: 1.6em; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 4px; }
+  h1 span { color: #2563eb; font-weight: normal; font-size: 0.65em; }
+  .date { color: #999; font-size: 0.82em; margin-bottom: 16px; }
+  h2 { font-size: 1.2em; margin-top: 2em; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  h3 { font-size: 1em; margin-top: 1.2em; }
+  p { margin-bottom: 10px; font-size: 0.88em; }
+  ul, ol { margin: 8px 0 12px 22px; font-size: 0.88em; }
+  li { margin-bottom: 5px; }
+  code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; font-size: 0.86em; }
+  .frame { background: #dbeafe; padding: 14px 18px; margin: 16px 0; border-radius: 4px; border-left: 4px solid #2563eb; font-size: 0.9em; }
+  .finding { background: #f1f5f9; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #64748b; font-size: 0.86em; }
+  .gap { background: #fee2e2; padding: 8px 14px; margin: 8px 0; border-radius: 4px; font-size: 0.84em; }
+  .gap strong { color: #dc2626; }
+  .caveat { background: #fef9c3; padding: 10px 16px; margin: 10px 0; border-radius: 4px; border-left: 3px solid #ca8a04; font-size: 0.84em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.82em; }
+  th { text-align: left; padding: 6px 10px; background: #e0e7ff; color: #2d4a7a; font-size: 0.76em; text-transform: uppercase; }
+  td { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+  .t-type { background: #d1fae5; color: #065f46; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .t-inst { background: #ede9fe; color: #5b21b6; padding: 2px 7px; border-radius: 3px; font-size: 0.74em; font-weight: 600; }
+  .num { font-variant-numeric: tabular-nums; }
+  .caption { color: #999; font-size: 0.74em; margin: 2px 0 14px; }
+  .footer { color: #999; font-size: 0.72em; margin-top: 3em; border-top: 1px solid #ddd; padding-top: 8px; }
+  pre.mermaid { background: #fff; border: 1px solid #c7d2fe; border-radius: 6px; padding: 12px; margin: 12px 0; overflow-x: auto; text-align: center; }
+  @media print { body { margin: 20px 1in; } }
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+<link rel="stylesheet" href="/css/doc-responsive.css">
+</head>
+<body>
+
+<h1>Spine <span>— Product Design</span></h1>
+<p class="date">Wren · 2026-09-01 (#4045). Origin: Jeff — <em>"i need basics first — spine product design"</em>, after I wrote a service design with no product above it. Ingest IRI: <code>chorus:doc-spine-product-design</code>. Companion: <a href="/designing/docs/spine-service-design.html">Spine — Service Design</a> (#4044), which describes how the log works; this doc says what the spine is for and what composes it.</p>
+
+<div class="frame">
+<strong>The product in one line.</strong> The spine is the team's memory: an append-only record of everything that happened, and a catalogue of everything that <em>can</em> happen. Those are two layers, not one — and getting them modeled as two is the whole of this design.
+</div>
+
+<h2>1 · Identity</h2>
+<p>Chorus has eight modeled products today — Athena, Borg, Chorus, Clearing, Convergence, Loom, Pulse, Werk. The spine is not among them. It exists as two domains, both Wren's, both at <em>Directing</em>:</p>
+<table>
+<tr><th>Domain</th><th>Purpose (from the model)</th><th>Vocabulary it claims</th></tr>
+<tr><td><code>spine</code></td><td>Be the system's audit trail — the structured event log of all activity and state changes.</td><td>EmitContract, EventCategory, Vertebra</td></tr>
+<tr><td><code>events</code></td><td>Make the team's history observable as data: one event vocabulary every emitter shares.</td><td>SpineEvent</td></tr>
+</table>
+<p>Two domains with no product above them is why the spine's docs, routes and vocabulary cannot be walked from anything. This design makes the spine a Product and gives those two domains a home.</p>
+
+<div class="caveat"><strong>The naming hazard, settled.</strong> "Spine" already names the value stream — how work flows through the team (<a href="/designing/docs/chorus-spine.html">chorus-spine.html</a>). This product is the <em>event log</em>. The value stream keeps the metaphor; the product owns the noun in the model. Both docs now cross-link.</p>
+
+<h2>2 · Promise</h2>
+<p>Three promises, in the order they matter:</p>
+<ol>
+  <li><strong>Nothing is lost.</strong> The log is append-only and never rotated (Jeff, 2026-07-23). Disk is cheaper than a forgotten month.</li>
+  <li><strong>Anything recorded is reachable.</strong> A question about last Tuesday is answerable at the speed of a query. <em>This promise is currently broken — see §6.</em></li>
+  <li><strong>What can happen is enumerable.</strong> The set of event types is the set of things the system is able to do, browsable as data rather than grepped from a schema file.</li>
+</ol>
+
+<h2>3 · Value &amp; audience</h2>
+<table>
+<tr><th>Audience</th><th>What they get</th></tr>
+<tr><td>Jeff</td><td>One place that answers "what happened, and when" without asking a role. The basis of every metric on Loom.</td></tr>
+<tr><td>The three roles</td><td>Session context, peer observation, gemba, and the ability to reconstruct a flow from its trace rather than from memory.</td></tr>
+<tr><td>Every other product</td><td>Werk, Borg, Pulse, Loom and Athena all read the spine. It is the substrate they measure themselves against.</td></tr>
+<tr><td>The method</td><td>A team that can replay its own history is a team that can improve deliberately. That is the thesis of Chorus, and the spine is what makes it checkable.</td></tr>
+</table>
+
+<h2>4 · Structure — types and instances</h2>
+
+<p>Jeff's framing, 2026-09-01: <em>"think of this like an eda — we have types of events and then many instances of each type."</em> That is exactly right, and it is the structural decision this product turns on. The two layers have different sizes, different lifecycles, different stores, and therefore different homes.</p>
+
+<pre class="mermaid">
+flowchart TB
+  subgraph T["TYPES — vocabulary, curated"]
+    ET["chorus:EventType<br/>345 rows"]
+    EF["declared fields · join keys<br/>vertebra · category · emitter"]
+    ET --- EF
+  end
+  subgraph I["INSTANCES — the stream, immutable"]
+    SE["chorus:SpineEvent<br/>2,097,133 rows and growing"]
+  end
+  SE -->|ofType| ET
+  REG[("designing/schemas/<br/>spine-events.json")] -->|loads| ET
+  LOG[("~/.chorus/chorus.log<br/>append-only")] -->|projects| SE
+  ET -->|GET /v1/eventtypes| API1["catalogue<br/>— what can happen"]
+  SE -->|GET /v1/spineevents?type=&amp;since=| API2["stream<br/>— what did happen"]
+</pre>
+
+<table>
+<tr><th></th><th><span class="t-type">TYPE</span> chorus:EventType</th><th><span class="t-inst">INSTANCE</span> chorus:SpineEvent</th></tr>
+<tr><td>Count</td><td class="num">345, curated</td><td class="num">2,097,133, growing ~50k/day</td></tr>
+<tr><td>Answers</td><td>What <em>can</em> happen</td><td>What <em>did</em> happen</td></tr>
+<tr><td>Lifecycle</td><td>Changes on a card; versioned like any vocabulary</td><td>Append-only; never edited, never deleted</td></tr>
+<tr><td>Store</td><td>Fuseki — <code>urn:chorus:domains:events</code></td><td>The log. <strong>Not</strong> the triplestore.</td></tr>
+<tr><td>Source of truth</td><td><code>spine-events.json</code>, loaded into the graph</td><td><code>~/.chorus/chorus.log</code>, projected on read</td></tr>
+<tr><td>Surface</td><td><code>GET /v1/eventtypes</code> — generated, browsable</td><td><code>GET /v1/spineevents?type=&amp;since=</code> — a projection</td></tr>
+</table>
+
+<h3>Why instances are not materialized</h3>
+<p>Two reasons, both load-bearing:</p>
+<ul>
+  <li><strong>Fit.</strong> A triplestore is a poor home for a growing, time-ordered, write-once stream. The log already is a perfect append-only store; duplicating it into triples buys nothing and costs a second source of truth.</li>
+  <li><strong>Risk.</strong> Materializing millions of subjects into <code>urn:chorus:instances</code> puts the whole graph in the blast radius of a bad deploy — the #3587 wipe class, at a scale where recovery is not a restore-from-yesterday.</li>
+</ul>
+<p>Instead the spine follows the compute-on-read ruling Jeff made for metrics on 2026-08-31: <em>the log is the record; values are computed at read time.</em> The SHACL shape still governs — a projected occurrence conforms to <code>SpineEventShape</code> exactly as a stored one would. What changes is where the bytes live, not what the contract is.</p>
+
+<div class="finding"><strong>The join is what makes both layers useful.</strong> <code>SpineEvent ofType EventType</code>. Downward: a type row links to its recent occurrences and its counts, so the catalogue is alive rather than a list. Upward: an occurrence resolves its declared fields and its value-stream stage, so a raw line becomes self-describing.</div>
+
+<h2>5 · Composition</h2>
+<table>
+<tr><th>Composes</th><th>Owner</th><th>Carries</th></tr>
+<tr><td><code>events</code> domain</td><td>Wren</td><td>EventType, SpineEvent — the vocabulary and the stream</td></tr>
+<tr><td><code>spine</code> domain</td><td>Wren</td><td>EmitContract, EventCategory, Vertebra — the writer's contract and the classification</td></tr>
+</table>
+<p><code>logs</code> (Silas, at <em>Proving</em>) is deliberately <strong>not</strong> part of this product. Logs is Loki aggregation and runtime observability — a consumer of the spine, not a constituent of it. Keeping that line clean is what stops "the spine" from becoming a synonym for "all telemetry."</p>
+
+<div class="gap"><strong>Composition is unrepresentable today.</strong> The <code>chorus</code> product record carries <em>no</em> <code>hasDomain</code> edges at all, so no product currently states which domains compose it. This design fixes that for spine and restores chorus's edges in the same land.</div>
+
+<h2>6 · As-Is — 2026-09-01, queried live</h2>
+<table>
+<tr><th>Layer</th><th>Modeled</th><th>Served</th><th>Populated</th></tr>
+<tr><td>Product</td><td>no</td><td>—</td><td>—</td></tr>
+<tr><td>Domains (spine, events)</td><td>yes</td><td>yes, at <code>/domains</code></td><td>yes</td></tr>
+<tr><td>EventType</td><td><strong>no</strong> — the 345 types live only in a JSON file</td><td>no route</td><td>—</td></tr>
+<tr><td>SpineEvent</td><td>yes — <code>SpineEventShape</code>, <code>729a5afa</code></td><td>yes — <code>/v1/spineevents</code></td><td><strong>count: 0</strong></td></tr>
+<tr><td>The log</td><td>—</td><td>4 MB tail only</td><td class="num">1.71 GB · 2,097,133 events</td></tr>
+</table>
+
+<div class="gap"><strong>Promise 2 is broken.</strong> Every reader takes a fixed 4 MB tail, which on today's traffic is the last <span class="num">3 h 17 m</span> — 0.25% of what is retained. Forty days are kept and three hours are reachable. Measured and detailed in the <a href="/designing/docs/spine-service-design.html">service design</a>.</div>
+
+<div class="gap"><strong>A generated route serving zero rows reads as working.</strong> <code>/v1/spineevents</code> is mounted, shaped, and empty. That is the hollow shape (#3734) at the API layer, and it is the direct consequence of modeling one class to be both a vocabulary and a stream.</div>
+
+<h2>7 · To-Be — path to close</h2>
+<ol>
+  <li><strong>Make the product real</strong> (#4045) — the Product row, its two <code>hasDomain</code> edges, chorus's restored edges, and this doc served as a Document with a resolving href.</li>
+  <li><strong>Split the layers</strong> (#4046) — model <code>EventType</code>, load the 345 from the registry, serve <code>/v1/eventtypes</code>, and turn <code>/v1/spineevents</code> into a real projection with <code>ofType</code> joining both directions. The type leg has no dependencies and should ship first.</li>
+  <li><strong>Restore reach</strong> (#4044) — a day-to-offset index so a reader asks for a window instead of a byte count, which is also what makes the occurrence API able to answer anything older than this morning.</li>
+  <li><strong>Close the MCP correspondence</strong> — with types modeled, "every tool leaves an event" becomes a checkable claim: 57 tools against 345 types, holes reported in both directions. Not yet carded; it is the discussion Jeff asked for, not a ticket.</li>
+</ol>
+
+<h2>8 · Not in scope</h2>
+<ul>
+  <li>Loki aggregation, promtail, dashboards — the <code>logs</code> domain, Silas, at Proving.</li>
+  <li>The writer's contract (adapters, envelope, trace lifecycle) — <a href="/designing/docs/logs-service-design.html">Logs service design</a>.</li>
+  <li>The value-stream sense of "spine" — <a href="/designing/docs/chorus-spine.html">chorus-spine.html</a>.</li>
+  <li>Per-line ingestion of 2.1M occurrences into the graph — explicitly rejected in §4.</li>
+</ul>
+
+<h2>9 · References</h2>
+<ul>
+  <li><a href="/designing/docs/spine-service-design.html">Spine — Service Design</a> (#4044) — contracts, readers, retention, the measured reach gap.</li>
+  <li><a href="/designing/docs/logs-service-design.html">Logs — Service Design</a> (#2848) — the writer's contract.</li>
+  <li><a href="/designing/docs/chorus-spine.html">The Chorus Spine — Value Stream Architecture</a> — the other sense of the word.</li>
+  <li><code>designing/schemas/spine-events.json</code> — the 345 types, today's unmodeled registry.</li>
+  <li>Cards: #4045 (this product), #4046 (types + instances), #4044 (service design).</li>
+</ul>
+
+<div class="footer">Chorus · designing/docs/spine-product-design.html · #4045 · Wren · 2026-09-01</div>
+</body>
+</html>
