@@ -33,18 +33,52 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   .astatus{font:400 12.5px system-ui,sans-serif;color:var(--muted,#5b6675);padding:14px}
   .astatus.err{color:#a8226b;font-weight:600}
   .alegend{font:400 11px system-ui,sans-serif;color:var(--muted,#8a94a3);margin:0 0 14px}
+  /* #4053 — the schema table. Jeff: "i cant tell whats required or optional",
+     "we need a definition of each attribute and the class this is the semantic
+     layer". Required is a column, not an italic; every attribute is one row. */
+  .sch{width:100%;border-collapse:collapse;font:13px system-ui,sans-serif}
+  .sch th{text-align:left;font:600 10px system-ui,sans-serif;letter-spacing:.07em;text-transform:uppercase;
+          color:var(--muted,#8a94a3);padding:7px 13px;border-bottom:1px solid var(--line,#e6eaef);white-space:nowrap}
+  .sch td{padding:7px 13px;border-bottom:1px solid #f2f5f7;vertical-align:top}
+  .sch tr:last-child td{border-bottom:0}
+  .sch tr.rev td{background:#fbeae4}
+  .sch td.undef{border-left:3px solid #a8442a}
+  .fname{font:600 12.5px ui-monospace,Menlo,monospace}
+  .fname.opt{font-weight:400;color:var(--muted,#5b6675)}
+  .fdef{font:12px system-ui,sans-serif;color:var(--muted,#5b6675);margin-top:3px;max-width:48ch;line-height:1.45}
+  .fnodef{font:italic 11.5px system-ui,sans-serif;color:#a8442a;margin-top:3px}
+  .fcard{font:12px ui-monospace,Menlo,monospace;color:var(--muted,#5b6675);white-space:nowrap}
+  .ftype{font:12.5px ui-monospace,Menlo,monospace}
+  .frule{font:11.5px ui-monospace,Menlo,monospace;color:var(--muted,#5b6675)}
+  .enumv{display:inline-block;background:#e6f2ef;color:#0f6b5c;border-radius:3px;padding:1px 5px;margin:1px 3px 1px 0;font-size:11px}
+  .revtag{background:#fbeae4;color:#a8442a;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;letter-spacing:.04em;margin-right:5px}
+  .cpill{font:600 10.5px ui-monospace,Menlo,monospace;padding:2px 8px;border-radius:20px;background:#e6f2ef;color:#0f6b5c;margin-left:8px}
+  .cpill.warn{background:#fbeae4;color:#a8442a}
+  .clsdef{padding:9px 13px;border-bottom:1px solid var(--line,#e6eaef);color:var(--muted,#5b6675);font:12.5px system-ui,sans-serif}
+  .clsdef.none{color:#a8442a;font-style:italic}
+  .cls{border:1px solid var(--line,#d8dee6);border-radius:4px;background:var(--panel,#fff);margin-bottom:14px;overflow:hidden}
+  .clshead{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;padding:9px 13px;border-bottom:1px solid var(--line,#e6eaef);background:var(--hover,#f6f8fa)}
+  .clsname{font:600 14px system-ui,sans-serif}
+  .clsdom{font:11.5px ui-monospace,Menlo,monospace;color:var(--muted,#8a94a3)}
+  .grow{flex:1}
+  .adia .node{cursor:pointer}
+  #showall{font:11px ui-monospace,Menlo,monospace;padding:3px 9px;border:1px solid #0f6b5c;background:#fff;color:#0f6b5c;border-radius:20px;cursor:pointer}
 </style></head>
 <body>
 <main style="max-width:1200px;margin:0 auto;padding:16px">
 <h1 style="font:300 26px system-ui,sans-serif;margin:6px 0 2px">Class Atlas</h1>
-<p class="alegend">UML per domain, live from <code>urn:chorus:ontology</code> —
-solid edges stay in-domain, <em>dashed edges leave the domain</em> (target's home in the label),
-<code>*</code> marks a SHACL-required attribute, multiplicities are <code>min..max</code>.</p>
+<p class="alegend">Live from <code>urn:chorus:ontology</code> + athena-make.
+Map = dependencies only; each box carries its field and row count, and
+<b>click a class</b> to filter to its schema. Table = one row per attribute with its
+definition, whether it is <b>required</b>, its cardinality <code>min..max</code>,
+what it points at, and the SHACL rule behind it. Reverse
+(<code>sh:inversePath</code>) rules sort first — those are requirements the class
+cannot satisfy by its own authoring. Missing definitions are flagged, not hidden.</p>
 <nav class="anav" id="nav"></nav>
 <div id="out" class="astatus">Loading the model…</div>
 </main>
 <script>
-mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'neutral' });
+mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' });
 
 // mermaid identifiers must be bare words; labels carry the truth.
 const ident = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_');
@@ -55,55 +89,137 @@ const ident = (s) => String(s).replace(/[^A-Za-z0-9_]/g, '_');
 function classSizes(atlas) {
   const sizes = new Map();
   for (const d of atlas.domains) {
-    for (const c of d.classes) sizes.set(c.name, { props: c.attributes.length + c.edges.length, home: d.name });
+    for (const c of d.classes) sizes.set(c.name, {
+      props: c.attributes.length + c.edges.length, home: d.name,
+      served: c.served, rows: c.rowCount,
+    });
   }
   return sizes;
 }
 
 function domainDiagram(dom, sizes) {
-  const L = ['classDiagram'];
-  const drawn = new Set(dom.classes.map((c) => c.name));
+  // #4053 — DEPENDENCIES ONLY. Attributes moved to the schema table below;
+  // a mermaid class box has no room for cardinality, enums, definitions or
+  // counts, which is why the diagram alone read as "barely changed".
+  const L = ['classDiagram', '  direction LR'];
+  const drawn = new Set();
+  const box = (name) => {
+    if (drawn.has(name)) return;
+    drawn.add(name);
+    const s2 = sizes.get(name);
+    const line = !s2 ? 'elsewhere'
+      : (s2.served === false ? 'NOT SERVED'
+        : `${s2.props} fields · ${s2.rows === undefined ? 'rows n/a' : s2.rows + ' rows'}`);
+    L.push(`class ${ident(name)} {`, `  ${line}`, '}');
+  };
   for (const cls of dom.classes) {
-    L.push(`class ${ident(cls.name)} {`);
-    for (const a of cls.attributes) {
-      const req = a.min >= 1 ? '*' : '';
-      // #4053 — an enum names its legal values. Drawing `any status` when the
-      // shape says sh:in (exploring building operating retiring) told the reader
-      // the constraint was absent; the tightest field must not read as the loosest.
-      const type = a.allowed && a.allowed.length ? a.allowed.join('|') : (a.type || 'any');
-      L.push(`  ${type} ${ident(a.name)}${req}`);
-    }
-    L.push('}');
-    // #4053 — DECLARED (the pen) and SERVED (athena-make mounted it) are two
-    // claims. A class served with 0 rows is NOT the same as one that works, and
-    // a class the pen declares that nothing serves must say so on the picture —
-    // otherwise a green athena-make verb is unfalsifiable here.
-    if (cls.served === false) {
-      L.push(`note for ${ident(cls.name)} "DECLARED — not served by athena-make"`);
-    } else if (cls.rowCount === 0) {
-      L.push(`note for ${ident(cls.name)} "served · 0 rows — mounted and empty"`);
-    } else if (typeof cls.rowCount === 'number') {
-      L.push(`note for ${ident(cls.name)} "served · ${cls.rowCount} rows"`);
-    } else if (cls.served) {
-      L.push(`note for ${ident(cls.name)} "served · count unavailable"`);
-    }
-    for (const p of cls.parents) L.push(`${ident(p)} <|-- ${ident(cls.name)}`);
+    box(cls.name);
     for (const e of cls.edges) {
-      const arrow = e.crossDomain ? '..>' : '-->';
-      L.push(`${ident(cls.name)} ${arrow} "${e.multiplicity}" ${ident(e.to)} : ${ident(e.name)}`);
-      // #4053 AC3 — say how big the target is and where it lives, once, so an
-      // empty box means "drawn elsewhere", never "nothing there".
-      if (!drawn.has(e.to) && sizes && sizes.has(e.to)) {
-        drawn.add(e.to);
-        const s = sizes.get(e.to);
-        L.push(`class ${ident(e.to)} {`);
-        L.push(`  «${s.props} properties · ${s.home}»`);
-        L.push('}');
-      }
+      box(e.to);
+      // a reverse rule points the other way — that IS the requirement
+      if (e.inverse) L.push(`${ident(e.to)} --> "${e.multiplicity}" ${ident(cls.name)} : ${ident(e.name)}`);
+      else L.push(`${ident(cls.name)} --> "${e.multiplicity}" ${ident(e.to)} : ${ident(e.name)}`);
     }
+    for (const p of cls.parents) { box(p); L.push(`${ident(p)} <|-- ${ident(cls.name)}`); }
+  }
+  for (const cls of dom.classes) {
+    L.push(`click ${ident(cls.name)} call pick("${cls.name}")`);
+    L.push(`style ${ident(cls.name)} fill:#e6f2ef,stroke:#0f6b5c,stroke-width:2px`);
   }
   return L.join('\n');
 }
+
+const escq = (t) => String(t == null ? '' : t)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// #4053 — one row per attribute, with its definition. Reverse rules first (they
+// are requirements the class cannot satisfy by its own authoring), then
+// required, then optional; alphabetical within each band.
+function memberRows(cls, sizes) {
+  const members = [
+    ...cls.edges.map((e) => ({ ...e, edge: true })),
+    ...cls.attributes.map((a) => ({ ...a, edge: false })),
+  ].sort((a, b) =>
+    (b.inverse ? 1 : 0) - (a.inverse ? 1 : 0) ||
+    (b.min >= 1 ? 1 : 0) - (a.min >= 1 ? 1 : 0) ||
+    a.name.localeCompare(b.name));
+
+  return members.map((m) => {
+    const req = m.min >= 1;
+    const card = `${m.min}..${m.max == null ? '*' : m.max}`;
+    let type = '<td class="ftype">—</td>';
+    if (m.allowed && m.allowed.length) {
+      type = '<td>' + m.allowed.map((v) => `<span class="enumv">${escq(v)}</span>`).join('') + '</td>';
+    } else if (m.edge) {
+      type = '<td class="ftype">ref</td>';
+    } else if (m.type) {
+      type = `<td class="ftype">${escq(m.type)}</td>`;
+    }
+    let points = '<td></td>';
+    if (m.edge) {
+      const t = sizes.get(m.to);
+      const detail = !t ? '<span class="frule">elsewhere</span>'
+        : (t.served === false ? '<span class="fnodef" style="display:inline">not served</span>'
+          : `<span class="frule">${t.props} props · ${t.rows === undefined ? 'rows n/a' : t.rows + ' rows'}</span>`);
+      points = `<td class="ftype">${m.inverse ? '&larr;' : '&rarr;'} ${escq(m.to)} ${detail}</td>`;
+    }
+    const rules = [];
+    if (m.inverse) rules.push('sh:inversePath — something else must point here');
+    if (m.allowed && m.allowed.length) rules.push('sh:in — closed value set');
+    if (m.pattern) rules.push('sh:pattern ' + escq(m.pattern));
+    if (m.edge && !m.inverse) rules.push('sh:class');
+    if (m.max === 1 && m.min === 0) rules.push('absent = off');
+    const def = m.definition
+      ? `<div class="fdef">${escq(m.definition)}</div>`
+      : '<div class="fnodef">no definition — rdfs:comment missing</div>';
+    return `<tr class="${m.inverse ? 'rev' : ''}">` +
+      `<td class="${m.definition ? '' : 'undef'}">` +
+        `<span class="fname ${req ? '' : 'opt'}">${m.inverse ? '<span class="revtag">REVERSE</span>' : ''}${escq(m.name)}</span>${def}</td>` +
+      `<td class="${req ? 'fname' : 'fname opt'}">${req ? 'yes' : 'no'}</td>` +
+      `<td class="fcard">${card}</td>${type}${points}` +
+      `<td class="frule">${rules.join(' · ')}</td></tr>`;
+  }).join('');
+}
+
+function classBlock(cls, domName, sizes) {
+  const rowsTxt = cls.served === false ? 'DECLARED — not served'
+    : (cls.rowCount === undefined ? 'served · count unavailable' : `served · ${cls.rowCount} rows`);
+  const cov = `${cls.definedCount || 0}/${cls.memberCount || 0} defined`;
+  const covCls = (cls.definedCount || 0) === (cls.memberCount || 0) ? 'cpill' : 'cpill warn';
+  const clsDef = cls.definition
+    ? `<div class="clsdef">${escq(cls.definition)}</div>`
+    : '<div class="clsdef none">no definition — rdfs:comment missing on the class</div>';
+  return `<div class="cls" data-cls="${escq(cls.name)}">
+    <div class="clshead"><span class="clsname">${escq(cls.name)}</span>
+      <span class="clsdom">${escq(domName)}</span><span class="grow"></span>
+      <span class="${cls.served === false ? 'cpill warn' : 'cpill'}">${rowsTxt}</span>
+      <span class="${covCls}">${cov}</span></div>
+    ${clsDef}
+    <table class="sch"><thead><tr><th>Field &amp; definition</th><th>Req</th><th>Card</th><th>Type</th><th>Points at</th><th>Rule</th></tr></thead>
+    <tbody>${memberRows(cls, sizes)}</tbody></table>
+  </div>`;
+}
+
+function pick(name) {
+  document.querySelectorAll('.cls[data-cls]').forEach(function (el) {
+    el.style.display = (!name || el.dataset.cls === name) ? '' : 'none';
+  });
+  // #4053 — hide the DOMAIN sections that no longer hold a visible class,
+  // otherwise drilling into one class leaves 28 empty diagrams behind it and
+  // the reader scrolls through blank space to reach the thing they clicked.
+  document.querySelectorAll('.adom').forEach(function (sec) {
+    const has = [...sec.querySelectorAll('.cls[data-cls]')].some(function (c) { return c.style.display !== 'none'; });
+    sec.style.display = (!name || has) ? '' : 'none';
+  });
+  document.querySelectorAll('#picked').forEach(function (el) {
+    el.textContent = name ? ('showing ' + name) : 'showing all classes';
+  });
+  if (name) {
+    const el = document.querySelector('.cls[data-cls="' + name + '"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+window.pick = pick;
 
 (async () => {
   const out = document.getElementById('out');
@@ -150,12 +266,26 @@ function domainDiagram(dom, sizes) {
     const div = document.createElement('div'); div.className = 'adia';
     sec.appendChild(h); sec.appendChild(div);
     out.appendChild(sec);
+    const hp = document.createElement('span');
+    hp.id = 'picked'; hp.className = 'cpill'; hp.textContent = 'showing all classes';
+    h.appendChild(hp);
+    const hb = document.createElement('button');
+    hb.id = 'showall'; hb.textContent = 'show all'; hb.style.marginLeft = '8px';
+    hb.onclick = function () { pick(null); };
+    h.appendChild(hb);
     try {
-      const { svg } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom, SIZES));
+      const { svg, bindFunctions } = await mermaid.render('atlas_' + ident(dom.name), domainDiagram(dom, SIZES));
       div.innerHTML = svg;
+      if (bindFunctions) bindFunctions(div);
     } catch (e) {
       div.textContent = 'diagram failed for ' + dom.name + ': ' + e.message;
     }
+    // #4053 — the schema tables: the map answers "what depends on what", these
+    // answer "what is inside, what is required, and what does it mean".
+    const tables = document.createElement('div');
+    tables.style.padding = '0 10px 10px';
+    tables.innerHTML = dom.classes.map((c) => classBlock(c, dom.name, SIZES)).join('');
+    sec.appendChild(tables);
   }
 })();
 </script>

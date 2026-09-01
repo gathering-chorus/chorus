@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas — schema view MOCK</title>
+<!-- #4053 MOCK — not wired to the model. Real values, hand-placed, so Jeff can
+     react to the SHAPE before it is built. Every number here was queried live
+     from urn:chorus:ontology and athena-make on 2026-09-01 11:35. -->
+<style>
+  :root{
+    --bg:#f7f8f7; --card:#fff; --ink:#16201d; --soft:#5b6b65; --faint:#8d9c96;
+    --rule:#e2e8e5; --accent:#0f6b5c; --accent-bg:#e6f2ef; --warn:#a8442a; --warn-bg:#fbeae4;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px 20px 80px}
+  .wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+  .mockbar{background:#fef9c3;border:1px solid #ca8a04;border-radius:6px;padding:9px 13px;font-size:12.5px;color:#6b4d05}
+  h1{font-size:20px;letter-spacing:-.01em}
+  .sub{color:var(--soft);font-size:13px;margin-top:3px}
+
+  .cls{background:var(--card);border:1px solid var(--rule);border-radius:9px;overflow:hidden}
+  .clshead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--rule);background:#fbfcfb}
+  .clsname{font-size:16px;font-weight:650;letter-spacing:-.01em}
+  .clsdom{font-size:12px;color:var(--faint);font-family:ui-monospace,monospace}
+  .pill{font-size:11px;font-family:ui-monospace,monospace;padding:2px 8px;border-radius:20px;background:var(--accent-bg);color:var(--accent);font-weight:600}
+  .pill.warn{background:var(--warn-bg);color:var(--warn)}
+  .spacer{flex:1}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+     padding:8px 14px;border-bottom:1px solid var(--rule);font-weight:600;white-space:nowrap}
+  td{padding:7px 14px;border-bottom:1px solid #f0f4f2;vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  tbody tr:hover{background:#fafcfb}
+  .f{font-family:ui-monospace,monospace;font-size:12.5px}
+  .req{font-weight:700;color:var(--ink)}
+  .opt{color:var(--faint)}
+  .card{font-family:ui-monospace,monospace;font-size:12px;color:var(--soft);white-space:nowrap}
+  .fk{font-family:ui-monospace,monospace;font-size:12.5px;color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+  .rule{font-family:ui-monospace,monospace;font-size:11.5px;color:var(--soft)}
+  .enum span{display:inline-block;background:var(--accent-bg);color:var(--accent);border-radius:3px;padding:1px 5px;margin:1px 3px 1px 0;font-size:11px}
+  .inv{background:var(--warn-bg);color:var(--warn);border-radius:3px;padding:1px 6px;font-size:10.5px;font-weight:700;letter-spacing:.04em}
+  .note{padding:9px 16px;background:#fbfcfb;border-top:1px solid var(--rule);font-size:12px;color:var(--soft)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--soft);background:var(--card);border:1px solid var(--rule);border-radius:9px;padding:11px 16px}
+  .legend b{color:var(--ink)}\n  .dia{padding:14px;overflow-x:auto;background:#fff}\n  .dia svg{max-width:100%}\n  .dia .node{cursor:pointer}
+  #showall{margin-left:8px;font:11px ui-monospace,monospace;padding:3px 9px;border:1px solid var(--accent);background:#fff;color:var(--accent);border-radius:20px;cursor:pointer}
+  .def{font-size:12px;color:var(--soft);font-family:-apple-system,sans-serif;margin-top:3px;max-width:46ch;line-height:1.45}
+  .nodef{font-size:11.5px;color:var(--warn);font-family:-apple-system,sans-serif;margin-top:3px;font-style:italic}
+  .clsdef{padding:10px 16px;border-bottom:1px solid var(--rule);color:var(--soft);font-size:13px;background:#fbfcfb}
+  td.undef{border-left:3px solid var(--warn)}
+  tr.hl td{background:var(--warn-bg)}
+  .miss{color:var(--warn);font-size:12px}
+  code{font-family:ui-monospace,monospace;font-size:11.5px;background:#f0f4f2;padding:1px 4px;border-radius:3px}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  window.mermaid = mermaid;
+  mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'loose' });
+</script>
+</head>
+<body><div class="wrap">
+
+<div class="mockbar"><b>MOCK — nothing here is wired.</b> The shape is the question. Every value was queried live from <code>urn:chorus:ontology</code> + athena-make at 2026-09-01 11:35, so the content is real even though the page is hand-built.</div>
+
+<div>
+  <h1>Atlas — schema view</h1>
+  <div class="sub">The model as DDL: what is required, what it points at, and whether it has data. One block per class; the UML diagram stays as a companion below each block.</div>
+</div>
+
+<div class="legend">
+  <span><b>REQ</b> minCount ≥ 1 — the record is refused without it</span>
+  <span><b>CARD</b> min..max — <code>*</code> means unbounded</span>
+  <span><b>→</b> forward reference &nbsp; <b>←</b> reverse: something else must point here</span>
+  <span><b>served · N</b> athena-make mounts it, N rows live</span>
+</div>
+
+<div class="cls">
+  <div class="clshead"><span class="clsname">Class map</span>
+    <span class="clsdom">dependencies only — click a green class for its schema</span>
+    <span class="spacer"></span><span class="pill" id="picked">showing all</span><button id="showall" onclick="pick(null)">show all classes</button></div>
+  <div class="dia" id="dia">drawing…</div>
+</div>
+
+<div class="cls" id="Product">
+  <div class="clshead"><span class="clsname">Product</span>
+    <span class="clsdom">products · chorus:ProductShape</span>
+    <span class="spacer"></span><span class="pill">served · 9 rows</span>
+    <span class="pill warn">6/13 defined</span></div>
+  <div class="clsdef">A system being built by the team. Products are outputs of the spine AND inputs back to Capturing (feedback loop).</div>
+  <table><thead><tr><th>Field &amp; definition</th><th>Req</th><th>Card</th><th>Type</th><th>Points at</th><th>Rule</th></tr></thead>
+  <tbody>
+<tr><td class="f req">atStep<div class="def">subject (Product|Domain|Service) -&gt; its primary value-stream step (chorus:ValueStreamStep, ADR-040). Ingestion maps the AS-IS chorus:primaryStep onto this.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">ValueStreamStep</span> <span class="opt">5 props · 55 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">audience<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">comment<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">gaps<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">hasDesignDoc<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Document</span> <span class="opt">6 props · 18 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req">hasDomain<div class="def">True containment — a product has this domain as a constituent part. Loom hasDomain Principles.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Domain</span> <span class="opt">13 props · 40 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">label<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">ownedBy<div class="def">The role responsible for this entity. Initial assignments as of #1845 — subject to Jeff&#x27;s review. Ownership follows structure, not vice versa.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Role</span> <span class="opt">3 props · rows n/a</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req">status<div class="def">Implementation status: live, designed, planned.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="enum"><span>exploring</span><span>building</span><span>operating</span><span>retiring</span></td><td></td><td class="rule">sh:in — closed value set</td></tr>
+<tr><td class="f req undef">valueProposition<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">vision<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f opt">ownerSequence<div class="def">The owning role&#x27;s ordinal over this thing among the things of the same kind they own (1 = first). Unique within ownedBy per kind. Applied to Product and Domain (#3686); Chunk uses roleSequence (#3654).</div></td><td class="opt">no</td><td class="card">0..*</td><td class="f">integer</td><td></td><td class="rule"></td></tr>
+<tr><td class="f opt">publishesPreAuth<div class="def">May this node appear on a surface visible before sign-in. Absent means NO. Opt-in by construction: nothing reaches the public sign-in page unless the model says so explicitly. #3777.</div></td><td class="opt">no</td><td class="card">0..1</td><td class="f">string</td><td></td><td class="rule">absent = off (fail-closed)</td></tr>
+  </tbody></table>
+</div>
+
+<div class="cls" id="Domain">
+  <div class="clshead"><span class="clsname">Domain</span>
+    <span class="clsdom">domains · chorus:DomainShape</span>
+    <span class="spacer"></span><span class="pill">served · 40 rows</span>
+    <span class="pill warn">9/13 defined</span></div>
+  <div class="clsdef">A bounded context with its own data, handlers, ontology, and routes. Three subtypes separate concerns.</div>
+  <table><thead><tr><th>Field &amp; definition</th><th>Req</th><th>Card</th><th>Type</th><th>Points at</th><th>Rule</th></tr></thead>
+  <tbody>
+<tr class="hl"><td class="f req"><span class="inv">REVERSE</span> hasDomain<div class="def">True containment — a product has this domain as a constituent part. Loom hasDomain Principles.</div></td><td class="req">yes</td><td class="card">1..1</td><td class="f">ref</td><td>&larr; <span class="fk">Product</span> <span class="opt">13 props · 9 rows</span></td><td class="rule"><b>sh:inversePath</b> — something else must point here</td></tr>
+<tr><td class="f req">atStep<div class="def">subject (Product|Domain|Service) -&gt; its primary value-stream step (chorus:ValueStreamStep, ADR-040). Ingestion maps the AS-IS chorus:primaryStep onto this.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">ValueStreamStep</span> <span class="opt">5 props · 55 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req">atStream<div class="def">Domain -&gt; its ValueStream (chorusStream | gatheringStream | lifeStream). Required (with atStep) because steps are SHARED across streams, so atStep alone is ambiguous. ADR-045 §4.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">ValueStream</span> <span class="opt">4 props · 8 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">comment<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">definesVocabulary<div class="def">Domain-individual -&gt; a member CLASS it defines (its schema/vocabulary). DEDICATED edge, distinct from chorus:contains (content-membership, ADR-041) — the generator enumerates a domain&#x27;s surface by this. ADR-045 §3 (Kade DE-review: no overloaded contains).</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Class</span> <span class="miss">not served</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">gaps<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">hasDesignDoc<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Document</span> <span class="opt">6 props · 18 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">label<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">ownedBy<div class="def">The role responsible for this entity. Initial assignments as of #1845 — subject to Jeff&#x27;s review. Ownership follows structure, not vice versa.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Role</span> <span class="opt">3 props · rows n/a</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req">purpose<div class="def">The capability a Domain expresses — Jeff 2026-06-19: &#x27;a domain IS a capability, expressed.&#x27; Names what the domain can DO; distinct from rdfs:comment (description). Resolves ArchiMate/BIZBOK Capability into Domain (no 5th type).</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">status<div class="def">Implementation status: live, designed, planned.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="enum"><span>exploring</span><span>building</span><span>operating</span><span>retiring</span></td><td></td><td class="rule">sh:in — closed value set</td></tr>
+<tr><td class="f opt">ownerSequence<div class="def">The owning role&#x27;s ordinal over this thing among the things of the same kind they own (1 = first). Unique within ownedBy per kind. Applied to Product and Domain (#3686); Chunk uses roleSequence (#3654).</div></td><td class="opt">no</td><td class="card">0..*</td><td class="f">integer</td><td></td><td class="rule"></td></tr>
+<tr><td class="f opt">publishesPreAuth<div class="def">May this node appear on a surface visible before sign-in. Absent means NO. Opt-in by construction: nothing reaches the public sign-in page unless the model says so explicitly. #3777.</div></td><td class="opt">no</td><td class="card">0..1</td><td class="f">string</td><td></td><td class="rule">absent = off (fail-closed)</td></tr>
+  </tbody></table>
+</div>
+
+<div class="cls" id="Service">
+  <div class="clshead"><span class="clsname">Service</span>
+    <span class="clsdom">services · chorus:ServiceShape</span>
+    <span class="spacer"></span><span class="pill">served · 12 rows</span>
+    <span class="pill warn">5/14 defined</span></div>
+  <div class="clsdef">A runtime component — LaunchAgent, container, cron job.</div>
+  <table><thead><tr><th>Field &amp; definition</th><th>Req</th><th>Card</th><th>Type</th><th>Points at</th><th>Rule</th></tr></thead>
+  <tbody>
+<tr class="hl"><td class="f req"><span class="inv">REVERSE</span> hosts<div class="def">Domain hosts Service (1:* from Domain). Inverse drives the Service &#x27;exactly one hosting Domain&#x27; constraint.</div></td><td class="req">yes</td><td class="card">1..1</td><td class="f">ref</td><td>&larr; <span class="fk">Domain</span> <span class="opt">13 props · 40 rows</span></td><td class="rule"><b>sh:inversePath</b> — something else must point here</td></tr>
+<tr><td class="f req undef">asIs<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">atStep<div class="def">subject (Product|Domain|Service) -&gt; its primary value-stream step (chorus:ValueStreamStep, ADR-040). Ingestion maps the AS-IS chorus:primaryStep onto this.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">ValueStreamStep</span> <span class="opt">5 props · 55 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">gaps<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">hasDesignDoc<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Document</span> <span class="opt">6 props · 18 rows</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">implementationPlan<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">label<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">notInScope<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req undef">overview<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">ownedBy<div class="def">The role responsible for this entity. Initial assignments as of #1845 — subject to Jeff&#x27;s review. Ownership follows structure, not vice versa.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">ref</td><td>&rarr; <span class="fk">Role</span> <span class="opt">3 props · rows n/a</span></td><td class="rule">sh:class</td></tr>
+<tr><td class="f req undef">pathToClose<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f req">status<div class="def">Implementation status: live, designed, planned.</div></td><td class="req">yes</td><td class="card">1..*</td><td class="enum"><span>exploring</span><span>building</span><span>operating</span><span>retiring</span></td><td></td><td class="rule">sh:in — closed value set</td></tr>
+<tr><td class="f req undef">toBe<div class="nodef">no definition — rdfs:comment missing</div></td><td class="req">yes</td><td class="card">1..*</td><td class="f">string</td><td></td><td class="rule"></td></tr>
+<tr><td class="f opt">publishesPreAuth<div class="def">May this node appear on a surface visible before sign-in. Absent means NO. Opt-in by construction: nothing reaches the public sign-in page unless the model says so explicitly. #3777.</div></td><td class="opt">no</td><td class="card">0..1</td><td class="f">string</td><td></td><td class="rule">absent = off (fail-closed)</td></tr>
+  </tbody></table>
+</div>
+
+<div class="legend" style="display:block">
+  <b>What this mock is asking you.</b>
+  <div style="margin-top:6px;color:var(--soft)">
+    1 · Map on top, click a class to drill into its schema. Right relationship between the two?<br>
+    2 · Are these the right six columns — Field / Req / Card / Type / Points at / Rule?<br>
+    3 · Definitions come straight from rdfs:comment. Missing ones are flagged red, not hidden.<br>
+    4 · Reverse rules are highlighted and pulled to the top of their class. Right emphasis?<br>
+    5 · What is missing that you expected to see?
+  </div>
+</div>
+
+</div>
+<script>
+const UML = `classDiagram
+  direction LR
+  Product --> "1..*" Role : ownedBy
+  Product --> "1..*" ValueStreamStep : atStep
+  Product --> "1..*" Document : hasDesignDoc
+  Product --> "1..*" Domain : hasDomain
+  Domain --> "1..*" Role : ownedBy
+  Domain --> "1..*" Class : definesVocabulary
+  Domain --> "1..*" ValueStream : atStream
+  Domain --> "1..*" ValueStreamStep : atStep
+  Domain --> "1..*" Document : hasDesignDoc
+  Product --> "1..1" Domain : hasDomain
+  Service --> "1..*" Role : ownedBy
+  Domain --> "1..1" Service : hosts
+  Service --> "1..*" ValueStreamStep : atStep
+  Service --> "1..*" Document : hasDesignDoc
+  class Class {
+    NOT SERVED
+  }
+  class Document {
+    6 fields · 18 rows
+  }
+  class Domain {
+    13 fields · 40 rows
+  }
+  class Product {
+    13 fields · 9 rows
+  }
+  class Role {
+    3 fields · rows n/a
+  }
+  class Service {
+    14 fields · 12 rows
+  }
+  class ValueStream {
+    4 fields · 8 rows
+  }
+  class ValueStreamStep {
+    5 fields · 55 rows
+  }
+  click Domain call pick("Domain")
+  style Domain fill:#e6f2ef,stroke:#0f6b5c,stroke-width:2px
+  click Product call pick("Product")
+  style Product fill:#e6f2ef,stroke:#0f6b5c,stroke-width:2px
+  click Service call pick("Service")
+  style Service fill:#e6f2ef,stroke:#0f6b5c,stroke-width:2px`;
+function pick(name){
+  document.querySelectorAll('.cls[id]').forEach(function(el){
+    el.style.display = (!name || el.id === name) ? '' : 'none';
+  });
+  document.getElementById('picked').textContent = name ? ('showing ' + name) : 'showing all';
+  if (name) document.getElementById(name).scrollIntoView({behavior:'smooth', block:'start'});
+}
+window.pick = pick;
+(async () => {
+  try {
+    // the mermaid <script type="module"> is DEFERRED, so this classic script
+    // runs first and window.mermaid is still undefined. Wait for it.
+    for (let i = 0; i < 100 && !window.mermaid; i++) await new Promise(r => setTimeout(r, 50));
+    if (!window.mermaid) throw new Error('mermaid did not load');
+    const { svg, bindFunctions } = await window.mermaid.render('umlmap', UML);
+    const d = document.getElementById('dia');
+    d.innerHTML = svg;
+    if (bindFunctions) bindFunctions(d);
+  } catch (e) {
+    document.getElementById('dia').textContent = 'map failed: ' + e.message;
+  }
+})();
+</script>
+</body></html>

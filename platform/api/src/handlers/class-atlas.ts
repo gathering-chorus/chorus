@@ -18,15 +18,47 @@ export interface SparqlBinding {
   // target a Service OR a Domain) has no sh:class, so reading only sh:class
   // left it invisible — which is exactly why the atlas showed no Product→Service.
   orClass?: SparqlTerm;
+  // #4053 — the predicate behind an sh:inversePath, and a field's sh:pattern.
+  // Both are constraints the model already carries and the diagram dropped.
+  invOf?: SparqlTerm;
+  pattern?: SparqlTerm;
+  // #4053 — the semantic layer: rdfs:comment on the class and on the property.
+  // Structure without meaning lets the atlas say a field exists and never what
+  // it is for. Missing ones stay undefined so the gap is countable, not hidden.
+  classDef?: SparqlTerm;
+  propDef?: SparqlTerm;
+  /** rdfs:comment of the predicate BEHIND an inverse path. */
+  invDef?: SparqlTerm;
 }
 
-export interface AtlasAttribute { name: string; type: string; min: number; max: number | null; allowed?: string[] }
-export interface AtlasEdge { name: string; to: string; multiplicity: string; crossDomain: boolean }
+export interface AtlasAttribute {
+  name: string; type: string; min: number; max: number | null;
+  allowed?: string[];
+  /** sh:pattern — the regex a value must match. */
+  pattern?: string;
+  /** rdfs:comment on the property. Absent when the model never defined it. */
+  definition?: string;
+}
+export interface AtlasEdge {
+  name: string; to: string; multiplicity: string; crossDomain: boolean;
+  // #4053 — an inverse-path edge is a requirement on the OTHER end: something
+  // must point at me. Domain requires EXACTLY ONE Product to claim it, and no
+  // amount of authoring on Domain can satisfy that. Drawing it as a bare
+  // "(inverse path)" hid the strongest rules in the model.
+  inverse?: boolean;
+  /** rdfs:comment on the property. Absent when the model never defined it. */
+  definition?: string;
+}
 export interface AtlasClass {
   name: string; attributes: AtlasAttribute[]; edges: AtlasEdge[]; parents: string[];
   // #4053 — DECLARED (in the pen) and SERVED (mounted by athena-make) are two
   // different claims. served=false is the fail-closed default: if discovery
   // cannot be read we say "not confirmed", never "fine".
+  /** rdfs:comment on the class. Absent when the model never defined it. */
+  definition?: string;
+  /** members (attributes + edges) carrying a definition, and the total. */
+  definedCount?: number;
+  memberCount?: number;
   served?: boolean;
   // Present only when a count actually resolved. 0 means asked-and-empty;
   // undefined means could-not-ask. Collapsing them rebuilds the ambiguity.
@@ -52,7 +84,11 @@ function addPropertyRow(
   if (!row.prop) return;
   // A blank-node path is an inverse-path constraint — a real requirement
   // that authoring cannot satisfy, so it is SHOWN and labelled, not dropped.
-  const name = row.prop.type === 'bnode' ? '(inverse path)' : local(row.prop.value);
+  // #4053 — and now NAMED: the predicate is on the blank node, so the edge can
+  // read `hasDomain (inverse) 1..1 Product` instead of an anonymous stub.
+  const inverse = row.prop.type === 'bnode';
+  const invName = local(row.invOf?.value);
+  const name = inverse ? (invName || '(inverse path)') : local(row.prop.value);
   if (!name) return;
 
   const min = row.min?.value ? Number(row.min.value) : 0;
@@ -62,18 +98,34 @@ function addPropertyRow(
   const rangeClass = local(row.rc?.value) || local(row.orClass?.value);
 
   if (rangeClass) {
-    if (entry.edges.some((e) => e.name === name && e.to === rangeClass)) return;
-    // cross-domain when the target class's home domain is not this one;
-    // an unknown home is treated as cross — an honest "elsewhere".
-    entry.edges.push({
-      name, to: rangeClass,
-      multiplicity: multiplicity(min, max),
-      crossDomain: classHomes.get(rangeClass) !== dom,
-    });
+    addEdgeRow(entry, { name, rangeClass, min, max, inverse, dom }, row, classHomes);
     return;
   }
 
   addAttributeRow(entry, name, row, min, max);
+}
+
+interface EdgeSpec { name: string; rangeClass: string; min: number; max: number | null; inverse: boolean; dom: string }
+
+/** Split out to keep addPropertyRow under the complexity ratchet. */
+function addEdgeRow(
+  entry: AtlasClass,
+  spec: EdgeSpec,
+  row: SparqlBinding,
+  classHomes: ReadonlyMap<string, string>
+): void {
+  if (entry.edges.some((e) => e.name === spec.name && e.to === spec.rangeClass)) return;
+  // An inverse edge takes its definition from the predicate being inverted.
+  const definition = row.propDef?.value ?? row.invDef?.value;
+  // cross-domain when the target class's home domain is not this one;
+  // an unknown home is treated as cross — an honest "elsewhere".
+  entry.edges.push({
+    name: spec.name, to: spec.rangeClass,
+    multiplicity: multiplicity(spec.min, spec.max),
+    crossDomain: classHomes.get(spec.rangeClass) !== spec.dom,
+    ...(definition ? { definition } : {}),
+    ...(spec.inverse ? { inverse: true } : {}),
+  });
 }
 
 /** #4053 — sh:in members arrive one row each, so an attribute accumulates its
@@ -103,6 +155,8 @@ function addAttributeRow(
     min,
     max,
     ...(member !== undefined ? { allowed: [member] } : {}),
+    ...(row.pattern?.value ? { pattern: row.pattern.value } : {}),
+    ...(row.propDef?.value ? { definition: row.propDef.value } : {}),
   });
 }
 
@@ -148,12 +202,17 @@ export function buildClassAtlas(
     const entry = classes.get(cls) ?? { name: cls, attributes: [], edges: [], parents: [] };
     classes.set(cls, entry);
 
+    // #4053 — the class's own definition rides any row for that class.
+    if (!entry.definition && row.classDef?.value) entry.definition = row.classDef.value;
+
     // Subclass edge (may ride any row for the class).
     const parent = local(row.parent?.value);
     if (parent && !entry.parents.includes(parent)) entry.parents.push(parent);
 
     addPropertyRow(entry, row, dom, classHomes);
   }
+
+  countDefinitions(domains);
 
   return {
     domains: [...domains.entries()]
@@ -165,13 +224,28 @@ export function buildClassAtlas(
   };
 }
 
+/** #4053 — definition coverage per class, once every member is known. */
+function countDefinitions(domains: ReadonlyMap<string, Map<string, AtlasClass>>): void {
+  for (const classes of domains.values()) {
+    for (const c of classes.values()) {
+      const members = [...c.attributes, ...c.edges];
+      c.memberCount = members.length;
+      c.definedCount = members.filter((m) => m.definition).length;
+    }
+  }
+}
+
 const ATLAS_QUERY = `PREFIX chorus: <https://jeffbridwell.com/chorus#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX sh: <http://www.w3.org/ns/shacl#>
-SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass WHERE { GRAPH <urn:chorus:ontology> {
+SELECT ?domain ?class ?prop ?min ?max ?dt ?rc ?parent ?inValue ?orClass ?invOf ?pattern ?classDef ?propDef ?invDef WHERE { GRAPH <urn:chorus:ontology> {
   ?domain chorus:definesVocabulary ?class .
+  OPTIONAL { ?class rdfs:comment ?classDef }
   OPTIONAL { ?shp sh:targetClass ?class ; sh:property ?b . ?b sh:path ?prop .
+    OPTIONAL { ?prop sh:inversePath ?invOf . OPTIONAL { ?invOf rdfs:comment ?invDef } }
+    OPTIONAL { ?b sh:pattern ?pattern }
+    OPTIONAL { ?prop rdfs:comment ?propDef }
     OPTIONAL { ?b sh:minCount ?min } OPTIONAL { ?b sh:maxCount ?max }
     OPTIONAL { ?b sh:datatype ?dt } OPTIONAL { ?b sh:class ?rc }
     OPTIONAL { ?b sh:in ?inList . ?inList rdf:rest*/rdf:first ?inValue }
