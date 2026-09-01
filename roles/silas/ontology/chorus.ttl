@@ -2382,7 +2382,19 @@ chorus:ProductShape a sh:NodeShape ;
     sh:property [ sh:path chorus:gaps             ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:atStep           ; sh:minCount 1 ; sh:class chorus:ValueStreamStep ] ;
     sh:property [ sh:path chorus:hasDesignDoc     ; sh:minCount 1 ; sh:class chorus:Document ] ;
-    sh:property [ sh:path chorus:hasDomain        ; sh:minCount 1 ; sh:class chorus:Domain ] .
+    sh:property [ sh:path chorus:hasDomain        ; sh:minCount 1 ; sh:class chorus:Domain ] ;
+    # #4053 — Jeff, reading the atlas: "there is no dependency from products class
+    # to services class at all." The edges were AUTHORED (chorus:consumes appears
+    # 79x) but governed by no shape, so nothing served them and nothing drew them.
+    # Silas's ruling 2026-09-01: consumes is ONE verb — depends-on-a-capability —
+    # and Domain vs Service is granularity of target, not a different relation.
+    # Splitting it would force every caller to know the target's type.
+    # sh:or, not sh:class: 84 of the live targets are Domains, 21 are Services.
+    sh:property [ sh:path chorus:consumes         ; sh:minCount 0 ;
+                  sh:or ( [ sh:class chorus:Service ] [ sh:class chorus:Domain ] ) ] ;
+    sh:property [ sh:path chorus:provides         ; sh:minCount 0 ;
+                  sh:or ( [ sh:class chorus:Service ] [ sh:class chorus:Domain ] ) ] ;
+    sh:property [ sh:path chorus:hasServiceDesign ; sh:minCount 0 ; sh:class chorus:Document ] .
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;

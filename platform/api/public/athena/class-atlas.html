@@ -62,6 +62,19 @@ function domainDiagram(dom) {
       L.push(`  ${type} ${ident(a.name)}${req}`);
     }
     L.push('}');
+    // #4053 — DECLARED (the pen) and SERVED (athena-make mounted it) are two
+    // claims. A class served with 0 rows is NOT the same as one that works, and
+    // a class the pen declares that nothing serves must say so on the picture —
+    // otherwise a green athena-make verb is unfalsifiable here.
+    if (cls.served === false) {
+      L.push(`note for ${ident(cls.name)} "DECLARED — not served by athena-make"`);
+    } else if (cls.rowCount === 0) {
+      L.push(`note for ${ident(cls.name)} "served · 0 rows — mounted and empty"`);
+    } else if (typeof cls.rowCount === 'number') {
+      L.push(`note for ${ident(cls.name)} "served · ${cls.rowCount} rows"`);
+    } else if (cls.served) {
+      L.push(`note for ${ident(cls.name)} "served · count unavailable"`);
+    }
     for (const p of cls.parents) L.push(`${ident(p)} <|-- ${ident(cls.name)}`);
     for (const e of cls.edges) {
       const arrow = e.crossDomain ? '..>' : '-->';
@@ -86,6 +99,16 @@ function domainDiagram(dom) {
   }
   const nav = document.getElementById('nav');
   out.className = ''; out.textContent = '';
+  // #4053 — if athena-make could not be asked, say so ONCE at the top rather
+  // than letting every class read as "not served". Could-not-ask and
+  // not-served are different findings and must not collapse into one.
+  if (atlas.servedReachable === false) {
+    const warn = document.createElement('div');
+    warn.className = 'astatus err';
+    warn.textContent = 'athena-make unreachable at ' + (atlas.servedFrom || '?') +
+      ' — served status and row counts are UNKNOWN below, not absent.';
+    out.appendChild(warn);
+  }
   for (const dom of atlas.domains) {
     const a = document.createElement('a');
     a.href = '#dom-' + ident(dom.name);
