@@ -1000,14 +1000,28 @@ fn send_mcp_nudge(from: &str, other: &str, card: u64, trace: &str) -> R<()> {
 /// interpolates safely into the JSON-RPC body. This is the MINIMAL mechanism pointer
 /// (run `werk-demo go <card>` to land); the rich announce stays the DemoOutcome
 /// message + Bridge post. The announce CONTENT is Jeff's to shape — this is the slot.
+/// #4075 — the werk's own Clearing (env-up runs it per role, see werk-deploy
+/// demo_env env_services): silas=3481, kade=3482, wren=3483. The announce
+/// carries it so Jeff opens THIS round's room, not prod's.
+pub fn clearing_url_for(role: &str) -> String {
+    let port = match role {
+        "silas" => 3481,
+        "kade" => 3482,
+        "wren" => 3483,
+        _ => 3470,
+    };
+    format!("http://localhost:{}/", port)
+}
+
 fn announce_to_jeff(from: &str, card: u64, trace: &str, variant_url: &str, round: &str) {
     let url = if variant_url.is_empty() { "(variant up)" } else { variant_url };
+    let clearing = clearing_url_for(from);
     // #3746 — Jeff, reviewing the tree-rendered room: "the werk-demo styling and
     // length of messages is a lot." One line: card, round (the stale-present
     // discipline), where to look, the three answers. The reassurance prose said
     // the same thing on every demo and taught nothing; `werk-demo go` stays
     // discoverable in docs, not in every announce.
-    let msg = format!("Demo ready — #{} · round {} · {} · go / no / more", card, round, url);
+    let msg = format!("Demo ready — #{} · round {} · {} · clearing {} · go / no / more", card, round, url, clearing);
     let mcp_url = std::env::var("CHORUS_MCP_URL")
         .unwrap_or_else(|_| "http://localhost:3341/mcp".to_string());
     // #3544 — the announce must DELIVER (osascript-inject) into the demoer's session,
@@ -1419,9 +1433,10 @@ pub fn demo(card: u64, role: &str, home: &Path) -> R<DemoOutcome> {
         _ => 3340,
     };
     let variant_url = format!("http://localhost:{}/api/chorus/health", variant_port);
+    let clearing_url = clearing_url_for(role);
     let pause_body = format!(
-        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
-        role, card, variant_url
+        r#"{{"from":"{}","text":"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🎬 [DEMO READY FOR JEFF] — card #{}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nVariant up: {}\nClearing: {}\nAwaiting your eyes (or a machine verdict).\n→ React with questions, check the variant, or /acp when satisfied."}}"#,
+        role, card, variant_url, clearing_url
     );
     // -f + exit-check so the silent-success class can't recur on this surface
     // (Kade's debt-note catch — AC2 spirit leaks beyond signal()).
