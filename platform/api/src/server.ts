@@ -2545,7 +2545,13 @@ app.use(['/api/loom', '/api/chorus'], (_req: Request, res: Response, next: NextF
 
 const ATHENA_GRAPH = 'urn:chorus:ontology';
 const ATHENA_INSTANCES = 'urn:chorus:instances';
-const ATHENA_SPARQL = 'http://localhost:3030/pods/sparql';
+// #4058 — the athena read/write endpoints follow CHORUS_FUSEKI like the two
+// query sites above do, so a werk variant (env-up sets CHORUS_FUSEKI to the
+// werk's own dataset, #4047) resolves the security envelope's surface table and
+// Principal scope grants from ITS store, not prod's. Hardcoded pods here meant
+// a demo of a scope grant could never show it: the variant read prod's grants.
+const ATHENA_FUSEKI_BASE = process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods';
+const ATHENA_SPARQL = ATHENA_FUSEKI_BASE + '/sparql';
 const SPARQL_DIR = path.resolve(__dirname, 'sparql');
 
 const ATHENA_QUERIES = [
@@ -2560,7 +2566,7 @@ const ATHENA_QUERIES = [
 
 // Athena SPARQL client + envelope + loader extracted to
 // src/athena-sparql.ts (#2205 wave 8).
-const ATHENA_UPDATE = 'http://localhost:3030/pods/update';
+const ATHENA_UPDATE = ATHENA_FUSEKI_BASE + '/update';
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from './athena-sparql';
 const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: ATHENA_UPDATE, auth: fusekiWriteAuthFromEnv() });
 const athenaSparqlQuery = _athena.query;
@@ -3553,32 +3559,57 @@ app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request,
   }
 });
 
-// POST /api/athena/reload — reload ontology from TTL into Fuseki
+// POST /api/athena/reload — redeploy the MODEL SET into this api's store.
+//
+// #4058 — this surface requires urn:chorus:domains:code, which no principal
+// held for eight weeks, so nobody could reach what it did. What it did was
+// DROP urn:chorus:ontology and PUT back chorus.ttl ALONE — one of 24 files in
+// athena-deploy-model.sh's MODEL_SET. Reproduced on the werk store before this
+// change: 5247 triples -> 3170, every APISurface/requiresScope row gone, i.e.
+// the security envelope's own surface table erased by the first caller the
+// grant lets in. Granting the scope without fixing this would have armed it
+// against prod. So the handler no longer has its own loader: it runs the one
+// governed deployer (per-subject additive merge, verified, spine-stamped —
+// #3550/#3736), pointed at THIS api's store (CHORUS_FUSEKI, so a werk variant
+// redeploys its own dataset, never prod's).
 app.post('/api/athena/reload', async (_req: Request, res: Response) => {
   const start = Date.now();
-  try {
-    const ttlPath = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
-    if (!fs.existsSync(ttlPath)) {
-      return res.status(404).json(athenaEnvelope('reload', { error: `TTL file not found: ${ttlPath}` }, Date.now() - start, { error: true }));
-    }
-    const ttlContent = fs.readFileSync(ttlPath, 'utf-8');
-    // #1956: Only drop+replace ontology graph. Instances graph (API-created data) is untouched.
-    await athenaSparqlUpdate(`DROP SILENT GRAPH <${ATHENA_GRAPH}>`);
-    const loadRes = await fetch('http://localhost:3030/pods/data?graph=' + encodeURIComponent(ATHENA_GRAPH), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'text/turtle' },
-      body: ttlContent,
-    });
-    if (!loadRes.ok) {
-      const text = await loadRes.text();
-      throw new Error(`Fuseki load ${loadRes.status}: ${text.slice(0, 200)}`);
-    }
-    const countResult = await athenaSparqlQuery(loadSparql('health'));
-    const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
-    res.json(athenaEnvelope('reload', { status: 'ok', source: ttlPath, tripleCount }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('reload', { error: errMsg(err) }, Date.now() - start, { error: true }));
+  const script = path.join(REPO_ROOT, 'platform/scripts/athena-deploy-model.sh');
+  if (!fs.existsSync(script)) {
+    return res.status(404).json(athenaEnvelope('reload', { error: `deployer not found: ${script}` }, Date.now() - start, { error: true }));
   }
+  execFile('bash', [script], {
+    env: {
+      ...process.env,
+      // launchd hands the api /usr/bin:/bin only; the deployer fail-closes
+      // without riot (#3731), which lives under homebrew. Append, never
+      // prepend, so an operator's PATH still wins.
+      PATH: [process.env.PATH || '/usr/bin:/bin', '/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.chorus/bin')].join(':'),
+      CHORUS_ROOT: REPO_ROOT,
+      FUSEKI_GSP: ATHENA_FUSEKI_BASE + '/data',
+      FUSEKI_QUERY: ATHENA_FUSEKI_BASE + '/query',
+      FUSEKI_UPDATE: ATHENA_FUSEKI_BASE + '/update',
+    },
+    timeout: 10 * 60 * 1000,
+    maxBuffer: 16 * 1024 * 1024,
+  }, async (err, stdout, stderr) => {
+    const tail = (s: string) => s.trim().split('\n').slice(-12).join('\n');
+    if (err) {
+      res.status(500).json(athenaEnvelope('reload', {
+        error: `athena-deploy-model.sh failed: ${errMsg(err)}`,
+        stderr: tail(String(stderr)),
+        stdout: tail(String(stdout)),
+      }, Date.now() - start, { error: true }));
+      return;
+    }
+    try {
+      const countResult = await athenaSparqlQuery(loadSparql('health'));
+      const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
+      res.json(athenaEnvelope('reload', { status: 'ok', source: script, store: ATHENA_FUSEKI_BASE, tripleCount, deployer: tail(String(stdout)) }, Date.now() - start));
+    } catch (e: unknown) {
+      res.status(500).json(athenaEnvelope('reload', { error: errMsg(e) }, Date.now() - start, { error: true }));
+    }
+  });
 });
 
 // #2627: helpers extracted from /api/athena/validate route.
