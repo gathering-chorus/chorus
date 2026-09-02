@@ -71,3 +71,60 @@ chorus:principal-chorus-sdk
 # out of reach by construction.
 chorus:principal-nightly
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI .
+
+# ---------------------------------------------------------------------------
+# #4058 — PROPOSED grants, awaiting Jeff's ruling. NOT YET DEPLOYED.
+#
+# authz-scope-reachable.sh measured 15 surfaces requiring 6 scopes that NO
+# principal holds. Every one is unreachable by every caller — 403 out-of-scope —
+# and has been since 2026-07-08. A surface nobody can reach looks exactly like a
+# surface nobody calls, which is why it stood for eight weeks.
+#
+# The principle applied below is least privilege per KIND of work, not
+# convenience:
+#   domains:code   model authoring (athena subdomain PUT/POST/DELETE, /reload,
+#                  discover-code, discover-tests, discover-writes) — 7 surfaces.
+#                  Role work. The three roles.
+#   icd            ICD authoring — 2 surfaces. Role work. The three roles.
+#   cards          card writes — 1 surface. Role work. The three roles.
+#   catalog        doc-catalog writes — 1 surface. Role work. The three roles.
+#   index          embed + index writes — 3 surfaces. SERVICE work, on a
+#                  schedule, not something a role does by hand. nightly only.
+#   nudge-read     read pending nudges — 1 surface, read-only. Every principal.
+#
+# chorus-sdk deliberately gets ONLY nudge-read here. Tests currently mint as
+# chorus-sdk (platform/api/tests/lib/service-token.ts defaults to it when
+# CHORUS_ROLE is unset), so granting it the authoring scopes would close the
+# test 403s by turning the SDK principal into the everything-key. The right fix
+# is AC4 — tests carry a real role — not a wider service principal.
+# ---------------------------------------------------------------------------
+
+chorus:principal-silas
+    chorus:hasScope "urn:chorus:domains:code"^^xsd:anyURI ,
+                    "urn:chorus:icd"^^xsd:anyURI ,
+                    "urn:chorus:cards"^^xsd:anyURI ,
+                    "urn:chorus:catalog"^^xsd:anyURI ,
+                    "urn:chorus:nudge-read"^^xsd:anyURI .
+
+chorus:principal-wren
+    chorus:hasScope "urn:chorus:domains:code"^^xsd:anyURI ,
+                    "urn:chorus:icd"^^xsd:anyURI ,
+                    "urn:chorus:cards"^^xsd:anyURI ,
+                    "urn:chorus:catalog"^^xsd:anyURI ,
+                    "urn:chorus:nudge-read"^^xsd:anyURI .
+
+chorus:principal-kade
+    chorus:hasScope "urn:chorus:domains:code"^^xsd:anyURI ,
+                    "urn:chorus:icd"^^xsd:anyURI ,
+                    "urn:chorus:cards"^^xsd:anyURI ,
+                    "urn:chorus:catalog"^^xsd:anyURI ,
+                    "urn:chorus:nudge-read"^^xsd:anyURI .
+
+# Service principals stay narrow. nightly gains index because the embed/index
+# writes ARE its job; it gains nothing else.
+chorus:principal-nightly
+    chorus:hasScope "urn:chorus:index"^^xsd:anyURI ,
+                    "urn:chorus:nudge-read"^^xsd:anyURI .
+
+chorus:principal-chorus-sdk
+    chorus:hasScope "urn:chorus:nudge-read"^^xsd:anyURI .
