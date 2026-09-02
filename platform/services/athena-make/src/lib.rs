@@ -3500,6 +3500,9 @@ pub fn is_safe_local(s: &str) -> bool {
         && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
+/// The collection row's column separator (see collection_items). U+001F, never '|'.
+pub const COL_SEP: char = '\u{1f}';
+
 /// Collection marshal — one JSON object per SUBJECT, multi-valued fields aggregated.
 /// #3558 deduped rows by subject (first row wins), which fixed the fan-out counts but
 /// silently DROPPED every value after the first (borg showed 1 of 5 hasDomain). #3635:
@@ -3511,7 +3514,13 @@ pub fn collection_items(rows: Vec<String>, extra_names: &[String]) -> Vec<String
     let mut by_subj: std::collections::HashMap<String, Vec<Vec<String>>> =
         std::collections::HashMap::new();
     for rowv in rows {
-        let cols: Vec<String> = rowv.split('|').map(|s| s.to_string()).collect();
+        // #4045 — the column separator is U+001F (unit separator), not '|'. With '|'
+        // any value containing a pipe (a table rendered as text: "Path | Today | To-be")
+        // shifted every column after it: spine's hasDomain served a sentence from its
+        // apiSurface and hasDesignDoc served "404 — no class". Proven on the werk
+        // variant 2026-09-02 10:31. U+001F is a control character no authored text
+        // carries; the CONCAT in the collection query emits the same byte.
+        let cols: Vec<String> = rowv.split(COL_SEP).map(|s| s.to_string()).collect();
         let subj = cols.first().cloned().unwrap_or_default();
         if !by_subj.contains_key(&subj) {
             order.push(subj.clone());
@@ -3680,7 +3689,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             })
             .collect();
         let cat: String = (0..extra.len())
-            .map(|i| format!(", \"|\", COALESCE(STR(?f{i}), \"\")", i = i))
+            .map(|i| format!(", \"\\u001F\", COALESCE(STR(?f{i}), \"\")", i = i))
             .collect();
         // #4010 — LIMIT/OFFSET pushed into SPARQL, and the total asked separately.
         //
@@ -3703,7 +3712,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
             .and_then(|c| c.parse::<usize>().ok())
             .unwrap_or(0);
         let where_body = format!(
-            "GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"|\", COALESCE(?clabel, ?rlabel, \"\"), \"|\", COALESCE(?status, \"\"){cat}) AS ?v) }}",
+            "GRAPH <{g}> {{ ?s a <{c}> . OPTIONAL {{ ?s <{ns}label> ?clabel }} OPTIONAL {{ ?s <http://www.w3.org/2000/01/rdf-schema#label> ?rlabel }} OPTIONAL {{ ?s <{ns}status> ?status }}{opts} BIND(CONCAT(STR(?s), \"\\u001F\", COALESCE(?clabel, ?rlabel, \"\"), \"\\u001F\", COALESCE(?status, \"\"){cat}) AS ?v) }}",
             g = table.instances_graph, c = table.class, ns = NS, opts = opts, cat = cat
         );
         // The TOTAL is a COUNT over subjects only — no OPTIONALs, no CONCAT, so
@@ -4863,15 +4872,31 @@ mod tests {
     }
 
     // #3635 — collection marshal aggregates multi-valued fields per subject.
+    // #4045 — a value that CONTAINS a pipe must not shift the columns after it.
+    // Negative proof: on the old '|'-separated rows this same fixture split into
+    // six columns and hasDomain served "Today" — the test fails on pre-fix code.
+    #[test]
+    fn collection_items_value_containing_a_pipe_does_not_shift_columns() {
+        let sep = super::COL_SEP;
+        let rows = vec![format!(
+            "https://x#spine{s}Spine{s}operating{s}Path | Today | To-be{s}events",
+            s = sep
+        )];
+        let items = collection_items(rows, &["apiSurface".to_string(), "hasDomain".to_string()]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].contains("\"apiSurface\": \"Path | Today | To-be\""), "pipe kept inside the value: {}", items[0]);
+        assert!(items[0].contains("\"hasDomain\": \"events\""), "the column after it is intact: {}", items[0]);
+    }
+
     // Pinned fixture for the #3558 fan-out: borg's 5 hasDomain rows must yield ONE
     // item carrying ALL values (the dedupe kept the first row and dropped the rest).
     #[test]
     fn collection_items_aggregates_multivalued_fields_per_subject() {
         let rows = vec![
-            "https://x#borg|Borg|building|logs".to_string(),
-            "https://x#borg|Borg|building|builds".to_string(),
-            "https://x#borg|Borg|building|deploys".to_string(),
-            "https://x#athena||building|domains".to_string(),
+            "https://x#borg\u{1f}Borg\u{1f}building\u{1f}logs".to_string(),
+            "https://x#borg\u{1f}Borg\u{1f}building\u{1f}builds".to_string(),
+            "https://x#borg\u{1f}Borg\u{1f}building\u{1f}deploys".to_string(),
+            "https://x#athena\u{1f}\u{1f}building\u{1f}domains".to_string(),
         ];
         let items = collection_items(rows, &["hasDomain".to_string()]);
         assert_eq!(items.len(), 2, "entities, not SPARQL rows");
@@ -4892,10 +4917,10 @@ mod tests {
     fn collection_items_cross_product_rows_dedupe_values() {
         // two multi-valued fields fan as a cross-product; values dedupe per field
         let rows = vec![
-            "https://x#d|D|ok|a|v1".to_string(),
-            "https://x#d|D|ok|a|v2".to_string(),
-            "https://x#d|D|ok|b|v1".to_string(),
-            "https://x#d|D|ok|b|v2".to_string(),
+            "https://x#d\u{1f}D\u{1f}ok\u{1f}a\u{1f}v1".to_string(),
+            "https://x#d\u{1f}D\u{1f}ok\u{1f}a\u{1f}v2".to_string(),
+            "https://x#d\u{1f}D\u{1f}ok\u{1f}b\u{1f}v1".to_string(),
+            "https://x#d\u{1f}D\u{1f}ok\u{1f}b\u{1f}v2".to_string(),
         ];
         let items = collection_items(rows, &["f1".to_string(), "f2".to_string()]);
         assert_eq!(items.len(), 1);
@@ -4927,7 +4952,7 @@ mod tests {
 
     #[test]
     fn collection_items_empty_field_renders_empty_string() {
-        let rows = vec!["https://x#d|D|ok|".to_string()];
+        let rows = vec!["https://x#d\u{1f}D\u{1f}ok\u{1f}".to_string()];
         let items = collection_items(rows, &["f1".to_string()]);
         assert!(items[0].contains("\"f1\": \"\""), "{}", items[0]);
     }

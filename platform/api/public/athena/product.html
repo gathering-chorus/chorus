@@ -4,7 +4,7 @@
 <!-- #3635 — the Jeff-approved product INSTANCE page (2026-07-12 mock), ?p=<name>.
      Replaces the #3420 skeleton. Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<link rel="stylesheet" href="athena-flow.css"><style>/* #4045 — section attributes are multi-paragraph text; keep their line breaks */ td.attr-text p{white-space:pre-line;margin:0}</style><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -93,9 +93,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       const isEdge = !!def.$ref;
       const vals = asArray(e[k]).filter(v => v !== '' && v != null);
       const cell = vals.length
-        ? (isEdge ? vals.map(v => edgeLink(k, v)).join(' ') : `<p>${esc(vals.join(' '))}</p>`)
+        ? (isEdge ? vals.map(v => edgeLink(k, v)).join(' ') : `<p>${esc(vals.join('\n'))}</p>`)
         : '<span class="empty">not set</span>';
-      return `<tr><td><code>chorus:${esc(k)}</code></td><td class="kind">${isEdge ? 'edge' : 'field'}</td><td>${cell}</td></tr>`;
+      return `<tr><td><code>chorus:${esc(k)}</code></td><td class="kind">${isEdge ? 'edge' : 'field'}</td><td class="${isEdge ? '' : 'attr-text'}">${cell}</td></tr>`;
     });
     const provLine = ['iri', 'created', 'creator', 'modified'].filter(k => e[k]).map(k => `${k}: ${esc(String(e[k]).slice(0, 40))}`).join(' &middot; ');
     const designDoc = asArray(e.hasDesignDoc).map(v => docsByName[String(v).replace(/^.*[#/]/, '')]).find(Boolean);
