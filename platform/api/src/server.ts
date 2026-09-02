@@ -1642,11 +1642,30 @@ const readSpineEventsForRole = (role: string, sinceMs: number): SpineLine[] => {
   return out;
 };
 
-const listWipCardsForRoles = (): WipCardEntry[] =>
-  getBoardCards()
+/** #4028 — the board's WIP by owner. The pulse snapshot is the same source
+ *  /context/board/wip answers from; the live cards cache is the fallback when a
+ *  fresh process (a demo variant) has no snapshot yet. */
+const wipFromPulse = (): WipCardEntry[] => {
+  const raw = readPulseFile();
+  if (raw === null) return [];
+  try {
+    const wip = (JSON.parse(raw) as { board?: { wip_cards?: unknown } }).board?.wip_cards;
+    if (!Array.isArray(wip)) return [];
+    return wip
+      .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object')
+      .map((c) => ({ id: Number(c.id), owner: typeof c.owner === 'string' ? c.owner : '' }))
+      .filter((c) => Number.isFinite(c.id));
+  } catch { return []; }
+};
+
+const listWipCardsForRoles = (): WipCardEntry[] => {
+  const fromPulse = wipFromPulse();
+  if (fromPulse.length > 0) return fromPulse;
+  return getBoardCards()
     .filter((c) => c.status === 'WIP')
     .map((c) => ({ id: Number(c.id), owner: c.owner }))
     .filter((c) => Number.isFinite(c.id));
+};
 
 app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
   const alertDir = [
