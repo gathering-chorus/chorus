@@ -306,14 +306,9 @@ pub fn generate_plist(
     // Without it a reload answers 401 and the service turns that into a 500 —
     // which reads as the variant being broken rather than unauthenticated.
     // launchd gives a plist no inherited environment, so it has to be written in.
-    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
-        if !pw.is_empty() {
-            env_pairs.push((
-                "FUSEKI_ADMIN_USER",
-                std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()),
-            ));
-            env_pairs.push(("FUSEKI_ADMIN_PASSWORD", pw));
-        }
+    if let Some((user, pw)) = fuseki_admin_creds() {
+        env_pairs.push(("FUSEKI_ADMIN_USER", user));
+        env_pairs.push(("FUSEKI_ADMIN_PASSWORD", pw));
     }
     for (k, v) in extra_env {
         env_pairs.push((k, v.to_string()));
@@ -477,13 +472,35 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
 /// a model seed against a dataset that was never made, which surfaced as a
 /// confusing 405. The credential is the same one every bash writer uses via
 /// fuseki-auth.sh; read it from the environment rather than inventing a path.
-fn fuseki_admin_auth() -> Vec<String> {
-    match std::env::var("FUSEKI_ADMIN_PASSWORD") {
-        Ok(pw) if !pw.is_empty() => {
-            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
-            vec!["-u".to_string(), format!("{}:{}", user, pw)]
+fn fuseki_admin_creds() -> Option<(String, String)> {
+    let from_env = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|p| !p.is_empty());
+    let (user, pw) = match from_env {
+        Some(pw) => (std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()), pw),
+        None => {
+            // The pipeline runs under act/launchd, where nothing exports this —
+            // which is exactly where the 401 showed up. fuseki-auth.sh has read
+            // the credential from this file since #3611; do the same rather than
+            // require every caller to source a shell script first. Extract the
+            // two keys only, and never log the value.
+            let path = std::env::var("FUSEKI_WRITE_ENV").unwrap_or_else(|_| {
+                format!("{}/.gathering/data/fuseki-write.env",
+                        std::env::var("HOME").unwrap_or_default())
+            });
+            let body = std::fs::read_to_string(path).ok()?;
+            let pick = |k: &str| body.lines()
+                .find_map(|l| l.strip_prefix(&format!("{}=", k)))
+                .map(|v| v.trim().to_string());
+            let pw = pick("FUSEKI_ADMIN_PASSWORD").filter(|p| !p.is_empty())?;
+            (pick("FUSEKI_ADMIN_USER").unwrap_or_else(|| "admin".to_string()), pw)
         }
-        _ => Vec::new(),
+    };
+    Some((user, pw))
+}
+
+fn fuseki_admin_auth() -> Vec<String> {
+    match fuseki_admin_creds() {
+        Some((user, pw)) => vec!["-u".to_string(), format!("{}:{}", user, pw)],
+        None => Vec::new(),
     }
 }
 
