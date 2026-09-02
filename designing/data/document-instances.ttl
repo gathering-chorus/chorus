@@ -19,7 +19,8 @@
 # pins in seed --deploy are the clean close — noted on #4062 (/ca).
 # =============================================================================
 
-chorus:doc-product-design-pulse a chorus:Document ;
+# #4045 — was chorus:doc-product-design-pulse (outside the ADR-040 document- convention; the seeder's iri-guard refused it). Renamed; prod keeps the old row in urn:chorus:domains:documents until retired.
+chorus:document-product-design-pulse a chorus:Document ;
     chorus:label """Product Design — Pulse""" ;
     rdfs:label """Product Design — Pulse""" ;
     chorus:docTitle """Product Design — Pulse""" ;
@@ -30,7 +31,8 @@ chorus:doc-product-design-pulse a chorus:Document ;
     chorus:ownedBy chorus:role-wren ;
     chorus:hasProduct chorus:pulse .
 
-chorus:doc-service-design-pulse a chorus:Document ;
+# #4045 — was chorus:doc-service-design-pulse (same iri-guard reason as above).
+chorus:document-service-design-pulse a chorus:Document ;
     chorus:label """Service Design — Pulse""" ;
     rdfs:label """Service Design — Pulse""" ;
     chorus:docTitle """Service Design — Pulse""" ;
@@ -201,18 +203,3 @@ chorus:document-werk-subproduct-design a chorus:Document ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
     chorus:hasDomain chorus:tests ;
     chorus:ownedBy chorus:role-wren .
-
-# #4045 — pulse's hasDesignDoc pointed at document-pulse-service-design, a row
-# that exists in NO graph (retired); the edge dangled live and the werk-store seed
-# refused on it. The product design exists as a file; this is its Document row.
-chorus:document-pulse-product-design a chorus:Document ;
-    chorus:label """pulse-product-design""" ;
-    rdfs:label """pulse-product-design""" ;
-    chorus:docTitle """Product Design — Pulse""" ;
-    chorus:docHref """/designing/docs/product-design-pulse.html""" ;
-    chorus:comment """What Pulse is as a product — the team's short-term memory over the spine — per its product design (#4045 registered the row the pulse product already pointed at).""" ;
-    rdfs:comment """What Pulse is as a product — the team's short-term memory over the spine — per its product design (#4045 registered the row the pulse product already pointed at).""" ;
-    chorus:hasDomain chorus:knowledge ;
-    chorus:ownedBy chorus:role-wren ;
-    chorus:hasProduct chorus:pulse .
-
