@@ -573,8 +573,24 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // (least-privilege scope: the tests graph only). Spine events keep role
     // "system" — who acted vs which credential wrote are different facts.
     let mint_role = std::env::var("WERK_NIGHTLY_MINT_ROLE").unwrap_or_else(|_| "nightly".to_string());
+    // #4063 — a werk-rooted nightly never writes prod's ledger (see
+    // nightly_writeback_withheld). Withheld cases are counted and named once,
+    // never silently, and never as "lost": nothing was promised to the store.
+    let endpoint_overridden = ["OWL_API_TESTRESULTS", "OWL_API_TESTRESULTS_BATCH"]
+        .iter()
+        .any(|k| std::env::var(k).map(|v| !v.trim().is_empty()).unwrap_or(false));
+    let withheld = werk_test::nightly_writeback_withheld(&root, endpoint_overridden);
+    let withheld_total = AtomicUsize::new(0);
+    if withheld {
+        println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; set OWL_API_TESTRESULTS to the werk's store to write (#4063)", root);
+    }
     let store_unit = |unit: &str, cases: &[CaseResult]| {
         if cases.is_empty() {
+            return;
+        }
+        if withheld {
+            withheld_total.fetch_add(cases.len(), Ordering::SeqCst);
+            println!("nightly-withheld|{}|{} (werk root, prod ledger untouched)", unit, cases.len());
             return;
         }
         let (joined, unregistered) = werk_test::join_cases(cases, &rows, &row_names, &row_entities);
@@ -872,6 +888,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         emit_spine("testresult.lost", &role, &card, &trace,
             &[("lost", &lost.to_string()), ("expected", &expected.to_string()),
               ("stored", &stored.to_string())]);
+    }
+    let withheld_n = withheld_total.load(Ordering::SeqCst);
+    if withheld_n > 0 {
+        emit_spine("testresult.writeback.withheld", &role, &card, &trace,
+            &[("count", &withheld_n.to_string()), ("reason", "werk-root"), ("root", &root)]);
     }
     println!("nightly-stored|run|{} of {}", stored, expected);
     let writeback_duration_ms = writeback_started.elapsed().as_millis();

@@ -1852,6 +1852,16 @@
         "lost": "expected minus stored"
       }
     },
+    "testresult.writeback.withheld": {
+      "vertebra": "proving",
+      "source": "werk-test",
+      "description": "A card-less nightly run rooted in a werk computed verdicts and deliberately did NOT write them to the production test ledger. Found 2026-09-02: a proof run in kade-4063 posted 6,770 TestResult rows to prod's tests domain in 20 minutes — #3722 isolated the werk run's log and nudges, never its writeback. Not a loss (nothing was promised to the store); set OWL_API_TESTRESULTS to the werk's own store to write (#4063).",
+      "fields": {
+        "count": "Cases computed and withheld",
+        "reason": "werk-root",
+        "root": "The werk path the run was rooted in"
+      }
+    },
     "testresult.posted": {
       "vertebra": "building",
       "source": "werk",

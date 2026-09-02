@@ -2283,6 +2283,17 @@ pub fn failed_case_lines(label: &str, cases: &[CaseResult]) -> Vec<String> {
         .collect()
 }
 
+/// #4063 — a NIGHTLY run from a werk root must not write the production test
+/// ledger. On 2026-09-02 a proof run in kade-4063 posted 6,770 TestResult rows
+/// to prod's tests domain in 20 minutes (#3722 isolated the log and the
+/// nudges, never the writeback), so /test-run's "most recent stored run" became
+/// a werk's. The gate's card-scoped runs keep writing (that is their design);
+/// only card-less nightly mode under a werk root is withheld — unless the
+/// caller pointed OWL_API_TESTRESULTS at another store on purpose.
+pub fn nightly_writeback_withheld(root: &str, endpoint_overridden: bool) -> bool {
+    root.contains("/chorus-werk/") && !endpoint_overridden
+}
+
 /// #4030 — the runner's PLAN, one line per unit, printed before any lane runs.
 /// The wrapper (nightly-suites.sh `_never_ran_rows`) folds a planned unit that
 /// never produced a `nightly-unit|` line into a red NEVER RAN row, so a lane
@@ -2611,6 +2622,15 @@ mod nightly_via_runner_3920 {
         assert_eq!(lines, vec!["!! jest:directing/clearing FAILED: directing/clearing/tests/a.test.ts :: pins to bottom"]);
         // NEGATIVE PROOF: a green set names nothing — no invented red
         assert!(failed_case_lines("jest:x", &cases[1..]).is_empty());
+    }
+
+    #[test]
+    fn a_werk_nightly_withholds_the_prod_ledger_unless_pointed_elsewhere() {
+        // NEGATIVE PROOF (#3734): the violating state — werk root, no override —
+        // must be withheld; the two legitimate states must not.
+        assert!(nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", false));
+        assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", true));
+        assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus", false));
     }
 
     #[test]
