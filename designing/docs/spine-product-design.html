@@ -55,6 +55,7 @@
 <tr><td><code>events</code></td><td>Make the team's history observable as data: one event vocabulary every emitter shares.</td><td>SpineEvent</td></tr>
 </table>
 <p>Two domains with no product above them is why the spine's docs, routes and vocabulary cannot be walked from anything. This design makes the spine a Product and gives those two domains a home.</p>
+<p><strong>State at land (2026-09-02).</strong> The Product row is served with <code>hasDomain events</code>. The second edge, to the <code>spine</code> vocabulary domain, is not writable yet: the domain and the product share one IRI (<code>chorus:spine</code> is typed <code>Domain</code> in the ontology graph and <code>Product</code> in the instances graph), so the shape refuses the edge as a self-loop. One side has to be renamed before the composition is complete &mdash; the graph-identifier scheme card (#1772) is where that call lands. The <code>events</code> edge was also moved off Clearing, which had carried it by accident; a domain has exactly one parent product.</p>
 
 <div class="caveat"><strong>The naming hazard, settled.</strong> "Spine" already names the value stream — how work flows through the team (<a href="/designing/docs/chorus-spine.html">chorus-spine.html</a>). This product is the <em>event log</em>. The value stream keeps the metaphor; the product owns the noun in the model. Both docs now cross-link.</p>
 
