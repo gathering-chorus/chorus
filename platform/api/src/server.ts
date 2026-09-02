@@ -2545,7 +2545,13 @@ app.use(['/api/loom', '/api/chorus'], (_req: Request, res: Response, next: NextF
 
 const ATHENA_GRAPH = 'urn:chorus:ontology';
 const ATHENA_INSTANCES = 'urn:chorus:instances';
-const ATHENA_SPARQL = 'http://localhost:3030/pods/sparql';
+// #4058 — the athena read/write endpoints follow CHORUS_FUSEKI like the two
+// query sites above do, so a werk variant (env-up sets CHORUS_FUSEKI to the
+// werk's own dataset, #4047) resolves the security envelope's surface table and
+// Principal scope grants from ITS store, not prod's. Hardcoded pods here meant
+// a demo of a scope grant could never show it: the variant read prod's grants.
+const ATHENA_FUSEKI_BASE = process.env.CHORUS_FUSEKI || 'http://localhost:3030/pods';
+const ATHENA_SPARQL = ATHENA_FUSEKI_BASE + '/sparql';
 const SPARQL_DIR = path.resolve(__dirname, 'sparql');
 
 const ATHENA_QUERIES = [
@@ -2560,7 +2566,7 @@ const ATHENA_QUERIES = [
 
 // Athena SPARQL client + envelope + loader extracted to
 // src/athena-sparql.ts (#2205 wave 8).
-const ATHENA_UPDATE = 'http://localhost:3030/pods/update';
+const ATHENA_UPDATE = ATHENA_FUSEKI_BASE + '/update';
 import { createAthenaSparqlClient, createEnvelopeBuilder, createSparqlLoader } from './athena-sparql';
 const _athena = createAthenaSparqlClient({ sparqlUrl: ATHENA_SPARQL, updateUrl: ATHENA_UPDATE, auth: fusekiWriteAuthFromEnv() });
 const athenaSparqlQuery = _athena.query;
