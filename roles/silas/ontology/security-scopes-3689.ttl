@@ -73,7 +73,8 @@ chorus:principal-nightly
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI .
 
 # ---------------------------------------------------------------------------
-# #4058 — PROPOSED grants, awaiting Jeff's ruling. NOT YET DEPLOYED.
+# #4058 — grants RULED by Jeff 2026-09-02 08:01 ("approved — deploy the grants").
+# Live in the werk store at env-up (demo); live in prod via SECURITY_SET at land.
 #
 # authz-scope-reachable.sh measured 15 surfaces requiring 6 scopes that NO
 # principal holds. Every one is unreachable by every caller — 403 out-of-scope —
