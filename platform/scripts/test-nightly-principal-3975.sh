@@ -18,17 +18,23 @@ TMP=$(mktemp -d)
 cleanup() { rm -rf "$TMP"; }
 
 # The grant block runs from the subject line to its terminating '.'.
-nightly_scopes()         { sed -n '/^chorus:principal-nightly$/,/\./p' "$1" | grep -c 'hasScope'; }
-nightly_nontest_scopes() { sed -n '/^chorus:principal-nightly$/,/\./p' "$1" | grep 'hasScope' | grep -vc 'urn:chorus:domains:tests'; }
+# #4071 — the RULED grant set, not "exactly one". Jeff, 2026-09-02 08:01 (#4058):
+# nightly holds the tests graph, the index writes (its scheduled job), and the
+# read-only nudge surface. Nothing else. The block lists one scope per line
+# (the first on the subject's own line, the rest continued), so count lines.
+NIGHTLY_RULED_SCOPES='urn:chorus:domains:tests|urn:chorus:index|urn:chorus:nudge-read'
+nightly_block()          { sed -n '/^chorus:principal-nightly$/,/\./p' "$1"; }
+nightly_scopes()         { nightly_block "$1" | grep -cE '"urn:chorus:[^"]+"'; }
+nightly_nontest_scopes() { nightly_block "$1" | grep -oE '"urn:chorus:[^"]+"' | grep -vcE "\"($NIGHTLY_RULED_SCOPES)\""; }
 
 # 1. The principal is modeled: service kind, no sign-in.
 grep -q 'chorus:principal-nightly a chorus:Principal' "$PRINCIPALS" && ok || bad "principal-nightly missing from identity TTL"
 sed -n '/^chorus:principal-nightly a chorus:Principal/,/ \.$/p' "$PRINCIPALS" | grep -q 'principalKind "service"' && ok || bad "nightly must be a service principal"
 sed -n '/^chorus:principal-nightly a chorus:Principal/,/ \.$/p' "$PRINCIPALS" | grep -q 'canSignIn "false"' && ok || bad "nightly must not sign in"
 
-# 2. LEAST privilege: exactly one scope, and it is the tests graph.
-[ "$(nightly_scopes "$SCOPES")" -eq 1 ] && ok || bad "nightly must hold exactly 1 scope, has $(nightly_scopes "$SCOPES")"
-[ "$(nightly_nontest_scopes "$SCOPES")" -eq 0 ] && ok || bad "nightly holds a scope beyond the tests graph"
+# 2. LEAST privilege: exactly the three ruled scopes, and nothing beyond them.
+[ "$(nightly_scopes "$SCOPES")" -eq 3 ] && ok || bad "nightly must hold exactly the 3 ruled scopes (tests, index, nudge-read), has $(nightly_scopes "$SCOPES")"
+[ "$(nightly_nontest_scopes "$SCOPES")" -eq 0 ] && ok || bad "nightly holds a scope beyond the ruled set: $(nightly_block "$SCOPES" | grep -oE '"urn:chorus:[^"]+"' | grep -vE "\"($NIGHTLY_RULED_SCOPES)\"" | paste -sd' ' -)"
 
 # 3. NEGATIVE PROOF (#3734): a widened grant makes checks 2 FAIL. Fixture
 #    assembled from fragments so this file never matches the guard itself.

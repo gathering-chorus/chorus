@@ -24,6 +24,25 @@ load test_helper
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 SOCKET="$HOME/.chorus/run/chorus-hooks.sock"  # #3617: daemon serves from ~/.chorus/run since the 7/8 lockout fix
 
+# #4071 — a latency RATIO measured on a saturated box measures the box, not the
+# cache: red at load 60 (cold 2081ms, warm 1864ms), green at load 9, same
+# daemon, same code. Below the core count the numbers mean something; at or
+# above it this spec reports UNMEASURED (a bats skip — never pass, never fail).
+# LOAD_1MIN / NCPU are the fixture seam so the gate itself has proofs.
+load_gate_reason() {
+  local load ncpu
+  load="${LOAD_1MIN:-$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')}"
+  ncpu="${NCPU:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
+  [ -n "$load" ] || { echo "UNMEASURED — load average unreadable"; return 0; }
+  python3 -c "import sys; l=float('$load'); n=float('$ncpu'); sys.exit(0 if l >= n else 1)" \
+    && echo "UNMEASURED — 1-minute load ${load} at or above ${ncpu} cores; latency would measure the box, not the cache"
+  return 0
+}
+require_quiet_box() {
+  local why; why=$(load_gate_reason)
+  [ -z "$why" ] || skip "$why"
+}
+
 envelope_ms() {
   local prompt="$1" session="${2:-latency-spec}"
   local payload
@@ -47,6 +66,7 @@ print(int((time.time() - t0) * 1000))
 }
 
 @test "warm-cache latency is lower than cold-cache latency" {
+  require_quiet_box
   # Use a unique prompt so cold call actually misses the cache.
   local uniq="latency-spec-$(date +%s)-$RANDOM"
   cold=$(envelope_ms "$uniq first call warms cache")
@@ -63,9 +83,26 @@ assert warm * 100 / cold <= 70, f'warm ratio {warm*100/cold:.0f}% of cold — ex
 }
 
 @test "warm-cache latency under 400ms ceiling" {
+  require_quiet_box
   local uniq="latency-ceiling-$(date +%s)-$RANDOM"
   envelope_ms "$uniq prime" >/dev/null
   warm=$(envelope_ms "$uniq prime")
   echo "warm=${warm}ms" >&2
   [ "$warm" -lt 400 ]
+}
+
+# #4071 proofs for the gate itself (#3734): it must open on a quiet box and
+# close on a busy one — with the seam, no live load needed.
+@test "load gate: a quiet box measures (positive control)" {
+  out=$(LOAD_1MIN=3.2 NCPU=8 load_gate_reason)
+  [ -z "$out" ] || { echo "gate closed on a quiet box: $out" >&2; return 1; }
+}
+
+@test "NEGATIVE PROOF: load gate closes at and above the core count" {
+  out=$(LOAD_1MIN=8.0 NCPU=8 load_gate_reason)
+  [[ "$out" == UNMEASURED* ]] || { echo "gate open at load == cores: '$out'" >&2; return 1; }
+  out=$(LOAD_1MIN=57.7 NCPU=8 load_gate_reason)
+  [[ "$out" == UNMEASURED* ]] || { echo "gate open at load 57.7: '$out'" >&2; return 1; }
+  out=$(LOAD_1MIN= NCPU=8 load_gate_reason)
+  [[ "$out" == UNMEASURED* ]] || { echo "unreadable load must not read as quiet: '$out'" >&2; return 1; }
 }

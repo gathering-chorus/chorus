@@ -374,6 +374,10 @@ run_cargo_lane() {
       if [ "$_now" -gt "$_seen" ]; then
         printf '%s\n' "$(sed -n "$((_seen+1)),${_now}p" "$_cap" | grep '^nightly-unit|')" | while IFS='|' read -r _ k u v s; do
           [ -n "$u" ] && spine_emit nightly.suite.observed "lane=runner" "kind=$k" "unit=$u" "verdict=$v"
+          # #4071 — Jeff: "once there is one error in the daily test run why do
+          # we wait to the end?" We do not: the owner hears about a red the
+          # minute it lands, while the run is still going.
+          [ -n "$u" ] && _first_red_nudge "$k" "$u" "$v" "$s"
         done
         _seen="$_now"
       fi
@@ -480,6 +484,19 @@ EOF
 # #3974 — ONE owner-routing rule. The previous state was three disagreeing
 # maps (owner_for_npm, _cov_owner, per-tier hardcodes) plus a call to an
 # owner_for_cargo that never existed. Path in, owner out, everywhere.
+# #4071 — a red row nudges its owner the moment the runner emits it, not at the
+# end of a 70-minute run. Only fail rows (a skip or unmeasured row is not a red);
+# one nudge per unit per run. OPS_NUDGE is the seam the proof points at a stub.
+_first_red_nudge() {
+  local kind="$1" unit="$2" verdict="$3" summary="$4" path owner ops_nudge
+  [ "$verdict" = "fail" ] || return 0
+  case "$kind" in cargo) path="platform/services/$unit" ;; *) path="$unit" ;; esac
+  owner=$(owner_for "$path")
+  ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
+  [ -x "$ops_nudge" ] || return 0
+  "$ops_nudge" "$owner" "nightly RED now: $path — $summary (run still going; read it now, not at the end)" system >/dev/null 2>&1 || true
+}
+
 owner_for() {
   case "$1" in
     "$APP_ROOT"|"$APP_ROOT"/*)              echo "kade" ;;
