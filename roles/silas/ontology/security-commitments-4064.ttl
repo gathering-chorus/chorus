@@ -1,0 +1,292 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #4064 — the security service design's COMMITMENTS as rows, not prose.
+#
+# Jeff, 2026-09-02 12:03: "maybe we need to shift the service design from html
+# into the graph." Read the same morning: six security artifacts held 34
+# commitments no card carried and 4 places where two documents disagreed, and
+# no query could see either. Each row below is one promise the design makes,
+# with where it says it, whether it is open, who owns it, the card that carries
+# it (or none — that absence is what the #4064 check turns red), and the probe
+# that measures it when one exists.
+#
+# Shape: chorus:CommitmentShape (Wren, #4064) — chorus:Commitment with
+# chorus:ofService -> chorus:Service, chorus:status sh:in (open closed deferred),
+# chorus:card -> chorus:Card, chorus:probe -> chorus:SecurityProbe |
+# chorus:AuthBoundary. Pinned to urn:chorus:instances (edges-follow-node).
+#
+# ofService = the service whose DOOR the promise is about, not "security" as a
+# bucket: identity (who you are), knowledge-store (the Fuseki key), werk (land
+# and gate authority), observability (probes and monitors), clearing (the room).
+#
+# Sources (verbatim short quotes in chorus:sourceQuote):
+#   SR  = designing/docs/security-rollout.html
+#   SSD = designing/docs/security-service-design.html
+#   A52 = roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md
+#   A54 = roles/silas/adr/ADR-054 (rule catalogue / accept origin)
+#   A12 = roles/silas/adr/ADR-012 · A42 = ADR-042 · A53 = ADR-053
+#   D56 = roles/silas/designing/3356-model-store-security-design.md
+#   POS = roles/silas/ontology/security-posture-3729.ttl
+#   SUR = roles/silas/ontology/security-3619-surfaces-final.ttl
+#   AZC = platform/scripts/authz-coverage.sh · DTD = platform/scripts/security-distance-to-done.sh
+#   SOL = designing/docs/SOLID-AUTHENTICATION.md · CLA = designing/docs/chorus-clearing-architecture.md
+
+# ---------------------------------------------------------------- identity
+chorus:commitment-cli-verbs-present-token a chorus:Commitment ;
+    rdfs:label "CLIs and werk verbs present the role's real token" ;
+    chorus:statement "Self-declared identity dies: CLIs and werk verbs present the role's real token; DEPLOY_ROLE is no longer an authorization." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "Self-declared identity dies — CLIs and werk verbs present the role's real token" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-merge-door-verifies-token a chorus:Commitment ;
+    rdfs:label "The merge-to-main door verifies a token" ;
+    chorus:statement "The pipeline that merges to main verifies the accepter's token instead of believing a role name." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "the pipeline that merges to main believes the role name" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-werk .
+
+chorus:commitment-retire-dec-093-lan-trust a chorus:Commitment ;
+    rdfs:label "Retire DEC-093: internal APIs stop trusting the LAN" ;
+    chorus:statement "Every internal API on localhost:3340 requires identity; the LAN-trust decision (DEC-093) is retired." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "The envelope covers the LAN… DEC-093 retired deliberately" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-service-creds-ttl-remint a chorus:Commitment ;
+    rdfs:label "Service credentials with TTL re-minting for internal callers" ;
+    chorus:statement "Scripts and services that call internal APIs carry a credential and re-mint it on a sane TTL so pipelines never break mid-loop." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "sane TTL re-minting so it does not break the pipelines" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-deploy-role-env-path-refused a chorus:Commitment ;
+    rdfs:label "DEPLOY_ROLE env path refused once tokens are required" ;
+    chorus:statement "Migration step 3: token required, the env-var identity path is refused; env-var forgery dies." ;
+    chorus:sourceDoc "roles/silas/designing/3356-model-store-security-design.md" ; chorus:sourceQuote "Env-var forgery dies" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-dpop-proof-of-possession a chorus:Commitment ;
+    rdfs:label "DPoP proof-of-possession binding" ;
+    chorus:statement "Bearer-first is a known, time-boxed weakness; tokens become proof-of-possession bound (DPoP)." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md" ; chorus:sourceQuote "Bearer-first is a known, time-boxed weakness" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:probe chorus:security-probe-dpop-enforced .
+
+chorus:commitment-hs256-verify-arm-deleted a chorus:Commitment ;
+    rdfs:label "HS256 retirement finished: legacy verify arm deleted" ;
+    chorus:statement "hs256_minters, shared_secret_refs and hs256_verify_branch reach 0." ;
+    chorus:sourceDoc "platform/scripts/security-distance-to-done.sh" ; chorus:sourceQuote "goal 0" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-css-batch-scope-mapping a chorus:Commitment ;
+    rdfs:label "CSS token to /batch scope mapping" ;
+    chorus:statement "/batch writes are scoped from the CSS identity, not a legacy scoped token." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md" ; chorus:sourceQuote "a named future concern, not this card's" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-athena .
+
+chorus:commitment-css-in-threat-model-and-monitors a chorus:Commitment ;
+    rdfs:label "CSS named as an availability edge in the threat model and monitor set" ;
+    chorus:statement "The identity server is a new single point of failure; it is named in the threat model and watched by a monitor." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md" ; chorus:sourceQuote "name it in the threat model (#2444) and the monitor set" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-observability .
+
+chorus:commitment-identity-credentials-backed-up a chorus:Commitment ;
+    rdfs:label "Identity credentials in the backup tier" ;
+    chorus:statement "Signing keys and CSS credentials are irreplaceable and currently have zero backup copies; they join the backup tier." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "irreplaceable… currently zero copies" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:probe chorus:security-probe-key-custody .
+
+chorus:commitment-buzz-keys-derived-credentials a chorus:Commitment ;
+    rdfs:label "Buzz keys become derived credentials" ;
+    chorus:statement "No parallel key model: Buzz keys derive from the identity seam." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "Buzz keys are not yet derived credentials (#3674 bar)" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-athena-ui-session-bridge a chorus:Commitment ;
+    rdfs:label "Athena UI session bridge for browser writes" ;
+    chorus:statement "Browser writes 401 until a session bridge carries the signed-in person's identity to the envelope." ;
+    chorus:sourceDoc "roles/silas/ontology/security-3619-surfaces-final.ttl" ; chorus:sourceQuote "browser writes 401 until the session bridge exists" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-athena .
+
+chorus:commitment-passkey-sign-in a chorus:Commitment ;
+    rdfs:label "A real person signs in with a passkey" ;
+    chorus:statement "Humans authenticate with WebAuthn passkeys at CSS, with guest / reviewer / admin tiers." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md" ; chorus:sourceQuote "Passkeys/WebAuthn at CSS" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-3645 .
+
+chorus:commitment-one-allow-list a chorus:Commitment ;
+    rdfs:label "Sign-in reads one allow list from the identity domain" ;
+    chorus:statement "Four allow-lists become one graph source; duplicates removed." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "Four allow-lists → one graph source" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-3784 ; chorus:probe chorus:security-probe-allow-set-populated .
+
+chorus:commitment-provision-person-one-command a chorus:Commitment ;
+    rdfs:label "Provision a person in one command, all or none" ;
+    chorus:statement "CSS account, pod, WebID, principal and access are created together or not at all." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "provisioning a person is four edits" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-3829 .
+
+# ---------------------------------------------------------- knowledge store
+chorus:commitment-split-dal-cred-from-dba-cred a chorus:Commitment ;
+    rdfs:label "Split the shared Fuseki credential into DAL-cred and DBA-cred" ;
+    chorus:statement "The one shared shiro admin credential becomes two: a DAL credential for governed writes and a DBA credential for schema work." ;
+    chorus:sourceDoc "roles/silas/designing/3356-model-store-security-design.md" ; chorus:sourceQuote "flipping now would break the ~19 writers" ;
+    chorus:status "deferred" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-knowledge-store ; chorus:probe chorus:auth-boundary-dal-write .
+
+chorus:commitment-fuseki-per-graph-acl a chorus:Commitment ;
+    rdfs:label "Fuseki per-graph ACL" ;
+    chorus:statement "Shiro authorizes per graph so a DAL credential cannot escalate to schema graphs; closes the priv-esc loop." ;
+    chorus:sourceDoc "roles/silas/designing/3356-model-store-security-design.md" ; chorus:sourceQuote "Closes the priv-esc loop" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-knowledge-store .
+
+chorus:commitment-scope-allows-in-live-verify a chorus:Commitment ;
+    rdfs:label "scope_allows wired into the live verify path" ;
+    chorus:statement "The pure scope_allows function (#3567 spike) runs in the live verify path and returns 403 on a miss." ;
+    chorus:sourceDoc "roles/silas/designing/3356-model-store-security-design.md" ; chorus:sourceQuote "the pure function exists (#3567 spike)" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-knowledge-store .
+
+chorus:commitment-one-write-door-per-store a chorus:Commitment ;
+    rdfs:label "Every data store gets one write door" ;
+    chorus:statement "index.db, messages.db and LanceDB stop accepting raw writes; each has one governed door." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-052-identity-via-solid-oidc-css.md" ; chorus:sourceQuote "Decides for: #3614" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-knowledge-store ; chorus:card chorus:card-3614 .
+
+chorus:commitment-anon-reads-named a chorus:Commitment ;
+    rdfs:label "Anonymous Fuseki reads: decided, not ambiguous" ;
+    chorus:statement "The posture model calls raw LAN SPARQL an open bypass; the probe reports anon update 401 while anon query is 200. One statement about reads, decided and recorded." ;
+    chorus:sourceDoc "roles/silas/ontology/security-posture-3729.ttl" ; chorus:sourceQuote "the residual the Shiro spike (#3564) left open" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-knowledge-store ; chorus:probe chorus:auth-boundary-dal-write .
+
+# ------------------------------------------------------------------- werk
+chorus:commitment-three-lying-gates-verified a chorus:Commitment ;
+    rdfs:label "pair_gate, inject_force, quality_gate: blocking means blocking" ;
+    chorus:statement "Three gates document 'blocking' and return allow; each is verified with a negative proof or stops claiming to block." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "document 'blocking' and return allow… Named 2026-08-06, unverified" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-werk .
+
+chorus:commitment-no-verify-bypass-audited a chorus:Commitment ;
+    rdfs:label "--no-verify on commit is audited" ;
+    chorus:statement "A commit that skips the pre-commit gate leaves a record; today the bypass is silent." ;
+    chorus:sourceDoc "roles/silas/ontology/security-posture-3729.ttl" ; chorus:sourceQuote "--no-verify is silent — recorded as the known unaudited bypass" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-werk ; chorus:probe chorus:auth-boundary-commit-gate .
+
+chorus:commitment-accept-origin-checked a chorus:Commitment ;
+    rdfs:label "Accept and go-recording check their origin" ;
+    chorus:statement "werk-demo's verdict path verifies where the go came from; plumbing origin there is the follow-on." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-054" ; chorus:sourceQuote "does not yet check origin… plumbing origin there is follow-on" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-werk .
+
+chorus:commitment-rule-catalogue-enforced-vs-norm a chorus:Commitment ;
+    rdfs:label "Full catalogue of invariant rules: enforced-in-code vs norm-only" ;
+    chorus:statement "Every rule the team relies on is listed once with whether code enforces it; norm-only rules are carded or accepted." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-054" ; chorus:sourceQuote "does not settle the full enumeration or which gaps get carded" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-werk .
+
+chorus:commitment-nightly-red-files-cards a chorus:Commitment ;
+    rdfs:label "Nightly red files cards" ;
+    chorus:statement "The 03:00 nightly, the only red-main detector, files a card on red instead of relying on a morning read." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-053" ; chorus:sourceQuote "does not yet file cards on red (#2527)" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-werk .
+
+# ------------------------------------------------------------ observability
+chorus:commitment-reserved-spine-events-emitted a chorus:Commitment ;
+    rdfs:label "Reserved security spine events are emitted" ;
+    chorus:statement "security.bypass.detected, security.credential.rotated, security.permission.violated and security.attestation.completed are emitted by the code that owns them, not reserved forever." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "Spine Events" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-observability .
+
+chorus:commitment-drift-test-baseline a chorus:Commitment ;
+    rdfs:label "Security drift test against a reconstructed baseline" ;
+    chorus:statement "Phase 6: a drift test compares the live posture to book/security-reconstructed.html." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "Pending; planned, Phase 6" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-observability .
+
+chorus:commitment-precommit-backstop-and-skip-audit a chorus:Commitment ;
+    rdfs:label "Pre-commit backstop and SECURITY_DIRECT_EDIT_SKIP audited" ;
+    chorus:statement "Phase 5: the pre-commit backstop lands and every use of the skip flag is recorded." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "Migration Phase 5 — Pending" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-werk .
+
+chorus:commitment-profiles-as-projection a chorus:Commitment ;
+    rdfs:label "Permission profiles generated from the graph" ;
+    chorus:statement "config/profiles/*.json is a projection of the graph with a named generator and schedule, not hand-maintained truth." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "what's the generator address?… When does it run?" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-athena .
+
+chorus:commitment-permission-subject-resolves a chorus:Commitment ;
+    rdfs:label "SHACL: a Permission subject resolves to a real Role or SubDomain" ;
+    chorus:statement "Closed-world enforcement at the schema layer: a Permission names a URI that exists, not a string." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "not a string… Closed-world enforcement at the schema layer" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-athena .
+
+chorus:commitment-permission-credential-modeled a chorus:Commitment ;
+    rdfs:label "Permission and Credential instances modeled" ;
+    chorus:statement "About 30 real rules and the credential inventory exist as instances. One doc calls this a gap, the posture model calls it deferred: decide once." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "~30 real rules, 0 modeled" ;
+    chorus:status "deferred" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-athena .
+
+chorus:commitment-role-lane-authz a chorus:Commitment ;
+    rdfs:label "Role-lane authorization measured (axis 2)" ;
+    chorus:statement "Which role may write which surface is measured by its own tool; today only scope is measured." ;
+    chorus:sourceDoc "platform/scripts/authz-coverage.sh" ; chorus:sourceQuote "has no single door and is a SEPARATE phase-2 tool; named here, not measured" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-every-mutating-route-declared a chorus:Commitment ;
+    rdfs:label "Every mutating route declares an APISurface" ;
+    chorus:statement "A mutating route with no APISurface is open by construction; the set of undeclared mutating routes is zero." ;
+    chorus:sourceDoc "platform/scripts/authz-coverage.sh" ; chorus:sourceQuote "A mutating route with no such declaration is OPEN by construction" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-localhost-only-binds a chorus:Commitment ;
+    rdfs:label "Native LaunchAgents bind to localhost, not 0.0.0.0" ;
+    chorus:statement "Services that need no LAN exposure bind loopback; the deep-health check fails, not warns, on a 0.0.0.0 bind." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-012" ; chorus:sourceQuote "localhost-only binding remains an open concern" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-observability .
+
+chorus:commitment-tls-termination-app a chorus:Commitment ;
+    rdfs:label "TLS termination for the app" ;
+    chorus:statement "The app terminates TLS itself or behind a local proxy, not only at the tunnel edge." ;
+    chorus:sourceDoc "designing/docs/SOLID-AUTHENTICATION.md" ; chorus:sourceQuote "TLS termination is a future improvement" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-gathering-app .
+
+chorus:commitment-edge-policy-honest-error a chorus:Commitment ;
+    rdfs:label "Edge policy names its refusal" ;
+    chorus:statement "When the tunnel blocks the account API the error says so; today it says 'try again'." ;
+    chorus:sourceDoc "designing/docs/security-rollout.html" ; chorus:sourceQuote "the error says 'try again'" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-2646 .
+
+chorus:commitment-shared-security-spinoff a chorus:Commitment ;
+    rdfs:label "Phase 2 shared-security spin-off" ;
+    chorus:statement "Deferred pending a forcing event (open-source cut); one artifact reads it as satisfied. Reconcile to one status." ;
+    chorus:sourceDoc "roles/silas/adr/ADR-042" ; chorus:sourceQuote "Explicitly deferred… Forcing event: open-source cut" ;
+    chorus:status "deferred" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+# --------------------------------------------------------------- clearing
+chorus:commitment-clearing-message-from-verified a chorus:Commitment ;
+    rdfs:label "Clearing message-from is the verified identity" ;
+    chorus:statement "Anyone past the gate can post as any role today; the from field binds to the verified identity." ;
+    chorus:sourceDoc "designing/docs/chorus-clearing-architecture.md" ; chorus:sourceQuote "message-from unverified" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-clearing ; chorus:card chorus:card-3980 .
+
+chorus:commitment-clearing-watcher-stale-lock a chorus:Commitment ;
+    rdfs:label "Clearing watcher checks for stale locks" ;
+    chorus:statement "The watcher detects and clears a stale lock instead of waiting on it." ;
+    chorus:sourceDoc "designing/docs/chorus-clearing-architecture.md" ; chorus:sourceQuote "Watcher itself doesn't check for stale locks" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-wren ; chorus:ofService chorus:service-clearing .
+
+# ------------------------------------------------ contradictions to resolve
+chorus:commitment-solid-doc-matches-adr-052 a chorus:Commitment ;
+    rdfs:label "SOLID-AUTHENTICATION.md agrees with ADR-052 on JWT verification" ;
+    chorus:statement "The doc still says JWTs from CSS decode without signature verification; ADR-052 says that gap closed. One of them is wrong; fix the doc or reopen the ADR." ;
+    chorus:sourceDoc "designing/docs/SOLID-AUTHENTICATION.md" ; chorus:sourceQuote "JWT from CSS decoded without signature verification (local trust)" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:probe chorus:security-probe-token-verify-bogus .
+
+chorus:commitment-key-registry-not-anchored-on-hs256 a chorus:Commitment ;
+    rdfs:label "Credential inventory not anchored on a class scheduled for deletion" ;
+    chorus:statement "ADR-052 retires keyId/KeyRegistryEntry with HS256; the posture model cites KeyRegistryEntry rows as the credential inventory. Pick the surviving home." ;
+    chorus:sourceDoc "roles/silas/ontology/security-posture-3729.ttl" ; chorus:sourceQuote "KeyRegistryEntry rows already realize the credential inventory" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity .
+
+chorus:commitment-design-cards-in-flight-current a chorus:Commitment ;
+    rdfs:label "The design's cards-in-flight list matches the board" ;
+    chorus:statement "The #2659 design names #2444, #2645, #2290 as the security card set; none is on the board. Replaced by this commitment set, which the #4064 check keeps honest." ;
+    chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "cards in flight" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-4064 .
