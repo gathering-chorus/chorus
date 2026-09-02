@@ -803,6 +803,33 @@ PYEOF
 #   pass        the census answered and every registered test ran
 #   fail        the census answered and named tests that never ran
 #   unmeasured  the census could not be taken (domain down, binary absent)
+# #4063 — join the reconciler's never-run file list against the units that
+# produced no results in this run. Prints one phrase: "N in units that
+# produced no results (unit [why]; …), M unattributed". Pure over its two
+# inputs (the reconciler's stdout, the lane output file) — testable.
+_attribute_never_ran() {
+  local rec="$1" lane="$2"
+  local files; files=$(printf '%s\n' "$rec" | grep ' :: ' | sed 's/^ *//; s/ :: .*//' | sort -u)
+  local dead=""
+  [ -f "$lane" ] && dead=$(grep -E '^nightly-unit\|[a-z]+\|[^|]+\|fail\|0 pass, 0 fail' "$lane" 2>/dev/null | cut -d'|' -f3 | sort -u)
+  local total; total=$(printf '%s\n' "$files" | grep -c . | tr -d ' ')
+  local acc=0 parts="" u n why
+  while IFS= read -r u; do
+    [ -z "$u" ] && continue
+    n=$(printf '%s\n' "$files" | grep -c "^$u/" | tr -d ' ')
+    [ "$n" -eq 0 ] && continue
+    acc=$((acc + n))
+    why=$(grep -F "$u" "$lane" | grep -E '^!! ' | head -1 | grep -oE 'killed after [0-9]+s|deps unavailable|no test files|FAIL LOUD' | head -1)
+    parts="${parts:+$parts; }$u $n${why:+ [$why]}"
+  done <<< "$dead"
+  local un=$((total - acc))
+  if [ "$acc" -gt 0 ]; then
+    printf '%s in units that produced no results this run (%s), %s unattributed — fix the unit, not the ledger' "$acc" "$parts" "$un"
+  else
+    printf 'no unit of this run failed empty, so these are registered names the runners never emit — the ledger does not cross-foot'
+  fi
+}
+
 _reconcile_leg() {
   local bin="${NIGHTLY_RECONCILE_BIN:-$(command -v werk-test 2>/dev/null)}"
   # #4030 — the 03:00 launchd PATH predates ~/.chorus/bin (#2734): every
@@ -830,7 +857,15 @@ _reconcile_leg() {
   fi
   local never; never=$(printf '%s' "$out" | sed -n 's/.*never-run (\([0-9][0-9]*\)).*/\1/p' | head -1)
   if [ -n "$never" ] && [ "$never" -gt 0 ] 2>/dev/null; then
-    echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — the ledger does not cross-foot)"
+    # #4063 — say WHY they never ran. On 2026-09-02 "515 never ran" read as a
+    # ledger defect (Kade's) when 5xx of them lived in platform/api, which the
+    # runner killed at its 1200s cap (Silas's red) — one cause, two reds, the
+    # second one blaming the wrong owner. Attribute each never-run file to a
+    # unit of THIS run that produced no results (fail with "0 pass, 0 fail"),
+    # read from the lane output the runner just wrote.
+    local lane="${NIGHTLY_FAIL_DIR:-$HOME/.chorus/nightly-failures}/_lane-output.log"
+    local attributed; attributed=$(_attribute_never_ran "$out" "$lane")
+    echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — ${attributed})"
   else
     echo "SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (${registered} registered, every one executed — ledger cross-foots)"
   fi
@@ -1150,7 +1185,13 @@ emit_suite_results() {
     if [ "$status" = "fail" ]; then
       flog=$(_fail_log_path "$kind" "$path")
       if [ -s "$flog" ]; then
-        reason=$( (grep -iE 'error|panic|fail|assert' "$flog" | tail -1 || true; tail -1 "$flog") \
+        # #4063 — prefer the runner's own named failure for THIS unit ("!! jest:<unit>
+        # FAILED: file :: case", "!! jest:<unit> killed after 1200s"). The old
+        # "last error-ish line" read the shared lane log's tail and attached an
+        # unrelated PASSING suite as the reason on every runner-lane red.
+        reason=$(grep -E "^!! [a-z]+:$path( |$)" "$flog" | grep -E 'FAILED:|killed|FAIL LOUD|unavailable' | head -1 \
+                  | tr '\n|"' '   ' | tr -s ' ' | cut -c1-200)
+        [ -z "$reason" ] && reason=$( (grep -iE 'error|panic|fail|assert' "$flog" | tail -1 || true; tail -1 "$flog") \
                   | head -1 | tr '\n|"' '   ' | tr -s ' ' | cut -c1-200 )
       fi
     fi

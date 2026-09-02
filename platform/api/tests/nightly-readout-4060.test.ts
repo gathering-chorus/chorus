@@ -152,3 +152,20 @@ describe('/nightly page — any past run, with the readout on top', () => {
     expect(html).toContain('1 fixed');
   });
 });
+
+describe('/nightly page — a partial run has no verdict', () => {
+  it('NEGATIVE PROOF (#4063): 13 suites in and 0 red so far must NOT banner ALL GREEN', () => {
+    const partial = parseAllRuns('RUN|start|2026-09-02T13:30:00|pid=1\n' +
+      Array.from({ length: 13 }, (_, i) => `SUITE|cargo|c${i}|silas|pass|1 pass, 0 fail`).join('\n') + '\n');
+    const html = renderNightlyPage(partial[0], { readout: buildReadout(partial[0], null), history: partial });
+    expect(html).not.toContain('ALL GREEN');
+    expect(html).toContain('IN PROGRESS');
+    expect(html).toContain('13 suite(s) so far');
+    expect(html).toContain('0 red so far');
+  });
+
+  it('a completed all-green run still says ALL GREEN — the fix must not widen into never-green', () => {
+    const done = parseAllRuns('RUN|start|2026-09-02T13:30:00|pid=1\nSUITE|cargo|c|silas|pass|1 pass, 0 fail\nRUN|complete|2026-09-02T14:30:00|suites=1\n');
+    expect(renderNightlyPage(done[0])).toContain('ALL GREEN');
+  });
+});
