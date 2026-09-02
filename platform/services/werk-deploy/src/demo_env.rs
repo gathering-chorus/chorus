@@ -302,6 +302,19 @@ pub fn generate_plist(
         ("CHORUS_API_ENV", "werk".to_string()),
         ("CHORUS_ROOT", werk_root.to_string()),
     ];
+    // The Fuseki admin credential every variant needs to WRITE to its own store.
+    // Without it a reload answers 401 and the service turns that into a 500 —
+    // which reads as the variant being broken rather than unauthenticated.
+    // launchd gives a plist no inherited environment, so it has to be written in.
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        if !pw.is_empty() {
+            env_pairs.push((
+                "FUSEKI_ADMIN_USER",
+                std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()),
+            ));
+            env_pairs.push(("FUSEKI_ADMIN_PASSWORD", pw));
+        }
+    }
     for (k, v) in extra_env {
         env_pairs.push((k, v.to_string()));
     }
@@ -632,6 +645,15 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
+                // Silas, 2026-09-02, proving #4058: the variant booted without
+                // these three, so an authz demo could not fail — the security
+                // envelope was pass-through (chorus-sdk walked straight through
+                // reload), the api's own athena sparql/update still pointed at
+                // PROD's store while only athena-make got the werk one, and the
+                // reload's Fuseki update answered 401 → 500 with no admin
+                // credential. A demo env that cannot refuse proves nothing.
+                ("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"),
+                ("CHORUS_FUSEKI", werk_fuseki.as_str()),
             ],
             // #4022 — the athena variant verifies write tokens against CSS's
             // JWKS, and the issuer URL reaches the binary ONLY through env
@@ -999,5 +1021,30 @@ mod store_4047 {
             "kade", "/tmp/werk", 3364, &[]);
         assert!(!without.contains("CHORUS_FUSEKI"),
             "fixture is bogus if the var appears without being passed");
+    }
+
+    /// Silas, 2026-09-02: the chorus-api variant booted without the security
+    /// envelope and without its own store, so an authz demo could not fail —
+    /// the envelope was pass-through and the api read PROD's graph while only
+    /// athena-make got the werk one. A demo env that cannot refuse proves
+    /// nothing, so both belong on the plist.
+    #[test]
+    fn api_variant_plist_carries_the_envelope_flag_and_the_werk_store() {
+        let svc = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
+        let f = werk_fuseki_for("kade");
+        let with = generate_plist(&svc, "kade", "/tmp/werk", 3343,
+            &[("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"), ("CHORUS_FUSEKI", f.as_str())]);
+        assert!(with.contains("<key>CHORUS_SECURITY_ENVELOPE_ENABLE</key>"), "{}", with);
+        assert!(with.contains("<key>CHORUS_FUSEKI</key>"), "{}", with);
+        assert!(with.contains(&f), "{}", with);
+
+        // NEGATIVE PROOF (#3734): the same plist with neither passed. If this
+        // still contained them the assertions above would pass for the wrong
+        // reason — the shape of the #3725 trap.
+        let without = generate_plist(&svc, "kade", "/tmp/werk", 3343, &[]);
+        assert!(!without.contains("CHORUS_SECURITY_ENVELOPE_ENABLE"),
+            "fixture is bogus if the flag appears without being passed");
+        assert!(!without.contains("CHORUS_FUSEKI"),
+            "fixture is bogus if the store appears without being passed");
     }
 }
