@@ -1,89 +1,233 @@
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 
-# #3545 — shape-valid Products. comment emitted as BOTH rdfs:comment (shape sh:path) AND chorus:comment (generator field projection) — dual until the generator aligns. From products.json.
-# #3603 — this file is THE definition home for child products (ProductShape floor
-# content); structural edges (partOf / hasDomain / consumes / atStep) live in
-# roles/silas/ontology/chorus.ttl. Added: product-clearing, product-spine,
-# product-pulse, product-convergence (roster per Jeff 2026-07-03: Chorus →
-# {Athena, Loom, Werk, Borg, Clearing→{Spine, Pulse}, Convergence}; Gathering
-# top-level; Senses not a product). chorusProduct / borgProduct / gathering keep
-# their legacy IRIs and defs in chorus.ttl (IRI convergence is #1772).
-# hasDesignDoc: unfilled everywhere, named in gaps — no Document instances exist
-# in the graph (docs live in doc-catalog-registry.json); convergence follow-on.
+# =============================================================================
+# #4045 — the nine products, in a file, on the IRIs the API serves.
+#
+# Until now every Product row (chorus:athena … chorus:werk, and spine minted
+# 2026-09-01) existed ONLY in the live store: no deploy could reproduce them,
+# and the #3603-era product-* rows this file used to hold were retired live but
+# kept here, so the file described a graph that no longer existed. Same class of
+# fix as #3838 (roles) and #4040 (pipelines): day-authored, in the manifest,
+# seeded by athena-model into urn:chorus:instances under act — in the werk
+# env at env-up and in prod at deploy-canonical. No hand runs.
+#
+# Jeff, 2026-09-02: "i expected all doc sections to be attributes in the class",
+# then "we must do athena-* flow on these … using act … the pipeline". Spine
+# carries its design-doc sections as the nine string properties #4045 added to
+# ProductShape; the other eight fill theirs per card.
+#
+# Exported from the live store 2026-09-02 08:58 (dcterms provenance dropped —
+# the seeder stamps its own), then spine's sections added. chorus:comment is
+# emitted as both rdfs:comment (shape path) and chorus:comment (projection).
+# =============================================================================
 
-chorus:product-athena a chorus:Product ;
-    rdfs:label "Athena" ; chorus:label "Athena" ;
-    rdfs:comment "Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them." ; chorus:comment "Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them." ;
+chorus:athena a chorus:Product ;
+    chorus:label """Athena""" ;
+    rdfs:label """Athena""" ;
     chorus:ownedBy chorus:role-wren ;
-    chorus:status "building" ;
-    chorus:audience "Gates, SessionStart envelope injection, blast-radius, role-nudge routing, demo feedback, the tagging layer, and Jeff and the team via the rendered tree page." ;
-    chorus:valueProposition "One queryable source of truth for the product tree with no fallback that yields a different answer, so every structural and impact question resolves to a real tree IRI rather than memory or pattern-matching." ;
-    chorus:vision "A single SHACL-gated model whose one generator projects Product, Domain, Service, and ValueStream into uniform generated APIs and pages, made whole by construction through the DAL as the only write path." ;
-    chorus:gaps "A v1 predicate layer still being cleaned, the Service class not yet instantiated, and the generator not yet projecting inverse-path relationships as nested fields." .
+    chorus:vision """A single SHACL-gated model whose one generator projects Product, Domain, Service, and ValueStream into uniform generated APIs and pages, made whole by construction through the DAL as the only write path.""" ;
+    chorus:valueProposition """One queryable source of truth for the product tree with no fallback that yields a different answer, so every structural and impact question resolves to a real tree IRI rather than memory or pattern-matching.""" ;
+    chorus:audience """Gates, SessionStart envelope injection, blast-radius, role-nudge routing, demo feedback, the tagging layer, and Jeff and the team via the rendered tree page.""" ;
+    chorus:status """building""" ;
+    chorus:gaps """A v1 predicate layer still being cleaned, the Service class not yet instantiated, and the generator not yet projecting inverse-path relationships as nested fields.""" ;
+    chorus:atStep chorus:value-stream-step-designing ;
+    chorus:hasDesignDoc chorus:document-athena-product-design ;
+    chorus:hasDomain chorus:products, chorus:services, chorus:domains, chorus:value-streams ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
 
-# product-borg RETIRED (#3603) — it duplicated chorus:borgProduct (the edge-holder:
-# ~30 inbound partOf/belongsTo/hasDomain edges in chorus.ttl). One node per product:
-# borgProduct survives; product-borg's floor content was folded onto borgProduct's
-# definition in chorus.ttl. The live product-borg instance is deleted by the #3603
-# migration.
-
-chorus:product-werk a chorus:Product ;
-    rdfs:label "Werk" ; chorus:label "Werk" ;
-    rdfs:comment "The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps." ; chorus:comment "The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps." ;
-    chorus:ownedBy chorus:role-kade ;
-    chorus:status "operating" ;
-    chorus:audience "The three roles building Chorus and Gathering plus Jeff accepting the work; the external customer never touches Werk." ;
-    chorus:valueProposition "Every accepted card leaves as merged source on origin/main with a coherent receipt — one trace from pull to deployed cdhash — so a green result can't lie and work arrives proven rather than taken on faith." ;
-    chorus:vision "Generated domain APIs over the graph end the reconcile treadmill structurally — typed contracts at every boundary, every card a coherent SKU." ;
-    chorus:gaps "werk-test is held behind the generated tests-domain API; the tests domain lacks per-test identity and result ingestion; card-acceptance does not yet advance artifact status; advisory test and review steps are not yet gates." .
-
-chorus:product-clearing a chorus:Product ;
-    rdfs:label "The Clearing" ; chorus:label "The Clearing" ;
-    rdfs:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse." ; chorus:comment "Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse." ;
-    chorus:ownedBy chorus:role-wren ;
-    chorus:status "operating" ;
-    chorus:audience "Jeff and all three roles during alignment moments. Borg reads the transcripts, and decisions marked in-channel are captured to the decision log." ;
-    chorus:valueProposition "Real-time multi-party alignment with decisions captured where they happen — Jeff stops being the transport layer between role terminals." ;
-    chorus:vision "One shared room where the team aligns in minutes instead of relaying briefs, with every DECISION: line landing in the graph automatically." ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Transcript indexing depends on the index-freshness pipeline that alerts today." .
-
-chorus:product-spine a chorus:Product ;
-    rdfs:label "Spine" ; chorus:label "Spine" ;
-    rdfs:comment "The audit trail — structured event log of all team activity and state changes. Child product of The Clearing." ; chorus:comment "The audit trail — structured event log of all team activity and state changes. Child product of The Clearing." ;
-    chorus:ownedBy chorus:role-wren ;
-    chorus:status "operating" ;
-    chorus:audience "All roles and Borg as writers/readers, and Jeff via dashboards, traces, and readouts." ;
-    chorus:valueProposition "One append-only truth about what happened — traces, fitness functions, and Borg's reflection all read the same spine instead of competing logs." ;
-    chorus:vision "Every act in the system is an event on one spine with a threaded trace — the team's history is queryable, not anecdotal." ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). ADR-046 spine reshape (EmitContract consumption, failureClass spans) in flight." .
-
-chorus:product-pulse a chorus:Product ;
-    rdfs:label "Pulse" ; chorus:label "Pulse" ;
-    rdfs:comment "Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing." ; chorus:comment "Agent vital signs — heartbeats, declared role states, andon, at-a-glance health of the running team. Child product of The Clearing." ;
+chorus:borg a chorus:Product ;
+    chorus:label """Borg""" ;
+    rdfs:label """Borg""" ;
+    chorus:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
+    rdfs:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
     chorus:ownedBy chorus:role-silas ;
-    chorus:status "operating" ;
-    chorus:audience "Jeff at a glance, the roles for mutual observation, alerting as a consumer." ;
-    chorus:valueProposition "Silence becomes a signal: heartbeats and declared states let the roles watch each other, so Jeff is never the first to notice a stall." ;
-    chorus:vision "The running team is legible at a glance — who is alive, building, blocked, or dark, without anyone asking." ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). Nudge-delivery health (no-window failures) still alerts. Pulse domain newly authored in #3603." .
+    chorus:vision """A model-driven reflect cycle where monitor and alert are ontology domains whose contracts generate, the page renders a verdict not a readout, and the capability travels generatively to run with chorus off.""" ;
+    chorus:valueProposition """Borg's product isn't dashboards — it's Jeff's attention back: it surfaces the one thing that needs a person, calmly, to the owner, so no human is ever the first to notice a stall.""" ;
+    chorus:audience """The roles (to self-coordinate and catch a dark peer, flapping service, or drift before Jeff does) and Jeff (outcomes only — a calm board, or the single thing that needs him).""" ;
+    chorus:status """building""" ;
+    chorus:gaps """Probes were bespoke and lied, there is no liveness or crash-loop signal, alerts are hand-routed, there is no model-driven contract, and there is no Borg page — the observation surfaces are scattered.""" ;
+    chorus:atStep chorus:value-stream-step-proving ;
+    chorus:hasDesignDoc chorus:document-borg-product-design ;
+    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:Properties, chorus:alerts-monitors, chorus:logs, chorus:identity, chorus:metrics ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
 
-chorus:product-convergence a chorus:Product ;
-    rdfs:label "Convergence" ; chorus:label "Convergence" ;
-    rdfs:comment "Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph." ; chorus:comment "Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph." ;
+chorus:chorus a chorus:Product ;
+    chorus:label """Chorus""" ;
+    rdfs:label """Chorus""" ;
+    chorus:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
+    rdfs:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
+    chorus:ownedBy """role-wren""" ;
+    chorus:vision """A multi-agent/human team that builds a platform for building systems — coordination itself modeled, observable, improvable.""" ;
+    chorus:valueProposition """Three AI roles and one human work as a real team: shared memory, one board, one audit spine, gates at the right moments.""" ;
+    chorus:audience """Jeff and the three roles, and future teams adopting the method.""" ;
+    chorus:status """operating""" ;
+    chorus:gaps """hasDesignDoc unfilled (no Document instances in graph). V1/V2 domain-layer convergence outstanding.""" ;
+    chorus:atStep chorus:value-stream-step-directing ;
+    chorus:hasDesignDoc chorus:document-chorus-as-platform ;
+    chorus:hasDomain chorus:search, chorus:memory ;
+    chorus:publishesPreAuth """true""" .
+
+chorus:clearing a chorus:Product ;
+    chorus:label """The Clearing""" ;
+    rdfs:label """The Clearing""" ;
+    chorus:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
+    rdfs:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
     chorus:ownedBy chorus:role-wren ;
-    chorus:status "building" ;
-    chorus:audience "The roles as integration authors, the graph as the destination, the ICD gate as the enforcement point." ;
-    chorus:valueProposition "Harvesters and pipelines governed by ICDs — every integration is declared before it is coded, so data lineage is a contract rather than an accident." ;
-    chorus:vision "Data from every surface converges into the one graph through declared contracts; the V1/V2 domain-layer convergence is this product finishing its own job." ;
-    chorus:gaps "hasDesignDoc unfilled (no Document instances in graph). V1/V2 domain IRI duplication outstanding. Change-management engine (impact, propagate, verify) not yet built." .
+    chorus:vision """One shared room where the team aligns in minutes instead of relaying briefs, with every DECISION: line landing in the graph automatically.""" ;
+    chorus:valueProposition """Real-time multi-party alignment with decisions captured where they happen — Jeff stops being the transport layer between role terminals.""" ;
+    chorus:audience """Jeff and all three roles during alignment moments. Borg reads the transcripts, and decisions marked in-channel are captured to the decision log.""" ;
+    chorus:status """operating""" ;
+    chorus:gaps """hasDesignDoc unfilled (no Document instances in graph). Transcript indexing depends on the index-freshness pipeline that alerts today.""" ;
+    chorus:atStep chorus:value-stream-step-directing ;
+    chorus:hasDesignDoc chorus:document-clearing-value-stream-design ;
+    chorus:hasDomain chorus:cards, chorus:streams, chorus:messages ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
 
-chorus:product-loom a chorus:Product ;
-    rdfs:label "Loom" ; chorus:label "Loom" ;
-    rdfs:comment "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs." ; chorus:comment "The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs." ;
+chorus:convergence a chorus:Product ;
+    chorus:label """Convergence""" ;
+    rdfs:label """Convergence""" ;
+    chorus:comment """Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph.""" ;
+    rdfs:comment """Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph.""" ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:vision """Every outside source lands through one governed ingestion path — mapped, reconciled, and conformed to the canonical model before it enters the graph, so nothing arrives unshaped.""" ;
+    chorus:valueProposition """Harvesters and pipelines governed by ICDs — every integration is declared before it is coded, so data lineage is a contract rather than an accident.""" ;
+    chorus:audience """The roles as integration authors, the graph as the destination, the ICD gate as the enforcement point.""" ;
+    chorus:status """building""" ;
+    chorus:gaps """hasDesignDoc unfilled (no Document instances in graph). V1/V2 domain IRI duplication outstanding. Change-management engine (impact, propagate, verify) not yet built.""" ;
+    chorus:atStep chorus:value-stream-step-building ;
+    chorus:hasDesignDoc chorus:document-convergence-value-stream-design ;
+    chorus:hasDomain chorus:integrations ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
+
+chorus:loom a chorus:Product ;
+    chorus:label """Loom""" ;
+    rdfs:label """Loom""" ;
+    chorus:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
+    rdfs:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
     chorus:ownedBy chorus:role-jeff ;
-    chorus:status "exploring" ;
-    chorus:audience "The Chorus team — the three AI roles and Jeff — for whom Loom holds the persistent normative substrate; owned by Jeff at the Shaping step." ;
-    chorus:valueProposition "Loom gives the team one coherent, validated home for its normative substrate as real OWL classes with SHACL shapes, so the operating model is graphed and constrained rather than scattered as ungraphed markdown." ;
-    chorus:vision "A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every subdomain populated or explicitly planned — Loom as the template the other products follow." ;
-    chorus:gaps "5 of 7 intent subdomains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL." .
+    chorus:vision """A coherent product modeled on the recursive Athena model, one clean predicate set, every content type a real OWL class with a SHACL shape, every subdomain populated or explicitly planned — Loom as the template the other products follow.""" ;
+    chorus:valueProposition """Loom gives the team one coherent, validated home for its normative substrate as real OWL classes with SHACL shapes, so the operating model is graphed and constrained rather than scattered as ungraphed markdown.""" ;
+    chorus:audience """The Chorus team — the three AI roles and Jeff — for whom Loom holds the persistent operating frame; secondarily any future team adopting Chorus, who receives a working normative model rather than a pile of docs.""" ;
+    chorus:status """exploring""" ;
+    chorus:gaps """5 of 7 intent subdomains are empty shells (decisions live as ungraphed markdown; Decision and RCA aren't OWL classes); the predicate layer needs cleaning; content is unconstrained by SHACL.""" ;
+    chorus:atStep chorus:value-stream-step-shaping ;
+    chorus:hasDesignDoc chorus:document-loom-subproduct-design ;
+    chorus:hasDomain chorus:rcas, chorus:roles, chorus:principles, chorus:policies, chorus:practices, chorus:skills, chorus:decisions ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
+
+chorus:pulse a chorus:Product ;
+    chorus:label """Pulse""" ;
+    rdfs:label """Pulse""" ;
+    chorus:comment """The team's vital signs — who is working, on what, and what they are waiting on. A child product of The Clearing.""" ;
+    rdfs:comment """The team's vital signs — who is working, on what, and what they are waiting on. A child product of The Clearing.""" ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:vision """Jeff can look once and know where the work stands. Who is moving, who is stuck, and what is waiting on him — read in a glance, never assembled by asking three people.""" ;
+    chorus:valueProposition """Coordination is the tax on a team of three agents and one human. Pulse pays it down by making the team's state readable instead of askable: the roles watch each other through it rather than messaging to check, and Jeff stops being the one who notices a stall. Its raw material is what the team already emits while working, so being legible costs a role nothing extra.""" ;
+    chorus:audience """Jeff first — one screen, no interpretation required. The three roles second, as the way they see each other without interrupting each other. Alerting third, as a consumer of the same reading.""" ;
+    chorus:status """operating""" ;
+    chorus:gaps """Pulse can say who a role CLAIMS to be, not what they are doing — so a role deep in work can read as idle, and the reading Jeff most needs is the one least trustworthy. It has no notion of waiting: it lists roles and cards but not who is blocked on whom, which is the question that actually costs a coordination day. It reports the same way on a loaded machine as an idle one, so a slow reading and a stalled role look identical. And it is read-only by nature — it can show a stall but cannot route it, so noticing still depends on someone looking.""" ;
+    chorus:atStep chorus:value-stream-step-directing ;
+    chorus:hasDesignDoc chorus:document-pulse-service-design ;
+    chorus:hasDomain chorus:knowledge ;
+    chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts-monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .
+
+chorus:spine a chorus:Product ;
+    chorus:label """Spine""" ;
+    rdfs:label """Spine""" ;
+    chorus:comment """Two layers, not one (Jeff 2026-09-01, EDA framing): EventType is curated vocabulary in the graph; SpineEvent is the log projected on read. Composes the events domain; the spine vocabulary domain shares its IRI (#1772) and cannot be linked until one side is renamed. Excludes logs (Silas, Proving) — a consumer, not a constituent.""" ;
+    rdfs:comment """Two layers, not one (Jeff 2026-09-01, EDA framing): EventType is curated vocabulary in the graph; SpineEvent is the log projected on read. Composes the events domain; the spine vocabulary domain shares its IRI (#1772) and cannot be linked until one side is renamed. Excludes logs (Silas, Proving) — a consumer, not a constituent.""" ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:vision """A team that can replay its own history can improve deliberately — event types as curated vocabulary, occurrences as an immutable stream, joined by ofType.""" ;
+    chorus:valueProposition """The team memory: an append-only record of everything that happened, and a catalogue of everything that can happen. Nothing is lost, anything recorded is reachable, and what can happen is enumerable.""" ;
+    chorus:audience """Jeff, the three roles, and every other product — Werk, Borg, Pulse, Loom and Athena all read it.""" ;
+    chorus:status """operating""" ;
+    chorus:gaps """Reach: readers take a fixed 4MB tail = the last 3h17m of a 40-day 1.71GB log, so promise 2 is broken today. EventType is unmodeled — the 345 types live only in spine-events.json. /v1/spineevents is mounted and returns count 0. IRI collision: chorus:spine is both this Product and a Domain.""" ;
+    chorus:atStep chorus:value-stream-step-directing ;
+    chorus:hasDesignDoc chorus:document-spine-product-design ;
+    chorus:hasDomain chorus:events ;
+    chorus:promise """Three promises, in the order they matter:
+ Nothing is lost. The log is append-only and never rotated (Jeff, 2026-07-23). Disk is cheaper than a forgotten month.
+ Anything recorded is reachable. A question about last Tuesday is answerable at the speed of a query. This promise is currently broken — see §6.
+ What can happen is enumerable. The set of event types is the set of things the system is able to do, browsable as data rather than grepped from a schema file.""" ;
+    chorus:structure """Jeff's framing, 2026-09-01: "think of this like an eda — we have types of events and then many instances of each type." That is exactly right, and it is the structural decision this product turns on. The two layers have different sizes, different lifecycles, different stores, and therefore different homes.
+ | TYPE chorus:EventType | INSTANCE chorus:SpineEvent | 
+Count | 345, curated | 2,097,133, growing ~50k/day | 
+Answers | What can happen | What did happen | 
+Lifecycle | Changes on a card; versioned like any vocabulary | Append-only; never edited, never deleted | 
+Store | Fuseki — urn:chorus:domains:events | The log. Not the triplestore. | 
+Source of truth | spine-events.json, loaded into the graph | ~/.chorus/chorus.log, projected on read | 
+Surface | GET /v1/eventtypes — generated, browsable | GET /v1/spineevents?type=&since= — a projection | 
+Why instances are not materialized
+Two reasons, both load-bearing:
+ Fit. A triplestore is a poor home for a growing, time-ordered, write-once stream. The log already is a perfect append-only store; duplicating it into triples buys nothing and costs a second source of truth.
+ Risk. Materializing millions of subjects into urn:chorus:instances puts the whole graph in the blast radius of a bad deploy — the #3587 wipe class, at a scale where recovery is not a restore-from-yesterday.
+Instead the spine follows the compute-on-read ruling Jeff made for metrics on 2026-08-31: the log is the record; values are computed at read time. The SHACL shape still governs — a projected occurrence conforms to SpineEventShape exactly as a stored one would. What changes is where the bytes live, not what the contract is.
+The join is what makes both layers useful. SpineEvent ofType EventType. Downward: a type row links to its recent occurrences and its counts, so the catalogue is alive rather than a list. Upward: an occurrence resolves its declared fields and its value-stream stage, so a raw line becomes self-describing.""" ;
+    chorus:model """The structural layer (Product / Domain / Service / ValueStream) is the value-stream model and is not restated here — see value-stream-template.html. This section is the spine's own content classes, as the store serves them today (queried 2026-09-02 08:50), and the two changes this design asks for.
+Class | Domain | Shape today | Instances today | Verdict | 
+chorus:SpineEvent | events | rdfs:label (1), eventKind (1) — two properties | 0 in the store; 2,097,133 lines in the log | Keep, widen. The shape must name what a line actually carries: emittedAt, emittedBy (Role), traceId, cardId, ofType (EventType). Occurrences are projected on read (§4), so the shape governs the projection, not a stored row. | 
+chorus:EventType | events | absent — not in the ontology | 0 (345 kinds live only in spine-events.json) | Add. The vocabulary class: eventKind (the dotted name, unique), inCategory (EventCategory), atStep (ValueStreamStep), declaredFields, emitter. Claimed by the events domain so /v1/eventtypes mounts. | 
+chorus:EmitContract | spine | declaresMetric (Metric, min 1) | 1 | Keep. The writer's declare-what-you-emit contract (ADR-046); Borg reads it to build monitors. Needs an emitsType edge to EventType once that class exists. | 
+chorus:EventCategory | spine | no shape | 1 | Keep, shape it. The classification that runs parallel to the value stream (lifecycle, coordination, security, telemetry…). One property: rdfs:label; EventType points at it. | 
+chorus:Vertebra | spine | none (deprecated #3697) | 11 (v1 rows) | Retire. Superseded by ValueStreamStep. Drop the claim when the 11 rows go; until then it is claimed so the class-atlas does not report it served-unclaimed. | 
+The one join that makes the two layers one product: SpineEvent ofType EventType. Everything else in this table exists to make that edge resolvable in both directions.""" ;
+    chorus:pagesAndFlow """Same rule as Athena's design (#3378): every page renders its class's generated API, every link follows a real model edge, navigation starts at the value stream.
+Page | Today | To-be | 
+Product page | Live — vision, value proposition, one domain. Does not render hasDesignDoc, so this document is unreachable from the row it describes. | Render the design-doc link and the gaps fold. Small page change. | 
+Domain page (events) | Live — claims SpineEvent only. | Claims EventType too; shows the type count and the projected occurrence count side by side. | 
+EventType page | Does not exist. The 345 kinds are readable only by opening a JSON file. | The page Jeff asked for on 2026-09-01 (“events UI”): the catalogue, each kind clickable to its live occurrences. This is the first page whose substance is the spine, not the model of the spine. | 
+Class atlas | Live (#4053) — shows the two-property SpineEvent shape honestly. | Shows the widened shape and EventType; no page change, the model change lands there by construction. |""" ;
+    chorus:apiSurface """Path | Today | To-be | 
+GET /v1/spineevents | Mounted, generated from SpineEventShape, returns count 0 — it reads the store and the store holds no occurrences. | A projection over the log: ?type=&since=&role=&card=, bounded page, newest first. Same envelope as every generated collection so the page code does not know it is a projection. | 
+GET /v1/eventtypes | 404 — no class, no claim, no route. | Generated the moment EventType is claimed by the events domain: the catalogue, 345 rows, each with its category, step and a live count. | 
+GET /v1/emitcontracts | Live, 1 row. | Unchanged; gains emitsType. | 
+GET /api/chorus/context/spine?limit= | Live — the last N lines, the 4MB-tail reach problem (§9). | Delegates to the projection above so reach is the whole log, not a tail. | 
+POST /api/chorus/spine-event · chorus-log | Live — the two write doors, both append a line. | Validate eventKind against EventType at write; an unknown kind is refused, not appended. This is what makes the catalogue authoritative instead of descriptive. | 
+MCP | chorus_logs_query, chorus_logs_for_card, chorus_logs_for_trace read the log directly. | Each becomes a thin call over /v1/spineevents — one read path, one shape, the MCP correspondence Jeff asked for. |""" ;
+    chorus:asIs """Layer | Modeled | Served | Populated | 
+Product | no | — | — | 
+Domains (spine, events) | yes | yes, at /domains | yes | 
+EventType | no — the 345 types live only in a JSON file | no route | — | 
+SpineEvent | yes — SpineEventShape, 729a5afa | yes — /v1/spineevents | count: 0 | 
+The log | — | 4 MB tail only | 1.71 GB · 2,097,133 events | 
+Promise 2 is broken. Every reader takes a fixed 4 MB tail, which on today's traffic is the last 3 h 17 m — 0.25% of what is retained. Forty days are kept and three hours are reachable. Measured and detailed in the service design.
+A generated route serving zero rows reads as working. /v1/spineevents is mounted, shaped, and empty. That is the hollow shape (#3734) at the API layer, and it is the direct consequence of modeling one class to be both a vocabulary and a stream.""" ;
+    chorus:toBe """Make the product real (#4045) — the Product row, its two hasDomain edges, chorus's restored edges, and this doc served as a Document with a resolving href.
+ Split the layers (#4046) — model EventType, load the 345 from the registry, serve /v1/eventtypes, and turn /v1/spineevents into a real projection with ofType joining both directions. The type leg has no dependencies and should ship first.
+ Restore reach (#4044) — a day-to-offset index so a reader asks for a window instead of a byte count, which is also what makes the occurrence API able to answer anything older than this morning.
+ Close the MCP correspondence — with types modeled, "every tool leaves an event" becomes a checkable claim: 57 tools against 345 types, holes reported in both directions. Not yet carded; it is the discussion Jeff asked for, not a ticket.""" ;
+    chorus:notInScope """Loki aggregation, promtail, dashboards — the logs domain, Silas, at Proving.
+ The writer's contract (adapters, envelope, trace lifecycle) — Logs service design.
+ The value-stream sense of "spine" — chorus-spine.html.
+ Per-line ingestion of 2.1M occurrences into the graph — explicitly rejected in §4.""" ;
+    chorus:references """Spine — Service Design (#4044) — contracts, readers, retention, the measured reach gap.
+ Logs — Service Design (#2848) — the writer's contract.
+ The Chorus Spine — Value Stream Architecture — the other sense of the word.
+ designing/schemas/spine-events.json — the 345 types, today's unmodeled registry.
+ Cards: #4045 (this product), #4046 (types + instances), #4044 (service design).
+Chorus · designing/docs/spine-product-design.html · #4045 · Wren · 2026-09-01""" .
+
+chorus:werk a chorus:Product ;
+    chorus:label """Werk""" ;
+    rdfs:label """Werk""" ;
+    chorus:comment """The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.""" ;
+    rdfs:comment """The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.""" ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:vision """Generated domain APIs over the graph end the reconcile treadmill structurally — typed contracts at every boundary, every card a coherent SKU.""" ;
+    chorus:valueProposition """Every accepted card leaves as merged source on origin/main with a coherent receipt — one trace from pull to deployed cdhash — so a green result can't lie and work arrives proven rather than taken on faith.""" ;
+    chorus:audience """The three roles building Chorus and Gathering plus Jeff accepting the work; the external customer never touches Werk.""" ;
+    chorus:status """operating""" ;
+    chorus:gaps """werk-test is held behind the generated tests-domain API; the tests domain lacks per-test identity and result ingestion; card-acceptance does not yet advance artifact status; advisory test and review steps are not yet gates.""" ;
+    chorus:atStep chorus:value-stream-step-building ;
+    chorus:hasDesignDoc chorus:document-werk-subproduct-design ;
+    chorus:hasDomain chorus:tests, chorus:code, chorus:version-control, chorus:cicd, chorus:pipelines ;
+    chorus:publishesPreAuth """true""" ;
+    chorus:partOf chorus:chorus .

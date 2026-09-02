@@ -83,3 +83,36 @@ print(len(rows))')"
   run has_domain no-such-product-4045 events
   [ "$status" -eq 2 ]
 }
+
+# ── #4045 second half — Jeff: "i expected all doc sections to be attributes in
+# the class, not stored in html." The shape declares nine section properties;
+# spine's row serves them non-empty; the schema the page renders from lists them.
+SECTIONS="promise structure model pagesAndFlow apiSurface asIs toBe notInScope references"
+
+@test "AC4: the served Product schema declares every design-doc section as a property" {
+  props="$(curl -sf --max-time 10 "$OWL_URL/products/openapi.json" | python3 -c '
+import sys, json
+print(" ".join(sorted(json.load(sys.stdin)["components"]["schemas"]["Product"]["properties"].keys())))')"
+  for k in $SECTIONS; do
+    case " $props " in *" $k "*) ;; *) echo "schema lacks $k"; return 1 ;; esac
+  done
+}
+
+@test "AC4: spine serves every section non-empty, from the model not the html" {
+  row="$(product_row spine)"
+  [ -n "$row" ]
+  for k in $SECTIONS; do
+    printf '%s' "$row" | python3 -c "import sys,json; v=json.load(sys.stdin).get('$k',''); sys.exit(0 if isinstance(v,str) and len(v.strip())>20 else 1)" \
+      || { echo "spine.$k empty"; return 1; }
+  done
+}
+
+@test "AC4 negative proof (#3734): a property the shape does not declare is NOT in the schema" {
+  props="$(curl -sf --max-time 10 "$OWL_URL/products/openapi.json" | python3 -c '
+import sys, json
+print(" ".join(json.load(sys.stdin)["components"]["schemas"]["Product"]["properties"].keys()))')"
+  case " $props " in *" section1 "*|*" designHtml "*) return 1 ;; esac
+  # and a product that never filled its sections serves them absent, not invented
+  run bash -c "$(declare -f product_row); OWL_URL=$OWL_URL product_row pulse | python3 -c 'import sys,json; v=json.load(sys.stdin).get(\"promise\",\"\"); sys.exit(0 if not v else 1)'"
+  [ "$status" -eq 0 ]
+}

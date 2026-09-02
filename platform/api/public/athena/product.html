@@ -33,10 +33,18 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   try {
     // edges (ownedBy/atStep/hasDomain) live on the COLLECTION row; literals on the
     // entity read; containment in the has-child fold. Merge all three.
-    const [entEnv, collEnv, kidFold] = await Promise.all([
+    // #4045 — the SHAPE is fetched too: every property the model declares for a
+    // Product is rendered, present or not, so an attribute can never be served yet
+    // invisible (Jeff, 2026-09-02: "we have a pretty rich product model yet many of
+    // the attributes are not visible to me"). Documents resolve hasDesignDoc to a link.
+    const [entEnv, collEnv, kidFold, apiSpec, docEnv] = await Promise.all([
       fetchJSON(`/products/${encodeURIComponent(p)}`),
       fetchJSON('/products'),
-      fetchJSON(`/products/${encodeURIComponent(p)}/has-child`).catch(() => null)]);
+      fetchJSON(`/products/${encodeURIComponent(p)}/has-child`).catch(() => null),
+      fetchJSON('/products/openapi.json').catch(() => null),
+      fetchJSON('/documents').catch(() => null)]);
+    const shape = (apiSpec && apiSpec.components && apiSpec.components.schemas && apiSpec.components.schemas.Product && apiSpec.components.schemas.Product.properties) || {};
+    const docsByName = Object.fromEntries((((docEnv || {}).data) || []).map(r => [r.name, r]));
     const lit = (Array.isArray(entEnv.data) ? entEnv.data[0] : entEnv.data) || {};
     const row = ((collEnv.data || []).find(r => r.name === p)) || {};
     const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([, v]) => v !== '' && v != null)) };
@@ -65,8 +73,36 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     });
     const kids = asArray(e.hasChild).sort();
 
+    // Every shape property, in one table. Provenance fields fold into one line;
+    // the narrative ones already rendered above are listed again here on purpose —
+    // this table is the complete answer to "what does the model say about spine".
+    const PROV = new Set(['iri', 'type', 'created', 'creator', 'modified', 'label']);
+    const edgeLink = (prop, v) => {
+      const n = String(v).replace(/^.*[#/]/, '');
+      if (prop === 'hasDomain') return `<a class="edge" href="domain.html?d=${encodeURIComponent(n)}">${esc(n)}</a>`;
+      if (prop === 'ownedBy') return ownerDot(n);
+      if (prop === 'atStep') return stepBadge(n);
+      if (prop === 'hasDesignDoc' || prop === 'hasServiceDesign') {
+        const d = docsByName[n];
+        return d && d.docHref ? `<a class="edge" href="${esc(basePath(d.docHref))}">${esc(d.docTitle || n)}</a>` : `${esc(n)} <span class="src">(no served Document row)</span>`;
+      }
+      if (prop === 'hasChild') return `<a class="edge" href="product.html?p=${encodeURIComponent(n)}">${esc(n)}</a>`;
+      return esc(n);
+    };
+    const attrRows = Object.entries(shape).filter(([k]) => !PROV.has(k)).sort(([a], [b]) => a.localeCompare(b)).map(([k, def]) => {
+      const isEdge = !!def.$ref;
+      const vals = asArray(e[k]).filter(v => v !== '' && v != null);
+      const cell = vals.length
+        ? (isEdge ? vals.map(v => edgeLink(k, v)).join(' ') : `<p>${esc(vals.join(' '))}</p>`)
+        : '<span class="empty">not set</span>';
+      return `<tr><td><code>chorus:${esc(k)}</code></td><td class="kind">${isEdge ? 'edge' : 'field'}</td><td>${cell}</td></tr>`;
+    });
+    const provLine = ['iri', 'created', 'creator', 'modified'].filter(k => e[k]).map(k => `${k}: ${esc(String(e[k]).slice(0, 40))}`).join(' &middot; ');
+    const designDoc = asArray(e.hasDesignDoc).map(v => docsByName[String(v).replace(/^.*[#/]/, '')]).find(Boolean);
+
     main.innerHTML = `
 <div class="promise"><strong>vision:</strong> ${esc(e.vision || '')}</div>
+${designDoc && designDoc.docHref ? `<p class="vp"><strong>product design:</strong> <a class="edge" href="${esc(basePath(designDoc.docHref))}">${esc(designDoc.docTitle || designDoc.name)}</a> <span class="src">chorus:hasDesignDoc</span></p>` : `<p class="vp"><strong>product design:</strong> <span class="empty">none registered</span> <span class="src">chorus:hasDesignDoc</span></p>`}
 <div class="stats">
   <div class="stat"><div class="v">${ownerDot(e.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
   <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
@@ -80,6 +116,9 @@ ${doms.length ? `<table><tr><th>Domain</th><th>Owner</th><th>Vocabulary</th><th>
 <details class="fold" open><summary>Children (hasChild) <span class="src">chorus:hasChild</span></summary><div class="body">
 ${kids.length ? kids.map(c => `<a class="chip" href="product.html?p=${encodeURIComponent(c)}">${esc(c)}</a>`).join(' ') : `<div class="empty">none &mdash; ${esc(p)} is a leaf product</div>`}</div></details>
 ${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
+<details class="fold" open><summary>Every attribute the model declares (${attrRows.length}) <span class="src">GET /products/openapi.json &rarr; Product</span></summary><div class="body">
+${attrRows.length ? `<table><tr><th>Property</th><th></th><th>Value</th></tr>${attrRows.join('')}</table>` : '<div class="empty">shape unavailable — the API did not serve its schema</div>'}
+${provLine ? `<p class="src">${provLine}</p>` : ''}</div></details>
 ${srcNote(`GET /products/${esc(p)}`)}`;
   } catch (e) { fetchFailed(main, e); }
 })();
