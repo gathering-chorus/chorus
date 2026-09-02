@@ -648,6 +648,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let owl_upstream = owl_upstream_for(role)?;
         let nightly_log = werk_nightly_log_path(werk_root);
         let css_issuer = css_issuer_for_variant();
+        let jwks_url = jwks_url_for_variant();
         let model_bin = format!("{}/athena-model", werk_bin_dir(role));
         let werk_fuseki = werk_fuseki_for(role);
         let variant_path = variant_path_for(role);
@@ -671,6 +672,13 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 // credential. A demo env that cannot refuse proves nothing.
                 ("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"),
                 ("CHORUS_FUSEKI", werk_fuseki.as_str()),
+                // Silas, 2026-09-02: with the envelope on, the variant refused
+                // EVERYONE with authn-missing — it had no identity verifier at
+                // all. Prod's chorus-api carries both of these; the variant
+                // carried neither, so "refuses everything" looked like the
+                // envelope working when it was the door having no key reader.
+                ("CSS_ISSUER", css_issuer.as_str()),
+                ("CHORUS_JWKS_URL", jwks_url.as_str()),
             ],
             // #4022 — the athena variant verifies write tokens against CSS's
             // JWKS, and the issuer URL reaches the binary ONLY through env
@@ -853,6 +861,17 @@ pub fn werk_fuseki_for(role: &str) -> String {
     let base = std::env::var("CHORUS_FUSEKI_BASE")
         .unwrap_or_else(|_| "http://localhost:3030".to_string());
     format!("{}/{}", base.trim_end_matches('/'), werk_dataset_name(role))
+}
+
+/// The local JWKS the verifier fetches. Same default chorus-env-setup.sh uses;
+/// the issuer is the LOGICAL public origin (behind Cloudflare) and the JWKS is
+/// fetched LOCALLY — fetching the public one from the box is 1010-blocked.
+pub fn jwks_url_for_variant() -> String {
+    std::env::var("CHORUS_JWKS_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "http://localhost:3001/.oidc/jwks".to_string())
 }
 
 pub fn css_issuer_for_variant() -> String {
@@ -1063,5 +1082,29 @@ mod store_4047 {
             "fixture is bogus if the flag appears without being passed");
         assert!(!without.contains("CHORUS_FUSEKI"),
             "fixture is bogus if the store appears without being passed");
+    }
+
+    /// Silas, 2026-09-02: envelope ON + no verifier env = refuses everyone with
+    /// authn-missing, which reads as the envelope working. The issuer is the
+    /// LOGICAL public origin; the JWKS is fetched locally (the public one is
+    /// 1010-blocked from the box), so they are two different hosts on purpose.
+    #[test]
+    fn api_variant_plist_carries_both_halves_of_the_identity_verifier() {
+        let svc = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
+        let issuer = css_issuer_for_variant();
+        let jwks = jwks_url_for_variant();
+        assert!(issuer.starts_with("https://"), "issuer must be the real CSS, got {}", issuer);
+        assert!(jwks.contains("/.oidc/jwks"), "jwks must be the local key set, got {}", jwks);
+        assert_ne!(issuer, jwks, "issuer and jwks are different hosts by design");
+        let with = generate_plist(&svc, "kade", "/tmp/werk", 3343,
+            &[("CSS_ISSUER", issuer.as_str()), ("CHORUS_JWKS_URL", jwks.as_str())]);
+        assert!(with.contains("<key>CSS_ISSUER</key>"), "{}", with);
+        assert!(with.contains("<key>CHORUS_JWKS_URL</key>"), "{}", with);
+
+        // NEGATIVE PROOF (#3734): neither passed — the state that produced
+        // authn-missing for every caller.
+        let without = generate_plist(&svc, "kade", "/tmp/werk", 3343, &[]);
+        assert!(!without.contains("CSS_ISSUER"), "fixture bogus: issuer appears unpassed");
+        assert!(!without.contains("CHORUS_JWKS_URL"), "fixture bogus: jwks appears unpassed");
     }
 }
