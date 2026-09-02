@@ -206,6 +206,40 @@ const sendChorusPage = (file: string) =>
 // each with only 4 in common. A table that merged them silently would hide the
 // exact incoherence we keep coming back to, so `source` is a column, not a
 // footnote.
+interface DomainSchemaPropRow { property: string; type: string; required: boolean; source: string[] }
+type DomainSchemaBinding = NonNullable<SparqlSelectResponse['results']>['bindings'] extends (infer B)[] | undefined ? B : never;
+
+const localName = (v: string | undefined): string => String(v || '').split(/[#/]/).pop() || '';
+
+/** Merge one binding into a property row (type first-wins, required any-wins, sources deduped). */
+function mergeDomainSchemaRow(cur: DomainSchemaPropRow, row: DomainSchemaBinding): DomainSchemaPropRow {
+  const next = { ...cur, source: [...cur.source] };
+  if (row.range?.value && !next.type) next.type = localName(row.range.value);
+  if (row.req?.value && Number(row.req.value) >= 1) next.required = true;
+  const src = row.src?.value;
+  if (src && !next.source.includes(src)) next.source.push(src);
+  return next;
+}
+
+/** Fold SPARQL bindings (class, prop, range, req, src) into class → property rows. Pure. */
+function foldDomainSchemaRows(bindings: DomainSchemaBinding[] | undefined): Map<string, Map<string, DomainSchemaPropRow>> {
+  const classes = new Map<string, Map<string, DomainSchemaPropRow>>();
+  for (const row of bindings ?? []) {
+    const cls = localName(row.class?.value);
+    // A blank-node path is an inverse-path constraint (^hasDomain). It is a
+    // real requirement and unsatisfiable by authoring, so it is SHOWN and
+    // labelled rather than dropped — dropping it is how a floor nobody can
+    // meet stays invisible.
+    const prop = row.prop?.type === 'bnode' ? '(inverse path)' : localName(row.prop?.value);
+    if (!cls || !prop) continue;
+    const props = classes.get(cls) ?? new Map<string, DomainSchemaPropRow>();
+    const cur = props.get(prop) ?? { property: prop, type: '', required: false, source: [] };
+    props.set(prop, mergeDomainSchemaRow(cur, row));
+    classes.set(cls, props);
+  }
+  return classes;
+}
+
 app.get('/api/athena/domain-schema/:domain', async (req: Request, res: Response) => {
   const d = String(req.params.domain || '');
   if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(d)) {
@@ -235,28 +269,10 @@ SELECT ?class ?prop ?range ?req ?src WHERE { GRAPH <urn:chorus:ontology> {
     }
     // #3606 — typed bindings + Map accumulators (was `any` + Record-with-
     // dynamic-keys; same treatment as athena-model-relationships).
+    // #4028 — folding lives in foldDomainSchemaRows so this handler stays
+    // under the complexity bar (lint-ratchet).
     const body = (await r.json()) as SparqlSelectResponse;
-    const local = (v: string | undefined) => String(v || '').split(/[#/]/).pop() || '';
-    interface PropRow { property: string; type: string; required: boolean; source: string[] }
-    const classes = new Map<string, Map<string, PropRow>>();
-    for (const row of body.results?.bindings || []) {
-      const cls = local(row.class?.value);
-      // A blank-node path is an inverse-path constraint (^hasDomain). It is a
-      // real requirement and unsatisfiable by authoring, so it is SHOWN and
-      // labelled rather than dropped — dropping it is how a floor nobody can
-      // meet stays invisible.
-      const isBlank = row.prop?.type === 'bnode';
-      const prop = isBlank ? '(inverse path)' : local(row.prop?.value);
-      if (!cls || !prop) continue;
-      const props = classes.get(cls) || new Map<string, PropRow>();
-      const cur = props.get(prop) || { property: prop, type: '', required: false, source: [] };
-      if (row.range?.value && !cur.type) cur.type = local(row.range.value);
-      if (row.req?.value && Number(row.req.value) >= 1) cur.required = true;
-      const src = row.src?.value;
-      if (src && !cur.source.includes(src)) cur.source.push(src);
-      props.set(prop, cur);
-      classes.set(cls, props);
-    }
+    const classes = foldDomainSchemaRows(body.results?.bindings || []);
     res.json({
       domain: d,
       storeReachable: true,
