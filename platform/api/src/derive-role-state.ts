@@ -108,7 +108,7 @@ function ts(line: SpineLine): number {
 }
 
 function cardOf(line: SpineLine): string | null {
-  if (line.card_id !== undefined && line.card_id !== null) return String(line.card_id);
+  if (line.card_id !== undefined) return String(line.card_id);
   const m = /(?:^|,)card(?:_id)?=(\d+)/.exec(line.payload ?? '');
   return m ? m[1] : null;
 }
