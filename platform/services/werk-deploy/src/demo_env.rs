@@ -459,12 +459,29 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
 /// shapes and claims of the branch under demo rather than prod's. Best-effort
 /// by design: a store that cannot be prepared must not block env-up, but it
 /// says so loudly instead of silently falling back to prod's data.
+/// #4047 follow-on (Silas, 2026-09-02): Fuseki's admin endpoint requires
+/// basic auth, and both the create and the drop posted anonymously — 401, then
+/// a model seed against a dataset that was never made, which surfaced as a
+/// confusing 405. The credential is the same one every bash writer uses via
+/// fuseki-auth.sh; read it from the environment rather than inventing a path.
+fn fuseki_admin_auth() -> Vec<String> {
+    match std::env::var("FUSEKI_ADMIN_PASSWORD") {
+        Ok(pw) if !pw.is_empty() => {
+            let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string());
+            vec!["-u".to_string(), format!("{}:{}", user, pw)]
+        }
+        _ => Vec::new(),
+    }
+}
+
 fn prepare_werk_store(role: &str, werk_root: &str) -> String {
     let ds = werk_dataset_name(role);
     let base = werk_fuseki_for(role);
     let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
     let admin = format!("{}/$/datasets", base);
+    let auth = fuseki_admin_auth();
     let out = Command::new("curl")
+        .args(&auth)
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
                "--data", &format!("dbName={}&dbType=mem", ds)])
         .output();
@@ -472,7 +489,16 @@ fn prepare_werk_store(role: &str, werk_root: &str) -> String {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(e) => format!("curl-failed:{}", e),
     };
-    // 200 = created, 409 = already there; both are usable.
+    // 200 = created, 409 = already there; both are usable. Anything else means
+    // there is no dataset, and seeding into one that does not exist answers 405
+    // — a code that sends the reader looking at the wrong thing. Say it here.
+    if !(created == "200" || created == "409") {
+        return format!(
+            "store={} create_http={} — dataset NOT created (admin auth missing or refused); \
+no model seed attempted",
+            ds, created
+        );
+    }
     let deploy = format!("{}/platform/scripts/athena-deploy-model.sh", werk_root);
     let seeded = if Path::new(&deploy).exists() {
         let st = Command::new("bash")
@@ -522,6 +548,7 @@ fn drop_werk_store(role: &str) -> String {
     let base = werk_fuseki_for(role);
     let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
     let out = Command::new("curl")
+        .args(&fuseki_admin_auth())
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
                &format!("{}/$/datasets/{}", base, ds)])
         .output();

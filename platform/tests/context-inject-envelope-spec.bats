@@ -20,10 +20,18 @@ load test_helper
 #   - silas has a WIP card in pulse-latest.json (Athena section requires it)
 
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
-SOCKET="/tmp/chorus-hooks.sock"
-BINARY="${CHORUS_ROOT}/platform/services/chorus-hooks/target/release/chorus-hooks"
+# /tmp/chorus-hooks.sock was retired in 2026-07 (the socket moved to
+# $HOME/.chorus/run, owner-only, off the world-writable /tmp). This file kept
+# checking the old path, so its first assertion could only ever fail — a red
+# that named a live daemon as missing. Resolve it the way the daemon does.
+SOCKET="${CHORUS_HOOK_SOCKET:-$HOME/.chorus/run/chorus-hooks.sock}"
+# #2734: target/release is the BUILD artifact; ~/.chorus/bin is the DEPLOY
+# artifact, and the daemon runs the latter. Comparing daemon age against the
+# build tree made any local rebuild look like a stale daemon — it reds on
+# compiling, not on running old code. Stat what actually runs.
+BINARY="${CHORUS_BIN:-$HOME/.chorus/bin}/chorus-hooks"
 
-# #2614: every test in this file POSTs to the live daemon at /tmp/chorus-hooks.sock
+# #2614: every test in this file POSTs to the live daemon at $CHORUS_HOOK_SOCKET
 # and expects pulse-latest.json + chorus-events to reflect real role state. Gated
 # behind RUN_INTEGRATION; default cargo/bats run skips the whole file.
 setup() {

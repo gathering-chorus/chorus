@@ -77,6 +77,20 @@ _load_1m() {
 # real wedge and stays fail). Everything else passes through untouched.
 _classify_verdict() {
   local verdict="$1" summary="$2"
+  # #3753 AC4 lived only at spine-emit time, so a row whose verdict said pass
+  # while its own summary counted failures kept the pass on the LINE — and the
+  # line is what the log, the page and every count read. 2026-09-02 03:00 shipped
+  # two of them (directing/clearing "852 pass, 1 fail", test-product-membrane.sh
+  # "0 pass, 1 fail"), both rendered green, so the night read 5 red when it was 7.
+  # Flip it here, where the row is made, not only where the event is emitted.
+  if [ "$verdict" = "pass" ]; then
+    local _f
+    _f=$(printf '%s' "$summary" | grep -oE '[0-9]+ (failed|fail)' | grep -oE '[0-9]+' | head -1)
+    if [ "${_f:-0}" -gt 0 ] 2>/dev/null; then
+      echo "nightly-suites: REPORTER CONTRADICTION — row says pass with failed=${_f}; recording fail (#3753 AC4, row-level)" >&2
+      printf 'fail'; return
+    fi
+  fi
   [ "$verdict" = "fail" ] || { printf '%s' "$verdict"; return; }
   case "$summary" in
     *"NODE_MODULE_VERSION"*|*"Cannot find module"*|*"command not found"*|*"ERR_DLOPEN_FAILED"*|*"spawn "*ENOENT*|*"DID NOT RUN"*)
