@@ -13,7 +13,19 @@ FAIL=0
 # The latter is a stale path; the test read empty there before this fix and
 # reported "no role.state.changed event" while events were landing in the
 # real log. Resolve the live path the same way the binary does.
-CHORUS_LOG="${HOME}/.chorus/chorus.log"
+# #4065 — read the SAME file the writer writes. chorus-hook-shim honors
+# CHORUS_LOG_FILE (the #3615 membrane's spine seam); the nightly runs every
+# suite in its own world with that set, so the event landed in the suite's
+# log while this test kept reading ~/.chorus/chorus.log — red at 03:00, green
+# by hand, for days. When nothing set it, this test brings its own world
+# (#3528) instead of mutating the live silas state on the production spine.
+if [ -z "${CHORUS_LOG_FILE:-}" ]; then
+  _tmp=$(mktemp -d "${TMPDIR:-/tmp}/role-state-spine.XXXXXX")
+  export CHORUS_LOG_FILE="$_tmp/chorus.log"
+  trap 'rm -rf "$_tmp"' EXIT
+fi
+CHORUS_LOG="$CHORUS_LOG_FILE"
+touch "$CHORUS_LOG" 2>/dev/null || true
 ROLE_STATE="${CHORUS_ROOT}/platform/scripts/role-state"
 
 echo "=== role-state spine event tests ==="

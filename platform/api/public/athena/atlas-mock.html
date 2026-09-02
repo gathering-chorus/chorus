@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Atlas — schema view MOCK</title>
+<!-- #4065 — every Chorus page resolves its own mount (#3798): the same inline boot
+     product.html carries, so this page works under /chorus/ and at root alike. -->
+<script>(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
 <!-- #4053 MOCK — not wired to the model. Real values, hand-placed, so Jeff can
      react to the SHAPE before it is built. Every number here was queried live
      from urn:chorus:ontology and athena-make on 2026-09-01 11:35. -->

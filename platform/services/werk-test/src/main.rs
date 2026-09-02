@@ -797,13 +797,22 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     for (b, (ok, cases, text)) in lane_results {
         let b = &b;
         let kind = bats_kind(b);
+        // #4065 — a suite that DECLINED to run (rc=3, e.g. test-product-membrane
+        // refusing to boot out live agents unattended, #4004) is neither pass
+        // nor fail. Its one synthetic "skip" case used to count as a FAIL here,
+        // so the row read "pass | 0 pass, 1 fail" — the reporter contradiction
+        // #3753 flagged every night. It is now its own verdict: skip.
+        if werk_test::is_self_refused(&cases) {
+            println!("{}", werk_test::nightly_lane_line_refused(kind, b));
+            continue;
+        }
         let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
             // shell suites report summary counts, not TAP cases
             werk_test::parse_shell_counts(&text)
                 .unwrap_or(if ok { (1, 0) } else { (0, 1) })
         } else {
             (cases.iter().filter(|(_, r)| r == "pass").count(),
-             cases.iter().filter(|(_, r)| r != "pass").count())
+             cases.iter().filter(|(_, r)| r != "pass" && r != "skip").count())
         };
         println!("{}", werk_test::nightly_lane_line(kind, b, ok, passed, case_failed, 0));
         if !ok {
@@ -1024,8 +1033,16 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
             let refused = code == Some(3);
             let ok = success || refused;
             if !ok {
-                let tail: Vec<&str> = text.lines().rev().take(20).collect();
-                eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+                // #4065 — the failing suite's own last lines go to STDOUT, each
+                // prefixed with the suite path, so nightly-suites.sh's per-unit
+                // fail log (which greps the lane output for lines naming the
+                // unit) carries the CAUSE, not just the verdict. On stderr they
+                // were lost: test-role-state-spine.sh was red at 03:00 and green
+                // by hand for days with a fail log that said only "0 pass, 2 fail".
+                let tail: Vec<&str> = text.lines().rev().take(40).collect();
+                for line in tail.into_iter().rev() {
+                    println!("{} | {}", suite, line);
+                }
             }
             let mut cases = werk_test::parse_bats_cases(&text);
             if refused && cases.is_empty() {
