@@ -381,7 +381,7 @@ fn run(args: &[String]) -> Result<i32, String> {
             emit_spine("test.integration.skipped", &role, &card, &trace,
                 &[("count", &ui_set.len().to_string()), ("stack_down", down), ("lane", "ui")]);
         } else {
-            let (ok, summary) = run_ui_flows(&werk, &ui_set);
+            let (ok, summary) = run_ui_flows(&werk, &ui_set, &quarantined);
             println!("   {}:workspace … {}{}", kind.label(), if ok { "ok" } else { "FAIL" }, summary);
             if !ok {
                 any_failed = true;
@@ -2165,10 +2165,19 @@ fn ensure_ui_service_built(werk: &str, pkg: &str, artifact: &str) {
     }
 }
 
-fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool, String) {
+fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (bool, String) {
     ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
     cmd.arg("playwright").arg("test");
+    // #4045 — honour the quarantine here too, not only in run_cargo. Visible: the
+    // pattern is printed, so a skipped spec is never a silent absence (#3443).
+    let mut excluded = String::new();
+    if let Some(pat) = werk_test::playwright_grep_invert(quarantined) {
+        let names: Vec<&str> = quarantined.iter().map(|q| q.case.as_str()).collect();
+        println!("   ui-flows: quarantined specs excluded via --grep-invert: {}", names.join(", "));
+        excluded = format!(" [quarantined, excluded: {}]", names.join(", "));
+        cmd.arg("--grep-invert").arg(pat);
+    }
     for f in files {
         cmd.arg(f);
     }
@@ -2188,7 +2197,7 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>) -> (bool
                     for line in werk_test::playwright_failure_lines(&text) {
                         eprintln!("{}", line);
                     }
-                    (o.status.success() && f == 0, format!(" ({} passed, {} failed)", p, f))
+                    (o.status.success() && f == 0, format!(" ({} passed, {} failed){}", p, f, excluded))
                 }
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();

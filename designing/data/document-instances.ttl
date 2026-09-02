@@ -159,7 +159,7 @@ chorus:document-service-design-clearing a chorus:Document ;
     rdfs:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
     chorus:hasDomain chorus:messages ;
     chorus:ownedBy chorus:role-wren ;
-    chorus:hasProduct chorus:product-clearing .
+    chorus:hasProduct chorus:clearing .
 
 chorus:document-service-design-nudge a chorus:Document ;
     chorus:label """service-design-nudge""" ;
@@ -201,3 +201,18 @@ chorus:document-werk-subproduct-design a chorus:Document ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
     chorus:hasDomain chorus:tests ;
     chorus:ownedBy chorus:role-wren .
+
+# #4045 — pulse's hasDesignDoc pointed at document-pulse-service-design, a row
+# that exists in NO graph (retired); the edge dangled live and the werk-store seed
+# refused on it. The product design exists as a file; this is its Document row.
+chorus:document-pulse-product-design a chorus:Document ;
+    chorus:label """pulse-product-design""" ;
+    rdfs:label """pulse-product-design""" ;
+    chorus:docTitle """Product Design — Pulse""" ;
+    chorus:docHref """/designing/docs/product-design-pulse.html""" ;
+    chorus:comment """What Pulse is as a product — the team's short-term memory over the spine — per its product design (#4045 registered the row the pulse product already pointed at).""" ;
+    rdfs:comment """What Pulse is as a product — the team's short-term memory over the spine — per its product design (#4045 registered the row the pulse product already pointed at).""" ;
+    chorus:hasDomain chorus:knowledge ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:pulse .
+

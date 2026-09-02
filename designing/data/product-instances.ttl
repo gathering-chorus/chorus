@@ -135,7 +135,7 @@ chorus:pulse a chorus:Product ;
     chorus:status """operating""" ;
     chorus:gaps """Pulse can say who a role CLAIMS to be, not what they are doing — so a role deep in work can read as idle, and the reading Jeff most needs is the one least trustworthy. It has no notion of waiting: it lists roles and cards but not who is blocked on whom, which is the question that actually costs a coordination day. It reports the same way on a loaded machine as an idle one, so a slow reading and a stalled role look identical. And it is read-only by nature — it can show a stall but cannot route it, so noticing still depends on someone looking.""" ;
     chorus:atStep chorus:value-stream-step-directing ;
-    chorus:hasDesignDoc chorus:document-pulse-service-design ;
+    chorus:hasDesignDoc chorus:document-pulse-product-design ;
     chorus:hasDomain chorus:knowledge ;
     chorus:consumes chorus:code, chorus:logs, chorus:roles, chorus:alerts-monitors, chorus:messages, chorus:streams, chorus:events, chorus:cards, chorus:security, chorus:memory, chorus:knowledge, chorus:tests ;
     chorus:publishesPreAuth """true""" ;
