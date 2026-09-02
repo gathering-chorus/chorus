@@ -264,6 +264,16 @@ export class TilePoller {
   // the <role>-declared.json this used to parse no longer exists. blocked and
   // observing (the only states a projection cannot infer) arrive on the same
   // row, so the spine projection below still honours them.
+  /** #3869/#4028 — the pane's clock labels and derives ONLY while the roles API
+   *  has not answered for this role; once it has, its row owns state and age
+   *  (the pane's own clock produced "building · 22m ago"). */
+  private applyObservationClock(tile: RoleTile, role: string, ts: string): void {
+    if (this.rolesFromApi.has(role)) return;
+    const ageSecs = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    tile.lastActionAge = formatAge(ageSecs);
+    tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
+  }
+
   private applyAndonState(tile: RoleTile, role: string): void {
     if (this.readRolesOverride) {
       const rows = this.readRolesOverride();
@@ -328,21 +338,7 @@ export class TilePoller {
       }
       if (!last) return;
       tile.lastAction = last.digest || '';
-      if (last.ts) {
-        const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
-        // #4028 — the age label belongs to the same source as the state: the API
-        // row's lastActivity. The pane's own clock produced "building · 22m ago".
-        if (!this.rolesFromApi.has(role)) tile.lastActionAge = formatAge(ageSecs);
-        // #3869 — the observation stream has always known whether a role is
-        // working; the tile read it for the age label and then took `state`
-        // from a file agents update by hand. That is why every screenshot Jeff
-        // sent for two days said "Wren idle" while Wren was mid-build.
-        // #4028 — when /api/chorus/context/roles has answered, ITS state stands;
-        // the observation age still labels the tile, it no longer re-derives state.
-        if (!this.rolesFromApi.has(role)) {
-          tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
-        }
-      }
+      if (last.ts) this.applyObservationClock(tile, role, last.ts);
     } catch {
       // No observations yet
     }
@@ -424,6 +420,14 @@ export class TilePoller {
   // 15min — a reused pid always mismatches (pin says June, process says July).
   // One batched `ps` per poll; a pin failing identity is ignored, never
   // trusted-by-default.
+  /** #4028 — a run pin fills state only while no roles-API row has answered
+   *  (the row already says waiting for a presented demo). */
+  private applyRunPinState(tile: RoleTile, role: string, phase: string): void {
+    if (this.rolesFromApi.has(role)) return;
+    if (tile.state !== 'idle' && tile.state !== 'unknown' && tile.state !== 'waiting') return;
+    tile.state = phase === 'presented' ? 'presenting' : 'building';
+  }
+
   private applyWerkRuns(tile: RoleTile, role: string): void {
     try {
       const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
@@ -431,12 +435,7 @@ export class TilePoller {
       for (const f of files) {
         const run = this.readRun(f, role);
         if (!run || !this.runIsCurrent(run, pidStarts)) continue;
-        // #4028 — the API row already knows a presented demo (waiting); a run pin
-        // only fills state when no row has answered.
-        if (!this.rolesFromApi.has(role)
-          && (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting')) {
-          tile.state = run.phase === 'presented' ? 'presenting' : 'building';
-        }
+        this.applyRunPinState(tile, role, run.phase ?? "");
         tile.sessionAlive = true;
         if (!tile.card && run.card) tile.card = `#${run.card}`;
         return;
