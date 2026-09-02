@@ -335,7 +335,11 @@ export class TilePoller {
         // working; the tile read it for the age label and then took `state`
         // from a file agents update by hand. That is why every screenshot Jeff
         // sent for two days said "Wren idle" while Wren was mid-build.
-        tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
+        // #4028 — when /api/chorus/context/roles has answered, ITS state stands;
+        // the observation age still labels the tile, it no longer re-derives state.
+        if (!this.rolesFromApi.has(role)) {
+          tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
+        }
       }
     } catch {
       // No observations yet
@@ -385,6 +389,7 @@ export class TilePoller {
   }
 
   private applySpineProjection(tile: RoleTile, role: string): void {
+    if (this.rolesFromApi.has(role)) return; // #4028 — one derivation, served by the API
     const act = this.spineActivity[role];
     const projected = projectRoleState({
       declared: tile.state,
@@ -424,7 +429,10 @@ export class TilePoller {
       for (const f of files) {
         const run = this.readRun(f, role);
         if (!run || !this.runIsCurrent(run, pidStarts)) continue;
-        if (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting') {
+        // #4028 — the API row already knows a presented demo (waiting); a run pin
+        // only fills state when no row has answered.
+        if (!this.rolesFromApi.has(role)
+          && (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting')) {
           tile.state = run.phase === 'presented' ? 'presenting' : 'building';
         }
         tile.sessionAlive = true;

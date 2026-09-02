@@ -43,10 +43,16 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
       JSON.stringify({ role: 'wren', card: 3772, phase: 'running', pid: process.pid, startedAt: new Date().toISOString() }));
     setPidStartTimesForTest(new Map([[process.pid, Date.now()]]));
 
+    // #4028 inverted this test: the roles API is the ONE source of state. A run
+    // pin still fills the card and proves the session alive, but if the API row
+    // says idle, the tile says idle — a running pipeline is activity the API
+    // itself sees (werk.phase is an activity event), so the row would say building.
     const t = wrenTile(poller(scanDir, werkDir));
-    expect(t.state).toBe('building');
+    expect(t.state).toBe('idle');
     expect(t.card).toBe('#3772');
     expect(t.sessionAlive).toBe(true);
+    // and when the row says building, that is what shows
+    expect(wrenTile(poller(scanDir, werkDir, { state: 'building', stale: false })).state).toBe('building');
   });
 
   test('presented run → presenting', () => {
@@ -54,7 +60,9 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     fs.writeFileSync(path.join(werkDir, '3761.json'),
       JSON.stringify({ role: 'wren', card: 3761, phase: 'presented', presentedAt: new Date().toISOString() }));
 
-    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('presenting');
+    // #4028: a presented demo is 'waiting' in the API row; the pin no longer invents 'presenting' over it
+    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('idle');
+    expect(wrenTile(poller(scanDir, werkDir, { state: 'waiting', stale: false })).state).toBe('waiting');
   });
 
   test('landed run does NOT override — landed is done, idle is true', () => {

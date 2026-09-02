@@ -278,3 +278,19 @@ describe('TilePoller — poll re-reads state', () => {
     expect(p.getTiles().find((t) => t.role === 'kade')!.state).toBe('building');
   });
 });
+
+// #4028 — negative proof (#3734): once the roles API has answered, no older layer
+// (observation age, spine projection, run pin) may overwrite its state.
+describe('#4028 the API row is the only source of tile state', () => {
+  it('a role the API calls waiting stays waiting even with fresh stream activity', () => {
+    const poller = new TilePoller({
+      readRoles: () => [{ role: 'wren', state: 'waiting', card: 4028, stale: false, lastActivity: new Date().toISOString() } as any],
+    } as any);
+    const tile: any = { state: 'unknown', cards: [], lastAction: '', lastActionAge: '' };
+    (poller as any).applyAndonState(tile, 'wren');
+    // fresh spine activity: without the #4028 guard this projects 'building' over the row
+    (poller as any).spineActivity = { wren: { ageSecs: 5, kind: 'hook.decision' } };
+    (poller as any).applySpineProjection(tile, 'wren');
+    expect(tile.state).toBe('waiting');
+  });
+});
