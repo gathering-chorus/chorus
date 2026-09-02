@@ -176,6 +176,31 @@ function renderHistory(o: NightlyPageOpts | undefined, current: string): string 
   return `<details class="history"><summary>${h.length} recorded run(s) — open any</summary><ul>${items}</ul></details>`;
 }
 
+/** #4063/#4073 — the run's verdict and banner class, pulled out so
+ *  renderNightlyPage stays under the complexity cap (the ratchet on main went
+ *  +1 on it, 2026-09-02). A partial run has NO verdict (IN PROGRESS); green is
+ *  only ever said of a whole night. */
+function runVerdict(run: NightlyRun, reds: number): { verdict: string; cls: string } {
+  if (!run.completed) {
+    return { verdict: `IN PROGRESS — ${run.rows.length} suite(s) so far, ${reds} red so far`, cls: 'partial' };
+  }
+  return reds === 0 ? { verdict: 'ALL GREEN', cls: 'green' } : { verdict: `${reds} RED SUITES`, cls: 'red' };
+}
+
+/** The not-finished banner: STOPPED (#4035), NO OUTPUT (#4009 wedged), or
+ *  RUNNING. Empty for a completed run. */
+function notFinishedBanner(run: NightlyRun): string {
+  if (run.completed) return '';
+  if (run.stoppedAt) {
+    return `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`;
+  }
+  const quiet = run.quietForMs ?? 0;
+  const mins = Math.round(quiet / 60000);
+  return quietVerdict(run, quiet) === 'quiet'
+    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
+    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
+}
+
 /** Render the run as the one-look report page. */
 export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts): string {
   if (!run) {
@@ -197,24 +222,8 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   // subset had reported — the vacuous-pass class. Partial = IN PROGRESS, in
   // amber, with "so far" on every count; green is only ever said of a whole
   // night.
-  const verdict = !run.completed
-    ? `IN PROGRESS — ${run.rows.length} suite(s) so far, ${reds.length} red so far`
-    : reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED SUITES`;
-  const cls = !run.completed ? 'partial' : reds.length === 0 ? 'green' : 'red';
-  // #4009 — say WHICH not-finished state this is. "PARTIAL" covered both a run
-  // still working and a run wedged 38 minutes; a reader could not act on it.
-  const quiet = run.quietForMs ?? 0;
-  const liveness = quietVerdict(run, quiet);
-  const mins = Math.round(quiet / 60000);
-  const stoppedBanner = run.stoppedAt
-    ? `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`
-    : '';
-  const liveBanner = liveness === 'quiet'
-    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
-    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
-  const partial = run.completed
-    ? ''
-    : (stoppedBanner || liveBanner);
+  const { verdict, cls } = runVerdict(run, reds.length);
+  const partial = notFinishedBanner(run);
   const row = (r: NightlyRow) => `
     <tr class="${esc(r.status)}">
       <td class="st">${esc(r.status)}</td>
