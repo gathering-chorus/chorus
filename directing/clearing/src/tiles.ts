@@ -435,7 +435,7 @@ export class TilePoller {
       for (const f of files) {
         const run = this.readRun(f, role);
         if (!run || !this.runIsCurrent(run, pidStarts)) continue;
-        this.applyRunPinState(tile, role, run.phase ?? "");
+        this.applyRunPinState(tile, role, run.phase ?? '');
         tile.sessionAlive = true;
         if (!tile.card && run.card) tile.card = `#${run.card}`;
         return;
