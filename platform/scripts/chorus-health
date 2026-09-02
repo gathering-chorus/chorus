@@ -372,6 +372,28 @@ else
   warn "authn-coverage" "authn-coverage.sh produced no COVERAGE_PCT — probe or a store may be down"
 fi
 
+# #4058 — authz-scope-reachable: does any surface require a scope NO principal
+# holds? Such a surface is dead — every caller gets 403 out-of-scope — and it
+# looks identical to a surface nobody calls, which is how 15 of them accumulated
+# unnoticed from 2026-07-08 until per-case jest results became storable on 08-27
+# and 48 x "Received: 403" landed at once.
+#
+# FAIL, not warn. A declared-but-ungrantable scope is a broken surface, not a
+# gauge, and the whole lesson of this card is that the benign tier is where these
+# go to be ignored. UNMEASURED is also a FAIL: "the store did not answer" must
+# never render as a clean bill.
+azr_out=$(bash "${SCRIPTS}/authz-scope-reachable.sh" 2>/dev/null)
+azr_n=$(printf '%s' "$azr_out" | grep '^UNREACHABLE_SURFACES=' | cut -d= -f2)
+if [ "$azr_n" = "0" ]; then
+  pass "authz-scope-reachable" "every scope a surface requires is held by some principal"
+elif [ -z "$azr_n" ] || [ "$azr_n" = "UNMEASURED" ]; then
+  fail "authz-scope-reachable" "could not measure declared-vs-held scopes — never a vacuous pass"
+else
+  azr_scopes=$(printf '%s' "$azr_out" | grep '^UNREACHABLE_SCOPES=' | cut -d= -f2)
+  fail "authz-scope-reachable" "${azr_n} surface(s) require ${azr_scopes} scope(s) no principal holds — unreachable by every caller:"
+  printf '%s\n' "$azr_out" | grep 'surface(s)'
+fi
+
 # #3001 — mcp-error-rate probe retired. Was added in #3000 as pull-model
 # polling on a schedule. Replaced by push-model: chorus-mcp directly nudges
 # silas (the ops role) when mcp.*.error events emit. The probe was redundant
