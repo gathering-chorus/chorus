@@ -136,6 +136,10 @@ export type NightlyPageOpts = {
   readout?: {
     runId: string;
     durationMin: number | null;
+    failed?: number;
+    /** #4073 — counts by derived label; rendered as the split line */
+    byLabel?: { 'product-broke': number; 'test-wrong': number; unmeasured: number };
+    reds?: { suite: string; label: string }[];
     changes: {
       previousRunId: string | null;
       newlyRed: { owner: string; suite: string }[];
@@ -161,7 +165,29 @@ function renderReadoutBanner(o: NightlyPageOpts | undefined): string {
     ...c.newlyRed.map((x) => `<li class="new">new: ${esc(x.owner)} ${esc(x.suite)}</li>`),
     ...c.fixed.map((x) => `<li class="fixed">fixed: ${esc(x.owner)} ${esc(x.suite)}</li>`),
   ].join('');
-  return `<div class="banner readout"><span>took ${esc(dur)}</span><span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
+  return `<div class="banner readout"><span>took ${esc(dur)}</span>${splitLine(r)}<span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
+}
+
+/** #4073 — "4 red: 2 product broke, 1 test wrong, 1 unmeasured", derived from
+ *  run history. Empty when the readout carries no split (older callers). */
+function splitLine(r: NonNullable<NightlyPageOpts['readout']>): string {
+  const b = r.byLabel;
+  if (!b || !r.failed) return '';
+  return `<span class="split"><b>${r.failed} red:</b> ${b['product-broke']} product broke · ${b['test-wrong']} test wrong · ${b.unmeasured} unmeasured</span>`;
+}
+
+function labelText(label: string): string {
+  if (label === 'product-broke') return 'PRODUCT BROKE';
+  if (label === 'test-wrong') return 'TEST WRONG';
+  return label === 'unmeasured' ? 'UNMEASURED' : '';
+}
+
+/** the label cell for a red row; blank for non-red rows */
+function labelCell(o: NightlyPageOpts | undefined, r: NightlyRow): string {
+  if (r.status !== 'fail') return '<td class="lbl"></td>';
+  const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
+  const label = hit?.label ?? '';
+  return `<td class="lbl ${esc(label)}">${labelText(label)}</td>`;
 }
 
 function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
@@ -174,6 +200,31 @@ function renderHistory(o: NightlyPageOpts | undefined, current: string): string 
     return `<li${cls}><a href="/nightly?run=${esc(run.runId)}">${esc(run.runId)}</a> <span class="hl">${esc(label)}</span></li>`;
   }).join('');
   return `<details class="history"><summary>${h.length} recorded run(s) — open any</summary><ul>${items}</ul></details>`;
+}
+
+/** #4063/#4073 — the run's verdict and banner class, pulled out so
+ *  renderNightlyPage stays under the complexity cap (the ratchet on main went
+ *  +1 on it, 2026-09-02). A partial run has NO verdict (IN PROGRESS); green is
+ *  only ever said of a whole night. */
+function runVerdict(run: NightlyRun, reds: number): { verdict: string; cls: string } {
+  if (!run.completed) {
+    return { verdict: `IN PROGRESS — ${run.rows.length} suite(s) so far, ${reds} red so far`, cls: 'partial' };
+  }
+  return reds === 0 ? { verdict: 'ALL GREEN', cls: 'green' } : { verdict: `${reds} RED SUITES`, cls: 'red' };
+}
+
+/** The not-finished banner: STOPPED (#4035), NO OUTPUT (#4009 wedged), or
+ *  RUNNING. Empty for a completed run. */
+function notFinishedBanner(run: NightlyRun): string {
+  if (run.completed) return '';
+  if (run.stoppedAt) {
+    return `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`;
+  }
+  const quiet = run.quietForMs ?? 0;
+  const mins = Math.round(quiet / 60000);
+  return quietVerdict(run, quiet) === 'quiet'
+    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
+    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
 }
 
 /** Render the run as the one-look report page. */
@@ -197,27 +248,11 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   // subset had reported — the vacuous-pass class. Partial = IN PROGRESS, in
   // amber, with "so far" on every count; green is only ever said of a whole
   // night.
-  const verdict = !run.completed
-    ? `IN PROGRESS — ${run.rows.length} suite(s) so far, ${reds.length} red so far`
-    : reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED SUITES`;
-  const cls = !run.completed ? 'partial' : reds.length === 0 ? 'green' : 'red';
-  // #4009 — say WHICH not-finished state this is. "PARTIAL" covered both a run
-  // still working and a run wedged 38 minutes; a reader could not act on it.
-  const quiet = run.quietForMs ?? 0;
-  const liveness = quietVerdict(run, quiet);
-  const mins = Math.round(quiet / 60000);
-  const stoppedBanner = run.stoppedAt
-    ? `<div class="banner partial">STOPPED at ${esc(run.stoppedAt)}${run.stoppedDetail ? ' (' + esc(run.stoppedDetail) + ')' : ''} — not a full night; the suites below ran before the stop.</div>`
-    : '';
-  const liveBanner = liveness === 'quiet'
-    ? `<div class="banner partial">NO OUTPUT for ${mins} min — this run started ${esc(run.startedAt)} and has emitted nothing since. Treat it as wedged, not slow.</div>`
-    : `<div class="banner partial">RUNNING — started ${esc(run.startedAt)}, last result ${mins} min ago. ${run.rows.length} suite(s) so far; not a full night yet.</div>`;
-  const partial = run.completed
-    ? ''
-    : (stoppedBanner || liveBanner);
+  const { verdict, cls } = runVerdict(run, reds.length);
+  const partial = notFinishedBanner(run);
   const row = (r: NightlyRow) => `
     <tr class="${esc(r.status)}">
-      <td class="st">${esc(r.status)}</td>
+      <td class="st">${esc(r.status)}</td>${labelCell(opts, r)}
       <td class="kind">${esc(r.kind)}</td>
       <td class="path">${esc(displayPath(r.path))}</td>
       <td>${esc(r.owner)}</td>
@@ -235,7 +270,7 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   ${renderReadoutBanner(opts)}
   ${renderHistory(opts, run.startedAt)}
   <table>
-    <thead><tr><th></th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
+    <thead><tr><th></th><th>means</th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
     <tbody>${ordered.map(row).join('')}</tbody>
   </table>
   <p class="prov">cargo tier runs via <code>werk-test --nightly</code> — registry selection, nextest, typed needs-stack skips (#3920). Page renders the run record verbatim; it holds no verdict of its own.</p>`;
@@ -261,6 +296,9 @@ function page(title: string, body: string): string {
   details.history ul { columns:2; padding-left:1.25rem; margin:.5rem 0 0; }
   details.history li.cur { font-weight:700; color:var(--fg); }
   .hl { font-size:.85rem; }
+  .split b { color:var(--fg); }
+  td.lbl { font-size:.75rem; font-weight:700; white-space:nowrap; }
+  td.lbl.product-broke { color:var(--red); } td.lbl.test-wrong { color:var(--amber); } td.lbl.unmeasured { color:var(--mut); }
   .verdict { font-size:1.6rem; font-weight:700; }
   .banner.green .verdict { color:var(--green); } .banner.red .verdict { color:var(--red); }
   .counts, .when { color:var(--mut); }

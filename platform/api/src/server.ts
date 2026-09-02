@@ -373,8 +373,11 @@ app.get('/werk', sendChorusPage('werk.html'));
 // (#3878); on localhost and the LAN nothing did, so the one link on the tile
 // answered 404 ("Cannot GET /clearing"). Same host, the room's port: a redirect
 // that works wherever chorus-api itself is reachable.
+// #4075 — a demo variant runs its own Clearing; CLEARING_PORT (set by env-up)
+// sends the door there, so the variant never leaks a viewer to prod's room.
+const CLEARING_PORT = /^\d+$/.test(process.env.CLEARING_PORT ?? '') ? process.env.CLEARING_PORT : '3470';
 app.get('/clearing', (req: Request, res: Response) =>
-  res.redirect(302, `${req.protocol}://${req.hostname}:3470/`));
+  res.redirect(302, `${req.protocol}://${req.hostname}:${CLEARING_PORT}/`));
 // #3920 — /nightly: the rendered nightly report. One page, verdict first,
 // reds on top; renders the run record the nightly writes, no re-derived verdicts.
 // #4015 — the test-run report: ONE document, two renderings. JSON at
@@ -508,7 +511,7 @@ function readoutFor(runId: string) {
   const run = findRun(runs, runId);
   if (!run) return null;
   const idx = runs.indexOf(run);
-  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null) };
+  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null, runs) };
 }
 
 app.get('/api/chorus/nightly/runs', (_req: Request, res: Response) => {

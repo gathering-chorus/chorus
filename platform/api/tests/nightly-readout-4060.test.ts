@@ -66,10 +66,12 @@ describe('buildReadout — Jeff\'s units', () => {
     expect(r.failed).toBe(3);
     expect(r.passed).toBe(1);
     expect(r.skipped).toBe(1);
+    // #4073 — each red now carries its derived label; with two runs of history
+    // and no flips, all three read as product-broke (see nightly-red-labels-4073)
     expect(r.reds).toEqual([
-      { owner: 'silas', suite: 'platform/tests/vocab-claim-authority.bats', kind: 'bats' },
-      { owner: 'silas', suite: 'platform/api', kind: 'npm' },
-      { owner: 'kade', suite: 'tests-domain', kind: 'cargo' },
+      { owner: 'silas', suite: 'platform/tests/vocab-claim-authority.bats', kind: 'bats', label: 'product-broke' },
+      { owner: 'silas', suite: 'platform/api', kind: 'npm', label: 'product-broke' },
+      { owner: 'kade', suite: 'tests-domain', kind: 'cargo', label: 'product-broke' },
     ]);
     expect(r.redByOwner).toEqual({ silas: 2, kade: 1 });
   });

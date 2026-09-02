@@ -841,7 +841,9 @@ const messageRouter = new MessageRouter();
 const tailer = new ChorusLogTailer(messageRouter);
 
 // Persist messages to disk
-const MSG_FILE = '/tmp/bridge-messages.json';
+// #4075 — a demo variant sets CLEARING_MSG_FILE to a werk-local path so the
+// room it shows never reads or writes prod's messages (#3615 membrane).
+const MSG_FILE = process.env.CLEARING_MSG_FILE || '/tmp/bridge-messages.json';
 const fs_sync = require('fs');
 try {
   const saved = JSON.parse(fs_sync.readFileSync(MSG_FILE, 'utf-8'));

@@ -898,3 +898,90 @@ fn non_crate_shared_dir_never_enters_the_deployable_set() {
     assert_eq!(lib_only, vec!["shared".to_string()]);
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+// ---- #4075: the werk's own Clearing in the demo env ------------------------
+// Jeff 2026-09-02: "im tired of clearing not being available in demo" /
+// "so no demo card fail". These describe what he gets: a Clearing on the
+// variant that reads the variant's api and cannot touch prod's room files.
+
+#[test]
+fn env_services_run_a_clearing_per_role_on_ports_nothing_else_uses() {
+    let svcs = werk_deploy::demo_env::env_services();
+    let clearing = svcs.iter().find(|s| s.name == "clearing").expect("clearing is in the env");
+    assert_eq!(clearing.source_dir_rel, "directing/clearing");
+    assert_eq!(clearing.port_env, "COMMAND_CHANNEL_PORT");
+    assert_eq!(clearing.smoke_path, "/health");
+    for role in ["silas", "kade", "wren"] {
+        let p = clearing.port_for(role).unwrap();
+        assert_ne!(p, 3470, "{role}: a variant Clearing must never sit on prod's port");
+    }
+    assert_eq!(werk_deploy::demo_env::env_ports_collide(&svcs), None);
+}
+
+#[test]
+fn negative_proof_3734_a_port_collision_is_caught() {
+    let mut svcs = werk_deploy::demo_env::env_services();
+    let api_wren = svcs.iter().find(|s| s.name == "chorus-api").unwrap().wren_port;
+    let c = svcs.iter_mut().find(|s| s.name == "clearing").unwrap();
+    c.silas_port = api_wren; // the state the check exists to catch
+    let hit = werk_deploy::demo_env::env_ports_collide(&svcs);
+    assert_eq!(hit.map(|(_, p)| p), Some(api_wren));
+}
+
+#[test]
+fn variant_clearing_reads_its_own_roles_api_never_prod() {
+    for role in ["silas", "kade", "wren"] {
+        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+        let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone()).unwrap();
+        let api_port = werk_deploy::demo_env::env_port_for("chorus-api", role).unwrap();
+        assert_eq!(get("CHORUS_API_URL"), format!("http://localhost:{api_port}"));
+        assert_eq!(get("PULSE_URL"), format!("http://localhost:{api_port}"));
+        assert!(!get("CHORUS_API_URL").contains(":3340"), "{role}: variant room pointed at prod api");
+    }
+}
+
+#[test]
+fn variant_clearing_writes_only_under_the_werks_demo_store() {
+    let env = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+    let get = |k: &str| env.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone()).unwrap();
+    assert_eq!(get("CLEARING_MSG_FILE"), "/w/.chorus-demo/bridge-messages.json");
+    assert_eq!(get("CHORUS_LOG_FILE"), "/w/.chorus-demo/chorus.log");
+    // negative proof: the prod paths the membrane forbids are absent from every value
+    for (_, v) in &env {
+        assert!(!v.contains("/tmp/bridge-messages.json"), "prod message store leaked: {v}");
+        assert!(!v.ends_with("/.chorus/chorus.log"), "prod spine leaked: {v}");
+    }
+}
+
+#[test]
+fn clearing_extra_env_refuses_an_unknown_role() {
+    assert!(werk_deploy::demo_env::clearing_extra_env("jeff", "/w", "x", "/bin").is_err());
+}
+
+#[test]
+fn the_real_variant_clearing_env_names_no_prod_surface() {
+    for role in ["silas", "kade", "wren"] {
+        let env = werk_deploy::demo_env::clearing_extra_env(role, "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+        assert_eq!(werk_deploy::demo_env::clearing_env_prod_leak(&env), None, "{role}");
+    }
+}
+
+#[test]
+fn negative_proof_3734_a_clearing_env_pointed_at_prod_is_refused() {
+    // Silas, 2026-09-02: "ship a proof where clearing_extra_env points at prod and the check FAILS."
+    let base = werk_deploy::demo_env::clearing_extra_env("wren", "/w/.chorus-demo", "https://id.example", "/bin").unwrap();
+    let poison = |k: &str, v: &str| -> Vec<(String, String)> {
+        base.iter().map(|(kk, vv)| if kk == k { (kk.clone(), v.to_string()) } else { (kk.clone(), vv.clone()) }).collect()
+    };
+    let cases = [
+        ("CHORUS_API_URL", "http://localhost:3340"),
+        ("PULSE_URL", "http://localhost:3475"),
+        ("CLEARING_MSG_FILE", "/tmp/bridge-messages.json"),
+        ("CHORUS_LOG_FILE", "/Users/jeffbridwell/.chorus/chorus.log"),
+    ];
+    for (k, v) in cases {
+        let hit = werk_deploy::demo_env::clearing_env_prod_leak(&poison(k, v));
+        assert!(hit.is_some(), "{k}={v} was NOT caught");
+        assert!(hit.unwrap().starts_with(k), "the refusal names the offending key");
+    }
+}
