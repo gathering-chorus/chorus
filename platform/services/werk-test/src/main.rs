@@ -742,6 +742,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         let passed = cases.iter().filter(|c| c.result == "pass").count();
         let case_failed = cases.iter().filter(|c| c.result != "pass").count();
         let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };
+        // #4063 — name every failed case before the fold line, so a red row
+        // points at a test, not at a count.
+        for l in werk_test::failed_case_lines(&format!("jest:{}", p), &cases) {
+            println!("{}", l);
+        }
         println!("{}", werk_test::nightly_lane_line(npm_kind, p, ok, passed, case_failed, pkg_ns.len()));
         if !ok {
             any_failed = true;

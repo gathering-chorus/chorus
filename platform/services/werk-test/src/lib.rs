@@ -2233,7 +2233,12 @@ pub fn nightly_unit_line(crate_name: &str, ok: bool, passed: usize, failed: usiz
 /// same machine vocabulary to nightly-suites.sh. One verdict language, every
 /// tier; the wrapper only translates, never judges.
 pub fn nightly_lane_line(kind: &str, unit: &str, ok: bool, passed: usize, failed: usize, ns_skipped: usize) -> String {
-    let verdict = if ok { "pass" } else { "fail" };
+    // #4063 — a line must never say pass while counting failures. On
+    // 2026-09-02 03:00 directing/clearing folded as "pass|852 pass, 1 fail":
+    // jest exited 0 (forceExit) while one case reported failed, and the
+    // morning read had a red that named nothing. The verdict is the runner's
+    // exit AND its own count — the two states stay separable (#3734).
+    let verdict = if ok && failed == 0 { "pass" } else { "fail" };
     let skip = if ns_skipped > 0 {
         format!(", {} SKIPPED (stack-down, typed #3919)", ns_skipped)
     } else {
@@ -2263,6 +2268,19 @@ pub fn nightly_lane_line_refused(kind: &str, unit: &str) -> String {
         "nightly-unit|{}|{}|skip|0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)",
         kind, unit
     )
+}
+
+/// #4063 — a red names its cases. "852 pass, 1 fail" sent Kade hunting a
+/// suite that is green in a werk; the failing case was never printed because
+/// it was unregistered and so never stored. Every failed case is named in
+/// the lane output (the wrapper folds lines naming the unit into the
+/// per-unit failure log and the SUITE reason), registered or not.
+pub fn failed_case_lines(label: &str, cases: &[CaseResult]) -> Vec<String> {
+    cases
+        .iter()
+        .filter(|c| c.result == "fail")
+        .map(|c| format!("!! {} FAILED: {} :: {}", label, c.file_path, c.test_name))
+        .collect()
 }
 
 /// #4030 — the runner's PLAN, one line per unit, printed before any lane runs.
@@ -2569,6 +2587,30 @@ mod nightly_via_runner_3920 {
         let plain_skip = vec![("some skipped case".to_string(), "skip".to_string())];
         assert!(!is_self_refused(&plain_skip), "a skip that is not the rc=3 marker is not a refusal");
         assert!(!is_self_refused(&[]), "no cases is UNMEASURED, not refused");
+    }
+
+    #[test]
+    fn a_lane_line_never_says_pass_while_counting_fails() {
+        // NEGATIVE PROOF (#3734/#4063): the exact 2026-09-02 row — runner exit ok,
+        // one case failed — must fold as fail, never "pass|852 pass, 1 fail".
+        let lied = nightly_lane_line("npm", "directing/clearing", true, 852, 1, 0);
+        assert_eq!(lied, "nightly-unit|npm|directing/clearing|fail|852 pass, 1 fail");
+        // and a clean run with exit ok stays pass — the fix must not widen into all-red
+        let clean = nightly_lane_line("npm", "directing/clearing", true, 853, 0, 0);
+        assert!(clean.contains("|pass|"), "{clean}");
+    }
+
+    #[test]
+    fn failed_cases_are_named_in_the_lane_output() {
+        let cases = vec![
+            CaseResult { file_path: "directing/clearing/tests/a.test.ts".into(), test_name: "pins to bottom".into(), result: "fail".into() },
+            CaseResult { file_path: "directing/clearing/tests/b.test.ts".into(), test_name: "green one".into(), result: "pass".into() },
+            CaseResult { file_path: "directing/clearing/tests/c.test.ts".into(), test_name: "held".into(), result: "skip".into() },
+        ];
+        let lines = failed_case_lines("jest:directing/clearing", &cases);
+        assert_eq!(lines, vec!["!! jest:directing/clearing FAILED: directing/clearing/tests/a.test.ts :: pins to bottom"]);
+        // NEGATIVE PROOF: a green set names nothing — no invented red
+        assert!(failed_case_lines("jest:x", &cases[1..]).is_empty());
     }
 
     #[test]
