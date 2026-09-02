@@ -1595,28 +1595,33 @@ const readPulseFile = (): string | null => readPulseSnapshot();
 // side-file are gone: nothing is stored, so nothing reverts to "unknown".
 // The spine tail (4 MB ≈ the last few hours at today's rate) is read per
 // request and filtered to the role and the lookback the handler asks for.
+// One spine line → SpineLine, or null when it is not an event line worth keeping.
+const parseSpineLine = (line: string, sinceMs: number): SpineLine | null => {
+  let p: Record<string, unknown>;
+  try { p = JSON.parse(line) as Record<string, unknown>; } catch { return null; }
+  if (typeof p.event !== 'string' || typeof p.timestamp !== 'string') return null;
+  const t = Date.parse(p.timestamp);
+  if (!Number.isFinite(t) || t < sinceMs) return null;
+  return {
+    timestamp: p.timestamp,
+    event: p.event,
+    role: typeof p.role === 'string' ? p.role : undefined,
+    card_id: typeof p.card_id === 'string' || typeof p.card_id === 'number' ? p.card_id : undefined,
+    detail: typeof p.detail === 'string' ? p.detail : undefined,
+    payload: typeof p.payload === 'string' ? p.payload : undefined,
+  };
+};
+
 const readSpineEventsForRole = (role: string, sinceMs: number): SpineLine[] => {
   const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
   if (raw == null) return [];
+  const roleTag = `"role":"${role}"`;
   const out: SpineLine[] = [];
   for (const line of raw.split('\n')) {
-    if (!line) continue;
-    // cheap pre-filter before JSON.parse: the role must appear on the line
-    if (!line.includes(`"role":"${role}"`) && !line.includes('"event":"demo.')) continue;
-    try {
-      const p = JSON.parse(line);
-      if (typeof p.event !== 'string' || typeof p.timestamp !== 'string') continue;
-      const t = Date.parse(p.timestamp);
-      if (!Number.isFinite(t) || t < sinceMs) continue;
-      out.push({
-        timestamp: p.timestamp,
-        event: p.event,
-        role: typeof p.role === 'string' ? p.role : undefined,
-        card_id: p.card_id ?? undefined,
-        detail: typeof p.detail === 'string' ? p.detail : undefined,
-        payload: typeof p.payload === 'string' ? p.payload : undefined,
-      });
-    } catch { /* skip malformed */ }
+    // cheap pre-filter before JSON.parse: the role, or a demo event (its go may come from jeff)
+    if (!line.includes(roleTag) && !line.includes('"event":"demo.')) continue;
+    const ev = parseSpineLine(line, sinceMs);
+    if (ev) out.push(ev);
   }
   return out;
 };
