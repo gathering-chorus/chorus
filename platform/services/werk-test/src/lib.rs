@@ -2186,6 +2186,20 @@ pub fn parse_playwright_summary(out: &str) -> Option<(usize, usize)> {
     passed.map(|p| (p, failed))
 }
 
+/// #4045 — the skipped count from a playwright summary ("4 skipped"). A skip is a
+/// TYPED outcome the leg must count and print, not a pass: with no CLEARING_URL the
+/// four clearing specs skip, and until a variant Clearing exists the leg covers
+/// none of Clearing — the summary has to say so (Kade, 2026-09-02).
+pub fn parse_playwright_skipped(out: &str) -> usize {
+    out.lines()
+        .filter_map(|l| {
+            let w: Vec<&str> = l.trim().split_whitespace().collect();
+            if w.len() >= 2 && w[1].starts_with("skipped") { w[0].parse::<usize>().ok() } else { None }
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 /// #3920 fold — the nightly's cargo lane plan: every Rust crate holding a
 /// REGISTERED test. This IS the "full selection" — the registry is the one
 /// selection engine; there is no glob fallback (a fallback would be the second
@@ -3232,5 +3246,13 @@ mod serialized_split_tests {
     // "matches" means one of the un-escaped literals is a substring.
     fn regex_lite(pat: &str) -> impl Fn(&str) -> bool + '_ {
         move |title: &str| pat.split('|').any(|t| title.contains(&t.replace('\\', "")))
+    }
+
+    #[test]
+    fn playwright_skipped_is_counted_and_zero_when_absent() {
+        let out = "  -  3 [chromium] › proving/flows/clearing-room-key-3865.spec.cjs:51:3 › x\n\n  4 skipped\n  90 passed (1.2m)\n";
+        assert_eq!(super::parse_playwright_skipped(out), 4);
+        assert_eq!(super::parse_playwright_summary(out), Some((90, 0)));
+        assert_eq!(super::parse_playwright_skipped("  94 passed (2.0m)\n"), 0, "no skipped line → 0, never invented");
     }
 }

@@ -2197,7 +2197,16 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
                     for line in werk_test::playwright_failure_lines(&text) {
                         eprintln!("{}", line);
                     }
-                    (o.status.success() && f == 0, format!(" ({} passed, {} failed){}", p, f, excluded))
+                    // #4045 — a skip is typed and visible: counted here, named in the summary.
+                    let skipped = werk_test::parse_playwright_skipped(&text);
+                    let skip_note = if skipped > 0 {
+                        let why = if std::env::var("CLEARING_URL").map(|v| v.is_empty()).unwrap_or(true) {
+                            " (clearing specs: no CLEARING_URL — the leg covers none of Clearing until a variant room exists)"
+                        } else { "" };
+                        println!("   ui-flows: {} skipped{}", skipped, why);
+                        format!(", {} skipped{}", skipped, why)
+                    } else { String::new() };
+                    (o.status.success() && f == 0, format!(" ({} passed, {} failed{}){}", p, f, skip_note, excluded))
                 }
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();

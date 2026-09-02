@@ -195,7 +195,7 @@ GET /api/chorus/context/spine?limit= | Live — the last N lines, the 4MB-tail r
 POST /api/chorus/spine-event · chorus-log | Live — the two write doors, both append a line. | Validate eventKind against EventType at write; an unknown kind is refused, not appended. This is what makes the catalogue authoritative instead of descriptive. | 
 MCP | chorus_logs_query, chorus_logs_for_card, chorus_logs_for_trace read the log directly. | Each becomes a thin call over /v1/spineevents — one read path, one shape, the MCP correspondence Jeff asked for. |""" ;
     chorus:asIs """Layer | Modeled | Served | Populated | 
-Product | no | — | — | 
+Product | yes — chorus:spine on ProductShape, with the nine design sections as properties (this card) | yes — /products/spine and the product page | yes — hasDomain events; the spine vocabulary domain waits on the IRI split (#1772) | 
 Domains (spine, events) | yes | yes, at /domains | yes | 
 EventType | no — the 345 types live only in a JSON file | no route | — | 
 SpineEvent | yes — SpineEventShape, 729a5afa | yes — /v1/spineevents | count: 0 | 

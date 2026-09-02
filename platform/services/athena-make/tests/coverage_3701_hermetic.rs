@@ -329,14 +329,14 @@ fn rows_for(q: &str) -> Vec<String> {
         return vec![];
     }
     if q.contains("?s a <") {
-        // collection list: subj|label|status|extra…
+        // collection list: subj␟label␟status␟extra… — U+001F columns since #4045 (a value may contain '|')
         let canned: Vec<String> = if q.contains("#Domain>") {
-            vec![format!("{NS}borg|Borg|active|wren"), format!("{NS}pulse|Pulse|active|wren")]
+            vec![format!("{NS}borg\u{1f}Borg\u{1f}active\u{1f}wren"), format!("{NS}pulse\u{1f}Pulse\u{1f}active\u{1f}wren")]
         } else if q.contains("#Product>") {
             vec![
-                format!("{NS}loom|Loom|active|athena"),
-                format!("{NS}loom|Loom|active|borg"),
-                format!("{NS}solo|Solo||"),
+                format!("{NS}loom\u{1f}Loom\u{1f}active\u{1f}athena"),
+                format!("{NS}loom\u{1f}Loom\u{1f}active\u{1f}borg"),
+                format!("{NS}solo\u{1f}Solo\u{1f}\u{1f}"),
             ]
         } else {
             vec![]
@@ -348,7 +348,7 @@ fn rows_for(q: &str) -> Vec<String> {
         // subject is in the VALUES list — multi-valued edges keep all their rows.
         if q.contains("SELECT (STR(?s) AS ?v)") {
             let mut subs: Vec<String> = canned.iter()
-                .map(|r| r.split('|').next().unwrap_or("").to_string()).collect();
+                .map(|r| r.split('\u{1f}').next().unwrap_or("").to_string()).collect();
             subs.dedup();
             return subs;
         }
@@ -358,7 +358,7 @@ fn rows_for(q: &str) -> Vec<String> {
             let wanted: Vec<&str> = list.split_whitespace()
                 .map(|t| t.trim_start_matches('<').trim_end_matches('>')).collect();
             return canned.into_iter()
-                .filter(|r| wanted.contains(&r.split('|').next().unwrap_or("")))
+                .filter(|r| wanted.contains(&r.split('\u{1f}').next().unwrap_or("")))
                 .collect();
         }
         return canned;
