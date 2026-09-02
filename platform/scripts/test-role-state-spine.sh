@@ -1,24 +1,16 @@
 #!/bin/bash
-# test-role-state-spine.sh — Tests for role-state spine event emission (#1945)
-# AC: role-state emits role.state.changed to chorus.log on every transition
-
+# test-role-state-spine.sh — role-state under #4028: nothing declared, nothing stored.
+#
+# Was (#1945): every transition emits role.state.changed. Now: the only thing a
+# role says is `blocked`, as a JSON spine event with a detail; every other
+# state is derived on read by chorus-api and the CLI writes NOTHING for it.
+# Brings its own world (#3528): CHORUS_LOG_FILE points at a temp spine unless
+# the caller set one (the nightly does, #4065).
 set -uo pipefail
-
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
-
 PASS=0
 FAIL=0
-# #2801 — chorus-hook-shim writes the spine log to ~/.chorus/chorus.log
-# (canonical, per state_paths::chorus_log_file()), not platform/logs/chorus.log.
-# The latter is a stale path; the test read empty there before this fix and
-# reported "no role.state.changed event" while events were landing in the
-# real log. Resolve the live path the same way the binary does.
-# #4065 — read the SAME file the writer writes. chorus-hook-shim honors
-# CHORUS_LOG_FILE (the #3615 membrane's spine seam); the nightly runs every
-# suite in its own world with that set, so the event landed in the suite's
-# log while this test kept reading ~/.chorus/chorus.log — red at 03:00, green
-# by hand, for days. When nothing set it, this test brings its own world
-# (#3528) instead of mutating the live silas state on the production spine.
+
 if [ -z "${CHORUS_LOG_FILE:-}" ]; then
   _tmp=$(mktemp -d "${TMPDIR:-/tmp}/role-state-spine.XXXXXX")
   export CHORUS_LOG_FILE="$_tmp/chorus.log"
@@ -28,40 +20,56 @@ CHORUS_LOG="$CHORUS_LOG_FILE"
 touch "$CHORUS_LOG" 2>/dev/null || true
 ROLE_STATE="${CHORUS_ROOT}/platform/scripts/role-state"
 
-echo "=== role-state spine event tests ==="
+echo "=== role-state (#4028 — derived, blocked-as-event) ==="
 echo ""
 
-# --- Test 1: State transition emits spine event ---
-echo "Test 1: State transition emits role.state.changed"
-BEFORE=$(wc -l < "$CHORUS_LOG" 2>/dev/null | tr -d ' ')
-"$ROLE_STATE" silas waiting 2>/dev/null
-sleep 1
-AFTER=$(wc -l < "$CHORUS_LOG" 2>/dev/null | tr -d ' ')
-NEW_LINES=$(tail -n +$((BEFORE + 1)) "$CHORUS_LOG" 2>/dev/null | grep "role.state.changed" | grep "silas")
-if [ -n "$NEW_LINES" ]; then
-  echo "  PASS: role.state.changed emitted for silas"
+# --- Test 1: blocked emits ONE JSON role.blocked line with the detail ---
+echo "Test 1: blocked emits role.blocked with detail"
+BEFORE=$(wc -l < "$CHORUS_LOG" | tr -d ' ')
+"$ROLE_STATE" silas blocked 'detail="waiting on the DAL cred"' >/dev/null 2>&1
+NEW=$(tail -n +$((BEFORE + 1)) "$CHORUS_LOG")
+if echo "$NEW" | python3 -c '
+import sys, json
+lines = [l for l in sys.stdin.read().splitlines() if l.strip()]
+ok = len(lines) == 1
+if ok:
+    d = json.loads(lines[0])
+    ok = d.get("event") == "role.blocked" and d.get("role") == "silas" and d.get("detail") == "waiting on the DAL cred"
+sys.exit(0 if ok else 1)'; then
+  echo "  PASS: one JSON role.blocked line, role=silas, detail carried"
   PASS=$((PASS+1))
 else
-  echo "  FAIL: no role.state.changed event after state transition"
+  echo "  FAIL: expected exactly one JSON role.blocked line; got: $NEW"
   FAIL=$((FAIL+1))
 fi
 
-# --- Test 2: Event contains state value ---
-echo "Test 2: Event contains the new state"
-if echo "$NEW_LINES" | grep -q "waiting"; then
-  echo "  PASS: event contains state=waiting"
+# --- Test 2: a derived state declares NOTHING (no spine line, no file) ---
+echo "Test 2: 'building' writes no spine line and no declared file"
+BEFORE=$(wc -l < "$CHORUS_LOG" | tr -d ' ')
+LEGACY="/tmp/claude-team-scan/silas-declared.json"
+LEGACY_MTIME_BEFORE=$(stat -f %m "$LEGACY" 2>/dev/null || echo none)
+"$ROLE_STATE" silas building >/dev/null 2>&1
+RC=$?
+AFTER=$(wc -l < "$CHORUS_LOG" | tr -d ' ')
+LEGACY_MTIME_AFTER=$(stat -f %m "$LEGACY" 2>/dev/null || echo none)
+if [ "$RC" -eq 0 ] && [ "$BEFORE" -eq "$AFTER" ] && [ "$LEGACY_MTIME_BEFORE" = "$LEGACY_MTIME_AFTER" ]; then
+  echo "  PASS: exit 0, spine unchanged, no declared file written"
   PASS=$((PASS+1))
 else
-  echo "  FAIL: event missing state value"
+  echo "  FAIL: rc=$RC lines $BEFORE→$AFTER legacy mtime $LEGACY_MTIME_BEFORE→$LEGACY_MTIME_AFTER"
   FAIL=$((FAIL+1))
 fi
 
-# --- Test 3: retired by #2467/#2629 ---
-# Original (89279b82, #1945) asserted role.state.changed events contained
-# card=N. Wave 1 of #2467 (PR #72) dropped card from JSON output; wave 3
-# (#2629) refuses card= at the CLI. Behavior is deliberately gone —
-# board is source of truth for cards. Retired per eliminate-vs-manage,
-# not @skip-tagged.
+# --- Test 3 (negative proof, #3734): card= is still refused ---
+echo "Test 3: card= is refused (board owns the card)"
+"$ROLE_STATE" silas blocked card=4058 >/dev/null 2>&1
+if [ $? -eq 2 ]; then
+  echo "  PASS: exit 2 on card="
+  PASS=$((PASS+1))
+else
+  echo "  FAIL: card= was not refused"
+  FAIL=$((FAIL+1))
+fi
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

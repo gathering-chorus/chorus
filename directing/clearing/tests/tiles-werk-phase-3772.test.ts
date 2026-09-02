@@ -20,12 +20,15 @@ function tmpDirs() {
   return { base, scanDir, werkDir };
 }
 
-function poller(scanDir: string, werkDir: string) {
+// #4028 — role STATE comes from the derived endpoint, not a declared file. The
+// helper takes wren's derived row so each case states what the streams said.
+function poller(scanDir: string, werkDir: string, wren: { state: string; stale?: boolean } = { state: 'idle', stale: true }) {
   return new TilePoller({
     scanDir,
     werkRunsDir: werkDir,
     pulseFile: path.join(scanDir, 'no-pulse.json'),
     chorusApi: 'http://127.0.0.1:1', // refused instantly; board facts not under test
+    readRoles: () => [{ role: 'wren', state: wren.state, stale: wren.stale ?? true, lastActivity: null }],
   });
 }
 
@@ -36,8 +39,6 @@ afterEach(() => setPidStartTimesForTest(null));
 describe('#3772 tiles — werk phase overrides the idle lie', () => {
   test('declared idle + running pipeline → building, with the card', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'),
-      JSON.stringify({ state: 'idle', session_alive: true, ts: Math.floor(Date.now() / 1000) - 1140 }));
     fs.writeFileSync(path.join(werkDir, '3772.json'),
       JSON.stringify({ role: 'wren', card: 3772, phase: 'running', pid: process.pid, startedAt: new Date().toISOString() }));
     setPidStartTimesForTest(new Map([[process.pid, Date.now()]]));
@@ -50,7 +51,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('presented run → presenting', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3761.json'),
       JSON.stringify({ role: 'wren', card: 3761, phase: 'presented', presentedAt: new Date().toISOString() }));
 
@@ -59,7 +59,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('landed run does NOT override — landed is done, idle is true', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3768.json'),
       JSON.stringify({ role: 'wren', card: 3768, phase: 'landed' }));
 
@@ -68,17 +67,15 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('declared blocked is NOT masked by a running pipeline', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'blocked' }));
     fs.writeFileSync(path.join(werkDir, '3772.json'),
       JSON.stringify({ role: 'wren', card: 3772, phase: 'running', pid: process.pid, startedAt: new Date().toISOString() }));
     setPidStartTimesForTest(new Map([[process.pid, Date.now()]]));
 
-    expect(wrenTile(poller(scanDir, werkDir)).state).toBe('blocked');
+    expect(wrenTile(poller(scanDir, werkDir, { state: 'blocked', stale: false })).state).toBe('blocked');
   });
 
   test("another role's run never touches this tile", () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3766.json'),
       JSON.stringify({ role: 'kade', card: 3766, phase: 'running', pid: process.pid, startedAt: new Date().toISOString() }));
     setPidStartTimesForTest(new Map([[process.pid, Date.now()]]));
@@ -91,7 +88,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('#3780 running pin with a DEAD pid is ignored — idle stays idle', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3432.json'),
       JSON.stringify({ role: 'wren', card: 3432, phase: 'running', pid: 999901, startedAt: '2026-06-23T16:14:06Z' }));
     setPidStartTimesForTest(new Map()); // pid not in the live map = dead
@@ -104,7 +100,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
     // on Aug 6 as a Chrome renderer started July 23. Red against #3780's
     // existence-only check; green with identity matching.
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3467.json'),
       JSON.stringify({ role: 'wren', card: 3467, phase: 'running', pid: 42578, startedAt: '2026-06-17T22:20:22Z' }));
     setPidStartTimesForTest(new Map([[42578, Date.parse('2026-07-23T11:02:00Z')]])); // alive — but July, not June
@@ -114,7 +109,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('#3781 running pin with no startedAt is ignored (identity unverifiable = fail closed)', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3499.json'),
       JSON.stringify({ role: 'wren', card: 3499, phase: 'running', pid: process.pid }));
     setPidStartTimesForTest(new Map([[process.pid, Date.now()]]));
@@ -124,7 +118,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('#3780 running pin with NO pid at all is ignored', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3432.json'),
       JSON.stringify({ role: 'wren', card: 3432, phase: 'running' }));
 
@@ -133,7 +126,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('#3780 presented pin older than 24h is ignored', () => {
     const { scanDir, werkDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     fs.writeFileSync(path.join(werkDir, '3453.json'),
       JSON.stringify({ role: 'wren', card: 3453, phase: 'presented', presentedAt: '2026-06-16T15:47:19Z' }));
 
@@ -142,7 +134,6 @@ describe('#3772 tiles — werk phase overrides the idle lie', () => {
 
   test('missing werk-runs dir → declared state alone (no crash)', () => {
     const { scanDir } = tmpDirs();
-    fs.writeFileSync(path.join(scanDir, 'wren-declared.json'), JSON.stringify({ state: 'idle' }));
     expect(wrenTile(poller(scanDir, '/nonexistent/nowhere')).state).toBe('idle');
   });
 });

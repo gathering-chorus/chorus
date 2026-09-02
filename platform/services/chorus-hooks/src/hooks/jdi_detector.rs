@@ -60,20 +60,10 @@ pub async fn check(input: &HookInput, _state: &AppState) {
     });
 }
 
-/// Read the card a role is currently working on from andon state
-fn read_role_card(role: &str) -> Option<String> {
-    let state_file = format!("/tmp/claude-team-scan/{}-declared.json", role);
-    let content = std::fs::read_to_string(&state_file).ok()?;
-    let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
-    parsed
-        .get("card")
-        .and_then(|c| {
-            if c.is_number() {
-                Some(c.to_string())
-            } else {
-                c.as_str().map(|s| s.to_string())
-            }
-        })
+/// #4028 — the declared state file is gone; the card a role is on lives on
+/// the board. The jdi event carries the card only when the caller passes it.
+fn read_role_card(_role: &str) -> Option<String> {
+    None
 }
 
 #[cfg(test)]

@@ -1585,62 +1585,47 @@ import { fetchContextBoardNext } from './handlers/context-board-next';
 import { fetchContextCoverage } from './handlers/context-coverage';
 import { fetchContextBoardSwat } from './handlers/context-board-swat';
 import { fetchContextRoles } from './handlers/context-roles';
+import type { SpineLine, WipCardEntry } from './derive-role-state';
 import { fetchContextHealth } from './handlers/context-health';
 
 const readPulseFile = (): string | null => readPulseSnapshot();
 
-const readRoleStateFile = (role: string): { role: string; state: string; card?: number | null; gemba?: string | null; detail?: string | null } | null => {
-  const p = `/tmp/claude-team-scan/${role}-declared.json`;
-  try {
-    if (!fs.existsSync(p)) return null;
-    const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
-    return {
-      role,
-      state: typeof parsed.state === 'string' ? parsed.state : 'unknown',
-      card: typeof parsed.card === 'number' ? parsed.card : null,
-      gemba: typeof parsed.gemba === 'string' ? parsed.gemba : null,
-      detail: typeof parsed.detail === 'string' ? parsed.detail : null,
-    };
-  } catch {
-    return null;
+// #4028 — role state is derived from the streams on every read. The declared
+// file (/tmp/claude-team-scan/<role>-declared.json) and the #2193 inferred
+// side-file are gone: nothing is stored, so nothing reverts to "unknown".
+// The spine tail (4 MB ≈ the last few hours at today's rate) is read per
+// request and filtered to the role and the lookback the handler asks for.
+const readSpineEventsForRole = (role: string, sinceMs: number): SpineLine[] => {
+  const raw = readFileTail(`${process.env.HOME}/.chorus/chorus.log`, SPINE_TAIL_BYTES);
+  if (raw == null) return [];
+  const out: SpineLine[] = [];
+  for (const line of raw.split('\n')) {
+    if (!line) continue;
+    // cheap pre-filter before JSON.parse: the role must appear on the line
+    if (!line.includes(`"role":"${role}"`) && !line.includes('"event":"demo.')) continue;
+    try {
+      const p = JSON.parse(line);
+      if (typeof p.event !== 'string' || typeof p.timestamp !== 'string') continue;
+      const t = Date.parse(p.timestamp);
+      if (!Number.isFinite(t) || t < sinceMs) continue;
+      out.push({
+        timestamp: p.timestamp,
+        event: p.event,
+        role: typeof p.role === 'string' ? p.role : undefined,
+        card_id: p.card_id ?? undefined,
+        detail: typeof p.detail === 'string' ? p.detail : undefined,
+        payload: typeof p.payload === 'string' ? p.payload : undefined,
+      });
+    } catch { /* skip malformed */ }
   }
+  return out;
 };
 
-const tailSpineForRole = (role: string): { timestamp: string; role: string; event: string } | null => {
-  // Producer is chorus-hook-shim writing to ~/.chorus/chorus.log (CSC: Runtime
-  // Artifacts). 2026-05-04: moved out of repo working tree because branch
-  // checkouts were clobbering unstaged writes.
-  const candidates = [
-    `${process.env.HOME}/.chorus/chorus.log`,
-  ];
-  const logPath = candidates.find((p) => fs.existsSync(p));
-  if (!logPath) return null;
-  try {
-    if (!fs.existsSync(logPath)) return null;
-    // Read the tail; spine log is append-only JSONL. Reading last 64KB is
-    // enough to find the most recent per-role event without scanning the whole file.
-    const stat = fs.statSync(logPath);
-    const start = Math.max(0, stat.size - 64 * 1024);
-    const fd = fs.openSync(logPath, 'r');
-    const buf = Buffer.alloc(stat.size - start);
-    fs.readSync(fd, buf, 0, buf.length, start);
-    fs.closeSync(fd);
-    const lines = buf.toString('utf-8').split('\n').filter(Boolean);
-    for (let i = lines.length - 1; i >= 0; i--) {
-      try {
-        const parsed = JSON.parse(lines[i]);
-        if (parsed.role === role && typeof parsed.event === 'string') {
-          return {
-            timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : '',
-            role,
-            event: parsed.event,
-          };
-        }
-      } catch { /* skip malformed */ }
-    }
-  } catch { /* best effort */ }
-  return null;
-};
+const listWipCardsForRoles = (): WipCardEntry[] =>
+  getBoardCards()
+    .filter((c) => c.status === 'WIP')
+    .map((c) => ({ id: Number(c.id), owner: c.owner }))
+    .filter((c) => Number.isFinite(c.id));
 
 app.get('/api/chorus/context/alerts', async (req: Request, res: Response) => {
   const alertDir = [
@@ -1790,16 +1775,8 @@ app.get('/api/chorus/context/roles', async (req: Request, res: Response) => {
   const r = await fetchContextRoles(
     {
       sparql: _athena,
-      readState: readRoleStateFile,
-      tailSpine: tailSpineForRole,
-      // #2193 AC5: inferred state from derive-role-state
-      readInferred: (role: string) => {
-        const p = `/tmp/claude-team-scan/${role}-inferred.json`;
-        try {
-          if (!fs.existsSync(p)) return null;
-          return JSON.parse(fs.readFileSync(p, 'utf-8'));
-        } catch { return null; }
-      },
+      readEvents: readSpineEventsForRole,
+      listWipCards: listWipCardsForRoles,
     },
     req.originalUrl,
   );
