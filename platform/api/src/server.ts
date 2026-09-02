@@ -509,7 +509,8 @@ app.get('/api/chorus/nightly/runs/:id', (req: Request, res: Response) => {
   const found = readoutFor(String(req.params.id));
   if (!found) { res.status(404).json({ error: `no recorded nightly run ${req.params.id}` }); return; }
   if (req.query.format === 'text') {
-    const base = process.env.CHORUS_API_PUBLIC_URL || 'http://localhost:3340';
+    // the link points at THIS host — a werk variant links its own page, not prod's
+    const base = process.env.CHORUS_API_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
     res.type('text/plain').send(renderReadoutText(found.readout, base) + '\n');
     return;
   }

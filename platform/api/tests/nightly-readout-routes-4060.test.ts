@@ -63,7 +63,8 @@ describe('GET /api/chorus/nightly/runs/:id', () => {
     expect(t).toContain('2 suites, 1 red');
     expect(t).toContain('kade   platform/tests/a.bats');
     expect(t).toContain('1 new red, 1 fixed');
-    expect(t).toContain('/nightly?run=2026-09-02T03:00:05');
+    // the link is to the host that answered, so a variant links its own page
+    expect(t).toContain(`${app.baseUrl}/nightly?run=2026-09-02T03:00:05`);
   });
 
   it('NEGATIVE PROOF (#3734): an unknown run id is 404, never another run\'s numbers', async () => {
