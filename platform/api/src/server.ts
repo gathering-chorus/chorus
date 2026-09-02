@@ -3581,6 +3581,10 @@ app.post('/api/athena/reload', async (_req: Request, res: Response) => {
   execFile('bash', [script], {
     env: {
       ...process.env,
+      // launchd hands the api /usr/bin:/bin only; the deployer fail-closes
+      // without riot (#3731), which lives under homebrew. Append, never
+      // prepend, so an operator's PATH still wins.
+      PATH: [process.env.PATH || '/usr/bin:/bin', '/opt/homebrew/bin', '/usr/local/bin', path.join(os.homedir(), '.chorus/bin')].join(':'),
       CHORUS_ROOT: REPO_ROOT,
       FUSEKI_GSP: ATHENA_FUSEKI_BASE + '/data',
       FUSEKI_QUERY: ATHENA_FUSEKI_BASE + '/query',
