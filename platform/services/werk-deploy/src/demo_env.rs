@@ -171,7 +171,106 @@ pub fn env_services() -> Vec<EnvService> {
             smoke_path: "/health".to_string(),
             smoke_kind: SmokeKind::HttpGet,
         },
+        // #4075 — the werk's own Clearing, pointed at the werk's chorus-api, so a
+        // card that changes the room (tiles, pane, messages) is SEEN in demo.
+        // Jeff, 2026-09-02: "im tired of clearing not being available in demo" /
+        // "so no demo card fail". Before this, /clearing on a variant 302'd to
+        // prod :3470 and every Clearing change was only visible after land.
+        EnvService {
+            name: "clearing".to_string(),
+            kind: EnvServiceKind::TsService,
+            silas_port: 3481,
+            kade_port: 3482,
+            wren_port: 3483,
+            source_dir_rel: "directing/clearing".to_string(),
+            program_args_template: ProgramArgsTemplate::Node {
+                entry: "dist/server.js".to_string(),
+            },
+            port_env: "COMMAND_CHANNEL_PORT".to_string(),
+            smoke_path: "/health".to_string(),
+            smoke_kind: SmokeKind::HttpGet,
+        },
     ]
+}
+
+/// #4075 — the port one env service listens on for a role, by name. The
+/// Clearing needs its api's port; the api needs the Clearing's (for /clearing).
+pub fn env_port_for(service: &str, role: &str) -> R<u16> {
+    env_services()
+        .iter()
+        .find(|s| s.name == service)
+        .ok_or_else(|| format!("env: no service named '{}'", service))?
+        .port_for(role)
+}
+
+/// #4075 — the Clearing's HTTPS listener (mic) sits ten above its HTTP port.
+pub fn clearing_https_port(http_port: u16) -> u16 {
+    http_port + 10
+}
+
+/// #4075 — the env a variant Clearing runs with. Pure, so the two properties
+/// the card exists for are testable: it reads THIS role's api (never :3340),
+/// and its writable files (spine, message store) sit under the werk's
+/// .chorus-demo, never the prod paths (#3615 membrane).
+pub fn clearing_extra_env(
+    role: &str,
+    demo_store_dir: &str,
+    css_issuer: &str,
+    variant_path: &str,
+) -> R<Vec<(String, String)>> {
+    let api_url = format!("http://localhost:{}", env_port_for("chorus-api", role)?);
+    let https = clearing_https_port(env_port_for("clearing", role)?).to_string();
+    let signin_url = std::env::var("CHORUS_SIGNIN_URL")
+        .unwrap_or_else(|_| "https://chorus.lightlifeurbangardens.com/_auth/".to_string());
+    let s = |k: &str, v: String| (k.to_string(), v);
+    Ok(vec![
+        s("CHORUS_API_URL", api_url.clone()),
+        s("CHORUS_API_BASE", api_url.clone()),
+        s("PULSE_URL", api_url),
+        s("CLEARING_HTTPS_PORT", https),
+        s("CHORUS_LOG_FILE", format!("{}/chorus.log", demo_store_dir)),
+        s("CLEARING_MSG_FILE", format!("{}/bridge-messages.json", demo_store_dir)),
+        s("CHORUS_SIGNIN_URL", signin_url),
+        s("CSS_ISSUER", css_issuer.to_string()),
+        s("CHORUS_CLEARING_REQUIRE_DPOP", "1".to_string()),
+        s("PATH", variant_path.to_string()),
+    ])
+}
+
+/// #4075 — the prod surfaces a variant Clearing must never be handed. If any
+/// value in its env names one, env_up REFUSES (fail-closed) rather than start a
+/// room whose posts would land in prod. Silas's gate ask, 2026-09-02: "a message
+/// posted in the variant Clearing must land in the variant store, never prod on
+/// 3475 or 3340."
+pub const CLEARING_PROD_SURFACES: &[&str] = &[
+    "localhost:3340",            // prod chorus-api
+    "localhost:3475",            // prod pulse / jeff-input
+    "localhost:3470",            // prod Clearing
+    "/tmp/bridge-messages.json", // prod message store
+    "/.chorus/chorus.log",       // prod spine
+];
+
+pub fn clearing_env_prod_leak(env: &[(String, String)]) -> Option<String> {
+    for (k, v) in env {
+        if let Some(hit) = CLEARING_PROD_SURFACES.iter().find(|s| v.contains(*s)) {
+            return Some(format!("{}={} names prod surface {}", k, v, hit));
+        }
+    }
+    None
+}
+
+/// #4075 — every (service, role) port in the env is distinct; a collision
+/// would make one variant's smoke pass on another's process.
+pub fn env_ports_collide(services: &[EnvService]) -> Option<(String, u16)> {
+    let mut seen = std::collections::HashMap::new();
+    for s in services {
+        for p in [s.silas_port, s.kade_port, s.wren_port] {
+            if let Some(prev) = seen.insert(p, s.name.clone()) {
+                return Some((format!("{} vs {}", prev, s.name), p));
+            }
+        }
+    }
+    None
 }
 
 impl EnvService {
@@ -654,8 +753,16 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let variant_path = variant_path_for(role);
         let chorus_home = std::env::var("CHORUS_HOME")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+        let clearing_port_s = env_port_for("clearing", role)?.to_string();
+        let clearing_owned = clearing_extra_env(role, &demo_store_dir, &css_issuer, &variant_path)?;
+        if svc.name == "clearing" {
+            if let Some(leak) = clearing_env_prod_leak(&clearing_owned) {
+                return Err(format!("env_up: refusing to start the variant Clearing — {}", leak));
+            }
+        }
         let extra_env: Vec<(&str, &str)> = match svc.name.as_str() {
             "chorus-api" => vec![
+                ("CLEARING_PORT", clearing_port_s.as_str()),
                 ("CHORUS_API_SCHEDULED_JOBS", "off"),
                 ("CHORUS_DB_PATH", demo_db_path.as_str()),
                 ("CHORUS_LANCE_DIR", demo_lance_dir.as_str()),
@@ -706,6 +813,11 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("CHORUS_FUSEKI", werk_fuseki.as_str()),
                 ("PATH", variant_path.as_str()),
             ],
+            // #4075 — the room reads the werk's api (tiles, pulse, pane) and
+            // writes ONLY werk-local files: its spine and message store live
+            // under the werk's .chorus-demo, never /tmp/bridge-messages.json or
+            // ~/.chorus/chorus.log (#3615 membrane). Sign-in is the real one.
+            "clearing" => clearing_owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect(),
             _ => vec![],
         };
 
