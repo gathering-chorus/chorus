@@ -121,13 +121,62 @@ flowchart TB
 <table>
 <tr><th>Composes</th><th>Owner</th><th>Carries</th></tr>
 <tr><td><code>events</code> domain</td><td>Wren</td><td>EventType, SpineEvent — the vocabulary and the stream</td></tr>
-<tr><td><code>spine</code> domain</td><td>Wren</td><td>EmitContract, EventCategory, Vertebra — the writer's contract and the classification</td></tr>
+<tr><td><code>spine</code> domain</td><td>Wren</td><td>EmitContract, EventCategory — the writer's contract and the classification. (Vertebra is DEPRECATED since #3697, superseded by ValueStreamStep; it stays claimed only until its 11 v1 rows are retired.)</td></tr>
 </table>
 <p><code>logs</code> (Silas, at <em>Proving</em>) is deliberately <strong>not</strong> part of this product. Logs is Loki aggregation and runtime observability — a consumer of the spine, not a constituent of it. Keeping that line clean is what stops "the spine" from becoming a synonym for "all telemetry."</p>
 
 <div class="gap"><strong>Composition is unrepresentable today.</strong> The <code>chorus</code> product record carries <em>no</em> <code>hasDomain</code> edges at all, so no product currently states which domains compose it. This design fixes that for spine and restores chorus's edges in the same land.</div>
 
-<h2>6 · As-Is — 2026-09-01, queried live</h2>
+
+<h2>6 · The Model (OWL + SHACL)</h2>
+<p>The structural layer (Product / Domain / Service / ValueStream) is the value-stream model and is not restated here &mdash; see <a href="/designing/docs/value-stream-template.html">value-stream-template.html</a>. This section is the spine's own content classes, <em>as the store serves them today</em> (queried 2026-09-02 08:50), and the two changes this design asks for.</p>
+<table>
+<thead><tr><th>Class</th><th>Domain</th><th>Shape today</th><th>Instances today</th><th>Verdict</th></tr></thead>
+<tbody>
+<tr><td><code>chorus:SpineEvent</code></td><td>events</td><td><code>rdfs:label</code> (1), <code>eventKind</code> (1) &mdash; two properties</td><td>0 in the store; 2,097,133 lines in the log</td><td><strong>Keep, widen.</strong> The shape must name what a line actually carries: <code>emittedAt</code>, <code>emittedBy</code> (Role), <code>traceId</code>, <code>cardId</code>, <code>ofType</code> (EventType). Occurrences are projected on read (§4), so the shape governs the projection, not a stored row.</td></tr>
+<tr><td><code>chorus:EventType</code></td><td>events</td><td><em>absent</em> &mdash; not in the ontology</td><td>0 (345 kinds live only in <code>spine-events.json</code>)</td><td><strong>Add.</strong> The vocabulary class: <code>eventKind</code> (the dotted name, unique), <code>inCategory</code> (EventCategory), <code>atStep</code> (ValueStreamStep), <code>declaredFields</code>, <code>emitter</code>. Claimed by the events domain so <code>/v1/eventtypes</code> mounts.</td></tr>
+<tr><td><code>chorus:EmitContract</code></td><td>spine</td><td><code>declaresMetric</code> (Metric, min 1)</td><td>1</td><td><strong>Keep.</strong> The writer's declare-what-you-emit contract (ADR-046); Borg reads it to build monitors. Needs an <code>emitsType</code> edge to EventType once that class exists.</td></tr>
+<tr><td><code>chorus:EventCategory</code></td><td>spine</td><td>no shape</td><td>1</td><td><strong>Keep, shape it.</strong> The classification that runs parallel to the value stream (lifecycle, coordination, security, telemetry&hellip;). One property: <code>rdfs:label</code>; EventType points at it.</td></tr>
+<tr><td><code>chorus:Vertebra</code></td><td>spine</td><td>none (deprecated #3697)</td><td>11 (v1 rows)</td><td><strong>Retire.</strong> Superseded by ValueStreamStep. Drop the claim when the 11 rows go; until then it is claimed so the class-atlas does not report it served-unclaimed.</td></tr>
+</tbody>
+</table>
+<p>The one join that makes the two layers one product: <code>SpineEvent ofType EventType</code>. Everything else in this table exists to make that edge resolvable in both directions.</p>
+
+<h2>7 · Pages &amp; Flow &mdash; the UX of the model</h2>
+<p>Same rule as Athena's design (#3378): every page renders its class's generated API, every link follows a real model edge, navigation starts at the value stream.</p>
+<pre class="mermaid">
+flowchart LR
+  VS["/athena/value-stream.html<br/>Directing step"] --> P["/athena/product.html?p=spine<br/>identity · promise · domains"]
+  P --> D["/athena/domain-detail.html?id=events<br/>classes claimed · gaps"]
+  D --> ET["EventType page (to-be)<br/>one kind: fields · category · step · recent occurrences · count"]
+  ET --> SE["Occurrence stream (to-be)<br/>/v1/spineevents?type=&amp;since= rendered"]
+  P --> CA["/athena/class-atlas.html<br/>SpineEvent · EventType · EmitContract shapes"]
+  SE -.->|"a line resolves its type"| ET
+</pre>
+<table>
+<thead><tr><th>Page</th><th>Today</th><th>To-be</th></tr></thead>
+<tbody>
+<tr><td>Product page</td><td>Live &mdash; vision, value proposition, one domain. Does not render <code>hasDesignDoc</code>, so this document is unreachable from the row it describes.</td><td>Render the design-doc link and the <code>gaps</code> fold. Small page change.</td></tr>
+<tr><td>Domain page (events)</td><td>Live &mdash; claims SpineEvent only.</td><td>Claims EventType too; shows the type count and the projected occurrence count side by side.</td></tr>
+<tr><td>EventType page</td><td>Does not exist. The 345 kinds are readable only by opening a JSON file.</td><td>The page Jeff asked for on 2026-09-01 (&ldquo;events UI&rdquo;): the catalogue, each kind clickable to its live occurrences. This is the first page whose substance is the spine, not the model of the spine.</td></tr>
+<tr><td>Class atlas</td><td>Live (#4053) &mdash; shows the two-property SpineEvent shape honestly.</td><td>Shows the widened shape and EventType; no page change, the model change lands there by construction.</td></tr>
+</tbody>
+</table>
+
+<h2>8 · API Surface</h2>
+<table>
+<thead><tr><th>Path</th><th>Today</th><th>To-be</th></tr></thead>
+<tbody>
+<tr><td><code>GET /v1/spineevents</code></td><td>Mounted, generated from SpineEventShape, returns <strong>count 0</strong> &mdash; it reads the store and the store holds no occurrences.</td><td>A projection over the log: <code>?type=&amp;since=&amp;role=&amp;card=</code>, bounded page, newest first. Same envelope as every generated collection so the page code does not know it is a projection.</td></tr>
+<tr><td><code>GET /v1/eventtypes</code></td><td>404 &mdash; no class, no claim, no route.</td><td>Generated the moment EventType is claimed by the events domain: the catalogue, 345 rows, each with its category, step and a live count.</td></tr>
+<tr><td><code>GET /v1/emitcontracts</code></td><td>Live, 1 row.</td><td>Unchanged; gains <code>emitsType</code>.</td></tr>
+<tr><td><code>GET /api/chorus/context/spine?limit=</code></td><td>Live &mdash; the last N lines, the 4MB-tail reach problem (§9).</td><td>Delegates to the projection above so reach is the whole log, not a tail.</td></tr>
+<tr><td><code>POST /api/chorus/spine-event</code> · <code>chorus-log</code></td><td>Live &mdash; the two write doors, both append a line.</td><td>Validate <code>eventKind</code> against EventType at write; an unknown kind is refused, not appended. This is what makes the catalogue authoritative instead of descriptive.</td></tr>
+<tr><td>MCP</td><td><code>chorus_logs_query</code>, <code>chorus_logs_for_card</code>, <code>chorus_logs_for_trace</code> read the log directly.</td><td>Each becomes a thin call over <code>/v1/spineevents</code> &mdash; one read path, one shape, the MCP correspondence Jeff asked for.</td></tr>
+</tbody>
+</table>
+
+<h2>9 · As-Is — 2026-09-01, queried live</h2>
 <table>
 <tr><th>Layer</th><th>Modeled</th><th>Served</th><th>Populated</th></tr>
 <tr><td>Product</td><td>no</td><td>—</td><td>—</td></tr>
@@ -141,7 +190,7 @@ flowchart TB
 
 <div class="gap"><strong>A generated route serving zero rows reads as working.</strong> <code>/v1/spineevents</code> is mounted, shaped, and empty. That is the hollow shape (#3734) at the API layer, and it is the direct consequence of modeling one class to be both a vocabulary and a stream.</div>
 
-<h2>7 · To-Be — path to close</h2>
+<h2>10 · To-Be — path to close</h2>
 <ol>
   <li><strong>Make the product real</strong> (#4045) — the Product row, its two <code>hasDomain</code> edges, chorus's restored edges, and this doc served as a Document with a resolving href.</li>
   <li><strong>Split the layers</strong> (#4046) — model <code>EventType</code>, load the 345 from the registry, serve <code>/v1/eventtypes</code>, and turn <code>/v1/spineevents</code> into a real projection with <code>ofType</code> joining both directions. The type leg has no dependencies and should ship first.</li>
@@ -149,7 +198,7 @@ flowchart TB
   <li><strong>Close the MCP correspondence</strong> — with types modeled, "every tool leaves an event" becomes a checkable claim: 57 tools against 345 types, holes reported in both directions. Not yet carded; it is the discussion Jeff asked for, not a ticket.</li>
 </ol>
 
-<h2>8 · Not in scope</h2>
+<h2>11 · Not in scope</h2>
 <ul>
   <li>Loki aggregation, promtail, dashboards — the <code>logs</code> domain, Silas, at Proving.</li>
   <li>The writer's contract (adapters, envelope, trace lifecycle) — <a href="/designing/docs/logs-service-design.html">Logs service design</a>.</li>
@@ -157,7 +206,7 @@ flowchart TB
   <li>Per-line ingestion of 2.1M occurrences into the graph — explicitly rejected in §4.</li>
 </ul>
 
-<h2>9 · References</h2>
+<h2>12 · References</h2>
 <ul>
   <li><a href="/designing/docs/spine-service-design.html">Spine — Service Design</a> (#4044) — contracts, readers, retention, the measured reach gap.</li>
   <li><a href="/designing/docs/logs-service-design.html">Logs — Service Design</a> (#2848) — the writer's contract.</li>
