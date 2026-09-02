@@ -44,10 +44,26 @@ envelope() {
   # Emit a UserPromptSubmit with the given prompt/session; return the
   # stderr portion of the response (where context-synthesis lives).
   local prompt="$1" session="${2:-spec-test}"
-  printf '{"hook_event_name":"UserPromptSubmit","prompt":"%s","session_id":"%s"}' "$prompt" "$session" | \
+  # #4065 — name the role in the payload (the shim's deploy_role field). The
+  # daemon otherwise infers it from the CALLER's ancestry: from a role's shell
+  # that is the role, from the 03:00 nightly it is nobody — and an envelope for
+  # nobody carries no Pulse, no Spine, no Athena. Green by hand, red at night.
+  printf '{"hook_event_name":"UserPromptSubmit","prompt":"%s","session_id":"%s","deploy_role":"silas"}' "$prompt" "$session" | \
     curl -s --unix-socket "$SOCKET" -X POST -H 'Content-Type: application/json' \
       --data @- http://localhost/user-prompt-submit | \
-    python3 -c "import json,sys; print(json.load(sys.stdin).get('stderr',''))"
+    python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+# #4065 — the daemon returns the envelope as hook output on STDOUT
+# (hookSpecificOutput.additionalContext); the old 'stderr' field is gone, and
+# reading it made tests 4-6 fail on an envelope that was present and complete.
+out=d.get('stdout','')
+try:
+    j=json.loads(out) if out else {}
+    ctx=(j.get('hookSpecificOutput') or {}).get('additionalContext') or j.get('additionalContext') or ''
+except Exception:
+    ctx=''
+print(ctx or d.get('stderr',''))"
 }
 
 @test "prereq: chorus-hooks socket exists" {
@@ -97,7 +113,10 @@ envelope() {
   # Read pulse snapshot — if silas has no WIP, the test setup is wrong
   wip=$(python3 -c "
 import json
-d = json.load(open('/tmp/pulse-latest.json'))
+import os
+# #4065 — the durable snapshot lives in ~/.chorus (#3202); /tmp is a derived cache
+p = os.path.expanduser('~/.chorus/pulse-latest.json')
+d = json.load(open(p if os.path.exists(p) else '/tmp/pulse-latest.json'))
 wip = d.get('board',{}).get('wip_cards',[])
 silas_wip = [c for c in wip if str(c.get('owner','')).lower() == 'silas']
 print(len(silas_wip))

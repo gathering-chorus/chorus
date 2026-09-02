@@ -2245,6 +2245,26 @@ pub fn nightly_lane_line(kind: &str, unit: &str, ok: bool, passed: usize, failed
     )
 }
 
+/// #4065 — a suite that exited 3 DECLINED to run here (#4004: a suite that
+/// would boot out live agents refuses unattended). `run_bats_cases` records
+/// that as one synthetic case marked "skip" and nothing else. Scoring that
+/// case as a failure produced "pass | 0 pass, 1 fail" — the very contradiction
+/// #3753 exists to flag — every night for test-product-membrane.sh.
+pub fn is_self_refused(cases: &[(String, String)]) -> bool {
+    !cases.is_empty() && cases.iter().all(|(n, r)| r == "skip" && n.starts_with("SELF-REFUSED rc=3"))
+}
+
+/// The lane line for a self-refused suite: verdict `skip`, counts 0/0, and a
+/// parenthesised reason so nightly-suites.sh's UNMEASURED remap (#4009/#4013)
+/// leaves it alone. Same vocabulary as `nightly_lane_line`; the wrapper counts
+/// `skip` rows as skipped (#3557), never as red and never as green.
+pub fn nightly_lane_line_refused(kind: &str, unit: &str) -> String {
+    format!(
+        "nightly-unit|{}|{}|skip|0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)",
+        kind, unit
+    )
+}
+
 /// #4030 — the runner's PLAN, one line per unit, printed before any lane runs.
 /// The wrapper (nightly-suites.sh `_never_ran_rows`) folds a planned unit that
 /// never produced a `nightly-unit|` line into a red NEVER RAN row, so a lane
@@ -2515,6 +2535,40 @@ mod nightly_via_runner_3920 {
         assert!(red.contains("|fail|"), "red line carries the fail verdict: {red}");
         assert!(!green.contains("|fail|"), "green line must not: {green}");
         assert_eq!(red, "nightly-unit|cargo|chorus-hooks|fail|40 pass, 2 fail");
+    }
+
+    /// #4065 — a self-refused suite is its own verdict: skip, 0/0, reason in
+    /// parentheses. Positive control on the exact line the wrapper folds.
+    #[test]
+    fn self_refused_suite_is_a_skip_row_not_a_fail_row() {
+        let cases = vec![(
+            "SELF-REFUSED rc=3 — platform/scripts/test-product-membrane.sh declined to run here".to_string(),
+            "skip".to_string(),
+        )];
+        assert!(is_self_refused(&cases));
+        let line = nightly_lane_line_refused("shell", "platform/scripts/test-product-membrane.sh");
+        assert_eq!(
+            line,
+            "nightly-unit|shell|platform/scripts/test-product-membrane.sh|skip|0 pass, 0 fail (SELF-REFUSED rc=3 — suite declined to run here)"
+        );
+        assert!(!line.contains("|fail|") && !line.contains("|pass|"), "{line}");
+    }
+
+    /// NEGATIVE PROOF (#3734): a suite that RAN and failed a case, or that
+    /// skipped one case among real ones, must NOT read as self-refused — that
+    /// would turn a real red into a skip.
+    #[test]
+    fn a_real_failure_or_a_partial_skip_is_never_self_refused() {
+        let ran_and_failed = vec![("ok case".to_string(), "pass".to_string()), ("bad case".to_string(), "fail".to_string())];
+        assert!(!is_self_refused(&ran_and_failed));
+        let partial = vec![
+            ("SELF-REFUSED rc=3 — x declined to run here".to_string(), "skip".to_string()),
+            ("real case".to_string(), "fail".to_string()),
+        ];
+        assert!(!is_self_refused(&partial));
+        let plain_skip = vec![("some skipped case".to_string(), "skip".to_string())];
+        assert!(!is_self_refused(&plain_skip), "a skip that is not the rc=3 marker is not a refusal");
+        assert!(!is_self_refused(&[]), "no cases is UNMEASURED, not refused");
     }
 
     #[test]

@@ -1451,7 +1451,7 @@ app.get('/api/chorus/domain/:name/pipeline', async (req: Request, res: Response)
 
 /** Check if a date falls in US Eastern Daylight Time */
 // Time utilities moved to src/time-utils.ts (#2205 wave 6).
-import { isEDT, bostonNow, convertToLocal } from './time-utils';
+import { isEDT, bostonNow, bostonOffsetIso, convertToLocal } from './time-utils';
 
 /** Reciprocal Rank Fusion — merge FTS + semantic results by message ID */
 // #2168 AC-14: query-aware RRF weighting extracted to ./search-rrf.ts
@@ -3782,7 +3782,10 @@ app.post('/api/chorus/spine-event', (req: Request, res: Response) => {
   handleSpineEvent(req, res, {
     appendFileSync: fs.appendFileSync,
     chorusLogPath: SPINE_EVENT_LOG,
-    now: bostonNow,
+    // #4065 — the spine has one clock: offset-ISO Boston. bostonNow() is a
+    // naive display label; writing it here made every spine-event line
+    // (seed.received, test.nohop) fail spine-one-clock.
+    now: bostonOffsetIso,
     traceDbPath: DB_PATH, DatabaseCtor: Database,
     ensureTraceTable: () => { if (!traceTableReady) { ensureTraceTable(); traceTableReady = true; } },
   });

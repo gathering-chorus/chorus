@@ -49,6 +49,19 @@ export function bostonNow(): string {
 }
 
 /**
+ * #4065 — Boston-local now as OFFSET ISO (`2026-09-02T11:08:15.123-0400`), the
+ * spine's one clock (#3880 / ADR-058). `bostonNow()` is a naive display label
+ * and must never be written to the spine: every /api/chorus/spine-event line
+ * (seed.received, test.nohop, …) carried it and failed spine-one-clock nightly.
+ */
+export function bostonOffsetIso(d: Date = new Date()): string {
+  const local = convertToLocal(d.toISOString(), 'America/New_York'); // YYYY-MM-DD HH:MM:SS
+  const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+  const offset = isEDT(d.toISOString()) ? '-0400' : '-0500';
+  return `${local.replace(' ', 'T')}.${ms}${offset}`;
+}
+
+/**
  * #3093 — single canonical render-to-Boston helper for human-facing strings.
  *
  * Storage stays UTC (correct for cross-machine ordering, spine events, db
