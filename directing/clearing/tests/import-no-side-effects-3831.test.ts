@@ -17,12 +17,22 @@
  */
 
 import { execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import { socketSessionAuthed, startBackgroundWork } from '../src/server';
 
 const CLEARING = path.join(__dirname, '..');
 /** socketSessionAuthed takes the raw Cookie header. Empty = nobody signed in. */
 const NO_COOKIE = '';
+
+// #4073 — this file flipped 4 times in 21 nightly runs, every time because
+// ./dist/server.js was absent or stale on the machine, never because the
+// product changed. The test brings its own world (#3528): build once here.
+beforeAll(() => {
+  if (!fs.existsSync(path.join(CLEARING, 'dist', 'server.js'))) {
+    execFileSync('npm', ['run', 'build', '--silent'], { cwd: CLEARING, stdio: 'ignore' });
+  }
+}, 180000);
 
 /** Run a snippet in a fresh node process; true if it exited on its own. */
 function exitsCleanly(snippet: string, timeoutMs = 15000): boolean {

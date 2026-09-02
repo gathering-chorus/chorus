@@ -13,11 +13,18 @@
     <!-- #4037: Jeff wants a DAILY run, not only 03:00 — one agent, two
          calendar slots, same runner/log/lock. The afternoon slot lets a
          noon fix see its proof the same day. -->
+    <!-- #4073 (2026-09-02): the night slot moved 03:00 -> 06:00. HYPOTHESIS under
+         test, not a finding: com.gathering.fuseki-backup (a 49 GB copy) also
+         fires at 03:00 and ran 03:00:06 -> 05:44:38 on 09-02, covering the whole
+         nightly; platform/api was cut off at its 1200s cap at 03:36 both nights
+         and finishes in 170s by day. 06:00 starts after the backup ends. If
+         platform/api completes tonight the hypothesis holds; if it is still cut
+         off, the cause is something its own tests wait on at night. -->
     <key>StartCalendarInterval</key>
     <array>
         <dict>
             <key>Hour</key>
-            <integer>3</integer>
+            <integer>6</integer>
             <key>Minute</key>
             <integer>0</integer>
         </dict>

@@ -492,7 +492,7 @@ function readoutFor(runId: string) {
   const run = findRun(runs, runId);
   if (!run) return null;
   const idx = runs.indexOf(run);
-  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null) };
+  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null, runs) };
 }
 
 app.get('/api/chorus/nightly/runs', (_req: Request, res: Response) => {
