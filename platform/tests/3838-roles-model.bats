@@ -25,10 +25,21 @@ setup() {
 
 # ---------------------------------------------------------------- the file ---
 
+# #4071 — these checks used to grep the TTL for sentences ("chorus:role-wren a
+# chorus:Role, chorus:AgentRole"): a reordered type list or a blank-node style
+# turned them red with the model unchanged, and a typo that still contained the
+# substring kept them green. Now they PARSE the file and ask it questions with
+# SPARQL, the same way the store will. The text can be laid out any way Turtle
+# allows; only the triples count.
+q() { # q <ttl> <sparql> -> CSV rows without the header
+  sparql --data "$1" --results CSV --query <(printf '%s' "$2") 2>/dev/null | tail -n +2 | tr -d '\r'
+}
+PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>'
+
 @test "every role is declared in a source file" {
   [ -f "$ROLES_TTL" ]
   for r in jeff wren silas kade; do
-    grep -q "chorus:role-$r a chorus:Role" "$ROLES_TTL"
+    [ "$(q "$ROLES_TTL" "$PFX ASK { chorus:role-$r a chorus:Role }")" = "true" ] || { echo "role-$r is not a chorus:Role in $ROLES_TTL" >&2; return 1; }
   done
 }
 
@@ -43,31 +54,37 @@ setup() {
   # cannot be constrained, queried reliably, or trusted.
   # Count roles, not a magic constant: the file had 4 roles when this was
   # written and has 5 now, so a hardcoded 4 reds on every role we add.
-  n_roles=$(grep -cE '^chorus:role-[a-z-]+ a ' "$ROLES_TTL")
-  run grep -c 'chorus:roleKind "' "$ROLES_TTL"
-  [ "$output" -eq "$n_roles" ]
-  ! grep -q 'chorus:comment "kind=' "$ROLES_TTL"
+  missing=$(q "$ROLES_TTL" "$PFX SELECT ?r WHERE { ?r a chorus:Role . FILTER NOT EXISTS { ?r chorus:roleKind ?k } }")
+  [ -z "$missing" ] || { echo "roles with no roleKind: $missing" >&2; return 1; }
+  n_roles=$(q "$ROLES_TTL" "$PFX SELECT (COUNT(?r) AS ?n) WHERE { ?r a chorus:Role }")
+  [ "$n_roles" -ge 4 ]
+  prose=$(q "$ROLES_TTL" "$PFX SELECT ?r WHERE { ?r chorus:comment ?c . FILTER(CONTAINS(STR(?c), \"kind=\")) }")
+  [ -z "$prose" ] || { echo "kind still carried as prose on: $prose" >&2; return 1; }
 }
 
 @test "roles are dual-typed so subclass and superclass queries both find them" {
   # Our store does no inference. A role typed only AgentRole vanishes from every
   # query asking for a Role — and every ownership constraint asks for a Role.
-  grep -q "chorus:role-wren a chorus:Role, chorus:AgentRole" "$ROLES_TTL"
-  grep -q "chorus:role-jeff a chorus:Role, chorus:HumanRole" "$ROLES_TTL"
+  [ "$(q "$ROLES_TTL" "$PFX ASK { chorus:role-wren a chorus:Role, chorus:AgentRole }")" = "true" ]
+  [ "$(q "$ROLES_TTL" "$PFX ASK { chorus:role-jeff a chorus:Role, chorus:HumanRole }")" = "true" ]
+  # and no role is typed by the subclass alone
+  lone=$(q "$ROLES_TTL" "$PFX SELECT ?r WHERE { { ?r a chorus:AgentRole } UNION { ?r a chorus:HumanRole } FILTER NOT EXISTS { ?r a chorus:Role } }")
+  [ -z "$lone" ] || { echo "typed by subclass only: $lone" >&2; return 1; }
 }
 
 # --------------------------------------------------------------- the shape ---
 
 @test "RoleShape exists and requires a floor" {
-  grep -q "chorus:RoleShape a sh:NodeShape" "$SHAPE_TTL"
-  # Requires, not merely mentions: label and kind both minCount 1.
-  run bash -c "sed -n '/chorus:RoleShape a sh:NodeShape/,/\\.$/p' '$SHAPE_TTL' | grep -c 'sh:minCount 1'"
-  [ "$output" -ge 3 ]
+  [ "$(q "$SHAPE_TTL" "$PFX ASK { chorus:RoleShape a sh:NodeShape }")" = "true" ]
+  # Requires, not merely mentions: at least three properties with minCount 1
+  # (label, kind, and one more) — counted from the shape's own property nodes.
+  n=$(q "$SHAPE_TTL" "$PFX SELECT (COUNT(?p) AS ?n) WHERE { chorus:RoleShape sh:property ?p . ?p sh:minCount ?m . FILTER(?m >= 1) }")
+  [ "${n:-0}" -ge 3 ] || { echo "RoleShape requires only $n properties" >&2; return 1; }
 }
 
 @test "RoleShape pins its instances graph" {
-  run bash -c "sed -n '/chorus:RoleShape a sh:NodeShape/,/\\.$/p' '$SHAPE_TTL' | grep -c 'chorus:instancesGraph \"urn:chorus:instances\"'"
-  [ "$output" -eq 1 ]
+  g=$(q "$SHAPE_TTL" "$PFX SELECT ?g WHERE { chorus:RoleShape chorus:instancesGraph ?g }")
+  [ "$g" = "urn:chorus:instances" ] || { echo "RoleShape instancesGraph = '${g:-<none>}'" >&2; return 1; }
 }
 
 @test "NEGATIVE PROOF: a shape without an instances-graph pin is detectable" {
@@ -83,8 +100,8 @@ chorus:GhostShape a sh:NodeShape ;
   sh:targetClass chorus:Ghost ;
   sh:property [ sh:path chorus:label ; sh:minCount 1 ] .
 TTL
-  run bash -c "sed -n '/chorus:GhostShape a sh:NodeShape/,/\\.$/p' '$TMP/unpinned.ttl' | grep -c 'chorus:instancesGraph'"
-  [ "$output" -eq 0 ]   # the check FIRES on the unpinned shape
+  g=$(q "$TMP/unpinned.ttl" "$PFX SELECT ?g WHERE { chorus:GhostShape chorus:instancesGraph ?g }")
+  [ -z "$g" ]   # the same query the positive check uses returns nothing: the check FIRES
 }
 
 # ------------------------------------------------------------- one spelling ---
