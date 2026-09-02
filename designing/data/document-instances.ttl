@@ -1,0 +1,203 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# =============================================================================
+# #4045 — the 18 served Documents, in a file, so a product seed can resolve its
+# hasDesignDoc edge in a store that starts empty (the werk store at env-up).
+#
+# The products batch refused on 2026-09-02 09:47 for a missing comment, and
+# would have refused next on hasDesignDoc: the seeder's referential-integrity
+# check is fail-closed against the store OR the batch (#3839), and no Document
+# existed in the werk store. Same pattern as roles (#3838): live-only until
+# authored. Exported from urn:chorus:domains:documents 2026-09-02 09:55.
+#
+# NOTE: seed --deploy loads the whole manifest into urn:chorus:instances (one
+# batch, one graph), while DocumentShape pins urn:chorus:domains:documents and
+# /documents serves from there. In prod the rows already exist in the pinned
+# graph, so this adds a second copy in instances (the two spine docs already had
+# one); in the werk store it is what lets Product rows resolve. Per-group graph
+# pins in seed --deploy are the clean close — noted on #4062 (/ca).
+# =============================================================================
+
+chorus:doc-product-design-pulse a chorus:Document ;
+    chorus:label """Product Design — Pulse""" ;
+    rdfs:label """Product Design — Pulse""" ;
+    chorus:docTitle """Product Design — Pulse""" ;
+    chorus:docHref """/designing/docs/product-design-pulse.html""" ;
+    chorus:comment """What Pulse is FOR: Jeff looks once and knows whether his team is working, without asking anyone and without being lied to. Measured by how many times a day he has to ask — six on 2026-08-25.""" ;
+    rdfs:comment """What Pulse is FOR: Jeff looks once and knows whether his team is working, without asking anyone and without being lied to. Measured by how many times a day he has to ask — six on 2026-08-25.""" ;
+    chorus:hasDomain chorus:memory ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:pulse .
+
+chorus:doc-service-design-pulse a chorus:Document ;
+    chorus:label """Service Design — Pulse""" ;
+    rdfs:label """Service Design — Pulse""" ;
+    chorus:docTitle """Service Design — Pulse""" ;
+    chorus:docHref """/designing/docs/service-design-pulse.html""" ;
+    chorus:comment """How Pulse works and where it currently lies: an event-bus cache, not an aggregator (Silas, 2026-04-21); 1 of 8 #2442 items shipped; the state field wrong by construction at pulse.rs:162, which is why 129 declaration cards never fixed it.""" ;
+    rdfs:comment """How Pulse works and where it currently lies: an event-bus cache, not an aggregator (Silas, 2026-04-21); 1 of 8 #2442 items shipped; the state field wrong by construction at pulse.rs:162, which is why 129 declaration cards never fixed it.""" ;
+    chorus:hasDomain chorus:memory ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:pulse .
+
+chorus:document-athena-product-design a chorus:Document ;
+    chorus:label """athena-product-design""" ;
+    rdfs:label """athena-product-design""" ;
+    chorus:docTitle """Athena — Product Design""" ;
+    chorus:docHref """/designing/docs/athena-product-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 athena-domain → knowledge.""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 athena-domain → knowledge.""" ;
+    chorus:hasDomain chorus:knowledge ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-borg-product-design a chorus:Document ;
+    chorus:label """borg-product-design""" ;
+    rdfs:label """borg-product-design""" ;
+    chorus:docTitle """Borg — Product Design""" ;
+    chorus:docHref """/designing/docs/borg-product-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
+    chorus:hasDomain chorus:alerts-monitors ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-chorus-as-platform a chorus:Document ;
+    chorus:label """chorus-as-platform""" ;
+    rdfs:label """chorus-as-platform""" ;
+    chorus:docTitle """Chorus — A System to Build Systems""" ;
+    chorus:docHref """/designing/docs/chorus-as-platform.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 chorus-domain → domains.""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 chorus-domain → domains.""" ;
+    chorus:hasDomain chorus:domains ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-clearing-value-stream-design a chorus:Document ;
+    chorus:label """clearing-value-stream-design""" ;
+    rdfs:label """clearing-value-stream-design""" ;
+    chorus:docTitle """Clearing — Value-Stream Design""" ;
+    chorus:docHref """/designing/docs/clearing-value-stream-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    chorus:hasDomain chorus:messages ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-convergence-value-stream-design a chorus:Document ;
+    chorus:label """convergence-value-stream-design""" ;
+    rdfs:label """convergence-value-stream-design""" ;
+    chorus:docTitle """Convergence — Value-Stream Design""" ;
+    chorus:docHref """/designing/docs/convergence-value-stream-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 convergence-domain → integrations.""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 convergence-domain → integrations.""" ;
+    chorus:hasDomain chorus:integrations ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-doc-service-design-spine a chorus:Document ;
+    chorus:label """doc-service-design-spine""" ;
+    rdfs:label """doc-service-design-spine""" ;
+    chorus:docTitle """Spine — Service Design""" ;
+    chorus:docHref """/designing/docs/spine-service-design.html""" ;
+    chorus:comment """The event log finally has a design (#4044). Disambiguates the two senses of spine (value stream vs event log); names three measured gaps: reach (a fixed 4MB tail serves 3h17m of a 40-day 1.71GB log, so the Team Pulse range tabs are decorative), a second SDK-written log at platform/logs/chorus.log that no reader reads, and the MCP-tools-to-events correspondence we assert but never check.""" ;
+    rdfs:comment """The event log finally has a design (#4044). Disambiguates the two senses of spine (value stream vs event log); names three measured gaps: reach (a fixed 4MB tail serves 3h17m of a 40-day 1.71GB log, so the Team Pulse range tabs are decorative), a second SDK-written log at platform/logs/chorus.log that no reader reads, and the MCP-tools-to-events correspondence we assert but never check.""" ;
+    chorus:hasDomain chorus:spine ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:spine .
+
+chorus:document-loom-subproduct-design a chorus:Document ;
+    chorus:label """loom-subproduct-design""" ;
+    rdfs:label """loom-subproduct-design""" ;
+    chorus:docTitle """Loom — Subproduct Design""" ;
+    chorus:docHref """/designing/docs/loom-subproduct-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    chorus:hasDomain chorus:principles ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-memory-architecture a chorus:Document ;
+    chorus:label """memory-architecture""" ;
+    rdfs:label """memory-architecture""" ;
+    chorus:docTitle """Memory Architecture""" ;
+    chorus:docHref """/designing/docs/MEMORY_ARCHITECTURE.html""" ;
+    chorus:comment """How the team remembers — session index, artifacts, recall layers.""" ;
+    rdfs:comment """How the team remembers — session index, artifacts, recall layers.""" ;
+    chorus:hasDomain chorus:memory ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-pipelines-design a chorus:Document ;
+    chorus:label """pipelines-design""" ;
+    rdfs:label """pipelines-design""" ;
+    chorus:docTitle """Pipelines — service design (design as data; this Document is the catalog pointer)""" ;
+    chorus:docHref """/gathering-docs/ci-pipeline-service-design.html""" ;
+    chorus:hasDomain chorus:pipelines ;
+    chorus:ownedBy chorus:role-kade .
+
+chorus:document-pulse-service-design-tobe a chorus:Document ;
+    chorus:label """pulse-service-design-tobe""" ;
+    rdfs:label """pulse-service-design-tobe""" ;
+    chorus:docTitle """Pulse — Service Design (to-be)""" ;
+    chorus:docHref """/designing/docs/chorus-pulse-tobe.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
+    chorus:hasDomain chorus:memory ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-service-design-cards a chorus:Document ;
+    chorus:label """service-design-cards""" ;
+    rdfs:label """service-design-cards""" ;
+    chorus:docTitle """Service Design — Cards""" ;
+    chorus:docHref """/designing/docs/cards-service-design.html""" ;
+    chorus:comment """How the board works as a service — the cards CLI, its backing store, and the write paths every role uses.""" ;
+    rdfs:comment """How the board works as a service — the cards CLI, its backing store, and the write paths every role uses.""" ;
+    chorus:hasDomain chorus:cards ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-service-design-clearing a chorus:Document ;
+    chorus:label """service-design-clearing""" ;
+    rdfs:label """service-design-clearing""" ;
+    chorus:docTitle """Service Design — The Clearing""" ;
+    chorus:docHref """/designing/docs/clearing-service-design.html""" ;
+    chorus:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
+    rdfs:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
+    chorus:hasDomain chorus:messages ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:product-clearing .
+
+chorus:document-service-design-nudge a chorus:Document ;
+    chorus:label """service-design-nudge""" ;
+    rdfs:label """service-design-nudge""" ;
+    chorus:docTitle """Nudge — Service Design""" ;
+    chorus:docHref """/designing/docs/nudge-service-design.html""" ;
+    chorus:comment """Nudge delivery as a service — persist AND deliver, both paths every time (DEC-107).""" ;
+    rdfs:comment """Nudge delivery as a service — persist AND deliver, both paths every time (DEC-107).""" ;
+    chorus:hasDomain chorus:messages ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-service-design-streams a chorus:Document ;
+    chorus:label """service-design-streams""" ;
+    rdfs:label """service-design-streams""" ;
+    chorus:docTitle """Service Design — Streams""" ;
+    chorus:docHref """/designing/docs/streams-service-design.html""" ;
+    chorus:comment """The live stream feed as a service — spine, session, and log flow rendered watchable.""" ;
+    rdfs:comment """The live stream feed as a service — spine, session, and log flow rendered watchable.""" ;
+    chorus:hasDomain chorus:streams ;
+    chorus:ownedBy chorus:role-wren .
+
+chorus:document-spine-product-design a chorus:Document ;
+    chorus:label """spine-product-design""" ;
+    rdfs:label """spine-product-design""" ;
+    chorus:docTitle """Spine — Product Design""" ;
+    chorus:docHref """/designing/docs/spine-product-design.html""" ;
+    chorus:comment """What the spine IS as a product (#4045): three promises (nothing lost, anything recorded reachable, what can happen enumerable), and the EDA layering Jeff called for on 2026-09-01 — EventType as curated vocabulary in the graph, SpineEvent as the log projected on read, joined by ofType. Composes the events and spine domains; excludes logs.""" ;
+    rdfs:comment """What the spine IS as a product (#4045): three promises (nothing lost, anything recorded reachable, what can happen enumerable), and the EDA layering Jeff called for on 2026-09-01 — EventType as curated vocabulary in the graph, SpineEvent as the log projected on read, joined by ofType. Composes the events and spine domains; excludes logs.""" ;
+    chorus:hasDomain chorus:spine ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:hasProduct chorus:spine .
+
+chorus:document-werk-subproduct-design a chorus:Document ;
+    chorus:label """werk-subproduct-design""" ;
+    rdfs:label """werk-subproduct-design""" ;
+    chorus:docTitle """Werk — Subproduct Design""" ;
+    chorus:docHref """/designing/docs/werk-subproduct-design.html""" ;
+    chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
+    rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
+    chorus:hasDomain chorus:tests ;
+    chorus:ownedBy chorus:role-wren .

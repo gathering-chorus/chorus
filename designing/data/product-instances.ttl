@@ -23,6 +23,8 @@
 # =============================================================================
 
 chorus:athena a chorus:Product ;
+    chorus:comment """Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.""" ;
+    rdfs:comment """Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.""" ;
     chorus:label """Athena""" ;
     rdfs:label """Athena""" ;
     chorus:ownedBy chorus:role-wren ;
