@@ -88,7 +88,7 @@ const NO_READING = /never ran|runner produced no|UNMEASURED|no parseable output|
  *  caller. Rules, in order:
  *    unmeasured    the summary says the runner never took a reading
  *    test-wrong    the summary names the machine, or the suite flipped
- *                  pass/fail ≥2 times in its last 10 runs (whack-a-mole)
+ *                  pass/fail ≥2 times in its last 10 runs, or ≥4 times ever
  *    product-broke everything else: a red that has held, or a first red
  *                  after a steady green history
  *  NEGATIVE PROOFS in nightly-red-labels-4073.test.ts: red-every-run is never
@@ -96,11 +96,17 @@ const NO_READING = /never ran|runner produced no|UNMEASURED|no parseable output|
 export function labelRed(history: string[], summary: string): RedLabel {
   if (NO_READING.test(summary)) return 'unmeasured';
   if (MACHINE_WORDS.test(summary)) return 'test-wrong';
-  const recent = history.slice(-10);
+  // recent flapping (≥2 flips in the last 10 runs) or chronic flapping (≥4
+  // flips over the whole record: directing/clearing flipped 13 times in 45
+  // runs and would otherwise read as a fresh break each time it comes back)
+  return countFlips(history.slice(-10)) >= 2 || countFlips(history) >= 4 ? 'test-wrong' : 'product-broke';
+}
+
+function countFlips(seq: string[]): number {
   let flips = 0;
   let prev = '';
-  for (const v of recent) { if (prev && v !== prev) flips++; prev = v; }
-  return flips >= 2 ? 'test-wrong' : 'product-broke';
+  for (const v of seq) { if (prev && v !== prev) flips++; prev = v; }
+  return flips;
 }
 
 const LABEL_WORDS: Record<RedLabel, string> = { 'product-broke': 'PRODUCT BROKE', 'test-wrong': 'TEST WRONG', unmeasured: 'UNMEASURED' };
@@ -127,7 +133,8 @@ function minutesBetween(a: string, b: string): number | null {
 
 /** The delta against the previous run. Keyed by display path so an absolute
  *  path from an older walker row matches its repo-relative successor. */
-function diffRuns(rows: NightlyRow[], reds: RedSuite[], prev: NightlyRunRecord | null): Readout['changes'] {
+function diffRuns(run: NightlyRunRecord, reds: RedSuite[], prev: NightlyRunRecord | null): Readout['changes'] {
+  const rows = run.rows;
   const changes: Readout['changes'] = { previousRunId: null, newlyRed: [], fixed: [], stillRed: [], gone: [] };
   if (!prev) return changes;
   changes.previousRunId = prev.runId;
@@ -138,7 +145,9 @@ function diffRuns(rows: NightlyRow[], reds: RedSuite[], prev: NightlyRunRecord |
   for (const [suite, red] of prevRed) {
     if (nowAll.has(suite) && !nowRed.has(suite)) changes.fixed.push(red);
   }
-  changes.gone = prev.rows.map((r) => displayPath(r.path)).filter((s) => !nowAll.has(s));
+  // a run still in progress has not "dropped" anything yet — the suites it has
+  // not reached are not gone (the 15:38 run read "302 suite(s) no longer run")
+  changes.gone = run.completed ? prev.rows.map((r) => displayPath(r.path)).filter((s) => !nowAll.has(s)) : [];
   return changes;
 }
 
@@ -174,7 +183,7 @@ export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | nul
     reds,
     redByOwner,
     byLabel,
-    changes: diffRuns(rows, reds, prev),
+    changes: diffRuns(run, reds, prev),
   };
 }
 

@@ -27,6 +27,13 @@ describe('labelRed — the three states, from history alone', () => {
     expect(labelRed(['fail', 'fail', 'fail', 'fail', 'fail'], '')).not.toBe('test-wrong');
   });
 
+  it('TEST WRONG: a chronic flapper is test-wrong even when its last ten runs look like a fresh break', () => {
+    const chronic = ['fail', 'pass', 'fail', 'pass', 'fail', 'pass', ...Array(9).fill('pass'), 'fail'];
+    expect(labelRed(chronic, '')).toBe('test-wrong');
+    // NEGATIVE PROOF: one old flip and a long steady green is a real break
+    expect(labelRed(['fail', 'pass', ...Array(9).fill('pass'), 'fail'], '')).toBe('product-broke');
+  });
+
   it('TEST WRONG: the failure names the machine, not the product', () => {
     for (const s of ['bats: 0 passed, 1 failed (latency 812ms > 500ms)', 'jest: timeout exceeded under load', 'ECONNREFUSED 127.0.0.1:3470', 'no live stack']) {
       expect(labelRed(['pass', 'pass', 'fail'], s)).toBe('test-wrong');
@@ -88,5 +95,16 @@ describe('/nightly page carries the split', () => {
     expect(html).toMatch(/td class="lbl product-broke">PRODUCT BROKE<\/td>/);
     // NEGATIVE PROOF: a green row carries no label
     expect((html.match(/td class="lbl"><\/td>/g) || []).length).toBe(1);
+  });
+});
+
+describe('a partial run drops nothing', () => {
+  it('NEGATIVE PROOF: suites the run has not reached yet are not "no longer run"', () => {
+    const LOG = run('2026-09-02T13:30:00', [green('a.bats'), green('b.bats'), green('c.bats')]) +
+      '\nRUN|start|2026-09-02T15:38:49|pid=2\n' + green('a.bats') + '\n';
+    const runs = parseAllRuns(LOG);
+    const r = buildReadout(runs[1], runs[0], runs);
+    expect(r.completed).toBe(false);
+    expect(r.changes.gone).toEqual([]);
   });
 });
