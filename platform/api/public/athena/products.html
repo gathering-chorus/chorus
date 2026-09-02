@@ -48,6 +48,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="promise"><strong>vision:</strong> ${esc(p.vision || '')}</div>
   <p class="vp"><strong>value proposition:</strong> ${esc(p.valueProposition || '')}</p>
   <div><span class="lbl">domains (${asArray(p.hasDomain).length})</span> ${domainChips(p.hasDomain)}</div>
+  <div><span class="lbl">design</span> ${asArray(p.hasDesignDoc).length ? `<a class="chip" href="product.html?p=${encodeURIComponent(p.name)}">${esc(String(asArray(p.hasDesignDoc)[0]).replace(/^document-/, ''))}</a>` : '<span class="empty">no design doc</span>'}</div>
   ${kids.length ? `<div class="fold-mini"><span class="lbl">children</span> ${kids.sort().map(c => `<a class="edge" href="#p-${esc(c)}">${esc(c)}</a>`).join(' ')}</div>` : ''}
 </div>`;
     }

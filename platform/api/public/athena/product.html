@@ -1,87 +1,176 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Product — Athena</title>
-<!-- #3635 — the Jeff-approved product INSTANCE page (2026-07-12 mock), ?p=<name>.
-     Replaces the #3420 skeleton. Hand-authored pending the generator upgrade. -->
+<!-- #4045 — the product page as a RENDERED DESIGN, phone-first (was the v2 mock; Jeff read it on his phone and worked from it, 2026-09-02 11:38).
+     Jeff, 2026-09-02 10:51: "think about the ux of having a properties table on phone —
+     the tail of the doc should be more like a rendered designed page and less like a
+     simple tree of attributes." Same data as product.html (every shape property, live
+     from the model); the difference is the rendering: the sections read as the design
+     doc they came from, in design order, with the model's own tables and lists, and
+     nothing wider than a phone. The #3635 attribute-table version it replaces is in git. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
-   A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
-   against the apex, asks the garden site, gets a 404 — so the file that would have told
-   this page where it lives can never load. Chicken-and-egg, and it left three correct
-   fixes underneath it inert. Relative src was rejected: it breaks the no-trailing-slash
-   entry and needs ../ depth per page, which is per-page compensation for a mount.
-   No request, so nothing can escape the mount. At root BASE is '' and URLs are unchanged. */
-(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script>
+<script>(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
-window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
-return b+(x.charAt(0)==='/'?x:'/'+x);};
-/* the DOM-rewriter still has a job (root-absolute hrefs must stay inside the mount);
-   it is fetched THROUGH the base this snippet just computed, so it cannot escape. */
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;return b+(x.charAt(0)==='/'?x:'/'+x);};
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<style>
+  /* phone-first: the page is a single column of readable measure; nothing scrolls sideways */
+  .wrap { max-width: 760px; padding: 16px; }
+  .hero { margin: 6px 0 10px; }
+  .hero h1 { font-size: 1.6rem; line-height: 1.2; }
+  .hero .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; font-size: .85rem; color: var(--muted); }
+  .hero .meta a { color: var(--accent); text-decoration: none; }
+  .vision { font-size: 1.05rem; line-height: 1.45; border-left: 4px solid var(--accent); padding: 8px 14px; margin: 14px 0; background: var(--surface); border-radius: 0 6px 6px 0; }
+  .vision .k { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
+  .lede { font-size: .98rem; margin: 0 0 10px; }
+  .lede .k { font-weight: 600; margin-right: 6px; }
+  /* section jump list — horizontal scroll on phone, wraps on desktop */
+  nav.toc { display: flex; gap: 6px; overflow-x: auto; padding: 6px 0 10px; margin: 6px 0 4px; scrollbar-width: none; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+  nav.toc::-webkit-scrollbar { display: none; }
+  nav.toc a { flex: 0 0 auto; font-size: .78rem; padding: 4px 11px; border: 1px solid var(--border); border-radius: 12px; color: var(--muted); text-decoration: none; background: var(--surface); }
+  nav.toc a.filled { color: var(--text); border-color: #c9ced6; }
+  @media (min-width: 700px) { nav.toc { flex-wrap: wrap; position: static; } }
+  /* a section is a chapter: numbered heading, then the model's text rendered as prose */
+  section.ch { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  section.ch h2 { font-size: 1.08rem; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
+  section.ch h2 .n { color: var(--muted); font-weight: 400; font-size: .85rem; min-width: 1.4em; }
+  section.ch h2 .src { margin-left: auto; font-size: .68rem; color: var(--muted); font-weight: 400; }
+  section.ch p { margin: 0 0 8px; font-size: .93rem; }
+  section.ch p:last-child { margin-bottom: 0; }
+  section.ch ul, section.ch ol { margin: 0 0 8px 1.2em; font-size: .93rem; }
+  section.ch li { margin-bottom: 3px; }
+  section.ch .unwritten { color: var(--muted); font-style: italic; font-size: .88rem; }
+  section.ch.empty { padding: 8px 16px; background: transparent; border-style: dashed; }
+  section.ch.empty h2 { margin: 0; font-size: .95rem; color: var(--muted); }
+  /* the model's tables: real tables on desktop; on a phone each row becomes a card with labelled cells */
+  .mt { width: 100%; border-collapse: collapse; font-size: .86rem; margin: 6px 0 10px; }
+  .mt th { text-align: left; font-size: .68rem; text-transform: uppercase; color: var(--muted); padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  .mt td { padding: 6px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  .mt td:first-child { font-weight: 600; white-space: nowrap; }
+  @media (max-width: 640px) {
+    .mt thead { display: none; }
+    .mt, .mt tbody, .mt tr, .mt td { display: block; width: 100%; }
+    .mt tr { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin: 0 0 8px; background: var(--bg); }
+    .mt td { border: 0; padding: 3px 0; white-space: normal; }
+    .mt td:first-child { font-size: .95rem; padding-bottom: 4px; }
+    .mt td[data-l]::before { content: attr(data-l); display: block; font-size: .66rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  }
+  /* composition: domain chips with owner dots, one per line on phone */
+  .doms { display: flex; flex-wrap: wrap; gap: 6px; }
+  .doms a { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--accent); text-decoration: none; font-size: .86rem; }
+  .doms a .c { color: var(--muted); font-size: .74rem; }
+  .prov { font-size: .72rem; color: var(--muted); margin-top: 18px; line-height: 1.6; }
+  .prov code { font-size: .72rem; }
+</style>
 </head>
 <body><div class="wrap">
 <div class="crumb" id="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="products.html">products</a></div>
-<h1 id="title">Product</h1>
 <div id="main"><p class="empty">loading live from the model&hellip;</p></div>
 </div>
 <script>
 (async function () {
   const main = document.getElementById('main');
-  const p = new URLSearchParams(location.search).get('p');
-  if (!p) { main.innerHTML = '<div class="err">No product named — open as product.html?p=&lt;name&gt;, e.g. from <a class="edge" href="products.html">the products page</a>.</div>'; return; }
+  // #4045 — a phone that autolinks 'p=spine.' hands us 'spine.'; trailing punctuation is noise, not a product name.
+  const p = (new URLSearchParams(location.search).get('p') || '').replace(/[.,;:!?)\]]+$/, '') || null;
+  if (!p) { main.innerHTML = '<div class="err">No product named — open as product.html?p=&lt;name&gt;.</div>'; return; }
   try {
-    // edges (ownedBy/atStep/hasDomain) live on the COLLECTION row; literals on the
-    // entity read; containment in the has-child fold. Merge all three.
-    const [entEnv, collEnv, kidFold] = await Promise.all([
+    const [entEnv, collEnv, apiSpec, docEnv, domEnv] = await Promise.all([
       fetchJSON(`/products/${encodeURIComponent(p)}`),
       fetchJSON('/products'),
-      fetchJSON(`/products/${encodeURIComponent(p)}/has-child`).catch(() => null)]);
+      fetchJSON('/products/openapi.json').catch(() => null),
+      fetchJSON('/documents').catch(() => null),
+      fetchJSON('/domains').catch(() => null)]);
     const lit = (Array.isArray(entEnv.data) ? entEnv.data[0] : entEnv.data) || {};
     const row = ((collEnv.data || []).find(r => r.name === p)) || {};
     const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([, v]) => v !== '' && v != null)) };
-    e.hasChild = (kidFold && kidFold.hasChild) || [];
-    if (!Object.keys(lit).length && !Object.keys(row).length) { main.innerHTML = `<div class="err">The model has no product named "${esc(p)}" — that is the graph's answer, not a fetch failure.</div>`; return; }
+    if (!Object.keys(lit).length && !Object.keys(row).length) { main.innerHTML = `<div class="err">The model has no product named "${esc(p)}".</div>`; return; }
+    const shape = (apiSpec && apiSpec.components && apiSpec.components.schemas && apiSpec.components.schemas.Product && apiSpec.components.schemas.Product.properties) || {};
+    const docsByName = Object.fromEntries((((docEnv || {}).data) || []).map(r => [r.name, r]));
+    const domsByName = Object.fromEntries((((domEnv || {}).data) || []).map(r => [r.name, r]));
     const label = e.label || p[0].toUpperCase() + p.slice(1);
     document.title = `${label} — Product — Athena`;
-    document.getElementById('title').innerHTML = `${esc(label)} <span class="kind">&mdash; Product</span>`;
     const step = stepLocal(e.atStep);
     document.getElementById('crumb').innerHTML =
-      `<a href="value-stream.html">value stream</a> &rarr; <a href="value-stream.html">${esc(step[0] ? step[0].toUpperCase() + step.slice(1) : '?')}</a> &rarr; <a href="products.html">products</a> &rarr; ${esc(p)}`;
-
+      `<a href="value-stream.html">value stream</a> &rarr; <a href="value-stream.html">${esc(step ? step[0].toUpperCase() + step.slice(1) : '?')}</a> &rarr; <a href="products.html">products</a> &rarr; ${esc(p)}`;
+    const designDoc = asArray(e.hasDesignDoc).map(v => docsByName[String(v).replace(/^.*[#/]/, '')]).find(Boolean);
     const doms = asArray(e.hasDomain).sort();
-    // domain edges (owner, vocabulary) live on the /domains COLLECTION rows
-    let domRowsByName = {};
-    if (doms.length) {
-      try { domRowsByName = Object.fromEntries(((await fetchJSON('/domains')).data || []).map(r => [r.name, r])); } catch (_) {}
-    }
-    const domRows = doms.map(d => {
-      const de = domRowsByName[d] || {};
-      const vocab = asArray(de.definesVocabulary);
-      return `<tr><td><a class="edge" href="domain.html?d=${encodeURIComponent(d)}">${esc(d)}</a></td>` +
-        `<td>${ownerDot(de.ownedBy)}</td>` +
-        `<td>${vocab.length} class${vocab.length !== 1 ? 'es' : ''}</td>` +
-        `<td><a class="edge" href="${owlBase()}/domains/${encodeURIComponent(d)}">:3360 &#10003;</a></td></tr>`;   /* #4010 — was ${OWL}, a name nothing defines; the ReferenceError killed the whole render, so every product page showed "Cannot reach the model API" while the API was fine */
-    });
-    const kids = asArray(e.hasChild).sort();
+
+    // ── text → design: the model's strings are the doc's sections. Lines with " | "
+    //    are table rows (first row = header); "1. " / "- " lines are lists; the rest,
+    //    paragraphs. Tables become labelled cards under 640px (CSS above).
+    const render = (txt) => {
+      const lines = String(txt || '').split('\n').map(l => l.trim()).filter(Boolean);
+      let html = '', i = 0;
+      const isRow = l => l.includes(' | ');
+      while (i < lines.length) {
+        if (isRow(lines[i])) {
+          const rows = []; while (i < lines.length && isRow(lines[i])) { rows.push(lines[i].replace(/^\s*\|\s*/, '').replace(/\s*\|\s*$/, '').split(' | ').map(c => c.trim())); i++; }
+          const head = rows.shift();
+          html += `<table class="mt"><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</thead><tbody>` +
+            rows.map(r => `<tr>${r.map((c, k) => `<td${k ? ` data-l="${esc(head[k] || '')}"` : ''}>${esc(c)}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+        } else if (/^(\d+[.)]|[-•])\s/.test(lines[i])) {
+          const ordered = /^\d/.test(lines[i]); const items = [];
+          while (i < lines.length && /^(\d+[.)]|[-•])\s/.test(lines[i])) { items.push(lines[i].replace(/^(\d+[.)]|[-•])\s/, '')); i++; }
+          html += `<${ordered ? 'ol' : 'ul'}>${items.map(t => `<li>${esc(t)}</li>`).join('')}</${ordered ? 'ol' : 'ul'}>`;
+        } else { html += `<p>${esc(lines[i])}</p>`; i++; }
+      }
+      return html;
+    };
+
+    // ── the design order: what a product design says, chapter by chapter
+    const chapters = [
+      ['promise',       'Promise'],
+      ['audience',      'Audience'],
+      ['structure',     'Structure'],
+      ['composition',   'Composition'],          // rendered from hasDomain, not a string
+      ['model',         'The Model (OWL + SHACL)'],
+      ['pagesAndFlow',  'Pages & Flow'],
+      ['apiSurface',    'API Surface'],
+      ['asIs',          'As-Is'],
+      ['toBe',          'To-Be'],
+      ['notInScope',    'Not in scope'],
+      ['gaps',          'Gaps'],
+      ['references',    'References'],
+      ['comment',       'Notes'],
+    ];
+    const has = k => k === 'composition' ? doms.length > 0 : !!(e[k] && String(e[k]).trim());
+    const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
+    const chapterHtml = chapters.map(([k, t], n) => {
+      const src = k === 'composition' ? 'chorus:hasDomain' : `chorus:${k}`;
+      if (!has(k)) return `<section class="ch empty" id="${k}"><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src} &middot; not written</span></h2></section>`;
+      let body;
+      if (k === 'composition') {
+        body = `<div class="doms">${doms.map(d => { const de = domsByName[d] || {}; const v = asArray(de.definesVocabulary).length;
+          return `<a href="domain.html?d=${encodeURIComponent(d)}">${ownerDot(de.ownedBy)}${esc(d)} <span class="c">${v} class${v !== 1 ? 'es' : ''}</span></a>`; }).join('')}</div>`;
+      } else body = render(e[k]);
+      return `<section class="ch" id="${k}"><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src}</span></h2>${body}</section>`;
+    }).join('');
+
+    // ── anything the shape declares that the chapters did not place (so nothing served is invisible)
+    const placed = new Set(chapters.map(([k]) => k).concat(['hasDomain', 'label', 'vision', 'valueProposition', 'status', 'ownedBy', 'atStep', 'hasDesignDoc', 'iri', 'type', 'created', 'creator', 'modified']));
+    const rest = Object.keys(shape).filter(k => !placed.has(k)).sort();
+    const restHtml = rest.length ? `<section class="ch" id="more"><h2><span class="n">&middot;</span>Also on the shape<span class="src">${rest.length} more</span></h2>` +
+      `<p>${rest.map(k => `<code>${esc(k)}</code>: ${e[k] ? esc(asArray(e[k]).join(', ')) : '<span class="unwritten">not set</span>'}`).join(' &nbsp;&middot;&nbsp; ')}</p></section>` : '';
 
     main.innerHTML = `
-<div class="promise"><strong>vision:</strong> ${esc(e.vision || '')}</div>
-<div class="stats">
-  <div class="stat"><div class="v">${ownerDot(e.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
-  <div class="stat"><div class="v">${stepBadge(e.atStep)}</div><div class="l">Step (atStep)</div></div>
-  <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
-  <div class="stat"><div class="v">${doms.length}</div><div class="l">Domains</div></div>
+<div class="hero">
+  <h1>${esc(label)} <span class="kind">&mdash; Product</span></h1>
+  <div class="meta">
+    <span>${ownerDot(e.ownedBy)}</span>
+    <span>${stepBadge(e.atStep)}</span>
+    <span><em>${esc(e.status || 'no status')}</em></span>
+    ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
+  </div>
 </div>
-<details class="fold" open><summary>Value Proposition <span class="src">chorus:valueProposition</span></summary><div class="body"><p>${esc(e.valueProposition || '')}</p></div></details>
-${e.audience ? `<details class="fold" open><summary>Audience <span class="src">chorus:audience</span></summary><div class="body"><p>${esc(e.audience)}</p></div></details>` : ''}
-<details class="fold" open><summary>Domains (hasDomain) <span class="src">model edges &rarr; live domain pages</span></summary><div class="body">
-${doms.length ? `<table><tr><th>Domain</th><th>Owner</th><th>Vocabulary</th><th>Live</th></tr>${domRows.join('')}</table>` : '<div class="empty">no domains declared</div>'}</div></details>
-<details class="fold" open><summary>Children (hasChild) <span class="src">chorus:hasChild</span></summary><div class="body">
-${kids.length ? kids.map(c => `<a class="chip" href="product.html?p=${encodeURIComponent(c)}">${esc(c)}</a>`).join(' ') : `<div class="empty">none &mdash; ${esc(p)} is a leaf product</div>`}</div></details>
-${e.gaps ? `<details class="fold" open><summary>Gaps <span class="src">chorus:gaps &mdash; honest, from the model</span></summary><div class="body"><p>${esc(e.gaps)}</p></div></details>` : ''}
-${srcNote(`GET /products/${esc(p)}`)}`;
-  } catch (e) { fetchFailed(main, e); }
+<div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>
+<p class="lede"><span class="k">Value proposition</span>${esc(e.valueProposition || '')}</p>
+<nav class="toc">${toc}</nav>
+${chapterHtml}
+${restHtml}
+<div class="prov">Rendered from <code>GET /products/${esc(p)}</code> &middot; ${Object.keys(shape).length} properties on the Product shape &middot; ${['created', 'modified'].filter(k => e[k]).map(k => `${k} ${esc(String(e[k]).slice(0, 10))}`).join(' &middot; ')}</div>`;
+  } catch (err) { fetchFailed(main, err); }
 })();
 </script>
 </body></html>

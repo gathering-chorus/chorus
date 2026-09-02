@@ -371,6 +371,31 @@ pub fn expired_cases<'a>(q: &'a [Quarantined], today: &str) -> Vec<&'a Quarantin
         .collect()
 }
 
+/// #4045 — the ui-flows leg honoured no quarantine at all: `quarantined_cases()`
+/// fed `run_cargo` only, so a playwright spec ruled a known red (the Clearing
+/// scroll-follow, the Team Pulse "0 cards" count defect) blocked every card whose
+/// diff touched a page, with no governed way out. Playwright's `--grep-invert`
+/// matches the full title path (project › file › suite › title), and the tests
+/// domain registers ui specs at FILE granularity with `testName` = the file's
+/// basename, so a quarantined row excludes its whole file. Regex-escaped, alternated.
+/// None when nothing is quarantined — no flag, nothing hidden.
+pub fn playwright_grep_invert(quarantined: &[Quarantined]) -> Option<String> {
+    let mut terms: Vec<String> = quarantined
+        .iter()
+        .map(|q| q.case.trim())
+        .filter(|c| !c.is_empty())
+        .map(|c| c.chars().map(|ch| {
+            if "\\.^$|?*+()[]{}/".contains(ch) { format!("\\{}", ch) } else { ch.to_string() }
+        }).collect::<String>())
+        .collect();
+    if terms.is_empty() {
+        return None;
+    }
+    terms.sort();
+    terms.dedup();
+    Some(terms.join("|"))
+}
+
 /// One-line, ALWAYS-printed report of the cases the gate skipped because they're
 /// quarantined — a skip must be VISIBLE, never a silent absence (#3443 "I don't see
 /// it" bar). Empty set → an explicit `quarantined: none`, not blank.
@@ -2161,6 +2186,20 @@ pub fn parse_playwright_summary(out: &str) -> Option<(usize, usize)> {
     passed.map(|p| (p, failed))
 }
 
+/// #4045 — the skipped count from a playwright summary ("4 skipped"). A skip is a
+/// TYPED outcome the leg must count and print, not a pass: with no CLEARING_URL the
+/// four clearing specs skip, and until a variant Clearing exists the leg covers
+/// none of Clearing — the summary has to say so (Kade, 2026-09-02).
+pub fn parse_playwright_skipped(out: &str) -> usize {
+    out.lines()
+        .filter_map(|l| {
+            let w: Vec<&str> = l.trim().split_whitespace().collect();
+            if w.len() >= 2 && w[1].starts_with("skipped") { w[0].parse::<usize>().ok() } else { None }
+        })
+        .max()
+        .unwrap_or(0)
+}
+
 /// #3920 fold — the nightly's cargo lane plan: every Rust crate holding a
 /// REGISTERED test. This IS the "full selection" — the registry is the one
 /// selection engine; there is no glob fallback (a fallback would be the second
@@ -3183,5 +3222,37 @@ mod serialized_split_tests {
         let (readers, alone) = split_serialized(&ser, &["membrane.sh".to_string()]);
         assert!(readers.is_empty());
         assert_eq!(alone.len(), 1);
+    }
+
+    // #4045 — the ui-flows leg must skip a quarantined spec (negative proof:
+    // with nothing quarantined the flag is ABSENT, and a live title from a
+    // spec that is not quarantined does not match the pattern).
+    #[test]
+    fn playwright_grep_invert_excludes_only_quarantined_files() {
+        let q = vec![
+            super::Quarantined { case: "clearing-ui.spec.cjs".into(), reason: "known red".into(), until: "2026-09-09".into() },
+            super::Quarantined { case: "chorus-loom-4036.spec.cjs".into(), reason: "count defect".into(), until: "2026-09-09".into() },
+        ];
+        let pat = super::playwright_grep_invert(&q).expect("two quarantined → a pattern");
+        let re = regex_lite(&pat);
+        assert!(re("[chromium] › proving/flows/clearing-ui.spec.cjs:75:3 › pinned to bottom"), "quarantined file matches");
+        assert!(re("[chromium] › proving/flows/chorus-loom-4036.spec.cjs:135:3 › Team Pulse"), "quarantined file matches");
+        assert!(!re("[chromium] › proving/flows/tiles.spec.cjs:10:1 › tiles render"), "a spec NOT quarantined must not match");
+        assert!(!re("[chromium] › proving/flows/clearing-ui-spec-cjs-lookalike.spec.cjs"), "the dot is literal, not any-char");
+        assert_eq!(super::playwright_grep_invert(&[]), None, "nothing quarantined → no flag at all");
+    }
+
+    // A tiny matcher: the pattern is an alternation of escaped literals, so
+    // "matches" means one of the un-escaped literals is a substring.
+    fn regex_lite(pat: &str) -> impl Fn(&str) -> bool + '_ {
+        move |title: &str| pat.split('|').any(|t| title.contains(&t.replace('\\', "")))
+    }
+
+    #[test]
+    fn playwright_skipped_is_counted_and_zero_when_absent() {
+        let out = "  -  3 [chromium] › proving/flows/clearing-room-key-3865.spec.cjs:51:3 › x\n\n  4 skipped\n  90 passed (1.2m)\n";
+        assert_eq!(super::parse_playwright_skipped(out), 4);
+        assert_eq!(super::parse_playwright_summary(out), Some((90, 0)));
+        assert_eq!(super::parse_playwright_skipped("  94 passed (2.0m)\n"), 0, "no skipped line → 0, never invented");
     }
 }

@@ -2952,6 +2952,26 @@ mod model_source_tests {
         let diff = "roles/silas/ontology/security-model-3618.ttl";
         assert_eq!(changed_model_sources(diff).len(), 1);
     }
+
+    #[test]
+    fn model_plus_public_page_is_model_only_not_a_death() {
+        // #4045 — the exact diff that died at deploy-werk on 2026-09-02 09:03:
+        // a shape change, its seed file + manifest, the page that renders the
+        // new properties, and a bats test. Nothing here builds.
+        let diff = "roles/silas/ontology/chorus.ttl\ndesigning/data/product-instances.ttl\nplatform/config/instance-seed-manifest.txt\nplatform/api/public/athena/product.html\nplatform/api/public/athena/products.html\nplatform/tests/4045-spine-product.bats";
+        assert!(super::empty_summary_is_model_only(diff), "model + public page must be model-only");
+        assert!(!super::empty_summary_is_config_only(diff), "a model change is not config-only");
+    }
+
+    #[test]
+    fn model_plus_real_ts_change_still_dies() {
+        // Negative proof (#3734): the asset drop must not widen into "any chorus-api
+        // change is fine". A real TS source beside the model is a buildable change
+        // that produced no pairs — that is still the broken/under-scoped build.
+        let diff = "roles/silas/ontology/chorus.ttl\nplatform/api/src/handlers/products.ts";
+        assert!(!super::empty_summary_is_model_only(diff));
+        assert!(!super::empty_summary_is_config_only(diff));
+    }
 }
 
 #[cfg(test)]
@@ -3009,19 +3029,24 @@ mod running_verdict_tests {
 /// model-only — the empty build summary still means a broken/under-scoped
 /// build and must die.
 pub fn empty_summary_is_model_only(diff: &str) -> bool {
-    changed_service_crates(diff).is_empty()
-        && changed_ts_services(diff).is_empty()
-        && !changed_model_sources(diff).is_empty()
+    // #4045 — same asset drop as config-only. A model card that also touches a
+    // page under platform/api/public/ (the page that RENDERS the new model
+    // properties — the normal shape of a model card, not an edge case) read the
+    // html as a chorus-api TS change, was neither config-only nor model-only,
+    // and died "no crate=cdhash pairs" (#3487 class, hit 08-27 and again here).
+    let buildable = drop_build_irrelevant(diff);
+    changed_service_crates(&buildable).is_empty()
+        && changed_ts_services(&buildable).is_empty()
+        && !changed_model_sources(&buildable).is_empty()
 }
 
-pub fn empty_summary_is_config_only(diff: &str) -> bool {
-    // Asset/prose lines are dropped BEFORE classification (Wren's #3810: a
-    // page-only diff like platform/api/public/index.html sits inside the
-    // chorus-api dir but needs no build — the variant serves public/ straight
-    // from the werk). Mirrors werk-build's build-irrelevant rule so the two
-    // verbs agree on what an empty summary can explain.
-    let buildable: String = diff
-        .lines()
+/// Lines that need no build, dropped BEFORE classification (Wren's #3810: a
+/// page-only diff like platform/api/public/index.html sits inside the chorus-api
+/// dir but needs no build — the variant serves public/ straight from the werk).
+/// Mirrors werk-build's build-irrelevant rule so the verbs agree on what an
+/// empty summary can explain. Shared by the config-only and model-only checks.
+pub fn drop_build_irrelevant(diff: &str) -> String {
+    diff.lines()
         .filter(|l| {
             let l = l.trim();
             let asset_ext = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
@@ -3030,7 +3055,11 @@ pub fn empty_summary_is_config_only(diff: &str) -> bool {
             !(asset_ext || static_dir)
         })
         .map(|l| format!("{}\n", l))
-        .collect();
+        .collect()
+}
+
+pub fn empty_summary_is_config_only(diff: &str) -> bool {
+    let buildable = drop_build_irrelevant(diff);
     changed_service_crates(&buildable).is_empty()
         && changed_ts_services(&buildable).is_empty()
         && changed_model_sources(&buildable).is_empty()

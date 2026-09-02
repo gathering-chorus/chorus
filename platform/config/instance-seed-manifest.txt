@@ -14,6 +14,14 @@ value-stream-step:designing/data/value-stream-step-instances.ttl
 # #3838 — the four roles: before this they existed only in the live store, so
 # no deploy could reproduce ownedBy/holdsRole targets.
 role:roles/wren/ontology/role-instances-3838.ttl
+# #4045 — the nine products (athena … werk, spine). Live-only until this card;
+# spine carries its design-doc sections as Product attributes. After role: the
+# ownedBy targets must be present in the store or the batch (#3839).
+product:designing/data/product-instances.ttl
+# #4045 — the 18 served Documents: hasDesignDoc targets for the products above.
+# One batch, so product→document and document→hasProduct resolve against each
+# other (#3839). Lands in urn:chorus:instances with the rest (see the file header).
+document:designing/data/document-instances.ttl
 # #4040 — the two real pipelines (cicd, athena) + their steps; clearing/borg
 # planned instances, no steps. Two kinds, TWO files: the seeder refuses a
 # subject claimed by two kinds in one batch (proven at the #4040 land 19:23),
