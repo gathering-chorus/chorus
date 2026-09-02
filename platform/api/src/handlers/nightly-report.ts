@@ -128,8 +128,56 @@ export function tallyTests(rows: NightlyRow[]): {
   return { passed, failed, unparsed };
 }
 
+/** #4060 — what the page shows above the run: the readout (duration, delta vs
+ *  the previous run) and the list of every recorded run, so any past night is
+ *  one click away. Typed structurally to keep this module free of a cycle
+ *  with nightly-readout.ts, which imports the parser from here. */
+export type NightlyPageOpts = {
+  readout?: {
+    runId: string;
+    durationMin: number | null;
+    changes: {
+      previousRunId: string | null;
+      newlyRed: { owner: string; suite: string }[];
+      fixed: { owner: string; suite: string }[];
+      stillRed: { owner: string; suite: string }[];
+      gone: string[];
+    };
+  };
+  history?: { runId: string; completed: boolean; rows: NightlyRow[] }[];
+};
+
+function renderReadoutBanner(o: NightlyPageOpts | undefined): string {
+  const r = o?.readout;
+  if (!r) return '';
+  const c = r.changes;
+  const dur = r.durationMin === null ? 'duration unknown (run never completed)' : `${r.durationMin} min`;
+  const delta = c.previousRunId === null
+    ? 'since last run: no earlier run to compare'
+    : `since <a href="/nightly?run=${esc(c.previousRunId)}">${esc(c.previousRunId)}</a>: ` +
+      `${c.newlyRed.length} new red · ${c.fixed.length} fixed · ${c.stillRed.length} still red` +
+      (c.gone.length ? ` · ${c.gone.length} no longer run` : '');
+  const detail = [
+    ...c.newlyRed.map((x) => `<li class="new">new: ${esc(x.owner)} ${esc(x.suite)}</li>`),
+    ...c.fixed.map((x) => `<li class="fixed">fixed: ${esc(x.owner)} ${esc(x.suite)}</li>`),
+  ].join('');
+  return `<div class="banner readout"><span>took ${esc(dur)}</span><span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
+}
+
+function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
+  const h = o?.history;
+  if (!h || h.length < 1) return '';
+  const items = [...h].reverse().map((run) => {
+    const reds = run.rows.filter((r) => r.status === 'fail').length;
+    const label = run.completed ? `${reds} red / ${run.rows.length}` : `partial (${run.rows.length} so far)`;
+    const cls = run.runId === current ? ' class="cur"' : '';
+    return `<li${cls}><a href="/nightly?run=${esc(run.runId)}">${esc(run.runId)}</a> <span class="hl">${esc(label)}</span></li>`;
+  }).join('');
+  return `<details class="history"><summary>${h.length} recorded run(s) — open any</summary><ul>${items}</ul></details>`;
+}
+
 /** Render the run as the one-look report page. */
-export function renderNightlyPage(run: NightlyRun | null): string {
+export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts): string {
   if (!run) {
     return page('Nightly', '<div class="banner empty">No nightly run recorded yet — first run lands at 03:00.</div>');
   }
@@ -176,6 +224,8 @@ export function renderNightlyPage(run: NightlyRun | null): string {
     <span class="counts">TESTS: ${tests.passed} passed · ${tests.failed} failed${tests.unparsed ? ' (' + tests.unparsed + ' suite(s) report no test counts)' : ''}</span>
     <span class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt) : ''}</span>
   </div>
+  ${renderReadoutBanner(opts)}
+  ${renderHistory(opts, run.startedAt)}
   <table>
     <thead><tr><th></th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
     <tbody>${ordered.map(row).join('')}</tbody>
@@ -196,6 +246,13 @@ function page(title: string, body: string): string {
   .banner.green { background:color-mix(in srgb, var(--green) 12%, transparent); }
   .banner.red { background:color-mix(in srgb, var(--red) 12%, transparent); }
   .banner.partial, .banner.empty { background:color-mix(in srgb, var(--amber) 14%, transparent); }
+  .banner.readout { background:color-mix(in srgb, var(--mut) 10%, transparent); flex-direction:column; gap:.25rem; }
+  .banner.readout ul.delta { margin:.25rem 0 0; padding-left:1.25rem; }
+  .banner.readout li.new { color:var(--red); } .banner.readout li.fixed { color:var(--green); }
+  details.history { margin-bottom:1rem; color:var(--mut); }
+  details.history ul { columns:2; padding-left:1.25rem; margin:.5rem 0 0; }
+  details.history li.cur { font-weight:700; color:var(--fg); }
+  .hl { font-size:.85rem; }
   .verdict { font-size:1.6rem; font-weight:700; }
   .banner.green .verdict { color:var(--green); } .banner.red .verdict { color:var(--red); }
   .counts, .when { color:var(--mut); }

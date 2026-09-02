@@ -302,6 +302,14 @@ pub fn generate_plist(
         ("CHORUS_API_ENV", "werk".to_string()),
         ("CHORUS_ROOT", werk_root.to_string()),
     ];
+    // The Fuseki admin credential every variant needs to WRITE to its own store.
+    // Without it a reload answers 401 and the service turns that into a 500 —
+    // which reads as the variant being broken rather than unauthenticated.
+    // launchd gives a plist no inherited environment, so it has to be written in.
+    if let Some((user, pw)) = fuseki_admin_creds() {
+        env_pairs.push(("FUSEKI_ADMIN_USER", user));
+        env_pairs.push(("FUSEKI_ADMIN_PASSWORD", pw));
+    }
     for (k, v) in extra_env {
         env_pairs.push((k, v.to_string()));
     }
@@ -459,12 +467,51 @@ fn build_service_dist(svc: &EnvService, werk_root: &str, role: &str) -> R<()> {
 /// shapes and claims of the branch under demo rather than prod's. Best-effort
 /// by design: a store that cannot be prepared must not block env-up, but it
 /// says so loudly instead of silently falling back to prod's data.
+/// #4047 follow-on (Silas, 2026-09-02): Fuseki's admin endpoint requires
+/// basic auth, and both the create and the drop posted anonymously — 401, then
+/// a model seed against a dataset that was never made, which surfaced as a
+/// confusing 405. The credential is the same one every bash writer uses via
+/// fuseki-auth.sh; read it from the environment rather than inventing a path.
+fn fuseki_admin_creds() -> Option<(String, String)> {
+    let from_env = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|p| !p.is_empty());
+    let (user, pw) = match from_env {
+        Some(pw) => (std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".to_string()), pw),
+        None => {
+            // The pipeline runs under act/launchd, where nothing exports this —
+            // which is exactly where the 401 showed up. fuseki-auth.sh has read
+            // the credential from this file since #3611; do the same rather than
+            // require every caller to source a shell script first. Extract the
+            // two keys only, and never log the value.
+            let path = std::env::var("FUSEKI_WRITE_ENV").unwrap_or_else(|_| {
+                format!("{}/.gathering/data/fuseki-write.env",
+                        std::env::var("HOME").unwrap_or_default())
+            });
+            let body = std::fs::read_to_string(path).ok()?;
+            let pick = |k: &str| body.lines()
+                .find_map(|l| l.strip_prefix(&format!("{}=", k)))
+                .map(|v| v.trim().to_string());
+            let pw = pick("FUSEKI_ADMIN_PASSWORD").filter(|p| !p.is_empty())?;
+            (pick("FUSEKI_ADMIN_USER").unwrap_or_else(|| "admin".to_string()), pw)
+        }
+    };
+    Some((user, pw))
+}
+
+fn fuseki_admin_auth() -> Vec<String> {
+    match fuseki_admin_creds() {
+        Some((user, pw)) => vec!["-u".to_string(), format!("{}:{}", user, pw)],
+        None => Vec::new(),
+    }
+}
+
 fn prepare_werk_store(role: &str, werk_root: &str) -> String {
     let ds = werk_dataset_name(role);
     let base = werk_fuseki_for(role);
     let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
     let admin = format!("{}/$/datasets", base);
+    let auth = fuseki_admin_auth();
     let out = Command::new("curl")
+        .args(&auth)
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
                "--data", &format!("dbName={}&dbType=mem", ds)])
         .output();
@@ -472,7 +519,16 @@ fn prepare_werk_store(role: &str, werk_root: &str) -> String {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(e) => format!("curl-failed:{}", e),
     };
-    // 200 = created, 409 = already there; both are usable.
+    // 200 = created, 409 = already there; both are usable. Anything else means
+    // there is no dataset, and seeding into one that does not exist answers 405
+    // — a code that sends the reader looking at the wrong thing. Say it here.
+    if !(created == "200" || created == "409") {
+        return format!(
+            "store={} create_http={} — dataset NOT created (admin auth missing or refused); \
+no model seed attempted",
+            ds, created
+        );
+    }
     let deploy = format!("{}/platform/scripts/athena-deploy-model.sh", werk_root);
     let seeded = if Path::new(&deploy).exists() {
         let st = Command::new("bash")
@@ -522,6 +578,7 @@ fn drop_werk_store(role: &str) -> String {
     let base = werk_fuseki_for(role);
     let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
     let out = Command::new("curl")
+        .args(&fuseki_admin_auth())
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
                &format!("{}/$/datasets/{}", base, ds)])
         .output();
@@ -591,6 +648,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let owl_upstream = owl_upstream_for(role)?;
         let nightly_log = werk_nightly_log_path(werk_root);
         let css_issuer = css_issuer_for_variant();
+        let jwks_url = jwks_url_for_variant();
         let model_bin = format!("{}/athena-model", werk_bin_dir(role));
         let werk_fuseki = werk_fuseki_for(role);
         let variant_path = variant_path_for(role);
@@ -605,6 +663,22 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
                 ("OWL_UPSTREAM", owl_upstream.as_str()),
                 // #4022 — /test-run reads the WERK's nightly log, not prod's.
                 ("NIGHTLY_LOG_PATH", nightly_log.as_str()),
+                // Silas, 2026-09-02, proving #4058: the variant booted without
+                // these three, so an authz demo could not fail — the security
+                // envelope was pass-through (chorus-sdk walked straight through
+                // reload), the api's own athena sparql/update still pointed at
+                // PROD's store while only athena-make got the werk one, and the
+                // reload's Fuseki update answered 401 → 500 with no admin
+                // credential. A demo env that cannot refuse proves nothing.
+                ("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"),
+                ("CHORUS_FUSEKI", werk_fuseki.as_str()),
+                // Silas, 2026-09-02: with the envelope on, the variant refused
+                // EVERYONE with authn-missing — it had no identity verifier at
+                // all. Prod's chorus-api carries both of these; the variant
+                // carried neither, so "refuses everything" looked like the
+                // envelope working when it was the door having no key reader.
+                ("CSS_ISSUER", css_issuer.as_str()),
+                ("CHORUS_JWKS_URL", jwks_url.as_str()),
             ],
             // #4022 — the athena variant verifies write tokens against CSS's
             // JWKS, and the issuer URL reaches the binary ONLY through env
@@ -787,6 +861,17 @@ pub fn werk_fuseki_for(role: &str) -> String {
     let base = std::env::var("CHORUS_FUSEKI_BASE")
         .unwrap_or_else(|_| "http://localhost:3030".to_string());
     format!("{}/{}", base.trim_end_matches('/'), werk_dataset_name(role))
+}
+
+/// The local JWKS the verifier fetches. Same default chorus-env-setup.sh uses;
+/// the issuer is the LOGICAL public origin (behind Cloudflare) and the JWKS is
+/// fetched LOCALLY — fetching the public one from the box is 1010-blocked.
+pub fn jwks_url_for_variant() -> String {
+    std::env::var("CHORUS_JWKS_URL")
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| "http://localhost:3001/.oidc/jwks".to_string())
 }
 
 pub fn css_issuer_for_variant() -> String {
@@ -972,5 +1057,54 @@ mod store_4047 {
             "kade", "/tmp/werk", 3364, &[]);
         assert!(!without.contains("CHORUS_FUSEKI"),
             "fixture is bogus if the var appears without being passed");
+    }
+
+    /// Silas, 2026-09-02: the chorus-api variant booted without the security
+    /// envelope and without its own store, so an authz demo could not fail —
+    /// the envelope was pass-through and the api read PROD's graph while only
+    /// athena-make got the werk one. A demo env that cannot refuse proves
+    /// nothing, so both belong on the plist.
+    #[test]
+    fn api_variant_plist_carries_the_envelope_flag_and_the_werk_store() {
+        let svc = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
+        let f = werk_fuseki_for("kade");
+        let with = generate_plist(&svc, "kade", "/tmp/werk", 3343,
+            &[("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"), ("CHORUS_FUSEKI", f.as_str())]);
+        assert!(with.contains("<key>CHORUS_SECURITY_ENVELOPE_ENABLE</key>"), "{}", with);
+        assert!(with.contains("<key>CHORUS_FUSEKI</key>"), "{}", with);
+        assert!(with.contains(&f), "{}", with);
+
+        // NEGATIVE PROOF (#3734): the same plist with neither passed. If this
+        // still contained them the assertions above would pass for the wrong
+        // reason — the shape of the #3725 trap.
+        let without = generate_plist(&svc, "kade", "/tmp/werk", 3343, &[]);
+        assert!(!without.contains("CHORUS_SECURITY_ENVELOPE_ENABLE"),
+            "fixture is bogus if the flag appears without being passed");
+        assert!(!without.contains("CHORUS_FUSEKI"),
+            "fixture is bogus if the store appears without being passed");
+    }
+
+    /// Silas, 2026-09-02: envelope ON + no verifier env = refuses everyone with
+    /// authn-missing, which reads as the envelope working. The issuer is the
+    /// LOGICAL public origin; the JWKS is fetched locally (the public one is
+    /// 1010-blocked from the box), so they are two different hosts on purpose.
+    #[test]
+    fn api_variant_plist_carries_both_halves_of_the_identity_verifier() {
+        let svc = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
+        let issuer = css_issuer_for_variant();
+        let jwks = jwks_url_for_variant();
+        assert!(issuer.starts_with("https://"), "issuer must be the real CSS, got {}", issuer);
+        assert!(jwks.contains("/.oidc/jwks"), "jwks must be the local key set, got {}", jwks);
+        assert_ne!(issuer, jwks, "issuer and jwks are different hosts by design");
+        let with = generate_plist(&svc, "kade", "/tmp/werk", 3343,
+            &[("CSS_ISSUER", issuer.as_str()), ("CHORUS_JWKS_URL", jwks.as_str())]);
+        assert!(with.contains("<key>CSS_ISSUER</key>"), "{}", with);
+        assert!(with.contains("<key>CHORUS_JWKS_URL</key>"), "{}", with);
+
+        // NEGATIVE PROOF (#3734): neither passed — the state that produced
+        // authn-missing for every caller.
+        let without = generate_plist(&svc, "kade", "/tmp/werk", 3343, &[]);
+        assert!(!without.contains("CSS_ISSUER"), "fixture bogus: issuer appears unpassed");
+        assert!(!without.contains("CHORUS_JWKS_URL"), "fixture bogus: jwks appears unpassed");
     }
 }

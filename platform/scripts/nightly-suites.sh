@@ -77,6 +77,20 @@ _load_1m() {
 # real wedge and stays fail). Everything else passes through untouched.
 _classify_verdict() {
   local verdict="$1" summary="$2"
+  # #3753 AC4 lived only at spine-emit time, so a row whose verdict said pass
+  # while its own summary counted failures kept the pass on the LINE — and the
+  # line is what the log, the page and every count read. 2026-09-02 03:00 shipped
+  # two of them (directing/clearing "852 pass, 1 fail", test-product-membrane.sh
+  # "0 pass, 1 fail"), both rendered green, so the night read 5 red when it was 7.
+  # Flip it here, where the row is made, not only where the event is emitted.
+  if [ "$verdict" = "pass" ]; then
+    local _f
+    _f=$(printf '%s' "$summary" | grep -oE '[0-9]+ (failed|fail)' | grep -oE '[0-9]+' | head -1)
+    if [ "${_f:-0}" -gt 0 ] 2>/dev/null; then
+      echo "nightly-suites: REPORTER CONTRADICTION — row says pass with failed=${_f}; recording fail (#3753 AC4, row-level)" >&2
+      printf 'fail'; return
+    fi
+  fi
   [ "$verdict" = "fail" ] || { printf '%s' "$verdict"; return; }
   case "$summary" in
     *"NODE_MODULE_VERSION"*|*"Cannot find module"*|*"command not found"*|*"ERR_DLOPEN_FAILED"*|*"spawn "*ENOENT*|*"DID NOT RUN"*)
@@ -1057,6 +1071,33 @@ emit_pipeline_run() {
   rm -f "$out"
 }
 
+# #4060 — THE READOUT. Jeff, 2026-09-02: "i dont even get a readout on the run."
+# After a run finishes he gets the run's readout without asking anyone: how
+# long it took, how many suites, which are red and whose, what changed since
+# the last run, and the link to that run's own page. The text is NOT built
+# here — it is fetched from chorus-api's readout route, the same function the
+# /nightly page renders and `--readout` prints, so the nudge, the page and any
+# role asked all carry one set of numbers. If the route cannot answer, the
+# nudge says so and carries NO numbers: an unavailable readout must never be
+# replaced by a count this script made up on its own (#3734 — the two states
+# stay separable). Seams: NIGHTLY_API (route host), OPS_NUDGE (delivery).
+deliver_readout() {
+  local api="${NIGHTLY_API:-http://localhost:3340}"
+  local ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
+  local out code text
+  out=$(mktemp "${TMPDIR:-/tmp}/nightly-readout.XXXXXX")
+  code=$(curl -s --max-time 15 -o "$out" -w '%{http_code}' "$api/api/chorus/nightly/runs/latest?format=text" 2>/dev/null || echo 000)
+  text=$(cat "$out" 2>/dev/null); rm -f "$out"
+  if [ "$code" = "200" ] && [ -n "$text" ]; then
+    echo "nightly-suites: readout delivered to jeff:" >&2
+    printf '%s\n' "$text" >&2
+    "$ops_nudge" jeff "$text" system >/dev/null 2>&1 || echo "nightly-suites: readout nudge to jeff FAILED (ops-nudge rc=$?)" >&2
+  else
+    echo "nightly-suites: readout UNAVAILABLE — $api answered HTTP $code; nudging jeff without numbers" >&2
+    "$ops_nudge" jeff "nightly finished but its readout could not be built ($api answered HTTP $code). No numbers until the api answers: $api/nightly" system >/dev/null 2>&1 || true
+  fi
+}
+
 emit_run_summary() {
   local results="$1" total suites passed failed skipped owners_csv zero_red
   suites=$(printf '%s\n' "$results" | grep -c '^SUITE|' | tr -d ' ')
@@ -1320,6 +1361,18 @@ for l in suites:
     print(l)
 PYEOF
     ;;
+  --readout)
+    # #4060 — what a ROLE prints when asked about a run. Same route, same
+    # numbers as the nudge Jeff got and the page he opens. Optional run id;
+    # default latest. Exit 1 when the api cannot answer — never a home-made count.
+    _rid="${2:-latest}"
+    _api="${NIGHTLY_API:-http://localhost:3340}"
+    _ro=$(mktemp "${TMPDIR:-/tmp}/nightly-readout.XXXXXX")
+    _rc=$(curl -s --max-time 15 -o "$_ro" -w '%{http_code}' "$_api/api/chorus/nightly/runs/$_rid?format=text" 2>/dev/null || echo 000)
+    if [ "$_rc" = "200" ]; then cat "$_ro"; rm -f "$_ro"; exit 0; fi
+    echo "nightly-suites: no readout — $_api answered HTTP $_rc for run '$_rid' (see $_api/api/chorus/nightly/runs for the recorded ids)" >&2
+    rm -f "$_ro"; exit 1
+    ;;
   --run-one)
     # #3606 — run a single suite exactly as the nightly would (stack-gate
     # included), emit its SUITE line, exit 0/1 on pass/fail. Gives a red suite
@@ -1429,9 +1482,11 @@ PYEOF
     emit_run_summary "$out"
     emit_pipeline_run "$out" "$(( ($(date +%s) - ${_t0:-$(date +%s)}) * 1000 ))"
     emit_suite_results "$out"; [ "${NIGHTLY_NO_NUDGE:-0}" = "1" ] || notify_results "$out"
+    # #4060 — the readout reaches Jeff last, after the record is complete.
+    [ "${NIGHTLY_NO_NUDGE:-0}" = "1" ] || deliver_readout
     ;;
   *)
-    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all|--last-run|--run-one <kind> <path>}" >&2
+    echo "Usage: $0 {--list-npm|--list-cargo|--list-shell|--list-bats|--list-cucumber|--list-all|--run-all|--last-run|--readout [run-id]|--run-one <kind> <path>}" >&2
     exit 2
     ;;
 esac

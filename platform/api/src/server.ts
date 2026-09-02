@@ -39,6 +39,7 @@ import { modelRelationshipsHandler, SparqlSelectResponse } from './handlers/athe
 import { buildTestRunReport, lastRunSuites, renderStoredRun, renderTestRun, StoredRun, TEST_RUN_CSS } from './handlers/test-run-report';
 import { classAtlasHandler } from './handlers/class-atlas';
 import { parseNightlyLog, renderNightlyPage } from './handlers/nightly-report';
+import { parseAllRuns, findRun, buildReadout, renderReadoutText } from './handlers/nightly-readout';
 import { fetchLoomAnalytics, LoomCardRow } from './handlers/loom-analytics';
 
 /** Extract a string message from an unknown error. #2463 wave 1: replaces `catch (err: any)` + `err.message`. */
@@ -473,20 +474,63 @@ app.get('/test-run', async (_req: Request, res: Response) => {
   res.type('html').send(TEST_RUN_CSS + renderStoredRun(await latestStoredRun()) + '<hr>' + renderTestRun(doc));
 });
 
-app.get('/nightly', (_req: Request, res: Response) => {
+// #4060 — the READOUT. One function (buildReadout) computes a run's numbers in
+// Jeff's units; this route serves it as JSON or text, the page below renders
+// the same object, and nightly-suites.sh delivers the text form to Jeff by
+// nudge when a run finishes. A role asked "was last night green" reads this
+// route (`nightly-suites.sh --readout`), so two roles give the same numbers.
+function readNightlyLog(): { text: string; quietForMs: number } {
   const logPath = process.env.NIGHTLY_LOG_PATH
     || path.join(os.homedir(), 'Library/Logs/Chorus/nightly-suites.log');
-  let text = '';
-  let quietForMs = 0;
   try {
-    text = fs.readFileSync(logPath, 'utf8');
-    // #4009 — the log's own mtime is the only honest "when did this run last
-    // say anything". Without it the page cannot tell working from wedged.
-    quietForMs = Date.now() - fs.statSync(logPath).mtimeMs;
-  } catch { /* no run yet — honest empty state */ }
-  const parsed = parseNightlyLog(text);
-  if (parsed) parsed.quietForMs = quietForMs;
-  res.type('html').send(renderNightlyPage(parsed));
+    return { text: fs.readFileSync(logPath, 'utf8'), quietForMs: Date.now() - fs.statSync(logPath).mtimeMs };
+  } catch { return { text: '', quietForMs: 0 }; }
+}
+
+function readoutFor(runId: string) {
+  const runs = parseAllRuns(readNightlyLog().text);
+  const run = findRun(runs, runId);
+  if (!run) return null;
+  const idx = runs.indexOf(run);
+  return { runs, run, readout: buildReadout(run, idx > 0 ? runs[idx - 1] : null) };
+}
+
+app.get('/api/chorus/nightly/runs', (_req: Request, res: Response) => {
+  const runs = parseAllRuns(readNightlyLog().text);
+  res.json({
+    runs: [...runs].reverse().map((r) => ({
+      runId: r.runId, startedAt: r.startedAt, completedAt: r.completedAt ?? null, completed: r.completed,
+      suites: r.rows.length, failed: r.rows.filter((x) => x.status === 'fail').length,
+    })),
+  });
+});
+
+app.get('/api/chorus/nightly/runs/:id', (req: Request, res: Response) => {
+  const found = readoutFor(String(req.params.id));
+  if (!found) { res.status(404).json({ error: `no recorded nightly run ${req.params.id}` }); return; }
+  if (req.query.format === 'text') {
+    // the link points at THIS host — a werk variant links its own page, not prod's
+    const base = process.env.CHORUS_API_PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+    res.type('text/plain').send(renderReadoutText(found.readout, base) + '\n');
+    return;
+  }
+  res.json(found.readout);
+});
+
+app.get('/nightly', (req: Request, res: Response) => {
+  const { text, quietForMs } = readNightlyLog();
+  const wanted = typeof req.query.run === 'string' && req.query.run ? req.query.run : 'latest';
+  const found = readoutFor(wanted);
+  if (!found) {
+    if (wanted !== 'latest') { res.status(404).type('html').send(renderNightlyPage(null)); return; }
+    // no run yet — honest empty state
+    res.type('html').send(renderNightlyPage(parseNightlyLog(text)));
+    return;
+  }
+  // #4009 — the log's own mtime is the only honest "when did this run last
+  // say anything". Only meaningful for the newest run.
+  if (found.run === found.runs[found.runs.length - 1]) found.run.quietForMs = quietForMs;
+  res.type('html').send(renderNightlyPage(found.run, { readout: found.readout, history: found.runs }));
 });
 app.get('/harvest-manifests', sendChorusPage('harvest-manifests.html'));
 app.get('/loom', sendChorusPage('loom.html'));

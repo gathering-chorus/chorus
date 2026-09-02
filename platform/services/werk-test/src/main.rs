@@ -1403,29 +1403,117 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
         eprintln!("!! npm:{} has neither jest nor a test script — FAIL LOUD (no silent green)", pkg);
         return (false, Vec::new());
     }
-    let mut cmd = Command::new("npm");
-    cmd.args(["test", "--silent"]).current_dir(&pkg_dir);
-    cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
-    apply_suite_world(&mut cmd, werk);
-    match run_capped_unit(&mut cmd, &format!("npm:{}", pkg)) {
-        Some((ok, stdout, stderr)) => {
-            let text = format!("{}{}", stdout, stderr);
-            if !ok {
-                let tail: Vec<&str> = text.lines().rev().take(20).collect();
-                eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
-            }
-            let cases = werk_test::parse_bats_cases(&text)
-                .into_iter()
-                .map(|(name, result)| CaseResult {
-                    file_path: format!("{}/", pkg),
-                    test_name: name,
-                    result,
-                })
-                .collect();
-            (ok, cases)
-        }
-        None => (false, Vec::new()),
+    // File attribution, and why this runs one file at a time.
+    //
+    // `npm test` here is `tsx --test tests/*.test.ts`, and node:test FLATTENS:
+    // its TAP carries case names and no filename, even when handed many files.
+    // Every case was therefore stored under the PACKAGE directory:
+    //
+    //   registered  platform/mcp-server/tests/word-cap.test.ts :: <case>
+    //   stored      platform/mcp-server/                       :: <case>
+    //
+    // The reconcile census joins on (file, name), so nothing matched and 245
+    // passing mcp-server tests were counted as "never ran" every night — about
+    // half the whole never-ran gap, and none of it real.
+    //
+    // Running per file is the only way to know which file a case came from.
+    // It costs one process start per test file and buys a ledger that
+    // cross-foots.
+    let files = npm_test_files(&pkg_dir);
+    if files.is_empty() {
+        eprintln!("!! npm:{} has a test script but no test files found — FAIL LOUD", pkg);
+        return (false, Vec::new());
     }
+    // The runner is invoked DIRECTLY, not through `npm test -- <file>`: the
+    // script globs its own files, so an appended path is additive — it runs the
+    // whole suite again and attributes all 245 cases to whichever file was
+    // named. Checked before shipping; it would have been silently wrong 16×.
+    let Some(runner) = npm_test_runner(&pkg_dir) else {
+        eprintln!("!! npm:{} test script is not a node:test runner — cannot attribute \
+cases to files; refusing to store package-level rows that can never cross-foot", pkg);
+        return (false, Vec::new());
+    };
+    let mut all_ok = true;
+    let mut cases: Vec<CaseResult> = Vec::new();
+    for rel in &files {
+        let mut cmd = Command::new(&runner.0);
+        cmd.args(&runner.1).arg(rel).current_dir(&pkg_dir);
+        cmd.env("CHORUS_CONTEXT", ""); // #3918 — test child stays refusable
+        apply_suite_world(&mut cmd, werk);
+        match run_capped_unit(&mut cmd, &format!("npm:{}:{}", pkg, rel)) {
+            Some((ok, stdout, stderr)) => {
+                let text = format!("{}{}", stdout, stderr);
+                if !ok {
+                    all_ok = false;
+                    let tail: Vec<&str> = text.lines().rev().take(20).collect();
+                    eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
+                }
+                cases.extend(werk_test::parse_bats_cases(&text).into_iter().map(
+                    |(name, result)| CaseResult {
+                        file_path: format!("{}/{}", pkg, rel),
+                        test_name: name,
+                        result,
+                    },
+                ));
+            }
+            None => all_ok = false,
+        }
+    }
+    (all_ok, cases)
+}
+
+/// The node:test runner behind a package's `test` script, as (program, args)
+/// with the file glob stripped — so one file can be appended. Recognises the
+/// two shapes we run: `tsx --test <glob>` and `node --test <glob>`.
+fn npm_test_runner(pkg_dir: &str) -> Option<(String, Vec<String>)> {
+    let json = std::fs::read_to_string(format!("{}/package.json", pkg_dir)).ok()?;
+    let script = json
+        .lines()
+        .find(|l| l.contains("\"test\":"))?
+        .split_once(':')?
+        .1
+        .trim()
+        .trim_end_matches(',')
+        .trim()
+        .trim_matches('"')
+        .to_string();
+    if !script.contains("--test") {
+        return None;
+    }
+    let mut toks = script.split_whitespace().map(str::to_string);
+    let prog = toks.next()?;
+    // keep flags, drop the glob (anything that is not a flag)
+    let args: Vec<String> = toks.filter(|t| t.starts_with('-')).collect();
+    if !args.iter().any(|a| a == "--test") {
+        return None;
+    }
+    let prog = if prog == "tsx" { "npx".to_string() } else { prog };
+    let args = if prog == "npx" {
+        let mut v = vec!["--no-install".to_string(), "tsx".to_string()];
+        v.extend(args);
+        v
+    } else {
+        args
+    };
+    Some((prog, args))
+}
+
+/// The package's test files, package-relative, sorted. Mirrors what the test
+/// script globs; used so each file can be run on its own for attribution.
+fn npm_test_files(pkg_dir: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for sub in ["tests", "test"] {
+        let dir = format!("{}/{}", pkg_dir, sub);
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            if name.ends_with(".test.ts") || name.ends_with(".test.js") {
+                out.push(format!("{}/{}", sub, name));
+            }
+        }
+    }
+    out.sort();
+    out
 }
 
 /// #3912 — run jest on an explicit registered-file selection. Paths arrive
