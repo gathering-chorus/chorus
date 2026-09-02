@@ -136,6 +136,10 @@ export type NightlyPageOpts = {
   readout?: {
     runId: string;
     durationMin: number | null;
+    failed?: number;
+    /** #4073 — counts by derived label; rendered as the split line */
+    byLabel?: { 'product-broke': number; 'test-wrong': number; unmeasured: number };
+    reds?: { suite: string; label: string }[];
     changes: {
       previousRunId: string | null;
       newlyRed: { owner: string; suite: string }[];
@@ -161,7 +165,29 @@ function renderReadoutBanner(o: NightlyPageOpts | undefined): string {
     ...c.newlyRed.map((x) => `<li class="new">new: ${esc(x.owner)} ${esc(x.suite)}</li>`),
     ...c.fixed.map((x) => `<li class="fixed">fixed: ${esc(x.owner)} ${esc(x.suite)}</li>`),
   ].join('');
-  return `<div class="banner readout"><span>took ${esc(dur)}</span><span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
+  return `<div class="banner readout"><span>took ${esc(dur)}</span>${splitLine(r)}<span>${delta}</span>${detail ? `<ul class="delta">${detail}</ul>` : ''}</div>`;
+}
+
+/** #4073 — "4 red: 2 product broke, 1 test wrong, 1 unmeasured", derived from
+ *  run history. Empty when the readout carries no split (older callers). */
+function splitLine(r: NonNullable<NightlyPageOpts['readout']>): string {
+  const b = r.byLabel;
+  if (!b || !r.failed) return '';
+  return `<span class="split"><b>${r.failed} red:</b> ${b['product-broke']} product broke · ${b['test-wrong']} test wrong · ${b.unmeasured} unmeasured</span>`;
+}
+
+function labelText(label: string): string {
+  if (label === 'product-broke') return 'PRODUCT BROKE';
+  if (label === 'test-wrong') return 'TEST WRONG';
+  return label === 'unmeasured' ? 'UNMEASURED' : '';
+}
+
+/** the label cell for a red row; blank for non-red rows */
+function labelCell(o: NightlyPageOpts | undefined, r: NightlyRow): string {
+  if (r.status !== 'fail') return '<td class="lbl"></td>';
+  const hit = o?.readout?.reds?.find((x) => x.suite === displayPath(r.path));
+  const label = hit?.label ?? '';
+  return `<td class="lbl ${esc(label)}">${labelText(label)}</td>`;
 }
 
 function renderHistory(o: NightlyPageOpts | undefined, current: string): string {
@@ -226,7 +252,7 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   const partial = notFinishedBanner(run);
   const row = (r: NightlyRow) => `
     <tr class="${esc(r.status)}">
-      <td class="st">${esc(r.status)}</td>
+      <td class="st">${esc(r.status)}</td>${labelCell(opts, r)}
       <td class="kind">${esc(r.kind)}</td>
       <td class="path">${esc(displayPath(r.path))}</td>
       <td>${esc(r.owner)}</td>
@@ -244,7 +270,7 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   ${renderReadoutBanner(opts)}
   ${renderHistory(opts, run.startedAt)}
   <table>
-    <thead><tr><th></th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
+    <thead><tr><th></th><th>means</th><th>tier</th><th>suite</th><th>owner</th><th>result</th></tr></thead>
     <tbody>${ordered.map(row).join('')}</tbody>
   </table>
   <p class="prov">cargo tier runs via <code>werk-test --nightly</code> — registry selection, nextest, typed needs-stack skips (#3920). Page renders the run record verbatim; it holds no verdict of its own.</p>`;
@@ -270,6 +296,9 @@ function page(title: string, body: string): string {
   details.history ul { columns:2; padding-left:1.25rem; margin:.5rem 0 0; }
   details.history li.cur { font-weight:700; color:var(--fg); }
   .hl { font-size:.85rem; }
+  .split b { color:var(--fg); }
+  td.lbl { font-size:.75rem; font-weight:700; white-space:nowrap; }
+  td.lbl.product-broke { color:var(--red); } td.lbl.test-wrong { color:var(--amber); } td.lbl.unmeasured { color:var(--mut); }
   .verdict { font-size:1.6rem; font-weight:700; }
   .banner.green .verdict { color:var(--green); } .banner.red .verdict { color:var(--red); }
   .counts, .when { color:var(--mut); }

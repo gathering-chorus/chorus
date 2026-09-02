@@ -17,7 +17,12 @@ import { parseNightlyLog, displayPath, type NightlyRun, type NightlyRow } from '
 
 export type NightlyRunRecord = NightlyRun & { runId: string };
 
-export type RedSuite = { owner: string; suite: string; kind: string };
+/** #4073 — the three things a red can mean, DERIVED from the run history
+ *  (never declared by the test): the product broke, the test is wrong, or
+ *  nothing was measured. */
+export type RedLabel = 'product-broke' | 'test-wrong' | 'unmeasured';
+
+export type RedSuite = { owner: string; suite: string; kind: string; label: RedLabel };
 
 export type Readout = {
   runId: string;
@@ -34,6 +39,8 @@ export type Readout = {
   silent: number;
   reds: RedSuite[];
   redByOwner: Record<string, number>;
+  /** #4073 — how many reds of each label; the zero-red bar measures product-broke */
+  byLabel: Record<RedLabel, number>;
   changes: {
     /** null = no earlier run in the record; the delta is then UNKNOWN, not zero */
     previousRunId: string | null;
@@ -71,7 +78,46 @@ export function findRun(runs: NightlyRunRecord[], id: string): NightlyRunRecord 
   return runs.find((r) => r.runId === id) ?? null;
 }
 
-const toRed = (r: NightlyRow): RedSuite => ({ owner: r.owner, suite: displayPath(r.path), kind: r.kind });
+/** Failure text that names the machine's condition, not the product. */
+const MACHINE_WORDS = /latency|timeout|timed out|under load|ECONNREFUSED|no live stack|stack-down|stack down|load \d|wedged/i;
+/** Summaries where the runner took no reading at all. */
+const NO_READING = /never ran|runner produced no|UNMEASURED|no parseable output|killed after|produced no results|0 pass, 0 fail/i;
+
+/** #4073 — label one red from its own history (oldest → newest, the newest
+ *  being this run's fail) and its summary line. Pure; the readout is the only
+ *  caller. Rules, in order:
+ *    unmeasured    the summary says the runner never took a reading
+ *    test-wrong    the summary names the machine, or the suite flipped
+ *                  pass/fail ≥2 times in its last 10 runs (whack-a-mole)
+ *    product-broke everything else: a red that has held, or a first red
+ *                  after a steady green history
+ *  NEGATIVE PROOFS in nightly-red-labels-4073.test.ts: red-every-run is never
+ *  test-wrong; a single red with no history is never unmeasured. */
+export function labelRed(history: string[], summary: string): RedLabel {
+  if (NO_READING.test(summary)) return 'unmeasured';
+  if (MACHINE_WORDS.test(summary)) return 'test-wrong';
+  const recent = history.slice(-10);
+  let flips = 0;
+  let prev = '';
+  for (const v of recent) { if (prev && v !== prev) flips++; prev = v; }
+  return flips >= 2 ? 'test-wrong' : 'product-broke';
+}
+
+const LABEL_WORDS: Record<RedLabel, string> = { 'product-broke': 'PRODUCT BROKE', 'test-wrong': 'TEST WRONG', unmeasured: 'UNMEASURED' };
+
+/** The pass/fail history of one suite across the recorded runs up to and
+ *  including `upTo` (oldest first), keyed by display path. */
+function suiteHistory(history: NightlyRunRecord[], upTo: NightlyRunRecord, suite: string): string[] {
+  const out: string[] = [];
+  for (const r of history) {
+    const row = r.rows.find((x) => displayPath(x.path) === suite);
+    if (row && (row.status === 'pass' || row.status === 'fail')) out.push(row.status);
+    if (r === upTo) break;
+  }
+  return out;
+}
+
+const toRed = (r: NightlyRow, label: RedLabel): RedSuite => ({ owner: r.owner, suite: displayPath(r.path), kind: r.kind, label });
 
 function minutesBetween(a: string, b: string): number | null {
   const t0 = Date.parse(a), t1 = Date.parse(b);
@@ -85,7 +131,7 @@ function diffRuns(rows: NightlyRow[], reds: RedSuite[], prev: NightlyRunRecord |
   const changes: Readout['changes'] = { previousRunId: null, newlyRed: [], fixed: [], stillRed: [], gone: [] };
   if (!prev) return changes;
   changes.previousRunId = prev.runId;
-  const prevRed = new Map(prev.rows.filter((r) => r.status === 'fail').map((r) => [displayPath(r.path), toRed(r)]));
+  const prevRed = new Map(prev.rows.filter((r) => r.status === 'fail').map((r) => [displayPath(r.path), toRed(r, 'product-broke')]));
   const nowAll = new Set(rows.map((r) => displayPath(r.path)));
   const nowRed = new Set(reds.map((r) => r.suite));
   for (const r of reds) (prevRed.has(r.suite) ? changes.stillRed : changes.newlyRed).push(r);
@@ -98,9 +144,19 @@ function diffRuns(rows: NightlyRow[], reds: RedSuite[], prev: NightlyRunRecord |
 
 const countStatus = (rows: NightlyRow[], status: string): number => rows.filter((r) => r.status === status).length;
 
-export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | null): Readout {
+export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | null, history: NightlyRunRecord[] = []): Readout {
   const rows = run.rows;
-  const reds = rows.filter((r) => r.status === 'fail').map(toRed);
+  const hist = history.length ? history : [run];
+  const reds = rows.filter((r) => r.status === 'fail').map((r) => {
+    const suite = displayPath(r.path);
+    return toRed(r, labelRed(suiteHistory(hist, run, suite), r.summary));
+  });
+  const byLabel: Record<RedLabel, number> = { 'product-broke': 0, 'test-wrong': 0, unmeasured: 0 };
+  for (const r of reds) {
+    if (r.label === 'product-broke') byLabel['product-broke'] += 1;
+    else if (r.label === 'test-wrong') byLabel['test-wrong'] += 1;
+    else byLabel.unmeasured += 1;
+  }
   const redByOwner: Record<string, number> = {};
   for (const r of reds) redByOwner[r.owner] = (redByOwner[r.owner] ?? 0) + 1;
   const completedAt = run.completed ? (run.completedAt ?? null) : null;
@@ -117,6 +173,7 @@ export function buildReadout(run: NightlyRunRecord, prev: NightlyRunRecord | nul
     silent: rows.filter((r) => !['pass', 'fail', 'skip'].includes(r.status)).length,
     reds,
     redByOwner,
+    byLabel,
     changes: diffRuns(rows, reds, prev),
   };
 }
@@ -132,6 +189,12 @@ function headLine(r: Readout): string {
     r.silent ? `, ${r.silent} no output` : '',
   ].join('');
   return `nightly ${when} took ${r.durationMin ?? '?'} min: ${r.suites} suites, ${r.failed} red${extras}`;
+}
+
+/** #4073 — the split line: "4 red: 2 product broke, 1 test wrong, 1 unmeasured". */
+function labelLine(r: Readout): string {
+  const b = r.byLabel;
+  return `${r.failed} red: ${b['product-broke']} product broke, ${b['test-wrong']} test wrong, ${b.unmeasured} unmeasured`;
 }
 
 const redLine = (prefix: string, red: RedSuite): string => `  ${prefix}${red.owner.padEnd(6)} ${red.suite}`;
@@ -150,7 +213,8 @@ export function renderReadoutText(r: Readout, baseUrl: string): string {
   const lines: string[] = [headLine(r)];
   if (r.failed > 0) {
     const owners = Object.entries(r.redByOwner).sort((a, b) => b[1] - a[1]).map(([o, n]) => `${o} ${n}`).join(', ');
-    lines.push(`red by owner: ${owners}`, ...r.reds.map((red) => redLine('', red)));
+    lines.push(labelLine(r), `red by owner: ${owners}`,
+      ...r.reds.map((red) => redLine(`${LABEL_WORDS[red.label].padEnd(14)} `, red)));
   }
   lines.push(...deltaLines(r.changes), `${baseUrl}/nightly?run=${r.runId}`);
   return lines.join('\n');
