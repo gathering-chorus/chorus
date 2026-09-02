@@ -15,8 +15,9 @@
 #   authz-scope-probe.sh
 #
 # Route: /api/athena/reload is surface-post-api-athena-reload (requiresScope
-# domains:code, security-3619-surfaces-final.ttl). It re-reads the model from the
-# store; against a werk variant it mutates nothing durable.
+# domains:code, security-3619-surfaces-final.ttl). It redeploys the MODEL_SET into
+# the api's own store (CHORUS_FUSEKI); against a werk variant that is the werk's
+# in-memory dataset, so nothing durable is touched.
 set -uo pipefail
 
 API="${AUTHZ_API:-http://localhost:3343}"

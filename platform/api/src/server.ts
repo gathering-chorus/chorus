@@ -2209,7 +2209,7 @@ const ICD_PFX = 'PREFIX icd: <https://jeffbridwell.com/icd#>';
 import { escSparql, icdSlug } from './sparql-helpers';
 
 // ICD SPARQL client + domain resolver moved to src/icd-sparql.ts (#2205 wave 9).
-import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv, basicAuthHeader } from './icd-sparql';
+import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv } from './icd-sparql';
 const _icd = createIcdSparqlClient({ queryUrl: FUSEKI_QUERY_URL, updateUrl: FUSEKI_UPDATE_URL, auth: fusekiWriteAuthFromEnv() });
 const icdSparqlQuery = _icd.query;
 const icdSparqlUpdate = _icd.update;
@@ -3559,41 +3559,53 @@ app.delete('/api/athena/subdomains/:id/consumes/:targetId', async (req: Request,
   }
 });
 
-// POST /api/athena/reload — reload ontology from TTL into Fuseki
+// POST /api/athena/reload — redeploy the MODEL SET into this api's store.
+//
+// #4058 — this surface requires urn:chorus:domains:code, which no principal
+// held for eight weeks, so nobody could reach what it did. What it did was
+// DROP urn:chorus:ontology and PUT back chorus.ttl ALONE — one of 24 files in
+// athena-deploy-model.sh's MODEL_SET. Reproduced on the werk store before this
+// change: 5247 triples -> 3170, every APISurface/requiresScope row gone, i.e.
+// the security envelope's own surface table erased by the first caller the
+// grant lets in. Granting the scope without fixing this would have armed it
+// against prod. So the handler no longer has its own loader: it runs the one
+// governed deployer (per-subject additive merge, verified, spine-stamped —
+// #3550/#3736), pointed at THIS api's store (CHORUS_FUSEKI, so a werk variant
+// redeploys its own dataset, never prod's).
 app.post('/api/athena/reload', async (_req: Request, res: Response) => {
   const start = Date.now();
-  try {
-    const ttlPath = path.join(REPO_ROOT, 'roles/silas/ontology/chorus.ttl');
-    if (!fs.existsSync(ttlPath)) {
-      return res.status(404).json(athenaEnvelope('reload', { error: `TTL file not found: ${ttlPath}` }, Date.now() - start, { error: true }));
-    }
-    const ttlContent = fs.readFileSync(ttlPath, 'utf-8');
-    // #1956: Only drop+replace ontology graph. Instances graph (API-created data) is untouched.
-    await athenaSparqlUpdate(`DROP SILENT GRAPH <${ATHENA_GRAPH}>`);
-    // #4058 — same store as the DROP above (CHORUS_FUSEKI, so a werk variant
-    // reloads ITS graph, never prod's), and the write credential the DROP
-    // already carries. Before this the load was a bare PUT to prod's pods:
-    // it 401'd in every variant (500 to the caller) — and had Fuseki been
-    // open it would have written the werk's TTL into prod from a demo.
-    const loadAuth = fusekiWriteAuthFromEnv();
-    const loadRes = await fetch(ATHENA_FUSEKI_BASE + '/data?graph=' + encodeURIComponent(ATHENA_GRAPH), {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'text/turtle',
-        ...(loadAuth ? { Authorization: basicAuthHeader(loadAuth) } : {}),
-      },
-      body: ttlContent,
-    });
-    if (!loadRes.ok) {
-      const text = await loadRes.text();
-      throw new Error(`Fuseki load ${loadRes.status}: ${text.slice(0, 200)}`);
-    }
-    const countResult = await athenaSparqlQuery(loadSparql('health'));
-    const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
-    res.json(athenaEnvelope('reload', { status: 'ok', source: ttlPath, tripleCount }, Date.now() - start));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('reload', { error: errMsg(err) }, Date.now() - start, { error: true }));
+  const script = path.join(REPO_ROOT, 'platform/scripts/athena-deploy-model.sh');
+  if (!fs.existsSync(script)) {
+    return res.status(404).json(athenaEnvelope('reload', { error: `deployer not found: ${script}` }, Date.now() - start, { error: true }));
   }
+  execFile('bash', [script], {
+    env: {
+      ...process.env,
+      CHORUS_ROOT: REPO_ROOT,
+      FUSEKI_GSP: ATHENA_FUSEKI_BASE + '/data',
+      FUSEKI_QUERY: ATHENA_FUSEKI_BASE + '/query',
+      FUSEKI_UPDATE: ATHENA_FUSEKI_BASE + '/update',
+    },
+    timeout: 10 * 60 * 1000,
+    maxBuffer: 16 * 1024 * 1024,
+  }, async (err, stdout, stderr) => {
+    const tail = (s: string) => s.trim().split('\n').slice(-12).join('\n');
+    if (err) {
+      res.status(500).json(athenaEnvelope('reload', {
+        error: `athena-deploy-model.sh failed: ${errMsg(err)}`,
+        stderr: tail(String(stderr)),
+        stdout: tail(String(stdout)),
+      }, Date.now() - start, { error: true }));
+      return;
+    }
+    try {
+      const countResult = await athenaSparqlQuery(loadSparql('health'));
+      const tripleCount = parseInt(countResult.results.bindings[0]?.count?.value || '0', 10);
+      res.json(athenaEnvelope('reload', { status: 'ok', source: script, store: ATHENA_FUSEKI_BASE, tripleCount, deployer: tail(String(stdout)) }, Date.now() - start));
+    } catch (e: unknown) {
+      res.status(500).json(athenaEnvelope('reload', { error: errMsg(e) }, Date.now() - start, { error: true }));
+    }
+  });
 });
 
 // #2627: helpers extracted from /api/athena/validate route.
