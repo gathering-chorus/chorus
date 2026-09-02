@@ -330,7 +330,9 @@ export class TilePoller {
       tile.lastAction = last.digest || '';
       if (last.ts) {
         const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
-        tile.lastActionAge = formatAge(ageSecs);
+        // #4028 — the age label belongs to the same source as the state: the API
+        // row's lastActivity. The pane's own clock produced "building · 22m ago".
+        if (!this.rolesFromApi.has(role)) tile.lastActionAge = formatAge(ageSecs);
         // #3869 — the observation stream has always known whether a role is
         // working; the tile read it for the age label and then took `state`
         // from a file agents update by hand. That is why every screenshot Jeff
