@@ -2209,7 +2209,7 @@ const ICD_PFX = 'PREFIX icd: <https://jeffbridwell.com/icd#>';
 import { escSparql, icdSlug } from './sparql-helpers';
 
 // ICD SPARQL client + domain resolver moved to src/icd-sparql.ts (#2205 wave 9).
-import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv } from './icd-sparql';
+import { createIcdSparqlClient, createIcdDomainResolver, fusekiWriteAuthFromEnv, basicAuthHeader } from './icd-sparql';
 const _icd = createIcdSparqlClient({ queryUrl: FUSEKI_QUERY_URL, updateUrl: FUSEKI_UPDATE_URL, auth: fusekiWriteAuthFromEnv() });
 const icdSparqlQuery = _icd.query;
 const icdSparqlUpdate = _icd.update;
@@ -3570,9 +3570,18 @@ app.post('/api/athena/reload', async (_req: Request, res: Response) => {
     const ttlContent = fs.readFileSync(ttlPath, 'utf-8');
     // #1956: Only drop+replace ontology graph. Instances graph (API-created data) is untouched.
     await athenaSparqlUpdate(`DROP SILENT GRAPH <${ATHENA_GRAPH}>`);
-    const loadRes = await fetch('http://localhost:3030/pods/data?graph=' + encodeURIComponent(ATHENA_GRAPH), {
+    // #4058 — same store as the DROP above (CHORUS_FUSEKI, so a werk variant
+    // reloads ITS graph, never prod's), and the write credential the DROP
+    // already carries. Before this the load was a bare PUT to prod's pods:
+    // it 401'd in every variant (500 to the caller) — and had Fuseki been
+    // open it would have written the werk's TTL into prod from a demo.
+    const loadAuth = fusekiWriteAuthFromEnv();
+    const loadRes = await fetch(ATHENA_FUSEKI_BASE + '/data?graph=' + encodeURIComponent(ATHENA_GRAPH), {
       method: 'PUT',
-      headers: { 'Content-Type': 'text/turtle' },
+      headers: {
+        'Content-Type': 'text/turtle',
+        ...(loadAuth ? { Authorization: basicAuthHeader(loadAuth) } : {}),
+      },
       body: ttlContent,
     });
     if (!loadRes.ok) {
