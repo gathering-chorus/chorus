@@ -191,8 +191,16 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
     (r) => !['pass', 'fail', 'skip'].includes(r.status),
   );
   const tests = tallyTests(run.rows);
-  const verdict = reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED SUITES`;
-  const cls = reds.length === 0 ? 'green' : 'red';
+  // #4063 — a run that has not completed has NO verdict yet. On 2026-09-02
+  // 13:5x the 13:30 run was 13 suites in and the page bannered "ALL GREEN,
+  // 12 passed / 13 total" (Silas): the green was computed over whichever
+  // subset had reported — the vacuous-pass class. Partial = IN PROGRESS, in
+  // amber, with "so far" on every count; green is only ever said of a whole
+  // night.
+  const verdict = !run.completed
+    ? `IN PROGRESS — ${run.rows.length} suite(s) so far, ${reds.length} red so far`
+    : reds.length === 0 ? 'ALL GREEN' : `${reds.length} RED SUITES`;
+  const cls = !run.completed ? 'partial' : reds.length === 0 ? 'green' : 'red';
   // #4009 — say WHICH not-finished state this is. "PARTIAL" covered both a run
   // still working and a run wedged 38 minutes; a reader could not act on it.
   const quiet = run.quietForMs ?? 0;
