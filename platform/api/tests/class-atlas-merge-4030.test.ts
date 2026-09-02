@@ -23,7 +23,9 @@ describe('class atlas merging (#4030)', () => {
     expect(card.name).toBe('Card');
     expect(card.edges).toEqual([
       { name: 'ownedBy', to: 'Role', multiplicity: '0..*', crossDomain: true },
-      { name: '(inverse path)', to: 'Chunk', multiplicity: '0..*', crossDomain: false },
+      // #4053 — a blank-node path is now flagged `inverse`, so a reverse
+      // requirement is distinguishable from a forward one.
+      { name: '(inverse path)', to: 'Chunk', multiplicity: '0..*', crossDomain: false, inverse: true },
     ]);
     expect(card.attributes).toEqual([{ name: 'title', type: 'string', min: 0, max: null }]);
   });
