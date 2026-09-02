@@ -25,8 +25,10 @@ ROUTE="${AUTHZ_ROUTE:-/api/athena/reload}"
 [ -n "${SCOPED_TOKEN:-}" ]   || { echo "authz-scope-probe: SCOPED_TOKEN unset" >&2;   exit 2; }
 [ -n "${UNSCOPED_TOKEN:-}" ] || { echo "authz-scope-probe: UNSCOPED_TOKEN unset" >&2; exit 2; }
 
+# A scoped call to /reload runs the full model deploy (24 files, ~1 min); a
+# refused call answers in ms. One generous ceiling for both, overridable.
 probe() {
-  curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+  curl -s -o /dev/null -w '%{http_code}' --max-time "${AUTHZ_TIMEOUT:-600}" -X POST \
     -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
     --data '{}' "$API$ROUTE" 2>/dev/null || echo 000
 }
