@@ -36,3 +36,11 @@ wren   10:00–11:30 waiting #4045 (a presented demo with no go — true, I was 
 ```
 
 Silas's probes counted as work; his quiet hour did not. The declared file had said `wren=idle` through six pipeline rounds that morning; the streams say `waiting`, which is what was actually happening.
+
+## 18:22 — re-present after #4075 landed
+
+The pipeline re-announced round 127's proof as "same patch, prove already paid" while the wren variant
+slot had been torn down by #4075's accept (env-down runs per role, and two cards of one role share the
+slot). The demo nudge pointed at a dead :3345. Re-proving with a content change so env-up runs again;
+the shared-slot teardown is the gap to close next (a presented sibling card must not lose its variant
+to another card's land).
