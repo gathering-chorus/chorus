@@ -34,15 +34,24 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   nav.toc a.filled { color: var(--text); border-color: #c9ced6; }
   @media (min-width: 700px) { nav.toc { flex-wrap: wrap; position: static; } }
   /* a section is a chapter: numbered heading, then the model's text rendered as prose */
-  section.ch { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
-  section.ch h2 { font-size: 1.08rem; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
-  section.ch h2 .n { color: var(--muted); font-weight: 400; font-size: .85rem; min-width: 1.4em; }
-  section.ch h2 .src { margin-left: auto; font-size: .68rem; color: var(--muted); font-weight: 400; }
-  section.ch p { margin: 0 0 8px; font-size: .93rem; }
-  section.ch p:last-child { margin-bottom: 0; }
-  section.ch ul, section.ch ol { margin: 0 0 8px 1.2em; font-size: .93rem; }
-  section.ch li { margin-bottom: 3px; }
-  section.ch .unwritten { color: var(--muted); font-style: italic; font-size: .88rem; }
+  /* each chapter is a fold (Jeff 2026-09-03 10:08: "the folds need to be able to expand and collapse"); open by default, click the heading to collapse; state remembered per chapter in this browser */
+  section.ch, details.ch { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  details.ch > summary { list-style: none; cursor: pointer; }
+  details.ch > summary::-webkit-details-marker { display: none; }
+  details.ch > summary h2 { margin: 0; }
+  details.ch > summary h2 .n::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--muted); font-size: .8em; transition: transform .12s; }
+  details.ch[open] > summary h2 .n::before { transform: rotate(90deg); }
+  details.ch[open] > summary { margin-bottom: 8px; }
+  .foldall { display: flex; gap: 12px; justify-content: flex-end; font-size: .8rem; margin: 4px 0 -4px; }
+  .foldall a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  section.ch h2, details.ch h2 { font-size: 1.08rem; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
+  .ch h2 .n { color: var(--muted); font-weight: 400; font-size: .85rem; min-width: 1.4em; }
+  .ch h2 .src { margin-left: auto; font-size: .68rem; color: var(--muted); font-weight: 400; }
+  .ch p { margin: 0 0 8px; font-size: .93rem; }
+  .ch p:last-child { margin-bottom: 0; }
+  .ch ul, .ch ol { margin: 0 0 8px 1.2em; font-size: .93rem; }
+  .ch li { margin-bottom: 3px; }
+  .ch .unwritten { color: var(--muted); font-style: italic; font-size: .88rem; }
   section.ch.empty { padding: 8px 16px; background: transparent; border-style: dashed; }
   section.ch.empty h2 { margin: 0; font-size: .95rem; color: var(--muted); }
   /* the model's tables: real tables on desktop; on a phone each row becomes a card with labelled cells */
@@ -137,6 +146,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       ['references',    'References'],
       ['comment',       'Notes'],
     ];
+    // fold state: open unless this browser collapsed it before (localStorage, per chapter); a #hash always opens its target
+    const foldKey = k => `athena.product.fold.${k}`;
+    const foldOpen = k => { try { return localStorage.getItem(foldKey(k)) !== 'closed'; } catch (_) { return true; } };
     const has = k => k === 'composition' ? doms.length > 0 : !!(e[k] && String(e[k]).trim());
     const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
     const chapterHtml = chapters.map(([k, t], n) => {
@@ -147,7 +159,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
         body = `<div class="doms">${doms.map(d => { const de = domsByName[d] || {}; const v = asArray(de.definesVocabulary).length;
           return `<a href="domain.html?d=${encodeURIComponent(d)}">${ownerDot(de.ownedBy)}${esc(d)} <span class="c">${v} class${v !== 1 ? 'es' : ''}</span></a>`; }).join('')}</div>`;
       } else body = render(e[k]);
-      return `<section class="ch" id="${k}"><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src}</span></h2>${body}</section>`;
+      return `<details class="ch" id="${k}"${foldOpen(k) ? ' open' : ''}><summary><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src}</span></h2></summary>${body}</details>`;
     }).join('');
 
     // ── anything the shape declares that the chapters did not place (so nothing served is invisible)
@@ -169,9 +181,16 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>
 <p class="lede"><span class="k">Value proposition</span>${esc(e.valueProposition || '')}</p>
 <nav class="toc">${toc}</nav>
+<div class="foldall"><a data-fold="open">expand all</a><a data-fold="close">collapse all</a></div>
 ${chapterHtml}
 ${restHtml}
 <div class="prov">Rendered from <code>GET /products/${esc(p)}</code> &middot; ${Object.keys(shape).length} properties on the Product shape &middot; ${['created', 'modified'].filter(k => e[k]).map(k => `${k} ${esc(String(e[k]).slice(0, 10))}`).join(' &middot; ')}</div>`;
+    // remember each fold's state; expand/collapse all; a toc jump opens its target
+    const folds = () => Array.from(main.querySelectorAll('details.ch'));
+    folds().forEach(d => d.addEventListener('toggle', () => { try { localStorage.setItem(foldKey(d.id), d.open ? 'open' : 'closed'); } catch (_) {} }));
+    main.querySelectorAll('.foldall a').forEach(a => a.addEventListener('click', () => folds().forEach(d => { d.open = a.dataset.fold === 'open'; })));
+    const openHash = () => { const t = location.hash && main.querySelector(`details.ch${location.hash}`); if (t) t.open = true; };
+    window.addEventListener('hashchange', openHash); openHash();
   } catch (err) { fetchFailed(main, err); }
 })();
 </script>
