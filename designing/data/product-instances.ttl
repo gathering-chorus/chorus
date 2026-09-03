@@ -101,7 +101,7 @@ flowchart LR
     chorus:gaps """No liveness or crash-loop signal; alerts routed by hand; no model-driven monitor contract; no Borg page yet, so the observation surfaces are scattered.""" ;
     chorus:atStep chorus:value-stream-step-proving ;
     chorus:hasDesignDoc chorus:document-borg-product-design ;
-    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:Properties, chorus:alerts-monitors, chorus:logs, chorus:identity, chorus:metrics ;
+    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:properties, chorus:alerts-monitors, chorus:logs, chorus:identity, chorus:metrics ;
     chorus:publishesPreAuth """true""" ;
     chorus:promise """The system sees itself, so no person has to be the eyes. Borg watches everything it can reach — services, health, alerts, and the gap between how the system is drawn and how it actually runs — and surfaces the one thing that needs a person, calmly, to the person who owns it.
 Its product is not dashboards. It is your attention back. Every time the owner is the first to notice a stall is a failure of this product. A service that froze silently for weeks is the anti-promise made concrete, and the reason Borg exists.

@@ -1101,7 +1101,7 @@ chorus:spine-service a chorus:SubDomain ;
 # --- Cross-cutting infrastructure sub-domains ---
 
 # --- properties RETIRED as a SubDomain here (#3489 / ADR-045): collapsed into the
-# punned domain-class chorus:Properties (owl:Class + chorus:Domain) defined below in
+# punned domain-class chorus:properties (owl:Class + chorus:Domain) defined below in
 # the ADR-045 section. partOf borgProduct directly (a first-class config-as-data domain,
 # no longer nested under observability). Edges repointed; blast-radius(Properties-domain) → ∅. ---
 
@@ -1342,8 +1342,8 @@ chorus:observability-domain chorus:hasDomain chorus:time-domain .
 # (loom-policies, domains-domain, services-domain edges: on the product definitions above — #3603)
 
 # Borg has two domains: Observability and Heralds (DEC-2090)
-chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:Properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
-# ^ chorus:Properties wired via hasDomain (product→domain membership, what owl-api enumerates to
+chorus:borgProduct chorus:hasDomain chorus:observability-domain, chorus:properties, chorus:security .   # #3587: repointed from security-domain → security (V2 canonical); security also has partOf borgProduct
+# ^ chorus:properties wired via hasDomain (product→domain membership, what owl-api enumerates to
 # bind the domain API to its product) AS WELL AS partOf (single-parent ownership, #3450). Reciprocal
 # pair, same as observability (belongsTo + hasDomain). #3489: re-homed from observability → borg direct.
 
@@ -1399,11 +1399,11 @@ chorus:pipelines-domain chorus:consumes chorus:infrastructure-domain,
 # --- Cross-cutting consumption: Properties, Security, and Time ---
 # Properties consumed by infrastructure services; Security and Time consumed by all subdomains.
 
-chorus:cards-service chorus:consumes chorus:Properties .
-chorus:observability-domain chorus:consumes chorus:Properties .
-chorus:infrastructure-domain chorus:consumes chorus:Properties .
-chorus:deploys-domain chorus:consumes chorus:Properties .
-chorus:logs-domain chorus:consumes chorus:Properties .
+chorus:cards-service chorus:consumes chorus:properties .
+chorus:observability-domain chorus:consumes chorus:properties .
+chorus:infrastructure-domain chorus:consumes chorus:properties .
+chorus:deploys-domain chorus:consumes chorus:properties .
+chorus:logs-domain chorus:consumes chorus:properties .
 
 chorus:code-domain chorus:consumes chorus:security .
 chorus:gates-service chorus:consumes chorus:security .
@@ -1422,7 +1422,7 @@ chorus:infrastructure-domain chorus:consumes chorus:security .
 chorus:logs-domain chorus:consumes chorus:security .
 chorus:messages-domain chorus:consumes chorus:security .
 chorus:observability-domain chorus:consumes chorus:security .
-chorus:Properties chorus:consumes chorus:security .
+chorus:properties chorus:consumes chorus:security .
 # pulse-metrics-domain security edge removed
 chorus:loom-rcas chorus:consumes chorus:security .
 chorus:streams-domain chorus:consumes chorus:security .
@@ -1453,7 +1453,7 @@ chorus:infrastructure-domain chorus:consumes chorus:time-domain .
 chorus:logs-domain chorus:consumes chorus:time-domain .
 chorus:messages-domain chorus:consumes chorus:time-domain .
 chorus:observability-domain chorus:consumes chorus:time-domain .
-chorus:Properties chorus:consumes chorus:time-domain .
+chorus:properties chorus:consumes chorus:time-domain .
 chorus:security chorus:consumes chorus:time-domain .
 # pulse-metrics-domain time edge removed
 chorus:loom-rcas chorus:consumes chorus:time-domain .
@@ -1828,7 +1828,7 @@ chorus:public   a owl:NamedIndividual ; rdfs:label "public" .
 chorus:internal a owl:NamedIndividual ; rdfs:label "internal" .
 chorus:secret   a owl:NamedIndividual ; rdfs:label "secret" .
 
-# #3584 — chorus:repoTarget was ALSO used (chorus:Properties, and the security-domain decl above)
+# #3584 — chorus:repoTarget was ALSO used (chorus:properties, and the security-domain decl above)
 # but never declared — same undefined-symbol class. Declared here (helps Properties too).
 chorus:repoTarget a owl:DatatypeProperty ;
     rdfs:label "repo target" ;
@@ -2214,7 +2214,7 @@ chorus:prop-role-kade-nudge-word-cap a chorus:Property ;
     chorus:propertyScope "role" .
 
 # --- properties as a Domain — ADR-045 worked example (domain-as-owl-class) ---
-# PUNNING (OWL 2 DL): chorus:Properties is BOTH an owl:Class (class-facet — what owl-api
+# PUNNING (OWL 2 DL): chorus:properties is BOTH an owl:Class (class-facet — what owl-api
 # projects into the API surface) AND a chorus:Domain individual (individual-facet — sits in
 # the ADR-041 tree). The tree bindings + definesVocabulary hang on the INDIVIDUAL facet.
 # FACET DISCIPLINE (Kade DE-review delta #1): NO vocabulary/content triple on the class-facet —
@@ -2455,7 +2455,7 @@ chorus:CommitmentShape a sh:NodeShape ;
     sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype xsd:string ] ) ] .   # #4089 — a probe is a model row (IRI, security) OR a runnable path relative to CHORUS_ROOT (string, tests); commitment-check.sh reads both
 
 # the properties domain-class itself (punned)
-chorus:Properties a owl:Class , chorus:Domain ;
+chorus:properties a owl:Class , chorus:Domain ;
     rdfs:label "properties" ;
     rdfs:comment "Config-as-data domain: service configuration + runtime properties governed as a registry (PropertyKey register-before-use). ADR-045 first worked example of domain-as-owl-class." ;
     chorus:partOf chorus:borgProduct ;
