@@ -15,7 +15,8 @@
 # Shape: chorus:CommitmentShape (Wren, #4064) — chorus:Commitment with
 # chorus:ofService -> chorus:Service, chorus:status sh:in (open closed deferred),
 # chorus:card -> chorus:Card, chorus:probe -> chorus:SecurityProbe |
-# chorus:AuthBoundary. Pinned to urn:chorus:instances (edges-follow-node).
+# chorus:AuthBoundary. Deployed into urn:chorus:domains:security, the graph the
+# security domain declares as its instancesGraph and the one athena-make serves from.
 #
 # ofService = the service whose DOOR the promise is about, not "security" as a
 # bucket: identity (who you are), knowledge-store (the Fuseki key), werk (land

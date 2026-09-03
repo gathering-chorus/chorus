@@ -637,6 +637,10 @@ if [ -z "${TTL:-}" ]; then
     # they ride the security leg, not MODEL_SET (rows in the ontology graph
     # would serve 0 — the products-incident shape of miss).
     "$CHORUS_ROOT/roles/silas/ontology/security-posture-3729.ttl"
+    # #4064 — the security service design's promises as chorus:Commitment rows. The
+    # class is claimed by the security domain, whose instancesGraph is this graph, so
+    # athena-make serves /commitments from here (rows in urn:chorus:instances served 0).
+    "$CHORUS_ROOT/roles/silas/ontology/security-commitments-4064.ttl"
   )
   for ttl in "${SECURITY_SET[@]}"; do
     [ -f "$ttl" ] || { echo "athena-deploy-model: SECURITY_SET TTL not found: $ttl" >&2; exit 1; }
@@ -882,9 +886,6 @@ if [ -z "${TTL:-}" ]; then
   SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
   SERVICES_SET=(
     "$CHORUS_ROOT/designing/data/service-instances.ttl"
-    # #4064 — a service design's promises as chorus:Commitment rows on their Service
-    # (edges-follow-node: they live beside the Service rows in urn:chorus:instances).
-    "$CHORUS_ROOT/roles/silas/ontology/security-commitments-4064.ttl"
   )
   for ttl in "${SERVICES_SET[@]}"; do
     [ -f "$ttl" ] || { echo "athena-deploy-model: SERVICES_SET TTL not found: $ttl" >&2; exit 1; }
