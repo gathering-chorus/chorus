@@ -3632,6 +3632,45 @@
         "files": "Comma-joined changed model source paths"
       }
     },
+    "model.seed.started": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "werk-deploy canonical leg (#4096): the instance seed leg (athena-model seed --deploy) is starting. Runs for a model change OR a seed-only change (designing/data + manifest) — #4080 landed with canonical never seeded because the leg lived inside the model branch.",
+      "fields": {
+        "target": "Always canonical",
+        "seedFiles": "Changed seed sources (designing/data/*.ttl, instance-seed-manifest.txt)",
+        "modelFiles": "Changed model sources, may be empty"
+      }
+    },
+    "model.seed.completed": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "werk-deploy canonical leg (#4096): athena-model seed --deploy finished (the binary output-verifies the declared subjects live).",
+      "fields": {
+        "target": "Always canonical",
+        "seedFiles": "Changed seed sources"
+      }
+    },
+    "model.serve.restarted": {
+      "vertebra": "building",
+      "source": "werk-deploy",
+      "description": "werk-deploy canonical leg (#4096): athena-make kickstarted after a model deploy and reported live, so the served schema carries the landed shapes. A shape is a deploy too — #4045 and #4094 landed new properties that the serve kept hiding until a hand restart.",
+      "fields": {
+        "service": "com.chorus.athena-make",
+        "files": "Changed model sources",
+        "deploy_target": "canonical"
+      }
+    },
+    "model.serve.restart_failed": {
+      "vertebra": "building",
+      "source": "werk-deploy",
+      "description": "werk-deploy canonical leg (#4096): athena-make did not come back after the model deploy; the land dies loudly (model-serve-restart-fail) instead of landing a shape the serve does not carry.",
+      "fields": {
+        "service": "com.chorus.athena-make",
+        "files": "Changed model sources",
+        "reason": "kickstart / liveness error"
+      }
+    },
     "model.deploy.completed": {
       "vertebra": "building",
       "source": "chorus-model-deploy",
