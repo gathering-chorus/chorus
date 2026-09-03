@@ -19,48 +19,56 @@ chorus:unitdomain-cloudflared a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.alert-delivery-test a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.alert-delivery-test → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.alert-delivery-test" ;
+    rdfs:comment "splits to alerts (#4085) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.alert-notifier a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.alert-notifier → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.alert-notifier" ;
+    rdfs:comment "splits to alerts (#4085) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.alert-runner a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.alert-runner → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.alert-runner" ;
-    rdfs:comment "alerts half of alerts-monitors (#4085)" ;
+    rdfs:comment "splits to alerts (#4085) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.api a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.api → services" ;
+    rdfs:label "com.chorus.api → spine" ;
     chorus:launchdLabel "com.chorus.api" ;
-    chorus:hasDomain chorus:services .
+    rdfs:comment "Jeff 10:59: the spine is the broker for services and events; the coordination API host is spine, beside mcp and hooks (Kade: services-domain is DEFINITIONS)" ;
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.api.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.api.werk.silas → services" ;
+    rdfs:label "com.chorus.api.werk.silas → spine" ;
     chorus:launchdLabel "com.chorus.api.werk.silas" ;
-    chorus:hasDomain chorus:services .
+    rdfs:comment "see com.chorus.api" ;
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.api.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.api.werk.wren → services" ;
+    rdfs:label "com.chorus.api.werk.wren → spine" ;
     chorus:launchdLabel "com.chorus.api.werk.wren" ;
-    chorus:hasDomain chorus:services .
+    rdfs:comment "see com.chorus.api" ;
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.athena-make a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.athena-make → athena" ;
+    rdfs:label "com.chorus.athena-make → domains" ;
     chorus:launchdLabel "com.chorus.athena-make" ;
-    chorus:hasDomain chorus:athena .
+    rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
+    chorus:hasDomain chorus:domains .
 
 chorus:unitdomain-com.chorus.athena-make.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.athena-make.werk.silas → athena" ;
+    rdfs:label "com.chorus.athena-make.werk.silas → domains" ;
     chorus:launchdLabel "com.chorus.athena-make.werk.silas" ;
-    chorus:hasDomain chorus:athena .
+    rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
+    chorus:hasDomain chorus:domains .
 
 chorus:unitdomain-com.chorus.athena-make.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.athena-make.werk.wren → athena" ;
+    rdfs:label "com.chorus.athena-make.werk.wren → domains" ;
     chorus:launchdLabel "com.chorus.athena-make.werk.wren" ;
-    chorus:hasDomain chorus:athena .
+    rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
+    chorus:hasDomain chorus:domains .
 
 chorus:unitdomain-com.chorus.bedroom-health a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.bedroom-health → infrastructure" ;
@@ -85,7 +93,7 @@ chorus:unitdomain-com.chorus.cards-orphan-reaper a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.chorus-health a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.chorus-health → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.chorus-health" ;
-    rdfs:comment "monitors half (#4088)" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.clearing a chorus:UnitDomainMapping ;
@@ -96,6 +104,7 @@ chorus:unitdomain-com.chorus.clearing a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.clearing-probe a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.clearing-probe → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.clearing-probe" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.clearing.werk.silas a chorus:UnitDomainMapping ;
@@ -124,9 +133,10 @@ chorus:unitdomain-com.chorus.context-cache-weekly a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:memory .
 
 chorus:unitdomain-com.chorus.crawler-index a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.crawler-index → knowledge" ;
+    rdfs:label "com.chorus.crawler-index → memory" ;
     chorus:launchdLabel "com.chorus.crawler-index" ;
-    chorus:hasDomain chorus:knowledge .
+    rdfs:comment "Kade: writes the chorus index /chorus search reads; same home as context-cache-*" ;
+    chorus:hasDomain chorus:memory .
 
 chorus:unitdomain-com.chorus.cruft-scan a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.cruft-scan → infrastructure" ;
@@ -139,9 +149,10 @@ chorus:unitdomain-com.chorus.daily-review-ops a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:infrastructure .
 
 chorus:unitdomain-com.chorus.daily-review-summary a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.daily-review-summary → board" ;
+    rdfs:label "com.chorus.daily-review-summary → tests" ;
     chorus:launchdLabel "com.chorus.daily-review-summary" ;
-    chorus:hasDomain chorus:board .
+    rdfs:comment "Kade: the 06:05 digest reads --last-run and routes test reds" ;
+    chorus:hasDomain chorus:tests .
 
 chorus:unitdomain-com.chorus.daily-signal-scan a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.daily-signal-scan → board" ;
@@ -151,6 +162,7 @@ chorus:unitdomain-com.chorus.daily-signal-scan a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.deep-health a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.deep-health → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.deep-health" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.embed-worker a chorus:UnitDomainMapping ;
@@ -161,12 +173,14 @@ chorus:unitdomain-com.chorus.embed-worker a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.eventloop-probe a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.eventloop-probe → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.eventloop-probe" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.fuseki-compact a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.fuseki-compact → knowledge" ;
+    rdfs:label "com.chorus.fuseki-compact → infrastructure" ;
     chorus:launchdLabel "com.chorus.fuseki-compact" ;
-    chorus:hasDomain chorus:knowledge .
+    rdfs:comment "Wren: a store, beside fuseki-backup" ;
+    chorus:hasDomain chorus:infrastructure .
 
 chorus:unitdomain-com.chorus.fuseki-perf a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.fuseki-perf → metrics" ;
@@ -186,17 +200,20 @@ chorus:unitdomain-com.chorus.harvest-exporter a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.chorus.heartbeat a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.heartbeat → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.heartbeat" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.heartbeat-probe a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.heartbeat-probe → alerts-monitors" ;
     chorus:launchdLabel "com.chorus.heartbeat-probe" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.chorus.hooks a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.hooks → policies" ;
+    rdfs:label "com.chorus.hooks → spine" ;
     chorus:launchdLabel "com.chorus.hooks" ;
-    chorus:hasDomain chorus:policies .
+    rdfs:comment "Jeff 2026-09-03: the Hook class has to be spine/events (a hook fires on an event and emits events); this row tags the RUNTIME. Each of the 47 hooks gets its own row with the domain of its PURPOSE (policies, skills, memory, messages, spine)." ;
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.index-artifacts a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.index-artifacts → knowledge" ;
@@ -255,9 +272,10 @@ chorus:unitdomain-com.chorus.ops a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:infrastructure .
 
 chorus:unitdomain-com.chorus.pair-heartbeat a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.pair-heartbeat → spine" ;
+    rdfs:label "com.chorus.pair-heartbeat → roles" ;
     chorus:launchdLabel "com.chorus.pair-heartbeat" ;
-    chorus:hasDomain chorus:spine .
+    rdfs:comment "Kade: who is paired with whom; beside session-watcher" ;
+    chorus:hasDomain chorus:roles .
 
 chorus:unitdomain-com.chorus.perf-baseline a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.perf-baseline → metrics" ;
@@ -265,9 +283,10 @@ chorus:unitdomain-com.chorus.perf-baseline a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:metrics .
 
 chorus:unitdomain-com.chorus.posture-capture a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.posture-capture → security" ;
+    rdfs:label "com.chorus.posture-capture → analytics" ;
     chorus:launchdLabel "com.chorus.posture-capture" ;
-    chorus:hasDomain chorus:security .
+    rdfs:comment "Wren: Jeff's webcam posture score for /lm, not security" ;
+    chorus:hasDomain chorus:analytics .
 
 chorus:unitdomain-com.chorus.pulse a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.pulse → spine" ;
@@ -290,14 +309,16 @@ chorus:unitdomain-com.chorus.seed-probe a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:messages .
 
 chorus:unitdomain-com.chorus.service-harvest a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.service-harvest → infrastructure" ;
+    rdfs:label "com.chorus.service-harvest → services" ;
     chorus:launchdLabel "com.chorus.service-harvest" ;
-    chorus:hasDomain chorus:infrastructure .
+    rdfs:comment "Wren: it writes domains:services" ;
+    chorus:hasDomain chorus:services .
 
 chorus:unitdomain-com.chorus.session-watcher a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.session-watcher → spine" ;
+    rdfs:label "com.chorus.session-watcher → roles" ;
     chorus:launchdLabel "com.chorus.session-watcher" ;
-    chorus:hasDomain chorus:spine .
+    rdfs:comment "Wren: who is in session; role state derives from it (#4028)" ;
+    chorus:hasDomain chorus:roles .
 
 chorus:unitdomain-com.chorus.share-guard a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.share-guard → security" ;
@@ -328,6 +349,7 @@ chorus:unitdomain-com.chorus.tmp-reaper a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.gathering.alertmanager a chorus:UnitDomainMapping ;
     rdfs:label "com.gathering.alertmanager → alerts-monitors" ;
     chorus:launchdLabel "com.gathering.alertmanager" ;
+    rdfs:comment "splits to alerts (#4085) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.gathering.app a chorus:UnitDomainMapping ;
@@ -344,6 +366,7 @@ chorus:unitdomain-com.gathering.bedroom-heartbeat a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.gathering.blackbox-exporter a chorus:UnitDomainMapping ;
     rdfs:label "com.gathering.blackbox-exporter → alerts-monitors" ;
     chorus:launchdLabel "com.gathering.blackbox-exporter" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.gathering.blockverse a chorus:UnitDomainMapping ;
@@ -362,9 +385,10 @@ chorus:unitdomain-com.gathering.edge a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:integrations .
 
 chorus:unitdomain-com.gathering.fuseki a chorus:UnitDomainMapping ;
-    rdfs:label "com.gathering.fuseki → knowledge" ;
+    rdfs:label "com.gathering.fuseki → infrastructure" ;
     chorus:launchdLabel "com.gathering.fuseki" ;
-    chorus:hasDomain chorus:knowledge .
+    rdfs:comment "Wren: a store, beside fuseki-backup" ;
+    chorus:hasDomain chorus:infrastructure .
 
 chorus:unitdomain-com.gathering.fuseki-backup a chorus:UnitDomainMapping ;
     rdfs:label "com.gathering.fuseki-backup → infrastructure" ;
@@ -374,12 +398,13 @@ chorus:unitdomain-com.gathering.fuseki-backup a chorus:UnitDomainMapping ;
 chorus:unitdomain-com.gathering.grafana a chorus:UnitDomainMapping ;
     rdfs:label "com.gathering.grafana → alerts-monitors" ;
     chorus:launchdLabel "com.gathering.grafana" ;
-    rdfs:comment "dashboards read the monitors; splits to monitors with #4088" ;
+    rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.gathering.infra-alert a chorus:UnitDomainMapping ;
     rdfs:label "com.gathering.infra-alert → alerts-monitors" ;
     chorus:launchdLabel "com.gathering.infra-alert" ;
+    rdfs:comment "splits to alerts (#4085) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
 
 chorus:unitdomain-com.gathering.log-rotate a chorus:UnitDomainMapping ;
@@ -458,14 +483,16 @@ chorus:unitdomain-nifi a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:integrations .
 
 chorus:unitdomain-ollama a chorus:UnitDomainMapping ;
-    rdfs:label "ollama → search" ;
+    rdfs:label "ollama → integrations" ;
     chorus:launchdLabel "ollama" ;
-    chorus:hasDomain chorus:search .
+    rdfs:comment "Kade: bedroom LLM runtime, peer of images-api and navidrome" ;
+    chorus:hasDomain chorus:integrations .
 
 chorus:unitdomain-platform-command-errors a chorus:UnitDomainMapping ;
-    rdfs:label "platform-command-errors → spine" ;
+    rdfs:label "platform-command-errors → logs" ;
     chorus:launchdLabel "platform-command-errors" ;
-    chorus:hasDomain chorus:spine .
+    rdfs:comment "Kade: a Loki job, not a unit" ;
+    chorus:hasDomain chorus:logs .
 
 chorus:unitdomain-platform-permission-prompts a chorus:UnitDomainMapping ;
     rdfs:label "platform-permission-prompts → security" ;
