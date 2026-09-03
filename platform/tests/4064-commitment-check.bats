@@ -54,3 +54,11 @@ row() { # id status [card] [probe]
   [ "$status" -eq 1 ] || { echo "$output"; false; }
   [[ "$output" == *"FAIL no-commitments"* ]] || { echo "$output"; false; }
 }
+
+
+@test "NEGATIVE PROOF: an open commitment with a probe but NO card is still RED (empty column must not swallow the next)" {
+  { echo "$PRE"; row a open 1; row p open "" green.sh; } > "$BATS_TEST_TMPDIR/w.ttl"
+  run env COMMITMENT_TTL="$BATS_TEST_TMPDIR/w.ttl" "$CHECK"
+  [ "$status" -eq 1 ] || { echo "$output"; false; }
+  [[ "$output" == *"FAIL open-no-card commitment-p"* ]] || { echo "$output"; false; }
+}

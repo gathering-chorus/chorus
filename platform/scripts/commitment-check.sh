@@ -23,7 +23,10 @@ SELECT ?c ?status ?card ?probe WHERE {
 rows=$(sparql --data "$TTL" --results TSV --query <(echo "$Q") 2>&1) || { echo "FAIL ttl-unparseable $rows" | head -3; exit 1; }
 
 fail=0; n=0
-while IFS=$'\t' read -r c status card probe; do
+# TSV columns come through awk on a non-whitespace separator: bash's read collapses
+# consecutive tabs, so an empty card column would swallow the probe column into it
+# (found 2026-09-03: 8 probe-only rows read as "carded").
+while IFS='|' read -r c status card probe; do
   [ -z "$c" ] && continue
   n=$((n+1)); id=${c##*#}; id=${id%>}; status=${status//\"/}; probe=${probe//\"/}
   case "$status" in
@@ -40,7 +43,7 @@ while IFS=$'\t' read -r c status card probe; do
     deferred) echo "ok   deferred $id" ;;
     *) echo "FAIL bad-status $id '$status'"; fail=1 ;;
   esac
-done < <(printf '%s\n' "$rows" | tail -n +2)
+done < <(printf '%s\n' "$rows" | tail -n +2 | awk -F'\t' 'BEGIN{OFS="|"} {print $1,$2,$3,$4}')
 [ "$n" -gt 0 ] || { echo "FAIL no-commitments $TTL holds zero chorus:Commitment rows"; exit 1; }
 echo "commitments=$n fail=$fail"
 exit $fail
