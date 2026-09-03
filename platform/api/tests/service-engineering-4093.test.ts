@@ -9,7 +9,7 @@ const PUB = path.join(__dirname, '..', 'public', 'athena');
 const read = (f: string) => fs.readFileSync(path.join(PUB, f), 'utf8');
 
 /** The rule: a page may USE the facet table, never DEFINE it. */
-export function facetTableDefinitions(src: string): number {
+function facetTableDefinitions(src: string): number {
   return (src.match(/const\s+FACETS\s*=\s*\[/g) || []).length;
 }
 
