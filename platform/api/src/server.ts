@@ -1550,7 +1550,14 @@ function runFreshnessHandler() {
 // recompute's own residual sync cost moving fully off-loop (worker thread) is
 // the structural follow-on #3055.
 const freshnessCache = createFreshnessCache(runFreshnessHandler, { ttlMs: 30_000 });
-freshnessCache.get(); // pre-warm at boot so the first live request never pays the cold cost
+// pre-warm at boot so the first live request never pays the cold cost. #4063 —
+// a pre-warm can only ever be a convenience: if it throws, the boot continues
+// and the first request computes cold (and reports the real error).
+try {
+  freshnessCache.get();
+} catch (e) {
+  console.error(`freshness pre-warm failed at boot (first request computes cold): ${(e as Error).message}`);
+}
 
 // New canonical path under /api/chorus/context/* (#2252).
 app.get('/api/chorus/context/freshness', async (req: Request, res: Response) => {

@@ -81,7 +81,11 @@ export function findRun(runs: NightlyRunRecord[], id: string): NightlyRunRecord 
 /** Failure text that names the machine's condition, not the product. */
 const MACHINE_WORDS = /latency|timeout|timed out|under load|ECONNREFUSED|no live stack|stack-down|stack down|load \d|wedged/i;
 /** Summaries where the runner took no reading at all. */
-const NO_READING = /never ran|runner produced no|UNMEASURED|no parseable output|killed after|produced no results|0 pass, 0 fail/i;
+// #4063 — the census row ("N registered test(s) never ran") IS a reading: the
+// reconciler counted. It is unmeasured only when the row attributes the gap to
+// units that produced no results (that phrase is on the row); the other form
+// ("registered names the runners never emit") is a real red with an owner.
+const NO_READING = /runner produced no|UNMEASURED|no parseable output|killed after|produced no results|0 pass, 0 fail/i;
 
 /** #4073 — label one red from its own history (oldest → newest, the newest
  *  being this run's fail) and its summary line. Pure; the readout is the only

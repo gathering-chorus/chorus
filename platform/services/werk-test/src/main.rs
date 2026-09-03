@@ -308,11 +308,11 @@ fn run(args: &[String]) -> Result<i32, String> {
                 let ns_refs: Vec<&str> = ns_bins.iter().map(|s| s.as_str()).collect();
                 let (ok, cases) = run_cargo(&werk, c, &q_names, &ns_refs);
                 let crate_dir = format!("platform/services/{}", c);
-                for (bare, result) in cases {
-                    match match_cargo_case(&bare, &crate_dir, &rows, &row_names) {
+                for (path, result) in cases {
+                    match werk_test::match_cargo_case_path(&path, &crate_dir, &rows, &row_names) {
                         Some(fp) => all_cases.push(CaseResult {
                             file_path: fp,
-                            test_name: bare,
+                            test_name: werk_test::nextest_bare_name(&path).to_string(),
                             result,
                         }),
                         None => unmatched_cargo += 1,
@@ -679,9 +679,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // #4030 AC3 — join + store THIS crate's cases now, in the worker
         let crate_dir = format!("platform/services/{}", c);
         let mut matched: Vec<CaseResult> = Vec::new();
-        for (bare, result) in &cases {
-            match match_cargo_case(bare, &crate_dir, &rows, &row_names) {
-                Some(fp) => matched.push(CaseResult { file_path: fp, test_name: bare.clone(), result: result.clone() }),
+        for (path, result) in &cases {
+            match werk_test::match_cargo_case_path(path, &crate_dir, &rows, &row_names) {
+                Some(fp) => matched.push(CaseResult { file_path: fp, test_name: werk_test::nextest_bare_name(path).to_string(), result: result.clone() }),
                 None => { unmatched_cargo.fetch_add(1, Ordering::SeqCst); }
             }
         }
@@ -774,9 +774,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #4030 AC3 — one bats runner for the three pools: run, then store now.
     let run_bats_stored = |werk: &str, b: &str| -> (bool, Vec<(String, String)>, String) {
         let r = run_bats_cases(werk, b);
-        let cases: Vec<CaseResult> = r.1.iter()
+        let mut cases: Vec<CaseResult> = r.1.iter()
             .map(|(n, res)| CaseResult { file_path: b.to_string(), test_name: n.clone(), result: res.clone() })
             .collect();
+        // #4063 — a shell suite (test-*.sh) prints summary counts, not TAP
+        // cases, so nothing of it ever reached the ledger: 113 registered
+        // shell tests read "never ran" every night while running every
+        // night. The registry holds one test per script, named by the file;
+        // store that one verdict.
+        if cases.is_empty() && bats_kind(b) == "shell" {
+            cases.push(werk_test::shell_suite_case(b, r.0));
+        }
         store_unit(b, &cases);
         r
     };
@@ -1306,7 +1314,8 @@ fn run_cargo(werk: &str, name: &str, quarantined: &[&str], ns_bins: &[&str]) -> 
                 let start = lines.len().saturating_sub(60);
                 eprintln!("{}", lines[start..].join("\n"));
             }
-            (ok, werk_test::parse_nextest_cases(&text))
+            // #4063 — full nextest paths: the module chain resolves same-named fns
+            (ok, werk_test::parse_nextest_case_paths(&text))
         }
         Err(_) => (false, Vec::new()),
     }

@@ -85,6 +85,17 @@ export function fetchFreshness({
 }: FreshnessDeps): FreshnessResult {
   // #3136 — exists/countLines/spineLogPath deps retained on FreshnessDeps for callers
   // but no longer consumed here: spine is delisted, claude is the only countable source.
+  // #4063 — an index database with no watermarks table (a fresh test world, a
+  // box before its first index run) is "not indexed", not an exception. Left
+  // as a throw, the boot pre-warm in server.ts took every platform/api jest
+  // suite down with "SqliteError: no such table: watermarks" (222 red on the
+  // 2026-09-03 nightly and in every werk pipeline run).
+  const hasWatermarks = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'watermarks'")
+    .get();
+  if (!hasWatermarks) {
+    return { status: 503, body: { error: 'Index database has no watermarks table (index not initialised)' } };
+  }
   const watermarks = db.prepare('SELECT source, last_indexed FROM watermarks ORDER BY source').all() as Watermark[];
 
   const nowMs = now();
