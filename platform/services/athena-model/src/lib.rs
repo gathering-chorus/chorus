@@ -4171,6 +4171,9 @@ pub struct PostRow {
     pub name: String,
     pub owner: Option<String>,
     pub body: String,
+    /// structural edges (partOf / contains / hasChild) — the API keeps these on
+    /// their own routes (`/{plural}/{name}/partof` …), not in the row body
+    pub structural: Vec<(String, String)>, // (route segment, target name)
 }
 
 fn nt_unescape(s: &str) -> String {
@@ -4274,11 +4277,17 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
         let mut keys: Vec<String> = Vec::new();
         let mut values: HashMap<String, Vec<String>> = HashMap::new();
         let mut owner: Option<String> = None;
+        let mut structural: Vec<(String, String)> = Vec::new();
         for (p, o) in &by_subject[s] {
             if *p == rdf_type { continue; }
             let key = iri_local(p).to_string();
             let val = if is_iri_term(o) {
                 let target = name_from_local(iri_local(o), None);
+                let route = match key.as_str() { "partOf" => Some("partof"), "contains" => Some("contains"), "hasChild" => Some("has-child"), _ => None };
+                if let Some(r) = route {
+                    if !structural.iter().any(|(rr, t)| rr == r && *t == target) { structural.push((r.to_string(), target)); }
+                    continue;
+                }
                 if key == "ownedBy" {
                     // the API injects the owner from the verified token; the row's
                     // owner is WHO SIGNS the write, not a body field
@@ -4302,7 +4311,7 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
             };
             parts.push(format!("{}:{}", json_str(k), v));
         }
-        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")) });
+        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")), structural });
     }
     Ok(rows)
 }
@@ -4364,6 +4373,17 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
         if method == "POST" { rep.created += 1 } else { rep.replaced += 1 }
         witness("model.seed.posted", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("method", method), ("status", &st.to_string())]);
         rep.lines.push(format!("{} {} as {} → {}", method, url, owner, st));
+        // structural edges ride their own routes; an edge already present answers
+        // 200/409-idempotent and is not a failure, anything else stops the run
+        for (route, target) in &r.structural {
+            let eurl = format!("{}/{}", url_one, route);
+            let (est, ebody) = http("POST", &eurl, &token, Some(&format!("{{\"target\":{}}}", json_str(target))))?;
+            if !(200..300).contains(&est) && !(est == 409 && ebody.contains("already")) {
+                witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &est.to_string())]);
+                return Err(format!("seed --post: POST {} → {} as {} → {}: {}", eurl, target, owner, est, ebody.trim()));
+            }
+            rep.lines.push(format!("POST {} {} as {} → {}", eurl, target, owner, est));
+        }
     }
     Ok(rep)
 }
@@ -4421,6 +4441,21 @@ mod post_rows_4096 {
         assert!(!r.body.contains("ownedBy"), "the owner signs; it is not a body field: {}", r.body);
     }
 
+    /// partOf / contains / hasChild are not body fields (the API's closed shape
+    /// refused the athena row on the first live run, round 4): they ride their
+    /// own routes after the row write.
+    #[test]
+    fn structural_edges_leave_the_body_and_ride_their_own_routes() {
+        let tr = vec![
+            t(&format!("<{C}athena>"), &format!("<{C}label>"), "\"Athena\""),
+            t(&format!("<{C}athena>"), &format!("<{C}partOf>"), &format!("<{C}chorus>")),
+            t(&format!("<{C}athena>"), &format!("<{C}ownedBy>"), &format!("<{C}role-wren>")),
+        ];
+        let rows = post_rows("product", &tr).unwrap();
+        assert!(!rows[0].body.contains("partOf"), "{}", rows[0].body);
+        assert_eq!(rows[0].structural, vec![("partof".to_string(), "chorus".to_string())]);
+    }
+
     #[test]
     fn a_prefixed_kind_strips_its_own_prefix_for_the_name() {
         let tr = vec![t(&format!("<{C}document-x-design>"), &format!("<{C}docTitle>"), "\"X\"")];
@@ -4433,7 +4468,7 @@ mod post_rows_4096 {
     /// the poster never signs as a default role (Jeff: each owner in turn).
     #[test]
     fn a_row_without_an_owner_is_refused_before_anything_is_sent() {
-        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into() }];
+        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into(), structural: vec![] }];
         let mint = |_: &str| -> R<String> { panic!("must not mint for an unowned row") };
         let mut tokens = OwnerTokens::new(&mint);
         let http = |_: &str, _: &str, _: &str, _: Option<&str>| -> R<(u16, String)> { panic!("must not send") };
@@ -4447,9 +4482,9 @@ mod post_rows_4096 {
         use std::cell::RefCell;
         let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
         let rows = vec![
-            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into() },
-            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into() },
-            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into() },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into(), structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into(), structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into(), structural: vec![] },
         ];
         let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
         let mut tokens = OwnerTokens::new(&mint);
