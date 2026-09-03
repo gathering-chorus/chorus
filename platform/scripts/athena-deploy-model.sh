@@ -85,6 +85,9 @@ else
     # ownerSequence (Product/Domain, uniqueWithin ownedBy) as ADDITIVE shapes.
     # Same day-authored MODEL_SET discipline as #3654.
     "$CHORUS_ROOT/roles/wren/ontology/priorities-3686.ttl"
+    # #4077 — English-only policy: the Policy row + response.banned.terms key and
+    # per-role lists the stop gate reads. Day-authored into MODEL_SET, never live-only.
+    "$CHORUS_ROOT/roles/wren/ontology/policies-4077.ttl"
     # #3881 — the ADR-058 GovernanceCheck registry (#3846). Landed in the repo
     # but never deployed (not in MODEL_SET = live-only-in-reverse); caught by
     # athena-validate's own empty-registry warn on day one. Same day-authored

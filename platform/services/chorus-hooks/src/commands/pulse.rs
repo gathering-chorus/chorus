@@ -45,7 +45,7 @@ pub fn assemble() -> String {
         }};
     }
 
-    // 1. Role states — read 3 JSON files from /tmp/claude-team-scan/
+    // 1. Role states — derived rows from chorus-api (#4028); no files
     let roles = timed!("roles_ms", assemble_roles());
     pulse.insert("roles".into(), roles);
 
@@ -122,57 +122,10 @@ pub fn run(_args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// #4028/#4077 — the role rows come from the ONE derivation (chorus-api
+/// /api/chorus/context/roles); see shared::roles_api. No file is read.
 fn assemble_roles() -> serde_json::Value {
-    // #2168 AC-9: compose declared + inferred into one flat role entry.
-    // declared.json is primary (top-level state, card, ts, source="declared"
-    // — backward-compat for tiles.ts). inferred.json surfaces as
-    // card_inferred + divergent + inferred_stale flags.
-    // Freshness window is 5 min — enforced here, not in the observer writer.
-    const INFERRED_TTL_SECS: u64 = 300;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    let mut roles = serde_json::Map::new();
-    for role in &["wren", "silas", "kade"] {
-        let decl_path = format!("/tmp/claude-team-scan/{}-declared.json", role);
-        let declared = fs::read_to_string(&decl_path).ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .unwrap_or_else(|| serde_json::json!({"state": "unknown"}));
-
-        let inf_path = format!("/tmp/claude-team-scan/{}-inferred.json", role);
-        let inferred = fs::read_to_string(&inf_path).ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
-
-        let declared_card = declared.get("card").cloned();
-        let (card_inferred, inferred_stale) = match inferred.as_ref() {
-            Some(v) => {
-                let ts = v.get("ts").and_then(|t| t.as_u64()).unwrap_or(0);
-                let stale = now.saturating_sub(ts) > INFERRED_TTL_SECS;
-                (v.get("card").cloned(), stale)
-            }
-            None => (None, true),
-        };
-        let divergent = match (&declared_card, &card_inferred, inferred_stale) {
-            (Some(d), Some(i), false) => d != i,
-            _ => false,
-        };
-
-        let mut composed = declared.clone();
-        if let Some(obj) = composed.as_object_mut() {
-            if let Some(c) = declared_card {
-                obj.insert("card_declared".into(), c);
-            }
-            if let Some(c) = card_inferred {
-                obj.insert("card_inferred".into(), c);
-            }
-            obj.insert("divergent".into(), serde_json::Value::Bool(divergent));
-            obj.insert("inferred_stale".into(), serde_json::Value::Bool(inferred_stale));
-        }
-        roles.insert(role.to_string(), composed);
-    }
-    serde_json::Value::Object(roles)
+    crate::shared::roles_api::roles_from_api(&crate::shared::roles_api::roles_endpoint())
 }
 
 fn assemble_recent_events() -> serde_json::Value {

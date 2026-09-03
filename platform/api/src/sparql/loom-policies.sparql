@@ -6,8 +6,11 @@ SELECT ?policy ?label ?comment ?surface ?principle ?principleLabel WHERE {
     OPTIONAL { ?policy rdfs:label ?label }
     OPTIONAL { ?policy rdfs:comment ?comment }
     OPTIONAL { ?policy chorus:surface ?surface }
+    # #4077 — a policy names its principle with chorus:derivedFrom (all 15 rows
+    # do; chorus:enforces was never declared and no row carries it), so the
+    # page read every policy as an orphan. Accept either edge.
     OPTIONAL {
-      ?policy chorus:enforces ?principle .
+      ?policy (chorus:enforces|chorus:derivedFrom) ?principle .
       OPTIONAL { ?principle rdfs:label ?principleLabel }
     }
   }
