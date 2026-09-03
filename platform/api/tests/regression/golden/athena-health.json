@@ -12,7 +12,7 @@
       {
         "name": "health",
         "path": "/api/athena/health",
-        "description": "Ontology health \u2014 triple count, endpoint status"
+        "description": "Ontology health — triple count, endpoint status"
       },
       {
         "name": "subdomains",
@@ -23,11 +23,6 @@
         "name": "blast-radius",
         "path": "/api/athena/subdomains/:id/blast-radius",
         "description": "Which sub-products consume a given sub-domain"
-      },
-      {
-        "name": "steps",
-        "path": "/api/athena/steps",
-        "description": "Value stream steps with sub-domains at each step"
       },
       {
         "name": "owners",

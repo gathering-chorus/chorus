@@ -3,6 +3,8 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 SELECT ?owner ?label (COUNT(?sd) AS ?count) WHERE {
   GRAPH <urn:chorus:ontology> {
     ?sd chorus:ownedBy ?owner .
-    ?owner rdfs:label ?label .
   }
+  # #4079: role labels live in urn:chorus:instances since #3838 (roles model),
+  # not in the ontology graph — look the label up in whichever graph holds it.
+  OPTIONAL { GRAPH ?lg { ?owner rdfs:label ?label } }
 } GROUP BY ?owner ?label ORDER BY DESC(?count)
