@@ -2281,6 +2281,8 @@ chorus:notInScope      a owl:DatatypeProperty ; rdfs:label "notInScope" ; rdfs:r
     rdfs:comment "What this product deliberately excludes and why. The design doc §Not in scope." .
 chorus:references      a owl:DatatypeProperty ; rdfs:label "references" ; rdfs:range xsd:string ;
     rdfs:comment "Cards, ADRs, decisions and documents this design rests on. The design doc §References." .
+chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:range xsd:string ;
+    rdfs:comment "A picture the design carries, held as data: mermaid source, first line a '%% caption' comment naming what it shows. Repeatable — one value per diagram. #4094: Jeff, 2026-09-03: 'we are completely abandoning diagrams and other visual flows from the html when we migrate.' Rendered in the Flows chapter of the product, service and domain pages." .
 chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:range xsd:string .
 chorus:asIs               a owl:DatatypeProperty ; rdfs:label "as-is" ; rdfs:range xsd:string .
 chorus:toBe               a owl:DatatypeProperty ; rdfs:label "to-be" ; rdfs:range xsd:string .
@@ -2324,6 +2326,7 @@ chorus:ValueStreamShape a sh:NodeShape ;
 
 # --- ProductShape ---
 chorus:ProductShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Product ;
     # 2026-08-02 — /products served 0 while EIGHT complete products (athena, borg,
@@ -2373,6 +2376,7 @@ chorus:ProductShape a sh:NodeShape ;
 
 # --- DomainShape (supersedes DomainCoordinateShape; + purpose [the capability] + definesVocabulary [DDD mark] per ADR-045 + the capability ruling) ---
 chorus:DomainShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Domain ;
     chorus:instancesGraph "urn:chorus:ontology" ;   # #3581: serve the punned Domain class-individuals from the ontology graph where they LIVE (not the empty urn:chorus:instances default) — fixes owl-api /domains=0. Steward call A (Silas, 2026-06-25); mirrors TestShape:instancesGraph.
@@ -2390,6 +2394,7 @@ chorus:DomainShape a sh:NodeShape ;
 
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Service ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in

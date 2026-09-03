@@ -71,6 +71,24 @@ Chorus · Athena · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:borg a chorus:Product ;
+    chorus:diagram """%% Structure
+flowchart TD
+  PR["Proving<br/><i>per-card · terminates</i>"] --- B["product: Borg"]
+  RE["Reflecting<br/><i>continuous · loops</i>"] --- B
+  B --> OBS["domain: observability"]
+  B --> OPS["domain: operations"]
+  B --> INF["domain: infrastructure"]
+  OBS --> o1["heralds · monitor · alert<br/>logs · metrics · analytics"]
+  OPS --> p1["deploys · builds · time · security-trust"]
+  INF --> i1["infra hosts · properties · toolchain"]
+  RE -.->|"hasValueStream"| CY["reflect cycle:<br/>plant→tend→read→surface→prune→feed"]
+  PR -.->|"hasValueStream"| DC["proving ceremony:<br/>present→gather→verdict→accept"]""" ;
+    chorus:diagram """%% Entry: the map to the mirror
+flowchart LR
+  C["/chorus drawing (the map)"] -->|"Spine to Proving"| L["Borg landing (the verdict)"]
+  L --> SW["the seasonal wheel:<br/>plant, tend, read, surface, prune, feed"]
+  L --> D["drill: monitor / alert / health,<br/>logs / metrics / fitness"]
+  D --> X["each page = generated shell +<br/>client-fetch of its class's HTTP route"]""" ;
     chorus:label """Borg""" ;
     rdfs:label """Borg""" ;
     chorus:comment """Borg is the self-judgment product of Chorus, spanning Proving and Reflecting — the system seeing itself so no human has to be the eyes.""" ;
@@ -221,6 +239,14 @@ Chorus · The Clearing · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:convergence a chorus:Product ;
+    chorus:diagram """%% The engine: sources to canonical model
+flowchart LR
+  SRC["heterogeneous sources<br/>(legacy schema, feed, discovered system)"] --> ING["ingest — flow-based intake (FlowFiles + provenance)"]
+  ING --> MAP["map — route + translate toward canonical model"]
+  MAP --> REC["reconcile — schema-map · cleanse · dedup · entity-resolve"]
+  REC --> LAND["land — write conformant instances"]
+  LAND --> SOR[("system of record — the OWL graph / canonical model")]
+  REC -.golden master + source→row mapping.-> SOR""" ;
     chorus:label """Convergence""" ;
     rdfs:label """Convergence""" ;
     chorus:comment """Cross-domain integration — ICDs, harvesters, data pipelines. The product whose job is making the many sources one graph.""" ;
@@ -366,6 +392,29 @@ Chorus · Pulse · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:spine a chorus:Product ;
+    chorus:diagram """%% Types and instances
+flowchart TB
+  subgraph T["TYPES — vocabulary, curated"]
+    ET["chorus:EventType<br/>345 rows"]
+    EF["declared fields · join keys<br/>vertebra · category · emitter"]
+    ET --- EF
+  end
+  subgraph I["INSTANCES — the stream, immutable"]
+    SE["chorus:SpineEvent<br/>2,097,133 rows and growing"]
+  end
+  SE -->|ofType| ET
+  REG[("designing/schemas/<br/>spine-events.json")] -->|loads| ET
+  LOG[("~/.chorus/chorus.log<br/>append-only")] -->|projects| SE
+  ET -->|GET /v1/eventtypes| API1["catalogue<br/>— what can happen"]
+  SE -->|GET /v1/spineevents?type=&since=| API2["stream<br/>— what did happen"]""" ;
+    chorus:diagram """%% Pages and flow
+flowchart LR
+  VS["/athena/value-stream.html<br/>Directing step"] --> P["/athena/product.html?p=spine<br/>identity · promise · domains"]
+  P --> D["/athena/domain-detail.html?id=events<br/>classes claimed · gaps"]
+  D --> ET["EventType page (to-be)<br/>one kind: fields · category · step · recent occurrences · count"]
+  ET --> SE["Occurrence stream (to-be)<br/>/v1/spineevents?type=&since= rendered"]
+  P --> CA["/athena/class-atlas.html<br/>SpineEvent · EventType · EmitContract shapes"]
+  SE -.->|"a line resolves its type"| ET""" ;
     chorus:label """Spine""" ;
     rdfs:label """Spine""" ;
     chorus:comment """Two layers, not one (Jeff 2026-09-01, EDA framing): EventType is curated vocabulary in the graph; SpineEvent is the log projected on read. Composes the events domain; the spine vocabulary domain shares its IRI (#1772) and cannot be linked until one side is renamed. Excludes logs (Silas, Proving) — a consumer, not a constituent.""" ;
@@ -409,6 +458,59 @@ Internal notes for the team: the Spine service design (contracts, readers, reten
 Chorus · Spine · rewritten for readers outside the team 2026-09-03""" .
 
 chorus:werk a chorus:Product ;
+    chorus:diagram """%% Supporting domains
+flowchart TD
+  Chorus["Chorus"] -->|hasChild| Werk["Werk — Product<br/>Building step<br/>(live graph: top-level Product)"]
+  Werk -->|hasDomain| Pipelines["pipelines<br/>1..n instances, owned per-role;<br/>the engineer role governs the set —<br/>ADRs, act, verb contract"]
+  Werk -->|hasDomain| VCS["version-control<br/>verb binaries, ephemeral werks,<br/>guards, conflict-hold, recovery verbs"]
+  Werk -->|hasDomain| Code["code<br/>quality rules, lint, complexity,<br/>dup-string, no-warn-tier"]
+  Werk -->|hasDomain| Tests["tests<br/>TDD discipline, hermetic-by-default,<br/>integration-gated-explicitly"]
+  Werk -.->|consumes| BD["build+deploy<br/>(sibling — the architect role)"]
+  classDef op fill:#d1fae5,stroke:f46,color:f46;
+  classDef bld fill:#fef9c3,stroke:d0e,color:d0e;
+  classDef anchor fill:#ede9fe,stroke:#7c3aed,color:#5b21b6;
+  classDef sibling fill:#e0e7ff,stroke:a3,color:a3;
+  class Chorus,Werk anchor;
+  class VCS op;
+  class Code,Tests,Pipelines bld;
+  class BD sibling;""" ;
+    chorus:diagram """%% The model: entities, relationships, properties
+flowchart TB
+  CARD(["Card"])
+  SCEN(["Scenario (authored)"]):::auth
+  subgraph SPINE["shared spine"]
+    VR["VerbRun"]; TR["TypedRefusal"]; WIT["Witness"]
+  end
+  subgraph CICD["cicd"]
+    PR2["PipelineRun"]; GR["GateResult"]; RV["ReviewVerdict"]; DV["DemoVerdict — the GO"]; DEP["Deployment {cdhash}"]
+  end
+  subgraph VC["version-control"]
+    WS["WerkSlot"]; ME["MergeEvent"]; CH["ConflictHold"]; RA["RecoveryAction"]
+  end
+  subgraph CODE["code"]
+    SF["SourceFile {filePath}"]; CD["CardDiff"]; QF["QualityFinding"]
+  end
+  subgraph TESTS["tests — ingestion-first"]
+    T["Test {filePath+testName} ⚠"]; TSR["TestSuiteRun"]; TRES["TestResult ⚠"]
+  end
+  CARD -->|hasVerbRun| VR
+  VR -->|refusedWith| TR
+  VR -.->|written to| WIT
+  CARD -->|hasGateResult| GR
+  CARD -->|hasReviewVerdict| RV
+  CARD -->|hasDemoVerdict| DV
+  DV ==>|"GO=accept "| ME
+  CD -->|changed paths| SF
+  T -->|inFile| SF
+  T -->|"covers — the werk-test edge"| SD(["SubDomain"])
+  SCEN -->|"verifiedBy — intent bound to proof"| T
+  T -.-> TRES
+  TRES -.-> TSR
+  classDef ok fill:#d1fae5,stroke:f46,color:f46;
+  classDef gap fill:#fee2e2,stroke:b1b,color:b1b;
+  classDef auth fill:#e0e7ff,stroke:a3,color:a3;
+  class VR,TR,WIT,PR2,GR,RV,DV,DEP,WS,ME,CH,RA,CD,QF,TSR,SF ok;
+  class T,TRES gap;""" ;
     chorus:label """Werk""" ;
     rdfs:label """Werk""" ;
     chorus:comment """The Chorus execution protocol that carries a unit of work from pulled to proven-and-accepted, across the Building and Proving steps.""" ;
