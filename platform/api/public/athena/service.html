@@ -8,14 +8,14 @@
      Silas set: public = overview/asIs/toBe, signed-in = gaps/notInScope/
      pathToClose, secret = implementationPlan. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script>
-<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>   <!-- #4093 — after basePath exists; same include product.html (#4094) and class-atlas.html use --><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
 (function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
 window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
 return b+(x.charAt(0)==='/'?x:'/'+x);};
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>   <!-- #4093 — after basePath exists; same include product.html (#4094) and class-atlas.html use -->
 </head>
 <body><div class="wrap">
 <div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="services.html">services</a> &rarr; <span id="crumb"></span></div>
