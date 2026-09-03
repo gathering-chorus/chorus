@@ -1258,7 +1258,11 @@ pub fn json_field(body: &str, key: &str) -> Option<String> {
 /// into trusted NDJSON. In particular, missing commas, duplicate keys, unknown
 /// escapes, non-string values, and trailing content are refusals rather than
 /// inputs that a substring extractor can silently normalize.
-fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, String>> {
+/// #4096 — a value is a JSON string OR a JSON array of strings (a multi-valued
+/// shape property: a product's four hasDomain targets, its two chorus:diagram
+/// sources). One string parses as a one-element list. An empty array, a nested
+/// object/array, or a non-string element is a refusal: the door does not guess.
+fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, Vec<String>>> {
     fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
         while i < bytes.len() && matches!(bytes[i], b' ' | b'\t' | b'\r' | b'\n') {
             i += 1;
@@ -1331,8 +1335,38 @@ fn parse_create_object(body: &str) -> R<std::collections::BTreeMap<String, Strin
             return Err(format!("create property '{}' must be followed by ':'", key));
         }
         i = skip_ws(bytes, i + 1);
-        let value = string_at(body, &mut i)
-            .map_err(|e| format!("create property '{}' must be a JSON string ({})", key, e))?;
+        let value: Vec<String> = if bytes.get(i) == Some(&b'[') {
+            i = skip_ws(bytes, i + 1);
+            let mut items = Vec::new();
+            loop {
+                if bytes.get(i) == Some(&b']') {
+                    i += 1;
+                    break;
+                }
+                let item = string_at(body, &mut i)
+                    .map_err(|e| format!("create property '{}': every list element must be a JSON string ({})", key, e))?;
+                items.push(item);
+                i = skip_ws(bytes, i);
+                match bytes.get(i) {
+                    Some(b',') => {
+                        i = skip_ws(bytes, i + 1);
+                        if bytes.get(i) == Some(&b']') {
+                            return Err(format!("create property '{}': list must not have a trailing comma", key));
+                        }
+                    }
+                    Some(b']') => { i += 1; break; }
+                    Some(_) => return Err(format!("create property '{}': list elements must be separated by ','", key)),
+                    None => return Err(format!("create property '{}': list is not closed", key)),
+                }
+            }
+            if items.is_empty() {
+                return Err(format!("create property '{}': an empty list says nothing — omit the property instead", key));
+            }
+            items
+        } else {
+            vec![string_at(body, &mut i)
+                .map_err(|e| format!("create property '{}' must be a JSON string or a list of strings ({})", key, e))?]
+        };
         if out.insert(key.clone(), value).is_some() {
             return Err(format!("create property '{}' appears more than once", key));
         }
@@ -1471,14 +1505,19 @@ pub fn split_json_array_objects(body: &str) -> R<Vec<&str>> {
 /// Edge fields (edge:*) are skipped — edges are written through the edge endpoints,
 /// not the entity body. Pure + unit-tested.
 pub fn collect_entity_props(body: &str, fields: &[String]) -> Vec<(String, String)> {
+    // #4096 — every value of a list-valued property, through the strict parser
+    // (a malformed body yields no props, and replace then refuses as empty).
+    let values = parse_create_object(body).unwrap_or_default();
     let mut out = Vec::new();
     for f in fields {
         let (name, kind) = f.split_once('|').unwrap_or((f.as_str(), "plain"));
         if kind.starts_with("edge:") {
             continue;
         }
-        if let Some(v) = json_field(body, name) {
-            out.push((name.to_string(), v));
+        if let Some(vs) = values.get(name) {
+            for v in vs {
+                out.push((name.to_string(), v.clone()));
+            }
         }
     }
     out
@@ -1491,13 +1530,17 @@ pub fn collect_entity_props(body: &str, fields: &[String]) -> Vec<(String, Strin
 /// 2026-07-24). target_kind = kebab of the edge's sh:class (kind_of_class),
 /// matching the DAL's mint contract.
 pub fn collect_entity_edges(body: &str, fields: &[String]) -> Vec<(String, String, String)> {
+    // #4096 — every target of a list-valued edge (a product's hasDomain list).
+    let values = parse_create_object(body).unwrap_or_default();
     let mut out = Vec::new();
     for f in fields {
         if let Some((name, kind)) = f.split_once('|') {
             if let Some(class_local) = kind.strip_prefix("edge:") {
-                if let Some(v) = json_field(body, name) {
-                    if !v.is_empty() {
-                        out.push((name.to_string(), kind_of_class(class_local), v));
+                if let Some(vs) = values.get(name) {
+                    for v in vs {
+                        if !v.is_empty() {
+                            out.push((name.to_string(), kind_of_class(class_local), v.clone()));
+                        }
                     }
                 }
             }
@@ -1862,12 +1905,25 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<P
         entity: String::new(),
         message,
     })?;
-    let name = values.get("name").cloned().ok_or_else(|| CreatePrepareError {
-        tag: "validation",
-        spine_result: "validation",
-        entity: String::new(),
-        message: "create requires a 'name' in the body".to_string(),
-    })?;
+    let name = match values.get("name").map(Vec::as_slice) {
+        Some([one]) => one.clone(),
+        Some(_) => {
+            return Err(CreatePrepareError {
+                tag: "validation",
+                spine_result: "validation",
+                entity: String::new(),
+                message: "create 'name' must be one string, not a list".to_string(),
+            })
+        }
+        None => {
+            return Err(CreatePrepareError {
+                tag: "validation",
+                spine_result: "validation",
+                entity: String::new(),
+                message: "create requires a 'name' in the body".to_string(),
+            })
+        }
+    };
     if !is_safe_local(&name) {
         return Err(CreatePrepareError {
             tag: "validation",
@@ -1896,10 +1952,11 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<P
     let (mut fields, mut edges) = verified_owner_projection(table, caller_role);
     for field in &table.fields {
         let (property, annotation) = field.split_once('|').unwrap_or((field.as_str(), "plain"));
-        let Some(value) = values.get(property) else { continue };
+        let Some(vals) = values.get(property) else { continue };
         if property == "ownedBy" {
             continue;
         }
+        for value in vals {
         if let Some(class_local) = annotation.strip_prefix("edge:") {
             if !value.is_empty() {
                 if !is_safe_local(value) {
@@ -1918,6 +1975,7 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<P
         } else {
             fields.push((property.to_string(), value.clone()));
         }
+        }
     }
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     Ok(PreparedCreate {
@@ -1933,12 +1991,22 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<P
 /// keys and values cross the existing JSON escaping boundary; no request data
 /// is ever interpolated into process argv.
 fn prepared_create_json(req: &PreparedCreate) -> String {
-    let fields = req
-        .fields
-        .iter()
-        .map(|(key, value)| format!("\"{}\":\"{}\"", json_escape(key), json_escape(value)))
-        .collect::<Vec<_>>()
-        .join(",");
+    // #4096 — a JSON object cannot repeat a key, so the FIRST value of each
+    // property goes in `fields` and every further value rides in `more_values`
+    // (the DAL's slot for multi-valued literals; it writes them as further
+    // triples on the same predicate).
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let mut firsts: Vec<String> = Vec::new();
+    let mut more: Vec<String> = Vec::new();
+    for (key, value) in &req.fields {
+        if seen.insert(key.as_str()) {
+            firsts.push(format!("\"{}\":\"{}\"", json_escape(key), json_escape(value)));
+        } else {
+            more.push(format!("[\"{}\",\"{}\"]", json_escape(key), json_escape(value)));
+        }
+    }
+    let fields = firsts.join(",");
+    let more_values = more.join(",");
     let edges = req
         .edges
         .iter()
@@ -1953,10 +2021,11 @@ fn prepared_create_json(req: &PreparedCreate) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!(
-        "{{\"kind\":\"{}\",\"name\":\"{}\",\"fields\":{{{}}},\"edges\":[{}],\"graph\":\"{}\"}}",
+        "{{\"kind\":\"{}\",\"name\":\"{}\",\"fields\":{{{}}},\"more_values\":[{}],\"edges\":[{}],\"graph\":\"{}\"}}",
         json_escape(&req.kind),
         json_escape(&req.name),
         fields,
+        more_values,
         edges,
         json_escape(&req.graph),
     )
@@ -2204,9 +2273,9 @@ mod bounds_closedshape_tests {
     fn create_object_parser_is_strict_and_decodes_strings() {
         let parsed = parse_create_object(r#" { "name": "tr-1", "testName": "a \"quote\"", "note": "\u2014" } "#)
             .expect("valid flat create object");
-        assert_eq!(parsed.get("name").map(String::as_str), Some("tr-1"));
-        assert_eq!(parsed.get("testName").map(String::as_str), Some("a \"quote\""));
-        assert_eq!(parsed.get("note").map(String::as_str), Some("—"));
+        assert_eq!(parsed.get("name").map(|v| v[0].as_str()), Some("tr-1"));
+        assert_eq!(parsed.get("testName").map(|v| v[0].as_str()), Some("a \"quote\""));
+        assert_eq!(parsed.get("note").map(|v| v[0].as_str()), Some("—"));
 
         for bad in [
             r#"{"name":"x" "filePath":"a"}"#,
@@ -2215,9 +2284,43 @@ mod bounds_closedshape_tests {
             r#"{"name":42}"#,
             r#"{"name":"bad\q"}"#,
             r#"{"name":"x"} trailing"#,
+            // #4096 lists: empty, non-string element, nested, trailing comma, unclosed
+            r#"{"name":"x","hasDomain":[]}"#,
+            r#"{"name":"x","hasDomain":[1]}"#,
+            r#"{"name":"x","hasDomain":[["a"]]}"#,
+            r#"{"name":"x","hasDomain":["a",]}"#,
+            r#"{"name":"x","hasDomain":["a""#,
         ] {
             assert!(parse_create_object(bad).is_err(), "malformed JSON must be refused: {bad}");
         }
+    }
+
+    /// #4096 — a list value parses to every element, in order; a plain string is a
+    /// one-element list, so the two forms are one shape to the rest of the door.
+    #[test]
+    fn create_object_parser_takes_lists_of_strings() {
+        let parsed = parse_create_object(r#"{"name":"athena","hasDomain":["products","services","domains"],"diagram":["%% a\\nflowchart TD","%% b\\nflowchart LR"],"label":"Athena"}"#)
+            .expect("lists of strings are valid");
+        assert_eq!(parsed["hasDomain"], vec!["products", "services", "domains"]);
+        assert_eq!(parsed["diagram"].len(), 2);
+        assert_eq!(parsed["label"], vec!["Athena"]);
+    }
+
+    /// #4096 — the NDJSON handed to the DAL carries the first value per key in
+    /// `fields` and the rest in `more_values`; a JSON object cannot repeat a key.
+    #[test]
+    fn prepared_create_ndjson_puts_further_values_in_more_values() {
+        let req = PreparedCreate {
+            kind: "product".into(),
+            name: "p".into(),
+            fields: vec![("diagram".into(), "one".into()), ("diagram".into(), "two".into()), ("label".into(), "P".into())],
+            edges: vec![("hasDomain".into(), "domain".into(), "a".into()), ("hasDomain".into(), "domain".into(), "b".into())],
+            graph: "urn:chorus:instances".into(),
+        };
+        let out = prepared_create_ndjson(&[req]);
+        assert!(out.contains("\"fields\":{\"diagram\":\"one\",\"label\":\"P\"}"), "{out}");
+        assert!(out.contains("\"more_values\":[[\"diagram\",\"two\"]]"), "{out}");
+        assert!(out.contains("[\"hasDomain\",\"domain\",\"a\"],[\"hasDomain\",\"domain\",\"b\"]"), "{out}");
     }
 
     #[test]
@@ -2231,7 +2334,7 @@ mod bounds_closedshape_tests {
         };
         assert_eq!(
             prepared_create_ndjson(&[req]),
-            "{\"kind\":\"test-result\",\"name\":\"tr-1\",\"fields\":{\"ownedBy\":\"wren\",\"testName\":\"a \\\"quote\\\"\"},\"edges\":[[\"ofTest\",\"test\",\"test-a\"]],\"graph\":\"urn:chorus:domains:tests\"}\n",
+            "{\"kind\":\"test-result\",\"name\":\"tr-1\",\"fields\":{\"ownedBy\":\"wren\",\"testName\":\"a \\\"quote\\\"\"},\"more_values\":[],\"edges\":[[\"ofTest\",\"test\",\"test-a\"]],\"graph\":\"urn:chorus:domains:tests\"}\n",
         );
     }
 

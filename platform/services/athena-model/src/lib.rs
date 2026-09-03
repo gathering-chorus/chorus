@@ -479,6 +479,14 @@ pub struct WriteReq {
     pub name: String,
     #[serde(default)]
     pub fields: BTreeMap<String, String>,
+    /// #4096 — ADDITIONAL literal values for a multi-valued property (chorus:diagram
+    /// on a product carries two mermaid sources; a shape's sh:maxCount unset means a
+    /// list). `fields` keeps the FIRST value so every existing floor check (required,
+    /// sh:in, datatype, uniqueness) keeps its one-value meaning; these ride beside it
+    /// and are written as further triples on the same predicate. A repeated `--field
+    /// k=v` on the CLI lands here instead of overwriting the first.
+    #[serde(default)]
+    pub more_values: Vec<(String, String)>,
     #[serde(default)]
     pub edges: Vec<(String, String, String)>, // (property, target_kind, target_name)
     /// #3647 — the class's model-declared instance HOME graph (athena-make resolves it
@@ -527,6 +535,10 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     let class = class_iri(&req.kind)?;
     let mut lines = vec![format!("<{}> a <{}>", subject, class)];
     for (prop, val) in &req.fields {
+        check_property_local(prop)?;
+        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+    }
+    for (prop, val) in &req.more_values {
         check_property_local(prop)?;
         lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
     }
@@ -1337,7 +1349,7 @@ fn plan_writes<'a>(
                 }
             }
         }
-        for (prop, value) in &req.fields {
+        for (prop, value) in req.fields.iter().chain(req.more_values.iter().map(|(k, v)| (k, v))) {
             if let Some(datatype) = shape.datatypes.get(prop) {
                 if !datatype_ok(value, datatype) {
                     witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
@@ -3496,6 +3508,7 @@ mod webid_uniqueness_3838 {
             kind: "principal".into(),
             name: name.into(),
             fields,
+            more_values: vec![],
             edges: vec![],
             // urn:chorus:instances, NOT the security graph. See the module note:
             // the security graph is DBA-path only and the DAL refuses it outright,
@@ -4107,5 +4120,33 @@ mod deploy_partitions_4089 {
         let parts = deploy_partitions(&homes);
         assert_eq!(parts[0].0, "urn:chorus:domains:services");
         assert_eq!(parts[1].0, "urn:chorus:instances");
+    }
+}
+
+#[cfg(test)]
+mod multi_value_4096 {
+    use super::*;
+
+    /// #4096 — a multi-valued literal (a product's two chorus:diagram sources) is
+    /// written as two triples on one predicate; the first value stays in `fields`.
+    #[test]
+    fn extra_values_become_further_triples_on_the_same_predicate() {
+        let mut req = WriteReq { kind: "product".into(), name: "p".into(), ..Default::default() };
+        req.fields.insert("diagram".into(), "%% one\nflowchart TD".into());
+        req.more_values.push(("diagram".into(), "%% two\nflowchart LR".into()));
+        let (_, ttl) = to_turtle(&req).unwrap();
+        assert_eq!(ttl.matches("#diagram>").count(), 2, "{}", ttl);
+        assert!(ttl.contains("%% one") && ttl.contains("%% two"));
+    }
+
+    /// NEGATIVE PROOF (#3734): an extra value on a property the shape does not
+    /// declare is refused by the same door as a first value — check_property_local
+    /// runs on every value, so a bad local name in `more_values` cannot slip past.
+    #[test]
+    fn extra_value_with_a_bad_property_name_is_refused() {
+        let mut req = WriteReq { kind: "product".into(), name: "p".into(), ..Default::default() };
+        req.fields.insert("diagram".into(), "a".into());
+        req.more_values.push(("not a property".into(), "b".into()));
+        assert!(to_turtle(&req).is_err());
     }
 }

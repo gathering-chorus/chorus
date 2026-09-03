@@ -45,7 +45,13 @@ fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
             "--field" => {
                 let kv = args.get(i + 1).ok_or("--field needs k=v")?;
                 let (k, v) = kv.split_once('=').ok_or_else(|| format!("--field '{}' is not k=v", kv))?;
-                req.fields.insert(k.to_string(), v.to_string());
+                // #4096 — a repeated key is a further value of a multi-valued
+                // property, not an overwrite (the first value stays in `fields`).
+                if req.fields.contains_key(k) {
+                    req.more_values.push((k.to_string(), v.to_string()));
+                } else {
+                    req.fields.insert(k.to_string(), v.to_string());
+                }
                 i += 2;
             }
             "--edge" => {
