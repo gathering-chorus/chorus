@@ -1,4 +1,5 @@
 // @test-type: integration — hits the live chorus-api at :3340; carries a scoped service token on writes (#3619).
+/* eslint-disable jest/no-standalone-expect -- #4079: every test below is declared through testWhenWritable, a conditional alias of test / test.skip (UNMEASURED without a writable store); the jest plugin cannot see through the alias. */
 /**
  * Discover UI pages per domain — #2065
  *
