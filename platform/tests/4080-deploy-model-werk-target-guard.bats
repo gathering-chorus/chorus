@@ -23,7 +23,7 @@ setup() {
 }
 
 @test "negative proof: bare run inside a werk is REFUSED and names prod" {
-  run env -u FUSEKI_GSP -u DEPLOY_TARGET CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && bash '$SCRIPT'"
+  run env -u FUSEKI_GSP -u DEPLOY_TARGET -u ONTOLOGY_GRAPH CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && bash '$SCRIPT'"
   [ "$status" -eq 78 ]
   [[ "$output" == *"REFUSED"* ]]
   [[ "$output" == *"pods"* ]]
@@ -46,4 +46,14 @@ setup() {
   run env -u FUSEKI_GSP -u DEPLOY_TARGET CHORUS_ROOT="$NONWERK" bash -c "cd '$NONWERK' && bash '$SCRIPT'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"default pods"* ]]
+}
+
+@test "inside a werk, a test naming its own throwaway ONTOLOGY_GRAPH passes (the #3601 discipline)" {
+  run env -u FUSEKI_GSP -u DEPLOY_TARGET ONTOLOGY_GRAPH="urn:chorus:ontology-test-bats-x" CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && bash '$SCRIPT'"
+  [ "$status" -eq 0 ]
+}
+
+@test "negative proof: inside a werk, ONTOLOGY_GRAPH set to the LIVE graph is still REFUSED" {
+  run env -u FUSEKI_GSP -u DEPLOY_TARGET ONTOLOGY_GRAPH="urn:chorus:ontology" CHORUS_ROOT="$WERK_DIR" bash -c "cd '$WERK_DIR' && bash '$SCRIPT'"
+  [ "$status" -eq 78 ]
 }

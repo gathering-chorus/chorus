@@ -151,7 +151,10 @@ fi
 _fuseki_gsp_explicit="${FUSEKI_GSP+x}"
 case ":${CHORUS_ROOT:-}:$(pwd -P 2>/dev/null):" in
   *"/chorus-werk/"*)
-    if [ -z "$_fuseki_gsp_explicit" ] && [ "${DEPLOY_TARGET:-}" != "canonical" ]; then
+    # A test that names its own throwaway ONTOLOGY_GRAPH (the #3601 wipe-guard
+    # discipline) is not a prod write and passes; only the LIVE graph is refused.
+    _og="${ONTOLOGY_GRAPH:-urn:chorus:ontology}"
+    if [ -z "$_fuseki_gsp_explicit" ] && [ "${DEPLOY_TARGET:-}" != "canonical" ] && [ "$_og" = "urn:chorus:ontology" ]; then
       echo "athena-deploy-model: REFUSED — running inside a werk with no FUSEKI_GSP set; the default is PROD (localhost:3030/pods). Set FUSEKI_GSP/FUSEKI_QUERY/FUSEKI_UPDATE to the werk store (werk-<role>), or DEPLOY_TARGET=canonical to write prod on purpose (#4080)." >&2
       exit 78
     fi ;;
