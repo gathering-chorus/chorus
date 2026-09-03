@@ -55,6 +55,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${stepBadge(links.atStep)}</div><div class="l">Step (atStep)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
+  <div class="stat"><div class="v">${e.changedAt ? esc(String(e.changedAt).slice(0, 10)) + (e.changedIn && e.changedIn !== 'unknown' ? ' · ' + esc(String(e.changedIn).slice(0, 7)) : '') : '<span class="empty">not yet written through the door</span>'}</div><div class="l">Changed (stamped by the door, #4101)</div></div>
 </div>
 ${folds.join('\n')}
 <details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>

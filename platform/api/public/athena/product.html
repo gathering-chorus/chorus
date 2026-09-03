@@ -24,6 +24,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   .hero h1 { font-size: 1.6rem; line-height: 1.2; }
   .hero .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; font-size: .85rem; color: var(--muted); }
   .hero .meta a { color: var(--accent); text-decoration: none; }
+  .hero .meta .changed code { font-size: .8em; }   /* #4101 — version is the write's commit, never typed */
   .vision { font-size: 1.05rem; line-height: 1.45; border-left: 4px solid var(--accent); padding: 8px 14px; margin: 14px 0; background: var(--surface); border-radius: 0 6px 6px 0; }
   .vision .k { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
   .lede { font-size: .98rem; margin: 0 0 10px; }
@@ -191,6 +192,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     <span>${stepBadge(e.atStep)}</span>
     <span><em>${esc(e.status || 'no status')}</em></span>
     ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
+    ${e.changedAt ? `<span class="changed" title="stamped by the door on the write that last changed this row">changed ${esc(String(e.changedAt).slice(0, 10))}${e.changedIn && e.changedIn !== 'unknown' ? ` in <code>${esc(String(e.changedIn).slice(0, 7))}</code>` : ''}</span>` : '<span class="unwritten">not yet written through the door</span>'}
   </div>
 </div>
 <div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>

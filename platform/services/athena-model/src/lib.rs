@@ -4486,6 +4486,11 @@ pub fn curl_http(method: &str, url: &str, token: &str, body: Option<&str>) -> R<
     let mut cmd = Command::new("curl");
     cmd.args(["-s", "--max-time", "30", "-X", method, url, "-w", "\n%{http_code}"]);
     if !token.is_empty() { cmd.arg("-H").arg(format!("Authorization: Bearer {}", token)); }
+    // #4101 — the land tells the door which commit is changing the row; the door
+    // stamps it (changedIn) with the clock (changedAt). Never a body field.
+    if let Ok(c) = std::env::var("CHORUS_LANDED_COMMIT") {
+        if !c.trim().is_empty() { cmd.arg("-H").arg(format!("X-Landed-Commit: {}", c.trim())); }
+    }
     if body.is_some() { cmd.args(["-H", "Content-Type: application/json", "--data-binary", "@-"]); }
     cmd.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     let mut child = cmd.spawn().map_err(|e| format!("curl: {}", e))?;

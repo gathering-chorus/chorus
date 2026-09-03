@@ -21,6 +21,7 @@
 
 # #4045 — was chorus:doc-product-design-pulse (outside the ADR-040 document- convention; the seeder's iri-guard refused it). Renamed; prod keeps the old row in urn:chorus:domains:documents until retired.
 chorus:document-product-design-pulse a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Product Design — Pulse""" ;
     chorus:docHref """/designing/docs/product-design-pulse.html""" ;
     chorus:comment """What Pulse is FOR: Jeff looks once and knows whether his team is working, without asking anyone and without being lied to. Measured by how many times a day he has to ask — six on 2026-08-25.""" ;
@@ -31,6 +32,7 @@ chorus:document-product-design-pulse a chorus:Document ;
 
 # #4045 — was chorus:doc-service-design-pulse (same iri-guard reason as above).
 chorus:document-service-design-pulse a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Service Design — Pulse""" ;
     chorus:docHref """/designing/docs/service-design-pulse.html""" ;
     chorus:comment """How Pulse works and where it currently lies: an event-bus cache, not an aggregator (Silas, 2026-04-21); 1 of 8 #2442 items shipped; the state field wrong by construction at pulse.rs:162, which is why 129 declaration cards never fixed it.""" ;
@@ -40,6 +42,7 @@ chorus:document-service-design-pulse a chorus:Document ;
     chorus:hasProduct chorus:pulse .
 
 chorus:document-athena-product-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Athena — Product Design""" ;
     chorus:docHref """/designing/docs/athena-product-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 athena-domain → knowledge.""" ;
@@ -48,6 +51,7 @@ chorus:document-athena-product-design a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-borg-product-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Borg — Product Design""" ;
     chorus:docHref """/designing/docs/borg-product-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
@@ -56,6 +60,7 @@ chorus:document-borg-product-design a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-chorus-as-platform a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Chorus — A System to Build Systems""" ;
     chorus:docHref """/designing/docs/chorus-as-platform.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 chorus-domain → domains.""" ;
@@ -64,6 +69,7 @@ chorus:document-chorus-as-platform a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-clearing-value-stream-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Clearing — Value-Stream Design""" ;
     chorus:docHref """/designing/docs/clearing-value-stream-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
@@ -72,6 +78,7 @@ chorus:document-clearing-value-stream-design a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-convergence-value-stream-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Convergence — Value-Stream Design""" ;
     chorus:docHref """/designing/docs/convergence-value-stream-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 convergence-domain → integrations.""" ;
@@ -80,6 +87,7 @@ chorus:document-convergence-value-stream-design a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-doc-service-design-spine a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Spine — Service Design""" ;
     chorus:docHref """/designing/docs/spine-service-design.html""" ;
     chorus:comment """The event log finally has a design (#4044). Disambiguates the two senses of spine (value stream vs event log); names three measured gaps: reach (a fixed 4MB tail serves 3h17m of a 40-day 1.71GB log, so the Team Pulse range tabs are decorative), a second SDK-written log at platform/logs/chorus.log that no reader reads, and the MCP-tools-to-events correspondence we assert but never check.""" ;
@@ -89,6 +97,7 @@ chorus:document-doc-service-design-spine a chorus:Document ;
     chorus:hasProduct chorus:spine .
 
 chorus:document-loom-subproduct-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Loom — Subproduct Design""" ;
     chorus:docHref """/designing/docs/loom-subproduct-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
@@ -97,6 +106,7 @@ chorus:document-loom-subproduct-design a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-memory-architecture a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Memory Architecture""" ;
     chorus:docHref """/designing/docs/MEMORY_ARCHITECTURE.html""" ;
     chorus:comment """How the team remembers — session index, artifacts, recall layers.""" ;
@@ -105,12 +115,14 @@ chorus:document-memory-architecture a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-pipelines-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Pipelines — service design (design as data; this Document is the catalog pointer)""" ;
     chorus:docHref """/gathering-docs/ci-pipeline-service-design.html""" ;
     chorus:hasDomain chorus:pipelines ;
     chorus:ownedBy chorus:role-kade .
 
 chorus:document-pulse-service-design-tobe a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Pulse — Service Design (to-be)""" ;
     chorus:docHref """/designing/docs/chorus-pulse-tobe.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row).""" ;
@@ -119,6 +131,7 @@ chorus:document-pulse-service-design-tobe a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-service-design-cards a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Service Design — Cards""" ;
     chorus:docHref """/designing/docs/cards-service-design.html""" ;
     chorus:comment """How the board works as a service — the cards CLI, its backing store, and the write paths every role uses.""" ;
@@ -127,6 +140,7 @@ chorus:document-service-design-cards a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-service-design-clearing a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Service Design — The Clearing""" ;
     chorus:docHref """/designing/docs/clearing-service-design.html""" ;
     chorus:comment """The Clearing as a service — multi-party chat, streams in, decisions out.""" ;
@@ -136,6 +150,7 @@ chorus:document-service-design-clearing a chorus:Document ;
     chorus:hasProduct chorus:clearing .
 
 chorus:document-service-design-nudge a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Nudge — Service Design""" ;
     chorus:docHref """/designing/docs/nudge-service-design.html""" ;
     chorus:comment """Nudge delivery as a service — persist AND deliver, both paths every time (DEC-107).""" ;
@@ -144,6 +159,7 @@ chorus:document-service-design-nudge a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-service-design-streams a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Service Design — Streams""" ;
     chorus:docHref """/designing/docs/streams-service-design.html""" ;
     chorus:comment """The live stream feed as a service — spine, session, and log flow rendered watchable.""" ;
@@ -152,6 +168,7 @@ chorus:document-service-design-streams a chorus:Document ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-spine-product-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Spine — Product Design""" ;
     chorus:docHref """/designing/docs/spine-product-design.html""" ;
     chorus:comment """What the spine IS as a product (#4045): three promises (nothing lost, anything recorded reachable, what can happen enumerable), and the EDA layering Jeff called for on 2026-09-01 — EventType as curated vocabulary in the graph, SpineEvent as the log projected on read, joined by ofType. Composes the events and spine domains; excludes logs.""" ;
@@ -161,6 +178,7 @@ chorus:document-spine-product-design a chorus:Document ;
     chorus:hasProduct chorus:spine .
 
 chorus:document-werk-subproduct-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Werk — Subproduct Design""" ;
     chorus:docHref """/designing/docs/werk-subproduct-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
@@ -173,6 +191,7 @@ chorus:document-werk-subproduct-design a chorus:Document ;
 # (Kade). Authored here so the product row can point at the doc Jeff actually reads;
 # the stub row stays (prod carries it) until retired.
 chorus:document-werk-product-design a chorus:Document ;
+    chorus:docState """current""" ;
     chorus:docTitle """Werk — Product Design""" ;
     chorus:docHref """/designing/docs/werk-product-design.html""" ;
     chorus:comment """Werk as a Product (Jeff, 2026-07-12, #3421): why pay not just prompt, the 12-verb family, the four domains, card-artifact coherence, the query-backwards model. Consolidates ten former werk docs.""" ;
