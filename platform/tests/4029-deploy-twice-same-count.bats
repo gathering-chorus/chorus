@@ -10,7 +10,7 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
-GRAPH="urn:chorus:ontology-test-bats-4029"
+GRAPH="urn:chorus:ontology-test-bats-4029-$$"   # #4084: per-process suffix — two pipelines running this at once shared one graph and tore each other down
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 
