@@ -203,3 +203,18 @@ chorus:document-werk-subproduct-design a chorus:Document ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 tests-domain → tests.""" ;
     chorus:hasDomain chorus:tests ;
     chorus:ownedBy chorus:role-wren .
+
+# #4080 — werk's served hasDesignDoc pointed at werk-subproduct-design, a 920-byte
+# pointer stub retired 2026-07-12 (#3421). The real design is werk-product-design.html
+# (Kade). Authored here so the product row can point at the doc Jeff actually reads;
+# the stub row stays (prod carries it) until retired.
+chorus:document-werk-product-design a chorus:Document ;
+    chorus:label """werk-product-design""" ;
+    rdfs:label """werk-product-design""" ;
+    chorus:docTitle """Werk — Product Design""" ;
+    chorus:docHref """/designing/docs/werk-product-design.html""" ;
+    chorus:comment """Werk as a Product (Jeff, 2026-07-12, #3421): why pay not just prompt, the 12-verb family, the four domains, card-artifact coherence, the query-backwards model. Consolidates ten former werk docs.""" ;
+    rdfs:comment """Werk as a Product (Jeff, 2026-07-12, #3421): why pay not just prompt, the 12-verb family, the four domains, card-artifact coherence, the query-backwards model. Consolidates ten former werk docs.""" ;
+    chorus:hasDomain chorus:pipelines ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:hasProduct chorus:werk .

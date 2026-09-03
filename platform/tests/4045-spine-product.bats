@@ -112,7 +112,10 @@ print(" ".join(sorted(json.load(sys.stdin)["components"]["schemas"]["Product"]["
 import sys, json
 print(" ".join(json.load(sys.stdin)["components"]["schemas"]["Product"]["properties"].keys()))')"
   case " $props " in *" section1 "*|*" designHtml "*) return 1 ;; esac
-  # and a product that never filled its sections serves them absent, not invented
-  run bash -c "$(declare -f product_row); OWL_URL=$OWL_URL product_row pulse | python3 -c 'import sys,json; v=json.load(sys.stdin).get(\"promise\",\"\"); sys.exit(0 if not v else 1)'"
-  [ "$status" -eq 0 ]
+  # and the section check is shown to FAIL on a row that lacks a section (#4080: every
+  # product is filled now, so the fixture is a served row with one section removed)
+  run bash -c "$(declare -f product_row); OWL_URL=$OWL_URL product_row spine | python3 -c '
+import sys,json; r=json.load(sys.stdin); r.pop(\"toBe\",None)
+v=r.get(\"toBe\",\"\"); sys.exit(0 if isinstance(v,str) and len(v.strip())>20 else 1)'"
+  [ "$status" -eq 1 ]
 }
