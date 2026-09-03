@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -570,18 +570,17 @@ fn run() -> Result<String, String> {
                 for (k, _) in &parsed {
                     homes.push(deploy_home(&store, k, default_home)?);
                 }
+                // ONE batch (referential integrity spans homes, #3839), each
+                // group written to its own home; verify per home afterwards.
+                let groups: Vec<SeedGroup> = parsed
+                    .iter()
+                    .map(|(k, t)| SeedGroup { kind: k.as_str(), triples: t.as_slice() })
+                    .collect();
+                let report = seed_multi_at(&store, &groups, &provenance, None, Some(&homes), &id)?;
                 let parts = deploy_partitions(&homes);
-                let mut total_subjects = 0usize;
-                let mut total_triples = 0usize;
+                let (total_subjects, total_triples) = (report.subjects, report.triples);
                 let mut verified: Vec<String> = Vec::new();
                 for (g, idx) in &parts {
-                    let groups: Vec<SeedGroup> = idx
-                        .iter()
-                        .map(|&i| SeedGroup { kind: parsed[i].0.as_str(), triples: parsed[i].1.as_slice() })
-                        .collect();
-                    let report = seed_multi(&store, &groups, &provenance, Some(g.as_str()), &id)?;
-                    total_subjects += report.subjects;
-                    total_triples += report.triples;
                     // parse_ntriples keeps subjects bracketed (`<iri>`); bare IRIs
                     // for comparison with select_v's unbracketed bindings.
                     let mut declared: Vec<String> = idx

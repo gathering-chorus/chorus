@@ -2385,6 +2385,28 @@ pub fn seed_multi(
     graph: Option<&str>,
     id: &Identity,
 ) -> R<SeedReport> {
+    seed_multi_at(store, groups, provenance, graph, None, id)
+}
+
+/// #4089 — `seed_multi` with a HOME PER GROUP. `homes[i]` is the graph group i's
+/// subjects are written to (each shape's declared instancesGraph, resolved by the
+/// caller via `deploy_home`); validation, the subject-claimed-once rule and the
+/// referential-integrity check still run over the WHOLE batch as one
+/// transaction, so a product in one home may point at a document in another
+/// (#3839 kept). `None` = every group lands in `graph` / the shapes' shared pin.
+pub fn seed_multi_at(
+    store: &dyn Store,
+    groups: &[SeedGroup<'_>],
+    provenance: &str,
+    graph: Option<&str>,
+    homes: Option<&[String]>,
+    id: &Identity,
+) -> R<SeedReport> {
+    if let Some(h) = homes {
+        if h.len() != groups.len() {
+            return Err(format!("seed: {} homes for {} groups — one home per group", h.len(), groups.len()));
+        }
+    }
     // #3839 AC7 — where do these instances go?
     //
     // A caller that STATES a graph is honored: per-domain graphs are legitimate
@@ -2398,7 +2420,7 @@ pub fn seed_multi(
     // #3838 zero-rows class, three separate hits). Now the SHAPE decides, and a
     // class whose shape declares no pin is refused rather than guessed at.
     let resolved: String;
-    let g: &str = match graph {
+    let g: &str = match graph.or(homes.and_then(|h| h.first().map(|s| s.as_str()))) {
         Some(explicit) => explicit,
         None => {
             let mut pins: Vec<String> = Vec::new();
@@ -2437,6 +2459,26 @@ pub fn seed_multi(
         format!("seed: graph '{}' is outside the known realms (urn:chorus:*, urn:gathering:*) — refused", g)
     })?;
     assert_dal_writable(g)?; // #3356 AC4 — ontology/security are DBA-path-only
+    // #4089 — every per-group home passes the same doors as g
+    let home_of = |i: usize| -> &str { homes.map(|h| h[i].as_str()).unwrap_or(g) };
+    let mut distinct_homes: Vec<&str> = Vec::new();
+    for i in 0..groups.len() {
+        let h = home_of(i);
+        if !distinct_homes.contains(&h) {
+            distinct_homes.push(h);
+        }
+    }
+    for h in &distinct_homes {
+        if h.contains(['<', '>', '{', '}', ' ', ';']) {
+            witness("model.seed.refused", &[("graph", h), ("reason", "malformed-graph")]);
+            return Err(format!("seed: graph '{}' is malformed (refused)", h));
+        }
+        if realm_policy(h).is_none() {
+            witness("model.seed.refused", &[("graph", h), ("reason", "off-realm-graph")]);
+            return Err(format!("seed: graph '{}' is outside the known realms (urn:chorus:*, urn:gathering:*) — refused", h));
+        }
+        assert_dal_writable(h)?;
+    }
     if groups.is_empty() || groups.iter().all(|gr| gr.triples.is_empty()) {
         return Err("seed: no triples to load".into());
     }
@@ -2644,14 +2686,17 @@ pub fn seed_multi(
     // the graph is skipped entirely — no DELETE, no INSERT, no modified bump.
     // Both sides of the comparison are plain strings, so nothing can be lost in
     // transit the way a literal's datatype is.
-    let mut stored_hash: std::collections::HashMap<String, String> =
+    // keyed by (home, subject): the same IRI may legitimately sit in two graphs
+    let mut stored_hash: std::collections::HashMap<(String, String), String> =
         std::collections::HashMap::new();
-    for row in store.select_v(&format!(
-        "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s <{ns}contentHash> ?h }} BIND(CONCAT(STR(?s), '|', STR(?h)) AS ?v) }}",
-        g = g, ns = NS
-    ))? {
-        if let Some((subj, h)) = row.split_once('|') {
-            stored_hash.insert(subj.to_string(), h.to_string());
+    for home in &distinct_homes {
+        for row in store.select_v(&format!(
+            "SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s <{ns}contentHash> ?h }} BIND(CONCAT(STR(?s), '|', STR(?h)) AS ?v) }}",
+            g = home, ns = NS
+        ))? {
+            if let Some((subj, h)) = row.split_once('|') {
+                stored_hash.insert((home.to_string(), subj.to_string()), h.to_string());
+            }
         }
     }
 
@@ -2660,25 +2705,28 @@ pub fn seed_multi(
     let now = now_iso();
     let creator = id.role().to_string();
     let mut sparql = String::new();
-    let mut body = String::new();
+    // one INSERT body per home graph, homes in first-seen order
+    let mut bodies: Vec<(String, String)> = distinct_homes.iter().map(|h| (h.to_string(), String::new())).collect();
     let mut triple_count = 0usize;
     let mut subject_count = 0usize;
     let mut unchanged = 0usize;
 
-    for ((kind, order, by_subject), class_and_shape) in grouped.iter().zip(shapes.iter()) {
+    for (gi, ((kind, order, by_subject), class_and_shape)) in grouped.iter().zip(shapes.iter()).enumerate() {
+        let gg = home_of(gi);
+        let body = &mut bodies.iter_mut().find(|(h, _)| h == gg).expect("home listed").1;
         let mut unchanged_in_group = 0usize;
         for subject_term in order {
             let iri = &subject_term[1..subject_term.len() - 1];
             let props = &by_subject[subject_term];
             let hash = content_hash(props);
-            if stored_hash.get(iri).map(|h| h == &hash).unwrap_or(false) {
+            if stored_hash.get(&(gg.to_string(), iri.to_string())).map(|h| h == &hash).unwrap_or(false) {
                 unchanged += 1;
                 unchanged_in_group += 1;
                 continue; // AC4 — identical content is a no-op, not a rewrite
             }
             sparql.push_str(&format!(
                 "DELETE WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} }} ;\n",
-                g = g, s = iri
+                g = gg, s = iri
             ));
             let mut has_label = false;
             let mut has_type = false;
@@ -2707,7 +2755,7 @@ pub fn seed_multi(
             let existing_created = store
                 .select_v(&format!(
                     "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> <{d}created> ?v }} }}",
-                    g = g, s = iri, d = DCT
+                    g = gg, s = iri, d = DCT
                 ))?
                 .into_iter()
                 .next();
@@ -2719,16 +2767,22 @@ pub fn seed_multi(
             ));
         }
         let (ns_, no_) = (order.len().to_string(), kind.to_string());
-        witness("model.seed", &[("kind", no_.as_str()), ("graph", g), ("subjects", ns_.as_str()), ("provenance", provenance)]);
+        witness("model.seed", &[("kind", no_.as_str()), ("graph", gg), ("subjects", ns_.as_str()), ("provenance", provenance)]);
         subject_count += order.len() - unchanged_in_group;
     }
-    if body.is_empty() {
+    if bodies.iter().all(|(_, b)| b.is_empty()) {
         // Everything was already exactly this. Say so — a deploy that reports
         // "wrote 67" every night when it changed nothing is a broken signal.
         witness("model.seed.unchanged", &[("graph", g), ("subjects", unchanged.to_string().as_str())]);
         return Ok(SeedReport { subjects: 0, triples: 0 });
     }
-    sparql.push_str(&format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = g, b = body));
+    // one transaction: every DELETE, then one INSERT DATA per home graph
+    let inserts: Vec<String> = bodies
+        .iter()
+        .filter(|(_, b)| !b.is_empty())
+        .map(|(h, b)| format!("INSERT DATA {{ GRAPH <{g}> {{ {b} }} }}", g = h, b = b))
+        .collect();
+    sparql.push_str(&inserts.join(" ;\n"));
     store.update(&sparql)?;
 
     Ok(SeedReport { subjects: subject_count, triples: triple_count })
