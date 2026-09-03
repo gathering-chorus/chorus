@@ -2294,6 +2294,37 @@ pub fn nightly_writeback_withheld(root: &str, endpoint_overridden: bool) -> bool
     root.contains("/chorus-werk/") && !endpoint_overridden
 }
 
+/// #4078 — count a lane's cases by what they ARE: pass / fail / skipped. For
+/// days directing/clearing folded as "839 pass, 1 fail" with no failing test —
+/// the 1 was a SKIPPED case, counted as failed because the count was
+/// "everything that is not pass". A skip is not a red (#3734: the two states
+/// must stay separable; a test.skip cannot make a night red).
+pub fn case_counts<'a>(results: impl Iterator<Item = &'a str>) -> (usize, usize, usize) {
+    let (mut passed, mut failed, mut skipped) = (0, 0, 0);
+    for r in results {
+        match r {
+            "pass" => passed += 1,
+            "fail" => failed += 1,
+            _ => skipped += 1,
+        }
+    }
+    (passed, failed, skipped)
+}
+
+/// #4078 — the fold line with case-level skips named: "N pass, M fail, K skipped".
+/// The wrapper reads pass/fail by label, so the extra field is inert there and
+/// visible to a reader; verdict stays exit-and-count (#4063).
+pub fn nightly_lane_line_with_skips(kind: &str, unit: &str, ok: bool, passed: usize, failed: usize, skipped: usize, ns_skipped: usize) -> String {
+    let line = nightly_lane_line(kind, unit, ok, passed, failed, ns_skipped);
+    if skipped == 0 { return line; }
+    // insert ", K skipped" right after "M fail"
+    let needle = format!("{} fail", failed);
+    match line.find(&needle) {
+        Some(i) => format!("{}, {} skipped{}", &line[..i + needle.len()], skipped, &line[i + needle.len()..]),
+        None => line,
+    }
+}
+
 /// #4030 — the runner's PLAN, one line per unit, printed before any lane runs.
 /// The wrapper (nightly-suites.sh `_never_ran_rows`) folds a planned unit that
 /// never produced a `nightly-unit|` line into a red NEVER RAN row, so a lane
@@ -2631,6 +2662,21 @@ mod nightly_via_runner_3920 {
         assert!(nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", false));
         assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus-werk/kade-4063", true));
         assert!(!nightly_writeback_withheld("/Users/j/CascadeProjects/chorus", false));
+    }
+
+    #[test]
+    fn a_skipped_case_is_not_a_failure() {
+        // NEGATIVE PROOF (#3734/#4078): the exact clearing fold — 839 pass, 1 skip,
+        // runner exit ok — must fold green with the skip named, never "1 fail".
+        let results: Vec<&str> = std::iter::repeat("pass").take(839).chain(std::iter::once("skip")).collect();
+        let (p, f, s) = case_counts(results.into_iter());
+        assert_eq!((p, f, s), (839, 0, 1));
+        let line = nightly_lane_line_with_skips("npm", "directing/clearing", true, p, f, s, 0);
+        assert_eq!(line, "nightly-unit|npm|directing/clearing|pass|839 pass, 0 fail, 1 skipped");
+        // and a real failure still folds red — the fix must not widen into never-red
+        let (p2, f2, s2) = case_counts(["pass", "fail", "skip"].into_iter());
+        assert_eq!((p2, f2, s2), (1, 1, 1));
+        assert!(nightly_lane_line_with_skips("npm", "x", true, p2, f2, s2, 0).contains("|fail|"));
     }
 
     #[test]
