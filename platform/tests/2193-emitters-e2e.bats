@@ -3,7 +3,8 @@
 load test_helper
 # 2193-emitters-e2e — source-shape + smoke assertions for #2193 semantic
 # spine emitters that live in bash (commit.landed, test.delta) and the
-# derive + coherence-check scripts.
+# derive + coherence-check scripts. (#4028 retired both bash scripts — state is
+# derived in platform/api/src/derive-role-state.ts now; #4080 retired their 5 tests.)
 
 CHORUS_ROOT="${CHORUS_ROOT}"
 
@@ -17,38 +18,6 @@ CHORUS_ROOT="${CHORUS_ROOT}"
 @test "test.delta prior-run file rotates so deltas compute across runs" {
   grep -qE '/tmp/chorus-test-delta-' "$CHORUS_ROOT/platform/scripts/gate-code-tests.sh"
   grep -qE 'emit_test_delta' "$CHORUS_ROOT/platform/scripts/gate-code-tests.sh"
-}
-
-@test "derive-role-state script exists, executable, and writes inferred.json" {
-  # #2614: writes /tmp/claude-team-scan/kade-inferred.json — same path live
-  # daemon reads. Gate behind RUN_INTEGRATION; default cargo/bats run skips.
-  [ -z "${RUN_INTEGRATION:-}" ] && skip "axis-4 — writes /tmp/claude-team-scan/kade-inferred.json (set RUN_INTEGRATION=1 to run)"
-  [ -x "$CHORUS_ROOT/platform/scripts/derive-role-state" ]
-  # Smoke-run for kade; inferred.json should appear and be valid JSON.
-  bash "$CHORUS_ROOT/platform/scripts/derive-role-state" kade
-  [ -f /tmp/claude-team-scan/kade-inferred.json ]
-  python3 -c "import json; d=json.load(open('/tmp/claude-team-scan/kade-inferred.json')); assert d['role']=='kade'; assert d['source']=='inferred'; assert 'ts' in d"
-}
-
-@test "derive-role-state rejects unknown role with non-zero exit" {
-  run bash "$CHORUS_ROOT/platform/scripts/derive-role-state" jeff
-  [ "$status" -ne 0 ]
-}
-
-@test "coherence-check script exists and is executable" {
-  [ -x "$CHORUS_ROOT/platform/scripts/coherence-check" ]
-}
-
-@test "coherence-check has the 60s threshold + fires role.state.drifted on alarm" {
-  grep -qE 'THRESHOLD=60' "$CHORUS_ROOT/platform/scripts/coherence-check"
-  grep -qE 'role\.state\.drifted' "$CHORUS_ROOT/platform/scripts/coherence-check"
-}
-
-@test "coherence-check nudges the drifted role, not jeff" {
-  # Source assertion: the nudge target is $ROLE from the loop, not 'jeff' literally.
-  run grep -nE '"\$OPS_NUDGE"\s+"jeff"' "$CHORUS_ROOT/platform/scripts/coherence-check"
-  [ "$status" -ne 0 ]  # no match = jeff never hard-coded as target
-  grep -qE '"\$OPS_NUDGE"\s+"\$ROLE"' "$CHORUS_ROOT/platform/scripts/coherence-check"
 }
 
 @test "spine-events.json registers ac.ticked, commit.landed, test.delta" {

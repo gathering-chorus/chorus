@@ -142,6 +142,24 @@ else
     "$CHORUS_ROOT/roles/kade/ontology/pipelines-4040.ttl"
   )
 fi
+# #4080 — a bare run from INSIDE A WERK must not default to prod. On 2026-09-03
+# 07:29 a hand run from werk-silas wrote urn:chorus:ontology in pods (the 08-28
+# werk-writes-prod class) because these defaults are prod. The pipeline's env-up
+# passes FUSEKI_* for the werk store (werk-deploy demo_env.rs) and the canonical
+# land runs from canonical; a role at a werk shell gets neither and lands on
+# prod silently. Refuse: name the store, or say canonical on purpose.
+_fuseki_gsp_explicit="${FUSEKI_GSP+x}"
+case ":${CHORUS_ROOT:-}:$(pwd -P 2>/dev/null):" in
+  *"/chorus-werk/"*)
+    # A test that names its own throwaway ONTOLOGY_GRAPH (the #3601 wipe-guard
+    # discipline) is not a prod write and passes; only the LIVE graph is refused.
+    _og="${ONTOLOGY_GRAPH:-urn:chorus:ontology}"
+    if [ -z "$_fuseki_gsp_explicit" ] && [ "${DEPLOY_TARGET:-}" != "canonical" ] && [ "$_og" = "urn:chorus:ontology" ]; then
+      echo "athena-deploy-model: REFUSED — running inside a werk with no FUSEKI_GSP set; the default is PROD (localhost:3030/pods). Set FUSEKI_GSP/FUSEKI_QUERY/FUSEKI_UPDATE to the werk store (werk-<role>), or DEPLOY_TARGET=canonical to write prod on purpose (#4080)." >&2
+      exit 78
+    fi ;;
+esac
+[ "${ATHENA_DEPLOY_TARGET_CHECK_ONLY:-}" = "1" ] && { echo "target-check: ok gsp=${FUSEKI_GSP:-<default pods>}"; exit 0; }
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 
@@ -503,8 +521,14 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
       # route must not retire, and an unanswerable athena-make must not blind-pass).
       if ! printf '%s' "$_served_resp" | grep -q '"served"'; then
         echo "athena-deploy-model: RETIREMENT serve-check UNANSWERED (athena-make gave no route list) — refusing to execute claim retirements blind (#3752, Wren's window)" >&2
-        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-serve-check-unanswered" 2>/dev/null || true
-        exit 1
+        # #4080 — DEFER, do not die. This exit 1 sat BEFORE the SECURITY_SET load
+        # below, so in a fresh werk store (no variant athena-make up yet at seed
+        # time) the script quit here, 0 Principal rows landed, and every DAL token
+        # was WebIdNotAllowed — the #4080 env-up hollow demo (Kade, 07:43). A claim
+        # retirement that cannot be serve-checked is skipped and tried again on the
+        # next deploy that can answer; the rest of the deploy proceeds.
+        "$CHORUS_LOG" model.retirement.deferred "$ROLE" graph="$_rg" reason="retirement-serve-check-unanswered" line="$_rline" 2>/dev/null || true
+        continue
       fi
       _rroute_now=$(printf '%s' "$_rcls" | python3 -c '
 import sys
