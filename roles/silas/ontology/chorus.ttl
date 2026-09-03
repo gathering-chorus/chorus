@@ -2447,7 +2447,7 @@ chorus:CommitmentShape a sh:NodeShape ;
     sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
     sh:property [ sh:path chorus:ofService ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Service ] ;
     sh:property [ sh:path chorus:card ; sh:maxCount 1 ; sh:class chorus:Card ] ;
-    sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+    sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:or ( [ sh:nodeKind sh:IRI ] [ sh:datatype xsd:string ] ) ] .   # #4089 — a probe is a model row (IRI, security) OR a runnable path relative to CHORUS_ROOT (string, tests); commitment-check.sh reads both
 
 # the properties domain-class itself (punned)
 chorus:Properties a owl:Class , chorus:Domain ;

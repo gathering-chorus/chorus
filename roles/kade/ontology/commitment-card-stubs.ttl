@@ -9,7 +9,7 @@
 # security-commitments-4064.ttl
 chorus:card-3645 a chorus:Card ; rdfs:label "3645" .
 chorus:card-3784 a chorus:Card ; rdfs:label "3784" .
-chorus:card-3829 a chorus:Card ; rdfs:label "3829" .
+chorus:card-3829 a chorus:Card ; rdfs:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" .
 chorus:card-3614 a chorus:Card ; rdfs:label "3614" .
 chorus:card-2646 a chorus:Card ; rdfs:label "2646" .
 chorus:card-3980 a chorus:Card ; rdfs:label "3980" .
