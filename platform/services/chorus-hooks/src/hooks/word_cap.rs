@@ -45,12 +45,17 @@ pub const WORD_CAP_REFUSAL_CAP: u32 = 2;
 /// it. Strip order: fenced blocks (an unclosed fence strips to end of text —
 /// accepted risk, named in the fixture), then inline code spans, then
 /// http(s)/ws(s) URLs. A token counts only if it contains a letter or digit.
-pub fn count_words(text: &str) -> usize {
+/// #4077 — the prose the cap counts and the english-only leg reads: header,
+/// fenced blocks, inline code and URLs removed. ONE stripping rule for both.
+pub fn prose_only(text: &str) -> String {
     let no_header = strip_leading_header(text);
     let no_fences = strip_fences(&no_header);
     let no_inline = strip_inline_code(&no_fences);
-    let no_urls = strip_urls(&no_inline);
-    no_urls
+    strip_urls(&no_inline)
+}
+
+pub fn count_words(text: &str) -> usize {
+    prose_only(text)
         .split_whitespace()
         .filter(|tok| tok.chars().any(|c| c.is_alphanumeric()))
         .count()

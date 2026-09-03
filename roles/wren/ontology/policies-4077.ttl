@@ -1,0 +1,20 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# English-only policy (#4077) — Jeff, 2026-09-02: "i think we need an english
+# only policy" / "we have a policy domain" / "use english not ainglish".
+#
+# Jeff, same evening, on a banned-word list as the enforcement: "not sure a
+# banned word list is poiesis" — "take it out". A list is a fence, not the
+# making; it can only catch words that already failed once. So this policy has
+# NO word list and NO gate. It is the rule, derived from its principle, read by
+# every role at session start with the rest of the policies domain.
+# =============================================================================
+
+chorus:policy-english-only a chorus:Policy ;
+    rdfs:label "English only" ;
+    rdfs:comment "A reply to Jeff uses words a colleague with no context would follow. Name the specific file, service, count or person; never a name the team coined, never a borrowed architecture word standing in for the thing. If the specific thing cannot be named, say so. Enforced by reading, not by a filter: Jeff says \"ainglish\" and the reply is rewritten in that turn." ;
+    chorus:derivedFrom chorus:principle-comprehension-is-the-rate-limit .
