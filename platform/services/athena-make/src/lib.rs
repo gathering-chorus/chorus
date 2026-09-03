@@ -1813,10 +1813,25 @@ fn dal_err_resp(e: &str) -> (u16, String) {
 
 /// Query the ownedBy role of an entity (for authZ). None = no ownedBy on record →
 /// authz_allows fails closed.
-fn query_owned_by(entity: &str, instances_graph: &str) -> Option<String> {
+/// #4096 — the entity's IRI as the DAL mints it. Product, Domain and Test are
+/// BARE grains (chorus:spine); every other kind is PREFIXED with its kebab kind
+/// (chorus:document-x, chorus:value-stream-step-directing) — the DAL's KINDS table
+/// (athena-model lib.rs) is the source of that flag. Until today every read,
+/// existence check and owner lookup here used the bare form for every kind, so a
+/// document written through the door could not be read back, and its own creator
+/// was refused as "not the owner" on replace (round 14).
+pub fn entity_subject(class: &str, name: &str) -> String {
+    let local = class.rsplit('#').next().unwrap_or(class);
+    match local {
+        "Product" | "Domain" | "Test" => format!("{}{}", NS, name),
+        _ => format!("{}{}-{}", NS, kind_of_class(local), name),
+    }
+}
+
+fn query_owned_by(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
     let q = format!(
-        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
-        ns = NS, g = instances_graph, e = entity
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:ownedBy ?o . BIND(REPLACE(STR(?o), '.*[#/]', '') AS ?v) }} }}",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity)
     );
     sparql_json(&q)
         .ok()
@@ -1843,10 +1858,10 @@ fn partof_exists(entity: &str, instances_graph: &str) -> bool {
 }
 
 /// Does the entity exist at all? (create → 409 if it does; replace → 404 if it doesn't).
-fn entity_exists(entity: &str, instances_graph: &str) -> bool {
+fn entity_exists(class: &str, entity: &str, instances_graph: &str) -> bool {
     let q = format!(
-        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{ns}{e}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
-        ns = NS, g = instances_graph, e = entity
+        "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o . BIND('y' AS ?v) }} }} LIMIT 1",
+        g = instances_graph, s = entity_subject(class, entity)
     );
     sparql_json(&q).map(|b| !select_v(&b).is_empty()).unwrap_or(false)
 }
@@ -2430,7 +2445,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             return write_resp("validation", "invalid entity name");
         }
         // AC3 authZ — only the owning role writes this node's edges (fail-closed).
-        let owned = query_owned_by(e, &table.instances_graph);
+        let owned = query_owned_by(&table.class, e, &table.instances_graph);
         if !authz_allows(caller_role, owned.as_deref()) {
             emit_write_spine(caller_role, method, e, "", "authz");
             return write_resp("authz", "only the owning role may write this node (ownedBy)");
@@ -2490,7 +2505,7 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
-            if !entity_exists(name, &table.instances_graph) {
+            if !entity_exists(&table.class, name, &table.instances_graph) {
                 return write_resp("not-found", "entity does not exist");
             }
             // #3573 AC5 — closed-shape: reject an off-model property on replace too.
@@ -3329,8 +3344,8 @@ pub fn page_html(t: &RouteTable) -> String {
 /// `contains`, ~80 files on the cards domain) as duplicate JSON keys — malformed
 /// JSON. links also drops the per-edge label lookup (#3354): a link is a traversal
 /// ref, the label lives on the target — fewer queries, ADR-conformant.
-fn entity_json(name: &str, exposure: &[(String, String)], authed: bool, instances_graph: &str) -> R<(String, String)> {
-    let subject = format!("{}{}", NS, name);
+fn entity_json(class: &str, name: &str, exposure: &[(String, String)], authed: bool, instances_graph: &str) -> R<(String, String)> {
+    let subject = entity_subject(class, name);
     let q = format!(
         "SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> ?p ?o }} BIND(CONCAT(STR(?p), \"|\", STR(?o)) AS ?v) }} ORDER BY ?v",
         g = instances_graph, s = subject
@@ -3727,7 +3742,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         if !is_safe_key(key) {
             return (400, "{ \"error\": \"invalid key\" }".to_string());
         }
-        let q = effective_fetch_query(&format!("{}{}", NS, node), &table.instances_graph);
+        let q = effective_fetch_query(&entity_subject(&table.class, node), &table.instances_graph);
         return match sparql_json(&q) {
             Ok(body) => {
                 let rows = select_v(&body);
@@ -4048,7 +4063,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 Err(e) => (502, format!("{{ \"error\": \"{}\" }}", json_escape(&e))),
             };
         }
-        return match entity_json(name, &table.exposure, authed, &table.instances_graph) {
+        return match entity_json(&table.class, name, &table.exposure, authed, &table.instances_graph) {
             Ok((data, links)) => {
                 meta.result_count = 1;
                 // #3506 / ADR-047 — wrap the entity read in the uniform envelope
@@ -5801,6 +5816,18 @@ mod tests {
         // the gate's expression, verbatim: refused only when out of scope AND ownerless
         assert!(!( !scope_allows(target, &scope) && !row_owner_governed(&owned) ), "owned class writes to a graph outside its scope");
         assert!(   !scope_allows(target, &scope) && !row_owner_governed(&ownerless),  "ownerless class is still refused");
+    }
+
+    /// #4096 — the read side mints the same IRI the DAL does: bare for Product,
+    /// Domain, Test; kind-prefixed for everything else. NEGATIVE PROOF: a document
+    /// resolved the bare way is a different IRI (the round-14 shape).
+    #[test]
+    fn entity_subject_mirrors_the_dal_mint_rule() {
+        assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Product", "spine"), format!("{}spine", NS));
+        assert_eq!(entity_subject("chorus#Domain", "events"), format!("{}events", NS));
+        assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Document", "spine-product-design"), format!("{}document-spine-product-design", NS));
+        assert_eq!(entity_subject("https://jeffbridwell.com/chorus#ValueStreamStep", "directing"), format!("{}value-stream-step-directing", NS));
+        assert_ne!(entity_subject("https://jeffbridwell.com/chorus#Document", "x"), format!("{}x", NS));
     }
 
     #[test]
