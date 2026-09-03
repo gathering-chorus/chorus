@@ -17,7 +17,8 @@ window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.in
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
 <style>
   /* phone-first: the page is a single column of readable measure; nothing scrolls sideways */
-  .wrap { max-width: 760px; padding: 16px; }
+  /* on a wide screen: 1in margins either side, no fixed column (Jeff 2026-09-03: "1 inch right and left so I don't scroll so much on mac"); phone keeps 16px */
+  .wrap { max-width: none; padding: 16px 1in; }
   .hero { margin: 6px 0 10px; }
   .hero h1 { font-size: 1.6rem; line-height: 1.2; }
   .hero .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; font-size: .85rem; color: var(--muted); }
@@ -50,6 +51,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   .mt td { padding: 6px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
   .mt td:first-child { font-weight: 600; white-space: nowrap; }
   @media (max-width: 640px) {
+    .wrap { padding: 16px; }
     .mt thead { display: none; }
     .mt, .mt tbody, .mt tr, .mt td { display: block; width: 100%; }
     .mt tr { border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; margin: 0 0 8px; background: var(--bg); }
