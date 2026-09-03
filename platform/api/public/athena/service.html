@@ -56,8 +56,31 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
 </div>
 ${folds.join('\n')}
+<details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>
 ${srcNote(`GET /services/${esc(s)}`)}`;
   } catch (e) { fetchFailed(main, e); }
+  // #4064 — a service's commitments, rendered from the graph. Collection rows carry
+  // literals; the ofService edge is read from each row's entity `links`.
+  try {
+    const body = document.getElementById('commitments-body');
+    const col = await fetchJSON('/commitments?limit=200');
+    const rows = col.items || col.data || [];
+    const mine = [];
+    for (const r of rows) {
+      try {
+        const ent = await fetchJSON(`/commitments/${encodeURIComponent(r.name)}`);
+        const svc = String((ent.links || {}).ofService || '');
+        if (svc.endsWith(':service-' + s) || svc.endsWith('#service-' + s)) mine.push({ ...r, card: (ent.links || {}).card, owner: (ent.links || {}).ownedBy });
+      } catch (_) { /* one unreadable row does not blank the fold */ }
+    }
+    const open = mine.filter(r => r.status === 'open'), noCard = open.filter(r => !r.card);
+    if (!rows.length) { body.innerHTML = '<p class="empty">The model serves no commitment rows yet &mdash; a fetch of zero, not an empty design.</p>'; }
+    else if (!mine.length) { body.innerHTML = `<p class="empty">${rows.length} commitments served; none point at this service.</p>`; }
+    else {
+      const tr = mine.map(r => `<tr><td>${esc(r.label || r.name)}</td><td>${esc(r.status || '')}</td><td>${esc(String(r.owner || '').replace(/^.*role-/, ''))}</td><td>${r.card ? '#' + esc(String(r.card).replace(/^.*card-/, '')) : '<span style="color:#b00">none</span>'}</td></tr>`).join('');
+      body.innerHTML = `<p><strong>${mine.length}</strong> commitments &middot; <strong>${open.length}</strong> open &middot; <strong>${noCard.length}</strong> open with no card</p><table><thead><tr><th>Commitment</th><th>Status</th><th>Owner</th><th>Card</th></tr></thead><tbody>${tr}</tbody></table>`;
+    }
+  } catch (e) { const b = document.getElementById('commitments-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for commitments &mdash; fetch failure, not an empty design. ${esc(String(e && e.message || e))}</p>`; }
 })();
 </script>
 </body></html>
