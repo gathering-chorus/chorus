@@ -10,7 +10,7 @@
 // vocabulary threw 'OWL is not defined'; defining it inside one function (first fix) left renderFacets without it.
 // Same-origin /owl proxy, resolved through athena-flow's basePath when present, so it works on prod, a werk variant, the LAN and the tunnel.
 var OWL = (typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl';
-</script><script src="model-fold.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+</script><script src="model-fold.js"></script><script src="facets.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -93,74 +93,9 @@ ${srcNote(`GET /domains/${esc(d)} + the materialized facet endpoints (/api/athen
 // live graph-derived facets: cards, code, tests, alerts, logs, decisions, deps, etc.
 // Same endpoints as /domain.html; rendered in the family's design vocabulary.
 async function renderFacets(d) {
-  const el = document.getElementById('facets');
-  const ATHENA = '/api/athena/subdomains/';
-  const DOM = '/api/chorus/domain/';
-  // v2 name -> v1 facet id: try <name>-domain first (the athena grain), fall back to the bare name
-  let fid = `${d}-domain`;
-  let probe = await fetch(ATHENA + encodeURIComponent(fid)).then(r => r.ok ? r.json() : null).catch(() => null);
-  if (!probe || probe.error) {
-    fid = d;
-    probe = await fetch(ATHENA + encodeURIComponent(fid)).then(r => r.ok ? r.json() : null).catch(() => null);
-  }
-  const FACETS = [
-    { t: 'Cards', u: ATHENA + fid + '/cards', k: 'cards', cols: ['id', 'title', 'owner', 'status', 'priority'] },
-    { t: 'Dependencies', u: DOM + fid + '/dependencies', k: '_deps' },
-    { t: 'API Contract', u: ATHENA + fid + '/services', k: 'endpoints', alt: 'services', cols: ['method', 'path', 'handler'] },
-    { t: 'UI Pages', u: ATHENA + fid + '/pages', k: 'pages', cols: ['route', 'path', 'pageType'] },
-    { t: 'Code', u: ATHENA + fid + '/code', k: 'files', cols: ['path', 'type'] },
-    { t: 'Tests', u: DOM + fid + '/tests', k: 'tests', cols: ['path', 'type'] },
-    { t: 'Persistence', u: ATHENA + fid + '/persistence', k: 'stores', alt: 'persistence', cols: ['label', 'namespace', 'records', 'status'] },
-    { t: 'Pipeline', u: DOM + fid + '/pipeline', k: 'stages', cols: ['name', 'status', 'summary'] },
-    { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
-    { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
-    { t: 'Decisions', u: DOM + fid + '/decisions', k: 'decisions', cols: ['id', 'title', 'type', 'date'] },
-    // #4084 — the FIRST fold read from the graph, not a v1 registry: chorus:LogSource rows (harvested hourly by
-    // log-harvest.sh) carrying hasDomain from the authored UnitDomainMapping rows. Filtered client-side on the
-    // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
-    { t: 'Logs', u: OWL + '/logsources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === d,
-      cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + d },
-    { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
-    { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
-    { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
-    { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
-    { t: 'Gaps & Status', u: ATHENA + fid + '/gaps', k: 'gaps', cols: ['type', 'description', 'severity'] },
-  ];
-  function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
-  function unwrap(b, k, alt) {
-    if (b && Array.isArray(b.data)) return b.data;   // #4084: an athena-make collection envelope carries its rows in `data`
-    const dd = (b && b.data) || b || {};
-    const v = dd[k] || (alt ? dd[alt] : null) || [];
-    return Array.isArray(v) ? v : [];
-  }
-  function table(items, cols) {
-    const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
-    const rows = items.slice(0, 40).map(it =>
-      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); const short = /^\/.+\//.test(v) && v.length > 28 ? `<span title="${esc(v)}">…/${esc(v.split('/').pop())}</span>` : esc(v.slice(0, 120)); return `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : short}</td>`; }).join('')}</tr>`).join('');
-    const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
-    return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
-  }
-  const bodies = await Promise.all(FACETS.map(f =>
-    fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
-  el.innerHTML = FACETS.map((f, i) => {
-    const b = bodies[i];
-    let inner, count;
-    if (f.k === '_deps') {
-      const dd = (b && b.data) || {};
-      const dir = dd.direct || { consumes: [], consumedBy: [] };
-      count = (dir.consumes || []).length + (dir.consumedBy || []).length;
-      inner = count
-        ? `<div><span class="lbl">depends on</span> ${(dir.consumes || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>
-           <div style="margin-top:6px"><span class="lbl">consumed by</span> ${(dir.consumedBy || []).map(x => `<a class="chip" href="domain.html?d=${encodeURIComponent(String(x.id || x).replace(/-domain$/, ''))}">${esc(x.label || x.id || x)}</a>`).join('') || '<span class="empty">none</span>'}</div>`
-        : '<div class="empty">none recorded</div>';
-    } else {
-      const items = unwrap(b, f.k, f.alt);
-      const rows = f.filter ? items.filter(f.filter) : items;
-      count = rows.length;
-      inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
-    }
-    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">${f.graph ? esc(f.src) + ' &middot; graph' : 'materialized &middot; live'}</span></summary><div class="body">${inner}</div></details>`;
-  }).join('');
+  // #4093 — one renderer (facets.js); this page draws every facet
+  const fid = await resolveFacetId(d);
+  await renderFacetTables(document.getElementById('facets'), fid);
 }
 </script>
 </body></html>

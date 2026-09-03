@@ -8,13 +8,14 @@
      Silas set: public = overview/asIs/toBe, signed-in = gaps/notInScope/
      pathToClose, secret = implementationPlan. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
 (function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
 window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
 return b+(x.charAt(0)==='/'?x:'/'+x);};
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>   <!-- #4093 — after basePath exists; same include product.html (#4094) and class-atlas.html use -->
 </head>
 <body><div class="wrap">
 <div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="services.html">services</a> &rarr; <span id="crumb"></span></div>
@@ -57,7 +58,11 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 </div>
 ${folds.join('\n')}
 <details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>
-${srcNote(`GET /services/${esc(s)}`)}`;
+<h2 class="eng">Engineering</h2>
+<details class="fold" open id="flows-fold"><summary>Flows <span class="src">chorus:diagram (mermaid)</span></summary><div class="body" id="flows-body"><p class="empty">Loading diagrams&hellip;</p></div></details>
+<details class="fold" open id="runsas-fold"><summary>Runs as <span class="src">chorus:ServiceInstance / chorus:ScheduledJob &rarr; chorus:runsService</span></summary><div class="body" id="runsas-body"><p class="empty">Loading harvested units&hellip;</p></div></details>
+<div id="domain-facets"><p class="empty">Loading the hosting domain&rsquo;s facets&hellip;</p></div>
+${srcNote(`GET /services/${esc(s)} &middot; /serviceinstances &middot; /scheduledjobs &middot; the hosting domain's materialized facets`)}`;
   } catch (e) { fetchFailed(main, e); }
   // #4064 — a service's commitments, rendered from the graph. Collection rows carry
   // literals; the ofService edge is read from each row's entity `links`.
@@ -82,6 +87,66 @@ ${srcNote(`GET /services/${esc(s)}`)}`;
       body.innerHTML = `<p><strong>${mine.length}</strong> commitments &middot; <strong>${open.length}</strong> open &middot; <strong>${noCard.length}</strong> open with no card</p><table><thead><tr><th>Commitment</th><th>Status</th><th>Owner</th><th>Card</th></tr></thead><tbody>${tr}</tbody></table>`;
     }
   } catch (e) { const b = document.getElementById('commitments-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for commitments &mdash; fetch failure, not an empty design. ${esc(String(e && e.message || e))}</p>`; }
+
+  // ---- #4093 — the engineering half. Jeff, 2026-09-03: "our service designs seem rather
+  // untechnical, more like a pm view" and "the domains ultimately will show true state".
+  // A service page COMPOSES its hosting domain's facets (one renderer, facets.js) and adds
+  // only what a service owns: flows, runs-as, commitments. Every chapter tells an empty
+  // model apart from a fetch failure.
+  const asArray = v => Array.isArray(v) ? v : (v === undefined || v === null || v === '' ? [] : [v]);
+
+  // Flows — chorus:diagram is repeatable; the entity read serves one string for a repeated
+  // literal, the collection row keeps the list (Wren, #4094), so read the row.
+  try {
+    const body = document.getElementById('flows-body');
+    const col = await fetchJSON('/services?limit=300');
+    const row = (col.data || col.items || []).find(r => r.name === s) || {};
+    const ds = asArray(row.diagram).map(String).map(v => { const ls = v.trim().split('\n'); const cap = ls[0].startsWith('%%') ? ls.shift().replace(/^%%\s*/, '') : ''; return { caption: cap, src: ls.join('\n').trim() }; });
+    if (!ds.length) { body.innerHTML = '<p class="empty">No diagram on this service yet &mdash; the model serves none, not a fetch failure.</p>'; }
+    else {
+      body.innerHTML = ds.map((d, di) => `<figure class="dg"><figcaption>${esc(d.caption || `Diagram ${di + 1}`)}</figcaption><div class="mmd" data-i="${di}"></div></figure>`).join('');
+      if (window.mermaid) {
+        mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' });
+        for (const el of body.querySelectorAll('figure.dg .mmd')) {
+          const d = ds[Number(el.dataset.i)];
+          try { const { svg } = await mermaid.render(`dg_${s.replace(/[^a-z0-9]/gi, '_')}_${el.dataset.i}`, d.src); el.innerHTML = svg; }
+          catch (err) { el.innerHTML = `<div class="mmd-err">diagram source did not render: ${esc(String(err && err.message || err).slice(0, 120))}</div>`; }
+        }
+      } else { for (const el of body.querySelectorAll('figure.dg .mmd')) el.innerHTML = '<div class="mmd-err">mermaid did not load; source held in the model</div>'; }
+    }
+  } catch (e) { const b = document.getElementById('flows-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for diagrams &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`; }
+
+  // Runs as — the harvested launchd units whose runsService edge names this service.
+  try {
+    const body = document.getElementById('runsas-body');
+    const [inst, jobs] = await Promise.all([fetchJSON('/serviceinstances?limit=500'), fetchJSON('/scheduledjobs?limit=500')]);
+    const mine = r => String(r.runsService || '') === s || String(r.runsService || '').endsWith(':' + s);
+    const rows = [...(inst.data || []).filter(mine).map(r => ({ ...r, kind: 'instance' })), ...(jobs.data || []).filter(mine).map(r => ({ ...r, kind: 'job' }))];
+    if (!rows.length) { body.innerHTML = `<p class="empty">No harvested unit names this service (${(inst.data || []).length} instances, ${(jobs.data || []).length} jobs served). If one should, map it in platform/config/service-instance-map.json.</p>`; }
+    else {
+      const tr = rows.map(r => `<tr><td>${esc(r.launchdLabel || r.label || r.name)}</td><td>${esc(r.kind)}</td><td>${esc(r.onMachine || '')}</td><td>${esc(r.runState || r.lastExitCode || '')}</td><td>${esc(String(r.lastObserved || '').slice(0, 16))}</td></tr>`).join('');
+      body.innerHTML = `<p><strong>${rows.length}</strong> unit(s)</p><table><thead><tr><th>Unit</th><th>Kind</th><th>Machine</th><th>State</th><th>Observed</th></tr></thead><tbody>${tr}</tbody></table>`;
+    }
+  } catch (e) { const b = document.getElementById('runsas-body'); if (b) b.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for units &mdash; fetch failure. ${esc(String(e && e.message || e))}</p>`; }
+
+  // The hosting domain: chorus:hosts lives in the ontology graph and is not on the served
+  // row, so ask the read-only SPARQL door for it; then compose its facets.
+  try {
+    const el = document.getElementById('domain-facets');
+    const q = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?d WHERE { GRAPH <urn:chorus:ontology> { ?d chorus:hosts chorus:${s} } } LIMIT 1`;
+    const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
+    if (!r.ok) throw new Error(`sparql-read ${r.status}`);
+    const j = await r.json();
+    const iri = String(((((j.results || {}).bindings || [])[0] || {}).d || {}).value || '');
+    if (!iri) { el.innerHTML = '<details class="fold" open><summary>Hosting domain <span class="src">chorus:hosts</span></summary><div class="body"><p class="empty">No domain hosts this service in the model &mdash; add <code>&lt;domain&gt; chorus:hosts chorus:' + esc(s) + '</code>.</p></div></details>'; }
+    else {
+      const local = iri.split('#').pop();
+      const d = local.replace(/-domain$/, '');
+      const fid = await resolveFacetId(d);
+      const heading = t => ({ 'API Contract': 'Interfaces', 'Persistence': 'Data', 'Dependencies': 'Depends on', 'Tests': 'Tests', 'Code': 'Code', 'Logs': 'Logs', 'Alerts': 'Alerts' })[t] || t;
+      await renderFacetTables(el, fid, { only: ['API Contract', 'Persistence', 'Dependencies', 'Tests', 'Code', 'Logs', 'Alerts'], heading, src: `from domain <a href="domain.html?d=${encodeURIComponent(d)}">${esc(d)}</a> &middot; materialized &middot; live` });
+    }
+  } catch (e) { const el = document.getElementById('domain-facets'); if (el) el.innerHTML = `<p class="empty"><strong>Cannot reach the hosting domain</strong> &mdash; fetch failure, not an empty design. ${esc(String(e && e.message || e))}</p>`; }
 })();
 </script>
 </body></html>

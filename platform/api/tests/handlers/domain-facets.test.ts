@@ -43,6 +43,47 @@ function deps(overrides: Partial<DomainFacetDeps> = {}): DomainFacetDeps {
 // --- fetchDomainTests ---
 
 describe('fetchDomainTests', () => {
+  // #4093 — the registry (tests domain graph) is the source of truth; the scanner is
+  // the fallback. Jeff, 2026-09-03: "the domains ultimately will show true state".
+  test('#4093 registry rows win over the scanner: files listed once with their layer, total = registered cases', async () => {
+    let scannerCalled = false;
+    const d = deps({
+      sparql: async (q: string) => q.includes('urn:chorus:domains:tests')
+        ? { results: { bindings: [
+            { f: { value: 'platform/tests/a.bats' }, l: { value: 'integration' }, n: { value: '3' } },
+            { f: { value: 'platform/api/tests/b.test.ts' }, l: { value: 'unit' }, n: { value: '12' } },
+          ] } }
+        : emptyResult(),
+      qualityByDomain: async () => { scannerCalled = true; return { layers: [{ key: 'unit', files: [{ name: 'stale.ts' }] }], total: 1 }; },
+    });
+    const r = await fetchDomainTests(d, 'tests');
+    const body = r.body as { data: { tests: Array<{ path: string; type: string }>; byType: Record<string, number>; total: number } };
+    expect(scannerCalled).toBe(false);
+    expect(body.data.tests.map((x) => x.path)).toEqual(['platform/tests/a.bats', 'platform/api/tests/b.test.ts']);
+    expect(body.data.byType).toEqual({ integration: 1, unit: 1 });
+    expect(body.data.total).toBe(15);
+  });
+
+  test('#4093 NEGATIVE PROOF: a registry that answers nothing falls back to the scanner, never to an empty page', async () => {
+    const d = deps({
+      sparql: async () => emptyResult(),
+      qualityByDomain: async () => ({ layers: [{ key: 'unit', files: [{ name: 'scanned.ts' }] }], total: 1 }),
+    });
+    const r = await fetchDomainTests(d, 'tests');
+    const body = r.body as { data: { tests: Array<{ path: string }> } };
+    expect(body.data.tests.map((x) => x.path)).toEqual(['scanned.ts']);
+  });
+
+  test('#4093 a registry that THROWS is not a 500: the scanner answers', async () => {
+    const d = deps({
+      sparql: async () => { throw new Error('fuseki down'); },
+      qualityByDomain: async () => ({ layers: [{ key: 'bdd', files: [{ name: 'x.feature' }] }], total: 1 }),
+    });
+    const r = await fetchDomainTests(d, 'tests');
+    expect(r.status).toBe(200);
+    expect((r.body as { data: { tests: unknown[] } }).data.tests.length).toBe(1);
+  });
+
   test('projection layers shape into tests array with layer as type (#3657)', async () => {
     const d = deps({
       qualityByDomain: async () => ({
