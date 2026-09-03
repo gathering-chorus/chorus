@@ -142,6 +142,21 @@ else
     "$CHORUS_ROOT/roles/kade/ontology/pipelines-4040.ttl"
   )
 fi
+# #4080 — a bare run from INSIDE A WERK must not default to prod. On 2026-09-03
+# 07:29 a hand run from werk-silas wrote urn:chorus:ontology in pods (the 08-28
+# werk-writes-prod class) because these defaults are prod. The pipeline's env-up
+# passes FUSEKI_* for the werk store (werk-deploy demo_env.rs) and the canonical
+# land runs from canonical; a role at a werk shell gets neither and lands on
+# prod silently. Refuse: name the store, or say canonical on purpose.
+_fuseki_gsp_explicit="${FUSEKI_GSP+x}"
+case ":${CHORUS_ROOT:-}:$(pwd -P 2>/dev/null):" in
+  *"/chorus-werk/"*)
+    if [ -z "$_fuseki_gsp_explicit" ] && [ "${DEPLOY_TARGET:-}" != "canonical" ]; then
+      echo "athena-deploy-model: REFUSED — running inside a werk with no FUSEKI_GSP set; the default is PROD (localhost:3030/pods). Set FUSEKI_GSP/FUSEKI_QUERY/FUSEKI_UPDATE to the werk store (werk-<role>), or DEPLOY_TARGET=canonical to write prod on purpose (#4080)." >&2
+      exit 78
+    fi ;;
+esac
+[ "${ATHENA_DEPLOY_TARGET_CHECK_ONLY:-}" = "1" ] && { echo "target-check: ok gsp=${FUSEKI_GSP:-<default pods>}"; exit 0; }
 FUSEKI_GSP="${FUSEKI_GSP:-http://localhost:3030/pods/data}"
 FUSEKI_QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 
