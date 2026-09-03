@@ -85,3 +85,13 @@ teardown() { rm -rf "$T"; }
   [ "$status" -eq 0 ]
   [ "$output" = "1 1 0" ]
 }
+
+@test "NEGATIVE PROOF (#4098): the loader refuses LogSource rows unless the harvester declares it owns them" {
+  LOAD="$ROOT/platform/scripts/service-harvest-load.sh"
+  python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt" > "$T/gen.ttl"
+  run env -u HARVEST_OWNED_CLASSES bash "$LOAD" --generated "$T/gen.ttl" --dry-run
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not own"* ]]
+  run env HARVEST_OWNED_CLASSES=LogSource bash "$LOAD" --generated "$T/gen.ttl" --dry-run
+  [[ "$output" != *"does not own"* ]]
+}
