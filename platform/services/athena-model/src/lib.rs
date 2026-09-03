@@ -4426,7 +4426,24 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
             pending.remove(&r.name);
             continue;
         }
-        let (st, body) = http(method, &url, &token, Some(&body_now))?;
+        let (mut method, mut url) = (method, url);
+        let (mut st, mut body) = http(method, &url, &token, Some(&body_now))?;
+        // The entity read is not the truth of existence for every kind (a document
+        // read answers nothing while the row is there): a create that says
+        // already-exists is an existing row — replace it.
+        if st == 409 && body.contains("already-exists") {
+            method = "PUT"; url = url_one.clone();
+            let r2 = http(method, &url, &token, Some(&body_now))?; st = r2.0; body = r2.1;
+        }
+        // A held-back edge may be a REQUIRED one (the door does not say which edges
+        // are required, and a target name can collide across kinds — product
+        // `spine` and domain `spine`). If the door says the row lacks something
+        // and we held something, send the whole row; a genuine cycle of two
+        // required edges then fails honestly as unknown-target.
+        if st == 422 && body_now != r.body && body.contains("requires") {
+            let r2 = http(method, &url, &token, Some(&r.body))?; st = r2.0; body = r2.1;
+            if (200..300).contains(&st) { second_pass.retain(|x| x.name != r.name); }
+        }
         if !(200..300).contains(&st) {
             witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
             return Err(format!("seed --post: {} {} as {} → {}: {}", method, url, owner, st, body.trim()));
@@ -4556,6 +4573,42 @@ mod post_rows_4096 {
         assert!(c.iter().any(|l| l.starts_with("POST http://api/products ") && l.contains("\"hasDesignDoc\":\"spine-design\"")), "{c:?}");
         assert!(c.iter().any(|l| l == "PUT http://api/documents/spine-design {\"name\":\"spine-design\",\"docTitle\":\"Spine\",\"hasProduct\":\"spine\"}"), "second pass restores it: {c:?}");
         assert_eq!((rep.created, rep.replaced), (2, 0));
+    }
+
+    /// A held-back edge that turns out to be required (the target name collided
+    /// with a pending row of another kind): the door says "requires", the poster
+    /// sends the whole row, and it lands. And a create answered already-exists
+    /// becomes a replace — the entity read is not the truth for every kind.
+    #[test]
+    fn a_required_edge_held_by_a_name_collision_is_retried_whole_and_409_becomes_a_put() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let prod = PostRow { kind: "product".into(), plural: "products".into(), name: "borg".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"borg\",\"hasDomain\":\"spine\"}".into(),
+            edge_targets: vec![("hasDomain".into(), "spine".into())], structural: vec![] };
+        let other = PostRow { kind: "document".into(), plural: "documents".into(), name: "spine".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine\",\"docTitle\":\"S\"}".into(), edge_targets: vec![], structural: vec![] };
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, _t: &str, b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {}", b.unwrap_or("")));
+            let b = b.unwrap_or("");
+            Ok(match (m, u) {
+                ("GET", _) => (404, String::new()),
+                ("POST", "http://api/products") if !b.contains("hasDomain") => (422, "shape-violation: Product requires 'hasDomain'".into()),
+                ("POST", "http://api/products") => (201, String::new()),
+                ("POST", "http://api/documents") => (409, "already-exists: create-only".into()),
+                ("PUT", _) => (200, String::new()),
+                _ => (500, String::new()),
+            })
+        };
+        let rep = post_all(&[prod, other], "http://api", &mut tokens, &http, false).unwrap();
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "POST http://api/products {\"name\":\"borg\"}"), "first try held the edge: {c:?}");
+        assert!(c.iter().any(|l| l == "POST http://api/products {\"name\":\"borg\",\"hasDomain\":\"spine\"}"), "retried whole: {c:?}");
+        assert!(c.iter().any(|l| l.starts_with("PUT http://api/documents/spine ")), "409 became a PUT: {c:?}");
+        assert_eq!((rep.created, rep.replaced), (1, 1));
+        assert!(!c.iter().any(|l| l.contains("second pass")), "nothing left for a second pass: {c:?}");
     }
 
     #[test]
