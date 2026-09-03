@@ -690,9 +690,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     });
     for (c, ((ok, cases), ns_len)) in cargo_results {
         let c = &c;
-        let passed = cases.iter().filter(|(_, r)| r == "pass").count();
-        let case_failed = cases.iter().filter(|(_, r)| r != "pass").count();
-        println!("{}", werk_test::nightly_unit_line(c, ok, passed, case_failed, ns_len));
+        // #4078 — a skipped case is not a failure
+        let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|(_, r)| r.as_str()));
+        println!("{}", werk_test::nightly_lane_line_with_skips("cargo", c, ok, passed, case_failed, case_skipped, ns_len));
         if !ok {
             any_failed = true;
             failed_count += 1;
@@ -755,15 +755,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             println!("!! jest:{} produced NO cases of its own — every result came from elsewhere", p);
         }
         let cases = mine;
-        let passed = cases.iter().filter(|c| c.result == "pass").count();
-        let case_failed = cases.iter().filter(|c| c.result != "pass").count();
+        // #4078 — a skipped case is not a failure (clearing's "1 fail" was 1 skip)
+        let (passed, case_failed, case_skipped) = werk_test::case_counts(cases.iter().map(|c| c.result.as_str()));
         let npm_kind = if werk_test::security_units(&rows).contains(p) { "security" } else { "npm" };
         // #4063 — name every failed case before the fold line, so a red row
         // points at a test, not at a count.
         for l in werk_test::failed_case_lines(&format!("jest:{}", p), &cases) {
             println!("{}", l);
         }
-        println!("{}", werk_test::nightly_lane_line(npm_kind, p, ok, passed, case_failed, pkg_ns.len()));
+        println!("{}", werk_test::nightly_lane_line_with_skips(npm_kind, p, ok, passed, case_failed, case_skipped, pkg_ns.len()));
         if !ok {
             any_failed = true;
             failed_count += 1;
