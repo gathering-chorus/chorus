@@ -1683,21 +1683,6 @@ chorus:Credential a owl:Class ;
     rdfs:label "Credential" ;
     rdfs:comment "A secret value or token used to authenticate. Schema only — actual credential values never live in the graph; instances reference source location (env-var name, plist key, keychain item) and metadata. #2659." .
 
-chorus:Commitment a owl:Class ;
-    rdfs:label "Commitment" ;
-    rdfs:comment "A promise a service design makes, held as a row instead of prose (#4064). What is promised, where the design says it, whether it is open, who owns it, the card that carries it (or none), and the probe that measures it when one exists. An open Commitment with no card is unowned work; that absence is what the commitment check turns red." .
-
-chorus:CommitmentShape a sh:NodeShape ;
-    sh:targetClass chorus:Commitment ;
-    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:statement ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:sourceDoc ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:sourceQuote ; sh:minCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:status ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "open" "closed" "deferred" ) ] ;
-    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
-    sh:property [ sh:path chorus:ofService ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Service ] ;
-    sh:property [ sh:path chorus:card ; sh:maxCount 1 ; sh:class chorus:Card ] ;
-    sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
 
 chorus:Permission a owl:Class ;
     rdfs:label "Permission" ;
@@ -2440,6 +2425,29 @@ chorus:ServiceShape a sh:NodeShape ;
     sh:property [ sh:path chorus:gaps               ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:notInScope         ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:internal ] ;
     sh:property [ sh:path chorus:hasDesignDoc       ; sh:minCount 1 ; sh:class chorus:Document ] .
+
+
+# --- Commitment (#4064, moved here by #4089) — a service design's promise as a row.
+# Jeff, 2026-09-03 10:07: "its 100% part of services." Declared under the
+# services domain, claimed by chorus:services-domain (definesVocabulary below),
+# served from urn:chorus:domains:services, the services domain's graph. Security's rows
+# (#4064) and tests' rows (#4089) are instances of the same class.
+chorus:Commitment a owl:Class ;
+    rdfs:label "Commitment" ;
+    rdfs:comment "A promise a service design makes, held as a row instead of prose (#4064). What is promised, where the design says it, whether it is open, who owns it, the card that carries it (or none), and the probe that measures it when one exists. An open Commitment with no card is unowned work; that absence is what the commitment check turns red." .
+
+chorus:CommitmentShape a sh:NodeShape ;
+    sh:targetClass chorus:Commitment ;
+    chorus:instancesGraph "urn:chorus:domains:services" ;   # #4089 — Jeff, 2026-09-03: Commitment is "100% part of services" and no row lives in a catch-all graph; every row lives in its domain's graph. The services harvester (service-harvest-load.sh) replaces only the classes it emits, so authored rows here survive a cycle (proof: platform/tests/4089-harvest-keeps-cotenants.bats).
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:statement ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:sourceDoc ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:sourceQuote ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:status ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "open" "closed" "deferred" ) ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:ofService ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Service ] ;
+    sh:property [ sh:path chorus:card ; sh:maxCount 1 ; sh:class chorus:Card ] ;
+    sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
 
 # the properties domain-class itself (punned)
 chorus:Properties a owl:Class , chorus:Domain ;
@@ -3940,7 +3948,7 @@ chorus:ScheduledJobShape a sh:NodeShape ;
 
 # Claim the runtime vocabulary so owl-api mounts /serviceinstances
 # (DECLARED ⊃ CLAIMED ⊃ SERVED — claiming MOUNTS the surface).
-chorus:services-domain chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob .
+chorus:services-domain chorus:definesVocabulary chorus:ServiceInstance , chorus:ScheduledJob , chorus:Commitment .   # Commitment: Jeff 2026-09-03, "100% part of services" (#4089)
 # chorus:Service is claimed by the V2 services Domain (domains-builds-decisions-rcas-4022.ttl) — one claimer per served class (vocab-claim-authority, #4029).
 
 # --- hosts / atStep edges for the six Services authored 2026-08-15 ---
@@ -3953,6 +3961,8 @@ chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+mem
 chorus:service-knowledge-store chorus:atStep chorus:value-stream-step-reflecting .
 chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
 chorus:service-werk chorus:atStep chorus:value-stream-step-building .
+chorus:tests-domain chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout
+chorus:service-tests chorus:atStep chorus:value-stream-step-proving .
 # gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
 # to a gathering product domain the day one exists in this graph.
 chorus:infrastructure-domain chorus:hosts chorus:service-gathering-app .

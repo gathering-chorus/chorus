@@ -28,3 +28,14 @@ document:designing/data/document-instances.ttl
 # so the two-kinds-one-file shape #3839 describes does not survive contact.
 pipeline:roles/kade/ontology/pipeline-instances.ttl
 pipeline-step:roles/kade/ontology/pipeline-step-instances.ttl
+# #4089 — thin Card stubs every Commitment row below points at (chorus:card is
+# FK-checked fail-closed, #3839): a fresh store (the demo variant) has no cards.
+card:roles/kade/ontology/commitment-card-stubs.ttl
+# #4064 / #4089 — service design COMMITMENTS as rows. Jeff, 2026-09-03:
+# Commitment is "100% part of services", so the rows live in the services
+# domain's graph (CommitmentShape instancesGraph urn:chorus:domains:services;
+# the seeder writes each kind to its shape's declared home, #3647). The
+# services harvester replaces only its own classes, so these rows survive its
+# cycle. Security first (#4064), tests second (#4089); the next service adds a line.
+commitment:roles/silas/ontology/security-commitments-4064.ttl
+commitment:roles/kade/ontology/tests-commitments-4089.ttl

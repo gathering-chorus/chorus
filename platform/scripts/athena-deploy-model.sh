@@ -661,10 +661,10 @@ if [ -z "${TTL:-}" ]; then
     # they ride the security leg, not MODEL_SET (rows in the ontology graph
     # would serve 0 — the products-incident shape of miss).
     "$CHORUS_ROOT/roles/silas/ontology/security-posture-3729.ttl"
-    # #4064 — the security service design's promises as chorus:Commitment rows. The
-    # class is claimed by the security domain, whose instancesGraph is this graph, so
-    # athena-make serves /commitments from here (rows in urn:chorus:instances served 0).
-    "$CHORUS_ROOT/roles/silas/ontology/security-commitments-4064.ttl"
+    # #4064's security-commitments-4064.ttl LEFT this set in #4089: Commitment is
+    # part of the services domain (Jeff, 2026-09-03), its shape declares
+    # instancesGraph urn:chorus:domains:services, and both commitment files deploy
+    # through the instance-seed-manifest (seed --deploy writes each kind to its home).
   )
   for ttl in "${SECURITY_SET[@]}"; do
     [ -f "$ttl" ] || { echo "athena-deploy-model: SECURITY_SET TTL not found: $ttl" >&2; exit 1; }

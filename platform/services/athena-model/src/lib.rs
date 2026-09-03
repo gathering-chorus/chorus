@@ -72,6 +72,10 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
+    // #4089 — Commitment rows (a service design's promises, #4064) deploy through
+    // the INSTANCE_SET like every cross-domain instance (Silas's OWL-DBA ruling
+    // 2026-09-03: not a domain's harvested graph). Type-prefixed: commitment-<name>.
+    ("commitment", "Commitment", false),
     // #3680 — Test as a REFERENCE kind: TestResult.ofTest must mint the target
     // IRI, and the 4,617 Test entities are crawler-minted BARE (NS#<name>, names
     // already test-*-slugged). bare_grain=true reproduces exactly that IRI. The
@@ -2089,6 +2093,41 @@ pub fn content_hash(props: &[(String, String)]) -> String {
 /// written, the write succeeded, and the surface served nothing. A write that
 /// lands somewhere unread is not a successful write, so the door refuses rather
 /// than reporting success.
+/// #4089 — where a manifest kind's rows LAND on `seed --deploy`: the shape's
+/// declared instancesGraph when it has exactly one, else the caller's default.
+/// (seed --deploy used to force every kind into urn:chorus:instances, so a
+/// shape that declared a per-domain home — CommitmentShape → the services
+/// graph — was written where nothing served it: the #3581 zero-rows class.)
+/// Two pins is a modelling error and is refused, never averaged.
+pub fn deploy_home(store: &dyn Store, kind: &str, default: &str) -> R<String> {
+    let class = class_iri(kind)?;
+    let pins = instances_graph_pins(store, &class)?;
+    match pins.as_slice() {
+        [] => Ok(default.to_string()),
+        [one] => Ok(one.clone()),
+        many => Err(format!(
+            "seed --deploy: {} declares {} instancesGraph pins ({}) — one home per class",
+            class, many.len(), many.join(", ")
+        )),
+    }
+}
+
+/// #4089 — group manifest entries by home graph, FIRST-SEEN ORDER preserved on
+/// both axes: the graphs come out in the order the manifest first names them,
+/// and each group keeps its entries in manifest order. Order is load-bearing —
+/// a later group's edges may point at an earlier group's subjects (Card stubs
+/// before Commitment rows), and the FK check asks the store across graphs.
+pub fn deploy_partitions(homes: &[String]) -> Vec<(String, Vec<usize>)> {
+    let mut out: Vec<(String, Vec<usize>)> = Vec::new();
+    for (i, h) in homes.iter().enumerate() {
+        match out.iter_mut().find(|(g, _)| g == h) {
+            Some((_, idx)) => idx.push(i),
+            None => out.push((h.clone(), vec![i])),
+        }
+    }
+    out
+}
+
 fn instances_graph_pins(store: &dyn Store, class: &str) -> R<Vec<String>> {
     store.select_v(&format!(
         "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
@@ -2766,6 +2805,11 @@ mod tests {
             format!("{}value-stream-step-proving", NS)
         );
         assert_eq!(mint("service", "crawler").unwrap(), format!("{}service-crawler", NS));
+        // #4089 — commitment rows seed through the manifest, so the kind must mint
+        assert_eq!(
+            mint("commitment", "ledger-cross-foots").unwrap(),
+            format!("{}commitment-ledger-cross-foots", NS)
+        );
         assert_eq!(mint("principle", "be direct").unwrap(), format!("{}principle-be-direct", NS));
         // #4040 — the pipelines domain's kinds (the fifth generate-vs-write drift)
         assert_eq!(mint("pipeline", "cicd").unwrap(), format!("{}pipeline-cicd", NS));
@@ -3983,5 +4027,31 @@ FUSEKI_ADMIN_PASSWORD=\"FIXTURE-NOT-A-PASSWORD-1\"
         let q = scratch("bare.env");
         std::fs::write(&q, "FUSEKI_ADMIN_PASSWORD=FIXTURE-NOT-A-PASSWORD-2").unwrap();
         assert_eq!(fuseki_admin_password_from_file(&q).as_deref(), Some("FIXTURE-NOT-A-PASSWORD-2"));
+    }
+}
+
+#[cfg(test)]
+mod deploy_partitions_4089 {
+    use super::deploy_partitions;
+
+    #[test]
+    fn groups_by_home_in_first_seen_order_and_keeps_manifest_order_inside() {
+        let homes: Vec<String> = ["i", "i", "s", "i", "s", "t"].iter().map(|s| s.to_string()).collect();
+        let parts = deploy_partitions(&homes);
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], ("i".to_string(), vec![0, 1, 3]));
+        assert_eq!(parts[1], ("s".to_string(), vec![2, 4]));
+        assert_eq!(parts[2], ("t".to_string(), vec![5]));
+    }
+
+    /// NEGATIVE PROOF for the ordering claim: a manifest that names the
+    /// services graph before the instances graph must seed services FIRST —
+    /// the partitioner never re-sorts to a canonical order.
+    #[test]
+    fn never_reorders_to_a_canonical_graph_order() {
+        let homes: Vec<String> = ["urn:chorus:domains:services", "urn:chorus:instances"].iter().map(|s| s.to_string()).collect();
+        let parts = deploy_partitions(&homes);
+        assert_eq!(parts[0].0, "urn:chorus:domains:services");
+        assert_eq!(parts[1].0, "urn:chorus:instances");
     }
 }
