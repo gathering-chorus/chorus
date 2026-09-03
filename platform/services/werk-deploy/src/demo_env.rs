@@ -614,14 +614,34 @@ fn prepare_werk_store(role: &str, werk_root: &str) -> String {
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
                "--data", &format!("dbName={}&dbType=mem", ds)])
         .output();
-    let created = match out {
+    let mut created = match out {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(e) => format!("curl-failed:{}", e),
     };
+    // #4096 — a 409 means a store from an earlier round is still here (a failed
+    // env-up never reaches env-down). Rows it holds were written by that round's
+    // code and data — loom sat there owned by role-jeff across four rounds and
+    // every later PUT was refused against it. A demo store is fresh or it is
+    // not a demo: drop it and create it again.
+    if created == "409" {
+        let _ = Command::new("curl")
+            .args(&auth)
+            .args(["-s", "-o", "/dev/null", "-X", "DELETE", &format!("{}/{}", admin, ds)])
+            .output();
+        created = match Command::new("curl")
+            .args(&auth)
+            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
+                   "--data", &format!("dbName={}&dbType=mem", ds)])
+            .output()
+        {
+            Ok(o) => format!("{} (recreated fresh)", String::from_utf8_lossy(&o.stdout).trim()),
+            Err(e) => format!("curl-failed:{}", e),
+        };
+    }
     // 200 = created, 409 = already there; both are usable. Anything else means
     // there is no dataset, and seeding into one that does not exist answers 405
     // — a code that sends the reader looking at the wrong thing. Say it here.
-    if !(created == "200" || created == "409") {
+    if !(created.starts_with("200") || created == "409") {
         return format!(
             "store={} create_http={} — dataset NOT created (admin auth missing or refused); \
 no model seed attempted",
