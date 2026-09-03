@@ -43,6 +43,9 @@ describe('labelRed — the three states, from history alone', () => {
   it('UNMEASURED: the runner never took a reading', () => {
     expect(labelRed(['pass', 'fail'], '0 pass, 0 fail (runner produced no unit results rc=1)')).toBe('unmeasured');
     expect(labelRed(['pass', 'fail'], '0 pass, 1 fail (515 registered test(s) never ran of 7747 — 5xx in units that produced no results this run (platform/api 512 [killed after 1200s]))')).toBe('unmeasured');
+    // #4063 — NEGATIVE PROOF: the census counted, no unit died: that is a red,
+    // never "unmeasured" (the label that hid the row for four mornings)
+    expect(labelRed(['fail', 'fail', 'fail'], '0 pass, 1 fail (289 registered test(s) never ran of 7800 — no unit of this run failed empty, so these are registered names the runners never emit — the ledger does not cross-foot)')).toBe('product-broke');
     expect(labelRed(['pass', 'fail'], '0 pass, 0 fail (UNMEASURED — suite produced no parseable output)')).toBe('unmeasured');
   });
 

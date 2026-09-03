@@ -339,6 +339,32 @@ pub fn parse_nextest_cases(out: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// #4063 — the same lines, keeping the FULL nextest path
+/// (`hooks::log_first_gate::tests::allows_non_code_files`) instead of the bare
+/// fn name. The module path is what tells two same-named fns apart: seven hook
+/// modules each carry `allows_non_code_files`, and the bare-name join refused
+/// all of them as ambiguous every night (22 never-stored cargo cases, all
+/// passing).
+pub fn parse_nextest_case_paths(out: &str) -> Vec<(String, String)> {
+    out.lines()
+        .filter_map(|l| {
+            let t = l.trim();
+            let verdict = if t.starts_with("PASS ") { "pass" }
+                else if t.starts_with("FAIL ") { "fail" }
+                else if t.starts_with("SKIP ") { "skip" }
+                else { return None };
+            let after = t.split(']').nth(1)?.trim();
+            let path = after.split_whitespace().last()?;
+            Some((path.to_string(), verdict.to_string()))
+        })
+        .collect()
+}
+
+/// The bare fn name of a nextest case path.
+pub fn nextest_bare_name(path: &str) -> &str {
+    path.rsplit("::").next().unwrap_or(path)
+}
+
 /// Parse the `curl … | jq -r '… | @tsv'` output (one `testName\treason\tuntil`
 /// row per quarantined case) into `Quarantined`. Pure, so the read-wiring is
 /// testable rather than a thin shell. A row with a blank case (no `testName`)
@@ -769,6 +795,48 @@ pub fn match_cargo_case(
     }
 }
 
+/// #4063 — join a cargo case by its FULL nextest path. Unique bare name wins as
+/// before; when the bare name lives in several files of the crate, the module
+/// path decides: `hooks::log_first_gate::tests::x` names the file whose
+/// crate-relative path, minus `src/` and `.rs`, reads `hooks/log_first_gate`.
+/// Still ambiguous (or nothing registered) → None, counted loudly by the caller.
+pub fn match_cargo_case_path(
+    path: &str,
+    crate_dir: &str,
+    rows: &[TestRow],
+    names: &[String],
+) -> Option<String> {
+    let bare = nextest_bare_name(path);
+    if let Some(fp) = match_cargo_case(bare, crate_dir, rows, names) {
+        return Some(fp);
+    }
+    let modules: Vec<&str> = path.split("::").collect();
+    if modules.len() < 2 {
+        return None;
+    }
+    let hits: Vec<&TestRow> = rows
+        .iter()
+        .zip(names.iter())
+        .filter(|(r, n)| r.file_path.starts_with(crate_dir) && n.as_str() == bare)
+        .filter(|(r, _)| {
+            let rel = r.file_path.trim_start_matches(crate_dir).trim_start_matches('/');
+            let rel = rel.strip_prefix("src/").unwrap_or(rel);
+            let rel = rel.strip_suffix(".rs").unwrap_or(rel);
+            let rel = rel.strip_suffix("/mod").unwrap_or(rel);
+            let file_mods: Vec<&str> = rel.split('/').collect();
+            // the file's module chain must appear, in order, at the head of the
+            // case path (lib.rs / main.rs register as the crate root: empty chain)
+            file_mods == [""] || file_mods == ["lib"] || file_mods == ["main"]
+                || modules.starts_with(&file_mods)
+        })
+        .map(|(r, _)| r)
+        .collect();
+    match hits.as_slice() {
+        [one] => Some(one.file_path.clone()),
+        _ => None,
+    }
+}
+
 /// Jest reports absolute paths; the registered identity is werk-relative.
 pub fn rel_path(abs: &str, werk_root: &str) -> String {
     abs.strip_prefix(werk_root)
@@ -886,7 +954,21 @@ pub fn reconcile_gap(
     registered.iter().filter(|k| !ran.contains(k)).cloned().collect()
 }
 
+/// #4063 — the one stored verdict of a shell suite (`test-*.sh`): the registry
+/// names the script's single test by its file name, so the row joins.
+pub fn shell_suite_case(suite: &str, ok: bool) -> CaseResult {
+    CaseResult {
+        file_path: suite.to_string(),
+        test_name: suite.rsplit('/').next().unwrap_or(suite).to_string(),
+        result: if ok { "pass" } else { "fail" }.to_string(),
+    }
+}
+
 /// Visible, never silent — explicit-none style (quarantine_report/gap_report).
+/// #4063 — EVERY never-run case is listed (the report used to stop at 20 and
+/// say "+269 more", so the row could not be acted on), and the list is
+/// preceded by the count per file kind, which is where the causes split
+/// (shell scripts with no per-case rows, kinds no lane runs, name mismatches).
 pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> String {
     if gap.is_empty() {
         return format!("reconcile: registered {}, never-run: none", registered_total);
@@ -896,13 +978,23 @@ pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> St
         registered_total,
         gap.len()
     );
-    for (f, n) in gap.iter().take(20) {
+    out.push_str(&format!("\n  by kind: {}", reconcile_by_kind(gap)));
+    for (f, n) in gap.iter() {
         out.push_str(&format!("\n  {} :: {}", f, n));
     }
-    if gap.len() > 20 {
-        out.push_str(&format!("\n  … +{} more", gap.len() - 20));
-    }
     out
+}
+
+/// "ts 76, sh 113, rs 22 …" — never-run counts per file extension, largest first.
+pub fn reconcile_by_kind(gap: &[(String, String)]) -> String {
+    let mut counts: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for (f, _) in gap {
+        let ext = f.rsplit('.').next().unwrap_or("?").to_string();
+        *counts.entry(ext).or_insert(0) += 1;
+    }
+    let mut v: Vec<(String, usize)> = counts.into_iter().collect();
+    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    v.iter().map(|(k, c)| format!("{} {}", k, c)).collect::<Vec<_>>().join(", ")
 }
 
 /// #4022 — resolve a collection's `links.next` (a root-relative `/v1/...` path)
@@ -2538,19 +2630,42 @@ pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
         let l = l.trim();
         if let Some(rest) = l.strip_prefix("not ok ") {
             if let Some((_, name)) = rest.split_once(' ') {
-                cases.push((name.trim().trim_start_matches("- ").trim().to_string(), "fail".to_string()));
+                cases.push((tap_unescape(name.trim().trim_start_matches("- ").trim()), "fail".to_string()));
             }
         } else if let Some(rest) = l.strip_prefix("ok ") {
             if let Some((num, name)) = rest.split_once(' ') {
                 if num.chars().all(|c| c.is_ascii_digit()) {
                     // bats: "ok 1 desc" · node:test TAP: "ok 1 - desc"
                     let name = name.trim().trim_start_matches("- ").trim_start_matches("# skip").trim();
-                    cases.push((name.to_string(), "pass".to_string()));
+                    cases.push((tap_unescape(name), "pass".to_string()));
                 }
             }
         }
     }
     cases
+}
+
+/// #4063 — TAP escapes `#` as `\#` and `\` as `\\` in a test point's
+/// description (node:test does; proven with `node --test --test-reporter=tap`
+/// on 2026-09-03). The registry holds the source title, so a case named
+/// "registry has it (#2996)" arrived as "registry has it (\#2996)", joined
+/// nothing, and was "never run" every night: 36 of the mcp-server package's
+/// cases, all passing. Undo the escape so the case carries its own name.
+pub fn tap_unescape(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('#') => { out.push('#'); chars.next(); }
+                Some('\\') => { out.push('\\'); chars.next(); }
+                _ => out.push(c),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -3416,5 +3531,140 @@ mod serialized_split_tests {
         assert_eq!(super::parse_playwright_skipped(out), 4);
         assert_eq!(super::parse_playwright_summary(out), Some((90, 0)));
         assert_eq!(super::parse_playwright_skipped("  94 passed (2.0m)\n"), 0, "no skipped line → 0, never invented");
+    }
+}
+
+#[cfg(test)]
+mod never_ran_causes_4063 {
+    use super::*;
+
+    fn row(path: &str) -> TestRow {
+        TestRow {
+            file_path: path.to_string(),
+            covers: String::new(),
+            pyramid_layer: String::new(),
+            hermeticity: String::new(),
+            test_concern: String::new(),
+        }
+    }
+
+    // --- TAP escaping (node:test): the case must carry its source title ---
+
+    #[test]
+    fn tap_hash_and_backslash_are_unescaped() {
+        let tap = "ok 1 - registry has it (\\#2996) -> typed refusal\nok 2 - escapes newlines to literal \\\\n\nnot ok 3 - plain\n";
+        let cases = parse_bats_cases(tap);
+        assert_eq!(cases[0].0, "registry has it (#2996) -> typed refusal");
+        assert_eq!(cases[1].0, "escapes newlines to literal \\n");
+        assert_eq!(cases[2], ("plain".to_string(), "fail".to_string()));
+    }
+
+    /// NEGATIVE PROOF: the escaped form joins nothing — this is the state the
+    /// fix exists to end, and the join must still refuse it (no guessing).
+    #[test]
+    fn escaped_name_does_not_join_the_registered_title() {
+        let rows = vec![row("platform/mcp-server/tests/card-add-jeff.test.ts")];
+        let names = vec!["registry has it (#2996)".to_string()];
+        let ents = vec!["test-card-add-jeff-registry".to_string()];
+        let escaped = CaseResult {
+            file_path: "platform/mcp-server/tests/card-add-jeff.test.ts".into(),
+            test_name: "registry has it (\\#2996)".into(),
+            result: "pass".into(),
+        };
+        let (joined, unjoined) = join_cases(&[escaped], &rows, &names, &ents);
+        assert!(joined.is_empty() && unjoined == 1, "escaped title must NOT join");
+        let fixed = CaseResult {
+            file_path: "platform/mcp-server/tests/card-add-jeff.test.ts".into(),
+            test_name: tap_unescape("registry has it (\\#2996)"),
+            result: "pass".into(),
+        };
+        let (joined, unjoined) = join_cases(&[fixed], &rows, &names, &ents);
+        assert_eq!((joined.len(), unjoined), (1, 0));
+    }
+
+    // --- cargo: same fn name in several modules of one crate ---
+
+    fn hook_rows() -> (Vec<TestRow>, Vec<String>) {
+        (
+            vec![
+                row("platform/services/chorus-hooks/src/hooks/log_first_gate.rs"),
+                row("platform/services/chorus-hooks/src/hooks/memory_gate.rs"),
+                row("platform/services/chorus-hooks/src/hooks/pair_gate.rs"),
+                row("platform/services/chorus-hooks/src/lib.rs"),
+            ],
+            vec![
+                "allows_non_code_files".into(),
+                "allows_non_code_files".into(),
+                "allows_non_code_files".into(),
+                "only_here".into(),
+            ],
+        )
+    }
+
+    #[test]
+    fn module_path_resolves_a_bare_name_shared_by_three_files() {
+        let (rows, names) = hook_rows();
+        let crate_dir = "platform/services/chorus-hooks";
+        // the bare join is (correctly) ambiguous …
+        assert_eq!(match_cargo_case("allows_non_code_files", crate_dir, &rows, &names), None);
+        // … the module path is not
+        assert_eq!(
+            match_cargo_case_path("hooks::memory_gate::tests::allows_non_code_files", crate_dir, &rows, &names).as_deref(),
+            Some("platform/services/chorus-hooks/src/hooks/memory_gate.rs")
+        );
+        assert_eq!(
+            match_cargo_case_path("hooks::pair_gate::tests::allows_non_code_files", crate_dir, &rows, &names).as_deref(),
+            Some("platform/services/chorus-hooks/src/hooks/pair_gate.rs")
+        );
+        // a crate-root test (lib.rs) still resolves through the unique bare name
+        assert_eq!(
+            match_cargo_case_path("tests::only_here", crate_dir, &rows, &names).as_deref(),
+            Some("platform/services/chorus-hooks/src/lib.rs")
+        );
+    }
+
+    /// NEGATIVE PROOF: a module path that names none of the candidate files
+    /// stays unjoined — the resolver never picks "the first one".
+    #[test]
+    fn module_path_naming_no_registered_file_stays_unjoined() {
+        let (rows, names) = hook_rows();
+        let crate_dir = "platform/services/chorus-hooks";
+        assert_eq!(match_cargo_case_path("hooks::sparql_guard::tests::allows_non_code_files", crate_dir, &rows, &names), None);
+        assert_eq!(match_cargo_case_path("allows_non_code_files", crate_dir, &rows, &names), None);
+        assert_eq!(match_cargo_case_path("hooks::memory_gate::tests::allows_non_code_files", "platform/services/other", &rows, &names), None);
+    }
+
+    #[test]
+    fn nextest_paths_keep_the_module_chain() {
+        let out = "PASS [   0.012s] chorus-hooks hooks::log_first_gate::tests::allows_non_code_files\nFAIL [   0.100s] chorus-hooks::pulse_roles_4077 counts_roles\n";
+        let cases = parse_nextest_case_paths(out);
+        assert_eq!(cases[0], ("hooks::log_first_gate::tests::allows_non_code_files".to_string(), "pass".to_string()));
+        assert_eq!(nextest_bare_name(&cases[0].0), "allows_non_code_files");
+        assert_eq!(cases[1], ("counts_roles".to_string(), "fail".to_string()));
+    }
+
+    // --- shell suites store their one verdict ---
+
+    #[test]
+    fn shell_suite_stores_one_case_named_by_file() {
+        let c = shell_suite_case("platform/scripts/test-agent-state.sh", true);
+        assert_eq!((c.file_path.as_str(), c.test_name.as_str(), c.result.as_str()),
+            ("platform/scripts/test-agent-state.sh", "test-agent-state.sh", "pass"));
+        assert_eq!(shell_suite_case("platform/tests/x.test.sh", false).result, "fail");
+    }
+
+    // --- the report lists every case and splits by kind ---
+
+    #[test]
+    fn reconcile_report_lists_all_and_counts_by_kind() {
+        let gap: Vec<(String, String)> = (0..25)
+            .map(|i| (format!("platform/scripts/test-{}.sh", i), format!("test-{}.sh", i)))
+            .chain(std::iter::once(("platform/api/tests/a.test.ts".to_string(), "x".to_string())))
+            .collect();
+        let rep = reconcile_report(7800, &gap);
+        assert!(rep.contains("never-run (26)"));
+        assert!(rep.contains("by kind: sh 25, ts 1"), "{}", rep);
+        assert_eq!(rep.matches(" :: ").count(), 26, "every case listed, no '+N more'");
+        assert!(!rep.contains("more"));
     }
 }
