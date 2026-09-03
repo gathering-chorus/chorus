@@ -3961,8 +3961,7 @@ chorus:chorus-domain chorus:hosts chorus:service-knowledge-store . # context+mem
 chorus:service-knowledge-store chorus:atStep chorus:value-stream-step-reflecting .
 chorus:chorus-domain chorus:hosts chorus:service-werk .            # pipeline
 chorus:service-werk chorus:atStep chorus:value-stream-step-building .
-chorus:tests-domain chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout
-chorus:service-tests chorus:atStep chorus:value-stream-step-proving .
+chorus:tests-domain chorus:hosts chorus:service-tests .              # #4089 — the tests service: registry, runner, evidence, readout (atStep rides on the row in service-instances.ttl: an edge in this graph never reaches the served row — "no step" on every service page)
 # gathering-app hosted under infrastructure for now (Silas ruling) — MIGRATES
 # to a gathering product domain the day one exists in this graph.
 chorus:infrastructure-domain chorus:hosts chorus:service-gathering-app .
