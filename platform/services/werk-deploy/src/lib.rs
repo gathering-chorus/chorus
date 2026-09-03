@@ -1906,12 +1906,21 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         let root_m = canonical_root_path(home);
         jsonl(home, role, card, trace, "model.seed.started",
             &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\",\"modelFiles\":\"{}\"", seed_files.join(","), model_files.join(",")));
-        // #3895 — the DAL-gated instance leg was split OUT of athena-deploy-model.sh
-        // (the #3785 recovery path must never require an identity token, ADR-038:
-        // no new deploy-path bash). Landing still seeds instances: mint the
-        // land-role's token, then `athena-model seed --deploy` (manifest +
-        // output-verify live in the binary). Fails CLOSED — a land whose
-        // instances did not seed dies loudly rather than landing them stale.
+        // #4096 — the rows go through the API, not around it (Jeff, 2026-09-03:
+        // "only agents write a working api then dont use it 'just because'").
+        // athena-model seed --post reads the manifest, turns every subject into
+        // the door's own write body, and POSTs/PUTs it to canonical athena-make
+        // signed by the row's owner. Fails CLOSED — a land whose rows were
+        // refused dies loudly with the API's words, never lands them stale.
+        let seed_bin = {
+            let installed = format!("{}/.chorus/bin/athena-model",
+                env::var("HOME").unwrap_or_default());
+            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
+        };
+        let api = env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".to_string());
+        // The land role's identity is still needed for the ownerless kinds
+        // (value streams, steps, roles, pipelines, cards — shapes with no owner),
+        // which `--unowned load` sends through the file loader, said out loud.
         let seed_token = run_env(
             Some(root_m.as_str()),
             &[],
@@ -1919,25 +1928,18 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             &[&format!("{}/platform/scripts/chorus-identity-token", root_m), role],
         )
         .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("cannot mint a CSS identity token for '{}' — instances NOT seeded (DAL fails closed): {}", role, e)))?
+            format!("cannot mint a CSS identity token for '{}' — rows NOT posted (DAL fails closed): {}", role, e)))?
         .trim()
         .to_string();
-        // ~/.chorus/bin is THE deploy location (#2734); crates deployed above,
-        // so this binary is the landed build. PATH fallback for pre-deploy boxes.
-        let seed_bin = {
-            let installed = format!("{}/.chorus/bin/athena-model",
-                env::var("HOME").unwrap_or_default());
-            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
-        };
         run_env(
             Some(root_m.as_str()),
             &[("CHORUS_TRACE_ID", trace), ("CHORUS_ROOT", root_m.as_str()),
               ("CHORUS_IDENTITY_TOKEN", seed_token.as_str())],
             &seed_bin,
-            &["seed", "--deploy"],
+            &["seed", "--post", "--api", &api, "--unowned", "load"],
         )
         .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("athena-model seed --deploy failed — instances are landed but NOT live: {}", e)))?;
+            format!("athena-model seed --post refused — rows are landed but NOT live: {}", e)))?;
         jsonl(home, role, card, trace, "model.seed.completed",
             &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\"", seed_files.join(",")));
         if model_files.is_empty() { labels.push(format!("seed[{}]", seed_files.len())); }

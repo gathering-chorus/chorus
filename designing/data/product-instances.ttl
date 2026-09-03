@@ -142,7 +142,7 @@ chorus:chorus a chorus:Product ;
     rdfs:label """Chorus""" ;
     chorus:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
     rdfs:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
-    chorus:ownedBy """role-wren""" ;
+    chorus:ownedBy chorus:role-wren ;   # #4096: was a string, not the role — the poster found it (a row nobody could sign)
     chorus:vision """A platform for building systems, worked by a small team of people and AI agents, where the way of building is itself modeled, observable and improvable.""" ;
     chorus:valueProposition """A repeatable, instrumented, legible method for forging software: shared memory, one board, one event log, and gates at the right moments, so the output arrives proven rather than claimed.""" ;
     chorus:audience """The team working inside it today, and any team that wants to compose people and agents into something that holds together without a person in the middle of every message.""" ;

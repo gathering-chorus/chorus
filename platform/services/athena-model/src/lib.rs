@@ -4150,3 +4150,324 @@ mod multi_value_4096 {
         assert!(to_turtle(&req).is_err());
     }
 }
+
+// ─── #4096 — the poster: seed rows go through the API, not around it ──────────
+use std::collections::HashMap;
+//
+// Jeff, 2026-09-03: "only agents write a working api then dont use it 'just
+// because'" — the land loaded designing/data/*.ttl straight into the store while
+// POST /{kind} and PUT /{kind}/{name} existed for every kind in the manifest.
+// This turns each seed subject into the API's own write body and sends it as
+// the row's OWNER (Jeff, 15:58: "each owner in turn") — the same door, the same
+// authn/authz/shape checks, the same audit line a person gets.
+
+/// One seed subject as the API sees it: the route, the entity name, the owner
+/// whose token signs the write, and the flat body (a value is one string or a
+/// list of strings — the door takes both since #4096).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostRow {
+    pub kind: String,
+    pub plural: String,
+    pub name: String,
+    pub owner: Option<String>,
+    pub body: String,
+}
+
+fn nt_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('u') => {
+                let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) { out.push(ch); }
+            }
+            Some('U') => {
+                let hex: String = (0..8).filter_map(|_| chars.next()).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) { out.push(ch); }
+            }
+            Some(other) => { out.push('\\'); out.push(other); }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The local name of an IRI term (`<...#x>` or `<.../x>` → `x`).
+fn iri_local(term: &str) -> &str {
+    let t = term.trim_start_matches('<').trim_end_matches('>');
+    t.rsplit(['#', '/']).next().unwrap_or(t)
+}
+
+/// The entity NAME behind a minted IRI local, for the API: a bare-grain kind
+/// (product, domain, test) is the local itself; a prefixed kind strips its
+/// `<kind>-` (role-wren → wren, document-x → x). A target whose kind is unknown
+/// strips the LONGEST known prefixed kind that matches (value-stream-step-x → x
+/// before value-stream-x), else stays as-is.
+fn name_from_local(local: &str, kind: Option<&str>) -> String {
+    if let Some(k) = kind {
+        if let Ok((k, _, bare)) = kind_entry(k) {
+            if bare { return local.to_string(); }
+            if let Some(rest) = local.strip_prefix(&format!("{}-", k)) { return rest.to_string(); }
+            return local.to_string();
+        }
+    }
+    let mut best: Option<&str> = None;
+    for (k, _, bare) in KINDS {
+        if *bare { continue; }
+        if local.starts_with(&format!("{}-", k)) && best.map_or(true, |b| k.len() > b.len()) {
+            best = Some(k);
+        }
+    }
+    match best {
+        Some(k) => local[k.len() + 1..].to_string(),
+        None => local.to_string(),
+    }
+}
+
+/// Turn one group's triples (riot N-Triples) into API rows, subject order kept.
+/// Pure — the unit tests below are the door's own negative proofs.
+pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<PostRow>> {
+    let (kind, class, _bare) = kind_entry(kind)?;
+    let plural = format!("{}s", class.to_lowercase());
+    let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    let mut order: Vec<&str> = Vec::new();
+    let mut by_subject: HashMap<&str, Vec<(&str, &str)>> = HashMap::new();
+    for (s, p, o) in triples {
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !(is_iri_term(o) || is_nt_literal(o)) {
+            return Err("seed --post: a triple has an invalid/injection-shaped slot".into());
+        }
+        if !by_subject.contains_key(s.as_str()) { order.push(s); }
+        by_subject.entry(s.as_str()).or_default().push((p.as_str(), o.as_str()));
+    }
+    let mut rows = Vec::new();
+    for s in order {
+        let local = iri_local(s);
+        let name = name_from_local(local, Some(kind));
+        let mut keys: Vec<String> = Vec::new();
+        let mut values: HashMap<String, Vec<String>> = HashMap::new();
+        let mut owner: Option<String> = None;
+        for (p, o) in &by_subject[s] {
+            if *p == rdf_type { continue; }
+            let key = iri_local(p).to_string();
+            let val = if is_iri_term(o) {
+                let target = name_from_local(iri_local(o), None);
+                if key == "ownedBy" {
+                    // the API injects the owner from the verified token; the row's
+                    // owner is WHO SIGNS the write, not a body field
+                    owner = Some(target);
+                    continue;
+                }
+                target
+            } else {
+                let (lex, _) = nt_literal_parts(o);
+                nt_unescape(lex)
+            };
+            let slot = values.entry(key.clone()).or_default();
+            if !slot.contains(&val) { slot.push(val); }
+            if !keys.contains(&key) { keys.push(key); }
+        }
+        let mut parts = vec![format!("\"name\":{}", json_str(&name))];
+        for k in &keys {
+            let vs = &values[k];
+            let v = if vs.len() == 1 { json_str(&vs[0]) } else {
+                format!("[{}]", vs.iter().map(|x| json_str(x)).collect::<Vec<_>>().join(","))
+            };
+            parts.push(format!("{}:{}", json_str(k), v));
+        }
+        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")) });
+    }
+    Ok(rows)
+}
+
+/// A minted identity per owner, cached for the run. `mint` is injected so the
+/// tests never touch the identity server (and the poster never learns a secret
+/// it did not ask for).
+pub struct OwnerTokens<'a> {
+    cache: HashMap<String, String>,
+    mint: &'a dyn Fn(&str) -> R<String>,
+}
+impl<'a> OwnerTokens<'a> {
+    pub fn new(mint: &'a dyn Fn(&str) -> R<String>) -> Self { Self { cache: HashMap::new(), mint } }
+    pub fn for_owner(&mut self, owner: &str) -> R<String> {
+        if let Some(t) = self.cache.get(owner) { return Ok(t.clone()); }
+        let t = (self.mint)(owner)?;
+        if t.trim().is_empty() { return Err(format!("seed --post: no identity for owner '{}'", owner)); }
+        self.cache.insert(owner.to_string(), t.trim().to_string());
+        Ok(t.trim().to_string())
+    }
+}
+
+/// One HTTP exchange: (status, body). Injected so the transport is testable.
+pub type Http<'a> = &'a dyn Fn(&str, &str, &str, Option<&str>) -> R<(u16, String)>;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PostReport { pub created: usize, pub replaced: usize, pub lines: Vec<String> }
+
+/// Post every row in order: GET decides create vs replace, the owner's token
+/// signs, any non-2xx stops the run loudly with the API's own words. Rows with
+/// no owner are refused before anything is sent (Jeff: each owner in turn — a
+/// row nobody owns is a data defect to fix in the file, not a default).
+pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http: Http<'_>, dry: bool) -> R<PostReport> {
+    let unowned: Vec<&PostRow> = rows.iter().filter(|r| r.owner.is_none()).collect();
+    if !unowned.is_empty() {
+        return Err(format!(
+            "seed --post: {} row(s) carry no ownedBy, so no owner can sign them: {}",
+            unowned.len(),
+            unowned.iter().take(8).map(|r| format!("{}/{}", r.plural, r.name)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let api = api.trim_end_matches('/');
+    let mut rep = PostReport::default();
+    for r in rows {
+        let owner = r.owner.as_deref().unwrap_or_default();
+        let token = tokens.for_owner(owner)?;
+        let url_one = format!("{}/{}/{}", api, r.plural, r.name);
+        let (st, _) = http("GET", &url_one, "", None)?;
+        let (method, url) = if st == 200 { ("PUT", url_one.clone()) } else { ("POST", format!("{}/{}", api, r.plural)) };
+        if dry {
+            rep.lines.push(format!("{} {} as {} (dry-run)", method, url, owner));
+            continue;
+        }
+        let (st, body) = http(method, &url, &token, Some(&r.body))?;
+        if !(200..300).contains(&st) {
+            witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
+            return Err(format!("seed --post: {} {} as {} → {}: {}", method, url, owner, st, body.trim()));
+        }
+        if method == "POST" { rep.created += 1 } else { rep.replaced += 1 }
+        witness("model.seed.posted", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("method", method), ("status", &st.to_string())]);
+        rep.lines.push(format!("{} {} as {} → {}", method, url, owner, st));
+    }
+    Ok(rep)
+}
+
+/// The real transport: curl, bearer in a header, body via stdin (never argv).
+pub fn curl_http(method: &str, url: &str, token: &str, body: Option<&str>) -> R<(u16, String)> {
+    use std::io::Write;
+    let mut cmd = Command::new("curl");
+    cmd.args(["-s", "--max-time", "30", "-X", method, url, "-w", "\n%{http_code}"]);
+    if !token.is_empty() { cmd.arg("-H").arg(format!("Authorization: Bearer {}", token)); }
+    if body.is_some() { cmd.args(["-H", "Content-Type: application/json", "--data-binary", "@-"]); }
+    cmd.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("curl: {}", e))?;
+    if let Some(b) = body {
+        child.stdin.take().ok_or("curl stdin")?.write_all(b.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let (resp, code) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+    let st: u16 = code.trim().parse().map_err(|_| format!("curl: no status from {} {}", method, url))?;
+    Ok((st, resp.to_string()))
+}
+
+#[cfg(test)]
+mod post_rows_4096 {
+    use super::*;
+
+    fn t(s: &str, p: &str, o: &str) -> (String, String, String) { (s.into(), p.into(), o.into()) }
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    #[test]
+    fn a_product_row_becomes_the_api_body_with_lists_and_its_owner() {
+        let tr = vec![
+            t(&format!("<{C}spine>"), "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", &format!("<{C}Product>")),
+            t(&format!("<{C}spine>"), &format!("<{C}label>"), "\"Spine\""),
+            t(&format!("<{C}spine>"), "<http://www.w3.org/2000/01/rdf-schema#label>", "\"Spine\""),
+            t(&format!("<{C}spine>"), &format!("<{C}ownedBy>"), &format!("<{C}role-wren>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDomain>"), &format!("<{C}events>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDomain>"), &format!("<{C}spine>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDesignDoc>"), &format!("<{C}document-spine-product-design>")),
+            t(&format!("<{C}spine>"), &format!("<{C}atStep>"), &format!("<{C}value-stream-step-directing>")),
+            t(&format!("<{C}spine>"), &format!("<{C}diagram>"), "\"%% one\\nflowchart TD\""),
+            t(&format!("<{C}spine>"), &format!("<{C}diagram>"), "\"%% two\\nflowchart LR\""),
+        ];
+        let rows = post_rows("product", &tr).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!((r.plural.as_str(), r.name.as_str(), r.owner.as_deref()), ("products", "spine", Some("wren")));
+        assert!(r.body.contains("\"name\":\"spine\""), "{}", r.body);
+        assert!(r.body.contains("\"label\":\"Spine\""), "duplicate rdfs/chorus label collapses to one: {}", r.body);
+        assert!(r.body.contains("\"hasDomain\":[\"events\",\"spine\"]"), "{}", r.body);
+        assert!(r.body.contains("\"hasDesignDoc\":\"spine-product-design\""), "{}", r.body);
+        assert!(r.body.contains("\"atStep\":\"directing\""), "longest prefixed kind wins: {}", r.body);
+        assert!(r.body.contains("\"diagram\":[\"%% one\\nflowchart TD\",\"%% two\\nflowchart LR\"]"), "{}", r.body);
+        assert!(!r.body.contains("ownedBy"), "the owner signs; it is not a body field: {}", r.body);
+    }
+
+    #[test]
+    fn a_prefixed_kind_strips_its_own_prefix_for_the_name() {
+        let tr = vec![t(&format!("<{C}document-x-design>"), &format!("<{C}docTitle>"), "\"X\"")];
+        let rows = post_rows("document", &tr).unwrap();
+        assert_eq!(rows[0].name, "x-design");
+        assert_eq!(rows[0].plural, "documents");
+    }
+
+    /// NEGATIVE PROOF (#3734): a row nobody owns is refused before any request —
+    /// the poster never signs as a default role (Jeff: each owner in turn).
+    #[test]
+    fn a_row_without_an_owner_is_refused_before_anything_is_sent() {
+        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into() }];
+        let mint = |_: &str| -> R<String> { panic!("must not mint for an unowned row") };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |_: &str, _: &str, _: &str, _: Option<&str>| -> R<(u16, String)> { panic!("must not send") };
+        let err = post_all(&rows, "http://x", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("no ownedBy") && err.contains("products/p"), "{err}");
+    }
+
+    /// GET 200 → PUT, GET 404 → POST; each row signed by ITS owner; a non-2xx stops the run.
+    #[test]
+    fn create_or_replace_is_decided_by_the_get_and_signed_by_the_owner() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let rows = vec![
+            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into() },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into() },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into() },
+        ];
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, tok: &str, _b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {tok}"));
+            Ok(match (m, u.rsplit('/').next().unwrap_or("")) {
+                ("GET", "old") => (200, String::new()),
+                ("GET", _) => (404, String::new()),
+                ("PUT", _) => (200, "ok".into()),
+                ("POST", _) if _b.map_or(false, |b| b.contains("bad")) => (422, "shape-violation".into()),
+                ("POST", _) => (201, "created".into()),
+                _ => (500, String::new()),
+            })
+        };
+        let err = post_all(&rows, "http://api/", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("422") && err.contains("shape-violation"), "{err}");
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "PUT http://api/products/old tok-kade"), "{c:?}");
+        assert!(c.iter().any(|l| l == "POST http://api/products tok-wren"), "{c:?}");
+    }
+}
