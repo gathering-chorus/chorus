@@ -1,3 +1,4 @@
+// @test-type: unit — signal:integration is fixture-data (in-memory sqlite, pure handler, no live service)
 /**
  * chorus-freshness handler — unit tests (#2189).
  *
@@ -40,6 +41,18 @@ function deps(db: Database.Database, overrides: Partial<FreshnessDeps> = {}): Fr
 }
 
 describe('fetchFreshness (#2189 /api/chorus/freshness)', () => {
+  // #4063 — NEGATIVE PROOF: a database that was never indexed has no
+  // watermarks table. That is a 503 with the reason, never a throw (the throw
+  // killed the api boot in every test world and took 222 tests red with it).
+  test('no watermarks table → 503 "not initialised", no throw', () => {
+    const db = new Database(':memory:');
+    db.exec('CREATE TABLE messages (id INTEGER PRIMARY KEY, source TEXT);');
+    let r: ReturnType<typeof fetchFreshness> | undefined;
+    expect(() => { r = fetchFreshness(deps(db)); }).not.toThrow();
+    expect(r?.status).toBe(503);
+    expect((r?.body as { error: string }).error).toMatch(/no watermarks table/);
+  });
+
   test('claude drift 0 → fresh; both message count and watermark count align', () => {
     const db = emptyDb();
     db.prepare('INSERT INTO watermarks VALUES (?, ?)').run(
