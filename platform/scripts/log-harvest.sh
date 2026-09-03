@@ -10,6 +10,8 @@ CHORUS_LOG="${CHORUS_LOG:-$S/chorus-log}"
 OUT="${LOG_HARVEST_OUT:-$HOME/.chorus/log-harvest/library.ttl}"
 mkdir -p "$(dirname "$OUT")"
 export CHORUS_HARVEST_GRAPH="${CHORUS_HARVEST_GRAPH:-urn:chorus:domains:logs}"
+# #4098 — the loader (#4089) replaces only the classes its caller OWNS; this harvester owns LogSource and nothing else.
+export HARVEST_OWNED_CLASSES="${HARVEST_OWNED_CLASSES:-LogSource}"
 
 if ! python3 "$S/log-harvest-gen.py" "$@" > "$OUT.tmp" 2> "$OUT.stderr"; then
   cat "$OUT.stderr" >&2

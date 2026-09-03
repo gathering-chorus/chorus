@@ -202,6 +202,12 @@ chorus:unitdomain-com.chorus.launchagent-metrics a chorus:UnitDomainMapping ;
     chorus:launchdLabel "com.chorus.launchagent-metrics" ;
     chorus:hasDomain chorus:metrics .
 
+chorus:unitdomain-com.chorus.log-harvest a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.log-harvest → logs" ;
+    chorus:launchdLabel "com.chorus.log-harvest" ;
+    rdfs:comment "#4098: the log harvester is itself a unit with a log; found unmapped by its own first production run" ;
+    chorus:hasDomain chorus:logs .
+
 chorus:unitdomain-com.chorus.mcp a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.mcp → spine" ;
     chorus:launchdLabel "com.chorus.mcp" ;
