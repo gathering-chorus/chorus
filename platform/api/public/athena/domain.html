@@ -5,7 +5,7 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}</style><script src="athena-flow.js"></script><script>
 // #4064/#4084 — one page-wide model base. It was never defined on this page (#3810), so any domain with a
 // vocabulary threw 'OWL is not defined'; defining it inside one function (first fix) left renderFacets without it.
 // Same-origin /owl proxy, resolved through athena-flow's basePath when present, so it works on prod, a werk variant, the LAN and the tunnel.
@@ -136,9 +136,9 @@ async function renderFacets(d) {
   function table(items, cols) {
     const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
     const rows = items.slice(0, 40).map(it =>
-      `<tr>${cols.map(c => `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : esc(String(it[c] ?? '').slice(0, 120))}</td>`).join('')}</tr>`).join('');
+      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); const short = /^\/.+\//.test(v) && v.length > 28 ? `<span title="${esc(v)}">…/${esc(v.split('/').pop())}</span>` : esc(v.slice(0, 120)); return `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : short}</td>`; }).join('')}</tr>`).join('');
     const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
-    return `<table><tr>${head}</tr>${rows}</table>${more}`;
+    return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
   }
   const bodies = await Promise.all(FACETS.map(f =>
     fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
