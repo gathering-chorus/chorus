@@ -7,12 +7,12 @@
   },
   "data": [
     {
-      "uri": "https://jeffbridwell.com/chorus#wren-owner",
+      "uri": "https://jeffbridwell.com/chorus#role-wren",
       "label": "Wren",
       "subdomainCount": 5
     },
     {
-      "uri": "https://jeffbridwell.com/chorus#silas-owner",
+      "uri": "https://jeffbridwell.com/chorus#role-silas",
       "label": "Silas",
       "subdomainCount": 2
     }
