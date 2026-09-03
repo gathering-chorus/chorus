@@ -137,7 +137,7 @@ ${srcNote(`GET /services/${esc(s)} &middot; /serviceinstances &middot; /schedule
     const r = await fetch(window.basePath('/sparql-read'), { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/sparql-results+json' }, body: JSON.stringify({ query: q }) });
     if (!r.ok) throw new Error(`sparql-read ${r.status}`);
     const j = await r.json();
-    const iri = String((((j.results || {}).bindings || [])[0] || {}).d || {}).value || '';
+    const iri = String(((((j.results || {}).bindings || [])[0] || {}).d || {}).value || '');
     if (!iri) { el.innerHTML = '<details class="fold" open><summary>Hosting domain <span class="src">chorus:hosts</span></summary><div class="body"><p class="empty">No domain hosts this service in the model &mdash; add <code>&lt;domain&gt; chorus:hosts chorus:' + esc(s) + '</code>.</p></div></details>'; }
     else {
       const local = iri.split('#').pop();

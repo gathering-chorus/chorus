@@ -2394,7 +2394,7 @@ chorus:DomainShape a sh:NodeShape ;
 
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
-    sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
+    sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Service ;
     # #4010 — MOVED off the ontology graph. #3675 parked Service instances in
