@@ -290,7 +290,8 @@ chorus:commitment-design-cards-in-flight-current a chorus:Commitment ;
     rdfs:label "The design's cards-in-flight list matches the board" ;
     chorus:statement "The #2659 design names #2444, #2645, #2290 as the security card set; none is on the board. Replaced by this commitment set, which the #4064 check keeps honest." ;
     chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "cards in flight" ;
-    chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-4064 .
+    # closed 2026-09-03: the page no longer carries a hand list; the Commitment rows are the list and commitment-check keeps it honest
+    chorus:status "closed" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-4064 .
 
 # ---------------------------------------------------------------- card stubs
 # Thin chorus:Card stubs for cards these rows point at that the board projection
