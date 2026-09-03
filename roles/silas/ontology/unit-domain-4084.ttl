@@ -3,7 +3,8 @@
 
 # #4084 — AUTHORED unit → domain mapping (ADR-027, ADR-060 §5). One row per launchd unit or Loki-only job.
 # Every harvester joins on chorus:launchdLabel and copies hasDomain from here. Deployed to
-# urn:chorus:domains:infrastructure by athena-deploy-model (INFRA_SET). An unmapped unit is a red in
+# urn:chorus:domains:infrastructure by athena-deploy-model (INFRA_SET). Werk variants (<unit>.werk.<role>)
+# inherit the base unit's row in the harvester; never author them. An unmapped unit is a red in
 # log-harvest.sh --check, never a guess. alerts-monitors rows split with #4085/#4088.
 
 chorus:unitdomain-bridge-subscriber a chorus:UnitDomainMapping ;
@@ -40,33 +41,9 @@ chorus:unitdomain-com.chorus.api a chorus:UnitDomainMapping ;
     rdfs:comment "Jeff 10:59: the spine is the broker for services and events; the coordination API host is spine, beside mcp and hooks (Kade: services-domain is DEFINITIONS)" ;
     chorus:hasDomain chorus:spine .
 
-chorus:unitdomain-com.chorus.api.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.api.werk.silas → spine" ;
-    chorus:launchdLabel "com.chorus.api.werk.silas" ;
-    rdfs:comment "see com.chorus.api" ;
-    chorus:hasDomain chorus:spine .
-
-chorus:unitdomain-com.chorus.api.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.api.werk.wren → spine" ;
-    chorus:launchdLabel "com.chorus.api.werk.wren" ;
-    rdfs:comment "see com.chorus.api" ;
-    chorus:hasDomain chorus:spine .
-
 chorus:unitdomain-com.chorus.athena-make a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.athena-make → domains" ;
     chorus:launchdLabel "com.chorus.athena-make" ;
-    rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
-    chorus:hasDomain chorus:domains .
-
-chorus:unitdomain-com.chorus.athena-make.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.athena-make.werk.silas → domains" ;
-    chorus:launchdLabel "com.chorus.athena-make.werk.silas" ;
-    rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
-    chorus:hasDomain chorus:domains .
-
-chorus:unitdomain-com.chorus.athena-make.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.athena-make.werk.wren → domains" ;
-    chorus:launchdLabel "com.chorus.athena-make.werk.wren" ;
     rdfs:comment "Wren: athena is a Product; the make renders the model → domains" ;
     chorus:hasDomain chorus:domains .
 
@@ -106,16 +83,6 @@ chorus:unitdomain-com.chorus.clearing-probe a chorus:UnitDomainMapping ;
     chorus:launchdLabel "com.chorus.clearing-probe" ;
     rdfs:comment "splits to monitors (#4088) when that domain row exists; Wren review 2026-09-03" ;
     chorus:hasDomain chorus:alerts-monitors .
-
-chorus:unitdomain-com.chorus.clearing.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.clearing.werk.silas → messages" ;
-    chorus:launchdLabel "com.chorus.clearing.werk.silas" ;
-    chorus:hasDomain chorus:messages .
-
-chorus:unitdomain-com.chorus.clearing.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.clearing.werk.wren → messages" ;
-    chorus:launchdLabel "com.chorus.clearing.werk.wren" ;
-    chorus:hasDomain chorus:messages .
 
 chorus:unitdomain-com.chorus.context-cache-daily a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.context-cache-daily → memory" ;
@@ -245,16 +212,6 @@ chorus:unitdomain-com.chorus.mcp-config-herald a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.mcp-config-herald → heralds" ;
     chorus:launchdLabel "com.chorus.mcp-config-herald" ;
     chorus:hasDomain chorus:heralds .
-
-chorus:unitdomain-com.chorus.mcp.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp.werk.silas → spine" ;
-    chorus:launchdLabel "com.chorus.mcp.werk.silas" ;
-    chorus:hasDomain chorus:spine .
-
-chorus:unitdomain-com.chorus.mcp.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp.werk.wren → spine" ;
-    chorus:launchdLabel "com.chorus.mcp.werk.wren" ;
-    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.nightly-suites a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.nightly-suites → tests" ;

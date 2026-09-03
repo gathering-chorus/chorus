@@ -14,7 +14,7 @@ Library, so they carry no lastWrittenAt (a gap the logs row names, not a guess).
   --machine NAME    library | bedroom (default library)
   --check           print unmapped units, exit 1 if any (the negative proof)
 """
-import argparse, glob, json, os, plistlib, subprocess, sys, time, urllib.request
+import argparse, glob, json, os, plistlib, re, subprocess, sys, time, urllib.request
 from datetime import datetime, timezone
 
 P = "https://jeffbridwell.com/chorus#"
@@ -88,6 +88,13 @@ def main():
         label = pl.get("Label") or os.path.basename(f)[:-6]
         paths = sorted({p for p in (pl.get("StandardOutPath"), pl.get("StandardErrorPath")) if p})
         units.append((label, paths))
+    # A werk variant (com.chorus.api.werk.kade) is the base unit run for one role's card; it inherits the
+    # base unit's domain. Rule, not a guess: env-up mints these per card and nobody authors rows for them.
+    WERK = re.compile(r"^(.*)\.werk\.(silas|wren|kade)$")
+    for l, _ in units:
+        m = WERK.match(l)
+        if m and l not in mapping and m.group(1) in mapping:
+            mapping[l] = mapping[m.group(1)]
     unmapped = [l for l, _ in units if l not in mapping]
     if a.check:
         for l in unmapped: print(f"UNMAPPED {l}")

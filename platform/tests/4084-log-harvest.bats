@@ -54,6 +54,15 @@ teardown() { rm -rf "$T"; }
   ! grep -A12 'logsource-library-com.chorus.silent>' <<<"$output" | grep -q 'chorus:lokiJob'
 }
 
+@test "a werk variant unit inherits its base unit's domain (env-up mints them per card; nobody authors rows for them)" {
+  mk com.chorus.alert-runner.werk.kade "$T/logs/ar-kade.log"
+  run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt"
+  [ "$status" -eq 0 ]
+  grep -A12 'logsource-library-com.chorus.alert-runner.werk.kade>' <<<"$output" | grep -q 'chorus:hasDomain chorus:alerts-monitors'
+  run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt" --check
+  [ "$status" -eq 0 ]
+}
+
 @test "NEGATIVE PROOF: a unit with no mapping row is emitted WITHOUT a domain edge and --check goes red naming it" {
   printf 'com.chorus.alert-runner\talerts-monitors\n' > "$T/map.tsv"
   run python3 "$GEN" --plists "$T/la" --mapping "$T/map.tsv" --loki-jobs "$T/jobs.txt"
