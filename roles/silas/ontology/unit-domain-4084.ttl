@@ -483,10 +483,10 @@ chorus:unitdomain-nifi a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:integrations .
 
 chorus:unitdomain-ollama a chorus:UnitDomainMapping ;
-    rdfs:label "ollama → integrations" ;
+    rdfs:label "ollama → search" ;
     chorus:launchdLabel "ollama" ;
-    rdfs:comment "Kade: bedroom LLM runtime, peer of images-api and navidrome" ;
-    chorus:hasDomain chorus:integrations .
+    rdfs:comment "Jeff 2026-09-03: both apps use it, and in Chorus it is the embedder (nomic-embed-text) behind embed-delta, embed-query and search-worker; that is the search domain, not an integration" ;
+    chorus:hasDomain chorus:search .
 
 chorus:unitdomain-platform-command-errors a chorus:UnitDomainMapping ;
     rdfs:label "platform-command-errors → logs" ;
