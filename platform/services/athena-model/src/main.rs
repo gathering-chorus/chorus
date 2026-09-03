@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, mint, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -555,50 +555,71 @@ fn run() -> Result<String, String> {
             }
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651 — same gate as every verb
-            let groups: Vec<SeedGroup> = parsed
-                .iter()
-                .map(|(k, t)| SeedGroup { kind: k.as_str(), triples: t.as_slice() })
-                .collect();
             let kind = pairs.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join("+");
-            let report = seed_multi(&store, &groups, &provenance, graph.as_deref(), &id)?;
             // #3895 — output-verify (deploy only): every SUBJECT declared in the
             // manifest must be present in the live graph. Asks the store, names
             // any absentee — a verify that cannot fail is worse than none
             // (#3839's staging-compare verify was exactly that).
             if deploy {
-                let g = graph.as_deref().unwrap_or("urn:chorus:instances");
-                // parse_ntriples keeps subjects bracketed (`<iri>`); bare IRIs
-                // for comparison with select_v's unbracketed bindings.
-                let mut declared: Vec<String> = parsed
+                // #4089 — each manifest kind lands in ITS SHAPE'S home graph (a
+                // declared instancesGraph), else the legacy bucket. One batch per
+                // home, in manifest order, so an earlier home's subjects are in
+                // the store when a later home's edges point at them.
+                let default_home = graph.as_deref().unwrap_or("urn:chorus:instances");
+                let mut homes: Vec<String> = Vec::new();
+                for (k, _) in &parsed {
+                    homes.push(deploy_home(&store, k, default_home)?);
+                }
+                // ONE batch (referential integrity spans homes, #3839), each
+                // group written to its own home; verify per home afterwards.
+                let groups: Vec<SeedGroup> = parsed
                     .iter()
-                    .flat_map(|(_, t)| t.iter().map(|(s, _, _)| s.trim_matches(['<', '>']).to_string()))
+                    .map(|(k, t)| SeedGroup { kind: k.as_str(), triples: t.as_slice() })
                     .collect();
-                declared.sort();
-                declared.dedup();
-                let values = declared.iter().map(|s| format!("<{}>", s)).collect::<Vec<_>>().join(" ");
-                let q = format!(
-                    "SELECT DISTINCT ?v WHERE {{ VALUES ?v {{ {} }} GRAPH <{}> {{ ?v ?p ?o }} }}",
-                    values, g
-                );
-                let present = store.select_v(&q)?;
-                let missing: Vec<&String> = declared
-                    .iter()
-                    .filter(|s| !present.iter().any(|p| p == *s))
-                    .collect();
-                if !missing.is_empty() {
-                    return Err(format!(
-                        "seed --deploy VERIFY FAILED: {} of {} declared subjects absent from <{}>: {}",
-                        missing.len(),
-                        declared.len(),
-                        g,
-                        missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
-                    ));
+                let report = seed_multi_at(&store, &groups, &provenance, None, Some(&homes), &id)?;
+                let parts = deploy_partitions(&homes);
+                let (total_subjects, total_triples) = (report.subjects, report.triples);
+                let mut verified: Vec<String> = Vec::new();
+                for (g, idx) in &parts {
+                    // parse_ntriples keeps subjects bracketed (`<iri>`); bare IRIs
+                    // for comparison with select_v's unbracketed bindings.
+                    let mut declared: Vec<String> = idx
+                        .iter()
+                        .flat_map(|&i| parsed[i].1.iter().map(|(s, _, _)| s.trim_matches(['<', '>']).to_string()))
+                        .collect();
+                    declared.sort();
+                    declared.dedup();
+                    let values = declared.iter().map(|s| format!("<{}>", s)).collect::<Vec<_>>().join(" ");
+                    let q = format!(
+                        "SELECT DISTINCT ?v WHERE {{ VALUES ?v {{ {} }} GRAPH <{}> {{ ?v ?p ?o }} }}",
+                        values, g
+                    );
+                    let present = store.select_v(&q)?;
+                    let missing: Vec<&String> = declared
+                        .iter()
+                        .filter(|s| !present.iter().any(|p| p == *s))
+                        .collect();
+                    if !missing.is_empty() {
+                        return Err(format!(
+                            "seed --deploy VERIFY FAILED: {} of {} declared subjects absent from <{}>: {}",
+                            missing.len(),
+                            declared.len(),
+                            g,
+                            missing.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                        ));
+                    }
+                    verified.push(format!("{} in <{}>", declared.len(), g));
                 }
                 return Ok(format!(
-                    "seeded: {} subjects / {} triples (kind={}, provenance={}) — {} declared subjects verified live in <{}>",
-                    report.subjects, report.triples, kind, provenance, declared.len(), g
+                    "seeded: {} subjects / {} triples (kind={}, provenance={}) — declared subjects verified live: {}",
+                    total_subjects, total_triples, kind, provenance, verified.join("; ")
                 ));
             }
+            let groups: Vec<SeedGroup> = parsed
+                .iter()
+                .map(|(k, t)| SeedGroup { kind: k.as_str(), triples: t.as_slice() })
+                .collect();
+            let report = seed_multi(&store, &groups, &provenance, graph.as_deref(), &id)?;
             Ok(format!(
                 "seeded: {} subjects / {} triples (kind={}, provenance={})",
                 report.subjects, report.triples, kind, provenance

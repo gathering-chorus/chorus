@@ -1,0 +1,243 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #4089 — the tests service design as COMMITMENT rows, not prose.
+#
+# Jeff, 2026-09-03 09:34: "feel its right to move tests service design into
+# services graph and revise deeply." Same day, earlier: "part of our struggle in
+# fixing the tests is how we have not finished our rewrite."
+#
+# Revised against what RUNS on 2026-09-03, not copied from the drafts. Three
+# sources, each quoted where a row comes from it:
+#   JUN = designing/docs/tests-service-design.html      (Kade, 2026-06-17, #3473 — the domain model; retired by this card)
+#   AUG = designing/docs/test-runner-service-design.html (Kade, 2026-08-16, #3905/#3912 — the runner; retired by this card)
+#   FM  = Test Runner Field Manual, compiled 2026-08-27 from the code, file:line cited
+#         https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1
+#   JEFF = Jeff's words in session, dated
+#
+# Shape: chorus:CommitmentShape (#4064). status open = the promise is not kept
+# yet (a card, or none — that absence is what commitment-check.sh turns red);
+# closed = kept, with the probe that proves it when one is runnable (a closed
+# row with no runnable probe reads UNMEASURED in the check, never pass);
+# deferred = decided not now. ofService is always chorus:service-tests.
+# Probes are paths relative to CHORUS_ROOT that the check can execute.
+
+# ------------------------------------------------ registration and the model
+chorus:commitment-tests-declared-layer-at-commit a chorus:Commitment ;
+    rdfs:label "Every test declares its layer; the commit gate blocks undeclared or contradicting declarations" ;
+    chorus:statement "Every changed test file carries an @test-type header naming its layer (and optionally its concern); the pre-commit gate blocks a file with no declaration or one whose declaration contradicts its content, unless the override is justified inline." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "Declared test-type gate — DONE (#3442, today): every changed test declares its type; pre-commit blocks undeclared/contradicting." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-gate-test-type-negative.sh" .
+
+chorus:commitment-tests-two-axes-never-merged a chorus:Commitment ;
+    rdfs:label "Layer and concern are two axes, never one enum" ;
+    chorus:statement "pyramidLayer (unit / integration / e2e / bdd / contract / fitness / smoke) and testConcern (api / ui / perf / security) stay separate properties; a concern alone is refused, because a file can be unit AND security." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "Two axes, never merged … a concern alone is refused — one merged enum rebuilds the ambiguity Jeff named. Shipped in #3912." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-tests-header-enters-the-graph a chorus:Commitment ;
+    rdfs:label "The authored header enters the registry; heuristics only fill absence" ;
+    chorus:statement "The hydrator ingests the file's own @test-type declaration as the registered layer and concern (inferred=false); filename heuristics fill only a missing declaration and are flagged inferred." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "The header enters the graph. @test-type is enforced at commit then thrown away … The hydrator ingests the authored header; heuristics only fill absence, flagged as inferred." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-registry-validates-before-clear a chorus:Commitment ;
+    rdfs:label "The whole corpus validates before the old registry is cleared" ;
+    chorus:statement "A hydration that fails validation leaves the previous registry intact; the registry is never half-replaced, and no domain may hold more than 30% of the corpus." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "The whole corpus VALIDATES before the old one is cleared (#3970), and no domain may hold >30% of the corpus (#3996 share gate)." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-tag-tests-validate-first.sh" .
+
+chorus:commitment-value-axis-governed a chorus:Commitment ;
+    rdfs:label "A test's value is a governed property" ;
+    chorus:statement "Whether a test is worth keeping (valid / asserts-retired-behavior / passes-by-definition / integration-not-gated) is a declared, governed property on the Test row, so the pyramid and the census can show what is dead weight." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "value — is it worth keeping (#3324 taxonomy): valid · asserts-retired-behavior · passes-by-definition · integration-not-gated." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-conformance-tests-prove-shacl a chorus:Commitment ;
+    rdfs:label "The tests domain's own tests prove its SHACL is enforced" ;
+    chorus:statement "Conformance tests assert the DAL enforces the Test shape: sh:in and sh:minCount green today, sh:datatype and edge-target-type red until the enforcement is built, and that red is kept visible rather than deleted." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "the tests domain's first tests assert its SHACL is enforced … sh:datatype + edge-target-type tests are RED — and that RED is good" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+# ------------------------------------------------ selection
+chorus:commitment-registry-is-the-only-selection-engine a chorus:Commitment ;
+    rdfs:label "The registry is the only selection engine" ;
+    chorus:statement "Every lane picks its tests from the registry (/tests), never from a glob; the runner refuses to run when the registry does not answer, with no fallback walker." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "A test runs because a pipeline SELECTED it from the registry … never because a script's glob happened to contain it." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-via-runner.sh" .
+
+chorus:commitment-five-lists-retired a chorus:Commitment ;
+    rdfs:label "The five hand-kept package lists are retired behind retirement gates" ;
+    chorus:statement "TS_PACKAGES in werk-test, gate-code's PROJECTS, quality.yml's matrix, run-all-tests' dirs and coverage-floors stop being five drifting copies of the same surface; each retires behind a gate so no glob runner survives as a fallback." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "Retire TS_PACKAGES and the other four lists one consumer at a time, each with a retirement gate so no glob-runner survives as fallback" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-blast-radius-selection a chorus:Commitment ;
+    rdfs:label "The gate runs the tests that cover a card's change, and refuses to under-select" ;
+    chorus:statement "For a card's diff the runner selects the registered tests whose covers edge reaches the changed code's domain, and a fixture diff with known covering tests proves it runs exactly those; today selection is by path unit plus a covers union, not the code→domain edge." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "Blast-radius selection — run the right tests for the card, via :covers + the code→domain edge." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-every-registered-test-has-a-lane a chorus:Commitment ;
+    rdfs:label "Every registered test has a lane that runs it" ;
+    chorus:statement "The nightly's selection is every registered test; a registered file no lane can run is a red finding, not a silent gap. On 2026-09-03, 112 registered files (shell outside platform/scripts, sexuality-player js, cucumber features, playwright flows, python) had no lane." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "nightly | ALL registered + discovery reconcile | zero-red bar" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-ledger-cross-foots a chorus:Commitment ;
+    rdfs:label "After a full run, registered minus executed is zero" ;
+    chorus:statement "The census (werk-test --reconcile) reads zero never-run after a full run, because every executed case joins its registered identity by (file, name). On 2026-09-03 it read 149." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "--reconcile census: registered ∖ executed = the report FOOTER" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+# ------------------------------------------------ execution
+chorus:commitment-hermeticity-gates-needs-stack a chorus:Commitment ;
+    rdfs:label "Hermetic tests always block; needs-stack tests skip as a typed, counted state when the stack is down" ;
+    chorus:statement "A test's hermeticity is independent of its layer: hermetic tests block every land; needs-stack tests run only with the live stack up and otherwise report SKIPPED as a typed, counted state, never a pass and never a red." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "hermeticity — where it can run: hermetic (no live deps) vs needs-stack … hermetic blocks always; needs-stack blocks only when the env is up." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-stack-gate.sh" .
+
+chorus:commitment-flake-quarantine a chorus:Commitment ;
+    rdfs:label "A quarantined case cannot poison the blocking gate" ;
+    chorus:statement "Cases quarantined in the registry (reason, until) are excluded from the run by exact filter, counted and named, so a known flake never turns a land red." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "Flake quarantine (#2530) — flakes can't poison a blocking gate." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-werk-test-blocks-the-land a chorus:Commitment ;
+    rdfs:label "werk-test is the blocking test floor of every land" ;
+    chorus:statement "No card lands with a red affected unit; the test step in werk.yml is blocking, and a self-modifying diff (the runner changing itself) runs advisory and says so." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "Flip to blocking — … when 2–4 are met." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+    # no probe: platform/tests/werk-pipeline-shape.test.sh asserts a retired job layout
+    # (prove/land) and fails 4/22 on main today — a wrong test, not evidence. It is
+    # also one of the 112 registered files no lane runs (commitment-every-registered-test-has-a-lane).
+
+chorus:commitment-perf-load-gated a chorus:Commitment ;
+    rdfs:label "Under load a perf test reports UNMEASURABLE, never red" ;
+    chorus:statement "A red must mean the code failed, never that the machine was busy: the nightly defers behind a load gate and a timing test under live load reports UNMEASURABLE." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "perf … load-gated: UNMEASURABLE under load, never red (#3753)" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-one-binary a chorus:Commitment ;
+    rdfs:label "The nightly is the same runner every land uses; the bash wrapper retires" ;
+    chorus:statement "The nightly is werk-test with selection = everything: the coverage, shell, census and readout legs live in the binary, and nightly-suites.sh shrinks to a caller and then retires. Every red fixed on 2026-09-03 sat on the seam between the bash wrapper and the Rust runner." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "The nightly stops being a separate discovery engine and becomes two registry operations … nightly-suites shrinks to a caller." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-4017 .
+
+chorus:commitment-nightly-single-flight a chorus:Commitment ;
+    rdfs:label "One run at a time; an orphaned lane never overlaps the next run" ;
+    chorus:statement "The single-flight lock guards the runner and its whole process group, not just the wrapper, so a killed or stalled run cannot leave lanes competing with the next one." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "single-flight lock … release kills the lane's process group FIRST (#4008/#4009 orphan fix)" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-4008 .
+
+chorus:commitment-nightly-says-what-it-is-doing a chorus:Commitment ;
+    rdfs:label "The run says what it is doing while it does it" ;
+    chorus:statement "Every run has a run id, streams one event per suite as it finishes, and /nightly shows the run live: which unit is running, which finished, and whether it is quiet or wedged." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "a background streamer emits nightly.suite.observed per unit, live" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-4007 .
+
+chorus:commitment-bats-assertions-can-fail a chorus:Commitment ;
+    rdfs:label "Every bats assertion can fail" ;
+    chorus:statement "No bats test passes by construction: a `run` that swallows a preceding [[ ]] or a !-negated form is rewritten so the assertion can go red." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "bats 1.13 … today we count 1 pass/fail per FILE" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-4014 .
+
+chorus:commitment-rc3-means-one-thing a chorus:Commitment ;
+    rdfs:label "A suite's self-refusal means the same thing in the gate and the nightly" ;
+    chorus:statement "rc=3 (a suite declining to run here) is a typed refusal in every runner, never a plain failure in one and a skip in another." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "rc=3 is a refusal in the nightly bats runner, a plain failure in the gate bats runner — #4016's mirror" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-no-units-is-not-a-pass a chorus:Commitment ;
+    rdfs:label "A run that measured nothing cannot exit 0" ;
+    chorus:statement "NoUnits, a contended lock, or a registry that did not answer are all distinguishable from a clean run by an exit-code reader; nothing measured is never a pass." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "NoUnits labels itself \"nothing was measured\" and still exits 0 — the gate passes on vacuum" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-tests-never-write-prod-from-a-werk a chorus:Commitment ;
+    rdfs:label "A run rooted in a werk never writes the prod ledger or nudges the team" ;
+    chorus:statement "When the runner's root is a werk, results are withheld from the prod store (counted and named, never lost), the log goes to the werk, and no nudge fires." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "werk isolation (#3722) CHORUS_ROOT under /chorus-werk/ → log to /tmp, no nudges" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+# ------------------------------------------------ evidence
+chorus:commitment-per-case-results-stored a chorus:Commitment ;
+    rdfs:label "Every executed case stores a result under its registered identity, and a run that loses its evidence fails" ;
+    chorus:statement "Each case posts one TestResult keyed to the registered Test; the stored count feeds the exit code so a run that computed verdicts and stored none exits 1 with RESULTS LOST." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "A run that loses its evidence fails (#4015) … Before this, 2026-08-27's nightly ran 7,411 tests, stored 0, and exited 0 with a verdict." ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-results-persist.sh" .
+
+chorus:commitment-nightly-least-privilege-principal a chorus:Commitment ;
+    rdfs:label "The nightly writes as its own least-privilege principal" ;
+    chorus:statement "The nightly mints as the machine principal 'nightly', scoped to the tests graph only, never as a human role." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "nightly principal = \"nightly\" (#3975 — least privilege, scoped to the tests graph only)" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-principal-3975.sh" .
+
+chorus:commitment-result-carries-role-trace-duration a chorus:Commitment ;
+    rdfs:label "A TestResult records who ran it, under which trace, and how long it took" ;
+    chorus:statement "Per-case results carry role, trace and duration so a result can be tied to the run and card that produced it and slow tests can be found from the ledger." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "a TestResult records no role, no trace, no duration" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-skipped-is-not-a-failure a chorus:Commitment ;
+    rdfs:label "A skipped case is not a failure" ;
+    chorus:statement "Cases count as pass, fail or skipped; a fold line names its skips, so a suite with one skip and no failing test never reads '1 fail'." ;
+    chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "skipped is a typed, counted state (#3557)" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-stopped-run-says-so a chorus:Commitment ;
+    rdfs:label "A stopped run says STOPPED" ;
+    chorus:statement "A run that is stopped writes RUN|stopped, /nightly says STOPPED, and the runner's process group dies with the stop; a stuck suite dies at its own cap, never the night." ;
+    chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "…KILLED after N suite(s); PARTIAL | start-without-complete marker — the run died mid-flight" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4035-stopped-run-says-so.bats" .
+
+# ------------------------------------------------ readout
+chorus:commitment-red-names-its-cause a chorus:Commitment ;
+    rdfs:label "Every red is labelled: product broke, test wrong, or unmeasured" ;
+    chorus:statement "The readout labels each red from its own summary and history — a red that has held or first appears after steady green is product-broke; one that names the machine or flaps is test-wrong; one where the runner took no reading is unmeasured — and the census row counts as a reading." ;
+    chorus:sourceDoc "JEFF 2026-09-02" ; chorus:sourceQuote "a red must mean the product broke" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4063-red-names-itself.bats" .
+
+chorus:commitment-readout-reaches-jeff a chorus:Commitment ;
+    rdfs:label "A readout reaches Jeff after every run" ;
+    chorus:statement "After each run Jeff gets minutes taken, suites, reds by owner with their labels, and the delta since the previous run (new, fixed, still red); if the api is down the nudge says unavailable and never invents numbers." ;
+    chorus:sourceDoc "JEFF 2026-09-02" ; chorus:sourceQuote "I don't even get a readout on the nightly run" ;
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4060-nightly-readout-delivery.bats" .
+
+chorus:commitment-red-keeps-its-evidence a chorus:Commitment ;
+    rdfs:label "A red keeps its own evidence" ;
+    chorus:statement "The coverage lane keeps each package's output and the census keeps its full never-ran list on every run, so no red has to be reproduced by hand to be read. On 2026-09-03 08:57 a clearing coverage red carried no reason and passed by hand five minutes later." ;
+    chorus:sourceDoc "JEFF 2026-09-03" ; chorus:sourceQuote "keep focused on tests i will continue to prioritize a clean overall tests run today" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-per-card-test-evidence-at-accept a chorus:Commitment ;
+    rdfs:label "Every accepted card proves its own tests ran" ;
+    chorus:statement "At accept, the card's own test evidence (the cases its diff selected, stored under its trace) is checked; a card whose tests never ran cannot be accepted green." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "TestRun → Borg / gates / demo … Proving, the gates, the demo prover, ship-readiness all consume test state." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-3983 .
+
+# ------------------------------------------------ surfaces
+chorus:commitment-every-surface-is-a-projection a chorus:Commitment ;
+    rdfs:label "Every test surface is a projection of the declared model" ;
+    chorus:statement "The pyramid, per-domain test counts, the gates and werk-test all read the registry; the filename scanner is retired (a numbered reversal of #2098, not a quiet refactor). The pyramid page returns 404 on 2026-09-03." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "The declared classification becomes the single source; the scanner's filename inference is retired (reverses #2098)." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-4055 .
+
+chorus:commitment-domain-shaped-report a chorus:Commitment ;
+    rdfs:label "The runner reports in Jeff's tree: card, domain, then unit / page / integration / security" ;
+    chorus:statement "A run reads as card → domain → test kind, the way Jeff drew it, not as one list per tool; a Test row carries the domain edge that makes that grouping possible." ;
+    chorus:sourceDoc "JEFF 2026-09-02" ; chorus:sourceQuote "not even close" ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .
+
+chorus:commitment-e2e-pipeline-test a chorus:Commitment ;
+    rdfs:label "One readable end-to-end test of the card pipeline" ;
+    chorus:statement "One test walks pull, commit, push, merge, deploy and accept in the order a card takes them, readable as a story of the pipeline." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "tests :implementedBy werk — werk-test/gates are werk reading the domain." ;
+    chorus:status "open" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:card chorus:card-3325 .
+
+chorus:commitment-enforcement-as-property a chorus:Commitment ;
+    rdfs:label "Gate enforcement (advisory / blocking) as a model property" ;
+    chorus:statement "The gate's enforcement level was to be a property flipped by a model write. Deferred: Jeff ruled the floor blocking (#3190) and it stays blocking in code; a toggle would reopen a door that was deliberately closed." ;
+    chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "the enforcement state is itself a property … flipped via a model write" ;
+    chorus:status "deferred" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests .

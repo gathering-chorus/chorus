@@ -38,8 +38,19 @@ while IFS='|' read -r c status card probe; do
       # an IRI cannot be executed here — say so rather than pass it
       case "$probe" in http://*|https://*|urn:*|\<*) echo "UNMEASURED closed-probe-is-model-ref $id ${probe##*#}"; continue ;; esac
       p="$probe"; [ "${p:0:1}" = / ] || p="$PROBE_ROOT/$p"
-      if [ ! -x "$p" ]; then echo "UNMEASURED closed-probe-missing $id $probe"; continue; fi
-      if "$p" >/dev/null 2>&1; then echo "ok   closed-probe-green $id"; else echo "FAIL closed-probe-red $id $probe"; fail=1; fi ;;
+      if [ ! -f "$p" ]; then echo "UNMEASURED closed-probe-missing $id $probe"; continue; fi
+      # #4089 — COMMITMENT_PROBES=0: name the probe, do not run it (a probe is a
+      # real test that may reach live services; the unit proof must stay hermetic)
+      if [ "${COMMITMENT_PROBES:-1}" = 0 ]; then echo "UNRUN closed-probe-present $id $probe"; continue; fi
+      # #4089 — a probe runs by its kind: .bats through bats, .sh through bash,
+      # anything else must be executable. The +x bit is not the test's identity.
+      case "$p" in
+        *.bats) runner="bats" ;;
+        *.sh)   runner="bash" ;;
+        *)      [ -x "$p" ] || { echo "UNMEASURED closed-probe-not-runnable $id $probe"; continue; }; runner="" ;;
+      esac
+      if [ -n "$runner" ] && ! command -v "$runner" >/dev/null; then echo "UNMEASURED closed-probe-runner-missing $id $runner"; continue; fi
+      if ${runner:+$runner} "$p" >/dev/null 2>&1; then echo "ok   closed-probe-green $id"; else echo "FAIL closed-probe-red $id $probe"; fail=1; fi ;;
     deferred) echo "ok   deferred $id" ;;
     *) echo "FAIL bad-status $id '$status'"; fail=1 ;;
   esac

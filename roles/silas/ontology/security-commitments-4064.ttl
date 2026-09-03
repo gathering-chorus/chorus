@@ -34,6 +34,10 @@
 #   AZC = platform/scripts/authz-coverage.sh · DTD = platform/scripts/security-distance-to-done.sh
 #   SOL = designing/docs/SOLID-AUTHENTICATION.md · CLA = designing/docs/chorus-clearing-architecture.md
 
+# The two thin Card stubs this file carried moved to
+# roles/kade/ontology/commitment-card-stubs.ttl (#4089): a file seeds as ONE kind,
+# and a Card subject in a commitment-kind file is a subject claimed by two kinds.
+
 # ---------------------------------------------------------------- identity
 chorus:commitment-cli-verbs-present-token a chorus:Commitment ;
     rdfs:label "CLIs and werk verbs present the role's real token" ;
@@ -298,5 +302,3 @@ chorus:commitment-design-cards-in-flight-current a chorus:Commitment ;
 # (board-3654-project.sh) has not minted — it only projects cards carrying a chunk
 # label. Same thin shape it writes: type + label; Vikunja stays the system of record.
 @prefix dcterms: <http://purl.org/dc/terms/> .
-chorus:card-3829 a chorus:Card ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" ; dcterms:creator "silas" .
-chorus:card-4064 a chorus:Card ; chorus:label "Service design commitments live in the graph, not HTML — Commitment rows on Service, security design first" ; dcterms:creator "silas" .

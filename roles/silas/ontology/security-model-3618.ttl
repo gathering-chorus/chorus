@@ -47,8 +47,10 @@ chorus:security a owl:Class, chorus:Domain ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:definesVocabulary chorus:Credential, chorus:Permission,
-        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate,
-        chorus:Commitment ;
+        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate ;
+    # chorus:Commitment LEFT this claim in #4089 — Jeff, 2026-09-03 10:07: "its 100% part
+    # of services". The services domain claims it (chorus.ttl); the security rows still
+    # point at their services through chorus:ofService.
     chorus:status "building" ;
     chorus:gaps """Measured 2026-09-03 (commitment-check.sh, authz-coverage #3977): 32 of 42 commitments are open with no card; 59 of 85 mutating routes declare no APISurface, so authorization there is open by construction; permissions still live in config/profiles/*.json, hook decision tables and inline checks rather than Permission rows; one shared Fuseki credential serves both DAL and DBA use; the HS256 legacy verify arm is still compiled in; the security.* spine events the design reserves are not emitted. Undecided since the 2026-05 design: per-session cryptographic role identity, whether a threat model is a probe or its own class, bulk permission tooling, generating profiles from Permission rows.""" ;
     chorus:hasDesignDoc chorus:document-service-design-security .
