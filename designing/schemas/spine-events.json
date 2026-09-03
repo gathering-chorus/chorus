@@ -3683,6 +3683,16 @@
         "line": "Staging file line number"
       }
     },
+    "model.retirement.deferred": {
+      "vertebra": "building",
+      "source": "chorus-model-deploy",
+      "description": "#4080: a staged claim retirement could not be serve-checked (athena-make gave no route list, e.g. a fresh werk store at env-up) and was SKIPPED for this deploy, to be retried on the next deploy that can answer. Replaces the exit 1 that quit the script before the SECURITY_SET load and left the werk store with 0 Principal rows.",
+      "fields": {
+        "graph": "Named graph the retirement was staged against",
+        "reason": "retirement-serve-check-unanswered",
+        "line": "The staged retirement line, verbatim"
+      }
+    },
     "deploy.allow_set_gate.passed": {
       "vertebra": "operations",
       "legacy_name": null,

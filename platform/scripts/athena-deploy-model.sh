@@ -518,8 +518,14 @@ print(e.get("subject_domain",""), e.get("object_class",""), e.get("retire_subjec
       # route must not retire, and an unanswerable athena-make must not blind-pass).
       if ! printf '%s' "$_served_resp" | grep -q '"served"'; then
         echo "athena-deploy-model: RETIREMENT serve-check UNANSWERED (athena-make gave no route list) — refusing to execute claim retirements blind (#3752, Wren's window)" >&2
-        "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-serve-check-unanswered" 2>/dev/null || true
-        exit 1
+        # #4080 — DEFER, do not die. This exit 1 sat BEFORE the SECURITY_SET load
+        # below, so in a fresh werk store (no variant athena-make up yet at seed
+        # time) the script quit here, 0 Principal rows landed, and every DAL token
+        # was WebIdNotAllowed — the #4080 env-up hollow demo (Kade, 07:43). A claim
+        # retirement that cannot be serve-checked is skipped and tried again on the
+        # next deploy that can answer; the rest of the deploy proceeds.
+        "$CHORUS_LOG" model.retirement.deferred "$ROLE" graph="$_rg" reason="retirement-serve-check-unanswered" line="$_rline" 2>/dev/null || true
+        continue
       fi
       _rroute_now=$(printf '%s' "$_rcls" | python3 -c '
 import sys
