@@ -56,7 +56,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // #4064 — OWL was never defined on this page (#3810 left it out), so any domain with
     // definesVocabulary threw 'OWL is not defined' and rendered as a fetch failure.
     // Same-origin /owl proxy, so links work on prod, a werk variant and the LAN alike.
-    const OWL = (window.CHORUS_MODEL_API || '/owl');
+    const OWL = (typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl';
     const vocab = asArray(e.definesVocabulary).sort();
     const vocabRows = vocab.map(v =>
       `<tr><td>${esc(v)}</td><td><a class="edge" href="${OWL}/${esc(v.toLowerCase())}s">:3360/${esc(v.toLowerCase())}s</a></td></tr>`).join('');
