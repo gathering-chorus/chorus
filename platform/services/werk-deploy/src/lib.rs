@@ -1684,6 +1684,24 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// security-model-3618.ttl, domains-*.ttl, board-3654.ttl, werk-domains.ttl, …).
 /// A .ttl elsewhere (e.g. platform/api/src/sparql/shapes.ttl) is NOT a model source
 /// and must not trigger a deploy. PURE — unit-tested, negative-proven.
+/// #4096 — the INSTANCE-SEED homes: the day-authored seed files under
+/// designing/data/*.ttl and the manifest that lists them. A card that changes only
+/// these (the normal shape of a content card since 09-02: products, documents) has
+/// no model source, so the model leg never ran and the seed leg — which lived
+/// inside it — never seeded canonical. #4080 landed green at 11:30 with canonical
+/// serving 0 of 9 sections for eight products until a hand run at 11:47. PURE —
+/// unit-tested, negative-proven (a .ttl elsewhere, a docs html, do NOT fire).
+pub fn changed_seed_sources(diff: &str) -> Vec<String> {
+    diff.lines()
+        .map(str::trim)
+        .filter(|l| {
+            (l.starts_with("designing/data/") && l.ends_with(".ttl"))
+                || *l == "platform/config/instance-seed-manifest.txt"
+        })
+        .map(str::to_string)
+        .collect()
+}
+
 pub fn changed_model_sources(diff: &str) -> Vec<String> {
     diff.lines()
         .map(str::trim)
@@ -1746,6 +1764,8 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // into the no-op branch below ("no-service-crates") and land green-but-inert: #3735
     // merged clean, board Done, live chorus:security unchanged until a HAND-RUN deploy.
     let model_files = changed_model_sources(&diff);
+    // #4096 — seed-only lands seed canonical too (see changed_seed_sources).
+    let seed_files = changed_seed_sources(&diff);
 
     // #3785 — BLOCKING allow-set gate. A deploy that would leave the doors
     // reading an empty allow-set is refused before it commits.
@@ -1784,7 +1804,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         }
     }
 
-    if crates.is_empty() && ts.is_empty() && model_files.is_empty() {
+    if crates.is_empty() && ts.is_empty() && model_files.is_empty() && seed_files.is_empty() {
         // Docs/config-only card — no service and no model to deploy for prod. Clean no-op
         // so the acp chain proceeds (mirrors werk-build's no-build-units case).
         jsonl(home, role, card, trace, "deploy.completed",
@@ -1878,12 +1898,29 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         )
         .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
             format!("athena-deploy-model.sh failed — model changes are landed but NOT live: {}", e)))?;
-        // #3895 — the DAL-gated instance leg was split OUT of athena-deploy-model.sh
-        // (the #3785 recovery path must never require an identity token, ADR-038:
-        // no new deploy-path bash). Landing still seeds instances: mint the
-        // land-role's token, then `athena-model seed --deploy` (manifest +
-        // output-verify live in the binary). Fails CLOSED — a land whose
-        // instances did not seed dies loudly rather than landing them stale.
+    }
+    // #4096 — the seed leg runs for a model change OR a seed-only change. It used to
+    // sit inside the model branch above, so a card that changed only designing/data
+    // seed files (#4080) landed with canonical never seeded.
+    if !model_files.is_empty() || !seed_files.is_empty() {
+        let root_m = canonical_root_path(home);
+        jsonl(home, role, card, trace, "model.seed.started",
+            &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\",\"modelFiles\":\"{}\"", seed_files.join(","), model_files.join(",")));
+        // #4096 — the rows go through the API, not around it (Jeff, 2026-09-03:
+        // "only agents write a working api then dont use it 'just because'").
+        // athena-model seed --post reads the manifest, turns every subject into
+        // the door's own write body, and POSTs/PUTs it to canonical athena-make
+        // signed by the row's owner. Fails CLOSED — a land whose rows were
+        // refused dies loudly with the API's words, never lands them stale.
+        let seed_bin = {
+            let installed = format!("{}/.chorus/bin/athena-model",
+                env::var("HOME").unwrap_or_default());
+            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
+        };
+        let api = env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".to_string());
+        // The land role's identity is still needed for the ownerless kinds
+        // (value streams, steps, roles, pipelines, cards — shapes with no owner),
+        // which `--unowned load` sends through the file loader, said out loud.
         let seed_token = run_env(
             Some(root_m.as_str()),
             &[],
@@ -1891,25 +1928,24 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
             &[&format!("{}/platform/scripts/chorus-identity-token", root_m), role],
         )
         .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("cannot mint a CSS identity token for '{}' — instances NOT seeded (DAL fails closed): {}", role, e)))?
+            format!("cannot mint a CSS identity token for '{}' — rows NOT posted (DAL fails closed): {}", role, e)))?
         .trim()
         .to_string();
-        // ~/.chorus/bin is THE deploy location (#2734); crates deployed above,
-        // so this binary is the landed build. PATH fallback for pre-deploy boxes.
-        let seed_bin = {
-            let installed = format!("{}/.chorus/bin/athena-model",
-                env::var("HOME").unwrap_or_default());
-            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
-        };
         run_env(
             Some(root_m.as_str()),
             &[("CHORUS_TRACE_ID", trace), ("CHORUS_ROOT", root_m.as_str()),
               ("CHORUS_IDENTITY_TOKEN", seed_token.as_str())],
             &seed_bin,
-            &["seed", "--deploy"],
+            &["seed", "--post", "--api", &api, "--unowned", "load"],
         )
         .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("athena-model seed --deploy failed — instances are landed but NOT live: {}", e)))?;
+            format!("athena-model seed --post refused — rows are landed but NOT live: {}", e)))?;
+        jsonl(home, role, card, trace, "model.seed.completed",
+            &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\"", seed_files.join(",")));
+        if model_files.is_empty() { labels.push(format!("seed[{}]", seed_files.len())); }
+    }
+    if !model_files.is_empty() {
+        let root_m = canonical_root_path(home);
         // Single-request truth: the store attests which commit its model came from
         // (#3736 stamp, written by the script). Gate stamp == landedCommit on pipeline lands.
         let stamp = read_model_stamp(root_m.as_str());
@@ -1927,6 +1963,23 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
                 stamp, landed_commit.unwrap_or("")
             ));
         }
+        // #4096 — a shape is a deploy too. athena-make reads the shapes at boot and
+        // serves that schema until restarted: #4045 (09-02) and #4094 (09-03) both
+        // landed a new Product property and /products kept serving the old columns
+        // until a hand restart. Kickstart it, wait for liveness, say so on the
+        // spine; a restart that fails dies loudly — never a silent "landed but
+        // not serving".
+        let svc = "com.chorus.athena-make";
+        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
+            .and_then(|_| wait_for_service_up(svc))
+            .map_err(|e| {
+                emit_spine(home, "model.serve.restart_failed", role, card, trace,
+                    &[("service", svc), ("files", &model_files.join(",")), ("reason", &e.to_string().replace('"', "'"))]);
+                died(home, role, card, trace, "model-serve-restart-fail",
+                    format!("{} did not come back after the model deploy — the new shape is in the store but NOT served: {}", svc, e))
+            })?;
+        emit_spine(home, "model.serve.restarted", role, card, trace,
+            &[("service", svc), ("files", &model_files.join(",")), ("deploy_target", "canonical")]);
     }
 
     let only = labels.join(",");
@@ -2963,6 +3016,28 @@ mod model_source_tests {
         assert!(!super::empty_summary_is_config_only(diff), "a model change is not config-only");
     }
 
+    /// #4096 — the exact #4080 land diff (2026-09-03 11:30): seed files + manifest +
+    /// a public page + bats, NO ontology source. changed_model_sources is empty (right —
+    /// no MODEL_SET deploy needed) but changed_seed_sources must fire, or canonical is
+    /// never seeded and the land is green-but-hollow.
+    #[test]
+    fn seed_only_diff_fires_the_seed_leg_not_the_model_leg() {
+        let diff = "designing/data/document-instances.ttl\ndesigning/data/product-instances.ttl\nplatform/config/instance-seed-manifest.txt\nplatform/api/public/athena/product.html\nplatform/tests/4080-products-sections.bats";
+        assert!(super::changed_model_sources(diff).is_empty());
+        assert_eq!(super::changed_seed_sources(diff),
+            vec!["designing/data/document-instances.ttl", "designing/data/product-instances.ttl", "platform/config/instance-seed-manifest.txt"]);
+        assert!(super::empty_summary_is_model_only(diff), "a seed-only card is model-side, not a no-op");
+    }
+
+    /// NEGATIVE PROOF (#3734): the states the seed classifier must NOT fire on — a
+    /// .ttl outside designing/data, a design html under designing/docs, a schema json,
+    /// the ontology sources themselves (those are the MODEL leg's, not the seed leg's).
+    #[test]
+    fn non_seed_files_do_not_fire_the_seed_leg() {
+        let diff = "platform/api/src/sparql/shapes.ttl\ndesigning/docs/spine-product-design.html\ndesigning/schemas/spine-events.json\nroles/silas/ontology/chorus.ttl\ndesigning/data/README.md";
+        assert!(super::changed_seed_sources(diff).is_empty());
+    }
+
     #[test]
     fn model_plus_real_ts_change_still_dies() {
         // Negative proof (#3734): the asset drop must not widen into "any chorus-api
@@ -3037,7 +3112,9 @@ pub fn empty_summary_is_model_only(diff: &str) -> bool {
     let buildable = drop_build_irrelevant(diff);
     changed_service_crates(&buildable).is_empty()
         && changed_ts_services(&buildable).is_empty()
-        && !changed_model_sources(&buildable).is_empty()
+        && (!changed_model_sources(&buildable).is_empty()
+            // #4096 — a seed-only card (designing/data + manifest) is a model-side change too
+            || !changed_seed_sources(&buildable).is_empty())
 }
 
 /// Lines that need no build, dropped BEFORE classification (Wren's #3810: a

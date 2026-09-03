@@ -614,14 +614,34 @@ fn prepare_werk_store(role: &str, werk_root: &str) -> String {
         .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
                "--data", &format!("dbName={}&dbType=mem", ds)])
         .output();
-    let created = match out {
+    let mut created = match out {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(e) => format!("curl-failed:{}", e),
     };
+    // #4096 — a 409 means a store from an earlier round is still here (a failed
+    // env-up never reaches env-down). Rows it holds were written by that round's
+    // code and data — loom sat there owned by role-jeff across four rounds and
+    // every later PUT was refused against it. A demo store is fresh or it is
+    // not a demo: drop it and create it again.
+    if created == "409" {
+        let _ = Command::new("curl")
+            .args(&auth)
+            .args(["-s", "-o", "/dev/null", "-X", "DELETE", &format!("{}/{}", admin, ds)])
+            .output();
+        created = match Command::new("curl")
+            .args(&auth)
+            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
+                   "--data", &format!("dbName={}&dbType=mem", ds)])
+            .output()
+        {
+            Ok(o) => format!("{} (recreated fresh)", String::from_utf8_lossy(&o.stdout).trim()),
+            Err(e) => format!("curl-failed:{}", e),
+        };
+    }
     // 200 = created, 409 = already there; both are usable. Anything else means
     // there is no dataset, and seeding into one that does not exist answers 405
     // — a code that sends the reader looking at the wrong thing. Say it here.
-    if !(created == "200" || created == "409") {
+    if !(created.starts_with("200") || created == "409") {
         return format!(
             "store={} create_http={} — dataset NOT created (admin auth missing or refused); \
 no model seed attempted",
@@ -642,32 +662,10 @@ no model seed attempted",
                    Err(e) => format!("model-seed-FAILED {}", e) }
     } else { "model-seed-SKIPPED (no deploy script in werk)".to_string() };
     // #4047 — the TBox alone is not a demo: instances (pipelines, roles, value
-    // streams) come from the instance-seed-manifest via the DAL, which needs a
-    // minted identity token (env-trust retired #3687). Without this leg the
-    // variant serves empty collections and a model card still cannot be shown.
-    let token = Command::new(format!("{}/platform/scripts/chorus-identity-token", werk_root))
-        .arg(role)
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_default();
-    let instances = if token.is_empty() {
-        "instances-SKIPPED (no identity token)".to_string()
-    } else {
-        let st = Command::new(format!("{}/athena-model", werk_bin_dir(role)))
-            .args(["seed", "--deploy"])
-            .env("CHORUS_FUSEKI", format!("{}/{}", base, ds))
-            .env("CHORUS_ROOT", werk_root)
-            .env("CHORUS_IDENTITY_TOKEN", &token)
-            .output();
-        match st {
-            Ok(o) if o.status.success() =>
-                format!("instances-seeded ({})", String::from_utf8_lossy(&o.stdout).lines().last().unwrap_or("").trim()),
-            Ok(o) => format!("instances-FAILED {}", String::from_utf8_lossy(&o.stderr).lines().next().unwrap_or("").trim()),
-            Err(e) => format!("instances-FAILED {}", e),
-        }
-    };
-    format!("store={} create_http={} {} {}", ds, created, seeded, instances)
+    // streams) come from the instance-seed-manifest. #4096 — they are POSTED
+    // through the variant athena-make AFTER it boots (see post_werk_rows), not
+    // loaded here around it: the file loader was the second door.
+    format!("store={} create_http={} {}", ds, created, seeded)
 }
 
 /// #4047 — drop the werk's dataset at env-down so no per-card store outlives
@@ -893,7 +891,55 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
 
         summary.push(format!("{}=:{}", svc.name, port));
     }
+    // #4096 — the rows go through the door, as each row's owner, once the
+    // variant athena-make answers. A refusal here is the demo's refusal.
+    summary.push(post_werk_rows(role, werk_root)?);
     Ok(format!("env_up role={} {}", role, summary.join(" ")))
+}
+
+/// #4096 — `athena-model seed --post` against the werk's athena-make: every
+/// manifest row created or replaced through POST/PUT, signed by its owner
+/// (Jeff: "each owner in turn"). Fails closed: a variant whose rows did not
+/// post is not a demo.
+fn post_werk_rows(role: &str, werk_root: &str) -> R<String> {
+    let api = owl_upstream_for(role)?;
+    // the variant may still be finishing its boot; give it a moment to answer
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let up = Command::new("curl").args(["-sf", "--max-time", "3", "-o", "/dev/null", &format!("{}/health", api)]).status()
+            .map(|s| s.success()).unwrap_or(false);
+        if up { break; }
+        if std::time::Instant::now() > deadline {
+            return Err(format!("env_up: variant athena-make at {} did not answer /health within 30s — rows not posted", api));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    // the role's identity is still needed for the ownerless kinds, which
+    // `--unowned load` sends through the file loader (said out loud each run)
+    let token = Command::new(format!("{}/platform/scripts/chorus-identity-token", werk_root))
+        .arg(role)
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    if token.is_empty() {
+        return Err("env_up: no identity token for the role — rows not posted".to_string());
+    }
+    let out = Command::new(format!("{}/athena-model", werk_bin_dir(role)))
+        .args(["seed", "--post", "--api", &api, "--unowned", "load"])
+        .env("CHORUS_ROOT", werk_root)
+        .env("CHORUS_FUSEKI", werk_fuseki_for(role))
+        .env("CHORUS_IDENTITY_TOKEN", &token)
+        .output()
+        .map_err(|e| format!("env_up: athena-model seed --post: {}", e))?;
+    if !out.status.success() {
+        return Err(format!(
+            "env_up: rows did NOT post through {} — {}",
+            api,
+            String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("").trim()
+        ));
+    }
+    Ok(format!("rows-posted ({})", String::from_utf8_lossy(&out.stdout).lines().last().unwrap_or("").trim()))
 }
 
 /// Tear down the role's demo environment: bootout all variants, verify they

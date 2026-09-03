@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, batch, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -45,7 +45,13 @@ fn parse_req(args: &[String]) -> Result<(WriteReq, bool), String> {
             "--field" => {
                 let kv = args.get(i + 1).ok_or("--field needs k=v")?;
                 let (k, v) = kv.split_once('=').ok_or_else(|| format!("--field '{}' is not k=v", kv))?;
-                req.fields.insert(k.to_string(), v.to_string());
+                // #4096 — a repeated key is a further value of a multi-valued
+                // property, not an overwrite (the first value stays in `fields`).
+                if req.fields.contains_key(k) {
+                    req.more_values.push((k.to_string(), v.to_string()));
+                } else {
+                    req.fields.insert(k.to_string(), v.to_string());
+                }
                 i += 2;
             }
             "--edge" => {
@@ -452,6 +458,13 @@ fn run() -> Result<String, String> {
             let mut provenance = "migrated".to_string();
             let mut base: Option<String> = None;
             let mut deploy = false;
+            let mut post = false;
+            let mut api: Option<String> = None;
+            let mut dry = false;
+            let mut unowned_mode = String::from("refuse");
+            // #4096 — owned rows post AFTER the ownerless kinds load (roles, value streams,
+            // steps are what the owned rows point at); held here across the loader path
+            let mut deferred_post: Option<(Vec<athena_model::PostRow>, String)> = None;
             let rest = &args[1..];
             let mut i = 0;
             while i < rest.len() {
@@ -479,6 +492,15 @@ fn run() -> Result<String, String> {
                             _ => return Err("seed: --ttl must follow its own --kind (one --kind per --ttl)".into()),
                         }
                     }
+                    // #4096 — post through the API as each row's owner (Jeff: "each owner in turn")
+                    "--post" => { post = true; }
+                    "--api" => { i += 1; api = rest.get(i).cloned(); }
+                    "--dry-run" => { dry = true; }
+                    // #4096 — what to do with rows whose shape carries no owner (value
+                    // streams, steps, roles, pipelines, cards today: 95 of 200): "refuse"
+                    // (default) or "load" them through the file loader while the door
+                    // gains an owner for those kinds. Always printed, never silent.
+                    "--unowned" => { i += 1; unowned_mode = rest.get(i).cloned().unwrap_or_default(); }
                     "--graph" => { i += 1; graph = rest.get(i).cloned(); }
                     "--provenance" => { i += 1; provenance = rest.get(i).cloned().unwrap_or_default(); }
                     // #3392 — resolve relative TTL IRIs against this base so a
@@ -489,9 +511,12 @@ fn run() -> Result<String, String> {
                 }
                 i += 1;
             }
-            if deploy {
+            if deploy && post {
+                return Err("seed: --deploy (file loader) and --post (the API) are two doors — pick one; --post is the land's".into());
+            }
+            if deploy || post {
                 if !pairs.is_empty() {
-                    return Err("seed: --deploy carries its own manifest — do not combine with --kind/--ttl".into());
+                    return Err("seed: --deploy/--post carry their own manifest — do not combine with --kind/--ttl".into());
                 }
                 let root = std::env::var("CHORUS_ROOT")
                     .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
@@ -553,6 +578,78 @@ fn run() -> Result<String, String> {
                 };
                 parsed.push((kind.clone(), parse_ntriples(&nt)?));
             }
+            if post {
+                // #4096 — the API is the door. Every subject becomes the API's own
+                // write body and is sent as its owner; the store is never touched
+                // from here. Manifest order is dependency order (targets first).
+                let api = api
+                    .or_else(|| std::env::var("ATHENA_MAKE_URL").ok())
+                    .unwrap_or_else(|| "http://localhost:3360".to_string());
+                let root = std::env::var("CHORUS_ROOT")
+                    .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+                let mint = move |owner: &str| -> Result<String, String> {
+                    let out = std::process::Command::new(format!("{}/platform/scripts/chorus-identity-token", root))
+                        .arg(owner)
+                        .output()
+                        .map_err(|e| format!("seed --post: cannot mint an identity for '{}': {}", owner, e))?;
+                    if !out.status.success() {
+                        return Err(format!("seed --post: identity for '{}' refused: {}", owner, String::from_utf8_lossy(&out.stderr).trim()));
+                    }
+                    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+                };
+                let mut tokens = OwnerTokens::new(&mint);
+                let mut rows = Vec::new();
+                for (k, triples) in &parsed {
+                    rows.extend(post_rows(k, triples)?);
+                }
+                let (owned, unowned): (Vec<_>, Vec<_>) = rows.into_iter().partition(|r| r.owner.is_some());
+                let mut per_kind: Vec<(String, usize)> = Vec::new();
+                for r in &unowned {
+                    match per_kind.iter_mut().find(|(k, _)| *k == r.kind) {
+                        Some(e) => e.1 += 1,
+                        None => per_kind.push((r.kind.clone(), 1)),
+                    }
+                }
+                let unowned_note = per_kind.iter().map(|(k, n)| format!("{}={}", k, n)).collect::<Vec<_>>().join(",");
+                if !unowned.is_empty() && unowned_mode != "load" {
+                    return Err(format!(
+                        "seed --post: {} row(s) carry no ownedBy, so no owner can sign them ({}). \
+                         Give those kinds an owner, or say --unowned load to load them through the file loader for now.",
+                        unowned.len(), unowned_note
+                    ));
+                }
+                if unowned.is_empty() {
+                    let rep = post_all(&owned, &api, &mut tokens, &curl_http, dry)?;
+                    for l in &rep.lines { println!("{}", l); }
+                    return Ok(format!(
+                        "posted: {} rows through {} ({} created, {} replaced){}",
+                        owned.len(), api, rep.created, rep.replaced,
+                        if dry { " — dry-run, nothing sent" } else { "" }
+                    ));
+                }
+                // --unowned load: the ownerless kinds go through the file loader FIRST
+                // (the owned rows point at them: ownedBy → role, atStep → step), then
+                // the owned rows post. Said out loud every run so the remainder shrinks
+                // on purpose.
+                println!("unowned rows loaded through the file loader (their shapes carry no owner): {}", unowned_note);
+                let posted_line = format!("{} owned rows to post through {} after the loader", owned.len(), api);
+                deferred_post = Some((owned, api.clone()));
+                let keep: std::collections::HashSet<(String, String)> =
+                    unowned.iter().map(|r| (r.kind.clone(), r.name.clone())).collect();
+                let mut trimmed: Vec<(String, Vec<(String, String, String)>)> = Vec::new();
+                for (k, triples) in &parsed {
+                    let kept: Vec<(String, String, String)> = triples.iter().filter(|(s, _, _)| {
+                        let local = s.trim_start_matches('<').trim_end_matches('>').rsplit(['#', '/']).next().unwrap_or("");
+                        keep.iter().any(|(kk, name)| kk == k && (local == name.as_str() || local == format!("{}-{}", k, name)))
+                    }).cloned().collect();
+                    if !kept.is_empty() { trimmed.push((k.clone(), kept)); }
+                }
+                parsed = trimmed;
+                deploy = true;
+                if dry {
+                    return Ok(format!("{} — dry-run; {} unowned rows would load through the file loader first", posted_line, unowned.len()));
+                }
+            }
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651 — same gate as every verb
             let kind = pairs.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>().join("+");
@@ -610,10 +707,34 @@ fn run() -> Result<String, String> {
                     }
                     verified.push(format!("{} in <{}>", declared.len(), g));
                 }
-                return Ok(format!(
+                let seeded_line = format!(
                     "seeded: {} subjects / {} triples (kind={}, provenance={}) — declared subjects verified live: {}",
                     total_subjects, total_triples, kind, provenance, verified.join("; ")
-                ));
+                );
+                if let Some((owned, api)) = deferred_post.take() {
+                    // #4096 — now the owned rows, through the door, as each owner
+                    let root = std::env::var("CHORUS_ROOT")
+                        .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
+                    let mint = move |owner: &str| -> Result<String, String> {
+                        let out = std::process::Command::new(format!("{}/platform/scripts/chorus-identity-token", root))
+                            .arg(owner)
+                            .output()
+                            .map_err(|e| format!("seed --post: cannot mint an identity for '{}': {}", owner, e))?;
+                        if !out.status.success() {
+                            return Err(format!("seed --post: identity for '{}' refused: {}", owner, String::from_utf8_lossy(&out.stderr).trim()));
+                        }
+                        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+                    };
+                    let mut tokens = OwnerTokens::new(&mint);
+                    let rep = post_all(&owned, &api, &mut tokens, &curl_http, false)?;
+                    for l in &rep.lines { println!("{}", l); }
+                    println!("{}", seeded_line);
+                    return Ok(format!(
+                        "posted: {} rows through {} ({} created, {} replaced); {}",
+                        owned.len(), api, rep.created, rep.replaced, seeded_line
+                    ));
+                }
+                return Ok(seeded_line);
             }
             let groups: Vec<SeedGroup> = parsed
                 .iter()

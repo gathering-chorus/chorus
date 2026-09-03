@@ -101,7 +101,7 @@ flowchart LR
     chorus:gaps """No liveness or crash-loop signal; alerts routed by hand; no model-driven monitor contract; no Borg page yet, so the observation surfaces are scattered.""" ;
     chorus:atStep chorus:value-stream-step-proving ;
     chorus:hasDesignDoc chorus:document-borg-product-design ;
-    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:Properties, chorus:alerts-monitors, chorus:logs, chorus:identity, chorus:metrics ;
+    chorus:hasDomain chorus:infrastructure, chorus:builds, chorus:deploys, chorus:time, chorus:heralds, chorus:toolchain, chorus:analytics, chorus:security, chorus:properties, chorus:alerts-monitors, chorus:logs, chorus:identity, chorus:metrics ;
     chorus:publishesPreAuth """true""" ;
     chorus:promise """The system sees itself, so no person has to be the eyes. Borg watches everything it can reach — services, health, alerts, and the gap between how the system is drawn and how it actually runs — and surfaces the one thing that needs a person, calmly, to the person who owns it.
 Its product is not dashboards. It is your attention back. Every time the owner is the first to notice a stall is a failure of this product. A service that froze silently for weeks is the anti-promise made concrete, and the reason Borg exists.
@@ -142,7 +142,7 @@ chorus:chorus a chorus:Product ;
     rdfs:label """Chorus""" ;
     chorus:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
     rdfs:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
-    chorus:ownedBy """role-wren""" ;
+    chorus:ownedBy chorus:role-wren ;   # #4096: was a string, not the role — the poster found it (a row nobody could sign)
     chorus:vision """A platform for building systems, worked by a small team of people and AI agents, where the way of building is itself modeled, observable and improvable.""" ;
     chorus:valueProposition """A repeatable, instrumented, legible method for forging software: shared memory, one board, one event log, and gates at the right moments, so the output arrives proven rather than claimed.""" ;
     chorus:audience """The team working inside it today, and any team that wants to compose people and agents into something that holds together without a person in the middle of every message.""" ;
@@ -297,7 +297,7 @@ chorus:loom a chorus:Product ;
     rdfs:label """Loom""" ;
     chorus:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
     rdfs:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
-    chorus:ownedBy chorus:role-jeff ;
+    chorus:ownedBy chorus:role-wren ;   # #4096: was role-jeff — a human principal resolves to no writing role, so nobody could write this row through the door; Loom is Wren's product (principles, practices, policies)
     chorus:vision """The team's operating model held as a coherent, validated model: every principle, practice, policy, decision, role and skill a real entry with a shape, and the loop from experience back to principle closed.""" ;
     chorus:valueProposition """Coordination without a switchboard: the rules of working are written down, enforced where actions happen, and fed back from experience, rather than remembered and relayed by one person.""" ;
     chorus:audience """The team, for whom Loom holds the persistent operating frame; and any team adopting the method, which receives a working normative model rather than a pile of documents.""" ;

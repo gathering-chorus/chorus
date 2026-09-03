@@ -170,12 +170,30 @@ teardown_file() {
   echo "$output" | grep -q "SERVED at /credentials RIGHT NOW"
 }
 
-@test "#3752 NEGATIVE PROOF: unanswerable owl-api REFUSES claim retirements (never blind)" {
+@test "#3752/#4080 NEGATIVE PROOF: unanswerable owl-api DEFERS claim retirements (never blind) and the deploy proceeds" {
+  # #4080 changed the shape of this refusal: the script used to exit 1 here, which
+  # sat before the SECURITY_SET load and left a fresh werk store with 0 Principal
+  # rows (the hollow env-up). Now an unanswerable serve-check DEFERS the claim
+  # retirement — the claim SURVIVES, the deploy continues — and says so.
+  RG="${TEST_GRAPH}-na"
+  TT="$BATS_TEST_TMPDIR/claim-na.ttl"
+  printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\nchorus:testdom chorus:definesVocabulary chorus:TestClaimX .\n' > "$TT"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' \
+    --data-binary @"$TT" "$GSP?graph=$RG" -o /dev/null
   RF="$BATS_TEST_TMPDIR/noapi.jsonl"
-  printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "${TEST_GRAPH}-na" > "$RF"
+  printf '{"subject_domain":"testdom","object_class":"TestClaimX","graph":"%s"}\n' "$RG" > "$RF"
   run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" OWL_API_URL="http://localhost:1" bash "$SCRIPT"
-  [ "$status" -eq 1 ]
+  echo "output: $output"
+  [ "$status" -eq 0 ]
   echo "$output" | grep -q "serve-check UNANSWERED"
+  # the negative that matters: nothing was retired blind — the claim is still there
+  run curl -s "$Q" --data-urlencode "query=ASK { GRAPH <$RG> { <https://jeffbridwell.com/chorus#testdom> <https://jeffbridwell.com/chorus#definesVocabulary> <https://jeffbridwell.com/chorus#TestClaimX> } }" -H "Accept: application/sparql-results+json"
+  [[ "${output// /}" == *'"boolean":true'* ]]
+  # and the same staging line WITH an answering serve-check does retire it (so the deferral above is the unanswered path, not the harness)
+  run env ONTOLOGY_GRAPH="$TEST_GRAPH" TTL="$TTL" RETIREMENTS_FILE="$RF" bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "retirement executed .* claim testdom->TestClaimX"
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$RG" -o /dev/null 2>/dev/null || true
 }
 
 # --- #3732: whole-graph retirement — backup-verified, fail-closed ---

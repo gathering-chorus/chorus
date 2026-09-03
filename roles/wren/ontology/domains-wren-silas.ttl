@@ -5,7 +5,7 @@
 @prefix sh:     <http://www.w3.org/ns/shacl#> .
 
 # #3581 — materialize the V2 domains as real chorus:Domain entities, the proven
-# TTL-deploy way (matching chorus:Properties, the sole surviving template), authored
+# TTL-deploy way (matching chorus:properties, the sole surviving template), authored
 # properly (Jeff's "do it properly, no stubs" ruling, 2026-06-25). Paired Wren(drive)
 # + Kade(navigate). This file = Wren's lane (loom/athena/chorus-service/clearing) +
 # Silas's borg (attributed to tree owner = silas). PEER-CHECK + verify-edges-resolve

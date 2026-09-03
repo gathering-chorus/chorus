@@ -479,6 +479,14 @@ pub struct WriteReq {
     pub name: String,
     #[serde(default)]
     pub fields: BTreeMap<String, String>,
+    /// #4096 — ADDITIONAL literal values for a multi-valued property (chorus:diagram
+    /// on a product carries two mermaid sources; a shape's sh:maxCount unset means a
+    /// list). `fields` keeps the FIRST value so every existing floor check (required,
+    /// sh:in, datatype, uniqueness) keeps its one-value meaning; these ride beside it
+    /// and are written as further triples on the same predicate. A repeated `--field
+    /// k=v` on the CLI lands here instead of overwriting the first.
+    #[serde(default)]
+    pub more_values: Vec<(String, String)>,
     #[serde(default)]
     pub edges: Vec<(String, String, String)>, // (property, target_kind, target_name)
     /// #3647 — the class's model-declared instance HOME graph (athena-make resolves it
@@ -527,6 +535,10 @@ pub fn to_turtle(req: &WriteReq) -> R<(String, String)> {
     let class = class_iri(&req.kind)?;
     let mut lines = vec![format!("<{}> a <{}>", subject, class)];
     for (prop, val) in &req.fields {
+        check_property_local(prop)?;
+        lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
+    }
+    for (prop, val) in &req.more_values {
         check_property_local(prop)?;
         lines.push(format!("    <{}{}> \"{}\"", NS, prop, esc(val)));
     }
@@ -1337,7 +1349,7 @@ fn plan_writes<'a>(
                 }
             }
         }
-        for (prop, value) in &req.fields {
+        for (prop, value) in req.fields.iter().chain(req.more_values.iter().map(|(k, v)| (k, v))) {
             if let Some(datatype) = shape.datatypes.get(prop) {
                 if !datatype_ok(value, datatype) {
                     witness("model.refused", &[("kind", req.kind.as_str()), ("name", req.name.as_str()), ("reason", "shape-violation"), ("field", prop)]);
@@ -3496,6 +3508,7 @@ mod webid_uniqueness_3838 {
             kind: "principal".into(),
             name: name.into(),
             fields,
+            more_values: vec![],
             edges: vec![],
             // urn:chorus:instances, NOT the security graph. See the module note:
             // the security graph is DBA-path only and the DAL refuses it outright,
@@ -4107,5 +4120,544 @@ mod deploy_partitions_4089 {
         let parts = deploy_partitions(&homes);
         assert_eq!(parts[0].0, "urn:chorus:domains:services");
         assert_eq!(parts[1].0, "urn:chorus:instances");
+    }
+}
+
+#[cfg(test)]
+mod multi_value_4096 {
+    use super::*;
+
+    /// #4096 — a multi-valued literal (a product's two chorus:diagram sources) is
+    /// written as two triples on one predicate; the first value stays in `fields`.
+    #[test]
+    fn extra_values_become_further_triples_on_the_same_predicate() {
+        let mut req = WriteReq { kind: "product".into(), name: "p".into(), ..Default::default() };
+        req.fields.insert("diagram".into(), "%% one\nflowchart TD".into());
+        req.more_values.push(("diagram".into(), "%% two\nflowchart LR".into()));
+        let (_, ttl) = to_turtle(&req).unwrap();
+        assert_eq!(ttl.matches("#diagram>").count(), 2, "{}", ttl);
+        assert!(ttl.contains("%% one") && ttl.contains("%% two"));
+    }
+
+    /// NEGATIVE PROOF (#3734): an extra value on a property the shape does not
+    /// declare is refused by the same door as a first value — check_property_local
+    /// runs on every value, so a bad local name in `more_values` cannot slip past.
+    #[test]
+    fn extra_value_with_a_bad_property_name_is_refused() {
+        let mut req = WriteReq { kind: "product".into(), name: "p".into(), ..Default::default() };
+        req.fields.insert("diagram".into(), "a".into());
+        req.more_values.push(("not a property".into(), "b".into()));
+        assert!(to_turtle(&req).is_err());
+    }
+}
+
+// ─── #4096 — the poster: seed rows go through the API, not around it ──────────
+use std::collections::HashMap;
+//
+// Jeff, 2026-09-03: "only agents write a working api then dont use it 'just
+// because'" — the land loaded designing/data/*.ttl straight into the store while
+// POST /{kind} and PUT /{kind}/{name} existed for every kind in the manifest.
+// This turns each seed subject into the API's own write body and sends it as
+// the row's OWNER (Jeff, 15:58: "each owner in turn") — the same door, the same
+// authn/authz/shape checks, the same audit line a person gets.
+
+/// One seed subject as the API sees it: the route, the entity name, the owner
+/// whose token signs the write, and the flat body (a value is one string or a
+/// list of strings — the door takes both since #4096).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostRow {
+    pub kind: String,
+    pub plural: String,
+    pub name: String,
+    pub owner: Option<String>,
+    pub body: String,
+    /// the row's edge values (property → target names), so a two-pass post can
+    /// hold back an edge whose target is itself still to be posted (#4096 round
+    /// 11: document.hasProduct ↔ product.hasDesignDoc is a cycle; one row at a
+    /// time cannot satisfy it in one pass)
+    pub edge_targets: Vec<(String, String)>,
+    /// structural edges (partOf / contains / hasChild) — the API keeps these on
+    /// their own routes (`/{plural}/{name}/partof` …), not in the row body
+    pub structural: Vec<(String, String)>, // (route segment, target name)
+}
+
+fn nt_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('r') => out.push('\r'),
+            Some('t') => out.push('\t'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('u') => {
+                let hex: String = (0..4).filter_map(|_| chars.next()).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) { out.push(ch); }
+            }
+            Some('U') => {
+                let hex: String = (0..8).filter_map(|_| chars.next()).collect();
+                if let Some(ch) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) { out.push(ch); }
+            }
+            Some(other) => { out.push('\\'); out.push(other); }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn json_str(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// The local name of an IRI term (`<...#x>` or `<.../x>` → `x`).
+fn iri_local(term: &str) -> &str {
+    let t = term.trim_start_matches('<').trim_end_matches('>');
+    t.rsplit(['#', '/']).next().unwrap_or(t)
+}
+
+/// The entity NAME behind a minted IRI local, for the API: a bare-grain kind
+/// (product, domain, test) is the local itself; a prefixed kind strips its
+/// `<kind>-` (role-wren → wren, document-x → x). A target whose kind is unknown
+/// strips the LONGEST known prefixed kind that matches (value-stream-step-x → x
+/// before value-stream-x), else stays as-is.
+fn name_from_local(local: &str, kind: Option<&str>) -> String {
+    if let Some(k) = kind {
+        if let Ok((k, _, bare)) = kind_entry(k) {
+            if bare { return local.to_string(); }
+            if let Some(rest) = local.strip_prefix(&format!("{}-", k)) { return rest.to_string(); }
+            return local.to_string();
+        }
+    }
+    let mut best: Option<&str> = None;
+    for (k, _, bare) in KINDS {
+        if *bare { continue; }
+        if local.starts_with(&format!("{}-", k)) && best.map_or(true, |b| k.len() > b.len()) {
+            best = Some(k);
+        }
+    }
+    match best {
+        Some(k) => local[k.len() + 1..].to_string(),
+        None => local.to_string(),
+    }
+}
+
+/// Turn one group's triples (riot N-Triples) into API rows, subject order kept.
+/// Pure — the unit tests below are the door's own negative proofs.
+pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<PostRow>> {
+    let (kind, class, _bare) = kind_entry(kind)?;
+    let plural = format!("{}s", class.to_lowercase());
+    let rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>";
+    let mut order: Vec<&str> = Vec::new();
+    let mut by_subject: HashMap<&str, Vec<(&str, &str)>> = HashMap::new();
+    for (s, p, o) in triples {
+        if !subj_pred_ok(s) || !subj_pred_ok(p) || !(is_iri_term(o) || is_nt_literal(o)) {
+            return Err("seed --post: a triple has an invalid/injection-shaped slot".into());
+        }
+        if !by_subject.contains_key(s.as_str()) { order.push(s); }
+        by_subject.entry(s.as_str()).or_default().push((p.as_str(), o.as_str()));
+    }
+    let mut rows = Vec::new();
+    for s in order {
+        let local = iri_local(s);
+        let name = name_from_local(local, Some(kind));
+        let mut keys: Vec<String> = Vec::new();
+        let mut values: HashMap<String, Vec<String>> = HashMap::new();
+        let mut owner: Option<String> = None;
+        let mut structural: Vec<(String, String)> = Vec::new();
+        let mut edge_targets: Vec<(String, String)> = Vec::new();
+        for (p, o) in &by_subject[s] {
+            if *p == rdf_type { continue; }
+            let key = iri_local(p).to_string();
+            let val = if is_iri_term(o) {
+                let target = name_from_local(iri_local(o), None);
+                let route = match key.as_str() { "partOf" => Some("partof"), "contains" => Some("contains"), "hasChild" => Some("has-child"), _ => None };
+                if let Some(r) = route {
+                    if !structural.iter().any(|(rr, t)| rr == r && *t == target) { structural.push((r.to_string(), target)); }
+                    continue;
+                }
+                if key == "ownedBy" {
+                    // the API injects the owner from the verified token; the row's
+                    // owner is WHO SIGNS the write, not a body field
+                    owner = Some(target);
+                    continue;
+                }
+                edge_targets.push((key.clone(), target.clone()));
+                target
+            } else {
+                let (lex, _) = nt_literal_parts(o);
+                nt_unescape(lex)
+            };
+            let slot = values.entry(key.clone()).or_default();
+            if !slot.contains(&val) { slot.push(val); }
+            if !keys.contains(&key) { keys.push(key); }
+        }
+        let mut parts = vec![format!("\"name\":{}", json_str(&name))];
+        for k in &keys {
+            let vs = &values[k];
+            let v = if vs.len() == 1 { json_str(&vs[0]) } else {
+                format!("[{}]", vs.iter().map(|x| json_str(x)).collect::<Vec<_>>().join(","))
+            };
+            parts.push(format!("{}:{}", json_str(k), v));
+        }
+        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")), edge_targets, structural });
+    }
+    Ok(rows)
+}
+
+/// The row's body with every edge value whose target is in `hold` removed
+/// (a list keeps its other targets; a property left empty is dropped). Pure.
+pub fn body_without(row: &PostRow, hold: &std::collections::HashSet<String>) -> String {
+    let held: Vec<&(String, String)> = row.edge_targets.iter().filter(|(_, t)| hold.contains(t)).collect();
+    if held.is_empty() { return row.body.clone(); }
+    // the body is our own flat JSON: "k":"v" or "k":["v1","v2"]; rebuild it
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 1; // after '{'
+    let b = row.body.as_bytes();
+    while i < b.len() - 1 {
+        // key
+        let ks = i + 1; let mut ke = ks; while b[ke] != b'"' || b[ke - 1] == b'\\' { ke += 1; }
+        let key = json_unquote(&row.body[ks..ke]);
+        i = ke + 2; // past '":'
+        let (vals, next) = if b[i] == b'[' {
+            let mut vs = Vec::new(); let mut j = i + 1;
+            loop { let vs_ = j + 1; let mut ve = vs_; while b[ve] != b'"' || b[ve - 1] == b'\\' { ve += 1; } vs.push(json_unquote(&row.body[vs_..ve])); j = ve + 1; if b[j] == b']' { break; } j += 1; }
+            (vs, j + 1)
+        } else {
+            let vs_ = i + 1; let mut ve = vs_; while b[ve] != b'"' || b[ve - 1] == b'\\' { ve += 1; }
+            (vec![json_unquote(&row.body[vs_..ve])], ve + 1)
+        };
+        let kept: Vec<String> = vals.into_iter().filter(|v| !held.iter().any(|(k, t)| *k == key && t == v)).collect();
+        if !kept.is_empty() {
+            let v = if kept.len() == 1 { json_str(&kept[0]) } else { format!("[{}]", kept.iter().map(|x| json_str(x)).collect::<Vec<_>>().join(",")) };
+            out.push(format!("{}:{}", json_str(&key), v));
+        }
+        i = next; if i < b.len() && b[i] == b',' { i += 1; }
+    }
+    format!("{{{}}}", out.join(","))
+}
+
+fn json_unquote(raw: &str) -> String {
+    // inverse of json_str for the subset json_str emits
+    let mut out = String::new(); let mut it = raw.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' { out.push(c); continue; }
+        match it.next() { Some('n') => out.push('\n'), Some('r') => out.push('\r'), Some('t') => out.push('\t'), Some('"') => out.push('"'), Some('\\') => out.push('\\'),
+            Some('u') => { let h: String = (0..4).filter_map(|_| it.next()).collect(); if let Some(ch) = u32::from_str_radix(&h, 16).ok().and_then(char::from_u32) { out.push(ch); } }
+            Some(o) => { out.push('\\'); out.push(o); } None => out.push('\\') }
+    }
+    out
+}
+
+/// A minted identity per owner, cached for the run. `mint` is injected so the
+/// tests never touch the identity server (and the poster never learns a secret
+/// it did not ask for).
+pub struct OwnerTokens<'a> {
+    cache: HashMap<String, String>,
+    mint: &'a dyn Fn(&str) -> R<String>,
+}
+impl<'a> OwnerTokens<'a> {
+    pub fn new(mint: &'a dyn Fn(&str) -> R<String>) -> Self { Self { cache: HashMap::new(), mint } }
+    pub fn for_owner(&mut self, owner: &str) -> R<String> {
+        if let Some(t) = self.cache.get(owner) { return Ok(t.clone()); }
+        let t = (self.mint)(owner)?;
+        if t.trim().is_empty() { return Err(format!("seed --post: no identity for owner '{}'", owner)); }
+        self.cache.insert(owner.to_string(), t.trim().to_string());
+        Ok(t.trim().to_string())
+    }
+}
+
+/// One HTTP exchange: (status, body). Injected so the transport is testable.
+pub type Http<'a> = &'a dyn Fn(&str, &str, &str, Option<&str>) -> R<(u16, String)>;
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PostReport { pub created: usize, pub replaced: usize, pub lines: Vec<String> }
+
+/// Post every row in order: GET decides create vs replace, the owner's token
+/// signs, any non-2xx stops the run loudly with the API's own words. Rows with
+/// no owner are refused before anything is sent (Jeff: each owner in turn — a
+/// row nobody owns is a data defect to fix in the file, not a default).
+pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http: Http<'_>, dry: bool) -> R<PostReport> {
+    let unowned: Vec<&PostRow> = rows.iter().filter(|r| r.owner.is_none()).collect();
+    if !unowned.is_empty() {
+        return Err(format!(
+            "seed --post: {} row(s) carry no ownedBy, so no owner can sign them: {}",
+            unowned.len(),
+            unowned.iter().take(8).map(|r| format!("{}/{}", r.plural, r.name)).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let api = api.trim_end_matches('/');
+    let mut rep = PostReport::default();
+    // Two passes. Pass 1 posts every row with edges to NOT-YET-POSTED rows of this
+    // run held back (a cycle like document.hasProduct ↔ product.hasDesignDoc cannot
+    // be written one row at a time otherwise). Pass 2 PUTs the full body of every
+    // row that had something held back, now that its targets exist.
+    let mut pending: std::collections::HashSet<String> = rows.iter().map(|r| r.name.clone()).collect();
+    let mut second_pass: Vec<&PostRow> = Vec::new();
+    for r in rows {
+        let owner = r.owner.as_deref().unwrap_or_default();
+        let token = tokens.for_owner(owner)?;
+        let url_one = format!("{}/{}/{}", api, r.plural, r.name);
+        let (st, _) = http("GET", &url_one, "", None)?;
+        let (method, url) = if st == 200 { ("PUT", url_one.clone()) } else { ("POST", format!("{}/{}", api, r.plural)) };
+        let hold: std::collections::HashSet<String> = pending.iter().filter(|n| *n != &r.name).cloned().collect();
+        let body_now = body_without(r, &hold);
+        if body_now != r.body { second_pass.push(r); }
+        if dry {
+            rep.lines.push(format!("{} {} as {} (dry-run){}", method, url, owner, if body_now != r.body { " + a second pass for held-back edges" } else { "" }));
+            pending.remove(&r.name);
+            continue;
+        }
+        let (mut method, mut url) = (method, url);
+        let (mut st, mut body) = http(method, &url, &token, Some(&body_now))?;
+        // The entity read is not the truth of existence for every kind (a document
+        // read answers nothing while the row is there): a create that says
+        // already-exists is an existing row — replace it.
+        if st == 409 && body.contains("already-exists") {
+            method = "PUT"; url = url_one.clone();
+            let r2 = http(method, &url, &token, Some(&body_now))?; st = r2.0; body = r2.1;
+        }
+        // A held-back edge may be a REQUIRED one (the door does not say which edges
+        // are required, and a target name can collide across kinds — product
+        // `spine` and domain `spine`). If the door says the row lacks something
+        // and we held something, send the whole row; a genuine cycle of two
+        // required edges then fails honestly as unknown-target.
+        if st == 422 && body_now != r.body && body.contains("requires") {
+            let r2 = http(method, &url, &token, Some(&r.body))?; st = r2.0; body = r2.1;
+            if (200..300).contains(&st) { second_pass.retain(|x| x.name != r.name); }
+        }
+        if !(200..300).contains(&st) {
+            witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
+            return Err(format!("seed --post: {} {} as {} → {}: {}", method, url, owner, st, body.trim()));
+        }
+        if method == "POST" { rep.created += 1 } else { rep.replaced += 1 }
+        witness("model.seed.posted", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("method", method), ("status", &st.to_string())]);
+        rep.lines.push(format!("{} {} as {} → {}", method, url, owner, st));
+        // structural edges ride their own routes; an edge already present answers
+        // 200/409-idempotent and is not a failure, anything else stops the run
+        for (route, target) in &r.structural {
+            let eurl = format!("{}/{}", url_one, route);
+            let (est, ebody) = http("POST", &eurl, &token, Some(&format!("{{\"target\":{}}}", json_str(target))))?;
+            if !(200..300).contains(&est) && !(est == 409 && ebody.contains("already")) {
+                witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &est.to_string())]);
+                return Err(format!("seed --post: POST {} → {} as {} → {}: {}", eurl, target, owner, est, ebody.trim()));
+            }
+            rep.lines.push(format!("POST {} {} as {} → {}", eurl, target, owner, est));
+        }
+        pending.remove(&r.name);
+    }
+    if !dry {
+        for r in second_pass {
+            let owner = r.owner.as_deref().unwrap_or_default();
+            let token = tokens.for_owner(owner)?;
+            let url = format!("{}/{}/{}", api, r.plural, r.name);
+            let (st, body) = http("PUT", &url, &token, Some(&r.body))?;
+            if !(200..300).contains(&st) {
+                witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
+                return Err(format!("seed --post (second pass, held-back edges): PUT {} as {} → {}: {}", url, owner, st, body.trim()));
+            }
+            rep.lines.push(format!("PUT {} as {} → {} (second pass: edges to rows posted after it)", url, owner, st));
+        }
+    }
+    Ok(rep)
+}
+
+/// The real transport: curl, bearer in a header, body via stdin (never argv).
+pub fn curl_http(method: &str, url: &str, token: &str, body: Option<&str>) -> R<(u16, String)> {
+    use std::io::Write;
+    let mut cmd = Command::new("curl");
+    cmd.args(["-s", "--max-time", "30", "-X", method, url, "-w", "\n%{http_code}"]);
+    if !token.is_empty() { cmd.arg("-H").arg(format!("Authorization: Bearer {}", token)); }
+    if body.is_some() { cmd.args(["-H", "Content-Type: application/json", "--data-binary", "@-"]); }
+    cmd.stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("curl: {}", e))?;
+    if let Some(b) = body {
+        child.stdin.take().ok_or("curl stdin")?.write_all(b.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&out.stdout).to_string();
+    let (resp, code) = text.rsplit_once('\n').unwrap_or(("", text.as_str()));
+    let st: u16 = code.trim().parse().map_err(|_| format!("curl: no status from {} {}", method, url))?;
+    Ok((st, resp.to_string()))
+}
+
+#[cfg(test)]
+mod post_rows_4096 {
+    use super::*;
+
+    fn t(s: &str, p: &str, o: &str) -> (String, String, String) { (s.into(), p.into(), o.into()) }
+    const C: &str = "https://jeffbridwell.com/chorus#";
+
+    #[test]
+    fn a_product_row_becomes_the_api_body_with_lists_and_its_owner() {
+        let tr = vec![
+            t(&format!("<{C}spine>"), "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>", &format!("<{C}Product>")),
+            t(&format!("<{C}spine>"), &format!("<{C}label>"), "\"Spine\""),
+            t(&format!("<{C}spine>"), "<http://www.w3.org/2000/01/rdf-schema#label>", "\"Spine\""),
+            t(&format!("<{C}spine>"), &format!("<{C}ownedBy>"), &format!("<{C}role-wren>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDomain>"), &format!("<{C}events>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDomain>"), &format!("<{C}spine>")),
+            t(&format!("<{C}spine>"), &format!("<{C}hasDesignDoc>"), &format!("<{C}document-spine-product-design>")),
+            t(&format!("<{C}spine>"), &format!("<{C}atStep>"), &format!("<{C}value-stream-step-directing>")),
+            t(&format!("<{C}spine>"), &format!("<{C}diagram>"), "\"%% one\\nflowchart TD\""),
+            t(&format!("<{C}spine>"), &format!("<{C}diagram>"), "\"%% two\\nflowchart LR\""),
+        ];
+        let rows = post_rows("product", &tr).unwrap();
+        assert_eq!(rows.len(), 1);
+        let r = &rows[0];
+        assert_eq!((r.plural.as_str(), r.name.as_str(), r.owner.as_deref()), ("products", "spine", Some("wren")));
+        assert!(r.body.contains("\"name\":\"spine\""), "{}", r.body);
+        assert!(r.body.contains("\"label\":\"Spine\""), "duplicate rdfs/chorus label collapses to one: {}", r.body);
+        assert!(r.body.contains("\"hasDomain\":[\"events\",\"spine\"]"), "{}", r.body);
+        assert!(r.body.contains("\"hasDesignDoc\":\"spine-product-design\""), "{}", r.body);
+        assert!(r.body.contains("\"atStep\":\"directing\""), "longest prefixed kind wins: {}", r.body);
+        assert!(r.body.contains("\"diagram\":[\"%% one\\nflowchart TD\",\"%% two\\nflowchart LR\"]"), "{}", r.body);
+        assert!(!r.body.contains("ownedBy"), "the owner signs; it is not a body field: {}", r.body);
+    }
+
+    /// partOf / contains / hasChild are not body fields (the API's closed shape
+    /// refused the athena row on the first live run, round 4): they ride their
+    /// own routes after the row write.
+    #[test]
+    fn structural_edges_leave_the_body_and_ride_their_own_routes() {
+        let tr = vec![
+            t(&format!("<{C}athena>"), &format!("<{C}label>"), "\"Athena\""),
+            t(&format!("<{C}athena>"), &format!("<{C}partOf>"), &format!("<{C}chorus>")),
+            t(&format!("<{C}athena>"), &format!("<{C}ownedBy>"), &format!("<{C}role-wren>")),
+        ];
+        let rows = post_rows("product", &tr).unwrap();
+        assert!(!rows[0].body.contains("partOf"), "{}", rows[0].body);
+        assert_eq!(rows[0].structural, vec![("partof".to_string(), "chorus".to_string())]);
+    }
+
+    /// A cycle (document.hasProduct ↔ product.hasDesignDoc) posts in two passes:
+    /// the first row goes without the edge to the not-yet-posted row, the second
+    /// row goes whole, then the first is PUT whole. Every edge lands.
+    #[test]
+    fn a_cycle_between_two_rows_posts_in_two_passes_and_loses_no_edge() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let doc = PostRow { kind: "document".into(), plural: "documents".into(), name: "spine-design".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine-design\",\"docTitle\":\"Spine\",\"hasProduct\":\"spine\"}".into(),
+            edge_targets: vec![("hasProduct".into(), "spine".into())], structural: vec![] };
+        let prod = PostRow { kind: "product".into(), plural: "products".into(), name: "spine".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine\",\"hasDesignDoc\":\"spine-design\",\"hasDomain\":[\"events\",\"spine\"]}".into(),
+            edge_targets: vec![("hasDesignDoc".into(), "spine-design".into()), ("hasDomain".into(), "events".into()), ("hasDomain".into(), "spine".into())], structural: vec![] };
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, _t: &str, b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {}", b.unwrap_or("")));
+            Ok(match m { "GET" => (404, String::new()), "POST" => (201, String::new()), _ => (200, String::new()) })
+        };
+        let rep = post_all(&[doc, prod], "http://api", &mut tokens, &http, false).unwrap();
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "POST http://api/documents {\"name\":\"spine-design\",\"docTitle\":\"Spine\"}"), "first pass holds the edge back: {c:?}");
+        assert!(c.iter().any(|l| l.starts_with("POST http://api/products ") && l.contains("\"hasDesignDoc\":\"spine-design\"")), "{c:?}");
+        assert!(c.iter().any(|l| l == "PUT http://api/documents/spine-design {\"name\":\"spine-design\",\"docTitle\":\"Spine\",\"hasProduct\":\"spine\"}"), "second pass restores it: {c:?}");
+        assert_eq!((rep.created, rep.replaced), (2, 0));
+    }
+
+    /// A held-back edge that turns out to be required (the target name collided
+    /// with a pending row of another kind): the door says "requires", the poster
+    /// sends the whole row, and it lands. And a create answered already-exists
+    /// becomes a replace — the entity read is not the truth for every kind.
+    #[test]
+    fn a_required_edge_held_by_a_name_collision_is_retried_whole_and_409_becomes_a_put() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let prod = PostRow { kind: "product".into(), plural: "products".into(), name: "borg".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"borg\",\"hasDomain\":\"spine\"}".into(),
+            edge_targets: vec![("hasDomain".into(), "spine".into())], structural: vec![] };
+        let other = PostRow { kind: "document".into(), plural: "documents".into(), name: "spine".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine\",\"docTitle\":\"S\"}".into(), edge_targets: vec![], structural: vec![] };
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, _t: &str, b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {}", b.unwrap_or("")));
+            let b = b.unwrap_or("");
+            Ok(match (m, u) {
+                ("GET", _) => (404, String::new()),
+                ("POST", "http://api/products") if !b.contains("hasDomain") => (422, "shape-violation: Product requires 'hasDomain'".into()),
+                ("POST", "http://api/products") => (201, String::new()),
+                ("POST", "http://api/documents") => (409, "already-exists: create-only".into()),
+                ("PUT", _) => (200, String::new()),
+                _ => (500, String::new()),
+            })
+        };
+        let rep = post_all(&[prod, other], "http://api", &mut tokens, &http, false).unwrap();
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "POST http://api/products {\"name\":\"borg\"}"), "first try held the edge: {c:?}");
+        assert!(c.iter().any(|l| l == "POST http://api/products {\"name\":\"borg\",\"hasDomain\":\"spine\"}"), "retried whole: {c:?}");
+        assert!(c.iter().any(|l| l.starts_with("PUT http://api/documents/spine ")), "409 became a PUT: {c:?}");
+        assert_eq!((rep.created, rep.replaced), (1, 1));
+        assert!(!c.iter().any(|l| l.contains("second pass")), "nothing left for a second pass: {c:?}");
+    }
+
+    #[test]
+    fn a_prefixed_kind_strips_its_own_prefix_for_the_name() {
+        let tr = vec![t(&format!("<{C}document-x-design>"), &format!("<{C}docTitle>"), "\"X\"")];
+        let rows = post_rows("document", &tr).unwrap();
+        assert_eq!(rows[0].name, "x-design");
+        assert_eq!(rows[0].plural, "documents");
+    }
+
+    /// NEGATIVE PROOF (#3734): a row nobody owns is refused before any request —
+    /// the poster never signs as a default role (Jeff: each owner in turn).
+    #[test]
+    fn a_row_without_an_owner_is_refused_before_anything_is_sent() {
+        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into(), edge_targets: vec![], structural: vec![] }];
+        let mint = |_: &str| -> R<String> { panic!("must not mint for an unowned row") };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |_: &str, _: &str, _: &str, _: Option<&str>| -> R<(u16, String)> { panic!("must not send") };
+        let err = post_all(&rows, "http://x", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("no ownedBy") && err.contains("products/p"), "{err}");
+    }
+
+    /// GET 200 → PUT, GET 404 → POST; each row signed by ITS owner; a non-2xx stops the run.
+    #[test]
+    fn create_or_replace_is_decided_by_the_get_and_signed_by_the_owner() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let rows = vec![
+            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into(), edge_targets: vec![], structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into(), edge_targets: vec![], structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into(), edge_targets: vec![], structural: vec![] },
+        ];
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, tok: &str, _b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {tok}"));
+            Ok(match (m, u.rsplit('/').next().unwrap_or("")) {
+                ("GET", "old") => (200, String::new()),
+                ("GET", _) => (404, String::new()),
+                ("PUT", _) => (200, "ok".into()),
+                ("POST", _) if _b.map_or(false, |b| b.contains("bad")) => (422, "shape-violation".into()),
+                ("POST", _) => (201, "created".into()),
+                _ => (500, String::new()),
+            })
+        };
+        let err = post_all(&rows, "http://api/", &mut tokens, &http, false).unwrap_err();
+        assert!(err.contains("422") && err.contains("shape-violation"), "{err}");
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "PUT http://api/products/old tok-kade"), "{c:?}");
+        assert!(c.iter().any(|l| l == "POST http://api/products tok-wren"), "{c:?}");
     }
 }
