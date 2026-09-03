@@ -102,3 +102,47 @@ sys.exit(0 if any("werk-product-design" in str(x) for x in v) and not any("werk-
   run bash -c "$(declare -f section_ok); printf '%s' '{\"promise\":\"$(printf 'x%.0s' $(seq 1 40))\"}' | section_ok promise"
   [ "$status" -eq 0 ]
 }
+
+# ── round 5 — Jeff, 2026-09-03 08:51: "the product page is for people who arent
+# chorus insiders yet its full of card reference and internal narrative". The
+# eight reader-facing chapters carry no card numbers and no role names; the team
+# record lives only in references, labelled as internal notes.
+READER_SECTIONS="promise structure model pagesAndFlow apiSurface asIs toBe notInScope"
+
+# exit 0 when the text on stdin has no card ref (#NNNN) and no role/owner name, else 1 and names the leak
+no_insider_refs() {
+  python3 -c '
+import sys, re
+t = sys.stdin.read()
+bad = re.findall(r"#\d{3,4}|\b(?:Wren|Silas|Kade|Jeff)\b", t)
+if bad: print("insider refs: " + ", ".join(sorted(set(bad)))); sys.exit(1)'
+}
+
+@test "AC1 (round 5): no product's reader-facing chapters carry card numbers or role names" {
+  for p in $PRODUCTS; do
+    row="$(product_row "$p")"
+    for k in $READER_SECTIONS; do
+      printf '%s' "$row" | python3 -c "import sys,json; sys.stdout.write(json.load(sys.stdin).get('$k',''))" | no_insider_refs \
+        || { echo "$p.$k leaks insider references"; return 1; }
+    done
+  done
+}
+
+@test "AC1 (round 5): every references chapter is labelled as internal notes for the team" {
+  for p in $PRODUCTS; do
+    printf '%s' "$(product_row "$p")" | python3 -c '
+import sys, json
+r = json.load(sys.stdin).get("references", "")
+sys.exit(0 if "Internal notes for the team" in r else 1)' || { echo "$p.references lacks the internal-notes label"; return 1; }
+  done
+}
+
+@test "negative proof (#3734): the insider-refs check FAILS on a chapter that names a card or a role" {
+  run bash -c "$(declare -f no_insider_refs); printf '%s' 'landed on #4045 with the go' | no_insider_refs"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"#4045"* ]]
+  run bash -c "$(declare -f no_insider_refs); printf '%s' 'Silas established this in the service design' | no_insider_refs"
+  [ "$status" -eq 1 ]
+  run bash -c "$(declare -f no_insider_refs); printf '%s' 'The architect role established this in the service design' | no_insider_refs"
+  [ "$status" -eq 0 ]
+}
