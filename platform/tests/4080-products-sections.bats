@@ -107,7 +107,7 @@ sys.exit(0 if any("werk-product-design" in str(x) for x in v) and not any("werk-
 # chorus insiders yet its full of card reference and internal narrative". The
 # eight reader-facing chapters carry no card numbers and no role names; the team
 # record lives only in references, labelled as internal notes.
-READER_SECTIONS="promise structure model pagesAndFlow apiSurface asIs toBe notInScope"
+READER_SECTIONS="vision valueProposition audience gaps promise structure model pagesAndFlow apiSurface asIs toBe notInScope"
 
 # exit 0 when the text on stdin has no card ref (#NNNN) and no role/owner name, else 1 and names the leak
 no_insider_refs() {
