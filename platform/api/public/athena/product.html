@@ -9,13 +9,13 @@
      doc they came from, in design order, with the model's own tables and lists, and
      nothing wider than a phone. The #3635 attribute-table version it replaces is in git. -->
 <script>window.OWL_PORT = 3360;</script>
-<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>
 <link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script>
 <script>(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
 window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;return b+(x.charAt(0)==='/'?x:'/'+x);};
 var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>   <!-- #4094 — after basePath exists; same include class-atlas.html uses -->
 <style>
   /* phone-first: the page is a single column of readable measure; nothing scrolls sideways */
   /* on a wide screen: 1in margins either side, no fixed column (Jeff 2026-09-03: "1 inch right and left so I don't scroll so much on mac"); phone keeps 16px */
@@ -47,7 +47,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   figure.dg { margin: 0 0 14px; }
   figure.dg figcaption { font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
   figure.dg .mmd { overflow-x: auto; }
-  figure.dg .mmd svg { max-width: 100%; height: auto; }
+  figure.dg .mmd svg { max-width: 100%; height: auto; font-size: 16px; line-height: 1.25; }
+  /* mermaid measures its labels outside this page's chapter CSS; the chapter's p/span rules must not reach them, or every box clips (seen on round 1) */
+  figure.dg .mmd p, figure.dg .mmd span { margin: 0; font-size: inherit; line-height: inherit; }
   figure.dg .mmd-err { color: var(--muted); font-style: italic; font-size: .85rem; }
   .foldall { display: flex; gap: 12px; justify-content: flex-end; font-size: .8rem; margin: 4px 0 -4px; }
   .foldall a { color: var(--accent); text-decoration: none; cursor: pointer; }
@@ -102,7 +104,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       fetchJSON('/domains').catch(() => null)]);
     const lit = (Array.isArray(entEnv.data) ? entEnv.data[0] : entEnv.data) || {};
     const row = ((collEnv.data || []).find(r => r.name === p)) || {};
-    const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([, v]) => v !== '' && v != null)) };
+    // the entity read serves one string for a repeated literal (the last value); the collection row keeps the list —
+    // so a repeated property (chorus:diagram, #4094) is read from the row, everything else from the entity
+    const e = { ...row, ...Object.fromEntries(Object.entries(lit).filter(([k, v]) => v !== '' && v != null && !Array.isArray(row[k]))) };
     if (!Object.keys(lit).length && !Object.keys(row).length) { main.innerHTML = `<div class="err">The model has no product named "${esc(p)}".</div>`; return; }
     const shape = (apiSpec && apiSpec.components && apiSpec.components.schemas && apiSpec.components.schemas.Product && apiSpec.components.schemas.Product.properties) || {};
     const docsByName = Object.fromEntries((((docEnv || {}).data) || []).map(r => [r.name, r]));
