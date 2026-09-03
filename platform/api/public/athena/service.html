@@ -70,7 +70,8 @@ ${srcNote(`GET /services/${esc(s)}`)}`;
       try {
         const ent = await fetchJSON(`/commitments/${encodeURIComponent(r.name)}`);
         const svc = String((ent.links || {}).ofService || '');
-        if (svc.endsWith(':service-' + s) || svc.endsWith('#service-' + s)) mine.push({ ...r, card: (ent.links || {}).card, owner: (ent.links || {}).ownedBy });
+        // the page's `s` is the row name (service-identity); links carry chorus:service-identity
+        if (svc === 'chorus:' + s || svc.endsWith('#' + s) || svc.endsWith(':' + s)) mine.push({ ...r, card: (ent.links || {}).card, owner: (ent.links || {}).ownedBy });
       } catch (_) { /* one unreadable row does not blank the fold */ }
     }
     const open = mine.filter(r => r.status === 'open'), noCard = open.filter(r => !r.card);
