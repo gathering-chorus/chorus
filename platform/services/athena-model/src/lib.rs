@@ -4171,6 +4171,11 @@ pub struct PostRow {
     pub name: String,
     pub owner: Option<String>,
     pub body: String,
+    /// the row's edge values (property → target names), so a two-pass post can
+    /// hold back an edge whose target is itself still to be posted (#4096 round
+    /// 11: document.hasProduct ↔ product.hasDesignDoc is a cycle; one row at a
+    /// time cannot satisfy it in one pass)
+    pub edge_targets: Vec<(String, String)>,
     /// structural edges (partOf / contains / hasChild) — the API keeps these on
     /// their own routes (`/{plural}/{name}/partof` …), not in the row body
     pub structural: Vec<(String, String)>, // (route segment, target name)
@@ -4278,6 +4283,7 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
         let mut values: HashMap<String, Vec<String>> = HashMap::new();
         let mut owner: Option<String> = None;
         let mut structural: Vec<(String, String)> = Vec::new();
+        let mut edge_targets: Vec<(String, String)> = Vec::new();
         for (p, o) in &by_subject[s] {
             if *p == rdf_type { continue; }
             let key = iri_local(p).to_string();
@@ -4294,6 +4300,7 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
                     owner = Some(target);
                     continue;
                 }
+                edge_targets.push((key.clone(), target.clone()));
                 target
             } else {
                 let (lex, _) = nt_literal_parts(o);
@@ -4311,9 +4318,53 @@ pub fn post_rows(kind: &str, triples: &[(String, String, String)]) -> R<Vec<Post
             };
             parts.push(format!("{}:{}", json_str(k), v));
         }
-        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")), structural });
+        rows.push(PostRow { kind: kind.to_string(), plural: plural.clone(), name, owner, body: format!("{{{}}}", parts.join(",")), edge_targets, structural });
     }
     Ok(rows)
+}
+
+/// The row's body with every edge value whose target is in `hold` removed
+/// (a list keeps its other targets; a property left empty is dropped). Pure.
+pub fn body_without(row: &PostRow, hold: &std::collections::HashSet<String>) -> String {
+    let held: Vec<&(String, String)> = row.edge_targets.iter().filter(|(_, t)| hold.contains(t)).collect();
+    if held.is_empty() { return row.body.clone(); }
+    // the body is our own flat JSON: "k":"v" or "k":["v1","v2"]; rebuild it
+    let mut out: Vec<String> = Vec::new();
+    let mut i = 1; // after '{'
+    let b = row.body.as_bytes();
+    while i < b.len() - 1 {
+        // key
+        let ks = i + 1; let mut ke = ks; while b[ke] != b'"' || b[ke - 1] == b'\\' { ke += 1; }
+        let key = json_unquote(&row.body[ks..ke]);
+        i = ke + 2; // past '":'
+        let (vals, next) = if b[i] == b'[' {
+            let mut vs = Vec::new(); let mut j = i + 1;
+            loop { let vs_ = j + 1; let mut ve = vs_; while b[ve] != b'"' || b[ve - 1] == b'\\' { ve += 1; } vs.push(json_unquote(&row.body[vs_..ve])); j = ve + 1; if b[j] == b']' { break; } j += 1; }
+            (vs, j + 1)
+        } else {
+            let vs_ = i + 1; let mut ve = vs_; while b[ve] != b'"' || b[ve - 1] == b'\\' { ve += 1; }
+            (vec![json_unquote(&row.body[vs_..ve])], ve + 1)
+        };
+        let kept: Vec<String> = vals.into_iter().filter(|v| !held.iter().any(|(k, t)| *k == key && t == v)).collect();
+        if !kept.is_empty() {
+            let v = if kept.len() == 1 { json_str(&kept[0]) } else { format!("[{}]", kept.iter().map(|x| json_str(x)).collect::<Vec<_>>().join(",")) };
+            out.push(format!("{}:{}", json_str(&key), v));
+        }
+        i = next; if i < b.len() && b[i] == b',' { i += 1; }
+    }
+    format!("{{{}}}", out.join(","))
+}
+
+fn json_unquote(raw: &str) -> String {
+    // inverse of json_str for the subset json_str emits
+    let mut out = String::new(); let mut it = raw.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' { out.push(c); continue; }
+        match it.next() { Some('n') => out.push('\n'), Some('r') => out.push('\r'), Some('t') => out.push('\t'), Some('"') => out.push('"'), Some('\\') => out.push('\\'),
+            Some('u') => { let h: String = (0..4).filter_map(|_| it.next()).collect(); if let Some(ch) = u32::from_str_radix(&h, 16).ok().and_then(char::from_u32) { out.push(ch); } }
+            Some(o) => { out.push('\\'); out.push(o); } None => out.push('\\') }
+    }
+    out
 }
 
 /// A minted identity per owner, cached for the run. `mint` is injected so the
@@ -4355,17 +4406,27 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
     }
     let api = api.trim_end_matches('/');
     let mut rep = PostReport::default();
+    // Two passes. Pass 1 posts every row with edges to NOT-YET-POSTED rows of this
+    // run held back (a cycle like document.hasProduct ↔ product.hasDesignDoc cannot
+    // be written one row at a time otherwise). Pass 2 PUTs the full body of every
+    // row that had something held back, now that its targets exist.
+    let mut pending: std::collections::HashSet<String> = rows.iter().map(|r| r.name.clone()).collect();
+    let mut second_pass: Vec<&PostRow> = Vec::new();
     for r in rows {
         let owner = r.owner.as_deref().unwrap_or_default();
         let token = tokens.for_owner(owner)?;
         let url_one = format!("{}/{}/{}", api, r.plural, r.name);
         let (st, _) = http("GET", &url_one, "", None)?;
         let (method, url) = if st == 200 { ("PUT", url_one.clone()) } else { ("POST", format!("{}/{}", api, r.plural)) };
+        let hold: std::collections::HashSet<String> = pending.iter().filter(|n| *n != &r.name).cloned().collect();
+        let body_now = body_without(r, &hold);
+        if body_now != r.body { second_pass.push(r); }
         if dry {
-            rep.lines.push(format!("{} {} as {} (dry-run)", method, url, owner));
+            rep.lines.push(format!("{} {} as {} (dry-run){}", method, url, owner, if body_now != r.body { " + a second pass for held-back edges" } else { "" }));
+            pending.remove(&r.name);
             continue;
         }
-        let (st, body) = http(method, &url, &token, Some(&r.body))?;
+        let (st, body) = http(method, &url, &token, Some(&body_now))?;
         if !(200..300).contains(&st) {
             witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
             return Err(format!("seed --post: {} {} as {} → {}: {}", method, url, owner, st, body.trim()));
@@ -4383,6 +4444,20 @@ pub fn post_all(rows: &[PostRow], api: &str, tokens: &mut OwnerTokens<'_>, http:
                 return Err(format!("seed --post: POST {} → {} as {} → {}: {}", eurl, target, owner, est, ebody.trim()));
             }
             rep.lines.push(format!("POST {} {} as {} → {}", eurl, target, owner, est));
+        }
+        pending.remove(&r.name);
+    }
+    if !dry {
+        for r in second_pass {
+            let owner = r.owner.as_deref().unwrap_or_default();
+            let token = tokens.for_owner(owner)?;
+            let url = format!("{}/{}/{}", api, r.plural, r.name);
+            let (st, body) = http("PUT", &url, &token, Some(&r.body))?;
+            if !(200..300).contains(&st) {
+                witness("model.seed.post.refused", &[("kind", &r.kind), ("name", &r.name), ("owner", owner), ("status", &st.to_string())]);
+                return Err(format!("seed --post (second pass, held-back edges): PUT {} as {} → {}: {}", url, owner, st, body.trim()));
+            }
+            rep.lines.push(format!("PUT {} as {} → {} (second pass: edges to rows posted after it)", url, owner, st));
         }
     }
     Ok(rep)
@@ -4456,6 +4531,33 @@ mod post_rows_4096 {
         assert_eq!(rows[0].structural, vec![("partof".to_string(), "chorus".to_string())]);
     }
 
+    /// A cycle (document.hasProduct ↔ product.hasDesignDoc) posts in two passes:
+    /// the first row goes without the edge to the not-yet-posted row, the second
+    /// row goes whole, then the first is PUT whole. Every edge lands.
+    #[test]
+    fn a_cycle_between_two_rows_posts_in_two_passes_and_loses_no_edge() {
+        use std::cell::RefCell;
+        let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
+        let doc = PostRow { kind: "document".into(), plural: "documents".into(), name: "spine-design".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine-design\",\"docTitle\":\"Spine\",\"hasProduct\":\"spine\"}".into(),
+            edge_targets: vec![("hasProduct".into(), "spine".into())], structural: vec![] };
+        let prod = PostRow { kind: "product".into(), plural: "products".into(), name: "spine".into(), owner: Some("wren".into()),
+            body: "{\"name\":\"spine\",\"hasDesignDoc\":\"spine-design\",\"hasDomain\":[\"events\",\"spine\"]}".into(),
+            edge_targets: vec![("hasDesignDoc".into(), "spine-design".into()), ("hasDomain".into(), "events".into()), ("hasDomain".into(), "spine".into())], structural: vec![] };
+        let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
+        let mut tokens = OwnerTokens::new(&mint);
+        let http = |m: &str, u: &str, _t: &str, b: Option<&str>| -> R<(u16, String)> {
+            calls.borrow_mut().push(format!("{m} {u} {}", b.unwrap_or("")));
+            Ok(match m { "GET" => (404, String::new()), "POST" => (201, String::new()), _ => (200, String::new()) })
+        };
+        let rep = post_all(&[doc, prod], "http://api", &mut tokens, &http, false).unwrap();
+        let c = calls.borrow();
+        assert!(c.iter().any(|l| l == "POST http://api/documents {\"name\":\"spine-design\",\"docTitle\":\"Spine\"}"), "first pass holds the edge back: {c:?}");
+        assert!(c.iter().any(|l| l.starts_with("POST http://api/products ") && l.contains("\"hasDesignDoc\":\"spine-design\"")), "{c:?}");
+        assert!(c.iter().any(|l| l == "PUT http://api/documents/spine-design {\"name\":\"spine-design\",\"docTitle\":\"Spine\",\"hasProduct\":\"spine\"}"), "second pass restores it: {c:?}");
+        assert_eq!((rep.created, rep.replaced), (2, 0));
+    }
+
     #[test]
     fn a_prefixed_kind_strips_its_own_prefix_for_the_name() {
         let tr = vec![t(&format!("<{C}document-x-design>"), &format!("<{C}docTitle>"), "\"X\"")];
@@ -4468,7 +4570,7 @@ mod post_rows_4096 {
     /// the poster never signs as a default role (Jeff: each owner in turn).
     #[test]
     fn a_row_without_an_owner_is_refused_before_anything_is_sent() {
-        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into(), structural: vec![] }];
+        let rows = vec![PostRow { kind: "product".into(), plural: "products".into(), name: "p".into(), owner: None, body: "{}".into(), edge_targets: vec![], structural: vec![] }];
         let mint = |_: &str| -> R<String> { panic!("must not mint for an unowned row") };
         let mut tokens = OwnerTokens::new(&mint);
         let http = |_: &str, _: &str, _: &str, _: Option<&str>| -> R<(u16, String)> { panic!("must not send") };
@@ -4482,9 +4584,9 @@ mod post_rows_4096 {
         use std::cell::RefCell;
         let calls: RefCell<Vec<String>> = RefCell::new(Vec::new());
         let rows = vec![
-            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into(), structural: vec![] },
-            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into(), structural: vec![] },
-            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into(), structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "old".into(), owner: Some("kade".into()), body: "{\"name\":\"old\"}".into(), edge_targets: vec![], structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "new".into(), owner: Some("wren".into()), body: "{\"name\":\"new\"}".into(), edge_targets: vec![], structural: vec![] },
+            PostRow { kind: "product".into(), plural: "products".into(), name: "bad".into(), owner: Some("wren".into()), body: "{\"name\":\"bad\"}".into(), edge_targets: vec![], structural: vec![] },
         ];
         let mint = |o: &str| -> R<String> { Ok(format!("tok-{o}")) };
         let mut tokens = OwnerTokens::new(&mint);
