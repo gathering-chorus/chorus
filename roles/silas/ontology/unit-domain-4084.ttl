@@ -1,0 +1,482 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4084 — AUTHORED unit → domain mapping (ADR-027, ADR-060 §5). One row per launchd unit or Loki-only job.
+# Every harvester joins on chorus:launchdLabel and copies hasDomain from here. Deployed to
+# urn:chorus:domains:infrastructure by athena-deploy-model (INFRA_SET). An unmapped unit is a red in
+# log-harvest.sh --check, never a guess. alerts-monitors rows split with #4085/#4088.
+
+chorus:unitdomain-bridge-subscriber a chorus:UnitDomainMapping ;
+    rdfs:label "bridge-subscriber → messages" ;
+    chorus:launchdLabel "bridge-subscriber" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-cloudflared a chorus:UnitDomainMapping ;
+    rdfs:label "cloudflared → integrations" ;
+    chorus:launchdLabel "cloudflared" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-com.chorus.alert-delivery-test a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.alert-delivery-test → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.alert-delivery-test" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.alert-notifier a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.alert-notifier → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.alert-notifier" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.alert-runner a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.alert-runner → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.alert-runner" ;
+    rdfs:comment "alerts half of alerts-monitors (#4085)" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.api a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.api → services" ;
+    chorus:launchdLabel "com.chorus.api" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.api.werk.silas a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.api.werk.silas → services" ;
+    chorus:launchdLabel "com.chorus.api.werk.silas" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.api.werk.wren a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.api.werk.wren → services" ;
+    chorus:launchdLabel "com.chorus.api.werk.wren" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.athena-make a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.athena-make → athena" ;
+    chorus:launchdLabel "com.chorus.athena-make" ;
+    chorus:hasDomain chorus:athena .
+
+chorus:unitdomain-com.chorus.athena-make.werk.silas a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.athena-make.werk.silas → athena" ;
+    chorus:launchdLabel "com.chorus.athena-make.werk.silas" ;
+    chorus:hasDomain chorus:athena .
+
+chorus:unitdomain-com.chorus.athena-make.werk.wren a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.athena-make.werk.wren → athena" ;
+    chorus:launchdLabel "com.chorus.athena-make.werk.wren" ;
+    chorus:hasDomain chorus:athena .
+
+chorus:unitdomain-com.chorus.bedroom-health a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.bedroom-health → infrastructure" ;
+    chorus:launchdLabel "com.chorus.bedroom-health" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.building-pipeline a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.building-pipeline → pipelines" ;
+    chorus:launchdLabel "com.chorus.building-pipeline" ;
+    chorus:hasDomain chorus:pipelines .
+
+chorus:unitdomain-com.chorus.buzz-tunnel a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.buzz-tunnel → integrations" ;
+    chorus:launchdLabel "com.chorus.buzz-tunnel" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-com.chorus.cards-orphan-reaper a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.cards-orphan-reaper → cards" ;
+    chorus:launchdLabel "com.chorus.cards-orphan-reaper" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:unitdomain-com.chorus.chorus-health a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.chorus-health → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.chorus-health" ;
+    rdfs:comment "monitors half (#4088)" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.clearing a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.clearing → messages" ;
+    chorus:launchdLabel "com.chorus.clearing" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-com.chorus.clearing-probe a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.clearing-probe → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.clearing-probe" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.clearing.werk.silas a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.clearing.werk.silas → messages" ;
+    chorus:launchdLabel "com.chorus.clearing.werk.silas" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-com.chorus.clearing.werk.wren a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.clearing.werk.wren → messages" ;
+    chorus:launchdLabel "com.chorus.clearing.werk.wren" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-com.chorus.context-cache-daily a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.context-cache-daily → memory" ;
+    chorus:launchdLabel "com.chorus.context-cache-daily" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:unitdomain-com.chorus.context-cache-hourly a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.context-cache-hourly → memory" ;
+    chorus:launchdLabel "com.chorus.context-cache-hourly" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:unitdomain-com.chorus.context-cache-weekly a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.context-cache-weekly → memory" ;
+    chorus:launchdLabel "com.chorus.context-cache-weekly" ;
+    chorus:hasDomain chorus:memory .
+
+chorus:unitdomain-com.chorus.crawler-index a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.crawler-index → knowledge" ;
+    chorus:launchdLabel "com.chorus.crawler-index" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:unitdomain-com.chorus.cruft-scan a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.cruft-scan → infrastructure" ;
+    chorus:launchdLabel "com.chorus.cruft-scan" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.daily-review-ops a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.daily-review-ops → infrastructure" ;
+    chorus:launchdLabel "com.chorus.daily-review-ops" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.daily-review-summary a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.daily-review-summary → board" ;
+    chorus:launchdLabel "com.chorus.daily-review-summary" ;
+    chorus:hasDomain chorus:board .
+
+chorus:unitdomain-com.chorus.daily-signal-scan a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.daily-signal-scan → board" ;
+    chorus:launchdLabel "com.chorus.daily-signal-scan" ;
+    chorus:hasDomain chorus:board .
+
+chorus:unitdomain-com.chorus.deep-health a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.deep-health → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.deep-health" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.embed-worker a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.embed-worker → search" ;
+    chorus:launchdLabel "com.chorus.embed-worker" ;
+    chorus:hasDomain chorus:search .
+
+chorus:unitdomain-com.chorus.eventloop-probe a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.eventloop-probe → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.eventloop-probe" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.fuseki-compact a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.fuseki-compact → knowledge" ;
+    chorus:launchdLabel "com.chorus.fuseki-compact" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:unitdomain-com.chorus.fuseki-perf a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.fuseki-perf → metrics" ;
+    chorus:launchdLabel "com.chorus.fuseki-perf" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.chorus.graph-hydrate a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.graph-hydrate → knowledge" ;
+    chorus:launchdLabel "com.chorus.graph-hydrate" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:unitdomain-com.chorus.harvest-exporter a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.harvest-exporter → metrics" ;
+    chorus:launchdLabel "com.chorus.harvest-exporter" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.chorus.heartbeat a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.heartbeat → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.heartbeat" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.heartbeat-probe a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.heartbeat-probe → alerts-monitors" ;
+    chorus:launchdLabel "com.chorus.heartbeat-probe" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.chorus.hooks a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.hooks → policies" ;
+    chorus:launchdLabel "com.chorus.hooks" ;
+    chorus:hasDomain chorus:policies .
+
+chorus:unitdomain-com.chorus.index-artifacts a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.index-artifacts → knowledge" ;
+    chorus:launchdLabel "com.chorus.index-artifacts" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:unitdomain-com.chorus.jeff-input-monitor a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.jeff-input-monitor → spine" ;
+    chorus:launchdLabel "com.chorus.jeff-input-monitor" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:unitdomain-com.chorus.lance-maintain a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.lance-maintain → search" ;
+    chorus:launchdLabel "com.chorus.lance-maintain" ;
+    chorus:hasDomain chorus:search .
+
+chorus:unitdomain-com.chorus.launchagent-metrics a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.launchagent-metrics → metrics" ;
+    chorus:launchdLabel "com.chorus.launchagent-metrics" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.chorus.mcp a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.mcp → services" ;
+    chorus:launchdLabel "com.chorus.mcp" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.mcp-config-herald a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.mcp-config-herald → heralds" ;
+    chorus:launchdLabel "com.chorus.mcp-config-herald" ;
+    chorus:hasDomain chorus:heralds .
+
+chorus:unitdomain-com.chorus.mcp.werk.silas a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.mcp.werk.silas → services" ;
+    chorus:launchdLabel "com.chorus.mcp.werk.silas" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.mcp.werk.wren a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.mcp.werk.wren → services" ;
+    chorus:launchdLabel "com.chorus.mcp.werk.wren" ;
+    chorus:hasDomain chorus:services .
+
+chorus:unitdomain-com.chorus.nightly-suites a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.nightly-suites → tests" ;
+    chorus:launchdLabel "com.chorus.nightly-suites" ;
+    chorus:hasDomain chorus:tests .
+
+chorus:unitdomain-com.chorus.nudge-health a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.nudge-health → messages" ;
+    chorus:launchdLabel "com.chorus.nudge-health" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-com.chorus.ops a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.ops → infrastructure" ;
+    chorus:launchdLabel "com.chorus.ops" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.pair-heartbeat a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.pair-heartbeat → spine" ;
+    chorus:launchdLabel "com.chorus.pair-heartbeat" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:unitdomain-com.chorus.perf-baseline a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.perf-baseline → metrics" ;
+    chorus:launchdLabel "com.chorus.perf-baseline" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.chorus.posture-capture a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.posture-capture → security" ;
+    chorus:launchdLabel "com.chorus.posture-capture" ;
+    chorus:hasDomain chorus:security .
+
+chorus:unitdomain-com.chorus.pulse a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.pulse → spine" ;
+    chorus:launchdLabel "com.chorus.pulse" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:unitdomain-com.chorus.reindex-worker a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.reindex-worker → search" ;
+    chorus:launchdLabel "com.chorus.reindex-worker" ;
+    chorus:hasDomain chorus:search .
+
+chorus:unitdomain-com.chorus.security-scan-weekly a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.security-scan-weekly → security" ;
+    chorus:launchdLabel "com.chorus.security-scan-weekly" ;
+    chorus:hasDomain chorus:security .
+
+chorus:unitdomain-com.chorus.seed-probe a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.seed-probe → messages" ;
+    chorus:launchdLabel "com.chorus.seed-probe" ;
+    chorus:hasDomain chorus:messages .
+
+chorus:unitdomain-com.chorus.service-harvest a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.service-harvest → infrastructure" ;
+    chorus:launchdLabel "com.chorus.service-harvest" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.session-watcher a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.session-watcher → spine" ;
+    chorus:launchdLabel "com.chorus.session-watcher" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:unitdomain-com.chorus.share-guard a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.share-guard → security" ;
+    chorus:launchdLabel "com.chorus.share-guard" ;
+    rdfs:comment "guards what leaves the box: security, not chorus plumbing" ;
+    chorus:hasDomain chorus:security .
+
+chorus:unitdomain-com.chorus.share-guard-path a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.share-guard-path → security" ;
+    chorus:launchdLabel "com.chorus.share-guard-path" ;
+    chorus:hasDomain chorus:security .
+
+chorus:unitdomain-com.chorus.standards-surface a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.standards-surface → practices" ;
+    chorus:launchdLabel "com.chorus.standards-surface" ;
+    chorus:hasDomain chorus:practices .
+
+chorus:unitdomain-com.chorus.tm-thin a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.tm-thin → infrastructure" ;
+    chorus:launchdLabel "com.chorus.tm-thin" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.chorus.tmp-reaper a chorus:UnitDomainMapping ;
+    rdfs:label "com.chorus.tmp-reaper → infrastructure" ;
+    chorus:launchdLabel "com.chorus.tmp-reaper" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.alertmanager a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.alertmanager → alerts-monitors" ;
+    chorus:launchdLabel "com.gathering.alertmanager" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.gathering.app a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.app → infrastructure" ;
+    chorus:launchdLabel "com.gathering.app" ;
+    rdfs:comment "the gathering app runs here; its content domains are its own" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.bedroom-heartbeat a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.bedroom-heartbeat → infrastructure" ;
+    chorus:launchdLabel "com.gathering.bedroom-heartbeat" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.blackbox-exporter a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.blackbox-exporter → alerts-monitors" ;
+    chorus:launchdLabel "com.gathering.blackbox-exporter" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.gathering.blockverse a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.blockverse → integrations" ;
+    chorus:launchdLabel "com.gathering.blockverse" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-com.gathering.codebase-graph-watcher a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.codebase-graph-watcher → code" ;
+    chorus:launchdLabel "com.gathering.codebase-graph-watcher" ;
+    chorus:hasDomain chorus:code .
+
+chorus:unitdomain-com.gathering.edge a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.edge → integrations" ;
+    chorus:launchdLabel "com.gathering.edge" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-com.gathering.fuseki a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.fuseki → knowledge" ;
+    chorus:launchdLabel "com.gathering.fuseki" ;
+    chorus:hasDomain chorus:knowledge .
+
+chorus:unitdomain-com.gathering.fuseki-backup a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.fuseki-backup → infrastructure" ;
+    chorus:launchdLabel "com.gathering.fuseki-backup" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.grafana a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.grafana → alerts-monitors" ;
+    chorus:launchdLabel "com.gathering.grafana" ;
+    rdfs:comment "dashboards read the monitors; splits to monitors with #4088" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.gathering.infra-alert a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.infra-alert → alerts-monitors" ;
+    chorus:launchdLabel "com.gathering.infra-alert" ;
+    chorus:hasDomain chorus:alerts-monitors .
+
+chorus:unitdomain-com.gathering.log-rotate a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.log-rotate → logs" ;
+    chorus:launchdLabel "com.gathering.log-rotate" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:unitdomain-com.gathering.log-sync a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.log-sync → logs" ;
+    chorus:launchdLabel "com.gathering.log-sync" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:unitdomain-com.gathering.loki a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.loki → logs" ;
+    chorus:launchdLabel "com.gathering.loki" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:unitdomain-com.gathering.mysql a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.mysql → infrastructure" ;
+    chorus:launchdLabel "com.gathering.mysql" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.mysqld-exporter a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.mysqld-exporter → metrics" ;
+    chorus:launchdLabel "com.gathering.mysqld-exporter" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.gathering.node-exporter a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.node-exporter → metrics" ;
+    chorus:launchdLabel "com.gathering.node-exporter" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.gathering.perf-baseline a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.perf-baseline → metrics" ;
+    chorus:launchdLabel "com.gathering.perf-baseline" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.gathering.prometheus a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.prometheus → metrics" ;
+    chorus:launchdLabel "com.gathering.prometheus" ;
+    chorus:hasDomain chorus:metrics .
+
+chorus:unitdomain-com.gathering.promtail a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.promtail → logs" ;
+    chorus:launchdLabel "com.gathering.promtail" ;
+    chorus:hasDomain chorus:logs .
+
+chorus:unitdomain-com.gathering.rsync-backup a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.rsync-backup → infrastructure" ;
+    chorus:launchdLabel "com.gathering.rsync-backup" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-com.gathering.vikunja a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.vikunja → cards" ;
+    chorus:launchdLabel "com.gathering.vikunja" ;
+    chorus:hasDomain chorus:cards .
+
+chorus:unitdomain-com.gathering.wordpress a chorus:UnitDomainMapping ;
+    rdfs:label "com.gathering.wordpress → integrations" ;
+    chorus:launchdLabel "com.gathering.wordpress" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-images-api a chorus:UnitDomainMapping ;
+    rdfs:label "images-api → integrations" ;
+    chorus:launchdLabel "images-api" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-navidrome a chorus:UnitDomainMapping ;
+    rdfs:label "navidrome → integrations" ;
+    chorus:launchdLabel "navidrome" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-nifi a chorus:UnitDomainMapping ;
+    rdfs:label "nifi → integrations" ;
+    chorus:launchdLabel "nifi" ;
+    chorus:hasDomain chorus:integrations .
+
+chorus:unitdomain-ollama a chorus:UnitDomainMapping ;
+    rdfs:label "ollama → search" ;
+    chorus:launchdLabel "ollama" ;
+    chorus:hasDomain chorus:search .
+
+chorus:unitdomain-platform-command-errors a chorus:UnitDomainMapping ;
+    rdfs:label "platform-command-errors → spine" ;
+    chorus:launchdLabel "platform-command-errors" ;
+    chorus:hasDomain chorus:spine .
+
+chorus:unitdomain-platform-permission-prompts a chorus:UnitDomainMapping ;
+    rdfs:label "platform-permission-prompts → security" ;
+    chorus:launchdLabel "platform-permission-prompts" ;
+    chorus:hasDomain chorus:security .
+
+chorus:unitdomain-system a chorus:UnitDomainMapping ;
+    rdfs:label "system → infrastructure" ;
+    chorus:launchdLabel "system" ;
+    chorus:hasDomain chorus:infrastructure .
+
+chorus:unitdomain-werk-verbs a chorus:UnitDomainMapping ;
+    rdfs:label "werk-verbs → version-control" ;
+    chorus:launchdLabel "werk-verbs" ;
+    chorus:hasDomain chorus:version-control .

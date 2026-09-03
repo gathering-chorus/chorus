@@ -1346,7 +1346,6 @@ app.get('/api/chorus/domain/:name/code', async (req: Request, res: Response) => 
 // Extracted to handlers/domain-facets.ts (#2173 AC4).
 import {
   fetchDomainTests,
-  fetchDomainLogs,
   fetchDomainServices,
   fetchDomainDecisions,
   fetchDomainRadius,
@@ -1378,11 +1377,7 @@ app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) =
   res.status(r.status).json(r.body);
 });
 
-// GET /api/chorus/domain/:name/logs — log sources for a domain (#2060 AC4)
-app.get('/api/chorus/domain/:name/logs', async (req: Request, res: Response) => {
-  const r = await fetchDomainLogs(domainFacetDeps(), req.params.name);
-  res.status(r.status).json(r.body);
-});
+// #4084: /api/chorus/domain/:name/logs RETIRED — the Logs fold reads chorus:LogSource rows from the graph (/owl/logsources), harvested by log-harvest.sh.
 
 // GET /api/chorus/domain/:name/services — API endpoints in a domain (#2060 AC5)
 app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response) => {

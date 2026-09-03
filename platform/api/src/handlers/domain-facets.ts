@@ -90,35 +90,8 @@ export async function fetchDomainTests(
   }
 }
 
-// --- logs: SPARQL against urn:chorus:instances for chorus:hasLogSource ---
-
-export async function fetchDomainLogs(
-  deps: DomainFacetDeps,
-  subdomainName: string,
-): Promise<FetchResult> {
-  const now = deps.now ?? Date.now;
-  const start = now();
-  try {
-    const sdId = await deps.resolveSubdomainId(subdomainName);
-    const sdUri = `https://jeffbridwell.com/chorus#${sdId}`;
-    const query = `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?log ?label ?location ?status WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> chorus:hasLogSource ?log . OPTIONAL { ?log rdfs:label ?label } OPTIONAL { ?log chorus:logSourceLocation ?location } OPTIONAL { ?log chorus:logSourceStatus ?status } } }`;
-    const result = await deps.sparql(query);
-    const logs = result.results.bindings.map((b) => ({
-      label: b.label?.value || (b.log?.value || '').split('#').pop() || '',
-      location: b.location?.value || null,
-      status: b.status?.value || null,
-    }));
-    return {
-      status: 200,
-      body: deps.envelope('domain-logs', { subdomain: sdId, logs }, now() - start, { count: logs.length }),
-    };
-  } catch {
-    return {
-      status: 200,
-      body: deps.envelope('domain-logs', { subdomain: subdomainName, logs: [] }, now() - start, { count: 0 }),
-    };
-  }
-}
+// --- logs: RETIRED by #4084. LogSource rows live in urn:chorus:domains:logs, harvested by
+// log-harvest.sh and served at /owl/logsources; the domain page reads them there. ---
 
 // --- services: SPARQL against urn:chorus:instances for chorus:hasEndpoint ---
 

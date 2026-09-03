@@ -114,13 +114,18 @@ async function renderFacets(d) {
     { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
     { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
     { t: 'Decisions', u: DOM + fid + '/decisions', k: 'decisions', cols: ['id', 'title', 'type', 'date'] },
-    { t: 'Logs', u: DOM + fid + '/logs', k: 'logs', cols: ['label', 'location', 'status'] },
+    // #4084 — the FIRST fold read from the graph, not a v1 registry: chorus:LogSource rows (harvested hourly by
+    // log-harvest.sh) carrying hasDomain from the authored UnitDomainMapping rows. Filtered client-side on the
+    // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
+    { t: 'Logs', u: OWL + '/logsources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === d,
+      cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + d },
     { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
     { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
     { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
     { t: 'Gaps & Status', u: ATHENA + fid + '/gaps', k: 'gaps', cols: ['type', 'description', 'severity'] },
   ];
+  function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
   function unwrap(b, k, alt) {
     const dd = (b && b.data) || b || {};
     const v = dd[k] || (alt ? dd[alt] : null) || [];
@@ -148,10 +153,11 @@ async function renderFacets(d) {
         : '<div class="empty">none recorded</div>';
     } else {
       const items = unwrap(b, f.k, f.alt);
-      count = items.length;
-      inner = count ? table(items, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
+      const rows = f.filter ? items.filter(f.filter) : items;
+      count = rows.length;
+      inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
     }
-    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">materialized &middot; live</span></summary><div class="body">${inner}</div></details>`;
+    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">${f.graph ? esc(f.src) + ' &middot; graph' : 'materialized &middot; live'}</span></summary><div class="body">${inner}</div></details>`;
   }).join('');
 }
 </script>
