@@ -1683,6 +1683,22 @@ chorus:Credential a owl:Class ;
     rdfs:label "Credential" ;
     rdfs:comment "A secret value or token used to authenticate. Schema only — actual credential values never live in the graph; instances reference source location (env-var name, plist key, keychain item) and metadata. #2659." .
 
+chorus:Commitment a owl:Class ;
+    rdfs:label "Commitment" ;
+    rdfs:comment "A promise a service design makes, held as a row instead of prose (#4064). What is promised, where the design says it, whether it is open, who owns it, the card that carries it (or none), and the probe that measures it when one exists. An open Commitment with no card is unowned work; that absence is what the commitment check turns red." .
+
+chorus:CommitmentShape a sh:NodeShape ;
+    sh:targetClass chorus:Commitment ;
+    sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:statement ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:sourceDoc ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:sourceQuote ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:status ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "open" "closed" "deferred" ) ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:ofService ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Service ] ;
+    sh:property [ sh:path chorus:card ; sh:maxCount 1 ; sh:class chorus:Card ] ;
+    sh:property [ sh:path chorus:probe ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
 chorus:Permission a owl:Class ;
     rdfs:label "Permission" ;
     rdfs:comment "An authorization rule binding a subject (role or domain) to an action on a resource. Explicit-grant true = whitelist (allow); false = denial (blacklist). Conditions narrow the rule (env, time-of-day, resource pattern). #2659." .

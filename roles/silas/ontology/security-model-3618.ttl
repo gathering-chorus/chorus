@@ -47,10 +47,30 @@ chorus:security a owl:Class, chorus:Domain ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:definesVocabulary chorus:Credential, chorus:Permission,
-        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate .
+        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate,
+        chorus:Commitment ;
+    chorus:status "building" ;
+    chorus:gaps """Measured 2026-09-03 (commitment-check.sh, authz-coverage #3977): 32 of 42 commitments are open with no card; 59 of 85 mutating routes declare no APISurface, so authorization there is open by construction; permissions still live in config/profiles/*.json, hook decision tables and inline checks rather than Permission rows; one shared Fuseki credential serves both DAL and DBA use; the HS256 legacy verify arm is still compiled in; the security.* spine events the design reserves are not emitted. Undecided since the 2026-05 design: per-session cryptographic role identity, whether a threat model is a probe or its own class, bulk permission tooling, generating profiles from Permission rows.""" ;
+    chorus:hasDesignDoc chorus:document-service-design-security .
 
 chorus:hasDomain-security-stmt a rdf:Statement ;
     rdfs:comment "Migration note (#3618): borgProduct chorus:hasDomain repoints security-trust → security in the same DEL/INS batch; the 8 consumes edges (code, gates, toolchain, athena, convergence, domains, integrations, knowledge) repoint identically. Script: platform/scripts/security-3618-migrate.sh (generate|apply, door-only)." .
+
+
+# #4064 — the design record. There is no design HTML any more: the generated
+# domain page renders this row (purpose, gaps, vocabulary, hosts) and the generated
+# service page renders the hosted Identity service's sections and its Commitment
+# rows. Authoring surface = these rows. docHref points at the generated page.
+chorus:document-service-design-security a chorus:Document ;
+    chorus:label """Service Design — Security""" ;
+    rdfs:label """Service Design — Security""" ;
+    chorus:docTitle """Service Design — Security""" ;
+    chorus:docHref """/athena/domain.html?d=security""" ;
+    chorus:comment """The security domain's design lives in the graph (#4064): purpose, gaps and vocabulary on the security and identity Domain rows, rendered by the generated domain page; overview / as-is / to-be / gaps / not-in-scope / path-to-close on the Identity Service row and every promise as a Commitment row, rendered by the generated service page. The 2026-05-01 hand-written design (#2659) was deleted, not rewritten.""" ;
+    rdfs:comment """The security domain's design as a projection of the graph (#4064).""" ;
+    chorus:hasDomain chorus:security ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:hasProduct chorus:borgProduct .
 
 # ----------------------------------------------------------------------------
 # 2. THE CHILD — chorus:identity (authentication: who is this, provably)
@@ -66,7 +86,10 @@ chorus:identity a owl:Class, chorus:Domain ;
     chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
-    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry .
+    chorus:definesVocabulary chorus:Principal, chorus:KeyRegistryEntry ;
+    chorus:status "building" ;
+    chorus:gaps """Single CSS instance is a hard-fail dependency for every login; the Host-spoof in login.handler.ts is load-bearing; the Clearing public door and MCP/pulse loopback trust are not on the seam; DEPLOY_ROLE self-attribution is still accepted where a token is not yet required (commitments open, no card).""" ;
+    chorus:hasDesignDoc chorus:document-service-design-security .
 
 # ----------------------------------------------------------------------------
 # 3. IDENTITY VOCABULARY — Principal, KeyRegistryEntry, the joining edges
