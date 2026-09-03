@@ -1,811 +1,212 @@
-//! role-state — L2 Team Awareness layer.
+//! role-state — #4028: nothing declared, nothing stored.
+//!
+//! Until #4028 this subcommand wrote /tmp/claude-team-scan/{role}-declared.json
+//! and a sweep demoted it when a pid looked dead. The file reverted to
+//! "unknown" overnight, said "idle" through six pipeline rounds, and 142 cards
+//! of declaring never made it true. Jeff, 2026-08-28: "i dont know why we cant
+//! rip out 'declared' role state and have it be derived directly from streams."
+//!
+//! Now (agreed with Silas 2026-09-02): the state is DERIVED on every read by
+//! chorus-api's GET /api/chorus/context/roles from the spine the hooks daemon
+//! already writes (hook.decision / context.inject.request per tool call) plus
+//! the board's WIP. The only thing a role still says is that it is BLOCKED —
+//! as a spine EVENT (`role.blocked`, with a detail) that expires the moment
+//! activity resumes. No file. No sweep. No reconciler.
 //!
 //! Subcommands:
-//!   chorus-hook-shim role-state <role> <state> [detail="text"] [gemba=<role>]
-//!   chorus-hook-shim role-state query <role|all>
-//!   chorus-hook-shim role-state cleanup
-//!
-//! State file: /tmp/claude-team-scan/{role}-declared.json
-//! Contains: role, state, ts, detail, gemba, last_emit, session_alive, pid
-//!
-//! #2467 / #2629: card and card_type are NOT fields of role-state.
-//! Card lives on the board; role-state owns session/attention only.
-//! Calls passing `card=N` or `type=X` are REFUSED (exit 2).
+//!   chorus-hook-shim role-state <role> blocked detail="why"   → emits role.blocked
+//!   chorus-hook-shim role-state <role> <other-state>          → no-op (derived), exit 0
+//!   chorus-hook-shim role-state query <role|all>              → reads the derived rows
+//!   chorus-hook-shim role-state cleanup                       → no-op (nothing stored)
 
 use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
-use crate::process;
-
-const SCAN_DIR: &str = "/tmp/claude-team-scan";
-const VALID_STATES: &[&str] = &["building", "blocked", "waiting", "observing", "idle"];
 const ROLES: &[&str] = &["wren", "silas", "kade"];
+const DERIVED_STATES: &[&str] = &["building", "waiting", "observing", "idle"];
 
-/// #3319 AC4: `observing` decays. Observation is only real while the watcher
-/// keeps polling (loom-gemba re-declares on every poll, refreshing ts). A
-/// watcher that stopped polling for this long isn't observing — the state
-/// computes back on the next sweep (every write + cleanup), no daemon.
-const OBSERVING_TTL_SECS: u64 = 600;
-
-/// Pure decay decision: only `observing` decays, and only past the TTL.
-/// Other states have their own truth signals (pid for liveness; building is
-/// board-backed) — TTL-demoting them would punish legitimately quiet work.
-fn observing_decayed(state: &str, ts: u64, now: u64, ttl_secs: u64) -> bool {
-    state == "observing" && now.saturating_sub(ts) > ttl_secs
+fn roles_endpoint() -> String {
+    std::env::var("CHORUS_ROLES_URL")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:3340/api/chorus/context/roles".to_string())
 }
 
-// #3615 — writes resolve through the membrane; the read at the bottom of this
-// file uses the plain (read-side) resolver.
-fn chorus_log_path() -> String {
-    crate::shared::state_paths::chorus_log_file_for_write()
-}
-
-pub fn run(args: &[String]) -> ExitCode {
-    if args.is_empty() {
-        eprintln!("Usage: chorus-hook-shim role-state <role> <state> | query <role|all> | cleanup");
-        return ExitCode::from(1);
-    }
-
-    // Query subcommand
-    if args[0] == "query" {
-        let target = args.get(1).map(|s| s.as_str()).unwrap_or("all");
-        return query(target);
-    }
-
-    // #2467: cleanup subcommand — sweep all role-state files, demote stale
-    // entries (state in {building,blocked,waiting,observing} but pid dead)
-    // to `idle` with card cleared. The phantom-state class: writers don't
-    // clean up when sessions die, so the Clearing + readers see stale
-    // building-cards forever. This makes the substrate self-healing.
-    if args[0] == "cleanup" {
-        return cleanup_stale();
-    }
-
-    // Auto-cleanup before every write — every transition by any role
-    // triggers a sweep, so the lie can't compound across writers.
-    let _ = cleanup_stale_silent();
-
-    if args.len() < 2 {
-        eprintln!("Usage: chorus-hook-shim role-state <role> <state> [detail=\"text\"] [gemba=<role>]");
-        return ExitCode::from(1);
-    }
-
-    let role = &args[0];
-    let state = &args[1];
-
-    if !VALID_STATES.contains(&state.as_str()) {
-        eprintln!("Invalid state: {} (must be building|blocked|waiting|observing|idle)", state);
-        return ExitCode::from(1);
-    }
-
-    // #2467 / #2629: card and card_type fields are NOT accepted. Card belongs
-    // to the board; role-state owns session/attention only.
-    //   - Wave 1 (#2467, PR #72): JSON output dropped card/card_type fields.
-    //   - Wave 2 (#2467, PR #77): instruction text in skills + CLAUDE.md
-    //     fragments cleaned. Transition window opened.
-    //   - Wave 3 (#2629, this change): transition closed. Args are REFUSED
-    //     at the affordance layer — non-zero exit, no state file written.
-    //     Silent-drop is the same shape as the bug we're trying to prevent;
-    //     a refusal makes the contract honest at every surface.
+/// Parse `[detail="…"] [gemba=…] [card=…]` after `<role> <state>`. Returns
+/// Err(exit code) for the refused `card=` / `type=` forms (#2467/#2629 — the
+/// board owns the card; that contract did not change).
+pub fn parse_detail(args: &[String]) -> Result<String, u8> {
     let mut detail = String::new();
-    let mut gemba = String::new();
-
-    for kv in args.iter().skip(2) {
+    for kv in args {
         if let Some((key, val)) = kv.split_once('=') {
             match key {
-                "detail" => detail = val.replace('"', "\\\""),
-                "gemba" => gemba = val.to_string(),
-                "card" | "type" => {
-                    eprintln!(
-                        "role-state: REFUSED — `{}=` is no longer accepted (#2467/#2629).\n\
-                         Card lives on the board, not in role-state. Drop the `{}=` arg.\n\
-                         Caller (skill / script / fixture) needs updating to pass only:\n\
-                           role-state <role> <state> [detail=\"text\"] [gemba=<role>]",
-                        key, key
-                    );
-                    return ExitCode::from(2);
-                }
+                "detail" => detail = val.trim_matches('"').to_string(),
+                "card" | "type" => return Err(2),
                 _ => {}
             }
         }
     }
-
-    // Build enriched state — L2 fields
-    let _ = fs::create_dir_all(SCAN_DIR);
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let wall = process::wall_clock();
-    let pid = process::find_role_pid(role);
-    let session_alive = pid.is_some();
-    let last_emit = last_spine_emit(role).unwrap_or_else(|| wall.clone());
-
-    // #2168 AC-7: unconditional source="declared" stamp.
-    // #2467: no card/card_type fields — board is authoritative for cards.
-    let mut json = format!(
-        r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}","source":"declared""#,
-        role, state, ts, last_emit, session_alive, wall
-    );
-    if let Some(p) = pid {
-        json.push_str(&format!(r#","pid":{}"#, p));
-    }
-    if !detail.is_empty() {
-        json.push_str(&format!(r#","detail":"{}""#, detail));
-    }
-    if !gemba.is_empty() {
-        json.push_str(&format!(r#","gemba":"{}""#, gemba));
-    }
-    json.push('}');
-
-    let out = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
-    let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
-
-    if let Ok(mut f) = fs::File::create(&tmp) {
-        let _ = writeln!(f, "{}", json);
-    }
-    let _ = fs::rename(&tmp, &out);
-
-    // Emit spine event to chorus.log (#1945)
-    let mut event_kv = format!("role={} state={}", role, state);
-    if !gemba.is_empty() {
-        event_kv.push_str(&format!(" gemba={}", gemba));
-    }
-    let log_path = chorus_log_path();
-    if let Ok(mut log_file) = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
-        let _ = writeln!(log_file, "role.state.changed | {} {}", role, event_kv);
-    }
-
-    // #2435 atomic cutover — idle/waiting inbox drain retired. The /tmp/voice-inbox
-    // queue was the fallback channel for inject-failed nudges. Under the spine-
-    // tick-poller canonical receiver (platform/scripts/spine-tick-poller), there
-    // is no inject failure to queue for — the poller retries on its next 2s tick
-    // directly from spine. Queue file + drain + count-payload nudge.acknowledged
-    // event all retire together.
-
-    ExitCode::SUCCESS
+    Ok(detail)
 }
 
-/// Query role state — reads declared state, enriches with live PID check
-fn query(target: &str) -> ExitCode {
-    let roles: Vec<&str> = if target == "all" {
-        ROLES.to_vec()
-    } else if ROLES.contains(&target) {
-        vec![target]
-    } else {
-        eprintln!("Unknown role: {}. Use wren, silas, kade, or all.", target);
+pub fn run(args: &[String]) -> ExitCode {
+    if args.is_empty() {
+        eprintln!("Usage: chorus-hook-shim role-state <role> blocked detail=\"why\" | <role> <state> | query <role|all> | cleanup");
         return ExitCode::from(1);
+    }
+    if args[0] == "query" {
+        return query(args.get(1).map(|s| s.as_str()).unwrap_or("all"));
+    }
+    if args[0] == "cleanup" {
+        println!("role-state cleanup: nothing to clean — state is derived on read (#4028)");
+        return ExitCode::SUCCESS;
+    }
+    if args.len() < 2 {
+        eprintln!("Usage: chorus-hook-shim role-state <role> <state> [detail=\"text\"]");
+        return ExitCode::from(1);
+    }
+    let role = args[0].as_str();
+    let state = args[1].as_str();
+    if !ROLES.contains(&role) {
+        eprintln!("Unknown role: {} (wren|silas|kade)", role);
+        return ExitCode::from(1);
+    }
+
+    let detail = match parse_detail(&args[2..]) {
+        Ok(d) => d,
+        Err(code) => {
+            eprintln!(
+                "role-state: REFUSED — `card=` / `type=` are not accepted (#2467/#2629). \
+                 The board owns the card; pass only: role-state <role> blocked detail=\"why\""
+            );
+            return ExitCode::from(code);
+        }
     };
 
-    for role in &roles {
-        let state_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
-        let pid = process::find_role_pid(role);
-        let session_alive = pid.is_some();
-
-        if let Ok(content) = fs::read_to_string(&state_file) {
-            if let Ok(mut parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                // #2629: legacy state files written before wave 1 may carry
-                // card / card_type fields. Strip them on read — refusal at
-                // every surface includes the read path, not just the write
-                // path. Found by wren in #2629 gate:product probe.
-                if let Some(obj) = parsed.as_object_mut() {
-                    obj.remove("card");
-                    obj.remove("card_type");
-                }
-
-                // Enrich with live data
-                parsed["session_alive"] = serde_json::Value::Bool(session_alive);
-                if let Some(p) = pid {
-                    parsed["pid"] = serde_json::json!(p);
-                } else {
-                    parsed["pid"] = serde_json::Value::Null;
-                }
-
-                // Compute staleness
-                if let Some(ts) = parsed["ts"].as_u64() {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    let age_secs = now.saturating_sub(ts);
-                    parsed["age_secs"] = serde_json::json!(age_secs);
-                    parsed["age_human"] = serde_json::json!(humanize_duration(age_secs));
-                }
-
-                // Refresh last_emit from spine
-                if let Some(last) = last_spine_emit(role) {
-                    parsed["last_emit"] = serde_json::json!(last);
-                }
-
-                println!("{}", serde_json::to_string_pretty(&parsed).unwrap_or_default());
+    match state {
+        "blocked" => {
+            // Through the shim's own spine emitter (#3140 schema enrichment, Eastern
+            // timestamp, the same JSON every other event carries). No file.
+            let detail_kv = format!("detail={}", detail);
+            let code = crate::chorus_log::run_silent(&["role.blocked".to_string(), role.to_string(), detail_kv]);
+            if code != ExitCode::SUCCESS {
+                eprintln!("role-state: could not emit role.blocked");
+                return code;
             }
-        } else {
-            // No state file — report what we can from PID detection
-            let status = if session_alive { "unknown (session alive, no state declared)" } else { "offline (no session)" };
-            println!(r#"{{"role":"{}","state":"{}","session_alive":{}}}"#, role, status, session_alive);
+            println!("role.blocked | {} detail=\"{}\" — expires on your next activity (#4028)", role, detail);
+            ExitCode::SUCCESS
+        }
+        s if DERIVED_STATES.contains(&s) => {
+            println!(
+                "role-state: '{}' is derived from the streams now (#4028) — nothing to declare. \
+                 Read it: role-state query {}",
+                s, role
+            );
+            ExitCode::SUCCESS
+        }
+        other => {
+            eprintln!("Invalid state: {} (blocked is the only declarable state; building|waiting|observing|idle are derived)", other);
+            ExitCode::from(1)
         }
     }
+}
 
+/// Read the derived rows from chorus-api and print them. No file is consulted.
+fn query(target: &str) -> ExitCode {
+    if target != "all" && !ROLES.contains(&target) {
+        eprintln!("Unknown role: {}. Use wren, silas, kade, or all.", target);
+        return ExitCode::from(1);
+    }
+    let url = roles_endpoint();
+    let body: serde_json::Value = match ureq::get(&url).timeout(std::time::Duration::from_secs(5)).call() {
+        Ok(resp) => match resp.into_json() {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("role-state query: {} answered non-JSON: {}", url, e);
+                return ExitCode::from(1);
+            }
+        },
+        Err(e) => {
+            eprintln!("role-state query: {} unreachable: {} — the state is derived there; nothing local to read", url, e);
+            return ExitCode::from(1);
+        }
+    };
+    let rows = body
+        .pointer("/data/roles")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    for row in rows {
+        let name = row.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        if target != "all" && name != target {
+            continue;
+        }
+        println!("{}", serde_json::to_string_pretty(&row).unwrap_or_default());
+    }
     ExitCode::SUCCESS
-}
-
-/// #2467: stale-state cleanup. Sweeps all 3 role-state files and demotes any
-/// in active states (building/blocked/waiting/observing) to idle when the
-/// role's session is dead (no claude process matching its cwd). Card field
-/// cleared on demotion. The phantom-card class that today's worktree-hook
-/// (#2625) tripped on — writers persisted state from sessions that ended.
-///
-/// Public via `chorus-hook-shim role-state cleanup` and called silently
-/// from every write so the lie can't compound across writers.
-fn cleanup_stale() -> ExitCode {
-    let demoted = sweep_and_demote(true);
-    println!("role-state cleanup: demoted {} stale entries", demoted);
-    ExitCode::SUCCESS
-}
-
-fn cleanup_stale_silent() -> usize {
-    sweep_and_demote(false)
-}
-
-/// What the sweep should do to one role's entry. Pure — the whole demotion
-/// policy in one testable place, so the negative proofs (#3734) can drive it
-/// with forced measurement failures instead of hoping lsof cooperates.
-#[derive(Debug, PartialEq)]
-enum SweepAction {
-    Keep,
-    /// Leave the declared state, but the reading could not be made — log it.
-    KeepUnmeasurable(&'static str),
-    Demote { new_state: &'static str, reason: &'static str },
-    /// idle written by a previous sweep, but the session is provably alive
-    /// again — restore what the role had declared (#3802: demote-only sweeps
-    /// wrote idle permanently; nothing ever promoted a live role back).
-    Repromote,
-}
-
-fn sweep_decision(
-    state: &str,
-    source: Option<&str>,
-    liveness: &process::Liveness,
-    decayed: bool,
-) -> SweepAction {
-    use process::Liveness::*;
-    let active = ["building", "blocked", "waiting", "observing"].contains(&state);
-    if active {
-        // Two demotion rules:
-        //   1. Session PROVABLY dead → idle. Dead requires positive evidence
-        //      (every claude pid enumerated and read, none matching); a failed
-        //      probe is Unmeasurable and NEVER demotes — one slow lsof under
-        //      CPU starvation must not mark a working role idle (#3802, the
-        //      Clearing showed Jeff idle tiles for roles mid-build).
-        //   2. #3319 AC4: `observing` past TTL → waiting, even with a live
-        //      pid. Observation is only real while the watcher keeps polling.
-        return match liveness {
-            Dead => SweepAction::Demote { new_state: "idle", reason: "session-dead" },
-            Alive(_) if decayed => SweepAction::Demote { new_state: "waiting", reason: "observing-ttl" },
-            Alive(_) => SweepAction::Keep,
-            Unmeasurable(what) => SweepAction::KeepUnmeasurable(what),
-        };
-    }
-    // idle that THIS SWEEP wrote (source=cleanup), with the session provably
-    // alive → the demotion was wrong or the session returned; restore the
-    // declared state. An idle the ROLE declared is a statement, never touched.
-    if state == "idle" && source == Some("cleanup") {
-        if let Alive(_) = liveness {
-            return SweepAction::Repromote;
-        }
-    }
-    SweepAction::Keep
-}
-
-/// #3802 — should the sweep run at all in this context?
-///
-/// The sweep operates on PRODUCTION surfaces: the team scan dir and the spine.
-/// In a build/test context that brought no world (#3528), touching either is
-/// exactly what the membrane refuses (#3615) — and before the membrane, a CI
-/// run's auto-sweep could quietly demote the LIVE team's states (the container
-/// sees the host's files but none of its processes, so every session reads
-/// dead). Hygiene on prod state is prod behavior, not a side effect of
-/// invoking the shim inside CI. Pure over an env fn so the proofs can drive it.
-fn sweep_should_skip(env: &dyn Fn(&str) -> Option<String>) -> bool {
-    matches!(
-        crate::shared::membrane::context_from(env).0,
-        crate::shared::membrane::Context::Build
-    ) && env("CHORUS_LOG_FILE").is_none()
-}
-
-fn sweep_and_demote(verbose: bool) -> usize {
-    let env = |k: &str| std::env::var(k).ok().filter(|s| !s.is_empty());
-    if sweep_should_skip(&env) {
-        if verbose {
-            eprintln!("  sweep skipped: build context with no world override (#3615/#3528)");
-        }
-        return 0;
-    }
-    let mut demoted = 0;
-
-    for role in ROLES {
-        let state_file = PathBuf::from(format!("{}/{}-declared.json", SCAN_DIR, role));
-        let Ok(content) = fs::read_to_string(&state_file) else { continue; };
-        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) else { continue; };
-        let Some(state) = parsed["state"].as_str() else { continue; };
-
-        let liveness = process::probe_role_session(role);
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let declared_ts = parsed["ts"].as_u64().unwrap_or(0);
-        let decayed = observing_decayed(state, declared_ts, now, OBSERVING_TTL_SECS);
-
-        let (new_state, reason) = match sweep_decision(state, parsed["source"].as_str(), &liveness, decayed) {
-            SweepAction::Keep => continue,
-            SweepAction::KeepUnmeasurable(what) => {
-                if let Ok(mut log_file) = fs::OpenOptions::new()
-                    .create(true).append(true).open(chorus_log_path())
-                {
-                    let _ = writeln!(
-                        log_file,
-                        "role.state.sweep.unmeasurable | role={} state={} probe={}",
-                        role, state, what
-                    );
-                }
-                continue;
-            }
-            SweepAction::Demote { new_state, reason } => (new_state, reason),
-            SweepAction::Repromote => {
-                let prev = parsed["prev_state"].as_str().unwrap_or("waiting").to_string();
-                let wall = process::wall_clock();
-                let json = format!(
-                    r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":true,"wall_clock":"{}","source":"repromote"}}"#,
-                    role, prev, now, wall, wall
-                );
-                let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
-                if fs::File::create(&tmp).and_then(|mut f| writeln!(f, "{}", json)).is_ok()
-                    && fs::rename(&tmp, &state_file).is_ok()
-                {
-                    if let Ok(mut log_file) = fs::OpenOptions::new()
-                        .create(true).append(true).open(chorus_log_path())
-                    {
-                        let _ = writeln!(
-                            log_file,
-                            "role.state.repromote | role={} restored={} reason=session-alive",
-                            role, prev
-                        );
-                    }
-                    if verbose {
-                        eprintln!("  {} repromoted: idle -> {} (session alive)", role, prev);
-                    }
-                }
-                continue;
-            }
-        };
-        let pid_alive = matches!(liveness, process::Liveness::Alive(_));
-
-        // Demote. Stamp source="cleanup" so debugging is possible —
-        // the next person can see this entry was auto-fixed by sweep, not
-        // declared by a writer. No card field — cards belong to the board,
-        // not role-state (Jeff's directive 2026-04-30).
-        let prev_state = state.to_string();
-        let wall = process::wall_clock();
-        let json = format!(
-            r#"{{"role":"{}","state":"{}","ts":{},"last_emit":"{}","session_alive":{},"wall_clock":"{}","source":"cleanup","prev_state":"{}"}}"#,
-            role, new_state, now, wall, pid_alive, wall, prev_state
-        );
-        let tmp = PathBuf::from(format!("{}/{}-declared.json.tmp", SCAN_DIR, role));
-        if fs::File::create(&tmp).and_then(|mut f| writeln!(f, "{}", json)).is_ok()
-            && fs::rename(&tmp, &state_file).is_ok()
-        {
-            demoted += 1;
-            if let Ok(mut log_file) = fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(chorus_log_path())
-            {
-                let _ = writeln!(
-                    log_file,
-                    "role.state.cleanup | role={} prev_state={} reason={}",
-                    role, prev_state, reason
-                );
-            }
-            if verbose {
-                eprintln!("  {} demoted: {} -> {} ({})", role, prev_state, new_state, reason);
-            }
-        }
-    }
-    demoted
-}
-
-/// Get last spine event timestamp for a role from chorus.log (JSON format, tail search)
-/// #3670 — tail-bounded: an active role emits every few seconds, so its last event
-/// lives in the final KBs. A role absent from the 8MB tail gets None (same as a
-/// role absent from the log), never a whole-file read.
-fn last_spine_emit(role: &str) -> Option<String> {
-    let content = crate::shared::log_tail::read_log_tail(std::path::Path::new(
-        &crate::shared::state_paths::chorus_log_file(),
-    ))?;
-    let role_pattern = format!("\"role\":\"{}\"", role);
-    for line in content.lines().rev() {
-        if line.contains(&role_pattern) {
-            // Extract timestamp from JSON: {"timestamp":"2026-03-21T19:11:18.306Z",...}
-            if let Some(start) = line.find("\"timestamp\":\"") {
-                let after = &line[start + 13..];
-                if let Some(end) = after.find('"') {
-                    let ts = &after[..end];
-                    // Convert ISO to Boston time display: take date+time portion
-                    if ts.len() >= 19 {
-                        return Some(ts[..19].replace('T', " "));
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn humanize_duration(secs: u64) -> String {
-    if secs < 60 { return format!("{}s ago", secs); }
-    if secs < 3600 { return format!("{}m ago", secs / 60); }
-    if secs < 86400 { return format!("{}h ago", secs / 3600); }
-    format!("{}d ago", secs / 86400)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
-    // --- #3319 AC4: observing decays past TTL (pure decision) ---
-
-    #[test]
-    fn observing_past_ttl_decays() {
-        assert!(observing_decayed("observing", 1000, 1000 + OBSERVING_TTL_SECS + 1, OBSERVING_TTL_SECS));
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
     }
 
     #[test]
-    fn observing_within_ttl_holds() {
-        // A re-poll refreshes ts, so an active watcher never crosses the TTL.
-        assert!(!observing_decayed("observing", 1000, 1000 + OBSERVING_TTL_SECS, OBSERVING_TTL_SECS));
+    fn detail_is_parsed_and_quotes_stripped() {
+        assert_eq!(parse_detail(&args(&["detail=\"why not\"", "gemba=kade"])).unwrap(), "why not");
+        assert_eq!(parse_detail(&args(&[])).unwrap(), "");
     }
 
     #[test]
-    fn only_observing_decays_other_states_never_ttl_demoted() {
-        // building/blocked/waiting have their own truth signals — quiet work
-        // is legitimate there. TTL applies to attention claims only.
-        for s in ["building", "blocked", "waiting", "idle"] {
-            assert!(!observing_decayed(s, 0, u64::MAX, OBSERVING_TTL_SECS), "{} must not TTL-decay", s);
-        }
-    }
-
-    // --- #3802: the sweep decision, driven with FORCED measurement failures ---
-    use crate::process::Liveness;
-
-    #[test]
-    fn negative_proof_unmeasurable_never_demotes() {
-        // The violation this card exists to catch: a failed probe read as
-        // "dead". A building role with an unmeasurable session KEEPS its state.
-        for what in [Liveness::Unmeasurable("ps"), Liveness::Unmeasurable("lsof")] {
-            assert_eq!(
-                sweep_decision("building", Some("declared"), &what, false),
-                SweepAction::KeepUnmeasurable(match what { Liveness::Unmeasurable(w) => w, _ => unreachable!() }),
-                "unmeasurable must never demote"
-            );
-        }
+    fn card_and_type_are_still_refused_at_the_cli() {
+        // #2467/#2629 — the board owns the card. #4028 removed the file, not the refusal.
+        assert_eq!(parse_detail(&args(&["card=4028"])), Err(2));
+        assert_eq!(parse_detail(&args(&["type=fix"])), Err(2));
     }
 
     #[test]
-    fn provably_dead_still_demotes() {
-        // The check must still catch the state it exists for: real death.
-        assert_eq!(
-            sweep_decision("building", Some("declared"), &Liveness::Dead, false),
-            SweepAction::Demote { new_state: "idle", reason: "session-dead" }
-        );
+    fn declaring_a_derived_state_writes_nothing_anywhere() {
+        // Negative proof (#3734): the declared file this module used to write must
+        // NOT appear after a "building" call — the state is derived, so a
+        // declaration has no place to land.
+        let scan = std::env::temp_dir().join(format!("4028-scan-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&scan);
+        let code = run(&args(&["wren", "building"]));
+        assert_eq!(code, ExitCode::SUCCESS);
+        assert!(!scan.join("wren-declared.json").exists(), "no declared file may be written");
+        assert!(!std::path::Path::new("/tmp/claude-team-scan/wren-declared.json").exists()
+            || fs::metadata("/tmp/claude-team-scan/wren-declared.json")
+                .and_then(|m| m.modified())
+                .map(|t| t.elapsed().map(|d| d.as_secs() > 5).unwrap_or(true))
+                .unwrap_or(true),
+            "a pre-existing legacy file may exist, but this call must not have touched it");
     }
 
     #[test]
-    fn live_pid_repromotes_idle_by_cleanup_only() {
-        // A sweep-written idle with the session alive again → restore.
-        assert_eq!(
-            sweep_decision("idle", Some("cleanup"), &Liveness::Alive(123), false),
-            SweepAction::Repromote
-        );
-        // NEGATIVE PROOF the other way: an idle the ROLE declared is a
-        // statement — never re-promoted, alive or not.
-        assert_eq!(
-            sweep_decision("idle", Some("declared"), &Liveness::Alive(123), false),
-            SweepAction::Keep
-        );
-        // And a cleanup-idle whose session is still unmeasurable stays put.
-        assert_eq!(
-            sweep_decision("idle", Some("cleanup"), &Liveness::Unmeasurable("lsof"), false),
-            SweepAction::Keep
-        );
+    fn blocked_appends_one_json_line_to_the_membrane_log() {
+        let dir = std::env::temp_dir().join(format!("4028-log-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let log = dir.join("chorus.log");
+        let _ = fs::remove_file(&log);
+        std::env::set_var("CHORUS_LOG_FILE", log.to_string_lossy().to_string());
+        let code = run(&args(&["silas", "blocked", "detail=\"waiting on the DAL cred\""]));
+        std::env::remove_var("CHORUS_LOG_FILE");
+        assert_eq!(code, ExitCode::SUCCESS);
+        let body = fs::read_to_string(&log).expect("log written");
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 1, "exactly one line: {body}");
+        let v: serde_json::Value = serde_json::from_str(lines[0]).expect("json line");
+        assert_eq!(v["event"], "role.blocked");
+        assert_eq!(v["role"], "silas");
+        assert_eq!(v["detail"], "waiting on the DAL cred");
     }
 
     #[test]
-    fn sweep_skips_in_build_context_without_a_world() {
-        // VIOLATION fixture: CI set, no world — running the sweep here is what
-        // demoted live team state from inside containers pre-membrane.
-        let ci = |k: &str| match k { "CI" => Some("true".into()), _ => None };
-        assert!(sweep_should_skip(&ci), "CI with no world must skip the sweep");
-        // NEGATIVE PROOFS both ways: a test that brought its world sweeps...
-        let ci_world = |k: &str| match k {
-            "CI" => Some("true".into()),
-            "CHORUS_LOG_FILE" => Some("/tmp/x/log".into()),
-            _ => None,
-        };
-        assert!(!sweep_should_skip(&ci_world), "a brought world must not skip");
-        // ...and production always sweeps.
-        let prod = |_: &str| None;
-        assert!(!sweep_should_skip(&prod), "prod must never skip");
-    }
-
-    #[test]
-    fn observing_ttl_demotion_survives_the_refactor() {
-        assert_eq!(
-            sweep_decision("observing", Some("declared"), &Liveness::Alive(9), true),
-            SweepAction::Demote { new_state: "waiting", reason: "observing-ttl" }
-        );
-    }
-
-    #[test]
-    fn observing_clock_skew_is_safe() {
-        // ts in the future (clock skew) must not underflow or decay.
-        assert!(!observing_decayed("observing", 5000, 1000, OBSERVING_TTL_SECS));
-    }
-
-    // --- AC2: declare/query round-trip ---
-
-    #[test]
-    fn declare_creates_state_file() {
-        // #2629: card= no longer accepted; pass only state (+ optional
-        // detail/gemba). State file MUST NOT contain card field.
-        let result = run(&[
-            "kade".into(),
-            "building".into(),
-        ]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        let state_file = format!("{}/kade-declared.json", SCAN_DIR);
-        let content = fs::read_to_string(&state_file).expect("state file should exist");
-        assert!(content.contains("\"state\":\"building\""));
-        assert!(content.contains("\"role\":\"kade\""));
-        // #2467/#2629: card field never appears
-        assert!(!content.contains("\"card\":"), "card field must NOT appear: {}", content);
-        assert!(!content.contains("\"card_type\":"), "card_type field must NOT appear: {}", content);
-    }
-
-    #[test]
-    fn query_returns_declared_state() {
-        // First declare (no card= per #2629 affordance)
-        run(&["kade".into(), "building".into()]);
-
-        // Then query — should succeed
-        let result = query("kade");
-        assert_eq!(result, ExitCode::SUCCESS);
-    }
-
-    #[test]
-    fn query_all_returns_all_roles() {
-        let result = query("all");
-        assert_eq!(result, ExitCode::SUCCESS);
-    }
-
-    // --- #2629 wave 3: affordance-layer refusal of card= / type= ---
-    //
-    // History (git log): wave 1 (ce22b9c7, PR #72) made the JSON writer
-    // drop card/card_type fields silently. Wave 2 (75f108b1, PR #77)
-    // cleaned the instruction text in skills + CLAUDE.md fragments.
-    // Prior to #2467, the writer ACCEPTED and PERSISTED card= via the
-    // carry-forward block (#2058 → 6146baf7). Wave 3 closes the
-    // remaining affordance gap: parser must REFUSE card=/type= args, not
-    // silently drop them. Otherwise a script reaching for the old
-    // syntax still works (no error) and the lie can return.
-
-    #[test]
-    fn rejects_card_arg() {
-        // RED against current code (parser arm `"card" | "type" => {}`
-        // silently drops). After wave 3: exit non-zero with a clear
-        // error pointing to #2467.
-        let result = run(&[
-            "kade".into(),
-            "building".into(),
-            "card=1718".into(),
-        ]);
-        assert_eq!(result, ExitCode::from(2),
-            "card= must be REFUSED at the affordance layer (#2629), not silently dropped");
-    }
-
-    #[test]
-    fn rejects_type_arg() {
-        let result = run(&[
-            "kade".into(),
-            "building".into(),
-            "type=fix".into(),
-        ]);
-        assert_eq!(result, ExitCode::from(2),
-            "type= must be REFUSED at the affordance layer (#2629), not silently dropped");
-    }
-
-    #[test]
-    fn rejects_both_card_and_type() {
-        let result = run(&[
-            "kade".into(),
-            "building".into(),
-            "card=1718".into(),
-            "type=fix".into(),
-        ]);
-        assert_eq!(result, ExitCode::from(2),
-            "card=+type= must be REFUSED (#2629)");
-    }
-
-    // Note: query() writes to stdout — full end-to-end strip verification
-    // lives in tests/role_state_legacy_strip.rs (integration test) where
-    // CARGO_BIN_EXE_chorus-hook-shim is in scope. Unit tests here cover
-    // refusal at the write path; the integration test covers the read path.
-
-    #[test]
-    fn refusal_does_not_write_state_file() {
-        // When args are refused, no state file should be created/updated —
-        // the call is rejected as a whole, not partially honored.
-        let state_file = format!("{}/wren-declared.json", SCAN_DIR);
-        let _ = fs::remove_file(&state_file);
-        let result = run(&[
-            "wren".into(),
-            "building".into(),
-            "card=99".into(),
-        ]);
-        assert_eq!(result, ExitCode::from(2));
-        assert!(!std::path::Path::new(&state_file).exists() ||
-                !fs::read_to_string(&state_file).unwrap_or_default().contains("\"state\":\"building\""),
-                "refused call must not have updated wren state to building (#2629)");
-    }
-
-    // --- AC2: state validation ---
-
-    #[test]
-    fn rejects_invalid_state() {
-        let result = run(&["kade".into(), "dancing".into()]);
-        assert_eq!(result, ExitCode::from(1));
-    }
-
-    #[test]
-    fn accepts_all_valid_states() {
-        for state in VALID_STATES {
-            let result = run(&["kade".into(), state.to_string()]);
-            assert_eq!(result, ExitCode::SUCCESS, "state '{}' should be valid", state);
-        }
-    }
-
-    // --- AC2: corrupt state file recovery ---
-
-    #[test]
-    fn query_handles_corrupt_state_file() {
-        let _ = fs::create_dir_all(SCAN_DIR);
-        let state_file = format!("{}/kade-declared.json", SCAN_DIR);
-
-        // Write garbage JSON
-        fs::write(&state_file, "not json at all {{{").expect("write corrupt file");
-
-        // Query should not crash — returns SUCCESS even if parse fails
-        let result = query("kade");
-        assert_eq!(result, ExitCode::SUCCESS);
-    }
-
-    #[test]
-    fn query_handles_missing_state_file() {
-        let _ = fs::create_dir_all(SCAN_DIR);
-        let state_file = format!("{}/wren-declared.json", SCAN_DIR);
-        let _ = fs::remove_file(&state_file);
-
-        // Should report "offline" gracefully, not crash
-        let result = query("wren");
-        assert_eq!(result, ExitCode::SUCCESS);
-    }
-
-    // #2435 atomic cutover — inbox drain tests retired alongside the drain
-    // code. /tmp/voice-inbox is no longer written (inject retired in nudge.rs)
-    // nor read (drain removed from role_state). The spine-tick-poller is the
-    // canonical receiver; there's nothing for role_state to drain. New coverage
-    // for tick-poller delivery lives in the receiver-side tests for that
-    // script and its spine fold.
-
-    /// #2435 atomic cutover — regression guard that no role-state transition
-    /// (idle, waiting, building) touches the retired /tmp/voice-inbox queue.
-    /// Pre-existing queue files must survive all transitions unchanged.
-    #[test]
-    fn no_transition_drains_retired_inbox() {
-        // #3607 — per-process role name: this test collided with itself when two
-        // pipelines' cargo-test runs raced on the same /tmp/voice-inbox path
-        // (one run's cleanup ate the other's fixture mid-assert; blocked a land).
-        let test_role = format!("test-no-drain-post-cutover-{}", std::process::id());
-        let test_role = test_role.as_str();
-        let inbox_dir = format!("/tmp/voice-inbox/{}", test_role);
-        let inbox_file = format!("{}/pending-inject.txt", inbox_dir);
-
-        for state in &["idle", "waiting", "building"] {
-            let _ = fs::create_dir_all(&inbox_dir);
-            fs::write(&inbox_file, "should stay\n").expect("write test inbox");
-
-            let result = run(&[test_role.into(), (*state).into()]);
-            assert_eq!(result, ExitCode::SUCCESS);
-
-            let content = fs::read_to_string(&inbox_file).unwrap_or_default();
-            assert!(
-                content.contains("should stay"),
-                "retired drain must NOT consume inbox on transition={}", state
-            );
-        }
-
-        // Cleanup
-        let _ = fs::remove_file(&inbox_file);
-        let _ = fs::remove_dir(&inbox_dir);
-    }
-
-    // --- AC2: detail and gemba extras ---
-
-    #[test]
-    fn declare_with_detail_persists() {
-        let result = run(&[
-            "silas".into(),
-            "blocked".into(),
-            "detail=waiting for review".into(),
-        ]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        let state_file = format!("{}/silas-declared.json", SCAN_DIR);
-        let content = fs::read_to_string(&state_file).expect("state file");
-        assert!(content.contains("\"detail\":\"waiting for review\""));
-    }
-
-    #[test]
-    fn declare_with_gemba_persists() {
-        let result = run(&[
-            "wren".into(),
-            "observing".into(),
-            "gemba=kade".into(),
-        ]);
-        assert_eq!(result, ExitCode::SUCCESS);
-
-        let state_file = format!("{}/wren-declared.json", SCAN_DIR);
-        let content = fs::read_to_string(&state_file).expect("state file");
-        assert!(content.contains("\"gemba\":\"kade\""));
-    }
-
-    // --- AC2: humanize_duration ---
-
-    #[test]
-    fn humanize_duration_formats_correctly() {
-        assert_eq!(humanize_duration(30), "30s ago");
-        assert_eq!(humanize_duration(120), "2m ago");
-        assert_eq!(humanize_duration(7200), "2h ago");
-        assert_eq!(humanize_duration(172800), "2d ago");
-    }
-
-    // --- AC2: query rejects unknown role ---
-
-    #[test]
-    fn query_rejects_unknown_role() {
-        let result = query("jeff");
-        assert_eq!(result, ExitCode::from(1));
-    }
-
-    // --- AC2: no args returns error ---
-
-    #[test]
-    fn run_no_args_returns_error() {
-        let result = run(&[]);
-        assert_eq!(result, ExitCode::from(1));
-    }
-
-    #[test]
-    fn run_role_only_returns_error() {
-        let result = run(&["kade".into()]);
-        assert_eq!(result, ExitCode::from(1));
+    fn unknown_role_and_unknown_state_are_refused() {
+        assert_ne!(run(&args(&["bob", "blocked"])), ExitCode::SUCCESS);
+        assert_ne!(run(&args(&["wren", "napping"])), ExitCode::SUCCESS);
     }
 }

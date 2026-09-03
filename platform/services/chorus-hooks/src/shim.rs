@@ -1009,19 +1009,16 @@ fn observe_missed_cmd(args: &[String]) -> ExitCode {
             continue;
         }
 
-        // Check if role is active (state file exists and recent)
-        let state_file = format!("/tmp/claude-team-scan/{}-declared.json", role);
-        let is_active = if let Ok(content) = std::fs::read_to_string(&state_file) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(ts) = parsed.get("ts").and_then(|v| v.as_u64()) {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    now.saturating_sub(ts) < 1800
-                } else { false }
-            } else { false }
-        } else { false };
+        // #4028 — "active" is derived, not declared: the observations file the
+        // role's own tool calls append to was written in the last 30 min. The
+        // <role>-declared.json this used to read no longer exists.
+        let obs_path = format!("/tmp/claude-team-scan/{}-observations.jsonl", role);
+        let is_active = std::fs::metadata(&obs_path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .map(|age| age.as_secs() < 1800)
+            .unwrap_or(false);
 
         if !is_active {
             continue;

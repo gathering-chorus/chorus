@@ -62,52 +62,55 @@ describe('TilePoller — constructor initializes roles', () => {
   });
 });
 
-describe('TilePoller — role declared state', () => {
+describe('TilePoller — role state comes from the derived endpoint (#4028)', () => {
   beforeEach(() => { clear(); });
 
-  test('building state surfaces session alive (#2467: card from board, not role-state)', () => {
-    writeState('kade', {
-      state: 'building',
-      session_alive: true,
-      ts: Math.floor(Date.now() / 1000) - 30,
-    });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
+  const rows = (over: Array<Partial<import('../src/tiles').DerivedRoleRow> & { role: string }>) => () =>
+    over.map((r) => ({ state: 'idle', detail: null, lastActivity: null, stale: true, ...r }));
+
+  test('building on the derived row surfaces building + session alive; card still comes from the board', () => {
+    const p = new TilePoller({ ...OPTS, readRoles: rows([
+      { role: 'kade', state: 'building', stale: false, lastActivity: new Date(Date.now() - 30_000).toISOString() },
+    ]) });
+    const t = p.getTiles().find((x) => x.role === 'kade')!;
     expect(t.state).toBe('building');
-    // #2467: card no longer in role-state — board is authoritative.
-    // With no boardCache populated in this test, tile.card is empty string.
     expect(t.card).toBe('');
     expect(t.sessionAlive).toBe(true);
     expect(t.lastActionAge).toMatch(/\d+s ago/);
   });
 
-  test('session_alive:false is respected (default true)', () => {
-    writeState('kade', { state: 'idle', session_alive: false });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
+  test('a stale derived row reads as session not alive', () => {
+    const p = new TilePoller({ ...OPTS, readRoles: rows([{ role: 'kade', state: 'idle', stale: true }]) });
+    expect(p.getTiles().find((x) => x.role === 'kade')!.sessionAlive).toBe(false);
+  });
+
+  test('blocked arrives on the row and the tile shows it', () => {
+    const p = new TilePoller({ ...OPTS, readRoles: rows([
+      { role: 'wren', state: 'blocked', detail: 'waiting on Jeff', stale: false, lastActivity: new Date().toISOString() },
+    ]) });
+    expect(p.getTiles().find((x) => x.role === 'wren')!.state).toBe('blocked');
+  });
+
+  test('negative proof (#3734): a <role>-declared.json on disk is NOT read — the tile ignores it', () => {
+    writeState('kade', { state: 'building', session_alive: true, ts: Math.floor(Date.now() / 1000) - 30 });
+    const p = new TilePoller({ ...OPTS, readRoles: rows([{ role: 'kade', state: 'idle', stale: true }]) });
+    const t = p.getTiles().find((x) => x.role === 'kade')!;
+    expect(t.state).toBe('idle');
     expect(t.sessionAlive).toBe(false);
   });
 
-  test('reconciler divergence is non-applicable post-#2467 (no role-state.card to diverge from)', () => {
-    writeState('silas', { state: 'building', session_alive: true, ts: Math.floor(Date.now() / 1000) });
+  test('reconciler divergence is non-applicable (no declared card to diverge from)', () => {
     writePulse({ roles: { silas: { divergent: true, card_declared: 2100, card_inferred: 2200 } } });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'silas')!;
-    // #2467: divergence display retired — no declared-card field exists in
-    // role-state to diverge from. Board is authoritative.
+    const p = new TilePoller({ ...OPTS, readRoles: rows([{ role: 'silas', state: 'building', stale: false }]) });
+    const t = p.getTiles().find((x) => x.role === 'silas')!;
     expect(t.divergent).toBe(false);
     expect(t.cardDeclared).toBeUndefined();
     expect(t.cardInferred).toBeUndefined();
   });
 
-  test('reconciler with matching declared=inferred is non-divergent', () => {
-    writeState('wren', { state: 'building', card: '50', session_alive: true, ts: Math.floor(Date.now() / 1000) });
-    writePulse({ roles: { wren: { divergent: false, card_declared: 50, card_inferred: 50 } } });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'wren')!;
-    expect(t.divergent).toBe(false);
-  });
-
-  test('malformed state JSON is tolerated (tile stays at defaults)', () => {
-    fs.writeFileSync(path.join(TMP, 'kade-declared.json'), 'not json');
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
-    expect(t.state).toBe('idle');
+  test('no derived rows yet (API not answered) — tile keeps defaults', () => {
+    const p = new TilePoller({ ...OPTS, readRoles: () => null });
+    expect(p.getTiles().find((x) => x.role === 'kade')!.state).toBe('idle');
   });
 });
 
@@ -230,14 +233,14 @@ describe('TilePoller — formatAge via lastActionAge', () => {
     [3700, /\d+h ago/],
     [90_000, /\d+d ago/],
   ])('age %d → matches %s', (secs, re) => {
-    writeState('kade', { state: 'building', ts: Math.floor(Date.now() / 1000) - secs });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
+    const readRoles = () => [{ role: 'kade', state: 'building', stale: false, lastActivity: new Date(Date.now() - secs * 1000).toISOString() }];
+    const t = new TilePoller({ ...OPTS, readRoles }).getTiles().find((x) => x.role === 'kade')!;
     expect(t.lastActionAge).toMatch(re);
   });
 
-  test('future ts (negative age) renders as "just now"', () => {
-    writeState('kade', { state: 'building', ts: Math.floor(Date.now() / 1000) + 60 });
-    const t = new TilePoller(OPTS).getTiles().find((x) => x.role === 'kade')!;
+  test('future lastActivity (negative age) renders as "just now"', () => {
+    const readRoles = () => [{ role: 'kade', state: 'building', stale: false, lastActivity: new Date(Date.now() + 60_000).toISOString() }];
+    const t = new TilePoller({ ...OPTS, readRoles }).getTiles().find((x) => x.role === 'kade')!;
     expect(t.lastActionAge).toBe('just now');
   });
 });
@@ -266,11 +269,28 @@ describe('TilePoller — board refresh resilience', () => {
 describe('TilePoller — poll re-reads state', () => {
   beforeEach(() => { clear(); });
 
-  test('second poll picks up new state', () => {
-    const p = new TilePoller(OPTS);
+  test('second poll picks up the new derived state', () => {
+    let rows: any[] = [];
+    const p = new TilePoller({ ...OPTS, readRoles: () => rows });
     expect(p.getTiles().find((t) => t.role === 'kade')!.state).toBe('idle');
-    writeState('kade', { state: 'building', card: '99' });
+    rows = [{ role: 'kade', state: 'building', stale: false, lastActivity: new Date().toISOString() }];
     p.poll();
     expect(p.getTiles().find((t) => t.role === 'kade')!.state).toBe('building');
+  });
+});
+
+// #4028 — negative proof (#3734): once the roles API has answered, no older layer
+// (observation age, spine projection, run pin) may overwrite its state.
+describe('#4028 the API row is the only source of tile state', () => {
+  it('a role the API calls waiting stays waiting even with fresh stream activity', () => {
+    const poller = new TilePoller({
+      readRoles: () => [{ role: 'wren', state: 'waiting', card: 4028, stale: false, lastActivity: new Date().toISOString() } as any],
+    } as any);
+    const tile: any = { state: 'unknown', cards: [], lastAction: '', lastActionAge: '' };
+    (poller as any).applyAndonState(tile, 'wren');
+    // fresh spine activity: without the #4028 guard this projects 'building' over the row
+    (poller as any).spineActivity = { wren: { ageSecs: 5, kind: 'hook.decision' } };
+    (poller as any).applySpineProjection(tile, 'wren');
+    expect(tile.state).toBe('waiting');
   });
 });

@@ -133,6 +133,13 @@ test.describe('#4036 the hub page is Chorus-native', () => {
   });
 
   test('Team Pulse renders live numbers from /api/loom-metrics', async ({ page }) => {
+    // #4028 — the page's own rendering is under test, not the last 90 minutes
+    // of prod's spine: /api/loom-metrics tallies a 4 MB tail of chorus.log, so
+    // this red whenever no card was pulled or closed recently (twice tonight,
+    // 19:05 and 19:15). Bring the data, as the analytics test below does.
+    await page.route('**/api/loom-metrics*', (r) => r.fulfill({
+      json: { board: { done: 3, total: 7 }, weekly_throughput: { '2026-W35': 3 }, reject_stats: { rate: 0, deploys: 2 }, operations: { deploys: 2 } },
+    }));
     await page.goto(`${BASE}/loom`, { waitUntil: 'networkidle' });
     await expect(page.locator('#team-pulse h2'), 'Team Pulse present').toHaveText('Team Pulse');
     for (const id of ['range-buttons', 'vs-card', 'role-card', 'brief-card', 'wip-health-card', 'quality-card', 'ops-card']) {

@@ -132,6 +132,18 @@ export interface TilePollerOptions {
   /** #3905 — the spine the projection reads. Tests MUST pin a fixture; the
    *  live default made three 3772 cases red whenever a 03:00 pipeline ran. */
   spineFile?: string;
+  /** #4028 — the derived role rows (GET /api/chorus/context/roles). Tests inject
+   *  a sync reader; production fills a cache from the API on every refresh. */
+  readRoles?: () => DerivedRoleRow[] | null;
+}
+
+/** #4028 — one row of /api/chorus/context/roles, the only source of role STATE. */
+export interface DerivedRoleRow {
+  role: string;
+  state: string;
+  detail?: string | null;
+  lastActivity?: string | null;
+  stale?: boolean;
 }
 
 export class TilePoller {
@@ -139,6 +151,9 @@ export class TilePoller {
   private spineActivity: Record<string, SpineActivity> = {};
   private pulse: PulseState | null = null;
   private boardCache: { wip_cards: BoardCard[]; swat_cards: BoardCard[]; ts: number } = { wip_cards: [], swat_cards: [], ts: 0 };
+  // #4028 — derived rows from chorus-api; replaces <role>-declared.json.
+  private rolesFromApi: Map<string, DerivedRoleRow> = new Map();
+  private readRolesOverride: (() => DerivedRoleRow[] | null) | null = null;
   // #2273: exposed so tests can await the board refresh instead of using setTimeout
   boardRefresh: Promise<void> = Promise.resolve();
   private readonly scanDir: string;
@@ -152,6 +167,7 @@ export class TilePoller {
     this.pulseFile = opts.pulseFile ?? PULSE_FILE;
     this.chorusApi = opts.chorusApi ?? CHORUS_API;
     this.werkRunsDir = opts.werkRunsDir ?? WERK_RUNS_DIR;
+    this.readRolesOverride = opts.readRoles ?? null;
     // A fixture scanDir without an explicit spine means a HERMETIC caller —
     // point the spine into the same fixture dir (usually absent → no
     // projection) instead of the live log.
@@ -184,10 +200,22 @@ export class TilePoller {
   }
 
   private refreshBoardFromApi(): void {
+    if (this.readRolesOverride) {
+      const rows = this.readRolesOverride();
+      if (rows) this.rolesFromApi = new Map(rows.map((r) => [r.role, r]));
+    }
     this.boardRefresh = Promise.allSettled([
       fetch(`${this.chorusApi}/api/chorus/context/board/wip`).then((r) => r.ok ? r.json() : null).catch(() => null),
       fetch(`${this.chorusApi}/api/chorus/context/board/swat`).then((r) => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([wipResult, swatResult]) => {
+      this.readRolesOverride
+        ? Promise.resolve(null)
+        : fetch(`${this.chorusApi}/api/chorus/context/roles`).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([wipResult, swatResult, rolesResult]) => {
+      // #4028 — role STATE comes from the derived endpoint; a failed poll keeps
+      // the last good rows (same hold-last-good rule as the board below).
+      const rolesData = rolesResult.status === 'fulfilled' ? rolesResult.value : null;
+      const rows: DerivedRoleRow[] | null = rolesData?.data?.roles ?? null;
+      if (rows) this.rolesFromApi = new Map(rows.map((r) => [r.role, r]));
       const wipData = wipResult.status === 'fulfilled' ? wipResult.value : null;
       const swatData = swatResult.status === 'fulfilled' ? swatResult.value : null;
       // #3869 — `null` is preserved all the way to the merge. Collapsing it to
@@ -232,18 +260,32 @@ export class TilePoller {
   // renderer derives WIP cards directly from the board (via boardCache).
   // No state mutation needed on card.accepted; the board is authoritative.
 
+  // #4028 — state is derived by chorus-api from the streams and read here;
+  // the <role>-declared.json this used to parse no longer exists. blocked and
+  // observing (the only states a projection cannot infer) arrive on the same
+  // row, so the spine projection below still honours them.
+  /** #3869/#4028 — the pane's clock labels and derives ONLY while the roles API
+   *  has not answered for this role; once it has, its row owns state and age
+   *  (the pane's own clock produced "building · 22m ago"). */
+  private applyObservationClock(tile: RoleTile, role: string, ts: string): void {
+    if (this.rolesFromApi.has(role)) return;
+    const ageSecs = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+    tile.lastActionAge = formatAge(ageSecs);
+    tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
+  }
+
   private applyAndonState(tile: RoleTile, role: string): void {
-    try {
-      const data = JSON.parse(fs.readFileSync(path.join(this.scanDir, `${role}-declared.json`), 'utf-8'));
-      tile.state = data.state || 'idle';
-      // #2467: card field no longer in role-state; tile.card derived from
-      // board in applyBoardAndPulse below.
-      tile.sessionAlive = data.session_alive !== false;
-      if (data.ts) {
-        tile.lastActionAge = formatAge(Math.floor(Date.now() / 1000) - data.ts);
-      }
-    } catch {
-      // File doesn't exist or is malformed — tile keeps defaults.
+    if (this.readRolesOverride) {
+      const rows = this.readRolesOverride();
+      if (rows) this.rolesFromApi = new Map(rows.map((r) => [r.role, r]));
+    }
+    const row = this.rolesFromApi.get(role);
+    if (!row) return; // API not answered yet — tile keeps defaults, the spine projection fills it
+    tile.state = row.state || 'idle';
+    tile.sessionAlive = row.stale === false;
+    if (row.lastActivity) {
+      const ageSecs = Math.floor((Date.now() - new Date(row.lastActivity).getTime()) / 1000);
+      if (Number.isFinite(ageSecs)) tile.lastActionAge = formatAge(ageSecs); // negative → 'just now', as before
     }
   }
 
@@ -296,15 +338,7 @@ export class TilePoller {
       }
       if (!last) return;
       tile.lastAction = last.digest || '';
-      if (last.ts) {
-        const ageSecs = Math.floor((Date.now() - new Date(last.ts).getTime()) / 1000);
-        tile.lastActionAge = formatAge(ageSecs);
-        // #3869 — the observation stream has always known whether a role is
-        // working; the tile read it for the age label and then took `state`
-        // from a file agents update by hand. That is why every screenshot Jeff
-        // sent for two days said "Wren idle" while Wren was mid-build.
-        tile.state = deriveState({ declared: tile.state, lastActivityAgeSecs: ageSecs });
-      }
+      if (last.ts) this.applyObservationClock(tile, role, last.ts);
     } catch {
       // No observations yet
     }
@@ -353,6 +387,7 @@ export class TilePoller {
   }
 
   private applySpineProjection(tile: RoleTile, role: string): void {
+    if (this.rolesFromApi.has(role)) return; // #4028 — one derivation, served by the API
     const act = this.spineActivity[role];
     const projected = projectRoleState({
       declared: tile.state,
@@ -385,6 +420,14 @@ export class TilePoller {
   // 15min — a reused pid always mismatches (pin says June, process says July).
   // One batched `ps` per poll; a pin failing identity is ignored, never
   // trusted-by-default.
+  /** #4028 — a run pin fills state only while no roles-API row has answered
+   *  (the row already says waiting for a presented demo). */
+  private applyRunPinState(tile: RoleTile, role: string, phase: string): void {
+    if (this.rolesFromApi.has(role)) return;
+    if (tile.state !== 'idle' && tile.state !== 'unknown' && tile.state !== 'waiting') return;
+    tile.state = phase === 'presented' ? 'presenting' : 'building';
+  }
+
   private applyWerkRuns(tile: RoleTile, role: string): void {
     try {
       const files = fs.readdirSync(this.werkRunsDir).filter((f) => /^\d+\.json$/.test(f));
@@ -392,9 +435,7 @@ export class TilePoller {
       for (const f of files) {
         const run = this.readRun(f, role);
         if (!run || !this.runIsCurrent(run, pidStarts)) continue;
-        if (tile.state === 'idle' || tile.state === 'unknown' || tile.state === 'waiting') {
-          tile.state = run.phase === 'presented' ? 'presenting' : 'building';
-        }
+        this.applyRunPinState(tile, role, run.phase ?? '');
         tile.sessionAlive = true;
         if (!tile.card && run.card) tile.card = `#${run.card}`;
         return;

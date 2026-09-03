@@ -14,7 +14,8 @@ import { startTestApp, type TestApp } from './lib/test-app';
 // #3656: Quality Service reparented borg→werk — lives at /werk/quality/ now.
 const SURFACES = [
   { slug: 'assessment',        title: 'Borg Assessment' },
-  { slug: 'instance-explorer', title: 'Instance Explorer' },
+  // #4031 removed the instance-explorer tile from /borg/ on purpose: it was a
+  // twin of The Model row's Instance Explorer. The negative test below holds it out.
   { slug: 'patterns',          title: 'Interaction Patterns' },
   { slug: 'jeff',              title: 'Jeff Dashboard' },
   { slug: 'replay',            title: 'Session Replay' },
@@ -22,6 +23,17 @@ const SURFACES = [
   { slug: 'cost',              title: 'Cost Dashboard' },
   { slug: 'hooks',             title: 'Hooks Dashboard' },
 ];
+
+describe('#4031: the removed twin stays removed', () => {
+  let harness: TestApp;
+  beforeAll(async () => { harness = await startTestApp(); });
+  afterAll(async () => { if (harness) await harness.close(); });
+
+  test('landing does NOT list instance-explorer (nightly red 2026-09-02 was this test expecting it back)', async () => {
+    const html = await (await fetch(`${harness.baseUrl}/borg/`)).text();
+    expect(html.includes('/borg/instance-explorer')).toBe(false);
+  });
+});
 
 describe('#2099: Borg landing at /borg/', () => {
   let harness: TestApp;
@@ -34,7 +46,7 @@ describe('#2099: Borg landing at /borg/', () => {
     expect(res.status).toBe(200);
   });
 
-  test('landing lists all 8 surface slugs', async () => {
+  test('landing lists all 7 surface slugs', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/`);
     const html = await res.text();
     for (const s of SURFACES) {
@@ -50,10 +62,12 @@ describe('#2099: Borg landing at /borg/', () => {
     }
   });
 
-  test('landing points Quality Service at its werk home, not /borg/quality (#3656)', async () => {
+  test('landing links neither /borg/quality nor /werk/quality — Quality is reached from /werk (#3656, #4031)', async () => {
     const res = await fetch(`${harness.baseUrl}/borg/`);
     const html = await res.text();
-    expect(html).toContain('/werk/quality/');
+    // #4031 — the landing no longer links out to Werk at all; Quality lives on
+    // /werk and is reached from there. The rule that survives is: no /borg/quality/.
+    expect(html).not.toContain('/werk/quality/');
     expect(html).not.toContain('/borg/quality');
   });
 });

@@ -27,19 +27,28 @@ now=$(date +%s)
 all_inactive=true
 inactive_count=0
 
+# #4028 — role state is derived by chorus-api from the streams; there is no
+# declared file. One read of /api/chorus/context/roles serves every role.
+ROLES_JSON=$(curl -sf --max-time 5 "${CHORUS_ROLES_URL:-http://localhost:3340/api/chorus/context/roles}" 2>/dev/null || echo "")
+if [ -z "$ROLES_JSON" ]; then
+  echo "watchdog: /api/chorus/context/roles unreachable — nothing to judge, not guessing" >&2
+  exit 0
+fi
+
 for role in wren silas kade; do
-  STATE_FILE="$SCAN_DIR/${role}-declared.json"
   WATCHDOG_STATE="$WATCHDOG_DIR/${role}.state"
 
-  # Skip if no state file
-  if [ ! -f "$STATE_FILE" ]; then
-    continue
-  fi
-
-  # Read state timestamp and current state
-  STATE_TS=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('ts',0))" 2>/dev/null || echo "0")
-  STATE_VAL=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('state','unknown'))" 2>/dev/null || echo "unknown")
-  CARD=$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('card',''))" 2>/dev/null || echo "")
+  read -r STATE_VAL STATE_TS CARD <<< "$(echo "$ROLES_JSON" | python3 -c '
+import sys, json
+role = sys.argv[1]
+rows = json.load(sys.stdin).get("data", {}).get("roles", [])
+r = next((x for x in rows if x.get("role") == role), None)
+if not r:
+    print("idle 0 "); sys.exit(0)
+la = r.get("lastActivity")
+import datetime
+ts = int(datetime.datetime.fromisoformat(la.replace("Z", "+00:00")).timestamp()) if la else 0
+print(r.get("state", "idle"), ts, r.get("card") or "")' "$role")"
 
   # Skip idle/waiting/observing roles — they're not expected to be active (#1891)
   if [ "$STATE_VAL" = "idle" ] || [ "$STATE_VAL" = "waiting" ] || [ "$STATE_VAL" = "observing" ]; then
@@ -52,13 +61,11 @@ for role in wren silas kade; do
   if [ -n "$CARD" ]; then
     CARD_STATUS=$(bash "$SCRIPT_DIR/cards" view "$CARD" 2>/dev/null | grep -oE 'Status:\s+\S+' | awk '{print $2}' || echo "unknown")
     if [ "$CARD_STATUS" = "Done" ] || [ "$CARD_STATUS" = "Won't" ]; then
-      # Card is done — role hasn't updated state yet. Skip, don't alert.
       continue
     fi
   fi
 
-  # AC#3: State gap tolerance — if state is very recent (< 30s), skip.
-  # Covers the gap between /acp completing and next /pull declaring new state.
+  # AC#3: State gap tolerance — if activity is very recent (< 30s), skip.
   if [ "$age" -lt 30 ]; then
     all_inactive=false
     continue

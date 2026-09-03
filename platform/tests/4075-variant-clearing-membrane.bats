@@ -10,8 +10,9 @@
 # Brings its own world (#3528): CHORUS_HOME, the message store, the spine and the
 # "prod" store are all under $BATS_TEST_TMPDIR.
 
-ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-NODE=/Users/jeffbridwell/.nvm/versions/node/v20.11.1/bin/node
+ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)}"
+# node from PATH (the nightly and the werk both export it); no absolute home path (#4075 nightly red, Silas 19:19)
+NODE="${NODE:-$(command -v node)}"
 
 setup() {
   W="$BATS_TEST_TMPDIR"
