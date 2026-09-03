@@ -9,6 +9,7 @@
      doc they came from, in design order, with the model's own tables and lists, and
      nothing wider than a phone. The #3635 attribute-table version it replaces is in git. -->
 <script>window.OWL_PORT = 3360;</script>
+<script>document.write('<script src="'+window.basePath('/js/vendor/mermaid.min.js')+'"><\/script>');</script>
 <link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script>
 <script>(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
@@ -42,6 +43,12 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   details.ch > summary h2 .n::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--muted); font-size: .8em; transition: transform .12s; }
   details.ch[open] > summary h2 .n::before { transform: rotate(90deg); }
   details.ch[open] > summary { margin-bottom: 8px; }
+  /* #4094 — the design's diagrams, rendered from chorus:diagram (mermaid source, %% caption first line) */
+  figure.dg { margin: 0 0 14px; }
+  figure.dg figcaption { font-size: .85rem; color: var(--muted); margin-bottom: 6px; }
+  figure.dg .mmd { overflow-x: auto; }
+  figure.dg .mmd svg { max-width: 100%; height: auto; }
+  figure.dg .mmd-err { color: var(--muted); font-style: italic; font-size: .85rem; }
   .foldall { display: flex; gap: 12px; justify-content: flex-end; font-size: .8rem; margin: 4px 0 -4px; }
   .foldall a { color: var(--accent); text-decoration: none; cursor: pointer; }
   section.ch h2, details.ch h2 { font-size: 1.08rem; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
@@ -138,6 +145,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       ['composition',   'Composition'],          // rendered from hasDomain, not a string
       ['model',         'The Model (OWL + SHACL)'],
       ['pagesAndFlow',  'Pages & Flow'],
+      ['diagram',       'Flows'],                // rendered from chorus:diagram (repeatable mermaid), #4094
       ['apiSurface',    'API Surface'],
       ['asIs',          'As-Is'],
       ['toBe',          'To-Be'],
@@ -149,7 +157,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // fold state: open unless this browser collapsed it before (localStorage, per chapter); a #hash always opens its target
     const foldKey = k => `athena.product.fold.${k}`;
     const foldOpen = k => { try { return localStorage.getItem(foldKey(k)) !== 'closed'; } catch (_) { return true; } };
-    const has = k => k === 'composition' ? doms.length > 0 : !!(e[k] && String(e[k]).trim());
+    const diagrams = () => asArray(e.diagram).map(String).map(v => { const ls = v.trim().split('\n'); const cap = ls[0].startsWith('%%') ? ls.shift().replace(/^%%\s*/, '') : ''; return { caption: cap, src: ls.join('\n').trim() }; }).filter(d => d.src);
+    const has = k => k === 'composition' ? doms.length > 0 : k === 'diagram' ? diagrams().length > 0 : !!(e[k] && String(e[k]).trim());
     const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
     const chapterHtml = chapters.map(([k, t], n) => {
       const src = k === 'composition' ? 'chorus:hasDomain' : `chorus:${k}`;
@@ -158,6 +167,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       if (k === 'composition') {
         body = `<div class="doms">${doms.map(d => { const de = domsByName[d] || {}; const v = asArray(de.definesVocabulary).length;
           return `<a href="domain.html?d=${encodeURIComponent(d)}">${ownerDot(de.ownedBy)}${esc(d)} <span class="c">${v} class${v !== 1 ? 'es' : ''}</span></a>`; }).join('')}</div>`;
+      } else if (k === 'diagram') {
+        body = diagrams().map((d, di) => `<figure class="dg"><figcaption>${esc(d.caption || `Diagram ${di + 1}`)}</figcaption><div class="mmd" data-i="${di}"></div></figure>`).join('');
       } else body = render(e[k]);
       return `<details class="ch" id="${k}"${foldOpen(k) ? ' open' : ''}><summary><h2><span class="n">${n + 1}</span>${esc(t)}<span class="src">${src}</span></h2></summary>${body}</details>`;
     }).join('');
@@ -191,6 +202,16 @@ ${restHtml}
     main.querySelectorAll('.foldall a').forEach(a => a.addEventListener('click', () => folds().forEach(d => { d.open = a.dataset.fold === 'open'; })));
     const openHash = () => { const t = location.hash && main.querySelector(`details.ch${location.hash}`); if (t) t.open = true; };
     window.addEventListener('hashchange', openHash); openHash();
+    // #4094 — draw each diagram from its mermaid source; a bad source says so instead of an empty box
+    if (window.mermaid) {
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'neutral' });
+      const ds = diagrams();
+      for (const el of main.querySelectorAll('figure.dg .mmd')) {
+        const d = ds[Number(el.dataset.i)];
+        try { const { svg } = await mermaid.render(`dg_${p}_${el.dataset.i}`, d.src); el.innerHTML = svg; }
+        catch (err) { el.innerHTML = `<div class="mmd-err">diagram source did not render: ${esc(String(err && err.message || err).slice(0, 120))}</div>`; }
+      }
+    }
   } catch (err) { fetchFailed(main, err); }
 })();
 </script>
