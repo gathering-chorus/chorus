@@ -290,3 +290,11 @@ chorus:commitment-design-cards-in-flight-current a chorus:Commitment ;
     chorus:statement "The #2659 design names #2444, #2645, #2290 as the security card set; none is on the board. Replaced by this commitment set, which the #4064 check keeps honest." ;
     chorus:sourceDoc "designing/docs/security-service-design.html" ; chorus:sourceQuote "cards in flight" ;
     chorus:status "open" ; chorus:ownedBy chorus:role-silas ; chorus:ofService chorus:service-identity ; chorus:card chorus:card-4064 .
+
+# ---------------------------------------------------------------- card stubs
+# Thin chorus:Card stubs for cards these rows point at that the board projection
+# (board-3654-project.sh) has not minted — it only projects cards carrying a chunk
+# label. Same thin shape it writes: type + label; Vikunja stays the system of record.
+@prefix dcterms: <http://purl.org/dc/terms/> .
+chorus:card-3829 a chorus:Card ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" ; dcterms:creator "silas" .
+chorus:card-4064 a chorus:Card ; chorus:label "Service design commitments live in the graph, not HTML — Commitment rows on Service, security design first" ; dcterms:creator "silas" .

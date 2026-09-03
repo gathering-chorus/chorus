@@ -340,6 +340,33 @@ flowchart LR
   <li><strong>Profile-as-projection generator.</strong> If <code>config/profiles/*.json</code> becomes generated from <code>chorus:Permission</code> instances, what's the generator address? <code>platform/scripts/generate-profiles.sh</code>? When does it run — pre-commit, post-merge, on Athena write?</li>
 </ol>
 
+<h2>Commitments (from the graph)</h2>
+<p>Every promise this design makes is a <code>chorus:Commitment</code> row on its service (#4064), not a sentence to re-read. This list is fetched from the model, never copied here. Open with no card = unowned work. Query: <code>commitment-check.sh</code> or <code>GET /v1/commitments</code> on the model API.</p>
+<div id="commitments"><em>Loading commitments from the model API…</em></div>
+<script>
+(function () {
+  var el = document.getElementById('commitments');
+  var base = (window.CHORUS_MODEL_API || 'http://localhost:3360');
+  fetch(base + '/v1/commitments?limit=200').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function (d) {
+      var rows = d.items || d.data || d.rows || [];
+      if (!rows.length) { el.innerHTML = '<p><strong>No commitment rows served.</strong> The class is in the schema but no rows are live — that is a fetch of zero, not an empty design.</p>'; return; }
+      var open = rows.filter(function (r) { return r.status === 'open'; });
+      var noCard = open.filter(function (r) { return !r.card; });
+      var h = '<p><strong>' + rows.length + '</strong> commitments · <strong>' + open.length + '</strong> open · <strong>' + noCard.length + '</strong> open with no card</p>';
+      h += '<table><thead><tr><th>Commitment</th><th>Service</th><th>Status</th><th>Owner</th><th>Card</th></tr></thead><tbody>';
+      rows.forEach(function (r) {
+        var svc = (r.ofService || '').split('#').pop().replace(/^service-/, '');
+        var own = (r.ownedBy || '').split('#').pop().replace(/^role-/, '');
+        var card = r.card ? '#' + String(r.card).split('#').pop().replace(/^card-/, '') : '<span style="color:#b00">none</span>';
+        h += '<tr><td>' + (r.label || r.name || '') + '</td><td>' + svc + '</td><td>' + (r.status || '') + '</td><td>' + own + '</td><td>' + card + '</td></tr>';
+      });
+      el.innerHTML = h + '</tbody></table>';
+    })
+    .catch(function (e) { el.innerHTML = '<p><strong>Cannot reach the model API</strong> (' + base + ') — this is a fetch failure, not an empty design. ' + e.message + '</p>'; });
+})();
+</script>
+
 <h2>References</h2>
 <p><strong>ADRs:</strong></p>
 <ul>

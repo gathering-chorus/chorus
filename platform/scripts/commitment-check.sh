@@ -31,6 +31,9 @@ while IFS=$'\t' read -r c status card probe; do
       if [ -z "$card" ]; then echo "FAIL open-no-card $id"; fail=1; else echo "ok   open-carded  $id ${card##*#}"; fi ;;
     closed)
       if [ -z "$probe" ]; then echo "UNMEASURED closed-no-probe $id"; continue; fi
+      # a probe is a model row (an IRI such as chorus:security-probe-...) or a runnable path;
+      # an IRI cannot be executed here — say so rather than pass it
+      case "$probe" in http://*|https://*|urn:*|\<*) echo "UNMEASURED closed-probe-is-model-ref $id ${probe##*#}"; continue ;; esac
       p="$probe"; [ "${p:0:1}" = / ] || p="$PROBE_ROOT/$p"
       if [ ! -x "$p" ]; then echo "UNMEASURED closed-probe-missing $id $probe"; continue; fi
       if "$p" >/dev/null 2>&1; then echo "ok   closed-probe-green $id"; else echo "FAIL closed-probe-red $id $probe"; fail=1; fi ;;

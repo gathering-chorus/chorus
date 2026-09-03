@@ -882,6 +882,9 @@ if [ -z "${TTL:-}" ]; then
   SERVICES_STAGING="${SERVICES_GRAPH}-staging-deploy"
   SERVICES_SET=(
     "$CHORUS_ROOT/designing/data/service-instances.ttl"
+    # #4064 — a service design's promises as chorus:Commitment rows on their Service
+    # (edges-follow-node: they live beside the Service rows in urn:chorus:instances).
+    "$CHORUS_ROOT/roles/silas/ontology/security-commitments-4064.ttl"
   )
   for ttl in "${SERVICES_SET[@]}"; do
     [ -f "$ttl" ] || { echo "athena-deploy-model: SERVICES_SET TTL not found: $ttl" >&2; exit 1; }

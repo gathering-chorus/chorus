@@ -47,7 +47,8 @@ chorus:security a owl:Class, chorus:Domain ;
     chorus:repoTarget "platform/services/owl-api/src/auth.rs" ;
     chorus:instancesGraph "urn:chorus:domains:security" ;
     chorus:definesVocabulary chorus:Credential, chorus:Permission,
-        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate .
+        chorus:SecurityProbe, chorus:AuthBoundary, chorus:APISurface, chorus:Gate,
+        chorus:Commitment .
 
 chorus:hasDomain-security-stmt a rdf:Statement ;
     rdfs:comment "Migration note (#3618): borgProduct chorus:hasDomain repoints security-trust → security in the same DEL/INS batch; the 8 consumes edges (code, gates, toolchain, athena, convergence, domains, integrations, knowledge) repoint identically. Script: platform/scripts/security-3618-migrate.sh (generate|apply, door-only)." .
