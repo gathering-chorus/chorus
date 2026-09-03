@@ -219,9 +219,10 @@ chorus:unitdomain-com.chorus.launchagent-metrics a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:metrics .
 
 chorus:unitdomain-com.chorus.mcp a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp → services" ;
+    rdfs:label "com.chorus.mcp → spine" ;
     chorus:launchdLabel "com.chorus.mcp" ;
-    chorus:hasDomain chorus:services .
+    rdfs:comment "Jeff 2026-09-03: mcp is part of spine/events (mcp is to spine what act is to pipelines)" ;
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.mcp-config-herald a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.mcp-config-herald → heralds" ;
@@ -229,14 +230,14 @@ chorus:unitdomain-com.chorus.mcp-config-herald a chorus:UnitDomainMapping ;
     chorus:hasDomain chorus:heralds .
 
 chorus:unitdomain-com.chorus.mcp.werk.silas a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp.werk.silas → services" ;
+    rdfs:label "com.chorus.mcp.werk.silas → spine" ;
     chorus:launchdLabel "com.chorus.mcp.werk.silas" ;
-    chorus:hasDomain chorus:services .
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.mcp.werk.wren a chorus:UnitDomainMapping ;
-    rdfs:label "com.chorus.mcp.werk.wren → services" ;
+    rdfs:label "com.chorus.mcp.werk.wren → spine" ;
     chorus:launchdLabel "com.chorus.mcp.werk.wren" ;
-    chorus:hasDomain chorus:services .
+    chorus:hasDomain chorus:spine .
 
 chorus:unitdomain-com.chorus.nightly-suites a chorus:UnitDomainMapping ;
     rdfs:label "com.chorus.nightly-suites → tests" ;

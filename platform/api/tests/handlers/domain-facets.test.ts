@@ -11,7 +11,6 @@
 
 import {
   fetchDomainTests,
-  fetchDomainLogs,
   fetchDomainServices,
   fetchDomainDecisions,
   fetchDomainRadius,
@@ -133,49 +132,7 @@ describe('fetchDomainTests', () => {
   });
 });
 
-// --- fetchDomainLogs ---
-
-describe('fetchDomainLogs', () => {
-  test('shapes SPARQL bindings into logs array', async () => {
-    const result: SparqlResult = {
-      results: {
-        bindings: [
-          { log: { value: 'https://jeffbridwell.com/chorus#api-log' }, label: { value: 'chorus-api' }, location: { value: '/var/log/chorus-api' }, status: { value: 'healthy' } },
-          { log: { value: 'https://jeffbridwell.com/chorus#fuseki-log' }, label: { value: 'fuseki' } },
-        ],
-      },
-    };
-    const d = deps({ sparql: async () => result });
-    const r = await fetchDomainLogs(d, 'chorus-domain');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { logs: Array<{ label: string; location: string | null; status: string | null }> } };
-    expect(body.data.logs.length).toBe(2);
-    expect(body.data.logs[0].label).toBe('chorus-api');
-    expect(body.data.logs[0].location).toBe('/var/log/chorus-api');
-    expect(body.data.logs[1].location).toBeNull();
-    expect(body.data.logs[1].status).toBeNull();
-  });
-
-  test('derives label from uri when label missing', async () => {
-    const result: SparqlResult = {
-      results: { bindings: [{ log: { value: 'https://jeffbridwell.com/chorus#nameless-log' } }] },
-    };
-    const d = deps({ sparql: async () => result });
-    const r = await fetchDomainLogs(d, 'x');
-    const body = r.body as { data: { logs: Array<{ label: string }> } };
-    expect(body.data.logs[0].label).toBe('nameless-log');
-  });
-
-  test('SPARQL throws returns empty envelope', async () => {
-    const d = deps({ sparql: async () => { throw new Error('timeout'); } });
-    const r = await fetchDomainLogs(d, 'chorus-domain');
-    expect(r.status).toBe(200);
-    const body = r.body as { data: { logs: unknown[] } };
-    expect(body.data.logs).toEqual([]);
-  });
-});
-
-// --- fetchDomainServices ---
+// --- fetchDomainLogs: RETIRED by #4084 (Logs fold reads chorus:LogSource from the graph; see platform/tests/4084-log-harvest.bats) ---
 
 describe('fetchDomainServices', () => {
   test('shapes endpoints and aggregates byMethod', async () => {
