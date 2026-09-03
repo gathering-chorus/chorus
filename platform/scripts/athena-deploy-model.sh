@@ -726,6 +726,79 @@ if [ -z "${TTL:-}" ]; then
 fi
 
 # =============================================================================
+# INFRA_SET (#4084) — chorus:UnitDomainMapping rows into urn:chorus:domains:infrastructure,
+# the one authored place a launchd unit says which domain it belongs to. Same
+# SAFE-BY-CONSTRUCTION shape as SECURITY_SET (staged load, per-subject additive
+# merge, single-request-truth verify). Generated from the SECURITY block by #4084;
+# keep the two in step.
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  INFRA_GRAPH="${INFRA_GRAPH:-urn:chorus:domains:infrastructure}"
+  INFRA_STAGING="${INFRA_GRAPH}-staging-deploy"
+  INFRA_SET=(
+    # #4084 — the AUTHORED unit → domain mapping rows (ADR-027 / ADR-060 §5); every harvester joins on them.
+    "$CHORUS_ROOT/roles/silas/ontology/unit-domain-4084.ttl"
+  )
+  for ttl in "${INFRA_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "athena-deploy-model: INFRA_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "athena-deploy-model: riot validate FAILED for INFRA_SET $ttl — NOT deploying infrastructure" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="riot-invalid-security" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${INFRA_SET[@]}"; do
+    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-resp.txt -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$INFRA_STAGING" 2>/dev/null) || scode="000"
+    if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
+      echo "athena-deploy-model: INFRA_SET staging load failed for $ttl (http $scode)" >&2
+      head -3 /tmp/chorus-model-infra-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-staging-http-$scode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  SECURITY_MERGE="DELETE { GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INFRA_STAGING> { ?s ?sp ?so } GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INFRA_STAGING> { ?s ?p ?o } }"
+  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-merge.txt -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$SECURITY_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
+  if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
+    echo "athena-deploy-model: INFRA_SET merge staging->security failed (http $smcode)" >&2
+    head -3 /tmp/chorus-model-infra-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-merge-http-$smcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  # #3726 — SINGLE-REQUEST TRUTH: the verify must distinguish "0 subjects missing"
+  # from "could not ask". A bare `| tr -dc 0-9` with `:-0` makes an empty/failed
+  # response read as 0-missing = PASS — the could-not-ask-reads-as-success class
+  # (the same defect as the #3536 guard at :174/:274, carded separately). We
+  # require the CSV to carry its header (?n) AND a numeric row; absent either, the
+  # store did not answer THIS query and we fail-closed rather than pass blind.
+  _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$INFRA_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$INFRA_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: INFRA-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _smissing=$(printf '%s\n' "$_sresp" | tail -1 | tr -dc '0-9')
+  if [ "${_smissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: INFRA-VERIFY FAILED — ${_smissing:-?} staged subject(s) absent from <$INFRA_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-verify-missing" missing="${_smissing:-unknown}" 2>/dev/null || true
+    exit 1
+  fi
+  _sn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?p) AS ?n) WHERE { GRAPH <$INFRA_GRAPH> { ?p a c:UnitDomainMapping } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
+  echo "athena-deploy-model: hydrated ${#INFRA_SET[@]} security file(s) -> <$INFRA_GRAPH> (http $smcode, $_sn unit-domain mappings live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$INFRA_GRAPH" mappings="${_sn}" 2>/dev/null || true
+fi
+
+# =============================================================================
 # PRINCIPLES_SET (#3749) — the 14 PC (Hemenway) principle instances into their
 # ADR-051 home urn:chorus:domains:principles: the graph athena-make's
 # resolve_instances_graph projects from `chorus:principles definesVocabulary

@@ -3975,3 +3975,70 @@ chorus:alerts-monitors-domain chorus:hosts chorus:service-observability .
 chorus:service-observability chorus:atStep chorus:value-stream-step-proving .
 chorus:convergence-domain chorus:hosts chorus:service-integration .
 chorus:service-integration chorus:atStep chorus:value-stream-step-building .
+
+# ============================================================================
+# #4084 — logs domain becomes a graph writer (ADR-060: borrow the semantics,
+# keep our names). LogSource rows are HARVESTED (log-harvest.sh, hourly), never
+# authored; the unit → domain edge is AUTHORED once (UnitDomainMapping rows,
+# unit-domain-4084.ttl, ADR-027) and every harvester joins on it.
+# ============================================================================
+
+chorus:adoptedFrom a owl:AnnotationProperty ;
+    rdfs:label "adopted from" ;
+    rdfs:comment "ADR-060: the industry term whose meaning, cardinality and value set this property borrows, as '<standard>:<term>' (otel:log.file.path, loki:job, alertmanager:labels.severity). The name stays chorus:; import/export is a rename, never a remodel. A property carrying a borrowed name without this citation fails athena-validate." .
+
+chorus:logPath a owl:DatatypeProperty ;
+    rdfs:label "log path" ;
+    rdfs:comment "Absolute path launchd routes the unit's stdout/stderr to (StandardOutPath / StandardErrorPath). ADR-023: ~/Library/Logs/{Chorus,Gathering}/ is the rule; anything else is a finding, not a style." ;
+    chorus:adoptedFrom "otel:log.file.path" ;
+    rdfs:domain chorus:LogSource ; rdfs:range xsd:string .
+
+chorus:lokiJob a owl:DatatypeProperty ;
+    rdfs:label "loki job" ;
+    rdfs:comment "The Loki `job` label under which this source's lines are queryable, when promtail ships it. Absent = the file is written but not shipped (a finding)." ;
+    chorus:adoptedFrom "loki:job" ;
+    rdfs:domain chorus:LogSource ; rdfs:range xsd:string .
+
+chorus:lastWrittenAt a owl:DatatypeProperty ;
+    rdfs:label "last written at" ;
+    rdfs:comment "mtime of the log file at harvest. With the unit's cadence this answers 'loaded but silent' from the graph instead of from chorus-health's file peeks." ;
+    chorus:adoptedFrom "otel:log.record.observed_timestamp" ;
+    rdfs:domain chorus:LogSource ; rdfs:range xsd:dateTime .
+
+chorus:sizeBytes a owl:DatatypeProperty ;
+    rdfs:label "size bytes" ;
+    rdfs:domain chorus:LogSource ; rdfs:range xsd:integer .
+
+chorus:logStatus a owl:DatatypeProperty ;
+    rdfs:label "log status" ;
+    rdfs:comment "active = written in the last 24h · silent = exists, older · missing = path declared, no file · unobservable = the plist declares no StandardOutPath (buzz-tunnel today)." ;
+    rdfs:domain chorus:LogSource ; rdfs:range xsd:string .
+
+chorus:LogSourceShape a sh:NodeShape ;
+    sh:targetClass chorus:LogSource ;
+    chorus:instancesGraph "urn:chorus:domains:logs" ;   # harvested-state graph, domain-named (ADR-051); OUT of MODEL_SET
+    sh:property [ sh:path rdfs:label           ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:launchdLabel  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:onMachine     ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Machine  ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:logPath       ; sh:minCount 0 ; sh:maxCount 2 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lokiJob       ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string   ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:hasDomain     ; sh:minCount 0 ; sh:maxCount 1 ; sh:class chorus:Domain   ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:logStatus     ; sh:minCount 1 ; sh:maxCount 1 ; sh:in ( "active" "silent" "missing" "unobservable" ) ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastWrittenAt ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:sizeBytes     ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:integer  ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:lastObserved  ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:dateTime ; chorus:exposure chorus:public ] .
+    # hasDomain minCount 0 on purpose: a unit with no UnitDomainMapping row is emitted
+    # WITHOUT the edge and counted as unmapped; log-harvest.sh --check goes red on it.
+    # Hiding the row would hide the gap (the skip-counts-as-pass shape, #3734).
+
+chorus:UnitDomainMapping a owl:Class ;
+    rdfs:label "Unit → Domain Mapping" ;
+    rdfs:comment "ADR-027 / ADR-060 §5: the ONE authored place that says which domain a launchd unit (or Loki-only job) belongs to. Every harvester (logs, services, alerts, monitors, the crawler's unit facets) joins on launchdLabel and copies hasDomain from here. Authored rows (unit-domain-4084.ttl); an unmapped unit is a red in log-harvest --check, never a guess." .
+
+chorus:UnitDomainMappingShape a sh:NodeShape ;
+    sh:targetClass chorus:UnitDomainMapping ;
+    chorus:instancesGraph "urn:chorus:domains:infrastructure" ;
+    sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:launchdLabel ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path chorus:hasDomain    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Domain  ; chorus:exposure chorus:public ] ;
+    sh:property [ sh:path rdfs:comment        ; sh:minCount 0 ; sh:maxCount 1 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] .

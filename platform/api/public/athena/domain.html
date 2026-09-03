@@ -5,7 +5,12 @@
      The family's domain view; the richer 17-facet /domain.html (root) remains until
      its facets fold in (consolidation card). Hand-authored pending the generator upgrade. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="model-fold.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
+<link rel="stylesheet" href="athena-flow.css"><style>.tbl{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch}.tbl table{min-width:420px}</style><script src="athena-flow.js"></script><script>
+// #4064/#4084 — one page-wide model base. It was never defined on this page (#3810), so any domain with a
+// vocabulary threw 'OWL is not defined'; defining it inside one function (first fix) left renderFacets without it.
+// Same-origin /owl proxy, resolved through athena-flow's basePath when present, so it works on prod, a werk variant, the LAN and the tunnel.
+var OWL = (typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl';
+</script><script src="model-fold.js"></script><script>mountJourneyNav('domains');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch.
    A root-absolute src on the loader tag is the trap: from /chorus/ the browser resolves it
    against the apex, asks the garden site, gets a 404 — so the file that would have told
    this page where it lives can never load. Chicken-and-egg, and it left three correct
@@ -53,10 +58,6 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       (part ? ` &rarr; <a href="product.html?p=${encodeURIComponent(part)}">${esc(part)}</a>` : '') +
       ` &rarr; ${esc(d)}`;
 
-    // #4064 — OWL was never defined on this page (#3810 left it out), so any domain with
-    // definesVocabulary threw 'OWL is not defined' and rendered as a fetch failure.
-    // Same-origin /owl proxy, so links work on prod, a werk variant and the LAN alike.
-    const OWL = (typeof window.basePath === 'function') ? window.basePath('/owl') : '/owl';
     const vocab = asArray(e.definesVocabulary).sort();
     const vocabRows = vocab.map(v =>
       `<tr><td>${esc(v)}</td><td><a class="edge" href="${OWL}/${esc(v.toLowerCase())}s">:3360/${esc(v.toLowerCase())}s</a></td></tr>`).join('');
@@ -114,14 +115,20 @@ async function renderFacets(d) {
     { t: 'Releases', u: DOM + fid + '/releases', k: 'releases', cols: ['timestamp', 'cardId', 'title', 'role'] },
     { t: 'Infrastructure', u: DOM + fid + '/infra', k: 'environments', cols: ['name', 'port', 'engine', 'host'] },
     { t: 'Decisions', u: DOM + fid + '/decisions', k: 'decisions', cols: ['id', 'title', 'type', 'date'] },
-    { t: 'Logs', u: DOM + fid + '/logs', k: 'logs', cols: ['label', 'location', 'status'] },
+    // #4084 — the FIRST fold read from the graph, not a v1 registry: chorus:LogSource rows (harvested hourly by
+    // log-harvest.sh) carrying hasDomain from the authored UnitDomainMapping rows. Filtered client-side on the
+    // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
+    { t: 'Logs', u: OWL + '/logsources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === d,
+      cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + d },
     { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
     { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
     { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
     { t: 'Gaps & Status', u: ATHENA + fid + '/gaps', k: 'gaps', cols: ['type', 'description', 'severity'] },
   ];
+  function tail(iri) { return String(iri || '').split('#').pop().replace(/^chorus:/, ''); }
   function unwrap(b, k, alt) {
+    if (b && Array.isArray(b.data)) return b.data;   // #4084: an athena-make collection envelope carries its rows in `data`
     const dd = (b && b.data) || b || {};
     const v = dd[k] || (alt ? dd[alt] : null) || [];
     return Array.isArray(v) ? v : [];
@@ -129,9 +136,9 @@ async function renderFacets(d) {
   function table(items, cols) {
     const head = cols.map(c => `<th>${esc(c)}</th>`).join('');
     const rows = items.slice(0, 40).map(it =>
-      `<tr>${cols.map(c => `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : esc(String(it[c] ?? '').slice(0, 120))}</td>`).join('')}</tr>`).join('');
+      `<tr>${cols.map(c => { const v = String(it[c] ?? ''); const short = /^\/.+\//.test(v) && v.length > 28 ? `<span title="${esc(v)}">…/${esc(v.split('/').pop())}</span>` : esc(v.slice(0, 120)); return `<td>${c === 'id' && it[c] ? '#' + esc(it[c]) : short}</td>`; }).join('')}</tr>`).join('');
     const more = items.length > 40 ? `<p class="empty">…and ${items.length - 40} more</p>` : '';
-    return `<table><tr>${head}</tr>${rows}</table>${more}`;
+    return `<div class="tbl"><table><tr>${head}</tr>${rows}</table></div>${more}`;   // #4084: Jeff on his phone: the Logs table ran off the right edge; the fold scrolls its own table now
   }
   const bodies = await Promise.all(FACETS.map(f =>
     fetch(f.u).then(r => r.ok ? r.json() : null).catch(() => null)));
@@ -148,10 +155,11 @@ async function renderFacets(d) {
         : '<div class="empty">none recorded</div>';
     } else {
       const items = unwrap(b, f.k, f.alt);
-      count = items.length;
-      inner = count ? table(items, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
+      const rows = f.filter ? items.filter(f.filter) : items;
+      count = rows.length;
+      inner = count ? table(rows, f.cols) : `<div class="empty">no ${f.t.toLowerCase()} for this domain</div>`;
     }
-    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">materialized &middot; live</span></summary><div class="body">${inner}</div></details>`;
+    return `<details class="fold"${count ? ' open' : ''}><summary>${f.t} (${count}) <span class="src">${f.graph ? esc(f.src) + ' &middot; graph' : 'materialized &middot; live'}</span></summary><div class="body">${inner}</div></details>`;
   }).join('');
 }
 </script>

@@ -150,7 +150,19 @@ chorus:logs a owl:Class, chorus:Domain ;
   chorus:purpose "Aggregate and query the system's logs via Loki — structured runtime observability." ;
   chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/api/src/handlers/logs-query.ts" ; chorus:definesVocabulary chorus:LogSource .
+  chorus:repoTarget "platform/api/src/handlers/logs-query.ts" ; chorus:definesVocabulary chorus:LogSource ;
+  # #4084 — the row made whole (DomainShape: status, gaps, hasDesignDoc) and given its instances graph.
+  chorus:status "building" ;
+  chorus:instancesGraph "urn:chorus:domains:logs" ;
+  chorus:gaps """Measured 2026-09-03: 78 launchd units declare a log path; none was a graph row until #4084. Two units log to /tmp (posture-capture, service-harvest) and one declares no StandardOutPath (buzz-tunnel), against ADR-023. Promtail ships 34 Loki jobs; units whose file is written but never shipped are the next finding the harvest surfaces. Bedroom units are harvested by service-harvest but their log files are not stat'd from Library yet (lastWrittenAt absent for bedroom rows).""" ;
+  chorus:hasDesignDoc chorus:document-domain-design-logs .
+
+chorus:document-domain-design-logs a chorus:Document ;
+  chorus:label """Domain Design — Logs""" ; rdfs:label """Domain Design — Logs""" ; chorus:docTitle """Domain Design — Logs""" ;
+  chorus:docHref """/athena/domain.html?d=logs""" ;
+  chorus:comment """The logs domain's design is its rows (#4084): purpose and gaps on the Domain row; every log source a harvested LogSource row (unit, machine, path, Loki job, last written, status) carrying the domain it belongs to from the authored UnitDomainMapping rows. No hand-written design page.""" ;
+  rdfs:comment """The logs domain's design is its rows (#4084).""" ;
+  chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:role-silas ; chorus:hasProduct chorus:borgProduct .
 
 chorus:alerts-monitors a owl:Class, chorus:Domain ;
   rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;
@@ -196,7 +208,9 @@ chorus:infrastructure a owl:Class, chorus:Domain ;
   chorus:purpose "Hold the physical substrate the team runs on — host machines, stores, and LaunchAgents." ;
   chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
   chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:PersistenceStore .
+  chorus:repoTarget "platform/apps" ; chorus:definesVocabulary chorus:Machine, chorus:PersistenceStore, chorus:UnitDomainMapping ;
+  # #4084 — UnitDomainMapping is the authored unit → domain edge every harvester joins on (ADR-027); homed here because units are infrastructure.
+  chorus:instancesGraph "urn:chorus:domains:infrastructure" .
 
 chorus:analytics a owl:Class, chorus:Domain ;
   rdfs:label "analytics" ; chorus:comment "Usage analytics and behavioral signals — attention, interaction patterns." ;
