@@ -609,6 +609,16 @@ pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
     scope.iter().any(|g| g == target_graph)
 }
 
+/// #4096 — scope by ROW, not by graph, for classes that carry an owner (Silas,
+/// 2026-09-03 17:11: "the graph owner governs the class and shape; the row's
+/// ownedBy governs who writes the row"). A Commitment owned by silas lives in the
+/// services graph, which wren owns; silas writes it. Create injects the caller
+/// as owner; replace and delete already refuse a non-owner (authz_allows). A class
+/// with no owner field stays graph-governed: the token's scope must name the graph.
+pub fn row_owner_governed(fields: &[String]) -> bool {
+    fields.iter().any(|f| f.split('|').next() == Some("ownedBy"))
+}
+
 /// Authentication alone is not write authority. A model Principal may exist
 /// without a holdsRole edge (guest/service identity); such a principal gets an
 /// empty resolved agent id and must never create an entity with ownedBy="".
@@ -4696,8 +4706,10 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     } else if !target_graph.is_empty() && target_graph != effective_target {
                         ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
                          ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
-                    } else if !scope_allows(effective_target, &claims.scope) {
-                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope (#3573/#3689)\" }}", json_escape(effective_target))),
+                    } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
+                        // #4096 — an owned class is governed by the row's owner (checked in
+                        // handle_write); only an ownerless class needs the graph in scope.
+                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
                          ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                     } else {
                         let role = claims.agent_id.clone();
@@ -5772,6 +5784,23 @@ mod tests {
     fn scope_allows_grants_write_to_in_scope_graph() {
         // the 200 case: token scoped to tests' instance graph, writing there
         assert!(scope_allows("urn:chorus:domains:tests", &["urn:chorus:domains:tests".to_string()]));
+    }
+
+    #[test]
+    /// #4096 — an owned class is row-governed: the graph need not be in the token's
+    /// scope (the owner check in handle_write governs). NEGATIVE PROOF: a class with
+    /// no ownedBy field is still graph-governed, so the same out-of-scope write is refused.
+    #[test]
+    fn owned_classes_are_row_governed_and_ownerless_classes_stay_graph_governed() {
+        let owned = vec!["label".to_string(), "ownedBy|edge:Role".to_string(), "statement".to_string()];
+        let ownerless = vec!["label".to_string(), "trigger".to_string()];
+        assert!(row_owner_governed(&owned));
+        assert!(!row_owner_governed(&ownerless));
+        let scope = vec!["urn:chorus:domains:security".to_string()];
+        let target = "urn:chorus:domains:services";
+        // the gate's expression, verbatim: refused only when out of scope AND ownerless
+        assert!(!( !scope_allows(target, &scope) && !row_owner_governed(&owned) ), "owned class writes to a graph outside its scope");
+        assert!(   !scope_allows(target, &scope) && !row_owner_governed(&ownerless),  "ownerless class is still refused");
     }
 
     #[test]
