@@ -297,7 +297,7 @@ chorus:loom a chorus:Product ;
     rdfs:label """Loom""" ;
     chorus:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
     rdfs:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
-    chorus:ownedBy chorus:role-jeff ;
+    chorus:ownedBy chorus:role-wren ;   # #4096: was role-jeff — a human principal resolves to no writing role, so nobody could write this row through the door; Loom is Wren's product (principles, practices, policies)
     chorus:vision """The team's operating model held as a coherent, validated model: every principle, practice, policy, decision, role and skill a real entry with a shape, and the loop from experience back to principle closed.""" ;
     chorus:valueProposition """Coordination without a switchboard: the rules of working are written down, enforced where actions happen, and fed back from experience, rather than remembered and relayed by one person.""" ;
     chorus:audience """The team, for whom Loom holds the persistent operating frame; and any team adopting the method, which receives a working normative model rather than a pile of documents.""" ;
