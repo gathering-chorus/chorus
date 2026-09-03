@@ -40,7 +40,8 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # tests below failed on exit 127 (command not found) rather than on the schema.
 SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
-TEST_GRAPH="urn:chorus:ontology-test-bats-3540"
+# per-run graph name: two pipelines (e.g. wren-4080 + silas-4084, 2026-09-03 10:20) ran this file at once against one store and one cleared the graph mid-ASK — test-wrong, not product-wrong
+TEST_GRAPH="urn:chorus:ontology-test-bats-3540-$$"
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#>'
