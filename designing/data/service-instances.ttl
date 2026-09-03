@@ -121,6 +121,27 @@ chorus:service-tests a chorus:Service ;
     chorus:overview "The service that answers 'is it tested, and did it pass' for every card and every night: the registry of tests (the tests domain, one row per test with layer, concern, hermeticity, covers), the runner that selects from that registry and executes it (werk-test: the blocking floor of every land and the whole-registry nightly), the evidence it stores (one TestResult per case), and the surfaces that read the evidence (the readout to Jeff, /nightly, the census). INSIDE iff its subject is a test's identity, selection, execution, evidence or readout." ;
     chorus:ownedBy chorus:role-kade ;
     chorus:atStep chorus:value-stream-step-building ;   # Jeff, 2026-09-03 11:44: "isnt it building" — the test step is part of Building; the demo is Proving
+    # #4093 — the flows, as data (chorus:diagram, Wren's #4094: repeatable mermaid, %% caption first line)
+    chorus:diagram """%% As is (2026-09-03): the runner as it runs — a bash wrapper around the Rust binary, a python hydrator writing the registry
+flowchart LR
+  H[test file headers] --> HY[hydrator, every 15 min]
+  HY --> REG[(registry graph)]
+  REG --> WT[werk-test]
+  NS[nightly wrapper, 03:00] --> WT
+  CARD[card diff] --> WT
+  WT --> L1[cargo] & L2[jest] & L3[node test] & L4[bats] & L5[shell] & L6[ui]
+  L1 & L2 & L3 & L4 & L5 & L6 --> WB[write-back]
+  WB --> LED[(results ledger)]
+  LED --> RO[readout: page, nudge, census]
+  NS -. coverage, shell, census legs .-> RO""" ;
+    chorus:diagram """%% To be: one binary — the nightly is the same runner with selection = everything; wrapper and hydrator folded in; every registered test has a lane; the census reads zero
+flowchart LR
+  H[test file headers] --> WT[werk-test: registry, lanes, evidence, readout]
+  CARD[card diff] --> WT
+  ALL[selection = everything, 03:00] --> WT
+  WT --> LED[(results ledger)]
+  LED --> RO[readout in Jeff's tree: card, domain, kind]
+  LED --> CEN[census = 0]""" ;
     chorus:status "building" ;
     chorus:asIs "Live: registry hydrated every 15 min from @test-type headers (7,808 tests); werk-test blocks every land and runs the 03:00 nightly (327 units, ~55 min); per-case results store under the nightly principal (#3975) and a run that loses its evidence fails (#4015); every red is labelled product-broke / test-wrong / unmeasured and delivered to Jeff after each run (#4060, #4073). Hard truths on 2026-09-03: the nightly still runs through a bash wrapper around the Rust runner and every red fixed that day sat on that seam (#4063); 149 registered tests never store a result, 112 of them in files no lane runs; the design of record was an unread HTML draft for eleven weeks." ;
     chorus:toBe "One binary: the nightly is the same runner every land uses with selection = everything, the bash legs and the python hydrator gone (#4017); the runner reports in Jeff's tree (card → domain → unit / page / integration / security), not by tool; every registered test has a lane and every executed case joins its registered identity, so the census reads zero; a red keeps its own evidence." ;

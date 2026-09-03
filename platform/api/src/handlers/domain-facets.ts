@@ -43,11 +43,34 @@ export async function fetchDomainTests(
     // `covers`), not URI-keyed — use resolver.primary for the lookup.
     const identity = resolveDomainIdentity(subdomainName);
     const domain = identity.primary;
-    const scanData = await qualityByDomain(domain);
-    let tests = (scanData.layers || []).flatMap((l) =>
-      (l.files || []).map((f) => ({ path: f.name, type: l.key })),
-    );
-    let total = scanData.total || 0;
+    // #4093 — the REGISTRY first (Jeff, 2026-09-03: "the domains ultimately will show true
+    // state"). The tests domain graph holds one row per registered test with the domain
+    // it covers; the scanner below is a heuristic projection that answered "1 test" for
+    // the tests domain itself while the registry held hundreds. Files are listed once
+    // with their layer; total is the number of registered CASES.
+    let tests: Array<{ path: string; type: string }> = [];
+    let total = 0;
+    try {
+      const covers = `https://jeffbridwell.com/chorus#${domain}`;
+      const rq = `PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?f ?l (COUNT(?t) AS ?n) WHERE { GRAPH <urn:chorus:domains:tests> { ?t a chorus:Test ; chorus:covers <${covers}> ; chorus:filePath ?f . OPTIONAL { ?t chorus:pyramidLayer ?l } } } GROUP BY ?f ?l ORDER BY ?f`;
+      const rr = await deps.sparql(rq);
+      // only rows shaped like the registry answer count (a binding with no ?f is not a test)
+      const rows = ((rr as { results?: { bindings?: Array<{ f?: { value?: string }; l?: { value?: string }; n?: { value?: string } }> } }).results?.bindings ?? [])
+        .filter((b) => !!b.f?.value);
+      if (rows.length > 0) {
+        tests = rows.map((b) => ({ path: b.f?.value || '', type: b.l?.value || 'unknown' }));
+        total = rows.reduce((acc, b) => acc + (parseInt(b.n?.value || '0', 10) || 0), 0);
+      }
+    } catch {
+      // registry unreachable: fall through to the scanner, never a 500
+    }
+    if (tests.length === 0) {
+      const scanData = await qualityByDomain(domain);
+      tests = (scanData.layers || []).flatMap((l) =>
+        (l.files || []).map((f) => ({ path: f.name, type: l.key })),
+      );
+      total = scanData.total || 0;
+    }
     // #2485 — fall back to chorus:TestCoverage instances graph when upstream
     // has nothing (loom-* and other chorus-side subdomains the gathering-app
     // quality scanner doesn't see). Closes the follow-on parked at the top of
