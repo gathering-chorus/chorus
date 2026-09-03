@@ -341,13 +341,16 @@ flowchart LR
 </ol>
 
 <h2>Commitments (from the graph)</h2>
-<p>Every promise this design makes is a <code>chorus:Commitment</code> row on its service (#4064), not a sentence to re-read. This list is fetched from the model, never copied here. Open with no card = unowned work. Query: <code>commitment-check.sh</code> or <code>GET /v1/commitments</code> on the model API.</p>
+<p>Every promise this design makes is a <code>chorus:Commitment</code> row on its service (#4064), not a sentence to re-read. This list is fetched from the model, never copied here. Open with no card = unowned work. Query: <code>commitment-check.sh</code> or <code>GET /owl/commitments</code> on the model API.</p>
 <div id="commitments"><em>Loading commitments from the model API…</em></div>
 <script>
 (function () {
   var el = document.getElementById('commitments');
-  var base = (window.CHORUS_MODEL_API || 'http://localhost:3360');
-  fetch(base + '/v1/commitments?limit=200').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+  // same-origin model proxy (/owl -> athena-make), so the page works on prod, on a
+  // demo variant, and off-LAN through a tunnel; the bare collection path serves the
+  // rows (the /v1 prefix answered an empty list on 2026-09-03).
+  var base = (window.CHORUS_MODEL_API || '/owl');
+  fetch(base + '/commitments?limit=200').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function (d) {
       var rows = d.items || d.data || d.rows || [];
       if (!rows.length) { el.innerHTML = '<p><strong>No commitment rows served.</strong> The class is in the schema but no rows are live — that is a fetch of zero, not an empty design.</p>'; return; }
