@@ -1,3 +1,7 @@
+# #4102 — every row carries its owner. Rows with no owner cannot be written
+# through the door at all (a role's token signs its own rows), so they were
+# loaded straight from this file, around the API. Jeff, 2026-09-04: cards,
+# practices and principles are Wren's.
 # #3749 — the 14 PC (Hemenway) principles, migrated to their ADR-051 home:
 # urn:chorus:domains:principles (loaded by the PRINCIPLES_SET section of
 # chorus-model-deploy.sh — the SECURITY_SET per-graph pattern). Moved from
@@ -12,6 +16,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 chorus:hemenway-observe a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Observe" ;
     rdfs:comment "Use protracted and thoughtful observation rather than prolonged and thoughtless action. In the garden, this may mean noting where the sun and its shade fall during the day, where water collects, and in which direction the winds blow. Think over seasons, years." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed. (Chelsea Green, 2009), p. 6." ;
@@ -23,6 +28,7 @@ chorus:hemenway-observe a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-connect a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Connect" ;
     rdfs:comment "Use relative location — place the elements of your design in ways that create useful relationships and time-saving connections among all parts. The number of connections among useful elements makes a healthy, diverse ecosystem, not the number of elements." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -34,6 +40,7 @@ chorus:hemenway-connect a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-catch-and-store a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Catch and store energy and materials" ;
     rdfs:comment "Identify, collect, and hold useful flows. Every cycle is an opportunity for yield; every gradient (in slope, charge, temperature, or otherwise) is an opportunity for energy." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -45,6 +52,7 @@ chorus:hemenway-catch-and-store a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-each-element-multiple-functions a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Each element performs multiple functions" ;
     rdfs:comment "Choose and place each element in a design so that it performs as many functions as possible. Beneficial connections between diverse components create a stable whole. Stack elements in both space and time." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -56,6 +64,7 @@ chorus:hemenway-each-element-multiple-functions a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-function-supported-by-multiple-elements a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Each function is supported by multiple elements" ;
     rdfs:comment "Use multiple methods to achieve important functions and to create redundancy and backup. Redundancy protects when one or more elements fail." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -67,6 +76,7 @@ chorus:hemenway-function-supported-by-multiple-elements a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-least-change-greatest-effect a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Make the least change for the greatest effect" ;
     rdfs:comment "Understand the system you are working with well enough to find its 'leverage points' and intervene there, where the least work accomplishes the most change." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -78,6 +88,7 @@ chorus:hemenway-least-change-greatest-effect a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-small-scale-intensive-systems a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Use small-scale, intensive systems" ;
     rdfs:comment "Start at your doorstep with the smallest systems that will do the job and build on your successes. Grow by 'chunking' — that is, developing a small system or arrangement that works well — and then add it to another one." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
@@ -89,6 +100,7 @@ chorus:hemenway-small-scale-intensive-systems a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-optimize-edge a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Optimize edge" ;
     rdfs:comment "The edge — the intersection of two environments — is where resources and interactions are highest. A productive edge is where the most diversity and productivity are found." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -100,6 +112,7 @@ chorus:hemenway-optimize-edge a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-collaborate-with-succession a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Collaborate with succession" ;
     rdfs:comment "Living systems usually advance from immaturity to maturity, and if we accept this trend and align our designs with it instead of fighting it, we save work and energy. Mature ecosystems are more diverse and productive than young ones." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -111,6 +124,7 @@ chorus:hemenway-collaborate-with-succession a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-biological-renewable-resources a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Use biological and renewable resources" ;
     rdfs:comment "Renewable resources — usually living beings and their products — reproduce and build up over time, store energy, assist yield, and interact with other elements. Favor these over nonrenewable resources." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -122,6 +136,7 @@ chorus:hemenway-biological-renewable-resources a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-turn-problems-into-solutions a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Turn problems into solutions" ;
     rdfs:comment "Constraints can inspire creative design; problems usually carry not just the seeds of their own solution, but the inspiration for simultaneously solving other problems. 'You are confronted by formidable problems? Celebrate, for you have just encountered opportunities!'" ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -133,6 +148,7 @@ chorus:hemenway-turn-problems-into-solutions a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-get-a-yield a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Get a yield" ;
     rdfs:comment "Grow for both immediate and long-term rewards. A designer's discipline as much as a system property — listed under Hemenway's 'Principles Based on Attitudes.'" ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -144,6 +160,7 @@ chorus:hemenway-get-a-yield a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-creativity-is-the-limit a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "The biggest limit to abundance is creativity" ;
     rdfs:comment "The designer's imagination and skill usually limit productivity and diversity before any physical limits are reached." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;
@@ -155,6 +172,7 @@ chorus:hemenway-creativity-is-the-limit a chorus:Principle ;
     chorus:principleKind "pc" .
 
 chorus:hemenway-mistakes-are-tools-for-learning a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Mistakes are tools for learning" ;
     rdfs:comment "Evaluate your trials. Making mistakes is a sign you're trying to do things better. There is usually little penalty for mistakes if you learn from them." ;
     dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 7." ;

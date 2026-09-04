@@ -1983,7 +1983,14 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         .iter()
         .map(|field| field.split('|').next().unwrap_or(field))
         .collect();
-    if let Some(bad) = values.keys().find(|key| key.as_str() != "name" && !declared.contains(key.as_str())) {
+    // #4102 — `label` is written by the DAL on EVERY row whether a shape declares
+    // it or not, and every collection read serves it back. Refusing it on write
+    // made the read unusable as a write body: hand back what the page shows and
+    // the door says the field is off-model. Name is the identity, label is the
+    // name a person reads; both are universal, so neither is off-model.
+    if let Some(bad) = values.keys().find(|key| {
+        key.as_str() != "name" && key.as_str() != "label" && !declared.contains(key.as_str())
+    }) {
         return Err(CreatePrepareError {
             tag: "validation",
             spine_result: "off-model",
@@ -2222,7 +2229,10 @@ pub fn off_model_property(body: &str, fields: &[String]) -> Option<String> {
     let declared: std::collections::HashSet<&str> =
         fields.iter().map(|f| f.split('|').next().unwrap_or(f)).collect();
     for key in json_top_level_keys(body) {
-        if key == "name" || key == "target" { continue; } // write-envelope, not shape props
+        // #4102 — `label` rides with every row: the DAL writes one whether the
+        // shape declares it or not, and every collection read serves it back, so
+        // a body echoing a read must be allowed to carry it.
+        if key == "name" || key == "target" || key == "label" { continue; } // write-envelope, not shape props
         if !declared.contains(key.as_str()) {
             return Some(key);
         }
