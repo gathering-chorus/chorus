@@ -1238,22 +1238,47 @@ NIGHTLY_LOCKDIR="${NIGHTLY_LOCKDIR:-${TMPDIR:-/tmp}/chorus-nightly-suites.lock.d
 # so the negative proof can capture the call.
 refuse_single_flight() {
   local holder; holder=$(cat "$NIGHTLY_LOCKDIR/pid" 2>/dev/null)
-  echo "nightly-suites: another run holds $NIGHTLY_LOCKDIR (pid $holder) — exiting cleanly (single-flight, #3597)" >&2
+  # #4008 — the refusal names its state: a live HOLDER, or a dead holder whose RUNNER
+  # is still alive (pid + age). Typed, loud; the caller exits 0 (declared, never silent).
+  local why="${NIGHTLY_REFUSE_REASON:-holder pid $holder is alive}"
+  echo "nightly-suites: REFUSED — $why — one run at a time (single-flight, #3597/#4008), lock $NIGHTLY_LOCKDIR" >&2
   local ops_nudge="${OPS_NUDGE:-${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/ops-nudge}"
   if [ -x "$ops_nudge" ]; then
-    "$ops_nudge" silas "nightly-suites: scheduled run SKIPPED — pid $holder still holds the single-flight lock (#4037). The run did not happen; check the straggler." || true
+    "$ops_nudge" silas "nightly-suites: scheduled run SKIPPED — $why (#4037/#4008). The run did not happen; check the straggler." || true
   fi
+}
+
+# #4008 — the runners that must not overlap: any nightly runner process alive on the
+# box, whoever spawned it. The 2026-08-25 orphan: the wrapper died, its pid was gone,
+# the lock was stolen, and a second lane ran beside the orphaned `werk-test --nightly`
+# for 1h52m. Holder-alive is not the question; runner-alive is. Output: one
+# "<pid> <etime> <command>" line per live runner (never this process or its parent).
+# NIGHTLY_PS is the seam the proof stubs (a command printing ps -eo pid,ppid,etime,command).
+nightly_live_runners() {
+  local marker="${NIGHTLY_RUNNER_MARKER:-werk-test --nightly|nightly-suites.sh --run-all}"
+  ${NIGHTLY_PS:-ps -eo pid,ppid,etime,command} 2>/dev/null \
+    | awk -v self="$$" -v parent="$PPID" -v re="$marker" 'NR > 1 && $1 != self && $1 != parent && $0 ~ re { pid=$1; et=$3; $1=$2=$3=""; sub(/^ +/, ""); print pid, et, $0 }'
 }
 
 acquire_single_flight_lock() {
   local d="$NIGHTLY_LOCKDIR"
+  NIGHTLY_REFUSE_REASON=""
   if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
   local oldpid; oldpid=$(cat "$d/pid" 2>/dev/null || true)
   if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    NIGHTLY_REFUSE_REASON="holder pid $oldpid is alive"
     return 1   # a live run holds the lock
   fi
-  rm -rf "$d" 2>/dev/null   # stale (dead/absent holder) — steal it
+  # #4008 — the holder is dead; before stealing, ask whether its RUNNER is still going
+  local live; live=$(nightly_live_runners | head -1)
+  if [ -n "$live" ]; then
+    local rpid rage; rpid=${live%% *}; rage=$(printf '%s' "$live" | awk '{print $2}')
+    NIGHTLY_REFUSE_REASON="holder pid ${oldpid:-none} is dead but runner pid $rpid is alive (age $rage)"
+    return 1
+  fi
+  rm -rf "$d" 2>/dev/null   # stale (dead holder, no runner) — steal it
   if mkdir "$d" 2>/dev/null; then echo $$ > "$d/pid"; return 0; fi
+  NIGHTLY_REFUSE_REASON="lock $d could not be taken"
   return 1
 }
 # #4008/#4009 — the trap freed the LOCK but never killed the lane, so a killed
@@ -1457,6 +1482,18 @@ PYEOF
     _lg=$(_load_gate); _lg_rc=$?
     echo "$_lg"
     exit "$_lg_rc"
+    ;;
+  --lock-probe)
+    # #4008 — take the single-flight decision and nothing else: prints ACQUIRED or
+    # REFUSED <reason>, releases what it took, exits 0 either way. The proof drives
+    # this with NIGHTLY_LOCKDIR + NIGHTLY_PS stubbed, so both states are shown.
+    if acquire_single_flight_lock; then
+      echo "ACQUIRED"
+      rm -rf "$NIGHTLY_LOCKDIR" 2>/dev/null || true
+    else
+      echo "REFUSED $NIGHTLY_REFUSE_REASON"
+    fi
+    exit 0
     ;;
   --run-all)
     # #3597 single-flight: refuse to run concurrently with another nightly.
