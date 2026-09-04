@@ -194,7 +194,13 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const PLURAL = 'products', ROWNAME = p, CURRENT = e;
     // #4102 — History: the fold is shared by product, service and document
     // (athena/history-fold.js) so one change to how a diff reads changes all three.
-    const histHtml = await historyFold('products', p, e)   // `e` already merges the collection row (edges, bare) with the entity literals;
+    const histHtml = await historyFold('products', p, e);   // `e` already merges the collection row (edges, bare) with the entity literals
+    // #4102 — the design document's history is a fold on THIS page (Jeff,
+    // 2026-09-04: "its just a fold on the main page"): a document is read
+    // through the product it belongs to, so it gets no page of its own.
+    const docHist = designDoc && designDoc.name
+      ? (await historyFold('documents', String(designDoc.name).replace(/^document-/, ''), designDoc)).replace('id="history"', 'id="dochistory"').replace('History<span', 'Design doc history<span')
+      : '';;
 
     main.innerHTML = `
 <div class="hero">
@@ -204,7 +210,6 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     <span>${stepBadge(e.atStep)}</span>
     <span><em>${esc(e.status || 'no status')}</em></span>
     ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
-    ${designDoc && designDoc.name ? `<a href="document.html?d=${encodeURIComponent(designDoc.name)}">its history &rarr;</a>` : ''}
     ${e.version ? `<span class="changed" title="version = how many times this row has been saved; the date is the last save; both written automatically">v${esc(String(e.version))}${e.docState ? ` &middot; ${esc(String(e.docState))}` : ''} &middot; changed ${esc(localDay(e.changedAt))}</span>` : '<span class="unwritten">not yet saved through the API</span>'}
   </div>
 </div>
@@ -214,6 +219,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <div class="foldall"><a data-fold="open">expand all</a><a data-fold="close">collapse all</a></div>
 ${chapterHtml}
 ${histHtml}
+${docHist}
 ${restHtml}
 <div class="prov">Rendered from <code>GET /products/${esc(p)}</code> &middot; ${Object.keys(shape).length} properties on the Product shape &middot; ${['created', 'modified'].filter(k => e[k]).map(k => `${k} ${esc(String(e[k]).slice(0, 10))}`).join(' &middot; ')}</div>`;
     // remember each fold's state; expand/collapse all; a toc jump opens its target

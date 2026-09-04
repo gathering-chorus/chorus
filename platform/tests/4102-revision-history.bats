@@ -92,7 +92,7 @@ for same in ("promise", "vision", "structure", "audience"):
   fold="$ROOT/platform/api/public/athena/history-fold.js"
   grep -q "id=\"history\"" "$fold"
   grep -q "const diffOf" "$fold"
-  for f in product service document; do
+  for f in product service; do
     grep -q "history-fold.js" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not load the fold"; false; }
     grep -q "await historyFold(" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not render the fold"; false; }
     # negative proof (#3734): no page keeps a private copy of the diff
@@ -134,7 +134,9 @@ print(json.dumps(keep))')"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   n="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   [ "$n" -eq $((before + 1)) ] || { echo "document revisions before=$before after=$n"; false; }
-  # the page a person opens for that history exists and reads the same fold
-  grep -q "historyFold('documents'" "$ROOT/platform/api/public/athena/document.html"
-  grep -q "document.html?d=" "$ROOT/platform/api/public/athena/product.html"
+  # a document has no page of its own (Jeff, 2026-09-04: "its just a fold on the
+  # main page") — its history is a second fold on the product that owns it
+  grep -q "historyFold('documents'" "$ROOT/platform/api/public/athena/product.html"
+  grep -q 'id="dochistory"' "$ROOT/platform/api/public/athena/product.html"
+  [ ! -f "$ROOT/platform/api/public/athena/document.html" ]
 }
