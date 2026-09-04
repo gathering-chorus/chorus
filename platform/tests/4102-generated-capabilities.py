@@ -183,9 +183,12 @@ def main():
     index = get("/")
     collections = [p["collection"] for p in index.get("primitives", []) if p.get("collection")]
     results = []
-    check_shared_refusals(results)
+    # the kinds first, then the refusals: a refusal probe writes to a row it does
+    # not own, and running it first left the next kind's check reading state the
+    # probe had touched (a products FAIL that did not reproduce on its own)
     for c in collections:
         check_kind(c, results)
+    check_shared_refusals(results)
     width = max(len(n) for _, n, _ in results)
     for verdict, name, detail in results:
         print("%-11s %-*s %s" % (verdict, width, name, detail))

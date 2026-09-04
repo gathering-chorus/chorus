@@ -40,3 +40,13 @@ card:roles/kade/ontology/commitment-card-stubs.ttl
 # cycle. Security first (#4064), tests second (#4089); the next service adds a line.
 commitment:roles/silas/ontology/security-commitments-4064.ttl
 commitment:roles/kade/ontology/tests-commitments-4089.ttl
+# #4102 — practices and principles are READY to post through the door: their
+# rows now carry an owner. They are NOT listed here yet because the values lane
+# of the model deploy gates on principles being live, and the post leg runs
+# after it — listing them here empties the principles graph at gate time and the
+# deploy fails closed (measured 2026-09-04 15:55: "VALUES-EDGE-GATE FAILED — 16
+# expressedBy target(s) are not live Principles"). Same ordering class as #4101.
+# Move the values edge-gate after the post leg, then add the three lines below.
+#   principle:roles/wren/ontology/principles-instances-3749.ttl
+#   principle:roles/wren/ontology/principles-xp-4006.ttl
+#   practice:roles/kade/ontology/practices-3754-instances.ttl
