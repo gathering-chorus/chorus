@@ -2504,11 +2504,30 @@ fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<Str
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
+/// Splice two flat JSON objects into one. Used to put a row's edges back beside
+/// its literals for the revision snapshot; either side may be empty (`{  }`).
+fn merge_json_objects(a: &str, b: &str) -> String {
+    let inner = |o: &str| o.trim().trim_start_matches('{').trim_end_matches('}').trim().to_string();
+    let (ai, bi) = (inner(a), inner(b));
+    match (ai.is_empty(), bi.is_empty()) {
+        (true, true) => "{  }".to_string(),
+        (true, false) => format!("{{ {} }}", bi),
+        (false, true) => format!("{{ {} }}", ai),
+        (false, false) => format!("{{ {}, {} }}", ai, bi),
+    }
+}
+
 /// #4102 — write the row's CURRENT version as a Revision (kind revision, name
 /// `<kind>-<name>-v<version>`), snapshot = the row's data JSON as served. Rows
 /// without a version (never written through the door since #4101) keep "0".
 fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str) -> R<()> {
-    let (data, _links) = entity_json(&table.class, name, &table.exposure, true, &table.instances_graph)?;
+    // The snapshot must carry the EDGES too, not only the literals: AC2's diff is
+    // "an added domain, a removed diagram", and both are edges. entity_json splits
+    // them (#3635 read-surface quirk — an entity read serves literals, edges come
+    // back separately), so a snapshot built from `data` alone could never show the
+    // change Jeff asked to see.
+    let (data, links) = entity_json(&table.class, name, &table.exposure, true, &table.instances_graph)?;
+    let data = merge_json_objects(&data, &links);
     let prev = query_version(&table.class, name, &table.instances_graph).unwrap_or_else(|| "0".to_string());
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let kind = kind_of_class(class_local);
@@ -2524,7 +2543,10 @@ fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str)
         if let Some(v) = json_field(&fields[3].1, k) { fields.push((k.to_string(), v)); }
     }
     let edges = vec![("ownedBy".to_string(), "role".to_string(), caller_role.to_string())];
-    dal_add("revision", &rev_name, token, &fields, &edges, "urn:chorus:instances")
+    // A revision lives beside the row it is a revision OF — the row's own domain
+    // graph, never a catch-all (Jeff, 2026-09-03: no rows in the ontology graph,
+    // no catch-all instances graph).
+    dal_add("revision", &rev_name, token, &fields, &edges, &table.instances_graph)
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {

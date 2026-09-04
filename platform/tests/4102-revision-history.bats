@@ -31,7 +31,19 @@ revisions_of() { curl -sf --max-time 10 "$OWL_URL/revisions" | python3 -c 'impor
   body="$(printf '%s' "$row" | python3 -c '
 import sys, json
 r = json.load(sys.stdin)
-keep = {k: v for k, v in r.items() if k not in ("name","version","changedAt","changedIn","modified","created","ownedBy","label") and v not in ("", None, [])}
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
+# a read serves edge targets MINTED (chorus:value-stream-step-directing); the
+# write mint adds the kind prefix itself (ADR-040 Rule 0), so a body echoing a
+# read must hand back the bare name or the door refuses it double-prefixed.
+def bare(v):
+    if isinstance(v, list): return [bare(x) for x in v]
+    if isinstance(v, str) and v.startswith("chorus:"):
+        n = v[len("chorus:"):]
+        for kind in ("value-stream-step-","value-stream-","design-doc-","domain-","service-","product-","role-"):
+            if n.startswith(kind): return n[len(kind):]
+        return n
+    return v
+keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
 keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
   run curl -s -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
