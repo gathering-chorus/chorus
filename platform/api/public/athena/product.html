@@ -192,7 +192,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     <span>${stepBadge(e.atStep)}</span>
     <span><em>${esc(e.status || 'no status')}</em></span>
     ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
-    ${e.changedAt ? `<span class="changed" title="stamped by the door on the write that last changed this row">changed ${esc(String(e.changedAt).slice(0, 10))}${e.changedIn && e.changedIn !== 'unknown' ? ` in <code>${esc(String(e.changedIn).slice(0, 7))}</code>` : ''}</span>` : '<span class="unwritten">not yet written through the door</span>'}
+    ${e.version ? `<span class="changed" title="version = how many times this row has been saved; the date is the last save; both written automatically">v${esc(String(e.version))}${e.docState ? ` &middot; ${esc(String(e.docState))}` : ''} &middot; changed ${esc(String(e.changedAt || '').slice(0, 10))}</span>` : '<span class="unwritten">not yet saved through the API</span>'}
   </div>
 </div>
 <div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>

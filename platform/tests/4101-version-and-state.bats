@@ -34,13 +34,15 @@ print(sys.argv[1], "rows", len(rows), "bad", bad); sys.exit(1 if bad or not rows
   done
 }
 
-@test "AC1: every document carries one docState word from the four" {
+@test "AC1: every product and document carries a version number and one docState word from the four" {
   live
-  rows documents | python3 -c '
+  for k in products documents; do
+    rows "$k" | python3 -c '
 import sys, json
 rows = json.load(sys.stdin); ok = {"draft","current","superseded","retired"}
-bad = [(r.get("name"), r.get("docState")) for r in rows if r.get("docState") not in ok]
-print("bad", bad); sys.exit(1 if bad or not rows else 0)'
+bad = [(r.get("name"), r.get("docState"), r.get("version")) for r in rows if r.get("docState") not in ok or not str(r.get("version","")).isdigit()]
+print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
+  done
 }
 
 @test "AC2 negative proof (#3734): a write body that sets changedIn is refused by the door" {
@@ -64,16 +66,18 @@ print("bad", bad); sys.exit(1 if bad or not rows else 0)'
 }
 
 @test "AC1: the product and service pages show the stamp" {
-  grep -q "changed \${esc(String(e.changedAt).slice(0, 10))}" "$ROOT/platform/api/public/athena/product.html"
-  grep -q "Changed (stamped by the door" "$ROOT/platform/api/public/athena/service.html"
+  grep -q 'v\${esc(String(e.version))}' "$ROOT/platform/api/public/athena/product.html"
+  grep -q "Version · state · last changed" "$ROOT/platform/api/public/athena/service.html"
 }
 
-@test "AC1: the model declares the stamps on Product, Service and Document, and docState on Document with the four words" {
+@test "AC1: the model declares version, the stamps and docState (four words) on Product, Service and Document" {
   ttl="$ROOT/roles/silas/ontology/chorus.ttl"
   for shape in ProductShape ServiceShape DocumentShape; do
     awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:changedAt' || { echo "$shape lacks changedAt"; false; }
     awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:changedIn' || { echo "$shape lacks changedIn"; false; }
   done
-  awk '/^chorus:DocumentShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:docState.*"draft" "current" "superseded" "retired"'
-  ! awk '/^chorus:ProductShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:docState'
+  for shape in ProductShape ServiceShape DocumentShape; do
+    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:docState.*"draft" "current" "superseded" "retired"' || { echo "$shape lacks docState"; false; }
+    awk "/^chorus:$shape a sh:NodeShape/,/ \\.\$/" "$ttl" | grep -q 'sh:path chorus:version' || { echo "$shape lacks version"; false; }
+  done
 }

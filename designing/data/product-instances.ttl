@@ -23,6 +23,7 @@
 # =============================================================================
 
 chorus:athena a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:comment """Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.""" ;
     rdfs:comment """Athena is the structural and query layer of Chorus — the canonical model of what exists in the team's product world (products, domains, services, value-streams) and the predicates that connect them.""" ;
     chorus:label """Athena""" ;
@@ -71,6 +72,7 @@ Chorus · Athena · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:borg a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:diagram """%% Structure
 flowchart TD
   PR["Proving<br/><i>per-card · terminates</i>"] --- B["product: Borg"]
@@ -138,6 +140,7 @@ Chorus · Borg · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:chorus a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:label """Chorus""" ;
     rdfs:label """Chorus""" ;
     chorus:comment """The coordination protocol — hooks, scripts, gates, dashboards, spine, shared memory index. The nervous system.""" ;
@@ -189,6 +192,7 @@ Chorus · rewritten for readers outside the team 2026-09-03""" ;
     chorus:publishesPreAuth """true""" .
 
 chorus:clearing a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:label """The Clearing""" ;
     rdfs:label """The Clearing""" ;
     chorus:comment """Multi-party real-time alignment — browser chat with Jeff and all three AI roles. Parent product of Spine and Pulse.""" ;
@@ -239,6 +243,7 @@ Chorus · The Clearing · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:convergence a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:diagram """%% The engine: sources to canonical model
 flowchart LR
   SRC["heterogeneous sources<br/>(legacy schema, feed, discovered system)"] --> ING["ingest — flow-based intake (FlowFiles + provenance)"]
@@ -293,6 +298,7 @@ Chorus · Convergence · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:loom a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:label """Loom""" ;
     rdfs:label """Loom""" ;
     chorus:comment """The operating-model and team-knowledge layer of Chorus — the team's persistent product memory at the Shaping step — carrying principles, practices, policies, decisions, roles, skills, and RCAs.""" ;
@@ -342,6 +348,7 @@ Chorus · Loom · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:pulse a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:label """Pulse""" ;
     rdfs:label """Pulse""" ;
     chorus:comment """The team's vital signs — who is working, on what, and what they are waiting on. A child product of The Clearing.""" ;
@@ -392,6 +399,7 @@ Chorus · Pulse · rewritten for readers outside the team 2026-09-03""" ;
     chorus:partOf chorus:chorus .
 
 chorus:spine a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:diagram """%% Types and instances
 flowchart TB
   subgraph T["TYPES — vocabulary, curated"]
@@ -458,6 +466,7 @@ Internal notes for the team: the Spine service design (contracts, readers, reten
 Chorus · Spine · rewritten for readers outside the team 2026-09-03""" .
 
 chorus:werk a chorus:Product ;
+    chorus:docState """current""" ;
     chorus:diagram """%% Supporting domains
 flowchart TD
   Chorus["Chorus"] -->|hasChild| Werk["Werk — Product<br/>Building step<br/>(live graph: top-level Product)"]

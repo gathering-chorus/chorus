@@ -2003,8 +2003,9 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         }
     }
     // #4101 — stamps from the write; a document with no declared word is a draft
-    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn");
+    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn" && f != "version");
     fields.extend(write_stamps(table, landed_commit));
+    fields.extend(version_stamp(table, None));
     if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
         fields.push(("docState".to_string(), "draft".to_string()));
     }
@@ -2349,6 +2350,13 @@ mod bounds_closedshape_tests {
         assert_eq!(kept.fields.iter().find(|(f, _)| f == "changedIn").map(|(_, v)| v.as_str()), Some("unknown"));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d3","changedIn":"deadbeef"}"#).as_deref(), Some("changedIn"));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d3","docTitle":"x"}"#), None);
+        // version: 1 on create, previous + 1 on replace, only where the shape carries it
+        let mut vt = table.clone(); vt.fields.push("version".into());
+        let v1 = prepare_create(r#"{"name":"d4","docTitle":"D","docHref":"/d.html"}"#, &vt, "wren", "").unwrap();
+        assert_eq!(v1.fields.iter().find(|(f, _)| f == "version").map(|(_, v)| v.as_str()), Some("1"));
+        assert_eq!(version_stamp(&vt, Some("7")), Some(("version".to_string(), "8".to_string())));
+        assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
+        assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
         // a class without the stamp fields gets none
         let plain = RouteTable {
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
@@ -2477,7 +2485,23 @@ pub fn write_stamps(table: &RouteTable, landed_commit: &str) -> Vec<(String, Str
 }
 
 pub fn body_sets_a_stamp(body: &str) -> Option<String> {
-    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn")
+    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn" || k == "version")
+}
+
+/// #4101 — the version a person can say: the row's write count. `previous` is the
+/// row's current version (None on create). Only for classes whose shape carries it.
+pub fn version_stamp(table: &RouteTable, previous: Option<&str>) -> Option<(String, String)> {
+    if !table.fields.iter().any(|f| f.split('|').next() == Some("version")) { return None; }
+    let next = previous.and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0) + 1;
+    Some(("version".to_string(), next.to_string()))
+}
+
+fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:version ?v }} }}",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity)
+    );
+    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
@@ -2594,8 +2618,13 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // semantic rather than athena-make's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
             let (mut fields, mut owner_edges) = verified_owner_projection(table, caller_role);
-            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn").cloned());
+            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "version").cloned());
             fields.extend(write_stamps(table, landed_commit));   // #4101
+            let prev = query_version(&table.class, name, &table.instances_graph);
+            fields.extend(version_stamp(table, prev.as_deref()));
+            if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
+                fields.push(("docState".to_string(), "draft".to_string()));
+            }
             owner_edges.extend(
                 edges
                     .iter()
