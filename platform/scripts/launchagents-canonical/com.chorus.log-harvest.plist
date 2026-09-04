@@ -11,8 +11,6 @@
     </array>
     <key>StartInterval</key>
     <integer>3600</integer>
-    <key>RunAtLoad</key>
-    <true/>
     <key>EnvironmentVariables</key>
     <dict>
         <key>HARVEST_OWNED_CLASSES</key>

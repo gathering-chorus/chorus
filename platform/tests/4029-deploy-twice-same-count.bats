@@ -10,7 +10,11 @@
 
 ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
-GRAPH="urn:chorus:ontology-test-bats-4029-$$"   # #4084: per-process suffix — two pipelines running this at once shared one graph and tore each other down
+load test_helper   # test_graph_name (run-scoped throwaway graph)
+# #4084 gave this a per-PROCESS suffix; bats forks per @test, so teardown dropped
+# a name that was never created and the real graphs leaked into the live store.
+# Run-scoped instead: unique per run, identical across its processes.
+GRAPH="$(test_graph_name 4029)"
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 

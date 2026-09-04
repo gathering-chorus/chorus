@@ -40,8 +40,15 @@ ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
 # tests below failed on exit 127 (command not found) rather than on the schema.
 SCRIPT="$ROOT/platform/scripts/athena-deploy-model.sh"
 TTL="$ROOT/roles/kade/ontology/werk-domains.ttl"
-# per-run graph name: two pipelines (e.g. wren-4080 + silas-4084, 2026-09-03 10:20) ran this file at once against one store and one cleared the graph mid-ASK — test-wrong, not product-wrong
-TEST_GRAPH="urn:chorus:ontology-test-bats-3540-$$"
+load test_helper   # test_graph_name (run-scoped throwaway graph)
+# per-RUN graph name: two pipelines (e.g. wren-4080 + silas-4084, 2026-09-03
+# 10:20) ran this file at once against one store and one cleared the graph
+# mid-ASK. The first fix used `$$`, which is per-PROCESS — bats runs setup_file,
+# each @test and teardown_file separately, so teardown dropped a name that was
+# never created and every per-test graph leaked (77 of them found in the live
+# store 2026-09-04). test_graph_name is run-scoped: unique per run, identical
+# across the run's processes. See bats-graph-isolation.bats.
+TEST_GRAPH="$(test_graph_name 3540)"
 Q="http://localhost:3030/pods/query"
 GSP="http://localhost:3030/pods/data"
 PFX='PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX sh: <http://www.w3.org/ns/shacl#>'
