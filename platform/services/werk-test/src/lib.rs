@@ -618,20 +618,54 @@ pub fn unit_of_path(path: &str) -> Option<TestUnit> {
     if path.ends_with(".bats") {
         return Some(TestUnit::BatsSuite(path.to_string()));
     }
+    // Shell suites ride the BatsSuite variant: both are "a script path run as a
+    // suite"; the executor picks bats vs bash by extension.
+    // #4106 — this used to be `platform/scripts/test-*.sh` with no subdirectory,
+    // which left 56 suites in platform/tests/, 10 in proving/scripts/ and the
+    // whole `*.test.sh` naming convention with NO LANE. They were registered,
+    // never planned, and read as "never ran" every night — accurately, because
+    // nothing ran them. Resolved before the package loop so a shell suite under
+    // a TS package root never collapses into the package unit.
+    if is_shell_suite(path) {
+        return Some(TestUnit::BatsSuite(path.to_string()));
+    }
     for pkg in TS_PACKAGES {
         if path.starts_with(&format!("{}/", pkg)) {
             return Some(TestUnit::TsPackage((*pkg).to_string()));
         }
     }
-    // Shell suites (platform/scripts/test-*.sh) ride the BatsSuite variant:
-    // both are "a script path run as a suite"; the executor picks bats vs
-    // bash by extension.
-    if let Some(name) = path.strip_prefix("platform/scripts/") {
-        if name.starts_with("test-") && name.ends_with(".sh") && !name.contains('/') {
-            return Some(TestUnit::BatsSuite(path.to_string()));
-        }
-    }
     None
+}
+
+/// #4106 — which runner executes this suite. The extension was the only
+/// signal, and three suites in platform/tests are named `*.test.sh` while
+/// their shebang says `#!/usr/bin/env bats`. Handed to bash they die on the
+/// first `@test "..." {` with "syntax error near unexpected token `}`" — they
+/// could never have passed, in any lane, ever. The shebang is what the file
+/// says it is; the extension is only a fallback.
+pub fn runner_for(first_line: &str, path: &str) -> &'static str {
+    if first_line.starts_with("#!") && first_line.contains("bats") {
+        return "bats";
+    }
+    if path.ends_with(".sh") { "bash" } else { "bats" }
+}
+
+/// `runner_for` against a suite on disk; an unreadable file falls back to the
+/// extension rule, never to a panic.
+pub fn suite_runner(path: &str) -> &'static str {
+    let first = std::fs::read_to_string(path)
+        .ok()
+        .and_then(|c| c.lines().next().map(|l| l.to_string()))
+        .unwrap_or_default();
+    runner_for(&first, path)
+}
+
+/// #4106 — is this path a shell test suite? Both naming conventions in the
+/// tree: `test-<thing>.sh` (platform/scripts) and `<thing>.test.sh`
+/// (platform/tests, proving, skills).
+pub fn is_shell_suite(path: &str) -> bool {
+    let Some(name) = path.rsplit('/').next() else { return false };
+    name.ends_with(".sh") && (name.starts_with("test-") || name.ends_with(".test.sh"))
 }
 
 /// #3634 stage-2 (the query-from-model thesis the `affected_units` bridge note

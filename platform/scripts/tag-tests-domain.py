@@ -193,12 +193,16 @@ def case_names(path):
     # fixture's name as a real test — 5 such phantoms, one of them called "x").
     elif path.endswith('.bats'): r = re.findall(r'(?m)^[ \t]*@test\s+"([^"]+)"', c)
     elif re.search(r'\.(test|spec)\.[tj]s$', path): r = jest_case_names(c)
+    # #4063 — a shell suite has no per-case grain, so the runner stores ONE
+    # verdict per script named by the file (`shell_suite_case`). Registering
+    # the basename for .sh is therefore not an invention: it is the identity
+    # the runner actually emits, and the two join.
+    elif path.endswith('.sh'): return [os.path.basename(path)], c
     else: r = []
-    # #4106 — the old fallback returned [basename], inventing a case name for
-    # every kind with no extractor (.sh, .feature, .py). No runner emits a case
-    # called "daemon-env-3197.test.sh", so all 90 were permanent never-ran rows
-    # that read as missing coverage. The FILE is still registered (its
-    # SourceFile row is written regardless); what is not invented is a case.
+    # #4106 — for every OTHER kind the old fallback returned [basename], and
+    # nothing emits that name: 90 rows that could only ever read never-ran.
+    # The file stays registered (its SourceFile row is written regardless);
+    # what is not invented is a case name no runner will ever produce.
     return r, c
 
 # #3924 (with Wren) — discovery walks every test-bearing root, not just

@@ -1011,12 +1011,9 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // #3974 — one script-suite variant, two runners: .bats via bats, .sh via
     // bash (the shell tier's suites). Shell output is summary-grain (counted
     // in the lane line via parse_shell_counts); TAP suites get per-case rows.
-    let mut cmd = if suite.ends_with(".sh") {
-        let mut c = Command::new("bash");
-        c.arg(suite);
-        c
-    } else {
-        let mut c = Command::new("bats");
+    // #4106 — the shebang decides, not the extension (see `runner_for`).
+    let mut cmd = {
+        let mut c = Command::new(werk_test::suite_runner(&format!("{}/{}", werk, suite)));
         c.arg(suite);
         c
     };
@@ -1105,7 +1102,9 @@ fn run_bats(werk: &str, suite: &str) -> bool {
     // recorded pass aborted it, and the red was reported against a synthetic
     // test named "bats-gather-tests". That is why 28 suites read red in the werk
     // pipeline while every one of them passes when run directly.
-    let runner = if suite.ends_with(".sh") { "bash" } else { "bats" };
+    // #4106 — same rule on the werk lane: a `*.test.sh` whose shebang says bats
+    // is a bats suite.
+    let runner = werk_test::suite_runner(&format!("{}/{}", werk, suite));
     status_ok(
         Command::new(runner)
             .arg(suite)
