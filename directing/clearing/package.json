@@ -1,7 +1,7 @@
 {
   "name": "clearing",
   "version": "1.0.0",
-  "description": "Single UI for Jeff — filtered role interaction, role-to-role coordination behind the glass",
+  "description": "Single UI for Jeff \u2014 filtered role interaction, role-to-role coordination behind the glass",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -27,5 +27,8 @@
     "jest": "^30.3.0",
     "ts-jest": "^29.4.6",
     "typescript": "^5.4.0"
+  },
+  "overrides": {
+    "ws": "^8.21.0"
   }
 }
