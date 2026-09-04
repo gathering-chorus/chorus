@@ -7,6 +7,13 @@
 # the first quote inside the name. Negative proof: the exact names that were
 # truncated are now whole; control: plain names unchanged. And the share gate
 # stands down for a one-file corpus (it went red on the tagger's own test).
+#
+# AMENDED by #4106: the backtick case here was `has zero = ${n} rows`, asserting
+# an INTERPOLATED name is registered whole. It is registered whole and can never
+# be joined — jest emits the interpolated value, so all four such rows sat in the
+# census as never-ran forever. #4106 drops interpolated names at extraction; the
+# backtick case kept here is a plain template with no substitution, which is what
+# this test was really guarding (the delimiter, not the interpolation).
 
 TAGGER="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
 
@@ -15,7 +22,7 @@ TAGGER="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
   cat > "$f" <<'TS'
 describe('#3696 relay framing (pure)', () => {
   it('eventFrame is NIP-01 ["EVENT", event]', () => {});
-  it(`has zero = ${n} rows`, () => {});
+  it(`has zero rows`, () => {});
   it("says 'hi' to it", () => {});
   test.only('plain name', () => {});
 });
@@ -23,7 +30,7 @@ TS
   run python3 "$TAGGER" --names-of "$f"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = 'eventFrame is NIP-01 ["EVENT", event]' ]
-  [ "${lines[1]}" = 'has zero = ${n} rows' ]
+  [ "${lines[1]}" = 'has zero rows' ]
   [ "${lines[2]}" = "says 'hi' to it" ]
   [ "${lines[3]}" = 'plain name' ]
   [ "${#lines[@]}" -eq 4 ]
