@@ -657,9 +657,18 @@ esac
 # Interval agents carrying RunAtLoad=true fire at boot alongside every service;
 # 18 of them put the Library at load 527 on 2026-08-28 (3 hard crashes/2 days).
 # Warning, not failure: nothing is down, the next boot is what it endangers.
-_BOOT_AUDIT="${CHORUS_ROOT}/platform/scripts/launchagent-boot-audit.sh"
+# HEALTH_BOOT_AUDIT: seam for the suite — deep-health-summary.bats stubs an
+# audit that REPORTS A FINDING, which is the only way to exercise the path
+# below on a clean box.
+_BOOT_AUDIT="${HEALTH_BOOT_AUDIT:-${CHORUS_ROOT}/platform/scripts/launchagent-boot-audit.sh}"
 if [ -x "$_BOOT_AUDIT" ]; then
-  _herd=$("$_BOOT_AUDIT" 2>/dev/null); _herd_rc=$?
+  # `_herd=$(audit); _herd_rc=$?` reads as if it captures the code. Under
+  # `set -e` it never gets there: the assignment inherits the substitution's
+  # non-zero status and kills the script, so a FINDING produced no report at
+  # all (2026-09-04, four suites red behind one silent exit — same class as
+  # #3369). Capture the code in the `||` branch, where set -e cannot fire.
+  _herd_rc=0
+  _herd=$("$_BOOT_AUDIT" 2>/dev/null) || _herd_rc=$?
   if [ "$_herd_rc" -eq 1 ]; then
     WARNINGS+=("boot-herd: $(grep -c '^boot-herd:' <<<"$_herd") interval LaunchAgent(s) RunAtLoad=true — fires at boot (#4027). Fix: launchagent-boot-audit.sh --fix")
   elif [ "$_herd_rc" -ne 0 ]; then
