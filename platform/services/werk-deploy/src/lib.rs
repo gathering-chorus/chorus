@@ -1898,6 +1898,26 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         )
         .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
             format!("athena-deploy-model.sh failed — model changes are landed but NOT live: {}", e)))?;
+        // #4096/#4101 — a shape is a deploy too, and it must be SERVED before the rows
+        // post: #4101's land posted rows carrying the new docState to an athena-make
+        // still holding the old shape table (restart sat after the seed leg) and was
+        // refused "off-model property". Restart first, then post. athena-make reads the shapes at boot and
+        // serves that schema until restarted: #4045 (09-02) and #4094 (09-03) both
+        // landed a new Product property and /products kept serving the old columns
+        // until a hand restart. Kickstart it, wait for liveness, say so on the
+        // spine; a restart that fails dies loudly — never a silent "landed but
+        // not serving".
+        let svc = "com.chorus.athena-make";
+        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
+            .and_then(|_| wait_for_service_up(svc))
+            .map_err(|e| {
+                emit_spine(home, "model.serve.restart_failed", role, card, trace,
+                    &[("service", svc), ("files", &model_files.join(",")), ("reason", &e.to_string().replace('"', "'"))]);
+                died(home, role, card, trace, "model-serve-restart-fail",
+                    format!("{} did not come back after the model deploy — the new shape is in the store but NOT served: {}", svc, e))
+            })?;
+        emit_spine(home, "model.serve.restarted", role, card, trace,
+            &[("service", svc), ("files", &model_files.join(",")), ("deploy_target", "canonical")]);
     }
     // #4096 — the seed leg runs for a model change OR a seed-only change. It used to
     // sit inside the model branch above, so a card that changed only designing/data
@@ -1964,23 +1984,6 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
                 stamp, landed_commit.unwrap_or("")
             ));
         }
-        // #4096 — a shape is a deploy too. athena-make reads the shapes at boot and
-        // serves that schema until restarted: #4045 (09-02) and #4094 (09-03) both
-        // landed a new Product property and /products kept serving the old columns
-        // until a hand restart. Kickstart it, wait for liveness, say so on the
-        // spine; a restart that fails dies loudly — never a silent "landed but
-        // not serving".
-        let svc = "com.chorus.athena-make";
-        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
-            .and_then(|_| wait_for_service_up(svc))
-            .map_err(|e| {
-                emit_spine(home, "model.serve.restart_failed", role, card, trace,
-                    &[("service", svc), ("files", &model_files.join(",")), ("reason", &e.to_string().replace('"', "'"))]);
-                died(home, role, card, trace, "model-serve-restart-fail",
-                    format!("{} did not come back after the model deploy — the new shape is in the store but NOT served: {}", svc, e))
-            })?;
-        emit_spine(home, "model.serve.restarted", role, card, trace,
-            &[("service", svc), ("files", &model_files.join(",")), ("deploy_target", "canonical")]);
     }
 
     let only = labels.join(",");
