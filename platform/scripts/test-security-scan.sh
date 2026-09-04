@@ -62,7 +62,24 @@ run_sast() {
   else
     out=$(semgrep --config "$RULES" "$target" --exclude fixtures --error --quiet 2>/dev/null)
   fi
-  if [ $? -eq 0 ]; then
+  local sast_rc=$?
+
+  # #4107 — the exemption ledger. Two findings predate this gate ever blocking
+  # anything (2026-03-31 and 2026-06-13) and each needs a design decision, not a
+  # line edit, so they are carried as NAMED debt rather than holding every card
+  # behind them. This is not a suppression: the ledger is checked BOTH ways —
+  # a finding not in it still fails, and a ledger entry that no longer matches a
+  # real finding also fails, so an exemption cannot rot into a blind spot.
+  if [ "${2:-}" != "include-fixtures" ] && [ -f "$ROOT/platform/security/semgrep-exemptions.json" ]; then
+    local ledger_out ledger_rc
+    ledger_out=$(SAST_TARGET="$target" python3 "$SELF_DIR/sast-ledger-check.py" \
+                   "$ROOT/platform/security/semgrep-exemptions.json" "$sast_rc" <<< "$out" 2>&1)
+    ledger_rc=$?
+    printf '%s\n' "$ledger_out"
+    return $ledger_rc
+  fi
+
+  if [ $sast_rc -eq 0 ]; then
     echo "  SAST clean"; return 0
   else
     # #4004 — PRINT the findings. This said only "run this command yourself",

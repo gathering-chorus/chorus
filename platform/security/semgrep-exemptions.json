@@ -1,0 +1,19 @@
+{
+  "_comment": "SAST exemption ledger (#4107). The visible remaining-debt list, same shape as proving/security/sweep-exemptions.json. Nothing is silently suppressed: run_sast fails loud if an entry here no longer matches a real finding, so a stale exemption cannot rot into a blind spot, and it fails on any finding NOT listed here.",
+  "exemptions": [
+    {
+      "path": "directing/clearing/src/server.ts",
+      "rule": "platform.security.semgrep.chorus-caller-supplied-identity-to-sink",
+      "reason": "The Clearing message write reads the sender name from the request body. The path is authenticated (#3966 closed the anonymous hole), so this is an authenticated caller asserting someone else's name, not an open door. Binding it needs a decision on what a shared-secret server-side caller's identity IS, which is design work, not a line edit.",
+      "since": "2026-03-31",
+      "owner": "silas"
+    },
+    {
+      "path": "platform/pulse/src/service.ts",
+      "rule": "platform.security.semgrep.chorus-caller-supplied-identity-to-sink",
+      "reason": "The pulse nudge write reads the sender name from the request body. Same shape and same blocker as the Clearing entry above.",
+      "since": "2026-06-13",
+      "owner": "silas"
+    }
+  ]
+}
