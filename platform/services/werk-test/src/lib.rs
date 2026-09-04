@@ -1019,6 +1019,59 @@ pub fn next_page_url(current: &str, next: &str) -> Option<String> {
     if resolved == current { None } else { Some(resolved) }
 }
 
+/// #4105 — one step of the census walk, as three states instead of two.
+///
+/// The walk used to be `match next_page_url(..) { Some(n) if pages < 50 => .., _ => break }`.
+/// That `_` folded "the ledger is exhausted" and "we ran out of page budget"
+/// into the same break, and the caller then computed a never-run gap from a
+/// partial read — reporting tests that HAD executed as tests that never ran.
+/// A census that cannot tell those apart is not a census.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PageStep {
+    /// keep walking, here is the next page
+    Next(String),
+    /// the collection is finished — no next link, or a broken/self link
+    Exhausted,
+    /// there is more ledger and no budget left: the read is INCOMPLETE
+    Truncated,
+}
+
+pub fn page_walk_step(current: &str, next: &str, pages_read: usize, cap: usize) -> PageStep {
+    match next_page_url(current, next) {
+        None => PageStep::Exhausted,
+        Some(u) if pages_read < cap => PageStep::Next(u),
+        Some(_) => PageStep::Truncated,
+    }
+}
+
+/// #4105 — rows per census page. The door builds one SPARQL query per page and
+/// runs it through a curl with `--max-time 60` (athena-make `sparql_curl_args`),
+/// so a page whose query needs longer than that comes back 502
+/// `fuseki-query failed:` with an empty detail — the transport gave up, the
+/// store never answered. Measured against the live door 2026-09-04 08:48 under
+/// load 14.1: `limit=100000` -> 502 at 82s at any cursor; `limit=25000` -> 200
+/// in ~22s. The old default was 100000, so page 2 of the 415,567-row ledger
+/// failed every night and the census reported UNMEASURED.
+pub fn census_page_size() -> usize {
+    env_usize("CENSUS_PAGE_SIZE", 25_000)
+}
+
+/// #4105 — how many pages the walk may read before it calls the read
+/// incomplete. Budget against a runaway/looping door, not a bound on the
+/// ledger: 200 x 25k = 5M rows, an order of magnitude over today's 415,567.
+/// Hitting it is reported, never absorbed.
+pub fn census_page_cap() -> usize {
+    env_usize("CENSUS_PAGE_CAP", 200)
+}
+
+fn env_usize(key: &str, default: usize) -> usize {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(default)
+}
+
 /// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
 /// Returns rows + the PARALLEL testName vec + the PARALLEL minted entity-name
 /// vec (same filter → same length, always aligned). Shorter rows get empty
