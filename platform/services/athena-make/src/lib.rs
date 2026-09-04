@@ -2535,6 +2535,31 @@ fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<Str
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
+/// #4102 — the commit the row's CURRENT version was written in (the #4101 stamp).
+fn query_changed_in(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:changedIn ?v }} }}",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity)
+    );
+    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+}
+
+/// #4102 — one commit, one version. A land posts a row more than once BY DESIGN:
+/// once to create it, then a second pass restoring the edges whose targets did
+/// not exist yet (a cycle cannot be written one row at a time otherwise). Counted
+/// as two changes, a plain load leaves every row at v2 carrying a v1 revision
+/// nobody ever saw — history that records the loader instead of a person.
+///
+/// A write stamped with the SAME commit as the row's current changedIn is part of
+/// the same change: the row keeps its version and no revision is kept. Only a
+/// stamped write can claim this — a hand write carries no commit (it stamps
+/// "unknown"), so two hand edits can never collapse into one.
+fn same_change_as_current(class: &str, entity: &str, instances_graph: &str, landed_commit: &str) -> bool {
+    let c = landed_commit.trim();
+    if c.is_empty() || c == "unknown" { return false; }
+    query_changed_in(class, entity, instances_graph).as_deref() == Some(c)
+}
+
 /// #4102 — the home graph of a class, resolved the way the route table resolves
 /// it (declared chorus:instancesGraph, else the domain that definesVocabulary it).
 /// A Revision is a row of chorus:Revision, so it lives where that class lives —
@@ -2675,7 +2700,11 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // #4102 — the version this edge change displaces goes with it, in one
             // update. A row with no predecessor (never written through the door)
             // simply has nothing to keep.
-            let rev = build_revision(table, name, caller_role).ok();
+            let rev = if same_change_as_current(&table.class, name, &table.instances_graph, landed_commit) {
+                None
+            } else {
+                build_revision(table, name, caller_role).ok()
+            };
             match dal_edge_keeping(insert, &kind, name, pred, &target, token, &table.instances_graph, rev.as_ref()) {
                 Ok(_) => {
                     let verb = if insert { "add-edge" } else { "remove-edge" };
@@ -2730,7 +2759,14 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "version").cloned());
             fields.extend(write_stamps(table, landed_commit));   // #4101
             let prev = query_version(&table.class, name, &table.instances_graph);
-            fields.extend(version_stamp(table, prev.as_deref()));
+            // #4102 — one commit, one version: a second post from the same land is
+            // the same change, so the row keeps the version it already has.
+            let same_change = same_change_as_current(&table.class, name, &table.instances_graph, landed_commit);
+            match (same_change, prev.as_deref(), version_stamp(table, prev.as_deref())) {
+                (true, Some(p), Some((field, _))) => fields.push((field, p.to_string())),
+                (_, _, Some(stamp)) => fields.push(stamp),
+                _ => {}
+            }
             if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
                 fields.push(("docState".to_string(), "draft".to_string()));
             }
@@ -2745,7 +2781,7 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // field by field on the page and through the API (Jeff: the Staples Athena
             // revision history). Fails closed: no revision, no replace.
             let mut records: Vec<PreparedCreate> = Vec::new();
-            match build_revision(table, name, caller_role) {
+            if !same_change { match build_revision(table, name, caller_role) {
                 Ok(rev) => records.push(rev),
                 // No predecessor to keep is not a failure: the row is not in the
                 // graph this shape reads from, so this write is a create in all
@@ -2756,7 +2792,7 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
                     emit_write_spine(caller_role, "replace", name, "", "revision-fail");
                     return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
                 }
-            }
+            } }
             records.push(PreparedCreate {
                 kind: kind.clone(), name: name.to_string(), fields: fields.clone(),
                 edges: owner_edges.clone(), graph: table.instances_graph.clone(),

@@ -143,3 +143,71 @@ print(json.dumps(keep))')"
   grep -q 'id="dochistory"' "$ROOT/platform/api/public/athena/product.html"
   [ ! -f "$ROOT/platform/api/public/athena/document.html" ]
 }
+
+# --- one commit, one version (#4102) --------------------------------------
+# A land posts a row more than once by design: a create, then a second pass
+# restoring edges to rows that did not exist yet. Counted as two changes, a
+# plain load left every row at v2 with a v1 revision nobody ever saw — history
+# that records the loader, not a person. A write carrying the SAME commit as the
+# row's current changedIn is the same change: same version, no revision kept.
+
+product_body() {  # $1 = product name, $2 = marker text
+  curl -sf "$OWL_URL/products" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["data"]
+r = [x for x in rows if x["name"] == sys.argv[1]][0]
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","label","iri")
+def bare(v):
+    if isinstance(v, list): return [bare(x) for x in v]
+    if isinstance(v, str):
+        n = v[len("chorus:"):] if v.startswith("chorus:") else v
+        for kind in ("value-stream-step-","value-stream-","design-doc-","document-","domain-","service-","product-","role-"):
+            if n.startswith(kind): return n[len(kind):]
+        return n
+    return v
+keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
+keep["gaps"] = (r.get("gaps") or "").split(" (bats-4102")[0] + " (bats-4102 " + sys.argv[2] + ")"
+print(json.dumps(keep))' "$1" "$2"
+}
+product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print([x for x in rows if x["name"]==sys.argv[1]][0].get("version") or "0")' "$1"; }
+put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
+  if [ -n "$3" ]; then
+    curl -s -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
+      -H 'Content-Type: application/json' -H "X-Landed-Commit: $3" -d "$2"
+  else
+    curl -s -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
+      -H 'Content-Type: application/json' -d "$2"
+  fi
+}
+
+@test "AC5: a second post from the same land is the same change — no new version, no revision" {
+  live
+  c="bats4102same$$"
+  [ "$(put_product spine "$(product_body spine one)" "$c")" = "200" ]
+  v1="$(product_version spine)"
+  n1="$(revisions_of products/spine | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  # the second pass of the very same land, exactly as post_all sends it
+  [ "$(put_product spine "$(product_body spine two)" "$c")" = "200" ]
+  v2="$(product_version spine)"
+  n2="$(revisions_of products/spine | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  [ "$v2" = "$v1" ] || { echo "version moved on the second post of one land: $v1 -> $v2"; false; }
+  [ "$n2" -eq "$n1" ] || { echo "revisions kept on the second post of one land: $n1 -> $n2"; false; }
+}
+
+@test "AC5 negative proof (#3734): two DIFFERENT changes each keep their version — the rule swallows nothing" {
+  live
+  # a violation of what the rule is allowed to collapse: different commits.
+  v0="$(product_version spine)"
+  n0="$(revisions_of products/spine | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  [ "$(put_product spine "$(product_body spine cA)" "bats4102a$$")" = "200" ]
+  [ "$(put_product spine "$(product_body spine cB)" "bats4102b$$")" = "200" ]
+  n1="$(revisions_of products/spine | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  [ "$n1" -eq $((n0 + 2)) ] || { echo "two commits kept $((n1 - n0)) revisions, expected 2"; false; }
+  # and a hand write carries no commit at all: it can never collapse into another
+  [ "$(put_product spine "$(product_body spine hand1)" "")" = "200" ]
+  [ "$(put_product spine "$(product_body spine hand2)" "")" = "200" ]
+  n2="$(revisions_of products/spine | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  [ "$n2" -eq $((n1 + 2)) ] || { echo "two hand writes kept $((n2 - n1)) revisions, expected 2"; false; }
+  v2="$(product_version spine)"
+  [ "$v2" -eq $((v0 + 4)) ] || { echo "four changes moved the version $v0 -> $v2, expected +4"; false; }
+}

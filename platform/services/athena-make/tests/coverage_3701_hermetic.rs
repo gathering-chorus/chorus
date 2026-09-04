@@ -202,6 +202,12 @@ fn rows_for(q: &str) -> Vec<String> {
     if q.contains("chorus:instancesGraph") {
         return if q.contains("#Domain>") {
             vec![s("urn:test:instances")]
+        } else if q.contains("#Revision>") {
+            // #4102 — a replace keeps the version it displaces, and the Revision
+            // it writes needs the home graph of chorus:Revision. Without this row
+            // the fixture's model has no home for the class, so the door refuses
+            // every replace fail-closed (it will not silently drop a version).
+            vec![s("urn:chorus:instances")]
         } else if q.contains("#TestResult>") {
             vec![s("urn:chorus:domains:tests")]
         } else {
@@ -880,7 +886,7 @@ fn write_lifecycle_create_replace_edge_delete() {
     assert!(b.contains("shape-violation"), "{}", b);
     // REPLACE ok (pulse ownedBy wren, exists)
     let (c, _, b) = http("PUT", "/domains/pulse", hdrs, "{\"comment\":\"rewritten\",\"label\":\"P2\"}");
-    assert_eq!(c, 200);
+    assert_eq!(c, 200, "{}", b);
     assert!(b.contains("replaced pulse via DAL"), "{}", b);
     // REPLACE with empty body → 422
     let (c, _, b) = http("PUT", "/domains/pulse", hdrs, "{}");
