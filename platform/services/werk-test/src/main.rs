@@ -1931,8 +1931,15 @@ fn run_reconcile() -> Result<i32, String> {
         .collect();
     registered.sort();
     registered.dedup(); // covers fan-out duplicates one row per covers value
+    // #4105 — 100000 is a page the door cannot serve inside its own 60s SPARQL
+    // timeout: measured 2026-09-04 08:48, `limit=100000` answers 502
+    // `fuseki-query failed` after 82s at any cursor, so page 2 of the 415,567-row
+    // ledger failed every night. 25k answers in ~22s. Size and budget are both
+    // overridable for fixtures.
+    let page_size = werk_test::census_page_size();
+    let page_cap = werk_test::census_page_cap();
     let endpoint = std::env::var("OWL_API_TESTRESULTS")
-        .unwrap_or_else(|_| "http://localhost:3360/testresults?limit=100000".to_string());
+        .unwrap_or_else(|_| format!("http://localhost:3360/testresults?limit={}", page_size));
     // #4022 — `pipefail`, and a failed fetch is an ERROR, not an empty ledger.
     // On 2026-08-28 /testresults 502'd, `curl -sf` printed nothing, and this
     // function reported "7,794 registered tests never ran" — every test the
@@ -1952,11 +1959,13 @@ fn run_reconcile() -> Result<i32, String> {
             .output()
             .map_err(|e| format!("testresults fetch failed: {}", e))?;
         if !out.status.success() {
+            // #4022 fixed this for page 1; #4105 — the same rule mid-walk. A
+            // page that 502s is an unread page, never an empty ledger.
             return Err(format!(
-                "testresults fetch failed: {} unreachable or refused (rc={}, page {}) — census not taken",
+                "census UNMEASURED: testresults fetch failed on page {} — {} unreachable or refused (rc={}) — census not taken",
+                pages,
                 page,
-                out.status.code().unwrap_or(-1),
-                pages
+                out.status.code().unwrap_or(-1)
             ));
         }
         let mut next = String::new();
@@ -1972,19 +1981,41 @@ fn run_reconcile() -> Result<i32, String> {
                 }
             }
         }
-        match werk_test::next_page_url(&page, &next) {
-            Some(n) if pages < 50 => page = n,
-            _ => break,
+        // #4105 — three states, not two. Running out of page budget while a
+        // next link is still on the wire is a TRUNCATED read; the gap that
+        // would be computed from it counts executed tests as never-run.
+        match werk_test::page_walk_step(&page, &next, pages, page_cap) {
+            werk_test::PageStep::Next(n) => page = n,
+            werk_test::PageStep::Exhausted => break,
+            werk_test::PageStep::Truncated => {
+                return Err(format!(
+                    "census UNMEASURED: walk truncated at {} pages (cap {}, {} rows per page) — the ledger still had a next link, so no never-run gap can be computed from this read",
+                    pages, page_cap, page_size
+                ));
+            }
         }
     }
+    let raw_rows = executed.len();
     executed.sort();
     executed.dedup();
     let gap = reconcile_gap(&registered, &executed);
     println!("{}", reconcile_report(registered.len(), &gap));
+    // #4105 — say what was read, so a shrinking ledger is visible in the
+    // report and not only in the gap it produces.
+    println!(
+        "census: {} pages read, {} ledger rows, {} distinct executed tests, {} rows per page",
+        pages,
+        raw_rows,
+        executed.len(),
+        page_size
+    );
     emit_spine("tests.reconcile", &role, "-", &trace,
         &[("registered", &registered.len().to_string()),
           ("executed", &executed.len().to_string()),
-          ("never_run", &gap.len().to_string())]);
+          ("never_run", &gap.len().to_string()),
+          ("pages_read", &pages.to_string()),
+          ("ledger_rows", &raw_rows.to_string()),
+          ("page_size", &page_size.to_string())]);
     Ok(0)
 }
 

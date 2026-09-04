@@ -1324,3 +1324,58 @@ fn next_page_url_walks_the_ledger_and_stops_honestly_4022() {
     assert_eq!(next_page_url(cur, "/v1/testresults?limit=100000"), None, "a self-link must not loop");
     assert!(next_page_url("file:///tmp/r.json", "").is_none());
 }
+
+// ---------------------------------------------------------------------------
+// #4105 — the census walk must tell "ledger exhausted" from "we stopped early".
+// Before this, `match next_page_url(..) { Some(n) if pages < 50 => .., _ => break }`
+// collapsed both into the same break: a ledger longer than the cap was read
+// partially and the missing rows were reported as tests that never ran.
+// Negative proof (#3734): the violating state (a next link still present at
+// the cap) must produce Truncated, and the control (no next link) Exhausted.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn walk_at_the_cap_with_a_next_link_is_truncated_not_exhausted_4105() {
+    use werk_test::{page_walk_step, PageStep};
+    let cur = "http://localhost:3360/testresults?cursor=0&limit=25000";
+    let next = "/v1/testresults?cursor=25000&limit=25000";
+
+    // the violation: more ledger to read, and we are out of budget
+    assert_eq!(
+        page_walk_step(cur, next, 3, 3),
+        PageStep::Truncated,
+        "a next link at the cap is a TRUNCATED read, never a finished one"
+    );
+    assert_eq!(page_walk_step(cur, next, 9, 3), PageStep::Truncated);
+
+    // the control: the ledger really is finished
+    assert_eq!(page_walk_step(cur, "", 3, 3), PageStep::Exhausted);
+    assert_eq!(page_walk_step(cur, "", 0, 3), PageStep::Exhausted);
+
+    // a self-link is a broken next, not a page — and not a truncation either
+    assert_eq!(
+        page_walk_step(cur, "/v1/testresults?cursor=0&limit=25000", 0, 3),
+        PageStep::Exhausted
+    );
+
+    // under the cap with a real next link: keep walking
+    assert_eq!(
+        page_walk_step(cur, next, 1, 3),
+        PageStep::Next("http://localhost:3360/testresults?cursor=25000&limit=25000".to_string())
+    );
+}
+
+#[test]
+fn census_page_size_is_one_the_door_can_actually_serve_4105() {
+    use werk_test::{census_page_cap, census_page_size};
+    // measured 2026-09-04 08:48 against the live door under load 14.1:
+    // limit=100000 -> 502 "fuseki-query failed" at 82s (the door's own SPARQL
+    // curl gives up at --max-time 60); limit=25000 -> 200 at 22s.
+    assert!(
+        census_page_size() <= 25_000,
+        "a page the door 502s on is not a page size"
+    );
+    assert!(census_page_size() > 0);
+    // 415,567 rows at 25k = 17 pages; the cap is budget, not a ledger bound
+    assert!(census_page_cap() * census_page_size() > 415_567 * 4);
+}
