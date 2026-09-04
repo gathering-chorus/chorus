@@ -270,6 +270,14 @@ fn run(args: &[String]) -> Result<i32, String> {
             Err(down) => Some(down),
         }
     };
+    // #4102 — the werk lane never set RUN_INTEGRATION, so every bats
+    // integration case self-skipped and reported `ok` in a green run (the
+    // three ACs of #4102 among them). The nightly lane sets it from the same
+    // probe; the werk lane must too, or a pipeline cannot prove an AC that
+    // needs the stack.
+    if stack_down.is_none() {
+        std::env::set_var("RUN_INTEGRATION", "true");
+    }
     let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
     println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
     if let Some(down) = &stack_down {
