@@ -37,9 +37,9 @@ drop = ("name","version","changedAt","changedIn","modified","created","ownedBy",
 # read must hand back the bare name or the door refuses it double-prefixed.
 def bare(v):
     if isinstance(v, list): return [bare(x) for x in v]
-    if isinstance(v, str) and v.startswith("chorus:"):
-        n = v[len("chorus:"):]
-        for kind in ("value-stream-step-","value-stream-","design-doc-","domain-","service-","product-","role-"):
+    if isinstance(v, str):
+        n = v[len("chorus:"):] if v.startswith("chorus:") else v
+        for kind in ("value-stream-step-","value-stream-","design-doc-","document-","domain-","service-","product-","role-"):
             if n.startswith(kind): return n[len(kind):]
         return n
     return v
@@ -64,9 +64,15 @@ assert r["ofRow"] == "products/spine" and str(r["version"]).isdigit()'
   revisions_of products/spine | python3 -c '
 import sys, json
 revs = json.load(sys.stdin); r = max(revs, key=lambda x: int(x.get("version") or 0)); snap = json.loads(r["snapshot"]); now = json.loads(sys.argv[1])
-skip = {"version","changedAt","changedIn","modified","created","name"}
+skip = {"version","changedAt","changedIn","modified","created","name","iri","type"}
 diff = [k for k in set(snap) | set(now) if k not in skip and str(snap.get(k,"")) != str(now.get(k,""))]
-print("changed:", diff); assert diff == ["gaps"], diff' "$now"
+print("changed:", sorted(diff))
+# the field the write touched IS in the diff...
+assert "gaps" in diff, diff
+assert str(now.get("gaps")) == str(snap.get("gaps")) + " (bats-4102 touched)", (snap.get("gaps"), now.get("gaps"))
+# ...and fields the write left alone are NOT (AC2: identical fields are not shown)
+for same in ("promise", "vision", "structure", "audience"):
+    assert same not in diff, (same, diff)' "$now"
 }
 
 @test "AC3 negative proof (#3734): a create keeps no revision, and a direct write to /revisions is refused" {

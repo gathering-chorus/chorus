@@ -2527,6 +2527,11 @@ fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str)
     // back separately), so a snapshot built from `data` alone could never show the
     // change Jeff asked to see.
     let (data, links) = entity_json(&table.class, name, &table.exposure, true, &table.instances_graph)?;
+    // A snapshot must look like the row as SERVED, so a diff of two versions reads
+    // the same as the page: an entity read tags edge targets `chorus:<name>` while
+    // every collection read serves the bare minted name, and a snapshot carrying
+    // the other spelling makes every edge look changed when nothing changed.
+    let links = links.replace("\"chorus:", "\"");
     let data = merge_json_objects(&data, &links);
     let prev = query_version(&table.class, name, &table.instances_graph).unwrap_or_else(|| "0".to_string());
     let class_local = table.class.rsplit('#').next().unwrap_or("");
