@@ -92,6 +92,9 @@ for same in ("promise", "vision", "structure", "audience"):
   fold="$ROOT/platform/api/public/athena/history-fold.js"
   grep -q "id=\"history\"" "$fold"
   grep -q "const diffOf" "$fold"
+  # Jeff, 2026-09-04: "i can click on and view any revision" — the version opens,
+  # not only its diff
+  grep -q "view v\${r.v} as it was" "$fold"
   for f in product service; do
     grep -q "history-fold.js" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not load the fold"; false; }
     grep -q "await historyFold(" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not render the fold"; false; }

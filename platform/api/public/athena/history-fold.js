@@ -54,6 +54,12 @@ async function historyFold(plural, rowname, current) {
       const rows = d.length === 0 ? '<p class="unwritten">saved again with no field changed</p>' : d.map(x => x.from !== undefined
         ? `<p><b>${esc(x.k)}</b><br><span class="was">${esc(clip(x.from)) || '<i>empty</i>'}</span><br><span class="now">${esc(clip(x.to)) || '<i>empty</i>'}</span></p>`
         : `<p><b>${esc(x.k)}</b> ${x.added.length ? 'added ' + x.added.map(v => esc(clip(v))).join(', ') : ''} ${x.removed.length ? 'removed ' + x.removed.map(v => esc(clip(v))).join(', ') : ''}</p>`).join('');
-      return `<details class="rev"><summary>${label} <span class="src">${esc(String(r.at).slice(0, 10))}</span></summary>${rows}</details>`;
+      // Jeff, 2026-09-04: "i can click on and view any revision" — the diff says
+      // what changed, and this opens the version itself, every field as it read
+      // at the moment it was replaced.
+      const full = Object.keys(r.snap).filter(k => !['iri', 'type'].includes(k)).sort()
+        .map(k => `<p><b>${esc(k)}</b><br>${esc(String(Array.isArray(r.snap[k]) ? r.snap[k].join(' · ') : (r.snap[k] == null ? '' : r.snap[k]))) || '<i>empty</i>'}</p>`).join('');
+      return `<details class="rev"><summary>${label} <span class="src">${esc(String(r.at).slice(0, 10))}</span></summary>${rows}` +
+        `<details class="rev ver"><summary>view v${r.v} as it was <span class="src">${Object.keys(r.snap).length} fields</span></summary>${full || '<p class="unwritten">the snapshot is empty</p>'}</details></details>`;
     }).join('') + '</details>';
 }
