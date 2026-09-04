@@ -8,7 +8,7 @@
      Silas set: public = overview/asIs/toBe, signed-in = gaps/notInScope/
      pathToClose, secret = implementationPlan. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script src="history-fold.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
 (function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
@@ -50,39 +50,9 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     );
 
     const PLURAL = 'services', ROWNAME = s, CURRENT = e;
-    // #4102 — History: every prior version the door kept, newest first, each diffed
-    // against the version before it (the newest against the row as it is now).
-    const revEnv = await fetchJSON('/revisions').catch(() => null);
-    const mine = (((revEnv || {}).data) || []).filter(r => r.ofRow === `${PLURAL}/${ROWNAME}`)
-      .map(r => { let snap = {}; try { snap = JSON.parse(r.snapshot || '{}'); } catch (_) {} return { v: Number(r.version) || 0, at: r.changedAt || snap.changedAt || '', snap }; })
-      .sort((a, b) => b.v - a.v);
-    const diffOf = (older, newer) => {
-      const keys = Array.from(new Set([...Object.keys(older), ...Object.keys(newer)])).filter(k => !['version', 'changedAt', 'changedIn', 'modified', 'created', 'name'].includes(k)).sort();
-      const norm = v => Array.isArray(v) ? v.map(String).sort() : (v == null ? '' : String(v));
-      const out = [];
-      for (const k of keys) {
-        const a = norm(older[k]), b = norm(newer[k]);
-        if (JSON.stringify(a) === JSON.stringify(b)) continue;
-        if (Array.isArray(a) || Array.isArray(b)) {
-          const A = Array.isArray(a) ? a : (a ? [a] : []), B = Array.isArray(b) ? b : (b ? [b] : []);
-          out.push({ k, added: B.filter(x => !A.includes(x)), removed: A.filter(x => !B.includes(x)) });
-        } else out.push({ k, from: a, to: b });
-      }
-      return out;
-    };
-    const clip = s => { s = String(s || ''); return s.length > 160 ? s.slice(0, 157) + '…' : s; };
-    const histHtml = mine.length === 0
-      ? `<section class="ch empty" id="history"><h2><span class="n">&middot;</span>History<span class="src">chorus:Revision &middot; no prior versions kept yet</span></h2></section>`
-      : `<details class="ch" id="history"><summary><h2><span class="n">&middot;</span>History<span class="src">chorus:Revision &middot; ${mine.length} prior version${mine.length === 1 ? '' : 's'}</span></h2></summary>` +
-        mine.map((r, i) => {
-          const newer = i === 0 ? CURRENT : mine[i - 1].snap;
-          const d = diffOf(r.snap, newer);
-          const label = i === 0 ? `v${r.v} &rarr; now (v${esc(String(CURRENT.version || ''))})` : `v${r.v} &rarr; v${mine[i - 1].v}`;
-          const rows = d.length === 0 ? '<p class="unwritten">saved again with no field changed</p>' : d.map(x => x.from !== undefined
-            ? `<p><b>${esc(x.k)}</b><br><span class="was">${esc(clip(x.from)) || '<i>empty</i>'}</span><br><span class="now">${esc(clip(x.to)) || '<i>empty</i>'}</span></p>`
-            : `<p><b>${esc(x.k)}</b> ${x.added.length ? 'added ' + x.added.map(esc).join(', ') : ''} ${x.removed.length ? 'removed ' + x.removed.map(esc).join(', ') : ''}</p>`).join('');
-          return `<details class="rev"><summary>${label} <span class="src">${esc(String(r.at).slice(0, 10))}</span></summary>${rows}</details>`;
-        }).join('') + '</details>';
+    // #4102 — History: the fold is shared by product, service and document
+    // (athena/history-fold.js) so one change to how a diff reads changes all three.
+    const histHtml = await historyFold('services', s, rowWithLinks(env));
 
     main.innerHTML = `
 <div class="stats">

@@ -88,10 +88,15 @@ for same in ("promise", "vision", "structure", "audience"):
   grep -q 'kept by the door' "$BATS_TEST_TMPDIR/out"
 }
 
-@test "AC1/AC4: the product and service pages carry the History fold with field diffs" {
-  for f in product service; do
-    grep -q "id=\"history\"" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f lacks History"; false; }
-    grep -q "const diffOf" "$ROOT/platform/api/public/athena/$f.html"
+@test "AC1/AC4: every page that renders a row carries the History fold, from one implementation" {
+  fold="$ROOT/platform/api/public/athena/history-fold.js"
+  grep -q "id=\"history\"" "$fold"
+  grep -q "const diffOf" "$fold"
+  for f in product service document; do
+    grep -q "history-fold.js" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not load the fold"; false; }
+    grep -q "await historyFold(" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f does not render the fold"; false; }
+    # negative proof (#3734): no page keeps a private copy of the diff
+    ! grep -q "const diffOf" "$ROOT/platform/api/public/athena/$f.html" || { echo "$f still has its own diff"; false; }
   done
 }
 
@@ -101,4 +106,35 @@ for same in ("promise", "vision", "structure", "audience"):
   awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:snapshot'
   awk '/^chorus:RevisionShape a sh:NodeShape/,/ \.$/' "$ttl" | grep -q 'sh:path chorus:ofRow'
   grep -q 'chorus:definesVocabulary chorus:Product, chorus:Revision' "$ROOT/roles/wren/ontology/domains-wren-silas.ttl"
+}
+
+@test "AC4: a document replaced through the door keeps a Revision, and the document page carries the History fold" {
+  live
+  doc="$(curl -sf "$OWL_URL/documents" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; r=[x for x in rows if x.get("docHref") and x.get("hasDomain")][0]; print(r["name"].replace("document-","",1))')"
+  before="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  # an entity read splits edges into links (#3635), so a body that echoes the row
+  # has to take both halves or the shape refuses it for a missing hasDomain
+  row="$(curl -sf "$OWL_URL/documents/$doc" | python3 -c 'import sys,json; e=json.load(sys.stdin); d=dict(e["data"]); d.update({k:v for k,v in (e.get("links") or {}).items() if k != "type"}); print(json.dumps(d))')"
+  body="$(printf '%s' "$row" | python3 -c '
+import sys, json
+r = json.load(sys.stdin)
+drop = ("name","version","changedAt","changedIn","modified","created","ownedBy","iri","creator","label")
+def bare(v):
+    if isinstance(v, list): return [bare(x) for x in v]
+    if isinstance(v, str):
+        n = v[len("chorus:"):] if v.startswith("chorus:") else v
+        for kind in ("domain-","product-","role-","document-"):
+            if n.startswith(kind): return n[len(kind):]
+        return n
+    return v
+keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
+keep["comment"] = (r.get("comment") or "") + " (bats-4102 touched)"
+print(json.dumps(keep))')"
+  run curl -s -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
+  [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
+  n="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+  [ "$n" -eq $((before + 1)) ] || { echo "document revisions before=$before after=$n"; false; }
+  # the page a person opens for that history exists and reads the same fold
+  grep -q "historyFold('documents'" "$ROOT/platform/api/public/athena/document.html"
+  grep -q "document.html?d=" "$ROOT/platform/api/public/athena/product.html"
 }

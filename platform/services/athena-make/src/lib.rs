@@ -2504,6 +2504,24 @@ fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<Str
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
+/// #4102 — the home graph of a class, resolved the way the route table resolves
+/// it (declared chorus:instancesGraph, else the domain that definesVocabulary it).
+/// A Revision is a row of chorus:Revision, so it lives where that class lives —
+/// not in the graph of the row it is a revision of, and never in a catch-all.
+fn class_instances_graph(class: &str) -> R<String> {
+    let igq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let declared = select_v(&sparql_json(&igq)?).into_iter().next();
+    let dq = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let domain = select_v(&sparql_json(&dq)?).into_iter().next();
+    resolve_instances_graph(declared.as_deref(), domain.as_deref())
+}
+
 /// Splice two flat JSON objects into one. Used to put a row's edges back beside
 /// its literals for the revision snapshot; either side may be empty (`{  }`).
 fn merge_json_objects(a: &str, b: &str) -> String {
@@ -2548,10 +2566,12 @@ fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str)
         if let Some(v) = json_field(&fields[3].1, k) { fields.push((k.to_string(), v)); }
     }
     let edges = vec![("ownedBy".to_string(), "role".to_string(), caller_role.to_string())];
-    // A revision lives beside the row it is a revision OF — the row's own domain
-    // graph, never a catch-all (Jeff, 2026-09-03: no rows in the ontology graph,
-    // no catch-all instances graph).
-    dal_add("revision", &rev_name, token, &fields, &edges, &table.instances_graph)
+    // Every row in its own domain graph, never a catch-all (Jeff, 2026-09-03):
+    // for a Revision that is the home of chorus:Revision, which is also the graph
+    // /revisions reads — so a document's history is served by the same route as a
+    // product's, whatever graph the row itself lives in.
+    let rev_graph = class_instances_graph(&format!("{}Revision", NS))?;
+    dal_add("revision", &rev_name, token, &fields, &edges, &rev_graph)
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
@@ -2689,9 +2709,17 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // overwrite: its full data as one JSON snapshot, so any two versions diff
             // field by field on the page and through the API (Jeff: the Staples Athena
             // revision history). Fails closed: no revision, no replace.
-            if let Err(e) = keep_revision(table, name, caller_role, token) {
-                emit_write_spine(caller_role, "replace", name, "", "revision-fail");
-                return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
+            match keep_revision(table, name, caller_role, token) {
+                Ok(()) => {}
+                // No predecessor to keep is not a failure: the row is not in the
+                // graph this shape reads from, so this write is a create in all
+                // but name. Any OTHER error fails closed — losing a version
+                // silently is the one outcome this feature cannot have.
+                Err(e) if e == "not-found" => {}
+                Err(e) => {
+                    emit_write_spine(caller_role, "replace", name, "", "revision-fail");
+                    return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
+                }
             }
             match dal_add(&kind, name, token, &fields, &owner_edges, &table.instances_graph) {
                 Ok(_) => {

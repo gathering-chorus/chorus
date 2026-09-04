@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document — Athena</title>
+<!-- #4102 — the per-document page. A document row (docTitle, the file it points
+     at, its state, the domain and product it belongs to) had no page of its own:
+     the only way to see a design document was to open the file it links to, and
+     the only way to see what changed in it was the git log of a seed file.
+     Jeff, 2026-09-04: "at staples when we built athena we had a document level
+     and field level revision history"; "having a revision history for the doc
+     makes sense that is visible on the page". So: the row, the link to the
+     document itself, and its History. -->
+<script>window.OWL_PORT = 3360;</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="history-fold.js"></script><script>mountJourneyNav('documents');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
+if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
+b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
+window.basePath=function(x){if(!x)return b||'/';if(/^[a-z]+:\/\//i.test(x)||x.indexOf('//')===0)return x;
+return b+(x.charAt(0)==='/'?x:'/'+x);};
+var s=document.createElement('script');s.src=window.basePath('/js/base-path.js');document.head.appendChild(s);}());</script>
+</head>
+<body><div class="wrap">
+<div class="crumb"><a href="value-stream.html">value stream</a> &rarr; <a href="products.html">products</a> &rarr; <span id="crumb"></span></div>
+<h1 id="title">Document</h1>
+<div id="main"><p class="empty">loading live from the model&hellip;</p></div>
+</div>
+<script>
+(async function () {
+  const main = document.getElementById('main');
+  const d = new URLSearchParams(location.search).get('d') || '';
+  const row = d.replace(/^document-/, '');
+  document.getElementById('crumb').textContent = row;
+  if (!d) { main.innerHTML = '<p class="empty">no document named &mdash; open one from a product page.</p>'; return; }
+  try {
+    // The documents collection serves `name` with the kind prefix on it
+    // (document-athena-product-design) while the entity route mints that prefix
+    // itself, so the prefixed name 404s. Take either spelling.
+    const env = await fetchJSON(`/documents/${encodeURIComponent(row)}`);
+    const e = env.data || {};
+    document.getElementById('title').innerHTML = `${esc(e.docTitle || e.label || d)} <span class="kind">&mdash; Document</span>`;
+
+    const bare = v => String(v || '').replace(/^chorus:/, '').replace(/^(role|domain|product)-/, '');
+    const rowsHtml = [
+      ['Title', e.docTitle],
+      ['State', e.docState],
+      ['Owner', bare(e.ownedBy)],
+      ['Domain', bare(e.hasDomain)],
+      ['Product', bare(e.hasProduct)],
+      ['Version', e.version],
+      ['Last changed', String(e.changedAt || '').slice(0, 10)],
+      ['Landed in', e.changedIn],
+    ].filter(([, v]) => v).map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(String(v))}</td></tr>`).join('');
+
+    // #4102 — the same History fold every row-rendering page uses.
+    const histHtml = await historyFold('documents', row, rowWithLinks(env));
+
+    main.innerHTML = `
+<section class="ch"><h2><span class="n">&middot;</span>The document<span class="src">chorus:Document</span></h2>
+${e.docHref ? `<p><a href="${esc(e.docHref)}">${esc(e.docHref)}</a></p>` : '<p class="empty">This row names no file &mdash; the model serves no docHref.</p>'}
+${e.comment ? `<p>${esc(e.comment)}</p>` : ''}
+<table>${rowsHtml}</table>
+</section>
+${histHtml}
+<p class="src">Rendered from GET /documents/${esc(row)}</p>`;
+  } catch (err) {
+    main.innerHTML = `<p class="empty"><strong>Cannot reach the model</strong> for this document &mdash; fetch failure, not a missing row. ${esc(String(err && err.message || err))}</p>`;
+  }
+})();
+</script>
+</body></html>
