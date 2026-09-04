@@ -635,6 +635,10 @@ chorus:hasOwner a owl:ObjectProperty ;
 
 # SHACL: every Document must have at least one domain tag
 chorus:DocumentShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:version         ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — write count, stamped by the door
+    sh:property [ sh:path chorus:changedAt       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
+    sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
+    sh:property [ sh:path chorus:docState        ; sh:minCount 1 ; sh:in ( "draft" "current" "superseded" "retired" ) ] ;   # #4101 — one declared word
     sh:targetClass chorus:Document ;
     # #3860 — declared home (#3647). Without this pin the pen defaulted Document
     # writes to urn:chorus:instances while athena-make serves Documents from
@@ -2283,6 +2287,14 @@ chorus:references      a owl:DatatypeProperty ; rdfs:label "references" ; rdfs:r
     rdfs:comment "Cards, ADRs, decisions and documents this design rests on. The design doc §References." .
 chorus:diagram         a owl:DatatypeProperty ; rdfs:label "diagram" ; rdfs:range xsd:string ;
     rdfs:comment "A picture the design carries, held as data: mermaid source, first line a '%% caption' comment naming what it shows. Repeatable — one value per diagram. #4094: Jeff, 2026-09-03: 'we are completely abandoning diagrams and other visual flows from the html when we migrate.' Rendered in the Flows chapter of the product, service and domain pages." .
+chorus:changedAt       a owl:DatatypeProperty ; rdfs:label "changedAt" ; rdfs:range xsd:string ;
+    rdfs:comment "When this row last changed, UTC ISO, stamped by the door on every create and replace — never typed. #4101: Jeff, 2026-09-03: 'our docs dont show version'; version is a fact about the write, not a number a person maintains." .
+chorus:changedIn       a owl:DatatypeProperty ; rdfs:label "changedIn" ; rdfs:range xsd:string ;
+    rdfs:comment "The commit whose land last changed this row, stamped by the door from the land — never typed. #4101." .
+chorus:docState        a owl:DatatypeProperty ; rdfs:label "docState" ; rdfs:range xsd:string ;
+    rdfs:comment "One declared word for whether a document can be trusted: draft, current, superseded, retired. #4101: Jeff, 2026-09-03: 'what about state'. Products and services keep their lifecycle status; this is the document's own word." .
+chorus:version         a owl:DatatypeProperty ; rdfs:label "version" ; rdfs:range xsd:string ;
+    rdfs:comment "How many times this row has been written through the door: 1 on create, +1 on every replace. Stamped, never typed. #4101: Jeff, 2026-09-03 20:27: 'thats not the version # i was expecting' — a number a person can say, beside the date." .
 chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:range xsd:string .
 chorus:asIs               a owl:DatatypeProperty ; rdfs:label "as-is" ; rdfs:range xsd:string .
 chorus:toBe               a owl:DatatypeProperty ; rdfs:label "to-be" ; rdfs:range xsd:string .
@@ -2326,6 +2338,10 @@ chorus:ValueStreamShape a sh:NodeShape ;
 
 # --- ProductShape ---
 chorus:ProductShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:version         ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — write count, stamped by the door
+    sh:property [ sh:path chorus:docState        ; sh:minCount 1 ; sh:in ( "draft" "current" "superseded" "retired" ) ] ;   # #4101 — one declared word
+    sh:property [ sh:path chorus:changedAt       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
+    sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ] ;   # #4094 — repeatable mermaid source, %% caption first line
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Product ;
@@ -2394,6 +2410,10 @@ chorus:DomainShape a sh:NodeShape ;
 
 # --- ServiceShape (ADR-029 service-design template form; the most-ready primitive — 50+ designs to ingest) ---
 chorus:ServiceShape a sh:NodeShape ;
+    sh:property [ sh:path chorus:version         ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — write count, stamped by the door
+    sh:property [ sh:path chorus:docState        ; sh:minCount 1 ; sh:in ( "draft" "current" "superseded" "retired" ) ] ;   # #4101 — one declared word
+    sh:property [ sh:path chorus:changedAt       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
+    sh:property [ sh:path chorus:changedIn       ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #4101 — stamped by the door
     sh:property [ sh:path chorus:diagram         ; sh:minCount 0 ; sh:datatype xsd:string ; chorus:exposure chorus:public ] ;   # #4094 — repeatable mermaid source, %% caption first line   # #4093 — Service fields are tiered (#4010); without an exposure the diagram was withheld from the page like gaps/notInScope
     sh:property [ sh:path chorus:publishesPreAuth ; sh:maxCount 1 ; sh:datatype xsd:string ] ;   # #3777 — opt-in publication to the pre-auth sign-in page. OPTIONAL by design: absent means NOT published, so fail-closed comes from the data model rather than from generator code a later edit could soften.
     sh:targetClass chorus:Service ;

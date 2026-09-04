@@ -55,6 +55,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${stepBadge(links.atStep)}</div><div class="l">Step (atStep)</div></div>
   <div class="stat"><div class="v">${esc(e.status || 'no status')}</div><div class="l">Status</div></div>
   <div class="stat"><div class="v">${SECTIONS.filter(([k]) => e[k]).length}/${SECTIONS.length}</div><div class="l">Design sections served</div></div>
+  <div class="stat"><div class="v">${e.version ? 'v' + esc(String(e.version)) + (e.docState ? ' · ' + esc(String(e.docState)) : '') + ' · ' + esc((d => isNaN(d) ? String(e.changedAt || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date(String(e.changedAt || '')))) : '<span class="empty">not yet saved through the API</span>'}</div><div class="l">Version · state · last changed</div></div>
 </div>
 ${folds.join('\n')}
 <details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>

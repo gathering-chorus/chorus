@@ -925,8 +925,12 @@ fn post_werk_rows(role: &str, werk_root: &str) -> R<String> {
     if token.is_empty() {
         return Err("env_up: no identity token for the role — rows not posted".to_string());
     }
+    // #4101 — the werk's HEAD is the commit changing these rows in the demo
+    let head = Command::new("git").args(["-C", werk_root, "rev-parse", "HEAD"]).output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
     let out = Command::new(format!("{}/athena-model", werk_bin_dir(role)))
         .args(["seed", "--post", "--api", &api, "--unowned", "load"])
+        .env("CHORUS_LANDED_COMMIT", head)
         .env("CHORUS_ROOT", werk_root)
         .env("CHORUS_FUSEKI", werk_fuseki_for(role))
         .env("CHORUS_IDENTITY_TOKEN", &token)

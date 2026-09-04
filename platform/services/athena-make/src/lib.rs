@@ -1923,7 +1923,7 @@ fn verified_owner_projection(
 /// Purely prepare one create using exactly the checks/projections both routes
 /// need. This layer performs no existence reads: single and batch create both
 /// delegate identity conflict detection to the DAL's atomic `add-batch` path.
-fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<PreparedCreate, CreatePrepareError> {
+fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_commit: &str) -> Result<PreparedCreate, CreatePrepareError> {
     let values = parse_create_object(body).map_err(|message| CreatePrepareError {
         tag: "validation",
         spine_result: "validation",
@@ -2002,6 +2002,13 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str) -> Result<P
         }
         }
     }
+    // #4101 — stamps from the write; a document with no declared word is a draft
+    fields.retain(|(f, _)| f != "changedAt" && f != "changedIn" && f != "version");
+    fields.extend(write_stamps(table, landed_commit));
+    fields.extend(version_stamp(table, None));
+    if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
+        fields.push(("docState".to_string(), "draft".to_string()));
+    }
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     Ok(PreparedCreate {
         kind: kind_of_class(class_local),
@@ -2064,8 +2071,8 @@ fn prepared_create_ndjson(reqs: &[PreparedCreate]) -> String {
     out
 }
 
-fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
-    let req = match prepare_create(body, table, caller_role) {
+fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
+    let req = match prepare_create(body, table, caller_role, landed_commit) {
         Ok(req) => req,
         Err(e) => {
             emit_write_spine(caller_role, "create", &e.entity, "", e.spine_result);
@@ -2096,7 +2103,7 @@ fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str)
     }
 }
 
-fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
+fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
     let objects = match split_json_array_objects(body) {
         Ok(objects) => objects,
         Err(e) => return write_resp("validation", &e),
@@ -2107,7 +2114,7 @@ fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token:
 
     let mut reqs = Vec::with_capacity(objects.len());
     for (index, object) in objects.into_iter().enumerate() {
-        let req = match prepare_create(object, table, caller_role) {
+        let req = match prepare_create(object, table, caller_role, landed_commit) {
             Ok(req) => req,
             Err(e) => {
                 emit_write_spine(caller_role, "create-batch", &e.entity, "", e.spine_result);
@@ -2322,6 +2329,43 @@ mod bounds_closedshape_tests {
 
     /// #4096 — a list value parses to every element, in order; a plain string is a
     /// one-element list, so the two forms are one shape to the rest of the door.
+    /// #4101 — the door stamps changedAt/changedIn on a class whose shape carries
+    /// them, from the write itself; a document with no declared word is a draft.
+    /// NEGATIVE PROOF: a body that tries to set a stamp is named and refused.
+    #[test]
+    fn the_door_stamps_the_write_and_refuses_a_body_stamp() {
+        let table = RouteTable {
+            class: "https://jeffbridwell.com/chorus#Document".into(),
+            fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
+            instances_graph: "urn:chorus:domains:documents".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+        };
+        let req = prepare_create(r#"{"name":"d1","docTitle":"D","docHref":"/d.html"}"#, &table, "wren", "abc1234").unwrap();
+        let get = |k: &str| req.fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
+        assert_eq!(get("changedIn").as_deref(), Some("abc1234"));
+        assert!(get("changedAt").map_or(false, |v| v.ends_with('Z') && v.len() == 20), "{:?}", get("changedAt"));
+        assert_eq!(get("docState").as_deref(), Some("draft"));
+        let kept = prepare_create(r#"{"name":"d2","docTitle":"D","docHref":"/d.html","docState":"current"}"#, &table, "wren", "").unwrap();
+        assert_eq!(kept.fields.iter().find(|(f, _)| f == "docState").map(|(_, v)| v.as_str()), Some("current"));
+        assert_eq!(kept.fields.iter().find(|(f, _)| f == "changedIn").map(|(_, v)| v.as_str()), Some("unknown"));
+        assert_eq!(body_sets_a_stamp(r#"{"name":"d3","changedIn":"deadbeef"}"#).as_deref(), Some("changedIn"));
+        assert_eq!(body_sets_a_stamp(r#"{"name":"d3","docTitle":"x"}"#), None);
+        // version: 1 on create, previous + 1 on replace, only where the shape carries it
+        let mut vt = table.clone(); vt.fields.push("version".into());
+        let v1 = prepare_create(r#"{"name":"d4","docTitle":"D","docHref":"/d.html"}"#, &vt, "wren", "").unwrap();
+        assert_eq!(v1.fields.iter().find(|(f, _)| f == "version").map(|(_, v)| v.as_str()), Some("1"));
+        assert_eq!(version_stamp(&vt, Some("7")), Some(("version".to_string(), "8".to_string())));
+        assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
+        assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
+        // a class without the stamp fields gets none
+        let plain = RouteTable {
+            class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
+            routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
+            instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
+        };
+        assert!(write_stamps(&plain, "abc").is_empty());
+    }
+
     #[test]
     fn create_object_parser_takes_lists_of_strings() {
         let parsed = parse_create_object(r#"{"name":"athena","hasDomain":["products","services","domains"],"diagram":["%% a\\nflowchart TD","%% b\\nflowchart LR"],"label":"Athena"}"#)
@@ -2386,6 +2430,7 @@ mod bounds_closedshape_tests {
             r#"{"name":"fresh","comment":"ok","ownedBy":"attacker"}"#,
             &table,
             "wren",
+            "",
         )
         .expect("shape-aware owner projection");
         assert_eq!(req.fields, vec![("comment".into(), "ok".into())]);
@@ -2399,6 +2444,7 @@ mod bounds_closedshape_tests {
             r#"{"name":"fresh","comment":"ok"}"#,
             &table,
             "wren",
+            "",
         )
         .expect("legacy literal owner projection");
         assert_eq!(
@@ -2412,6 +2458,7 @@ mod bounds_closedshape_tests {
             r#"{"name":"fresh","comment":"ok","partOf":"!!!"}"#,
             &table,
             "wren",
+            "",
         )
         .expect_err("invalid edge target local names are client validation errors");
         assert_eq!(invalid.tag, "validation");
@@ -2419,7 +2466,49 @@ mod bounds_closedshape_tests {
     }
 }
 
+/// #4101 — the stamps the door adds to every create and replace on a class whose
+/// shape carries them: changedAt (UTC ISO, now) and changedIn (the land's commit,
+/// from the X-Landed-Commit header the poster sends; "unknown" for a hand write).
+/// A body that tries to set either is refused: they are facts about the write.
+pub fn write_stamps(table: &RouteTable, landed_commit: &str) -> Vec<(String, String)> {
+    let has = |k: &str| table.fields.iter().any(|f| f.split('|').next() == Some(k));
+    let mut out = Vec::new();
+    if has("changedAt") {
+        let now = Command::new("date").args(["-u", "+%Y-%m-%dT%H:%M:%SZ"]).output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+        out.push(("changedAt".to_string(), now));
+    }
+    if has("changedIn") {
+        out.push(("changedIn".to_string(), if landed_commit.trim().is_empty() { "unknown".to_string() } else { landed_commit.trim().to_string() }));
+    }
+    out
+}
+
+pub fn body_sets_a_stamp(body: &str) -> Option<String> {
+    json_top_level_keys(body).into_iter().find(|k| k == "changedAt" || k == "changedIn" || k == "version")
+}
+
+/// #4101 — the version a person can say: the row's write count. `previous` is the
+/// row's current version (None on create). Only for classes whose shape carries it.
+pub fn version_stamp(table: &RouteTable, previous: Option<&str>) -> Option<(String, String)> {
+    if !table.fields.iter().any(|f| f.split('|').next() == Some("version")) { return None; }
+    let next = previous.and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(0) + 1;
+    Some(("version".to_string(), next.to_string()))
+}
+
+fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:version ?v }} }}",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity)
+    );
+    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+}
+
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
+    handle_write_stamped(method, path, body, table, caller_role, token, "")
+}
+
+pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
     let op = match parse_write(method, path, &plural) {
@@ -2431,6 +2520,10 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
     if body.len() > MAX_WRITE_BYTES {
         return write_resp("validation", &format!(
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    // #4101 — the stamps are the door's, never the body's
+    if let Some(k) = body_sets_a_stamp(body) {
+        return write_resp("validation", &format!("'{}' is stamped by the door from the write itself; it cannot be set in the body", k));
     }
     // entity name (None for create/create-batch) + injection-safety
     let entity: Option<String> = match &op {
@@ -2500,8 +2593,8 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
                 }
             }
         }
-        WriteOp::CreateEntity => handle_create(body, table, caller_role, token),
-        WriteOp::CreateBatch => handle_create_batch(body, table, caller_role, token),
+        WriteOp::CreateEntity => handle_create(body, table, caller_role, token, landed_commit),
+        WriteOp::CreateBatch => handle_create_batch(body, table, caller_role, token, landed_commit),
         WriteOp::ReplaceEntity { name } => {
             // REPLACE: authZ (ownedBy == caller) already enforced in the entity block
             // above. Must exist (404 otherwise).
@@ -2525,7 +2618,13 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
             // semantic rather than athena-make's prior partial-update (a competing impl).
             let kind = kind_of_class(class_local);
             let (mut fields, mut owner_edges) = verified_owner_projection(table, caller_role);
-            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy").cloned());
+            fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "version").cloned());
+            fields.extend(write_stamps(table, landed_commit));   // #4101
+            let prev = query_version(&table.class, name, &table.instances_graph);
+            fields.extend(version_stamp(table, prev.as_deref()));
+            if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
+                fields.push(("docState".to_string(), "draft".to_string()));
+            }
             owner_edges.extend(
                 edges
                     .iter()
@@ -4731,7 +4830,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                         // (POST /batch is handled by the cross-class pre-table block above,
                         // which `continue`s — it can't reach here. One site, no drift.)
-                        let (c, b) = handle_write(&method, &path, body_str, table, &role, token);
+                        // #4101 — the land names the commit that is changing the row
+                        let landed_commit = header("x-landed-commit");
+                        let (c, b) = handle_write_stamped(&method, &path, body_str, table, &role, token, &landed_commit);
                         ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
                     }
                 }
@@ -6144,6 +6245,9 @@ mod version_axes_3947 {
 #[cfg(test)]
 mod bind_scope_tests_4004 {
     use super::bind_host;
+    // in-flow (2026-09-03): both tests set and remove ATHENA_MAKE_BIND and raced
+    // each other under the parallel runner (red twice today, green alone) — one lock
+    static BIND_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// NEGATIVE PROOF — the default must stay LOOPBACK. This surface is
     /// read-only but unauthenticated; a change that quietly bound it to every
@@ -6151,6 +6255,7 @@ mod bind_scope_tests_4004 {
     /// Absent, empty, and whitespace-only all mean "not configured".
     #[test]
     fn the_default_is_loopback_and_blank_is_not_a_value() {
+        let _g = BIND_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         for v in [None, Some(""), Some("   ")] {
             match v {
                 None => std::env::remove_var("ATHENA_MAKE_BIND"),
@@ -6165,6 +6270,7 @@ mod bind_scope_tests_4004 {
     /// Without this the check could pass by always answering loopback.
     #[test]
     fn an_operator_can_widen_it_explicitly() {
+        let _g = BIND_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ATHENA_MAKE_BIND", "0.0.0.0");
         assert_eq!(bind_host(), "0.0.0.0");
         std::env::remove_var("ATHENA_MAKE_BIND");

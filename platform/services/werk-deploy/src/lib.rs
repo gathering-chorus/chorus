@@ -1934,7 +1934,8 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         run_env(
             Some(root_m.as_str()),
             &[("CHORUS_TRACE_ID", trace), ("CHORUS_ROOT", root_m.as_str()),
-              ("CHORUS_IDENTITY_TOKEN", seed_token.as_str())],
+              ("CHORUS_IDENTITY_TOKEN", seed_token.as_str()),
+              ("CHORUS_LANDED_COMMIT", landed_commit.unwrap_or(""))],   // #4101 — the door stamps changedIn from this
             &seed_bin,
             &["seed", "--post", "--api", &api, "--unowned", "load"],
         )

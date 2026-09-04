@@ -24,6 +24,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   .hero h1 { font-size: 1.6rem; line-height: 1.2; }
   .hero .meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; font-size: .85rem; color: var(--muted); }
   .hero .meta a { color: var(--accent); text-decoration: none; }
+  .hero .meta .changed code { font-size: .8em; }   /* #4101 — version is the write's commit, never typed */
   .vision { font-size: 1.05rem; line-height: 1.45; border-left: 4px solid var(--accent); padding: 8px 14px; margin: 14px 0; background: var(--surface); border-radius: 0 6px 6px 0; }
   .vision .k { display: block; font-size: .7rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
   .lede { font-size: .98rem; margin: 0 0 10px; }
@@ -161,6 +162,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     // fold state: open unless this browser collapsed it before (localStorage, per chapter); a #hash always opens its target
     const foldKey = k => `athena.product.fold.${k}`;
     const foldOpen = k => { try { return localStorage.getItem(foldKey(k)) !== 'closed'; } catch (_) { return true; } };
+    // the stamp is UTC; show the viewer's own day (it read 2026-09-04 at 20:50 Boston on round 3)
+    const localDay = (iso) => { const d = new Date(String(iso || '')); return isNaN(d) ? String(iso || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
     const diagrams = () => asArray(e.diagram).map(String).map(v => { const ls = v.trim().split('\n'); const cap = ls[0].startsWith('%%') ? ls.shift().replace(/^%%\s*/, '') : ''; return { caption: cap, src: ls.join('\n').trim() }; }).filter(d => d.src);
     const has = k => k === 'composition' ? doms.length > 0 : k === 'diagram' ? diagrams().length > 0 : !!(e[k] && String(e[k]).trim());
     const toc = chapters.map(([k, t]) => `<a href="#${k}" class="${has(k) ? 'filled' : ''}">${esc(t)}</a>`).join('');
@@ -191,6 +194,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     <span>${stepBadge(e.atStep)}</span>
     <span><em>${esc(e.status || 'no status')}</em></span>
     ${designDoc && designDoc.docHref ? `<a href="${esc(basePath(designDoc.docHref))}">design doc &rarr;</a>` : '<span class="unwritten">no design doc registered</span>'}
+    ${e.version ? `<span class="changed" title="version = how many times this row has been saved; the date is the last save; both written automatically">v${esc(String(e.version))}${e.docState ? ` &middot; ${esc(String(e.docState))}` : ''} &middot; changed ${esc(localDay(e.changedAt))}</span>` : '<span class="unwritten">not yet saved through the API</span>'}
   </div>
 </div>
 <div class="vision"><span class="k">vision</span>${esc(e.vision || '')}</div>
