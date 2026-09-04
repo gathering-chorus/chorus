@@ -92,15 +92,29 @@ run_sca() {
   local scope=()
   if [ "$depth" = "scoped" ]; then scope=("${SCA_SCOPE[@]}"); fi
   echo "SCA: trivy fs (deps + secrets + config) — $depth"
+  # #4107 — trivy reads ~/.docker/config.json before it scans, and ours names a
+  # credsStore. With Docker Desktop stopped, the helper it spawns
+  # (docker-credential-desktop get) blocks forever on a socket that will never
+  # answer, and trivy's own --timeout does not cover a hung child. Measured
+  # 2026-09-04 13:13: 13 minutes at 0.0% CPU, the whole test stage wedged behind
+  # it, for a filesystem scan that needs no registry login at all.
+  #
+  # Point DOCKER_CONFIG at an empty config for the scan: no credsStore, no
+  # helper, no hang. The explicit --timeout is the second line of defence.
+  local _sca_dockercfg
+  _sca_dockercfg="$(mktemp -d)"
+  printf '{}' > "$_sca_dockercfg/config.json"
   # #4004 — capture instead of discarding to /dev/null, so a red names its CVEs.
   # NOTE bash 3.2 + set -u: never expand an empty array unguarded.
   local sca_out
   if [ ${#scope[@]} -gt 0 ]; then
-    sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "${scope[@]}" "$target" 2>&1)
+    sca_out=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "${scope[@]}" "$target" 2>&1)
   else
-    sca_out=$(trivy fs --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "$target" 2>&1)
+    sca_out=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "$target" 2>&1)
   fi
-  if [ $? -eq 0 ]; then
+  local sca_rc=$?
+  rm -rf "$_sca_dockercfg"
+  if [ $sca_rc -eq 0 ]; then
     echo "  SCA clean (no HIGH/CRITICAL)"; return 0
   else
     echo "  SCA FINDINGS:"
