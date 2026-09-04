@@ -25,7 +25,16 @@ set -uo pipefail
 # resolved relative to the script itself — never via CHORUS_ROOT, which in an
 # interactive/werk shell may point at canonical and miss a werk-local rule.
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="${CHORUS_ROOT:-$(cd "$SELF_DIR/.." && pwd)}"
+# #4107 — the TARGET is resolved the same way the ruleset is: the tree this
+# script lives in wins. CHORUS_ROOT is the LAST resort, not the first, because
+# in a werk shell it points at canonical — which meant a werk scanned canonical
+# and the gate could neither go red nor green on what the card actually changed.
+# The bats copy (see RULES below) is why CHORUS_ROOT stays in the ladder at all.
+ROOT=""
+for cand in "${BATS_TEST_DIRNAME:-}/../.." "$SELF_DIR/../.." "${CHORUS_ROOT:-}"; do
+  [ -n "$cand" ] && [ -d "$cand/platform" ] && ROOT="$(cd "$cand" && pwd)" && break
+done
+[ -n "$ROOT" ] || { echo "test-security-scan: cannot resolve repo root (tried BATS_TEST_DIRNAME, script dir, \$CHORUS_ROOT)" >&2; exit 2; }
 # #3991: under bats (werk-test) this file is COPIED to a tmpdir, so BASH_SOURCE
 # no longer sits beside the ruleset. Resolve via the real test dir first, then
 # the script's own dir, then CHORUS_ROOT — and FAIL LOUD if none holds rules.
@@ -75,13 +84,40 @@ run_sast() {
 # everything so secrets in artifacts are found on cadence, not never.
 SCA_SCOPE=(--skip-dirs "**/target" --skip-dirs "**/node_modules" --skip-dirs ".git" --skip-dirs "platform/security/sca-fixtures")
 
+# #4107 — trivy walks the WORKING TREE, so it reads git-ignored local files.
+# `.env.*` is git-ignored repo-wide (.gitignore), so those secrets are real but
+# never ship; counting them made the gate red every run for something no commit
+# can carry. Skipping them would be a blind spot on its own, so `assert_no_tracked_env`
+# below fails loud if one is ever actually tracked — the coverage moves, it does
+# not disappear.
+SCA_SCOPE+=(--skip-files "**/.env.*" --skip-files ".env.*")
+
+# The secret-scan exemption ledger: every entry names why it is not a credential.
+SCA_IGNOREFILE="$ROOT/platform/security/trivy-ignore.yaml"
+
+assert_no_tracked_env() {
+  local tracked
+  tracked=$(git -C "$ROOT" ls-files -- '.env' '.env.*' '**/.env' '**/.env.*' 2>/dev/null)
+  if [ -n "$tracked" ]; then
+    echo "  SECURITY: env file(s) TRACKED in git — the skip-files rule above is hiding them:" >&2
+    printf '%s\n' "$tracked" | sed 's/^/    /' >&2
+    return 1
+  fi
+  return 0
+}
+
 sca_flags() {
   # Cached DB: skip the update when the local DB is <24h old — the nightly
   # must never pay a download, and a stale-DB skip self-heals next day.
   local meta="$HOME/Library/Caches/trivy/db/metadata.json"
+  local out=""
   if [ -f "$meta" ] && [ -n "$(find "$meta" -mtime -1 2>/dev/null)" ]; then
-    echo "--skip-db-update"
+    out="--skip-db-update"
   fi
+  if [ -f "${SCA_IGNOREFILE:-}" ]; then
+    out="$out --ignorefile ${SCA_IGNOREFILE}"
+  fi
+  echo "$out"
 }
 
 run_sca() {
@@ -90,7 +126,11 @@ run_sca() {
   fi
   local target="${1:-$ROOT}" depth="${2:-scoped}"
   local scope=()
-  if [ "$depth" = "scoped" ]; then scope=("${SCA_SCOPE[@]}"); fi
+  if [ "$depth" = "scoped" ]; then
+    scope=("${SCA_SCOPE[@]}")
+    # the skip-files rule above only holds because nothing matching it is tracked
+    assert_no_tracked_env || return 1
+  fi
   echo "SCA: trivy fs (deps + secrets + config) — $depth"
   # #4107 — trivy reads ~/.docker/config.json before it scans, and ours names a
   # credsStore. With Docker Desktop stopped, the helper it spawns
@@ -106,7 +146,7 @@ run_sca() {
   printf '{}' > "$_sca_dockercfg/config.json"
   # #4004 — capture instead of discarding to /dev/null, so a red names its CVEs.
   # NOTE bash 3.2 + set -u: never expand an empty array unguarded.
-  local sca_out
+  local sca_out sca_json
   if [ ${#scope[@]} -gt 0 ]; then
     sca_out=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --exit-code 1 --severity HIGH,CRITICAL --quiet $(sca_flags) "${scope[@]}" "$target" 2>&1)
   else
@@ -117,8 +157,30 @@ run_sca() {
   if [ $sca_rc -eq 0 ]; then
     echo "  SCA clean (no HIGH/CRITICAL)"; return 0
   else
+    # #4107 — #4004 captured the output so a red could name its findings, but
+    # trivy's table opens with one Report Summary row PER lockfile (40+ here) and
+    # the head -60 cut the report before the detail. Measured on a planted-token
+    # fixture: exit 1, 63 lines, and not one of them named the secret. So print
+    # the findings from JSON, which is short and always names target + rule + line,
+    # and keep the human table only as the tail nobody has to read.
     echo "  SCA FINDINGS:"
-    printf '%s\n' "$sca_out" | sed 's/^/    /' | head -60
+    if [ ${#scope[@]} -gt 0 ]; then
+      sca_json=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --severity HIGH,CRITICAL --quiet --format json $(sca_flags) "${scope[@]}" "$target" 2>/dev/null)
+    else
+      sca_json=$(DOCKER_CONFIG="$_sca_dockercfg" trivy fs --timeout 4m --scanners vuln,secret --severity HIGH,CRITICAL --quiet --format json $(sca_flags) "$target" 2>/dev/null)
+    fi
+    printf '%s' "$sca_json" | python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("    (could not parse trivy json — raw table follows)"); sys.exit(0)
+n=0
+for r in d.get("Results") or []:
+    for v in r.get("Vulnerabilities") or []:
+        n+=1; print("    VULN   %s  %s %s -> %s  [%s]" % (r["Target"], v.get("PkgName"), v.get("InstalledVersion"), v.get("FixedVersion") or "no fix", v.get("VulnerabilityID")))
+    for s in r.get("Secrets") or []:
+        n+=1; print("    SECRET %s:%s  %s" % (r["Target"], s.get("StartLine"), s.get("RuleID")))
+print("    total: %d finding(s)" % n)
+'
     echo "  reproduce: trivy fs --scanners vuln,secret --severity HIGH,CRITICAL $target"
     return 1
   fi
