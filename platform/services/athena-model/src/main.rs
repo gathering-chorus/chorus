@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -410,6 +410,23 @@ fn run() -> Result<String, String> {
                 report.subjects.len(),
                 report.subjects.join("\n")
             ))
+        }
+        // #4102 — replace several rows in ONE update. athena-make sends the row
+        // being written and the Revision holding the version it displaces, so a
+        // failure cannot leave one without the other.
+        Some("write-many") => {
+            if args.len() != 1 {
+                return Err("write-many: no command-line arguments; pipe one WriteReq JSON object per line on stdin".into());
+            }
+            let mut input = String::new();
+            std::io::stdin()
+                .read_to_string(&mut input)
+                .map_err(|e| format!("write-many: cannot read stdin: {}", e))?;
+            let reqs = parse_add_batch_ndjson(&input)?;
+            let store = FusekiStore::new();
+            let id = Identity::resolve(&store)?;
+            let subjects = write_many(&store, &reqs, &id)?;
+            Ok(format!("written: {} entity(s)\n{}", subjects.len(), subjects.join("\n")))
         }
         // #3468 — delete / link / unlink: the governed verbs athena-make delegates to,
         // so every entity-delete and edge-mutation rides ONE audited write path.

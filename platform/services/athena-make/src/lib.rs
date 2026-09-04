@@ -1713,6 +1713,12 @@ fn dal_add_batch(input: &str, token: &str) -> R<()> {
     dal_run_stdin(&["add-batch".to_string()], token, input)
 }
 
+/// #4102 — replace several rows in one governed update (the row being written
+/// and the Revision holding the version it displaces).
+fn dal_write_many(input: &str, token: &str) -> R<()> {
+    dal_run_stdin(&["write-many".to_string()], token, input)
+}
+
 /// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
 fn dal_delete(kind: &str, name: &str, token: &str, graph: &str) -> R<()> {
     dal_run(&["delete".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
@@ -2538,7 +2544,7 @@ fn merge_json_objects(a: &str, b: &str) -> String {
 /// #4102 — write the row's CURRENT version as a Revision (kind revision, name
 /// `<kind>-<name>-v<version>`), snapshot = the row's data JSON as served. Rows
 /// without a version (never written through the door since #4101) keep "0".
-fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str) -> R<()> {
+fn build_revision(table: &RouteTable, name: &str, caller_role: &str) -> R<PreparedCreate> {
     // The snapshot must carry the EDGES too, not only the literals: AC2's diff is
     // "an added domain, a removed diagram", and both are edges. entity_json splits
     // them (#3635 read-surface quirk — an entity read serves literals, edges come
@@ -2571,7 +2577,7 @@ fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str)
     // /revisions reads — so a document's history is served by the same route as a
     // product's, whatever graph the row itself lives in.
     let rev_graph = class_instances_graph(&format!("{}Revision", NS))?;
-    dal_add("revision", &rev_name, token, &fields, &edges, &rev_graph)
+    Ok(PreparedCreate { kind: "revision".to_string(), name: rev_name, fields, edges, graph: rev_graph })
 }
 
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
@@ -2709,8 +2715,9 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // overwrite: its full data as one JSON snapshot, so any two versions diff
             // field by field on the page and through the API (Jeff: the Staples Athena
             // revision history). Fails closed: no revision, no replace.
-            match keep_revision(table, name, caller_role, token) {
-                Ok(()) => {}
+            let mut records: Vec<PreparedCreate> = Vec::new();
+            match build_revision(table, name, caller_role) {
+                Ok(rev) => records.push(rev),
                 // No predecessor to keep is not a failure: the row is not in the
                 // graph this shape reads from, so this write is a create in all
                 // but name. Any OTHER error fails closed — losing a version
@@ -2721,7 +2728,14 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
                     return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
                 }
             }
-            match dal_add(&kind, name, token, &fields, &owner_edges, &table.instances_graph) {
+            records.push(PreparedCreate {
+                kind: kind.clone(), name: name.to_string(), fields: fields.clone(),
+                edges: owner_edges.clone(), graph: table.instances_graph.clone(),
+            });
+            // The revision and the row it displaces go to the store as ONE update
+            // (write-many): a failure between them would otherwise record a version
+            // for a change that never happened.
+            match dal_write_many(&prepared_create_ndjson(&records), token) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
                     write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))

@@ -1761,6 +1761,29 @@ pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     Ok(subject)
 }
 
+/// #4102 — several rows REPLACED in one update. A write and the version it
+/// displaces have to land together or not at all: keeping the prior row and
+/// overwriting it were two calls, and a failure between them recorded a version
+/// for a change that never happened. Same planner and committer as `write`,
+/// just more than one plan, so the store sees one statement: a DELETE WHERE per
+/// subject, then a single INSERT DATA.
+pub fn write_many(store: &dyn Store, reqs: &[WriteReq], id: &Identity) -> R<Vec<String>> {
+    if reqs.is_empty() {
+        return Err("write-many: at least one entity is required".into());
+    }
+    let (plans, uniqueness_candidates) = plan_writes(store, reqs).map_err(|e| e.message)?;
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true)?;
+    for (req, subject) in reqs.iter().zip(subjects.iter()) {
+        let fields = req.fields.len().to_string();
+        let edges = req.edges.len().to_string();
+        witness("model.write", &[
+            ("kind", req.kind.as_str()), ("name", req.name.as_str()),
+            ("iri", subject.as_str()), ("fields", fields.as_str()), ("edges", edges.as_str()),
+        ]);
+    }
+    Ok(subjects)
+}
+
 /// Governed entity batch: validate the complete final state, authoritatively
 /// prove every minted subject absent, then insert all subjects in one update.
 /// This is deliberately NOT `seed_multi`: identities are minted from
