@@ -7,7 +7,7 @@
 //! Callers never pass IRIs — fields are literals, edges are (property, kind:name)
 //! pairs the mint resolves. --dry-run prints the Turtle and writes nothing.
 
-use athena_model::{add_batch, add_edge, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
+use athena_model::{add_batch, add_edge, add_edge_keeping, remove_edge_keeping, batch, curl_http, delete_entity, delete_iri, deploy_home, deploy_partitions, mint, post_all, post_rows, seed_multi_at, parse_add_batch_ndjson, parse_ntriples, remove_edge, seed_multi, OwnerTokens, SeedGroup, set_field, to_turtle, write, write_many, FusekiStore, Identity, Store, WriteReq};
 use std::io::Read;
 use std::process::ExitCode;
 
@@ -777,17 +777,35 @@ fn run() -> Result<String, String> {
             Ok(format!("set: {} {}={}", subject, prop, value))
         }
         Some(verb @ ("link" | "unlink")) => {
-            let (req, _) = parse_req(&args[1..])?;
+            // #4102 — --revision-stdin is this verb's own flag, not an entity arg;
+            // parse_req rejects anything it does not know, so keep it out.
+            let entity_args: Vec<String> = args[1..].iter()
+                .filter(|a| a.as_str() != "--revision-stdin").cloned().collect();
+            let (req, _) = parse_req(&entity_args)?;
             let (prop, tkind, tname) = req
                 .edges
                 .first()
                 .ok_or(format!("{} needs --edge prop=kind:name", verb))?;
             let store = FusekiStore::new();
             let id = Identity::resolve(&store)?; // #3651
-            let subject = if verb == "link" {
-                add_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id)?
+            // #4102 — an edge is data: if the caller pipes the Revision recording
+            // this change on stdin, it lands in the SAME update as the edge.
+            let mut piped = String::new();
+            if args[1..].iter().any(|a| a == "--revision-stdin") {
+                std::io::stdin()
+                    .read_to_string(&mut piped)
+                    .map_err(|e| format!("{}: cannot read the revision on stdin: {}", verb, e))?;
+            }
+            let revision = if piped.trim().is_empty() {
+                None
             } else {
-                remove_edge(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id)?
+                Some(parse_add_batch_ndjson(&piped)?.into_iter().next()
+                    .ok_or_else(|| format!("{}: --revision-stdin got no record", verb))?)
+            };
+            let subject = if verb == "link" {
+                add_edge_keeping(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id, revision.as_ref())?
+            } else {
+                remove_edge_keeping(&store, &req.kind, &req.name, prop, tkind, tname, req.graph.as_deref(), &id, revision.as_ref())?
             };
             Ok(format!("{}: {} {} {}:{}", verb, subject, prop, tkind, tname))
         }

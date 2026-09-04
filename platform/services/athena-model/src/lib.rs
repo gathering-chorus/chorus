@@ -1666,6 +1666,9 @@ fn commit_writes(
     uniqueness_candidates: &[UniquenessCandidate<'_>],
     id: &Identity,
     replace_existing: bool,
+    // #4102 — one more SPARQL block to carry in this same update (an edge op, so
+    // a link and the revision recording it cannot land apart).
+    also: Option<&str>,
 ) -> R<Vec<String>> {
     const DCT: &str = "http://purl.org/dc/terms/";
     let created_by_subject = if replace_existing {
@@ -1737,6 +1740,10 @@ fn commit_writes(
             uniqueness_guard = uniqueness_guard,
         ));
     }
+    if let Some(extra) = also {
+        sparql.push_str(" ;\n");
+        sparql.push_str(extra);
+    }
     store.update(&sparql)?;
     if !replace_existing {
         prove_create_only_commit(store, plans, uniqueness_candidates, creator, &now)?;
@@ -1750,7 +1757,7 @@ fn commit_writes(
 pub fn write(store: &dyn Store, req: &WriteReq, id: &Identity) -> R<String> {
     let (plans, uniqueness_candidates) =
         plan_writes(store, std::slice::from_ref(req)).map_err(|e| e.message)?;
-    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true)?;
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true, None)?;
     let subject = subjects.into_iter().next().expect("one request plans one subject");
     let fields = req.fields.len().to_string();
     let edges = req.edges.len().to_string();
@@ -1772,7 +1779,7 @@ pub fn write_many(store: &dyn Store, reqs: &[WriteReq], id: &Identity) -> R<Vec<
         return Err("write-many: at least one entity is required".into());
     }
     let (plans, uniqueness_candidates) = plan_writes(store, reqs).map_err(|e| e.message)?;
-    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true)?;
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, true, None)?;
     for (req, subject) in reqs.iter().zip(subjects.iter()) {
         let fields = req.fields.len().to_string();
         let edges = req.edges.len().to_string();
@@ -1809,7 +1816,7 @@ pub fn add_batch(store: &dyn Store, reqs: &[WriteReq], id: &Identity) -> R<AddBa
     let identities = plans.iter().map(|p| p.identity.as_str()).collect::<Vec<_>>().join(", ");
     // Create-only commit: never DELETE a subject. The model-authoritative read
     // above has proved every minted identity absent in its destination graph.
-    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, false)
+    let subjects = commit_writes(store, &plans, &uniqueness_candidates, id, false, None)
         .map_err(|e| format!("add-batch: commit failed for [{}]: {}", identities, e))?;
     let entities = subjects.len().to_string();
     let fields = reqs.iter().map(|req| req.fields.len()).sum::<usize>().to_string();
@@ -1966,7 +1973,29 @@ pub fn delete_entity(store: &dyn Store, kind: &str, name: &str, graph: Option<&s
 /// wipes the node's other data. Referential integrity on BOTH endpoints
 /// (fail-closed). Witnesses the link. The governed replacement for athena-make's raw
 /// build_edge_update.
-pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
+/// #4102 — an edge op, with the revision that records it, in one update. With no
+/// revision the edge block is the whole statement, exactly as before.
+fn commit_edge_with_revision(store: &dyn Store, id: &Identity, revision: Option<&WriteReq>, edge_block: &str) -> R<()> {
+    match revision {
+        None => store.update(edge_block).map(|_| ()),
+        Some(req) => {
+            let (plans, uniqueness_candidates) =
+                plan_writes(store, std::slice::from_ref(req)).map_err(|e| e.message)?;
+            commit_writes(store, &plans, &uniqueness_candidates, id, true, Some(edge_block))?;
+            Ok(())
+        }
+    }
+}
+
+pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity) -> R<String> {
+    add_edge_keeping(store, kind, name, prop, tkind, tname, graph, id, None)
+}
+
+/// #4102 — link, and record the version it changes, in ONE update. An edge is
+/// data like any other triple: changing a row's parent with no revision leaves a
+/// history that says the row never moved.
+#[allow(clippy::too_many_arguments)]
+pub fn add_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity, revision: Option<&WriteReq>) -> R<String> {
     check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
@@ -1978,10 +2007,11 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
     }
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
     assert_dal_writable(g)?; // #3356 AC4
-    store.update(&format!(
+    let edge_block = format!(
         "INSERT DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
-    ))?;
+    );
+    commit_edge_with_revision(store, id, revision, &edge_block)?;
     witness("model.link", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
 }
@@ -1989,16 +2019,23 @@ pub fn add_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &s
 /// #3468 — REMOVE one edge (governed). Single DELETE DATA, witnessed. Idempotent:
 /// removing an absent edge is a no-op success (removal toward absence is safe).
 /// The governed replacement for athena-make's raw edge-delete.
-pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, _id: &Identity) -> R<String> {
+pub fn remove_edge(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity) -> R<String> {
+    remove_edge_keeping(store, kind, name, prop, tkind, tname, graph, id, None)
+}
+
+/// #4102 — unlink, and record the version it changes, in ONE update.
+#[allow(clippy::too_many_arguments)]
+pub fn remove_edge_keeping(store: &dyn Store, kind: &str, name: &str, prop: &str, tkind: &str, tname: &str, graph: Option<&str>, id: &Identity, revision: Option<&WriteReq>) -> R<String> {
     check_property_local(prop)?;
     let subject = mint(kind, name)?;
     let target = mint(tkind, tname)?;
     let g = graph.unwrap_or(INSTANCES_GRAPH); // #3647 — declared home or legacy default
     assert_dal_writable(g)?; // #3356 AC4
-    store.update(&format!(
+    let edge_block = format!(
         "DELETE DATA {{ GRAPH <{g}> {{ <{s}> <{ns}{p}> <{t}> }} }}",
         g = g, ns = NS, s = subject, p = prop, t = target
-    ))?;
+    );
+    commit_edge_with_revision(store, id, revision, &edge_block)?;
     witness("model.unlink", &[("subject", subject.as_str()), ("prop", prop), ("target", target.as_str())]);
     Ok(subject)
 }

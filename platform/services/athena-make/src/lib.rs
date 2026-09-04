@@ -1730,10 +1730,25 @@ fn dal_delete(kind: &str, name: &str, token: &str, graph: &str) -> R<()> {
 /// bare-kind entities (Domain/Product), so the subject kind mints the target IRI
 /// identically (mint is kind-independent for bare kinds).
 fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, token: &str, graph: &str) -> R<()> {
+    dal_edge_keeping(insert, kind, name, prop, tname, token, graph, None)
+}
+
+/// #4102 — an edge change is data like any other. When a Revision is passed it
+/// rides the SAME governed update as the link/unlink, so a row cannot change
+/// parent while its history says it never moved.
+#[allow(clippy::too_many_arguments)]
+fn dal_edge_keeping(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, token: &str, graph: &str, revision: Option<&PreparedCreate>) -> R<()> {
     let verb = if insert { "link" } else { "unlink" };
-    dal_run(&[verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+    let mut args: Vec<String> = vec![verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
               "--graph".into(), graph.to_string(),
-              "--edge".into(), format!("{}={}:{}", prop, kind, tname)], token)
+              "--edge".into(), format!("{}={}:{}", prop, kind, tname)];
+    match revision {
+        None => dal_run(&args, token),
+        Some(rev) => {
+            args.push("--revision-stdin".into());
+            dal_run_stdin(&args, token, &prepared_create_ndjson(std::slice::from_ref(rev)))
+        }
+    }
 }
 
 /// #3573 — BATCH via the DAL `batch` op. graph is the scope-VALIDATED x-target-graph;
@@ -2647,7 +2662,11 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // referential integrity + witness. Replaces the raw build_edge_update +
             // sparql_update path so edges ride the ONE governed write path too.
             let kind = kind_of_class(class_local);
-            match dal_edge(insert, &kind, name, pred, &target, token, &table.instances_graph) {
+            // #4102 — the version this edge change displaces goes with it, in one
+            // update. A row with no predecessor (never written through the door)
+            // simply has nothing to keep.
+            let rev = build_revision(table, name, caller_role).ok();
+            match dal_edge_keeping(insert, &kind, name, pred, &target, token, &table.instances_graph, rev.as_ref()) {
                 Ok(_) => {
                     let verb = if insert { "add-edge" } else { "remove-edge" };
                     emit_write_spine(caller_role, verb, name, edge, "ok");
