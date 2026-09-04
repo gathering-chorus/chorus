@@ -2504,6 +2504,29 @@ fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<Str
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
+/// #4102 — write the row's CURRENT version as a Revision (kind revision, name
+/// `<kind>-<name>-v<version>`), snapshot = the row's data JSON as served. Rows
+/// without a version (never written through the door since #4101) keep "0".
+fn keep_revision(table: &RouteTable, name: &str, caller_role: &str, token: &str) -> R<()> {
+    let (data, _links) = entity_json(&table.class, name, &table.exposure, true, &table.instances_graph)?;
+    let prev = query_version(&table.class, name, &table.instances_graph).unwrap_or_else(|| "0".to_string());
+    let class_local = table.class.rsplit('#').next().unwrap_or("");
+    let kind = kind_of_class(class_local);
+    let plural = pluralize(class_local);
+    let rev_name = format!("{}-{}-v{}", kind, name, prev);
+    let mut fields: Vec<(String, String)> = vec![
+        ("label".to_string(), format!("{}/{} v{}", plural, name, prev)),
+        ("ofRow".to_string(), format!("{}/{}", plural, name)),
+        ("version".to_string(), prev),
+        ("snapshot".to_string(), data),
+    ];
+    for k in ["changedAt", "changedIn"] {
+        if let Some(v) = json_field(&fields[3].1, k) { fields.push((k.to_string(), v)); }
+    }
+    let edges = vec![("ownedBy".to_string(), "role".to_string(), caller_role.to_string())];
+    dal_add("revision", &rev_name, token, &fields, &edges, "urn:chorus:instances")
+}
+
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
     handle_write_stamped(method, path, body, table, caller_role, token, "")
 }
@@ -2520,6 +2543,10 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
     if body.len() > MAX_WRITE_BYTES {
         return write_resp("validation", &format!(
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    // #4102 — revisions are written by the door at replace, never by a caller
+    if table.class.ends_with("#Revision") {
+        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
     }
     // #4101 — the stamps are the door's, never the body's
     if let Some(k) = body_sets_a_stamp(body) {
@@ -2631,6 +2658,14 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
                     .filter(|(property, _, _)| property != "ownedBy")
                     .cloned(),
             );
+            // #4102 — keep the version being replaced, as a Revision row, before the
+            // overwrite: its full data as one JSON snapshot, so any two versions diff
+            // field by field on the page and through the API (Jeff: the Staples Athena
+            // revision history). Fails closed: no revision, no replace.
+            if let Err(e) = keep_revision(table, name, caller_role, token) {
+                emit_write_spine(caller_role, "replace", name, "", "revision-fail");
+                return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
+            }
             match dal_add(&kind, name, token, &fields, &owner_edges, &table.instances_graph) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");

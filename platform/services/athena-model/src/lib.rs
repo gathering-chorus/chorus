@@ -72,6 +72,7 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
+    ("revision", "Revision", false),   // #4102 — a prior version of a row, kept by the door at replace
     // #4089 — Commitment rows (a service design's promises, #4064) deploy through
     // the INSTANCE_SET like every cross-domain instance (Silas's OWL-DBA ruling
     // 2026-09-03: not a domain's harvested graph). Type-prefixed: commitment-<name>.

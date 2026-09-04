@@ -2295,6 +2295,31 @@ chorus:docState        a owl:DatatypeProperty ; rdfs:label "docState" ; rdfs:ran
     rdfs:comment "One declared word for whether a document can be trusted: draft, current, superseded, retired. #4101: Jeff, 2026-09-03: 'what about state'. Products and services keep their lifecycle status; this is the document's own word." .
 chorus:version         a owl:DatatypeProperty ; rdfs:label "version" ; rdfs:range xsd:string ;
     rdfs:comment "How many times this row has been written through the door: 1 on create, +1 on every replace. Stamped, never typed. #4101: Jeff, 2026-09-03 20:27: 'thats not the version # i was expecting' — a number a person can say, beside the date." .
+
+# --- #4102 Revision: the prior version of a row, kept by the door at every replace ---
+# Jeff, 2026-09-04: "at staples when we built athena we had a document level and field level
+# revision history - this allowed us to run diffs on versions of docs to see what changed";
+# "having a revision history for the doc makes sense that is visible on the page";
+# "and retrievable by loom". One revision per replaced version: ofRow names the row,
+# version is the version it WAS, snapshot is that version's full data as JSON (every
+# property, so any two versions diff field by field). Written only by the door (athena-make
+# replace), never by a body: a direct write to /revisions is refused.
+chorus:Revision a owl:Class ; rdfs:label "Revision" ;
+    rdfs:comment "A prior version of a product, service or document row, kept at the moment it was replaced. #4102." .
+chorus:ofRow           a owl:DatatypeProperty ; rdfs:label "ofRow" ; rdfs:range xsd:string ;
+    rdfs:comment "The row this revision belongs to, as <plural>/<name> (products/spine). #4102." .
+chorus:snapshot        a owl:DatatypeProperty ; rdfs:label "snapshot" ; rdfs:range xsd:string ;
+    rdfs:comment "The replaced version's full data as one JSON object, every property, for field-by-field diffs. #4102." .
+chorus:RevisionShape a sh:NodeShape ;
+    sh:targetClass chorus:Revision ;
+    chorus:instancesGraph "urn:chorus:instances" ;
+    sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ofRow        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:version      ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:snapshot     ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:changedAt    ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:changedIn    ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:ownedBy      ; sh:minCount 1 ; sh:class chorus:Role ] .
 chorus:overview           a owl:DatatypeProperty ; rdfs:label "overview" ; rdfs:range xsd:string .
 chorus:asIs               a owl:DatatypeProperty ; rdfs:label "as-is" ; rdfs:range xsd:string .
 chorus:toBe               a owl:DatatypeProperty ; rdfs:label "to-be" ; rdfs:range xsd:string .
