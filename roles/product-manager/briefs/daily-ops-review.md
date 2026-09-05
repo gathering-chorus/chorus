@@ -1,41 +1,41 @@
-# Daily Ops Review — 2026-08-06
+# Daily Ops Review — 2026-09-05
 
 ## 1. Hooks Health
-**Status: GREEN**
-`cargo check` on `platform/services/chorus-hooks` passed — no errors, 2 dead-code warnings (`registration_json` in session_registry.rs:66, `owes_response_block` in nudge_drain.rs:178). Both unused-pub functions, not regressions.
-**Action:** None urgent. Consider pruning dead-code warnings in a housekeeping card.
+**Status: RED** (day 7)
+`cargo check` fails with 2 errors in `signal_witness.rs:55`: `si_pid` / `si_uid` accessed as struct fields but are methods in this libc version. Fix: `(*info).si_pid()` and `(*info).si_uid()`. Binary not buildable since 2026-08-30.
+**Action:** Silas or Wren — one-line fix, open a card if not already queued.
 
 ## 2. LaunchAgent /tmp Refs
-**Status: YELLOW**
-11+ plists in `proving/config/launchagents/` use `/tmp/` for log paths (alert-notifier, api, clearing, context-cache ×3, cruft-scan, fuseki ×2, harvest-exporter, hooks). Persistent since July review — no remediation shipped.
+**Status: YELLOW** (persistent)
+12+ plists in `proving/config/launchagents/` use `/tmp/` for stdout/stderr log paths (hooks, api, clearing, context-cache ×3, fuseki ×2, harvest-exporter, posture-capture, ops, seed-probe). No remediation shipped.
 **Action:** CSC hygiene card still open. Redirect log paths to `~/Library/Logs/Chorus/`.
 
 ## 3. CLAUDE.md Fragment Staleness
-**Status: YELLOW → RED**
-All 24 fragments in `designing/claudemd/shared/` last updated 2026-07-31 — breach 7-day threshold today. Wren's morning summary (today) explicitly flags this. Domain-context files also at 7d boundary (see §7).
-**Action:** Fragment refresh needed today. Wren owns. npm ci staleness (day 58, no owner) surfaced in same summary — assign.
+**Status: GREEN** (resolved)
+All 24 fragments in `designing/claudemd/shared/` updated 2026-09-05 today. Prior RED resolved.
+**Action:** None.
 
 ## 4. CSC Compliance (/tmp in scripts)
-**Status: YELLOW**
-`platform/scripts/` has 14+ `/tmp/` usages across: `coherence-check`, `look.sh`, `bridge-subscriber-watchdog.sh`, `nightly-suites.sh`, `bedroom-heartbeat.sh`, `werk-init.sh`, `crawler-hydrate-graph.sh`. Also `roles/kade/scripts/` has 5 hits (`gen-thumbs-bedroom.py`, `wm-schema-extract.py`, `photo-pipeline.py`, `gen-video-thumbs-bedroom.py`). No architect scripts affected.
-**Action:** Known ongoing. `/tmp/` in operational scripts acceptable if ephemeral; LaunchAgent log paths are the priority (§2).
+**Status: YELLOW** (persistent)
+`platform/scripts/` has 14+ `/tmp/` refs (`look.sh`, `bridge-subscriber-watchdog.sh`, `nightly-suites.sh`, `athena-deploy-model.sh` ×9+). `roles/wren/scripts/style-lint.sh` uses `/tmp/style-lint-body.html`. Ephemeral use; not a blocking issue.
+**Action:** Known ongoing. LaunchAgent log paths remain the priority (§2).
 
 ## 5. Git Dirty State
 **Status: GREEN**
-Working tree clean across all role directories. No uncommitted changes detected.
+Working tree clean — 0 uncommitted changes across all role directories.
 **Action:** None.
 
 ## 6. Stale WIP Cards
 **Status: YELLOW**
-Two Wren cards stalled >48h: **#3724** (path-routed /domains) — built but NOT on main since 2026-08-03, land verb stalled twice reporting `running` with no process; **#3718** (TBox verbs) — 53 tests passing, AC4 gate unarmed since 2026-08-03. Both blocked on Silas (land-verb substrate / model governance).
-**Action:** Silas to unblock land-verb stall (#3724) and arm AC4 gate (#3718). Wren confirm still blocked.
+chorus-api MCP offline (day 7), live board unqueryable. Wren's `state.json` shows stale `card:1962` timestamp (April). Recent git log confirms active shipping: Wren #4101 (22h), #4096 (2d); Kade #4105, #4106 (9–18h); Silas #4107, #4108 (9–13h). Wren state.json not updated post-land.
+**Action:** Wren update `state.json` after each land. Silas restore chorus-api to restore board visibility.
 
 ## 7. Domain Context Freshness
-**Status: RED**
-All 5 domain-context files (`chorus`, `infrastructure`, `music`, `photos`, `seeds`) last updated 2026-07-31 — hit 7-day ceiling today. Active shipments in chorus domain this week (#3724, #3718, Kade's nightly-to-zero #3606, #3758). Context files have not tracked these changes.
-**Action:** Refresh domain-context files today, prioritizing `chorus` and `infrastructure`. Wren owns per morning summary flag.
+**Status: GREEN** (resolved)
+All 5 domain-context files (`chorus`, `infrastructure`, `music`, `photos`, `seeds`) updated 2026-09-05 today. Prior RED resolved.
+**Action:** None.
 
 ## 8. Disk Delta
 **Status: N/A**
-No perf-baseline data found in repo (`data/`, `.coverage-denominator-baseline` present but not disk growth data). Cannot compute delta.
-**Action:** Consider establishing a disk-delta baseline artifact in `data/` if this check is recurring.
+No perf-baseline output data in repo. Cannot compute disk growth delta.
+**Action:** No change from prior reviews. Baseline artifact not yet established.
