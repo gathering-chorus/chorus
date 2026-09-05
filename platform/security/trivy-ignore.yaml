@@ -1,0 +1,19 @@
+# Secret-scan exemption ledger (#4107).
+#
+# The visible debt list, same shape as proving/security/sweep-exemptions.json:
+# every entry names WHY it is not a secret. Nothing is silently suppressed —
+# a real credential must never appear here, and the negative proof in
+# test-security-scan.sh asserts a planted token still turns the scan red.
+secrets:
+  - id: github-pat
+    paths:
+      - "platform/services/chorus-hooks/src/hooks/write_scrubber.rs"
+    statement: >
+      Fake token literals inside the #[tokio::test] blocks of the credential
+      scrubber itself. The scrubber exists to block these strings; its tests
+      must contain them or they prove nothing. Not a live credential.
+  - id: slack-access-token
+    paths:
+      - "platform/services/chorus-hooks/src/hooks/write_scrubber.rs"
+    statement: >
+      Same as github-pat above — write_scrubber's own test fixtures.

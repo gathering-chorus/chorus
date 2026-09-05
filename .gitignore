@@ -85,6 +85,13 @@ platform/logs/permission-prompts.log
 platform/logs/command-errors.log
 platform/logs/board-snapshot-*.json
 
+# #4107 — the paths #3388 missed. ADR-041: logs are runtime, not source.
+# platform/pulse/logs/ and a bare *.log at the repo root were both still
+# trackable, which is how six runtime files sat in the tree for five months.
+# Guarded by platform/tests/tracked-runtime-logs.bats.
+platform/pulse/logs/
+/*.log
+
 # Clearing transcripts (runtime, not source)
 archive/clearing/transcripts/
 directing/clearing/transcripts/
