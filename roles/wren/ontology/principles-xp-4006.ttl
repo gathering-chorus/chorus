@@ -1,3 +1,7 @@
+# #4102 — every row carries its owner. Rows with no owner cannot be written
+# through the door at all (a role's token signs its own rows), so they were
+# loaded straight from this file, around the API. Jeff, 2026-09-04: cards,
+# practices and principles are Wren's.
 # #4006 — the 14 XP principles, the second half of the loom's principle layer.
 #
 # The team already served the 14 permaculture principles it DESIGNS by. These
@@ -18,6 +22,7 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 chorus:xp-humanity a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Humanity" ;
     rdfs:comment "Software is written by people. To be effective, a process must acknowledge human needs — safety, accomplishment, belonging, growth, intimacy — and the tension between what a person needs and what a team needs." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -28,6 +33,7 @@ chorus:xp-humanity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-economics a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Economics" ;
     rdfs:comment "Someone has to pay. Software development that does not serve economic needs dies. Time value of money and the option value of systems are the two economic drivers that matter most." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -38,6 +44,7 @@ chorus:xp-economics a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-mutual-benefit a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Mutual Benefit" ;
     rdfs:comment "Every activity should benefit all concerned. Solutions that benefit me now at your expense, or me now at my own expense later, are the most destructive form of waste." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -48,6 +55,7 @@ chorus:xp-mutual-benefit a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-self-similarity a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Self-Similarity" ;
     rdfs:comment "Try copying the structure of one solution into a new context, even at a different scale. The details will be wrong; the shape is often right." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -58,6 +66,7 @@ chorus:xp-self-similarity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-improvement a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Improvement" ;
     rdfs:comment "There is no perfect process. Excellence in software development comes through a process of improvement, not through perfection at the outset. Make it work, make it right, make it fast — in that order." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -68,6 +77,7 @@ chorus:xp-improvement a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-diversity a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Diversity" ;
     rdfs:comment "Teams need to bring together a variety of skills, attitudes and perspectives to see problems and pitfalls, to think of multiple ways to solve problems, and to implement the solutions." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -78,6 +88,7 @@ chorus:xp-diversity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-reflection a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Reflection" ;
     rdfs:comment "Good teams do not just do their work, they think about how they are working and why they are working. They analyse why they succeeded or failed, and hide neither mistakes nor problems." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -88,6 +99,7 @@ chorus:xp-reflection a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-flow a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Flow" ;
     rdfs:comment "Deliver a steady flow of valuable software by engaging in all the activities of development simultaneously. Flow suggests deploying smaller increments of value ever more frequently." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -98,6 +110,7 @@ chorus:xp-flow a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-opportunity a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Opportunity" ;
     rdfs:comment "Learn to see problems as opportunities for change. Problems are not just occasions to survive; they are chances to transform the team's practice." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -108,6 +121,7 @@ chorus:xp-opportunity a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-redundancy a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Redundancy" ;
     rdfs:comment "Critical, difficult problems should be solved several different ways. Then if one solution fails, the others prevent disaster." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -118,6 +132,7 @@ chorus:xp-redundancy a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-failure a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Failure" ;
     rdfs:comment "When you do not know what to do, risking failure can be the shortest, surest road to success. Failure is not waste if it imparts knowledge." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -128,6 +143,7 @@ chorus:xp-failure a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-quality a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Quality" ;
     rdfs:comment "Quality is not a purchase decision — you do not get to choose between quality and speed. Projects do not go faster by accepting lower quality, and they do not go slower by demanding higher quality." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -138,6 +154,7 @@ chorus:xp-quality a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-baby-steps a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Baby Steps" ;
     rdfs:comment "What is the least you could do that is recognisably in the right direction? Big changes made all at once are dangerous; small steps let you back out of a mistake cheaply." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;
@@ -148,6 +165,7 @@ chorus:xp-baby-steps a chorus:Principle ;
     dcterms:modified "2026-08-25T13:00:00Z"^^xsd:dateTime .
 
 chorus:xp-accepted-responsibility a chorus:Principle ;
+    chorus:ownedBy chorus:role-wren ;
     rdfs:label "Accepted Responsibility" ;
     rdfs:comment "Responsibility cannot be assigned; it can only be accepted. If someone tries to give you responsibility, only you can decide whether you are responsible or not." ;
     dcterms:source "Beck, K. with Andres, C. Extreme Programming Explained: Embrace Change, 2nd ed. (Addison-Wesley, 2004), ch. 3." ;

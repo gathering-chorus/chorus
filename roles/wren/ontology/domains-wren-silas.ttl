@@ -238,7 +238,7 @@ chorus:products a owl:Class, chorus:Domain ;
   chorus:purpose "Hold the product tree — the products, their children, and what each claims — so structure questions resolve to one answer." ;
   chorus:ownedBy chorus:role-wren ; chorus:partOf chorus:product-athena ;
   chorus:atStep chorus:Designing ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product .
+  chorus:repoTarget "designing/products" ; chorus:definesVocabulary chorus:Product, chorus:Revision .   # #4102 — revisions served beside products
 
 chorus:value-streams a owl:Class, chorus:Domain ;
   rdfs:label "value-streams" ; chorus:comment "The value streams and their ordered steps — Chorus's Shaping → Directing → Designing → Building → Proving → Reflecting, and the child streams a step composes." ;

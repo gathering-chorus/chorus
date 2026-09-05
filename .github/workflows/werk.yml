@@ -312,6 +312,49 @@ jobs:
           post pending
           if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
+      - name: prove-live
+        id: prove_live
+        # #4102 — the card's own integration bats, run against the card's VARIANT,
+        # after env-up.
+        #
+        # Why this step exists: the test leg runs BEFORE deploy-werk and env-up, so
+        # at that point the card's stack does not exist yet. An integration bats
+        # there either self-skips (green for no reason) or resolves its default
+        # OWL_URL to :3360 — CANONICAL — and reports a red that is really "the
+        # membrane refused a test writing to prod". Both readings are wrong, and
+        # the AC that needs a live door goes unproven either way (#4102: eight
+        # checks failed in the test leg and all eight pass against the variant).
+        #
+        # The port comes from `werk-deploy env-port`, the one table that assigns
+        # variant ports — never a literal here, or this lane drifts back onto
+        # canonical the next time the map changes.
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
+        run: |
+          set -euo pipefail
+          WERK="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"
+          FILES=$(git -C "$WERK" diff --name-only origin/main...HEAD -- 'platform/tests/*.bats' || true)
+          if [ -z "$FILES" ]; then
+            echo "prove-live: this card changes no platform/tests/*.bats — nothing to run (explicit absence, not a pass)"
+            exit 0
+          fi
+          PORT=$(werk-deploy env-port athena-make "${ROLE}")
+          export OWL_URL="http://localhost:${PORT}"
+          export RUN_INTEGRATION=true
+          echo "prove-live: OWL_URL=${OWL_URL} (the ${ROLE} variant, not canonical :3360)"
+          # the variant must actually answer, or this leg is measuring nothing
+          curl -sf --max-time 10 "${OWL_URL}/health" >/dev/null || {
+            echo "prove-live: the variant's athena-make did not answer at ${OWL_URL} — env-up said it was up; refusing to report a verdict" >&2
+            exit 1
+          }
+          rc=0
+          for f in $FILES; do
+            [ -f "$WERK/$f" ] || continue
+            echo "-- $f"
+            ( cd "$WERK" && bats "$f" ) || rc=1
+          done
+          echo "prove-live: rc=$rc (BLOCKING — an AC that needs the live door is proven here or not at all)"
+          exit "$rc"
+
       - name: demo
         id: demo
         # #3519 — THE WITNESS-GATED LAND. Three separable steps, one source of truth (the

@@ -9,7 +9,7 @@
      doc they came from, in design order, with the model's own tables and lists, and
      nothing wider than a phone. The #3635 attribute-table version it replaces is in git. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script>mountJourneyNav('products');</script>
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="history-fold.js"></script><script>mountJourneyNav('products');</script>
 <script>(function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
@@ -52,6 +52,11 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   /* mermaid measures its labels outside this page's chapter CSS; the chapter's p/span rules must not reach them, or every box clips (seen on round 1) */
   figure.dg .mmd p, figure.dg .mmd span { margin: 0; font-size: inherit; line-height: inherit; }
   figure.dg .mmd-err { color: var(--muted); font-style: italic; font-size: .85rem; }
+  /* #4102 — history: one fold per prior version, each a field-by-field diff */
+  details.rev { margin: 6px 0; padding: 6px 10px; border: 1px dashed var(--border); border-radius: 6px; }
+  details.rev > summary { cursor: pointer; font-size: .9rem; }
+  details.rev .was { color: #a33; text-decoration: line-through; }
+  details.rev .now { color: #262; }
   .foldall { display: flex; gap: 12px; justify-content: flex-end; font-size: .8rem; margin: 4px 0 -4px; }
   .foldall a { color: var(--accent); text-decoration: none; cursor: pointer; }
   section.ch h2, details.ch h2 { font-size: 1.08rem; margin-bottom: 8px; display: flex; align-items: baseline; gap: 8px; }
@@ -186,6 +191,17 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
     const restHtml = rest.length ? `<section class="ch" id="more"><h2><span class="n">&middot;</span>Also on the shape<span class="src">${rest.length} more</span></h2>` +
       `<p>${rest.map(k => `<code>${esc(k)}</code>: ${e[k] ? esc(asArray(e[k]).join(', ')) : '<span class="unwritten">not set</span>'}`).join(' &nbsp;&middot;&nbsp; ')}</p></section>` : '';
 
+    const PLURAL = 'products', ROWNAME = p, CURRENT = e;
+    // #4102 — History: the fold is shared by product, service and document
+    // (athena/history-fold.js) so one change to how a diff reads changes all three.
+    const histHtml = await historyFold('products', p, e);   // `e` already merges the collection row (edges, bare) with the entity literals
+    // #4102 — the design document's history is a fold on THIS page (Jeff,
+    // 2026-09-04: "its just a fold on the main page"): a document is read
+    // through the product it belongs to, so it gets no page of its own.
+    const docHist = designDoc && designDoc.name
+      ? (await historyFold('documents', String(designDoc.name).replace(/^document-/, ''), designDoc)).replace('id="history"', 'id="dochistory"').replace('History<span', 'Design doc history<span')
+      : '';;
+
     main.innerHTML = `
 <div class="hero">
   <h1>${esc(label)} <span class="kind">&mdash; Product</span></h1>
@@ -202,6 +218,8 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
 <nav class="toc">${toc}</nav>
 <div class="foldall"><a data-fold="open">expand all</a><a data-fold="close">collapse all</a></div>
 ${chapterHtml}
+${histHtml}
+${docHist}
 ${restHtml}
 <div class="prov">Rendered from <code>GET /products/${esc(p)}</code> &middot; ${Object.keys(shape).length} properties on the Product shape &middot; ${['created', 'modified'].filter(k => e[k]).map(k => `${k} ${esc(String(e[k]).slice(0, 10))}`).join(' &middot; ')}</div>`;
     // remember each fold's state; expand/collapse all; a toc jump opens its target

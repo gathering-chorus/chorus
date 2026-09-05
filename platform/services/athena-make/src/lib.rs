@@ -1713,6 +1713,12 @@ fn dal_add_batch(input: &str, token: &str) -> R<()> {
     dal_run_stdin(&["add-batch".to_string()], token, input)
 }
 
+/// #4102 — replace several rows in one governed update (the row being written
+/// and the Revision holding the version it displaces).
+fn dal_write_many(input: &str, token: &str) -> R<()> {
+    dal_run_stdin(&["write-many".to_string()], token, input)
+}
+
 /// Delete an entity via the DAL `delete` (governed, fail-closed, witnessed).
 fn dal_delete(kind: &str, name: &str, token: &str, graph: &str) -> R<()> {
     dal_run(&["delete".into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
@@ -1724,10 +1730,25 @@ fn dal_delete(kind: &str, name: &str, token: &str, graph: &str) -> R<()> {
 /// bare-kind entities (Domain/Product), so the subject kind mints the target IRI
 /// identically (mint is kind-independent for bare kinds).
 fn dal_edge(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, token: &str, graph: &str) -> R<()> {
+    dal_edge_keeping(insert, kind, name, prop, tname, token, graph, None)
+}
+
+/// #4102 — an edge change is data like any other. When a Revision is passed it
+/// rides the SAME governed update as the link/unlink, so a row cannot change
+/// parent while its history says it never moved.
+#[allow(clippy::too_many_arguments)]
+fn dal_edge_keeping(insert: bool, kind: &str, name: &str, prop: &str, tname: &str, token: &str, graph: &str, revision: Option<&PreparedCreate>) -> R<()> {
     let verb = if insert { "link" } else { "unlink" };
-    dal_run(&[verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
+    let mut args: Vec<String> = vec![verb.into(), "--kind".into(), kind.to_string(), "--name".into(), name.to_string(),
               "--graph".into(), graph.to_string(),
-              "--edge".into(), format!("{}={}:{}", prop, kind, tname)], token)
+              "--edge".into(), format!("{}={}:{}", prop, kind, tname)];
+    match revision {
+        None => dal_run(&args, token),
+        Some(rev) => {
+            args.push("--revision-stdin".into());
+            dal_run_stdin(&args, token, &prepared_create_ndjson(std::slice::from_ref(rev)))
+        }
+    }
 }
 
 /// #3573 — BATCH via the DAL `batch` op. graph is the scope-VALIDATED x-target-graph;
@@ -1962,7 +1983,14 @@ fn prepare_create(body: &str, table: &RouteTable, caller_role: &str, landed_comm
         .iter()
         .map(|field| field.split('|').next().unwrap_or(field))
         .collect();
-    if let Some(bad) = values.keys().find(|key| key.as_str() != "name" && !declared.contains(key.as_str())) {
+    // #4102 — `label` is written by the DAL on EVERY row whether a shape declares
+    // it or not, and every collection read serves it back. Refusing it on write
+    // made the read unusable as a write body: hand back what the page shows and
+    // the door says the field is off-model. Name is the identity, label is the
+    // name a person reads; both are universal, so neither is off-model.
+    if let Some(bad) = values.keys().find(|key| {
+        key.as_str() != "name" && key.as_str() != "label" && !declared.contains(key.as_str())
+    }) {
         return Err(CreatePrepareError {
             tag: "validation",
             spine_result: "off-model",
@@ -2201,7 +2229,10 @@ pub fn off_model_property(body: &str, fields: &[String]) -> Option<String> {
     let declared: std::collections::HashSet<&str> =
         fields.iter().map(|f| f.split('|').next().unwrap_or(f)).collect();
     for key in json_top_level_keys(body) {
-        if key == "name" || key == "target" { continue; } // write-envelope, not shape props
+        // #4102 — `label` rides with every row: the DAL writes one whether the
+        // shape declares it or not, and every collection read serves it back, so
+        // a body echoing a read must be allowed to carry it.
+        if key == "name" || key == "target" || key == "label" { continue; } // write-envelope, not shape props
         if !declared.contains(key.as_str()) {
             return Some(key);
         }
@@ -2504,6 +2535,101 @@ fn query_version(class: &str, entity: &str, instances_graph: &str) -> Option<Str
     sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
 }
 
+/// #4102 — the commit the row's CURRENT version was written in (the #4101 stamp).
+fn query_changed_in(class: &str, entity: &str, instances_graph: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{s}> chorus:changedIn ?v }} }}",
+        ns = NS, g = instances_graph, s = entity_subject(class, entity)
+    );
+    sparql_json(&q).ok().and_then(|b| select_v(&b).into_iter().next())
+}
+
+/// #4102 — one commit, one version. A land posts a row more than once BY DESIGN:
+/// once to create it, then a second pass restoring the edges whose targets did
+/// not exist yet (a cycle cannot be written one row at a time otherwise). Counted
+/// as two changes, a plain load leaves every row at v2 carrying a v1 revision
+/// nobody ever saw — history that records the loader instead of a person.
+///
+/// A write stamped with the SAME commit as the row's current changedIn is part of
+/// the same change: the row keeps its version and no revision is kept. Only a
+/// stamped write can claim this — a hand write carries no commit (it stamps
+/// "unknown"), so two hand edits can never collapse into one.
+fn same_change_as_current(class: &str, entity: &str, instances_graph: &str, landed_commit: &str) -> bool {
+    let c = landed_commit.trim();
+    if c.is_empty() || c == "unknown" { return false; }
+    query_changed_in(class, entity, instances_graph).as_deref() == Some(c)
+}
+
+/// #4102 — the home graph of a class, resolved the way the route table resolves
+/// it (declared chorus:instancesGraph, else the domain that definesVocabulary it).
+/// A Revision is a row of chorus:Revision, so it lives where that class lives —
+/// not in the graph of the row it is a revision of, and never in a catch-all.
+fn class_instances_graph(class: &str) -> R<String> {
+    let igq = format!(
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; chorus:instancesGraph ?v }} }}",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let declared = select_v(&sparql_json(&igq)?).into_iter().next();
+    let dq = format!(
+        "PREFIX chorus: <{ns}> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?d chorus:definesVocabulary <{c}> BIND(REPLACE(STR(?d), '.*[#/]', '') AS ?v) }} }} LIMIT 1",
+        ns = NS, g = ONTOLOGY_GRAPH, c = class
+    );
+    let domain = select_v(&sparql_json(&dq)?).into_iter().next();
+    resolve_instances_graph(declared.as_deref(), domain.as_deref())
+}
+
+/// Splice two flat JSON objects into one. Used to put a row's edges back beside
+/// its literals for the revision snapshot; either side may be empty (`{  }`).
+fn merge_json_objects(a: &str, b: &str) -> String {
+    let inner = |o: &str| o.trim().trim_start_matches('{').trim_end_matches('}').trim().to_string();
+    let (ai, bi) = (inner(a), inner(b));
+    match (ai.is_empty(), bi.is_empty()) {
+        (true, true) => "{  }".to_string(),
+        (true, false) => format!("{{ {} }}", bi),
+        (false, true) => format!("{{ {} }}", ai),
+        (false, false) => format!("{{ {}, {} }}", ai, bi),
+    }
+}
+
+/// #4102 — write the row's CURRENT version as a Revision (kind revision, name
+/// `<kind>-<name>-v<version>`), snapshot = the row's data JSON as served. Rows
+/// without a version (never written through the door since #4101) keep "0".
+fn build_revision(table: &RouteTable, name: &str, caller_role: &str) -> R<PreparedCreate> {
+    // The snapshot must carry the EDGES too, not only the literals: AC2's diff is
+    // "an added domain, a removed diagram", and both are edges. entity_json splits
+    // them (#3635 read-surface quirk — an entity read serves literals, edges come
+    // back separately), so a snapshot built from `data` alone could never show the
+    // change Jeff asked to see.
+    let (data, links) = entity_json(&table.class, name, &table.exposure, true, &table.instances_graph)?;
+    // A snapshot must look like the row as SERVED, so a diff of two versions reads
+    // the same as the page: an entity read tags edge targets `chorus:<name>` while
+    // every collection read serves the bare minted name, and a snapshot carrying
+    // the other spelling makes every edge look changed when nothing changed.
+    let links = links.replace("\"chorus:", "\"");
+    let data = merge_json_objects(&data, &links);
+    let prev = query_version(&table.class, name, &table.instances_graph).unwrap_or_else(|| "0".to_string());
+    let class_local = table.class.rsplit('#').next().unwrap_or("");
+    let kind = kind_of_class(class_local);
+    let plural = pluralize(class_local);
+    let rev_name = format!("{}-{}-v{}", kind, name, prev);
+    let mut fields: Vec<(String, String)> = vec![
+        ("label".to_string(), format!("{}/{} v{}", plural, name, prev)),
+        ("ofRow".to_string(), format!("{}/{}", plural, name)),
+        ("version".to_string(), prev),
+        ("snapshot".to_string(), data),
+    ];
+    for k in ["changedAt", "changedIn"] {
+        if let Some(v) = json_field(&fields[3].1, k) { fields.push((k.to_string(), v)); }
+    }
+    let edges = vec![("ownedBy".to_string(), "role".to_string(), caller_role.to_string())];
+    // Every row in its own domain graph, never a catch-all (Jeff, 2026-09-03):
+    // for a Revision that is the home of chorus:Revision, which is also the graph
+    // /revisions reads — so a document's history is served by the same route as a
+    // product's, whatever graph the row itself lives in.
+    let rev_graph = class_instances_graph(&format!("{}Revision", NS))?;
+    Ok(PreparedCreate { kind: "revision".to_string(), name: rev_name, fields, edges, graph: rev_graph })
+}
+
 pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str) -> (u16, String) {
     handle_write_stamped(method, path, body, table, caller_role, token, "")
 }
@@ -2520,6 +2646,10 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
     if body.len() > MAX_WRITE_BYTES {
         return write_resp("validation", &format!(
             "write body {} bytes exceeds {}-byte cap", body.len(), MAX_WRITE_BYTES));
+    }
+    // #4102 — revisions are written by the door at replace, never by a caller
+    if table.class.ends_with("#Revision") {
+        return write_resp("validation", "revisions are kept by the door when a row is replaced; they cannot be written directly");
     }
     // #4101 — the stamps are the door's, never the body's
     if let Some(k) = body_sets_a_stamp(body) {
@@ -2567,7 +2697,15 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             // referential integrity + witness. Replaces the raw build_edge_update +
             // sparql_update path so edges ride the ONE governed write path too.
             let kind = kind_of_class(class_local);
-            match dal_edge(insert, &kind, name, pred, &target, token, &table.instances_graph) {
+            // #4102 — the version this edge change displaces goes with it, in one
+            // update. A row with no predecessor (never written through the door)
+            // simply has nothing to keep.
+            let rev = if same_change_as_current(&table.class, name, &table.instances_graph, landed_commit) {
+                None
+            } else {
+                build_revision(table, name, caller_role).ok()
+            };
+            match dal_edge_keeping(insert, &kind, name, pred, &target, token, &table.instances_graph, rev.as_ref()) {
                 Ok(_) => {
                     let verb = if insert { "add-edge" } else { "remove-edge" };
                     emit_write_spine(caller_role, verb, name, edge, "ok");
@@ -2621,7 +2759,14 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
             fields.extend(props.iter().filter(|(field, _)| field != "ownedBy" && field != "changedAt" && field != "changedIn" && field != "version").cloned());
             fields.extend(write_stamps(table, landed_commit));   // #4101
             let prev = query_version(&table.class, name, &table.instances_graph);
-            fields.extend(version_stamp(table, prev.as_deref()));
+            // #4102 — one commit, one version: a second post from the same land is
+            // the same change, so the row keeps the version it already has.
+            let same_change = same_change_as_current(&table.class, name, &table.instances_graph, landed_commit);
+            match (same_change, prev.as_deref(), version_stamp(table, prev.as_deref())) {
+                (true, Some(p), Some((field, _))) => fields.push((field, p.to_string())),
+                (_, _, Some(stamp)) => fields.push(stamp),
+                _ => {}
+            }
             if table.fields.iter().any(|f| f.split('|').next() == Some("docState")) && !fields.iter().any(|(f, _)| f == "docState") {
                 fields.push(("docState".to_string(), "draft".to_string()));
             }
@@ -2631,7 +2776,31 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
                     .filter(|(property, _, _)| property != "ownedBy")
                     .cloned(),
             );
-            match dal_add(&kind, name, token, &fields, &owner_edges, &table.instances_graph) {
+            // #4102 — keep the version being replaced, as a Revision row, before the
+            // overwrite: its full data as one JSON snapshot, so any two versions diff
+            // field by field on the page and through the API (Jeff: the Staples Athena
+            // revision history). Fails closed: no revision, no replace.
+            let mut records: Vec<PreparedCreate> = Vec::new();
+            if !same_change { match build_revision(table, name, caller_role) {
+                Ok(rev) => records.push(rev),
+                // No predecessor to keep is not a failure: the row is not in the
+                // graph this shape reads from, so this write is a create in all
+                // but name. Any OTHER error fails closed — losing a version
+                // silently is the one outcome this feature cannot have.
+                Err(e) if e == "not-found" => {}
+                Err(e) => {
+                    emit_write_spine(caller_role, "replace", name, "", "revision-fail");
+                    return write_resp("validation", &format!("could not keep the prior version as a revision, replace refused: {}", e));
+                }
+            } }
+            records.push(PreparedCreate {
+                kind: kind.clone(), name: name.to_string(), fields: fields.clone(),
+                edges: owner_edges.clone(), graph: table.instances_graph.clone(),
+            });
+            // The revision and the row it displaces go to the store as ONE update
+            // (write-many): a failure between them would otherwise record a version
+            // for a change that never happened.
+            match dal_write_many(&prepared_create_ndjson(&records), token) {
                 Ok(_) => {
                     emit_write_spine(caller_role, "replace", name, "", "ok");
                     write_resp("ok", &format!("replaced {} via DAL ({} props)", name, props.len()))

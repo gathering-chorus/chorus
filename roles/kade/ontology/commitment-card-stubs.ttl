@@ -1,3 +1,7 @@
+# #4102 — every row carries its owner. Rows with no owner cannot be written
+# through the door at all (a role's token signs its own rows), so they were
+# loaded straight from this file, around the API. Jeff, 2026-09-04: cards,
+# practices and principles are Wren's.
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
 
@@ -7,18 +11,32 @@
 # Titles are the board's; the board stays the card's home.
 
 # security-commitments-4064.ttl
-chorus:card-3645 a chorus:Card ; chorus:label "3645" .
-chorus:card-3784 a chorus:Card ; chorus:label "3784" .
-chorus:card-3829 a chorus:Card ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" .
-chorus:card-3614 a chorus:Card ; chorus:label "3614" .
-chorus:card-2646 a chorus:Card ; chorus:label "2646" .
-chorus:card-3980 a chorus:Card ; chorus:label "3980" .
-chorus:card-4064 a chorus:Card ; chorus:label "Service design commitments live in the graph, not HTML — Commitment rows on Service, security design first" .
+chorus:card-3645 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "3645" .
+chorus:card-3784 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "3784" .
+chorus:card-3829 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "Provision a person in one command — CSS account, pod, WebID, principal, access — all or none" .
+chorus:card-3614 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "3614" .
+chorus:card-2646 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "2646" .
+chorus:card-3980 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "3980" .
+chorus:card-4064 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "Service design commitments live in the graph, not HTML — Commitment rows on Service, security design first" .
 # tests-commitments-4089.ttl
-chorus:card-4017 a chorus:Card ; chorus:label "One binary — fold the nightly's five bash legs into werk-test and retire nightly-suites.sh" .
-chorus:card-4008 a chorus:Card ; chorus:label "Nightly single-flight guards the wrapper, not the runner — orphaned lanes run concurrently" .
-chorus:card-4007 a chorus:Card ; chorus:label "The nightly cannot say what it is doing while it does it — run_id, streamed per-suite events, live page" .
-chorus:card-4014 a chorus:Card ; chorus:label "6 bats assertions cannot fail — run swallows a preceding [[ ]] or !-negated form" .
-chorus:card-3983 a chorus:Card ; chorus:label "Every accepted card proves its OWN tests ran — per-card test-evidence check at accept" .
-chorus:card-4055 a chorus:Card ; chorus:label "Test pyramid page returns 404 — rebuild /werk/quality/ against the live summary endpoint" .
-chorus:card-3325 a chorus:Card ; chorus:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" .
+chorus:card-4017 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "One binary — fold the nightly's five bash legs into werk-test and retire nightly-suites.sh" .
+chorus:card-4008 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "Nightly single-flight guards the wrapper, not the runner — orphaned lanes run concurrently" .
+chorus:card-4007 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "The nightly cannot say what it is doing while it does it — run_id, streamed per-suite events, live page" .
+chorus:card-4014 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "6 bats assertions cannot fail — run swallows a preceding [[ ]] or !-negated form" .
+chorus:card-3983 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "Every accepted card proves its OWN tests ran — per-card test-evidence check at accept" .
+chorus:card-4055 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "Test pyramid page returns 404 — rebuild /werk/quality/ against the live summary endpoint" .
+chorus:card-3325 a chorus:Card ;
+    chorus:ownedBy chorus:role-wren ; chorus:label "One readable end-to-end test of the card pipeline: pull, commit, push, merge, deploy, accept" .

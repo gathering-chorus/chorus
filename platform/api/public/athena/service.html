@@ -8,7 +8,7 @@
      Silas set: public = overview/asIs/toBe, signed-in = gaps/notInScope/
      pathToClose, secret = implementationPlan. -->
 <script>window.OWL_PORT = 3360;</script>
-<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
+<link rel="stylesheet" href="athena-flow.css"><script src="athena-flow.js"></script><script src="facets.js"></script><script src="history-fold.js"></script><script>mountJourneyNav('services');</script><script>/* #3810 — the page teaches itself its mount, with nothing to fetch. */
 (function(){var m=document.querySelector('meta[name="chorus-base"]'),b=m&&m.getAttribute('content')||null;
 if(b===null){var p=(location&&location.pathname)||'';b=(p==='/chorus'||p.indexOf('/chorus/')===0)?'/chorus':'';}
 b=b.replace(/\/+$/,'');window.CHORUS_BASE=b;
@@ -49,6 +49,11 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
       : `<details class="fold"><summary>${esc(label)} <span class="src">${esc(path)} &mdash; withheld (${esc(tier)})</span></summary><div class="body"><p class="empty">Present in the model, not returned to this caller. ADR-048 exposure, not a missing field.</p></div></details>`
     );
 
+    const PLURAL = 'services', ROWNAME = s, CURRENT = e;
+    // #4102 — History: the fold is shared by product, service and document
+    // (athena/history-fold.js) so one change to how a diff reads changes all three.
+    const histHtml = await historyFold('services', s, rowWithLinks(env));
+
     main.innerHTML = `
 <div class="stats">
   <div class="stat"><div class="v">${ownerDot(links.ownedBy)}</div><div class="l">Owner (ownedBy)</div></div>
@@ -58,6 +63,7 @@ var s=document.createElement('script');s.src=window.basePath('/js/base-path.js')
   <div class="stat"><div class="v">${e.version ? 'v' + esc(String(e.version)) + (e.docState ? ' · ' + esc(String(e.docState)) : '') + ' · ' + esc((d => isNaN(d) ? String(e.changedAt || '').slice(0, 10) : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)(new Date(String(e.changedAt || '')))) : '<span class="empty">not yet saved through the API</span>'}</div><div class="l">Version · state · last changed</div></div>
 </div>
 ${folds.join('\n')}
+${histHtml}
 <details class="fold" open id="commitments-fold"><summary>Commitments <span class="src">chorus:Commitment &rarr; chorus:ofService</span></summary><div class="body" id="commitments-body"><p class="empty">Loading commitments from the model&hellip;</p></div></details>
 <h2 class="eng">Engineering</h2>
 <details class="fold" open id="flows-fold"><summary>Flows <span class="src">chorus:diagram (mermaid)</span></summary><div class="body" id="flows-body"><p class="empty">Loading diagrams&hellip;</p></div></details>
