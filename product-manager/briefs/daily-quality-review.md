@@ -1,47 +1,46 @@
-# Daily Quality Review — 2026-09-04
+# Daily Quality Review — 2026-09-05
 
-> **Path map:** `directing/clearing` → app; `platform/{workflow-engine,chorus-sdk,pulse,mcp-server}` → suites. `jeff-bridwell-personal-site` and `messages/*` do not exist in this repo.
+> **Path map:** `directing/clearing` → app; `platform/{mcp-server,workflow-engine,chorus-sdk,pulse}` → suites. `jeff-bridwell-personal-site` and `messages/*` do not exist in this repo.
 
 ## App Tests (`directing/clearing`)
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 83.**
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 84.**
 - 0 tests run. Root cause: missing `node_modules` in package.
 - **Action:** `npm ci` in `directing/clearing`.
 
 ## Lint
-**RED** — BLOCKED: ESLint cannot find src files. **Day 85.**
-- Pattern `directing/clearing/src/` yields no matches from repo root; module load also fails.
-- **Action:** `npm ci` at repo root; run ESLint from within `directing/clearing/`.
+**RED** — BLOCKED: ESLint cannot find `@eslint/js` module. **Day 86.**
+- Config at repo root fails to load; no warnings counted.
+- **Action:** `npm ci` at repo root.
 
 ## Build (TypeScript)
-**RED** — TS error counts today vs yesterday:
+**RED** — Error counts unchanged from yesterday. No new regressions.
 | Package | Yesterday | Today | Delta |
 |---|---|---|---|
-| `directing/clearing` | 239 | 240 | +1 |
-| `platform/mcp-server` | 28 | **250** | **+222 ⚠️** |
+| `directing/clearing` | 240 | 240 | — |
+| `platform/mcp-server` | 250 | 250 | — |
 | `platform/workflow-engine` | 11 | 11 | — |
 | `platform/chorus-sdk` | 28 | 28 | — |
 | `platform/pulse` | 952 | 952 | — |
-- **Action:** mcp-server regression (+222 errors) needs immediate triage — likely a type-definition or import change landed overnight.
+- **Action:** `platform/mcp-server` (+222 spike landed 2026-09-03) still needs a card; `platform/pulse` at 952 is the long tail.
 
 ## Board-Client → `platform/mcp-server`
-**RED** — 31 suites, 0 tests run (ESM/Babel TS transform missing). Unchanged.
+**RED** — 31 suites, 0 tests run (Babel TS transform fails). Unchanged.
 - **Action:** Add `babel-plugin-transform-typescript` or switch to ts-jest.
 
 ## Workflow-Engine
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 83.** Unchanged.
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 84.** Unchanged.
 
 ## Chorus-SDK
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 83.** Unchanged.
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 84.** Unchanged.
 
 ## Slack-Bridge → `platform/pulse`
-**RED** — BLOCKED: `ts-jest` preset not found. **Day 83.** Unchanged.
+**RED** — BLOCKED: `ts-jest` preset not found. **Day 84.** Unchanged.
 
 ## Coverage
 **N/A** — All suites blocked; no data.
 
-## Failure Delta (vs 2026-09-02)
-- **NEW REGRESSION:** `platform/mcp-server` TS errors: 28 → 250 (+222). File a card.
-- **NEW:** `directing/clearing` TS errors: 239 → 240 (+1). Minor, monitor.
-- **UNCHANGED (day 83):** All 4 ts-jest suites blocked — root fix is `npm ci`.
-- **UNCHANGED (day 85):** Lint blocked.
-- **UNCHANGED:** `platform/pulse` at 952 TS errors.
+## Failure Delta (vs 2026-09-04)
+**No new failures.** All counts stable.
+- All 4 ts-jest suites still blocked (day 84). Fix is `npm ci` per package.
+- Lint still blocked (day 86). Fix is `npm ci` at repo root.
+- All TS error counts flat — the `mcp-server` spike (+222) is now 2 days old; needs a card if not already filed.
