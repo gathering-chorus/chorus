@@ -1,42 +1,33 @@
-# Morning Summary — 2026-09-04
+# Daily Morning Summary — 2026-09-05
 
-**HEADLINE:** mcp-server blew up overnight (+222 TS errors) and chorus-hooks is still broken Day 5 — two unresolved compile-time failures entering the day.
-
----
-
-**OPS:** 🔴 RED
-- 🔴 chorus-hooks `cargo check` still failing (E0615 in `signal_witness.rs:55`) — **Day 5**. One-line fix; Silas has action. Escalate to Jeff if not resolved by EOD today.
-- 🔴 CLAUDE.md shared fragments 8 days stale — **overdue**. Wren to refresh today.
-- 🔴 Domain-context files 8 days stale — Kade: chorus + infrastructure; Wren: music.
-- 🟡 chorus-api offline **Day 5** — live board dark, WIP unverifiable.
-- 🟡 LaunchAgent /tmp refs (17+ plists) — card filed, no emergency.
-- 🟢 Git working tree clean.
+**HEADLINE:** Hooks compile error and chorus-api are both Day 6 with no fix landed — escalation due.
 
 ---
 
-**QUALITY:** 🔴 RED
-- **NEW REGRESSION:** `platform/mcp-server` TS errors 28 → 250 (+222 overnight). File a card immediately; triage type-def / import change from last night.
-- ts-jest blocked across 4 suites — **Day 83**. Root fix: `npm ci`. Still unowned.
-- Lint blocked — **Day 85**.
-- 0 tests running. No coverage data.
-- `platform/pulse` at 952 TS errors, unchanged.
+**OPS: 🔴 RED** (Silas, 2026-09-04)
+- Hooks: `si_pid`/`si_uid` compile error in `signal_witness.rs:55` — Day 6, one-line fix, unpatched.
+- chorus-api: ConnectionRefused — Day 6, live board blind.
+- YELLOW: CLAUDE.md fragments + domain-context files at 5d, breach threshold 2026-09-06 (2-day runway).
+- YELLOW: 17+ LaunchAgent plists routing to `/tmp/`, 70 scripts with `/tmp/` refs — chronic, migration cards active.
+- GREEN: Working tree clean.
 
----
+**QUALITY: 🔴 RED** (Kade, 2026-09-05)
+- Tests: 0 run across all suites — `ts-jest` preset missing, **Day 84**. Fix: `npm ci` per package.
+- Lint: ESLint blocked, **Day 86**. Fix: `npm ci` at repo root.
+- Build: TS error counts flat, no new regressions. `platform/mcp-server` spike (+222, landed 2026-09-03) still needs a card filed.
+- Error totals: clearing 240 · mcp-server 250 · chorus-sdk 28 · workflow-engine 11 · pulse 952.
 
-**YESTERDAY:** 9 cards shipped — #4063 (kade), #4064 (silas), #4080 (wren), #4084 (silas), #4089 (kade), #4093 (kade), #4094 (wren), #4096 (wren), #4098 (silas: log-harvest HARVEST_OWNED_CLASSES fix, 7/7 bats green).
-
----
+**YESTERDAY:** 7 cards shipped — #4101 (wren: athena-make shape ordering fix), #4008 (kade: single-flight lock), #4105 (kade: census partial-read), #4103 (silas: red-suites fixes — log-harvest plist, deep-health, platform/api coverage), #4106 (kade), #4107 #4108 (silas). Strong throughput across all three roles.
 
 **TODAY:**
-1. Silas: fix `signal_witness.rs` E0615 — Day 5, EOD deadline.
-2. File card + triage mcp-server +222 TS regression (all roles).
-3. Wren: refresh `designing/claudemd/shared/` fragments (search-hierarchy.md, chorus-prompt.md).
-4. Restore chorus-api — board has been dark 5 days.
-5. Background: ts-jest / lint unblock (`npm ci`) needs an owner.
+1. Silas: Land the `si_pid`/`si_uid` one-liner — Day 6 is too long, hooks are a core dependency.
+2. Silas/Jeff: Restore chorus-api — board is blind; cannot verify WIP state.
+3. Any role: `npm ci` at repo root + per-package — unblocks lint (Day 86) and all four test suites (Day 84).
+4. Wren: File card for `mcp-server` +222 TS spike (2 days old, no card yet).
+5. Wren/Kade: Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` before 2026-09-06.
+6. Wren: Refresh `designing/claudemd/shared/` before 2026-09-06.
 
----
-
-**BLOCKERS (Jeff's attention):**
-- chorus-hooks Day 5 — if Silas hasn't shipped the one-liner by EOD, this needs intervention.
-- mcp-server +222 errors overnight — new, unknown root cause, needs triage now.
-- chorus-api offline Day 5 — team operating blind on WIP board.
+**BLOCKERS (needs Jeff):**
+- 🔴 Hooks compile error Day 6 — Silas has the fix; if not landed by EOD today, Jeff escalates.
+- 🔴 chorus-api offline Day 6 — unknown root cause; board blind without it.
+- 🔴 Test/lint infra blocked Day 84-86 — `npm ci` is the fix; someone needs to own this today.
