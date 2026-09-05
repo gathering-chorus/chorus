@@ -85,3 +85,43 @@ leg() {
   run bash -c "grep -c '_reconcile_leg' '$NIGHTLY'"
   [ "$output" -ge 2 ]
 }
+
+# ---- #4106 — the number carries its states, or says it cannot ----
+
+@test "the row leads with the by-state split, not a bare count" {
+  # Jeff, 2026-09-04: "i dont want tests that are like schrodinger's cat."
+  # A count nobody can act on sat in the report every morning; the split is
+  # what makes it actionable at a glance.
+  stub "reconcile: registered 7934, never-run (209):
+  by kind: sh 54, bats 49, ts 41
+  by state: LANE SILENT 180, NAME MISMATCH 29
+  platform/tests/a.bats :: does a thing"
+  run leg
+  [[ "$output" == *"|fail|"* ]]
+  [[ "$output" == *"209 registered test(s) never ran"* ]]
+  [[ "$output" == *"LANE SILENT 180, NAME MISMATCH 29"* ]]
+  [[ "$output" != *"state UNKNOWN"* ]]
+}
+
+@test "negative proof: a census with no split says UNKNOWN, it does not drop it" {
+  # The failure this catches: an older werk-test on the box prints no split,
+  # the sed finds nothing, and the row renders exactly like a run that had no
+  # states to report. Silence and absence must not look the same (#3734).
+  stub "reconcile: registered 7934, never-run (209):
+  by kind: sh 54, bats 49, ts 41
+  platform/tests/a.bats :: does a thing"
+  run leg
+  [[ "$output" == *"|fail|"* ]]
+  [[ "$output" == *"state UNKNOWN"* ]]
+  [[ "$output" == *"predates #4106"* ]]
+}
+
+@test "negative proof: a clean census grows no split at all" {
+  # Nothing never-ran, so no state may be reported for anything — the mirror
+  # of the classifier's own "an empty gap fabricates no state".
+  stub "reconcile: registered 7934, never-run: none"
+  run leg
+  [[ "$output" == *"|pass|"* ]]
+  [[ "$output" != *"LANE SILENT"* ]]
+  [[ "$output" != *"state UNKNOWN"* ]]
+}

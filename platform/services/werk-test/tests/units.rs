@@ -1379,3 +1379,59 @@ fn census_page_size_is_one_the_door_can_actually_serve_4105() {
     // 415,567 rows at 25k = 17 pages; the cap is budget, not a ledger bound
     assert!(census_page_cap() * census_page_size() > 415_567 * 4);
 }
+
+// ---------------------------------------------------------------------------
+// #4106 — shell suites outside platform/scripts had no lane at all. The router
+// only recognised `platform/scripts/test-*.sh` with no subdirectory, so 56
+// suites in platform/tests/ and 10 in proving/scripts/ were registered, never
+// planned, and read as "never ran" every night — correctly, since nothing ran
+// them. Negative proof (#3734): each unrouted shape must now resolve to a
+// suite unit, and the control must still refuse a plain non-test script.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn every_shell_test_suite_gets_a_lane_wherever_it_lives_4106() {
+    use werk_test::{unit_of_path, TestUnit};
+    let suite = |p: &str| matches!(unit_of_path(p), Some(TestUnit::BatsSuite(s)) if s == p);
+
+    // the ones that had no lane
+    assert!(suite("platform/tests/clippy-ratchet.test.sh"), "platform/tests shell suite");
+    assert!(suite("platform/tests/doc-coherence.test.sh"));
+    assert!(suite("proving/scripts/flow-smoke.test.sh"), "proving/scripts shell suite");
+    assert!(suite("platform/scripts/tests/retirement-gate.test.sh"), "a scripts SUBDIR suite");
+    assert!(suite("skills/gemba/gemba-coherence.test.sh"), "a skills shell suite");
+    assert!(suite("platform/scripts/daemon-env-3197.test.sh"), "*.test.sh, not test-*.sh");
+
+    // the ones that already had one, unchanged
+    assert!(suite("platform/scripts/test-daily-review-lint-parse.sh"));
+    assert!(suite("platform/tests/4106-registry-mints-only-real-tests.bats"));
+
+    // control: a shell script that is not a test suite stays out of the plan
+    assert_eq!(unit_of_path("platform/scripts/chorus-werk-sync"), None);
+    assert_eq!(unit_of_path("platform/scripts/build-signed.sh"), None);
+    assert_eq!(unit_of_path("platform/scripts/nightly-suites.sh"), None);
+
+    // control: a rust test still resolves to its crate, never to a suite
+    assert!(matches!(
+        unit_of_path("platform/services/werk-test/tests/units.rs"),
+        Some(TestUnit::RustCrate(c)) if c == "werk-test"
+    ));
+}
+
+#[test]
+fn a_suite_is_run_by_what_its_shebang_says_not_its_extension_4106() {
+    use werk_test::runner_for;
+    // the violation: three suites in platform/tests are named *.test.sh and
+    // declare bats. Handed to bash they die on `@test "..." {`.
+    assert_eq!(runner_for("#!/usr/bin/env bats", "platform/tests/mcp-nudge.test.sh"), "bats");
+    assert_eq!(runner_for("#!/usr/bin/env bats", "platform/tests/x.bats"), "bats");
+    // control: a real shell suite still runs under bash (#4004 — handing a .sh
+    // to bats makes it self-abort inside bats-gather-tests)
+    assert_eq!(runner_for("#!/usr/bin/env bash", "platform/tests/clippy-ratchet.test.sh"), "bash");
+    assert_eq!(runner_for("#!/bin/sh", "platform/scripts/test-thing.sh"), "bash");
+    // control: no shebang at all falls back to the extension, never a panic
+    assert_eq!(runner_for("", "platform/tests/thing.test.sh"), "bash");
+    assert_eq!(runner_for("", "platform/tests/thing.bats"), "bats");
+    // a mention of bats in ordinary first-line text is not a shebang
+    assert_eq!(runner_for("# bats lives next door", "platform/tests/a.test.sh"), "bash");
+}

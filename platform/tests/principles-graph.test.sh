@@ -3,7 +3,13 @@
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
 # Live-graph tests for #2447 + #2314: principles graph matches /book/principles-reconstructed.html.
-# Post-#2314 (ADR-025), Principle instances live in urn:chorus:instances, not urn:chorus:ontology.
+# Post-#2314 (ADR-025), Principle instances lived in urn:chorus:instances.
+# #4106 (2026-09-04): they live in urn:chorus:domains:principles now — Jeff's
+# ruling that every row sits in its own domain graph and the catch-all
+# instances graph is retired. The rows never moved out from under this test
+# quietly; the test simply never ran, because nothing routed *.test.sh in
+# platform/tests to a lane. All 28 principles and all 14 Hemenway parents are
+# present in the domain graph, verified 2026-09-04 15:55.
 # Runs against live Fuseki + chorus-api — not a fixture, because the AC targets the live
 # graph and rendered HTML. Baseline pattern: same as doc-coherence-ratchet.test.sh.
 #
@@ -40,16 +46,16 @@ ask_query() {
 }
 
 # 1. Hemenway parent count
-PARENTS=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?p a chorus:Principle ; chorus:isPermacultureParent true } }')
+PARENTS=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true } }')
 check "14 Hemenway parents in graph" "14" "$PARENTS"
 
 # 2. skos:broader edge count to Hemenway parents — grows over time as Jeff
 # upstreams more specializations (#2471 multi-parent audit). Floor only.
-EDGES=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?c a chorus:Principle ; skos:broader ?p . ?p chorus:isPermacultureParent true } }')
+EDGES=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX skos: <http://www.w3.org/2004/02/skos/core#> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?c a chorus:Principle ; skos:broader ?p . ?p chorus:isPermacultureParent true } }')
 check ">=12 specialization edges (floor; grows)" "1" "$([ "$EDGES" -ge 12 ] && echo 1 || echo 0)"
 
 # 3. Every Hemenway parent has label + comment + source
-COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:instances> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; dcterms:source ?s } }')
+COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; dcterms:source ?s } }')
 check "all 14 parents have label+comment+source" "14" "$COMPLETE"
 
 # 4. HTML article count
@@ -61,7 +67,7 @@ HTML_LABELS=$(curl -s "$HTML_URL" 2>/dev/null | grep -oE '<h2>[^<]*</h2>' | sed 
 DRIFT=0
 while IFS= read -r label; do
   [ -z "$label" ] && continue
-  found=$(ask_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ASK { GRAPH <urn:chorus:instances> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label \"$label\" } }")
+  found=$(ask_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ASK { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label \"$label\" } }")
   [ "$found" != "True" ] && { DRIFT=$((DRIFT+1)); echo "    DRIFT: '$label' in HTML but not in graph"; }
 done <<< "$HTML_LABELS"
 check "0 label drift between HTML and graph" "0" "$DRIFT"

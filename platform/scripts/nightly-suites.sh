@@ -882,7 +882,15 @@ _reconcile_leg() {
     # read from the lane output the runner just wrote.
     local lane="${NIGHTLY_FAIL_DIR:-$HOME/.chorus/nightly-failures}/_lane-output.log"
     local attributed; attributed=$(_attribute_never_ran "$out" "$lane")
-    echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — ${attributed})"
+    # #4106 — lead with the split. A bare "209 never ran" is a number nobody can
+    # act on; every one of them now carries exactly one state decided from
+    # evidence (the tree, the ledger, the lane table), and the verb prints the
+    # counts. Absent split = an OLD binary, said out loud — never dropped
+    # silently, because a report that quietly loses its detail reads identical
+    # to one that had none (#3734).
+    local by_state; by_state=$(printf '%s' "$out" | sed -n 's/^ *by state: //p' | head -1)
+    [ -z "$by_state" ] && by_state="state UNKNOWN — this werk-test predates #4106 and cannot classify"
+    echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — ${by_state}; ${attributed})"
   else
     echo "SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (${registered} registered, every one executed — ledger cross-foots)"
   fi

@@ -162,24 +162,48 @@ def classify(path, c):
 # and the runner's fullName could never join them: 887 "never ran" in the
 # census and 594 results per nightly with no identity to save under. Match a
 # real string literal (same-quote delimited, backslash escapes honoured).
+# #4106 — `\b` also matched `test(` in `/Log in/.test('<button>Log in</button>')`,
+# so a regex call registered its ARGUMENT as a test case. Two such phantoms sat
+# in the registry as permanent never-ran rows. A declaration is never preceded
+# by a dot or an identifier character.
 JEST_NAME_RE = re.compile(
-    r'\b(?:it|test)(?:\.(?:only|skip|each|concurrent))?\s*\(\s*'
+    r'(?<![.\w$])(?:it|test)(?:\.(?:only|skip|each|concurrent))?\s*\(\s*'
     r"(?:'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"|`((?:[^`\\]|\\.)*)`)")
 def jest_case_names(source):
     out = []
     for m in JEST_NAME_RE.finditer(source):
         nm = next(g for g in m.groups() if g is not None)
-        out.append(nm.replace("\\'", "'").replace('\\"', '"').replace('\\`', '`'))
+        nm = nm.replace("\\'", "'").replace('\\"', '"').replace('\\`', '`')
+        # #4106 — a name built by interpolation is a template, not a name. The
+        # runner emits the interpolated value ("…port 51873"), so a row holding
+        # the raw "…port ${TEST_PORT}" can never be joined to a result and sits
+        # in the census as never-ran forever. Four of them did.
+        if '${' in nm:
+            continue
+        out.append(nm)
     return out
 
 def case_names(path):
     try: c = open(path, errors='ignore').read()
     except Exception: return [os.path.basename(path)], ''
     if path.endswith('.rs'): r = re.findall(r'#\[(?:tokio::)?test\][^\n]*\n\s*(?:async\s+)?fn\s+(\w+)', c)
-    elif path.endswith('.bats'): r = re.findall(r'@test\s+"([^"]+)"', c)
+    # #4106 — anchored to line start: the unanchored pattern also matched a
+    # @test declaration written INSIDE a string fixture (a bats suite that
+    # builds a little .bats file to run the tagger against registered its
+    # fixture's name as a real test — 5 such phantoms, one of them called "x").
+    elif path.endswith('.bats'): r = re.findall(r'(?m)^[ \t]*@test\s+"([^"]+)"', c)
     elif re.search(r'\.(test|spec)\.[tj]s$', path): r = jest_case_names(c)
+    # #4063 — a shell suite has no per-case grain, so the runner stores ONE
+    # verdict per script named by the file (`shell_suite_case`). Registering
+    # the basename for .sh is therefore not an invention: it is the identity
+    # the runner actually emits, and the two join.
+    elif path.endswith('.sh'): return [os.path.basename(path)], c
     else: r = []
-    return (r or [os.path.basename(path)]), c
+    # #4106 — for every OTHER kind the old fallback returned [basename], and
+    # nothing emits that name: 90 rows that could only ever read never-ran.
+    # The file stays registered (its SourceFile row is written regardless);
+    # what is not invented is a case name no runner will ever produce.
+    return r, c
 
 # #3924 (with Wren) — discovery walks every test-bearing root, not just
 # platform/. proving/ (browser flows) and directing/ (product tests) were
@@ -279,6 +303,18 @@ def assert_shares(counts):
             f"covers-share gate RED (#3996): {over[0][0]} holds {over[0][1]}/{total} "
             f"(> {cap:.0%}) — refusing to write an over-broad corpus. top: {hist}")
 
+def no_case_report(paths):
+    """#4106 — one line naming the files that yield no runnable case, by kind."""
+    if not paths:
+        return "no-case files: none — every registered file names at least one case"
+    counts = {}
+    for p in paths:
+        counts[p.rsplit('.', 1)[-1]] = counts.get(p.rsplit('.', 1)[-1], 0) + 1
+    kinds = ", ".join(f"{k} {v}" for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+    return (f"no-case files: {len(paths)} registered file(s) yield no runnable case "
+            f"({kinds}) — they need a lane or an extractor, not an invented name")
+
+
 def main():
     files = discover()
     # #3970 — VALIDATE BEFORE CLEAR. The old order (clear, then build+assert per
@@ -293,8 +329,11 @@ def main():
         if batch:
             batches.append(batch)
             batch = []
+    no_case = []   # #4106 — files the registry can see but cannot name a case in
     for p in files:
         cs, c = case_names(p)
+        if not cs:
+            no_case.append(p)
         layer, herm, concern = classify(p, c)
         inferred = "true"
         d = declared(c)
@@ -334,6 +373,13 @@ def main():
     for b in batches:
         post(f"PREFIX chorus: <{NS}> INSERT DATA {{ GRAPH <{DG}> {{\n" + "\n".join(b) + "\n} }")
     print(f"tests-domain ingested: {len(files)} files -> {ntests} Tests in {DG} (stamp {now_iso} @ {commit[:12]})")
+    # #4106 — VISIBLE, never silent. These files are discovered and registered as
+    # SourceFiles but yield no case name, so nothing joins a result to them and
+    # no lane necessarily runs them. Before #4106 each one minted a case named
+    # after the file, which read in the census as a test that never ran. Dropping
+    # the invention without printing the list would just make them disappear —
+    # the point is the opposite, so the count and the kinds are always stated.
+    print(no_case_report(no_case))
 
 if __name__ == "__main__":
     # #3996 — hermetic test seams (a test brings its own world, #3528):
@@ -344,6 +390,13 @@ if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--check-shares":
         assert_shares(json.load(open(sys.argv[2]))); print("shares ok"); sys.exit(0)
     #   --names-of <path>        print the case names the registry would hold, no store (#4022)
+    #   --no-case-files          list the discovered files that name no case (#4106)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--no-case-files":
+        nc = [p for p in discover() if not case_names(p)[0]]
+        for p in nc:
+            print(p)
+        print(no_case_report(nc), file=sys.stderr)
+        sys.exit(0)
     if len(sys.argv) >= 3 and sys.argv[1] == "--names-of":
         for nm in case_names(sys.argv[2])[0]: print(nm)
         sys.exit(0)

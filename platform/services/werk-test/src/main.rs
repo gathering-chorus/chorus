@@ -11,7 +11,7 @@ use std::path::Path;
 use std::process::Command;
 use werk_test::{
     affected_units, check_plan, gap_report, gate_outcome, is_self_modifying,
-    match_cargo_case, model_units, parse_case_tsv, parse_quarantine_rows,
+    model_units, parse_case_tsv, parse_quarantine_rows,
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
@@ -1011,12 +1011,9 @@ fn run_bats_cases(werk: &str, suite: &str) -> (bool, Vec<(String, String)>, Stri
     // #3974 — one script-suite variant, two runners: .bats via bats, .sh via
     // bash (the shell tier's suites). Shell output is summary-grain (counted
     // in the lane line via parse_shell_counts); TAP suites get per-case rows.
-    let mut cmd = if suite.ends_with(".sh") {
-        let mut c = Command::new("bash");
-        c.arg(suite);
-        c
-    } else {
-        let mut c = Command::new("bats");
+    // #4106 — the shebang decides, not the extension (see `runner_for`).
+    let mut cmd = {
+        let mut c = Command::new(werk_test::suite_runner(&format!("{}/{}", werk, suite)));
         c.arg(suite);
         c
     };
@@ -1105,7 +1102,9 @@ fn run_bats(werk: &str, suite: &str) -> bool {
     // recorded pass aborted it, and the red was reported against a synthetic
     // test named "bats-gather-tests". That is why 28 suites read red in the werk
     // pipeline while every one of them passes when run directly.
-    let runner = if suite.ends_with(".sh") { "bash" } else { "bats" };
+    // #4106 — same rule on the werk lane: a `*.test.sh` whose shebang says bats
+    // is a bats suite.
+    let runner = werk_test::suite_runner(&format!("{}/{}", werk, suite));
     status_ok(
         Command::new(runner)
             .arg(suite)
@@ -2000,6 +1999,21 @@ fn run_reconcile() -> Result<i32, String> {
     executed.dedup();
     let gap = reconcile_gap(&registered, &executed);
     println!("{}", reconcile_report(registered.len(), &gap));
+    // #4106 — the bare count was not actionable: 155 registrations that neither
+    // ran nor said why. Each one now lands in exactly one state decided from
+    // evidence — the tree, the ledger, the lane table. The root the paths are
+    // relative to is canonical unless the caller pins one (fixtures do).
+    let census_root = std::env::var("CENSUS_ROOT")
+        .or_else(|_| std::env::var("CHORUS_HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    let exists = |f: &str| Path::new(&format!("{}/{}", census_root, f)).exists();
+    // #4106 — the browser lane selects by the ui concern, not by path, so the
+    // ui-registered set is the other half of "does a lane cover this file".
+    let ui_registered = werk_test::ui_files(&rows);
+    let classified = werk_test::classify_gap(&gap, &executed, &ui_registered, &exists);
+    if !classified.is_empty() {
+        println!("{}", werk_test::gap_state_report(&classified, &executed));
+    }
     // #4105 — say what was read, so a shrinking ledger is visible in the
     // report and not only in the gap it produces.
     println!(
@@ -2015,7 +2029,8 @@ fn run_reconcile() -> Result<i32, String> {
           ("never_run", &gap.len().to_string()),
           ("pages_read", &pages.to_string()),
           ("ledger_rows", &raw_rows.to_string()),
-          ("page_size", &page_size.to_string())]);
+          ("page_size", &page_size.to_string()),
+          ("by_state", &werk_test::gap_state_split(&classified))]);
     Ok(0)
 }
 
