@@ -10,6 +10,11 @@ test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
 ALERT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/startup-sync-failure.yml"
+# #3709 moved the check body out of the yml into a sidecar script beside it.
+# The rule lives across the pair, so the pair is what gets measured — grepping
+# the yml alone reported the alert broken while it was working.
+CHECK="${ALERT%.yml}.check.sh"
+RULE=$(cat "$ALERT" "$CHECK" 2>/dev/null)
 
 echo "=== Startup Sync Alert Tests (#1895) ==="
 
@@ -21,28 +26,28 @@ else
 fi
 
 # Test 2: alert checks Fuseki health before firing
-if grep -q 'localhost:3030\|fuseki.*health\|fuseki.*ready' "$ALERT"; then
+if grep -q 'localhost:3030\|fuseki.*health\|fuseki.*ready' <<<"$RULE"; then
   test_pass "alert checks Fuseki health before firing"
 else
   test_fail "alert does not check Fuseki health — will fire cascade noise after restart"
 fi
 
 # Test 3: alert suppresses when Fuseki is healthy
-if grep -q 'fuseki.*ok\|FUSEKI_OK\|fuseki.*200' "$ALERT"; then
+if grep -q 'fuseki.*ok\|FUSEKI_OK\|fuseki.*200' <<<"$RULE"; then
   test_pass "alert has suppression path when Fuseki is healthy"
 else
   test_fail "alert missing suppression path for healthy Fuseki"
 fi
 
 # Test 4: alert still fires when Fuseki is genuinely down
-if grep -q 'failed\|exit 1' "$ALERT"; then
+if grep -q 'failed\|exit 1' <<<"$RULE"; then
   test_pass "alert still fires on genuine failures"
 else
   test_fail "alert lost failure detection"
 fi
 
 # Test 5: health probe uses /$/ping not dataset-specific query (#1895 Kade feedback)
-if grep -q '\$/ping' "$ALERT"; then
+if grep -q '\$/ping' <<<"$RULE"; then
   test_pass "health probe uses /\$/ping — dataset-independent"
 else
   test_fail "health probe uses dataset query — will 404 if dataset is rebuilding"
