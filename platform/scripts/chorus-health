@@ -789,7 +789,14 @@ fi
 # / load blips never cross, so they never intrude. The chorus.health spine event
 # above still records full state every run for the dashboards — only the
 # interruptive nudge is gated.
-if [ -n "${ALERT_FIRING// /}" ]; then
+# #4085 — CHORUS_HEALTH_NO_EMIT muted the spine event but NOT this nudge, so
+# 4027-chorus-health-missing-check.bats — which deliberately hides the check
+# scripts to prove the failure fires — paged all three roles with
+# owl-api-checks-missing every time anyone ran the suite. That is why the alert
+# has no matching chorus.health event and why canonical runs always pass: the
+# firings were synthetic, from a test proving a synthetic failure. The test's
+# own setup comment claims this variable stops the nudge. It did not.
+if [ -n "${ALERT_FIRING// /}" ] && [ "${CHORUS_HEALTH_NO_EMIT:-0}" != "1" ]; then
   OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
   # #4085 — an alert that cannot say where it ran from is not diagnosable.
   # owl-api-checks-missing fired at least seven times across 2026-08-29..09-06
