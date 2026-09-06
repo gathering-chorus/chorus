@@ -1348,29 +1348,41 @@ pub fn join_cases(
         // nightly lane counted ~451 "unregistered" that were registered all
         // along. Fall back to a UNIQUE suffix match within the same file; an
         // ambiguous suffix stays unjoined — identities are never guessed.
-        let suffix_hits: Vec<&&str> = index.iter()
-            .filter(|((f, n), _)| *f == c.file_path.as_str()
-                && c.test_name.len() > n.len()
-                && c.test_name.ends_with(n)
-                // the char before the suffix must be a separator, so the
-                // registered name "run" cannot claim the case "dry-run"
-                && c.test_name.as_bytes()[c.test_name.len() - n.len() - 1] == b' ')
-            .map(|(_, e)| e)
+        // #4111 — the LONGEST suffix, not the only one. One file held three
+        // cases ending "returns 404 for unknown subdomain": the bare one, and
+        // "actors …" and "completeness …". Every emitted fullName matched two
+        // registered names at once, #4015's uniqueness rule called that
+        // ambiguous, and all three sat in the census as never-ran. The longest
+        // match is not a guess — it is the most specific registered name, and
+        // two distinct names cannot both be the maximal suffix of one string.
+        // Ties (only possible between identical names) still refuse.
+        let mut hits: Vec<(&str, &str)> = index
+            .iter()
+            .filter(|((f, n), _)| {
+                *f == c.file_path.as_str()
+                    && c.test_name.len() > n.len()
+                    && c.test_name.ends_with(n)
+                    // the char before the suffix must be a separator, so the
+                    // registered name "run" cannot claim the case "dry-run"
+                    && c.test_name.as_bytes()[c.test_name.len() - n.len() - 1] == b' '
+            })
+            .map(|((_, n), e)| (*n, *e))
             .collect();
-        match suffix_hits.as_slice() {
-            [one] => {
+        // The maximal match is unique by construction: `index` is keyed by
+        // (file, name), so one file cannot hold two registered names of the
+        // same spelling, and two DIFFERENT names cannot both be the longest
+        // suffix of one string. No tie branch is written here because no tie
+        // is reachable — a guard whose state cannot occur is a hollow one.
+        hits.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        match hits.first() {
+            None => unjoined += 1,
+            Some((reg_name, entity)) => {
                 let mut rc = c.clone();
-                // post under the REGISTERED identity — ofTest demands it, and
-                // one name per test keeps test-diff's run-to-run keys stable
-                if let Some(((_, reg_name), _)) = index.iter()
-                    .find(|((f, n), _)| *f == c.file_path.as_str()
-                        && c.test_name.ends_with(n) && ***one == **index.get(&(*f, *n)).unwrap())
-                {
-                    rc.test_name = (*reg_name).to_string();
-                }
-                joined.push((rc, (**one).to_string()));
+                // post under the REGISTERED identity — ofTest demands it,
+                // and one name per test keeps test-diff's keys stable
+                rc.test_name = (*reg_name).to_string();
+                joined.push((rc, (*entity).to_string()));
             }
-            _ => unjoined += 1,
         }
     }
     (joined, unjoined)
@@ -3330,16 +3342,61 @@ mod describe_prefix_join_4015 {
         assert_eq!(unjoined, 1);
     }
 
+    // #4111 — this case used to assert that TWO suffix candidates meant refuse.
+    // That rule was measured wrong on 2026-09-06: athena.integration.test.ts
+    // holds "returns 404 for unknown subdomain", "actors returns 404 for
+    // unknown subdomain" and "completeness returns 404 for unknown subdomain".
+    // All three exist in the file, all three run, and every emitted fullName
+    // matched two registered names at once, so all three sat in the census as
+    // never-ran. jest's fullName is "<describe> <it-name>", so the it-name is
+    // the MAXIMAL registered suffix — picking it is the rule, not a guess.
     #[test]
-    fn an_ambiguous_suffix_stays_unjoined_not_guessed() {
+    fn the_longest_suffix_wins_because_it_is_the_it_name() {
         let rows = vec![row("b.test.ts"), row("b.test.ts")];
         let names = vec!["saves the file".into(), "also saves the file".into()];
         let ents = vec!["e1".into(), "e2".into()];
         let cases = vec![CaseResult { file_path: "b.test.ts".into(),
             test_name: "suite also saves the file".into(), result: "pass".into() }];
-        // exact-misses; suffix matches BOTH "saves the file" and "also saves the file"
-        let (_, unjoined) = join_cases(&cases, &rows, &names, &ents);
-        assert_eq!(unjoined, 1, "two candidate identities must never be resolved by guessing");
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 0, "the longer registered name is the it() name");
+        assert_eq!(joined[0].1, "e2", "joined to the specific test, not the shorter one");
+        assert_eq!(joined[0].0.test_name, "also saves the file",
+            "posted under the REGISTERED identity");
+    }
+
+    /// Why no tie branch exists: two registered rows with the SAME name in the
+    /// same file collapse to one index entry, so a tie is unreachable and a
+    /// guard for it would be a state that can never occur. Written down as a
+    /// test rather than a comment, so the day the index key changes, this goes
+    /// red instead of the tie silently becoming possible again.
+    #[test]
+    fn duplicate_registered_names_collapse_so_no_tie_is_reachable() {
+        let rows = vec![row("c.test.ts"), row("c.test.ts")];
+        let names = vec!["saves the file".into(), "saves the file".into()];
+        let ents = vec!["e1".into(), "e2".into()];
+        let cases = vec![CaseResult { file_path: "c.test.ts".into(),
+            test_name: "suite saves the file".into(), result: "pass".into() }];
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 0);
+        assert_eq!(joined.len(), 1, "one identity, because one index entry survives");
+        assert_eq!(joined[0].0.test_name, "saves the file");
+    }
+
+    /// And the shorter candidate must never win — the failure this whole change
+    /// exists to prevent is a result posted under the wrong test's identity.
+    #[test]
+    fn negative_proof_the_shorter_candidate_never_claims_the_case() {
+        let rows = vec![row("d.test.ts"), row("d.test.ts")];
+        let names = vec!["returns 404 for unknown subdomain".into(),
+                         "actors returns 404 for unknown subdomain".into()];
+        let ents = vec!["bare".into(), "actors".into()];
+        let cases = vec![CaseResult { file_path: "d.test.ts".into(),
+            test_name: "athena actors returns 404 for unknown subdomain".into(),
+            result: "pass".into() }];
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 0);
+        assert_ne!(joined[0].1, "bare", "the bare name must not swallow the actors case");
+        assert_eq!(joined[0].1, "actors");
     }
 
     #[test]
