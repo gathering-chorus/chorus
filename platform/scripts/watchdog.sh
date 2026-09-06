@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: services   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # watchdog.sh — Team awareness stall detection (#1958)
 # Reads role-state timestamps, nudges stale roles, escalates to Wren then Jeff.
 #

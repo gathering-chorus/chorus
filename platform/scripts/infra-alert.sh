@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: infrastructure   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # Infrastructure Alerting (#1654)
 # Runs every 5 minutes via LaunchAgent. Checks critical infrastructure.
 # 3-strike rule: only alert after 3 consecutive failures.

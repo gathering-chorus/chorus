@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# alert-domain: services   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # deep-health.sh — subprocess liveness, not wrapper alive (#2228)
 # Runs on 5-min cron. Alerts via nudge --force on failure.
 set -euo pipefail

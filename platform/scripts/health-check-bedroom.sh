@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# alert-domain: infrastructure   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # health-check-bedroom.sh — Automated Bedroom Mac health check
 # Runs on Library, SSHs to Bedroom, checks services + metrics.
 # Designed for cron/LaunchAgent — outputs one-line status or cards failures.

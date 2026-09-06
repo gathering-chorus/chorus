@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: services   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # daily-review-ops.sh — 6am ops health check, posts to Bridge
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail

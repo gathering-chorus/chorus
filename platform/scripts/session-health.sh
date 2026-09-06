@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# alert-domain: roles   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # session-health.sh — Session degradation detection (#2271)
 # Reports: prompt count, session age, tool call count, queue removes (compaction proxy)
 # Alerts when session exceeds thresholds — gas gauge, not check engine light.

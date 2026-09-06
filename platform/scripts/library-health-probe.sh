@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: infrastructure   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # library-health-probe.sh — Runs on Bedroom, checks Library services via SSH/HTTP.
 # Second watchdog layer: if Library is down or services crashed, alert.
 # Scheduled hourly on Bedroom via cron or LaunchAgent.

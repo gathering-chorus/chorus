@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# alert-domain: tests   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # test-nightly-first-red-nudge-4071.sh — a red row nudges its owner the moment
 # it lands, during the run. Jeff, 2026-09-02: "once there is one error in the
 # daily test run why do we wait to the end?"

@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: tests   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # #2142 — Discover + run every test suite the nightly backstop covers.
 # No suite is silently skipped: if a directory has a Cargo.toml, a package.json
 # with scripts.test, or matches platform/scripts/test-*.sh, it runs overnight.

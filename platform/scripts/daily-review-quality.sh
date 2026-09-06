@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: tests   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # daily-review-quality.sh — 6am quality check, posts to Bridge
 # Card #1766 | DEC-107 compliant (no osascript)
 set -euo pipefail

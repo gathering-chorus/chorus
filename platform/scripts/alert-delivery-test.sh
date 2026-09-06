@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# alert-domain: alerts   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # alert-delivery-test.sh — E2E alert delivery chain verification
 # Card #2274 | Silas
 #

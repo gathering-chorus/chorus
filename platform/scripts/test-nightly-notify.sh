@@ -1,4 +1,5 @@
 #!/bin/bash
+# alert-domain: tests   (#4085 — what this alert watches; harvest-alerts.sh refuses an undeclared alert)
 # @test-type: unit — stubbed ops-nudge capture, hermetic
 # #3254 — nightly-suites must ALERT the owning role on completion (the call-to-action).
 # notify_results() parses the run's SUITE|kind|path|owner|status|summary lines, groups the
