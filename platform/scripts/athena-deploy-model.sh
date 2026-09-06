@@ -74,6 +74,12 @@ else
     # #3860 — the Clearing's four domains get vocabulary: SpineEvent (events),
     # Message/Nudge (messages), and the definesVocabulary claims for cards.
     # Day-authored MODEL_SET discipline (#3654/#3686) — never live-only.
+    # #4085 — the alerts/monitors split. Alert + Monitor classes, both SHACL
+    # floors, and the two Domain rows that replace alerts-monitors. In MODEL_SET
+    # the day it is authored, never live-only (#3654/#3686), and the retired
+    # alerts-monitors row is removed from domains-wren-silas.ttl in the same
+    # commit so one subject has one definition (#3735 pattern).
+    "$CHORUS_ROOT/roles/silas/ontology/alerts-4085.ttl"
     "$CHORUS_ROOT/roles/wren/ontology/clearing-domains-3860.ttl"
     # #3860 — the #4010 memory OWL (Memory/ShortTerm/LongTerm/Knowledge) was
     # landed-but-never-deployed (#3881 class; chorus:Memory reached the store by

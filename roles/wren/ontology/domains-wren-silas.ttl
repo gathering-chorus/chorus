@@ -164,13 +164,12 @@ chorus:document-domain-design-logs a chorus:Document ;
   rdfs:comment """The logs domain's design is its rows (#4084).""" ;
   chorus:hasDomain chorus:logs ; chorus:ownedBy chorus:role-silas ; chorus:hasProduct chorus:borgProduct .
 
-chorus:alerts-monitors a owl:Class, chorus:Domain ;
-  rdfs:label "alerts-monitors" ; chorus:comment "Grafana dashboards, alert rules, and on-call signal management." ;
-  chorus:purpose "Watch the system — dashboards, alert rules, and the on-call signal that surfaces trouble." ;
-  chorus:ownedBy chorus:role-silas ; chorus:partOf chorus:borgProduct ;
-  chorus:atStep chorus:Proving ; chorus:atStream chorus:chorusStream ;
-  chorus:repoTarget "proving/domains/alerts" .
-  # FLAG: no clean owl:Class vocab (Gate/GateResult are gate-level, not alerts) — omitted, not faked.
+# chorus:alerts-monitors — REMOVED #4085. Split into chorus:alerts and
+# chorus:monitors, both defined in roles/silas/ontology/alerts-4085.ttl with a
+# class, a SHACL floor and a design doc each. Jeff asked for the split three
+# times (2026-06-14, 2026-08-13, 2026-09-03). Removed here rather than left in
+# place because two definitions of one subject let the deploy pick whichever it
+# read last — the #3587 wipe and the #3735 stale-security row, same shape.
 
 # chorus:security — REMOVED #3735 (Wren blessed 2026-08-02). It was a competing,
 # stale V1 definition (atStep Proving, ownedBy chorus:silas not role-silas,
