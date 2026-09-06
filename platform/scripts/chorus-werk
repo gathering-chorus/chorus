@@ -103,14 +103,27 @@ require_card_id() {
 # pull-time link costs nothing: no TS runs between pull and the first build,
 # and the build preamble is idempotent + runs every build.
 
+# The two overridable binaries this script shells. Defined here, above every
+# caller, because a seam that is declared after the code that needs it is a seam
+# only by accident. #3542 introduced CHORUS_LOG_BIN for the abandon path;
+# emit_spine resolved chorus-log its own way and ignored it, so one script had
+# two ways to reach one emitter and only one of them could be redirected.
+SCRIPT_DIR_CW="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHORUS_CARDS_BIN="${CHORUS_CARDS_BIN:-$SCRIPT_DIR_CW/cards}"
+CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_CW/chorus-log")}"
+
 # Emit a spine event, best-effort — never fails the caller.
+#
+# #4111 — through CHORUS_LOG_BIN, the same seam the abandon path already used.
+# The default resolves exactly as before (chorus-log on PATH, else the sibling
+# script), so nothing changes in production. What changes is that a test can now
+# redirect it: the old `command -v` lookup meant a caller's override was
+# silently ignored and the events went to the real spine, which is how
+# test-chorus-werk.sh spent its life asserting against a file nothing wrote.
 emit_spine() {
   local event="$1"; shift
-  if command -v chorus-log >/dev/null 2>&1; then
-    chorus-log "$event" "$@" >/dev/null 2>&1 || true
-  elif [ -x "$CHORUS_HOME/platform/scripts/chorus-log" ]; then
-    "$CHORUS_HOME/platform/scripts/chorus-log" "$event" "$@" >/dev/null 2>&1 || true
-  fi
+  [ -x "$CHORUS_LOG_BIN" ] || return 0
+  "$CHORUS_LOG_BIN" "$event" "$@" >/dev/null 2>&1 || true
 }
 
 # Resolve the base ref for a new card branch. Prefer origin/main — canonical's
@@ -430,10 +443,6 @@ cmd_status() {
 # Board lookup is env-overridable for hermetic tests (CHORUS_CARDS_BIN), spine
 # emit via CHORUS_LOG_BIN (mirrors nightly-suites.sh: logging failure must never
 # change the outcome, but the CARD lookup is fail-closed — no status, no abandon).
-SCRIPT_DIR_CW="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHORUS_CARDS_BIN="${CHORUS_CARDS_BIN:-$SCRIPT_DIR_CW/cards}"
-CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_CW/chorus-log")}"
-
 cmd_abandon() {
   local role="${1:-}" card_id="${2:-}"; shift 2 2>/dev/null || true
   local reason="${*:-}"
