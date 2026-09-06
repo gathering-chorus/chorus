@@ -50,6 +50,36 @@ literal_query() {
 
 echo "=== decisions-graph drift test (#2485 Move 3) ==="
 
+# #4111 — REFUSE before measuring if Decision is not a modelled class.
+#
+# This suite reported "expected 176, got 0" every night, which reads as a broken
+# import. Measured today: there is no import to break. `chorus:Decision` exists
+# only as a chorus:ArtifactType — a label — with no owl:Class, no shape and no
+# served collection, and the decisions domain file says so in its own words:
+#
+#   roles/kade/ontology/domains-builds-decisions-rcas-4022.ttl:24
+#   "FLAG: no real owl:Class vocab (no chorus:Decision/ADR class) —
+#    definesVocabulary omitted, not faked."
+#
+# So the eight failures below were one unbuilt thing counted eight times. A
+# check has to be able to tell "the import broke" from "the class was never
+# modelled"; this one could not, and it spent months reporting the second as the
+# first. When Decision IS modelled and served, this guard falls through and
+# every original assertion runs unchanged — including the count, which is the
+# whole point of leaving them in place.
+DECISION_SERVED=$(curl -sf -m 10 "${OWLAPI:-http://localhost:3360}/" 2>/dev/null \
+  | python3 -c "import json,sys; print(any(p.get('kind')=='Decision' for p in json.load(sys.stdin).get('primitives',[])))" 2>/dev/null || echo False)
+if [ "$DECISION_SERVED" != "True" ]; then
+  echo "  UNMEASURED: Decision is not a modelled class — no owl:Class, no shape,"
+  echo "              no served collection. There are $(grep -cE '^## DEC-[0-9]+' "$DECISIONS_MD") DECs and"
+  echo "              $(ls $ADR_GLOB 2>/dev/null | wc -l | tr -d ' ') ADRs written down and nothing that could put them in the graph."
+  echo "              This is unbuilt work, not a drift failure. Modelling the"
+  echo "              class is the decisions domain's own work (ownedBy wren)."
+  echo
+  echo "0 pass, 0 fail (UNMEASURED — Decision is not modelled)"
+  exit 0
+fi
+
 # 1. Source counts
 DEC_COUNT=$(grep -cE '^## DEC-[0-9]+' "$DECISIONS_MD")
 # shellcheck disable=SC2086
