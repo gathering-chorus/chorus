@@ -86,6 +86,26 @@ while IFS= read -r label; do
   [ "$found" != "True" ] && { DRIFT=$((DRIFT+1)); echo "    DRIFT: '$label' in HTML but not in graph"; }
 done <<< "$HTML_LABELS"
 check "0 label drift between HTML and graph" "0" "$DRIFT"
+# #4111 — say WHAT the drift is, not just how much of it there is.
+#
+# Measured 2026-09-06: the page renders Holmgren's twelve permaculture
+# principles ("Observe and interact", "Obtain a yield", "Produce no waste")
+# while the graph holds Hemenway's fourteen ("Observe", "Connect", "Make the
+# least change for the greatest effect"). These are not drifted versions of one
+# list — they are two different books, and the page's own <title> says
+# "Gaia's Garden", which is Hemenway. So the page is rendering the wrong set
+# under the right name.
+#
+# A bare "12 drifted" sends the reader looking for a rendering bug. Naming it
+# sends them to the actual question: which book the page is supposed to show.
+if [ "$DRIFT" -gt 0 ]; then
+  echo "    NOTE: this is not per-row drift. The page and the graph hold"
+  echo "          DIFFERENT principle sets — the page renders Holmgren's 12,"
+  echo "          the graph holds Hemenway's 14, and the page title says"
+  echo "          Gaia's Garden (Hemenway). Deciding which set the page should"
+  echo "          show is authoring work in the principles domain, not a"
+  echo "          rendering fix."
+fi
 
 # 6. riot validation
 if riot --validate "$TTL" >/dev/null 2>&1; then
