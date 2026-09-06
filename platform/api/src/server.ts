@@ -2620,7 +2620,20 @@ app.use('/api/athena', (req: Request, res: Response, next: NextFunction) => {
 // `http://localhost:3000` kept the right method set and the wrong reach: a demo
 // page on a werk port, or Jeff reading over the LAN from his phone, was refused
 // by a rule written for a browser sitting on this desk. Method set unchanged.
+// Routes under this prefix that legitimately take a cross-origin WRITE and
+// therefore need their own preflight answered rather than this one's.
+// Found by probing the variant, not by reading the diff.
+const CHORUS_CORS_WRITE_ROUTES = new Set(['/open']);
+
 app.use(['/api/loom', '/api/chorus'], (req: Request, res: Response, next: NextFunction) => {
+  // #2436 — this middleware short-circuits every OPTIONS under the prefix, which
+  // means it was also answering the preflight for `/api/chorus/open` and saying
+  // "GET, OPTIONS" — so that route's own OPTIONS handler, twenty lines further
+  // down, has been dead code and a browser POST to it has been failing preflight.
+  // Pre-existing (the hardcoded block did the same), surfaced by probing the
+  // variant rather than by reading the diff. Let the specific route answer.
+  if (req.method === 'OPTIONS' && CHORUS_CORS_WRITE_ROUTES.has(req.path)) return next();
+
   const allowed = corsAllowOrigin(req.headers.origin);
   if (allowed) {
     res.header('Access-Control-Allow-Origin', allowed);
