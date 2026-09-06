@@ -791,7 +791,11 @@ fi
 # interruptive nudge is gated.
 if [ -n "${ALERT_FIRING// /}" ]; then
   OPS_NUDGE="${CHORUS_ROOT}/platform/scripts/ops-nudge"
-  MSG="chorus-health: ${ALERT_FIRING}"
+  # #4085 — an alert that cannot say where it ran from is not diagnosable.
+  # owl-api-checks-missing fired at least seven times across 2026-08-29..09-06
+  # while every canonical run passed, and there was no way to tell which host,
+  # which checkout, or which run produced it. Carry the origin in the message.
+  MSG="chorus-health: ${ALERT_FIRING} [host=$(hostname -s) root=${CHORUS_ROOT} pid=$$]"
   [ -x "$OPS_NUDGE" ] && "$OPS_NUDGE" silas "$MSG" 2>/dev/null || true
 fi
 [ "$FAIL_COUNT" -gt 0 ] && exit 1
