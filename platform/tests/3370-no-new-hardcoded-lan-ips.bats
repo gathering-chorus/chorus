@@ -14,6 +14,18 @@ REPO="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
 # pinning behavior lives in scripts/services, which stay fully governed.
 BASELINE="$REPO/platform/tests/3370-lan-ip-baseline.txt"
 
+# #4111 — a COMMENT is not a pin. The header above already grants that prose
+# surfaces may carry addresses; a comment inside a .ts is the same prose one
+# level down. cors-origin.ts tripped this today on a single line explaining
+# WHY the code uses a range test instead of pinning an address — the guard
+# flagged the sentence describing the behaviour it wants. Counting only
+# non-comment lines is the conservative direction: an address in a string on a
+# code line still counts.
+lan_hits() {
+  grep -E "192\.168\.86\." "$1" 2>/dev/null \
+    | grep -cvE '^[[:space:]]*(//|#|\*|--|/\*)' || true
+}
+
 @test "no NEW hardcoded 192.168.86.x references (shrink-only ratchet)" {
   [ -f "$BASELINE" ]
   fails=""
@@ -22,14 +34,15 @@ BASELINE="$REPO/platform/tests/3370-lan-ip-baseline.txt"
     case "$file" in \#*) continue ;; esac          # comment lines in the baseline
     allowed="${allowed%%[!0-9]*}"                    # strip trailing inline comment
     [ -n "$allowed" ] || continue
-    actual=$(grep -c "192\.168\.86\." "$REPO/$file" 2>/dev/null) || actual=0
+    actual=$(lan_hits "$REPO/$file")
     if [ "$actual" -gt "$allowed" ]; then
       fails="$fails $file($actual>$allowed)"
     fi
   done < "$BASELINE"
   # any file NOT in the baseline must have zero references
   while IFS= read -r hit; do
-    grep -q "^${hit}:" "$BASELINE" || fails="$fails NEW:$hit"
+    grep -q "^${hit}:" "$BASELINE" && continue
+    [ "$(lan_hits "$REPO/$hit")" -gt 0 ] && fails="$fails NEW:$hit"
   done < <(grep -rl "192\.168\.86\." "$REPO/platform" "$REPO/proving" "$REPO/designing" "$REPO/.github" 2>/dev/null \
     | grep -vE "\.git|node_modules|/dist|/coverage|/logs/|/target/|board-snapshot|baseline" \
     | grep -vE "/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.sqlite3?$" \
