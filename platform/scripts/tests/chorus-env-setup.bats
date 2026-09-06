@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: unit — hermetic; sources chorus-env-setup.sh in temp trees, no live services
 
 # #2571 — chorus-env-setup.sh contract tests
 #
@@ -85,16 +86,50 @@ setup() {
   [ "$CHORUS_BIN" = "$HOME/.chorus/bin" ]
 }
 
-@test "PATH is prepended with CHORUS_BIN exactly once on idempotent re-source" {
+@test "re-sourcing adds no PATH entry — CHORUS_BIN leads and the count does not move" {
+  # #4111 — this used to assert the ABSOLUTE count was 1, which is a property of
+  # the inherited PATH, not of sourcing. It passed at every desk and failed in
+  # the pipeline, where the parent environment already carried CHORUS_BIN twice.
+  # Reproduced exactly with:
+  #   PATH="$HOME/.chorus/bin:$HOME/.chorus/bin:$PATH" bats …  → not ok 11
+  # A red has to mean the product broke. The real invariant is that re-sourcing
+  # ADDS nothing, whatever the caller handed us — so measure the delta.
   unset CHORUS_BIN
+  # Start from a deliberately hostile PATH: the duplicate the pipeline had.
+  PATH="/tmp/decoy-a:/tmp/decoy-a:$PATH"
   source "$SETUP"
   first_path="$PATH"
   # First source must put CHORUS_BIN ahead of everything
   [[ "$first_path" == "$CHORUS_BIN":* ]]
+  before=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
   source "$SETUP"
-  # Second source must not duplicate it
-  count=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
-  [ "$count" = "1" ]
+  after=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
+  [ "$after" = "$before" ]
+  # Deliberately NOT asserting the absolute count is 1. chorus-env-setup.sh
+  # no-ops when CHORUS_BIN is already anywhere on PATH (line 121) — it refuses
+  # to duplicate its own entry, and it does not tidy the caller's. Asserting 1
+  # would be asserting the caller's environment again, which is the bug.
+  # The pre-existing duplicate is still there, untouched — this script dedupes
+  # its own entry, it does not tidy the caller's PATH, and claiming otherwise
+  # would be a second invariant nobody asked for.
+  decoys=$(echo "$PATH" | tr ':' '\n' | grep -c '^/tmp/decoy-a$' || true)
+  [ "$decoys" = "2" ]
+}
+
+@test "NEGATIVE PROOF: an unconditional prepend fails the re-source check" {
+  # The check above must be able to go red. A setup script that prepends without
+  # looking is exactly the bug it guards, so run one and watch the delta move.
+  unset CHORUS_BIN
+  naive="$BATS_TEST_TMPDIR/naive-env-setup.sh"
+  cat > "$naive" <<'NAIVE'
+export CHORUS_BIN="$HOME/.chorus/bin"
+export PATH="$CHORUS_BIN:$PATH"
+NAIVE
+  source "$naive"
+  before=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
+  source "$naive"
+  after=$(echo "$PATH" | tr ':' '\n' | grep -c "^$CHORUS_BIN$" || true)
+  [ "$after" != "$before" ]
 }
 
 @test "<ROLE>_WERK points at the single matching werk when exactly one exists" {

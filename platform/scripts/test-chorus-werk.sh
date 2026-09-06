@@ -197,22 +197,46 @@ assert "add leaves empty-pkg untouched too" test ! -e "$WERK_BASE/kade-3002/plat
 "$CHORUS_WERK" remove kade 3002 > /dev/null 2>&1
 
 # --- TEST 15: remove emits card.branch.closed spine event ---
-mkdir -p "$CANONICAL/platform/scripts"
+# #4111 — this test used to stub chorus-log by dropping a script into
+# $CANONICAL/platform/scripts/, which emit_spine only ever consulted as a
+# FALLBACK: it tried `command -v chorus-log` first, and on any developer box
+# that resolves to the REAL emitter. So the stub was never called, the assert
+# grepped a file that was never created, and — worse — a test run wrote real
+# events into the real spine, against this file's own header claim that nothing
+# here touches the real /chorus paths. The abandon path (TEST A3) had the seam
+# right all along via CHORUS_LOG_BIN; emit_spine simply ignored it. One script,
+# two ways to reach one emitter.
+mkdir -p "$TEST_ROOT/spine-stub"
 SPINE_LOG="$TEST_ROOT/spine.log"
-cat > "$CANONICAL/platform/scripts/chorus-log" <<EOF
+cat > "$TEST_ROOT/spine-stub/chorus-log" <<EOF
 #!/usr/bin/env bash
 echo "\$@" >> "$SPINE_LOG"
 EOF
-chmod +x "$CANONICAL/platform/scripts/chorus-log"
+chmod +x "$TEST_ROOT/spine-stub/chorus-log"
+
+# The decoy IS the negative proof. It sits first on PATH, exactly where the old
+# `command -v chorus-log` would find it. If emit_spine ever goes back to
+# resolving by PATH, the event lands here instead and the assertions below say
+# so by name — rather than the test passing because both files happen to exist.
+mkdir -p "$TEST_ROOT/spine-decoy"
+DECOY_LOG="$TEST_ROOT/decoy.log"
+cat > "$TEST_ROOT/spine-decoy/chorus-log" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >> "$DECOY_LOG"
+EOF
+chmod +x "$TEST_ROOT/spine-decoy/chorus-log"
 
 "$CHORUS_WERK" add kade 3003 > /dev/null 2>&1
-"$CHORUS_WERK" remove kade 3003 > /dev/null 2>&1
+PATH="$TEST_ROOT/spine-decoy:$PATH" CHORUS_LOG_BIN="$TEST_ROOT/spine-stub/chorus-log" \
+  "$CHORUS_WERK" remove kade 3003 > /dev/null 2>&1
 RC=$?
 assert "test-15 remove exits 0" test "$RC" -eq 0
 assert "remove emits card.branch.closed spine event" grep -q "card.branch.closed" "$SPINE_LOG"
 CLOSED_LINE=$(grep "card.branch.closed" "$SPINE_LOG" | head -1)
 assert "card.branch.closed names role" grep -q "kade" <<< "$CLOSED_LINE"
 assert "card.branch.closed names card" grep -q "card=3003" <<< "$CLOSED_LINE"
+assert "NEGATIVE PROOF: a chorus-log on PATH does NOT receive the event — the seam decides" \
+  test ! -s "$DECOY_LOG"
 
 # --- TEST 16: remove deletes a squash-merged branch (patch-id, not ancestry) ---
 # The #2913 self-acp bug: after `gh pr merge --squash`, the branch is NOT an
