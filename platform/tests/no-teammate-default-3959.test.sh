@@ -15,7 +15,12 @@
 # fallback, unwrap_or, ?? — only that a human's name is never the answer.
 set -u
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-ROOT="${CHORUS_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
+# #4111 — the tree this script SHIPS in, not the tree an env var points at.
+# CHORUS_ROOT is canonical inside a role session, so run from a werk this guard
+# scanned canonical: a violation on main failed your branch, and fixing it in
+# your branch could never turn it green. Same class as #3701's ratchet pin.
+# Override deliberately with SCAN_ROOT if you really mean another tree.
+ROOT="${SCAN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 # A guard whose search target moved must fail LOUDLY, never pass vacuously (#3734).
 for d in platform directing; do
