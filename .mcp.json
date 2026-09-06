@@ -7,6 +7,17 @@
       "headers": {
         "X-Chorus-Role": "${CHORUS_ROLE}"
       }
+    },
+    "grafana": {
+      "type": "stdio",
+      "command": "${HOME}/.chorus/bin/mcp-grafana",
+      "args": [
+        "-t",
+        "stdio"
+      ],
+      "env": {
+        "GRAFANA_URL": "http://localhost:3100"
+      }
     }
   }
 }
