@@ -71,20 +71,54 @@ assert "werk.yml land job runs werk-merge (via MCP)" "yes" \
 assert "werk.yml land job deploys to canonical" "yes" \
   "$(present "$LAND" 'target.{0,9}canonical')"
 # Test is its OWN step before demo (Jeff's model: test AND demo at end).
-assert "werk.yml has an explicit test step (cargo/jest hermetic gate)" "yes" \
-  "$(present "$WERK" 'cargo test|npx jest')"
+#
+# #4111 — this used to demand a literal `cargo test` / `npx jest` line. #3190
+# replaced the inline step with the werk-test VERB — the blocking floor that
+# runs the card's affected units, emits typed test.failed events, and exits 1 to
+# halt the land. werk.yml has said so in the step's own comment since. The guard
+# kept asserting the pre-#3190 shape, so it read a pipeline WITH a stronger test
+# gate as having none. Same mistake as ci-workflow-shape's trigger assertions:
+# encoding the shape a decision replaced, and calling the decision a regression.
+#
+# Assert the gate that actually exists, and that it is still its own step before
+# the demo — which is the invariant Jeff cares about.
+assert "werk.yml has its own test step" "yes" \
+  "$(present "$WERK" '^ *- name: test$')"
+assert "the test step runs the werk-test blocking floor (#3190)" "yes" \
+  "$(present "$WERK" 'werk-test')"
 assert "werk.yml runs the demo (werk-demo)" "yes" \
   "$(present "$WERK" 'werk-demo')"
 
-# #3311 GO=accept: Half A never accepts; Half B RUNS werk-accept under the named accepter.
-# Half A (the prove job, everything before the `land:` job) must never accept.
-PROVE_HALF=$(mktemp); sed -n '1,/^  land:$/p' "$WERK" > "$PROVE_HALF"
-assert "werk.yml prove job does NOT invoke werk-accept" "yes" \
-  "$(absent "$PROVE_HALF" 'werk-accept[[:space:]]+\$\{CARD_ID\}|DEPLOY_ROLE.*werk-accept')"
-assert "werk.yml land job is go-gated" "yes" \
-  "$(present "$WERK" "inputs.go == 'true'")"
-assert "werk.yml prove job is go-gated off" "yes" \
-  "$(present "$WERK" "inputs.go != 'true'")"
+# #3311 GO=accept: nothing accepts before the demo has proven; the accept runs
+# under the named accepter once it has.
+#
+# #4111 — these three assertions described the TWO-JOB world. #3499 collapsed
+# werk.yml to ONE job: there is no `land:` job, the GO is given at invoke, and
+# merge/sync/deploy/accept are gated on `steps.demo.outputs.proven == 'true'`
+# — werk.yml's own header says so at line 3. Two consequences, both bad:
+#
+#   - "land job is go-gated" and "prove job is go-gated off" hunted `inputs.go ==`
+#     / `!=` job conditions that #3499 deliberately removed. The guard demanded
+#     the fork the design had eliminated.
+#   - worse, the slice `sed -n '1,/^  land:$/p'` found no `land:` line, so it
+#     copied the WHOLE file and then asserted the whole file contains no
+#     werk-accept. The check could not fail for its stated reason and could not
+#     pass for any: a vacuous slice, which is the #3734 shape exactly.
+#
+# Slice at the demo step instead, and REFUSE if the marker is missing rather
+# than grading a slice that silently became the whole file.
+DEMO_LINE=$(grep -n '^      - name: demo$' "$WERK" | head -1 | cut -d: -f1)
+if [ -z "$DEMO_LINE" ]; then
+  assert "werk.yml has a demo step to slice at (guard cannot grade without it)" "yes" "no"
+else
+  PROVE_HALF=$(mktemp); sed -n "1,${DEMO_LINE}p" "$WERK" > "$PROVE_HALF"
+  assert "nothing before the demo invokes werk-accept" "yes" \
+    "$(absent "$PROVE_HALF" 'werk-accept[[:space:]]+\$\{CARD_ID\}|DEPLOY_ROLE.*werk-accept')"
+fi
+assert "ONE job — no land: job fork (#3499)" "yes" \
+  "$(absent "$WERK" '^  land:$')"
+assert "the landing steps are gated on the demo's proof (#3499)" "yes" \
+  "$(present "$WERK" "steps\.demo\.outputs\.proven == 'true'")"
 assert "werk.yml land job RUNS werk-accept on GO (#3311 GO=accept)" "yes" \
   "$(present "$LAND" 'werk-accept')"
 

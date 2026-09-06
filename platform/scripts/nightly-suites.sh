@@ -550,6 +550,50 @@ PYEOF
   echo "owner map: $(grep -c . "$_OWNER_MAP" 2>/dev/null || echo 0) file(s) attributed from the model" >&2
 }
 
+# #4111 — who owns a DOMAIN, from the model, for the places that used to name a
+# teammate as a literal default. Same authority as owner_for above (Domain rows
+# carry ownedBy); this is the domain-keyed door onto it.
+#
+# Three sites in this file defaulted a role to a person's name — `${...:-silas}`
+# twice and one bare `chorus-identity-token kade` with no seam at all. A default
+# like that is a guess wearing a fact's clothes: it survives reorganisations,
+# and when ownership moves the nightly keeps paging whoever was named in April.
+# The comment at the sec_owner site already said the model is the authority when
+# they disagree; this makes that true instead of aspirational.
+#
+# Falls back to "system" — never to a teammate. A script running outside a role
+# session has no role, and saying so is better than picking one.
+_DOMAIN_OWNERS=""
+domain_owner() {
+  local want="$1" owlapi="${OWLAPI:-http://localhost:3360}"
+  if [ -z "$_DOMAIN_OWNERS" ]; then
+    local df="${TMPDIR:-/tmp}/nightly-domain-owners.$$"
+    if curl -sf -m 15 -o "$df" "$owlapi/domains?limit=200" 2>/dev/null; then
+      _DOMAIN_OWNERS=$(python3 - "$df" <<'PYEOF'
+import json, sys
+for d in json.load(open(sys.argv[1]))["data"]:
+    o = (d.get("ownedBy") or "")
+    o = o[5:] if o.startswith("role-") else o
+    if d.get("name") and o:
+        print("%s\t%s" % (d["name"], o))
+PYEOF
+)
+    fi
+    rm -f "$df"
+    [ -z "$_DOMAIN_OWNERS" ] && _DOMAIN_OWNERS="__unavailable__"
+  fi
+  if [ "$_DOMAIN_OWNERS" = "__unavailable__" ]; then
+    echo "!! domain owner UNAVAILABLE for '$want' — routing to system, not to a guess" >&2
+    echo "system"; return 0
+  fi
+  local o; o=$(printf '%s\n' "$_DOMAIN_OWNERS" | awk -F'\t' -v d="$want" '$1==d {print $2; exit}')
+  if [ -z "$o" ]; then
+    echo "!! no ownedBy for domain '$want' — routing to system, not to a guess" >&2
+    echo "system"; return 0
+  fi
+  echo "$o"
+}
+
 _owner_path_rule() {
   case "$1" in
     "$APP_ROOT"|"$APP_ROOT"/*)              echo "kade" ;;
@@ -930,7 +974,7 @@ _reconcile_leg() {
   # honestly reported unmeasured both times, which is correct behaviour and a
   # useless report. This is the difference between a check that refuses and a
   # check that works.
-  out=$(ROLE="${NIGHTLY_ROLE:-kade}" "$bin" --reconcile 2>&1); rc=$?
+  out=$(ROLE="${NIGHTLY_ROLE:-$(domain_owner tests)}" "$bin" --reconcile 2>&1); rc=$?
   local registered; registered=$(printf '%s' "$out" | sed -n 's/.*registered \([0-9][0-9]*\).*/\1/p' | head -1)
   if [ "$rc" -ne 0 ] || [ -z "$registered" ]; then
     local why; why=$(printf '%s' "$out" | grep -v '^\s*$' | head -1 | cut -c1-110)
@@ -1114,7 +1158,7 @@ notify_results() {
   # #3922 — the security lane routes to the SECURITY owner as its own signal,
   # never buried in the per-owner wall. Owner is env-overridable; the model
   # (security domain ownedBy) is the authority when they disagree.
-  local sec_owner="${NIGHTLY_SECURITY_OWNER:-silas}"
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-$(domain_owner security)}"
   local sec_reds sec_n
   sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
   sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)
@@ -1177,7 +1221,7 @@ emit_pipeline_run() {
   #   3. "label" is not on the shape: off-model property, refused
   # The failure line now prints the door's own body, so a refusal names itself.
   local tok body code out
-  tok=$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" kade 2>/dev/null)
+  tok=$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" "${NIGHTLY_PIPELINE_ROLE:-$(domain_owner pipelines)}" 2>/dev/null)
   if [ -z "$tok" ]; then
     echo "nightly-suites: pipeline-run emit SKIPPED — no identity token minted" >&2
     return 0
