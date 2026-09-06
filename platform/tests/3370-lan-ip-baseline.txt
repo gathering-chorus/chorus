@@ -48,3 +48,8 @@ platform/scripts/test-chorus-share.sh:1
 platform/scripts/fuseki-backup.sh:2
 platform/services/chorus-hooks/src/hooks/buzz_reply.rs:1
 platform/services/chorus-hooks/src/hooks/buzz_reply_test.rs:3
+# #4111 — Silas's #2436 CORS fixtures. These are the ADDRESSES UNDER TEST:
+#   the suite asserts corsAllowOrigin accepts the 192.168.86.0/24 range and
+#   rejects a lookalike (192.168.86.36.evil.example). Fixture data, not a pin —
+#   nothing goes dark if a machine changes address, because nothing calls these.
+platform/api/tests/cors-origin-2436.test.ts:3
