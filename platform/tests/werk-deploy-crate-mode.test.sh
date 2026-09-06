@@ -44,8 +44,22 @@ unset CHORUS_TRACE_ID
 cd "$FIX"
 git init -q -b main . >/dev/null
 mkdir -p platform/services/chorus-inject/src config/launchagents platform/api/src platform/scripts
-printf '[package]\nname="chorus-inject"\n' > platform/services/chorus-inject/Cargo.toml
+# #4111 — the fixture must DECLARE a binary. It had only `[package]` and a
+# src/lib.rs, so structural discovery (crate_binaries_in) found zero binaries —
+# a library crate. deploy_rust_service then hit
+#   bins.iter().all(...)   with bins EMPTY  ->  vacuously TRUE
+# took the "everything already matches, skip" branch, and returned Ok with
+# nothing installed and nothing kickstarted. The four assertions below were
+# failing against a crate that emits no binary at all, which is not the thing
+# this suite exists to test. A real service crate declares its binary; so does
+# this one now.
+#
+# The vacuous skip itself is a real defect and is Silas's to fix (DEC-022) —
+# zero binaries must refuse, not report success. This fixture stops MASKING it
+# as four confusing assertion failures; it does not stand in for his guard.
+printf '[package]\nname="chorus-inject"\n\n[[bin]]\nname="chorus-inject"\npath="src/main.rs"\n' > platform/services/chorus-inject/Cargo.toml
 printf '// v1\n' > platform/services/chorus-inject/src/lib.rs
+printf 'fn main() {}\n' > platform/services/chorus-inject/src/main.rs
 printf '<plist><string>chorus-inject</string></plist>' > config/launchagents/com.chorus.inject.plist
 printf '{"name":"chorus-api","scripts":{"build":"tsc"}}' > platform/api/package.json
 git add . >/dev/null && git -c user.email=t@t -c user.name=t commit -qm "silas: #9999 fixture" >/dev/null
@@ -69,6 +83,26 @@ cat > "$STUB/launchctl" <<EOF
 echo "\$@" >> "$LOGS/launchctl"
 if [ "\$1" = print ]; then echo 'state = running'; echo 'pid = 123'; fi
 exit 0
+EOF
+# #4111 — the fixture needs a RESOLVABLE running process, or the deploy
+# correctly refuses. resolve_restarted() reads `pid = N` out of launchctl print
+# and then asks `ps -p N -o lstart=` when that process started; the stub's
+# pid 123 is not a live process, ps returns nothing, and the verdict is Unknown
+# — which #3232 deliberately treats as RED ("install good, runtime unverified").
+# That refusal is right, and the four assertions were failing on a world that
+# could never satisfy it rather than on any defect. The stub answers for the
+# stub's own pid and defers to the real ps for anything else, so the test proves
+# the running==built path instead of the unresolvable one.
+#
+# The time is NOW, which is >= install_epoch — i.e. the daemon restarted AFTER
+# the install, the case the verify exists to confirm. The stale case (a start
+# time BEFORE the install) is T2's territory and is left alone.
+cat > "$STUB/ps" <<EOF
+#!/bin/sh
+case "\$*" in
+  *-p\ 123*lstart*) LC_ALL=C date '+%a %b %e %H:%M:%S %Y' ;;
+  *) exec /bin/ps "\$@" ;;
+esac
 EOF
 cat > "$STUB/codesign" <<EOF
 #!/bin/sh

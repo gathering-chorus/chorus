@@ -7,7 +7,16 @@
 
 MCP_URL="${MCP_URL:-http://localhost:3341/mcp}"
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
-SPINE_LOG="${CHORUS_LOG_FILE:-${CHORUS_ROOT}/platform/logs/chorus.log}"
+# #4111 — the spine moved to ~/.chorus/ on 2026-05-04 (branch checkouts were
+# clobbering the unstaged file mid-write). This defaulted to the OLD in-tree
+# path, which no longer receives nudge events: measured today, that file holds
+# zero `nudge.emitted` while the real spine holds this test's own probe. Worse
+# than simply failing — a stale file that still exists can hold a fossil event
+# from before the move and let the assertion pass for a nudge sent months ago.
+# Same resolution as the Rust side's chorus_log_file(): the override first, then
+# ~/.chorus/chorus.log.
+SPINE_LOG="${CHORUS_LOG_FILE:-$HOME/.chorus/chorus.log}"
+[ -f "$SPINE_LOG" ] || { echo "spine log not found at $SPINE_LOG — cannot verify emits"; exit 1; }
 
 # Helper: initialize and capture session id
 init_session() {
@@ -50,6 +59,12 @@ ack_initialized() {
   SESS=$(init_session)
   ack_initialized "$SESS"
   PROBE="MCP-HERMETIC-TEST-$(date +%s)"
+  # #4111 — remember where the spine was BEFORE the call. The assertion below
+  # used `tail -200`, which is a bet on how busy the log is: this spine writes
+  # 3,000 lines in well under a minute on a working day, so the event scrolled
+  # out of the window before the grep ran and the test called a working nudge a
+  # failure. A byte offset is not a bet.
+  SPINE_MARK=$(wc -c < "$SPINE_LOG" 2>/dev/null || echo 0)
   resp=$(curl -s -X POST "$MCP_URL" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
@@ -60,7 +75,14 @@ ack_initialized() {
   echo "$resp" | grep -q "nudge sent: silas → silas" || (echo "wrong text: $resp" && false)
   # Give the spine emit a moment to land
   sleep 1
-  tail -200 "$SPINE_LOG" | grep -q 'nudge.emitted' || (echo "no nudge.emitted in spine" && false)
+  # Search only what was written since the mark, and match THIS run's probe.
+  # Grepping the bare event name would pass on any nudge any role happened to
+  # send while this test ran — it could not tell its own emit from a neighbour's,
+  # which is the other half of why the old assertion was untrustworthy.
+  tail -c "+$((SPINE_MARK + 1))" "$SPINE_LOG" | grep -q "nudge.emitted" \
+    || (echo "no nudge.emitted written since the call" && false)
+  tail -c "+$((SPINE_MARK + 1))" "$SPINE_LOG" | grep -q "$PROBE" \
+    || (echo "nudge.emitted found but not THIS probe ($PROBE)" && false)
 }
 
 @test "tools/call rejects invalid target role" {
