@@ -1844,8 +1844,43 @@ fn dal_err_resp(e: &str) -> (u16, String) {
 pub fn entity_subject(class: &str, name: &str) -> String {
     let local = class.rsplit('#').next().unwrap_or(class);
     match local {
-        "Product" | "Domain" | "Test" => format!("{}{}", NS, name),
+        // #4114 — Principle joins the un-prefixed kinds because that is how all 28
+        // of its rows are actually authored (`chorus:hemenway-get-a-yield`,
+        // `chorus:xp-humanity`) — measured across every ontology file, 28 bare and
+        // 0 prefixed. Minting `principle-<name>` meant the entity read looked for a
+        // subject nobody ever wrote, so /principles listed 28 rows and every single
+        // read of one 404'd, which is why sessions booted with no principles at all.
+        "Product" | "Domain" | "Test" | "Principle" => format!("{}{}", NS, name),
         _ => format!("{}{}-{}", NS, kind_of_class(local), name),
+    }
+}
+
+/// #4114 — the name a READ hands out, and the exact inverse of `entity_subject`.
+///
+/// The two disagreed, and the disagreement was invisible because each side was
+/// right on its own. Every write in the spine addresses a row by its BARE name
+/// (`owl.write entity=werk-product-design` against `chorus:document-werk-product-design`),
+/// and the door mints the `<kind>-` prefix itself. The collection, meanwhile,
+/// served the subject's whole localname (`card-3645`), which the entity route
+/// then minted again into `card-card-3645`. So every name the cards list handed
+/// out 404'd on the read of that same row, and the row that DID answer was one
+/// the list never named.
+///
+/// Round-tripping is the property that matters: `served_name(c, entity_subject(c, n)) == n`
+/// for every class and every name. The unit test asserts exactly that, so the
+/// two cannot drift apart again without a red.
+pub fn served_name(class: &str, subject: &str) -> String {
+    let local = subject.rsplit('#').next().unwrap_or(subject);
+    let class_local = class.rsplit('#').next().unwrap_or(class);
+    match class_local {
+        // the same un-prefixed kinds as `entity_subject` — the two lists are one
+        // rule seen from both ends, and the round-trip test fails the moment they
+        // stop agreeing.
+        "Product" | "Domain" | "Test" | "Principle" => local.to_string(),
+        _ => {
+            let prefix = format!("{}-", kind_of_class(class_local));
+            local.strip_prefix(&prefix).unwrap_or(local).to_string()
+        }
     }
 }
 
@@ -3905,7 +3940,10 @@ pub const COL_SEP: char = '\u{1f}';
 /// group the fanned rows per subject and merge — a field renders as a string when it
 /// has one value and a JSON array when it has several (additive under ADR-047; single-
 /// valued fields keep their exact prior shape). label/status take the first non-empty.
-pub fn collection_items(rows: Vec<String>, extra_names: &[String]) -> Vec<String> {
+/// #4114 — `class` is here so the name this serves is the name the entity route
+/// accepts (see `served_name`). Without it the list published names its own read
+/// rejected.
+pub fn collection_items(class: &str, rows: Vec<String>, extra_names: &[String]) -> Vec<String> {
     let mut order: Vec<String> = Vec::new();
     let mut by_subj: std::collections::HashMap<String, Vec<Vec<String>>> =
         std::collections::HashMap::new();
@@ -3927,7 +3965,8 @@ pub fn collection_items(rows: Vec<String>, extra_names: &[String]) -> Vec<String
         .iter()
         .map(|subj| {
             let group = &by_subj[subj];
-            let name = subj.rsplit('#').next().unwrap_or(subj);
+            let name = served_name(class, subj);
+            let name = name.as_str();
             let pick = |idx: usize| {
                 group
                     .iter()
@@ -4135,7 +4174,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         return match projected {
             Ok(body) => {
                 let extra_names: Vec<String> = extra.iter().map(|(n, _)| n.clone()).collect();
-                let items = collection_items(select_v(&body), &extra_names);
+                let items = collection_items(&table.class, select_v(&body), &extra_names);
                 {
                     // #3506 / ADR-047 — the collection list, enveloped + paginated:
                     // kind = the item class, no `id`, `data` = the page, `count` = the
@@ -5271,6 +5310,11 @@ mod tests {
         assert_eq!(json_escape("a\tb\u{0008}c\u{0000}"), "a\\tb\\bc\\u0000");
     }
 
+    // #4114 — these marshal fixtures use bare subjects (`https://x#spine`), so they
+    // pass an un-prefixed kind and the served name is the localname exactly as
+    // before. What they assert is column handling, not naming.
+    const PRODUCT_CLASS: &str = "https://jeffbridwell.com/chorus#Product";
+
     // #3635 — collection marshal aggregates multi-valued fields per subject.
     // #4045 — a value that CONTAINS a pipe must not shift the columns after it.
     // Negative proof: on the old '|'-separated rows this same fixture split into
@@ -5282,7 +5326,7 @@ mod tests {
             "https://x#spine{s}Spine{s}operating{s}Path | Today | To-be{s}events",
             s = sep
         )];
-        let items = collection_items(rows, &["apiSurface".to_string(), "hasDomain".to_string()]);
+        let items = collection_items(PRODUCT_CLASS, rows, &["apiSurface".to_string(), "hasDomain".to_string()]);
         assert_eq!(items.len(), 1);
         assert!(items[0].contains("\"apiSurface\": \"Path | Today | To-be\""), "pipe kept inside the value: {}", items[0]);
         assert!(items[0].contains("\"hasDomain\": \"events\""), "the column after it is intact: {}", items[0]);
@@ -5298,7 +5342,7 @@ mod tests {
             "https://x#borg\u{1f}Borg\u{1f}building\u{1f}deploys".to_string(),
             "https://x#athena\u{1f}\u{1f}building\u{1f}domains".to_string(),
         ];
-        let items = collection_items(rows, &["hasDomain".to_string()]);
+        let items = collection_items(PRODUCT_CLASS, rows, &["hasDomain".to_string()]);
         assert_eq!(items.len(), 2, "entities, not SPARQL rows");
         assert!(
             items[0].contains("\"hasDomain\": [\"logs\", \"builds\", \"deploys\"]"),
@@ -5322,7 +5366,7 @@ mod tests {
             "https://x#d\u{1f}D\u{1f}ok\u{1f}b\u{1f}v1".to_string(),
             "https://x#d\u{1f}D\u{1f}ok\u{1f}b\u{1f}v2".to_string(),
         ];
-        let items = collection_items(rows, &["f1".to_string(), "f2".to_string()]);
+        let items = collection_items(PRODUCT_CLASS, rows, &["f1".to_string(), "f2".to_string()]);
         assert_eq!(items.len(), 1);
         assert!(items[0].contains("\"f1\": [\"a\", \"b\"]"), "{}", items[0]);
         assert!(items[0].contains("\"f2\": [\"v1\", \"v2\"]"), "{}", items[0]);
@@ -5353,7 +5397,7 @@ mod tests {
     #[test]
     fn collection_items_empty_field_renders_empty_string() {
         let rows = vec!["https://x#d\u{1f}D\u{1f}ok\u{1f}".to_string()];
-        let items = collection_items(rows, &["f1".to_string()]);
+        let items = collection_items(PRODUCT_CLASS, rows, &["f1".to_string()]);
         assert!(items[0].contains("\"f1\": \"\""), "{}", items[0]);
     }
 
@@ -6098,6 +6142,42 @@ mod tests {
         assert_eq!(entity_subject("https://jeffbridwell.com/chorus#Document", "spine-product-design"), format!("{}document-spine-product-design", NS));
         assert_eq!(entity_subject("https://jeffbridwell.com/chorus#ValueStreamStep", "directing"), format!("{}value-stream-step-directing", NS));
         assert_ne!(entity_subject("https://jeffbridwell.com/chorus#Document", "x"), format!("{}x", NS));
+    }
+
+    /// #4114 — the name a list serves must be the name its own read accepts.
+    #[test]
+    fn a_served_name_round_trips_through_the_write_mint() {
+        let c = |n: &str| format!("https://jeffbridwell.com/chorus#{}", n);
+        for (class, name) in [
+            ("Card", "3645"),
+            ("Document", "spine-product-design"),
+            ("ValueStreamStep", "directing"),
+            ("Principle", "hemenway-get-a-yield"),
+            ("Principle", "xp-humanity"),
+            ("Product", "spine"),
+            ("Domain", "events"),
+        ] {
+            let subject = entity_subject(&c(class), name);
+            assert_eq!(
+                served_name(&c(class), &subject),
+                name,
+                "{} / {}: the list would publish a name the read rejects",
+                class, name
+            );
+        }
+    }
+
+    /// Negative proof (#3734): the check must be able to go RED. Serving the raw
+    /// localname — exactly what the collection did before this card — does NOT
+    /// round-trip for a prefixed kind, and that is the defect this test catches.
+    #[test]
+    fn the_raw_localname_does_not_round_trip_and_the_check_says_so() {
+        let card = "https://jeffbridwell.com/chorus#Card";
+        let subject = entity_subject(card, "3645");
+        let raw_localname = subject.rsplit('#').next().unwrap();
+        assert_eq!(raw_localname, "card-3645");
+        assert_ne!(raw_localname, "3645", "the old behaviour served card-3645, which the read 404s");
+        assert_eq!(served_name(card, &subject), "3645");
     }
 
     #[test]
