@@ -2877,6 +2877,23 @@ pub fn parse_shell_counts(out: &str) -> Option<(usize, usize)> {
 
 /// #3974 — per-case results from bats TAP output ("ok N desc" / "not ok N desc"),
 /// so the bats lane stops being boolean-only and its cases post like cargo/jest.
+/// #4111 — the bare case name out of a TAP line carrying a skip directive.
+/// `ok 3 the name # skip reason` → `the name`. Returns None when there is no
+/// directive, so a `#` that is part of a real test name (`handles # in a path`)
+/// is left alone — the directive is ` # skip` with a space before the hash, at
+/// the END of the line.
+pub fn split_tap_skip(name: &str) -> Option<&str> {
+    let at = name.find(" # skip")?;
+    // must be the directive, not a name that merely contains the phrase: what
+    // follows is either nothing or a space and the reason
+    let after = &name[at + " # skip".len()..];
+    if after.is_empty() || after.starts_with(' ') {
+        Some(name[..at].trim_end())
+    } else {
+        None
+    }
+}
+
 pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
     let mut cases = Vec::new();
     for l in out.lines() {
@@ -2889,8 +2906,20 @@ pub fn parse_bats_cases(out: &str) -> Vec<(String, String)> {
             if let Some((num, name)) = rest.split_once(' ') {
                 if num.chars().all(|c| c.is_ascii_digit()) {
                     // bats: "ok 1 desc" · node:test TAP: "ok 1 - desc"
-                    let name = name.trim().trim_start_matches("- ").trim_start_matches("# skip").trim();
-                    cases.push((tap_unescape(name), "pass".to_string()));
+                    let name = name.trim().trim_start_matches("- ").trim();
+                    // #4111 — the skip marker is a TRAILING TAP directive, not a
+                    // prefix: bats writes `ok 3 <name> # skip <reason>`. The old
+                    // `trim_start_matches("# skip")` could never fire, so the
+                    // directive stayed glued to the name, the row failed to join
+                    // the registry, and twelve cases that ran and honestly
+                    // declined read as never-ran every night — nudge-health's
+                    // three among them, while the suite reported 9 pass 0 fail.
+                    // A skip is its own verdict: the case ran and said why.
+                    let (name, verdict) = match split_tap_skip(name) {
+                        Some(bare) => (bare, "skip"),
+                        None => (name, "pass"),
+                    };
+                    cases.push((tap_unescape(name), verdict.to_string()));
                 }
             }
         }
@@ -4165,5 +4194,75 @@ mod never_ran_causes_4063 {
         // a state that is NOT a mismatch must not grow a runner line
         let silent = classify_gap(&[k("platform/api/tests/quiet.test.ts", "n")], &[], &no_ui(), &|_| true);
         assert!(!gap_state_report(&silent, &executed).contains("runner emitted"));
+    }
+}
+
+// ── #4111 — a skip is a verdict, not a missing result ──────────────────────────
+#[cfg(test)]
+mod tap_skip_directive_4111 {
+    use super::{parse_bats_cases, split_tap_skip};
+
+    // Verbatim from `bats --tap platform/tests/nudge-health.bats`, 2026-09-06.
+    const REAL: &str = "\
+1..9
+ok 1 health check script exists and is executable
+ok 2 health check succeeds when role sessions are running # skip UNMEASURABLE: role sessions or tmux panes not visible from this test context
+ok 3 health check reports all roles reachable # skip UNMEASURABLE: role sessions or tmux panes not visible from this test context
+ok 4 health check detects missing role window
+ok 5 AC8: a vscode session is healthy via --vscode, never no-window (the 84x false alarm) # skip no live vscode session registered in this env
+not ok 6 something genuinely broke
+";
+
+    #[test]
+    fn a_skipped_case_carries_its_registered_name_and_a_skip_verdict() {
+        let cases = parse_bats_cases(REAL);
+        let skipped: Vec<&(String, String)> = cases.iter().filter(|(_, v)| v == "skip").collect();
+        assert_eq!(skipped.len(), 3, "{:?}", cases);
+        assert_eq!(skipped[0].0, "health check succeeds when role sessions are running");
+        assert_eq!(skipped[1].0, "health check reports all roles reachable");
+        assert_eq!(
+            skipped[2].0,
+            "AC8: a vscode session is healthy via --vscode, never no-window (the 84x false alarm)"
+        );
+    }
+
+    /// The negative proof, and the whole reason this exists: the old parser
+    /// stripped `# skip` as a PREFIX, which never matched, so the directive
+    /// stayed glued to the name. Those rows could not join the registry, and
+    /// the three nudge-health cases read as never-ran on every nightly while
+    /// the suite itself reported 9 pass, 0 fail.
+    #[test]
+    fn negative_proof_the_directive_is_never_left_glued_to_the_name() {
+        for (name, _) in parse_bats_cases(REAL) {
+            assert!(!name.contains("# skip"), "directive left in the name: {}", name);
+            assert!(!name.contains("UNMEASURABLE"), "reason left in the name: {}", name);
+        }
+    }
+
+    /// A skip must not be laundered into a pass either — that is how a suite
+    /// reports green while three of its cases never ran.
+    #[test]
+    fn negative_proof_a_skip_is_not_counted_as_a_pass() {
+        let cases = parse_bats_cases(REAL);
+        let passes: Vec<&(String, String)> = cases.iter().filter(|(_, v)| v == "pass").collect();
+        assert_eq!(passes.len(), 2, "only the two genuinely-ok cases: {:?}", cases);
+        assert_eq!(cases.iter().filter(|(_, v)| v == "fail").count(), 1);
+    }
+
+    /// A `#` inside a real test name is not a directive. Without this the fix
+    /// would truncate honest names, which is the same defect pointed the other
+    /// way.
+    #[test]
+    fn control_a_hash_inside_a_name_is_left_alone() {
+        assert_eq!(split_tap_skip("handles # in a path"), None);
+        assert_eq!(split_tap_skip("emits a # skipped-looking token"), None);
+        let cases = parse_bats_cases("ok 1 handles # in a path\n");
+        assert_eq!(cases[0].0, "handles # in a path");
+        assert_eq!(cases[0].1, "pass");
+    }
+
+    #[test]
+    fn control_a_bare_directive_with_no_reason_still_splits() {
+        assert_eq!(split_tap_skip("the name # skip"), Some("the name"));
     }
 }
