@@ -98,7 +98,14 @@ chorus:ChunkMembership a owl:Class ;
 chorus:CardShape a sh:NodeShape ;
   sh:targetClass chorus:Card ;
   chorus:instancesGraph "urn:chorus:instances" ;  # #3686: serve reads need the DAL home DECLARED — without it the generated route reads the wrong graph and serves 0 rows (the #3581/#3675 /domains=0 class)
-  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] .
+  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+  # #4116 — a card row carries its owner, like every other row the door writes.
+  # The write door refuses a node whose ownedBy is absent (authz_allows is
+  # fail-closed), so a row minted without one can never be written again by
+  # anyone — which is exactly what stopped #4102's land: the model declared the
+  # owner, the live row carried none, and the replace 403'd. Requiring it at the
+  # shape means the mint cannot produce that row in the first place.
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ] .
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;

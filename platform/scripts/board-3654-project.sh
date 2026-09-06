@@ -68,7 +68,7 @@ import sys, os, re, html
 from collections import defaultdict
 
 STATUS_W = {"Now":0, "WIP":1, "Next":2, "Blocked":3, "Later":4}
-sec, cards, chunks = None, {}, defaultdict(list)
+sec, cards, chunks, card_owner = None, {}, defaultdict(list), {}
 for line in os.environ["BOARD_LISTING"].splitlines():
     m = re.match(r'^(Now|WIP|Next|Blocked|Later|Done|Won.t Do|Harvesting|SWAT) \(', line)
     if m: sec = m.group(1); continue
@@ -78,6 +78,7 @@ for line in os.environ["BOARD_LISTING"].splitlines():
     cid, title, owner, prio = m.group(1), m.group(2), m.group(3).lower(), int(m.group(4)[1])
     title = html.unescape(title).replace('"', "'").strip()
     cards[cid] = title
+    card_owner[cid] = owner   # #4116 — the ownedBy target for this row
     for ch in re.findall(r'chunk:([a-z-]+)', line):
         chunks[ch].append((STATUS_W[sec], prio, int(cid), cid, owner))
 
@@ -133,7 +134,11 @@ for ch in sorted(chunks):
     for i, (_, _, _, cid, _) in enumerate(newcomers, max_rank[ch] + 1):
         if cid not in emitted:
             emitted.add(cid)
-            print(f"CARD\t{cid}\t{cards[cid]}")
+            # #4116 — the card row carries its owner. It was always in the board
+            # listing (owner is the 5th slot of every member tuple); the mint
+            # just never passed it, so 231 live card rows had no ownedBy and the
+            # write door could not touch any of them.
+            print(f"CARD\t{cid}\t{cards[cid]}\t{card_owner[cid]}")
         print(f"MEMBER\t{ch}\t{cid}\t{i}")
 PY
 )" || { echo "FATAL: board parse failed" >&2; exit 1; }
@@ -154,7 +159,12 @@ while IFS=$'\t' read -r kind a b c d; do
       [ "$d" = "loom=1" ] && args+=(--field "loomSequence=1")
       run "chunk $a (owner=$b seq=$c ${d:-})" "${args[@]}" ;;
     CARD)
-      run "card $a" --kind card --name "$a" --field "label=$b" ;;
+      # #4116 — ownedBy is REQUIRED by CardShape now: a row minted without an
+      # owner is a row nobody (not even the land carrying its own model) can
+      # ever write again. Fail loud rather than mint an unwritable row.
+      [ -n "$c" ] || { echo "REFUSED: card $a has no owner in the board listing" >&2; R=$((R+1)); continue; }
+      run "card $a (owner=$c)" --kind card --name "$a" --field "label=$b" \
+          --edge "ownedBy=role:$c" ;;
     MEMBER)
       run "membership $a#$c → card $b" --kind chunkmembership --name "$a-$b" \
           --field "rank=$c" --edge "inChunk=chunk:$a" --edge "hasCard=card:$b" ;;
