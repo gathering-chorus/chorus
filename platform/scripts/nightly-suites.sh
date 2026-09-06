@@ -497,13 +497,78 @@ _first_red_nudge() {
   "$ops_nudge" "$owner" "nightly RED now: $path — $summary (run still going; read it now, not at the end)" system >/dev/null 2>&1 || true
 }
 
-owner_for() {
+# #4111 — the DOMAIN implies the owner, and the model has said so all along:
+# every one of the 7,927 registered tests carries a `covers` domain, and all 40
+# Domain rows carry `ownedBy` (tests→kade, principles→wren, builds→silas, …).
+# The path rule below is blind to that: it reads every `platform/**` file as
+# Silas's, which is why the morning report filed Kade's own
+# `platform/tests/4106-registry-mints-only-real-tests.bats` under Silas and
+# sent him to fix a test he did not write. Attribution by directory was a
+# stand-in for a fact the graph already holds.
+#
+# Built once per run into a lookup file; the path rule stays as the fallback
+# for anything the registry does not know, and the fallback is COUNTED and
+# named in the run so a silently-empty map cannot masquerade as agreement.
+_OWNER_MAP="${NIGHTLY_OWNER_MAP:-}"
+_owner_map_build() {
+  [ -n "$_OWNER_MAP" ] && [ -s "$_OWNER_MAP" ] && return 0
+  _OWNER_MAP="${TMPDIR:-/tmp}/nightly-owner-map.$$"
+  : > "$_OWNER_MAP"
+  local owlapi="${OWLAPI:-http://localhost:3360}"
+  # The registry is 7,927 rows — far past the argv/environ limit, so the JSON
+  # goes to files and python reads the files. Passing it through the
+  # environment fails with "argument list too long", and because the failure
+  # was swallowed the map came back EMPTY and every row quietly fell back to
+  # the path rule: the exact silent-degradation shape this map exists to end.
+  local tf="${TMPDIR:-/tmp}/nightly-owner-tests.$$"
+  local df="${TMPDIR:-/tmp}/nightly-owner-domains.$$"
+  if ! curl -sf -m 30 -o "$tf" "$owlapi/tests?limit=25000" 2>/dev/null \
+     || ! curl -sf -m 15 -o "$df" "$owlapi/domains?limit=200" 2>/dev/null; then
+    rm -f "$tf" "$df"
+    echo "!! owner map UNAVAILABLE — registry unreachable; every row falls back to the path rule" >&2
+    return 0
+  fi
+  python3 - "$tf" "$df" >> "$_OWNER_MAP" <<'PYEOF'
+import json, sys
+tests = json.load(open(sys.argv[1]))["data"]
+domains = json.load(open(sys.argv[2]))["data"]
+own = {}
+for d in domains:
+    o = (d.get("ownedBy") or "")
+    o = o[5:] if o.startswith("role-") else o
+    if d.get("name") and o:
+        own[d["name"]] = o
+seen = {}
+for t in tests:
+    fp, cov = t.get("filePath"), t.get("covers")
+    if fp and cov in own:
+        seen[fp] = own[cov]
+for fp, o in sorted(seen.items()):
+    print("%s\t%s" % (fp, o))
+PYEOF
+  rm -f "$tf" "$df"
+  echo "owner map: $(grep -c . "$_OWNER_MAP" 2>/dev/null || echo 0) file(s) attributed from the model" >&2
+}
+
+_owner_path_rule() {
   case "$1" in
     "$APP_ROOT"|"$APP_ROOT"/*)              echo "kade" ;;
     directing/*|"$CHORUS_ROOT"/directing/*) echo "kade" ;;
     platform/*|roles/*|"$CHORUS_ROOT"/platform/*|"$CHORUS_ROOT"/roles/*) echo "silas" ;;
     *)                                      echo "kade" ;;
   esac
+}
+
+owner_for() {
+  local rel="${1#"$CHORUS_ROOT"/}"
+  _owner_map_build
+  local from_model=""
+  [ -s "$_OWNER_MAP" ] && from_model=$(awk -F'\t' -v f="$rel" '$1==f {print $2; exit}' "$_OWNER_MAP")
+  if [ -n "$from_model" ]; then
+    echo "$from_model"
+  else
+    _owner_path_rule "$1"
+  fi
 }
 
 # Extract a parseable pass/fail summary from a shell test script's full stdout.
