@@ -31,7 +31,19 @@ href_id() { python3 -c "import base64,sys; print(base64.urlsafe_b64encode(sys.ar
 # AC1 — POST /catalog/tags writes five-field tag, emits curated event.
 
 # 1. POST with missing href is rejected at boundary.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+# #4111 — the curation write door requires an identity; this test never sent
+# one, so every POST got 401 before its shape check and ten assertions read as
+# validation failures. Same missing header as principles-api.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TOKEN="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
+if [ -z "$TOKEN" ]; then
+  echo "catalog-curation-api: UNMEASURED — could not mint an identity token"
+  echo "0 pass, 0 fail (UNMEASURED — no identity token)"
+  exit 0
+fi
+AUTH=(-H "Authorization: Bearer $TOKEN")
+
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d '{"product":"chorus"}' "$TAGS_URL")
 check "POST tags without href rejected at 400" "400" "$CODE"
 
@@ -40,8 +52,8 @@ POST_BODY=$(cat <<EOF
 {"href":"$HREF_A","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
 EOF
 )
-RESP=$(curl -s -X POST -H 'Content-Type: application/json' -d "$POST_BODY" "$TAGS_URL")
-HTTP_OK=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$POST_BODY" "$TAGS_URL")
+RESP=$(curl -s -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_BODY" "$TAGS_URL")
+HTTP_OK=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_BODY" "$TAGS_URL")
 check "POST tags valid body returns 200" "200" "$HTTP_OK"
 PERSISTED_PRODUCT=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin).get('data',{}).get('product',''))" 2>/dev/null || echo "")
 check "POST tags returns persisted product" "chorus" "$PERSISTED_PRODUCT"
@@ -51,7 +63,7 @@ BAD_BODY=$(cat <<EOF
 {"href":"$HREF_A","product":"chorus","subdomain":"definitely-not-a-real-subdomain"}
 EOF
 )
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$BAD_BODY" "$TAGS_URL")
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$BAD_BODY" "$TAGS_URL")
 check "POST tags unknown subdomain rejected at 400" "400" "$CODE"
 
 # ---------------------------------------------------------------------------
@@ -78,14 +90,14 @@ POST_B=$(cat <<EOF
 {"href":"$HREF_B","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
 EOF
 )
-curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d "$POST_B" "$TAGS_URL"
+curl -s -o /dev/null -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_B" "$TAGS_URL"
 
 # A supersedes B
 LINEAGE_BODY=$(cat <<EOF
 {"subject_href":"$HREF_A","predicate":"supersedes","object_href":"$HREF_B"}
 EOF
 )
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$LINEAGE_BODY" "$LINEAGE_URL")
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$LINEAGE_BODY" "$LINEAGE_URL")
 check "POST lineage valid edge returns 200" "200" "$CODE"
 
 # Invalid predicate rejected.
@@ -93,7 +105,7 @@ BAD_LIN=$(cat <<EOF
 {"subject_href":"$HREF_A","predicate":"notARealPredicate","object_href":"$HREF_B"}
 EOF
 )
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$BAD_LIN" "$LINEAGE_URL")
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$BAD_LIN" "$LINEAGE_URL")
 check "POST lineage invalid predicate rejected at 400" "400" "$CODE"
 
 # Bidirectional read: GET doc A shows out-edge supersedes→B; GET doc B shows in-edge supersedes←A.
@@ -116,7 +128,7 @@ DIV_BODY=$(cat <<EOF
 {"href":"$HREF_DIVERGE","product":"chorus","subproduct":"loom","domain":"chorus","subdomain":"loom-principles","role":"wren"}
 EOF
 )
-curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d "$DIV_BODY" "$TAGS_URL"
+curl -s -o /dev/null -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$DIV_BODY" "$TAGS_URL"
 
 DRIFT_RESP=$(curl -s "$DRIFT_URL")
 N=$(echo "$DRIFT_RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len([e for e in d.get('data',{}).get('drift',[]) if e.get('href')=='$HREF_DIVERGE']))" 2>/dev/null || echo 0)
@@ -128,11 +140,16 @@ check "GET drift surfaces path↔tag divergence" "1" "$N"
 # verify /api/athena/validate surfaces it, then clean up.
 
 FUSEKI_UPDATE="${FUSEKI_UPDATE:-http://localhost:3030/pods/update}"
+# #4111 — Fuseki 401s a bare write (#3566, the script-side write door). This
+# INSERT went in unauthenticated, silently did nothing, and the assertion below
+# then read "no violation surfaced" as a SHACL failure. The write never happened.
+# `set -u` + macOS bash 3.2 needs the [@]+ guard form exactly as written.
+source "$ROOT/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
 VALIDATE_URL="$API_BASE/api/athena/validate"
 MALFORMED_URI="https://jeffbridwell.com/chorus#catalog-doc-shape-violation-${TS}"
 
 # Insert: CatalogDoc with no catalogHref (violates required-prop shape).
-curl -s -o /dev/null -X POST -H 'Content-Type: application/sparql-update' \
+curl -s -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
   --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 INSERT DATA { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> a chorus:CatalogDoc ; chorus:product \"chorus\" } }" \
   "$FUSEKI_UPDATE"
@@ -146,7 +163,7 @@ print(len(hits))
 check "validate surfaces malformed CatalogDoc (no catalogHref)" "1" "$([ "$VIOLATIONS" -ge 1 ] && echo 1 || echo 0)"
 
 # Cleanup
-curl -s -o /dev/null -X POST -H 'Content-Type: application/sparql-update' \
+curl -s -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
   --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 DELETE WHERE { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> ?p ?o } }" \
   "$FUSEKI_UPDATE"

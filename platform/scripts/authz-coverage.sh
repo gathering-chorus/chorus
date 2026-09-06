@@ -107,7 +107,33 @@ fi
 # 403s those with no mutation risk (refused before the body is processed).
 # Surfaces the role HOLDS are SKIPPED (probing them could mutate). Override with
 # CHORUS_AUTHZ_PROBE_TOKEN + CHORUS_AUTHZ_PROBE_LACKS="scopeA,scopeB".
-PROBE_ROLE="${CHORUS_AUTHZ_PROBE_ROLE:-silas}"
+# #4111 — the probe identity was hardcoded to a teammate's name. A default like
+# that is a guess wearing a fact's clothes: it survives reorganisations, and when
+# ownership moves the probe keeps measuring whoever was named in April. Derive it
+# from the security domain's ownedBy — the model is the authority — and fall back
+# to refusing rather than to a person.
+_probe_role_from_model() {
+  local owl="${OWLAPI:-http://localhost:3360}" df
+  df="$(mktemp "${TMPDIR:-/tmp}/authz-domains.XXXXXX")"
+  if curl -sf -m 15 -o "$df" "$owl/domains?limit=200" 2>/dev/null; then
+    python3 - "$df" <<'PYEOF'
+import json, sys
+for d in json.load(open(sys.argv[1]))["data"]:
+    if d.get("name") == "security":
+        o = (d.get("ownedBy") or "")
+        print(o[5:] if o.startswith("role-") else o)
+        break
+PYEOF
+  fi
+  rm -f "$df"
+}
+PROBE_ROLE="${CHORUS_AUTHZ_PROBE_ROLE:-$(_probe_role_from_model)}"
+if [ -z "$PROBE_ROLE" ]; then
+  echo "authz-coverage: REFUSED — no probe identity. The security domain's ownedBy" >&2
+  echo "  was unreadable and CHORUS_AUTHZ_PROBE_ROLE is unset. Set it explicitly;" >&2
+  echo "  this script will not pick a teammate's name on its own (#3959)." >&2
+  exit 2
+fi
 if [ -z "$TOKEN" ]; then
   MINT="$(command -v chorus-identity-token 2>/dev/null)"
   [ -z "$MINT" ] && [ -x "${ROOT_EARLY:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/chorus-identity-token" ] \

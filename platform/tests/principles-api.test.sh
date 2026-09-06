@@ -17,18 +17,33 @@ check() {
   else fail=$((fail+1)); echo "  FAIL: $desc (expected: $expected, got: $actual)"; fi
 }
 
+# #4111 — the write door requires an identity now, and this test never sent one.
+# Every write got 401 BEFORE the shape check ran, so "POST without label
+# rejected at 400" read 401, nothing was ever created, and the eight read
+# assertions below failed on a principle that does not exist. One missing header
+# presented as nine defects.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TOKEN="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
+if [ -z "$TOKEN" ]; then
+  echo "principles-api: UNMEASURED — could not mint an identity token; the write"
+  echo "  door needs one and every assertion below would read as a shape failure."
+  echo "0 pass, 0 fail (UNMEASURED — no identity token)"
+  exit 0
+fi
+AUTH=(-H "Authorization: Bearer $TOKEN")
+
 TS=$(date +%s)
 TEST_LABEL="Test principle ${TS}"
 POST_BODY="{\"label\":\"$TEST_LABEL\",\"comment\":\"hermetic test principle — safe to delete\"}"
 
 # 0. POST without required label is rejected at the boundary (400). Full
 # cross-graph SHACL validation lands in #2469's gate test.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d '{"comment":"missing-label probe"}' "$WRITE_URL")
 check "POST without label rejected at 400" "400" "$CODE"
 
 # 1. POST creates
-RESP=$(curl -s -X POST -H 'Content-Type: application/json' -d "$POST_BODY" "$WRITE_URL")
+RESP=$(curl -s -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_BODY" "$WRITE_URL")
 URI=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['data'].get('uri',''))" 2>/dev/null || echo "")
 check "POST returned a URI" "1" "$([ -n "$URI" ] && echo 1 || echo 0)"
 ENTITY_ID="${URI##*#}"
@@ -47,13 +62,13 @@ check "visible on /api/athena/subdomains/loom-principles" "1" "$([ "$N" -gt 0 ] 
 
 # 5. PUT updates idempotently
 UPDATED_LABEL="${TEST_LABEL} updated"
-curl -s -o /dev/null -X PUT -H 'Content-Type: application/json' \
+curl -s -o /dev/null -X PUT "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "{\"label\":\"$UPDATED_LABEL\"}" "$WRITE_URL/$ENTITY_ID"
 N=$(curl -s "$READ_URL_CANONICAL" | grep -c "$UPDATED_LABEL")
 check "PUT updates label (visible on read)" "1" "$([ "$N" -gt 0 ] && echo 1 || echo 0)"
 
 # 6. DELETE removes
-curl -s -o /dev/null -X DELETE "$WRITE_URL/$ENTITY_ID"
+curl -s -o /dev/null -X DELETE "${AUTH[@]}" "$WRITE_URL/$ENTITY_ID"
 N=$(curl -s "$READ_URL_CANONICAL" | grep -c "$TEST_LABEL")
 check "DELETE removes (not visible on read)" "0" "$N"
 
