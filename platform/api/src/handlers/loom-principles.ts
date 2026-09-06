@@ -123,6 +123,31 @@ export async function fetchLoomPrinciples(
         uri: d.iri ?? `${CHORUS_PREFIX}${name}`,
       });
     }
+    // #4110 — a walk that loses EVERY row is a broken read, not an empty set.
+    // #3749 repointed this handler at the generated surface and guarded the
+    // case where that surface is unreachable; the case it did not guard is the
+    // surface answering fine while every entity under it 404s. The `continue`
+    // above is right for one row that vanished mid-walk and wrong when the
+    // collection named N and none resolved, because then the caller cannot
+    // tell that from "there are no principles yet".
+    //
+    // That is what happened: athena-make's collection served 28 while every
+    // entity read answered 404, and this endpoint returned 200 with an empty
+    // array. Every session booted with no principles, and the only trace was a
+    // session.principles.empty event carrying error_type=api_returned_empty_set
+    // — which reads like a fact about the data rather than a broken read.
+    // Measured 2026-09-05 06:31: 28 named, 0 resolved.
+    if (names.length > 0 && principles.length === 0) {
+      return {
+        status: 502,
+        body: envelope(
+          'principles',
+          { error: `athena-make named ${names.length} principle(s) but none could be read — entity reads are failing` },
+          now() - started,
+          { error: true, named: names.length, resolved: 0 },
+        ),
+      };
+    }
     principles.sort((a, b) => (a.order ?? 999) - (b.order ?? 999) || a.label.localeCompare(b.label));
     const durationMs = now() - started;
     return {
