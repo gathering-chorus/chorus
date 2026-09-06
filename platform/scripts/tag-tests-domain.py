@@ -162,6 +162,48 @@ def classify(path, c):
 # and the runner's fullName could never join them: 887 "never ran" in the
 # census and 594 results per nightly with no identity to save under. Match a
 # real string literal (same-quote delimited, backslash escapes honoured).
+
+# #4111 — the registry stored the SOURCE spelling of a name; the runner emits
+# the EVALUATED one. Ten registered rows could never join because of it:
+#   source  it('escapes newlines to literal \\n')   runner  escapes newlines to literal \n
+#   source  @test "the \\$\\$ name differs"          runner  the $$ name differs
+# A name that survives its own escapes is the whole point of #4106: a
+# registered test must be a test that can actually run.
+def _unescape_js(nm):
+    """A JS string literal's value, not its source text."""
+    out = []
+    i = 0
+    simple = {'n': '\n', 't': '\t', 'r': '\r', '0': '\0',
+              '\\': '\\', "'": "'", '"': '"', '`': '`', '$': '$', '/': '/'}
+    while i < len(nm):
+        ch = nm[i]
+        if ch == '\\' and i + 1 < len(nm):
+            nxt = nm[i + 1]
+            out.append(simple.get(nxt, nxt))
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
+
+# The escaped-quote-aware form. The old pattern was `"([^"]+)"`, which stopped
+# at the first `\"` inside the name and registered a truncated string —
+# `lock: chorus-hooks contains no direct Command::new(\` was a real row.
+BATS_NAME_RE = re.compile(r'(?m)^[ \t]*@test\s+"((?:[^"\\]|\\.)*)"')
+
+def _unescape_bats(nm):
+    """What bash prints for a double-quoted @test name."""
+    out = []
+    i = 0
+    while i < len(nm):
+        if nm[i] == '\\' and i + 1 < len(nm) and nm[i + 1] in '"\\$`':
+            out.append(nm[i + 1])
+            i += 2
+            continue
+        out.append(nm[i])
+        i += 1
+    return ''.join(out)
+
 # #4106 — `\b` also matched `test(` in `/Log in/.test('<button>Log in</button>')`,
 # so a regex call registered its ARGUMENT as a test case. Two such phantoms sat
 # in the registry as permanent never-ran rows. A declaration is never preceded
@@ -173,7 +215,7 @@ def jest_case_names(source):
     out = []
     for m in JEST_NAME_RE.finditer(source):
         nm = next(g for g in m.groups() if g is not None)
-        nm = nm.replace("\\'", "'").replace('\\"', '"').replace('\\`', '`')
+        nm = _unescape_js(nm)
         # #4106 — a name built by interpolation is a template, not a name. The
         # runner emits the interpolated value ("…port 51873"), so a row holding
         # the raw "…port ${TEST_PORT}" can never be joined to a result and sits
@@ -191,7 +233,7 @@ def case_names(path):
     # @test declaration written INSIDE a string fixture (a bats suite that
     # builds a little .bats file to run the tagger against registered its
     # fixture's name as a real test — 5 such phantoms, one of them called "x").
-    elif path.endswith('.bats'): r = re.findall(r'(?m)^[ \t]*@test\s+"([^"]+)"', c)
+    elif path.endswith('.bats'): r = [_unescape_bats(m) for m in BATS_NAME_RE.findall(c)]
     elif re.search(r'\.(test|spec)\.[tj]s$', path): r = jest_case_names(c)
     # #4063 — a shell suite has no per-case grain, so the runner stores ONE
     # verdict per script named by the file (`shell_suite_case`). Registering
