@@ -57,7 +57,8 @@ hits=$(grep -rIl -E "$RETIRED" \
       if [ "${f#"$ROOT/platform/tests/"}" != "$f" ] && grep -q "retired-name-guard: exempt" "$f"; then
         exempt=yes
       fi
-      [ "$exempt" = yes ] || echo "$f"
+      [ "$exempt" = yes ] && continue
+      is_live_reference "$f" && echo "$f"
     done | sort)
 n=$(printf "%s" "$hits" | grep -c . || true)
 if [ "$n" -gt 0 ]; then

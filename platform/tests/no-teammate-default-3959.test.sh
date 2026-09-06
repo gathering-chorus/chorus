@@ -15,11 +15,16 @@
 # fallback, unwrap_or, ?? — only that a human's name is never the answer.
 set -u
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-# #4113 — the tree this file lives in, NOT $CHORUS_ROOT. Reading the env var made a
-# werk's copy of this suite grade CANONICAL's files: it reported the same six hits no
-# matter what the werk changed, so a fix could never turn it green from where the fix
-# was made. Same defect this card found in two other suites.
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The tree this file lives in, NOT $CHORUS_ROOT.
+#
+# #4113 (Wren) and #4111 (Kade) found this independently, in different suites, the
+# same week: reading the env var made a werk's copy grade CANONICAL's files, so it
+# reported the same hits no matter what the werk changed and a fix could never turn
+# it green from where the fix was made. Same class as #3701's ratchet pin.
+#
+# SCAN_ROOT is the deliberate override — this suite's own self-tests use it to point
+# the guard at a fixture tree, which is how its negative proofs run at all.
+ROOT="${SCAN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 # A guard whose search target moved must fail LOUDLY, never pass vacuously (#3734).
 for d in platform directing; do
