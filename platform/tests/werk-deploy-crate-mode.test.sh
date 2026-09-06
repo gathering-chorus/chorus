@@ -2,9 +2,32 @@
 # test-in-demo: exercise the DEMO SLOT's werk-deploy executable (#3317 crate mode)
 # end-to-end against a sandboxed fixture — real binary, stubbed system surface.
 set -u
-# Resolves the binary under test: env override → role slot → PATH (installed).
-BIN="${WERK_DEPLOY_BIN_UNDER_TEST:-${WERK_SILAS_BIN:+$WERK_SILAS_BIN/werk-deploy}}"
-BIN="${BIN:-$(command -v werk-deploy)}"
+# #4111 — grade the tree this test SHIPS in, not a named teammate's slot.
+#
+# The old chain was: env override -> $WERK_SILAS_BIN/werk-deploy -> PATH. Run
+# from any other werk it graded SILAS's binary, so this card's freshly built
+# werk-deploy was never the thing under test and four assertions failed against
+# a build nobody in this branch had touched. A test that names one teammate in
+# its resolution order cannot be run by the other two.
+#
+# Order now: explicit override -> this tree's own release build -> PATH. The
+# choice and its reason are printed with the results, so a surprising verdict
+# names the binary that produced it.
+REPO_UT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -n "${WERK_DEPLOY_BIN_UNDER_TEST:-}" ]; then
+  BIN="$WERK_DEPLOY_BIN_UNDER_TEST"; BIN_WHY="WERK_DEPLOY_BIN_UNDER_TEST"
+elif [ -x "$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy" ]; then
+  BIN="$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy"; BIN_WHY="this tree's release build"
+else
+  BIN="$(command -v werk-deploy)"; BIN_WHY="PATH (installed)"
+fi
+if [ -z "${BIN:-}" ] || [ ! -x "$BIN" ]; then
+  echo "werk-deploy-crate-mode: UNMEASURED — no werk-deploy binary to grade."
+  echo "  Looked in $REPO_UT/platform/services/werk-deploy/target/release/ and on PATH."
+  echo "  Run werk-build first, or set WERK_DEPLOY_BIN_UNDER_TEST."
+  echo "Results: 0 passed, 0 failed (UNMEASURED — no binary)"
+  exit 0
+fi
 T="$(mktemp -d -t wd-demo-XXXXXX)"
 trap 'rm -rf "$T"' EXIT
 FIX="$T/canonical"; STUB="$T/stub"; LOGS="$T/logs"
@@ -124,5 +147,5 @@ out=$("$BIN" crate chorus-api --rollback 2>&1); rc=$?
   && ok "refused: no prior deploy to restore" || fail "ts rollback refusal" "rc=$rc out=$out"
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed (executable: $BIN)"
+echo "Results: $PASS passed, $FAIL failed (executable: $BIN — $BIN_WHY)"
 [ $FAIL -eq 0 ]
