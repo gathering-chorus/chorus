@@ -272,7 +272,7 @@ pub fn run(args: &[String]) -> ExitCode {
     eprintln!("Context cached: {} ({} lines)", out_path, lines);
 
     // Spine events — AC for #1808
-    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
+    let log_path = crate::shared::state_paths::chorus_log_file();
     let eastern_offset = {
         let out = std::process::Command::new("date").args(["+%z"]).env("TZ", "America/New_York").output();
         out.ok().and_then(|o| String::from_utf8(o.stdout).ok())

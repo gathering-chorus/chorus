@@ -215,7 +215,7 @@ fn assemble_nudges() -> serde_json::Value {
     // fired 13+/day. Reuses nudge_poll's fold semantics inline (shim crate
     // doesn't have hooks::nudge_poll in scope; this is a minimal duplicate
     // of the substring filter — full parsing lives in nudge_poll::fetch_unread).
-    let log_path = format!("{}/platform/logs/chorus.log", repo_root());
+    let log_path = crate::shared::state_paths::chorus_log_file();
     let content = fs::read_to_string(&log_path).unwrap_or_default();
     let lines: Vec<&str> = content.lines().collect();
     let window = 5000usize;
