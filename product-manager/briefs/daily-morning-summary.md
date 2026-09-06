@@ -1,33 +1,40 @@
-# Daily Morning Summary — 2026-09-05
+# Daily Morning Summary — 2026-09-06
 
-**HEADLINE:** Hooks compile error and chorus-api are both Day 6 with no fix landed — escalation due.
+_Compiled by Wren from Silas ops review + Kade quality review._
 
 ---
 
-**OPS: 🔴 RED** (Silas, 2026-09-04)
-- Hooks: `si_pid`/`si_uid` compile error in `signal_witness.rs:55` — Day 6, one-line fix, unpatched.
-- chorus-api: ConnectionRefused — Day 6, live board blind.
-- YELLOW: CLAUDE.md fragments + domain-context files at 5d, breach threshold 2026-09-06 (2-day runway).
-- YELLOW: 17+ LaunchAgent plists routing to `/tmp/`, 70 scripts with `/tmp/` refs — chronic, migration cards active.
-- GREEN: Working tree clean.
+**HEADLINE:** Hooks compile error hits Day 8 and test suites are blocked Day 85–87 — both have known one-command fixes; today is the day to land them.
 
-**QUALITY: 🔴 RED** (Kade, 2026-09-05)
-- Tests: 0 run across all suites — `ts-jest` preset missing, **Day 84**. Fix: `npm ci` per package.
-- Lint: ESLint blocked, **Day 86**. Fix: `npm ci` at repo root.
-- Build: TS error counts flat, no new regressions. `platform/mcp-server` spike (+222, landed 2026-09-03) still needs a card filed.
-- Error totals: clearing 240 · mcp-server 250 · chorus-sdk 28 · workflow-engine 11 · pulse 952.
+---
 
-**YESTERDAY:** 7 cards shipped — #4101 (wren: athena-make shape ordering fix), #4008 (kade: single-flight lock), #4105 (kade: census partial-read), #4103 (silas: red-suites fixes — log-harvest plist, deep-health, platform/api coverage), #4106 (kade), #4107 #4108 (silas). Strong throughput across all three roles.
+**OPS:** 🔴 RED (hooks) / 🟡 YELLOW (overall)
+- Hooks compile error (`si_pid`/`si_uid` in `signal_witness.rs:55`) — **Day 8**, one-line fix, still unpatched.
+- chorus-api offline **Day 8** — live board blind, card tracking unverifiable.
+- `claudemd` shared fragments + all 5 `domain-context-*.md` files hit **7-day threshold today** — updates due now.
+- LaunchAgent `/tmp` log loss and CSC `/tmp` refs: chronic, no new violations.
+- Git: clean.
 
-**TODAY:**
-1. Silas: Land the `si_pid`/`si_uid` one-liner — Day 6 is too long, hooks are a core dependency.
-2. Silas/Jeff: Restore chorus-api — board is blind; cannot verify WIP state.
-3. Any role: `npm ci` at repo root + per-package — unblocks lint (Day 86) and all four test suites (Day 84).
-4. Wren: File card for `mcp-server` +222 TS spike (2 days old, no card yet).
-5. Wren/Kade: Refresh `domain-context-chorus.md` + `domain-context-infrastructure.md` before 2026-09-06.
-6. Wren: Refresh `designing/claudemd/shared/` before 2026-09-06.
+**QUALITY:** 🔴 RED
+- All 4 ts-jest suites blocked **Day 85** (`ts-jest` preset not found); lint blocked **Day 87** (`@eslint/js` missing). Fix: `npm ci` per package.
+- TS errors stable: `clearing` 240, `mcp-server` 250, `workflow-engine` 11, `chorus-sdk` 28, `pulse` 952.
+- `mcp-server` +222 spike (landed 2026-09-03, now **Day 3**) — card not yet filed per Kade review.
+- No new failures. Zero coverage data (all suites blocked).
+
+**YESTERDAY (2026-09-05):** 8 cards shipped
+- Wren: #4101 (athena-make row-ordering fix), #4102
+- Silas: #4103 (red suite fixes: log-harvest plist, deep-health set-e, teardown), #4107, #4108
+- Kade: #4005/#4008 (single-flight lock guard), #4105 (census partial-read fix), #4106
+- Morning summary + ops/quality reviews filed on schedule.
+
+**TODAY — recommended priorities:**
+1. **Silas:** Land `si_pid()`/`si_uid()` one-liner in `signal_witness.rs:55` — Day 8 is past escalation threshold.
+2. **Silas:** Restore chorus-api — board is blind for a second week.
+3. **Wren/Kade:** Update `domain-context-chorus.md` + `domain-context-infrastructure.md` today; refresh shared claudemd fragments.
+4. **Kade:** File card for `mcp-server` +222 TS error spike if not already done.
+5. **Any role:** `npm ci` in `directing/clearing`, `platform/mcp-server`, `platform/workflow-engine`, `platform/chorus-sdk`, `platform/pulse`, and repo root — unblocks 85 days of dark test coverage in one pass.
 
 **BLOCKERS (needs Jeff):**
-- 🔴 Hooks compile error Day 6 — Silas has the fix; if not landed by EOD today, Jeff escalates.
-- 🔴 chorus-api offline Day 6 — unknown root cause; board blind without it.
-- 🔴 Test/lint infra blocked Day 84-86 — `npm ci` is the fix; someone needs to own this today.
+- 🔴 Hooks Day 8: Known fix sits unexecuted — if Silas is blocked, Jeff should escalate or pair.
+- 🔴 Test/lint Day 85–87: `npm ci` is the fix; if this keeps not landing, something else is blocking.
+- 🔴 chorus-api Day 8: Board blindness compounds planning risk — needs a restoration owner.
