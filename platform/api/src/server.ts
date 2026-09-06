@@ -8,6 +8,7 @@
  * to handlers, which validate before reaching their own fs/index sinks.
  */
 import express, { Request, Response, NextFunction } from 'express';
+import { corsAllowOrigin } from './cors-origin'; // #2436
 import Database from 'better-sqlite3';
 // #3885 — the board's own store, read-only. Same file the cards CLI writes.
 const VIKUNJA_DB_PATH = process.env.VIKUNJA_DB_PATH
@@ -2583,12 +2584,25 @@ app.post('/sparql-read', async (req: Request, res: Response) => {
 // Named SPARQL queries against the Chorus ontology in Fuseki.
 // Access layer for agents — no raw SPARQL, no port guessing.
 
-// CORS for Athena — allows pages on localhost:3000 to fetch from 3340
-app.use('/api/athena', (_req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  if (_req.method === 'OPTIONS') return res.sendStatus(204);
+// CORS for Athena — #2436. This was `*` with GET/POST/PUT/DELETE while the
+// comment above it claimed "allows pages on localhost:3000": the comment
+// described a narrow intent the code never expressed. chorus-api binds
+// 0.0.0.0:3340, so that pairing let any page in any browser on the network write
+// to the CMDB.
+//
+// Now: echo the Origin only for this machine (loopback or the private LAN, on
+// any port — the werk variants and Jeff's phone both need that), and reads only.
+// Nothing writes here cross-origin from a browser; the land posts server-side and
+// sends no Origin at all, so it is unaffected. #2041 removes this whole block.
+app.use('/api/athena', (req: Request, res: Response, next: NextFunction) => {
+  const allowed = corsAllowOrigin(req.headers.origin);
+  if (allowed) {
+    res.header('Access-Control-Allow-Origin', allowed);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
@@ -2601,11 +2615,20 @@ app.use('/api/athena', (_req: Request, res: Response, next: NextFunction) => {
 // CSRF surface. The legitimate consumer is gathering reads; nothing
 // cross-origin writes here.
 // #2041: remove once Athena relocates
-app.use(['/api/loom', '/api/chorus'], (_req: Request, res: Response, next: NextFunction) => {
-  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
-  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
-  if (_req.method === 'OPTIONS') return res.sendStatus(204);
+// #2436 — same rule as the two blocks above, from the one helper, rather than a
+// third hand-written variant of the same decision. The hardcoded
+// `http://localhost:3000` kept the right method set and the wrong reach: a demo
+// page on a werk port, or Jeff reading over the LAN from his phone, was refused
+// by a rule written for a browser sitting on this desk. Method set unchanged.
+app.use(['/api/loom', '/api/chorus'], (req: Request, res: Response, next: NextFunction) => {
+  const allowed = corsAllowOrigin(req.headers.origin);
+  if (allowed) {
+    res.header('Access-Control-Allow-Origin', allowed);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
 
@@ -3209,14 +3232,27 @@ app.get('/api/athena/subdomains/:id/contract', async (req: Request, res: Respons
 });
 
 // POST /api/chorus/open — open a file locally (#1907)
-app.options('/api/chorus/open', (_req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+// #2436 — this one asks the machine to open a file, and it answered `*` with
+// POST. The path guard below confines it to the repo, so the worst case was
+// bounded, but any page in any browser could make this Mac open repo files.
+// Narrowed to this machine's own origins; a stranger now gets no header and the
+// browser refuses the response.
+app.options('/api/chorus/open', (req: Request, res: Response) => {
+  const allowed = corsAllowOrigin(req.headers.origin);
+  if (allowed) {
+    res.header('Access-Control-Allow-Origin', allowed);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+  }
   res.sendStatus(204);
 });
 app.post('/api/chorus/open', async (req: Request, res: Response) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const allowedOpenOrigin = corsAllowOrigin(req.headers.origin);
+  if (allowedOpenOrigin) {
+    res.header('Access-Control-Allow-Origin', allowedOpenOrigin);
+    res.header('Vary', 'Origin');
+  }
   const { path: filePath } = req.body || {};
   if (!filePath) return res.status(400).json({ error: 'Missing path' });
   const resolved = path.resolve(REPO_ROOT, filePath);
