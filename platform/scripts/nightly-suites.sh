@@ -1151,6 +1151,23 @@ run_app_eslint() {
 }
 
 run_all() {
+  # 4111 — a seam for tests that assert the WRAPPER, not the suites.
+  #
+  # platform/tests/4022-werk-run-never-pages-team.bats calls `--run-all` twice to
+  # prove that a werk run isolates its log and does not page the team. Both facts
+  # are settled in the preamble, before a single suite runs — but --run-all then
+  # executed all 395 suites, twice, inside a bats test that lives inside the
+  # pipeline's own test leg. Measured 2026-09-07: that is the bulk of a 1h44 test
+  # leg, and the pipeline was running the entire nightly nested inside itself.
+  #
+  # With this set, run_all does no work and everything around it is unchanged:
+  # the isolation banner, the lock, RUN|start, RUN|complete and notify_results
+  # all still happen, so the tests assert exactly what they were written to
+  # assert and nothing they were not.
+  if [ -n "${NIGHTLY_LEGS_NOOP:-}" ]; then
+    echo "nightly-suites: LEGS SKIPPED (NIGHTLY_LEGS_NOOP) — wrapper under test, no suite ran" >&2
+    return 0
+  fi
   run_lint_ratchet
   # #3527 — folded tiers (was 3 competing runners): coverage (nightly-coverage #2207),
   # smoke + app-eslint (daily-review-quality). One runner, one report, one nudge.
