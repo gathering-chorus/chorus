@@ -28,6 +28,8 @@ interface OptionalField {
 }
 
 interface EntitySpec {
+  /** #4113 — the graph this kind's rows live in; reads union it with the catch-all. */
+  homeGraph?: string;
   envelopeName: string;
   resultsKey: string;
   hasPredicate: string;
@@ -42,7 +44,14 @@ function buildListQuery(sdUri: string, spec: EntitySpec): string {
   const selectVars = [spec.entityVar, ...spec.optionalFields.map((f) => f.outputKey)]
     .map((v) => `?${v}`)
     .join(' ');
-  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ${selectVars} WHERE { GRAPH <urn:chorus:instances> { <${sdUri}> ${spec.hasPredicate} ?${spec.entityVar} . ${optionals} } }`;
+  // #4113 — read every graph the kind can live in, not just the catch-all.
+  const graphs = spec.homeGraph && spec.homeGraph !== 'urn:chorus:instances'
+    ? [spec.homeGraph, 'urn:chorus:instances']
+    : ['urn:chorus:instances'];
+  const blocks = graphs
+    .map((g) => `{ GRAPH <${g}> { <${sdUri}> ${spec.hasPredicate} ?${spec.entityVar} . ${optionals} } }`)
+    .join(' UNION ');
+  return `PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ${selectVars} WHERE { ${blocks} }`;
 }
 
 function shapeEntity(binding: SparqlBinding, spec: EntitySpec): Record<string, string | null> {
@@ -112,6 +121,25 @@ export async function fetchSubdomainEntities(
   }
 }
 
+// #4113 — the graph a kind writes to, and the set a kind reads from.
+const CATCH_ALL_GRAPH = 'urn:chorus:instances';
+const homeOf = (spec: { homeGraph?: string }): string => spec.homeGraph ?? CATCH_ALL_GRAPH;
+/**
+ * #4113 — which graphs a SECTION's rows can be in. Keyed by section name because the
+ * delete route is addressed by section, not by spec. Principles moved home; everything
+ * else is still catch-all only.
+ */
+const SECTION_HOME_GRAPH: Record<string, string> = { principles: 'urn:chorus:domains:principles' };
+const ENTITY_GRAPHS_FOR_SECTION = (section: string): string[] => {
+  const home = SECTION_HOME_GRAPH[section];
+  return home && home !== CATCH_ALL_GRAPH ? [home, CATCH_ALL_GRAPH] : [CATCH_ALL_GRAPH];
+};
+/** Rows written before #4113 are in the catch-all; new ones are in the home. Read both. */
+const readGraphsOf = (spec: { homeGraph?: string }): string[] =>
+  spec.homeGraph && spec.homeGraph !== CATCH_ALL_GRAPH
+    ? [spec.homeGraph, CATCH_ALL_GRAPH]
+    : [CATCH_ALL_GRAPH];
+
 // --- POST create: shared write-path ---
 //
 // All four entity POSTs share: validate `label`, mint URI from label slug,
@@ -126,6 +154,19 @@ export interface PropertyDescriptor {
 }
 
 export interface CreateEntitySpec {
+  /**
+   * #4113 — the graph this kind's rows live in. Defaults to the catch-all
+   * `urn:chorus:instances`, which is where every subdomain entity has always been
+   * written. Principles set it to their shape's declared home so that the row a POST
+   * creates is visible to the route that LISTS principles: the collection reads
+   * `urn:chorus:domains:principles` (PrincipleShape's instancesGraph) while this
+   * handler wrote the catch-all, so a created principle showed on the subdomain detail
+   * (a cross-graph UNION) and never on the list. Measured 2026-09-07.
+   *
+   * Reads union home + the catch-all so rows written before this still resolve; only
+   * new writes move. No migration of the 16,306 subjects in the catch-all is implied.
+   */
+  homeGraph?: string;
   envelopeName: string;          // 'subdomain-service-create'
   uriSegment: string;            // 'service' — used in URI slug and type name
   typeClass: string;             // 'chorus:Service'
@@ -211,7 +252,7 @@ export async function createSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const update = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
 
     await deps.sparqlUpdate(update);
 
@@ -358,6 +399,8 @@ export const createSubdomainScenario = (deps: WriteDeps, id: string, body: Recor
 // --- PUT update: DELETE-then-INSERT against a caller-supplied entity URI ---
 
 export interface UpdateEntitySpec {
+  /** #4113 — see CreateEntitySpec.homeGraph. */
+  homeGraph?: string;
   envelopeName: string;       // 'service-update'
   typeClass: string;          // 'chorus:Service'
   hasPredicate: string;       // 'chorus:hasService'
@@ -389,7 +432,9 @@ export async function updateSubdomainEntity(
     const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
     const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
 
-    const deleteQuery = `${SPARQL_PREFIXES} DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    const deleteQuery = readGraphsOf(spec)
+      .map((g) => `${SPARQL_PREFIXES} DELETE { GRAPH <${g}> { <${entityUri}> ?p ?o . } } WHERE { GRAPH <${g}> { <${entityUri}> ?p ?o . } }`)
+      .join(' ; ');
     await deps.sparqlUpdate(deleteQuery);
 
     const propTriples = Object.entries(spec.propertyMap)
@@ -403,7 +448,7 @@ export async function updateSubdomainEntity(
       .filter(Boolean)
       .join(' ');
 
-    const insert = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <urn:chorus:instances> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
+    const insert = `${SPARQL_PREFIXES} INSERT DATA { GRAPH <${homeOf(spec)}> { <${entityUri}> a ${spec.typeClass} ; rdfs:label "${escapeLiteral(label)}" . <${sdUri}> ${spec.hasPredicate} <${entityUri}> . ${propTriples} } }`;
     await deps.sparqlUpdate(insert);
 
     const responseData: Record<string, unknown> = {
@@ -523,7 +568,12 @@ export async function deleteSubdomainEntity(
   try {
     const sdUri = `https://jeffbridwell.com/chorus#${subdomainId}`;
     const entityUri = `https://jeffbridwell.com/chorus#${entityId}`;
-    const update = `${SPARQL_PREFIXES} DELETE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <urn:chorus:instances> { <${entityUri}> ?p ?o . } }`;
+    // #4113 — delete from every graph this kind can live in. Rows created before the
+    // home-graph fix are in the catch-all; new ones are in the domain graph. Deleting
+    // from only one leaves the other behind, which reads as "delete did nothing".
+    const update = ENTITY_GRAPHS_FOR_SECTION(section)
+      .map((g) => `${SPARQL_PREFIXES} DELETE { GRAPH <${g}> { <${entityUri}> ?p ?o . <${sdUri}> chorus:${sectionMeta.hasProperty} <${entityUri}> . } } WHERE { GRAPH <${g}> { <${entityUri}> ?p ?o . } }`)
+      .join(' ; ');
     await deps.sparqlUpdate(update);
     // Empty body for 204 signal (adapter converts to .send() with no content).
     return { status: 204, body: null };
@@ -703,6 +753,11 @@ export const updatePriorArtSpec: UpdateEntitySpec = {
 // rdfs:label, rdfs:comment, chorus:techReading, chorus:jeffReading, dcterms:source,
 // chorus:isPermacultureParent, skos:broader (parent principle URI for specializations).
 export const createPrincipleSpec: CreateEntitySpec = {
+  // #4113 — PrincipleShape declares chorus:instancesGraph "urn:chorus:domains:principles"
+  // and the collection route reads there. This handler wrote the catch-all, so a
+  // principle created through the door appeared on the subdomain detail (a cross-graph
+  // UNION) and never on the list of principles. Write where they live.
+  homeGraph: 'urn:chorus:domains:principles',
   envelopeName: 'subdomain-principle-create',
   uriSegment: 'principle',
   typeClass: 'chorus:Principle',
@@ -719,6 +774,7 @@ export const createPrincipleSpec: CreateEntitySpec = {
 };
 
 export const updatePrincipleSpec: UpdateEntitySpec = {
+  homeGraph: 'urn:chorus:domains:principles',
   envelopeName: 'principle-update',
   typeClass: 'chorus:Principle',
   hasPredicate: 'chorus:contains',
