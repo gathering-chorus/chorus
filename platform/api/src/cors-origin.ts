@@ -33,9 +33,10 @@
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1']);
 
 /**
- * Private-network IPv4 ranges (RFC 1918) plus link-local. The LAN the two Macs
- * and Jeff's phone share is 192.168.86.0/24; a range test avoids pinning a
- * DHCP-volatile address (ADR-012 records that the Library's IP moves).
+ * Private-network IPv4 ranges (RFC 1918) plus link-local. The two Macs and
+ * Jeff's phone share one private /24; a range test avoids pinning a
+ * DHCP-volatile address (ADR-012 records that the Library's IP moves, and
+ * holds the subnet — this file deliberately does not repeat it).
  */
 function isPrivateIPv4(host: string): boolean {
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);

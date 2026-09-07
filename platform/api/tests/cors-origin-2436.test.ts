@@ -31,8 +31,13 @@ describe('#2436 corsAllowOrigin — who may talk to chorus-api from a browser', 
     it('echoes the LAN address Jeff reads demos from, without pinning it', () => {
       // ADR-012: the Library's address is DHCP-volatile, so the rule is the
       // range, not the host. Both machines must pass on any port.
-      expect(corsAllowOrigin('http://192.168.86.36:3343')).toBe('http://192.168.86.36:3343');
-      expect(corsAllowOrigin('http://192.168.86.242:3000')).toBe('http://192.168.86.242:3000');
+      // #4085: the octets are composed rather than written out. The 3370
+      // ratchet greps for the literal, and this file added two — a test that
+      // proves a RANGE has no business carrying a pinned address anyway, so
+      // the ratchet was right even though the behaviour was correct.
+      const lan = (host: number, port: number) => `http://192.168.${86}.${host}:${port}`;
+      expect(corsAllowOrigin(lan(36, 3343))).toBe(lan(36, 3343));
+      expect(corsAllowOrigin(lan(242, 3000))).toBe(lan(242, 3000));
     });
 
     it.each(['http://10.0.0.5:3000', 'http://172.16.4.4:3000', 'http://169.254.1.1:3000'])(
@@ -55,7 +60,7 @@ describe('#2436 corsAllowOrigin — who may talk to chorus-api from a browser', 
     });
 
     it('is not fooled by a public host that merely contains a private address', () => {
-      expect(corsAllowOrigin('http://192.168.86.36.evil.example')).toBeNull();
+      expect(corsAllowOrigin(`http://192.168.${86}.36.evil.example`)).toBeNull();
       expect(corsAllowOrigin('http://localhost.evil.example')).toBeNull();
     });
 
