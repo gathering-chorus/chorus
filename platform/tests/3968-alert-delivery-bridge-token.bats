@@ -10,6 +10,13 @@ SCRIPT="$BATS_TEST_DIRNAME/../scripts/alert-delivery-test.sh"
 setup() {
   # A test brings its own world (#3528): never write fixture results into the real log.
   export ALERT_DELIVERY_LOG="$BATS_TEST_TMPDIR/alert-delivery-test.log"
+  # #4085 — the world was only half brought. The LOG was caged; the NUDGE was
+  # not, so every run of this file paged all three roles with "[synthetic]
+  # Delivery probe", one burst per @test. That is why the markers reaching us
+  # appear nowhere in the real alert-delivery-test.log: those runs wrote their
+  # log to a temp dir and their nudge to live terminals. Same outbound seam
+  # #3722 uses.
+  export CHORUS_MCP_NUDGE_URL="http://127.0.0.1:9/nudge"
   curl -s -o /dev/null --max-time 3 http://localhost:3475/health || skip "bridge not running"
 }
 
