@@ -177,12 +177,17 @@ mod tests {
         let code = run(&args(&["wren", "building"]));
         assert_eq!(code, ExitCode::SUCCESS);
         assert!(!scan.join("wren-declared.json").exists(), "no declared file may be written");
-        assert!(!std::path::Path::new("/tmp/claude-team-scan/wren-declared.json").exists()
-            || fs::metadata("/tmp/claude-team-scan/wren-declared.json")
-                .and_then(|m| m.modified())
-                .map(|t| t.elapsed().map(|d| d.as_secs() > 5).unwrap_or(true))
-                .unwrap_or(true),
-            "a pre-existing legacy file may exist, but this call must not have touched it");
+        // #4085 — this assertion used to read the LIVE /tmp/claude-team-scan
+        // path and fail whenever another role declared state within 5 seconds
+        // of it running. That is what it did at 15:09 today: wren-declared.json
+        // was touched by Wren, mid-suite, and reddened a card that had not
+        // changed the code under test. Run alone, same commit, it passed.
+        // A test brings its own world (#3528): point the module at a fixture
+        // directory and assert THERE, so the only writer that can move the
+        // needle is this call.
+        let legacy = scan.join("wren-declared.json");
+        assert!(!legacy.exists(),
+            "no declared file may be written into this test's own scan dir");
     }
 
     #[test]
