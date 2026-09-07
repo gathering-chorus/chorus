@@ -1,0 +1,982 @@
+{
+ "2643172": {
+  "accepted": "Caulerpa taxifolia",
+  "common": "caulerpa",
+  "listedAs": "Caulerpa taxifolia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2650106": {
+  "accepted": "Azolla pinnata",
+  "common": "mosquito fern",
+  "listedAs": "Azolla pinnata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2702462": {
+  "accepted": "Ischaemum rugosum",
+  "common": "murain-grass",
+  "listedAs": "Ischaemum rugosum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2703461": {
+  "accepted": "Oryza punctata",
+  "common": "red rice",
+  "listedAs": "Oryza punctata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2703462": {
+  "accepted": "Oryza longistaminata",
+  "common": "longstamen rice; red rice",
+  "listedAs": "Oryza longistaminata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2703463": {
+  "accepted": "Oryza rufipogon",
+  "common": "brownbeard rice; red rice",
+  "listedAs": "Oryza rufipogon",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2703873": {
+  "accepted": "Leptochloa chinensis",
+  "common": "Asian sprangletop",
+  "listedAs": "Leptochloa chinensis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2703935": {
+  "accepted": "Saccharum spontaneum",
+  "common": "wild sugarcane",
+  "listedAs": "Saccharum spontaneum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2704075": {
+  "accepted": "Rottboellia cochinchinensis",
+  "common": "itchgrass",
+  "listedAs": "Rottboellia cochinchinensis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2705011": {
+  "accepted": "Festuca filiformis",
+  "common": "hair fescue; fineleaf sheep fescue",
+  "listedAs": "Festuca filiformis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2705286": {
+  "accepted": "Avena sterilis",
+  "common": "animated oat",
+  "listedAs": "Avena sterilis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2705484": {
+  "accepted": "Glyceria maxima",
+  "common": "tall mannagrass; reed mannagrass",
+  "listedAs": "Glyceria maxima",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2705610": {
+  "accepted": "Paspalum scrobiculatum",
+  "common": "Kodo-millet",
+  "listedAs": "Paspalum scrobiculatum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2705869": {
+  "accepted": "Urochloa panicoides",
+  "common": "liverseed grass",
+  "listedAs": "Urochloa panicoides",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2706150": {
+  "accepted": "Pennisetum clandestinum",
+  "common": "kikuyugrass",
+  "listedAs": "Pennisetum clandestinum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2706160": {
+  "accepted": "Pennisetum macrourum",
+  "common": "African feathergrass",
+  "listedAs": "Pennisetum macrourum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2706161": {
+  "accepted": "Pennisetum pedicellatum",
+  "common": "Kyasuma grass",
+  "listedAs": "Pennisetum pedicellatum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2727576": {
+  "accepted": "Carex kobomugi",
+  "common": "Japanese sedge; Asiatic sand sedge",
+  "listedAs": "Carex kobomugi",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2744092": {
+  "accepted": "Homeria",
+  "common": "Cape tulip",
+  "listedAs": "Homeria spp.; Morea spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "2763941": {
+  "accepted": "Commelina benghalensis",
+  "common": "Benghal dayflower",
+  "listedAs": "Commelina benghalensis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2765950": {
+  "accepted": "Eichhornia azurea",
+  "common": "anchored water hyacinth",
+  "listedAs": "Eichhornia azurea",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2765990": {
+  "accepted": "Monochoria hastata",
+  "common": "monochoria",
+  "listedAs": "Monochoria hastata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2766015": {
+  "accepted": "Monochoria vaginalis",
+  "common": "pickerel weed",
+  "listedAs": "Monochoria vaginalis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2778437": {
+  "accepted": "Asphodelus fistulosus",
+  "common": "onion weed",
+  "listedAs": "Asphodelus fistulosus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2864467": {
+  "accepted": "Butomus umbellatus",
+  "common": "flowering rush",
+  "listedAs": "Butomus umbellatus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2865565": {
+  "accepted": "Lagarosiphon major",
+  "common": "oxygen weed",
+  "listedAs": "Lagarosiphon major",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2882443": {
+  "accepted": "Cabomba caroliniana",
+  "common": "Carolina Fanwort; fanwort",
+  "listedAs": "Cabomba caroliniana",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2888869": {
+  "accepted": "Emex spinosa",
+  "common": "devil's thorn",
+  "listedAs": "Emex spinosa",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2888871": {
+  "accepted": "Emex australis",
+  "common": "three-cornered jack",
+  "listedAs": "Emex australis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2889173": {
+  "accepted": "Reynoutria japonica",
+  "common": "Japanese knotweed",
+  "listedAs": "Polygonum cuspidatum; Fallopia japonica",
+  "note": "resolved via current name Reynoutria japonica",
+  "rank": "SPECIES"
+ },
+ "2918871": {
+  "accepted": "Spermacoce alata",
+  "common": "borreria",
+  "listedAs": "Spermacoce alata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2927479": {
+  "accepted": "Cuscuta",
+  "common": "dodder",
+  "listedAs": "Cuscuta spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "2928525": {
+  "accepted": "Ipomoea aquatica",
+  "common": "Chinese waterspinach",
+  "listedAs": "Ipomoea aquatica",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2929938": {
+  "accepted": "Solanum tampicense",
+  "common": "wetland nightshade",
+  "listedAs": "Solanum tampicense",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2931914": {
+  "accepted": "Solanum viarum",
+  "common": "tropical soda apple",
+  "listedAs": "Solanum viarum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2932389": {
+  "accepted": "Solanum torvum",
+  "common": "turkeyberry",
+  "listedAs": "Solanum torvum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2969431": {
+  "accepted": "Mimosa pigra",
+  "common": "catclaw mimosa",
+  "listedAs": "Mimosa pigra",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2975667": {
+  "accepted": "Galega officinalis",
+  "common": "goatsrue",
+  "listedAs": "Galega officinalis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2977636": {
+  "accepted": "Pueraria montana",
+  "common": "kudzu; Japanese arrowroot",
+  "listedAs": "Pueraria montana",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2984536": {
+  "accepted": "Humulus japonicus",
+  "common": "Japanese hops",
+  "listedAs": "Humulus japonicus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2993394": {
+  "accepted": "Rubus moluccanus",
+  "common": "wild blackberry",
+  "listedAs": "Rubus moluccanus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "2995149": {
+  "accepted": "Rubus phoenicolasius",
+  "common": "wineberry; Japanese wineberry; wine raspberry",
+  "listedAs": "Rubus phoenicolasius",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3003244": {
+  "accepted": "Rosa multiflora",
+  "common": "multiflora rose",
+  "listedAs": "Rosa multiflora",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3033339": {
+  "accepted": "Ranunculus repens",
+  "common": "creeping buttercup",
+  "listedAs": "Ranunculus repens",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3033894": {
+  "accepted": "Berberis vulgaris",
+  "common": "common barberry; European barberry",
+  "listedAs": "Berberis vulgaris",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3033896": {
+  "accepted": "Berberis thunbergii",
+  "common": "Japanese Barberry",
+  "listedAs": "Berberis thunbergii",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3034620": {
+  "accepted": "Aegopodium podagraria",
+  "common": "Bishop's weed; goutweed",
+  "listedAs": "Aegopodium podagraria",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3034825": {
+  "accepted": "Heracleum mantegazzianum",
+  "common": "giant hogweed",
+  "listedAs": "Heracleum mantegazzianum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3039267": {
+  "accepted": "Elaeagnus umbellata",
+  "common": "autumn olive",
+  "listedAs": "Elaeagnus umbellata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3039454": {
+  "accepted": "Frangula alnus",
+  "common": "European buckthorn; glossy buckthorn",
+  "listedAs": "Frangula alnus; Rhamnus frangula",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3039491": {
+  "accepted": "Rhamnus cathartica",
+  "common": "common buckthorn",
+  "listedAs": "Rhamnus cathartica",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3042291": {
+  "accepted": "Hesperis matronalis",
+  "common": "Dames Rocket",
+  "listedAs": "Hesperis matronalis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3046187": {
+  "accepted": "Cardamine impatiens",
+  "common": "bushy rock-cress; narrowleaf bittercress",
+  "listedAs": "Cardamine impatiens",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3053201": {
+  "accepted": "Rorippa amphibia",
+  "common": "water yellowcress; great yellowcress",
+  "listedAs": "Rorippa amphibia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3070106": {
+  "accepted": "Euphorbia cyparissias",
+  "common": "Cypress spurge",
+  "listedAs": "Euphorbia cyparissias",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3084939": {
+  "accepted": "Alternanthera sessilis",
+  "common": "sessile joyweed",
+  "listedAs": "Alternanthera sessilis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3127469": {
+  "accepted": "Centaurea",
+  "common": "spotted knapweed",
+  "listedAs": "Centaurea biebersteinii; C. stoebe ssp. micranthos",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "3138332": {
+  "accepted": "Carthamus oxyacanthus",
+  "common": "wild safflower; jeweled distaff thistle",
+  "listedAs": "Carthamus oxyacanthus; C. oxycantha",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3149462": {
+  "accepted": "Tridax procumbens",
+  "common": "coat buttons",
+  "listedAs": "Tridax procumbens",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3149879": {
+  "accepted": "Tussilago farfara",
+  "common": "coltsfoot",
+  "listedAs": "Tussilago farfara",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3149965": {
+  "accepted": "Crupina vulgaris",
+  "common": "common crupina",
+  "listedAs": "Crupina vulgaris",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3169120": {
+  "accepted": "Euonymus alatus",
+  "common": "burning bush; winged euonymus",
+  "listedAs": "Euonymus alatus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3169169": {
+  "accepted": "Celastrus orbiculatus",
+  "common": "Oriental or Asiatic bittersweet",
+  "listedAs": "Celastrus orbiculatus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3169379": {
+  "accepted": "Lysimachia nummularia",
+  "common": "creeping Jenny; moneywort",
+  "listedAs": "Lysimachia nummularia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3170376": {
+  "accepted": "Cynanchum rossicum",
+  "common": "pale swallow-wort",
+  "listedAs": "Cynanchum rossicum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3170380": {
+  "accepted": "Cynanchum louiseae",
+  "common": "black swallow-wort; Louise's swallow-wort",
+  "listedAs": "Cynanchum louiseae",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3171157": {
+  "accepted": "Striga",
+  "common": "witchweed",
+  "listedAs": "Striga spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "3172194": {
+  "accepted": "Alectra",
+  "common": "alectra",
+  "listedAs": "Alectra spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "3172296": {
+  "accepted": "Ligustrum obtusifolium",
+  "common": "Border privet",
+  "listedAs": "Ligustrum obtusifolium",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3173259": {
+  "accepted": "Orobanche",
+  "common": "broomrape",
+  "listedAs": "Orobanche spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "3173320": {
+  "accepted": "Aeginetia",
+  "common": "aeginetia",
+  "listedAs": "Aeginetia spp.",
+  "note": "",
+  "rank": "GENUS"
+ },
+ "3188511": {
+  "accepted": "Melastoma malabathricum",
+  "common": "Malabar melastome",
+  "listedAs": "Melastoma malabathricum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3188736": {
+  "accepted": "Lythrum salicaria",
+  "common": "purple loosestrife",
+  "listedAs": "Lythrum salicaria",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3188757": {
+  "accepted": "Trapa natans",
+  "common": "water-chestnut",
+  "listedAs": "Trapa natans",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3189172": {
+  "accepted": "Epilobium hirsutum",
+  "common": "hairy willow-herb; Codlins and Cream",
+  "listedAs": "Epilobium hirsutum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3189846": {
+  "accepted": "Acer platanoides",
+  "common": "Norway maple",
+  "listedAs": "Acer platanoides",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3189870": {
+  "accepted": "Acer pseudoplatanus",
+  "common": "sycamore maple",
+  "listedAs": "Acer pseudoplatanus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3190154": {
+  "accepted": "Phellodendron amurense",
+  "common": "Amur cork-tree",
+  "listedAs": "Phellodendron amurense",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3190653": {
+  "accepted": "Ailanthus altissima",
+  "common": "tree of heaven",
+  "listedAs": "Ailanthus altissima",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "3797394": {
+  "accepted": "Lycium ferocissimum",
+  "common": "African boxthorn",
+  "listedAs": "Lycium ferrocissimum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5274859": {
+  "accepted": "Salvinia herzogii",
+  "common": "giant salvinia",
+  "listedAs": "Salvinia herzogii",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5274861": {
+  "accepted": "Salvinia auriculata",
+  "common": "giant salvinia; eared watermoss",
+  "listedAs": "Salvinia auriculata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5274863": {
+  "accepted": "Salvinia molesta",
+  "common": "giant salvinia; kariba-weed",
+  "listedAs": "Salvinia molesta",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5274864": {
+  "accepted": "Salvinia biloba",
+  "common": "giant salvinia",
+  "listedAs": "Salvinia biloba",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5289717": {
+  "accepted": "Imperata brasiliensis",
+  "common": "Brazilian satintail",
+  "listedAs": "Imperata brasiliensis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5289756": {
+  "accepted": "Phalaris arundinacea",
+  "common": "reed canary-grass; ribbon grass",
+  "listedAs": "Phalaris arundinacea",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5289808": {
+  "accepted": "Microstegium vimineum",
+  "common": "Japanese stiltgrass; Nepalese browntop",
+  "listedAs": "Microstegium vimineum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5289929": {
+  "accepted": "Digitaria abyssinica",
+  "common": "African couch grass",
+  "listedAs": "Digitaria abyssinica; D. scalarum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5289935": {
+  "accepted": "Digitaria velutina",
+  "common": "velvet fingergrass",
+  "listedAs": "Digitaria velutina",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5290133": {
+  "accepted": "Chrysopogon aciculatus",
+  "common": "pilipiliula",
+  "listedAs": "Chrysopogon aciculatus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5290149": {
+  "accepted": "Phragmites australis",
+  "common": "common reed",
+  "listedAs": "Phragmites australis",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5290201": {
+  "accepted": "Arthraxon hispidus",
+  "common": "hairy joint grass; jointhead; small carpetgrass",
+  "listedAs": "Arthraxon hispidus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5298231": {
+  "accepted": "Iris pseudacorus",
+  "common": "yellow Iris",
+  "listedAs": "Iris pseudacorus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5301162": {
+  "accepted": "Potamogeton crispus",
+  "common": "crisped pondweed; curly pondweed",
+  "listedAs": "Potamogeton crispus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5328882": {
+  "accepted": "Sagittaria sagittifolia",
+  "common": "arrowhead",
+  "listedAs": "Sagittaria sagittifolia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5329260": {
+  "accepted": "Egeria densa",
+  "common": "anacharis, Brazilian waterweed; Brazilian elodea",
+  "listedAs": "Egeria densa; Elodea densa; Anacharis densa",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5329434": {
+  "accepted": "Najas minor",
+  "common": "brittle water-nymph; lesser naiad",
+  "listedAs": "Najas minor",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5329515": {
+  "accepted": "Ottelia alismoides",
+  "common": "duck-lettuce",
+  "listedAs": "Ottelia alismoides",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5329570": {
+  "accepted": "Hydrilla verticillata",
+  "common": "hydrilla; water-thyme; Florida elodea",
+  "listedAs": "Hydrilla verticillata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334190": {
+  "accepted": "Glaucium flavum",
+  "common": "horned poppy; sea poppy; yellow hornpoppy",
+  "listedAs": "Glaucium flavum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334240": {
+  "accepted": "Lonicera japonica",
+  "common": "Japanese honeysuckle",
+  "listedAs": "Lonicera japonica",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334242": {
+  "accepted": "Lonicera tatarica",
+  "common": "Tatarian honeysuckle",
+  "listedAs": "Lonicera tatarica",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334244": {
+  "accepted": "Lonicera bella",
+  "common": "Bell\u2019s honeysuckle",
+  "listedAs": "Lonicera x bella [L. morrowii x L. tatarica]",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334275": {
+  "accepted": "Lonicera morrowii",
+  "common": "Morrow\u2019s honeysuckle",
+  "listedAs": "Lonicera morrowii",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5334406": {
+  "accepted": "Polygonum perfoliatum",
+  "common": "mile-a-minute vine or weed; Asiatic Tearthumb",
+  "listedAs": "Polygonum perfoliatum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5341184": {
+  "accepted": "Myosotis scorpioides",
+  "common": "forget-me-not",
+  "listedAs": "Myosotis scorpioides",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5352251": {
+  "accepted": "Robinia pseudoacacia",
+  "common": "black locust",
+  "listedAs": "Robinia pseudoacacia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5358486": {
+  "accepted": "Prosopis reptans",
+  "common": "tornillo",
+  "listedAs": "Prosopis reptans",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5358525": {
+  "accepted": "Prosopis pallida",
+  "common": "kiawe",
+  "listedAs": "Prosopis pallida",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5358538": {
+  "accepted": "Prosopis velutina",
+  "common": "velvet mesquite",
+  "listedAs": "Prosopis velutina",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5358553": {
+  "accepted": "Prosopis strombulifera",
+  "common": "Argentine screwbean",
+  "listedAs": "Prosopis strombulifera",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5361760": {
+  "accepted": "Myriophyllum spicatum",
+  "common": "Eurasian or European water-milfoil; Spike water-milfoil",
+  "listedAs": "Myriophyllum spicatum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5361762": {
+  "accepted": "Myriophyllum heterophyllum",
+  "common": "variable water-milfoil; two-leaved water-milfoil",
+  "listedAs": "Myriophyllum heterophyllum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5361785": {
+  "accepted": "Myriophyllum aquaticum",
+  "common": "parrot-feather; water-feather; Brazilian water-milfoil",
+  "listedAs": "Myriophyllum aquaticum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5371742": {
+  "accepted": "Anthriscus sylvestris",
+  "common": "wild chervil",
+  "listedAs": "Anthriscus sylvestris",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5372605": {
+  "accepted": "Salix cinerea",
+  "common": "gray willow; rusty willow",
+  "listedAs": "Salix cinerea",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5376075": {
+  "accepted": "Alliaria petiolata",
+  "common": "garlic mustard",
+  "listedAs": "Alliaria petiolata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5376692": {
+  "accepted": "Lepidium latifolium",
+  "common": "broad-leafed pepperweed; tall pepperweed",
+  "listedAs": "Lepidium latifolium",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5384186": {
+  "accepted": "Opuntia aurantiaca",
+  "common": "jointed prickly pear",
+  "listedAs": "Opuntia aurantiaca",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5384510": {
+  "accepted": "Drymaria arenarioides",
+  "common": "alfombrilla",
+  "listedAs": "Drymaria arenarioides",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5398421": {
+  "accepted": "Mikania micrantha",
+  "common": "mile-a-minute; bittervine",
+  "listedAs": "Mikania micrantha",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5398634": {
+  "accepted": "Mikania cordata",
+  "common": "mile-a-minute; heartleaf hempvine",
+  "listedAs": "Mikania cordata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5400613": {
+  "accepted": "Ageratina adenophora",
+  "common": "crofton weed",
+  "listedAs": "Ageratina adenophora",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5415001": {
+  "accepted": "Limnophila sessiliflora",
+  "common": "ambulia",
+  "listedAs": "Limnophila sessiliflora",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5415355": {
+  "accepted": "Hygrophila polysperma",
+  "common": "Miramar weed",
+  "listedAs": "Hygrophila polysperma",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5415832": {
+  "accepted": "Melaleuca quinquenervia",
+  "common": "melaleuca",
+  "listedAs": "Melaleuca quinquenervia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5582546": {
+  "accepted": "Salix atrocinerea",
+  "common": "large gray willow",
+  "listedAs": "Salix atrocinerea; Salix cinerea ssp. oleifolia",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "5673796": {
+  "accepted": "Setaria pallidifusca",
+  "common": "cattail grass; yellow foxtail",
+  "listedAs": "Setaria pallidifusca S. pallidefusca;S. pumila",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "7422642": {
+  "accepted": "Ampelopsis brevipedunculata",
+  "common": "porcelain-berry; Amur peppervine",
+  "listedAs": "Ampelopsis brevipedunculata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "7679536": {
+  "accepted": "Sparganium erectum",
+  "common": "exotic bur-reed",
+  "listedAs": "Sparganium erectum",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "7738766": {
+  "accepted": "Miscanthus sacchariflorus",
+  "common": "plume grass; Amur silvergrass",
+  "listedAs": "Miscanthus sacchariflorus (also covers Miscanthus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "7808904": {
+  "accepted": "Mimosa diplotricha",
+  "common": "giant false sensitive plant; false sensitive plant",
+  "listedAs": "Mimosa diplotricha; M. invisa",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "7902463": {
+  "accepted": "Lonicera maackii",
+  "common": "Amur honeysuckle",
+  "listedAs": "Lonicera maackii",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "8203538": {
+  "accepted": "Euphorbia esula",
+  "common": "leafy Spurge; Wolf's Milk",
+  "listedAs": "Euphorbia esula",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "8397184": {
+  "accepted": "Ranunculus ficaria",
+  "common": "lesser celandine; fig buttercup",
+  "listedAs": "Ranunculus ficaria",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "8436459": {
+  "accepted": "Rubus fruticosus",
+  "common": "wild blackberry complex",
+  "listedAs": "Rubus fruticosus",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "8810827": {
+  "accepted": "Nymphoides peltata",
+  "common": "yellow floating heart",
+  "listedAs": "Nymphoides peltata",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "8965572": {
+  "accepted": "Senecio jacobaea",
+  "common": "tansy ragwort; stinking Willie",
+  "listedAs": "Senecio jacobaea",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "9613389": {
+  "accepted": "Nassella trichotoma",
+  "common": "serrated tussock",
+  "listedAs": "Nassella trichotoma",
+  "note": "",
+  "rank": "SPECIES"
+ },
+ "9642664": {
+  "accepted": "Pennisetum polystachion",
+  "common": "missiongrass",
+  "listedAs": "Pennisetum polystachyon; P. polystachion",
+  "note": "",
+  "rank": "SPECIES"
+ }
+}
