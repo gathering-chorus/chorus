@@ -18,11 +18,21 @@ WINDOW_H="${WERK_BUDGET_WINDOW_H:-24}"
 python3 - "$SPINE" "$BUDGETS" "$WINDOW_H" <<'PY'
 import sys, json, re, collections, datetime
 spine, budgets_f, window_h = sys.argv[1], sys.argv[2], float(sys.argv[3])
-budgets = {}
-for line in open(budgets_f):
+# #4113 — the TSV grew a third column (a ratchet TARGET beside the ceiling) when the
+# `test` row was pinned at reality, and this reader still unpacked exactly two. It died
+# with `ValueError: too many values to unpack` before measuring anything, so a perf gate
+# reported a red that was a parse error, not a slow pipeline. Third column optional, and
+# a genuinely malformed row now says which line it was instead of raising.
+budgets, targets = {}, {}
+for lineno, line in enumerate(open(budgets_f), 1):
     line = line.strip()
     if not line or line.startswith('#'): continue
-    p, b = line.split('\t'); budgets[p] = float(b)
+    parts = line.split('\t')
+    if len(parts) not in (2, 3):
+        sys.exit(f"FAIL: {budgets_f}:{lineno} has {len(parts)} column(s), expected phase<TAB>ceiling[<TAB>target]: {line!r}")
+    budgets[parts[0]] = float(parts[1])
+    if len(parts) == 3:
+        targets[parts[0]] = float(parts[2])
 
 cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=window_h)
 def secs(e):
