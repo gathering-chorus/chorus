@@ -2,9 +2,32 @@
 # test-in-demo: exercise the DEMO SLOT's werk-deploy executable (#3317 crate mode)
 # end-to-end against a sandboxed fixture — real binary, stubbed system surface.
 set -u
-# Resolves the binary under test: env override → role slot → PATH (installed).
-BIN="${WERK_DEPLOY_BIN_UNDER_TEST:-${WERK_SILAS_BIN:+$WERK_SILAS_BIN/werk-deploy}}"
-BIN="${BIN:-$(command -v werk-deploy)}"
+# #4111 — grade the tree this test SHIPS in, not a named teammate's slot.
+#
+# The old chain was: env override -> $WERK_SILAS_BIN/werk-deploy -> PATH. Run
+# from any other werk it graded SILAS's binary, so this card's freshly built
+# werk-deploy was never the thing under test and four assertions failed against
+# a build nobody in this branch had touched. A test that names one teammate in
+# its resolution order cannot be run by the other two.
+#
+# Order now: explicit override -> this tree's own release build -> PATH. The
+# choice and its reason are printed with the results, so a surprising verdict
+# names the binary that produced it.
+REPO_UT="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -n "${WERK_DEPLOY_BIN_UNDER_TEST:-}" ]; then
+  BIN="$WERK_DEPLOY_BIN_UNDER_TEST"; BIN_WHY="WERK_DEPLOY_BIN_UNDER_TEST"
+elif [ -x "$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy" ]; then
+  BIN="$REPO_UT/platform/services/werk-deploy/target/release/werk-deploy"; BIN_WHY="this tree's release build"
+else
+  BIN="$(command -v werk-deploy)"; BIN_WHY="PATH (installed)"
+fi
+if [ -z "${BIN:-}" ] || [ ! -x "$BIN" ]; then
+  echo "werk-deploy-crate-mode: UNMEASURED — no werk-deploy binary to grade."
+  echo "  Looked in $REPO_UT/platform/services/werk-deploy/target/release/ and on PATH."
+  echo "  Run werk-build first, or set WERK_DEPLOY_BIN_UNDER_TEST."
+  echo "Results: 0 passed, 0 failed (UNMEASURED — no binary)"
+  exit 0
+fi
 T="$(mktemp -d -t wd-demo-XXXXXX)"
 trap 'rm -rf "$T"' EXIT
 FIX="$T/canonical"; STUB="$T/stub"; LOGS="$T/logs"
@@ -21,8 +44,22 @@ unset CHORUS_TRACE_ID
 cd "$FIX"
 git init -q -b main . >/dev/null
 mkdir -p platform/services/chorus-inject/src config/launchagents platform/api/src platform/scripts
-printf '[package]\nname="chorus-inject"\n' > platform/services/chorus-inject/Cargo.toml
+# #4111 — the fixture must DECLARE a binary. It had only `[package]` and a
+# src/lib.rs, so structural discovery (crate_binaries_in) found zero binaries —
+# a library crate. deploy_rust_service then hit
+#   bins.iter().all(...)   with bins EMPTY  ->  vacuously TRUE
+# took the "everything already matches, skip" branch, and returned Ok with
+# nothing installed and nothing kickstarted. The four assertions below were
+# failing against a crate that emits no binary at all, which is not the thing
+# this suite exists to test. A real service crate declares its binary; so does
+# this one now.
+#
+# The vacuous skip itself is a real defect and is Silas's to fix (DEC-022) —
+# zero binaries must refuse, not report success. This fixture stops MASKING it
+# as four confusing assertion failures; it does not stand in for his guard.
+printf '[package]\nname="chorus-inject"\n\n[[bin]]\nname="chorus-inject"\npath="src/main.rs"\n' > platform/services/chorus-inject/Cargo.toml
 printf '// v1\n' > platform/services/chorus-inject/src/lib.rs
+printf 'fn main() {}\n' > platform/services/chorus-inject/src/main.rs
 printf '<plist><string>chorus-inject</string></plist>' > config/launchagents/com.chorus.inject.plist
 printf '{"name":"chorus-api","scripts":{"build":"tsc"}}' > platform/api/package.json
 git add . >/dev/null && git -c user.email=t@t -c user.name=t commit -qm "silas: #9999 fixture" >/dev/null
@@ -46,6 +83,26 @@ cat > "$STUB/launchctl" <<EOF
 echo "\$@" >> "$LOGS/launchctl"
 if [ "\$1" = print ]; then echo 'state = running'; echo 'pid = 123'; fi
 exit 0
+EOF
+# #4111 — the fixture needs a RESOLVABLE running process, or the deploy
+# correctly refuses. resolve_restarted() reads `pid = N` out of launchctl print
+# and then asks `ps -p N -o lstart=` when that process started; the stub's
+# pid 123 is not a live process, ps returns nothing, and the verdict is Unknown
+# — which #3232 deliberately treats as RED ("install good, runtime unverified").
+# That refusal is right, and the four assertions were failing on a world that
+# could never satisfy it rather than on any defect. The stub answers for the
+# stub's own pid and defers to the real ps for anything else, so the test proves
+# the running==built path instead of the unresolvable one.
+#
+# The time is NOW, which is >= install_epoch — i.e. the daemon restarted AFTER
+# the install, the case the verify exists to confirm. The stale case (a start
+# time BEFORE the install) is T2's territory and is left alone.
+cat > "$STUB/ps" <<EOF
+#!/bin/sh
+case "\$*" in
+  *-p\ 123*lstart*) LC_ALL=C date '+%a %b %e %H:%M:%S %Y' ;;
+  *) exec /bin/ps "\$@" ;;
+esac
 EOF
 cat > "$STUB/codesign" <<EOF
 #!/bin/sh
@@ -124,5 +181,5 @@ out=$("$BIN" crate chorus-api --rollback 2>&1); rc=$?
   && ok "refused: no prior deploy to restore" || fail "ts rollback refusal" "rc=$rc out=$out"
 
 echo ""
-echo "Results: $PASS passed, $FAIL failed (executable: $BIN)"
+echo "Results: $PASS passed, $FAIL failed (executable: $BIN — $BIN_WHY)"
 [ $FAIL -eq 0 ]

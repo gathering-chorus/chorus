@@ -523,6 +523,15 @@ mod tests {
     async fn test_search_block_retry_bypass() {
         let state = AppState::new();
         let session_id = "unknown"; // matches None session_id default
+        // #4111 — the role is PINNED via deploy_role below, not inferred.
+        // #4004 taught role() to fall back to the process ancestry when
+        // deploy_role is absent, so this test started reading the identity of
+        // whoever ran it: green in a silas session, red in a kade one, red in
+        // the pipeline (spawned from a role session). The block key it built
+        // then disagreed with the key check() computed, the dedupe never fired,
+        // and the failure looked like a search-enrichment defect.
+        // deploy_role is what the shim actually injects in production, so
+        // pinning it is the real path, not a test-only door.
         let role = "silas";
         let hash = pattern_hash("disk usage");
         let block_key = format!("{}-{}-{}", session_id, role, hash);
@@ -539,7 +548,7 @@ mod tests {
             prompt: None,
             stop_hook_active: None,
             hook_type: None,
-            deploy_role: None,
+            deploy_role: Some(role.to_string()),
             trace_id: None, tool_output_is_error: None,};
 
         let r = check(&input, &state).await;

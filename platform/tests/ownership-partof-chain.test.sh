@@ -19,6 +19,7 @@ PASS=0; FAIL=0
 test_pass() { echo "  PASS: $1"; ((PASS++)); }
 test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 
+
 echo "=== ownership partOf chain (#3450 model-half) ==="
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -47,7 +48,11 @@ def p(m):
 def f(m):
     global FAIL; FAIL += 1; print(f"  FAIL: {m}")
 
-# (1) partOf defined as an ObjectProperty
+def local(u):
+    return u.rsplit("#", 1)[-1]
+
+# (1) partOf defined as an ObjectProperty — a statement about the model TEXT,
+# so it stays a text check.
 if re.search(r"chorus:partOf\s+a\s+owl:ObjectProperty", ttl):
     p("chorus:partOf is a defined owl:ObjectProperty")
 else:
@@ -73,30 +78,24 @@ for s, o in edges:
         multi.append(s)
     parent[s] = o  # last wins; multi tracked separately
 
-# (2) single-parent invariant
 if not multi:
     p(f"single-parent invariant holds ({len(parent)} nodes carry exactly one partOf)")
 else:
     f(f"nodes with >1 partOf (violates single-parent): {sorted(set(multi))}")
 
-# ValueStream instances (chain terminals)
-vs = set(re.findall(r"chorus:([\w-]+)\s+a\s+chorus:ValueStream", ttl))
-
 def walk(node):
-    seen = []
-    cur = node
+    seen, cur = [], node
     while cur in parent:
         cur = parent[cur]
-        if cur in seen:  # cycle guard
+        if cur in seen:
             return seen, None
         seen.append(cur)
     return seen, cur
 
-# (3) two real nodes resolve up to a ValueStream
 for node in ("gates-service", "observability-domain"):
     chain, top = walk(node)
     if chain and top in vs:
-        p(f"{node} → {' → '.join(chain)} (terminates at ValueStream {top})")
+        p(f"{node} -> {' -> '.join(chain)} (terminates at ValueStream {top})")
     else:
         f(f"{node} ownership chain does not reach a ValueStream (got chain={chain}, top={top})")
 
@@ -104,6 +103,7 @@ print(f"::RESULT:: {PASS} passed, {FAIL} failed")
 sys.exit(0 if FAIL == 0 else 1)
 PY
 rc=$?
+rm -f /tmp/partof-edges.$$.json /tmp/partof-vs.$$.json
 
 echo ""
 if [ "$rc" -eq 0 ]; then echo "=== Results: PASS ==="; else echo "=== Results: FAIL ==="; fi

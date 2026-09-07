@@ -52,9 +52,26 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
   [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
 }
 
-@test "negative proof: a kind with no case extractor mints no case name at all" {
+@test "a shell suite is registered at file grain, by its basename" {
+  # #4106 second commit: shell suites got a lane, and the runner stores ONE
+  # verdict per suite via shell_suite_case, which emits exactly the basename.
+  # So the registry must hold that same string or the row can never join.
+  # This case previously asserted the opposite — written before the lane
+  # existed, never re-run after it did.
   f="$TMP/daemon-env.test.sh"
   printf '%s\n' '#!/bin/sh' 'echo checking' 'exit 0' > "$f"
+  run names_of "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "daemon-env.test.sh" ]
+  [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
+}
+
+@test "negative proof: a kind with no case extractor and no lane mints nothing" {
+  # The original proof, moved to a kind that genuinely has neither: nothing
+  # runs a bare .py as a suite, so inventing a name for it would recreate the
+  # permanent never-ran row this card exists to kill.
+  f="$TMP/helper.py"
+  printf '%s\n' 'def helper():' '    return 1' > "$f"
   run names_of "$f"
   [ "$status" -eq 0 ]
   [ -z "$output" ]

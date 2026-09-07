@@ -20,6 +20,10 @@ setup() {
   printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
   export OPS_NUDGE="$BATS_TEST_TMPDIR/ops-nudge-stub"
   printf '#!/bin/bash\necho "$@" >> "%s/nudges.txt"\n' "$BATS_TEST_TMPDIR" > "$OPS_NUDGE"; chmod +x "$OPS_NUDGE"
+  # 4111 — these tests assert the WRAPPER (isolated log, silent team), which is
+  # decided before any suite runs. Without this they ran all 395 suites, twice,
+  # inside the pipeline's own test leg — the nightly nested in itself.
+  export NIGHTLY_LEGS_NOOP=1
   export NIGHTLY_LOAD_STUB=0.1
   export NIGHTLY_LOAD_DEFER_SECS=0
   export NIGHTLY_LOAD_RECHECK_SECS=1

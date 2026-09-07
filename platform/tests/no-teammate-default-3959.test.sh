@@ -15,11 +15,16 @@
 # fallback, unwrap_or, ?? — only that a human's name is never the answer.
 set -u
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-# #4113 — the tree this file lives in, NOT $CHORUS_ROOT. Reading the env var made a
-# werk's copy of this suite grade CANONICAL's files: it reported the same six hits no
-# matter what the werk changed, so a fix could never turn it green from where the fix
-# was made. Same defect this card found in two other suites.
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# The tree this file lives in, NOT $CHORUS_ROOT.
+#
+# #4113 (Wren) and #4111 (Kade) found this independently, in different suites, the
+# same week: reading the env var made a werk's copy grade CANONICAL's files, so it
+# reported the same hits no matter what the werk changed and a fix could never turn
+# it green from where the fix was made. Same class as #3701's ratchet pin.
+#
+# SCAN_ROOT is the deliberate override — this suite's own self-tests use it to point
+# the guard at a fixture tree, which is how its negative proofs run at all.
+ROOT="${SCAN_ROOT:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
 # A guard whose search target moved must fail LOUDLY, never pass vacuously (#3734).
 for d in platform directing; do
@@ -38,6 +43,13 @@ hits=$(grep -rIn -E "$PATTERNS" \
       # a test fixture naming a role is data, not a production default
       skip=no
       if [ "${f#*test}" != "$f" ] || [ "${f#*spec}" != "$f" ]; then skip=yes; fi
+      # #4111 — and neither is a COMMENT. A default is a line of code; a note
+      # ABOUT one is the record of why it changed. This guard flagged the very
+      # comment written to explain a fix it had just demanded, which would make
+      # the price of satisfying it the deletion of its own rationale.
+      # Shallow on purpose: only the first token of the line decides.
+      code="${hit#*:}"; code="${code#*:}"
+      if printf '%s' "$code" | grep -qE '^[[:space:]]*(#|//|\*|--|/\*)'; then skip=yes; fi
       [ "$skip" = yes ] || echo "$hit"
     done | sort)
 
@@ -48,4 +60,34 @@ if [ "$n" -gt 0 ]; then
   echo "  Use \"system\" for a script running outside a role session, or refuse." >&2
   exit 1
 fi
+# #4111 negative proofs. The comment exemption above is exactly the kind of
+# widening that can quietly disarm a guard, so prove both directions every run.
+st=$(mktemp -d); trap 'rm -rf "$st"' EXIT
+mkdir -p "$st/platform" "$st/directing"
+printf '%s\n' '# ROLE="${NIGHTLY_ROLE:-kade}" was the old default' > "$st/platform/prose.sh"
+printf '%s\n' 'ROLE="${NIGHTLY_ROLE:-kade}"' > "$st/platform/live.sh"
+printf '%s\n' '# the old default was :-silas}' 'OWNER="${SEC_OWNER:-silas}"' > "$st/platform/mixed.sh"
+
+selftest_fail=0
+probe() {
+  local label="$1" want="$2"
+  local got
+  got=$(SCAN_ROOT="$st" bash "$SELF" 2>/dev/null | grep -c "site(s) default" || true)
+  if [ "$got" = "$want" ]; then echo "  self-test PASS: $label"; else
+    echo "  self-test FAIL: $label — expected $want failing-run(s), got $got"; selftest_fail=1; fi
+}
+echo "no-teammate-default: self-test"
+if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
+  export NO_TEAMMATE_SELFTEST=1
+  rm -f "$st/platform/live.sh" "$st/platform/mixed.sh"
+  probe "a comment quoting the old default is NOT a violation" 0
+  printf '%s\n' 'ROLE="${NIGHTLY_ROLE:-kade}"' > "$st/platform/live.sh"
+  probe "NEGATIVE PROOF: a real default still fails the guard" 1
+  rm -f "$st/platform/live.sh"
+  printf '%s\n' '# the old default was :-silas}' 'OWNER="${SEC_OWNER:-silas}"' > "$st/platform/mixed.sh"
+  probe "NEGATIVE PROOF: a comment above a real default does not launder it" 1
+  unset NO_TEAMMATE_SELFTEST
+  [ "$selftest_fail" -eq 0 ] || { echo "no-teammate-default: FAIL — the guard cannot separate prose from a default"; exit 1; }
+fi
+
 echo "no-teammate-default: PASS — no role defaults to a teammate's name"

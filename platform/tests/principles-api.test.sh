@@ -33,6 +33,21 @@ check() {
   else fail=$((fail+1)); echo "  FAIL: $desc (expected: $expected, got: $actual)"; fi
 }
 
+# #4111 — the write door requires an identity now, and this test never sent one.
+# Every write got 401 BEFORE the shape check ran, so "POST without label
+# rejected at 400" read 401, nothing was ever created, and the eight read
+# assertions below failed on a principle that does not exist. One missing header
+# presented as nine defects.
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+TOKEN="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
+if [ -z "$TOKEN" ]; then
+  echo "principles-api: UNMEASURED — could not mint an identity token; the write"
+  echo "  door needs one and every assertion below would read as a shape failure."
+  echo "0 pass, 0 fail (UNMEASURED — no identity token)"
+  exit 0
+fi
+AUTH=(-H "Authorization: Bearer $TOKEN")
+
 TS=$(date +%s)
 TEST_LABEL="Test principle ${TS}"
 POST_BODY="{\"label\":\"$TEST_LABEL\",\"comment\":\"hermetic test principle — safe to delete\"}"

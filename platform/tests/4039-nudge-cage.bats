@@ -34,12 +34,26 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header('Content-Type','application/json'); self.end_headers()
         self.wfile.write(b'{"ok":true}')
     def log_message(self, *a): pass
-HTTPServer(('127.0.0.1', port), H).handle_request()
+# 4111 — the stub MUST be able to give up. handle_request() with no timeout
+# blocks forever when the call never arrives, and the wait below blocks with it:
+# measured 2026-09-07, this one test held a pipeline round for 18 minutes and
+# counting at load 5 — not slow, stopped. A control that can hang forever is
+# worse than one that fails: a hang has no verdict and takes the other 349 units
+# of the lane down with it.
+srv = HTTPServer(('127.0.0.1', port), H)
+srv.timeout = 10
+srv.handle_request()   # returns after 10s having served nothing; the test then fails loudly
 PY
   local stub=$!
   sleep 0.4
   run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:$port/nudge" bash "$OPS_NUDGE" silas "stub probe"
   wait "$stub" 2>/dev/null || true
   [ "$status" -eq 0 ]
+  # An empty file means the stub timed out uncalled. Say so, instead of leaving a
+  # bare grep failure for someone to reverse-engineer.
+  [ -s "$BATS_TEST_TMPDIR/got.txt" ] || {
+    echo "the stub on 127.0.0.1:$port was never called — ops-nudge did not reach the seam"
+    false
+  }
   grep -q "stub probe" "$BATS_TEST_TMPDIR/got.txt"
 }

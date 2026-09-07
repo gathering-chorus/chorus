@@ -17,8 +17,27 @@ api_up() { curl -sf --max-time 5 "$API/api/athena/health" >/dev/null; }
 
 @test "valuestreams collection serves the chorus stream" {
   owl_up || skip "owl-api :3360 unreachable"
-  run bash -c "curl -sf '$OWL/valuestreams' | python3 -c 'import json,sys; d=json.load(sys.stdin); names=[r[\"name\"] for r in d[\"data\"]]; assert \"value-stream-chorus\" in names, names; print(len(names))'"
+  # #4111 — this pinned "value-stream-chorus", the PREFIXED localname. Wren's
+  # #4114 (merge b1d29ba4a) made a collection serve the name its own read
+  # accepts: served_name is the exact inverse of entity_subject, so the list now
+  # says "chorus" and /valuestreams/chorus is what answers. Measured today:
+  #   /valuestreams          → chorus, athena, borg, clearing, … (bare)
+  #   /valuestreams/chorus                → 200
+  #   /valuestreams/value-stream-chorus   → 404
+  # The old assertion demanded the exact name that 404s, which was the bug she
+  # fixed. Pinning the round-trip instead of a spelling.
+  run bash -c "curl -sf '$OWL/valuestreams' | python3 -c 'import json,sys; d=json.load(sys.stdin); names=[r[\"name\"] for r in d[\"data\"]]; assert \"chorus\" in names, names; print(len(names))'"
   [ "$status" -eq 0 ]
+}
+
+@test "the name the list serves is the name the read accepts (#4114 round-trip)" {
+  owl_up || skip "owl-api :3360 unreachable"
+  # The invariant behind the assertion above, stated so a regression to the
+  # prefixed spelling fails HERE with its own name rather than as a puzzle.
+  run bash -c "curl -sf -o /dev/null -w '%{http_code}' '$OWL/valuestreams/chorus'"
+  [ "$output" = "200" ]
+  run bash -c "curl -s -o /dev/null -w '%{http_code}' '$OWL/valuestreams/value-stream-chorus'"
+  [ "$output" = "404" ]
 }
 
 @test "the six core steps carry stageOrder 1-6 exactly" {

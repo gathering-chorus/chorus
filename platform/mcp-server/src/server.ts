@@ -2283,6 +2283,50 @@ async function notifySilasOfMcpError(event: string, fields: Record<string, unkno
   }
 }
 
+// The exec budgets. Named, not inline, so a refusal can quote the number it
+// blew and a reader can find every site that has one. #4111 does not change
+// either value — whether 600s is right at load is a separate question, and it
+// is Silas's (DEC-022).
+const LIFECYCLE_TIMEOUT_MS = 60000;
+const VERB_TIMEOUT_MS = 600000;
+
+// #4111 — name a timeout kill instead of guessing a verdict from stray stderr.
+//
+// execFile SIGTERMs the child when its `timeout` budget expires. A signal kill
+// carries no numeric `code`, so `typeof e.code === 'number' ? e.code : 1` fell
+// to exit 1, the reason regex found nothing in the (truncated, unrelated)
+// output, and the caller was handed `reason=work-fail`. On 2026-09-06 that sent
+// two roles chasing a deploy defect that was a 600s budget expiring at load 12
+// on 8 cores — twice, ten minutes to the tenth of a second.
+//
+// #3347 already detects this on the cards exec for the same starvation class.
+// This is that check, shared by every exec site that has a timeout.
+//
+// The timeout VALUES are not this function's business — it reports what
+// happened, it does not decide how long a verb may take.
+export function classifyExecFailure(
+  err: { killed?: boolean; signal?: string | null; code?: number | string | null },
+  combined: string,
+  reasonPattern: RegExp,
+  exitCode: number,
+  timeoutMs?: number,
+): { reason: string; timedOut: boolean; detail: string } {
+  const timedOut = Boolean(err.killed) || err.signal === 'SIGTERM';
+  if (timedOut) {
+    const budget = timeoutMs === undefined ? '' : ` budget=${timeoutMs}ms`;
+    return {
+      reason: 'timeout',
+      timedOut: true,
+      // The output tail is kept but labelled: a killed process's last words are
+      // whatever it happened to be saying, not why it died.
+      detail: `killed by the exec timeout${budget} — the verb did not finish, so any output below is incidental, not a cause`,
+    };
+  }
+  const match = combined.match(reasonPattern);
+  const reason = match ? match[1] : (exitCode === 2 ? 'usage-error' : 'work-fail');
+  return { reason, timedOut: false, detail: '' };
+}
+
 // #2605 — service-lifecycle executor. Wraps agent-state.sh; one function serves
 // all 6 per-verb tools.
 async function executeServiceLifecycle(
@@ -2297,10 +2341,11 @@ async function executeServiceLifecycle(
   let stdout: string; // assigned in both try and catch before first read
   let stderr: string;
   let exitCode = 0;
+  let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
   try {
     const result = await execFileP('bash', [scriptPath, verb, service], {
       env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role },
-      timeout: 60000,
+      timeout: LIFECYCLE_TIMEOUT_MS,
       maxBuffer: 1024 * 1024,
     });
     stdout = result.stdout || '';
@@ -2310,15 +2355,17 @@ async function executeServiceLifecycle(
     stdout = e.stdout || '';
     stderr = e.stderr || '';
     exitCode = typeof e.code === 'number' ? e.code : 1;
+    failure = e;
   }
   if (exitCode === 0) {
     return {
       content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, verb, service, role, stdout: stdout.trim(), stderr: stderr.trim() }) }],
     };
   }
-  const reasonMatch = (stderr + stdout).match(/reason=([a-z0-9-]+)/);
-  const reason = reasonMatch ? reasonMatch[1] : (exitCode === 2 ? 'usage-error' : 'work-fail');
-  throw new Error(`${verb}-fail — reason=${reason} exit=${exitCode}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 200) : ''}`);
+  const { reason, timedOut, detail } = classifyExecFailure(
+    failure ?? {}, stderr + stdout, /reason=([a-z0-9-]+)/, exitCode, LIFECYCLE_TIMEOUT_MS,
+  );
+  throw new Error(`${verb}-fail — reason=${reason} exit=${exitCode}${timedOut ? ' ' + detail : ''}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 200) : ''}`);
 }
 
 // #3110: werk-binary MCP wrapper executors. Each spawns the verb binary at
@@ -2346,6 +2393,7 @@ async function executeWerkVerb(
   let stdout: string; // assigned in both try and catch before first read
   let stderr: string;
   let exitCode = 0;
+  let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
   try {
     const result = await execFileP(binPath, args, {
       env: {
@@ -2360,7 +2408,7 @@ async function executeWerkVerb(
         CHORUS_INVOKER: 'chorus-mcp',
         ...extraEnv,
       },
-      timeout: 600000,
+      timeout: VERB_TIMEOUT_MS,
       maxBuffer: 4 * 1024 * 1024,
     });
     stdout = result.stdout || '';
@@ -2370,6 +2418,7 @@ async function executeWerkVerb(
     stdout = e.stdout || '';
     stderr = e.stderr || '';
     exitCode = typeof e.code === 'number' ? e.code : 1;
+    failure = e;
   }
   if (exitCode === 0) {
     return {
@@ -2380,10 +2429,11 @@ async function executeWerkVerb(
     };
   }
   const combined = stderr + stdout;
-  const reasonMatch = combined.match(/reason[=:]\s*([a-z0-9_-]+)/i);
-  const reason = reasonMatch ? reasonMatch[1] : (exitCode === 2 ? 'usage-error' : 'work-fail');
+  const { reason, timedOut, detail } = classifyExecFailure(
+    failure ?? {}, combined, /reason[=:]\s*([a-z0-9_-]+)/i, exitCode, VERB_TIMEOUT_MS,
+  );
   throw new Error(
-    `${verb}-fail — reason=${reason} exit=${exitCode}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 400) : ''}`,
+    `${verb}-fail — reason=${reason} exit=${exitCode}${timedOut ? ' ' + detail : ''}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 400) : ''}`,
   );
 }
 

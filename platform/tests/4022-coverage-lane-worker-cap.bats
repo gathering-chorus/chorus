@@ -19,6 +19,7 @@ setup() {
   printf 'ts:\n  pkg: 10\n' > "$CHORUS_ROOT/coverage-floors.yml"
   export NIGHTLY_LOG_PATH="$BATS_TEST_TMPDIR/nightly.log"
   export NIGHTLY_LOCKDIR="$BATS_TEST_TMPDIR/lock.d"
+  export NIGHTLY_COVERAGE_ONLY=1   # #4111 — only the lane under test; see run_all
   export NIGHTLY_NO_NUDGE=1 NIGHTLY_LOAD_STUB=0.1 NIGHTLY_LOAD_DEFER_SECS=0 NIGHTLY_LOAD_RECHECK_SECS=1
   export NIGHTLY_RECONCILE_BIN=/nonexistent/werk-test
   export CHORUS_LOG_BIN="$BATS_TEST_TMPDIR/chorus-log-stub"; printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"

@@ -511,7 +511,112 @@ _first_red_nudge() {
 # directory — so it now reports "unowned" instead of being silently posted to whoever
 # the default happened to name. A large unowned bucket is the true state; per-suite
 # owner declarations are the follow-on, not this card.
-owner_for() {
+
+# The path rule below is the FALLBACK, not the answer. Wren's #4113 note above
+# describes it and stays true: a bats file's owner is a fact about its content,
+# not its directory, and `unowned` is the honest verdict when the path cannot
+# decide. #4111 puts the MODEL in front of it — a registered test carries a
+# `covers` domain and every Domain row carries `ownedBy`, so most files are
+# answered by fact and only the remainder fall through to the path.
+
+# #4111 — the DOMAIN implies the owner, and the model has said so all along:
+# every one of the 7,927 registered tests carries a `covers` domain, and all 40
+# Domain rows carry `ownedBy` (tests→kade, principles→wren, builds→silas, …).
+# The path rule below is blind to that: it reads every `platform/**` file as
+# Silas's, which is why the morning report filed Kade's own
+# `platform/tests/4106-registry-mints-only-real-tests.bats` under Silas and
+# sent him to fix a test he did not write. Attribution by directory was a
+# stand-in for a fact the graph already holds.
+#
+# Built once per run into a lookup file; the path rule stays as the fallback
+# for anything the registry does not know, and the fallback is COUNTED and
+# named in the run so a silently-empty map cannot masquerade as agreement.
+_OWNER_MAP="${NIGHTLY_OWNER_MAP:-}"
+_owner_map_build() {
+  [ -n "$_OWNER_MAP" ] && [ -s "$_OWNER_MAP" ] && return 0
+  _OWNER_MAP="${TMPDIR:-/tmp}/nightly-owner-map.$$"
+  : > "$_OWNER_MAP"
+  local owlapi="${OWLAPI:-http://localhost:3360}"
+  # The registry is 7,927 rows — far past the argv/environ limit, so the JSON
+  # goes to files and python reads the files. Passing it through the
+  # environment fails with "argument list too long", and because the failure
+  # was swallowed the map came back EMPTY and every row quietly fell back to
+  # the path rule: the exact silent-degradation shape this map exists to end.
+  local tf="${TMPDIR:-/tmp}/nightly-owner-tests.$$"
+  local df="${TMPDIR:-/tmp}/nightly-owner-domains.$$"
+  if ! curl -sf -m 30 -o "$tf" "$owlapi/tests?limit=25000" 2>/dev/null \
+     || ! curl -sf -m 15 -o "$df" "$owlapi/domains?limit=200" 2>/dev/null; then
+    rm -f "$tf" "$df"
+    echo "!! owner map UNAVAILABLE — registry unreachable; every row falls back to the path rule" >&2
+    return 0
+  fi
+  python3 - "$tf" "$df" >> "$_OWNER_MAP" <<'PYEOF'
+import json, sys
+tests = json.load(open(sys.argv[1]))["data"]
+domains = json.load(open(sys.argv[2]))["data"]
+own = {}
+for d in domains:
+    o = (d.get("ownedBy") or "")
+    o = o[5:] if o.startswith("role-") else o
+    if d.get("name") and o:
+        own[d["name"]] = o
+seen = {}
+for t in tests:
+    fp, cov = t.get("filePath"), t.get("covers")
+    if fp and cov in own:
+        seen[fp] = own[cov]
+for fp, o in sorted(seen.items()):
+    print("%s\t%s" % (fp, o))
+PYEOF
+  rm -f "$tf" "$df"
+  echo "owner map: $(grep -c . "$_OWNER_MAP" 2>/dev/null || echo 0) file(s) attributed from the model" >&2
+}
+
+# #4111 — who owns a DOMAIN, from the model, for the places that used to name a
+# teammate as a literal default. Same authority as owner_for above (Domain rows
+# carry ownedBy); this is the domain-keyed door onto it.
+#
+# Three sites in this file defaulted a role to a person's name — `${...:-silas}`
+# twice and one bare `chorus-identity-token kade` with no seam at all. A default
+# like that is a guess wearing a fact's clothes: it survives reorganisations,
+# and when ownership moves the nightly keeps paging whoever was named in April.
+# The comment at the sec_owner site already said the model is the authority when
+# they disagree; this makes that true instead of aspirational.
+#
+# Falls back to "system" — never to a teammate. A script running outside a role
+# session has no role, and saying so is better than picking one.
+_DOMAIN_OWNERS=""
+domain_owner() {
+  local want="$1" owlapi="${OWLAPI:-http://localhost:3360}"
+  if [ -z "$_DOMAIN_OWNERS" ]; then
+    local df="${TMPDIR:-/tmp}/nightly-domain-owners.$$"
+    if curl -sf -m 15 -o "$df" "$owlapi/domains?limit=200" 2>/dev/null; then
+      _DOMAIN_OWNERS=$(python3 - "$df" <<'PYEOF'
+import json, sys
+for d in json.load(open(sys.argv[1]))["data"]:
+    o = (d.get("ownedBy") or "")
+    o = o[5:] if o.startswith("role-") else o
+    if d.get("name") and o:
+        print("%s\t%s" % (d["name"], o))
+PYEOF
+)
+    fi
+    rm -f "$df"
+    [ -z "$_DOMAIN_OWNERS" ] && _DOMAIN_OWNERS="__unavailable__"
+  fi
+  if [ "$_DOMAIN_OWNERS" = "__unavailable__" ]; then
+    echo "!! domain owner UNAVAILABLE for '$want' — routing to system, not to a guess" >&2
+    echo "system"; return 0
+  fi
+  local o; o=$(printf '%s\n' "$_DOMAIN_OWNERS" | awk -F'\t' -v d="$want" '$1==d {print $2; exit}')
+  if [ -z "$o" ]; then
+    echo "!! no ownedBy for domain '$want' — routing to system, not to a guess" >&2
+    echo "system"; return 0
+  fi
+  echo "$o"
+}
+
+_owner_path_rule() {
   case "$1" in
     # presentation — the app and the directing surfaces
     "$APP_ROOT"|"$APP_ROOT"/*)                      echo "kade" ;;
@@ -534,6 +639,18 @@ owner_for() {
     # everything else — including platform/tests/*, which the path cannot decide
     *)                                              echo "unowned" ;;
   esac
+}
+
+owner_for() {
+  local rel="${1#"$CHORUS_ROOT"/}"
+  _owner_map_build
+  local from_model=""
+  [ -s "$_OWNER_MAP" ] && from_model=$(awk -F'\t' -v f="$rel" '$1==f {print $2; exit}' "$_OWNER_MAP")
+  if [ -n "$from_model" ]; then
+    echo "$from_model"
+  else
+    _owner_path_rule "$1"
+  fi
 }
 
 # Extract a parseable pass/fail summary from a shell test script's full stdout.
@@ -895,7 +1012,9 @@ _reconcile_leg() {
   # honestly reported unmeasured both times, which is correct behaviour and a
   # useless report. This is the difference between a check that refuses and a
   # check that works.
-  out=$(ROLE="${NIGHTLY_ROLE:-system}" "$bin" --reconcile 2>&1); rc=$?  # #4113 — was kade
+  # #4113 landed "system" here; #4111 derives it instead — same rule, the model as
+  # the authority rather than a second literal. Falls back to "system", never a name.
+  out=$(ROLE="${NIGHTLY_ROLE:-$(domain_owner tests)}" "$bin" --reconcile 2>&1); rc=$?
   local registered; registered=$(printf '%s' "$out" | sed -n 's/.*registered \([0-9][0-9]*\).*/\1/p' | head -1)
   if [ "$rc" -ne 0 ] || [ -z "$registered" ]; then
     local why; why=$(printf '%s' "$out" | grep -v '^\s*$' | head -1 | cut -c1-110)
@@ -1032,6 +1151,33 @@ run_app_eslint() {
 }
 
 run_all() {
+  # 4111 — a seam for tests that assert the WRAPPER, not the suites.
+  #
+  # platform/tests/4022-werk-run-never-pages-team.bats calls `--run-all` twice to
+  # prove that a werk run isolates its log and does not page the team. Both facts
+  # are settled in the preamble, before a single suite runs — but --run-all then
+  # executed all 395 suites, twice, inside a bats test that lives inside the
+  # pipeline's own test leg. Measured 2026-09-07: that is the bulk of a 1h44 test
+  # leg, and the pipeline was running the entire nightly nested inside itself.
+  #
+  # With this set, run_all does no work and everything around it is unchanged:
+  # the isolation banner, the lock, RUN|start, RUN|complete and notify_results
+  # all still happen, so the tests assert exactly what they were written to
+  # assert and nothing they were not.
+  if [ -n "${NIGHTLY_LEGS_NOOP:-}" ]; then
+    echo "nightly-suites: LEGS SKIPPED (NIGHTLY_LEGS_NOOP) — wrapper under test, no suite ran" >&2
+    return 0
+  fi
+  # #4111 — the coverage-flag unit test needs ONE lane, not all of them. Without
+  # this seam it called --run-all and sat for 15 minutes per test running smoke,
+  # app-eslint and the whole cargo lane against the real repo, inside the
+  # pipeline's own test leg. Narrower than NIGHTLY_LEGS_NOOP on purpose: the
+  # coverage lane really runs, so the negative proof still asserts the real argv.
+  if [ -n "${NIGHTLY_COVERAGE_ONLY:-}" ]; then
+    run_coverage
+    return 0
+  fi
+
   run_lint_ratchet
   # #3527 — folded tiers (was 3 competing runners): coverage (nightly-coverage #2207),
   # smoke + app-eslint (daily-review-quality). One runner, one report, one nudge.
@@ -1079,7 +1225,9 @@ notify_results() {
   # #3922 — the security lane routes to the SECURITY owner as its own signal,
   # never buried in the per-owner wall. Owner is env-overridable; the model
   # (security domain ownedBy) is the authority when they disagree.
-  local sec_owner="${NIGHTLY_SECURITY_OWNER:-system}"  # #4113 — was silas; the nightly is not a role session
+  # #4113 landed "system" here; #4111 derives it instead — same rule, the model as
+  # the authority rather than a second literal. Falls back to "system", never a name.
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-$(domain_owner security)}"
   local sec_reds sec_n
   sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
   sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)
@@ -1142,7 +1290,7 @@ emit_pipeline_run() {
   #   3. "label" is not on the shape: off-model property, refused
   # The failure line now prints the door's own body, so a refusal names itself.
   local tok body code out
-  tok=$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" kade 2>/dev/null)
+  tok=$("$CHORUS_ROOT/platform/scripts/chorus-identity-token" "${NIGHTLY_PIPELINE_ROLE:-$(domain_owner pipelines)}" 2>/dev/null)
   if [ -z "$tok" ]; then
     echo "nightly-suites: pipeline-run emit SKIPPED — no identity token minted" >&2
     return 0
