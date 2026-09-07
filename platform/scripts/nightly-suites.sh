@@ -47,6 +47,18 @@ CHORUS_LOG_BIN="${CHORUS_LOG_BIN:-$(command -v chorus-log || echo "$SCRIPT_DIR_N
 NIGHTLY_RUN_ID="${NIGHTLY_RUN_ID:-nr-$(date +%s)-$$}"
 export NIGHTLY_RUN_ID
 
+# #4085 — the outbound cage existed but the nightly never wore it. #4039 built
+# it for werk-test's suite world, so per-card pipeline runs are caged; this
+# runner shells ~97 bats files directly at 03:00 with no cage at all, and every
+# suite that shells ops-nudge (alert-delivery-test.sh, chorus-health) paged all
+# three roles. That is the "[synthetic] Delivery probe" bursts and the recurring
+# chorus-health alerts whose findings appear in no canonical health run.
+#
+# #4039's own first assertion greps werk-test/src/lib.rs for the dead-port
+# string. That proves the string is in a source file, not that the process
+# running the suite is caged — which is why the gap survived being "covered".
+export CHORUS_MCP_NUDGE_URL="${CHORUS_MCP_NUDGE_URL:-http://127.0.0.1:9/nudge}"
+
 spine_emit() {
   local event="$1"; shift
   if [ -x "$CHORUS_LOG_BIN" ]; then
