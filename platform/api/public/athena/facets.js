@@ -51,7 +51,12 @@ async function renderFacetTables(el, fid, opts) {
     // homes, each carrying the domain it watches.
     { t: 'Alerts', u: OWL + '/alerts?limit=500', k: 'items', graph: true,
       filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
-      cols: ['label', 'alertSource', 'alertFile'] },
+      cols: ['label', 'alertSource', 'alertFile'],
+      // AC5 — a domain with no Alert rows must render "no alerts for this
+      // domain" WITH the query that asked, never a v1 lookup and never a fetch
+      // failure. src is what the fold prints beside its count, so an empty fold
+      // still says exactly what it looked for.
+      src: 'chorus:Alert · hasDomain = ' + dname },
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
     { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
     { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
