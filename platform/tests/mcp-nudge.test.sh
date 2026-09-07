@@ -7,7 +7,13 @@
 
 MCP_URL="${MCP_URL:-http://localhost:3341/mcp}"
 CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
-SPINE_LOG="${CHORUS_LOG_FILE:-${CHORUS_ROOT}/platform/logs/chorus.log}"
+# #4113 — was ${CHORUS_ROOT}/platform/logs/chorus.log, the repo-local file. The spine
+# is ~/.chorus/chorus.log and always has been (it is the memory layer and is never
+# rotated); the repo-local copy is a dead reader, the same class as #3998. The nudge
+# WAS emitted every night — this suite was looking in a file nothing writes to, and
+# reported "no nudge.emitted in spine" about a spine it was not reading.
+SPINE_LOG="${CHORUS_LOG_FILE:-$HOME/.chorus/chorus.log}"
+[ -s "$SPINE_LOG" ] || { echo "UNMEASURED: no spine at $SPINE_LOG" >&2; }
 
 # Helper: initialize and capture session id
 init_session() {

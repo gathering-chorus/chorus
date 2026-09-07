@@ -34,6 +34,22 @@ $1
 " 2>/dev/null
 }
 
+# #4113 — this suite reported "workflow parses as YAML: no" and five cascading
+# failures, and the YAML was fine. js-yaml simply is not installed in a fresh werk, so
+# `yq` died and every probe returned empty. A red that says the product's CI config is
+# broken, when the truth is the test could not load its own parser, is worse than no
+# test: it is a red that does not mean the product broke.
+#
+# The parser is a property of the box, not of the product. If it is absent this suite
+# reports UNMEASURED and exits 0 — it does not get to claim green either.
+if ! node -e "require('$REPO/node_modules/js-yaml')" 2>/dev/null; then
+  echo "ci-workflow-shape: UNMEASURED — js-yaml is not installed at $REPO/node_modules."
+  echo "  The workflow was NOT inspected. This is a missing dependency on this box,"
+  echo "  not a finding about .github/workflows/quality.yml. Run npm ci at the repo root."
+  echo "ci-workflow-shape: 0 passed, 0 failed (unmeasured)"
+  exit 0
+fi
+
 # 1. Workflow file exists.
 if [ -f "$WORKFLOW" ]; then
   assert "workflow file exists" "yes" "yes"
@@ -44,6 +60,7 @@ else
 fi
 
 # 2. Parses as valid YAML.
+# The parser is present (guarded above), so a failure here IS the YAML.
 PARSE_OK=$(yq "process.stdout.write(d ? 'yes' : 'no');" || echo "no")
 assert "workflow parses as YAML" "yes" "$PARSE_OK"
 

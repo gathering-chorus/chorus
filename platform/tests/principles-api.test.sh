@@ -5,6 +5,22 @@
 set -uo pipefail
 
 API_BASE="${API_BASE:-http://localhost:3340}"
+
+# #4113 — this suite was written before the write door required a verified identity
+# (#3687 retired DEPLOY_ROLE env-trust). Without a token every POST came back 401, the
+# create never happened, and the eight reads that followed failed for the same single
+# reason. The product was refusing an unauthenticated write, correctly; the test was
+# wrong. Derive the tree from this file, never $CHORUS_ROOT — a werk's test must grade
+# its own copy.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+TOKEN="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null || true)"
+if [ -z "$TOKEN" ]; then
+  echo "UNMEASURED: no identity token for wren — the write door cannot be exercised."
+  echo "This is not a product failure; nothing was measured."
+  echo "Result: 0 passed, 0 failed"
+  exit 0
+fi
+AUTH=(-H "Authorization: Bearer $TOKEN")
 WRITE_URL="${PRINCIPLES_WRITE_URL:-$API_BASE/api/athena/subdomains/loom-principles/principles}"
 READ_URL_CANONICAL="$API_BASE/api/athena/subdomains/loom-principles/principles"
 READ_URL_LOOM_REDIRECT="$API_BASE/api/loom/principles"
@@ -23,12 +39,18 @@ POST_BODY="{\"label\":\"$TEST_LABEL\",\"comment\":\"hermetic test principle — 
 
 # 0. POST without required label is rejected at the boundary (400). Full
 # cross-graph SHACL validation lands in #2469's gate test.
-CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d '{"comment":"missing-label probe"}' "$WRITE_URL")
-check "POST without label rejected at 400" "400" "$CODE"
+check "POST without label rejected at 400 (authenticated — this tests validation, not authN)" "400" "$CODE"
+
+# The other half of that pair: the same body with NO token must be refused for a
+# DIFFERENT reason. Without this, a door that refused everyone would pass the line above.
+CODE_ANON=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' \
+  -d "$POST_BODY" "$WRITE_URL")
+check "the same POST with no identity is refused 401 (not 400)" "401" "$CODE_ANON"
 
 # 1. POST creates
-RESP=$(curl -s -X POST -H 'Content-Type: application/json' -d "$POST_BODY" "$WRITE_URL")
+RESP=$(curl -s -X POST "${AUTH[@]}" -H 'Content-Type: application/json' -d "$POST_BODY" "$WRITE_URL")
 URI=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['data'].get('uri',''))" 2>/dev/null || echo "")
 check "POST returned a URI" "1" "$([ -n "$URI" ] && echo 1 || echo 0)"
 ENTITY_ID="${URI##*#}"
@@ -47,13 +69,18 @@ check "visible on /api/athena/subdomains/loom-principles" "1" "$([ "$N" -gt 0 ] 
 
 # 5. PUT updates idempotently
 UPDATED_LABEL="${TEST_LABEL} updated"
-curl -s -o /dev/null -X PUT -H 'Content-Type: application/json' \
+curl -s -o /dev/null -X PUT "${AUTH[@]}" -H 'Content-Type: application/json' \
   -d "{\"label\":\"$UPDATED_LABEL\"}" "$WRITE_URL/$ENTITY_ID"
 N=$(curl -s "$READ_URL_CANONICAL" | grep -c "$UPDATED_LABEL")
 check "PUT updates label (visible on read)" "1" "$([ "$N" -gt 0 ] && echo 1 || echo 0)"
 
-# 6. DELETE removes
-curl -s -o /dev/null -X DELETE "$WRITE_URL/$ENTITY_ID"
+# 6. DELETE removes.
+# #4113 — "not visible after delete" passes trivially when the create never happened,
+# which is exactly what it did while every POST was 401ing. Assert it WAS there first,
+# so the check can tell "deleted" from "never existed".
+BEFORE=$(curl -s "$READ_URL_CANONICAL" | grep -c "$UPDATED_LABEL")
+check "the row is present BEFORE the delete (so the next check means something)" "1" "$([ "$BEFORE" -gt 0 ] && echo 1 || echo 0)"
+curl -s -o /dev/null -X DELETE "${AUTH[@]}" "$WRITE_URL/$ENTITY_ID"
 N=$(curl -s "$READ_URL_CANONICAL" | grep -c "$TEST_LABEL")
 check "DELETE removes (not visible on read)" "0" "$N"
 

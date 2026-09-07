@@ -497,12 +497,42 @@ _first_red_nudge() {
   "$ops_nudge" "$owner" "nightly RED now: $path — $summary (run still going; read it now, not at the end)" system >/dev/null 2>&1 || true
 }
 
+# Which role owns a suite, by path.
+#
+# #4113 — this used to have three branches and none of them was "wren". Measured on
+# the 2026-09-07 03:00 run: 374 suites to silas, 21 to kade, 0 to wren, of 395. So
+# Wren's zero-red card was green by construction and could not have gone red if every
+# line she owns were on fire, while Silas's could never go green. Same defect, opposite
+# sign — and a check that cannot distinguish the two states it exists to separate is
+# the hollow-gate shape our own contract names (#3734).
+#
+# The honest part of this fix is the LAST branch. `platform/tests/*` cannot be
+# attributed from its path — a bats file's owner is a fact about its content, not its
+# directory — so it now reports "unowned" instead of being silently posted to whoever
+# the default happened to name. A large unowned bucket is the true state; per-suite
+# owner declarations are the follow-on, not this card.
 owner_for() {
   case "$1" in
-    "$APP_ROOT"|"$APP_ROOT"/*)              echo "kade" ;;
-    directing/*|"$CHORUS_ROOT"/directing/*) echo "kade" ;;
-    platform/*|roles/*|"$CHORUS_ROOT"/platform/*|"$CHORUS_ROOT"/roles/*) echo "silas" ;;
-    *)                                      echo "kade" ;;
+    # presentation — the app and the directing surfaces
+    "$APP_ROOT"|"$APP_ROOT"/*)                      echo "kade" ;;
+    directing/*|"$CHORUS_ROOT"/directing/*)         echo "kade" ;;
+
+    # role state belongs to the role whose directory it is
+    roles/wren/*|"$CHORUS_ROOT"/roles/wren/*)       echo "wren" ;;
+    roles/silas/*|"$CHORUS_ROOT"/roles/silas/*)     echo "silas" ;;
+    roles/kade/*|"$CHORUS_ROOT"/roles/kade/*)       echo "kade" ;;
+
+    # the model + generator lane is Wren's (athena / owl-api)
+    platform/services/athena-*|"$CHORUS_ROOT"/platform/services/athena-*) echo "wren" ;;
+
+    # observation, pipeline and infrastructure are Silas's
+    platform/services/werk-*|"$CHORUS_ROOT"/platform/services/werk-*)     echo "silas" ;;
+    platform/services/chorus-*|"$CHORUS_ROOT"/platform/services/chorus-*) echo "silas" ;;
+    platform/scripts/*|"$CHORUS_ROOT"/platform/scripts/*)                 echo "silas" ;;
+    proving/*|"$CHORUS_ROOT"/proving/*)                                   echo "silas" ;;
+
+    # everything else — including platform/tests/*, which the path cannot decide
+    *)                                              echo "unowned" ;;
   esac
 }
 
@@ -865,7 +895,7 @@ _reconcile_leg() {
   # honestly reported unmeasured both times, which is correct behaviour and a
   # useless report. This is the difference between a check that refuses and a
   # check that works.
-  out=$(ROLE="${NIGHTLY_ROLE:-kade}" "$bin" --reconcile 2>&1); rc=$?
+  out=$(ROLE="${NIGHTLY_ROLE:-system}" "$bin" --reconcile 2>&1); rc=$?  # #4113 — was kade
   local registered; registered=$(printf '%s' "$out" | sed -n 's/.*registered \([0-9][0-9]*\).*/\1/p' | head -1)
   if [ "$rc" -ne 0 ] || [ -z "$registered" ]; then
     local why; why=$(printf '%s' "$out" | grep -v '^\s*$' | head -1 | cut -c1-110)
@@ -1049,7 +1079,7 @@ notify_results() {
   # #3922 — the security lane routes to the SECURITY owner as its own signal,
   # never buried in the per-owner wall. Owner is env-overridable; the model
   # (security domain ownedBy) is the authority when they disagree.
-  local sec_owner="${NIGHTLY_SECURITY_OWNER:-silas}"
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-system}"  # #4113 — was silas; the nightly is not a role session
   local sec_reds sec_n
   sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
   sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)

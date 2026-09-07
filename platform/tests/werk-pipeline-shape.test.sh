@@ -71,20 +71,31 @@ assert "werk.yml land job runs werk-merge (via MCP)" "yes" \
 assert "werk.yml land job deploys to canonical" "yes" \
   "$(present "$LAND" 'target.{0,9}canonical')"
 # Test is its OWN step before demo (Jeff's model: test AND demo at end).
-assert "werk.yml has an explicit test step (cargo/jest hermetic gate)" "yes" \
-  "$(present "$WERK" 'cargo test|npx jest')"
+# #4113 — was `cargo test|npx jest`. #3190 promoted that inline step into the
+# werk-test VERB, which is the blocking floor, so the assertion was looking for a
+# shape the pipeline deliberately stopped having and reported red on a pipeline that
+# is correct. Assert the floor that exists, and that it BLOCKS — a test step that
+# cannot halt the land is not a gate.
+assert "werk.yml has an explicit test step (the werk-test blocking floor, #3190)" "yes" \
+  "$(present "$WERK" 'werk-test')"
+assert "werk.yml test step is BLOCKING, not advisory" "yes" \
+  "$(present "$WERK" 'BLOCKING')"
 assert "werk.yml runs the demo (werk-demo)" "yes" \
   "$(present "$WERK" 'werk-demo')"
 
-# #3311 GO=accept: Half A never accepts; Half B RUNS werk-accept under the named accepter.
-# Half A (the prove job, everything before the `land:` job) must never accept.
-PROVE_HALF=$(mktemp); sed -n '1,/^  land:$/p' "$WERK" > "$PROVE_HALF"
-assert "werk.yml prove job does NOT invoke werk-accept" "yes" \
-  "$(absent "$PROVE_HALF" 'werk-accept[[:space:]]+\$\{CARD_ID\}|DEPLOY_ROLE.*werk-accept')"
-assert "werk.yml land job is go-gated" "yes" \
-  "$(present "$WERK" "inputs.go == 'true'")"
-assert "werk.yml prove job is go-gated off" "yes" \
-  "$(present "$WERK" "inputs.go != 'true'")"
+# #3311 GO=accept, as reshaped by #3237 (go AT INVOKE).
+# #4113 — these three asserted a two-JOB layout (`prove:` and `land:`) gated by
+# `inputs.go == 'true'`. #3237 collapsed that into one job where the GO arrives as an
+# input and werk-demo's EXIT CODE decides whether the landing steps run: rc=0 proven
+# and go, rc=2 presented and stop green. The old assertions described a structure that
+# was deliberately retired, so they could only ever be red. What still has to be true
+# is the CONTRACT, not the job layout:
+assert "werk.yml takes the GO at invoke (#3237)" "yes" \
+  "$(present "$WERK" 'GO: \$\{\{ inputs.go \}\}')"
+assert "a present-only run cannot reach werk-accept — landing is gated on the demo verdict" "yes" \
+  "$(present "$WERK" "steps.demo.outputs.proven == 'true'")"
+assert "werk.yml refuses a go with no presented witness (supersede guard)" "yes" \
+  "$(present "$WERK" 'go-refused')"
 assert "werk.yml land job RUNS werk-accept on GO (#3311 GO=accept)" "yes" \
   "$(present "$LAND" 'werk-accept')"
 
