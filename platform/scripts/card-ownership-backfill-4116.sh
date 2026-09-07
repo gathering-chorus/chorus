@@ -15,7 +15,9 @@
 # projection uses. The HTTP door is not loosened and authz_allows is untouched.
 set -u
 
-ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+# The repo root is where this file lives, two levels up — never a home directory
+# baked into the file (hardcoded-path-guard, Kade 2026-09-07).
+ROOT="${CHORUS_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 QUERY="${FUSEKI_QUERY:-http://localhost:3030/pods/query}"
 GRAPH="${CARD_GRAPH:-urn:chorus:instances}"
 CARDS="${CARDS_CLI:-$ROOT/platform/scripts/cards}"
