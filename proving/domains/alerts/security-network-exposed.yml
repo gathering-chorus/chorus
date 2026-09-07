@@ -1,0 +1,65 @@
+# security-network-exposed.yml — Alert when a LAN-reachable route accepts an
+# unauthenticated request.
+#
+# Card #4085. Written because the alerts domain, once it could be queried at
+# all, answered "alerts for security: 0". We have security PROBES that measure —
+# authn-coverage (#3960) and authz-coverage (#3977) both run and both report —
+# and nothing that pages a human when one finds a hole. A monitor nobody routes
+# is a number in a log. That split is the whole reason alerts and monitors
+# became two domains.
+#
+# WHY THIS CONDITION AND NOT "COVERAGE DROPPED". #3965 established the
+# distinction that matters: loopback-bound is trust, NETWORK-bound is real
+# exposure. authn-coverage already scores that axis and prints
+# NETWORK-EXPOSED GAPS; #3966 and #3967 drove it to 0. This alert exists to
+# notice the day it stops being 0, which is the only number here worth waking
+# someone for. Alerting on total coverage percentage would page on ordinary
+# work — the number moves whenever a route is added — and would be muted within
+# a week, which is how several alerts in this directory earned their reputation.
+#
+# AND IT DISTINGUISHES THREE STATES, not two. An absent or silent probe exits 2
+# as "unmeasured". Reporting a missing measurement as zero gaps is the exact
+# defect that ran through 2026-09-06 and -07: the SHACL validator crashed and
+# reported a clean model, a deploy with no binaries reported everything current,
+# a pulse reading an empty log reported no unread nudges. This check refuses to
+# join that list.
+
+name: security-network-exposed
+description: A LAN-reachable route accepts an unauthenticated request — real exposure, not a loopback gap
+severity: critical
+schedule: "*/30 * * * *"
+domain: security   # #4085 — what this alert watches
+
+check: |
+  ROOT="${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}"
+  PROBE="$ROOT/platform/scripts/authn-coverage.sh"
+  if [ ! -x "$PROBE" ]; then
+    echo "unmeasured: authn-coverage.sh absent or not executable at $PROBE"
+    exit 2
+  fi
+  OUT="$(bash "$PROBE" 2>&1)" || true
+  # authn-coverage.sh:124 prints the machine line NETWORK_EXPOSED_GAPS=<n>.
+  # Line 123 above it is the same number in prose with a hyphen and a colon —
+  # I keyed on that one first and got "unmeasured" against a healthy probe,
+  # which is the check being wrong rather than the system. Key on the machine
+  # line; a format that changes must break this loudly, not read as zero.
+  N="$(printf '%s' "$OUT" | grep -oE 'NETWORK_EXPOSED_GAPS=[0-9]+' | grep -oE '[0-9]+$' | head -1)"
+  if [ -z "$N" ]; then
+    echo "unmeasured: probe ran but printed no NETWORK_EXPOSED_GAPS line"
+    exit 2
+  fi
+  if [ "$N" -eq 0 ]; then
+    echo "ok: 0 network-exposed gaps"
+    exit 0
+  fi
+  echo "exposed: $N network-reachable route(s) accept an unauthenticated request"
+  exit 1
+
+action: |
+  # At most once an hour, so a persistent hole nudges on the hour rather than
+  # every thirty minutes.
+  COOLDOWN="/tmp/alert-security-network-exposed-$(date '+%Y-%m-%d-%H')"
+  [ -f "$COOLDOWN" ] && exit 0
+  touch "$COOLDOWN"
+  "${CHORUS_ROOT:-$HOME/CascadeProjects/chorus}/platform/scripts/ops-nudge" silas \
+    "SECURITY: a LAN-reachable route accepts an unauthenticated request. Run: NETWORK=1 bash platform/scripts/authn-coverage.sh"
