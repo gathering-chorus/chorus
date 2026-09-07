@@ -1168,6 +1168,16 @@ run_all() {
     echo "nightly-suites: LEGS SKIPPED (NIGHTLY_LEGS_NOOP) — wrapper under test, no suite ran" >&2
     return 0
   fi
+  # #4111 — the coverage-flag unit test needs ONE lane, not all of them. Without
+  # this seam it called --run-all and sat for 15 minutes per test running smoke,
+  # app-eslint and the whole cargo lane against the real repo, inside the
+  # pipeline's own test leg. Narrower than NIGHTLY_LEGS_NOOP on purpose: the
+  # coverage lane really runs, so the negative proof still asserts the real argv.
+  if [ -n "${NIGHTLY_COVERAGE_ONLY:-}" ]; then
+    run_coverage
+    return 0
+  fi
+
   run_lint_ratchet
   # #3527 — folded tiers (was 3 competing runners): coverage (nightly-coverage #2207),
   # smoke + app-eslint (daily-review-quality). One runner, one report, one nudge.

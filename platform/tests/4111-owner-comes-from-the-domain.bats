@@ -24,18 +24,20 @@ owner() {
   [ "$(owner platform/tests/b.bats)" = "wren" ]
 }
 
-@test "negative proof: without the map the same file reads as the directory's owner" {
-  # The state the report was in every morning. If the map is ever silently
-  # dropped, this is what comes back — so the two must not look alike.
+@test "negative proof: without the map the same file does NOT read as kade" {
+  # The state the report was in every morning: no model answer, so the path
+  # rule decides. It cannot decide for platform/tests/, so it says "unowned"
+  # rather than blaming the directory's nearest role — that misattribution is
+  # what this card exists to end. The two answers must not look alike.
   : > "$NIGHTLY_OWNER_MAP"
-  [ "$(owner platform/tests/a.bats)" = "silas" ]
+  [ "$(owner platform/tests/a.bats)" = "unowned" ]
 }
 
 @test "a file the registry does not know falls back, it does not go blank" {
   printf '%s\t%s\n' "platform/tests/a.bats" "kade" > "$NIGHTLY_OWNER_MAP"
   run owner platform/tests/unknown.bats
   [ -n "$output" ]
-  [ "$output" = "silas" ]
+  [ "$output" = "unowned" ]
 }
 
 @test "an absolute path resolves the same as its repo-relative form" {
@@ -47,5 +49,5 @@ owner() {
   # awk matches the whole field, not a prefix — "platform/tests/a.bats.bak"
   # must not read as kade just because it starts with a mapped name.
   printf '%s\t%s\n' "platform/tests/a.bats" "kade" > "$NIGHTLY_OWNER_MAP"
-  [ "$(owner platform/tests/a.bats.bak)" = "silas" ]
+  [ "$(owner platform/tests/a.bats.bak)" = "unowned" ]
 }
