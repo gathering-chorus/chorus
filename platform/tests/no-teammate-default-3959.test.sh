@@ -43,7 +43,6 @@ hits=$(grep -rIn -E "$PATTERNS" \
       # a test fixture naming a role is data, not a production default
       skip=no
       if [ "${f#*test}" != "$f" ] || [ "${f#*spec}" != "$f" ]; then skip=yes; fi
-<<<<<<< HEAD
       # #4111 — and neither is a COMMENT. A default is a line of code; a note
       # ABOUT one is the record of why it changed. This guard flagged the very
       # comment written to explain a fix it had just demanded, which would make
@@ -51,15 +50,6 @@ hits=$(grep -rIn -E "$PATTERNS" \
       # Shallow on purpose: only the first token of the line decides.
       code="${hit#*:}"; code="${code#*:}"
       if printf '%s' "$code" | grep -qE '^[[:space:]]*(#|//|\*|--|/\*)'; then skip=yes; fi
-=======
-      # #4113 — WHO AM I vs WHO DO I TELL. This guard exists so a script never ACTS
-      # under a teammate name. A default RECIPIENT is different: the security lane
-      # belongs to Silas, and routing its red to him is ownership, not impersonation.
-      # Flagging those forced a correct routing default to be broken to satisfy the
-      # guard, which then broke the nudge-routing test — a guard that cannot tell the
-      # two apart makes the codebase worse.
-      if printf '%s' "$hit" | grep -qiE '(_owner=|_OWNER:-|recipient|notify_target)'; then skip=yes; fi
->>>>>>> 9575914fa (wren: #4119 — repairing three suites my own #4113 land broke, and the guard that made me break a correct default)
       [ "$skip" = yes ] || echo "$hit"
     done | sort)
 
@@ -70,7 +60,6 @@ if [ "$n" -gt 0 ]; then
   echo "  Use \"system\" for a script running outside a role session, or refuse." >&2
   exit 1
 fi
-<<<<<<< HEAD
 # #4111 negative proofs. The comment exemption above is exactly the kind of
 # widening that can quietly disarm a guard, so prove both directions every run.
 st=$(mktemp -d); trap 'rm -rf "$st"' EXIT
@@ -99,20 +88,24 @@ if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
   probe "NEGATIVE PROOF: a comment above a real default does not launder it" 1
   unset NO_TEAMMATE_SELFTEST
   [ "$selftest_fail" -eq 0 ] || { echo "no-teammate-default: FAIL — the guard cannot separate prose from a default"; exit 1; }
-=======
-# NEGATIVE PROOF (#3734) — the recipient exemption must not blind the guard to actors.
-_np=$(mktemp -d); trap 'rm -rf "$_np"' EXIT
-printf 'sec_owner="${X:-silas}"\n' > "$_np/recipient.sh"
-printf 'ROLE="${CHORUS_ROLE:-silas}"\n' > "$_np/actor.sh"
-_caught=$(grep -rIn -E "$PATTERNS" "$_np" 2>/dev/null | while IFS= read -r hit; do
-  printf '%s' "$hit" | grep -qiE '(_owner=|_OWNER:-|recipient|notify_target)' || basename "${hit%%:*}"
-done | sort -u)
-if [ "$_caught" = "actor.sh" ]; then
-  echo "no-teammate-default: negative proof OK — an ACTOR default is caught, a RECIPIENT default is not"
-else
-  echo "no-teammate-default: FAIL — the exemption does not separate actor from recipient (caught: '${_caught:-nothing}')" >&2
-  exit 1
->>>>>>> 9575914fa (wren: #4119 — repairing three suites my own #4113 land broke, and the guard that made me break a correct default)
+
+  # #4119 — the RECIPIENT exemption #4113 added here is GONE, and so is the proof
+  # that went with it. Two reasons, and the second is the real one.
+  #
+  # It collided: my rule exempted anything matching `_OWNER:-`, which swallowed
+  # #4111's own fixture `OWNER="${SEC_OWNER:-silas}"` — an ACTOR default it wrote
+  # to prove a comment cannot launder a real one. Two exemptions, each correct
+  # about its own case, and together a hole.
+  #
+  # And it was already dead. The only site it existed for was
+  # `NIGHTLY_SECURITY_OWNER:-silas` in nightly-suites.sh, and #4111 replaced that
+  # literal with `domain_owner security` — derived from the model, no teammate
+  # name in the source at all. With the exemption removed the guard passes over
+  # the whole tree, which is the measurement that says nothing needed it.
+  #
+  # The distinction it encoded (who I ACT as vs who I TELL) is still true and
+  # still worth knowing; it just does not need an exemption in a guard right now.
+  # If a real recipient default comes back, narrow it to that variable by name.
 fi
 
 echo "no-teammate-default: PASS — no role defaults to a teammate's name"
