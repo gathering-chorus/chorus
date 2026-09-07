@@ -1375,6 +1375,21 @@ fn run_tsc(werk: &str, pkg: &str) -> bool {
 /// `jest --ci` per TS package, deps guarded the same way (#3397).
 /// #3592 — `--json` capture: stdout is the machine result (per-case identity →
 /// TestResult emit), progress/failures stay on stderr and are echoed on red.
+/// #4111 — does this package's jest config declare a `hermetic` project?
+/// Read, not assumed: `--selectProjects hermetic` against a config with no
+/// projects is a warning and an empty run, which would be a vacuous green.
+fn jest_has_hermetic_project(pkg_dir: &str) -> bool {
+    for name in ["jest.config.js", "jest.config.cjs", "jest.config.ts"] {
+        let p = format!("{}/{}", pkg_dir, name);
+        if let Ok(src) = std::fs::read_to_string(&p) {
+            if src.contains("displayName: 'hermetic'") || src.contains("displayName: \"hermetic\"") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn run_jest(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     run_jest_with(werk, pkg, None)
 }
@@ -1399,6 +1414,24 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
     cmd.env("CHORUS_CONTEXT", "");
     cmd.args(["--ci", "--forceExit", "--passWithNoTests", "--json"])
         .current_dir(&pkg_dir);
+    // #4111 — run the HERMETIC project only. platform/api's jest config declares
+    // two projects, `hermetic` and `integration`; bare jest runs both. Inside act
+    // there is no live stack, so every *.integration.test.ts fails on a service
+    // it cannot reach: 150 failures across 15 suites on run 29, none of them
+    // about the code. The registry-unreachable fallback made it worse by running
+    // the FULL package suite, turning a registry outage into a wall of red that
+    // reads exactly like a broken build.
+    //
+    // The integration tier is not skipped in general — it has its own gated lane
+    // (`integration: N needs-stack test(s) ran with the live stack`). This says
+    // only that the hermetic leg runs hermetic tests, which is what the config
+    // has declared since the projects were split.
+    //
+    // Packages without projects ignore the flag with a warning rather than
+    // failing, so this is safe across every package the lane runs.
+    if jest_has_hermetic_project(&pkg_dir) {
+        cmd.arg("--selectProjects").arg("hermetic");
+    }
     if let Some(n) = max_workers {
         cmd.arg(format!("--maxWorkers={}", n.max(1)));
     }
