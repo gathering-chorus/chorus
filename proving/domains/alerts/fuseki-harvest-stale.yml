@@ -25,3 +25,4 @@ action: |
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "fuseki-harvest: SPARQL COUNT of photo triples in the harvest graph = 0" 2>/dev/null || true
+domain: integrations   # #4085 — what this alert watches; the harvester refuses an undeclared alert

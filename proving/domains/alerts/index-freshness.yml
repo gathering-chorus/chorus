@@ -42,3 +42,4 @@ for s in d['sources']:
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "index-freshness: stale sources detected. Semantic search degraded.
 $STALE" 2>/dev/null || true
+domain: search   # #4085 — what this alert watches; the harvester refuses an undeclared alert

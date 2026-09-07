@@ -38,11 +38,23 @@ chorus:hasScope a owl:DatatypeProperty ;
 # scope was briefly here too; Service instances ended up in
 # urn:chorus:instances, already in every role's scope, after the first home
 # turned out to be the harvester's PUT-replaced graph.)
+# #4085 — alerts and monitors added for silas only, because silas owns both
+# domains (chorus:alerts and chorus:monitors are ownedBy chorus:role-silas).
+# The write door refused every Alert row with "target graph
+# urn:chorus:domains:alerts is not in this token's scope and this class carries
+# no row owner" — correct refusal, missing grant.
+#
+# Worth naming, not fixed here: this list is hand-maintained and identical for
+# all three roles, so every new domain graph needs three manual edits and
+# nothing ties a grant to the ownership already in the model. Scope should be
+# DERIVED from ownedBy. That is its own card.
 chorus:principal-silas
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
+                    "urn:chorus:domains:alerts"^^xsd:anyURI ,
+                    "urn:chorus:domains:monitors"^^xsd:anyURI ,
                     "urn:chorus:domains:documents"^^xsd:anyURI .
 
 chorus:principal-wren

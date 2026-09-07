@@ -34,3 +34,4 @@ action: |
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "chorus-mcp-down: /mcp endpoint not responding to initialize. All MCP tool calls (chorus_nudge_message, etc.) are now failing for every role. Check chorus-api status." 2>/dev/null || true
+domain: services   # #4085 — what this alert watches; the harvester refuses an undeclared alert

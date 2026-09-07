@@ -51,3 +51,4 @@ check: |
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" kade "crawler-error: domain crawl failing persistently (consecutive>=2). Check /tmp/crawler-domain-status.json for failing domain(s)." 2>/dev/null || true
+domain: heralds   # #4085 — what this alert watches; the harvester refuses an undeclared alert

@@ -87,7 +87,7 @@ chorus:alerts a owl:Class, chorus:Domain ;
     chorus:atStream chorus:chorusStream ;
     chorus:definesVocabulary chorus:Alert ;
     chorus:status "building" ;
-    chorus:gaps "20 alerting sources counted on disk (7 Grafana rules, 13 ops-nudge scripts); rows harvested from both, none typed. Not yet covered: which alerts have fired and how often — that needs the spine join, and it is the next card, not a claim this one makes." ;
+    chorus:gaps "45 alert rows live, from three homes: 25 declared YAML under proving/domains/alerts, 7 Grafana provisioned rules, 13 scripts firing through ops-nudge. The first 25 were missed on the first pass — the domain row already said repoTarget proving/domains/alerts and the harvester looked everywhere except there. Every row now declares the domain it watches, in its own file. Not yet covered: which alerts have actually fired and how often — that needs the spine join, and it is the next card, not a claim this one makes." ;
     chorus:instancesGraph "urn:chorus:domains:alerts" ;
     chorus:hasDesignDoc chorus:document-alerts-service-design ;
     chorus:repoTarget "proving/domains/alerts" .

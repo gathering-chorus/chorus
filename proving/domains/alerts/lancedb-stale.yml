@@ -53,3 +53,4 @@ action: |
   # write in last 24h)" while the check had used 72h since #3617 — an alarm
   # misreporting its own threshold to the only person who acts on it.
   "$OPS_NUDGE" silas "lancedb-stale: $STATUS — gathering app document index (semantic search)" 2>/dev/null || true
+domain: search   # #4085 — what this alert watches; the harvester refuses an undeclared alert

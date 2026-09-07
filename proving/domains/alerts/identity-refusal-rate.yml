@@ -22,3 +22,4 @@ action: |
   # $STATUS carries the count, window, floor, and top-affected role. The reader
   # draws the conclusion; this action states only what was measured (#3519).
   "$OPS_NUDGE" --force silas "$STATUS" 2>/dev/null || true
+domain: identity   # #4085 — what this alert watches; the harvester refuses an undeclared alert

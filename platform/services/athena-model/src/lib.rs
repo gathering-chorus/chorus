@@ -72,6 +72,14 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("gate", "Gate", false),
     ("decision", "Decision", false),
     ("document", "Document", false),
+    // #4085 — Alert and Monitor. athena-make generated their full read+write
+    // surface the moment the classes reached the graph, and every POST /alerts
+    // then died on unknown-kind: the generated surface outruns this table,
+    // which is hand-maintained. The ValueStream comment above names the same
+    // thing — "the generate-vs-write drift" — so this is its third instance,
+    // not a new problem. Type-prefixed: alert-<name>, monitor-<name>.
+    ("alert", "Alert", false),
+    ("monitor", "Monitor", false),
     ("revision", "Revision", false),   // #4102 — a prior version of a row, kept by the door at replace
     // #4089 — Commitment rows (a service design's promises, #4064) deploy through
     // the INSTANCE_SET like every cross-domain instance (Silas's OWL-DBA ruling

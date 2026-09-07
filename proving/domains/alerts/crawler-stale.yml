@@ -54,3 +54,4 @@ check: |
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" kade "crawler-stale: no crawler.domain.indexed in expected window. Hydration loop stalled. Check launchctl list com.chorus.crawler-index + tail ~/Library/Logs/Chorus/crawler-index.log" 2>/dev/null || true
+domain: heralds   # #4085 — what this alert watches; the harvester refuses an undeclared alert

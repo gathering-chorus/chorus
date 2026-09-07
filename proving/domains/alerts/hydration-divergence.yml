@@ -49,3 +49,4 @@ check: |
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" kade "hydration-divergence: crawler missed its 30-min cadence (StartInterval=1800 is the sole trigger by design; no WatchPaths since 2026-05-24). Check launchctl print gui/501/com.chorus.crawler-index + the index-crawler-snapshots.sh log." 2>/dev/null || true
+domain: heralds   # #4085 — what this alert watches; the harvester refuses an undeclared alert

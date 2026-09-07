@@ -28,3 +28,4 @@ action: |
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] gathering-app DOWN' --arg from 'system' '{from: $from, text: $text}')" \
     &>/dev/null || true
+domain: services   # #4085 — what this alert watches; the harvester refuses an undeclared alert

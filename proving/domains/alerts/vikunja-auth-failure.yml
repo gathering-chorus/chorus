@@ -33,3 +33,4 @@ action: |
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "vikunja: {job=vikunja} matched /status=401/ count=$COUNT in last 5m (real auth-error shape)" 2>/dev/null || true
+domain: board   # #4085 — what this alert watches; the harvester refuses an undeclared alert

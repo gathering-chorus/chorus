@@ -52,3 +52,4 @@ action: |
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "loom-principles: per-role principle-set hashes are not all equal across silas/kade/wren" 2>/dev/null || true
+domain: principles   # #4085 — what this alert watches; the harvester refuses an undeclared alert

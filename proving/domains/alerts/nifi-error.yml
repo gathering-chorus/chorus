@@ -39,3 +39,4 @@ action: |
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] NiFi pipeline errors on Bedroom' --arg from 'system' '{from: $from, text: $text}')" \
     &>/dev/null || true
+domain: integrations   # #4085 — what this alert watches; the harvester refuses an undeclared alert

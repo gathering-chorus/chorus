@@ -47,3 +47,4 @@ action: |
     -H 'Content-Type: application/json' \
     -d "$(jq -n --arg text '[alert] daily review did not fire' --arg from 'system' '{from: $from, text: $text}')" \
     &>/dev/null || true
+domain: roles   # #4085 — what this alert watches; the harvester refuses an undeclared alert

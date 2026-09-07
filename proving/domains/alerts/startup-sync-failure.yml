@@ -49,3 +49,4 @@ print('sync failed — check Loki for details')
 
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "startup-sync alert: Fuseki is DOWN and sync failed. Error: $ERROR_DETAIL" 2>/dev/null || true
+domain: services   # #4085 — what this alert watches; the harvester refuses an undeclared alert

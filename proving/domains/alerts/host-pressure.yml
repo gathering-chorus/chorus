@@ -29,3 +29,4 @@ action: |
   # swap_used_pct, the thresholds, and the largest resident process; the reader
   # draws the conclusion.
   "$OPS_NUDGE" silas "host-pressure: $STATUS" 2>/dev/null || true
+domain: infrastructure   # #4085 — what this alert watches; the harvester refuses an undeclared alert

@@ -57,3 +57,4 @@ action: |
   touch "$COOLDOWN"
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
   "$OPS_NUDGE" silas "loom-principles: SPARQL COUNT of principles with no parent edge and not flagged abstract is > 0" 2>/dev/null || true
+domain: principles   # #4085 — what this alert watches; the harvester refuses an undeclared alert
