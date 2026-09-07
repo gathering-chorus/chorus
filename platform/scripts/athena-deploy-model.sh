@@ -362,7 +362,14 @@ fi
 if [ -z "${TTL:-}" ] || [ "${SHACL_REPORT:-0}" = "1" ]; then
   if command -v "$SHACL_BIN" >/dev/null 2>&1; then
     _v2shapes="$CHORUS_ROOT/roles/silas/ontology/chorus.ttl"
-    _union="$(mktemp)"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
+    # #4085 — the union file MUST end in .ttl. Jena picks its parser from the
+    # file extension, and mktemp yields an extensionless name, so every full
+    # deploy died with "Failed to determine the content type" before reading a
+    # single triple. Combined with `2>/dev/null` below, the reason was never
+    # visible: the leg reported violations=unknown (and, before #3731, a clean
+    # "0 violations") on every run since the union was introduced. The
+    # validator has therefore never actually validated this model.
+    _union="$(mktemp).ttl"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
     if _shacl_out=$("$SHACL_BIN" validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null); then
       _shacl_n=$(printf '%s' "$_shacl_out" | grep -c 'sh:resultSeverity' 2>/dev/null || true)
       echo "athena-deploy-model: SHACL report (V2 shapes, non-gating) — ${_shacl_n:-0} violation(s) [migration-progress signal, not a gate]"
