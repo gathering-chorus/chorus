@@ -42,7 +42,16 @@ async function renderFacetTables(el, fid, opts) {
     // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
     { t: 'Logs', u: OWL + '/logsources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
-    { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
+    // #4085 — the Alerts fold now reads chorus:Alert rows from the graph,
+    // filtered on hasDomain, exactly as #4084 did for Logs. It used to read the
+    // YAML files under proving/domains/alerts straight off disk, so the fold
+    // could only ever show file-shaped alerts: the 7 Grafana provisioned rules
+    // and the 13 scripts that page a role through ops-nudge were invisible to
+    // it, because they are not files in that directory. 45 rows now, three
+    // homes, each carrying the domain it watches.
+    { t: 'Alerts', u: OWL + '/alerts?limit=500', k: 'items', graph: true,
+      filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
+      cols: ['label', 'alertSource', 'alertFile'] },
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },
     { t: 'Actors', u: ATHENA + fid + '/actors', k: 'actors', cols: ['label', 'role', 'action'] },
     { t: 'Scenarios', u: ATHENA + fid + '/scenarios', k: 'scenarios', cols: ['label', 'given', 'when', 'then'] },
