@@ -107,7 +107,9 @@ fi
 # 403s those with no mutation risk (refused before the body is processed).
 # Surfaces the role HOLDS are SKIPPED (probing them could mutate). Override with
 # CHORUS_AUTHZ_PROBE_TOKEN + CHORUS_AUTHZ_PROBE_LACKS="scopeA,scopeB".
-PROBE_ROLE="${CHORUS_AUTHZ_PROBE_ROLE:-silas}"
+# #4113 — was ":-silas". A script running outside a role session must not act
+# under a teammate's name; "system" is the honest actor (#3959).
+PROBE_ROLE="${CHORUS_AUTHZ_PROBE_ROLE:-system}"
 if [ -z "$TOKEN" ]; then
   MINT="$(command -v chorus-identity-token 2>/dev/null)"
   [ -z "$MINT" ] && [ -x "${ROOT_EARLY:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/chorus-identity-token" ] \
