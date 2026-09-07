@@ -22,12 +22,24 @@ test_fail() { echo "  FAIL: $1"; ((FAIL++)); }
 echo "=== ownership partOf chain (#3450 model-half) ==="
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-TTL="$REPO_ROOT/roles/silas/ontology/chorus.ttl"
-[ -f "$TTL" ] || { test_fail "chorus.ttl missing at $TTL"; echo "=== Results: $PASS passed, $FAIL failed ==="; exit 1; }
+# #4113 — this read ONE file, roles/silas/ontology/chorus.ttl, with a regex that only
+# matched a standalone one-line triple ending in a period. The model has been spread
+# across per-role ontology files for months and most edges are authored inside a
+# predicate list (`... ; chorus:partOf chorus:x ;`). So the walk stopped at `werk` and
+# `borgProduct` and reported their chains as broken, while the live graph has
+# werk partOf chorus and borgProduct partOf chorusProduct — measured 2026-09-07.
+# It was reporting on the file it could see, not on the model.
+# Products and value streams are authored under designing/data (the INSTANCE_SET), not
+# under roles/. Reading only roles/ left chorus:werk invisible, so gates-service's chain
+# appeared to dead-end at a Product with no parent — while product-instances.ttl:468
+# defines it. The model is every authored .ttl, not one directory.
+TTLS=$( { find "$REPO_ROOT/roles" -name "*.ttl" -not -path "*/node_modules/*";
+          find "$REPO_ROOT/designing/data" -name "*.ttl" -not -path "*/node_modules/*" 2>/dev/null; } | sort)
+[ -n "$TTLS" ] || { test_fail "no ontology .ttl found under $REPO_ROOT/roles"; echo "=== Results: $PASS passed, $FAIL failed ==="; exit 1; }
 
-python3 - "$TTL" <<'PY'
+python3 - $TTLS <<'PY'
 import sys, re
-ttl = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+ttl = "\n".join(open(f, encoding="utf-8", errors="replace").read() for f in sys.argv[1:])
 
 PASS = FAIL = 0
 def p(m):
@@ -42,7 +54,18 @@ else:
     f("chorus:partOf is not defined as owl:ObjectProperty")
 
 # Collect partOf triples in the simple one-line form: chorus:S chorus:partOf chorus:O .
-edges = re.findall(r"chorus:([\w-]+)\s+chorus:partOf\s+chorus:([\w-]+)\s*\.", ttl)
+# #4113 — subject-scoped scan. A subject block runs from `chorus:name a ...` to the
+# terminating period, and partOf may sit anywhere inside it, separated by `;`. The old
+# pattern required the triple to be its own one-line statement, which is the least
+# common way any of this is actually written.
+edges = []
+for m in re.finditer(r"^chorus:([\w-]+)\s+a\s+(.*?)(?<!\\)\s\.\s*$", ttl, re.S | re.M):
+    subj, block = m.group(1), m.group(2)
+    for po in re.findall(r"chorus:partOf\s+chorus:([\w-]+)", block):
+        edges.append((subj, po))
+# plus the standalone one-line form the original looked for
+edges += re.findall(r"^chorus:([\w-]+)\s+chorus:partOf\s+chorus:([\w-]+)\s*\.", ttl, re.M)
+edges = list(dict.fromkeys(edges))
 parent = {}
 multi = []
 for s, o in edges:
