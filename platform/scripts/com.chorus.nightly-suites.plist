@@ -20,21 +20,18 @@
          and finishes in 170s by day. 06:00 starts after the backup ends. If
          platform/api completes tonight the hypothesis holds; if it is still cut
          off, the cause is something its own tests wait on at night. -->
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>6</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>13</integer>
-            <key>Minute</key>
-            <integer>30</integer>
-        </dict>
-    </array>
+    	<key>StartCalendarInterval</key>
+	<array>
+		<!-- #4085 — 03:00 only. The 06:00 and 13:30 slots were removed on Jeff's
+		     instruction; this repo copy kept declaring them, so a peer syncing
+		     "drift" re-installed them twice while believing he was fixing it. -->
+		<dict>
+			<key>Hour</key>
+			<integer>3</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
     <key>StandardOutPath</key>
     <string>/Users/jeffbridwell/Library/Logs/Chorus/nightly-suites.log</string>
     <key>StandardErrorPath</key>
