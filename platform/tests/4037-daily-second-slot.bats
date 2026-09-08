@@ -25,8 +25,19 @@ setup() {
   printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
 }
 
-@test "the agent carries BOTH daily slots (03:00 and 13:30)" {
-  [ "$(count_slots "$PLIST")" -ge 2 ]
+# RETIRED REQUIREMENT, 2026-09-03. This test asserted two slots because that is
+# what Jeff asked for on 08-31 (#4037). On 09-03 he had the schedule
+# consolidated: 03:00 single slot, "was 06:00 + 13:30 — both gone", with the
+# repo copies left saying the old hours as a named loose end. That loose end is
+# what #4085 corrects. An assertion that outlives its decision is not a test,
+# it is a second opinion nobody asked for — it would have reverted the schedule
+# the next time someone made the suite green.
+#
+# Now asserts what is actually wanted, so a re-added slot fails loudly.
+@test "the nightly agent carries exactly the 03:00 slot (#4064 consolidation)" {
+  [ "$(count_slots "$PLIST")" -eq 1 ]
+  run /usr/libexec/PlistBuddy -c "Print :StartCalendarInterval:0:Hour" "$PLIST"
+  [ "$output" = "3" ]
 }
 
 @test "negative proof: the check separates its states — a single-slot plist reads 1, not 2" {
