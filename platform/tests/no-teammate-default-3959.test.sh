@@ -88,6 +88,24 @@ if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
   probe "NEGATIVE PROOF: a comment above a real default does not launder it" 1
   unset NO_TEAMMATE_SELFTEST
   [ "$selftest_fail" -eq 0 ] || { echo "no-teammate-default: FAIL — the guard cannot separate prose from a default"; exit 1; }
+
+  # #4119 — the RECIPIENT exemption #4113 added here is GONE, and so is the proof
+  # that went with it. Two reasons, and the second is the real one.
+  #
+  # It collided: my rule exempted anything matching `_OWNER:-`, which swallowed
+  # #4111's own fixture `OWNER="${SEC_OWNER:-silas}"` — an ACTOR default it wrote
+  # to prove a comment cannot launder a real one. Two exemptions, each correct
+  # about its own case, and together a hole.
+  #
+  # And it was already dead. The only site it existed for was
+  # `NIGHTLY_SECURITY_OWNER:-silas` in nightly-suites.sh, and #4111 replaced that
+  # literal with `domain_owner security` — derived from the model, no teammate
+  # name in the source at all. With the exemption removed the guard passes over
+  # the whole tree, which is the measurement that says nothing needed it.
+  #
+  # The distinction it encoded (who I ACT as vs who I TELL) is still true and
+  # still worth knowing; it just does not need an exemption in a guard right now.
+  # If a real recipient default comes back, narrow it to that variable by name.
 fi
 
 echo "no-teammate-default: PASS — no role defaults to a teammate's name"
