@@ -4296,3 +4296,78 @@ not ok 6 something genuinely broke
         assert_eq!(split_tap_skip("the name # skip"), Some("the name"));
     }
 }
+
+#[cfg(test)]
+mod scope_proving_domains_4085 {
+    use super::*;
+
+    fn units() -> Vec<ScopeUnit> {
+        vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }]
+    }
+
+    /// #4085 added 26 alert definitions under proving/domains/alerts/. Each one
+    /// hit the unmapped escape, so a four-file diff ran 296 units for 45
+    /// minutes — runs 8 and 20, both logging reason=unmapped-or-forced.
+    #[test]
+    fn alert_definitions_do_not_force_a_full_run() {
+        let changed: Vec<String> = vec![
+            "proving/domains/alerts/app-down.yml".into(),
+            "proving/domains/alerts/host-pressure.yml".into(),
+        ];
+        match scope_unit_names(&changed, &units(), &[], false) {
+            ScopeVerdict::Scoped(names) => assert!(
+                names.is_empty(),
+                "an alert definition belongs to no crate and no package, so it names no unit; \
+the suites that read it are unioned in by affected_bats_suites. got {:?}",
+                names
+            ),
+            ScopeVerdict::Full(why) => panic!(
+                "proving/domains must not escape to FULL — that is the 45-minute run. reason: {}",
+                why
+            ),
+        }
+    }
+
+    /// NEGATIVE PROOF (#3734). The unmapped escape is the defense that makes
+    /// under-scoping unrepresentable; widening it for proving/domains must not
+    /// widen it for anything else. A genuinely unmapped file still forces FULL,
+    /// and still names itself.
+    #[test]
+    fn a_genuinely_unmapped_file_still_forces_full() {
+        let changed: Vec<String> = vec!["proving/somewhere-else/thing.yml".into()];
+        match scope_unit_names(&changed, &units(), &[], false) {
+            ScopeVerdict::Full(why) => assert!(
+                why.contains("proving/somewhere-else/thing.yml"),
+                "FULL must name the file that caused it; got {}",
+                why
+            ),
+            ScopeVerdict::Scoped(n) => panic!(
+                "an unmapped path was silently scoped to {:?} — the escape is gone",
+                n
+            ),
+        }
+    }
+
+    /// The sibling it was modelled on keeps its behaviour: a flows spec does
+    /// not escape to FULL.
+    ///
+    /// It also does not survive as a name, and that is worth writing down. The
+    /// final step filters names down to the units passed in, and "ui-flows" is
+    /// never one of them — units are crates and TS packages. So #4000's
+    /// names.insert("ui-flows") is dropped on the way out, and a flows-only
+    /// diff scopes to the empty set exactly like an alert definition does. I
+    /// asserted the name survived, watched this test fail, and found that out.
+    /// The behaviour I copied was already the behaviour I wrote.
+    #[test]
+    fn proving_flows_still_does_not_force_full() {
+        let changed: Vec<String> = vec!["proving/flows/clearing-ui.spec.cjs".into()];
+        match scope_unit_names(&changed, &units(), &[], false) {
+            ScopeVerdict::Scoped(names) => assert!(
+                names.is_empty(),
+                "the tail filter keeps only real units; got {:?}",
+                names
+            ),
+            ScopeVerdict::Full(why) => panic!("flows must stay scoped; got FULL: {}", why),
+        }
+    }
+}

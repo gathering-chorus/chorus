@@ -80,6 +80,26 @@ pub fn scope_unit_names(
             names.insert("ui-flows".to_string());
             continue;
         }
+        // #4085 — proving/domains/<domain>/*.yml are alert and monitor
+        // DEFINITIONS. They belong to no crate and no TS package, so every one
+        // of them hit the unmapped escape below. #4085 added 26 of them, which
+        // turned a 4-file diff into a 296-unit, 45-minute run — measured twice,
+        // runs 8 and 20, both printing "reason=unmapped-or-forced units=296".
+        //
+        // They are NOT scope_irrelevant: platform/tests carries suites that read
+        // them (fuseki-harvest-stale-alert.bats, 4111-alert-test-reads-the-pair
+        // .bats, nudge-cleanup-retirement.bats, test-daily-review.sh). Calling
+        // them irrelevant would silently skip real tests — the failure mode the
+        // unmapped escape exists to prevent.
+        //
+        // They add no UNIT name because a unit is a crate or a package and these
+        // are neither. The suites that cover them are unioned in separately by
+        // affected_bats_suites (#3917), which runs after this scope and keys on
+        // the same changed-file list. So: scoped, not escaped, and the tests
+        // that actually read these files still run.
+        if f.starts_with("proving/domains/") {
+            continue;
+        }
         return ScopeVerdict::Full(format!("unmapped:{}", f));
     }
     loop {
