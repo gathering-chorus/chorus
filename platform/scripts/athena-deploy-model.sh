@@ -369,7 +369,20 @@ if [ -z "${TTL:-}" ] || [ "${SHACL_REPORT:-0}" = "1" ]; then
     # visible: the leg reported violations=unknown (and, before #3731, a clean
     # "0 violations") on every run since the union was introduced. The
     # validator has therefore never actually validated this model.
-    _union="$(mktemp).ttl"; cat "${MODEL_SET[@]}" > "$_union" 2>/dev/null
+    # #4085 (second cause) — and every member must be BOM-stripped as it goes in.
+    # security-model-3618.ttl began with a UTF-8 BOM. Jena tolerates one at the
+    # START of a file, so riot validated it alone and nobody noticed; inside a
+    # concatenation the same three bytes land mid-stream and the whole union
+    # dies at that line with "Out of place: [KEYWORD:]". With the extension fix
+    # above this was the NEXT crash, not the last one — the leg still reported
+    # violations=unknown on every full deploy. Stripping per file, rather than
+    # only fixing the one file, is the difference between this recurring on the
+    # next authored .ttl and not.
+    _union="$(mktemp).ttl"; : > "$_union"
+    for _m in "${MODEL_SET[@]}"; do
+      [ -f "$_m" ] || continue
+      LC_ALL=C sed $'1s/^\xef\xbb\xbf//' "$_m" >> "$_union" 2>/dev/null
+    done
     if _shacl_out=$("$SHACL_BIN" validate --shapes "$_v2shapes" --data "$_union" 2>/dev/null); then
       _shacl_n=$(printf '%s' "$_shacl_out" | grep -c 'sh:resultSeverity' 2>/dev/null || true)
       echo "athena-deploy-model: SHACL report (V2 shapes, non-gating) — ${_shacl_n:-0} violation(s) [migration-progress signal, not a gate]"
