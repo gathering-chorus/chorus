@@ -2513,6 +2513,36 @@ pub fn ui_plan(fired: bool, registered: usize) -> Option<CheckKind> {
 
 /// #3920 — playwright's terminal summary: "N passed" / "M failed" lines.
 /// None = no recognizable summary (crash before running — caller fails loud).
+/// #4119 — what a playwright run that printed NO summary actually was.
+///
+/// Two very different things reach that branch and were reported as one word,
+/// "crashed": a runner that fell over, and a run whose file filters matched no
+/// spec at all, which playwright reports as `Error: No tests found.` and exits
+/// non-zero. Silas's run 8 hit the second and read the verdict as the first, so
+/// the ui-flows red sent a reader hunting a crash that never happened.
+///
+/// Both stay RED — a leg asked to run specs and running none is a real gap, and
+/// a silent green here is what a filter typo would buy. What changes is that the
+/// verdict NAMES which of the two states it is.
+#[derive(Debug, PartialEq, Eq)]
+pub enum PlaywrightNoSummary {
+    /// the filters selected nothing — nothing ran, and nothing crashed
+    SelectedNoSpec,
+    /// the runner produced no summary for some other reason
+    Crashed,
+}
+
+pub fn classify_playwright_no_summary(out: &str) -> PlaywrightNoSummary {
+    // playwright's own wording for an empty selection, matched case-insensitively
+    // because the phrasing has moved between "No tests found" and "no tests found".
+    let hay = out.to_lowercase();
+    if hay.contains("no tests found") {
+        PlaywrightNoSummary::SelectedNoSpec
+    } else {
+        PlaywrightNoSummary::Crashed
+    }
+}
+
 pub fn parse_playwright_summary(out: &str) -> Option<(usize, usize)> {
     let mut passed: Option<usize> = None;
     let mut failed: usize = 0;

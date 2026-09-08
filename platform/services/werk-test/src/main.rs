@@ -2350,7 +2350,21 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();
                     eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
-                    (false, " (no playwright summary — crashed before running, fail loud)".to_string())
+                    // #4119 — "the filter matched no spec" and "the runner fell
+                    // over" are different states and were printed as one word.
+                    // Both are still red; the verdict now says which.
+                    match werk_test::classify_playwright_no_summary(&text) {
+                        werk_test::PlaywrightNoSummary::SelectedNoSpec => {
+                            let asked: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+                            (false, format!(
+                                " (playwright selected NO spec — nothing ran, nothing crashed; \
+filters asked for: {}){}",
+                                if asked.is_empty() { "<none>".to_string() } else { asked.join(", ") },
+                                excluded))
+                        }
+                        werk_test::PlaywrightNoSummary::Crashed =>
+                            (false, format!(" (no playwright summary — crashed before running, fail loud){}", excluded)),
+                    }
                 }
             }
         }

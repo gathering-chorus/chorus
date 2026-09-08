@@ -1435,3 +1435,39 @@ fn a_suite_is_run_by_what_its_shebang_says_not_its_extension_4106() {
     // a mention of bats in ordinary first-line text is not a shebang
     assert_eq!(runner_for("# bats lives next door", "platform/tests/a.test.sh"), "bash");
 }
+
+// #4119 — a playwright run with no summary is two states, not one.
+//
+// werk-test reported both as "crashed before running". Silas's run 8 hit the
+// other one: the file filters matched no spec, playwright printed
+// `Error: No tests found.` and exited non-zero, and the verdict sent him
+// looking for a crash that never happened. Both stay RED — a leg asked to run
+// specs and running none is a real gap — but the verdict has to say which.
+#[test]
+fn a_filter_that_selects_no_spec_is_not_a_crash() {
+    use werk_test::{classify_playwright_no_summary, PlaywrightNoSummary};
+
+    let empty_selection = "Running 0 tests using 0 workers\nError: No tests found.\n";
+    assert_eq!(PlaywrightNoSummary::SelectedNoSpec,
+               classify_playwright_no_summary(empty_selection));
+
+    // the wording has moved between releases; case must not decide the verdict
+    assert_eq!(PlaywrightNoSummary::SelectedNoSpec,
+               classify_playwright_no_summary("error: no tests found"));
+}
+
+// NEGATIVE PROOF (#3734) — the classifier is only worth having if it can still
+// say "crashed" when the runner actually crashed. A rule that answered
+// SelectedNoSpec for everything would pass the test above and tell us nothing.
+#[test]
+fn negative_proof_a_real_crash_is_still_reported_as_a_crash() {
+    use werk_test::{classify_playwright_no_summary, PlaywrightNoSummary};
+
+    let real_crash = "node:internal/modules/cjs/loader:1143\n  throw err;\n  \
+Error: Cannot find module '@playwright/test'\n";
+    assert_eq!(PlaywrightNoSummary::Crashed,
+               classify_playwright_no_summary(real_crash));
+
+    // and an empty/silent runner is a crash too, not an empty selection
+    assert_eq!(PlaywrightNoSummary::Crashed, classify_playwright_no_summary(""));
+}
