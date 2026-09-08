@@ -43,6 +43,7 @@ hits=$(grep -rIn -E "$PATTERNS" \
       # a test fixture naming a role is data, not a production default
       skip=no
       if [ "${f#*test}" != "$f" ] || [ "${f#*spec}" != "$f" ]; then skip=yes; fi
+<<<<<<< HEAD
       # #4111 — and neither is a COMMENT. A default is a line of code; a note
       # ABOUT one is the record of why it changed. This guard flagged the very
       # comment written to explain a fix it had just demanded, which would make
@@ -50,6 +51,15 @@ hits=$(grep -rIn -E "$PATTERNS" \
       # Shallow on purpose: only the first token of the line decides.
       code="${hit#*:}"; code="${code#*:}"
       if printf '%s' "$code" | grep -qE '^[[:space:]]*(#|//|\*|--|/\*)'; then skip=yes; fi
+=======
+      # #4113 — WHO AM I vs WHO DO I TELL. This guard exists so a script never ACTS
+      # under a teammate name. A default RECIPIENT is different: the security lane
+      # belongs to Silas, and routing its red to him is ownership, not impersonation.
+      # Flagging those forced a correct routing default to be broken to satisfy the
+      # guard, which then broke the nudge-routing test — a guard that cannot tell the
+      # two apart makes the codebase worse.
+      if printf '%s' "$hit" | grep -qiE '(_owner=|_OWNER:-|recipient|notify_target)'; then skip=yes; fi
+>>>>>>> 9575914fa (wren: #4119 — repairing three suites my own #4113 land broke, and the guard that made me break a correct default)
       [ "$skip" = yes ] || echo "$hit"
     done | sort)
 
@@ -60,6 +70,7 @@ if [ "$n" -gt 0 ]; then
   echo "  Use \"system\" for a script running outside a role session, or refuse." >&2
   exit 1
 fi
+<<<<<<< HEAD
 # #4111 negative proofs. The comment exemption above is exactly the kind of
 # widening that can quietly disarm a guard, so prove both directions every run.
 st=$(mktemp -d); trap 'rm -rf "$st"' EXIT
@@ -88,6 +99,20 @@ if [ -z "${NO_TEAMMATE_SELFTEST:-}" ]; then
   probe "NEGATIVE PROOF: a comment above a real default does not launder it" 1
   unset NO_TEAMMATE_SELFTEST
   [ "$selftest_fail" -eq 0 ] || { echo "no-teammate-default: FAIL — the guard cannot separate prose from a default"; exit 1; }
+=======
+# NEGATIVE PROOF (#3734) — the recipient exemption must not blind the guard to actors.
+_np=$(mktemp -d); trap 'rm -rf "$_np"' EXIT
+printf 'sec_owner="${X:-silas}"\n' > "$_np/recipient.sh"
+printf 'ROLE="${CHORUS_ROLE:-silas}"\n' > "$_np/actor.sh"
+_caught=$(grep -rIn -E "$PATTERNS" "$_np" 2>/dev/null | while IFS= read -r hit; do
+  printf '%s' "$hit" | grep -qiE '(_owner=|_OWNER:-|recipient|notify_target)' || basename "${hit%%:*}"
+done | sort -u)
+if [ "$_caught" = "actor.sh" ]; then
+  echo "no-teammate-default: negative proof OK — an ACTOR default is caught, a RECIPIENT default is not"
+else
+  echo "no-teammate-default: FAIL — the exemption does not separate actor from recipient (caught: '${_caught:-nothing}')" >&2
+  exit 1
+>>>>>>> 9575914fa (wren: #4119 — repairing three suites my own #4113 land broke, and the guard that made me break a correct default)
 fi
 
 echo "no-teammate-default: PASS — no role defaults to a teammate's name"

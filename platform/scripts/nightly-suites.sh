@@ -1225,9 +1225,13 @@ notify_results() {
   # #3922 — the security lane routes to the SECURITY owner as its own signal,
   # never buried in the per-owner wall. Owner is env-overridable; the model
   # (security domain ownedBy) is the authority when they disagree.
+<<<<<<< HEAD
   # #4113 landed "system" here; #4111 derives it instead — same rule, the model as
   # the authority rather than a second literal. Falls back to "system", never a name.
   local sec_owner="${NIGHTLY_SECURITY_OWNER:-$(domain_owner security)}"
+=======
+  local sec_owner="${NIGHTLY_SECURITY_OWNER:-silas}"  # RECIPIENT, not actor: the security lane is Silas's (#3922). The actor is the literal "system" passed to ops_nudge below.
+>>>>>>> 9575914fa (wren: #4119 — repairing three suites my own #4113 land broke, and the guard that made me break a correct default)
   local sec_reds sec_n
   sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
   sec_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail"' | grep -c .)
