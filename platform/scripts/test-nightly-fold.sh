@@ -30,11 +30,11 @@ echo '{"data":[{"totals":{"lines":{"percent":60.0}}}]}' > "$TMP/fix/platform/ser
 out=$(NIGHTLY_COVERAGE_FLOORS="$TMP/floors.yml" NIGHTLY_COVERAGE_DRY_RUN=1 NIGHTLY_COVERAGE_FIXTURES="$TMP/fix" run_coverage)
 
 # 1. pass-case: 85 >= 80
-echo "$out" | grep -qE 'SUITE\|coverage\|platform/passproj\|silas\|pass\|' && ok || bad "passproj should be pass (got: $(echo "$out"|grep passproj))"
+echo "$out" | grep -qE 'SUITE\|coverage\|platform/passproj\|unowned\|pass\|' && ok || bad "passproj should be pass (got: $(echo "$out"|grep passproj))"
 # 2. fail-case: 50 < 80
-echo "$out" | grep -qE 'SUITE\|coverage\|platform/failproj\|silas\|fail\|' && ok || bad "failproj should be fail"
+echo "$out" | grep -qE 'SUITE\|coverage\|platform/failproj\|unowned\|fail\|' && ok || bad "failproj should be fail"
 # 3. rust pass: 60 >= 45
-echo "$out" | grep -qE 'SUITE\|coverage\|platform/services/rustproj\|silas\|pass\|' && ok || bad "rustproj should be pass"
+echo "$out" | grep -qE 'SUITE\|coverage\|platform/services/rustproj\|unowned\|pass\|' && ok || bad "rustproj should be pass"
 # 4. missing fixture -> FAIL. #3597: a declared floor means coverage MUST run; a
 #    missing summary artifact is a failure we can SEE, not a silent skip (reverses #3557).
 echo "$out" | grep -qE 'SUITE\|coverage\|directing/missingproj\|kade\|fail\|' && ok || bad "missingproj should FAIL — no artifact (#3597)"
