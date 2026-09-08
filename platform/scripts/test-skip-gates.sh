@@ -16,19 +16,26 @@ SHIM="$(resolve_shim_path)"
 # if the daemon does not answer a trivial probe, exit 2 UNMEASURED. Never a
 # fail, never a pass.
 #
+# EXIT 3, NOT 2 — use the lane that already exists. werk-test/src/main.rs:1072
+# reads rc=3 as SELF-REFUSED (#4004/#4065): the suite declined to run here, so
+# it is recorded skip / 0 pass 0 fail, never red and never green. I first exited
+# 2, which the runner scored as an ordinary failure — so the guard turned a
+# flaky red into a deterministic one inside act, where the daemon is not
+# reachable. That is worse than what it replaced. No new vocabulary; rc=3 is it.
+#
 # NEGATIVE PROOF (#3734 — no gate without one). Run:
 #   CHORUS_SHIM_BIN=/path/to/a/script/that/exits/1 bash platform/scripts/test-skip-gates.sh
 # resolve_shim_path honours CHORUS_SHIM_BIN first, so this substitutes a shim
-# that answers nothing. Observed: the UNMEASURED line, exit 2. Unset, the same
+# that answers nothing. Observed: the refusal line, exit 3. Unset, the same
 # commit runs the suite and exits 0 — so the guard separates the two states
 # rather than swallowing both. My first attempt at this fixture used
 # CHORUS_HOOK_SHIM, which resolve_shim_path does not read; it "passed" while
 # still finding the real shim, i.e. it proved nothing.
 if ! echo '{"tool_name":"Read","tool_input":{"file_path":"/dev/null"}}' \
      | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade "$SHIM" pre-tool-use >/dev/null 2>&1; then
-  echo "UNMEASURED: chorus-hooks daemon did not answer a trivial probe — the gates could not be asked." >&2
+  echo "SELF-REFUSED rc=3 — chorus-hooks daemon did not answer a trivial probe; the gates could not be asked." >&2
   echo "This is not a gate failure. Restart it and re-run: launchctl kickstart -k gui/\$UID/com.chorus.hooks" >&2
-  exit 2
+  exit 3
 fi
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 PASS=0; FAIL=0
