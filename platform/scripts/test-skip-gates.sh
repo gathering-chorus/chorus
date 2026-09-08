@@ -4,6 +4,32 @@ CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # #2478 — resolution via the shared lib (parity-pinned with the TS resolver)
 source "$(dirname "$0")/lib/resolve-shim.sh"
 SHIM="$(resolve_shim_path)"
+
+# #4085 — every check below asks the LIVE chorus-hooks daemon a question and
+# calls an empty answer a failed gate. The daemon restarts constantly (137 runs
+# on 2026-09-07) and answers nothing while it is coming back, so this suite
+# reports "gate not wired" for "daemon was between lives". Two back-to-back runs
+# on the same commit gave 8 passed 1 failed, then 9 passed 0 failed.
+#
+# A gate that cannot tell "not wired" from "could not ask" is the defect this
+# whole card has been about, so refuse to run rather than fabricate a verdict:
+# if the daemon does not answer a trivial probe, exit 2 UNMEASURED. Never a
+# fail, never a pass.
+#
+# NEGATIVE PROOF (#3734 — no gate without one). Run:
+#   CHORUS_SHIM_BIN=/path/to/a/script/that/exits/1 bash platform/scripts/test-skip-gates.sh
+# resolve_shim_path honours CHORUS_SHIM_BIN first, so this substitutes a shim
+# that answers nothing. Observed: the UNMEASURED line, exit 2. Unset, the same
+# commit runs the suite and exits 0 — so the guard separates the two states
+# rather than swallowing both. My first attempt at this fixture used
+# CHORUS_HOOK_SHIM, which resolve_shim_path does not read; it "passed" while
+# still finding the real shim, i.e. it proved nothing.
+if ! echo '{"tool_name":"Read","tool_input":{"file_path":"/dev/null"}}' \
+     | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade "$SHIM" pre-tool-use >/dev/null 2>&1; then
+  echo "UNMEASURED: chorus-hooks daemon did not answer a trivial probe — the gates could not be asked." >&2
+  echo "This is not a gate failure. Restart it and re-run: launchctl kickstart -k gui/\$UID/com.chorus.hooks" >&2
+  exit 2
+fi
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
 PASS=0; FAIL=0
 
