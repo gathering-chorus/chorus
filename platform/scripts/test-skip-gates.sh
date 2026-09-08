@@ -49,9 +49,22 @@ else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null
 # the fixture doesn't lock card type because card_type_for_role queries
 # the live board. The semantic intent is "shim denies a non-test
 # production Write by an active builder" — any matching deny qualifies.
-echo "$R" | grep -qiE "TDD|log-first|haven't.*written.*test|haven't.*checked.*log|permissionDecision\":\"deny" \
-  && p "tdd_gate: denies Write to production code (tdd or log-first family)" \
-  || f "tdd_gate: expected family deny for production Write, got: $(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('stdout',''); print(s[:80] if s else 'exit_code='+str(d.get('exit_code',0)))" 2>/dev/null)"
+# #4111 — this check has no card-type seam, and the gate family only fires when
+# the role has EXACTLY ONE WIP card (card_type_for_role returns "unknown" for 0
+# or >1, and unknown gates nothing). With no card open it went red every night
+# while the gate was working perfectly — a check that cannot tell "gate broken"
+# from "role idle" is not a gate, it is noise, and it was 1 of Kade's 4 reds on
+# the 2026-09-07 nightly for exactly that reason. So: measure the precondition
+# first and REFUSE rather than fail. UNMEASURED is honest; red is a lie.
+WIP_N=$(curl -s --max-time 2 "http://localhost:3340/api/chorus/context/board/wip?role=Kade" \
+  | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('data',{}).get('cards',[])))" 2>/dev/null || echo "?")
+if [ "$WIP_N" != "1" ]; then
+  echo "  UNMEASURED tdd_gate: needs exactly 1 WIP card for kade (board says: $WIP_N) — the gate family cannot fire, so this proves nothing either way"
+else
+  echo "$R" | grep -qiE "TDD|log-first|haven't.*written.*test|haven't.*checked.*log|permissionDecision\":\"deny" \
+    && p "tdd_gate: denies Write to production code (tdd or log-first family)" \
+    || f "tdd_gate: expected family deny for production Write, got: $(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); s=d.get('stdout',''); print(s[:80] if s else 'exit_code='+str(d.get('exit_code',0)))" 2>/dev/null)"
+fi
 
 # 2. demo_gate — blocks cards done without demo evidence
 # Root cause of regression (#2160): done-gate.sh exits 0 for nonexistent cards

@@ -106,8 +106,8 @@ exit 1'
 out=$(run_cargo_lane)
 echo "$out" | grep -q 'SUITE|npm|directing/clearing|kade|fail|10 pass, 3 fail' \
   && ok || bad "npm fold + kade routing, got: $out"
-echo "$out" | grep -q 'SUITE|bats|platform/tests/guard.bats|silas|pass|' \
-  && ok || bad "bats fold + silas routing, got: $out"
+echo "$out" | grep -q 'SUITE|bats|platform/tests/guard.bats|unowned|pass|' \
+  && ok || bad "bats fold + owner routing, got: $out"
 echo "$out" | grep -q 'SUITE|shell|platform/scripts/test-x.sh|silas|fail|' \
   && ok || bad "shell fold, got: $out"
 

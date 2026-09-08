@@ -21,7 +21,7 @@ set -u
 # grading canonical's copy of the function and reporting on code that was not changed.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NIGHTLY="$ROOT/platform/scripts/nightly-suites.sh"
-CHORUS_ROOT="$ROOT"; APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
+CHORUS_ROOT="$ROOT"; APP_ROOT="${APP_ROOT:-$(cd "$ROOT/../jeff-bridwell-personal-site" 2>/dev/null && pwd)}"
 
 pass=0; fail=0
 ok()   { pass=$((pass+1)); echo "  ok   $1"; }
