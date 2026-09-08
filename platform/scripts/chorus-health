@@ -317,16 +317,46 @@ else
   fail "chorus-api-up" "health check failed (${API_BASE}/health returned: ${api_health:-no response})"
 fi
 
-# Fuseki memory ceiling
+# Fuseki memory ceiling.
+#
+# #4085 — this alert fired at 06:56 on 2026-09-08 with Fuseki using 161MB of a
+# 2000MB ceiling. It was never about memory. Four registry rows contain the
+# substring "fuseki" — com.gathering.fuseki (the server), fuseki-backup,
+# fuseki-perf, fuseki-compact — and the check took s[0] of an unordered list,
+# so which service it measured depended on response order. Two ways it lied,
+# in opposite directions:
+#
+#   picked fuseki-perf   rss_mb null -> printed "None" -> every numeric test
+#                        below fails -> falls through to PASS "rss=NoneMB".
+#                        An unmeasured value reported as healthy.
+#   picked fuseki-backup rss_mb 1 -> a passing number for a process that is
+#                        not the server, so a real ceiling breach is invisible.
+#
+# Match the server by exact label, and keep "no row" and "row without rss"
+# apart from a real reading — an alert that cannot name its own state costs
+# more attention than it saves.
 fuseki_mem=$(curl -s --max-time 5 "${API_BASE}/api/chorus/services" 2>/dev/null | \
-  python3 -c "import json,sys; svcs=json.load(sys.stdin).get('services',[]); s=[x for x in svcs if 'fuseki' in x.get('label','')]; print(s[0].get('rss_mb',0) if s else 0)" 2>/dev/null || echo "0")
-if [ "$fuseki_mem" -eq 0 ] 2>/dev/null; then
-  warn "fuseki-memory" "Fuseki rss=0 or not found in service registry"
-elif [ "$fuseki_mem" -gt "$FUSEKI_MEM_CEILING_MB" ] 2>/dev/null; then
-  warn "fuseki-memory" "${fuseki_mem}MB exceeds ceiling ${FUSEKI_MEM_CEILING_MB}MB"
-else
-  pass "fuseki-memory" "rss=${fuseki_mem}MB"
-fi
+  python3 -c "import json,sys
+svcs = json.load(sys.stdin).get('services', [])
+row = next((x for x in svcs if x.get('label') == '${FUSEKI_LABEL:-com.gathering.fuseki}'), None)
+if row is None:
+    print('absent')
+elif row.get('rss_mb') is None:
+    print('unmeasured')
+else:
+    print(row['rss_mb'])" 2>/dev/null || echo "unmeasured")
+case "$fuseki_mem" in
+  absent)
+    warn "fuseki-memory" "no ${FUSEKI_LABEL:-com.gathering.fuseki} row in the service registry — memory UNKNOWN, not 0" ;;
+  unmeasured)
+    warn "fuseki-memory" "registry row carries no rss — memory UNKNOWN, not 0 (registry reachable, value missing)" ;;
+  *)
+    if [ "$fuseki_mem" -gt "$FUSEKI_MEM_CEILING_MB" ] 2>/dev/null; then
+      warn "fuseki-memory" "${fuseki_mem}MB exceeds ceiling ${FUSEKI_MEM_CEILING_MB}MB"
+    else
+      pass "fuseki-memory" "rss=${fuseki_mem}MB"
+    fi ;;
+esac
 
 # Bedroom reachability. SSH failure alone is ambiguous — an SSH timeout under
 # local load, or a host mid-reboot, looks identical to "down" (#3022). Use ping
