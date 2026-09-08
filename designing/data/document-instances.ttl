@@ -56,7 +56,7 @@ chorus:document-borg-product-design a chorus:Document ;
     chorus:docHref """/designing/docs/borg-product-design.html""" ;
     chorus:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
     rdfs:comment """Migrated from urn:chorus:instances (#3558 recovery row). V1 observability-domain → alerts-monitors.""" ;
-    chorus:hasDomain chorus:alerts-monitors ;
+    chorus:hasDomain chorus:alerts ;
     chorus:ownedBy chorus:role-wren .
 
 chorus:document-chorus-as-platform a chorus:Document ;
