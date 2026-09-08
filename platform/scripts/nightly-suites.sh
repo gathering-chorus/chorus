@@ -1238,8 +1238,10 @@ notify_results() {
   # #3922 — the security lane routes to the SECURITY owner as its own signal,
   # never buried in the per-owner wall. Owner is env-overridable; the model
   # (security domain ownedBy) is the authority when they disagree.
-  # #4113 landed "system" here; #4111 derives it instead — same rule, the model as
-  # the authority rather than a second literal. Falls back to "system", never a name.
+  # #4111 derives this from the model (security domain ownedBy) instead of a
+  # second literal; env still overrides. Note what it IS: sec_owner is the
+  # nudge RECIPIENT, not the actor — the actor is the literal "system" passed
+  # to ops_nudge below. I conflated the two in #4113 and broke a correct default.
   local sec_owner="${NIGHTLY_SECURITY_OWNER:-$(domain_owner security)}"
   local sec_reds sec_n
   sec_reds=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $2=="security" && $5=="fail" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)

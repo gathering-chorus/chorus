@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Garden Proposal — 19 Pinedale Rd</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Open+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  /* Tokens lifted from public/lightlife.html so the proposal reads as the same brand. */
+  :root {
+    --green-dark:#2d4a3e; --green-deep:#1a2f25; --green-medium:#4a7c59;
+    --green-light:#8fbc8f; --gold:#c9a227; --cream:#f5f5dc; --earth:#8b7355;
+    --ink:#2a2a26; --paper:#fdfdf8;
+  }
+  @page { size: letter; margin: 0; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:'Open Sans','Helvetica Neue',Arial,sans-serif;
+    font-weight:300; color:var(--ink); background:var(--paper);
+    font-size:8.4pt; line-height:1.38;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+
+  /* The home page's dark hero, carried onto the sheet. Body stays light so it
+     prints cleanly and stays readable on paper. */
+  .hero {
+    background:linear-gradient(135deg,var(--green-dark) 0%,var(--green-deep) 100%);
+    color:var(--cream); padding:0.3in 0.7in 0.26in; text-align:center;
+  }
+  .hero h1 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400;
+    font-size:19pt; letter-spacing:0.1em; text-transform:uppercase;
+    color:#fff; line-height:1.1;
+  }
+  .hero h1 span { color:var(--gold); }
+  .tagline {
+    font-size:8pt; font-weight:300; letter-spacing:0.3em; text-transform:uppercase;
+    color:var(--green-light); margin-top:0.35rem;
+  }
+  .rule { width:38px; height:1px; background:var(--gold); margin:0.5rem auto; }
+  .hero .for {
+    font-family:'Cormorant Garamond',Georgia,serif; font-size:12.5pt; color:#fff;
+  }
+  .hero .addr {
+    font-size:8.5pt; color:var(--green-light); letter-spacing:0.12em;
+    text-transform:uppercase; margin-top:0.2rem;
+  }
+
+  .sheet { padding:0.26in 0.7in 0.22in; }
+
+  h2 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:500;
+    font-size:12pt; color:var(--green-dark); letter-spacing:0.06em;
+    text-transform:uppercase; margin:0.6rem 0 0.28rem;
+    border-bottom:1px solid rgba(45,74,62,0.18); padding-bottom:0.28rem;
+  }
+  h2:first-child { margin-top:0; }
+  p { margin-bottom:0.38rem; }
+  .lede { font-size:9.1pt; }
+
+  /* Understand / Build & Change / Grow — the site's three pillars, reused as the
+     shape of the work rather than a flat numbered list. */
+  .pillar { margin:0.5rem 0 0.2rem; break-inside:avoid; }
+  .pillar-head {
+    font-family:'Cormorant Garamond',Georgia,serif; font-size:10.5pt;
+    color:var(--gold); letter-spacing:0.05em; margin-bottom:0.02rem;
+  }
+  .pillar-sub {
+    font-size:8pt; letter-spacing:0.22em; text-transform:uppercase;
+    color:var(--green-medium); margin-bottom:0.28rem;
+  }
+  ol { list-style:none; counter-reset:step; }
+  ol li {
+    counter-increment:step; position:relative; padding-left:1.7rem;
+    margin-bottom:0.26rem;
+  }
+  ol li::before {
+    content:counter(step); position:absolute; left:0; top:0.08rem;
+    width:1.05rem; height:1.05rem; border-radius:50%;
+    background:var(--green-medium); color:#fff;
+    font-size:7.5pt; line-height:1.05rem; text-align:center; font-weight:400;
+  }
+  ol li strong { font-weight:500; color:var(--green-dark); }
+
+  .panel {
+    background:rgba(45,74,62,0.055); border-left:2px solid var(--gold);
+    padding:0.4rem 0.7rem; margin:0.4rem 0;
+  }
+  .panel p:last-child { margin-bottom:0; }
+
+  table { width:100%; border-collapse:collapse; margin-top:0.25rem; }
+  td { padding:0.2rem 0; border-bottom:1px solid rgba(45,74,62,0.12);
+       vertical-align:top; }
+  td.when { width:1.45in; color:var(--green-medium); font-weight:500;
+            letter-spacing:0.04em; }
+  tr:last-child td { border-bottom:none; }
+
+  .foot {
+    margin-top:0.45rem; padding-top:0.3rem;
+    border-top:1px solid rgba(45,74,62,0.18);
+    font-size:8.5pt; color:var(--earth); text-align:center;
+    letter-spacing:0.1em; text-transform:uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1><span>Light</span> Life<br>Urban Gardens</h1>
+  <p class="tagline">Roslindale, Massachusetts</p>
+  <div class="rule"></div>
+  <div class="for">A Garden Proposal for Anthe Kelley</div>
+  <div class="addr">19 Pinedale Road &nbsp;·&nbsp; Six hours, this week</div>
+</div>
+
+<div class="sheet">
+
+  <h2>What I saw</h2>
+  <p class="lede">Your lot runs long and narrow, and the light is the strongest thing
+  about it — high southern sun down the west side all afternoon, a shaded courtyard in
+  the middle, tree cover at the far end. That range means three different kinds of
+  garden are possible here. But the paths don't connect the parts, so the yard reads as
+  one overgrown space instead of three usable ones.</p>
+  <p>The structure is already there: the two-foot stone wall, an established vegetable
+  bed, and real natives holding ground — milkweed, goldenrod, grape, raspberry, black
+  chokeberry.</p>
+
+  <h2>The work</h2>
+
+  <div class="pillar">
+    <div class="pillar-head">🌱 &nbsp;Understand</div>
+    <div class="pillar-sub">Learn your space</div>
+    <ol>
+      <li><strong>Identify what's there.</strong> We walk the cleared yard together and
+      name every remaining plant — what it is, and what it wants.</li>
+      <li><strong>Update the map.</strong> A corrected drawing of the garden as it
+      actually is, plants labeled, light marked.</li>
+    </ol>
+  </div>
+
+  <div class="pillar">
+    <div class="pillar-head">🔨 &nbsp;Build &amp; Change</div>
+    <div class="pillar-sub">Shape the garden</div>
+    <ol>
+      <li><strong>Clear the paths.</strong> Open every route through the yard. First,
+      because nothing else can be judged until you can get to it.</li>
+      <li><strong>Remove the invasives.</strong> Take out what is crowding the natives
+      you already have. I'll show you each one before it goes.</li>
+      <li><strong>Cut back the catalpas.</strong> Bring light back to the beds below.
+      Heavier structural pruning is better in winter when they're dormant — a follow-up
+      if you want it.</li>
+    </ol>
+  </div>
+
+  <div class="pillar">
+    <div class="pillar-head">🌻 &nbsp;Grow</div>
+    <div class="pillar-sub">Nurture abundance</div>
+    <ol>
+      <li><strong>Start a winter compost.</strong> A working pile at the far end, so
+      this season's material feeds next season's beds instead of leaving in bags.</li>
+      <li><strong>Recommend next steps.</strong> A short, prioritized list for spring.
+      No obligation attached.</li>
+    </ol>
+  </div>
+
+  <h2>The day</h2>
+  <p>All of it in one six-hour block this week, in this order — access first, then
+  removal, then the compost while that material is still on the ground. You end the day
+  with a yard you can walk, natives with room, light back on the beds, and a compost
+  pile working through the winter.</p>
+  <table>
+    <tr><td class="when">First</td><td>Paths cleared, so the whole property is
+      reachable.</td></tr>
+    <tr><td class="when">Then</td><td>Invasives out and catalpas cut back.</td></tr>
+    <tr><td class="when">Then</td><td>Winter compost started, using what came out.</td></tr>
+    <tr><td class="when">Last</td><td>We walk the cleared yard and name what is
+      left.</td></tr>
+    <tr><td class="when">After</td><td>Updated map and spring recommendations — my
+      time, not yours.</td></tr>
+  </table>
+
+  <h2>The exchange</h2>
+  <div class="panel">
+    <p><strong>Six hours at $35/hour — $210 of work.</strong> Offered as a trade for
+    acupuncture at Akasha Studio rather than payment. Terms to confirm between us.</p>
+  </div>
+
+  <div class="foot">Jeff Bridwell &nbsp;·&nbsp; Light Life Urban Gardens &nbsp;·&nbsp;
+  lightlifeurbangardens.com</div>
+
+</div>
+</body>
+</html>
