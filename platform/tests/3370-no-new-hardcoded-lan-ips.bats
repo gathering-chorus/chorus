@@ -43,7 +43,21 @@ lan_hits() {
   while IFS= read -r hit; do
     grep -q "^${hit}:" "$BASELINE" && continue
     [ "$(lan_hits "$REPO/$hit")" -gt 0 ] && fails="$fails NEW:$hit"
-  done < <(grep -rl "192\.168\.86\." "$REPO/platform" "$REPO/proving" "$REPO/designing" "$REPO/.github" 2>/dev/null \
+  # #4126 — the directories excluded on the NEXT line were being read first and
+  # discarded after. node_modules, target/ and .git are the bulk of the tree by
+  # far, so the scan spent its whole time on files whose hits it then dropped.
+  # Measured 2026-09-08 on this repo: 9.66s reading everything, 0.13s with the
+  # same exclusions pushed into grep — 74x, same answer. This suite measured
+  # 367.2s in the nightly, third most expensive unit in the run.
+  #
+  # The post-filter below is deliberately KEPT, not replaced: it also excludes
+  # file EXTENSIONS and paths (/logs/, board-snapshot, baseline) that
+  # --exclude-dir cannot express, and the negative proof at the bottom of this
+  # file asserts against that filter's behaviour. Pushing the directory half
+  # down to grep is a speed change; the rule the ratchet enforces is untouched.
+  done < <(grep -rl --exclude-dir=node_modules --exclude-dir=target --exclude-dir=.git \
+      --exclude-dir=coverage --exclude-dir=dist \
+      "192\.168\.86\." "$REPO/platform" "$REPO/proving" "$REPO/designing" "$REPO/.github" 2>/dev/null \
     | grep -vE "\.git|node_modules|/dist|/coverage|/logs/|/target/|board-snapshot|baseline" \
     | grep -vE "/backups/|\.nt$|\.backup$|\.md$|\.html$|\.ejs$|\.db$|\.sqlite3?$" \
     | sed "s|^$REPO/||")
