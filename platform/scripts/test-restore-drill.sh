@@ -75,6 +75,28 @@ fi
 # drill honestly is. Every other exit passes through untouched, so a genuinely
 # failed restore still goes red. #3616 built the age/cadence logic above; this
 # only fixes how a refusal is reported.
+# #4126 — Jeff, 2026-09-08: "we must not do a test-restore-drill on every
+# nightly test." Measured why it happens: #4043's own live proof recorded a real
+# drill at 2849s (47 minutes, 32.4GB, verdict=pass on the spine 2026-08-30).
+# The nightly kills any unit at NIGHTLY_UNIT_TIMEOUT, 1200s. A 47-minute job
+# inside a 20-minute cap can never finish, so it is killed, scored fail, and
+# records no PASS — which makes the age check above say "overdue" and start it
+# again tomorrow. The loop cannot exit by running, only by not running.
+#
+# Cost, measured 2026-09-08: 1200.0s, the single most expensive unit in a run
+# whose entire unit-time budget is 94.5 minutes.
+#
+# So under the nightly it REFUSES — rc=3, the SELF-REFUSED verdict #4004
+# already defined for "I could not look" as distinct from "it is broken". The
+# age and backup-freshness checks above still run and still go RED when the
+# last proven restore is stale, so a drill nobody runs is still loud; it just
+# stops burning 20 minutes a night to say so. Invoked directly (Silas's weekly
+# lane, no cap) it runs exactly as before.
+if [ -n "${NIGHTLY_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ]; then
+  echo "restore-drill: SELF-REFUSED — a ~47min restore cannot finish inside the nightly's ${NIGHTLY_UNIT_TIMEOUT:-1200}s unit cap (#4043 measured 2849s); run it on its own schedule. The staleness checks above still red."
+  exit 3
+fi
+
 bash "$R/platform/scripts/restore-drill.sh"
 rc=$?
 if [ "$rc" -eq 2 ]; then

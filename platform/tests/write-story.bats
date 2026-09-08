@@ -33,9 +33,22 @@ TEST_SLUG_PREFIX="test-bats-2321"
 # script runs; with residue from a prior run already present, that assertion
 # passes whether or not the script wrote anything. The pre-run drop is what makes
 # the test about this run — unauthenticated, it was decoration.
+# #4126 — `GRAPH ?g {}` matches graph NAMES; `GRAPH ?g { ?s ?p ?o }` matches
+# every triple in every graph and then throws all but the names away. The
+# question here is only "which graphs are named with our prefix", so the triple
+# pattern was pure cost — and cost that grows with the store forever.
+#
+# Measured 2026-09-08 against the live /pods dataset:
+#   { ?s ?p ?o }  36.9s      {}  0.68s      same 2 rows      54x
+#
+# This function runs in BOTH setup and teardown, so 6 tests paid it 12 times:
+# ~7.5 minutes of a 16m17s suite. And the suite used 0.89s of CPU across that
+# whole run — it was not computing, it was waiting on this. write-story.bats
+# was the second most expensive unit in the nightly (649.4s as measured, killed
+# partway) and nothing about the product was slow; the housekeeping was.
 _story_graphs() {
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$FUSEKI_QUERY" -H "Accept: text/csv" \
-    --data-urlencode "query=SELECT DISTINCT ?g WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g), \"urn:jb/jeff/stories/${TEST_SLUG_PREFIX}\")) }" \
+    --data-urlencode "query=SELECT DISTINCT ?g WHERE { GRAPH ?g {} FILTER(STRSTARTS(STR(?g), \"urn:jb/jeff/stories/${TEST_SLUG_PREFIX}\")) }" \
     2>/dev/null | tail -n +2 | tr -d '\r' | grep -v '^$' || true
 }
 

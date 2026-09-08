@@ -781,7 +781,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
     // #4030 AC3 — one bats runner for the three pools: run, then store now.
     let run_bats_stored = |werk: &str, b: &str| -> (bool, Vec<(String, String)>, String) {
+        // #4126 — Jeff, 2026-09-08: "do we ever find the bottleneck b4 tuning".
+        // We never have. The runner recorded what each unit DID and never how
+        // long it took, so "which units cost the hour" has never been
+        // answerable and every parallelism change — including the one I made
+        // this morning — was a guess. One timestamp per unit ends that.
+        //
+        // It also separates two states the report could not tell apart: a slow
+        // unit and a wedged one look identical from outside, because the pool
+        // counter only moves on completion. A unit that names its own seconds
+        // is visibly slow; a unit that never prints is visibly stuck.
+        let unit_started = std::time::Instant::now();
         let r = run_bats_cases(werk, b);
+        let unit_ms = unit_started.elapsed().as_millis();
         let mut cases: Vec<CaseResult> = r.1.iter()
             .map(|(n, res)| CaseResult { file_path: b.to_string(), test_name: n.clone(), result: res.clone() })
             .collect();
@@ -793,6 +805,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if cases.is_empty() && bats_kind(b) == "shell" {
             cases.push(werk_test::shell_suite_case(b, r.0));
         }
+        // #3953 already timed the CARD path (unit_costs → unit_cost_report,
+        // main.rs:301) but only there, and only when the budget blows. The
+        // nightly path never had it, which is why the slowest units in a
+        // 45-minute run have never been nameable. Same idea, the other path,
+        // printed unconditionally — a cost you only see when you are already
+        // over budget cannot tell you what to fix before you get there.
+        println!("nightly-elapsed|{}|{}|{}ms", bats_kind(b), b, unit_ms);
         store_unit(b, &cases);
         r
     };
