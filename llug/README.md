@@ -14,6 +14,8 @@ docs/     model.html        the value stream (SADIMET) and seven domains as clas
                             attributes and typed edges — what the app generates from
           build-spec.html   how it gets built: three chunks, one photo end to end,
                             the six field screens, and the engineering picks
+          app-mock.html     the field app, six screens: arrive, capture, identify,
+                            work, close, and the evening write-up
 
 clients/  pinedale-proposal.html      a client proposal, brand sheet, one page
           pinedale-field-plates.html  ten photos of one garden, read one per page
@@ -21,6 +23,14 @@ clients/  pinedale-proposal.html      a client proposal, brand sheet, one page
 
 survey/   the findings, with their evidence, so they can be re-checked
 ```
+
+## Not done yet
+
+The plant identification probe. One photo, one real call to Pl@ntNet, and an honest
+verdict on whether the candidates are good enough to build on. It needs an API key,
+which is Jeff's to get. Until then this repo says nothing about identification, and
+the two findings in `survey/` cover name MATCHING only — what happens after a name
+exists, not where the name comes from.
 
 ## Status
 
