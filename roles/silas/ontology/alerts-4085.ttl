@@ -87,7 +87,7 @@ chorus:alerts a owl:Class, chorus:Domain ;
     chorus:atStream chorus:chorusStream ;
     chorus:definesVocabulary chorus:Alert ;
     chorus:status "building" ;
-    chorus:gaps "45 alert rows live, from three homes: 25 declared YAML under proving/domains/alerts, 7 Grafana provisioned rules, 13 scripts firing through ops-nudge. The first 25 were missed on the first pass — the domain row already said repoTarget proving/domains/alerts and the harvester looked everywhere except there. Every row now declares the domain it watches, in its own file. Not yet covered: which alerts have actually fired and how often — that needs the spine join, and it is the next card, not a claim this one makes." ;
+    chorus:gaps "The domain row, the Alert class and its floor land here (#4125) with the alerts-monitors retirement. No Alert rows yet: the harvester that reads the declared YAML under proving/domains/alerts, the Grafana provisioned rules and the ops-nudge scripts is #4085, still open. Until it lands the Alerts fold on every domain page reads the hand list in /api/chorus/domain." ;
     chorus:instancesGraph "urn:chorus:domains:alerts" ;
     chorus:hasDesignDoc chorus:document-alerts-service-design ;
     chorus:repoTarget "proving/domains/alerts" .
@@ -103,7 +103,7 @@ chorus:monitors a owl:Class, chorus:Domain ;
     chorus:atStream chorus:chorusStream ;
     chorus:definesVocabulary chorus:Monitor ;
     chorus:status "building" ;
-    chorus:gaps "37 monitors counted on disk (9 security probes under platform/security/probes.d, 28 named checks in one chorus-health run); harvested, none typed. Not yet covered: the readings themselves — what each monitor last returned — which needs the spine join and is its own card." ;
+    chorus:gaps "The domain row, the Monitor class and its floor land here (#4125) with the alerts-monitors retirement. No Monitor rows yet: the harvester that reads the probes under platform/security/probes.d and the checks in chorus-health is #4085, still open." ;
     chorus:instancesGraph "urn:chorus:domains:monitors" ;
     chorus:hasDesignDoc chorus:document-monitors-service-design ;
     chorus:repoTarget "proving/domains/monitors" .
