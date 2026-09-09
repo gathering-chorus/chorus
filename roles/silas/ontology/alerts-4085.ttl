@@ -1,0 +1,172 @@
+# ============================================================================
+# #4085 — the alerts domain, split from alerts-monitors and made real.
+#
+# Jeff has asked three times (2026-06-14, 2026-08-13, 2026-09-03) for alerts
+# and monitors to be separate domains. They answer different questions:
+#
+#   a monitor asks   "is this thing healthy right now?"      (a probe, a check)
+#   an alert asks    "who should be told, and when?"          (a rule, a route)
+#
+# One row called alerts-monitors could not carry either answer, and it showed:
+# the row had no status, no gaps, no instances graph and no design doc, and the
+# Alerts section of every domain page read a list someone typed in May.
+#
+# This file defines the ALERTS half. #4088 defines monitors. The combined
+# alerts-monitors row is retired here — same treatment #3735 gave the stale
+# chorus:security row, and for the same reason: two definitions of one subject
+# let the deploy pick whichever it read last.
+#
+# MEASURED SCOPE (2026-09-06, counted not estimated):
+#   7   Grafana alert rules   shared-observability/.../alerting/chorus-alerts.yaml
+#   13  scripts that fire an alert through platform/scripts/ops-nudge
+#   20  real alerting sources total
+#
+# The 13 matter. An Alert harvester that read only Grafana would show 7 rows
+# and hide two thirds of what actually interrupts Jeff — a fold that lies by
+# omission is worse than the empty one it replaces.
+# ============================================================================
+
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix sh:   <http://www.w3.org/ns/shacl#> .
+
+# ---------------------------------------------------------------------------
+# 1. The class the alerts domain exists to define.
+# ---------------------------------------------------------------------------
+
+chorus:Alert a owl:Class ;
+    rdfs:label "Alert" ;
+    rdfs:comment "A declared rule that decides when a person or role gets interrupted. Carries what it watches, who it tells, and where it is authored. Distinct from a Monitor (#4088), which measures; an Alert routes." .
+
+chorus:alertSource a owl:DatatypeProperty ;
+    rdfs:label "alertSource" ;
+    rdfs:comment "Where the rule is authored: 'grafana' for a provisioned rule, 'script' for one fired from a shell script through ops-nudge." ;
+    rdfs:domain chorus:Alert ; rdfs:range xsd:string .
+
+chorus:alertFile a owl:DatatypeProperty ;
+    rdfs:label "alertFile" ;
+    rdfs:comment "Repo-relative path of the file that authors this alert. The row's provenance — a reader can open it." ;
+    rdfs:domain chorus:Alert ; rdfs:range xsd:string .
+
+chorus:alertRoute a owl:DatatypeProperty ;
+    rdfs:label "alertRoute" ;
+    rdfs:comment "Who this alert interrupts — a role name for an ops-nudge alert, a contact point for a Grafana one." ;
+    rdfs:domain chorus:Alert ; rdfs:range xsd:string .
+
+# ---------------------------------------------------------------------------
+# 2. SHACL floor. Every Alert row carries its domain, its source and its file,
+#    so no row can exist without saying what it watches and where it lives.
+# ---------------------------------------------------------------------------
+
+chorus:AlertShape a sh:NodeShape ;
+    sh:targetClass chorus:Alert ;
+    # Jeff 2026-09-03: no catch-all instances graph. Alert rows live in the
+    # alerts domain's own graph, which is also where the harvester writes.
+    chorus:instancesGraph "urn:chorus:domains:alerts" ;
+    sh:property [ sh:path rdfs:label       ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:alertSource ; sh:minCount 1 ; sh:in ( "grafana" "script" ) ] ;
+    sh:property [ sh:path chorus:alertFile   ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:alertRoute  ; sh:minCount 0 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
+
+# ---------------------------------------------------------------------------
+# 3. The two domain rows that replace alerts-monitors.
+# ---------------------------------------------------------------------------
+
+chorus:alerts a owl:Class, chorus:Domain ;
+    rdfs:label "alerts" ;
+    chorus:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
+    rdfs:comment "Alert rules and the routing that decides who gets interrupted, and when." ;
+    chorus:purpose "Decide who gets interrupted and when — the rules, their routes, and the record of what actually fired." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStep chorus:Proving ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:definesVocabulary chorus:Alert ;
+    chorus:status "building" ;
+    chorus:gaps "45 alert rows live, from three homes: 25 declared YAML under proving/domains/alerts, 7 Grafana provisioned rules, 13 scripts firing through ops-nudge. The first 25 were missed on the first pass — the domain row already said repoTarget proving/domains/alerts and the harvester looked everywhere except there. Every row now declares the domain it watches, in its own file. Not yet covered: which alerts have actually fired and how often — that needs the spine join, and it is the next card, not a claim this one makes." ;
+    chorus:instancesGraph "urn:chorus:domains:alerts" ;
+    chorus:hasDesignDoc chorus:document-alerts-service-design ;
+    chorus:repoTarget "proving/domains/alerts" .
+
+chorus:monitors a owl:Class, chorus:Domain ;
+    rdfs:label "monitors" ;
+    chorus:comment "Probes and health checks — the things that measure whether the system is working." ;
+    rdfs:comment "Probes and health checks — the things that measure whether the system is working." ;
+    chorus:purpose "Measure whether the system is working — probes, health checks, and the readings they produce." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:partOf chorus:borgProduct ;
+    chorus:atStep chorus:Proving ;
+    chorus:atStream chorus:chorusStream ;
+    chorus:definesVocabulary chorus:Monitor ;
+    chorus:status "building" ;
+    chorus:gaps "37 monitors counted on disk (9 security probes under platform/security/probes.d, 28 named checks in one chorus-health run); harvested, none typed. Not yet covered: the readings themselves — what each monitor last returned — which needs the spine join and is its own card." ;
+    chorus:instancesGraph "urn:chorus:domains:monitors" ;
+    chorus:hasDesignDoc chorus:document-monitors-service-design ;
+    chorus:repoTarget "proving/domains/monitors" .
+
+# ---------------------------------------------------------------------------
+# 4. The design doc row DomainShape requires. Short by #4064: the commitments
+#    live as rows, not as prose in the page.
+# ---------------------------------------------------------------------------
+
+chorus:document-alerts-service-design a chorus:Document ;
+    chorus:docState "current" ;
+    chorus:docTitle "Alerts — Service Design" ;
+    chorus:docHref "/designing/docs/alerts-service-design.html" ;
+    chorus:comment "Authored by #4085 alongside the alerts/monitors split. Deliberately short — per #4064 a service's commitments are rows with a status and a card, not paragraphs here." ;
+    rdfs:comment "Authored by #4085 alongside the alerts/monitors split." ;
+    chorus:hasDomain chorus:alerts ;
+    chorus:ownedBy chorus:role-silas .
+
+# ---------------------------------------------------------------------------
+# 5. The monitors half, modelled — not deferred. A domain that defines no class
+#    is a label, and #4085 split alerts off precisely so both halves get one.
+#
+# A Monitor MEASURES. It answers "is this working right now" and produces a
+# reading. It does not decide who to interrupt — that is an Alert, above.
+#
+# MEASURED SOURCES (2026-09-06, counted):
+#    9  security probes   platform/security/probes.d/*.sh
+#   28  chorus-health checks (one run, pass+warn+fail)
+# ---------------------------------------------------------------------------
+
+chorus:Monitor a owl:Class ;
+    rdfs:label "Monitor" ;
+    rdfs:comment "A check that measures whether something is working and produces a reading. Distinct from an Alert, which decides who gets interrupted; a Monitor only observes." .
+
+chorus:monitorKind a owl:DatatypeProperty ;
+    rdfs:label "monitorKind" ;
+    rdfs:comment "What sort of check this is: 'probe' for a standalone script under probes.d, 'check' for a named check inside a health run." ;
+    rdfs:domain chorus:Monitor ; rdfs:range xsd:string .
+
+chorus:monitorFile a owl:DatatypeProperty ;
+    rdfs:label "monitorFile" ;
+    rdfs:comment "Repo-relative path of the file that implements this monitor, so a reader can open it." ;
+    rdfs:domain chorus:Monitor ; rdfs:range xsd:string .
+
+chorus:measures a owl:DatatypeProperty ;
+    rdfs:label "measures" ;
+    rdfs:comment "The question this monitor answers, in one sentence, in the monitor's own words." ;
+    rdfs:domain chorus:Monitor ; rdfs:range xsd:string .
+
+chorus:MonitorShape a sh:NodeShape ;
+    sh:targetClass chorus:Monitor ;
+    chorus:instancesGraph "urn:chorus:domains:monitors" ;
+    sh:property [ sh:path rdfs:label        ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:monitorKind ; sh:minCount 1 ; sh:in ( "probe" "check" ) ] ;
+    sh:property [ sh:path chorus:monitorFile ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:measures    ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hasDomain   ; sh:minCount 1 ; sh:class chorus:Domain ] .
+
+chorus:document-monitors-service-design a chorus:Document ;
+    chorus:docState "current" ;
+    chorus:docTitle "Monitors — Service Design" ;
+    chorus:docHref "/designing/docs/monitors-service-design.html" ;
+    chorus:comment "Authored by #4085 with the split. A monitor measures; an alert routes. Kept short per #4064." ;
+    rdfs:comment "Authored by #4085 with the split." ;
+    chorus:hasDomain chorus:monitors ;
+    chorus:ownedBy chorus:role-silas .

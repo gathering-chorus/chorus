@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # #3618 — The security family, modeled completely, once.
 # DRAFT for Jeff's review — nothing here deploys until reviewed (AC2) and the
 # door (#3609) can carry the batch.
