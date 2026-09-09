@@ -19,20 +19,31 @@ SELECT ?label ?ownerLabel ?stepLabel ?comment ?consumer ?consumerLabel ?consumed
     { GRAPH <urn:chorus:ontology>  { <$URI> chorus:contains ?instance } }
     UNION
     { GRAPH <urn:chorus:instances> { <$URI> chorus:contains ?instance } }
+    # #4130 — a contained row's label/comment/type live in its DOMAIN graph now
+    # (every row in its home, Jeff 2026-09-03): the 28 principles sit in
+    # urn:chorus:domains:principles and this read found none of them, so the
+    # loom-principles detail served 27 bare IRIs and principles-api's four
+    # detail checks read 0 against rows that exist.
     OPTIONAL {
       { GRAPH <urn:chorus:ontology>  { ?instance rdfs:label ?instanceLabel } }
       UNION
       { GRAPH <urn:chorus:instances> { ?instance rdfs:label ?instanceLabel } }
+      UNION
+      { GRAPH <urn:chorus:domains:principles> { ?instance rdfs:label ?instanceLabel } }
     }
     OPTIONAL {
       { GRAPH <urn:chorus:ontology>  { ?instance rdfs:comment ?instanceComment } }
       UNION
       { GRAPH <urn:chorus:instances> { ?instance rdfs:comment ?instanceComment } }
+      UNION
+      { GRAPH <urn:chorus:domains:principles> { ?instance rdfs:comment ?instanceComment } }
     }
     OPTIONAL {
       { GRAPH <urn:chorus:ontology>  { ?instance a ?instanceType } }
       UNION
       { GRAPH <urn:chorus:instances> { ?instance a ?instanceType } }
+      UNION
+      { GRAPH <urn:chorus:domains:principles> { ?instance a ?instanceType } }
       OPTIONAL { GRAPH <urn:chorus:ontology> { ?instanceType rdfs:label ?instanceTypeLabel } }
       FILTER(?instanceType != owl:NamedIndividual)
     }

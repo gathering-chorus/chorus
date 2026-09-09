@@ -909,9 +909,17 @@ run_coverage() {
         # so a crate that stopped compiling destroyed its own last good summary and
         # the next run had no baseline either — the failure erased its evidence.
         _cov_tmp="$dir/.llvm-cov-summary.$$.tmp"
-        (cd "$dir" && cargo llvm-cov --summary-only --json >"$_cov_tmp" 2>/dev/null); rc=$?
+        # #4130 — stderr was /dev/null: the 2026-09-09 03:00 run errored rc=101 on
+        # chorus-hooks and left NOTHING to read (green by hand at 08:30, so a
+        # load-class failure is the hypothesis, not a finding). Keep the tail.
+        _cov_err="$dir/.llvm-cov.$$.err"
+        (cd "$dir" && cargo llvm-cov --summary-only --json >"$_cov_tmp" 2>"$_cov_err"); rc=$?
         if [ "$rc" -eq 0 ] && [ -s "$_cov_tmp" ]; then mv -f "$_cov_tmp" "$dir/llvm-cov-summary.json"; fi
-        rm -f "$_cov_tmp"
+        if [ "$rc" -ne 0 ] && [ -s "$_cov_err" ]; then
+          echo "coverage stderr for $rel (rc=$rc, last 12 lines):"
+          grep -E "panicked|FAILED|error(\[|:)|test result" "$_cov_err" | tail -12 | sed 's/^/  /'
+        fi
+        rm -f "$_cov_tmp" "$_cov_err"
         sj="$dir/llvm-cov-summary.json"
       else rc=127; fi
       [ -f "$sj" ] && pct=$(python3 -c "import json;print(json.load(open('$sj'))['data'][0]['totals']['lines']['percent'])" 2>/dev/null || true)

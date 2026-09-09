@@ -22,7 +22,10 @@ live() {
   TOK="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
   [ -n "$TOK" ] || skip "no identity token for wren"
 }
-revisions_of() { curl -sf --max-time 10 "$OWL_URL/revisions" | python3 -c 'import sys,json; d=json.load(sys.stdin); rows=d if isinstance(d,list) else d.get("data",[]); print(json.dumps([r for r in rows if r.get("ofRow")==sys.argv[1]]))' "$1"; }
+# #4130 — /revisions pages at 100 and this row had 90 of the 235 on the store;
+# the first page held none of them, so "before=0 after=0" was the READ, not the
+# door. Ask for the whole ledger. (limit is honoured up to the row count.)
+revisions_of() { curl -sf --max-time 10 "$OWL_URL/revisions?limit=100000" | python3 -c 'import sys,json; d=json.load(sys.stdin); rows=d if isinstance(d,list) else d.get("data",[]); print(json.dumps([r for r in rows if r.get("ofRow")==sys.argv[1]]))' "$1"; }
 
 @test "AC1: replacing a product through the door keeps the prior version as a Revision with its full data" {
   live
@@ -82,6 +85,9 @@ for same in ("promise", "vision", "structure", "audience"):
     -d '{"name":"bats-4102-fresh","docTitle":"fresh","docHref":"/fresh.html","hasDomain":"products"}'
   after="$(curl -sf "$OWL_URL/revisions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
   [ "$after" -eq "$before" ] || { echo "a create made a revision: $before -> $after"; false; }
+  # #4130 — take the fixture back out. It sat on the live store from 09-06 with
+  # changedIn=unknown (a hand create), and 4101 read it as a real document.
+  curl -s -o /dev/null -X DELETE "$OWL_URL/documents/bats-4102-fresh" -H "Authorization: Bearer $TOK"
   run curl -s -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/revisions" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -d '{"name":"forged","ofRow":"products/spine","version":"99","snapshot":"{}","label":"x"}'
   [ "$output" = "422" ]
@@ -113,7 +119,15 @@ for same in ("promise", "vision", "structure", "audience"):
 
 @test "AC4: a document replaced through the door keeps a Revision, and the document page carries the History fold" {
   live
-  doc="$(curl -sf "$OWL_URL/documents" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; r=[x for x in rows if x.get("docHref") and x.get("hasDomain")][0]; print(r["name"].replace("document-","",1))')"
+  # #4130 — pick a document the door can READ BACK by name. The first candidate
+  # on the store was a #4045 leftover (doc-product-design-pulse) whose entity
+  # read is 404 — a data defect 4101 reports on its own; this proof is about
+  # revision-keeping and needs a row it can round-trip.
+  doc=""
+  for cand in $(curl -sf "$OWL_URL/documents" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print(" ".join(x["name"].replace("document-","",1) for x in rows if x.get("docHref") and x.get("hasDomain")))'); do
+    curl -sf --max-time 5 -o /dev/null "$OWL_URL/documents/$cand" && { doc="$cand"; break; }
+  done
+  [ -n "$doc" ] || { echo "no document on the store reads back by name"; false; }
   before="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   # an entity read splits edges into links (#3635), so a body that echoes the row
   # has to take both halves or the shape refuses it for a missing hasDomain
@@ -169,6 +183,13 @@ keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None
 keep["gaps"] = (r.get("gaps") or "").split(" (bats-4102")[0] + " (bats-4102 " + sys.argv[2] + ")"
 print(json.dumps(keep))' "$1" "$2"
 }
+# #4130 — every stamped write above leaves the LIVE row's changedIn at a bats
+# marker, which 4101 then reads as "not a commit" on the next run. Hand the row
+# back: the same content, stamped with the tree's real HEAD (a real commit,
+# nothing collapsed — a different commit is a different change by AC5).
+restore_row() {  # $1 = product name
+  put_product "$1" "$(product_body "$1" restored)" "$(git -C "$ROOT" rev-parse HEAD)" >/dev/null
+}
 product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print([x for x in rows if x["name"]==sys.argv[1]][0].get("version") or "0")' "$1"; }
 put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
   if [ -n "$3" ]; then
@@ -210,4 +231,8 @@ put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
   [ "$n2" -eq $((n1 + 2)) ] || { echo "two hand writes kept $((n2 - n1)) revisions, expected 2"; false; }
   v2="$(product_version spine)"
   [ "$v2" -eq $((v0 + 4)) ] || { echo "four changes moved the version $v0 -> $v2, expected +4"; false; }
+  # #4130 — last write in the file: hand the live row back to a real commit
+  # (see restore_row). Without this the row stays at changedIn=unknown and
+  # 4101's "never unknown after a land" reads it as red on the next run.
+  restore_row spine
 }

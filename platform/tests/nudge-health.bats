@@ -45,6 +45,16 @@ roles_measurable() {
   [ -n "$(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)" ]
 }
 
+# #4130 — the last test scripts Terminal.app through osascript. Under the 03:00
+# nightly (launchd, no foreground GUI session) that AppleEvent sat 481s and came
+# back as a timeout error, not a window count — a 5-pass file called red by one
+# hung call. Measure the precondition against the same app the test will ask,
+# bounded: if Terminal cannot answer a trivial query in 10s, the assertion is
+# UNMEASURABLE from this context. Where a Terminal is scriptable it runs as before.
+terminal_scriptable() {
+  perl -e 'alarm 10; exec @ARGV' osascript -e 'tell application "Terminal" to count windows' >/dev/null 2>&1
+}
+
 @test "health check succeeds when role sessions are running" {
   roles_measurable || skip "UNMEASURABLE: role sessions or tmux panes not visible from this test context"
   run bash "$HEALTH_SCRIPT"
@@ -117,12 +127,13 @@ roles_measurable() {
 }
 
 @test "health check detects missing role window" {
+  terminal_scriptable || skip "UNMEASURABLE: Terminal.app not scriptable from this context (headless launchd, #4130)"
   # Use a role name that won't match any window
   # Temporarily override ROLES to test with a fake role
   run bash -c '
     SCRIPT="$1"
-    # Extract just the osascript check for a nonexistent pattern
-    result=$(osascript -e "
+    # Extract just the osascript check for a nonexistent pattern (bounded: 30s, #4130)
+    result=$(perl -e "alarm 30; exec @ARGV" osascript -e "
 tell application \"Terminal\"
     set matchCount to 0
     set matchName to \"\"

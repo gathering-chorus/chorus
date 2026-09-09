@@ -58,7 +58,11 @@ chorus:principal-wren
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
-                    "urn:chorus:domains:documents"^^xsd:anyURI .
+                    "urn:chorus:domains:documents"^^xsd:anyURI ,
+                    # #4130 — the principles write door is now a secured surface
+                    # (security-3619-surfaces.ttl) and Wren owns the loom; this is
+                    # the scope that door requires.
+                    "urn:chorus:domains:principles"^^xsd:anyURI .
 
 chorus:principal-kade
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
