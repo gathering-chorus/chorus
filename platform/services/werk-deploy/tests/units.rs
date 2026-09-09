@@ -985,3 +985,49 @@ fn negative_proof_3734_a_clearing_env_pointed_at_prod_is_refused() {
         assert!(hit.unwrap().starts_with(k), "the refusal names the offending key");
     }
 }
+
+// #4119 — the werk environment is brought up ONCE per deploy, not once per unit.
+//
+// env_up creates the werk store, runs athena-deploy-model over it and posts the
+// instance rows. It takes no service name: the work is identical whoever asks.
+// It was called from inside the per-unit loop, so a build with four TS services
+// seeded the whole store four times. Measured on run 11 of #4119: four identical
+// rounds at 06:44:32 / 06:46:42 / 06:49:05 / 06:51:17, ~2m25s each, about 100s of
+// every round spent posting 476 rows one at a time — and round four hit the 600s
+// exec wall. That wall is what has been reported as "deploy-werk hangs".
+#[test]
+fn env_up_runs_once_however_many_ts_services_were_built() {
+    use werk_deploy::env_up_call_count;
+
+    // the shape that produced the wall: four TS services in one build
+    assert_eq!(1, env_up_call_count("werk", 4));
+    assert_eq!(1, env_up_call_count("werk", 1));
+    // nothing to bring up
+    assert_eq!(0, env_up_call_count("werk", 0));
+    // canonical installs per unit and never calls env_up
+    assert_eq!(0, env_up_call_count("canonical", 4));
+}
+
+// NEGATIVE PROOF (#3734). The rule above is only worth anything if it can tell
+// "once" apart from "once per unit". This is the rule it replaced — the per-unit
+// call — stated as a function, and shown to FAIL the invariant on the exact
+// input that cost ten minutes. Without this, a future change that quietly puts
+// env_up back in the loop would still satisfy a test written only against 1.
+#[test]
+fn negative_proof_the_old_per_unit_rule_fails_this_invariant() {
+    fn old_rule(target: &str, ts_service_units: usize) -> usize {
+        if target == "werk" { ts_service_units } else { 0 }
+    }
+
+    // the old rule agrees with the new one whenever there is at most one unit,
+    // which is why this went unnoticed for as long as it did
+    assert_eq!(old_rule("werk", 1), werk_deploy::env_up_call_count("werk", 1));
+
+    // and diverges exactly where it cost us: four units, four bring-ups
+    assert_eq!(4, old_rule("werk", 4));
+    assert_ne!(
+        old_rule("werk", 4),
+        werk_deploy::env_up_call_count("werk", 4),
+        "the old per-unit rule must NOT satisfy the once-per-deploy invariant"
+    );
+}

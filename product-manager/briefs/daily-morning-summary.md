@@ -1,32 +1,38 @@
-# Daily Morning Summary — 2026-09-07
+# Morning Summary — 2026-09-08
 
-**HEADLINE:** Hooks compile error and chorus-api are both Day 8 — past escalation threshold; both need a call from Jeff today.
+**HEADLINE:** Hooks compile error and chorus-api are both Day 9 with escalation overdue — two critical infrastructure failures need Jeff's call today.
 
 ---
 
-**OPS:** 🔴 RED overall
-- 🔴 Hooks: `signal_witness.rs:55` — `si_pid`/`si_uid` direct field access (Linux requires method calls). Day 8, past escalation. One-line fix; Silas to land.
-- 🔴 chorus-api: Offline Day 8. Board blind — WIP state unverifiable.
-- 🟡 CLAUDE.md fragments: 5d stale, threshold 2026-09-08. Wren to refresh today.
-- 🟡 Domain context: `domain-context-chorus.md` + `domain-context-infrastructure.md` 5d stale, threshold 2026-09-08.
-- 🟡 LaunchAgents: 17 plists logging to `/tmp/` (logs lost on reboot, chronic).
+**OPS** — 🔴 RED (from Silas, 2026-09-07)
+- 🔴 Hooks: `signal_witness.rs:55` compile error, Day 9. Escalation was due Day 8. One-line fix (`si_pid()`/`si_uid()` method calls). Silas can land it; Jeff needs to make the call.
+- 🔴 chorus-api: OFFLINE Day 9. Board completely blind — WIP card state unverifiable.
+- 🟡 CLAUDE.md fragments: 5 days stale, **2-day runway before RED** — Wren must refresh today.
+- 🟡 Domain context: `designing/domain-context/*.md` 5 days stale, **2-day runway** — update today.
 - 🟢 Git: clean. CSC: no new violations.
 
-**QUALITY:** 🔴 RED — no movement, no new failures
-- 0 tests run across all 5 suites (ts-jest preset missing, Day 86). Fix: `npm ci` per package.
-- Lint blocked Day 88 (`@eslint/js` module not found). Fix: `npm ci` at repo root.
-- TS errors: 1481 total across 5 packages, flat. `platform/mcp-server` spike of +222 is 4 days stale — card overdue.
+**QUALITY** — 🔴 RED (from Kade, 2026-09-08)
+- 0 tests run. All 4 ts-jest suites blocked, Day 87. Lint blocked Day 89. Fix: `npm ci` per package.
+- TS errors flat: 1,481 across 5 packages. mcp-server +222 spike now 5 days stale — card needed.
+- ⚠ +1 new failure: mcp-server grew 31 → 32 failing suites. A new test file added to a broken suite.
+- Coverage: N/A (all suites blocked).
 
-**YESTERDAY:** 5 cards shipped (#4103, #4105, #4106, #4107, #4108). Key: #4114 fixed collection served-name round-trip (list→read 404 loop), #4110 principles read now errors loudly on empty result.
+**YESTERDAY** — 6 cards shipped
+- #4114 (wren): Fixed /cards and /principles 404 loop — list now serves the name read accepts; principles were minting wrong prefix (28 rows broken). Major correctness fix.
+- #4116 (wren): Card row now carries its owner — land can write only the rows it merged.
+- #4113 (wren): Wren card landed.
+- #4111 (kade): Kade card landed.
+- #4110 (silas): Principles read now surfaces "lost all rows" error instead of silent empty answer.
+- #2436 (silas): Silas card landed.
 
-**TODAY:**
-1. Jeff: Call on hooks Day 8 and chorus-api Day 8 — both past escalation
-2. Silas: Land `si_pid()` / `si_uid()` one-liner in `signal_witness.rs`
-3. Wren: Refresh CLAUDE.md fragments + domain-context files before tomorrow's threshold
-4. Anyone: `npm ci` at repo root and per package — unblocks Day 86/88 test+lint outage
-5. Silas: Open card for `mcp-server` +222 TS error spike (4 days stale)
+**TODAY** — recommended priorities
+1. Jeff: Call Silas on hooks fix — Day 9 is past threshold. Two-minute code change, needs authorization.
+2. Jeff: chorus-api recovery — 9 days blind is unacceptable for board health.
+3. Wren: Refresh CLAUDE.md fragments and domain-context-chorus.md — deadline is today or tomorrow goes RED.
+4. Any role: `npm ci` across packages to unblock tests/lint (Day 87/89 is embarrassing — this is a one-command fix).
+5. Silas: Open card for mcp-server +222 TS spike (5 days old, no card).
 
-**BLOCKERS:**
-- 🔴 Hooks compile error Day 8 — Jeff needs to explicitly call escalation
-- 🔴 chorus-api offline Day 8 — board visibility gone; WIP count unverifiable
-- 🔴 Test + lint Day 86/88 — trivial fix (`npm ci`) has not landed; needs owner
+**BLOCKERS** — needs Jeff
+- 🔴 Hooks compile error Day 9: escalation overdue. Silas has the fix; Jeff must authorize the land call.
+- 🔴 chorus-api Day 9 offline: board blind. Restoration needs infrastructure access.
+- 🔴 Test/lint Day 87/89: `npm ci` fix has been obvious for 3 months. Needs a dedicated burn-down session.

@@ -21,14 +21,31 @@ set -u
 # grading canonical's copy of the function and reporting on code that was not changed.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NIGHTLY="$ROOT/platform/scripts/nightly-suites.sh"
-CHORUS_ROOT="$ROOT"; APP_ROOT="${APP_ROOT:-/Users/jeffbridwell/CascadeProjects/jeff-bridwell-personal-site}"
+CHORUS_ROOT="$ROOT"
+# #4119 — was an absolute /Users/<name>/ path, which is exactly what Kade's
+# hardcoded-path-guard exists to catch, and it caught mine. The personal-site repo is a
+# SIBLING of the chorus checkout, so derive it; the env var still overrides.
+_sibling="$(cd "$ROOT/.." 2>/dev/null && pwd)"
+APP_ROOT="${APP_ROOT:-${_sibling:+$_sibling/jeff-bridwell-personal-site}}"
+# NEVER let this be empty: owner_for matches it as a case pattern, and an empty
+# pattern matches EVERY path — which silently routed all 15 assertions to one role
+# the first time I derived this. A sentinel that matches nothing is the safe default.
+: "${APP_ROOT:=/nonexistent-app-root}"
 
 pass=0; fail=0
 ok()   { pass=$((pass+1)); echo "  ok   $1"; }
 bad()  { fail=$((fail+1)); echo "  FAIL $1"; }
 
 # Load ONLY the function under test — sourcing the whole nightly would run it.
-eval "$(awk '/^owner_for\(\) \{/,/^\}/' "$NIGHTLY")"
+# #4119 — #4111 replaced a single owner_for with a model-backed lookup plus two
+# helpers (_owner_map_build, _owner_path_rule) and the _OWNER_MAP var. Extracting only
+# owner_for left it calling functions that did not exist, and every assertion returned
+# empty — a test reporting FAIL for a reason that had nothing to do with the mapping.
+# Extract the whole family, and pin _OWNER_MAP empty so the PATH RULE is what is graded
+# here (the model-backed half has its own coverage).
+eval "$(awk '/^_OWNER_MAP=/{print} /^_owner_map_build\(\) \{/,/^\}/{print} /^_owner_path_rule\(\) \{/,/^\}/{print} /^owner_for\(\) \{/,/^\}/{print}' "$NIGHTLY")"
+_OWNER_MAP=""
+_owner_map_build() { :; }
 if ! declare -f owner_for >/dev/null; then
   echo "FATAL: could not extract owner_for from $NIGHTLY" >&2; exit 2
 fi

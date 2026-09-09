@@ -1,0 +1,893 @@
+<title>Light Life Garden Model</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Open+Sans:wght@300;400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#fdfdf8; --surface:#f6f6ee; --surface-2:#eeeee2;
+    --line:rgba(45,74,62,0.16); --line-strong:rgba(45,74,62,0.32);
+    --ink:#26261f; --ink-soft:#5d6157;
+    --green-dark:#2d4a3e; --green:#4a7c59; --green-light:#8fbc8f;
+    --gold:#a8851f; --gold-bright:#c9a227; --earth:#8b7355;
+    --hero-from:#2d4a3e; --hero-to:#1a2f25; --hero-ink:#f5f5dc;
+    --measure:66ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#141d18; --surface:#1b2721; --surface-2:#22302a;
+      --line:rgba(143,188,143,0.20); --line-strong:rgba(143,188,143,0.36);
+      --ink:#e8ece2; --ink-soft:#a3b0a3;
+      --green-dark:#8fbc8f; --green:#7ba884; --green-light:#4a7c59;
+      --gold:#d9b64a; --gold-bright:#e5c665; --earth:#b0977a;
+      --hero-from:#1a2f25; --hero-to:#0d1712;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#141d18; --surface:#1b2721; --surface-2:#22302a;
+    --line:rgba(143,188,143,0.20); --line-strong:rgba(143,188,143,0.36);
+    --ink:#e8ece2; --ink-soft:#a3b0a3;
+    --green-dark:#8fbc8f; --green:#7ba884; --green-light:#4a7c59;
+    --gold:#d9b64a; --gold-bright:#e5c665; --earth:#b0977a;
+    --hero-from:#1a2f25; --hero-to:#0d1712;
+  }
+
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Open Sans','Helvetica Neue',Arial,sans-serif;
+    font-weight:300; font-size:16px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap { max-width:1080px; margin:0 auto; padding:0 clamp(1.1rem,4vw,3rem); }
+
+  .hero {
+    background:linear-gradient(135deg,var(--hero-from) 0%,var(--hero-to) 100%);
+    color:var(--hero-ink); padding:clamp(2.4rem,6vw,3.6rem) 0 clamp(2rem,5vw,3rem);
+  }
+  .eyebrow { font-size:0.72rem; letter-spacing:0.28em; text-transform:uppercase;
+    color:var(--green-light); margin:0 0 0.9rem; }
+  .hero h1 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:400;
+    font-size:clamp(2.2rem,1.3rem + 3.3vw,3.5rem); line-height:1.06;
+    margin:0; color:#fff; text-wrap:balance; max-width:21ch;
+  }
+  .hero h1 em { font-style:normal; color:var(--gold-bright); }
+  .hero .deck { max-width:var(--measure); margin:1.1rem 0 0; font-size:1.06rem;
+    color:#d6dcc9; }
+  .hero .meta {
+    margin-top:1.6rem; padding-top:1rem; border-top:1px solid rgba(245,245,220,0.18);
+    display:flex; flex-wrap:wrap; gap:0.5rem 2.2rem;
+    font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:0.76rem;
+    color:var(--green-light);
+  }
+
+  section { padding:clamp(2.4rem,5vw,3.4rem) 0; border-bottom:1px solid var(--line); }
+  section:last-of-type { border-bottom:none; }
+  h2 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:500;
+    font-size:clamp(1.6rem,1.2rem + 1.4vw,2.15rem); line-height:1.15;
+    color:var(--green-dark); margin:0 0 0.35rem; text-wrap:balance;
+  }
+  .sub { font-size:0.72rem; letter-spacing:0.24em; text-transform:uppercase;
+    color:var(--earth); margin:0 0 1.4rem; }
+  p { max-width:var(--measure); margin:0 0 0.85rem; }
+  .lead { font-size:1.06rem; }
+  strong { font-weight:600; color:var(--green-dark); }
+  code, .mono { font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:0.86em; }
+
+  .steps { display:grid; }
+  .step {
+    display:grid; grid-template-columns:5rem 1fr; gap:0 1.1rem;
+    padding:1.05rem 0; border-top:1px solid var(--line); align-items:start;
+  }
+  .step:first-child { border-top:none; }
+  .letter {
+    font-family:'Cormorant Garamond',Georgia,serif; font-size:2.2rem;
+    color:var(--gold); line-height:1; padding-top:0.05rem;
+  }
+  .letter small {
+    display:block; font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:0.6rem; letter-spacing:0.13em; color:var(--ink-soft);
+    margin-top:0.3rem; text-transform:uppercase;
+  }
+  .step h3 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:500;
+    font-size:1.32rem; margin:0 0 0.1rem; color:var(--ink);
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:0.6rem;
+  }
+  .step h3 .season {
+    font-family:'Open Sans',sans-serif; font-size:0.68rem; font-weight:400;
+    letter-spacing:0.18em; text-transform:uppercase; color:var(--earth);
+  }
+  .step p { margin:0.15rem 0 0.5rem; font-size:0.95rem; }
+  .anchors { display:flex; flex-wrap:wrap; gap:0.45rem 1.4rem; align-items:baseline;
+    font-size:0.78rem; }
+  .pc { color:var(--green); font-style:italic;
+    font-family:'Cormorant Garamond',Georgia,serif; font-size:1rem; }
+  .touches { font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:0.72rem;
+    color:var(--ink-soft); }
+  .chip {
+    display:inline-block; font-size:0.64rem; letter-spacing:0.14em;
+    text-transform:uppercase; padding:0.12rem 0.5rem; border:1px solid currentColor;
+    white-space:nowrap;
+  }
+  .chip.phone { color:var(--green); }
+  .chip.desk { color:var(--earth); }
+
+  .return {
+    display:flex; align-items:center; gap:0.9rem; margin-top:1.2rem;
+    padding:0.85rem 1.1rem; border:1px dashed var(--line); font-size:0.9rem;
+    color:var(--ink-soft);
+  }
+  .return .arrow { font-family:'IBM Plex Mono',ui-monospace,monospace;
+    color:var(--gold); font-size:1.1rem; }
+  .return em { font-style:normal; color:var(--green-dark); font-weight:600; }
+
+  .domain { margin-top:2.2rem; }
+  .domain-head {
+    display:flex; flex-wrap:wrap; align-items:baseline; gap:0.7rem 1.2rem;
+    padding-bottom:0.45rem; border-bottom:2px solid var(--line-strong);
+  }
+  .domain-head h3 {
+    font-family:'Cormorant Garamond',Georgia,serif; font-weight:500;
+    font-size:1.55rem; margin:0; color:var(--green-dark);
+  }
+  .domain-head .purpose { font-size:0.9rem; color:var(--ink-soft);
+    flex:1 1 20ch; min-width:0; }
+
+  .classes { display:grid; gap:1rem; margin-top:1rem;
+    grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); }
+  .cls { background:var(--surface); padding:0.9rem 1rem 1rem; min-width:0; }
+  .cls h4 {
+    font-family:'IBM Plex Mono',ui-monospace,monospace; font-weight:500;
+    font-size:0.86rem; margin:0 0 0.15rem; color:var(--green-dark);
+  }
+  .cls .gloss { font-size:0.82rem; color:var(--ink-soft); margin:0 0 0.7rem;
+    max-width:none; }
+  .cls dl { margin:0; display:grid; grid-template-columns:auto 1fr;
+    gap:0.2rem 0.7rem; font-size:0.78rem; align-items:baseline; }
+  .cls dt { font-family:'IBM Plex Mono',ui-monospace,monospace; color:var(--ink);
+    white-space:nowrap; }
+  .cls dd { margin:0; color:var(--ink-soft); min-width:0; }
+  .t { color:var(--earth); font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:0.94em; }
+  .cls .edges { margin-top:0.7rem; padding-top:0.6rem;
+    border-top:1px solid var(--line); }
+  .cls .edges .lbl { font-size:0.6rem; letter-spacing:0.18em; text-transform:uppercase;
+    color:var(--gold); display:block; margin-bottom:0.35rem; }
+  .cls .edges dt { color:var(--green); }
+
+  .rule-note { margin-top:1rem; padding:0.8rem 1rem; border-left:3px solid var(--gold);
+    background:var(--surface-2); font-size:0.9rem; }
+  .rule-note p { margin:0; max-width:none; }
+
+  .compare { display:grid; gap:1.4rem; margin-top:1.5rem;
+    grid-template-columns:repeat(auto-fit,minmax(270px,1fr)); }
+  .col h3 { font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:0.72rem;
+    letter-spacing:0.16em; text-transform:uppercase; color:var(--earth);
+    margin:0 0 0.7rem; font-weight:500; }
+  .col ol { list-style:none; margin:0; padding:0; }
+  .col li { padding:0.34rem 0; border-bottom:1px solid var(--line); font-size:0.9rem;
+    display:flex; justify-content:space-between; gap:1rem; align-items:baseline; }
+  .col li:last-child { border-bottom:none; }
+  .col li .tag { font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:0.68rem; color:var(--gold); }
+
+  figure.dia { margin:1.5rem 0 0; padding:1.1rem 0.8rem; background:var(--surface);
+    overflow-x:auto; }
+  figure.dia pre.mermaid { margin:0; text-align:center; min-width:520px; }
+  figure.dia figcaption {
+    margin-top:0.8rem; padding-top:0.6rem; border-top:1px solid var(--line);
+    font-size:0.82rem; color:var(--ink-soft); text-align:left;
+  }
+
+  .open { margin-top:1.4rem; padding:0; list-style:none; }
+  .open li { padding:0.6rem 0 0.6rem 1.4rem; border-top:1px solid var(--line);
+    position:relative; font-size:0.94rem; max-width:var(--measure); }
+  .open li::before { content:"?"; position:absolute; left:0; top:0.6rem;
+    color:var(--gold); font-family:'IBM Plex Mono',ui-monospace,monospace;
+    font-size:0.86rem; }
+
+  footer { padding:2rem 0 3rem; font-size:0.76rem; color:var(--ink-soft);
+    font-family:'IBM Plex Mono',ui-monospace,monospace; }
+  a { color:var(--green); }
+  a:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+  @media (prefers-reduced-motion:reduce) { * { animation:none !important; transition:none !important; } }
+</style>
+
+<div class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Light Life Urban Gardens · Product ideation · Draft 2</p>
+    <h1>Its own app, its own stream, its own <em>model</em></h1>
+    <p class="deck">Not a Chorus feature. A separate product with a separate value
+    stream — permaculture's own SADIMET cycle — carried on a phone into the garden it
+    describes. Chorus is what builds it, not what it is.</p>
+    <div class="meta">
+      <span>7 stream steps</span><span>7 domains</span><span>16 classes</span>
+      <span>Phone-first, desk-second</span><span>2026-09-07</span>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+
+<section>
+  <h2>Why it is a separate product</h2>
+  <p class="sub">The meta model earning its keep</p>
+  <p class="lead">Chorus's steps rhyme with permaculture's design cycle, and that is not
+  borrowing. Chorus is built on the permaculture principle set, so it converges on the
+  same shape — two systems descending from the same principles land in the same place.</p>
+  <p>Which is exactly why the garden app must not inherit Chorus's steps.
+  <strong>ValueStream is the type; Chorus is one instance and Light Life is another.</strong>
+  Same meta model, different content, no obligation to match. If the model can only
+  produce copies of Chorus, it is not a model — it is a template.</p>
+  <p>So Light Life takes the formal cycle from its own field, in the language its trade
+  and its clients already use.</p>
+</section>
+
+<section>
+  <h2>The stream</h2>
+  <p class="sub">SADIMET · one property, one season, forever</p>
+  <p>Permaculture's own design process. The D is <strong>Decisions</strong>, not Design,
+  because in this trade the whole engagement is design — that distinction is the
+  literature's, not mine. Each step carries the permaculture principle under it, in
+  Hemenway's wording from our own graph.</p>
+
+  <div class="steps">
+
+    <div class="step">
+      <div class="letter">S<small>Survey</small></div>
+      <div>
+        <h3>Walk it and draw it <span class="season">once per property</span></h3>
+        <p>Walk the site with the owner. Listen, sketch, measure what you can reach. Leave
+        them a hand-drawn map of their own space — which is what actually wins the work.</p>
+        <div class="anchors">
+          <span class="pc">Observe</span>
+          <span class="touches">Household · Property · SiteMap</span>
+          <span class="chip phone">in the garden</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">A<small>Analysis</small></div>
+      <div>
+        <h3>Read the light and the ground <span class="season">every season</span></h3>
+        <p>Zones by how often a space is used; sectors by what arrives from outside — sun,
+        wind, water, access. Identify what is growing, including what is invasive or
+        prohibited in this state.</p>
+        <div class="anchors">
+          <span class="pc">Connect</span>
+          <span class="touches">Zone · Sector · Planting · Plant</span>
+          <span class="chip phone">in the garden</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">D<small>Decisions</small></div>
+      <div>
+        <h3>Agree what to do, and what it trades for <span class="season">per engagement</span></h3>
+        <p>A set of work items for one property, each with hours and the season it belongs
+        in, and the exchange attached — cash at an hourly rate, or a trade with the value
+        still named so both sides can weigh it.</p>
+        <div class="anchors">
+          <span class="pc">Get a yield</span>
+          <span class="touches">Proposal · WorkItem · Arrangement</span>
+          <span class="chip desk">at the desk</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">I<small>Implement</small></div>
+      <div>
+        <h3>The visit <span class="season">per booking</span></h3>
+        <p>The day itself. Tick off what actually got done, log the real hours, and capture
+        what nobody predicted — a wasps nest, a tree worse than it looked, a bed that turned
+        out to be shaded.</p>
+        <div class="anchors">
+          <span class="pc">Use small-scale, intensive systems</span>
+          <span class="touches">Visit · WorkItem · Observation</span>
+          <span class="chip phone">in the garden</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">M<small>Maintain</small></div>
+      <div>
+        <h3>Tend through the season <span class="season">ongoing</span></h3>
+        <p>Photographs and short notes pinned to a place on the map. Low effort, high
+        value, and the only step whose evidence can only be gathered while the season is
+        actually happening.</p>
+        <div class="anchors">
+          <span class="pc">Catch and store energy and materials</span>
+          <span class="touches">Observation · Planting</span>
+          <span class="chip phone">in the garden</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">E<small>Evaluate</small></div>
+      <div>
+        <h3>What grew, what failed <span class="season">at season end</span></h3>
+        <p>Review the season against what was proposed. The corrected map is the artifact
+        — the drawing amended by a year of evidence, with the previous version kept.</p>
+        <div class="anchors">
+          <span class="pc">Mistakes are tools for learning</span>
+          <span class="touches">SiteMap · Observation · Planting</span>
+          <span class="chip desk">at the desk</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="letter">T<small>Tweak</small></div>
+      <div>
+        <h3>Schedule next season <span class="season">winter</span></h3>
+        <p>Small corrections and the standing work, each placed in the window it belongs
+        to. Catalpas cut back while dormant. Bare-root fruit trees in early spring.
+        Invasive removal after leaf drop. Timing is the craft; this is where it lives.</p>
+        <div class="anchors">
+          <span class="pc">Collaborate with succession</span>
+          <span class="touches">Recurrence · SeasonWindow · WorkItem</span>
+          <span class="chip desk">at the desk</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <figure class="dia">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#4a7c59','primaryTextColor':'#ffffff','primaryBorderColor':'#2d4a3e','lineColor':'#a8851f','fontFamily':'Open Sans, sans-serif','fontSize':'14px'}}}%%
+flowchart LR
+  S["S — Survey<br/><small>walk it, draw it</small>"]
+  A["A — Analysis<br/><small>light, zones, sectors</small>"]
+  D["D — Decisions<br/><small>propose, agree terms</small>"]
+  I["I — Implement<br/><small>the visit</small>"]
+  M["M — Maintain<br/><small>tend the season</small>"]
+  E["E — Evaluate<br/><small>what grew, what failed</small>"]
+  T["T — Tweak<br/><small>schedule next season</small>"]
+
+  S --> A --> D --> I --> M --> E --> T
+  T -. "next season" .-> A
+
+  classDef field fill:#4a7c59,stroke:#2d4a3e,color:#ffffff;
+  classDef desk fill:#8b7355,stroke:#5f4f3a,color:#ffffff;
+  class S,A,I,M field;
+  class D,E,T desk;
+</pre>
+    <figcaption>Green is done in the garden, brown at the desk. The dotted return goes to
+    <strong>A</strong>, not <strong>S</strong> — survey happens once per property, and
+    every season after re-reads it.</figcaption>
+  </figure>
+
+  <div class="return">
+    <span class="arrow">↺</span>
+    <span>The loop returns to <em>A — Analysis</em>, never to S. A property is surveyed
+    once; every season after re-reads it. That difference is what turns a customer into a
+    client.</span>
+  </div>
+</section>
+
+<section>
+  <h2>Phone or desk</h2>
+  <p class="sub">Where each step is actually performed</p>
+  <p>Four of the seven steps happen standing in a garden with dirty hands, often out of
+  signal. Three happen sitting down. That split is the product's hardest constraint and
+  should be decided now, not discovered later.</p>
+  <div class="compare">
+    <div class="col">
+      <h3>Phone, in the field</h3>
+      <ol>
+        <li><span>Sketch, measure, photograph</span><span class="tag">S</span></li>
+        <li><span>Identify plants, mark sun and access</span><span class="tag">A</span></li>
+        <li><span>Tick items done, log hours</span><span class="tag">I</span></li>
+        <li><span>Photo and note on a map pin</span><span class="tag">M</span></li>
+      </ol>
+    </div>
+    <div class="col">
+      <h3>Desk, between visits</h3>
+      <ol>
+        <li><span>Write and send the proposal</span><span class="tag">D</span></li>
+        <li><span>Redraw the map, review the season</span><span class="tag">E</span></li>
+        <li><span>Schedule the recurring work</span><span class="tag">T</span></li>
+      </ol>
+    </div>
+  </div>
+  <div class="rule-note">
+    <p>Consequence: capture must work with no signal and sync later, one-handed, camera
+    first. Anything a person has to type in a garden is a liability — the field steps get
+    a photo, a pin, and at most one sentence.</p>
+  </div>
+</section>
+
+<section>
+  <h2>The domains</h2>
+  <p class="sub">Seven domains · classes, attributes, edges</p>
+  <p>Six domains are Jeff's list. <strong>Work</strong> is the addition: a proposal is a
+  set of work items, a visit records which were done, a schedule says when they recur —
+  without it, a proposal cannot become a visit record without retyping everything. Types
+  are indicative; every edge names its target class and cardinality.</p>
+
+
+  <figure class="dia">
+<pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#f6f6ee','primaryTextColor':'#26261f','primaryBorderColor':'#4a7c59','lineColor':'#8b7355','fontFamily':'IBM Plex Mono, monospace','fontSize':'12px','clusterBkg':'transparent','clusterBorder':'#a8851f'}}}%%
+flowchart TB
+  subgraph CUST["Customer"]
+    HH["Household"]
+    ARR["Arrangement"]
+  end
+  subgraph PROP["Property"]
+    PR["Property"]
+    ZN["Zone"]
+    BD["Bed"]
+    SM["SiteMap"]
+    SC["Sector"]
+  end
+  subgraph RES["Garden Resources"]
+    PL["Plant"]
+    JS["JurisdictionStatus"]
+    PG["Planting"]
+    MT["Material"]
+  end
+  subgraph WRK["Work"]
+    WI["WorkItem"]
+  end
+  subgraph PRO["Proposal"]
+    PP["Proposal"]
+  end
+  subgraph VIS["Visit"]
+    VS["Visit"]
+    OB["Observation"]
+  end
+  subgraph SCH["Seasonal Schedule"]
+    SW["SeasonWindow"]
+    RC["Recurrence"]
+  end
+
+  HH -- owns --> PR
+  HH -- hasArrangement --> ARR
+  PR -- hasZone --> ZN
+  PR -- hasSector --> SC
+  PR -- currentMap --> SM
+  SM -- supersedes --> SM
+  ZN -- contains --> BD
+  BD -- holds --> PG
+  PG -- ofPlant --> PL
+  PL -- statusIn --> JS
+  PL -- pruneWindow --> SW
+
+  WI -- atProperty --> PR
+  WI -- touches --> PG
+  WI -- consumes --> MT
+  WI -- inWindow --> SW
+  WI -- dependsOn --> WI
+
+  PP -- includes --> WI
+  PP -- forProperty --> PR
+  PP -- underArrangement --> ARR
+  PP -- showsMap --> SM
+
+  VS -- atProperty --> PR
+  VS -- fulfils --> PP
+  VS -- completed --> WI
+  VS -- produced --> OB
+  OB -- about --> PG
+
+  RC -- ofWorkItem --> WI
+  RC -- inWindow --> SW
+</pre>
+    <figcaption><strong>WorkItem is the hub.</strong> A proposal includes it, a visit
+    completes it, a recurrence repeats it — one row, never retyped. And two edges carry
+    the season: <span class="mono">WorkItem&nbsp;→&nbsp;SeasonWindow</span> says when a
+    job may be done at all, <span class="mono">Recurrence&nbsp;→&nbsp;SeasonWindow</span>
+    says when it comes round again.</figcaption>
+  </figure>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Customer</h3>
+      <span class="purpose">Who the work is for, and on what terms</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:Household</h4>
+        <p class="gloss">A household, not a person — the garden belongs to the address,
+        and usually to more than one adult.</p>
+        <dl>
+          <dt>name</dt><dd><span class="t">string</span></dd>
+          <dt>contacts</dt><dd><span class="t">string[]</span> names as they wish to be called</dd>
+          <dt>phone</dt><dd><span class="t">string</span></dd>
+          <dt>email</dt><dd><span class="t">string</span></dd>
+          <dt>clientSince</dt><dd><span class="t">date</span></dd>
+          <dt>referredBy</dt><dd><span class="t">string</span> word of mouth is the channel</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>owns</dt><dd>→ <span class="t">Property</span> 1..*</dd>
+            <dt>hasArrangement</dt><dd>→ <span class="t">Arrangement</span> 0..*</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Arrangement</h4>
+        <p class="gloss">How this household pays. A barter is a first-class arrangement,
+        not a missing invoice — and it still carries a value.</p>
+        <dl>
+          <dt>kind</dt><dd><span class="t">enum</span> hourly | fixed | trade | mixed</dd>
+          <dt>hourlyRate</dt><dd><span class="t">decimal</span> 35.00</dd>
+          <dt>tradeFor</dt><dd><span class="t">string</span> what is received instead of money</dd>
+          <dt>agreedOn</dt><dd><span class="t">date</span></dd>
+          <dt>active</dt><dd><span class="t">boolean</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl><dt>forHousehold</dt><dd>→ <span class="t">Household</span> 1</dd></dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Property</h3>
+      <span class="purpose">The place itself — shape, light, structure, and the map of it</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:Property</h4>
+        <p class="gloss">One address. Lot geometry earns its place: a long narrow lot is a
+        different design problem from a square one.</p>
+        <dl>
+          <dt>address</dt><dd><span class="t">string</span></dd>
+          <dt>lotLengthFt</dt><dd><span class="t">decimal</span> 84</dd>
+          <dt>lotWidthFt</dt><dd><span class="t">decimal</span> 15</dd>
+          <dt>longAxisBearing</dt><dd><span class="t">enum</span> N-S | E-W | NE-SW | NW-SE</dd>
+          <dt>surveyedOn</dt><dd><span class="t">date</span> the S step, once</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>ownedBy</dt><dd>→ <span class="t">Household</span> 1</dd>
+            <dt>hasZone</dt><dd>→ <span class="t">Zone</span> 0..*</dd>
+            <dt>hasSector</dt><dd>→ <span class="t">Sector</span> 0..*</dd>
+            <dt>currentMap</dt><dd>→ <span class="t">SiteMap</span> 1</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Zone</h4>
+        <p class="gloss">Permaculture zones 0–5, ordered by how often you go there.
+        Frequency of use decides placement — the doorstep herb bed is zone 1 for a reason.</p>
+        <dl>
+          <dt>zoneNumber</dt><dd><span class="t">integer</span> 0–5</dd>
+          <dt>name</dt><dd><span class="t">string</span></dd>
+          <dt>visitsPerWeek</dt><dd><span class="t">integer</span> what makes it that zone</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>inProperty</dt><dd>→ <span class="t">Property</span> 1</dd>
+            <dt>contains</dt><dd>→ <span class="t">Bed</span> 0..*</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Sector</h4>
+        <p class="gloss">What arrives from outside and cannot be moved. Sectors are the
+        half of site analysis people skip, and they decide everything.</p>
+        <dl>
+          <dt>kind</dt><dd><span class="t">enum</span> sun | wind | water | frost | noise | view | access | deer</dd>
+          <dt>bearing</dt><dd><span class="t">enum</span> N … NW</dd>
+          <dt>season</dt><dd><span class="t">enum</span> summer | winter | all — high summer sun is not winter sun</dd>
+          <dt>note</dt><dd><span class="t">string</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl><dt>inProperty</dt><dd>→ <span class="t">Property</span> 1</dd></dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:SiteMap</h4>
+        <p class="gloss">The drawing, versioned. The map is what clients actually keep, and
+        it changes every season — so old versions are kept, never overwritten.</p>
+        <dl>
+          <dt>version</dt><dd><span class="t">integer</span></dd>
+          <dt>drawnOn</dt><dd><span class="t">date</span></dd>
+          <dt>image</dt><dd><span class="t">ref</span> photo of the hand drawing</dd>
+          <dt>isCurrent</dt><dd><span class="t">boolean</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>ofProperty</dt><dd>→ <span class="t">Property</span> 1</dd>
+            <dt>supersedes</dt><dd>→ <span class="t">SiteMap</span> 0..1</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Bed</h4>
+        <p class="gloss">A workable area inside a zone — bed, border, container group. The
+        unit a plant is actually placed in.</p>
+        <dl>
+          <dt>name</dt><dd><span class="t">string</span></dd>
+          <dt>lengthFt</dt><dd><span class="t">decimal</span></dd>
+          <dt>widthFt</dt><dd><span class="t">decimal</span></dd>
+          <dt>summerSunHours</dt><dd><span class="t">decimal</span> decides what can go here</dd>
+          <dt>form</dt><dd><span class="t">enum</span> in-ground | raised | container | espalier</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>inZone</dt><dd>→ <span class="t">Zone</span> 1</dd>
+            <dt>holds</dt><dd>→ <span class="t">Planting</span> 0..*</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Garden Resources</h3>
+      <span class="purpose">What grows on it, and what goes into it</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:Plant</h4>
+        <p class="gloss">The species, shared across every property. Separating species from
+        individual is what lets one list update flag every client at once.</p>
+        <dl>
+          <dt>commonName</dt><dd><span class="t">string</span> "burning bush"</dd>
+          <dt>botanicalName</dt><dd><span class="t">string</span> Euonymus alatus</dd>
+          <dt>habit</dt><dd><span class="t">enum</span> tree | shrub | vine | perennial | annual | groundcover</dd>
+          <dt>matureHeightFt</dt><dd><span class="t">decimal</span></dd>
+          <dt>sunNeed</dt><dd><span class="t">enum</span> full | part | shade</dd>
+          <dt>edible</dt><dd><span class="t">boolean</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>statusIn</dt><dd>→ <span class="t">JurisdictionStatus</span> 0..*</dd>
+            <dt>pruneWindow</dt><dd>→ <span class="t">SeasonWindow</span> 0..1</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:JurisdictionStatus</h4>
+        <p class="gloss">A species' standing in one place. Native here is invasive one
+        state over, so the judgement belongs on the pair — never on the plant.</p>
+        <dl>
+          <dt>jurisdiction</dt><dd><span class="t">string</span> "Massachusetts"</dd>
+          <dt>standing</dt><dd><span class="t">enum</span> native | naturalized | invasive | prohibited</dd>
+          <dt>listSource</dt><dd><span class="t">string</span> the published list it came from</dd>
+          <dt>asOf</dt><dd><span class="t">date</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl><dt>ofPlant</dt><dd>→ <span class="t">Plant</span> 1</dd></dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Planting</h4>
+        <p class="gloss">This species, in this bed, in this condition. The individual — and
+        what a photograph is actually about.</p>
+        <dl>
+          <dt>quantity</dt><dd><span class="t">integer</span></dd>
+          <dt>plantedOn</dt><dd><span class="t">date</span> null if it was already there</dd>
+          <dt>condition</dt><dd><span class="t">enum</span> thriving | holding | struggling | dead | removed</dd>
+          <dt>removedOn</dt><dd><span class="t">date</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>ofPlant</dt><dd>→ <span class="t">Plant</span> 1</dd>
+            <dt>inBed</dt><dd>→ <span class="t">Bed</span> 1</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Material</h4>
+        <p class="gloss">Bought or made inputs. Compost made on site is a material with no
+        cost and a source — which is the whole point of making it.</p>
+        <dl>
+          <dt>kind</dt><dd><span class="t">enum</span> compost | mulch | soil | stone | seed | timber | fixing</dd>
+          <dt>unit</dt><dd><span class="t">enum</span> cu-yd | bag | each | ft</dd>
+          <dt>unitCost</dt><dd><span class="t">decimal</span></dd>
+          <dt>madeOnSite</dt><dd><span class="t">boolean</span></dd>
+          <dt>supplier</dt><dd><span class="t">string</span></dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl><dt>usedBy</dt><dd>→ <span class="t">WorkItem</span> 0..*</dd></dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Work</h3>
+      <span class="purpose">One job — the unit a proposal, a visit and a schedule all share</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:WorkItem</h4>
+        <p class="gloss">"Clear the paths." "Cut back the catalpas." The atom: proposed,
+        then done, then possibly repeated — one row throughout, never retyped.</p>
+        <dl>
+          <dt>title</dt><dd><span class="t">string</span></dd>
+          <dt>detail</dt><dd><span class="t">string</span> what the client reads</dd>
+          <dt>estHours</dt><dd><span class="t">decimal</span> 1.5</dd>
+          <dt>skill</dt><dd><span class="t">enum</span> clearing | pruning | planting | building | hauling | identifying</dd>
+          <dt>state</dt><dd><span class="t">enum</span> proposed | scheduled | done | dropped</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>atProperty</dt><dd>→ <span class="t">Property</span> 1</dd>
+            <dt>inWindow</dt><dd>→ <span class="t">SeasonWindow</span> 0..1</dd>
+            <dt>touches</dt><dd>→ <span class="t">Bed | Planting</span> 0..*</dd>
+            <dt>dependsOn</dt><dd>→ <span class="t">WorkItem</span> 0..* — paths before removal</dd>
+            <dt>consumes</dt><dd>→ <span class="t">Material</span> 0..*</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+    <div class="rule-note">
+      <p><strong>The rule that makes the app worth having:</strong> a work item is
+      offerable only when today falls inside its <span class="mono">inWindow</span>. That
+      is why the window is an edge to a real class and not a string — everything else here
+      is a to-do list, and this is the one thing a garden app knows that a to-do list
+      cannot.</p>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Proposal</h3>
+      <span class="purpose">What was offered, on what terms, and what came of it</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:Proposal</h4>
+        <p class="gloss">A set of work items for one property with the exchange attached.
+        Renders to the one-page document in the Light Life brand.</p>
+        <dl>
+          <dt>reference</dt><dd><span class="t">string</span> "2026-09-PINEDALE"</dd>
+          <dt>issuedOn</dt><dd><span class="t">date</span></dd>
+          <dt>state</dt><dd><span class="t">enum</span> draft | sent | accepted | declined | expired</dd>
+          <dt>totalHours</dt><dd><span class="t">decimal</span> derived from the items</dd>
+          <dt>totalValue</dt><dd><span class="t">decimal</span> derived — stated even for a trade</dd>
+          <dt>narrative</dt><dd><span class="t">string</span> the "what I saw" paragraph</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>forProperty</dt><dd>→ <span class="t">Property</span> 1</dd>
+            <dt>includes</dt><dd>→ <span class="t">WorkItem</span> 1..*</dd>
+            <dt>underArrangement</dt><dd>→ <span class="t">Arrangement</span> 1</dd>
+            <dt>showsMap</dt><dd>→ <span class="t">SiteMap</span> 0..1</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Visit</h3>
+      <span class="purpose">What actually happened on a day, and what was seen</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:Visit</h4>
+        <p class="gloss">One day on one property. The hours here are real, and comparing
+        them to the estimate is how pricing gets honest.</p>
+        <dl>
+          <dt>visitedOn</dt><dd><span class="t">date</span></dd>
+          <dt>hoursSpent</dt><dd><span class="t">decimal</span> the truth against estHours</dd>
+          <dt>weather</dt><dd><span class="t">string</span></dd>
+          <dt>summary</dt><dd><span class="t">string</span> one paragraph for the client</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>atProperty</dt><dd>→ <span class="t">Property</span> 1</dd>
+            <dt>fulfils</dt><dd>→ <span class="t">Proposal</span> 0..1 — own garden has none</dd>
+            <dt>completed</dt><dd>→ <span class="t">WorkItem</span> 0..*</dd>
+            <dt>produced</dt><dd>→ <span class="t">Observation</span> 0..*</dd>
+          </dl>
+        </div>
+      </div>
+      <div class="cls">
+        <h4>llug:Observation</h4>
+        <p class="gloss">The field capture, and the smallest thing the app must do well: a
+        photo, a pin, a sentence. Everything else can wait for a desk.</p>
+        <dl>
+          <dt>notedAt</dt><dd><span class="t">datetime</span></dd>
+          <dt>kind</dt><dd><span class="t">enum</span> photo | note | measurement | problem</dd>
+          <dt>text</dt><dd><span class="t">string</span> one sentence, typed with one thumb</dd>
+          <dt>photo</dt><dd><span class="t">ref</span></dd>
+          <dt>mapPin</dt><dd><span class="t">point</span> where on the current map</dd>
+          <dt>syncState</dt><dd><span class="t">enum</span> local | synced — capture works with no signal</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>duringVisit</dt><dd>→ <span class="t">Visit</span> 1</dd>
+            <dt>about</dt><dd>→ <span class="t">Planting | Bed | Property</span> 1</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="domain">
+    <div class="domain-head">
+      <h3>Seasonal Schedule</h3>
+      <span class="purpose">When work may be done, and when it comes round again</span>
+    </div>
+    <div class="classes">
+      <div class="cls">
+        <h4>llug:SeasonWindow</h4>
+        <p class="gloss">A named period the trade already uses. Windows are anchored to
+        events as often as to dates — "after leaf drop" is not a calendar day.</p>
+        <dl>
+          <dt>name</dt><dd><span class="t">string</span> dormant · bare-root · after leaf drop</dd>
+          <dt>opensAbout</dt><dd><span class="t">month-day</span> 11-15</dd>
+          <dt>closesAbout</dt><dd><span class="t">month-day</span> 03-15</dd>
+          <dt>anchor</dt><dd><span class="t">enum</span> date | first-frost | leaf-drop | last-frost | bud-break</dd>
+          <dt>why</dt><dd><span class="t">string</span> "dormant — cleaner cuts, less stress"</dd>
+        </dl>
+      </div>
+      <div class="cls">
+        <h4>llug:Recurrence</h4>
+        <p class="gloss">Standing work. This is the class that turns one six-hour job into
+        a returning client, which is the business model.</p>
+        <dl>
+          <dt>everyNYears</dt><dd><span class="t">decimal</span> 0.5 = twice a year</dd>
+          <dt>lastDoneOn</dt><dd><span class="t">date</span></dd>
+          <dt>nextDue</dt><dd><span class="t">date</span> derived from last done + interval</dd>
+          <dt>state</dt><dd><span class="t">enum</span> due | waiting-on-window | overdue | paused</dd>
+        </dl>
+        <div class="edges"><span class="lbl">Edges</span>
+          <dl>
+            <dt>ofWorkItem</dt><dd>→ <span class="t">WorkItem</span> 1</dd>
+            <dt>inWindow</dt><dd>→ <span class="t">SeasonWindow</span> 1</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+    <div class="rule-note">
+      <p><span class="mono">waiting-on-window</span> is a real state, not a nicety. Work
+      can be due and still not doable — that is the difference between a garden schedule
+      and a task queue, and it is why the schedule is its own domain.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Where to start</h2>
+  <p class="sub">One slice, and it is time-boxed</p>
+  <p class="lead"><strong>M — Maintain, in Jeff's own garden, this month.</strong></p>
+  <p>Not Customer, not the proposal generator. Maintain is the only step whose evidence can
+  only be gathered while a season is running, and it is September. Everything else can be
+  built in January from notes; Maintain built in January is a guess about what a person
+  wants to record standing in a garden with dirty hands.</p>
+  <p>It is also the smallest honest slice — a photo, a pin, a sentence — and it forces four
+  classes to be real underneath it: <span class="mono">Property</span>,
+  <span class="mono">SiteMap</span>, <span class="mono">Planting</span> and
+  <span class="mono">Observation</span>.</p>
+  <ul class="open">
+    <li>Does a Visit exist without a Proposal? Jeff's own garden has no client. Either the
+    edge is optional, or he is a household of his own business — the second keeps the model
+    honest and is probably right.</li>
+    <li>Is the map an annotated photograph or real geometry? Photographing a hand drawing
+    and pinning to it is days of work. Modelling geometry is months. The clients value the
+    hand drawing.</li>
+    <li>Where does JurisdictionStatus come from? A state prohibited-plant list is public
+    data, and loading it once would let the app say something no competitor's says.</li>
+    <li>Is Bed needed in the first slice, or can an Observation pin to a Zone? Fewer classes
+    now, a migration later.</li>
+  </ul>
+</section>
+
+<footer class="wrap">
+  Draft 2 · Wren · 2026-09-07 · Cycle from permaculture.org.uk design frameworks ·
+  principles from the Chorus graph (Hemenway, <em>Gaia's Garden</em> 2nd ed.)
+</footer>
+
+</div>

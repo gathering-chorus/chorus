@@ -978,6 +978,16 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
     // #3092: dispatch by target_class so each kind (Rust service / TS service / CLI verb)
     // walks its own deploy path; no class enum on the verb's top level, just per-unit
     // dispatch (Jeff's framing: deploy all things that got built).
+    // #4119 — env_up brings up the WHOLE werk environment: it creates the werk
+    // store, runs athena-deploy-model over it, and posts the instance rows. It
+    // takes no service name and does the same work whoever asks for it. It was
+    // being called once per built TS-service unit, so a build with four of them
+    // seeded the entire store four times: measured on run 11 as four identical
+    // rounds at 06:44:32, 06:46:42, 06:49:05 and 06:51:17, ~2m25s each, ~100s
+    // of every round spent posting 476 rows one at a time — and the fourth round
+    // ran into the 600s exec wall, which is what "deploy-werk hangs" has been.
+    // Collect the TS units here; bring the environment up ONCE after the loop.
+    let mut ts_werk_units: Vec<String> = Vec::new();
     for (name, built_identity) in &built {
         // #3132 — classify STRUCTURALLY from the werk (no name allowlist).
         let class = target_class_in(name, &werk)?;
@@ -988,10 +998,15 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
                 )?;
             }
             TargetClass::TsService { svc, dist_dir_rel, smoke_url } => {
-                deploy_ts_service(
-                    home, &werk_s, role, card, target, &trace, name, built_identity, svc,
-                    dist_dir_rel, smoke_url,
-                )?;
+                if target == "werk" {
+                    // deferred: one env_up for all of them, after the loop
+                    ts_werk_units.push(name.clone());
+                } else {
+                    deploy_ts_service(
+                        home, &werk_s, role, card, target, &trace, name, built_identity, svc,
+                        dist_dir_rel, smoke_url,
+                    )?;
+                }
             }
             TargetClass::CliVerb { bin } => {
                 deploy_cli_verb(
@@ -1012,6 +1027,18 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
         let _ = register_gh(&werk_s, card, role, &trace, name, built_identity, target);
     }
 
+    // #4119 — the single environment bring-up. env_up is service-agnostic, so one
+    // call covers every TS unit in ts_werk_units; the names are logged so the
+    // record still says which units this bring-up stands for.
+    if env_up_call_count(target, ts_werk_units.len()) == 1 {
+        let canonical_root = canonical_root_path(home);
+        let names = ts_werk_units.join(",");
+        jsonl(home, role, card, &trace, "deploy.ts.env-up", &format!(",\"units\":\"{}\",\"count\":{}", names, ts_werk_units.len()));
+        let started = crate::demo_env::env_up(role, &werk_s, &canonical_root, card, &trace)
+            .map_err(|e| format!("env_up for {} failed: {}", names, e))?;
+        jsonl(home, role, card, &trace, "deploy.ts.env-up-done", &format!(",\"units\":\"{}\",\"detail\":\"{}\"", names, started.replace('"', "'")));
+    }
+
     let joined = summary(&built);
     jsonl(home, role, card, &trace, "deploy.completed", &format!(",\"target\":\"{}\",\"deployed\":\"{}\"", target, joined));
     Ok(format!("{} target={}", joined, target))
@@ -1021,6 +1048,17 @@ pub fn deploy_with_landed(card: u64, role: &str, target: &str, home: &Path, werk
 // The shell-out seam to platform/scripts/chorus-deploy is gone; install/verify/
 // kickstart/smoke for canonical deploys is native Rust, driven by structural
 // discovery (crate_binaries_in / target_class_in) — no KNOWN_CRATES allowlist.
+
+/// #4119 — how many times the werk environment is brought up in one deploy.
+///
+/// env_up takes no service name and seeds the whole store, so the answer is at
+/// most ONE per deploy no matter how many TS services were built. The rule this
+/// replaced returned the unit COUNT, which is how a four-TS-service build spent
+/// four rounds of ~2m25s re-seeding the same store into the 600s exec wall.
+/// target=canonical does its own per-unit install and never calls env_up.
+pub fn env_up_call_count(target: &str, ts_service_units: usize) -> usize {
+    if target == "werk" && ts_service_units > 0 { 1 } else { 0 }
+}
 
 /// Card id from a commit subject ("silas: #3317 (#534)" → 3317). Bash parity:
 /// first `#NNNN` wins; 0 when absent (hand-edited commits).

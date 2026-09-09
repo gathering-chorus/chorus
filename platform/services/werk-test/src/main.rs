@@ -781,7 +781,19 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
 
     // #4030 AC3 — one bats runner for the three pools: run, then store now.
     let run_bats_stored = |werk: &str, b: &str| -> (bool, Vec<(String, String)>, String) {
+        // #4126 — Jeff, 2026-09-08: "do we ever find the bottleneck b4 tuning".
+        // We never have. The runner recorded what each unit DID and never how
+        // long it took, so "which units cost the hour" has never been
+        // answerable and every parallelism change — including the one I made
+        // this morning — was a guess. One timestamp per unit ends that.
+        //
+        // It also separates two states the report could not tell apart: a slow
+        // unit and a wedged one look identical from outside, because the pool
+        // counter only moves on completion. A unit that names its own seconds
+        // is visibly slow; a unit that never prints is visibly stuck.
+        let unit_started = std::time::Instant::now();
         let r = run_bats_cases(werk, b);
+        let unit_ms = unit_started.elapsed().as_millis();
         let mut cases: Vec<CaseResult> = r.1.iter()
             .map(|(n, res)| CaseResult { file_path: b.to_string(), test_name: n.clone(), result: res.clone() })
             .collect();
@@ -793,6 +805,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if cases.is_empty() && bats_kind(b) == "shell" {
             cases.push(werk_test::shell_suite_case(b, r.0));
         }
+        // #3953 already timed the CARD path (unit_costs → unit_cost_report,
+        // main.rs:301) but only there, and only when the budget blows. The
+        // nightly path never had it, which is why the slowest units in a
+        // 45-minute run have never been nameable. Same idea, the other path,
+        // printed unconditionally — a cost you only see when you are already
+        // over budget cannot tell you what to fix before you get there.
+        println!("nightly-elapsed|{}|{}|{}ms", bats_kind(b), b, unit_ms);
         store_unit(b, &cases);
         r
     };
@@ -1227,6 +1246,25 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// MEMBRANE REFUSED into the werk log. Explicit env wins: a var the caller
 /// already set is left alone, so fixtures/integration setups keep control.
 fn apply_suite_world(cmd: &mut Command, werk: &str) {
+    // #4130 AC1 — tell the child it is under the nightly, and what its cap is.
+    //
+    // #4126 taught test-restore-drill.sh to refuse there: a ~47min restore
+    // (#4043 measured 2849s) cannot finish inside a 1200s per-unit cap, so it
+    // is killed, scored fail, records no PASS, and looks overdue again the next
+    // night. That refusal reads $NIGHTLY_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
+    // the runner exported NEITHER — unit_timeout() reads the variable in the
+    // RUNNER's process; no child ever saw it. So the refusal could not fire and
+    // the 2026-09-08 17:41 run still spent 1200.0s there. A gate that cannot
+    // reach the condition it guards is the #3734 shape, and I shipped one.
+    //
+    // Set here rather than in suite_world_env because that list is the HERMETIC
+    // world — tmp paths and dead ports that isolate a suite from the live box
+    // (#3892/#3912/#3995), and it is skipped for any key already in the
+    // environment so a caller can override it. These two are the opposite: not
+    // isolation, but the runner telling the suite the truth about where it is,
+    // and not overridable from outside the run.
+    cmd.env("WERK_TEST_NIGHTLY", "1");
+    cmd.env("NIGHTLY_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
     // OUTSIDE the werk tree: an untracked dir inside it would trip the
     // teardown's refuse-if-dirty at accept (#3431).
     let slot = Path::new(werk).file_name().and_then(|s| s.to_str()).unwrap_or("werk");
@@ -2350,7 +2388,21 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();
                     eprintln!("{}", tail.into_iter().rev().collect::<Vec<_>>().join("\n"));
-                    (false, " (no playwright summary — crashed before running, fail loud)".to_string())
+                    // #4119 — "the filter matched no spec" and "the runner fell
+                    // over" are different states and were printed as one word.
+                    // Both are still red; the verdict now says which.
+                    match werk_test::classify_playwright_no_summary(&text) {
+                        werk_test::PlaywrightNoSummary::SelectedNoSpec => {
+                            let asked: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+                            (false, format!(
+                                " (playwright selected NO spec — nothing ran, nothing crashed; \
+filters asked for: {}){}",
+                                if asked.is_empty() { "<none>".to_string() } else { asked.join(", ") },
+                                excluded))
+                        }
+                        werk_test::PlaywrightNoSummary::Crashed =>
+                            (false, format!(" (no playwright summary — crashed before running, fail loud){}", excluded)),
+                    }
                 }
             }
         }

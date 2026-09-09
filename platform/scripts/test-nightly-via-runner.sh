@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# #4113/#4119 — owner_for stopped defaulting unclassified platform paths to silas.
+# It now returns "unowned" for anything a path cannot decide, because a bats file's
+# owner is a fact about its content and 374 of 395 suites were being posted to one
+# person who had not earned them. These fixtures are synthetic paths under platform/
+# that match no ownership rule, so "unowned" IS the correct expectation — asserting
+# silas here would be asserting the defect.
+
 # test-nightly-via-runner.sh — guard for the #3920 fold: the nightly's cargo
 # lane executes via `werk-test --nightly` (ONE runner: nextest #3929,
 # needs-stack typed skips #3919, per-case TestResult posts #3592), and the
@@ -97,7 +104,7 @@ n=$(_walker_guard "$fixture")
 # ── #3974: every lane folds through the ONE runner ──
 
 # 10. Multi-kind lines fold with ONE owner rule: npm under directing → kade,
-#     bats/shell under platform → silas, cargo under platform/services → silas.
+#     bats/shell under an unclassified platform path -> unowned (#4113); werk-*/chorus-*/athena-* crates keep a role.
 stub_werk_test 'echo "nightly-unit|npm|directing/clearing|fail|10 pass, 3 fail"
 echo "nightly-unit|npm|platform/mcp-server|pass|226 pass, 0 fail"
 echo "nightly-unit|bats|platform/tests/guard.bats|pass|4 pass, 0 fail"
@@ -106,8 +113,11 @@ exit 1'
 out=$(run_cargo_lane)
 echo "$out" | grep -q 'SUITE|npm|directing/clearing|kade|fail|10 pass, 3 fail' \
   && ok || bad "npm fold + kade routing, got: $out"
-echo "$out" | grep -q 'SUITE|bats|platform/tests/guard.bats|silas|pass|' \
-  && ok || bad "bats fold + silas routing, got: $out"
+# #4113 — platform/tests/*.bats is UNOWNED by path: a bats file's owner is a fact
+# about its content, not its directory. Asserting silas here re-asserts the defect
+# that posted 374 of 395 suites to one person.
+echo "$out" | grep -q 'SUITE|bats|platform/tests/guard.bats|unowned|pass|' \
+  && ok || bad "bats fold + unowned routing, got: $out"
 echo "$out" | grep -q 'SUITE|shell|platform/scripts/test-x.sh|silas|fail|' \
   && ok || bad "shell fold, got: $out"
 
