@@ -43,7 +43,15 @@ chorus:principal-silas
                     "urn:chorus:ops"^^xsd:anyURI ,
                     "urn:chorus:ontology"^^xsd:anyURI ,
                     "urn:chorus:instances"^^xsd:anyURI ,
-                    "urn:chorus:domains:documents"^^xsd:anyURI .
+                    "urn:chorus:domains:documents"^^xsd:anyURI ,
+                    # #4130 — these two were granted straight to the live store
+                    # when alerts and monitors split into separate domains
+                    # (2026-09-03) and never written here. The store had 37
+                    # grants, this file had 35, and a fresh load from MODEL_SET
+                    # would have silently dropped both. Measured on the store:
+                    # both sit on principal-silas and nowhere else.
+                    "urn:chorus:domains:alerts"^^xsd:anyURI ,
+                    "urn:chorus:domains:monitors"^^xsd:anyURI .
 
 chorus:principal-wren
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
