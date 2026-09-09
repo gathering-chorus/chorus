@@ -86,6 +86,11 @@ ${yesterday_briefs}"
   fi
 
   missing_events=()
+  # #4131 — one pass over the 2 GB spine, then per-brief lookups on the index
+  # (the old per-brief grep of the whole file is why the unit died at its cap
+  # with no TAP line: UNMEASURED at 12:12).
+  ACC_IDX=$(mktemp)
+  grep "\"event\":\"card\.accepted\"" "$CHORUS_LOG" 2>/dev/null > "$ACC_IDX" || true
   while IFS= read -r brief; do
     # Extract card id from filename: *-card-NNNN-done.md → NNNN
     card_id=$(basename "$brief" | sed -E 's/.*-card-([0-9]+)-done\.md/\1/')
@@ -99,8 +104,7 @@ ${yesterday_briefs}"
     brief_date=$(basename "$brief" | grep -oE "^[0-9]{4}-[0-9]{2}-[0-9]{2}" | head -1)
     if [ -z "$brief_date" ]; then continue; fi
 
-    found=$(grep "\"event\":\"card\.accepted\"" "$CHORUS_LOG" 2>/dev/null \
-      | grep -E "\"card(_id)?\":\"?${card_id}\"?[,}]" \
+    found=$(grep -E "\"card(_id)?\":\"?${card_id}\"?[,}]" "$ACC_IDX" \
       | grep -E "\"timestamp\":\"${brief_date}" \
       | head -1)
 
@@ -108,6 +112,7 @@ ${yesterday_briefs}"
       missing_events+=("#${card_id} ($(basename "$brief"))")
     fi
   done <<< "$recent_briefs"
+  rm -f "$ACC_IDX"
 
   if [ ${#missing_events[@]} -gt 0 ]; then
     echo "Found done-briefs WITHOUT a corresponding card.accepted spine event:"
@@ -131,9 +136,13 @@ ${yesterday_briefs}"
 
   # Pull all card.comment events that mention gate:product-pass with their
   # timestamp + card_id. JSON shape varies; fall back to grep-and-parse.
-  pass_lines=$(grep "\"event\":\"card\.comment\"" "$CHORUS_LOG" 2>/dev/null \
+  # #4131 — one indexed pass over the spine (line numbers kept), then every
+  # lookup reads the index; the newest 20 gate passes, not the oldest.
+  EVT_IDX=$(mktemp)
+  grep -nE "\"event\":\"(card\.comment|probe\.evidence)\"" "$CHORUS_LOG" 2>/dev/null > "$EVT_IDX" || true
+  pass_lines=$(grep "\"event\":\"card\.comment\"" "$EVT_IDX" \
     | grep "gate:product-pass" \
-    | head -20)
+    | tail -20)
 
   if [ -z "$pass_lines" ]; then
     echo "nothing in the window to correlate — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
@@ -158,8 +167,7 @@ ${yesterday_briefs}"
     # Look for a probe.evidence event for this card within ±60s. Coarse
     # match: same card_id within ±60 lines (chorus.log emits ~1/sec under
     # load; 60 lines is a fair proxy for 60s).
-    pass_lineno=$(grep -n "\"event\":\"card\.comment\"" "$CHORUS_LOG" \
-      | grep "$pass_ts" | head -1 | cut -d: -f1)
+    pass_lineno="${pass_line%%:*}"
 
     if [ -z "$pass_lineno" ]; then
       continue
@@ -169,7 +177,7 @@ ${yesterday_briefs}"
     [ $window_start -lt 1 ] && window_start=1
     window_end=$((pass_lineno + 60))
 
-    correlated=$(sed -n "${window_start},${window_end}p" "$CHORUS_LOG" 2>/dev/null \
+    correlated=$(awk -F: -v a="$window_start" -v b="$window_end" '$1 >= a && $1 <= b' "$EVT_IDX" \
       | grep "\"event\":\"probe\.evidence\"" \
       | grep -E "\"card[_id]*\":\"?${pass_card}\"?" \
       | head -1)

@@ -33,8 +33,30 @@ setup() {
   # terminal demo state in the next N lines. Means demo started but
   # never closed — pattern Jeff named.
 
-  started_lines=$(grep "\"event\":\"card\.demo\.started\"" "$CHORUS_LOG" 2>/dev/null \
-    | head -20)
+  # #4131 — ONE pass over the spine. The spine is 2 GB and never rotates
+  # (Jeff's ruling); the old loop re-read it three times per started demo,
+  # so the unit died at its cap with no TAP line and the nightly scored it
+  # UNMEASURED (12:12 run). Index every line this audit can need, with its
+  # line number, once; every lookup below reads the index. And audit the
+  # NEWEST 20 demos (tail), not the oldest 20 in the file (head).
+  SPINE_IDX=$(mktemp)
+  grep -nE "\"event\":\"(card\.demo\.started|demo\.complete|card\.accepted|card\.rejected)\"" "$CHORUS_LOG" 2>/dev/null > "$SPINE_IDX" || true
+  # A demo presented and still waiting for Jeff's go is OPEN, not drifted:
+  # the first indexed run found 6 "uncorrelated" and all 6 were today's
+  # presented-not-yet-accepted demos (#4125, #4131). Audit demos older than
+  # DEMO_OPEN_HOURS (default 24). And /demo writes card.demo.started twice
+  # per demo, ~30ms apart; count a demo once (card + second).
+  open_cutoff=$(date -u -v-${DEMO_OPEN_HOURS:-24}H +"%Y-%m-%dT%H:%M:%S" 2>/dev/null \
+    || date -u -d "${DEMO_OPEN_HOURS:-24} hours ago" +"%Y-%m-%dT%H:%M:%S")
+  started_lines=$(grep "\"event\":\"card\.demo\.started\"" "$SPINE_IDX" \
+    | awk -v cut="$open_cutoff" '{
+        if (match($0, /"timestamp":"[^"]+"/)) { ts = substr($0, RSTART+13, RLENGTH-14) } else { next }
+        utc = ts; sub(/[.][0-9]+/, "", utc); sub(/[+-][0-9][0-9]:?[0-9][0-9]$|Z$/, "", utc)
+        if (utc > cut) next
+        if (match($0, /"card(_id)?":"?[0-9]+/)) { c = substr($0, RSTART, RLENGTH); gsub(/[^0-9]/, "", c) } else { next }
+        k = c ":" substr(ts, 1, 19); if (seen[k]++) next
+        print }' \
+    | tail -20)
 
   if [ -z "$started_lines" ]; then
     echo "no card.demo.started events in the window — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
@@ -55,8 +77,7 @@ setup() {
       continue
     fi
 
-    start_lineno=$(grep -n "\"event\":\"card\.demo\.started\"" "$CHORUS_LOG" \
-      | grep "$start_ts" | head -1 | cut -d: -f1)
+    start_lineno="${start_line%%:*}"
 
     if [ -z "$start_lineno" ]; then
       continue
@@ -67,7 +88,7 @@ setup() {
     # demo's terminal state (Jeff's go, then the land's card.accepted) lands
     # 20-40 minutes after card.demo.started: every started demo read as
     # unclosed the moment the audit could read a real spine.
-    terminal=$(tail -n "+${start_lineno}" "$CHORUS_LOG" 2>/dev/null \
+    terminal=$(awk -F: -v n="$start_lineno" '$1 > n' "$SPINE_IDX" \
       | grep -E "\"event\":\"(demo\.complete|card\.accepted|card\.rejected)\"" \
       | grep -E "\"card[_id]*\":\"?${start_card}\"?" \
       | head -1)
@@ -78,6 +99,7 @@ setup() {
       uncorrelated+=("#${start_card} @ ${start_ts}")
     fi
   done <<< "$started_lines"
+  rm -f "$SPINE_IDX"
 
   # Threshold: absolute-count >3 (per Kade preview-feedback, same Why-3
   # rationale as spine-emit-drift-audit.bats — see that file's comment

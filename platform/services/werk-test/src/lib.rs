@@ -2889,6 +2889,22 @@ pub fn nightly_bats_suites(rows: &[TestRow]) -> Vec<String> {
 /// test-*.sh emits). Shell scripts carry no per-case identities, so counts are
 /// the honest grain; None = no parseable summary (caller fails loud on rc).
 pub fn parse_shell_counts(out: &str) -> Option<(usize, usize)> {
+    // #4131 — the harness's own summary shape wins over any other line that
+    // happens to contain "Results:" (a scanner's stderr, a JSON key). On the
+    // 2026-09-09 12:12 run test-security-scan.sh printed "=== Results: 2
+    // passed, 0 failed ===" and the nightly still scored it 0/0 UNMEASURED.
+    for l in out.lines().rev() {
+        if let Some(rest) = l.trim().strip_prefix("=== Results:") {
+            let nums: Vec<usize> = rest
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|t| !t.is_empty())
+                .filter_map(|t| t.parse().ok())
+                .collect();
+            if nums.len() >= 2 {
+                return Some((nums[0], nums[1]));
+            }
+        }
+    }
     for l in out.lines().rev() {
         if let Some(i) = l.find("Results:") {
             let rest = &l[i + 8..];
@@ -4294,5 +4310,28 @@ not ok 6 something genuinely broke
     #[test]
     fn control_a_bare_directive_with_no_reason_still_splits() {
         assert_eq!(split_tap_skip("the name # skip"), Some("the name"));
+    }
+}
+
+#[cfg(test)]
+mod shell_counts_4131 {
+    use super::parse_shell_counts;
+
+    #[test]
+    fn harness_summary_wins_over_a_later_stray_results_line() {
+        // NEGATIVE PROOF for the old parser: the last "Results:" line won, so a
+        // scanner's trailing "Results: 0 ok 0" read the suite as 0/0.
+        let out = "SAST clean\n=== Results: 2 passed, 0 failed ===\ntrivy: Results: 0 of 0\n";
+        assert_eq!(parse_shell_counts(out), Some((2, 0)));
+    }
+
+    #[test]
+    fn loose_form_still_parses_when_no_harness_summary() {
+        assert_eq!(parse_shell_counts("Results: 3 passed, 1 failed"), Some((3, 1)));
+    }
+
+    #[test]
+    fn no_summary_is_none_not_zero_zero() {
+        assert_eq!(parse_shell_counts("SAST clean\nSCA clean\n"), None);
     }
 }

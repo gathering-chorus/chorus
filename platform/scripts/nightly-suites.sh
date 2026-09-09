@@ -422,7 +422,10 @@ run_cargo_lane() {
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
     local _flog; _flog=$(_fail_log_path "$kind" "$path")
-    if [ "$verdict" = "fail" ]; then
+    # #4131 — an UNMEASURED row must explain itself the same way a red does;
+    # on 2026-09-09 four units read "no parseable output" and nothing on disk
+    # said what they printed instead.
+    if [ "$verdict" = "fail" ] || [ "$verdict" = "unmeasured" ]; then
       mkdir -p "$NIGHTLY_FAIL_DIR" 2>/dev/null || true
       # #4004 — write THIS unit's slice, not the whole lane. `$out` is one
       # werk-test blob covering every unit, so writing it per failing suite
@@ -444,7 +447,9 @@ run_cargo_lane() {
         # field exists to quote, and every red read as its own summary row.
         # Keep the slice distinct per unit AND carry the diagnosis.
         echo "--- error lines from this lane ---"
-        printf '%s\n' "$out" | grep -iE 'error|panic|assertion|unresolved' | tail -20 \
+        # #4131 — an UNMEASURED unit's "why" is rarely error-shaped: it is a
+        # SKIPPED tool, a cap kill, a refusal. Carry those lines too.
+        printf '%s\n' "$out" | grep -iE 'error|panic|assertion|unresolved|skip|not installed|timed out|timeout|killed|refus|unmeasur|no parseable' | tail -20 \
           || echo "(no error-shaped lines in the lane output)"
       } > "$_flog" 2>/dev/null || true
     else
