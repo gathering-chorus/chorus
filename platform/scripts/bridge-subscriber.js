@@ -68,7 +68,22 @@ function formatBoardEvent(event) {
   }
 }
 
-console.error(`[bridge-subscriber] Connecting to ${BRIDGE_URL} for role ${role}...`);
+// #4130 — every line carries its own time.
+//
+// bridge-subscriber-health.test.sh asked "any ping timeouts in the last 20
+// LINES", because the lines had no timestamps and a line count was the only
+// window available. A count-window cannot age out: a fix stays red until enough
+// new lines push the old ones past 20, and a subscriber that is healthy and
+// therefore quiet never emits those lines at all — so the healthier it gets,
+// the longer it stays red. That is what kept this suite at 3 fails after the
+// launchd fix took it from 6.
+//
+// With a timestamp per line the test can ask the question it always meant:
+// "has this subscriber timed out RECENTLY", which a quiet log answers with no.
+const stamp = () => new Date().toISOString();
+const log = (msg) => console.error(`${stamp()} ${msg}`);
+
+log(`[bridge-subscriber] Connecting to ${BRIDGE_URL} for role ${role}...`);
 
 const socket = io(BRIDGE_URL, {
   reconnection: true,
@@ -79,7 +94,7 @@ const socket = io(BRIDGE_URL, {
 });
 
 socket.on('connect', () => {
-  console.error(`[bridge-subscriber] Connected to Bridge event bus`);
+  log(`[bridge-subscriber] Connected to Bridge event bus`);
 });
 
 socket.on('board-event', (event) => {
@@ -90,22 +105,22 @@ socket.on('board-event', (event) => {
 });
 
 socket.on('disconnect', (reason) => {
-  console.error(`[bridge-subscriber] Disconnected: ${reason}. Reconnecting...`);
+  log(`[bridge-subscriber] Disconnected: ${reason}. Reconnecting...`);
 });
 
 socket.on('connect_error', (err) => {
-  console.error(`[bridge-subscriber] Connection error: ${err.message}`);
+  log(`[bridge-subscriber] Connection error: ${err.message}`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  console.error('[bridge-subscriber] Shutting down');
+  log("[bridge-subscriber] Shutting down");
   socket.close();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.error('[bridge-subscriber] Shutting down');
+  log("[bridge-subscriber] Shutting down");
   socket.close();
   process.exit(0);
 });
