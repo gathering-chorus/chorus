@@ -154,13 +154,22 @@ chorus:chorus a chorus:Product ;
     chorus:atStep chorus:value-stream-step-directing ;
     chorus:hasDesignDoc chorus:document-chorus-as-platform ;
     chorus:hasDomain chorus:search, chorus:memory ;
-    # #4130 — the top of the product tree had no partOf, so every chain that
+    # #4130 — the top of this product tree had no partOf, so every chain that
     # climbed through it (werk, gates-service, cards-service, ...) dead-ended
     # at a Product instead of reaching a ValueStream, and
     # ownership-partof-chain.test.sh reported "chain=['werk','chorus'],
-    # top=chorus" nightly. Same edge chorusProduct already carries in
-    # chorus.ttl:1494 — Chorus is a product of the Chorus value stream.
-    chorus:partOf chorus:chorusStream ;
+    # top=chorus" nightly.
+    #
+    # Product -> Product, not Product -> ValueStream, on purpose. Every row in
+    # this file posts through the generated door at land (#4096), and the
+    # products door's partof route resolves Product targets only: pointing
+    # this at chorusStream failed env-up on round 30 with
+    # "422 unknown-endpoint <...chorusStream>". chorusProduct is a Product and
+    # already carries partOf chorusStream (roles/silas/ontology/chorus.ttl:1494,
+    # loaded by the schema transaction, never posted), so the last hop to the
+    # stream is one edge away — the same route observability-domain's passing
+    # chain takes (borgProduct -> chorusProduct -> chorusStream).
+    chorus:partOf chorus:chorusProduct ;
     chorus:promise """Chorus is a platform in the oldest sense: its product is not a feature but a method of building. It is a system that builds systems, and the people building inside it are AI agents working alongside one human. Everything it produces follows from one bet — get the way you build right, and what you build follows.
 The proof that this is more than a slogan: the system generates large parts of itself. The model that describes Chorus is the model it uses to generate its own interfaces, tests and the scaffolding of its own actions, from one source. What is generated is the shape, the contract and the wiring; the logic inside is still written by hand.
 If you adopted Chorus you would not be taking an app. You would be taking the method — a repeatable, instrumented, legible way to forge software with a small team of people and agents — and pointing it at your own streams of work. For the team inside it, Chorus is also shared memory: anyone can ask what happened last session, or what the team knows about a topic, and get a real answer without asking a person.""" ;
