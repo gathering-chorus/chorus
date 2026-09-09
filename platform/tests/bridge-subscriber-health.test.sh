@@ -26,15 +26,39 @@ for role in silas wren kade; do
   fi
 done
 
-# Test 2: No ping timeout disconnects in last 20 log lines (recent stability)
+# Test 2: no ping timeout in the last PING_WINDOW_MINS (recent stability)
+#
+# #4130 — this asked "in the last 20 LINES" because the log carried no times.
+# #1964 fixed the ping settings themselves (server 60s / client 120s) and this
+# check was written to watch that fix hold; the line window is what makes it
+# unable to. A line window cannot age out. After the launchd fix took this
+# suite from 6 fails to 3, the remaining 3 were timeouts from BEFORE that fix,
+# still inside the last 20 lines — and a healthy subscriber is a quiet one, so
+# it never writes the lines that would push them past the edge. The healthier
+# it got, the longer it stayed red.
+#
+# bridge-subscriber.js now stamps every line, so the window is time, which is
+# what "recent" meant all along.
+PING_WINDOW_MINS="${PING_WINDOW_MINS:-60}"
+_recent_ping_timeouts() { # $1=log → count of stamped ping timeouts inside the window
+  local log="$1" cutoff
+  cutoff="$(date -u -v-"${PING_WINDOW_MINS}"M '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)" || return 1
+  # Stamped lines only. A line without a timestamp predates #4130 and cannot be
+  # dated; counting it would resurrect exactly the bug being removed, and
+  # skipping it is honest — an undatable line is not evidence of a RECENT
+  # timeout. ISO-8601 UTC sorts lexically, so a string compare is a time compare.
+  grep 'ping timeout' "$log" 2>/dev/null \
+    | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}' \
+    | awk -v c="$cutoff" '$0 >= c' | wc -l | tr -d ' '
+}
 for role in silas wren kade; do
   log="$HOME/Library/Logs/Chorus/bridge-subscriber-$role.log"
   if [ -f "$log" ]; then
-    recent_disconnects=$(tail -20 "$log" | grep -c "ping timeout" || true)
-    if [ "$recent_disconnects" -eq 0 ]; then
-      test_pass "bridge-subscriber-$role: no recent ping timeouts"
+    recent_disconnects="$(_recent_ping_timeouts "$log")"
+    if [ "${recent_disconnects:-0}" -eq 0 ]; then
+      test_pass "bridge-subscriber-$role: no ping timeouts in the last ${PING_WINDOW_MINS}m"
     else
-      test_fail "bridge-subscriber-$role: $recent_disconnects ping timeouts in last 20 lines"
+      test_fail "bridge-subscriber-$role: $recent_disconnects ping timeouts in the last ${PING_WINDOW_MINS}m"
     fi
   else
     test_fail "bridge-subscriber-$role: no log file"

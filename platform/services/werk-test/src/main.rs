@@ -1246,6 +1246,25 @@ fn git_changed_files(werk: &str) -> Result<Vec<String>, String> {
 /// MEMBRANE REFUSED into the werk log. Explicit env wins: a var the caller
 /// already set is left alone, so fixtures/integration setups keep control.
 fn apply_suite_world(cmd: &mut Command, werk: &str) {
+    // #4130 AC1 — tell the child it is under the nightly, and what its cap is.
+    //
+    // #4126 taught test-restore-drill.sh to refuse there: a ~47min restore
+    // (#4043 measured 2849s) cannot finish inside a 1200s per-unit cap, so it
+    // is killed, scored fail, records no PASS, and looks overdue again the next
+    // night. That refusal reads $NIGHTLY_UNIT_TIMEOUT / $WERK_TEST_NIGHTLY, and
+    // the runner exported NEITHER — unit_timeout() reads the variable in the
+    // RUNNER's process; no child ever saw it. So the refusal could not fire and
+    // the 2026-09-08 17:41 run still spent 1200.0s there. A gate that cannot
+    // reach the condition it guards is the #3734 shape, and I shipped one.
+    //
+    // Set here rather than in suite_world_env because that list is the HERMETIC
+    // world — tmp paths and dead ports that isolate a suite from the live box
+    // (#3892/#3912/#3995), and it is skipped for any key already in the
+    // environment so a caller can override it. These two are the opposite: not
+    // isolation, but the runner telling the suite the truth about where it is,
+    // and not overridable from outside the run.
+    cmd.env("WERK_TEST_NIGHTLY", "1");
+    cmd.env("NIGHTLY_UNIT_TIMEOUT", werk_test::unit_timeout().as_secs().to_string());
     // OUTSIDE the werk tree: an untracked dir inside it would trip the
     // teardown's refuse-if-dirty at accept (#3431).
     let slot = Path::new(werk).file_name().and_then(|s| s.to_str()).unwrap_or("werk");
