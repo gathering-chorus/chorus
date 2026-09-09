@@ -93,8 +93,20 @@ fi
 # stops burning 20 minutes a night to say so. Invoked directly (Silas's weekly
 # lane, no cap) it runs exactly as before.
 if [ -n "${NIGHTLY_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ]; then
-  echo "restore-drill: SELF-REFUSED — a ~47min restore cannot finish inside the nightly's ${NIGHTLY_UNIT_TIMEOUT:-1200}s unit cap (#4043 measured 2849s); run it on its own schedule. The staleness checks above still red."
-  exit 3
+  # #4131 — under the nightly this unit is a VERDICT on backup freshness, not a
+  # skip. #4126 made it self-refuse (rc=3) because a ~47min restore cannot fit
+  # the unit cap, and the nightly then read "skipped" every night (Jeff,
+  # 2026-09-09: no skips). The restore itself runs on its own weekly agent
+  # (com.chorus.restore-drill); this says whether that proof is fresh.
+  if [ -z "$LAST" ]; then
+    echo "restore-drill: RED — the restore has never been proven on this box (weekly agent has not produced a PASS)"
+    exit 1
+  fi
+  if [ "$AGE_DAYS" -ge "$STALE_RED_DAYS" ]; then
+    exit 1
+  fi
+  echo "restore-drill: PASS — last proven restore ${AGE_DAYS}d ago (< ${STALE_RED_DAYS}d); the ~47min drill runs on its own schedule, not inside the ${NIGHTLY_UNIT_TIMEOUT:-1200}s unit cap"
+  exit 0
 fi
 
 bash "$R/platform/scripts/restore-drill.sh"

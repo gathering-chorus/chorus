@@ -258,12 +258,18 @@ list_cucumber() {
 _STACK_PROBE=""  # "up" | "down" — probed once per run, cached
 _stack_up() {
   if [ -z "$_STACK_PROBE" ]; then
-    if curl -fsS -m 4 "http://localhost:3340/api/chorus/context/health" >/dev/null 2>&1 \
-       && curl -fsS -m 4 "http://localhost:3030/" >/dev/null 2>&1; then
-      _STACK_PROBE="up"
-    else
-      _STACK_PROBE="down"
-    fi
+    # #4131 — one 4s probe under a loaded box read "down" with the whole stack
+    # up (12:12 run: smoke-check "skipped — no live stack" while 493 needs-stack
+    # tests ran against it). Three tries, 5s apart, before calling it down.
+    local _try
+    _STACK_PROBE="down"
+    for _try in 1 2 3; do
+      if curl -fsS -m 8 "http://localhost:3340/api/chorus/context/health" >/dev/null 2>&1 \
+         && curl -fsS -m 8 "http://localhost:3030/" >/dev/null 2>&1; then
+        _STACK_PROBE="up"; break
+      fi
+      sleep 5
+    done
   fi
   [ "$_STACK_PROBE" = "up" ]
 }

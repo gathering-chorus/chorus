@@ -18,7 +18,12 @@
 # stays green forever.
 
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
-CHORUS_LOG="$CHORUS_ROOT/platform/logs/chorus.log"
+# #4131 — audit the SPINE, not the repo stub. platform/logs/chorus.log under
+# canonical is a fresh CI-created file with no demo or accept history, so every
+# case skipped and the suite read UNMEASURED ("no parseable output") in the
+# nightly. The events this audits are written to ~/.chorus/chorus.log; this
+# test only reads it. CHORUS_SPINE stays the seam for a fixture spine.
+CHORUS_LOG="${CHORUS_SPINE:-$HOME/.chorus/chorus.log}"
 
 # Window: default last 24h, override via SPINE_DRIFT_WINDOW_HOURS.
 WINDOW_HOURS="${SPINE_DRIFT_WINDOW_HOURS:-24}"
@@ -31,7 +36,7 @@ BRIEFS_DIR="$CHORUS_ROOT/directing/products/roles"
 
 setup() {
   if [ ! -f "$CHORUS_LOG" ]; then
-    skip "chorus.log missing at $CHORUS_LOG — audit cannot run"
+    echo "spine missing at $CHORUS_LOG — the audit has nothing to read; that is a defect, not a skip (#4131)"; false
   fi
   # #3721 — the missing-file guard was not enough. This audit CORRELATES two
   # sources: done-briefs committed in the repo, and card.accepted events in the
@@ -53,7 +58,7 @@ setup() {
   # check runs and still fails hard on a done-brief with no accept, which is
   # the drift it exists to catch.
   if ! grep -q '"event":"card\.accepted"' "$CHORUS_LOG" 2>/dev/null; then
-    skip "no card.accepted events in $CHORUS_LOG — not an accept history (fresh CI-created log), nothing to correlate"
+    echo "nothing in the window to correlate — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
   fi
 }
 
@@ -75,7 +80,7 @@ ${yesterday_briefs}"
   recent_briefs=$(echo "$recent_briefs" | grep -v "^$" | head -50)
 
   if [ -z "$recent_briefs" ]; then
-    skip "no done-briefs from today/yesterday — nothing to audit"
+    echo "nothing in the window to correlate — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
   fi
 
   missing_events=()
@@ -129,7 +134,7 @@ ${yesterday_briefs}"
     | head -20)
 
   if [ -z "$pass_lines" ]; then
-    skip "no gate:product-pass card.comment events in chorus.log — nothing to audit"
+    echo "nothing in the window to correlate — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
   fi
 
   pass_total=0

@@ -11,11 +11,16 @@
 # demo.complete (or terminal demo state) within ±N lines.
 
 CHORUS_ROOT="${CHORUS_ROOT:-$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)}"
-CHORUS_LOG="$CHORUS_ROOT/platform/logs/chorus.log"
+# #4131 — audit the SPINE, not the repo stub. platform/logs/chorus.log under
+# canonical is a fresh CI-created file with no demo or accept history, so every
+# case skipped and the suite read UNMEASURED ("no parseable output") in the
+# nightly. The events this audits are written to ~/.chorus/chorus.log; this
+# test only reads it. CHORUS_SPINE stays the seam for a fixture spine.
+CHORUS_LOG="${CHORUS_SPINE:-$HOME/.chorus/chorus.log}"
 
 setup() {
   if [ ! -f "$CHORUS_LOG" ]; then
-    skip "chorus.log missing at $CHORUS_LOG"
+    echo "spine missing at $CHORUS_LOG — the audit has nothing to read; that is a defect, not a skip (#4131)"; false
   fi
 }
 
@@ -32,7 +37,7 @@ setup() {
     | head -20)
 
   if [ -z "$started_lines" ]; then
-    skip "no card.demo.started events in chorus.log — nothing to audit"
+    echo "no card.demo.started events in the window — nothing drifted (#4131: an empty window is a pass, not a skip)"; return 0
   fi
 
   uncorrelated=()

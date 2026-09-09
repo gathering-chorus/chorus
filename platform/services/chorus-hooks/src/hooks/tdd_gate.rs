@@ -174,7 +174,7 @@ pub fn check(input: &HookInput, state: &AppState) -> HookResponse {
     //   - doc / design: documentation, service-design rewrites, ADRs, page-graph populates,
     //     ontology curation. Not behavioral code; demos validate by reading the doc / viewing
     //     the page, not by running tests. (#2683 evidence: 100+ prior misfires of the same shape.)
-    let card_type = crate::types::card_type_for_role(input.role().as_str());
+    let card_type = crate::types::card_type_for_input(input);
     if card_type == "chore" || card_type == "swat" || card_type == "doc" || card_type == "design" {
         return HookResponse::allow();
     }
@@ -227,6 +227,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".to_string()),
+            card_type: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -293,6 +294,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("kade".into()),
+            card_type: None,
             trace_id: None,
             tool_output_is_error: None,
         };
@@ -332,6 +334,7 @@ mod tests {
 
     fn edit(file: &str, old: &str, new: &str) -> HookInput {
         HookInput {
+            card_type: None,
             tool_name: Some("Edit".into()),
             tool_input: Some(serde_json::json!({
                 "file_path": file, "old_string": old, "new_string": new,
@@ -342,6 +345,7 @@ mod tests {
     }
     fn write(file: &str, content: &str) -> HookInput {
         HookInput {
+            card_type: None,
             tool_name: Some("Write".into()),
             tool_input: Some(serde_json::json!({"file_path": file, "content": content})),
             tool_response: None, session_id: None, cwd: None, prompt: None,

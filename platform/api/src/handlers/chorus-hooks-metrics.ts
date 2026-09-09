@@ -30,7 +30,24 @@ function cutoffDateStr(now: () => number): string {
   return cutoff.toISOString().slice(0, 10);
 }
 
+// #4131 — the daemon writes one JSON object per line ({timestamp, hook, tool,
+// role, module, decision, latency_ms, ...}); the pipe form below is what the
+// log held when #2277 was written. This read only ever parsed the pipe form,
+// so once the last pipe lines rotated out (2026-09-09) it answered
+// totalDecisions: 0 over a log with 1,600 decisions in the window, and
+// hooks-metrics-api.bats went red on "no modules". Same skip rules both ways.
+function parseJsonLine(line: string, cutoffStr: string): { module: string; decision: string } | null {
+  let o: { timestamp?: unknown; module?: unknown; decision?: unknown };
+  try { o = JSON.parse(line) as typeof o; } catch { return null; }
+  const ts = typeof o.timestamp === 'string' ? o.timestamp : '';
+  if (ts.slice(0, 10) < cutoffStr) return null;
+  const module = typeof o.module === 'string' ? o.module : '';
+  const decision = typeof o.decision === 'string' ? o.decision.toLowerCase() : '';
+  if (!module || module === '-' || module === 'none' || decision === 'enter') return null;
+  return { module, decision };
+}
 function parseLogLine(line: string, cutoffStr: string): { module: string; decision: string } | null {
+  if (line.startsWith('{')) return parseJsonLine(line, cutoffStr);
   const parts = line.split('|').map((s) => s.trim());
   if (parts.length < 6) return null;
   if (parts[0].slice(0, 10) < cutoffStr) return null;

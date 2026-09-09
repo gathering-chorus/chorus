@@ -523,9 +523,15 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             &[("reason", "tests-domain-unreachable")]);
         return Err("nightly run requires the tests domain (one selection engine, no glob fallback) — fetch failed or empty; refusing loudly".into());
     }
+    // #4131 — a crate is a directory with a Cargo.toml. The registry yields
+    // names from test filePaths, and platform/services/shared/ is a SOURCE
+    // directory other crates include; planning it produced a suite row that
+    // could only ever read UNMEASURED ("no parseable output"). #4012 taught the
+    // coverage denominator this; the plan learns it here.
     let crates: Vec<String> = werk_test::nightly_cargo_crates(&rows)
         .into_iter()
         .filter(|c| only.as_deref().map(|o| o == c).unwrap_or(true))
+        .filter(|c| Path::new(&format!("{}/platform/services/{}/Cargo.toml", root, c)).is_file())
         .collect();
     if let Some(o) = &only {
         if crates.is_empty() {
@@ -620,9 +626,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .collect();
     // #3974 — bats lane: registered suites from the registry, per-case TAP
     // results (boolean-only bats is over).
+    // #4131 — a suite that can only ever self-refuse unattended (it boots out
+    // every com.chorus.* agent and needs an explicit restore grant, #4004) has
+    // no place in an unattended plan: it read "skipped" every night. The
+    // wrapper's NIGHTLY_DESTRUCTIVE_SUITES names them; same list, same seam.
+    let destructive: Vec<String> = std::env::var("NIGHTLY_DESTRUCTIVE_SUITES")
+        .unwrap_or_else(|_| "test-product-membrane.sh".to_string())
+        .split_whitespace().map(|s| s.to_string()).collect();
     let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
         .into_iter()
         .filter(|b| only.as_deref().map(|o| o == b).unwrap_or(true))
+        .filter(|b| !destructive.iter().any(|d| b.ends_with(&format!("/{}", d)) || b == d))
         .collect();
     // #3922 — security-declared units fold under their own lane label so the
     // report and owner routing see ONE security lane on its own cadence.
@@ -802,8 +816,16 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         // shell tests read "never ran" every night while running every
         // night. The registry holds one test per script, named by the file;
         // store that one verdict.
-        if cases.is_empty() && bats_kind(b) == "shell" {
-            cases.push(werk_test::shell_suite_case(b, r.0));
+        // #4131 — the registry holds ONE test per .sh named by the file (its
+        // identity, tag-tests-domain.py). A bats-shaped .sh emits its TAP cases
+        // and never that name, so eight scripts that ran every night were
+        // "never ran" to the reconcile (LANE SILENT 11 on 2026-09-09). Record the
+        // file-level verdict alongside the cases so the ledger cross-foots.
+        if b.ends_with(".sh") || bats_kind(b) == "shell" {
+            let ident = b.rsplit('/').next().unwrap_or(b);
+            if !cases.iter().any(|c| c.test_name == ident) {
+                cases.push(werk_test::shell_suite_case(b, r.0));
+            }
         }
         // #3953 already timed the CARD path (unit_costs → unit_cost_report,
         // main.rs:301) but only there, and only when the budget blows. The
@@ -862,7 +884,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
             println!("{}", werk_test::nightly_lane_line_refused(kind, b));
             continue;
         }
-        let (passed, case_failed) = if cases.is_empty() && kind == "shell" {
+        // #4131 — a .sh declared security (test-security-scan.sh) folds under the
+        // security lane but still prints shell counts; parsed as TAP it read 0/0.
+        let (passed, case_failed) = if cases.is_empty() && (kind == "shell" || b.ends_with(".sh")) {
             // shell suites report summary counts, not TAP cases
             werk_test::parse_shell_counts(&text)
                 .unwrap_or(if ok { (1, 0) } else { (0, 1) })

@@ -326,6 +326,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
+            card_type: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -340,6 +341,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
+            card_type: None,
             trace_id: None, tool_output_is_error: None,}
     }
 
@@ -534,6 +536,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
+            card_type: None,
             trace_id: None, tool_output_is_error: None,};
         let r = check(&input).await;
         assert!(r.stdout.is_none());

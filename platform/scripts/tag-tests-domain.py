@@ -273,6 +273,11 @@ def discover(roots=TEST_ROOTS):
             # join the registry so the nightly's full selection covers them.
             if re.search(r'\.bats$|\.(test|spec)\.[cm]?[tj]s$|\.test\.sh$|(_test|test_).*\.py$|\.feature$', f): out.append(p)
             elif f.startswith('test-') and f.endswith('.sh') and d.rstrip('/').endswith('platform/scripts'): out.append(p)
+            # #4131 — platform/services/shared/ is a SOURCE directory other crates
+            # include, not a crate (no Cargo.toml, #4012); its #[test] fns run under
+            # the including crate's names, so registering them here minted three
+            # rows no lane could ever emit (LANE SILENT every night).
+            elif f.endswith('.rs') and '/platform/services/shared/' in p: continue
             elif f.endswith('.rs') and re.search(r'#\[(?:tokio::)?test\]', open(p, errors='ignore').read()): out.append(p)
     return out
 

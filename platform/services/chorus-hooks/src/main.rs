@@ -1374,6 +1374,7 @@ mod emit_guard_dispatch_3945 {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: None,
+            card_type: None,
             trace_id: None,
             tool_output_is_error: None,
         }

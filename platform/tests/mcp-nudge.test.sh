@@ -19,7 +19,13 @@ CHORUS_ROOT="${CHORUS_ROOT:-${CHORUS_ROOT}}"
 # A stale file that still EXISTS is worse than a missing one — it can hold a fossil
 # event from before the move and let the assertion pass for a nudge sent in April.
 # So a missing spine is UNMEASURED and refuses; it never reads as green.
-SPINE_LOG="${CHORUS_LOG_FILE:-$HOME/.chorus/chorus.log}"
+# #4131 — this suite calls the LIVE MCP server and asserts on what that server
+# emits, so the spine to read is the server's, not this process's. Under the
+# nightly werk-test hands every unit its own CHORUS_LOG_FILE (a fresh temp
+# file, #3528), the server kept writing to ~/.chorus/chorus.log, and the grep
+# below read an empty file every night — "no nudge.emitted" against a nudge
+# that did emit. The test writes nothing; reading the live spine is allowed.
+SPINE_LOG="$HOME/.chorus/chorus.log"
 [ -s "$SPINE_LOG" ] || { echo "UNMEASURED: no spine at $SPINE_LOG — emits cannot be verified"; exit 1; }
 
 # Helper: initialize and capture session id

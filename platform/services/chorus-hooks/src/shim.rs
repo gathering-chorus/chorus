@@ -499,6 +499,19 @@ fn main() -> ExitCode {
         }
     };
 
+    // #4131 — CHORUS_CARD_TYPE is a FIXTURE seam (test-skip-gates.sh states the
+    // card type it proves against instead of depending on a 1s board curl). It
+    // has to cross the socket like DEPLOY_ROLE below: the daemon's env is not
+    // the shim's. A role session never carries this variable.
+    let input = if let Ok(ct) = std::env::var("CHORUS_CARD_TYPE") {
+        match serde_json::from_str::<serde_json::Value>(&input) {
+            Ok(mut json) if !ct.trim().is_empty() => { json["card_type"] = serde_json::Value::String(ct.trim().to_string()); json.to_string() }
+            _ => input,
+        }
+    } else {
+        input
+    };
+
     // Inject DEPLOY_ROLE into hook input so the service can detect role (#1714)
     let input = if let Ok(deploy_role) = std::env::var("DEPLOY_ROLE") {
         if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&input) {

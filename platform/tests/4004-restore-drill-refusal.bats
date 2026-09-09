@@ -14,6 +14,12 @@ setup() {
   cp "$BATS_TEST_DIRNAME/../scripts/test-restore-drill.sh" "$R/platform/scripts/"
   # the wrapper's cadence logic short-circuits on a recent PASS; force the run
   export CHORUS_ROOT="$R" RESTORE_DRILL_MAX_AGE_DAYS=0
+  # #4131 — the wrapper SELF-REFUSES (rc=3) when it sees the nightly's per-unit
+  # cap (#4126), and since #4130 werk-test exports NIGHTLY_UNIT_TIMEOUT to every
+  # unit it runs — including this one. Green at 03:00, three reds at 12:12 with
+  # the stub never reached. This proof is about the exit-code translation, not
+  # the refusal; it runs the wrapper in its own environment.
+  unset NIGHTLY_UNIT_TIMEOUT WERK_TEST_NIGHTLY
 }
 
 stub_drill() { printf '#!/usr/bin/env bash\nexit %s\n' "$1" > "$R/platform/scripts/restore-drill.sh"; }
