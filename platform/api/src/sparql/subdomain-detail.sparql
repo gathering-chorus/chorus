@@ -19,6 +19,11 @@ SELECT ?label ?ownerLabel ?stepLabel ?comment ?consumer ?consumerLabel ?consumed
     { GRAPH <urn:chorus:ontology>  { <$URI> chorus:contains ?instance } }
     UNION
     { GRAPH <urn:chorus:instances> { <$URI> chorus:contains ?instance } }
+    UNION
+    # #4130 — a principle CREATED through the door lands, edge and all, in the
+    # principles home graph (subdomain-entities SECTION_HOME_GRAPH), so the
+    # contains edge must be read there too or a fresh row never shows on the page.
+    { GRAPH <urn:chorus:domains:principles> { <$URI> chorus:contains ?instance } }
     # #4130 — a contained row's label/comment/type live in its DOMAIN graph now
     # (every row in its home, Jeff 2026-09-03): the 28 principles sit in
     # urn:chorus:domains:principles and this read found none of them, so the

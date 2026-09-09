@@ -43,3 +43,41 @@ chorus:xp-economics chorus:rhymesWith chorus:hemenway-catch-and-store .
 chorus:xp-mutual-benefit chorus:rhymesWith chorus:hemenway-connect .
 
 chorus:xp-self-similarity chorus:rhymesWith chorus:hemenway-small-scale-intensive-systems .
+
+# #4130 — the loom-principles SubDomain contains every principle row. These
+# edges lived in roles/silas/ontology/chorus.ttl (the ontology graph) and pointed
+# at 13 `principle-*` rows that #3749/#4006 retired, plus the 14 PC rows and
+# none of the 14 XP rows — so the subdomain detail served 13 dangling IRIs and
+# 14 typed principles, and principles-api's floor of 27 typed instances read
+# 14. An edge is a row in the domain of what it joins (Jeff, 2026-09-03: every
+# row in its domain graph); it rides the principles set like rhymesWith does,
+# so it can never outlive the row it points at.
+chorus:loom-principles chorus:contains
+    chorus:hemenway-observe ,
+    chorus:hemenway-connect ,
+    chorus:hemenway-catch-and-store ,
+    chorus:hemenway-each-element-multiple-functions ,
+    chorus:hemenway-function-supported-by-multiple-elements ,
+    chorus:hemenway-least-change-greatest-effect ,
+    chorus:hemenway-small-scale-intensive-systems ,
+    chorus:hemenway-optimize-edge ,
+    chorus:hemenway-collaborate-with-succession ,
+    chorus:hemenway-biological-renewable-resources ,
+    chorus:hemenway-turn-problems-into-solutions ,
+    chorus:hemenway-get-a-yield ,
+    chorus:hemenway-creativity-is-the-limit ,
+    chorus:hemenway-mistakes-are-tools-for-learning ,
+    chorus:xp-humanity ,
+    chorus:xp-economics ,
+    chorus:xp-mutual-benefit ,
+    chorus:xp-self-similarity ,
+    chorus:xp-improvement ,
+    chorus:xp-diversity ,
+    chorus:xp-reflection ,
+    chorus:xp-flow ,
+    chorus:xp-opportunity ,
+    chorus:xp-redundancy ,
+    chorus:xp-failure ,
+    chorus:xp-quality ,
+    chorus:xp-baby-steps ,
+    chorus:xp-accepted-responsibility .

@@ -2805,29 +2805,12 @@ chorus:dctermsSource a owl:AnnotationProperty ;
 
 # --- Contains edges — domains contain their instances ---
 
-chorus:loom-principles chorus:contains chorus:principle-protect-attention,
-    chorus:principle-services-reliable-bounded-idempotent, chorus:principle-no-dark-work,
-    chorus:principle-artifacts, chorus:principle-owner-sets-direction,
-    chorus:principle-ship-small, chorus:principle-self-healing,
-    chorus:principle-focus-is-infrastructure, chorus:principle-quality-at-source,
-    chorus:principle-speed-and-quality-correlate,
-    chorus:principle-comprehension-is-the-rate-limit,
-    chorus:principle-interrogate-the-data,
-    chorus:principle-no-competing-implementations,
-    # #2447: Hemenway parents contained by loom-principles too
-    chorus:hemenway-observe, chorus:hemenway-connect,
-    chorus:hemenway-catch-and-store,
-    chorus:hemenway-each-element-multiple-functions,
-    chorus:hemenway-function-supported-by-multiple-elements,
-    chorus:hemenway-least-change-greatest-effect,
-    chorus:hemenway-small-scale-intensive-systems,
-    chorus:hemenway-optimize-edge,
-    chorus:hemenway-collaborate-with-succession,
-    chorus:hemenway-biological-renewable-resources,
-    chorus:hemenway-turn-problems-into-solutions,
-    chorus:hemenway-get-a-yield,
-    chorus:hemenway-creativity-is-the-limit,
-    chorus:hemenway-mistakes-are-tools-for-learning .
+# #4130 — the loom-principles contains edges moved to
+# roles/wren/ontology/principles-rhymes-4006.ttl (the principles graph). The
+# block that stood here pointed at 13 principle-* rows retired by #3749/#4006
+# and at none of the XP rows. The live ontology graph keeps the stale edges
+# until the deploy learns to retire (#4125); the read path unions the
+# principles graph, so the page shows the 28 real rows either way.
 
 # #3754 — loom-practices membership emptied with practice v1; v2 members are
 # authored in roles/kade/ontology/practices-3754-instances.ttl.
