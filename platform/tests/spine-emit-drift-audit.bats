@@ -71,9 +71,11 @@ setup() {
     || date -u -d "yesterday" +"%Y-%m-%d" 2>/dev/null \
     || echo "")
 
-  recent_briefs=$(find "$BRIEFS_DIR" -type f -name "${today}-card-*-done.md" 2>/dev/null)
+  # #4131 — under a werk root the roles tree does not exist; a failing find is
+  # "no briefs", not a red (run 39 died on this line, bats errexit).
+  recent_briefs=$(find "$BRIEFS_DIR" -type f -name "${today}-card-*-done.md" 2>/dev/null || true)
   if [ -n "$yesterday" ]; then
-    yesterday_briefs=$(find "$BRIEFS_DIR" -type f -name "${yesterday}-card-*-done.md" 2>/dev/null)
+    yesterday_briefs=$(find "$BRIEFS_DIR" -type f -name "${yesterday}-card-*-done.md" 2>/dev/null || true)
     recent_briefs="${recent_briefs}
 ${yesterday_briefs}"
   fi
