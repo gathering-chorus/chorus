@@ -151,6 +151,11 @@ print(json.dumps(keep))')"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   n="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   [ "$n" -eq $((before + 1)) ] || { echo "document revisions before=$before after=$n"; false; }
+  # #4130 — same as restore_row for products: the hand write above leaves the
+  # LIVE document at changedIn=unknown, which 4101 reads as red (run 34 died on
+  # athena-product-design stamped by run 33). Hand it back under a real commit.
+  curl -s -o /dev/null -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+    -H "X-Landed-Commit: $(git -C "$ROOT" rev-parse HEAD)" -d "$body"
   # a document has no page of its own (Jeff, 2026-09-04: "its just a fold on the
   # main page") — its history is a second fold on the product that owns it
   grep -q "historyFold('documents'" "$ROOT/platform/api/public/athena/product.html"
