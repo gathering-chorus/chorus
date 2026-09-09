@@ -40,11 +40,21 @@ import { countAcDiff } from './ac-tick-detection';
 const DEFAULT_SNAPSHOT_DIR = path.join(__dirname, '../../logs');
 const DEFAULT_WORKFLOWS_ACTIVE_DIR = path.join(__dirname, '../../workflows/active');
 const DEFAULT_WORKFLOWS_ARCHIVE_DIR = path.join(__dirname, '../../workflows/archive');
-const DEFAULT_BRIEF_DIRS: Record<string, string> = {
+// #4131 — a test brings its own world (#3528). Suites that exercise `done` /
+// `move` without __setTestPaths wrote "Card #42 done by automation" briefs into
+// the LIVE role dirs every night (03:01, six files on 2026-09-09), and the
+// spine-emit drift audit then reported real done-briefs with no accept event.
+// Under jest the default is a temp tree; the live tree is never the default
+// for a test.
+const LIVE_BRIEF_DIRS: Record<string, string> = {
   silas: path.join(__dirname, '../../roles/silas/briefs'),
   kade: path.join(__dirname, '../../roles/kade/briefs'),
   wren: path.join(__dirname, '../../roles/wren/briefs'),
 };
+const JEST_BRIEFS_ROOT = path.join(require('os').tmpdir(), 'cards-jest-briefs', String(process.pid));
+const DEFAULT_BRIEF_DIRS: Record<string, string> = process.env.JEST_WORKER_ID
+  ? { silas: path.join(JEST_BRIEFS_ROOT, 'silas/briefs'), kade: path.join(JEST_BRIEFS_ROOT, 'kade/briefs'), wren: path.join(JEST_BRIEFS_ROOT, 'wren/briefs') }
+  : LIVE_BRIEF_DIRS;
 
 let SNAPSHOT_DIR = DEFAULT_SNAPSHOT_DIR;
 let WORKFLOWS_ACTIVE_DIR = DEFAULT_WORKFLOWS_ACTIVE_DIR;

@@ -98,7 +98,7 @@ ${yesterday_briefs}"
     if [ -z "$brief_date" ]; then continue; fi
 
     found=$(grep "\"event\":\"card\.accepted\"" "$CHORUS_LOG" 2>/dev/null \
-      | grep -E "card[_id]*[\":= ]+[\"']?${card_id}[\"' ]" \
+      | grep -E "\"card(_id)?\":\"?${card_id}\"?[,}]" \
       | grep -E "\"timestamp\":\"${brief_date}" \
       | head -1)
 

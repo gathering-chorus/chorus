@@ -62,10 +62,12 @@ setup() {
       continue
     fi
 
-    # Look forward up to 500 lines for any terminal demo event for this card
-    window_end=$((start_lineno + 500))
-
-    terminal=$(sed -n "${start_lineno},${window_end}p" "$CHORUS_LOG" 2>/dev/null \
+    # #4131 — look forward for the rest of the spine, not 500 lines. The spine
+    # writes thousands of lines a minute now, so 500 lines is seconds, and a
+    # demo's terminal state (Jeff's go, then the land's card.accepted) lands
+    # 20-40 minutes after card.demo.started: every started demo read as
+    # unclosed the moment the audit could read a real spine.
+    terminal=$(tail -n "+${start_lineno}" "$CHORUS_LOG" 2>/dev/null \
       | grep -E "\"event\":\"(demo\.complete|card\.accepted|card\.rejected)\"" \
       | grep -E "\"card[_id]*\":\"?${start_card}\"?" \
       | head -1)
