@@ -82,8 +82,10 @@ export interface LoomPrinciplesOwlDeps {
 // instance graph (urn:chorus:domains:principles, ADR-051), so this handler now
 // has ONE source of truth and cannot disagree with the model. The legacy
 // envelope shape (id/label/comment/readings/parents) is preserved so
-// loom/principles.html and the session-boot injector keep working unchanged;
-// `parents` is empty by construction post-#3749 (the 14 are peers).
+// loom/principles.html and the session-boot injector keep working unchanged.
+// `parents` was empty by construction post-#3749 (the 14 PC principles are
+// peers); since #4006 the XP principles rhyme with PC parents, and #4130
+// serves those edges from the collection row's rhymesWith (see below).
 export async function fetchLoomPrinciples(
   deps: LoomPrinciplesOwlDeps = {},
 ): Promise<{ status: number; body: unknown }> {
@@ -101,8 +103,19 @@ export async function fetchLoomPrinciples(
         body: envelope('principles', { error: `athena-make /principles answered ${listRes.status}` }, now() - started, { error: true }),
       };
     }
-    const list = (await listRes.json()) as { data?: Array<{ name?: string }> };
+    // #4130 — the collection row is where the generator puts EDGES (an
+    // sh:class property projects as `<path>|edge:<Class>`, lib.rs:944; the
+    // entity read below serves literals only). rhymesWith arrives here as the
+    // target's local name — a bare string for one parent, string[] for
+    // several — exactly like ownedBy / hasDomain on /products. Capture it per
+    // row now; labels resolve after the walk, when every principle is in hand.
+    const list = (await listRes.json()) as { data?: Array<{ name?: string; rhymesWith?: string | string[] }> };
     const names = (list.data ?? []).map((r) => r.name ?? '').filter(Boolean);
+    const rhymes = new Map<string, string[]>();
+    for (const r of list.data ?? []) {
+      if (!r.name || r.rhymesWith == null) continue;
+      rhymes.set(r.name, Array.isArray(r.rhymesWith) ? r.rhymesWith : [r.rhymesWith]);
+    }
     const principles: PrincipleRow[] = [];
     for (const name of names) {
       const entRes = await fetchFn(`${base}/principles/${encodeURIComponent(name)}`);
@@ -119,9 +132,28 @@ export async function fetchLoomPrinciples(
         jeffReading: d.jeffReading ?? '',
         isPermacultureParent: d.isPermacultureParent === 'true',
         order: d.order ? Number.parseInt(d.order, 10) : null,
-        parents: [],
+        parents: [], // filled below, once every principle has been walked
         uri: d.iri ?? `${CHORUS_PREFIX}${name}`,
       });
+    }
+    // #4130 — resolve rhymesWith (captured from the collection rows above)
+    // into parents, now that every target is a walked row with a label.
+    // History: #2337 filled parents from a SPARQL parent/parentLabel join;
+    // #3749 repointed this handler at the generated surface and hardcoded
+    // `parents: []` under "the 14 are peers" — true then. #4006 then authored
+    // the 14 XP principles and the 11 PC↔XP rhymesWith edges, and this
+    // handler kept serving none of them: /loom/principles.html grouped
+    // nothing, and principles-api's "multi-parent lists all 3 upstream
+    // parents" read 0 against 3 real edges. A target that did not walk (a
+    // rhyme to a principle that vanished) is dropped, not invented.
+    const byId = new Map(principles.map((p) => [p.id, p]));
+    for (const p of principles) {
+      const targets = rhymes.get(p.id);
+      if (!targets) continue;
+      p.parents = targets
+        .map((t) => byId.get(t))
+        .filter((t): t is PrincipleRow => t !== undefined)
+        .map((t) => ({ id: t.id, label: t.label, uri: t.uri }));
     }
     // #4110 — a walk that loses EVERY row is a broken read, not an empty set.
     // #3749 repointed this handler at the generated surface and guarded the

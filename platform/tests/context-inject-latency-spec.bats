@@ -31,7 +31,14 @@ SOCKET="$HOME/.chorus/run/chorus-hooks.sock"  # #3617: daemon serves from ~/.cho
 # LOAD_1MIN / NCPU are the fixture seam so the gate itself has proofs.
 load_gate_reason() {
   local load ncpu
-  load="${LOAD_1MIN:-$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')}"
+  # #4130 — `${LOAD_1MIN-...}` not `${LOAD_1MIN:-...}`. The colon form also
+  # substitutes when the variable is set-but-EMPTY, so the negative proof's
+  # "unreadable load" fixture (LOAD_1MIN= ) fell straight through to the real
+  # sysctl reading, got a number, and answered "quiet". The gate could not be
+  # driven into its own unreadable branch from the seam, which is the branch
+  # the proof exists to reach (#3734). Unset still reads the box; empty now
+  # means what the fixture says it means.
+  load="${LOAD_1MIN-$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')}"
   ncpu="${NCPU:-$(sysctl -n hw.ncpu 2>/dev/null || echo 8)}"
   [ -n "$load" ] || { echo "UNMEASURED — load average unreadable"; return 0; }
   python3 -c "import sys; l=float('$load'); n=float('$ncpu'); sys.exit(0 if l >= n else 1)" \

@@ -46,5 +46,16 @@ chorus:PrincipleShape a sh:NodeShape ;
     # same commit, so the constraint is satisfiable the moment it lands.
     sh:property [ sh:path chorus:principleKind ; sh:minCount 1 ; sh:maxCount 1 ;
                   sh:datatype xsd:string ; sh:in ( "pc" "xp" ) ] ;
+    # #4130 — CLAIM the two properties the loom reads and the generator was not
+    # serving. DECLARED ⊃ CLAIMED ⊃ SERVED: athena-make projects onto a
+    # collection row exactly the shape's sh:property paths (lib.rs:944 — an
+    # sh:class makes it an edge, an sh:datatype a typed literal). rhymesWith
+    # was declared (principles-rhymes-4006.ttl, 11 edges) and stored (11 in
+    # urn:chorus:domains:principles, measured 2026-09-09) and served nowhere,
+    # so /principles carried parents:[] for every XP row and three suites
+    # (principles-api, principles-graph, the book page) were red on an edge
+    # that exists. order is the same story for the 14 PC parents (#2314).
+    sh:property [ sh:path chorus:rhymesWith ; sh:class chorus:Principle ] ;
+    sh:property [ sh:path chorus:order ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
     chorus:instancesGraph "urn:chorus:domains:principles" ;
     chorus:generatedBy "athena-model" .

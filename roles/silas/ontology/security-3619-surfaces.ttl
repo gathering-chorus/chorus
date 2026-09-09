@@ -9,6 +9,35 @@
 @prefix chorus: <https://jeffbridwell.com/chorus#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 
+# #4130 — the principles write door. principles-api.test.sh's negative proof
+# (a POST with no identity is refused 401) read 200 on every run: these three
+# routes were never in this table, so the envelope gated nothing — the
+# open-by-construction class #3977 measured (59 undeclared routes). Scope is
+# the principles home graph; Wren's principal holds it (security-scopes-3689.ttl).
+chorus:surface-principles-create a chorus:APISurface ;
+    rdfs:label "chorus-api principles create (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "POST" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-principles-update a chorus:APISurface ;
+    rdfs:label "chorus-api principles update (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "PUT" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
+chorus:surface-principles-delete a chorus:APISurface ;
+    rdfs:label "chorus-api principles delete (loom-principles write door)" ;
+    chorus:securedBy chorus:gate-chorus-api-mutations ;
+    chorus:httpMethod "DELETE" ;
+    chorus:pathPrefix "/api/athena/subdomains/loom-principles/principles" ;
+    chorus:requiresScope "urn:chorus:domains:principles" ;
+    chorus:servedBy chorus:services .
+
 chorus:surface-alert-write a chorus:APISurface ;
     rdfs:label "chorus-api alert write (zero-caller)" ;
     chorus:securedBy chorus:gate-chorus-api-mutations ;

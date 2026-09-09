@@ -26,9 +26,21 @@ acquire_single_flight_lock && ok || bad "acquire after release should succeed"
 release_single_flight_lock
 
 # stale lock (holder pid dead) is stolen, not wedged
+# #4130 — the steal path first asks whether a nightly RUNNER is alive by scanning
+# ps (#4008). Inside the nightly a runner is ALWAYS alive — the one running this
+# proof — so the steal was refused there and this case was red every night and
+# green by hand. Stub the ps seam: no runner → the steal proceeds. Then the
+# negative (#3734): a live runner in the scan must still refuse the steal.
+printf '#!/bin/bash\necho "PID PPID ELAPSED COMMAND"\n' > "$TMP/ps-none"; chmod +x "$TMP/ps-none"
+printf '#!/bin/bash\necho "PID PPID ELAPSED COMMAND"\necho "424242 1 01:02:03 bash nightly-suites.sh --run-all"\n' > "$TMP/ps-runner"; chmod +x "$TMP/ps-runner"
+export NIGHTLY_PS="$TMP/ps-none"
 mkdir -p "$NIGHTLY_LOCKDIR"; echo 999999 > "$NIGHTLY_LOCKDIR/pid"
 acquire_single_flight_lock && ok || bad "stale lock (dead pid 999999) must be stolen"
 release_single_flight_lock
+mkdir -p "$NIGHTLY_LOCKDIR"; echo 999999 > "$NIGHTLY_LOCKDIR/pid"
+( NIGHTLY_PS="$TMP/ps-runner" acquire_single_flight_lock ) && bad "dead holder + live runner must REFUSE the steal (#4008 negative)" || ok
+rm -rf "$NIGHTLY_LOCKDIR"
+unset NIGHTLY_PS
 
 # NOTE: the CLI-level "--run-all exits 0 when locked" behavior is asserted via the
 # function (acquire returns 1 → dispatch echoes + exit 0). We do NOT invoke the real

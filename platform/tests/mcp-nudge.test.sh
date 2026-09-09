@@ -77,8 +77,14 @@ ack_initialized() {
     -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"chorus_nudge_message\",\"arguments\":{\"to\":\"silas\",\"message\":\"$PROBE\"}}}")
   echo "$resp" | grep -q '"result"' || (echo "no result: $resp" && false)
   echo "$resp" | grep -q "nudge sent: silas → silas" || (echo "wrong text: $resp" && false)
-  # Give the spine emit a moment to land
-  sleep 1
+  # #4130 — WAIT for the emit instead of betting one second covers it. The
+  # 2026-09-09 03:00 nightly (load 35) saw the call answer "nudge sent" and the
+  # spine line land AFTER the grep ran: a working nudge called red. Poll up to
+  # 20s for THIS probe; a nudge that never emits still reds at the cap.
+  for _i in $(seq 1 40); do
+    tail -c "+$((SPINE_MARK + 1))" "$SPINE_LOG" | grep -q "$PROBE" && break
+    sleep 0.5
+  done
   # Search only what was written since the mark, and match THIS run's probe.
   # Grepping the bare event name would pass on any nudge any role happened to
   # send while this test ran — it could not tell its own emit from a neighbour's,

@@ -60,7 +60,10 @@ print(sys.argv[1], "bad", bad); sys.exit(1 if bad or not rows else 0)' "$k"
   tok="$("$ROOT/platform/scripts/chorus-identity-token" wren 2>/dev/null)"
   [ -n "$tok" ] || skip "no identity token for wren"
   run curl -s -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/documents" -H "Authorization: Bearer $tok" -H 'Content-Type: application/json' \
-    -d '{"name":"bats-4101-state","docTitle":"x","docHref":"/x.html","docState":"maybe"}'
+    -d '{"name":"bats-4101-state","docTitle":"x","docHref":"/x.html","hasDomain":"memory","docState":"maybe"}'
+  # #4130 — Document gained hasDomain (minCount 1) after this proof was written; the
+  # door refused the body for THAT first and the grep for docState found nothing,
+  # so the proof read red while the docState rule held. One violation per proof.
   [ "$output" = "422" ]
   grep -qi 'docState' "$BATS_TEST_TMPDIR/out"
 }

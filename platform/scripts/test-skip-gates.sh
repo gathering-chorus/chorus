@@ -37,7 +37,7 @@ bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null
 # actually runs against the fixture. This test exercises tdd_gate, not
 # canonical_write_guard — different concerns.
 R=$(echo '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/CascadeProjects/chorus-werk/kade/platform/api/src/handlers/foo.ts","content":"export function foo() { return 1; }"},"session_id":"test-skip-gates-tdd","cwd":"/Users/jeffbridwell/CascadeProjects/chorus-werk/kade"}' \
-  | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade "$SHIM" pre-tool-use 2>&1)
+  | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade CHORUS_CARD_TYPE=new "$SHIM" pre-tool-use 2>&1)
 # Restore prior state
 if [ -n "$PREV_STATE" ]; then echo "$PREV_STATE" > "$STATE_FILE"
 else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null; fi
@@ -56,10 +56,13 @@ else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null
 # from "role idle" is not a gate, it is noise, and it was 1 of Kade's 4 reds on
 # the 2026-09-07 nightly for exactly that reason. So: measure the precondition
 # first and REFUSE rather than fail. UNMEASURED is honest; red is a lie.
-WIP_N=$(curl -s --max-time 2 "http://localhost:3340/api/chorus/context/board/wip?role=Kade" \
-  | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('data',{}).get('cards',[])))" 2>/dev/null || echo "?")
-if [ "$WIP_N" != "1" ]; then
-  echo "  UNMEASURED tdd_gate: needs exactly 1 WIP card for kade (board says: $WIP_N) — the gate family cannot fire, so this proves nothing either way"
+# #4130 — and with exactly one WIP card it STILL went red on the 2026-09-09 03:00
+# nightly: the hook's card-type lookup is a 1s curl, the box was at load 35, the
+# answer was "unknown", nothing fired. The fixture now states the card type through
+# the CHORUS_CARD_TYPE seam (types.rs) — no board, no clock. The one precondition
+# left is that the installed shim carries the seam.
+if ! strings "$SHIM" 2>/dev/null | grep -q "CHORUS_CARD_TYPE"; then
+  echo "  UNMEASURED tdd_gate: installed shim at $SHIM predates the CHORUS_CARD_TYPE seam (#4130) — deploy chorus-hooks, then this measures"
 else
   echo "$R" | grep -qiE "TDD|log-first|haven't.*written.*test|haven't.*checked.*log|permissionDecision\":\"deny" \
     && p "tdd_gate: denies Write to production code (tdd or log-first family)" \

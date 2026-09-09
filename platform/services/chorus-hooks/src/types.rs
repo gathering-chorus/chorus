@@ -268,6 +268,15 @@ pub fn decision_allow_json(message: &str) -> String {
 /// rather than block. No cache today — chorus-api is local + fast (~50ms).
 /// Returns "unknown" when role has 0 or >1 WIP cards (ambiguous → conservative).
 pub fn card_type_for_role(role: &str) -> String {
+    // #4130 — test seam. The live lookup below is a 1s curl against the board;
+    // under a loaded box it times out, the answer is "unknown", and unknown gates
+    // nothing — so test-skip-gates.sh's TDD proof read "no deny" on the 03:00
+    // nightly while the gate was fine. A fixture states the card type it is
+    // proving against; a role session never carries this variable.
+    if let Ok(v) = std::env::var("CHORUS_CARD_TYPE") {
+        let v = v.trim().to_string();
+        if !v.is_empty() { return v; }
+    }
     // chorus-api expects role with first letter capitalized: Silas/Kade/Wren
     let role_cap = {
         let mut chars = role.chars();

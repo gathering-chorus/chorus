@@ -133,23 +133,28 @@ print(1 if orders == expected else 0)
 " 2>/dev/null || echo 0)
 check "permaculture parents return in book order 1..14" "1" "$ORDER_OK"
 
-# 10. Multi-parent specialization: 'no competing implementations' is upstreamed
-# to parents 5, 6, and 7. API response must include all three parents on that
-# child so the page can nest it under each.
-MULTI_OK=$(curl -s "$READ_URL_CANONICAL" | python3 -c "
-import json, sys
+# 10. Parents served = rhymes authored. #4130 — the old check looked for a
+# 'no-competing' row upstreamed to three parents; that row left the model when
+# #4006 replaced the specializations with the 14 XP principles, so the check
+# could only ever read 0. What the model DOES declare is 11 rhymesWith edges
+# (principles-rhymes-4006.ttl), every one single-parent, and the loom read
+# served none of them until #4130 folded rhymesWith into `parents`. Measure
+# that: each authored edge is served as a parent on its child, and the count
+# matches the source exactly (a served parent nobody authored is as wrong as a
+# missing one).
+RHYMES_TTL="$ROOT/roles/wren/ontology/principles-rhymes-4006.ttl"
+PARENTS_OK=$(curl -s "$READ_URL_CANONICAL" | python3 -c "
+import json, sys, re
 ps = json.load(sys.stdin)['data']['principles']
-nc = next((p for p in ps if 'no-competing' in p.get('id','')), None)
-if not nc: print(0); sys.exit()
-labels = sorted(pp['label'] for pp in nc.get('parents', []))
-expected = sorted([
-  'Each function is supported by multiple elements',
-  'Make the least change for the greatest effect',
-  'Use small-scale, intensive systems',
-])
-print(1 if labels == expected else 0)
-" 2>/dev/null || echo 0)
-check "multi-parent: 'no competing' lists all 3 upstream parents" "1" "$MULTI_OK"
+served = {(p['id'], pp['id']) for p in ps for pp in p.get('parents', [])}
+ttl = open(sys.argv[1]).read()
+authored = set(re.findall(r'^chorus:([\\w-]+) chorus:rhymesWith chorus:([\\w-]+) \\.', ttl, re.M))
+missing = authored - served; extra = served - authored
+if missing or extra: print('0 missing=%s extra=%s' % (sorted(missing), sorted(extra)))
+else: print(1 if authored else 0)
+" "$RHYMES_TTL" 2>/dev/null || echo 0)
+check "every authored rhymesWith edge is served as a parent, and only those ($(grep -c 'chorus:rhymesWith chorus:hemenway' "$RHYMES_TTL") edges)" "1" "${PARENTS_OK%% *}"
+[ "${PARENTS_OK%% *}" = "1" ] || echo "    $PARENTS_OK"
 
 echo ""
 echo "Result: $pass passed, $fail failed"

@@ -452,7 +452,17 @@ mod tests {
         let log = fixture_path("latency-50k-negative");
         synthetic_50k(&log);
 
-        let reference = reference_scan(&log);
+        // #4130 — the proof was red on main under load (Silas, 2026-09-09
+        // 09:02, load 8.6; the 03:00 nightly too). The 10ms guard below only
+        // covers the reference side: a reference inflated to 8ms is still
+        // "sane", and a 2,000-line quadratic pass is only ~10-20x a 2ms scan,
+        // so under load the ratio compressed below BUDGET_FACTOR and the
+        // violation read as within budget. Two load-robust moves: the
+        // reference is the MIN of three scans (load can only add time, never
+        // remove it), and the superlinear pass is made unmistakably so
+        // (6,000 prefixes: ~9x the work, ~100x the reference on an idle box,
+        // still >12x with the reference at its 10ms ceiling).
+        let reference = (0..3).map(|_| reference_scan(&log)).min().expect("three scans");
         // #3949 — on a loaded box the REFERENCE inflates (2.0ms measured as
         // more), compressing the quadratic pass's ratio under BUDGET_FACTOR
         // and failing this proof spuriously (04:44 nightly, load class). A
@@ -468,7 +478,7 @@ mod tests {
         let raw = fs::read_to_string(&log).expect("read fixture");
         let lines: Vec<&str> = raw.lines().collect();
         let mut hits = 0usize;
-        for (i, _) in lines.iter().enumerate().take(2_000) {
+        for (i, _) in lines.iter().enumerate().take(6_000) {
             hits += lines[..i].iter().filter(|l| l.contains("nudge.emitted")).count();
         }
         std::hint::black_box(hits);

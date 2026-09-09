@@ -83,6 +83,13 @@ if not multi:
 else:
     f(f"nodes with >1 partOf (violates single-parent): {sorted(set(multi))}")
 
+# #4130 — `vs` is read at the chain check below and was defined nowhere, so the
+# suite died with NameError after its first two checks every night and printed
+# "FAIL" with no reason. It was Silas's one-liner from #3450 (067bf9ce6); my
+# #4111 rebase over Wren's #4113 scan rewrite dropped it. Restored verbatim —
+# same regex, same semantics that #3450 verified against the real model.
+vs = set(re.findall(r"chorus:([\w-]+)\s+a\s+chorus:ValueStream", ttl))
+
 def walk(node):
     seen, cur = [], node
     while cur in parent:

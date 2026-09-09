@@ -174,14 +174,19 @@ mod tests {
         // declaration has no place to land.
         let scan = std::env::temp_dir().join(format!("4028-scan-{}", std::process::id()));
         let _ = fs::remove_dir_all(&scan);
+        // #4130 — the legacy path is LIVE and shared: it read "touched within the
+        // last 5s" and any concurrent writer (a peer's session declaring state,
+        // test-skip-gates.sh's fixture, a parallel lane) made this proof red on a
+        // module that wrote nothing — run 33 of #4130 died on it with Wren
+        // building beside it. Measure what THIS call did: the mtime before and
+        // after must be the same one, or the file absent both times.
+        let legacy = std::path::Path::new("/tmp/claude-team-scan/wren-declared.json");
+        let mtime = |p: &std::path::Path| fs::metadata(p).and_then(|m| m.modified()).ok();
+        let before = mtime(legacy);
         let code = run(&args(&["wren", "building"]));
         assert_eq!(code, ExitCode::SUCCESS);
         assert!(!scan.join("wren-declared.json").exists(), "no declared file may be written");
-        assert!(!std::path::Path::new("/tmp/claude-team-scan/wren-declared.json").exists()
-            || fs::metadata("/tmp/claude-team-scan/wren-declared.json")
-                .and_then(|m| m.modified())
-                .map(|t| t.elapsed().map(|d| d.as_secs() > 5).unwrap_or(true))
-                .unwrap_or(true),
+        assert_eq!(before, mtime(legacy),
             "a pre-existing legacy file may exist, but this call must not have touched it");
     }
 
