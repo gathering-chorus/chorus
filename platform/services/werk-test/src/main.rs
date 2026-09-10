@@ -1171,7 +1171,11 @@ fn run_bats(werk: &str, suite: &str) -> bool {
             // refuses it the production spine.
             .env("CHORUS_CONTEXT", "")
             .env("CHORUS_ROOT", werk)
-            .env("CHORUS_LOG_FILE", tmp.join("spine.log")),
+            .env("CHORUS_LOG_FILE", tmp.join("spine.log"))
+            // #4136 — a bats suite that drives the real `cards` CLI (the
+            // sentinel e2e) wrote done-briefs into a LIVE role dir every night;
+            // the SDK honors this seam, so every suite's briefs land in its world.
+            .env("CARDS_BRIEFS_ROOT", tmp.join("briefs")),
     )
 }
 
