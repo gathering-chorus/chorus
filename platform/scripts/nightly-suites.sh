@@ -264,8 +264,12 @@ _stack_up() {
     local _try
     _STACK_PROBE="down"
     for _try in 1 2 3; do
-      if curl -fsS -m 8 "http://localhost:3340/api/chorus/context/health" >/dev/null 2>&1 \
-         && curl -fsS -m 8 "http://localhost:3030/" >/dev/null 2>&1; then
+      # #4131 (20:56 run, after the land): Fuseki's root answers 401 since the
+      # store went behind auth (#3726), so this probe read "down" on every run
+      # with the whole stack up. /$/ping is the unauthenticated liveness route.
+      # URLs are env-overridable so the proof can stand up a fake stack.
+      if curl -fsS -m 8 "${NIGHTLY_STACK_API_URL:-http://localhost:3340/api/chorus/context/health}" >/dev/null 2>&1 \
+         && curl -fsS -m 8 "${NIGHTLY_STACK_FUSEKI_URL:-http://localhost:3030/\$/ping}" >/dev/null 2>&1; then
         _STACK_PROBE="up"; break
       fi
       sleep 5
