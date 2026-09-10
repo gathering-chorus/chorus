@@ -630,8 +630,13 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // every com.chorus.* agent and needs an explicit restore grant, #4004) has
     // no place in an unattended plan: it read "skipped" every night. The
     // wrapper's NIGHTLY_DESTRUCTIVE_SUITES names them; same list, same seam.
+    // #4135 — test-product-membrane.sh was excluded here as destructive (it
+    // boots every com.chorus.* agent). Since #4131 it is a freshness VERDICT
+    // under the nightly and refuses attended runs without an explicit grant,
+    // so it is safe to plan; excluding it left a registered row no lane could
+    // ever emit (LANE SILENT on the reconcile every night). Default: none.
     let destructive: Vec<String> = std::env::var("NIGHTLY_DESTRUCTIVE_SUITES")
-        .unwrap_or_else(|_| "test-product-membrane.sh".to_string())
+        .unwrap_or_default()
         .split_whitespace().map(|s| s.to_string()).collect();
     let bats_suites: Vec<String> = werk_test::nightly_bats_suites(&rows)
         .into_iter()

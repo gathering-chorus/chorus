@@ -228,7 +228,14 @@ def jest_case_names(source):
 def case_names(path):
     try: c = open(path, errors='ignore').read()
     except Exception: return [os.path.basename(path)], ''
-    if path.endswith('.rs'): r = re.findall(r'#\[(?:tokio::)?test\][^\n]*\n\s*(?:async\s+)?fn\s+(\w+)', c)
+    if path.endswith('.rs'):
+        # #4135 — an `#[ignore]` fn never runs, so registering it mints a name no
+        # lane can ever emit (werk-deploy e2e_shared_lib_cascade_and_anti_stale:
+        # never-ran every night since #3222 parked it). Skip fns whose attribute
+        # block carries #[ignore …] between #[test] and fn.
+        # (#[ignore] may sit before OR after #[test]: take the whole attribute block.)
+        r = [m.group(2) for m in re.finditer(r'((?:[ \t]*#\[[^\n]*\][ \t]*\n)+)[ \t]*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)', c)
+             if re.search(r'#\[(?:tokio::)?test\]', m.group(1)) and '#[ignore' not in m.group(1)]
     # #4106 — anchored to line start: the unanchored pattern also matched a
     # @test declaration written INSIDE a string fixture (a bats suite that
     # builds a little .bats file to run the tagger against registered its
