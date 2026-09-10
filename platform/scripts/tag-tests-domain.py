@@ -133,6 +133,12 @@ def declared(c):
     if not m: return None
     layer = m.group(1).lower()
     concern = (m.group(2) or '').lower() or None
+    # #4136 — gate-test-type accepts `@test-type: perf` / `security` on their own
+    # (a concern with no layer). Here that read as junk and fell to the
+    # heuristic, so werk-phase-budgets.test.sh registered as unit/'' and the
+    # nightly counted a speed measurement as a broken test.
+    if layer in VALID_CONCERNS and concern is None:
+        concern, layer = layer, 'fitness'
     if layer not in VALID_LAYERS: return None          # junk header -> heuristic, inferred
     if concern and concern not in VALID_CONCERNS: concern = None
     return layer, concern

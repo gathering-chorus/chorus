@@ -646,8 +646,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3922 — security-declared units fold under their own lane label so the
     // report and owner routing see ONE security lane on its own cadence.
     let sec_units = werk_test::security_units(&rows);
+    let perf_units = werk_test::perf_units(&rows);
     let bats_kind = |b: &str| -> &'static str {
-        if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
+        if perf_units.contains(b) { "perf" } else if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
     };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh

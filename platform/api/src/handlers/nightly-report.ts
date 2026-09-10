@@ -235,6 +235,9 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
   const reds = run.rows.filter((r) => r.status === 'fail');
   const skips = run.rows.filter((r) => r.status === 'skip');
   const greens = run.rows.filter((r) => r.status === 'pass');
+  // #4136 — 'slow' is a perf row over its budget: speed, not breakage. It never
+  // joins the red count; it gets its own count and its own place in the table.
+  const slows = run.rows.filter((r) => r.status === 'slow');
   // A suite that reported neither pass, fail nor skip produced no parseable
   // output. It was silently absent from the counts, so 317 suites rendered as
   // 314 and three red-or-green-unknown suites read as nothing at all.
@@ -258,12 +261,12 @@ export function renderNightlyPage(run: NightlyRun | null, opts?: NightlyPageOpts
       <td>${esc(r.owner)}</td>
       <td class="sum">${esc(r.summary)}</td>
     </tr>`;
-  const ordered = [...reds, ...silent, ...skips, ...greens];
+  const ordered = [...reds, ...slows, ...silent, ...skips, ...greens];
   const body = `
   ${partial}
   <div class="banner ${cls}">
     <span class="verdict">${verdict}</span>
-    <span class="counts">SUITES: ${greens.length} passed · ${reds.length} failed · ${skips.length} skipped${silent.length ? ' · ' + silent.length + ' produced no output' : ''} · ${run.rows.length} total</span>
+    <span class="counts">SUITES: ${greens.length} passed · ${reds.length} failed${slows.length ? ' · ' + slows.length + ' slow (speed, not breakage)' : ''} · ${skips.length} skipped${silent.length ? ' · ' + silent.length + ' produced no output' : ''} · ${run.rows.length} total</span>
     <span class="counts">TESTS: ${tests.passed} passed · ${tests.failed} failed${tests.unparsed ? ' (' + tests.unparsed + ' suite(s) report no test counts)' : ''}</span>
     <span class="when">${esc(run.startedAt)}${run.completedAt ? ' → ' + esc(run.completedAt) : ''}</span>
   </div>

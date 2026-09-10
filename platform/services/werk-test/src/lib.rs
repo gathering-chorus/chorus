@@ -3218,6 +3218,21 @@ mod shell_fold_3974 {
 /// #3922 — the security lane's selection: rows declared testConcern=security,
 /// mapped to their units. Runs on its OWN cadence (not the land path); an
 /// empty selection is an explicit absence line, never a vacuous green.
+/// #4136 — perf-declared rows (`@test-type: perf`): a speed measurement, not a
+/// correctness check. Their units fold under a `perf` kind so the nightly can
+/// show "slow" beside the red count instead of inside it.
+pub fn perf_units(rows: &[TestRow]) -> std::collections::BTreeSet<String> {
+    rows.iter()
+        .filter(|r| r.test_concern == "perf")
+        .filter_map(|r| unit_of_path(&r.file_path))
+        .map(|u| match u {
+            TestUnit::RustCrate(c) => c,
+            TestUnit::TsPackage(p) => p,
+            TestUnit::BatsSuite(s) => s,
+        })
+        .collect()
+}
+
 pub fn security_rows(rows: &[TestRow]) -> Vec<TestRow> {
     rows.iter().filter(|r| r.test_concern == "security").cloned().collect()
 }
@@ -4381,5 +4396,39 @@ mod tsv_unescape_4135 {
     fn parse_case_tsv_applies_it() {
         let rows = parse_case_tsv("a.test.ts\tescapes newlines to literal \\\\n\tpassed\n");
         assert_eq!(rows[0].test_name, r"escapes newlines to literal \n");
+    }
+}
+
+#[cfg(test)]
+mod athena_join_4136 {
+    use super::{join_cases, CaseResult, TestRow};
+
+    fn row(f: &str) -> TestRow {
+        TestRow { file_path: f.into(), covers: String::new(), pyramid_layer: String::new(), hermeticity: String::new(), test_concern: String::new() }
+    }
+
+    /// #4136 — the two athena names that read never-ran on 2026-09-10. jest's
+    /// fullName is "<describe> <it-name>" and the describe here ends in the
+    /// same word the it-name starts with ("…/actors actors returns 404 …").
+    #[test]
+    fn describe_ending_in_the_it_names_first_word_still_joins_the_longest_suffix() {
+        let f = "platform/api/tests/athena.integration.test.ts";
+        let rows = vec![row(f), row(f), row(f)];
+        let names: Vec<String> = vec![
+            "returns 404 for unknown subdomain".into(),
+            "actors returns 404 for unknown subdomain".into(),
+            "completeness returns 404 for unknown subdomain".into(),
+        ];
+        let ents: Vec<String> = vec!["bare".into(), "actors".into(), "completeness".into()];
+        let cases = vec![
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/prior-art returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/actors actors returns 404 for unknown subdomain".into(), result: "pass".into() },
+            CaseResult { file_path: f.into(), test_name: "GET /api/athena/subdomains/:id/completeness completeness returns 404 for unknown subdomain".into(), result: "pass".into() },
+        ];
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        let mut ents_hit: Vec<&str> = joined.iter().map(|(_, e)| e.as_str()).collect();
+        ents_hit.sort();
+        assert_eq!(unjoined, 0, "every emitted case must join");
+        assert_eq!(ents_hit, vec!["actors", "bare", "completeness"], "each fullName joins ITS registered name, not the bare one twice");
     }
 }
