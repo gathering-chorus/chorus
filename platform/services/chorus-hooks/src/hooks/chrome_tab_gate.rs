@@ -65,6 +65,7 @@ mod tests {
             stop_hook_active: None,
             hook_type: None,
             deploy_role: Some("silas".into()),
+            card_type: None,
             trace_id: None, tool_output_is_error: None,}
     }
 

@@ -90,6 +90,10 @@ pub struct HookInput {
     pub hook_type: Option<String>,
     /// Injected by shim from DEPLOY_ROLE env var (#1714)
     pub deploy_role: Option<String>,
+    /// #4131 — injected by the shim from CHORUS_CARD_TYPE (fixture seam); the
+    /// gates read it through `card_type_for_input` before asking the board.
+    #[serde(default)]
+    pub card_type: Option<String>,
     /// #3252: the SHARED werk trace_id. Shim injects this from CHORUS_TRACE_ID
     /// (the demo/build/deploy lifecycle trace minted in #2897) — same socket-
     /// crossing pattern as `deploy_role` / `chorus_worktree_override`, because
@@ -267,6 +271,16 @@ pub fn decision_allow_json(message: &str) -> String {
 /// 1-second timeout per call; fails open to "unknown" (conservative gating)
 /// rather than block. No cache today — chorus-api is local + fast (~50ms).
 /// Returns "unknown" when role has 0 or >1 WIP cards (ambiguous → conservative).
+/// #4131 — the card type a gate should reason about: the fixture-stated one
+/// carried in the hook input (shim-injected from CHORUS_CARD_TYPE), else the
+/// board's answer for the role.
+pub fn card_type_for_input(input: &HookInput) -> String {
+    if let Some(ct) = input.card_type.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        return ct.to_string();
+    }
+    card_type_for_role(input.role().as_str())
+}
+
 pub fn card_type_for_role(role: &str) -> String {
     // #4130 — test seam. The live lookup below is a 1s curl against the board;
     // under a loaded box it times out, the answer is "unknown", and unknown gates

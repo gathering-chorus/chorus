@@ -23,6 +23,7 @@ fn run_scenario(label: &str, role: &str, file_path: &str) {
         stop_hook_active: None,
         hook_type: None,
         deploy_role: None,
+        card_type: None,
         trace_id: None, tool_output_is_error: None,
     };
 

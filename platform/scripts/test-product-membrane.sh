@@ -27,6 +27,30 @@ set -uo pipefail
 # self-refuse with rc=3, which the nightly scores as SELF-REFUSED rather than a
 # failure; an operator who owns the restore sets the grant and runs it. A guard
 # that must be granted cannot be defeated by a rename or a pty.
+# #4131 — a durable record of every attended run, so the nightly can say
+# whether the membrane proof is fresh instead of "self-refused" every night
+# (Jeff 2026-09-09: no skips, no outputs). One line per run: <epoch> <OK|FAIL>.
+MEMBRANE_LEDGER="${MEMBRANE_LEDGER:-$HOME/Library/Logs/Chorus/product-membrane.log}"
+MEMBRANE_STALE_RED_DAYS="${MEMBRANE_STALE_RED_DAYS:-30}"
+# #4131 — under the nightly this unit is a VERDICT on proof freshness (same
+# shape as test-restore-drill.sh): the drill itself only ever runs attended.
+if [ -n "${NIGHTLY_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ] && [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
+  _last=$(grep -E '^[0-9]+ OK$' "$MEMBRANE_LEDGER" 2>/dev/null | tail -1 | cut -d' ' -f1)
+  if [ -z "$_last" ]; then
+    echo "product-membrane: RED — the membrane has never been proven on this box (no attended run recorded in $MEMBRANE_LEDGER; run: MEMBRANE_ALLOW_UNDER_AGENT=1 $0)"
+    echo "=== Results: 0 passed, 1 failed ==="
+    exit 1
+  fi
+  _age=$(( ( $(date +%s) - _last ) / 86400 ))
+  if [ "$_age" -ge "$MEMBRANE_STALE_RED_DAYS" ]; then
+    echo "product-membrane: RED — last proven ${_age}d ago (>= ${MEMBRANE_STALE_RED_DAYS}d); rerun attended"
+    echo "=== Results: 0 passed, 1 failed ==="
+    exit 1
+  fi
+  echo "product-membrane: PASS — last proven ${_age}d ago (< ${MEMBRANE_STALE_RED_DAYS}d); the drill stops every chorus service, so it runs attended, not inside the nightly"
+  echo "=== Results: 1 passed, 0 failed ==="
+  exit 0
+fi
 if [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
   echo "REFUSED — test-product-membrane bootouts every com.chorus.* agent and needs explicit restore authority. It never runs unattended: set MEMBRANE_ALLOW_UNDER_AGENT=1 from an ops shell where you own the restore. (#4004)" >&2
   exit 3
@@ -129,9 +153,11 @@ main() {
 
   if probe_gathering "chorus-down"; then
     echo "MEMBRANE OK — gathering serves with chorus fully stopped" | tee -a "$RESULTS"
+    mkdir -p "$(dirname "$MEMBRANE_LEDGER")" 2>/dev/null; echo "$(date +%s) OK" >> "$MEMBRANE_LEDGER"
     rc=0
   else
     echo "MEMBRANE FAIL — a gathering surface degraded while chorus was down" | tee -a "$RESULTS"
+    mkdir -p "$(dirname "$MEMBRANE_LEDGER")" 2>/dev/null; echo "$(date +%s) FAIL" >> "$MEMBRANE_LEDGER"
     rc=1
   fi
 
