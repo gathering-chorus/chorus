@@ -260,20 +260,20 @@ _stack_up() {
   if [ -z "$_STACK_PROBE" ]; then
     # #4131 — one 4s probe under a loaded box read "down" with the whole stack
     # up (12:12 run: smoke-check "skipped — no live stack" while 493 needs-stack
-    # tests ran against it). Three tries, 5s apart, before calling it down.
-    local _try
+    # tests ran against it). Retry the PROBE via curl (three tries, 5s apart);
+    # not a loop in this script, because #3597's determinism guard forbids retry
+    # loops in the runner and the 20:56 run rightly caught one here. curl
+    # retrying a liveness GET is not a suite being re-run.
+    # Fuseki's root answers 401 since the store went behind auth (#3726), so
+    # the probe reads /$/ping, the unauthenticated liveness route. URLs are
+    # env-overridable so the proof can stand up a fake stack.
     _STACK_PROBE="down"
-    for _try in 1 2 3; do
-      # #4131 (20:56 run, after the land): Fuseki's root answers 401 since the
-      # store went behind auth (#3726), so this probe read "down" on every run
-      # with the whole stack up. /$/ping is the unauthenticated liveness route.
-      # URLs are env-overridable so the proof can stand up a fake stack.
-      if curl -fsS -m 8 "${NIGHTLY_STACK_API_URL:-http://localhost:3340/api/chorus/context/health}" >/dev/null 2>&1 \
-         && curl -fsS -m 8 "${NIGHTLY_STACK_FUSEKI_URL:-http://localhost:3030/\$/ping}" >/dev/null 2>&1; then
-        _STACK_PROBE="up"; break
-      fi
-      sleep 5
-    done
+    if curl -fsS -m 8 --retry 2 --retry-delay 5 --retry-all-errors \
+         "${NIGHTLY_STACK_API_URL:-http://localhost:3340/api/chorus/context/health}" >/dev/null 2>&1 \
+       && curl -fsS -m 8 --retry 2 --retry-delay 5 --retry-all-errors \
+         "${NIGHTLY_STACK_FUSEKI_URL:-http://localhost:3030/\$/ping}" >/dev/null 2>&1; then
+      _STACK_PROBE="up"
+    fi
   fi
   [ "$_STACK_PROBE" = "up" ]
 }
