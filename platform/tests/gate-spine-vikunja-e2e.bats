@@ -91,11 +91,6 @@ teardown() {
   if [ "$status" != "Later" ]; then
     bash "$CARDS" move "$SENTINEL" Later >/dev/null 2>&1 || true
   fi
-  # #4131 — `cards done` writes a done-brief into the owner's LIVE briefs dir
-  # ("Card #2429 done by automation"); the 20:56 nightly's spine-emit audit then
-  # flagged that brief as a done with no accept. The sentinel's side effects are
-  # this test's to remove, not the audit's to ignore.
-  rm -f "$(dirname "$CARDS")"/../../directing/products/roles/*/briefs/*-card-"$SENTINEL"-done.md 2>/dev/null || true
 }
 
 # --- AC: sentinel pattern — no new card IDs consumed per run ---
