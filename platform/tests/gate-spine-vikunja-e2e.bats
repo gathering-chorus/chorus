@@ -26,10 +26,6 @@ CHORUS_LOG_BIN="${CHORUS_ROOT}/platform/scripts/chorus-log"
 # #3915 — CARDS must be a client that RUNS (see find_sentinel): the werk copy
 # needs node deps the werk may not have. Resolve once, canonical as fallback.
 CARDS="${CHORUS_ROOT}/platform/scripts/cards"
-# #4136 — `cards done` on the sentinel wrote a done-brief into Kade's LIVE briefs
-# dir every night (2026-09-10 spine-emit audit red). The CLI honors
-# CARDS_BRIEFS_ROOT; every brief this suite causes lands in the run's tempdir.
-export CARDS_BRIEFS_ROOT="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/cards-briefs-$$"
 bash "$CARDS" view 2429 >/dev/null 2>&1 || CARDS="$HOME/CascadeProjects/chorus/platform/scripts/cards"
 BRIDGE="${CHORUS_ROOT}/platform/scripts/gate-spine-vikunja-bridge.sh"
 SENTINEL_CACHE="/tmp/e2e-sentinel-id"
