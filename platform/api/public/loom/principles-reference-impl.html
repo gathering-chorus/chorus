@@ -96,7 +96,7 @@
   <ol>
     <li><strong>Graph as the single source.</strong> One named graph holds every instance; nothing is paraphrased anywhere else.</li>
     <li><strong>API as the only write path.</strong> POST/PUT/DELETE through Athena; hand-edits to TTL are blocked at commit.</li>
-    <li><strong>Drift test as the gate.</strong> A static baseline (<code>book/principles-reconstructed.html</code>) is held against the graph; divergence fails CI.</li>
+    <li><strong>Graph integrity as the gate.</strong> <code>principles-graph.test.sh</code> checks the graph itself: 14 Hemenway parents, no dangling specialization edge, label + comment + source on every parent. The typed static baseline was retired by #4132 (2026-09-10).</li>
     <li><strong>Cite-by-ID, never inline.</strong> Role files reference principle URIs and emphasize a subset; the lens is editorial, the body is canonical.</li>
     <li><strong>Hook backstops the affordance.</strong> The typed API becomes the path of least resistance; the pre-commit hook bites the path it replaces.</li>
   </ol>
@@ -122,6 +122,7 @@ flowchart TB
   classDef shipped fill:#2d5016,stroke:#1a3008,color:#fff
   classDef later fill:#e8e3d0,stroke:#a99a78,color:#3a3a3a,stroke-dasharray: 5 3
   classDef boundary fill:#f6efe2,stroke:#8a6a1a,color:#3a3a3a
+  classDef retired fill:#ddd,stroke:#888,color:#555,stroke-dasharray: 2 2
 
   subgraph FUSEKI["Fuseki — localhost:3030/pods"]
     direction TB
@@ -141,7 +142,7 @@ flowchart TB
 
   subgraph BROWSER["Browser"]
     LOOM_PAGE["/loom/principles.html<br/>(book order, nested specializations)"]:::shipped
-    BOOK_PAGE["/book/principles-reconstructed.html<br/>(static baseline)"]:::shipped
+    BOOK_PAGE["static baseline<br/>(retired #4132)"]:::retired
   end
 
   subgraph CLAUDE_CODE["Claude Code role sessions"]
@@ -209,7 +210,7 @@ flowchart TB
   <p>Fourteen cards thread the principles arc from "read-only graph" to "drift-proof citation surface."</p>
 
   <h3>Shipped (5)</h3>
-  <div class="card-row"><span class="card-id">#2447</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Graph completeness — 14 Hemenway parents + 12 skos:broader edges; drift test holds <code>/book/principles-reconstructed.html</code> against the graph.</span></div>
+  <div class="card-row"><span class="card-id">#2447</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Graph completeness — 14 Hemenway parents + 12 skos:broader edges; drift test held a typed static page against the graph until #4132 retired the page.</span></div>
   <div class="card-row"><span class="card-id">#2314</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Loom Principles API + first ADR-025 migration — moved 27 Principle instances from ontology→instances; added Athena POST/PUT/DELETE/GET; retired Loom GET to 308; pre-commit hook blocks TTL adds.</span></div>
   <div class="card-row"><span class="card-id">#2157</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>"Tests hermetic by default, integration gated explicitly" — first content write through the API. Latent bug fix: <code>SPARQL_PREFIXES</code> hoist (chorus/rdfs/skos/dcterms/owl).</span></div>
   <div class="card-row"><span class="card-id">#2473</span><span class="card-status done">Done</span><span class="card-owner">Wren</span><span>Landed 18 missing team principles via API — Wren (6), Silas (7), Kade (5). Jeff stamped wording in three batches. Pre-req unlocked #2449.</span></div>
@@ -280,12 +281,12 @@ flowchart TB
 
   <div class="layer">
     <div class="layer-title">4. Render layer — page shape, book order, nesting</div>
-    <div class="layer-summary">What a reader sees. Source: loom/principles.html (live), book/principles-reconstructed.html (baseline).</div>
+    <div class="layer-summary">What a reader sees. Source: loom/principles.html (live, read from the graph).</div>
 
-    <div class="rule must"><span class="keyword">MUST</span> render the 14 permaculture parents in book order 1..14, prefixed with the ordinal (e.g., "<em>1. Observe</em>", "<em>6. Make the least change for the greatest effect</em>"). <span class="source">loom/principles.html:301–326; book/principles-reconstructed.html h2 elements</span></div>
+    <div class="rule must"><span class="keyword">MUST</span> render the 14 permaculture parents in book order 1..14, prefixed with the ordinal (e.g., "<em>1. Observe</em>", "<em>6. Make the least change for the greatest effect</em>"). <span class="source">loom/principles.html:301–326; graph chorus:order on the 14 parents</span></div>
     <div class="rule must"><span class="keyword">MUST</span> nest each child specialization under its parent(s) — a multi-parent child renders under each of its parents. <span class="source">loom/principles.html:308–325 (childrenByParent map + nested div)</span></div>
     <div class="rule should"><span class="keyword">SHOULD</span> render the comment as the <code>permaculture</code> layer; <code>techReading</code> as the <code>tech</code> layer; <code>jeffReading</code> as the <code>jeff</code> layer (3-layer affordance). <span class="source">loom/principles.html:247–273</span></div>
-    <div class="rule should"><span class="keyword">SHOULD</span> render <code>/book/principles-reconstructed.html</code> as the static baseline that the live page must match. <span class="source">principles-graph.test.sh drift assertions</span></div>
+    <div class="rule should"><span class="keyword">SHOULD</span> read every parent from the graph; there is no static baseline to match (#4132). <span class="source">principles-graph.test.sh graph assertions</span></div>
     <div class="rule must"><span class="keyword">MUST</span> 1in left/right page margins on book/principles pages. <span class="source">CLAUDE.md memory: feedback_page_margins_1in</span></div>
     <div class="rule must-not"><span class="keyword">MUST NOT</span> render unparented specializations alongside grouped ones — they get a separate "Unclassified" section, or are absent entirely if the multi-parent audit (#2471) has placed them all. <span class="source">loom/principles.html:327–330</span></div>
   </div>
@@ -414,7 +415,7 @@ flowchart TB
   <ul>
     <li><strong>ADR-025</strong> — <code>roles/silas/adr/ADR-025-ontology-vs-instances-graph-separation.md</code></li>
     <li><strong>Live page</strong> — <a href="/loom/principles.html">/loom/principles.html</a></li>
-    <li><strong>Static baseline</strong> — <a href="/book/principles-reconstructed.html">/book/principles-reconstructed.html</a></li>
+    <li><strong>Static baseline</strong> — retired by #4132; the graph is the only home of the principles</li>
     <li><strong>Canonical API</strong> — <code>GET /api/athena/subdomains/loom-principles/principles</code></li>
     <li><strong>Loom redirect</strong> — <code>GET /api/loom/principles</code> → 308</li>
     <li><strong>Write surface</strong> — <code>POST /api/athena/subdomains/loom-principles/principles</code></li>

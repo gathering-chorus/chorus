@@ -2,7 +2,9 @@
 # @test-type: integration — hits service/remote/sibling, skip-if-absent in CI
 : "${CHORUS_ROOT:=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
 
-# Live-graph tests for #2447 + #2314: principles graph matches /book/principles-reconstructed.html.
+# Live-graph tests for #2447 + #2314: the principles graph holds Hemenway's 14 parents intact.
+# #4132 (2026-09-10): the typed April page /book/principles-reconstructed.html and its two
+# page-vs-graph checks are gone — the graph is the only home of the principles.
 # Post-#2314 (ADR-025), Principle instances lived in urn:chorus:instances.
 # #4106 (2026-09-04): they live in urn:chorus:domains:principles now — Jeff's
 # ruling that every row sits in its own domain graph and the catch-all
@@ -22,7 +24,6 @@
 #   6. riot validates chorus.ttl
 set -uo pipefail
 
-HTML_URL="${HTML_URL:-http://localhost:3340/book/principles-reconstructed.html}"
 SPARQL_URL="${SPARQL_URL:-http://localhost:3030/pods/sparql}"
 TTL="${TTL:-${CHORUS_ROOT}/roles/silas/ontology/chorus.ttl}"
 
@@ -68,46 +69,7 @@ check "every specialization edge resolves to a real parent (${EDGES} edge(s))" "
 COMPLETE=$(count_query 'PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX dcterms: <http://purl.org/dc/terms/> SELECT (COUNT(?p) AS ?n) WHERE { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label ?l ; rdfs:comment ?c ; dcterms:source ?s } }')
 check "all 14 parents have label+comment+source" "14" "$COMPLETE"
 
-# 4. HTML article count — the page renders what the graph holds.
-#
-# #4111 — this pinned the literal 14. The page renders 12 and the graph holds
-# 14, and the fixed number could not say which of those two is the bug. Compare
-# the two sides: a mismatch is a rendering defect at any count, and authoring a
-# fifteenth parent is not a test failure.
-HTML_ARTICLES=$(curl -s "$HTML_URL" 2>/dev/null | grep -c '<article class="principle">')
-check "HTML renders one article per parent in the graph" "$PARENTS" "$HTML_ARTICLES"
-
-# 5. Drift: HTML labels vs graph Hemenway parents
-HTML_LABELS=$(curl -s "$HTML_URL" 2>/dev/null | grep -oE '<h2>[^<]*</h2>' | sed -E 's|<h2>[0-9]+\. *||; s|</h2>||' | head -14)
-DRIFT=0
-while IFS= read -r label; do
-  [ -z "$label" ] && continue
-  found=$(ask_query "PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ASK { GRAPH <urn:chorus:domains:principles> { ?p a chorus:Principle ; chorus:isPermacultureParent true ; rdfs:label \"$label\" } }")
-  [ "$found" != "True" ] && { DRIFT=$((DRIFT+1)); echo "    DRIFT: '$label' in HTML but not in graph"; }
-done <<< "$HTML_LABELS"
-check "0 label drift between HTML and graph" "0" "$DRIFT"
-# #4111 — say WHAT the drift is, not just how much of it there is.
-#
-# Measured 2026-09-06: the page renders Holmgren's twelve permaculture
-# principles ("Observe and interact", "Obtain a yield", "Produce no waste")
-# while the graph holds Hemenway's fourteen ("Observe", "Connect", "Make the
-# least change for the greatest effect"). These are not drifted versions of one
-# list — they are two different books, and the page's own <title> says
-# "Gaia's Garden", which is Hemenway. So the page is rendering the wrong set
-# under the right name.
-#
-# A bare "12 drifted" sends the reader looking for a rendering bug. Naming it
-# sends them to the actual question: which book the page is supposed to show.
-if [ "$DRIFT" -gt 0 ]; then
-  echo "    NOTE: this is not per-row drift. The page and the graph hold"
-  echo "          DIFFERENT principle sets — the page renders Holmgren's 12,"
-  echo "          the graph holds Hemenway's 14, and the page title says"
-  echo "          Gaia's Garden (Hemenway). Deciding which set the page should"
-  echo "          show is authoring work in the principles domain, not a"
-  echo "          rendering fix."
-fi
-
-# 6. riot validation
+# 4. riot validation
 if riot --validate "$TTL" >/dev/null 2>&1; then
   check "chorus.ttl validates" "0" "0"
 else
