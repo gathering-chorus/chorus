@@ -646,8 +646,9 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // #3922 — security-declared units fold under their own lane label so the
     // report and owner routing see ONE security lane on its own cadence.
     let sec_units = werk_test::security_units(&rows);
+    let perf_units = werk_test::perf_units(&rows);
     let bats_kind = |b: &str| -> &'static str {
-        if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
+        if perf_units.contains(b) { "perf" } else if sec_units.contains(b) { "security" } else if b.ends_with(".sh") { "shell" } else { "bats" }
     };
     // #4030 AC4 — the PLAN, printed before any lane runs. A planned unit that
     // never produces its `nightly-unit|` line is folded by nightly-suites.sh
@@ -1170,7 +1171,11 @@ fn run_bats(werk: &str, suite: &str) -> bool {
             // refuses it the production spine.
             .env("CHORUS_CONTEXT", "")
             .env("CHORUS_ROOT", werk)
-            .env("CHORUS_LOG_FILE", tmp.join("spine.log")),
+            .env("CHORUS_LOG_FILE", tmp.join("spine.log"))
+            // #4136 — a bats suite that drives the real `cards` CLI (the
+            // sentinel e2e) wrote done-briefs into a LIVE role dir every night;
+            // the SDK honors this seam, so every suite's briefs land in its world.
+            .env("CARDS_BRIEFS_ROOT", tmp.join("briefs")),
     )
 }
 

@@ -20,6 +20,17 @@ echo "--- tdd_gate ---"
 #   - card_type is "new" or "enhance" (not "fix" — log_first_gate fires first for fix cards)
 #   - session_id is present in input (None → gate skips check, assumes tests written)
 #   - session cache has no prior test file edit (empty session = no tests written)
+# #4136 — inside the werk pipeline (CI set) the membrane classifies this fixture's
+# shim calls as a build context and REFUSES the live sessions registry, and a
+# refused registration aborts the call before any gate runs: "expected deny, got
+# exit 0" on every werk round while the same fixture passes on canonical. A test
+# brings its own world: register into a tempdir and the gates get evaluated.
+export CHORUS_SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/skip-gates-sessions.XXXXXX")}"
+# Same for the spine: under CI the shim's own emit resolves the production spine
+# and the membrane refuses it (measured 2026-09-10 13:08: "build context (CI set)
+# attempted to resolve production surface 'spine'"). Shell units do not get the
+# per-suite CHORUS_LOG_FILE the bats runner sets, so this fixture sets its own.
+export CHORUS_LOG_FILE="${CHORUS_LOG_FILE:-$CHORUS_SESSIONS_DIR/spine.log}"
 STATE_DIR="/tmp/claude-team-scan"
 STATE_FILE="$STATE_DIR/kade-declared.json"
 mkdir -p "$STATE_DIR"

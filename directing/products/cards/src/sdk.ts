@@ -52,7 +52,14 @@ const LIVE_BRIEF_DIRS: Record<string, string> = {
   wren: path.join(__dirname, '../../roles/wren/briefs'),
 };
 const JEST_BRIEFS_ROOT = path.join(require('os').tmpdir(), 'cards-jest-briefs', String(process.pid));
-const DEFAULT_BRIEF_DIRS: Record<string, string> = process.env.JEST_WORKER_ID
+// #4136 — a test that drives the real CLI (bats, not jest) has no
+// JEST_WORKER_ID, so `cards done` on the sentinel card wrote
+// "done by automation" briefs into a LIVE role dir every night. CARDS_BRIEFS_ROOT
+// is the CLI-side seam: point it at the test's tempdir and briefs land there.
+const ENV_BRIEFS_ROOT = process.env.CARDS_BRIEFS_ROOT;
+const DEFAULT_BRIEF_DIRS: Record<string, string> = ENV_BRIEFS_ROOT
+  ? { silas: path.join(ENV_BRIEFS_ROOT, 'silas/briefs'), kade: path.join(ENV_BRIEFS_ROOT, 'kade/briefs'), wren: path.join(ENV_BRIEFS_ROOT, 'wren/briefs') }
+  : process.env.JEST_WORKER_ID
   ? { silas: path.join(JEST_BRIEFS_ROOT, 'silas/briefs'), kade: path.join(JEST_BRIEFS_ROOT, 'kade/briefs'), wren: path.join(JEST_BRIEFS_ROOT, 'wren/briefs') }
   : LIVE_BRIEF_DIRS;
 

@@ -117,6 +117,25 @@ _load_gate() {
 # persist the failing suite's output tail here; emit_suite_results surfaces a
 # one-line reason from it into the spine event. Env-overridable for tests.
 NIGHTLY_FAIL_DIR="${NIGHTLY_FAIL_DIR:-$HOME/.chorus/nightly-failures}"
+# #4136 — WHO restarts the hooks daemon mid-run? launchd SIGTERMed it four
+# times during the 2026-09-10 03:00 run and the spine only names launchd. Put a
+# logging launchctl first on PATH for this process tree: every call records its
+# caller's command line, then execs the real binary. Read the ledger after a run.
+_install_launchctl_ledger() {
+  local d="${NIGHTLY_FAIL_DIR}/launchctl-shim"
+  mkdir -p "$d" 2>/dev/null || return 0
+  cat > "$d/launchctl" <<'EOS'
+#!/bin/bash
+# #4136 — caller ledger; exec the real launchctl unchanged.
+_led="${NIGHTLY_LAUNCHCTL_LEDGER:-$HOME/.chorus/nightly-failures/launchctl-callers.log}"
+printf '%s pid=%s ppid=%s caller=%s :: launchctl %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$$" "$PPID" \
+  "$(ps -o command= -p "$PPID" 2>/dev/null | cut -c1-200)" "$*" >> "$_led" 2>/dev/null
+exec "${LAUNCHCTL_REAL:-/bin/launchctl}" "$@"
+EOS
+  chmod +x "$d/launchctl"
+  export PATH="$d:$PATH"
+}
+_install_launchctl_ledger
 
 # Stable per-suite failure-log path (kind+path → one file). Both the writer
 # (run_one_attempt) and the reader (emit_suite_results) derive it identically.
@@ -422,6 +441,10 @@ run_cargo_lane() {
     # the proof drives the REAL logic instead of a copy that can drift.
     local _r; _r=$(_remap_unmeasured "$verdict" "$summary")
     verdict="${_r%%|*}"; summary="${_r#*|}"
+    # #4136 — a perf row over its budget is SLOW, not broken (Jeff 2026-09-10:
+    # "so its a performance signal not a test failure"). It keeps its own verdict
+    # so the page shows the minutes beside the red count, never inside it.
+    if [ "$kind" = "perf" ] && [ "$verdict" = "fail" ]; then verdict="slow"; fi
     echo "SUITE|$kind|$path|$(owner_for "$path")|$verdict|$summary"
     # #3484 — persist the failing lane's output so the red explains itself;
     # clear on green so a passing rerun drops the stale reason.
@@ -1283,7 +1306,13 @@ notify_results() {
   per_owner=$(printf '%s\n' "$results" \
     | awk -F'|' '$1=="SUITE" && $5=="fail" {c[$4]++} END {for (o in c) printf "%s %d, ", o, c[o]}' \
     | sed 's/, $//')
-  "$ops_nudge" kade "nightly TOTAL: $total red across the board ($per_owner) — bar is zero$skipmsg" system >/dev/null 2>&1 || true
+  local slow_n slow_names slowmsg=""
+  slow_n=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="slow"' | grep -c . | tr -d ' ')
+  if [ "${slow_n:-0}" -gt 0 ]; then
+    slow_names=$(printf '%s\n' "$results" | awk -F'|' '$1=="SUITE" && $5=="slow" {k=split($3,a,"/"); print a[k]}' | paste -sd', ' -)
+    slowmsg=" — $slow_n slow (speed, not breakage: $slow_names)"
+  fi
+  "$ops_nudge" kade "nightly TOTAL: $total red across the board ($per_owner) — bar is zero$skipmsg$slowmsg" system >/dev/null 2>&1 || true
 }
 
 # #3606 — the DURABLE half of the aggregate. notify_results pushes a nudge, which
