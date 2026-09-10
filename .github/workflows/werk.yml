@@ -356,7 +356,11 @@ jobs:
             # (2026-09-09 23:07, 2026-09-10 10:49) while the test read an empty
             # file, and its `cards done` wrote briefs into a live role dir.
             W=$(mktemp -d "${TMPDIR:-/tmp}/prove-live.XXXXXX")
-            ( cd "$WERK" && CHORUS_LOG_FILE="$W/spine.log" CHORUS_SESSIONS_DIR="$W/sessions" CARDS_BRIEFS_ROOT="$W/briefs" bats "$f" ) || rc=1
+            # CHORUS_CONTEXT=prod is the pipeline's own escape hatch (its verbs must
+            # emit to the live spine) and the membrane honors it before any test
+            # marker — so a bats suite inherited "prod" here and its emits went live
+            # even with a test spine set (2026-09-10 12:35, run 4). A suite is a test.
+            ( cd "$WERK" && CHORUS_CONTEXT=test CHORUS_LOG_FILE="$W/spine.log" CHORUS_SESSIONS_DIR="$W/sessions" CARDS_BRIEFS_ROOT="$W/briefs" bats "$f" ) || rc=1
           done
           echo "prove-live: rc=$rc (BLOCKING — an AC that needs the live door is proven here or not at all)"
           exit "$rc"
