@@ -42,7 +42,7 @@ setup() {
 }
 
 @test "membrane attended without the grant still refuses (#4004 kept)" {
-  MEMBRANE_LEDGER="$TMP/none" run bash "$ROOT/scripts/test-product-membrane.sh" --dry-run
+  run env -u NIGHTLY_UNIT_TIMEOUT -u WERK_TEST_NIGHTLY MEMBRANE_LEDGER="$TMP/none" bash "$ROOT/scripts/test-product-membrane.sh" --dry-run
   [ "$status" -eq 3 ]
 }
 

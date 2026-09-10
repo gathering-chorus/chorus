@@ -29,7 +29,11 @@ PREV_STATE=$(cat "$STATE_FILE" 2>/dev/null || echo "")
 # setup is now non-hermetic — it depends on kade's actual board card type
 # at run-time. If the hook's gate logic no longer fires here, the right
 # fix is to mock board state, not to re-introduce card=/type= args.
-bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null
+# #4131 — role-state is DERIVED from the streams since #4028 ("nothing to
+# declare"), so the old `role-state kade building` wrote nothing and
+# is_role_building() read whatever the file held (waiting, on the 20:56 run) and
+# the gate allowed. The gate reads this file; the fixture states it directly.
+printf '{"role":"kade","state":"building","fixture":"test-skip-gates"}\n' > "$STATE_FILE"
 # #2806: canonical_write_guard (#2790) fires BEFORE tdd_gate when the
 # fixture path points at canonical chorus — the guard's "canonical is
 # read-only" deny short-circuits and tdd_gate never executes. Use a
@@ -40,7 +44,7 @@ R=$(echo '{"tool_name":"Write","tool_input":{"file_path":"/Users/jeffbridwell/Ca
   | CHORUS_HOOK_RAW=1 DEPLOY_ROLE=kade CHORUS_CARD_TYPE=new "$SHIM" pre-tool-use 2>&1)
 # Restore prior state
 if [ -n "$PREV_STATE" ]; then echo "$PREV_STATE" > "$STATE_FILE"
-else bash "${CHORUS_ROOT}/platform/scripts/role-state" kade building 2>/dev/null; fi
+else rm -f "$STATE_FILE"; fi
 # #2806: pre-write builder-discipline gates form a family — TDD gate
 # (test-first) AND log-first gate (read-logs-before-fixing) both fire on
 # Write to production code without preconditions. Test asserts ANY deny

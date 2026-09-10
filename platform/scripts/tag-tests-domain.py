@@ -277,7 +277,7 @@ def discover(roots=TEST_ROOTS):
             # include, not a crate (no Cargo.toml, #4012); its #[test] fns run under
             # the including crate's names, so registering them here minted three
             # rows no lane could ever emit (LANE SILENT every night).
-            elif f.endswith('.rs') and '/platform/services/shared/' in p: continue
+            elif f.endswith('.rs') and 'platform/services/shared/' in p: continue   # relative paths: no leading slash (20:56 run still carried 3 rows)
             elif f.endswith('.rs') and re.search(r'#\[(?:tokio::)?test\]', open(p, errors='ignore').read()): out.append(p)
     return out
 
