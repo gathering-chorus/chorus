@@ -1,3 +1,4 @@
+// @test-type: unit — hermetic
 /**
  * pain rollup v1.1 (#3029) — unit tests for the raw-line rollup ported from the
  * proven :8899 sketch (logform.py). Locks the contract the v1 server-side count
@@ -72,7 +73,14 @@ describe('lineMatchesPainFilter — disposition/level keying (#3165)', () => {
     expect(lineMatchesPainFilter('{"event":"werk_pull.bailed","disposition":"refuse"}')).toBe(true);
     expect(lineMatchesPainFilter('{"event":"some.op","disposition":"rollback"}')).toBe(true);
   });
-  it('does NOT count bare level=error in v1 — deferred (live Loki: 166/193 are gathering-app/daemon logs with no event/role/card_id; they need their own grouping, not the spine schema)', () => {
+  // #4135 — the title carried the whole deferral rationale (200+ chars); the
+  // registry door caps testName at 80, so the registered identity was a prefix
+  // the runner's emitted name never matched: never-ran every night. Rationale
+  // stays here; the title is the identity.
+  // Deferred because live Loki showed 166/193 bare level=error lines are
+  // gathering-app/daemon logs with no event/role/card_id; they need their own
+  // grouping before they can be counted.
+  it('does NOT count bare level=error in v1 — deferred', () => {
     expect(lineMatchesPainFilter('{"event":"some.op","level":"error","card_id":1}')).toBe(false);
     expect(lineMatchesPainFilter('{"level":"error","msg":"boom"}')).toBe(false);
     // but a level=error line that ALSO has a pain-suffix event still counts (via the suffix)

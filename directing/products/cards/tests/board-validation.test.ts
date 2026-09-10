@@ -1,3 +1,4 @@
+// @test-type: integration — reads the live board (skip-if-absent); determinism is proven on one captured payload (#4135)
 /**
  * Board state validation tests — #1820
  *
@@ -168,29 +169,45 @@ describe('list: completeness and determinism', () => {
     expect(all.length).toBe(allRaw.length);
   });
 
+  // #4135 — determinism is a property of the projection, not of the world.
+  // The old form listed the LIVE board three times and asserted the snapshots
+  // matched; on 2026-09-10 08:55 Silas pulled a card mid-run and it went red
+  // for "someone was working". Capture one payload, project it three times.
   test('repeat calls return same count', async () => {
     if (skip()) return;
-    const counts: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      const all = await client.list();
-      counts.push(all.length);
-    }
+    const raw = await client.fetchAllTasks();
+    const dbMap = client.fetchBucketMapFromDB();
+    const counts = [0, 1, 2].map(() => client.project(raw, dbMap).length);
     expect(new Set(counts).size).toBe(1);
   });
 
+  const breakdownOf = (tasks: BoardTask[]): string => {
+    const b: Record<string, number> = {};
+    for (const t of tasks) b[t.status] = (b[t.status] || 0) + 1;
+    return JSON.stringify(b, Object.keys(b).sort());
+  };
+
   test('repeat calls return same per-status breakdown', async () => {
     if (skip()) return;
-    const snapshots: string[] = [];
-    for (let i = 0; i < 3; i++) {
-      const all = await client.list();
-      const breakdown: Record<string, number> = {};
-      for (const t of all) {
-        breakdown[t.status] = (breakdown[t.status] || 0) + 1;
-      }
-      snapshots.push(JSON.stringify(breakdown, Object.keys(breakdown).sort()));
-    }
+    const raw = await client.fetchAllTasks();
+    const dbMap = client.fetchBucketMapFromDB();
+    const snapshots = [0, 1, 2].map(() => breakdownOf(client.project(raw, dbMap)));
     expect(snapshots[1]).toBe(snapshots[0]);
     expect(snapshots[2]).toBe(snapshots[0]);
+  });
+
+  test('NEGATIVE PROOF: a payload that changes between calls is caught', async () => {
+    if (skip()) return;
+    const raw = await client.fetchAllTasks();
+    const dbMap = client.fetchBucketMapFromDB();
+    if (raw.length === 0) return;
+    const before = breakdownOf(client.project(raw, dbMap));
+    // the world moves: one task flips done, the way a teammate's /acp would
+    const moved = raw.map((t, i) => (i === 0 ? { ...t, done: !t.done } : t));
+    const movedMap = new Map(dbMap);
+    movedMap.delete(raw[0].id);
+    const after = breakdownOf(client.project(moved, movedMap));
+    expect(after).not.toBe(before);
   });
 
   test('WIP cards in list include recently created cards', async () => {

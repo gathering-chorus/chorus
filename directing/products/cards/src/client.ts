@@ -193,7 +193,17 @@ export class BoardClient {
   async list(): Promise<BoardTask[]> {
     const allTasks = await this.fetchAllTasks();
     const dbMap = this.fetchBucketMapFromDB();
+    return this.project(allTasks, dbMap);
+  }
 
+  /**
+   * #4135 — the pure half of list(): one payload + one bucket map in, board
+   * tasks out, no I/O. Determinism is a property of THIS function, so the
+   * nightly proves it here against a fixed payload instead of listing the
+   * live board three times and failing whenever a teammate moves a card
+   * (Silas pulled #4132 at 08:55 mid-run on 2026-09-10; snapshot 2 ≠ 1).
+   */
+  project(allTasks: VikunjaTask[], dbMap: Map<number, string>): BoardTask[] {
     const tasks: BoardTask[] = [];
     for (const task of allTasks) {
       let status = dbMap.get(task.id);
@@ -655,7 +665,7 @@ export class BoardClient {
 
   /** Query Vikunja SQLite DB for task→bucket mapping.
    *  Bypasses the API's 50-per-bucket cap. Returns bucketName→Set<taskId>. (#1820) */
-  private fetchBucketMapFromDB(): Map<number, string> {
+  fetchBucketMapFromDB(): Map<number, string> {
     const map = new Map<number, string>();
     try {
       const sql = `SELECT tb.task_id, b.title FROM task_buckets tb JOIN buckets b ON b.id = tb.bucket_id WHERE b.project_view_id = ${this.board.viewId}`;

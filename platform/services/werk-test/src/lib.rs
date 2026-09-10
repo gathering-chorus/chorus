@@ -791,6 +791,31 @@ pub struct CaseResult {
 /// Parse jq-extracted jest rows (`file\tfullName\tstatus`). Jest statuses map
 /// onto the graph vocab (passed→pass, failed→fail, everything held→skip);
 /// incomplete rows are dropped, never a panic (parse_test_rows discipline).
+
+/// #4135 — jq's `@tsv` escapes a backslash as `\\` (and tab/newline/CR as
+/// `\t`/`\n`/`\r`). The registry holds the it-name as jest sees it, so a case
+/// named "escapes newlines to literal \\n" was emitted with doubled
+/// backslashes and never joined: NAME MISMATCH every night for a name that
+/// matched. Undo exactly the four escapes @tsv applies.
+pub fn tsv_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek() {
+                Some('\\') => { chars.next(); out.push('\\'); }
+                Some('t') => { chars.next(); out.push('\t'); }
+                Some('n') => { chars.next(); out.push('\n'); }
+                Some('r') => { chars.next(); out.push('\r'); }
+                _ => out.push(c),
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
     tsv.lines()
         .filter_map(|l| {
@@ -798,7 +823,7 @@ pub fn parse_case_tsv(tsv: &str) -> Vec<CaseResult> {
             match (it.next(), it.next(), it.next()) {
                 (Some(f), Some(n), Some(s)) if !f.is_empty() && !n.is_empty() => Some(CaseResult {
                     file_path: f.to_string(),
-                    test_name: n.to_string(),
+                    test_name: tsv_unescape(n),
                     result: match s {
                         "passed" => "pass",
                         "failed" => "fail",
@@ -4333,5 +4358,28 @@ mod shell_counts_4131 {
     #[test]
     fn no_summary_is_none_not_zero_zero() {
         assert_eq!(parse_shell_counts("SAST clean\nSCA clean\n"), None);
+    }
+}
+
+#[cfg(test)]
+mod tsv_unescape_4135 {
+    use super::{parse_case_tsv, tsv_unescape};
+
+    #[test]
+    fn undoes_jq_tsv_backslash_escape() {
+        assert_eq!(tsv_unescape(r"escapes newlines to literal \\n"), r"escapes newlines to literal \n");
+    }
+
+    #[test]
+    fn negative_proof_raw_tsv_name_does_not_equal_the_registry_name() {
+        // the state this exists to separate: without the unescape the join misses
+        let raw = r"escapes newlines to literal \\n";
+        assert_ne!(raw, r"escapes newlines to literal \n");
+    }
+
+    #[test]
+    fn parse_case_tsv_applies_it() {
+        let rows = parse_case_tsv("a.test.ts\tescapes newlines to literal \\\\n\tpassed\n");
+        assert_eq!(rows[0].test_name, r"escapes newlines to literal \n");
     }
 }
