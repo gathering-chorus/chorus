@@ -24,7 +24,11 @@ for bin in "$BIN_DIR"/werk-*; do
   crate="platform/services/$name"
   [ -d "$CHORUS_ROOT/$crate" ] || continue
   # newest deployed commit for this binary, from the spine (source of truth)
-  commit=$(grep -a '"event":"binary.deployed"' "$SPINE" | grep -aE "\"binary\":\"$name\"" \
+  # #4131 — the canonical deploy installs werk-test as `werk-test-bin` (the
+  # `werk-test` name is the wrapper) and emits binary.deployed under that name;
+  # matching the bare verb name read the 19:08 werk-side install as the newest
+  # and called a freshly landed verb a month stale. Accept either spelling.
+  commit=$(grep -a '"event":"binary.deployed"' "$SPINE" | grep -aE "\"binary\":\"$name(-bin)?\"" \
            | tail -1 | grep -aoE '"commit":"[0-9a-f]+"' | cut -d'"' -f4)
   if [ -z "$commit" ]; then
     # fall back to key=value payload form

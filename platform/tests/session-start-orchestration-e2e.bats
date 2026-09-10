@@ -70,7 +70,10 @@ teardown() {
 # --- AC: SessionStart binary is invocable ---
 
 @test "chorus-hook-shim session-start returns hookSpecificOutput JSON" {
-  run "$SHIM" session-start silas
+  # #4131 — the shim reports "Context cached: ..." on stderr; `run` merges the
+  # streams, so the JSON parse below read a prose line first (20:56 run). The
+  # contract is the JSON on stdout; keep stderr out of it.
+  run --separate-stderr "$SHIM" session-start silas
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c "
 import sys, json

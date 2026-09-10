@@ -15,7 +15,10 @@
 SCRIPT="$BATS_TEST_DIRNAME/../scripts/test-product-membrane.sh"
 
 @test "NEGATIVE PROOF: without the grant it REFUSES with rc=3 and boots nothing" {
-  run bash "$SCRIPT" --dry-run
+  # #4131 — the nightly exports NIGHTLY_UNIT_TIMEOUT to every unit, and under it
+  # the membrane script is a freshness verdict, not a refusal. This proves the
+  # grant check, so it brings its own env (#3528).
+  run env -u NIGHTLY_UNIT_TIMEOUT -u WERK_TEST_NIGHTLY bash "$SCRIPT" --dry-run
   [ "$status" -eq 3 ]
   [[ "$output" == *"REFUSED"* ]]
   [[ "$output" == *"restore authority"* ]]

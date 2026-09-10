@@ -42,7 +42,7 @@ setup() {
 }
 
 @test "membrane attended without the grant still refuses (#4004 kept)" {
-  MEMBRANE_LEDGER="$TMP/none" run bash "$ROOT/scripts/test-product-membrane.sh" --dry-run
+  run env -u NIGHTLY_UNIT_TIMEOUT -u WERK_TEST_NIGHTLY MEMBRANE_LEDGER="$TMP/none" bash "$ROOT/scripts/test-product-membrane.sh" --dry-run
   [ "$status" -eq 3 ]
 }
 
@@ -129,4 +129,43 @@ EOS
   [ -f "$logp" ]
   run cat "$logp"
   [[ "$output" == *"semgrep not installed"* ]]
+}
+
+# --- nightly stack probe: a 401 on Fuseki's root is not a down stack ----------
+
+_fake_stack() { # $1 = port; / answers 401, /$/ping and /health answer 200
+  python3 - "$1" >/dev/null 2>&1 <<'PY' &
+import sys, http.server
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        code = 200 if self.path in ("/$/ping", "/health") else 401
+        self.send_response(code); self.end_headers(); self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+  echo $!
+}
+
+@test "stack probe: Fuseki root 401 with /\$/ping 200 reads as UP" {
+  port=$(( 20000 + RANDOM % 20000 )); pid=$(_fake_stack "$port"); sleep 1
+  run env NIGHTLY_STACK_API_URL="http://127.0.0.1:$port/health" \
+          NIGHTLY_STACK_FUSEKI_URL="http://127.0.0.1:$port/\$/ping" \
+      bash -c "source '$ROOT/scripts/nightly-suites.sh'; _stack_up && echo UP || echo DOWN"
+  kill "$pid" 2>/dev/null
+  [[ "$output" == *"UP"* ]]
+}
+
+@test "NEGATIVE PROOF: probing Fuseki's root (the old URL) reads the same live stack as DOWN" {
+  port=$(( 20000 + RANDOM % 20000 )); pid=$(_fake_stack "$port"); sleep 1
+  run env NIGHTLY_STACK_API_URL="http://127.0.0.1:$port/health" \
+          NIGHTLY_STACK_FUSEKI_URL="http://127.0.0.1:$port/" \
+      bash -c "source '$ROOT/scripts/nightly-suites.sh'; _stack_up && echo UP || echo DOWN"
+  kill "$pid" 2>/dev/null
+  [[ "$output" == *"DOWN"* ]]
+}
+
+@test "stack probe: nothing listening reads as DOWN" {
+  run env NIGHTLY_STACK_API_URL="http://127.0.0.1:1/health" NIGHTLY_STACK_FUSEKI_URL="http://127.0.0.1:1/\$/ping" \
+      bash -c "source '$ROOT/scripts/nightly-suites.sh'; _stack_up && echo UP || echo DOWN"
+  [[ "$output" == *"DOWN"* ]]
 }

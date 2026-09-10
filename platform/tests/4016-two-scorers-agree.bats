@@ -32,6 +32,8 @@
 }
 
 @test "the membrane suite really does exit 3 unattended — the case this exists for" {
-  run bash "$BATS_TEST_DIRNAME/../scripts/test-product-membrane.sh" --dry-run
+  # #4131 — under the nightly's exported NIGHTLY_UNIT_TIMEOUT the script is a
+  # freshness verdict; the unattended refusal is what this proves, own env (#3528).
+  run env -u NIGHTLY_UNIT_TIMEOUT -u WERK_TEST_NIGHTLY bash "$BATS_TEST_DIRNAME/../scripts/test-product-membrane.sh" --dry-run
   [ "$status" -eq 3 ]
 }

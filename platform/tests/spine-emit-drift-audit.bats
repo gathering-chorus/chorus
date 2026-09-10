@@ -104,8 +104,14 @@ ${yesterday_briefs}"
     brief_date=$(basename "$brief" | grep -oE "^[0-9]{4}-[0-9]{2}-[0-9]{2}" | head -1)
     if [ -z "$brief_date" ]; then continue; fi
 
+    # #4131 — briefs are named with the UTC date (date -u) while spine timestamps
+    # are Boston-local, so an accept at 20:15 EDT sits under "yesterday" for a
+    # brief dated "today" (the 20:56 run: #4131's own accept read as missing).
+    # Accept either the brief's date or the local day before it.
+    prev_date=$(date -u -j -f "%Y-%m-%d" -v-1d "$brief_date" +"%Y-%m-%d" 2>/dev/null \
+      || date -u -d "$brief_date -1 day" +"%Y-%m-%d" 2>/dev/null || echo "$brief_date")
     found=$(grep -E "\"card(_id)?\":\"?${card_id}\"?[,}]" "$ACC_IDX" \
-      | grep -E "\"timestamp\":\"${brief_date}" \
+      | grep -E "\"timestamp\":\"(${brief_date}|${prev_date})" \
       | head -1)
 
     if [ -z "$found" ]; then

@@ -1492,6 +1492,14 @@ chorus:partOf a owl:ObjectProperty ;
 # products carry partOf on their definitions; borgProduct re-parented
 # chorusStream→chorusProduct per Jeff's roster (partOf is functional — one parent).
 chorus:chorusProduct chorus:partOf chorus:chorusStream .
+# #4131 — `chorus:chorus` is the products-domain row every sub-product (werk,
+# gates-service, cards-service, borg...) climbs to; without a parent the chain
+# dead-ends at a Product and ownership-partof-chain.test.sh is red every night.
+# The seed file cannot carry this edge: the generated door refuses partOf to a
+# target it does not serve (chorusStream is a ValueStream, not a product row —
+# measured 2026-09-09, 422 unknown-endpoint). So the edge rides the schema
+# transaction, exactly like chorusProduct -> chorusStream one line up.
+chorus:chorus        chorus:partOf chorus:chorusStream .
 chorus:gathering     chorus:partOf chorus:chorusStream .
 chorus:observability-domain chorus:partOf chorus:borgProduct .
 chorus:infrastructure-domain chorus:partOf chorus:borgProduct .
