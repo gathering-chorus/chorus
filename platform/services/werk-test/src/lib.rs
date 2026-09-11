@@ -1954,6 +1954,58 @@ pub struct SuiteCoverage {
     pub covers: Vec<String>,
 }
 
+/// #4138 — a path on the diff that is no longer in the tree was DELETED. It is
+/// not a unit to run: bats on a missing file prints "does not exist" and the
+/// suite reads FAIL, so a retired test read as a red land (run 4138-…-23,
+/// 2026-09-10: 14 units green, 2 deleted suites "failed"). Deleted paths are
+/// reported by the caller, never selected. `exists` is injected so the rule is
+/// provable without a filesystem.
+pub fn split_deleted(changed: &[String], exists: impl Fn(&str) -> bool) -> (Vec<String>, Vec<String>) {
+    changed.iter().cloned().partition(|f| exists(f))
+}
+
+#[cfg(test)]
+mod deleted_paths_4138 {
+    use super::*;
+
+    fn index() -> Vec<SuiteCoverage> {
+        vec![SuiteCoverage {
+            suite: "platform/tests/deep-health.bats".to_string(),
+            covers: vec!["platform/scripts/deep-health.sh".to_string()],
+        }]
+    }
+
+    #[test]
+    fn present_paths_are_kept_and_deleted_paths_are_set_aside() {
+        let changed: Vec<String> = ["platform/scripts/deep-health.sh", "platform/tests/deep-health.bats"]
+            .iter().map(|s| s.to_string()).collect();
+        let (present, deleted) = split_deleted(&changed, |f| f.ends_with(".sh"));
+        assert_eq!(present, vec!["platform/scripts/deep-health.sh".to_string()]);
+        assert_eq!(deleted, vec!["platform/tests/deep-health.bats".to_string()]);
+    }
+
+    /// NEGATIVE PROOF (#3734): the two states this exists to separate. Unfiltered,
+    /// the deleted suite IS selected (the red we saw); filtered, it is not.
+    #[test]
+    fn a_deleted_bats_suite_is_selected_without_the_filter_and_not_with_it() {
+        let changed: Vec<String> = vec!["platform/tests/deep-health.bats".to_string()];
+        let before = affected_units_full(&changed, &index());
+        assert!(before.iter().any(|u| matches!(u, TestUnit::BatsSuite(s) if s == "platform/tests/deep-health.bats")),
+            "control: without the filter the deleted suite is a unit — otherwise this proof is hollow");
+        let (present, deleted) = split_deleted(&changed, |_| false);
+        assert_eq!(deleted.len(), 1);
+        assert!(affected_units_full(&present, &index()).is_empty(), "a deleted suite must never become a unit");
+    }
+
+    #[test]
+    fn nothing_deleted_changes_nothing() {
+        let changed: Vec<String> = vec!["a".into(), "b".into()];
+        let (present, deleted) = split_deleted(&changed, |_| true);
+        assert_eq!(present, changed);
+        assert!(deleted.is_empty());
+    }
+}
+
 /// Is this changed path a bats suite?
 pub fn is_bats_suite(path: &str) -> bool {
     path.starts_with("platform/tests/") && path.ends_with(".bats")
