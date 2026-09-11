@@ -51,6 +51,22 @@ describe('patchTtlOwner', () => {
   it('returns null for a missing subdomain block', () => {
     expect(patchTtlOwner(TTL, 'garden-domain', 'kade')).toBeNull();
   });
+
+  // #4113 — ported from athena-owner-write.integration.test.ts, whose live
+  // block flipped prod ownership and wrote canonical chorus.ttl (retired).
+  it('returns null when the block has no ownedBy line; nothing to patch', () => {
+    const noOwner = `chorus:naked-domain a chorus:SubDomain ;
+    rdfs:label "Naked" ;
+    chorus:primaryStep chorus:Shaping .
+`;
+    expect(patchTtlOwner(noOwner, 'naked-domain', 'wren')).toBeNull();
+  });
+
+  it('is idempotent: patching to the same owner twice returns identical text', () => {
+    const first = patchTtlOwner(TTL, 'photos-domain', 'kade');
+    const second = patchTtlOwner(first!, 'photos-domain', 'kade');
+    expect(second).toBe(first);
+  });
 });
 
 describe('setSubdomainOwner', () => {
