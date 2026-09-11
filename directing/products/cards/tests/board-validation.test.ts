@@ -120,14 +120,39 @@ describe('view: status accuracy', () => {
 
   test('view status matches list status for small-bucket cards', async () => {
     if (skip()) return;
-    const all = await client.list();
-    const smallBucket = all.filter(t =>
+    // #4139 — one captured world. The old form did list() then view() per
+    // card as two live reads; on 2026-09-11 03:00 a sibling suite's move
+    // landed between them and the nightly went red for "someone moved a
+    // card". The property is that view's resolver and list's projection
+    // agree on the SAME snapshot.
+    const raw = await client.fetchAllTasks();
+    const dbMap = client.fetchBucketMapFromDB();
+    const buckets = await client.fetchBuckets();
+    const listed = client.project(raw, dbMap);
+    const smallBucket = listed.filter(t =>
       t.status === 'WIP' || t.status === 'Next' || t.status === 'Blocked'
     );
+    const byApiId = new Map(raw.map(t => [t.id, t]));
     for (const card of smallBucket.slice(0, 5)) {
-      const viewed = await client.view(card.index);
-      expect(viewed.status).toBe(card.status);
+      const task = byApiId.get(card.apiId);
+      expect(task).toBeDefined();
+      expect(client.resolveStatus(task!, dbMap, buckets)).toBe(card.status);
     }
+  });
+
+  test('NEGATIVE PROOF: a card moved between the two reads is caught', async () => {
+    if (skip()) return;
+    const raw = await client.fetchAllTasks();
+    const dbMap = client.fetchBucketMapFromDB();
+    const buckets = await client.fetchBuckets();
+    const listed = client.project(raw, dbMap);
+    const card = listed.find(t => t.status === 'WIP' || t.status === 'Next' || t.status === 'Blocked');
+    if (!card) return;
+    const task = raw.find(t => t.id === card.apiId)!;
+    // the world moves under the second read: the card is Done in the map now
+    const moved = new Map(dbMap);
+    moved.set(task.id, 'Done');
+    expect(client.resolveStatus(task, moved, buckets)).not.toBe(card.status);
   });
 
   test('view shows correct status for overflow bucket cards (Later/Done/Won\'t Do)', async () => {
