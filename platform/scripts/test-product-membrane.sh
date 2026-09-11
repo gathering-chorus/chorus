@@ -32,8 +32,9 @@ set -uo pipefail
 # (Jeff 2026-09-09: no skips, no outputs). One line per run: <epoch> <OK|FAIL>.
 MEMBRANE_LEDGER="${MEMBRANE_LEDGER:-$HOME/Library/Logs/Chorus/product-membrane.log}"
 MEMBRANE_STALE_RED_DAYS="${MEMBRANE_STALE_RED_DAYS:-30}"
-# #4131 — under the nightly this unit is a VERDICT on proof freshness (same
-# shape as test-restore-drill.sh): the drill itself only ever runs attended.
+# #4131 — under the nightly this unit is a VERDICT on proof freshness: the
+# drill itself only ever runs attended. (#4141 retired the restore-drill wrapper
+# that used to share this shape.)
 if [ -n "${NIGHTLY_UNIT_TIMEOUT:-}${WERK_TEST_NIGHTLY:-}" ] && [ "${MEMBRANE_ALLOW_UNDER_AGENT:-0}" != "1" ]; then
   _last=$(grep -E '^[0-9]+ OK$' "$MEMBRANE_LEDGER" 2>/dev/null | tail -1 | cut -d' ' -f1)
   if [ -z "$_last" ]; then
