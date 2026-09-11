@@ -1305,7 +1305,9 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
                     hermeticity: String::new(),
                     test_concern: String::new(),
                 });
-                names.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
+                // #4139 — the registry read goes through jq @tsv like the runner
+                // read does (#4135); both sides of the join undo the same escapes.
+                names.push(it.next().map(|x| tsv_unescape(x.trim())).unwrap_or_default());
                 entities.push(it.next().map(|x| x.trim().to_string()).unwrap_or_default());
                 if let Some(h) = it.next() {
                     if let Some(r) = rows.last_mut() {
@@ -2476,6 +2478,48 @@ pub fn integration_report(count: usize, stack_down: Option<&str>) -> String {
         (n, Some(down)) => format!(
             "integration: SKIPPED (stack-down: {}) — {} registered needs-stack test(s) NOT run; typed skip, counted, not a verdict", down, n),
         (n, None) => format!("integration: {} needs-stack test(s) ran with the live stack", n),
+    }
+}
+
+/// #4139 — the post-run line. `integration_report` announces the plan (and the
+/// typed SKIP when the stack is down); this one says what the run actually
+/// produced. On 2026-09-10 the plan line read "1484 needs-stack test(s) ran"
+/// while platform/api's 266 had not run since 09-07 (#4111 selected the
+/// hermetic project unconditionally). Zero executed with a live stack is a
+/// failure to run, named as such, never a quiet zero.
+pub fn integration_measured_report(registered: usize, executed: usize) -> String {
+    if executed == 0 && registered > 0 {
+        format!(
+            "integration: 0 ran of {} registered needs-stack test(s) — NOT run; the stack was up, so a lane dropped the tier",
+            registered
+        )
+    } else {
+        format!("integration: {} ran of {} registered needs-stack test(s) (live stack)", executed, registered)
+    }
+}
+
+/// #4139 — jest project selection. platform/api declares `hermetic` and
+/// `integration` projects; bare jest runs both, and the integration project
+/// without RUN_INTEGRATION fails 150 cases (#4111). #4111's answer was to
+/// select hermetic always, which dropped the integration tier from the nightly
+/// too. The flag decides: integration on → bare jest (both projects);
+/// integration off → hermetic only. No projects → nothing to select.
+pub fn jest_project_args(has_hermetic_project: bool, run_integration: bool) -> Vec<String> {
+    if has_hermetic_project && !run_integration {
+        vec!["--selectProjects".to_string(), "hermetic".to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// #4139 — one `filePath\ttestName` line of the census's ledger walk, read
+/// through jq @tsv, so the name is unescaped exactly like the registry's
+/// (`parse_rows_and_names`) and the runner's (`parse_case_tsv`).
+pub fn ledger_case_from_tsv(line: &str) -> Option<(String, String)> {
+    let mut it = line.split('\t');
+    match (it.next(), it.next()) {
+        (Some(f), Some(n)) if !f.is_empty() => Some((f.to_string(), tsv_unescape(n))),
+        _ => None,
     }
 }
 
@@ -4482,5 +4526,89 @@ mod athena_join_4136 {
         ents_hit.sort();
         assert_eq!(unjoined, 0, "every emitted case must join");
         assert_eq!(ents_hit, vec!["actors", "bare", "completeness"], "each fullName joins ITS registered name, not the bare one twice");
+    }
+}
+
+#[cfg(test)]
+mod integration_tier_4139 {
+    use super::{
+        integration_measured_report, jest_project_args, join_cases, ledger_case_from_tsv,
+        parse_case_tsv, parse_rows_and_names, reconcile_gap,
+    };
+
+    // #4111 passed `--selectProjects hermetic` unconditionally; platform/api's
+    // 266 integration tests stopped running 2026-09-08 while the lane read green.
+    #[test]
+    fn hermetic_project_selected_only_when_integration_is_off() {
+        assert_eq!(jest_project_args(true, false), vec!["--selectProjects", "hermetic"]);
+        assert!(jest_project_args(false, false).is_empty(), "no projects → bare jest");
+        assert!(jest_project_args(false, true).is_empty());
+    }
+
+    #[test]
+    fn negative_proof_integration_on_runs_both_projects() {
+        // the state #4111 could not separate: stack up, RUN_INTEGRATION=true,
+        // and jest still told to run hermetic only
+        let args = jest_project_args(true, true);
+        assert!(!args.iter().any(|a| a == "--selectProjects"), "got {:?}", args);
+    }
+
+    // #4135 unescaped jq's @tsv doubling on the runner side only. The registry
+    // read goes through @tsv too, so the two sides of the join disagreed.
+    #[test]
+    fn registry_name_is_unescaped_like_the_runner_name() {
+        let (_, names, _) = parse_rows_and_names(
+            "platform/api/tests/sparql-helpers.test.ts\tservices\tunit\tescapes newlines to literal \\\\n\tent-1\thermetic\t\n",
+        );
+        assert_eq!(names[0], r"escapes newlines to literal \n");
+    }
+
+    #[test]
+    fn negative_proof_backslash_case_joins_its_registered_row() {
+        let (rows, names, ents) = parse_rows_and_names(
+            "platform/api/tests/sparql-helpers.test.ts\tservices\tunit\tescapes newlines to literal \\\\n\tent-1\thermetic\t\n",
+        );
+        let cases = parse_case_tsv(
+            "platform/api/tests/sparql-helpers.test.ts\tescSparql escapes newlines to literal \\\\n\tpassed\n",
+        );
+        let (joined, unjoined) = join_cases(&cases, &rows, &names, &ents);
+        assert_eq!(unjoined, 0, "the newline case must join (it was dropped 2026-09-10 17:47)");
+        assert_eq!(joined[0].1, "ent-1");
+        assert_eq!(joined[0].0.test_name, r"escapes newlines to literal \n");
+    }
+
+    #[test]
+    fn census_reads_ledger_names_through_the_same_unescape() {
+        let (_, names, _) = parse_rows_and_names(
+            "platform/api/tests/sparql-helpers.test.ts\tservices\tunit\tescapes newlines to literal \\\\n\tent-1\thermetic\t\n",
+        );
+        let registered = vec![("platform/api/tests/sparql-helpers.test.ts".to_string(), names[0].clone())];
+        // the ledger holds the single backslash; jq @tsv doubles it on the way out
+        let executed = vec![ledger_case_from_tsv(
+            "platform/api/tests/sparql-helpers.test.ts\tescapes newlines to literal \\\\n",
+        ).unwrap()];
+        assert!(reconcile_gap(&registered, &executed).is_empty(), "census must cross-foot");
+        // negative proof: the raw split (what run_reconcile did) leaves the gap
+        let raw = vec![(
+            "platform/api/tests/sparql-helpers.test.ts".to_string(),
+            r"escapes newlines to literal \\n".to_string(),
+        )];
+        assert_eq!(reconcile_gap(&registered, &raw).len(), 1);
+    }
+
+    // "integration: 1484 needs-stack test(s) ran with the live stack" was the
+    // registry count, printed before anything ran.
+    #[test]
+    fn integration_line_reports_what_ran_not_what_was_registered() {
+        let line = integration_measured_report(1484, 266);
+        assert!(line.contains("266 ran of 1484"), "got {}", line);
+        assert!(!line.contains("1484 needs-stack test(s) ran"), "got {}", line);
+    }
+
+    #[test]
+    fn negative_proof_zero_executed_prints_zero() {
+        let line = integration_measured_report(1484, 0);
+        assert!(line.starts_with("integration: 0 ran of 1484"), "got {}", line);
+        assert!(line.contains("NOT"), "zero must read as a failure to run, got {}", line);
     }
 }
