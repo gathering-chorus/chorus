@@ -125,3 +125,26 @@ leg() {
   [[ "$output" != *"LANE SILENT"* ]]
   [[ "$output" != *"state UNKNOWN"* ]]
 }
+
+@test "#4140: the never-ran NAMES land in the log under the row, not just the count" {
+  stub "reconcile: registered 8022, never-run (2):
+  platform/api/tests/athena.integration.test.ts :: actors returns 404 for unknown subdomain
+  platform/tests/session-start-timing.test.sh :: session-start-timing.test.sh
+  by state: NAME MISMATCH 1, LANE SILENT 1
+  NAME MISMATCH (1):
+    platform/api/tests/athena.integration.test.ts :: actors returns 404 for unknown subdomain
+        runner emitted :: GET returns gaps list
+  LANE SILENT (1):
+    platform/tests/session-start-timing.test.sh :: session-start-timing.test.sh"
+  run leg
+  [[ "$output" == *"SUITE|reconcile|tests-domain|kade|fail|"* ]]
+  [[ "$output" == *"reconcile-detail|"*"athena.integration.test.ts :: actors returns 404 for unknown subdomain"* ]]
+  [[ "$output" == *"reconcile-detail|"*"LANE SILENT (1):"* ]]
+  [[ "$output" == *"reconcile-detail|"*"session-start-timing.test.sh :: session-start-timing.test.sh"* ]]
+}
+
+@test "#4140 NEGATIVE PROOF: a clean census writes no detail lines" {
+  stub "reconcile: registered 8022, never-run: none"
+  run leg
+  [[ "$output" != *"reconcile-detail|"* ]]
+}

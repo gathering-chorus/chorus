@@ -30,7 +30,7 @@
 use crate::auth::{self, AuthError, Claims};
 use p256::ecdsa::signature::Verifier;
 use p256::ecdsa::{Signature, VerifyingKey};
-use std::cell::RefCell;
+use std::sync::Mutex;
 use std::collections::HashMap;
 
 /// How long after a JWKS fetch ATTEMPT before we try again (seconds). Bounds
@@ -91,26 +91,26 @@ pub struct OidcVerifier {
     issuer: String,
     /// Principal allow-set resolver (prod: the model query; tests: a stub).
     /// None = graph unreachable — DISTINCT from Some(empty) = nobody allowed.
-    resolve_allow: Box<dyn Fn() -> Option<Vec<String>>>,
+    resolve_allow: Box<dyn Fn() -> Option<Vec<String>> + Send + Sync>,
     /// webId → role resolver over `chorus:holdsRole` (ADR-054 §3.3). Same
     /// None-vs-Some(empty) split as the allow-set.
-    resolve_roles: Box<dyn Fn() -> Option<Vec<(String, String)>>>,
+    resolve_roles: Box<dyn Fn() -> Option<Vec<(String, String)>> + Send + Sync>,
     /// webId → scopes resolver over `chorus:hasScope` (#3689). Same split.
-    resolve_scopes: Box<dyn Fn() -> Option<Vec<(String, Vec<String>)>>>,
-    fetch: Box<dyn Fn() -> Option<String>>,
-    state: RefCell<JwksState>,
-    allow: RefCell<AllowState>,
-    roles: RefCell<RoleState>,
-    scopes: RefCell<ScopeState>,
+    resolve_scopes: Box<dyn Fn() -> Option<Vec<(String, Vec<String>)>> + Send + Sync>,
+    fetch: Box<dyn Fn() -> Option<String> + Send + Sync>,
+    state: Mutex<JwksState>,
+    allow: Mutex<AllowState>,
+    roles: Mutex<RoleState>,
+    scopes: Mutex<ScopeState>,
 }
 
 impl OidcVerifier {
     pub fn new(
         issuer: &str,
-        resolve_allow: impl Fn() -> Option<Vec<String>> + 'static,
-        resolve_roles: impl Fn() -> Option<Vec<(String, String)>> + 'static,
-        resolve_scopes: impl Fn() -> Option<Vec<(String, Vec<String>)>> + 'static,
-        fetch: impl Fn() -> Option<String> + 'static,
+        resolve_allow: impl Fn() -> Option<Vec<String>> + Send + Sync + 'static,
+        resolve_roles: impl Fn() -> Option<Vec<(String, String)>> + Send + Sync + 'static,
+        resolve_scopes: impl Fn() -> Option<Vec<(String, Vec<String>)>> + Send + Sync + 'static,
+        fetch: impl Fn() -> Option<String> + Send + Sync + 'static,
     ) -> Self {
         Self {
             issuer: norm_iss(issuer),
@@ -118,17 +118,17 @@ impl OidcVerifier {
             resolve_roles: Box::new(resolve_roles),
             resolve_scopes: Box::new(resolve_scopes),
             fetch: Box::new(fetch),
-            state: RefCell::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
-            allow: RefCell::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
-            roles: RefCell::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
-            scopes: RefCell::new(ScopeState { grants: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            state: Mutex::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
+            allow: Mutex::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            roles: Mutex::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            scopes: Mutex::new(ScopeState { grants: Vec::new(), fetched_at: 0, last_attempt: 0 }),
         }
     }
 
     /// Boot-prime the allow-set (same posture as warm_fetch: loud on failure,
     /// never boot-blocking). Returns how many Principal webids were cached.
     pub fn warm_allow(&self, now_secs: u64) -> usize {
-        let mut al = self.allow.borrow_mut();
+        let mut al = self.allow.lock().unwrap_or_else(|e| e.into_inner());
         al.last_attempt = now_secs;
         if let Some(v) = (self.resolve_allow)() {
             al.webids = v;
@@ -144,7 +144,7 @@ impl OidcVerifier {
     /// write needs the store anyway, so refusing authz when the store is
     /// unreachable refuses nothing that could have succeeded.
     fn allowed(&self, web_id: &str, now_secs: u64) -> bool {
-        let mut al = self.allow.borrow_mut();
+        let mut al = self.allow.lock().unwrap_or_else(|e| e.into_inner());
         let stale = now_secs.saturating_sub(al.fetched_at) >= ALLOW_TTL_SECS;
         let can_retry = now_secs.saturating_sub(al.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
             || al.last_attempt == 0;
@@ -163,7 +163,7 @@ impl OidcVerifier {
 
     /// Boot-prime the webId→role map. Returns how many holdsRole edges cached.
     pub fn warm_roles(&self, now_secs: u64) -> usize {
-        let mut rl = self.roles.borrow_mut();
+        let mut rl = self.roles.lock().unwrap_or_else(|e| e.into_inner());
         rl.last_attempt = now_secs;
         if let Some(v) = (self.resolve_roles)() {
             rl.pairs = v;
@@ -178,7 +178,7 @@ impl OidcVerifier {
     /// role, and downstream authZ compares against `ownedBy` and fails closed.
     /// Resolve failure empties the map (fail-closed), same posture as `allowed`.
     pub fn role_for(&self, web_id: &str, now_secs: u64) -> Option<String> {
-        let mut rl = self.roles.borrow_mut();
+        let mut rl = self.roles.lock().unwrap_or_else(|e| e.into_inner());
         let stale = now_secs.saturating_sub(rl.fetched_at) >= ALLOW_TTL_SECS;
         let can_retry = now_secs.saturating_sub(rl.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
             || rl.last_attempt == 0;
@@ -200,7 +200,7 @@ impl OidcVerifier {
     /// never stale grants); refresh on the ALLOW_TTL cadence so revocation is
     /// a model edit that lands within one token TTL.
     pub fn scopes_for(&self, web_id: &str, now_secs: u64) -> Vec<String> {
-        let mut sc = self.scopes.borrow_mut();
+        let mut sc = self.scopes.lock().unwrap_or_else(|e| e.into_inner());
         let stale = now_secs.saturating_sub(sc.fetched_at) >= ALLOW_TTL_SECS;
         let can_retry = now_secs.saturating_sub(sc.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
             || sc.last_attempt == 0;
@@ -225,7 +225,7 @@ impl OidcVerifier {
     /// boot still verifies cached kids. CSS-down-at-boot is a LOUD warning,
     /// never a boot blocker. Returns how many keys were cached.
     pub fn warm_fetch(&self, now_secs: u64) -> usize {
-        let mut st = self.state.borrow_mut();
+        let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
         st.last_attempt = now_secs;
         if let Some(body) = (self.fetch)() {
             for (kid, point) in parse_jwks(&body) {
@@ -259,7 +259,7 @@ impl OidcVerifier {
         // cached key + no reachable JWKS = JwksUnreachable; a SUCCESSFUL fetch
         // that still lacks the kid = a key CSS never published = BadSignature.
         let point = {
-            let mut st = self.state.borrow_mut();
+            let mut st = self.state.lock().unwrap_or_else(|e| e.into_inner());
             if !st.keys.contains_key(&kid) {
                 if st.last_attempt != 0
                     && now_secs.saturating_sub(st.last_attempt) < JWKS_FETCH_COOLDOWN_SECS
@@ -647,8 +647,8 @@ mod tests {
     use crate::auth::b64url_encode;
     use p256::ecdsa::signature::Signer;
     use p256::ecdsa::SigningKey;
-    use std::cell::Cell;
-    use std::rc::Rc;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     const ISSUER: &str = "http://localhost:3001/";
     const KID: &str = "css-test-key-1";
@@ -796,15 +796,15 @@ mod tests {
     // cached ⇒ a CSS blip does NOT fail an otherwise-valid write.
     #[test]
     fn jwks_blip_resilient() {
-        let up = Rc::new(Cell::new(true));
+        let up = Arc::new(AtomicBool::new(true));
         let up_c = up.clone();
         let jwks = jwks_json(&css_key(), KID);
         let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), move || {
-            if up_c.get() { Some(jwks.clone()) } else { None }
+            if up_c.load(Ordering::SeqCst) { Some(jwks.clone()) } else { None }
         });
         v.warm_allow(NOW);
         assert_eq!(v.warm_fetch(NOW), 1, "boot warm-fetch caches the CSS key");
-        up.set(false); // CSS blips
+        up.store(false, Ordering::SeqCst); // CSS blips
         let c = v.verify(&token_valid(), NOW + 60).expect("cached kid verifies through the blip");
         assert_eq!(c.web_id, wren_webid());
     }
@@ -815,10 +815,10 @@ mod tests {
     #[test]
     fn unknown_kid_during_blip_fails_closed() {
         let jwks = jwks_json(&css_key(), KID);
-        let calls = Rc::new(Cell::new(0u32));
+        let calls = Arc::new(AtomicU32::new(0));
         let calls_c = calls.clone();
         let v = OidcVerifier::new(ISSUER, || Some(allow()), || Some(roles()), || Some(vec![]), move || {
-            calls_c.set(calls_c.get() + 1);
+            calls_c.fetch_add(1, Ordering::SeqCst);
             Some(jwks.clone())
         });
         v.warm_fetch(NOW);
@@ -826,11 +826,11 @@ mod tests {
         let rotated = mint_es256(&css_key(), "rotated-kid", &payload(ISSUER, "chorus", &wren_webid(), NOW + 3600));
         // inside the cooldown: no refetch, fail closed
         assert_eq!(v.verify(&rotated, NOW + 5), Err(AuthError::JwksUnreachable));
-        assert_eq!(calls.get(), 1, "cooldown suppressed the refetch");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "cooldown suppressed the refetch");
         // after the cooldown: refetch happens (rotation pickup path) — the stub
         // still lacks the kid, so it refuses as an unpublished key.
         assert_eq!(v.verify(&rotated, NOW + JWKS_FETCH_COOLDOWN_SECS + 1), Err(AuthError::BadSignature));
-        assert_eq!(calls.get(), 2, "post-cooldown verify refetched the JWKS");
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "post-cooldown verify refetched the JWKS");
     }
 
     // case 9 — #3689 CUTOVER: the deletion this test's predecessor promised.
@@ -891,19 +891,19 @@ mod tests {
     // The live half (real CSS cred revoked, real store) runs at land time.
     #[test]
     fn revocation_propagates_within_one_ttl() {
-        let revoked = Rc::new(Cell::new(false));
+        let revoked = Arc::new(AtomicBool::new(false));
         let revoked_c = revoked.clone();
         let jwks = jwks_json(&css_key(), KID);
         let v = OidcVerifier::new(
             ISSUER,
-            move || Some(if revoked_c.get() { vec![] } else { vec![wren_webid(), silas_webid()] }),
+            move || Some(if revoked_c.load(Ordering::SeqCst) { vec![] } else { vec![wren_webid(), silas_webid()] }),
             || Some(roles()),
             || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
         assert!(v.verify(&token_valid(), NOW).is_ok(), "pre-revocation: verifies");
-        revoked.set(true); // the model edit: Principal dropped
+        revoked.store(true, Ordering::SeqCst); // the model edit: Principal dropped
         // inside the TTL the cache may still allow — that's the accepted bound
         assert!(v.verify(&token_valid(), NOW + 10).is_ok(), "within TTL: stale cache may allow");
         // past the TTL the refresh runs and the WebID is refused
@@ -918,19 +918,19 @@ mod tests {
     // never stale-forever: authz refuses when membership cannot be proven.
     #[test]
     fn allow_refresh_failure_fails_closed() {
-        let up = Rc::new(Cell::new(true));
+        let up = Arc::new(AtomicBool::new(true));
         let up_c = up.clone();
         let jwks = jwks_json(&css_key(), KID);
         let v = OidcVerifier::new(
             ISSUER,
-            move || if up_c.get() { Some(vec![wren_webid()]) } else { None },
+            move || if up_c.load(Ordering::SeqCst) { Some(vec![wren_webid()]) } else { None },
             || Some(roles()),
             || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
         assert!(v.verify(&token_valid(), NOW).is_ok());
-        up.set(false); // graph goes unreachable
+        up.store(false, Ordering::SeqCst); // graph goes unreachable
         assert_eq!(
             v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1),
             Err(AuthError::WebIdNotAllowed),
@@ -1051,15 +1051,15 @@ mod tests {
     #[test]
     fn role_reassignment_lands_within_one_ttl() {
         let jwks = jwks_json(&css_key(), KID);
-        let reassigned = Rc::new(Cell::new(false));
-        let rc = Rc::clone(&reassigned);
+        let reassigned = Arc::new(AtomicBool::new(false));
+        let rc = Arc::clone(&reassigned);
         let v = OidcVerifier::new(
             ISSUER,
             || Some(allow()),
             move || {
                 Some(vec![(
                     wren_webid(),
-                    if rc.get() { "kade".to_string() } else { "wren".to_string() },
+                    if rc.load(Ordering::SeqCst) { "kade".to_string() } else { "wren".to_string() },
                 )])
             },
             || Some(vec![]),
@@ -1068,7 +1068,7 @@ mod tests {
         v.warm_allow(NOW);
         v.warm_roles(NOW);
         assert_eq!(v.verify(&token_valid(), NOW).unwrap().agent_id, "wren");
-        reassigned.set(true); // the model edit
+        reassigned.store(true, Ordering::SeqCst); // the model edit
         assert_eq!(
             v.verify(&token_valid(), NOW + 10).unwrap().agent_id,
             "wren",
@@ -1086,19 +1086,19 @@ mod tests {
     #[test]
     fn role_map_fails_closed_when_graph_unreachable() {
         let jwks = jwks_json(&css_key(), KID);
-        let up = Rc::new(Cell::new(true));
-        let uc = Rc::clone(&up);
+        let up = Arc::new(AtomicBool::new(true));
+        let uc = Arc::clone(&up);
         let v = OidcVerifier::new(
             ISSUER,
             || Some(allow()),
-            move || if uc.get() { Some(roles()) } else { None },
+            move || if uc.load(Ordering::SeqCst) { Some(roles()) } else { None },
             || Some(vec![]),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
         v.warm_roles(NOW);
         assert_eq!(v.verify(&token_valid(), NOW).unwrap().agent_id, "wren");
-        up.set(false);
+        up.store(false, Ordering::SeqCst);
         assert_eq!(
             v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().agent_id,
             "",
@@ -1208,17 +1208,17 @@ mod tests {
     #[test]
     fn scope_revocation_lands_within_one_ttl() {
         let jwks = jwks_json(&css_key(), KID);
-        let revoked = Rc::new(Cell::new(false));
-        let rc = Rc::clone(&revoked);
+        let revoked = Arc::new(AtomicBool::new(false));
+        let rc = Arc::clone(&revoked);
         let v = OidcVerifier::new(
             ISSUER, || Some(allow()), || Some(roles()),
-            move || Some(if rc.get() { vec![] } else {
+            move || Some(if rc.load(Ordering::SeqCst) { vec![] } else {
                 vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])] }),
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
         assert!(!v.verify(&token_valid(), NOW).unwrap().scope.is_empty());
-        revoked.set(true);
+        revoked.store(true, Ordering::SeqCst);
         assert!(v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().scope.is_empty(),
             "past one TTL the revocation is live");
     }
@@ -1227,16 +1227,16 @@ mod tests {
     #[test]
     fn scope_map_fails_closed_when_graph_unreachable() {
         let jwks = jwks_json(&css_key(), KID);
-        let up = Rc::new(Cell::new(true));
-        let uc = Rc::clone(&up);
+        let up = Arc::new(AtomicBool::new(true));
+        let uc = Arc::clone(&up);
         let v = OidcVerifier::new(
             ISSUER, || Some(allow()), || Some(roles()),
-            move || if uc.get() { Some(vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])]) } else { None },
+            move || if uc.load(Ordering::SeqCst) { Some(vec![(wren_webid(), vec!["urn:chorus:ontology".to_string()])]) } else { None },
             move || Some(jwks.clone()),
         );
         v.warm_allow(NOW);
         assert!(!v.verify(&token_valid(), NOW).unwrap().scope.is_empty());
-        up.set(false);
+        up.store(false, Ordering::SeqCst);
         assert!(v.verify(&token_valid(), NOW + ALLOW_TTL_SECS + 1).unwrap().scope.is_empty(),
             "unreachable graph ⇒ no scopes, never stale grants");
     }

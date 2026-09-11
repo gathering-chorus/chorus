@@ -272,14 +272,8 @@ fn run(args: &[String]) -> Result<i32, String> {
     let selected_ns_tests = rows.iter()
         .filter(|r| r.hermeticity == "needs-stack" && in_units(&r.file_path))
         .count();
-    let stack_down: Option<String> = if selected_ns.is_empty() {
-        None
-    } else {
-        match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
-            Ok(()) => None,
-            Err(down) => Some(down),
-        }
-    };
+    let stack = if selected_ns.is_empty() { werk_test::StackState::Up } else { stack_state_now() };
+    let stack_down: Option<String> = stack_down_of(&stack);
     // #4102 — the werk lane never set RUN_INTEGRATION, so every bats
     // integration case self-skipped and reported `ok` in a green run (the
     // three ACs of #4102 among them). The nightly lane sets it from the same
@@ -289,10 +283,16 @@ fn run(args: &[String]) -> Result<i32, String> {
         std::env::set_var("RUN_INTEGRATION", "true");
     }
     let ns_excluded: Vec<String> = if stack_down.is_some() { selected_ns.clone() } else { Vec::new() };
-    println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
-    if let Some(down) = &stack_down {
-        emit_spine("test.integration.skipped", &role, &card, &trace,
-            &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
+    if let werk_test::StackState::Unmeasurable(u) = &stack {
+        println!("{}", werk_test::integration_report_unmeasurable(selected_ns_tests, u));
+        emit_spine("test.integration.unmeasurable", &role, &card, &trace,
+            &[("count", &selected_ns_tests.to_string()), ("saw", u)]);
+    } else {
+        println!("{}", werk_test::integration_report(selected_ns_tests, stack_down.as_deref()));
+        if let Some(down) = &stack_down {
+            emit_spine("test.integration.skipped", &role, &card, &trace,
+                &[("count", &selected_ns_tests.to_string()), ("stack_down", down)]);
+        }
     }
     // #3920 — the browser lane: registered testConcern=ui files run as ONE
     // workspace check when the diff touches a ui surface. Stack-gated like any
@@ -563,15 +563,17 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // state per crate, never a fail and never silence.
     let ns_all = werk_test::needs_stack_files(&rows);
     let ns_total = rows.iter().filter(|r| r.hermeticity == "needs-stack").count();
-    let stack_down: Option<String> = if ns_all.is_empty() {
-        None
+    let stack = if ns_all.is_empty() { werk_test::StackState::Up } else { stack_state_now() };
+    let stack_down: Option<String> = stack_down_of(&stack);
+    if let werk_test::StackState::Unmeasurable(u) = &stack {
+        println!("{}", werk_test::integration_report_unmeasurable(ns_total, u));
+        // the nightly folds this to an UNMEASURED row on the page — not green
+        println!("nightly-unit|probe|platform/services/werk-test/stack-probe|unmeasured|0 pass, 0 fail (UNMEASURED — stack probe timed out: {}; {} needs-stack test(s) not run)", u, ns_total);
+        emit_spine("test.integration.unmeasurable", &role, &card, &trace,
+            &[("count", &ns_total.to_string()), ("saw", u)]);
     } else {
-        match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
-            Ok(()) => None,
-            Err(down) => Some(down),
-        }
-    };
-    println!("{}", werk_test::integration_report(ns_total, stack_down.as_deref()));
+        println!("{}", werk_test::integration_report(ns_total, stack_down.as_deref()));
+    }
 
     println!("-- werk-test --nightly — {} registered crate(s), full selection --", crates.len());
     let started_at = std::time::Instant::now();
@@ -1339,18 +1341,51 @@ fn apply_suite_world(cmd: &mut Command, werk: &str) {
 /// #3919 — probe the live stack the needs-stack tier depends on. Overridable
 /// via WERK_STACK_PROBES="name=url,name=url" so tests bring their own world;
 /// defaults to the two services the registered integration tests actually hit.
-fn probe_stack() -> Vec<(String, bool)> {
+fn probe_stack() -> Vec<(String, werk_test::ProbeState, String)> {
     let spec = std::env::var("WERK_STACK_PROBES").unwrap_or_else(|_|
         "chorus-api=http://localhost:3340/api/chorus/context/health,athena-make=http://localhost:3360/".to_string());
+    // #4140 — two tries with a real cap, and the probe records WHAT it saw
+    // (code + ms). One 3s try with no retry called a busy athena-make DOWN on
+    // 2026-09-11 08:20 and 1,484 needs-stack tests did not run. Same defect
+    // class deep-health fixed in #3948.
+    let cap = std::env::var("WERK_STACK_PROBE_TIMEOUT").ok().and_then(|v| v.parse().ok()).unwrap_or(10u32);
     spec.split(',')
         .filter_map(|pair| pair.split_once('='))
         .map(|(name, url)| {
-            let ok = Command::new("curl")
-                .args(["-sf", "--max-time", "3", "-o", "/dev/null", url])
-                .status().map(|s| s.success()).unwrap_or(false);
-            (name.trim().to_string(), ok)
+            let mut state = werk_test::ProbeState::Down;
+            let mut saw: Vec<String> = Vec::new();
+            for attempt in 1..=2 {
+                let t0 = std::time::Instant::now();
+                let out = Command::new("curl")
+                    .args(["-sf", "--max-time", &cap.to_string(), "-o", "/dev/null", "-w", "%{http_code}", url])
+                    .output();
+                let (exit, code) = match out {
+                    Ok(o) => (o.status.code().unwrap_or(-1), String::from_utf8_lossy(&o.stdout).trim().to_string()),
+                    Err(_) => (-1, "000".to_string()),
+                };
+                state = werk_test::classify_probe(exit, &code);
+                saw.push(format!("{} in {}ms", if code.is_empty() { "000".to_string() } else { code }, t0.elapsed().as_millis()));
+                if state == werk_test::ProbeState::Up { break; }
+                if attempt == 1 { std::thread::sleep(std::time::Duration::from_secs(2)); }
+            }
+            (name.trim().to_string(), state, saw.join(", "))
         })
         .collect()
+}
+
+/// #4140 — the three-state verdict from the probes: Up / Down (typed skip) /
+/// Unmeasurable (busy: not shown down, not run, not green).
+fn stack_state_now() -> werk_test::StackState {
+    let probes = probe_stack();
+    werk_test::stack_state(&probes.iter().map(|(n, st, saw)| (n.as_str(), *st, saw.clone())).collect::<Vec<_>>())
+}
+
+fn stack_down_of(stack: &werk_test::StackState) -> Option<String> {
+    match stack {
+        werk_test::StackState::Up => None,
+        werk_test::StackState::Down(d) => Some(d.clone()),
+        werk_test::StackState::Unmeasurable(u) => Some(u.clone()),
+    }
 }
 
 fn nextest_gate(werk: &str) -> &'static Result<(), String> {
@@ -2366,10 +2401,7 @@ mod suite_coverage_3917 {
 /// (browser against live pages); reuse the SAME probe machinery so up/down has
 /// one definition. Probes only when the lane actually fires.
 fn stack_down_ui(_selected_ns: &[String], _ns_all: &std::collections::BTreeSet<String>) -> Option<String> {
-    match werk_test::stack_verdict(&probe_stack().iter().map(|(n, o)| (n.as_str(), *o)).collect::<Vec<_>>()) {
-        Ok(()) => None,
-        Err(down) => Some(down),
-    }
+    stack_down_of(&stack_state_now())
 }
 
 /// #3920 — run the registered ui specs via playwright, from the werk (variant

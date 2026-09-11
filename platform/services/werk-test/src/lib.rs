@@ -2481,6 +2481,58 @@ pub fn integration_report(count: usize, stack_down: Option<&str>) -> String {
     }
 }
 
+/// #4140 — what one probe saw. `Down` is a service saying no (refused, or a
+/// non-2xx answer); `Unmeasurable` is a service that did not answer in time.
+/// On 2026-09-11 08:20 one `curl --max-time 3` with no retry read a busy
+/// athena-make (serving a 20s ledger page) as DOWN and 1,484 needs-stack
+/// tests were skipped as if the stack were off. Busy and off are different
+/// states and the run must say which it saw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProbeState { Up, Down, Unmeasurable }
+
+/// curl exit 28 = operation timed out. Exit 0 with a 2xx/3xx code = up. Anything
+/// else (7 refused, 22 = `-f` on a 4xx/5xx, 52 empty reply, …) = down.
+pub fn classify_probe(curl_exit: i32, http_code: &str) -> ProbeState {
+    if curl_exit == 28 {
+        return ProbeState::Unmeasurable;
+    }
+    let code: u16 = http_code.trim().parse().unwrap_or(0);
+    if curl_exit == 0 && (200..400).contains(&code) { ProbeState::Up } else { ProbeState::Down }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StackState { Up, Down(String), Unmeasurable(String) }
+
+/// The stack verdict from named probes with what each saw. A refused service
+/// is the typed SKIP (#3919); a service that only timed out is UNMEASURABLE —
+/// the tier is not run, and the run is not green for it. Down wins when both
+/// are present: a refused service is a fact, a slow one is a question.
+pub fn stack_state(probes: &[(&str, ProbeState, String)]) -> StackState {
+    let down: Vec<String> = probes.iter()
+        .filter(|(_, st, _)| *st == ProbeState::Down)
+        .map(|(n, _, saw)| format!("{}: {}", n, saw)).collect();
+    if !down.is_empty() {
+        return StackState::Down(down.join(", "));
+    }
+    let slow: Vec<String> = probes.iter()
+        .filter(|(_, st, _)| *st == ProbeState::Unmeasurable)
+        .map(|(n, _, saw)| format!("{}: {}", n, saw)).collect();
+    if !slow.is_empty() {
+        return StackState::Unmeasurable(slow.join(", "));
+    }
+    StackState::Up
+}
+
+/// #4140 — the integration line when the stack could not be measured. Not the
+/// typed skip: nothing said the stack was off, so this row is UNMEASURED on the
+/// nightly page, never quiet.
+pub fn integration_report_unmeasurable(count: usize, saw: &str) -> String {
+    format!(
+        "integration: UNMEASURABLE (stack probe timed out — {}) — {} registered needs-stack test(s) NOT run; the stack was not shown down, so this run is not green for them",
+        saw, count
+    )
+}
+
 /// #4139 — the post-run line. `integration_report` announces the plan (and the
 /// typed SKIP when the stack is down); this one says what the run actually
 /// produced. On 2026-09-10 the plan line read "1484 needs-stack test(s) ran"
@@ -4610,5 +4662,65 @@ mod integration_tier_4139 {
         let line = integration_measured_report(1484, 0);
         assert!(line.starts_with("integration: 0 ran of 1484"), "got {}", line);
         assert!(line.contains("NOT"), "zero must read as a failure to run, got {}", line);
+    }
+}
+
+#[cfg(test)]
+mod stack_probe_4140 {
+    use super::{classify_probe, integration_report_unmeasurable, stack_state, ProbeState, StackState};
+
+    // 2026-09-11 08:20: one `curl --max-time 3`, no retry, called athena-make DOWN
+    // while it was serving a 20s ledger page. 1,484 needs-stack tests were skipped.
+    #[test]
+    fn a_timeout_is_unmeasurable_not_down() {
+        assert_eq!(classify_probe(28, "000"), ProbeState::Unmeasurable);
+    }
+
+    #[test]
+    fn refused_is_down_and_a_200_is_up() {
+        assert_eq!(classify_probe(7, "000"), ProbeState::Down);
+        assert_eq!(classify_probe(0, "200"), ProbeState::Up);
+        assert_eq!(classify_probe(22, "503"), ProbeState::Down, "a non-2xx answer is a service saying no");
+    }
+
+    #[test]
+    fn negative_proof_the_old_bool_collapsed_busy_into_down() {
+        // the state the old probe could not separate
+        let old_bool = |exit: i32| exit == 0;
+        assert_eq!(old_bool(28), old_bool(7), "old probe: timeout and refused read the same");
+        assert_ne!(classify_probe(28, "000"), classify_probe(7, "000"));
+    }
+
+    #[test]
+    fn stack_state_names_the_slow_service_separately_from_the_down_one() {
+        let probes = vec![
+            ("chorus-api", ProbeState::Up, "200 in 12ms".to_string()),
+            ("athena-make", ProbeState::Unmeasurable, "000 in 10004ms x2".to_string()),
+        ];
+        match stack_state(&probes) {
+            StackState::Unmeasurable(why) => assert!(why.contains("athena-make") && why.contains("10004ms"), "{why}"),
+            other => panic!("expected Unmeasurable, got {:?}", other),
+        }
+        let probes = vec![("athena-make", ProbeState::Down, "refused".to_string())];
+        assert!(matches!(stack_state(&probes), StackState::Down(_)));
+        let probes = vec![("athena-make", ProbeState::Up, "200 in 5ms".to_string())];
+        assert!(matches!(stack_state(&probes), StackState::Up));
+    }
+
+    #[test]
+    fn down_wins_over_unmeasurable_when_both_present() {
+        let probes = vec![
+            ("chorus-api", ProbeState::Down, "refused".to_string()),
+            ("athena-make", ProbeState::Unmeasurable, "000 in 10004ms x2".to_string()),
+        ];
+        assert!(matches!(stack_state(&probes), StackState::Down(_)));
+    }
+
+    #[test]
+    fn unmeasurable_line_is_not_green_and_carries_the_latency() {
+        let line = integration_report_unmeasurable(1484, "athena-make: 000 in 10004ms x2");
+        assert!(line.starts_with("integration: UNMEASURABLE"), "{line}");
+        assert!(line.contains("1484") && line.contains("10004ms"), "{line}");
+        assert!(line.contains("NOT run") && !line.contains("typed skip"), "busy is not the typed skip: {line}");
     }
 }

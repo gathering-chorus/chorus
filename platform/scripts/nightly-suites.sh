@@ -1086,6 +1086,12 @@ _reconcile_leg() {
     local by_state; by_state=$(printf '%s' "$out" | sed -n 's/^ *by state: //p' | head -1)
     [ -z "$by_state" ] && by_state="state UNKNOWN — this werk-test predates #4106 and cannot classify"
     echo "SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (${never} registered test(s) never ran of ${registered} — ${by_state}; ${attributed})"
+    # #4140 — keep the NAMES. The census printed them and this leg kept only the
+    # count; on 2026-09-11 the 20 never-ran names had to be recomputed by hand
+    # (7.5 min of ledger walk) because nothing on disk had them. One line per
+    # name, under the row, in the run's own log.
+    printf '%s\n' "$out" | grep -E '^\s+\S+ :: |^\s+(NAME MISMATCH|LANE SILENT|[A-Z ]+) \([0-9]+\):$|^\s+runner emitted :: ' \
+      | sed 's/^/reconcile-detail|/'
   else
     echo "SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (${registered} registered, every one executed — ledger cross-foots)"
   fi
