@@ -459,6 +459,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     // #3592 — a TestResult's ofTest edge is mandatory, so only cases that JOIN
     // to a registered Test are posted; executed-but-unregistered is its own
     // loud surface (the mirror of the reconcile gap), never a fabricated identity.
+    // #4139 — the measured integration line: what ran, after it ran
+    if stack_down.is_none() && selected_ns_tests > 0 {
+        let executed_ns = all_cases.iter().filter(|c| selected_ns.iter().any(|f| f == &c.file_path)).count();
+        println!("{}", werk_test::integration_measured_report(selected_ns_tests, executed_ns));
+    }
     let (joined, unregistered) = werk_test::join_cases(&all_cases, &rows, &row_names, &row_entities);
     if unregistered > 0 {
         emit_spine("testresult.unregistered", &role, &card, &trace,
@@ -605,6 +610,8 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         .any(|k| std::env::var(k).map(|v| !v.trim().is_empty()).unwrap_or(false));
     let withheld = werk_test::nightly_writeback_withheld(&root, endpoint_overridden);
     let withheld_total = AtomicUsize::new(0);
+    // #4139 — needs-stack cases that actually produced a result this run
+    let executed_ns = AtomicUsize::new(0);
     if withheld {
         println!("!! werk nightly: results will NOT be written to the prod test ledger — root {} is a werk; set OWL_API_TESTRESULTS to the werk's store to write (#4063)", root);
     }
@@ -612,6 +619,7 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         if cases.is_empty() {
             return;
         }
+        executed_ns.fetch_add(cases.iter().filter(|c| ns_all.contains(&c.file_path)).count(), Ordering::SeqCst);
         if withheld {
             withheld_total.fetch_add(cases.len(), Ordering::SeqCst);
             println!("nightly-withheld|{}|{} (werk root, prod ledger untouched)", unit, cases.len());
@@ -919,6 +927,10 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     }
     if werk_test::security_rows(&rows).is_empty() {
         println!("security-lane: none registered testConcern=security — explicit absence (#3443/#3922)");
+    }
+    // #4139 — the measured integration line: what ran, after it ran
+    if stack_down.is_none() && ns_total > 0 {
+        println!("{}", werk_test::integration_measured_report(ns_total, executed_ns.load(Ordering::SeqCst)));
     }
     let total_units = crates.len() + ts_pkgs.len() + bats_suites.len();
 
@@ -1504,15 +1516,18 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
     // the FULL package suite, turning a registry outage into a wall of red that
     // reads exactly like a broken build.
     //
-    // The integration tier is not skipped in general — it has its own gated lane
-    // (`integration: N needs-stack test(s) ran with the live stack`). This says
-    // only that the hermetic leg runs hermetic tests, which is what the config
-    // has declared since the projects were split.
-    //
-    // Packages without projects ignore the flag with a warning rather than
-    // failing, so this is safe across every package the lane runs.
-    if jest_has_hermetic_project(&pkg_dir) {
-        cmd.arg("--selectProjects").arg("hermetic");
+    // #4111's fix selected hermetic UNCONDITIONALLY, and the "own gated lane"
+    // it leaned on was this same call under RUN_INTEGRATION=true — so the
+    // nightly dropped the tier too (0 platform/api integration rows stored
+    // 09-08 → 09-10 while the plan line still said "1484 ran"). The config
+    // already builds the integration project only when the flag is true, so
+    // the flag is the whole decision.
+    // #4139 — the flag decides the projects: integration on → both, off →
+    // hermetic only. #4111 selected hermetic always and dropped platform/api's
+    // 266 integration tests from the nightly (09-08 → 09-10, lane read green).
+    let run_integration = std::env::var("RUN_INTEGRATION").map(|v| v == "true").unwrap_or(false);
+    for a in werk_test::jest_project_args(jest_has_hermetic_project(&pkg_dir), run_integration) {
+        cmd.arg(a);
     }
     if let Some(n) = max_workers {
         cmd.arg(format!("--maxWorkers={}", n.max(1)));
@@ -2096,11 +2111,9 @@ fn run_reconcile() -> Result<i32, String> {
                 next = n.to_string();
                 continue;
             }
-            let mut it = l.split('\t');
-            if let (Some(f), Some(n)) = (it.next(), it.next()) {
-                if !f.is_empty() {
-                    executed.push((f.to_string(), n.to_string()));
-                }
+            // #4139 — same unescape as the registry side (#4135 did the runner)
+            if let Some(case) = werk_test::ledger_case_from_tsv(l) {
+                executed.push(case);
             }
         }
         // #4105 — three states, not two. Running out of page budget while a
