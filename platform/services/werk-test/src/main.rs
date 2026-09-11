@@ -64,7 +64,17 @@ fn run(args: &[String]) -> Result<i32, String> {
     }
     let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
 
-    let changed = git_changed_files(&werk)?;
+    let changed_all = git_changed_files(&werk)?;
+    // #4138 — a deleted test is retired, not red: a path gone from the tree is
+    // reported here and never becomes a unit (bats on a missing file = "does not exist" = FAIL).
+    let (changed, deleted) = werk_test::split_deleted(&changed_all, |f| Path::new(&werk).join(f).is_file());
+    if !deleted.is_empty() {
+        println!(
+            "test.plan.deleted | {} path(s) on the diff no longer exist in the werk and are not units: {}",
+            deleted.len(),
+            deleted.join(", ")
+        );
+    }
     let legacy_units = affected_units(&changed);
     // #3634 — stage 2: derive the plan from the tests domain. Model rows (filePath,
     // covers) widen the legacy path-derived units to every unit holding tests that
