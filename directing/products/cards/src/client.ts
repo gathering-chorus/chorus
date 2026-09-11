@@ -240,16 +240,27 @@ export class BoardClient {
     const apiId = await this.resolveIndex(index);
     const task = await this.fetchTask(apiId);
     const dbMap = this.fetchBucketMapFromDB();
+    // #4139 — buckets are fetched only on the fallback path, as before
+    const buckets = dbMap.has(task.id) ? [] : await this.fetchBuckets();
+    return this.parseTask(task, this.resolveStatus(task, dbMap, buckets));
+  }
+
+  /**
+   * #4139 — view()'s status resolution as a pure function of one captured
+   * world (task, DB bucket map, bucket view), so "view agrees with list" can
+   * be proven on a snapshot instead of on two live reads that a sibling
+   * test's move can split (2026-09-11 03:00 nightly, board-validation red).
+   */
+  resolveStatus(task: VikunjaTask, dbMap: Map<number, string>, buckets: VikunjaBucket[]): string {
     let status = dbMap.get(task.id);
     if (!status) {
       // Fallback: try bucket view, then done field
-      const buckets = await this.fetchBuckets();
       status = this.findTaskBucket(task.id, buckets);
       if (status === 'Unknown') {
         status = task.done ? 'Done' : 'Later';
       }
     }
-    return this.parseTask(task, status);
+    return status;
   }
 
   private async applyAddLabels(taskId: number, opts: AddLabelOpts): Promise<void> {
