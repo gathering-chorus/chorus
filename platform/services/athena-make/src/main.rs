@@ -303,6 +303,13 @@ mod cli_tests {
                         body.find("query=").map(|i| rows_for(&urldecode(&body[i + 6..])))
                     }
                         .unwrap_or_default();
+                    // #4140 — a collection page is the slow query in production
+                    // (a 25k-row ledger page took 20–49s on 2026-09-11); the
+                    // stub makes it 3s so the concurrency proof below can time
+                    // /health against it.
+                    if req.contains("ORDER BY ?s LIMIT") {
+                        std::thread::sleep(std::time::Duration::from_secs(3));
+                    }
                     let bindings = rows
                         .iter()
                         .map(|v| format!("{{\"v\":{{\"value\":\"{}\"}}}}", v))
@@ -380,6 +387,47 @@ mod cli_tests {
         assert_eq!(run(vec!["generate-product".into(), "--product".into(), "athena".into()]), 0);
         // serve: tables generate (Domain ok, Nope refused → the refuse arm), then
         // the privileged port 1 refuses to bind as non-root → serve() Err arm.
+        // #4140 — serve answers /health while a slow page is in flight. The
+        // loop was single-threaded: a 20s ledger page blocked every caller and
+        // the nightly's stack probe read the busy service as DOWN (08:20
+        // 2026-09-11, 1,484 needs-stack tests skipped). One serve on a free
+        // port against the stub; the stub's collection page sleeps 3s.
+        {
+            let free = {
+                let l = TcpListener::bind("127.0.0.1:0").unwrap();
+                let p = l.local_addr().unwrap().port();
+                drop(l);
+                p
+            };
+            std::thread::spawn(move || run(vec!["serve".into(), "--port".into(), free.to_string()]));
+            let get = move |path: &str| -> (u16, std::time::Duration) {
+                use std::io::Read;
+                let t0 = std::time::Instant::now();
+                let mut c = std::net::TcpStream::connect(("127.0.0.1", free)).expect("connect serve");
+                let _ = c.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+                let _ = c.write_all(format!("GET {} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n", path).as_bytes());
+                let mut buf = String::new();
+                let _ = c.read_to_string(&mut buf);
+                let code: u16 = buf.split_whitespace().nth(1).and_then(|c| c.parse().ok()).unwrap_or(0);
+                (code, t0.elapsed())
+            };
+            let mut up = false;
+            for _ in 0..100 {
+                if std::net::TcpStream::connect(("127.0.0.1", free)).is_ok() { up = true; break; }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            assert!(up, "serve did not come up on :{}", free);
+            let slow = std::thread::spawn(move || get("/domains?limit=1"));
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            let (hc, hd) = get("/health");
+            assert_eq!(hc, 200, "/health while a page is in flight");
+            assert!(hd < std::time::Duration::from_secs(1), "/health waited {:?} behind the slow page — the loop is serial again", hd);
+            let (sc, sd) = slow.join().unwrap();
+            assert_eq!(sc, 200, "the slow page still answers");
+            // NEGATIVE PROOF that the stall is real: the page itself took the
+            // stub's 3s, so a serial loop would have held /health ≥ 2.5s.
+            assert!(sd >= std::time::Duration::from_millis(2500), "page took {:?}: the slow path did not engage, the proof proves nothing", sd);
+        }
         assert_eq!(run(vec!["serve".into(), "--port".into(), "1".into()]), 1);
         // bad --port falls back to 3360 via unwrap_or; prove the parse-fallback
         // WITHOUT binding 3360 by making generation fail first (dead Fuseki again).

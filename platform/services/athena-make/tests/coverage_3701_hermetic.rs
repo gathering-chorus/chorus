@@ -574,6 +574,17 @@ fn http(method: &str, path: &str, headers: &[(&str, &str)], body: &str) -> (u16,
     try_http(w.port, method, path, headers, body).expect("request to hermetic serve")
 }
 
+/// #4140 — athena-make now serves connections concurrently, so another test's
+/// domain write can land in the shared DAL stub log between this test's clear
+/// and its read. Count only the batches THIS surface delegates (kind testresult).
+fn testresult_batches(w: &World) -> String {
+    let log = std::fs::read_to_string(&w.dal_batch_log).unwrap();
+    log.split("END\n")
+        .filter(|blk| blk.contains("\"kind\":\"test-result\"") || blk.contains("\"kind\":\"testresult\""))
+        .map(|blk| format!("{}END\n", blk))
+        .collect()
+}
+
 fn bearer(tok: &str) -> String {
     format!("Bearer {}", tok)
 }
@@ -1016,7 +1027,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     assert_eq!(batch_code, single_code, "{}", batch_body);
     assert!(single_body.contains("off-model property 'evil'"), "{}", single_body);
     assert!(batch_body.contains("batch item 2: off-model property 'evil'"), "{}", batch_body);
-    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "validation must delegate zero writes");
+    assert_eq!(testresult_batches(&w), "", "validation must delegate zero writes");
 
     let conflict_batch = format!(
         "[{},{{\"name\":\"testresult-existing\",\"filePath\":\"b.rs\",\"testName\":\"b\",\"result\":\"pass\",\"ofTest\":\"test-b\"}}]",
@@ -1025,7 +1036,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &conflict_batch);
     assert_eq!(code, 409, "{}", body);
     assert!(body.contains("test-result:testresult-existing") && body.contains("already-exists"), "{}", body);
-    let conflict_log = std::fs::read_to_string(&w.dal_batch_log).unwrap();
+    let conflict_log = testresult_batches(&w);
     assert_eq!(conflict_log.matches("ARGV\tadd-batch").count(), 1, "the governed DAL owns minted-identity conflict checks");
 
     std::fs::write(&w.dal_batch_log, "").unwrap();
@@ -1033,7 +1044,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &duplicate);
     assert_eq!(code, 409, "{}", body);
     assert!(body.contains("batch item 2: duplicate entity name 'tr-auth'"), "{}", body);
-    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "duplicate must delegate zero writes");
+    assert_eq!(testresult_batches(&w), "", "duplicate must delegate zero writes");
 
     let oversized = format!(
         "[{{\"name\":\"tr-big\",\"filePath\":\"{}\",\"testName\":\"big\",\"result\":\"pass\",\"ofTest\":\"test-big\"}}]",
@@ -1042,7 +1053,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     let (code, _, body) = http("POST", "/testresults/batch", &hdrs, &oversized);
     assert_eq!(code, 422, "{}", body);
     assert!(body.contains("exceeds 65536-byte cap"), "{}", body);
-    assert_eq!(std::fs::read_to_string(&w.dal_batch_log).unwrap(), "", "oversize must delegate zero writes");
+    assert_eq!(testresult_batches(&w), "", "oversize must delegate zero writes");
 
     // A normal single create still succeeds through the same prepared fields.
     let (code, _, body) = http(
@@ -1066,7 +1077,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
     let line_a = r#"{"kind":"test-result","name":"tr-batch-a","fields":{"ownedBy":"wren","filePath":"platform/a.rs","result":"pass","testName":"keeps },{ and \"quoted\""},"more_values":[],"edges":[["ofTest","test","test-a"]],"graph":"urn:chorus:domains:tests"}"#;
     let line_b = r#"{"kind":"test-result","name":"tr-batch-b","fields":{"ownedBy":"wren","filePath":"platform/b.rs","result":"fail","testName":"second"},"more_values":[],"edges":[["ofTest","test","test-b"]],"graph":"urn:chorus:domains:tests"}"#;
     let expected = format!("ARGV\tadd-batch\nTOKEN\t{}\nSTDIN\n{}\n{}\nEND\n", tok, line_a, line_b);
-    let log = std::fs::read_to_string(&w.dal_batch_log).unwrap();
+    let log = testresult_batches(&w);
     assert_eq!(log, expected, "exact argv/stdin contract; one ARGV marker means one DAL process");
     assert_eq!(log.matches("ARGV\t").count(), 1, "batch must delegate once");
 }

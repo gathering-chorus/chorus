@@ -2185,6 +2185,15 @@
         "largest": "The single most expensive check (label:unit) in this run"
       }
     },
+    "test.integration.unmeasurable": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "Werk `test` verb (#4140) — the stack probe TIMED OUT (no service said no): the needs-stack tier was not run and the run is NOT green for it. Distinct from test.integration.skipped (a refused service, the typed skip). On 2026-09-11 08:20 a busy athena-make read as DOWN and 1,484 tests were skipped as if the stack were off.",
+      "fields": {
+        "count": "How many registered needs-stack tests were not run",
+        "saw": "Per service, what the probe saw: http code and ms per try"
+      }
+    },
     "test.integration.skipped": {
       "vertebra": "proving",
       "source": "werk",

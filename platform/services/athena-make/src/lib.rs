@@ -4711,7 +4711,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
     let listener = TcpListener::bind((host.as_str(), port)).map_err(|e| format!("bind {}:{}: {}", host, port, e))?;
     let classes: Vec<&str> = tables.iter().map(|t| t.class.rsplit('#').next().unwrap_or("")).collect();
     eprintln!("athena-make: serving {} generated API(s) on :{} [{}] (read-only; writes go through athena-model)", tables.len(), port, classes.join(", "));
-    let mut req_counter: u64 = 0;
+    let req_counter = std::sync::atomic::AtomicU64::new(0);
     // #3402→#3719 — the HS256 KeyRegistry/shared-secret seam config that loaded
     // here was DELETED with the machinery: the ES256/CSS verifier below is the
     // ONE verify path (identity from the token, scope from the model).
@@ -4800,321 +4800,350 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
             (local, (product, shape_version, commit))
         })
         .collect();
+    // #4140 — one connection per thread. The loop was single-threaded: a 20s
+    // ledger page (the census reads 26 of them) blocked /health and every
+    // other caller, and the nightly's stack probe read "busy" as DOWN
+    // (2026-09-11 08:20, 1,484 needs-stack tests skipped). Everything the
+    // handler touches is read-only or behind a Mutex; the store is Fuseki.
+    // Bounded: past ATHENA_MAKE_MAX_CONN in-flight, a caller gets a fast 503
+    // (a named state) instead of a queue nobody can see.
+    let max_conn: usize = std::env::var("ATHENA_MAKE_MAX_CONN").ok().and_then(|v| v.parse().ok()).unwrap_or(16);
+    let active = std::sync::atomic::AtomicUsize::new(0);
+    let dim_cache = &dim_cache;
+    let oidc_verifier = &oidc_verifier;
+    let surfaces = &surfaces;
+    let req_counter = &req_counter;
+    let active_ref = &active;
+    struct InFlight<'a>(&'a std::sync::atomic::AtomicUsize);
+    impl Drop for InFlight<'_> {
+        fn drop(&mut self) { self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst); }
+    }
+    std::thread::scope(|sc| {
     for stream in listener.incoming() {
         let mut stream = match stream { Ok(s) => s, Err(_) => continue };
-        let started = std::time::Instant::now();
-        // #3609 — bounded read timeout so a client that stalls mid-body can never
-        // hang the single-threaded serve loop; read_http_request returns whatever
-        // arrived and downstream validation 422s a truncated batch.
-        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
-        let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
-        let req = req_string.as_str();
-        let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
-        // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
-        // breaks select_table at serve level); carry it to handle for pagination.
-        let (path, query) = match raw_path.split_once('?') {
-            Some((p, q)) => (p.to_string(), q.to_string()),
-            None => (raw_path, String::new()),
-        };
-        let method = req.lines().next().and_then(|l| l.split_whitespace().next()).unwrap_or("GET").to_string();
-        let header = |name: &str| -> String {
-            req.lines()
-                .find(|l| l.to_ascii_lowercase().starts_with(&format!("{}:", name)))
-                .map(|l| l.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
-                .unwrap_or_default()
-        };
-        // #3466 — multi-class dispatch: /health is server-level; otherwise select
-        // the table whose class owns this path's resource. Unknown resource → 404.
-        if path == "/health" {
-            let resp = http_response_ct(status_line(200), "{ \"ok\": true, \"service\": \"athena-make\" }", "application/json");
+        if active_ref.load(std::sync::atomic::Ordering::SeqCst) >= max_conn {
+            let resp = http_response_ct(status_line(503), "{ \"error\": \"busy\", \"message\": \"athena-make: too many in-flight connections\" }", "application/json");
             let _ = stream.write_all(resp.as_bytes());
             continue;
         }
-        // #3506 / ADR-047 §7 — the DISCOVERY ROOT: GET / (and /v1) lists every served
-        // primitive with its collection URL + per-shape version, so a consumer learns
-        // the whole surface from one entrypoint (no out-of-band knowledge). Plus
-        // /livez + /readyz liveness probes (the heartbeat the contract calls for).
-        if path == "/livez" || path == "/readyz" {
-            let resp = http_response_ct(status_line(200), "{ \"ok\": true }", "application/json");
-            let _ = stream.write_all(resp.as_bytes());
-            continue;
-        }
-        if path == "/" || path == format!("/{}", API_VERSION) {
-            let prims: Vec<String> = tables
-                .iter()
-                .map(|t| {
-                    let local = t.class.rsplit('#').next().unwrap_or("");
-                    let plural = pluralize(local);
-                    let sv = dim_cache.get(local).map(|d| d.1.clone()).unwrap_or_default();
-                    format!(
-                        "{{ \"kind\": \"{}\", \"collection\": \"/{}/{}\", \"openapi\": \"/{}/openapi.json\", \"shapeVersion\": \"{}\" }}",
-                        json_escape(local), API_VERSION, plural, plural, json_escape(&sv)
-                    )
-                })
-                .collect();
-            let doc = format!(
-                "{{ \"apiVersion\": \"{}\", \"service\": \"athena-make\", \"kind\": \"Discovery\", \"count\": {}, \"primitives\": [{}] }}",
-                API_VERSION, tables.len(), prims.join(", ")
-            );
-            let resp = http_response_ct(status_line(200), &doc, "application/json");
-            let _ = stream.write_all(resp.as_bytes());
-            continue;
-        }
-        // #3706 — BULK SCHEMA: GET /schema returns every shaped class's schema in
-        // ONE document (kind, fields, mandatory, modelVersion). The per-class
-        // /schema/<class> route stays; this exists because a consumer that wants
-        // the WHOLE model — the model view — otherwise pays one round-trip per
-        // class. The class view was making 42 requests to draw one screen, which
-        // is fine on loopback and hangs over wifi through the /owl proxy. Same
-        // projection, same source, one response. No new data, no second
-        // implementation — it reads the identical RouteTables the per-class route
-        // reads, so the two can never disagree.
-        // #3723 — GET /reconcile: where each class lives and whether it serves.
-        // Four independent sources (repo, deploy script, shapes, store); the
-        // DISAGREEMENT between them is the output. See reconcile.rs for the
-        // partition rule and Silas's ADR-051 x 025 ruling that shapes it.
-        if path == "/reconcile" {
-            let doc = crate::reconcile::reconcile_json(tables);
-            let resp = http_response_ct(status_line(200), &doc, "application/json");
-            let _ = stream.write_all(resp.as_bytes());
-            continue;
-        }
-        if path == "/schema" {
-            let doc = schema_set_json(tables);
-            let resp = http_response_ct(status_line(200), &doc, "application/json");
-            let _ = stream.write_all(resp.as_bytes());
-            continue;
-        }
-        // #3506 / ADR-047 §7 — served OpenAPI for EVERY surface: /<plural>/openapi.json
-        // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
-        // every primitive documents itself, found via the discovery root above.
-        if let Some(rest) = path.strip_suffix("/openapi.json").or_else(|| path.strip_suffix("/openapi")) {
-            let want = rest.trim_start_matches('/');
-            if let Some(t) = tables
-                .iter()
-                .find(|t| pluralize(t.class.rsplit('#').next().unwrap_or("")) == want)
-            {
-                let (body, ct) = if path.ends_with(".json") {
-                    (openapi_json(t), "application/json")
-                } else {
-                    (openapi_html(t.class.rsplit('#').next().unwrap_or("")), "text/html; charset=utf-8")
+        active_ref.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        sc.spawn(move || {
+            let _in_flight = InFlight(active_ref);
+                let started = std::time::Instant::now();
+                // #3609 — bounded read timeout so a client that stalls mid-body can never
+                // hang the single-threaded serve loop; read_http_request returns whatever
+                // arrived and downstream validation 422s a truncated batch.
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                let req_string = read_http_request(&mut stream, MAX_WRITE_BYTES);
+                let req = req_string.as_str();
+                let raw_path = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/").to_string();
+                // #3506 / ADR-047 §7 — strip the query for ROUTING (so `?limit=&cursor=` never
+                // breaks select_table at serve level); carry it to handle for pagination.
+                let (path, query) = match raw_path.split_once('?') {
+                    Some((p, q)) => (p.to_string(), q.to_string()),
+                    None => (raw_path, String::new()),
                 };
-                let resp = http_response_ct(status_line(200), &body, ct);
-                let _ = stream.write_all(resp.as_bytes());
-                continue;
-            }
-        }
-        // #3494 — composed domain surface dispatch, BEFORE the primitive select_table.
-        // /<mount> → the domain's vocabulary index; /<mount>/<class-kebab>[/...] →
-        // rewrite to the vocab class's own plural root and fall through to the normal
-        // per-class flow (so the composed sub-resource reuses handle()/auth untouched).
-        let path = match resolve_surface(&path, &surfaces) {
-            Some(SurfaceHit::Index { domain, classes }) => {
-                let refs: Vec<&str> = classes.iter().map(String::as_str).collect();
-                let idx = project_domain_vocab_index(&domain, &refs);
-                let resp = http_response_ct(status_line(200), &idx, "application/json");
-                let _ = stream.write_all(resp.as_bytes());
-                continue;
-            }
-            Some(SurfaceHit::Class { rewritten_path, .. }) => rewritten_path,
-            None => path,
-        };
-        // #3573 — /batch is a CROSS-CLASS governed write (owned by no single class
-        // table), so it's handled here, before table-selection. Same gate as per-class
-        // writes: Bearer required (else 401), x-target-graph must be in the token scope
-        // (else 403). Delegates to handle_batch → the typed-slot chorus-model batch op.
-        if method == "POST" && path == "/batch" {
-            let now_secs = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
-            let auth_hdr = header("authorization");
-            let token = auth_hdr
-                .strip_prefix("Bearer ")
-                .or_else(|| auth_hdr.strip_prefix("bearer "))
-                .unwrap_or(&auth_hdr);
-            let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
-                Err(_) => (
-                    401u16,
-                    "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
-                ),
-                Ok(claims) => {
-                    let target_graph = header("x-target-graph");
-                    // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
-                    // entity writes (which allow legacy/unscoped mixed-state), batch is the
-                    // most destructive op; a legacy allow-all token has no business here.
-                    if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
-                        (
-                            403u16,
-                            format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
-                        )
-                    } else if !resolved_write_role(&claims.agent_id) {
-                        (
-                            403u16,
-                            "{ \"error\": \"authz-role\", \"message\": \"batch writes require a model-resolved role\" }".to_string(),
-                        )
-                    } else {
-                        let role = claims.agent_id.clone();
-                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                        handle_batch(&target_graph, body_str, &role, token)
+                let method = req.lines().next().and_then(|l| l.split_whitespace().next()).unwrap_or("GET").to_string();
+                let header = |name: &str| -> String {
+                    req.lines()
+                        .find(|l| l.to_ascii_lowercase().starts_with(&format!("{}:", name)))
+                        .map(|l| l.splitn(2, ':').nth(1).unwrap_or("").trim().to_string())
+                        .unwrap_or_default()
+                };
+                // #3466 — multi-class dispatch: /health is server-level; otherwise select
+                // the table whose class owns this path's resource. Unknown resource → 404.
+                if path == "/health" {
+                    let resp = http_response_ct(status_line(200), "{ \"ok\": true, \"service\": \"athena-make\" }", "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #3506 / ADR-047 §7 — the DISCOVERY ROOT: GET / (and /v1) lists every served
+                // primitive with its collection URL + per-shape version, so a consumer learns
+                // the whole surface from one entrypoint (no out-of-band knowledge). Plus
+                // /livez + /readyz liveness probes (the heartbeat the contract calls for).
+                if path == "/livez" || path == "/readyz" {
+                    let resp = http_response_ct(status_line(200), "{ \"ok\": true }", "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                if path == "/" || path == format!("/{}", API_VERSION) {
+                    let prims: Vec<String> = tables
+                        .iter()
+                        .map(|t| {
+                            let local = t.class.rsplit('#').next().unwrap_or("");
+                            let plural = pluralize(local);
+                            let sv = dim_cache.get(local).map(|d| d.1.clone()).unwrap_or_default();
+                            format!(
+                                "{{ \"kind\": \"{}\", \"collection\": \"/{}/{}\", \"openapi\": \"/{}/openapi.json\", \"shapeVersion\": \"{}\" }}",
+                                json_escape(local), API_VERSION, plural, plural, json_escape(&sv)
+                            )
+                        })
+                        .collect();
+                    let doc = format!(
+                        "{{ \"apiVersion\": \"{}\", \"service\": \"athena-make\", \"kind\": \"Discovery\", \"count\": {}, \"primitives\": [{}] }}",
+                        API_VERSION, tables.len(), prims.join(", ")
+                    );
+                    let resp = http_response_ct(status_line(200), &doc, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #3706 — BULK SCHEMA: GET /schema returns every shaped class's schema in
+                // ONE document (kind, fields, mandatory, modelVersion). The per-class
+                // /schema/<class> route stays; this exists because a consumer that wants
+                // the WHOLE model — the model view — otherwise pays one round-trip per
+                // class. The class view was making 42 requests to draw one screen, which
+                // is fine on loopback and hangs over wifi through the /owl proxy. Same
+                // projection, same source, one response. No new data, no second
+                // implementation — it reads the identical RouteTables the per-class route
+                // reads, so the two can never disagree.
+                // #3723 — GET /reconcile: where each class lives and whether it serves.
+                // Four independent sources (repo, deploy script, shapes, store); the
+                // DISAGREEMENT between them is the output. See reconcile.rs for the
+                // partition rule and Silas's ADR-051 x 025 ruling that shapes it.
+                if path == "/reconcile" {
+                    let doc = crate::reconcile::reconcile_json(tables);
+                    let resp = http_response_ct(status_line(200), &doc, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                if path == "/schema" {
+                    let doc = schema_set_json(tables);
+                    let resp = http_response_ct(status_line(200), &doc, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #3506 / ADR-047 §7 — served OpenAPI for EVERY surface: /<plural>/openapi.json
+                // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
+                // every primitive documents itself, found via the discovery root above.
+                if let Some(rest) = path.strip_suffix("/openapi.json").or_else(|| path.strip_suffix("/openapi")) {
+                    let want = rest.trim_start_matches('/');
+                    if let Some(t) = tables
+                        .iter()
+                        .find(|t| pluralize(t.class.rsplit('#').next().unwrap_or("")) == want)
+                    {
+                        let (body, ct) = if path.ends_with(".json") {
+                            (openapi_json(t), "application/json")
+                        } else {
+                            (openapi_html(t.class.rsplit('#').next().unwrap_or("")), "text/html; charset=utf-8")
+                        };
+                        let resp = http_response_ct(status_line(200), &body, ct);
+                        let _ = stream.write_all(resp.as_bytes());
+                        return;
                     }
                 }
-            };
-            let resp = http_response_ct(status_line(code), &body, "application/json");
-            let _ = stream.write_all(resp.as_bytes());
-            continue;
-        }
-        // #3845 — dispatch decided in pure code (dispatch_for), because this
-        // decision lived inline here and was wrong for two months with nothing
-        // able to test it.
-        let table = match dispatch_for(&path, tables) {
-            Dispatch::Table(i) => &tables[i],
-            Dispatch::EffectiveUnavailable => {
-                let nf = "{ \"error\": \"effective-unavailable\", \"message\": \"no Property route table is mounted, so no effective-config graph can be resolved\" }";
-                let resp = http_response_ct(status_line(503), nf, "application/json");
-                let _ = stream.write_all(resp.as_bytes());
-                continue;
-            }
-            Dispatch::NotFound => {
-                let served: Vec<String> = tables
-                    .iter()
-                    .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
-                    .collect();
-                let nf = format!("{{ \"error\": \"unknown route\", \"served\": [{}] }}", served.join(", "));
-                let resp = http_response_ct(status_line(404), &nf, "application/json");
-                let _ = stream.write_all(resp.as_bytes());
-                continue;
-            }
-        };
-        let upstream_started = std::time::Instant::now();
-        // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured
-        // surface with a missing/invalid credential short-circuits to 401/403; every
-        // other surface falls through untouched (mixed-state). Local verify only.
-        let now_secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let ((code, body), meta) = if method != "GET" {
-            // #3454 — the WRITE path. authN is ALWAYS required on a write (a write is
-            // never open, unlike a read), then handle_write does authZ-from-ownedBy,
-            // shape rejection, the SPARQL-UPDATE, the spine event, and a typed status.
-            // A write can NEVER reach a read handler (the "POST returns 200" anti-pattern).
-            let auth_hdr = header("authorization");
-            let token = auth_hdr
-                .strip_prefix("Bearer ")
-                .or_else(|| auth_hdr.strip_prefix("bearer "))
-                .unwrap_or(&auth_hdr);
-            match oidc::verify_any(token, &oidc_verifier, now_secs) {
-                Err(_) => {
-                    let (c, t) = write_status("authn-missing");
-                    ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
-                     ReqMeta { route: "write-authn".into(), ..Default::default() })
-                }
-                Ok(claims) => {
-                    // #3573 Part C — SCOPE enforcement (the realm-isolation control,
-                    // Silas's invariant): the verified principal may write ONLY graphs
-                    // named by its model-resolved grants. The presented ES256 token does
-                    // not need a scope claim; verify_any resolves Principal hasScope data
-                    // into Claims.scope. Empty resolved scope is deny-all, fail closed.
-                    let target_graph = header("x-target-graph");
-                    // The selected class table owns the graph the DAL will
-                    // actually mutate. A caller-supplied header may confirm that
-                    // graph, but can never substitute a different in-scope graph
-                    // as an authorization decoy for the real write target.
-                    let effective_target = table.instances_graph.as_str();
-                    if !resolved_write_role(&claims.agent_id) {
-                        ((403u16, "{ \"error\": \"authz-role\", \"message\": \"writes require a model-resolved role\" }".to_string()),
-                         ReqMeta { route: "write-authz-role".into(), ..Default::default() })
-                    } else if !target_graph.is_empty() && target_graph != effective_target {
-                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
-                         ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
-                    } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
-                        // #4096 — an owned class is governed by the row's owner (checked in
-                        // handle_write); only an ownerless class needs the graph in scope.
-                        ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
-                         ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
-                    } else {
-                        let role = claims.agent_id.clone();
-                        let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
-                        // (POST /batch is handled by the cross-class pre-table block above,
-                        // which `continue`s — it can't reach here. One site, no drift.)
-                        // #4101 — the land names the commit that is changing the row
-                        let landed_commit = header("x-landed-commit");
-                        let (c, b) = handle_write_stamped(&method, &path, body_str, table, &role, token, &landed_commit);
-                        ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                // #3494 — composed domain surface dispatch, BEFORE the primitive select_table.
+                // /<mount> → the domain's vocabulary index; /<mount>/<class-kebab>[/...] →
+                // rewrite to the vocab class's own plural root and fall through to the normal
+                // per-class flow (so the composed sub-resource reuses handle()/auth untouched).
+                let path = match resolve_surface(&path, &surfaces) {
+                    Some(SurfaceHit::Index { domain, classes }) => {
+                        let refs: Vec<&str> = classes.iter().map(String::as_str).collect();
+                        let idx = project_domain_vocab_index(&domain, &refs);
+                        let resp = http_response_ct(status_line(200), &idx, "application/json");
+                        let _ = stream.write_all(resp.as_bytes());
+                        return;
                     }
-                }
-            }
-        } else {
-            match oidc::seam_auth_any(&path, &header("authorization"), &oidc_verifier, now_secs, &table.secured) {
-                Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
-                None => {
-                    let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
-                    // #3506 / ADR-048 §3 — authed = a valid service token is present; it
-                    // gates `internal`-exposure fields on an exposure-enforced shape.
-                    let ah = header("authorization");
-                    let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
-                    let authed = oidc::verify_any(tok, &oidc_verifier, now_secs).is_ok();
-                    handle_meta(&hp, table, authed)
-                }
-            }
-        };
-        let upstream_ms = upstream_started.elapsed().as_millis();
-        let status = status_line(code);
-        // #3520 / ADR-047 §7 — ETag = a content hash of the served body. The cache
-        // key IS the response content, derived per-entity: it changes exactly when
-        // THIS entity's bytes change (NOT a global commit that would invalidate every
-        // cache on any model write — that coarseness was the bug), and it activates
-        // with zero env and zero deploy injection. version = f(content).
-        let etag = if method == "GET" && code == 200 {
-            Some(content_hash(&body))
-        } else {
-            None
-        };
-        let cond_hit = method == "GET"
-            && code == 200
-            && etag.as_deref().map_or(false, |t| header("if-none-match").trim().trim_matches('"') == t);
-        let resp = if cond_hit {
-            http_response_304(etag.as_deref().unwrap_or(""))
-        } else if method == "GET" && code == 200 {
-            http_response_cacheable(status, &body, content_type_for(&path), etag.as_deref())
-        } else {
-            http_response_ct(status, &body, content_type_for(&path))
-        };
-        let _ = stream.write_all(resp.as_bytes());
-        // THE SEAM: every request passes here once — telemetry now; auth,
-        // validation, rate limits inject at this same point (the IoC payoff).
-        if path != "/health" { // probes are noise, not signal
-            let class_local = table.class.rsplit('#').next().unwrap_or("").to_string();
-            let (product, shape_version, commit) = dim_cache.get(&class_local).cloned().unwrap_or_default();
-            emit_telemetry(&TelemetryLine {
-                class: class_local,
-                entity: meta.entity,
-                route: meta.route,
-                fold: meta.fold,
-                status: match code {
-                    200 => ReqStatus::Ok,
-                    404 => ReqStatus::Refused("not-found".into()),
-                    _ => ReqStatus::Error("upstream".into()),
-                },
-                result_count: meta.result_count,
-                total_ms: started.elapsed().as_millis(),
-                upstream_ms,
-                caller: header("x-chorus-caller"),
-                trace_id: {
-                    req_counter += 1;
-                    let now = std::time::SystemTime::now()
+                    Some(SurfaceHit::Class { rewritten_path, .. }) => rewritten_path,
+                    None => path,
+                };
+                // #3573 — /batch is a CROSS-CLASS governed write (owned by no single class
+                // table), so it's handled here, before table-selection. Same gate as per-class
+                // writes: Bearer required (else 401), x-target-graph must be in the token scope
+                // (else 403). Delegates to handle_batch → the typed-slot chorus-model batch op.
+                if method == "POST" && path == "/batch" {
+                    let now_secs = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis())
+                        .map(|d| d.as_secs())
                         .unwrap_or(0);
-                    effective_trace(&header("x-chorus-trace-id"), now, req_counter)
-                },
-                product,
-                shape_version,
-                commit,
-            });
-        }
+                    let auth_hdr = header("authorization");
+                    let token = auth_hdr
+                        .strip_prefix("Bearer ")
+                        .or_else(|| auth_hdr.strip_prefix("bearer "))
+                        .unwrap_or(&auth_hdr);
+                    let (code, body) = match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => (
+                            401u16,
+                            "{ \"error\": \"authn-missing\", \"message\": \"a valid Bearer service-token is required for a batch write\" }".to_string(),
+                        ),
+                        Ok(claims) => {
+                            let target_graph = header("x-target-graph");
+                            // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
+                            // entity writes (which allow legacy/unscoped mixed-state), batch is the
+                            // most destructive op; a legacy allow-all token has no business here.
+                            if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
+                                (
+                                    403u16,
+                                    format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
+                                )
+                            } else if !resolved_write_role(&claims.agent_id) {
+                                (
+                                    403u16,
+                                    "{ \"error\": \"authz-role\", \"message\": \"batch writes require a model-resolved role\" }".to_string(),
+                                )
+                            } else {
+                                let role = claims.agent_id.clone();
+                                let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                                handle_batch(&target_graph, body_str, &role, token)
+                            }
+                        }
+                    };
+                    let resp = http_response_ct(status_line(code), &body, "application/json");
+                    let _ = stream.write_all(resp.as_bytes());
+                    return;
+                }
+                // #3845 — dispatch decided in pure code (dispatch_for), because this
+                // decision lived inline here and was wrong for two months with nothing
+                // able to test it.
+                let table = match dispatch_for(&path, tables) {
+                    Dispatch::Table(i) => &tables[i],
+                    Dispatch::EffectiveUnavailable => {
+                        let nf = "{ \"error\": \"effective-unavailable\", \"message\": \"no Property route table is mounted, so no effective-config graph can be resolved\" }";
+                        let resp = http_response_ct(status_line(503), nf, "application/json");
+                        let _ = stream.write_all(resp.as_bytes());
+                        return;
+                    }
+                    Dispatch::NotFound => {
+                        let served: Vec<String> = tables
+                            .iter()
+                            .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
+                            .collect();
+                        let nf = format!("{{ \"error\": \"unknown route\", \"served\": [{}] }}", served.join(", "));
+                        let resp = http_response_ct(status_line(404), &nf, "application/json");
+                        let _ = stream.write_all(resp.as_bytes());
+                        return;
+                    }
+                };
+                let upstream_started = std::time::Instant::now();
+                // THE SEAM (#3402): auth injects here, ONCE, before route logic. A secured
+                // surface with a missing/invalid credential short-circuits to 401/403; every
+                // other surface falls through untouched (mixed-state). Local verify only.
+                let now_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let ((code, body), meta) = if method != "GET" {
+                    // #3454 — the WRITE path. authN is ALWAYS required on a write (a write is
+                    // never open, unlike a read), then handle_write does authZ-from-ownedBy,
+                    // shape rejection, the SPARQL-UPDATE, the spine event, and a typed status.
+                    // A write can NEVER reach a read handler (the "POST returns 200" anti-pattern).
+                    let auth_hdr = header("authorization");
+                    let token = auth_hdr
+                        .strip_prefix("Bearer ")
+                        .or_else(|| auth_hdr.strip_prefix("bearer "))
+                        .unwrap_or(&auth_hdr);
+                    match oidc::verify_any(token, &oidc_verifier, now_secs) {
+                        Err(_) => {
+                            let (c, t) = write_status("authn-missing");
+                            ((c, format!("{{ \"error\": \"{}\", \"message\": \"a valid Bearer service-token is required for writes\" }}", t)),
+                             ReqMeta { route: "write-authn".into(), ..Default::default() })
+                        }
+                        Ok(claims) => {
+                            // #3573 Part C — SCOPE enforcement (the realm-isolation control,
+                            // Silas's invariant): the verified principal may write ONLY graphs
+                            // named by its model-resolved grants. The presented ES256 token does
+                            // not need a scope claim; verify_any resolves Principal hasScope data
+                            // into Claims.scope. Empty resolved scope is deny-all, fail closed.
+                            let target_graph = header("x-target-graph");
+                            // The selected class table owns the graph the DAL will
+                            // actually mutate. A caller-supplied header may confirm that
+                            // graph, but can never substitute a different in-scope graph
+                            // as an authorization decoy for the real write target.
+                            let effective_target = table.instances_graph.as_str();
+                            if !resolved_write_role(&claims.agent_id) {
+                                ((403u16, "{ \"error\": \"authz-role\", \"message\": \"writes require a model-resolved role\" }".to_string()),
+                                 ReqMeta { route: "write-authz-role".into(), ..Default::default() })
+                            } else if !target_graph.is_empty() && target_graph != effective_target {
+                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
+                                 ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
+                            } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
+                                // #4096 — an owned class is governed by the row's owner (checked in
+                                // handle_write); only an ownerless class needs the graph in scope.
+                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
+                                 ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
+                            } else {
+                                let role = claims.agent_id.clone();
+                                let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
+                                // (POST /batch is handled by the cross-class pre-table block above,
+                                // which `continue`s — it can't reach here. One site, no drift.)
+                                // #4101 — the land names the commit that is changing the row
+                                let landed_commit = header("x-landed-commit");
+                                let (c, b) = handle_write_stamped(&method, &path, body_str, table, &role, token, &landed_commit);
+                                ((c, b), ReqMeta { route: format!("write:{}", method.to_ascii_lowercase()), ..Default::default() })
+                            }
+                        }
+                    }
+                } else {
+                    match oidc::seam_auth_any(&path, &header("authorization"), &oidc_verifier, now_secs, &table.secured) {
+                        Some((c, b)) => ((c, b), ReqMeta { route: "auth-refused".into(), ..Default::default() }),
+                        None => {
+                            let hp = if query.is_empty() { path.clone() } else { format!("{}?{}", path, query) };
+                            // #3506 / ADR-048 §3 — authed = a valid service token is present; it
+                            // gates `internal`-exposure fields on an exposure-enforced shape.
+                            let ah = header("authorization");
+                            let tok = ah.strip_prefix("Bearer ").or_else(|| ah.strip_prefix("bearer ")).unwrap_or(&ah);
+                            let authed = oidc::verify_any(tok, &oidc_verifier, now_secs).is_ok();
+                            handle_meta(&hp, table, authed)
+                        }
+                    }
+                };
+                let upstream_ms = upstream_started.elapsed().as_millis();
+                let status = status_line(code);
+                // #3520 / ADR-047 §7 — ETag = a content hash of the served body. The cache
+                // key IS the response content, derived per-entity: it changes exactly when
+                // THIS entity's bytes change (NOT a global commit that would invalidate every
+                // cache on any model write — that coarseness was the bug), and it activates
+                // with zero env and zero deploy injection. version = f(content).
+                let etag = if method == "GET" && code == 200 {
+                    Some(content_hash(&body))
+                } else {
+                    None
+                };
+                let cond_hit = method == "GET"
+                    && code == 200
+                    && etag.as_deref().map_or(false, |t| header("if-none-match").trim().trim_matches('"') == t);
+                let resp = if cond_hit {
+                    http_response_304(etag.as_deref().unwrap_or(""))
+                } else if method == "GET" && code == 200 {
+                    http_response_cacheable(status, &body, content_type_for(&path), etag.as_deref())
+                } else {
+                    http_response_ct(status, &body, content_type_for(&path))
+                };
+                let _ = stream.write_all(resp.as_bytes());
+                // THE SEAM: every request passes here once — telemetry now; auth,
+                // validation, rate limits inject at this same point (the IoC payoff).
+                if path != "/health" { // probes are noise, not signal
+                    let class_local = table.class.rsplit('#').next().unwrap_or("").to_string();
+                    let (product, shape_version, commit) = dim_cache.get(&class_local).cloned().unwrap_or_default();
+                    emit_telemetry(&TelemetryLine {
+                        class: class_local,
+                        entity: meta.entity,
+                        route: meta.route,
+                        fold: meta.fold,
+                        status: match code {
+                            200 => ReqStatus::Ok,
+                            404 => ReqStatus::Refused("not-found".into()),
+                            _ => ReqStatus::Error("upstream".into()),
+                        },
+                        result_count: meta.result_count,
+                        total_ms: started.elapsed().as_millis(),
+                        upstream_ms,
+                        caller: header("x-chorus-caller"),
+                        trace_id: {
+                            let n = req_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis())
+                                .unwrap_or(0);
+                            effective_trace(&header("x-chorus-trace-id"), now, n)
+                        },
+                        product,
+                        shape_version,
+                        commit,
+                    });
+                }
+        });
     }
+    });
     Ok(())
 }
 

@@ -32,22 +32,38 @@ setup() {
   [ "$output" -ge 1 ]
 }
 
-@test "run_jest selects the hermetic project" {
-  grep -q '"--selectProjects"' "$RUNNER"
-  grep -q '"hermetic"' "$RUNNER"
+@test "run_jest selects the hermetic project only when the integration tier is OFF (#4139)" {
+  # #4111 passed --selectProjects hermetic unconditionally; #4139 made the flag
+  # decide: RUN_INTEGRATION=true → bare jest (both projects), else hermetic only.
+  LIB="$ROOT/platform/services/werk-test/src/lib.rs"
+  grep -q 'werk_test::jest_project_args(jest_has_hermetic_project(&pkg_dir), run_integration)' "$RUNNER"
+  grep -q 'std::env::var("RUN_INTEGRATION")' "$RUNNER"
+  run bash -c "sed -n '/^pub fn jest_project_args/,/^}/p' '$LIB'"
+  [[ "$output" == *'has_hermetic_project && !run_integration'* ]]
+  [[ "$output" == *'"--selectProjects"'* ]]
 }
 
-@test "NEGATIVE PROOF: the flag is guarded, never passed blind" {
-  # --selectProjects against a config with NO projects is a warning and an empty
-  # run — a vacuous green. The runner must read the config first.
-  grep -q "fn jest_has_hermetic_project" "$RUNNER"
-  run bash -c "grep -A2 'jest_has_hermetic_project(&pkg_dir)' '$RUNNER' | grep -c 'selectProjects'"
-  [ "$output" -ge 1 ]
+@test "NEGATIVE PROOF: with the tier ON the runner passes no --selectProjects (the #4111 state)" {
+  # the state #4111 could not separate: stack up, RUN_INTEGRATION=true, and
+  # jest still told to run hermetic only. The pure fn's own unit tests
+  # (lib.rs integration_tier_4139) prove both branches; here: the runner has
+  # no other path to the flag.
+  # code only — the doc comment above run_jest_with still names the flag
+  run bash -c "grep -c 'arg(\"--selectProjects\")' '$RUNNER'"
+  [ "$output" -eq 0 ]
 }
 
 @test "NEGATIVE PROOF: the guard says no for a config without the project" {
-  d="$BATS_TEST_TMPDIR/nopkg"; mkdir -p "$d"
-  printf 'module.exports = { testMatch: ["**/*.test.ts"] };\n' > "$d/jest.config.js"
-  run grep -c "displayName: 'hermetic'" "$d/jest.config.js"
-  [ "$output" = "0" ]
+  grep -q "fn jest_has_hermetic_project" "$RUNNER"
+  run bash -c "grep -A8 'fn jest_has_hermetic_project' '$RUNNER' | grep -c 'displayName'"
+  [ "$output" -ge 1 ]
+}
+
+@test "by hand: with RUN_INTEGRATION=true bare jest lists the integration files (skip-if-absent: needs node_modules)" {
+  J="$ROOT/platform/api/node_modules/.bin/jest"
+  [ -x "$J" ] || skip "platform/api/node_modules absent in this tree"
+  run bash -c "cd '$ROOT/platform/api' && RUN_INTEGRATION=true '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
+  [ "$output" -ge 1 ]
+  run bash -c "cd '$ROOT/platform/api' && '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
+  [ "$output" -eq 0 ]
 }
