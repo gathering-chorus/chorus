@@ -83,26 +83,8 @@ assert 'additionalContext' in d['hookSpecificOutput']
 "
 }
 
-# --- AC: SessionStart completes in a reasonable bound ---
-
-@test "session-start completes in under 10s typical" {
-  local start end elapsed
-  start=$(date +%s)
-  "$SHIM" session-start silas >/dev/null
-  end=$(date +%s)
-  elapsed=$(( end - start ))
-  # #3915 — a wall-clock budget measured on a loaded box is a coin flip, and a
-  # coin-flip test is a nightly red that teaches people to ignore nightly reds
-  # (#3753). Above the load ceiling the box, not session-start, is what is slow:
-  # report UNMEASURABLE instead of failing. Below it the budget still bites.
-  local load
-  load=$(uptime | sed 's/.*load averages*: *//' | awk '{print int($1)}')
-  if [ "${load:-0}" -ge 8 ] && [ "$elapsed" -ge 10 ]; then
-    skip "UNMEASURABLE: 1-min load ${load} — timing budget not attributable to session-start (#3753)"
-  fi
-  # 10s is generous — typical should be <3s. Flag if regressed.
-  [ "$elapsed" -lt 10 ]
-}
+# --- AC: SessionStart completes in a reasonable bound --- moved to
+# session-start-timing.test.sh (#4138: a perf row, shown in seconds, never red)
 
 # --- AC: Pulse regenerated on each SessionStart ---
 

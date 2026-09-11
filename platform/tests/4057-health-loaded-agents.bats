@@ -40,6 +40,9 @@ setup() {
   export HEALTH_STATE_FILE="$W/state.txt"
   export HEALTH_OPS_NUDGE="$W/bin/noop"
   export HEALTH_CHORUS_LOG="$W/bin/noop"
+  # #4138 — no live ports: an empty endpoint list means the probe loop runs nothing.
+  : > "$W/endpoints.txt"; export HEALTH_ENDPOINTS_FILE="$W/endpoints.txt"
+  export HEALTH_LOG_FILE="$W/logs/deep-health.log"
   : > "$W/loaded.txt"
 }
 

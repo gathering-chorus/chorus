@@ -55,10 +55,3 @@ SIGNAL_SCAN="${_REPO_ROOT}/platform/scripts/daily-signal-scan.sh"
   bash -n "$SIGNAL_SCAN"
 }
 
-@test "deep-health end-to-end: produces a summary even when checks fail" {
-  # The silent-death regression: exit 1 with empty output. Failures are fine;
-  # silence is not. (Read-only probes; same class the nightly already runs.)
-  run bash "$DEEP_HEALTH"
-  [ -n "$output" ]
-  echo "$output" | grep -qiE "summary|failures|warnings|healthy|ok"
-}

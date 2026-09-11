@@ -3,6 +3,22 @@
 # Runs on 5-min cron. Alerts via nudge --force on failure.
 set -euo pipefail
 
+# #4138 — a monitor that dies mid-run must say so in its own output. Three
+# times this script exited under set -e with ZERO lines and the silence read as
+# "not run" (#3369, the 09-04 boot-herd line, the 09-10 refused probe). The
+# summary flag is set right before each terminal message; anything else that
+# ends the script prints one line naming the exit and the line, and nudges ops.
+_SUMMARY_PRINTED=0
+_on_exit() {
+  local rc=$? line="${BASH_LINENO[0]:-?}"
+  [ "$_SUMMARY_PRINTED" -eq 1 ] && return 0
+  echo "deep-health: DIED before summary (exit $rc near line $line) — the monitor itself is broken, not the box"
+  "${OPS_NUDGE:-/usr/bin/true}" "${ALERT_ROLE:-silas}" "deep-health: DIED before summary (exit $rc near line $line)" 2>/dev/null || true
+  [ "$rc" -ne 0 ] || rc=70
+  exit "$rc"
+}
+trap _on_exit EXIT
+
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
@@ -20,6 +36,7 @@ if [ -f "$SUPPRESS_FILE" ]; then
   expiry=$(cat "$SUPPRESS_FILE" 2>/dev/null || echo 0)
   if [ "$expiry" -gt "$now" ] 2>/dev/null; then
     remaining=$(( expiry - now ))
+    _SUMMARY_PRINTED=1
     echo "deep-health: suppressed (${remaining}s remaining — planned restart)"
     exit 0
   fi
@@ -31,7 +48,7 @@ fi
 # #3948 — retry + down-vs-unmeasurable, same as the endpoint loop.
 FUSEKI_CODE="000"; fuseki_exit=0
 for attempt in 1 2; do
-  FUSEKI_CODE=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null); fuseki_exit=$?
+  fuseki_exit=0; FUSEKI_CODE=$(curl -s --max-time 3 -o /dev/null -w '%{http_code}' "http://localhost:3030/$/ping" 2>/dev/null) || fuseki_exit=$?
   [ "$fuseki_exit" -eq 0 ] && [ "$FUSEKI_CODE" = "200" ] && break
   [ "$attempt" -eq 1 ] && sleep 2
 done
@@ -72,6 +89,8 @@ fi
 # ask whether IT went silent. A log file with no loaded agent is not a finding
 # at all — it is a file to delete, and deep-health is not the deleter.
 LOG_DIR="${HEALTH_LOG_DIR:-$HOME/Library/Logs/Chorus}"
+HEALTH_LOG_FILE="${HEALTH_LOG_FILE:-$LOG_DIR/deep-health.log}"   # #4138 seam — a test brings its own world
+mkdir -p "$(dirname "$HEALTH_LOG_FILE")" 2>/dev/null || true
 HEALTH_PLIST_DIR="${HEALTH_PLIST_DIR:-$HOME/Library/LaunchAgents}"
 # Test seam: a file of labels, one per line, standing in for `launchctl list`.
 # Without it these checks can only be exercised against the real machine, which
@@ -305,7 +324,7 @@ fi
 # 20:37 on 2026-08-20 while the API answered 200 in 3.84s under load.
 api_code="000"; api_exit=0
 for attempt in 1 2; do
-  api_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:3340/api/chorus/health 2>/dev/null); api_exit=$?
+  api_exit=0; api_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" http://localhost:3340/api/chorus/health 2>/dev/null) || api_exit=$?
   [ "$api_exit" -eq 0 ] && [ "$api_code" = "200" ] && break
   [ "$attempt" -eq 1 ] && sleep 2
 done
@@ -483,7 +502,16 @@ deferred_reason() {  # deferred_reason <name> — echoes the reason, or nothing
   esac
 }
 
-for entry in "${HEALTH_ENDPOINTS[@]}"; do
+# #4138 seams — HEALTH_ENDPOINTS_FILE replaces the list above (one url|name|desc
+# per line, empty file = probe nothing) so a test never touches a live port;
+# HEALTH_FAULT_INJECT kills the run here so the DIED-before-summary line is provable.
+if [ -n "${HEALTH_ENDPOINTS_FILE:-}" ]; then
+  HEALTH_ENDPOINTS=()
+  while IFS= read -r _l; do [ -n "$_l" ] && HEALTH_ENDPOINTS+=("$_l"); done < "$HEALTH_ENDPOINTS_FILE"
+fi
+if [ -n "${HEALTH_FAULT_INJECT:-}" ]; then false; fi
+for entry in "${HEALTH_ENDPOINTS[@]+"${HEALTH_ENDPOINTS[@]}"}"; do
+  [ -n "$entry" ] || continue
   IFS='|' read -r url name desc <<< "$entry"
   # #3948 — one 5s curl was the whole verdict, and six times it called a
   # healthy Clearing "unreachable — team chat broken" (a busy box stalls one
@@ -494,7 +522,10 @@ for entry in "${HEALTH_ENDPOINTS[@]}"; do
   reachable=0; probe_code="000"; probe_ms="?"; probe_exit=0
   for attempt in 1 2; do
     t0=$(python3 -c 'import time; print(int(time.time()*1000))')
-    probe_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null); probe_exit=$?
+    # #4138 — `x=$(cmd); rc=$?` under set -e dies on the failing substitution
+    # BEFORE $? is read (the #3369 / 09-04 boot-herd class). curl exit 7 on a
+    # refused Bedroom port killed the whole report with zero output.
+    probe_exit=0; probe_code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "$url" 2>/dev/null) || probe_exit=$?
     t1=$(python3 -c 'import time; print(int(time.time()*1000))')
     probe_ms=$((t1 - t0))
     if [ "$probe_exit" -eq 0 ] && [ "$probe_code" -ge 200 ] && [ "$probe_code" -lt 400 ]; then
@@ -727,13 +758,15 @@ fi
 } > "${HEALTH_JSON_OUT:-/tmp/deep-health-latest.json}"
 
 if [ "$STATUS" = "healthy" ]; then
+  _SUMMARY_PRINTED=1
   echo "deep-health: all checks passed"
   exit 0
 fi
 
 if [ "$STATUS" = "warning" ]; then
+  _SUMMARY_PRINTED=1
   echo "deep-health: all checks passed — ${#WARNINGS[@]} warning(s), no failures"
-  echo "$(date '+%Y-%m-%d %H:%M') deep-health: ${#WARNINGS[@]} warning(s)" >> "$HOME/Library/Logs/Chorus/deep-health.log"
+  echo "$(date '+%Y-%m-%d %H:%M') deep-health: ${#WARNINGS[@]} warning(s)" >> "$HEALTH_LOG_FILE"
   exit 0
 fi
 
@@ -744,8 +777,9 @@ for f in "${FAILURES[@]}"; do
   - $f"
 done
 
+_SUMMARY_PRINTED=1
 echo "$MSG"
-echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HOME/Library/Logs/Chorus/deep-health.log"
+echo "$(date '+%Y-%m-%d %H:%M') $MSG" >> "$HEALTH_LOG_FILE"
 
 # Edge-triggered alerting (#2124 follow-up):
 # Only nudge when the failure set changes (new failure added or existing one

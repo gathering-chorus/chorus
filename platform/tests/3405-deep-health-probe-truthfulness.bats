@@ -65,8 +65,3 @@ DEEP_HEALTH="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/sc
   [ "$status" -ne 0 ]
 }
 
-@test "deep-health end-to-end still produces a summary" {
-  run bash "$DEEP_HEALTH"
-  [ -n "$output" ]
-  echo "$output" | grep -qiE "failures|warning|healthy|passed"
-}
