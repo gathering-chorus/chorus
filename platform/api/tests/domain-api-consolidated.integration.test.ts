@@ -1,5 +1,5 @@
 /**
- * @test-type: api
+ * @test-type: integration:api
  *
  * Domain API consolidation tests — #2060
  *
@@ -72,15 +72,7 @@ describe('#2060: consolidated domain API', () => {
     expect(body._meta.count).toBeDefined();
   }, 10_000);
 
-  // --- /logs ---
-
-  test('GET /api/chorus/domain/:name/logs returns log sources', async () => {
-    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/seeds/logs`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.data).toBeDefined();
-    expect(body._meta).toBeDefined();
-  }, 10_000);
+  // --- /logs --- retired in #4084 (Logs fold reads the graph); no facet route (#4143)
 
   // --- /services ---
 
@@ -95,8 +87,8 @@ describe('#2060: consolidated domain API', () => {
 
   // --- Consistent envelope ---
 
-  test('all five facet endpoints use identical envelope shape', async () => {
-    const facets = ['code', 'tests', 'alerts', 'logs', 'services'];
+  test('all four facet endpoints use identical envelope shape', async () => {
+    const facets = ['code', 'tests', 'alerts', 'services'];
     const responses = await Promise.all(
       facets.map(f => fetch(`${harness.baseUrl}/api/chorus/domain/seeds/${f}`).then(r => r.json()))
     );

@@ -1,5 +1,5 @@
 /**
- * @test-type: api
+ * @test-type: integration:api
  *
  * Logs facet population tests — #2083
  *
@@ -76,21 +76,8 @@ describe('AC3: Infrastructure reports a logs section', () => {
   });
 });
 
-// AC4: GET /api/chorus/domain/chorus/logs returns the domain-logs envelope.
-describe('AC4: Domain logs facet returns the right envelope', () => {
-
-  let harness: TestApp;
-
-  beforeAll(async () => { harness = await startTestApp(); });
-  afterAll(async () => { if (harness) await harness.close(); });
-  test('chorus domain logs facet returns a logs array under the domain-logs query', async () => {
-    const res = await fetch(`${harness.baseUrl}/api/chorus/domain/chorus/logs`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body._meta.query_name).toBe('domain-logs');
-    expect(Array.isArray(body.data.logs)).toBe(true);
-  });
-});
+// AC4 retired with the route (#4084 → #4143): the Logs fold reads chorus:LogSource
+// rows from the graph (/owl/logsources); there is no /api/chorus/domain/:name/logs.
 
 // AC5: when log sources exist, each carries label + location.
 describe('AC5: Log source metadata shape', () => {
