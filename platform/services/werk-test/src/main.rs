@@ -1590,7 +1590,13 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
             if !ok {
                 eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            {
+                // #4145 — keep the WHY of every failed case in the lane output
+                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                    println!("{}", l);
+                }
+                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            }
         }
         None => (false, Vec::new()),
     }
@@ -1785,7 +1791,13 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
             if !ok {
                 eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            {
+                // #4145 — keep the WHY of every failed case in the lane output
+                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                    println!("{}", l);
+                }
+                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            }
         }
         None => (false, Vec::new()),
     }

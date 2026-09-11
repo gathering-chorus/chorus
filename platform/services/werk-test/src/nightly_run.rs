@@ -434,12 +434,110 @@ pub fn shell_summary(out: &str, rc: i32) -> String {
     }
 }
 
+
+/// #4145 — a failed jest case's WHY, kept. The runner parsed jest's JSON for
+/// names and status and dropped `failureMessages`, so a red inside the run
+/// had no text anywhere (2026-09-11: 10 api reads failed twice in the run and
+/// passed by hand, and nothing said what they saw). One line per failed case:
+/// the first non-empty line of the message, ANSI stripped, capped at 200.
+pub fn jest_failure_why(json: &str, pkg: &str, rel: &dyn Fn(&str) -> String) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    while let Some(i) = json[pos..].find("\"assertionResults\"") {
+        let start = pos + i;
+        // the file name precedes its assertionResults in jest's shape
+        let file = json[..start].rfind("\"name\":\"").map(|k| {
+            let rest = &json[k + 8..];
+            rest[..rest.find('"').unwrap_or(0)].to_string()
+        }).unwrap_or_default();
+        let end = json[start..].find("\"endTime\"").map(|e| start + e).unwrap_or(json.len());
+        let block = &json[start..end];
+        let mut q = 0;
+        while let Some(j) = block[q..].find("\"fullName\":\"") {
+            let k = q + j + 12;
+            let name_end = block[k..].find("\",\"").map(|e| k + e).unwrap_or(block.len());
+            let name = unescape_json(&block[k..name_end]);
+            let after = &block[name_end..];
+            let status = str_after(after, "\"status\":\"").unwrap_or_default();
+            let msg = str_after(after, "\"failureMessages\":[\"").unwrap_or_default();
+            if status == "failed" {
+                let first = unescape_json(&msg)
+                    .split('\n')
+                    .map(|l| strip_ansi(l).trim().to_string())
+                    .find(|l| !l.is_empty())
+                    .unwrap_or_else(|| "(no message)".into());
+                let first: String = first.chars().take(200).collect();
+                out.push(format!("!! jest:{} WHY: {} :: {} :: {}", pkg, rel(&file), name, first));
+            }
+            q = name_end;
+        }
+        pos = end;
+    }
+    out
+}
+
+fn str_after(s: &str, key: &str) -> Option<String> {
+    let i = s.find(key)? + key.len();
+    let rest = &s[i..];
+    let mut end = 0;
+    let b = rest.as_bytes();
+    while end < b.len() {
+        if b[end] == b'\\' { end += 2; continue; }
+        if b[end] == b'"' { break; }
+        end += 1;
+    }
+    Some(rest[..end.min(rest.len())].to_string())
+}
+
+fn unescape_json(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars();
+    while let Some(c) = it.next() {
+        if c != '\\' { out.push(c); continue; }
+        match it.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('u') => { let h: String = it.by_ref().take(4).collect(); if let Ok(v) = u32::from_str_radix(&h, 16) { if let Some(ch) = char::from_u32(v) { out.push(ch); } } }
+            Some(o) => { out.push('\\'); out.push(o); }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+fn strip_ansi(s: &str) -> String {
+    let mut out = String::new();
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c == '\u{1b}' {
+            if it.peek() == Some(&'[') {
+                it.next();
+                while let Some(&d) = it.peek() { it.next(); if d.is_ascii_alphabetic() { break; } }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
+}
+
 #[cfg(test)]
 mod nightly_run_4145 {
     use super::*;
 
     fn owner_stub(_: &str) -> String {
         "kade".into()
+    }
+
+
+    #[test]
+    fn jest_failure_why_keeps_the_first_assertion_line_and_nothing_for_passes() {
+        let json = r#"{"testResults":[{"name":"/w/platform/api/tests/a.test.ts","assertionResults":[{"fullName":"grp passes","status":"passed","failureMessages":[]},{"fullName":"grp fails hard","status":"failed","failureMessages":["\u001b[1mError: \u001b[22mexpect(received).toBe(expected)\n\nExpected: 200\nReceived: 503"]}],"endTime":1}]}"#;
+        let lines = jest_failure_why(json, "platform/api", &|f| f.replace("/w/", ""));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0], "!! jest:platform/api WHY: platform/api/tests/a.test.ts :: grp fails hard :: Error: expect(received).toBe(expected)");
     }
 
     #[test]
