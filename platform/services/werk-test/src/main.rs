@@ -20,6 +20,8 @@ use werk_test::{
     TS_PACKAGES,
 };
 
+mod nightly_all;
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -42,6 +44,11 @@ fn run(args: &[String]) -> Result<i32, String> {
     // #3920 fold — `werk-test --nightly`: the 03:00 cargo lane runs through THIS
     // verb, so nextest (#3929), the needs-stack typed skips (#3919), and the
     // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
+    // #4145 — `--nightly --run-all`: the whole run (pre-checks, lanes, census,
+    // record, nudges, readout) in the runner; launchd's 03:00 job.
+    if args.iter().any(|a| a == "--nightly") && args.iter().any(|a| a == "--run-all") {
+        return nightly_all::run_all(args);
+    }
     if args.iter().any(|a| a == "--nightly") {
         return run_nightly(args);
     }
@@ -634,6 +641,11 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
         let stored = post_test_results(&mint_role, &card, &trace, &joined, run_epoch_ms, idx_base);
         stored_total.fetch_add(stored, Ordering::SeqCst);
         unregistered_total.fetch_add(unregistered, Ordering::SeqCst);
+        // #4145 — the run's own record of what it posted, one line per case,
+        // so the census is "registry minus these" and never a ledger walk.
+        for (c, _) in &joined {
+            println!("nightly-case|{}|{}", c.file_path, c.test_name);
+        }
         println!("nightly-stored|{}|{} of {}", unit, stored, joined.len());
     };
     // #3974 — npm lane: every registered TS/node package, full selection.
@@ -1578,7 +1590,13 @@ fn run_jest_with(werk: &str, pkg: &str, max_workers: Option<usize>) -> (bool, Ve
             if !ok {
                 eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            {
+                // #4145 — keep the WHY of every failed case in the lane output
+                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                    println!("{}", l);
+                }
+                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            }
         }
         None => (false, Vec::new()),
     }
@@ -1773,7 +1791,13 @@ fn run_jest_selected(werk: &str, pkg: &str, files: &[String]) -> (bool, Vec<Case
             if !ok {
                 eprintln!("{}", stderr);
             }
-            (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            {
+                // #4145 — keep the WHY of every failed case in the lane output
+                for l in werk_test::nightly_run::jest_failure_why(&stdout, pkg, &|f| rel_path(f, werk)) {
+                    println!("{}", l);
+                }
+                (ok, jest_cases_via_jq(stdout.as_bytes(), werk))
+            }
         }
         None => (false, Vec::new()),
     }

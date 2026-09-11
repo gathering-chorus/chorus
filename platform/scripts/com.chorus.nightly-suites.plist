@@ -4,10 +4,13 @@
 <dict>
     <key>Label</key>
     <string>com.chorus.nightly-suites</string>
+    <!-- #4145 (2026-09-11, Jeff: "delete the nightly script, change the launchd"):
+         the runner owns the whole run. No bash wrapper; the installed binary
+         (#2734 deploy home) runs pre-checks, lanes, census, record, nudges, readout. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/nightly-suites.sh</string>
+        <string>/Users/jeffbridwell/.chorus/bin/werk-test-bin</string>
+        <string>--nightly</string>
         <string>--run-all</string>
     </array>
     <!-- #4037: Jeff wants a DAILY run, not only 03:00 — one agent, two

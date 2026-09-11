@@ -15,6 +15,7 @@
 //! The pure decision core (`affected_units` / `is_self_modifying` / `gate_outcome`)
 //! is unit-tested with no subprocess; the git-diff + runners wire on top.
 
+pub mod nightly_run;
 pub type R<T> = Result<T, String>;
 
 /// Known TS packages with their own jest config + node_modules (matches #3397's
