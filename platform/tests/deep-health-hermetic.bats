@@ -30,6 +30,9 @@ setup() {
   export HEALTH_OPS_NUDGE="$W/bin/nudge"
   export HEALTH_CHORUS_LOG="$W/bin/noop"
   export HEALTH_BOOT_AUDIT="$W/bin/noop"
+  # #4141 — the load reclassify step (#3753) turns refused probes into warnings
+  # when the box is busy; a test brings its own load, or it reads the box.
+  export NIGHTLY_LOAD_STUB=0.1
   # three probes, all refused: nothing listens on these loopback ports
   export HEALTH_ENDPOINTS_FILE="$W/endpoints.txt"
   printf '%s\n' \

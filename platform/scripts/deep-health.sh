@@ -3,6 +3,13 @@
 # Runs on 5-min cron. Alerts via nudge --force on failure.
 set -euo pipefail
 
+CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+OPS_NUDGE="${HEALTH_OPS_NUDGE:-${CHORUS_ROOT}/platform/scripts/ops-nudge}"
+CHORUS_LOG="${HEALTH_CHORUS_LOG:-${CHORUS_ROOT}/platform/scripts/chorus-log}"
+ALERT_ROLE="silas"
+# #4141 — the nudge recipient (ops owner) is one thing; the spine actor is
+# another. Automation never signs the spine as a role (#3860): see the emit at the end.
+
 # #4138 — a monitor that dies mid-run must say so in its own output. Three
 # times this script exited under set -e with ZERO lines and the silence read as
 # "not run" (#3369, the 09-04 boot-herd line, the 09-10 refused probe). The
@@ -13,18 +20,14 @@ _on_exit() {
   local rc=$? line="${BASH_LINENO[0]:-?}"
   [ "$_SUMMARY_PRINTED" -eq 1 ] && return 0
   echo "deep-health: DIED before summary (exit $rc near line $line) — the monitor itself is broken, not the box"
-  "${OPS_NUDGE:-/usr/bin/true}" "${ALERT_ROLE:-silas}" "deep-health: DIED before summary (exit $rc near line $line)" 2>/dev/null || true
+  "$OPS_NUDGE" "$ALERT_ROLE" "deep-health: DIED before summary (exit $rc near line $line)" 2>/dev/null || true
   [ "$rc" -ne 0 ] || rc=70
   exit "$rc"
 }
 trap _on_exit EXIT
 
-CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 
 # #2808: bash `nudge` retired in #2804/#2809. Use ops-nudge (pulse-direct).
-OPS_NUDGE="${HEALTH_OPS_NUDGE:-${CHORUS_ROOT}/platform/scripts/ops-nudge}"
-CHORUS_LOG="${HEALTH_CHORUS_LOG:-${CHORUS_ROOT}/platform/scripts/chorus-log}"
-ALERT_ROLE="silas"
 FAILURES=()
 WARNINGS=()
 
@@ -799,5 +802,5 @@ echo "deep-health: failure set unchanged — alert deduped (see $STATE_FILE)"
 else
   "$OPS_NUDGE" "$ALERT_ROLE" "$MSG" 2>/dev/null || true
 fi
-"$CHORUS_LOG" ops.health.deep_check_failed "$ALERT_ROLE" failures="${#FAILURES[@]}" 2>/dev/null || true
+"$CHORUS_LOG" ops.health.deep_check_failed system failures="${#FAILURES[@]}" 2>/dev/null || true
 exit 1
