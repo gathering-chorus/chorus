@@ -62,8 +62,10 @@ setup() {
 @test "by hand: with RUN_INTEGRATION=true bare jest lists the integration files (skip-if-absent: needs node_modules)" {
   J="$ROOT/platform/api/node_modules/.bin/jest"
   [ -x "$J" ] || skip "platform/api/node_modules absent in this tree"
-  run bash -c "cd '$ROOT/platform/api' && RUN_INTEGRATION=true '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
+  # the werk lane exports RUN_INTEGRATION=true to every child when the stack is
+  # up (#4102) — clear it explicitly for the "off" half or the proof is hollow
+  run bash -c "cd '$ROOT/platform/api' && env RUN_INTEGRATION=true '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
   [ "$output" -ge 1 ]
-  run bash -c "cd '$ROOT/platform/api' && '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
+  run bash -c "cd '$ROOT/platform/api' && env -u RUN_INTEGRATION '$J' --listTests 2>/dev/null | grep -c 'integration.test.ts'"
   [ "$output" -eq 0 ]
 }
