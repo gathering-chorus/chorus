@@ -18,21 +18,12 @@
 # that loses the single-flight lock to a live run must NUDGE, never vanish.
 
 BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
-PLIST="$BATS_TEST_DIRNAME/../scripts/com.chorus.nightly-suites.plist"
 
 has() { grep -qF -- "$2" <<<"$1"; }
 
 # A process table with no nightly runner in it, and one with a runner mid-lane.
 # Format is what nightly_live_runners parses: a header row, then pid ppid etime cmd.
 
-count_slots() { # slots in a plist = Hour keys inside StartCalendarInterval
-  python3 - "$1" <<'PY'
-import plistlib,sys
-d=plistlib.load(open(sys.argv[1],'rb'))
-v=d.get('StartCalendarInterval')
-print(len(v) if isinstance(v,list) else (1 if v else 0))
-PY
-}
 
 setup() {
   TMP="$BATS_TEST_TMPDIR"
@@ -50,42 +41,9 @@ setup() {
   printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
 }
 
-# #4148 (Jeff, 2026-09-12): "3am only + our current work on demand". The two
-# daytime slots #4037 added are gone; one scheduled run at 03:00.
-@test "the agent carries ONE scheduled slot, 03:00 (#4148)" {
-  [ "$(count_slots "$PLIST")" -eq 1 ]
-  python3 - "$PLIST" <<'PY'
-import plistlib,sys
-d=plistlib.load(open(sys.argv[1],'rb'))['StartCalendarInterval']
-d=d[0] if isinstance(d,list) else d
-assert d.get('Hour')==3 and d.get('Minute',0)==0, d
-PY
-}
-
-@test "negative proof: the check separates its states — a two-slot plist reads 2, not 1" {
-  cat > "$TMP/two.plist" <<'P'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>x</string>
-<key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>6</integer></dict><dict><key>Hour</key><integer>13</integer></dict></array>
-</dict></plist>
-P
-  [ "$(count_slots "$TMP/two.plist")" -eq 2 ]
-}
-
-@test "negative proof: a single-slot plist reads 1, not 2" {
-  cat > "$TMP/single.plist" <<'P'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>x</string>
-<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer></dict>
-</dict></plist>
-P
-  [ "$(count_slots "$TMP/single.plist")" -eq 1 ]
-}
-
+# #4148 (Jeff, 2026-09-12): the slot-count tests are gone. They asserted the
+# plist still said what a card said; nothing here can tell whether launchd fires.
+# The 03:00 run's own log line is the proof of the schedule.
 @test "one agent only: no second com.chorus.*suites LaunchAgent in the repo" {
   run bash -c "ls '$BATS_TEST_DIRNAME/../scripts/' | grep -c 'com.chorus..*suites.*plist'"
   [ "$output" = "1" ]
