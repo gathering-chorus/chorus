@@ -153,7 +153,7 @@ describe('decideEnvelope (#3618/#3719)', () => {
 
   test('scope comes from the MODEL: grant does not cover the discover surface → 403', async () => {
     const d = await decideEnvelope(
-      req({ path: '/api/athena/discover-code', authorization: `Bearer ${mintEs256()}` }),
+      req({ path: '/api/athena/discover-tests', authorization: `Bearer ${mintEs256()}` }),
       deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(403);
@@ -213,7 +213,7 @@ describe('decideEnvelope (#3618/#3719)', () => {
   });
 
   test('prefix match secures the whole discover class', async () => {
-    const d = await decideEnvelope(req({ path: '/api/athena/discover-code' }), deps());
+    const d = await decideEnvelope(req({ path: '/api/athena/discover-tests' }), deps());
     expect(d.action).toBe('refuse');
     expect(d.status).toBe(401);
     expect(d.events[0].fields.surface).toBe('surface-discover-writes');

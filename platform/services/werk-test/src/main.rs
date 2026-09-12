@@ -14,7 +14,7 @@ use werk_test::{
     model_units, parse_case_tsv, parse_quarantine_rows,
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
-    reconcile_gap, reconcile_report, rel_path, scope_rows, scoped_requires_model, spine_args,
+    rel_path, scope_rows, scoped_requires_model, spine_args,
     scope_declared_edges, scoped_test_units, suite_run_payload, test_result_payload,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     TS_PACKAGES,
@@ -36,11 +36,6 @@ fn main() {
 /// Parse `card` and `role`, find the card's werk, detect affected units on the
 /// diff, run the planned checks, emit typed failures to the spine, and gate.
 fn run(args: &[String]) -> Result<i32, String> {
-    // #3592 AC3 — `werk-test --reconcile`: registered ∖ executed, visible +
-    // alertable (tests.reconcile spine event), never blocking.
-    if args.iter().any(|a| a == "--reconcile") {
-        return run_reconcile();
-    }
     // #3920 fold — `werk-test --nightly`: the 03:00 cargo lane runs through THIS
     // verb, so nextest (#3929), the needs-stack typed skips (#3919), and the
     // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
@@ -2127,124 +2122,8 @@ fn post_test_results(
     stats.posted
 }
 
-/// #3592 AC3 — registered ∖ executed. Reads BOTH generated collections, prints
-/// the explicit-none report, emits tests.reconcile with the counts. Exit 0 —
-/// the count is alertable (spine/monitors), the command itself never blocks.
-fn run_reconcile() -> Result<i32, String> {
-    let role = std::env::var("ROLE").unwrap_or_else(|_| "kade".to_string());
-    let trace = std::env::var("CHORUS_TRACE_ID").unwrap_or_default();
-    let (rows, names, _entities, source) = fetch_test_rows();
-    if source != "model" {
-        return Err("reconcile requires the tests domain; fetch failed or empty".into());
-    }
-    let mut registered: Vec<(String, String)> = rows
-        .iter()
-        .zip(names.iter())
-        .map(|(r, n)| (r.file_path.clone(), n.clone()))
-        .collect();
-    registered.sort();
-    registered.dedup(); // covers fan-out duplicates one row per covers value
-    // #4105 — 100000 is a page the door cannot serve inside its own 60s SPARQL
-    // timeout: measured 2026-09-04 08:48, `limit=100000` answers 502
-    // `fuseki-query failed` after 82s at any cursor, so page 2 of the 415,567-row
-    // ledger failed every night. 25k answers in ~22s. Size and budget are both
-    // overridable for fixtures.
-    let page_size = werk_test::census_page_size();
-    let page_cap = werk_test::census_page_cap();
-    let endpoint = std::env::var("OWL_API_TESTRESULTS")
-        .unwrap_or_else(|_| format!("http://localhost:3360/testresults?limit={}", page_size));
-    // #4022 — `pipefail`, and a failed fetch is an ERROR, not an empty ledger.
-    // On 2026-08-28 /testresults 502'd, `curl -sf` printed nothing, and this
-    // function reported "7,794 registered tests never ran" — every test the
-    // nightly had just executed and stored (7,269 posted, 49/49 chunks). A
-    // census that cannot reach the ledger must say so, never "nothing ran".
-    // The ledger is larger than one page (229k rows, 100k page cap), so the
-    // walk follows `links.next` until the collection is exhausted.
-    let jq = r#"(.data[] | [.filePath, .testName] | @tsv), ("__NEXT__\t" + (.links.next // ""))"#;
-    let mut executed: Vec<(String, String)> = Vec::new();
-    let mut page = endpoint.clone();
-    let mut pages = 0usize;
-    loop {
-        pages += 1;
-        let pipe = format!("set -o pipefail; curl -sf --max-time 120 '{}' | jq -r '{}'", page, jq);
-        let out = Command::new("bash")
-            .args(["-c", &pipe])
-            .output()
-            .map_err(|e| format!("testresults fetch failed: {}", e))?;
-        if !out.status.success() {
-            // #4022 fixed this for page 1; #4105 — the same rule mid-walk. A
-            // page that 502s is an unread page, never an empty ledger.
-            return Err(format!(
-                "census UNMEASURED: testresults fetch failed on page {} — {} unreachable or refused (rc={}) — census not taken",
-                pages,
-                page,
-                out.status.code().unwrap_or(-1)
-            ));
-        }
-        let mut next = String::new();
-        for l in String::from_utf8_lossy(&out.stdout).lines() {
-            if let Some(n) = l.strip_prefix("__NEXT__\t") {
-                next = n.to_string();
-                continue;
-            }
-            // #4139 — same unescape as the registry side (#4135 did the runner)
-            if let Some(case) = werk_test::ledger_case_from_tsv(l) {
-                executed.push(case);
-            }
-        }
-        // #4105 — three states, not two. Running out of page budget while a
-        // next link is still on the wire is a TRUNCATED read; the gap that
-        // would be computed from it counts executed tests as never-run.
-        match werk_test::page_walk_step(&page, &next, pages, page_cap) {
-            werk_test::PageStep::Next(n) => page = n,
-            werk_test::PageStep::Exhausted => break,
-            werk_test::PageStep::Truncated => {
-                return Err(format!(
-                    "census UNMEASURED: walk truncated at {} pages (cap {}, {} rows per page) — the ledger still had a next link, so no never-run gap can be computed from this read",
-                    pages, page_cap, page_size
-                ));
-            }
-        }
-    }
-    let raw_rows = executed.len();
-    executed.sort();
-    executed.dedup();
-    let gap = reconcile_gap(&registered, &executed);
-    println!("{}", reconcile_report(registered.len(), &gap));
-    // #4106 — the bare count was not actionable: 155 registrations that neither
-    // ran nor said why. Each one now lands in exactly one state decided from
-    // evidence — the tree, the ledger, the lane table. The root the paths are
-    // relative to is canonical unless the caller pins one (fixtures do).
-    let census_root = std::env::var("CENSUS_ROOT")
-        .or_else(|_| std::env::var("CHORUS_HOME"))
-        .unwrap_or_else(|_| ".".to_string());
-    let exists = |f: &str| Path::new(&format!("{}/{}", census_root, f)).exists();
-    // #4106 — the browser lane selects by the ui concern, not by path, so the
-    // ui-registered set is the other half of "does a lane cover this file".
-    let ui_registered = werk_test::ui_files(&rows);
-    let classified = werk_test::classify_gap(&gap, &executed, &ui_registered, &exists);
-    if !classified.is_empty() {
-        println!("{}", werk_test::gap_state_report(&classified, &executed));
-    }
-    // #4105 — say what was read, so a shrinking ledger is visible in the
-    // report and not only in the gap it produces.
-    println!(
-        "census: {} pages read, {} ledger rows, {} distinct executed tests, {} rows per page",
-        pages,
-        raw_rows,
-        executed.len(),
-        page_size
-    );
-    emit_spine("tests.reconcile", &role, "-", &trace,
-        &[("registered", &registered.len().to_string()),
-          ("executed", &executed.len().to_string()),
-          ("never_run", &gap.len().to_string()),
-          ("pages_read", &pages.to_string()),
-          ("ledger_rows", &raw_rows.to_string()),
-          ("page_size", &page_size.to_string()),
-          ("by_state", &werk_test::gap_state_split(&classified))]);
-    Ok(0)
-}
+// #4154 — `werk-test --reconcile` (registered minus executed) retired with the
+// nightly census; the crawler keeps the registry current, the runner trusts it.
 
 /// #3634 write side — POST the run's TestSuiteRun through the generated write
 /// surface with a #3619-scoped token. Token: $CHORUS_WRITE_TOKEN if the runner

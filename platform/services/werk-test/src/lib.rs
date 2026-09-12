@@ -789,9 +789,6 @@ pub struct CaseResult {
     pub result: String,
 }
 
-/// Parse jq-extracted jest rows (`file\tfullName\tstatus`). Jest statuses map
-/// onto the graph vocab (passed→pass, failed→fail, everything held→skip);
-/// incomplete rows are dropped, never a panic (parse_test_rows discipline).
 
 /// #4135 — jq's `@tsv` escapes a backslash as `\\` (and tab/newline/CR as
 /// `\t`/`\n`/`\r`). The registry holds the it-name as jest sees it, so a case
@@ -1009,15 +1006,6 @@ pub fn boston_offset_iso(ts_millis: u128) -> String {
     )
 }
 
-/// registered ∖ executed, keyed (filePath, testName). Order preserved from the
-/// registered side so the report is stable.
-pub fn reconcile_gap(
-    registered: &[(String, String)],
-    executed: &[(String, String)],
-) -> Vec<(String, String)> {
-    let ran: std::collections::HashSet<&(String, String)> = executed.iter().collect();
-    registered.iter().filter(|k| !ran.contains(k)).cloned().collect()
-}
 
 /// #4063 — the one stored verdict of a shell suite (`test-*.sh`): the registry
 /// names the script's single test by its file name, so the row joins.
@@ -1029,26 +1017,6 @@ pub fn shell_suite_case(suite: &str, ok: bool) -> CaseResult {
     }
 }
 
-/// Visible, never silent — explicit-none style (quarantine_report/gap_report).
-/// #4063 — EVERY never-run case is listed (the report used to stop at 20 and
-/// say "+269 more", so the row could not be acted on), and the list is
-/// preceded by the count per file kind, which is where the causes split
-/// (shell scripts with no per-case rows, kinds no lane runs, name mismatches).
-pub fn reconcile_report(registered_total: usize, gap: &[(String, String)]) -> String {
-    if gap.is_empty() {
-        return format!("reconcile: registered {}, never-run: none", registered_total);
-    }
-    let mut out = format!(
-        "reconcile: registered {}, never-run ({}):",
-        registered_total,
-        gap.len()
-    );
-    out.push_str(&format!("\n  by kind: {}", reconcile_by_kind(gap)));
-    for (f, n) in gap.iter() {
-        out.push_str(&format!("\n  {} :: {}", f, n));
-    }
-    out
-}
 
 /// #4106 — the state of one never-run registration, decided from evidence.
 ///
@@ -1088,36 +1056,6 @@ impl GapState {
     }
 }
 
-/// Put every never-run registration in exactly one state.
-///
-/// Pure: `exists` is injected, so the proof does not need a tree on disk. The
-/// order of the tests is the order of the evidence — a file that is gone cannot
-/// be asked which lane covers it, and a file the lane already spoke about is a
-/// naming disagreement whether or not a lane covers it by path.
-pub fn classify_gap(
-    gap: &[(String, String)],
-    executed: &[(String, String)],
-    ui_registered: &std::collections::BTreeSet<String>,
-    exists: &dyn Fn(&str) -> bool,
-) -> Vec<((String, String), GapState)> {
-    let ran_files: std::collections::HashSet<&str> =
-        executed.iter().map(|(f, _)| f.as_str()).collect();
-    gap.iter()
-        .map(|key| {
-            let f = key.0.as_str();
-            let state = if !exists(f) {
-                GapState::Dead
-            } else if ran_files.contains(f) {
-                GapState::NameMismatch
-            } else if !has_lane(f, ui_registered) {
-                GapState::NoLane
-            } else {
-                GapState::LaneSilent
-            };
-            (key.clone(), state)
-        })
-        .collect()
-}
 
 /// Does ANY lane cover this path?
 ///
@@ -1131,62 +1069,7 @@ pub fn has_lane(path: &str, ui_registered: &std::collections::BTreeSet<String>) 
     unit_of_path(path).is_some() || ui_registered.contains(path)
 }
 
-/// The split, largest state first, so the number is actionable at a glance
-/// instead of a bare 155. Explicit-none style: an empty gap says so.
-pub fn gap_state_split(classified: &[((String, String), GapState)]) -> String {
-    if classified.is_empty() {
-        return "never-run: none".to_string();
-    }
-    let mut counts: std::collections::BTreeMap<GapState, usize> = std::collections::BTreeMap::new();
-    for (_, s) in classified {
-        *counts.entry(*s).or_insert(0) += 1;
-    }
-    let mut v: Vec<(GapState, usize)> = counts.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    v.iter()
-        .map(|(s, c)| format!("{} {}", s.label(), c))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
 
-/// Every never-run entry, grouped under its state, each carrying the state it
-/// was put in. #4063's rule holds: every entry is listed, never "+269 more".
-///
-/// A NAME MISMATCH row prints BOTH strings — what the registry holds and what
-/// the runner emitted for the same file — because a mismatch you cannot see the
-/// two sides of is not a report, it is another number to look up.
-pub fn gap_state_report(
-    classified: &[((String, String), GapState)],
-    executed: &[(String, String)],
-) -> String {
-    if classified.is_empty() {
-        return "never-run: none".to_string();
-    }
-    let mut out = format!("  by state: {}", gap_state_split(classified));
-    for state in [
-        GapState::Dead,
-        GapState::NameMismatch,
-        GapState::NoLane,
-        GapState::LaneSilent,
-    ] {
-        let mut rows: Vec<&((String, String), GapState)> =
-            classified.iter().filter(|(_, s)| *s == state).collect();
-        rows.sort_by(|a, b| a.0.cmp(&b.0));
-        if rows.is_empty() {
-            continue;
-        }
-        out.push_str(&format!("\n  {} ({}):", state.label(), rows.len()));
-        for ((f, n), _) in rows {
-            out.push_str(&format!("\n    {} :: {}", f, n));
-            if state == GapState::NameMismatch {
-                for emitted in runner_names_for(f, executed) {
-                    out.push_str(&format!("\n        runner emitted :: {}", emitted));
-                }
-            }
-        }
-    }
-    out
-}
 
 /// The names the runner actually emitted for one file, in ledger order, deduped.
 pub fn runner_names_for(file: &str, executed: &[(String, String)]) -> Vec<String> {
@@ -1258,33 +1141,8 @@ pub fn page_walk_step(current: &str, next: &str, pages_read: usize, cap: usize) 
     }
 }
 
-/// #4105 — rows per census page. The door builds one SPARQL query per page and
-/// runs it through a curl with `--max-time 60` (athena-make `sparql_curl_args`),
-/// so a page whose query needs longer than that comes back 502
-/// `fuseki-query failed:` with an empty detail — the transport gave up, the
-/// store never answered. Measured against the live door 2026-09-04 08:48 under
-/// load 14.1: `limit=100000` -> 502 at 82s at any cursor; `limit=25000` -> 200
-/// in ~22s. The old default was 100000, so page 2 of the 415,567-row ledger
-/// failed every night and the census reported UNMEASURED.
-pub fn census_page_size() -> usize {
-    env_usize("CENSUS_PAGE_SIZE", 25_000)
-}
 
-/// #4105 — how many pages the walk may read before it calls the read
-/// incomplete. Budget against a runaway/looping door, not a bound on the
-/// ledger: 200 x 25k = 5M rows, an order of magnitude over today's 415,567.
-/// Hitting it is reported, never absorbed.
-pub fn census_page_cap() -> usize {
-    env_usize("CENSUS_PAGE_CAP", 200)
-}
 
-fn env_usize(key: &str, default: usize) -> usize {
-    std::env::var(key)
-        .ok()
-        .and_then(|v| v.trim().parse::<usize>().ok())
-        .filter(|n| *n > 0)
-        .unwrap_or(default)
-}
 
 /// #3592 — 5-col fetch: `filePath\tcovers\tpyramidLayer\ttestName\tname`.
 /// Returns rows + the PARALLEL testName vec + the PARALLEL minted entity-name
@@ -1326,10 +1184,6 @@ pub fn parse_rows_and_names(tsv: &str) -> (Vec<TestRow>, Vec<String>, Vec<String
     (rows, names, entities)
 }
 
-/// #3592 — join executed cases onto the registered inventory by identity
-/// (filePath, testName) → the registered entity name (for the mandatory ofTest
-/// edge). Unjoined cases come back separately — counted loudly, never posted
-/// with a fabricated identity.
 
 /// #4015 — did this run's evidence survive? The nightly executed 7,411 tests on
 /// 2026-08-27, stored zero, and exited 0 with a verdict; the writeback's result
@@ -2889,25 +2743,6 @@ pub fn nightly_plan_line(kind: &str, unit: &str) -> String {
     format!("nightly-plan|{}|{}", kind, unit)
 }
 
-/// #4030 — planned units with no unit line, (kind, unit), in plan order.
-pub fn never_ran_units(output: &str) -> Vec<(String, String)> {
-    let ran: std::collections::HashSet<(&str, &str)> = output
-        .lines()
-        .filter_map(|l| l.strip_prefix("nightly-unit|"))
-        .filter_map(|rest| {
-            let mut it = rest.split('|');
-            Some((it.next()?, it.next()?))
-        })
-        .collect();
-    output
-        .lines()
-        .filter_map(|l| l.strip_prefix("nightly-plan|"))
-        .filter_map(|rest| {
-            let (kind, unit) = rest.split_once('|')?;
-            if ran.contains(&(kind, unit)) { None } else { Some((kind.to_string(), unit.to_string())) }
-        })
-        .collect()
-}
 
 /// #4030 — how a capped child ended.
 pub struct Finished {
@@ -3014,31 +2849,6 @@ mod deadline_4030 {
         assert_eq!(unit_timeout(), std::time::Duration::from_secs(1200));
     }
 
-    /// The plan/unit join: a planned unit with no unit line is NEVER RAN;
-    /// kinds must match (a `security` plan is not satisfied by an `npm` line).
-    #[test]
-    fn planned_units_without_a_unit_line_are_never_ran() {
-        let out = [
-            nightly_plan_line("cargo", "werk-test"),
-            nightly_plan_line("npm", "platform/api"),
-            nightly_plan_line("security", "platform/tests/x.bats"),
-            nightly_plan_line("bats", "platform/tests/y.bats"),
-            nightly_unit_line("werk-test", true, 3, 0, 0),
-            nightly_lane_line("bats", "platform/tests/x.bats", true, 1, 0, 0),
-        ].join("\n");
-        let never = never_ran_units(&out);
-        assert_eq!(never, vec![
-            ("npm".to_string(), "platform/api".to_string()),
-            ("security".to_string(), "platform/tests/x.bats".to_string()),
-            ("bats".to_string(), "platform/tests/y.bats".to_string()),
-        ]);
-        // control: every planned unit reported → nothing never-ran
-        let full = [
-            nightly_plan_line("npm", "platform/api"),
-            nightly_lane_line("npm", "platform/api", false, 1, 2, 0),
-        ].join("\n");
-        assert!(never_ran_units(&full).is_empty());
-    }
 }
 
 /// #3974 — full-selection TS packages: every registered package holding tests.
@@ -4222,18 +4032,6 @@ mod never_ran_causes_4063 {
 
     // --- the report lists every case and splits by kind ---
 
-    #[test]
-    fn reconcile_report_lists_all_and_counts_by_kind() {
-        let gap: Vec<(String, String)> = (0..25)
-            .map(|i| (format!("platform/scripts/test-{}.sh", i), format!("test-{}.sh", i)))
-            .chain(std::iter::once(("platform/api/tests/a.test.ts".to_string(), "x".to_string())))
-            .collect();
-        let rep = reconcile_report(7800, &gap);
-        assert!(rep.contains("never-run (26)"));
-        assert!(rep.contains("by kind: sh 25, ts 1"), "{}", rep);
-        assert_eq!(rep.matches(" :: ").count(), 26, "every case listed, no '+N more'");
-        assert!(!rep.contains("more"));
-    }
 
     // ---- #4106 — every never-run registration in exactly one state ----
 
@@ -4267,174 +4065,13 @@ mod never_ran_causes_4063 {
         (gap, executed, on_disk)
     }
 
-    #[test]
-    fn classify_gap_puts_one_file_of_each_state_in_exactly_that_state() {
-        let (gap, executed, on_disk) = four_state_fixture();
-        let exists = |f: &str| on_disk.iter().any(|d| d == f);
-        let out = classify_gap(&gap, &executed, &no_ui(), &exists);
 
-        assert_eq!(out.len(), gap.len(), "every registration classified, none dropped");
-        assert_eq!(out[0].1, GapState::Dead);
-        assert_eq!(out[1].1, GapState::NameMismatch);
-        assert_eq!(out[2].1, GapState::NoLane);
-        assert_eq!(out[3].1, GapState::LaneSilent);
 
-        let split = gap_state_split(&out);
-        for label in ["DEAD 1", "NAME MISMATCH 1", "NO LANE 1", "LANE SILENT 1"] {
-            assert!(split.contains(label), "{} missing from {}", label, split);
-        }
-    }
 
-    /// AC negative proof, direction 1: a registry whose every test ran produces
-    /// ZERO in all four buckets and never a fabricated one. The failure this
-    /// catches is a classifier that reports a state for a test that is not in
-    /// the gap at all — the "155" appearing out of an empty gap.
-    #[test]
-    fn every_test_ran_yields_no_states_and_invents_nothing() {
-        let registered = vec![k("platform/api/tests/a.test.ts", "one"), k("platform/api/tests/b.test.ts", "two")];
-        let executed = registered.clone();
-        let gap = reconcile_gap(&registered, &executed);
-        assert!(gap.is_empty(), "precondition: nothing never-ran");
 
-        let out = classify_gap(&gap, &executed, &no_ui(), &|_| true);
-        assert!(out.is_empty(), "no gap must produce no states, not a default one");
-        assert_eq!(gap_state_split(&out), "never-run: none");
-        let rep = gap_state_report(&out, &executed);
-        assert_eq!(rep, "never-run: none");
-        for label in ["DEAD", "NAME MISMATCH", "NO LANE", "LANE SILENT"] {
-            assert!(!rep.contains(label), "{} fabricated from an empty gap: {}", label, rep);
-        }
-    }
 
-    /// AC negative proof, direction 2: the split must FAIL when the states are
-    /// wrong, not merely when they are absent. Each mutation below is a real
-    /// misclassification the rules could plausibly make, and each must move the
-    /// answer. A classifier that answered "NO LANE 4" would pass a test that
-    /// only asserted "four entries, four states".
-    #[test]
-    fn a_misclassified_file_changes_the_split() {
-        let (gap, executed, on_disk) = four_state_fixture();
-        let baseline = gap_state_split(&classify_gap(&gap, &executed, &no_ui(), &|f: &str| {
-            on_disk.iter().any(|d| d == f)
-        }));
 
-        // (a) the deleted file comes back → DEAD must drop, LANE SILENT must rise
-        let all_present = gap_state_split(&classify_gap(&gap, &executed, &no_ui(), &|_| true));
-        assert_ne!(all_present, baseline);
-        assert!(!all_present.contains("DEAD"), "a present file must not read DEAD: {}", all_present);
 
-        // (b) the ledger never spoke about the renamed file → not a name
-        //     disagreement any more, it is a silent lane
-        let no_ledger = gap_state_split(&classify_gap(&gap, &[], &no_ui(), &|f: &str| {
-            on_disk.iter().any(|d| d == f)
-        }));
-        assert_ne!(no_ledger, baseline);
-        assert!(
-            !no_ledger.contains("NAME MISMATCH"),
-            "with an empty ledger nothing can be a name mismatch: {}",
-            no_ledger
-        );
-
-        // (c) the whole tree is gone → every state collapses to DEAD, and the
-        //     lane table is never consulted
-        let none_present = gap_state_split(&classify_gap(&gap, &executed, &no_ui(), &|_| false));
-        assert_eq!(none_present, "DEAD 4");
-    }
-
-    /// NO LANE is decided by the lane table, not by the extension. The three
-    /// shell-suite conventions #4106 gave a lane to must NOT read as NO LANE,
-    /// and a path no unit claims must.
-    #[test]
-    fn no_lane_tracks_the_lane_table_not_the_extension() {
-        let lane_covered = [
-            "platform/tests/principles-graph.test.sh",
-            "proving/scripts/test-demo.sh",
-            "platform/services/werk-test/src/lib.rs",
-            "platform/api/tests/x.test.ts",
-        ];
-        for f in lane_covered {
-            let out = classify_gap(&[k(f, "n")], &[], &no_ui(), &|_| true);
-            assert_ne!(out[0].1, GapState::NoLane, "{} has a lane", f);
-        }
-        let uncovered = ["docs/notes/orphan.test.js", "scratch/whatever.test.ts"];
-        for f in uncovered {
-            let out = classify_gap(&[k(f, "n")], &[], &no_ui(), &|_| true);
-            assert_eq!(out[0].1, GapState::NoLane, "{} has no lane", f);
-        }
-    }
-
-    /// Every entry is listed under its state — the #4063 rule (no "+N more")
-    /// survives the regrouping.
-    #[test]
-    fn gap_state_report_lists_every_entry_under_its_state() {
-        let (gap, executed, on_disk) = four_state_fixture();
-        let out = classify_gap(&gap, &executed, &no_ui(), &|f: &str| on_disk.iter().any(|d| d == f));
-        let rep = gap_state_report(&out, &executed);
-        // four registrations, plus the one runner-side line the single NAME
-        // MISMATCH earns
-        assert_eq!(rep.matches(" :: ").count(), 5, "{}", rep);
-        assert_eq!(rep.matches("runner emitted").count(), 1, "{}", rep);
-        assert!(!rep.contains("more"));
-        for (f, _) in &gap {
-            assert!(rep.contains(f.as_str()), "{} absent from report", f);
-        }
-    }
-
-    /// The second selector. A browser spec is covered because the registry gives
-    /// it the ui concern, not because its path matches a unit — and the negative
-    /// direction proves the arm is load-bearing: drop it from the ui set and the
-    /// same file must go back to NO LANE.
-    #[test]
-    fn a_ui_registered_spec_has_a_lane_and_loses_it_when_unregistered() {
-        let spec = "proving/flows/clearing-ui.spec.cjs";
-        assert!(unit_of_path(spec).is_none(), "precondition: no unit claims it by path");
-
-        let mut ui = std::collections::BTreeSet::new();
-        ui.insert(spec.to_string());
-        let covered = classify_gap(&[k(spec, "clearing-ui.spec.cjs")], &[], &ui, &|_| true);
-        assert_eq!(covered[0].1, GapState::LaneSilent, "the browser lane covers it");
-
-        let uncovered = classify_gap(&[k(spec, "clearing-ui.spec.cjs")], &[], &no_ui(), &|_| true);
-        assert_eq!(uncovered[0].1, GapState::NoLane, "unregistered for ui, nothing runs it");
-    }
-
-    /// #4106 — the app that had no lane at all now has one, and the lane table
-    /// is what decides it. If this package leaves TS_PACKAGES the 27 tests go
-    /// back to NO LANE, which is exactly what the census reported on 2026-09-04.
-    #[test]
-    fn the_node_test_app_is_a_unit() {
-        let f = "platform/apps/sexuality-player/test/parser.test.js";
-        assert_eq!(
-            unit_of_path(f),
-            Some(TestUnit::TsPackage("platform/apps/sexuality-player".to_string()))
-        );
-        let out = classify_gap(&[k(f, "parses solo-m")], &[], &no_ui(), &|_| true);
-        assert_ne!(out[0].1, GapState::NoLane);
-    }
-
-    /// AC: a NAME MISMATCH is reported with the two strings side by side. The
-    /// negative direction is the point — a report that printed only the
-    /// registered name would pass a test that just checked the file appears.
-    #[test]
-    fn a_name_mismatch_prints_both_strings() {
-        let f = "platform/api/tests/renamed.test.ts";
-        let gap = vec![k(f, "the registry's name")];
-        let executed = vec![k(f, "MessageRouter — the runner's name")];
-        let out = classify_gap(&gap, &executed, &no_ui(), &|_| true);
-        assert_eq!(out[0].1, GapState::NameMismatch);
-
-        let rep = gap_state_report(&out, &executed);
-        assert!(rep.contains("the registry's name"), "registry side missing: {}", rep);
-        assert!(
-            rep.contains("runner emitted :: MessageRouter — the runner's name"),
-            "runner side missing: {}",
-            rep
-        );
-
-        // a state that is NOT a mismatch must not grow a runner line
-        let silent = classify_gap(&[k("platform/api/tests/quiet.test.ts", "n")], &[], &no_ui(), &|_| true);
-        assert!(!gap_state_report(&silent, &executed).contains("runner emitted"));
-    }
 }
 
 // ── #4111 — a skip is a verdict, not a missing result ──────────────────────────
@@ -4591,7 +4228,7 @@ mod athena_join_4136 {
 mod integration_tier_4139 {
     use super::{
         integration_measured_report, jest_project_args, join_cases, ledger_case_from_tsv,
-        parse_case_tsv, parse_rows_and_names, reconcile_gap,
+        parse_case_tsv, parse_rows_and_names,
     };
 
     // #4111 passed `--selectProjects hermetic` unconditionally; platform/api's
@@ -4635,24 +4272,6 @@ mod integration_tier_4139 {
         assert_eq!(joined[0].0.test_name, r"escapes newlines to literal \n");
     }
 
-    #[test]
-    fn census_reads_ledger_names_through_the_same_unescape() {
-        let (_, names, _) = parse_rows_and_names(
-            "platform/api/tests/sparql-helpers.test.ts\tservices\tunit\tescapes newlines to literal \\\\n\tent-1\thermetic\t\n",
-        );
-        let registered = vec![("platform/api/tests/sparql-helpers.test.ts".to_string(), names[0].clone())];
-        // the ledger holds the single backslash; jq @tsv doubles it on the way out
-        let executed = vec![ledger_case_from_tsv(
-            "platform/api/tests/sparql-helpers.test.ts\tescapes newlines to literal \\\\n",
-        ).unwrap()];
-        assert!(reconcile_gap(&registered, &executed).is_empty(), "census must cross-foot");
-        // negative proof: the raw split (what run_reconcile did) leaves the gap
-        let raw = vec![(
-            "platform/api/tests/sparql-helpers.test.ts".to_string(),
-            r"escapes newlines to literal \\n".to_string(),
-        )];
-        assert_eq!(reconcile_gap(&registered, &raw).len(), 1);
-    }
 
     // "integration: 1484 needs-stack test(s) ran with the live stack" was the
     // registry count, printed before anything ran.

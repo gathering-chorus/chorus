@@ -83,10 +83,11 @@ run_all() {
   grep -q '^SUITE|cargo|platform/services/werk-x|silas|pass|5 pass, 0 fail$' "$T/nightly.log"
   grep -q '^SUITE|perf|platform/tests/p.sh|unowned|slow|' "$T/nightly.log"
   grep -q '^SUITE|shell|platform/scripts/z.sh|silas|fail|0 pass, 1 fail$' "$T/nightly.log"
-  grep -qE '^RUN\|complete\|[0-9T:-]+\|suites=5$' "$T/nightly.log"
+  # #4154 — four units, four rows: the fifth (reconcile|tests-domain) is gone
+  grep -qE '^RUN\|complete\|[0-9T:-]+\|suites=4$' "$T/nightly.log"
   # NEGATIVE PROOF of the 19:16 doubling: each row is in the log exactly once, and stdout carries none
   # (under launchd stdout IS the log file)
-  [ "$(grep -c '^SUITE|' "$T/nightly.log")" -eq 5 ]
+  [ "$(grep -c '^SUITE|' "$T/nightly.log")" -eq 4 ]
   ! grep -q '^SUITE|' <<<"$output"
 }
 
@@ -96,13 +97,14 @@ run_all() {
   [ "$(grep -c '^/domains' "$T/hits.txt")" -eq 1 ]
 }
 
-@test "NEGATIVE PROOF: a registered case the run never posted is never-ran, with its name kept in the log" {
+@test "#4154: a registered case the run never posted produces NO reconcile row and no red — the runner no longer censuses the registry" {
   run run_all
-  grep -q '^SUITE|reconcile|tests-domain|kade|fail|0 pass, 1 fail (1 registered test(s) never ran of 3' "$T/nightly.log"
-  grep -q '^reconcile-detail|.*platform/tests/a.bats :: three' "$T/nightly.log"
+  ! grep -q '^SUITE|reconcile|' "$T/nightly.log"
+  ! grep -q '^reconcile-detail|' "$T/nightly.log"
+  ! grep -q 'never ran' "$T/nightly.log"
 }
 
-@test "control: when every registered case was posted the census cross-foots and writes no detail" {
+@test "control: when every registered case was posted there is still no reconcile row (the row is gone in both states, #4154)" {
   cat > "$T/runner2.sh" <<'EOS'
 #!/bin/bash
 echo "nightly-case|platform/tests/a.bats|one"
@@ -112,7 +114,7 @@ echo "nightly-unit|bats|platform/tests/a.bats|pass|3 pass, 0 fail"
 EOS
   chmod +x "$T/runner2.sh"
   RUNNER="$T/runner2.sh" run run_all
-  grep -q '^SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (3 registered, every one executed' "$T/nightly.log"
+  ! grep -q '^SUITE|reconcile|' "$T/nightly.log"
   ! grep -q '^reconcile-detail|' "$T/nightly.log"
 }
 
@@ -127,16 +129,16 @@ echo "nightly-unit|jest|directing/clearing|pass|1 pass, 0 fail"
 EOS
   chmod +x "$T/runner3.sh"
   RUNNER="$T/runner3.sh" run run_all
-  grep -q '^SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (1 registered, every one executed' "$T/nightly.log"
   ! grep -q 'NAME MISMATCH' "$T/nightly.log"
+  grep -q '^SUITE|jest|directing/clearing|kade|pass|' "$T/nightly.log"
 }
 
 @test "reds nudge their owner as they land, then one grouped line per owner and one TOTAL; slow is named as speed" {
   run run_all
   grep -q 'NUDGE to=silas msg=nightly RED now: platform/scripts/z.sh' "$T/nudges.txt"
   grep -q 'NUDGE to=silas msg=nightly: 1 suite(s) red — z.sh' "$T/nudges.txt"
-  grep -q 'NUDGE to=kade msg=nightly: 1 suite(s) red — tests-domain' "$T/nudges.txt"
-  grep -qE 'NUDGE to=kade msg=nightly TOTAL: 2 red across the board \((kade 1, silas 1|silas 1, kade 1)\) — bar is zero — 1 slow \(speed, not breakage: p.sh\)' "$T/nudges.txt"
+  ! grep -q 'tests-domain' "$T/nudges.txt"   # #4154: no census row, so no census red to nudge
+  grep -qE 'NUDGE to=kade msg=nightly TOTAL: 1 red across the board \(silas 1\) — bar is zero — 1 slow \(speed, not breakage: p.sh\)' "$T/nudges.txt"
   grep -q 'NUDGE to=jeff msg=' "$T/nudges.txt"
 }
 
