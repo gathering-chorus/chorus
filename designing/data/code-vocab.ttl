@@ -1,0 +1,30 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix dct:    <http://purl.org/dc/terms/> .
+
+# #4157 — the code domain's named values. Deployed by athena-deploy-model.sh into
+# <urn:chorus:domains:code> (stage + additive merge, the #3726 security path), so the
+# vocabulary is reproducible from the repo, never hand-run. IRIs follow ADR-040
+# type-prefixed minting (code-kind-<name>, language-<name>), identical to what
+# athena-model mints for a POST, so a row written either way is the same row.
+# adoptedFrom: OTel semconv telemetry.sdk.language where a value exists.
+
+chorus:code-kind-code   a chorus:CodeKind ; rdfs:label "code"   ; dct:creator "athena-deploy-model" .
+chorus:code-kind-test   a chorus:CodeKind ; rdfs:label "test"   ; dct:creator "athena-deploy-model" .
+chorus:code-kind-log    a chorus:CodeKind ; rdfs:label "log"    ; dct:creator "athena-deploy-model" .
+chorus:code-kind-config a chorus:CodeKind ; rdfs:label "config" ; dct:creator "athena-deploy-model" .
+chorus:code-kind-doc    a chorus:CodeKind ; rdfs:label "doc"    ; dct:creator "athena-deploy-model" .
+
+chorus:language-rust       a chorus:Language ; rdfs:label "rust"       ; chorus:adoptedFrom "otel:telemetry.sdk.language=rust"   ; dct:creator "athena-deploy-model" .
+chorus:language-python     a chorus:Language ; rdfs:label "python"     ; chorus:adoptedFrom "otel:telemetry.sdk.language=python" ; dct:creator "athena-deploy-model" .
+chorus:language-typescript a chorus:Language ; rdfs:label "typescript" ; chorus:adoptedFrom "otel:telemetry.sdk.language=nodejs" ; dct:creator "athena-deploy-model" .
+chorus:language-javascript a chorus:Language ; rdfs:label "javascript" ; chorus:adoptedFrom "otel:telemetry.sdk.language=nodejs" ; dct:creator "athena-deploy-model" .
+chorus:language-bash       a chorus:Language ; rdfs:label "bash"       ; dct:creator "athena-deploy-model" .
+chorus:language-markdown   a chorus:Language ; rdfs:label "markdown"   ; dct:creator "athena-deploy-model" .
+chorus:language-turtle     a chorus:Language ; rdfs:label "turtle"     ; dct:creator "athena-deploy-model" .
+chorus:language-html       a chorus:Language ; rdfs:label "html"       ; dct:creator "athena-deploy-model" .
+chorus:language-css        a chorus:Language ; rdfs:label "css"        ; dct:creator "athena-deploy-model" .
+chorus:language-json       a chorus:Language ; rdfs:label "json"       ; dct:creator "athena-deploy-model" .
+chorus:language-yaml       a chorus:Language ; rdfs:label "yaml"       ; dct:creator "athena-deploy-model" .
+chorus:language-toml       a chorus:Language ; rdfs:label "toml"       ; dct:creator "athena-deploy-model" .
+chorus:language-sql        a chorus:Language ; rdfs:label "sql"        ; dct:creator "athena-deploy-model" .

@@ -224,9 +224,27 @@ fn run() -> Result<String, String> {
                         .map(str::to_string)
                         .collect();
                     let ig = get("--instances-graph");
+                    // #4157 — typed properties: --edge prop=Class, --datatype prop=xsd:type,
+                    // --optional prop (typed, no floor). Repeatable; comma form works.
+                    let collect = |flag: &str| -> Vec<String> {
+                        rest.iter().enumerate()
+                            .filter(|(_, a)| a.as_str() == flag)
+                            .filter_map(|(i, _)| rest.get(i + 1))
+                            .flat_map(|s| s.split(','))
+                            .filter(|x| !x.is_empty())
+                            .map(str::to_string)
+                            .collect()
+                    };
+                    let pair = |v: Vec<String>| -> Vec<(String, String)> {
+                        v.into_iter().filter_map(|s| s.split_once('=').map(|(a, b)| (a.to_string(), b.to_string()))).collect()
+                    };
+                    let edges = pair(collect("--edge"));
+                    let datatypes = pair(collect("--datatype"));
+                    let optional = collect("--optional");
                     let spec = athena_model::tbox::ShapeSpec {
                         class: &class, required: &required, target_file: &file,
                         instances_graph: ig.as_deref(),
+                        edges: &edges, datatypes: &datatypes, optional: &optional,
                     };
                     let r = athena_model::tbox::check_shape(&spec, &deploy_set);
                     let ttl = if r.is_empty() { athena_model::tbox::shape_turtle(&spec) } else { String::new() };
@@ -274,18 +292,7 @@ fn run() -> Result<String, String> {
             // it cannot itself parse.
             {
                 let existing = std::fs::read_to_string(&path).unwrap_or_default();
-                let mut header = String::new();
-                for (p, iri) in [
-                    ("sh:", "http://www.w3.org/ns/shacl#"),
-                    ("owl:", "http://www.w3.org/2002/07/owl#"),
-                    ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
-                ] {
-                    let used = turtle.contains(p);
-                    let declared = existing.contains(&format!("@prefix {}", p));
-                    if used && !declared {
-                        header.push_str(&format!("@prefix {:<7} <{}> .\n", p, iri));
-                    }
-                }
+                let header = prefix_header_for(&turtle, &existing);
                 if !header.is_empty() {
                     let merged = format!("{}{}", header, existing);
                     std::fs::write(&path, merged)
@@ -977,5 +984,44 @@ mod pen_write_target_tests_3885 {
     #[test]
     fn absent_required_yields_no_floor_so_the_refusal_still_fires() {
         assert!(required_from(&[]).is_empty());
+    }
+}
+
+/// #3885 / #4157 — the prefixes the emitted turtle uses that the target file
+/// has not declared. `xsd:` joined the list on #4157: the typed shape verb
+/// emits `sh:datatype xsd:string`, and the first write landed a file riot
+/// refused ("Undefined prefix: xsd") — the exact #3885 failure, one prefix
+/// over. A writer that emits a prefix it does not declare writes what it
+/// cannot parse.
+pub fn prefix_header_for(turtle: &str, existing: &str) -> String {
+    let mut header = String::new();
+    for (p, iri) in [
+        ("sh:", "http://www.w3.org/ns/shacl#"),
+        ("xsd:", "http://www.w3.org/2001/XMLSchema#"),
+        ("owl:", "http://www.w3.org/2002/07/owl#"),
+        ("rdfs:", "http://www.w3.org/2000/01/rdf-schema#"),
+    ] {
+        let used = turtle.contains(p);
+        let declared = existing.contains(&format!("@prefix {}", p));
+        if used && !declared {
+            header.push_str(&format!("@prefix {:<7} <{}> .\n", p, iri));
+        }
+    }
+    header
+}
+
+#[cfg(test)]
+mod prefix_header_tests_4157 {
+    use super::prefix_header_for;
+    #[test]
+    fn xsd_used_and_undeclared_is_added() {
+        let h = prefix_header_for("sh:property [ sh:datatype xsd:string ]", "@prefix sh: <x> .\n@prefix chorus: <y> .\n");
+        assert!(h.contains("@prefix xsd:"), "{h}");
+        assert!(!h.contains("@prefix sh:"), "{h}");
+    }
+    #[test]
+    fn negative_proof_declared_prefixes_are_not_repeated() {
+        let h = prefix_header_for("sh:datatype xsd:string", "@prefix sh: <x> .\n@prefix xsd: <z> .\n");
+        assert!(h.is_empty(), "{h}");
     }
 }
