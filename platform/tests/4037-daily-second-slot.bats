@@ -18,6 +18,10 @@
 # that loses the single-flight lock to a live run must NUDGE, never vanish.
 
 BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
+# #4148: a card werk builds only its own crates, so the runner binary is absent
+# there and the lock tests died with 127 in the pipeline. The installed runner
+# is the same product; use it when the werk has no build.
+[ -x "$BIN" ] || BIN="$HOME/.chorus/bin/werk-test-bin"
 
 has() { grep -qF -- "$2" <<<"$1"; }
 
