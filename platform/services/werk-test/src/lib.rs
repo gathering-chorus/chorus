@@ -1692,6 +1692,11 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         ("CHORUS_DB_PATH".into(), format!("{tmp}/index.db")),
         ("CHORUS_LANCE_DIR".into(), format!("{tmp}/lance")),
         ("CHORUS_MESSAGES_DB".into(), format!("{tmp}/messages.db")),
+        // #4152 — the werk lane's bats spawn set this seam (#4136) but the
+        // nightly's bats spawn goes through here and did not, so a nightly
+        // suite driving the real `cards` CLI wrote briefs into a LIVE role dir
+        // (2026-09-12 09:56, roles/kade/briefs, Wren's drift audit red).
+        ("CARDS_BRIEFS_ROOT".into(), format!("{tmp}/briefs")),
         // #3995 — the HTTP lane: the membrane guards stores via env seams, but a
         // suite POSTing to a live service walks around it (a werk-demo e2e paged
         // Jeff's live Clearing twice, 2026-08-23). Dead-port every outbound-HTTP

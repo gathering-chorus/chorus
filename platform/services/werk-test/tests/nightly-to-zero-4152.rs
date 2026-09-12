@@ -1,7 +1,7 @@
 //! #4152 — the three nightly reds of 2026-09-12, each with its negative proof.
 use std::process::Command;
 use std::time::{Duration, Instant};
-use werk_test::{plan_parallel_units, run_capped};
+use werk_test::{plan_parallel_units, run_capped, suite_world_env};
 
 /// AC1 — a child that writes more than a pipe buffer to stderr and exits 0
 /// must come back in seconds with rc 0. Before the drain fix the child blocks
@@ -59,4 +59,14 @@ fn ac3_without_the_conf_line_cards_would_pool() {
     let plan = plan_parallel_units(&pkgs, &|u| conf.iter().any(|e| e == u));
     assert!(plan.serialized.is_empty());
     assert_eq!(plan.parallel.len(), 2);
+}
+
+/// AC6 — the nightly's suite world carries the briefs seam, inside the tempdir.
+/// Remove the CARDS_BRIEFS_ROOT line from suite_world_env and this fails: a
+/// nightly bats suite driving `cards` would write briefs into a live role dir.
+#[test]
+fn ac6_suite_world_carries_the_briefs_seam_in_the_tempdir() {
+    let env = suite_world_env("/tmp/w");
+    let v = env.iter().find(|(k, _)| k == "CARDS_BRIEFS_ROOT").map(|(_, v)| v.clone());
+    assert_eq!(v.as_deref(), Some("/tmp/w/briefs"), "CARDS_BRIEFS_ROOT missing from the suite world: {:?}", env);
 }
