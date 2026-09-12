@@ -50,11 +50,31 @@ setup() {
   printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
 }
 
-@test "the agent carries BOTH daily slots (03:00 and 13:30)" {
-  [ "$(count_slots "$PLIST")" -ge 2 ]
+# #4148 (Jeff, 2026-09-12): "3am only + our current work on demand". The two
+# daytime slots #4037 added are gone; one scheduled run at 03:00.
+@test "the agent carries ONE scheduled slot, 03:00 (#4148)" {
+  [ "$(count_slots "$PLIST")" -eq 1 ]
+  python3 - "$PLIST" <<'PY'
+import plistlib,sys
+d=plistlib.load(open(sys.argv[1],'rb'))['StartCalendarInterval']
+d=d[0] if isinstance(d,list) else d
+assert d.get('Hour')==3 and d.get('Minute',0)==0, d
+PY
 }
 
-@test "negative proof: the check separates its states — a single-slot plist reads 1, not 2" {
+@test "negative proof: the check separates its states — a two-slot plist reads 2, not 1" {
+  cat > "$TMP/two.plist" <<'P'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>x</string>
+<key>StartCalendarInterval</key><array><dict><key>Hour</key><integer>6</integer></dict><dict><key>Hour</key><integer>13</integer></dict></array>
+</dict></plist>
+P
+  [ "$(count_slots "$TMP/two.plist")" -eq 2 ]
+}
+
+@test "negative proof: a single-slot plist reads 1, not 2" {
   cat > "$TMP/single.plist" <<'P'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
