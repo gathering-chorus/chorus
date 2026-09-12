@@ -120,9 +120,9 @@ sq() {
 
 # ── AC5: the daily runner emits a PipelineRun with metrics ──
 @test "AC5 nightly runner emits a PipelineRun row with metrics + forPipeline" {
-  NS="$REPO/platform/scripts/nightly-suites.sh"
-  grep -q 'emit_pipeline_run "\$out"' "$NS"
-  grep -q '"forPipeline":"pipeline-cicd"' "$NS"
+  NS="$REPO/platform/services/werk-test/src/nightly_run.rs"   # #4145 — the runner owns the emit
+  grep -q 'pub fn pipeline_run_body' "$NS"
+  grep -q 'forPipeline' "$NS"
   grep -q 'testsFailed' "$NS"
   grep -q 'runDurationMs' "$NS"
 }
@@ -179,7 +179,7 @@ sq() {
 }
 
 @test "AC4047 nightly emit authenticates and reports the real refusal" {
-  NS="$REPO/platform/scripts/nightly-suites.sh"
+  NS="$REPO/platform/services/werk-test/src/nightly_all.rs"   # #4145
   grep -q 'chorus-identity-token' "$NS"
   grep -q 'Authorization: Bearer' "$NS"
   # The mislabel that hid a 401 for a whole night must be gone from the CODE.

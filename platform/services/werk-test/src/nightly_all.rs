@@ -13,10 +13,33 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use werk_test::nightly_run::{
-    census_row, coverage_row, denominator_row, fail_log_name, fold_unit_line, notify_messages, owner_for, owner_map,
-    parse_case_line, parse_floors, pipeline_run_body, run_summary_fields, suite_result_fields, unit_slice,
-    SuiteRow,
+    census_row, coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
+    notify_messages, owner_for, owner_map, parse_case_line, parse_floors, pipeline_run_body, run_summary_fields,
+    suite_result_fields, unit_slice, SuiteRow,
 };
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+
+// #4035 — a stop (TERM/INT) mid-run writes `RUN|stopped`, reaps the child and
+// frees the lock. std has no signal API and the crate has no deps (ADR-032
+// §1); libc's signal(2) is declared here directly.
+static STOP_SIGNAL: AtomicI32 = AtomicI32::new(0);
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+extern "C" {
+    fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize;
+}
+extern "C" fn on_stop(sig: i32) {
+    STOP_SIGNAL.store(sig, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
+}
+fn install_stop_handler() {
+    unsafe {
+        signal(15, on_stop); // SIGTERM
+        signal(2, on_stop); // SIGINT
+    }
+}
+fn stop_requested() -> bool {
+    STOP_REQUESTED.load(Ordering::SeqCst)
+}
 
 fn env_or(k: &str, d: &str) -> String {
     std::env::var(k).ok().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| d.to_string())
@@ -95,14 +118,16 @@ fn load_gate() -> (bool, String) {
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
         .unwrap_or(8.0);
     let per: f64 = env_or("NIGHTLY_LOAD_MAX_PER_CORE", "1.5").parse().unwrap_or(1.5);
-    let load: f64 = Command::new("sysctl")
-        .args(["-n", "vm.loadavg"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().nth(1).and_then(|v| v.parse().ok()))
-        .unwrap_or(0.0);
-    let max = cores * per;
-    (load <= max, format!("load={} max={:.1}", load, max))
+    let load: f64 = match std::env::var("NIGHTLY_LOAD_STUB").ok().filter(|v| !v.is_empty()) {
+        Some(v) => v.parse().unwrap_or(0.0),
+        None => Command::new("sysctl")
+            .args(["-n", "vm.loadavg"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().nth(1).and_then(|v| v.parse().ok()))
+            .unwrap_or(0.0),
+    };
+    load_verdict(load, cores, per)
 }
 
 fn pid_alive(pid: u32) -> bool {
@@ -122,13 +147,34 @@ fn acquire_lock(lockdir: &str) -> Result<(), String> {
             return Err(format!("holder pid {} is alive", p));
         }
     }
-    let ps = Command::new("ps").args(["-eo", "pid,command"]).output().ok();
-    if let Some(o) = ps {
+    // a dead holder is stale unless a runner is still alive (#4008). NIGHTLY_PS
+    // is the test seam: a command that prints `PID PPID ELAPSED COMMAND` rows.
+    let ps_cmd = env_or("NIGHTLY_PS", "ps -eo pid,ppid,etime,command");
+    let out = Command::new("bash").arg("-c").arg(&ps_cmd).output().ok();
+    if let Some(o) = out {
         let me = std::process::id().to_string();
+        let parent = std::os::unix::process::parent_id().to_string();
+        let marker = env_or("NIGHTLY_RUNNER_MARKER", "werk-test --nightly|nightly-suites.sh --run-all|werk-test-bin --nightly");
         for l in String::from_utf8_lossy(&o.stdout).lines().skip(1) {
-            let pid = l.split_whitespace().next().unwrap_or("");
-            if pid != me && (l.contains("werk-test --nightly") || l.contains("nightly-suites.sh --run-all")) && !l.contains("--run-all --") {
-                return Err(format!("holder pid {} is dead but runner pid {} is alive", old.map(|p| p.to_string()).unwrap_or("none".into()), pid));
+            let cols: Vec<&str> = l.split_whitespace().collect();
+            if cols.len() < 4 {
+                continue;
+            }
+            let (pid, age) = (cols[0], cols[2]);
+            if pid == me || pid == parent {
+                continue;
+            }
+            let cmd = cols[3..].join(" ");
+            if cmd.contains("--lock-probe") {
+                continue;
+            }
+            if marker.split('|').any(|m| cmd.contains(m)) {
+                return Err(format!(
+                    "holder pid {} is dead but runner pid {} is alive (age {})",
+                    old.map(|p| p.to_string()).unwrap_or("none".into()),
+                    pid,
+                    age
+                ));
             }
         }
     }
@@ -444,6 +490,10 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     let mut lane_text = String::new();
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in BufReader::new(stdout).lines().flatten() {
+        if stop_requested() {
+            let _ = child.kill();
+            break;
+        }
         if let Some(f) = lane.as_mut() {
             let _ = writeln!(f, "{}", line);
         }
@@ -520,7 +570,64 @@ fn census(ctx: &Ctx, registered: &[(String, String)], cases: &[(String, String)]
 
 // ───────────────────────── the run ─────────────────────────
 
+/// Read-only modes the script used to answer for live callers:
+/// `--last-run` (daily-review-quality), `--load-gate` (load-reclassify),
+/// `--lock-probe` (the single-flight tests).
+pub fn run_mode(args: &[String]) -> Option<Result<i32, String>> {
+    let home_dir = env_or("HOME", "/tmp");
+    if args.iter().any(|a| a == "--last-run") {
+        let log = env_or("NIGHTLY_LOG_PATH", &format!("{}/Library/Logs/Chorus/nightly-suites.log", home_dir));
+        let meta = match std::fs::metadata(&log) {
+            Ok(m) => m,
+            Err(_) => {
+                println!("SUITE|meta|{}|silas|fail|0 pass, 1 fail (nightly log MISSING — no run to read, run the 03:00 nightly)", log);
+                return Some(Ok(1));
+            }
+        };
+        let age = meta.modified().ok().and_then(|m| m.elapsed().ok()).map(|d| d.as_secs()).unwrap_or(0);
+        if age > 93600 {
+            println!("SUITE|meta|{}|silas|fail|0 pass, 1 fail (nightly log STALE — {}s old > 26h; the 03:00 run did not write)", log, age);
+            return Some(Ok(1));
+        }
+        for l in last_run_rows(&std::fs::read_to_string(&log).unwrap_or_default()) {
+            println!("{}", l);
+        }
+        return Some(Ok(0));
+    }
+    if args.iter().any(|a| a == "--load-gate") {
+        let (ok, line) = load_gate();
+        println!("{}", line);
+        return Some(Ok(if ok { 0 } else { 1 }));
+    }
+    // `--classify <verdict> <summary>`: the row-level fold, for the wrapper's
+    // tests (#3753 AC2) — timeouts fold to unmeasurable only under load.
+    if let Some(i) = args.iter().position(|a| a == "--classify") {
+        let verdict = args.get(i + 1).cloned().unwrap_or_default();
+        let summary = args.get(i + 2).cloned().unwrap_or_default();
+        let (ok, _) = load_gate();
+        let (v, _) = werk_test::nightly_run::classify_verdict(&verdict, &summary, !ok);
+        println!("{}", v);
+        return Some(Ok(0));
+    }
+    if args.iter().any(|a| a == "--lock-probe") {
+        let lockdir = env_or("NIGHTLY_LOCKDIR", &format!("{}/chorus-nightly-suites.lock.d", env_or("TMPDIR", "/tmp").trim_end_matches('/')));
+        match acquire_lock(&lockdir) {
+            Ok(()) => {
+                println!("ACQUIRED");
+                let _ = std::fs::remove_dir_all(&lockdir);
+            }
+            Err(why) => println!("REFUSED {}", why),
+        }
+        return Some(Ok(0));
+    }
+    None
+}
+
 pub fn run_all(args: &[String]) -> Result<i32, String> {
+    if let Some(r) = run_mode(args) {
+        return r;
+    }
+    install_stop_handler();
     let root = std::env::var("CHORUS_ROOT").or_else(|_| std::env::var("CHORUS_HOME")).unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".into());
     let home = env_or("CHORUS_HOME", &root);
     let home_dir = env_or("HOME", "/tmp");
@@ -548,8 +655,8 @@ pub fn run_all(args: &[String]) -> Result<i32, String> {
         eprintln!("nightly: WERK RUN — isolated to {}, team nudge suppressed (#3722)", ctx.log);
     }
     if let Err(why) = acquire_lock(&ctx.lockdir) {
-        eprintln!("nightly: REFUSED — {} — one run at a time (single-flight, #3597/#4008), lock {}", why, ctx.lockdir);
-        ctx.nudge("silas", &format!("nightly: scheduled run SKIPPED — {} (#4037/#4008). The run did not happen; check the straggler.", why));
+        eprintln!("nightly-suites: REFUSED — {} — one run at a time (single-flight, #3597/#4008), lock {}", why, ctx.lockdir);
+        ctx.nudge("silas", &format!("nightly-suites: scheduled run SKIPPED — {} (#4037/#4008). The run did not happen; check the straggler.", why));
         return Ok(0);
     }
     let result = run_locked(&mut ctx, args);
@@ -606,6 +713,12 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     }
     let (over, _) = load_gate();
     let lane = run_runner(ctx, !over);
+    if stop_requested() {
+        let sig = STOP_SIGNAL.load(Ordering::SeqCst);
+        ctx.append_log(&format!("RUN|stopped|{}|signal={} pid={}", now_stamp(), if sig == 2 { "INT" } else { "TERM" }, std::process::id()));
+        let _ = std::fs::remove_dir_all(&ctx.lockdir);
+        std::process::exit(if sig == 2 { 130 } else { 143 });
+    }
     rows.extend(lane.rows.iter().cloned());
     // census from the run's own record — registry read once, above
     let ui: std::collections::BTreeSet<String> = registered.iter().map(|(f, _)| f.clone()).filter(|f| f.ends_with(".spec.ts")).collect();

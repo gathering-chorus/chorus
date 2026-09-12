@@ -21,7 +21,7 @@
 
 set -euo pipefail
 
-# #2856 — emit canonical results line on EXIT so nightly-suites.sh consumer
+# #2856 — emit canonical results line on EXIT so the nightly runner (werk-test --nightly, #4145) consumer
 # hits the tier-1 (canonical) summary parser instead of synthesizing from rc.
 # Single-assertion script: rc=0 → 1 passed, 0 failed; rc!=0 → 0 passed, 1 failed.
 trap '_rc=$?; if [ $_rc -eq 0 ]; then echo "=== Results: 1 passed, 0 failed ==="; else echo "=== Results: 0 passed, 1 failed ==="; fi' EXIT

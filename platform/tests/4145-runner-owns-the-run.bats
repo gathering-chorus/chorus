@@ -14,6 +14,9 @@ setup() {
   BIN="${WERK_TEST_BIN:-$ROOT/platform/services/werk-test/target/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
   T="$BATS_TEST_TMPDIR"
+  # #3528 — bring your own process table: a real nightly on the box must not refuse these runs
+  printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
+  export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
   touch "$T/root/platform/tests/a.bats"
   cat > "$T/runner.sh" <<'EOS'

@@ -3,7 +3,7 @@
 #
 # #4004 — test-product-membrane bootouts EVERY com.chorus.* agent, so it must
 # never run unattended. Two inference-based guards failed in a row:
-#   #3722 scanned ancestry for com.chorus. / nightly-suites.sh — #3974 renamed
+#   #3722 scanned ancestry for com.chorus. / the nightly runner (werk-test --nightly, #4145) — #3974 renamed
 #   the runner to werk-test and the scan went silent, so the nightly booted
 #   every agent and platform/api took 246 collateral failures.
 #   Refusing without a controlling terminal — act allocates a pty, so a pipeline

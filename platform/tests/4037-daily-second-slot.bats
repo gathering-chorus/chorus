@@ -17,7 +17,7 @@
 # #4037 — Jeff wants a DAILY run: two calendar slots on ONE agent, and a slot
 # that loses the single-flight lock to a live run must NUDGE, never vanish.
 
-NIGHTLY="$BATS_TEST_DIRNAME/../scripts/nightly-suites.sh"
+BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
 PLIST="$BATS_TEST_DIRNAME/../scripts/com.chorus.nightly-suites.plist"
 
 has() { grep -qF -- "$2" <<<"$1"; }
@@ -71,20 +71,33 @@ P
   [ "$output" = "1" ]
 }
 
-@test "a LIVE lock holder makes the slot refuse LOUDLY: refusal line + ops-nudge" {
-  mkdir -p "$NIGHTLY_LOCKDIR"; echo $$ > "$NIGHTLY_LOCKDIR/pid"   # us: alive
-  NIGHTLY_PS="$PS_NO_RUNNER" run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
-    if ! acquire_single_flight_lock; then refuse_single_flight; fi"
-  grep -q "SKIPPED" "$TMP/nudged.txt"
-  grep -q "$$" "$TMP/nudged.txt"
+# #4145 — the runner owns the lock. RUNALL drives `werk-test-bin --nightly
+# --run-all` with every outside thing stubbed: no legs, a runner that prints one
+# passing unit, a dead registry port, the nudge stub above.
+runall() {
+  printf '#!/bin/bash\necho "nightly-unit|bats|platform/tests/x.bats|pass|1 pass, 0 fail"\n' > "$TMP/runner.sh"; chmod +x "$TMP/runner.sh"
+  mkdir -p "$TMP/root"
+  CHORUS_ROOT="$TMP/root" CHORUS_HOME="$TMP/root" NIGHTLY_LOG_PATH="$TMP/run.log" NIGHTLY_FAIL_DIR="$TMP/fail" \
+  OWLAPI=http://127.0.0.1:9 NIGHTLY_API=http://127.0.0.1:9 NIGHTLY_RUNNER_CMD="$TMP/runner.sh" NIGHTLY_LEGS_NOOP=1 \
+  NIGHTLY_LOAD_MAX_PER_CORE=99 "$BIN" --nightly --run-all
 }
 
-@test "a STALE lock (dead holder) is stolen silently — the run proceeds, no nudge" {
+@test "a LIVE lock holder makes the slot refuse LOUDLY: refusal line + ops-nudge" {
+  mkdir -p "$NIGHTLY_LOCKDIR"; echo $$ > "$NIGHTLY_LOCKDIR/pid"   # us: alive
+  NIGHTLY_PS="$PS_NO_RUNNER" run runall
+  [ "$status" -eq 0 ]
+  has "$output" "REFUSED"
+  grep -q "SKIPPED" "$TMP/nudged.txt"
+  grep -q "$$" "$TMP/nudged.txt"
+  [ ! -f "$TMP/run.log" ]
+}
+
+@test "a STALE lock (dead holder) is stolen silently — the run proceeds, no refusal nudge" {
   mkdir -p "$NIGHTLY_LOCKDIR"; echo 4999999 > "$NIGHTLY_LOCKDIR/pid"  # dead pid
-  NIGHTLY_PS="$PS_NO_RUNNER" run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
-    if acquire_single_flight_lock; then echo STOLE; else refuse_single_flight; fi"
-  has "$output" "STOLE"
-  [ ! -s "$TMP/nudged.txt" ]
+  NIGHTLY_PS="$PS_NO_RUNNER" run runall
+  [ "$status" -eq 0 ]
+  grep -q '^RUN|complete|' "$TMP/run.log"
+  ! grep -q "SKIPPED" "$TMP/nudged.txt" 2>/dev/null
 }
 
 # Negative proof for the one above: same dead holder, same lock — the only thing
@@ -93,8 +106,7 @@ P
 # we would be back to 2026-08-25: two lanes running beside each other for 1h52m.
 @test "negative proof: a dead holder whose RUNNER is still alive is NOT stolen" {
   mkdir -p "$NIGHTLY_LOCKDIR"; echo 4999999 > "$NIGHTLY_LOCKDIR/pid"  # dead pid
-  NIGHTLY_PS="$PS_LIVE_RUNNER" run bash -c "source '$NIGHTLY' --list-shell >/dev/null 2>&1
-    if acquire_single_flight_lock; then echo STOLE; else refuse_single_flight; fi"
-  ! grep -q "STOLE" <<<"$output"
+  NIGHTLY_PS="$PS_LIVE_RUNNER" run runall
+  [ ! -f "$TMP/run.log" ]
   grep -q "runner pid 4242 is alive" "$TMP/nudged.txt"
 }

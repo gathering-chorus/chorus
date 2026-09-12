@@ -441,35 +441,32 @@ pub fn shell_summary(out: &str, rc: i32) -> String {
 /// passed by hand, and nothing said what they saw). One line per failed case:
 /// the first non-empty line of the message, ANSI stripped, capped at 200.
 pub fn jest_failure_why(json: &str, pkg: &str, rel: &dyn Fn(&str) -> String) -> Vec<String> {
+    // jest's JSON keys are alphabetical: a testResults entry is
+    // {"assertionResults":[{"ancestorTitles",…,"failureMessages",…,"fullName",…,"status",…}],"endTime",…,"name",…}
+    // so the FILE name follows its assertions, and inside an assertion the
+    // messages precede the name. Scope every lookup to its own object.
     let mut out = Vec::new();
     let mut pos = 0;
     while let Some(i) = json[pos..].find("\"assertionResults\"") {
         let start = pos + i;
-        // the file name precedes its assertionResults in jest's shape
-        let file = json[..start].rfind("\"name\":\"").map(|k| {
-            let rest = &json[k + 8..];
-            rest[..rest.find('"').unwrap_or(0)].to_string()
-        }).unwrap_or_default();
         let end = json[start..].find("\"endTime\"").map(|e| start + e).unwrap_or(json.len());
         let block = &json[start..end];
-        let mut q = 0;
-        while let Some(j) = block[q..].find("\"fullName\":\"") {
-            let k = q + j + 12;
-            let name_end = block[k..].find("\",\"").map(|e| k + e).unwrap_or(block.len());
-            let name = unescape_json(&block[k..name_end]);
-            let after = &block[name_end..];
-            let status = str_after(after, "\"status\":\"").unwrap_or_default();
-            let msg = str_after(after, "\"failureMessages\":[\"").unwrap_or_default();
-            if status == "failed" {
-                let first = unescape_json(&msg)
-                    .split('\n')
-                    .map(|l| strip_ansi(l).trim().to_string())
-                    .find(|l| !l.is_empty())
-                    .unwrap_or_else(|| "(no message)".into());
-                let first: String = first.chars().take(200).collect();
-                out.push(format!("!! jest:{} WHY: {} :: {} :: {}", pkg, rel(&file), name, first));
+        let file = str_after(&json[end..], "\"name\":\"").unwrap_or_default();
+        let entries: Vec<&str> = block.split("\"ancestorTitles\"").skip(1).collect();
+        for e in entries {
+            let status = str_after(e, "\"status\":\"").unwrap_or_default();
+            if status != "failed" {
+                continue;
             }
-            q = name_end;
+            let name = str_after(e, "\"fullName\":\"").map(|n| unescape_json(&n)).unwrap_or_default();
+            let msg = str_after(e, "\"failureMessages\":[\"").unwrap_or_default();
+            let first = unescape_json(&msg)
+                .split('\n')
+                .map(|l| strip_ansi(l).trim().to_string())
+                .find(|l| !l.is_empty())
+                .unwrap_or_else(|| "(no message)".into());
+            let first: String = first.chars().take(200).collect();
+            out.push(format!("!! jest:{} WHY: {} :: {} :: {}", pkg, rel(&unescape_json(&file)), name, first));
         }
         pos = end;
     }
@@ -523,6 +520,52 @@ fn strip_ansi(s: &str) -> String {
     out
 }
 
+
+/// `--last-run` (#3606/#3272): replay the LATEST run's SUITE rows from the log.
+/// The block starts at the last `RUN|start|`; a block with no `RUN|complete|`
+/// is PARTIAL and says so as a loud meta row first (the 2026-07-04 false wall
+/// came from re-running instead of reading). A log with no RUN markers at all
+/// (pre-#3709) is cut at the first repeated (kind, path) key walking backward.
+pub fn last_run_rows(log: &str) -> Vec<String> {
+    let raw: Vec<&str> = log.lines().collect();
+    let start = raw.iter().rposition(|l| l.starts_with("RUN|start|"));
+    let Some(si) = start else {
+        let mut seen = std::collections::HashSet::new();
+        let mut run: Vec<&str> = Vec::new();
+        for l in raw.iter().rev().filter(|l| l.starts_with("SUITE|")) {
+            let p: Vec<&str> = l.split('|').collect();
+            let key = (p.get(1).copied().unwrap_or(""), p.get(2).copied().unwrap_or(""));
+            if !seen.insert(key) {
+                break;
+            }
+            run.push(l);
+        }
+        run.reverse();
+        return run.into_iter().map(String::from).collect();
+    };
+    let block = &raw[si..];
+    let completed = block.iter().any(|l| l.starts_with("RUN|complete|"));
+    let suites: Vec<String> = block.iter().filter(|l| l.starts_with("SUITE|")).map(|l| l.to_string()).collect();
+    let mut out = Vec::new();
+    if !completed {
+        let started = raw[si].split('|').nth(2).unwrap_or("?");
+        out.push(format!(
+            "SUITE|meta|nightly-run-incomplete|silas|fail|0 pass, 1 fail (run started {} and never wrote RUN|complete — KILLED after {} suite(s); the results below are PARTIAL, not a full night)",
+            started,
+            suites.len()
+        ));
+    }
+    out.extend(suites);
+    out
+}
+
+/// The load gate's verdict line and pass/fail, from cores × per-core cap
+/// against the 1-minute load (`NIGHTLY_LOAD_STUB` is the test seam).
+pub fn load_verdict(load: f64, cores: f64, per_core: f64) -> (bool, String) {
+    let max = cores * per_core;
+    (load <= max, format!("load={} max={:.1}", load, max))
+}
+
 #[cfg(test)]
 mod nightly_run_4145 {
     use super::*;
@@ -534,10 +577,34 @@ mod nightly_run_4145 {
 
     #[test]
     fn jest_failure_why_keeps_the_first_assertion_line_and_nothing_for_passes() {
-        let json = r#"{"testResults":[{"name":"/w/platform/api/tests/a.test.ts","assertionResults":[{"fullName":"grp passes","status":"passed","failureMessages":[]},{"fullName":"grp fails hard","status":"failed","failureMessages":["\u001b[1mError: \u001b[22mexpect(received).toBe(expected)\n\nExpected: 200\nReceived: 503"]}],"endTime":1}]}"#;
+        // jest's real key order: assertions first, the file's "name" AFTER them; messages before fullName
+        let json = r#"{"testResults":[{"assertionResults":[{"ancestorTitles":["grp"],"failureMessages":[],"fullName":"grp passes","status":"passed"}],"endTime":1,"name":"/w/platform/api/tests/first.test.ts","status":"passed"},{"assertionResults":[{"ancestorTitles":["grp"],"failureMessages":["\u001b[1mError: \u001b[22mexpect(received).toBe(expected)\n\nExpected: 200\nReceived: 503"],"fullName":"grp fails hard","status":"failed"},{"ancestorTitles":["grp"],"failureMessages":[],"fullName":"grp ok","status":"passed"}],"endTime":2,"name":"/w/platform/api/tests/second.test.ts","status":"failed"}]}"#;
         let lines = jest_failure_why(json, "platform/api", &|f| f.replace("/w/", ""));
         assert_eq!(lines.len(), 1, "{lines:?}");
-        assert_eq!(lines[0], "!! jest:platform/api WHY: platform/api/tests/a.test.ts :: grp fails hard :: Error: expect(received).toBe(expected)");
+        assert_eq!(lines[0], "!! jest:platform/api WHY: platform/api/tests/second.test.ts :: grp fails hard :: Error: expect(received).toBe(expected)");
+    }
+
+
+    #[test]
+    fn last_run_replays_the_latest_block_and_flags_a_partial_one() {
+        let log = "RUN|start|2026-09-11T03:00:01|pid=1\nSUITE|bats|a|kade|pass|1 pass, 0 fail\nRUN|complete|2026-09-11T04:00:00|suites=1\nRUN|start|2026-09-11T15:51:18|pid=2\nSUITE|bats|b|kade|fail|0 pass, 1 fail\n";
+        let rows = last_run_rows(log);
+        assert_eq!(rows[0].split('|').nth(2), Some("nightly-run-incomplete"), "{rows:?}");
+        assert!(rows[0].contains("started 2026-09-11T15:51:18") && rows[0].contains("KILLED after 1 suite(s)"));
+        assert_eq!(rows[1], "SUITE|bats|b|kade|fail|0 pass, 1 fail");
+        // control: a completed block has no meta row
+        let done = "RUN|start|2026-09-11T03:00:01|pid=1\nSUITE|bats|a|kade|pass|1 pass, 0 fail\nRUN|complete|2026-09-11T04:00:00|suites=1\n";
+        assert_eq!(last_run_rows(done), vec!["SUITE|bats|a|kade|pass|1 pass, 0 fail".to_string()]);
+        // pre-#3709 log: cut at the first repeated key walking back
+        let old = "SUITE|bats|a|kade|pass|1 pass, 0 fail\nSUITE|bats|b|kade|pass|1 pass, 0 fail\nSUITE|bats|a|kade|fail|0 pass, 1 fail\n";
+        assert_eq!(last_run_rows(old), vec!["SUITE|bats|b|kade|pass|1 pass, 0 fail".to_string(), "SUITE|bats|a|kade|fail|0 pass, 1 fail".to_string()], "walk back until the first repeated (kind,path) key");
+    }
+
+    #[test]
+    fn load_verdict_holds_over_the_cap_and_passes_under_it() {
+        assert!(load_verdict(0.1, 8.0, 1.5).0);
+        assert!(!load_verdict(999.0, 8.0, 0.1).0, "negative proof: a loaded box is held");
+        assert_eq!(load_verdict(5.0, 8.0, 100.0).1, "load=5 max=800.0");
     }
 
     #[test]

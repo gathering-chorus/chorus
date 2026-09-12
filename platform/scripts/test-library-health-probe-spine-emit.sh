@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROBE="$SCRIPT_DIR/library-health-probe.sh"
 TMPDIR=$(mktemp -d)
 # #2856 — emit canonical results line on EXIT (composed with TMPDIR cleanup)
-# so nightly-suites.sh consumer hits tier-1 summary parser, not rc-synthesis.
+# so the nightly runner (werk-test --nightly, #4145) consumer hits tier-1 summary parser, not rc-synthesis.
 trap '_rc=$?; rm -rf "$TMPDIR"; if [ $_rc -eq 0 ]; then echo "=== Results: 1 passed, 0 failed ==="; else echo "=== Results: 0 passed, 1 failed ==="; fi' EXIT
 
 # Stub ssh: record args, succeed.

@@ -6,7 +6,7 @@
 # chorus-build, git-queue.sh helpers). Same convention as test-demo.sh (#2875).
 # Failures here mean the build/deploy contract has drifted — file follow-on cards.
 #
-# Auto-discovered by nightly-suites.sh via the test-*.sh glob.
+# Auto-discovered by the nightly runner (werk-test --nightly, #4145) via the test-*.sh glob.
 
 set -uo pipefail
 

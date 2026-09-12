@@ -46,10 +46,15 @@ fn run(args: &[String]) -> Result<i32, String> {
     // per-case TestResult posts (#3592) apply at 03:00 identically to the gate.
     // #4145 — `--nightly --run-all`: the whole run (pre-checks, lanes, census,
     // record, nudges, readout) in the runner; launchd's 03:00 job.
-    if args.iter().any(|a| a == "--nightly") && args.iter().any(|a| a == "--run-all") {
-        return nightly_all::run_all(args);
-    }
     if args.iter().any(|a| a == "--nightly") {
+        // read-only modes first (--last-run / --load-gate / --lock-probe): they
+        // must never fall through to a real run (a test's --lock-probe did, 19:30)
+        if let Some(r) = nightly_all::run_mode(args) {
+            return r;
+        }
+        if args.iter().any(|a| a == "--run-all") {
+            return nightly_all::run_all(args);
+        }
         return run_nightly(args);
     }
     let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with("--")).collect();

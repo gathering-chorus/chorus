@@ -16,7 +16,7 @@ set -uo pipefail
 
 # #4004 — this suite bootouts EVERY com.chorus.* agent, so the question is not
 # "who is my parent" but "does this run hold restore authority". Inference kept
-# failing: #3722 scanned ancestry for com.chorus. / nightly-suites.sh, #3974
+# failing: #3722 scanned ancestry for com.chorus. / the nightly runner (werk-test --nightly, #4145), #3974
 # renamed the runner to werk-test and the scan went quiet — the nightly booted
 # every agent and platform/api took 246 collateral failures. The obvious repair,
 # refusing without a controlling terminal, is ALSO wrong: act allocates a pty, so

@@ -46,13 +46,13 @@ setup() {
   cd "$REPO"
   # #3734 — retargeted off the standalone nightly-coverage script, which was RETIRED
   # as an orphan (nothing invoked it; #3527 folded the coverage tier into
-  # nightly-suites.sh and left the original standing). Note the failure mode this
+  # the nightly runner (werk-test --nightly, #4145) and left the original standing). Note the failure mode this
   # test had: `grep -c` against a DELETED file exits 2 with empty output, so
   # `[ "$output" -eq 0 ]` errors rather than passing — but a variant that compared
   # differently would have gone GREEN on a file that no longer exists, which is
   # the same can't-tell-two-states shape this card is about. Point it at the live
   # implementation so it guards something real.
-  run grep -cE "3475/api/nudge" platform/scripts/nightly-suites.sh
+  run bash -c "cat platform/services/werk-test/src/nightly_all.rs platform/services/werk-test/src/nightly_run.rs | grep -cE '3475/api/nudge' || true"
   [ "$output" -eq 0 ]
 }
 

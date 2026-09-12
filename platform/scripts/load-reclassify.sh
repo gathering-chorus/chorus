@@ -11,12 +11,12 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LG_BIN="${LOAD_GATE_BIN:-$SCRIPT_DIR/nightly-suites.sh}"
+LG_BIN="${LOAD_GATE_BIN:-$HOME/.chorus/bin/werk-test-bin}"   # #4145 — the runner answers --nightly --load-gate
 
 lg_out=""
 loaded=0
 if [ -x "$LG_BIN" ]; then
-  if ! lg_out=$("$LG_BIN" --load-gate 2>/dev/null); then loaded=1; fi
+  if ! lg_out=$("$LG_BIN" --nightly --load-gate 2>/dev/null); then loaded=1; fi
 fi
 
 while IFS= read -r line; do
