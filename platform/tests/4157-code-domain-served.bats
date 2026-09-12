@@ -52,7 +52,7 @@ post_codefile() { # language → prints http code, body in $BODY
   # the refusal must be the DAL's referential one, not a 404 for a wrong URL
   ! grep -q 'unknown route' "$BODY"
   grep -q 'unknown-target' "$BODY"
-  [ "$code" = 422 ] || [ "$code" = 404 ]
+  [ "$code" = 422 ]   # validation: the DAL's referential refusal, measured 2026-09-12
   [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/codefiles/$SACRIFICE")" != 200 ]
 }
 
