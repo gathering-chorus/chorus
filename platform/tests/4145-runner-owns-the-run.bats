@@ -14,6 +14,9 @@ setup() {
   BIN="${WERK_TEST_BIN:-$ROOT/platform/services/werk-test/target/release/werk-test}"
   [ -x "$BIN" ] || skip "werk-test not built at $BIN"
   T="$BATS_TEST_TMPDIR"
+  # #3528 — bring your own process table: a real nightly on the box must not refuse these runs
+  printf '#!/bin/bash\necho "  PID  PPID ELAPSED COMMAND"\n' > "$BATS_TEST_TMPDIR/ps-none"; chmod +x "$BATS_TEST_TMPDIR/ps-none"
+  export NIGHTLY_PS="$BATS_TEST_TMPDIR/ps-none"
   mkdir -p "$T/root/platform/scripts" "$T/root/platform/tests" "$T/fail"
   touch "$T/root/platform/tests/a.bats"
   cat > "$T/runner.sh" <<'EOS'
@@ -79,6 +82,10 @@ run_all() {
   grep -q '^SUITE|perf|platform/tests/p.sh|unowned|slow|' "$T/nightly.log"
   grep -q '^SUITE|shell|platform/scripts/z.sh|silas|fail|0 pass, 1 fail$' "$T/nightly.log"
   grep -qE '^RUN\|complete\|[0-9T:-]+\|suites=5$' "$T/nightly.log"
+  # NEGATIVE PROOF of the 19:16 doubling: each row is in the log exactly once, and stdout carries none
+  # (under launchd stdout IS the log file)
+  [ "$(grep -c '^SUITE|' "$T/nightly.log")" -eq 5 ]
+  ! grep -q '^SUITE|' <<<"$output"
 }
 
 @test "the registry is read ONCE per run (the wrapper read it once per row: 385 times on 2026-09-11)" {

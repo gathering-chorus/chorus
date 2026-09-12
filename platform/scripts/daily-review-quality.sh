@@ -134,7 +134,8 @@ classify_suite() {
 # launchd env has no cargo on PATH, so a re-run manufactured a 30-suite
 # false-red wall (2026-07-04) and clobbered the per-suite failure logs.
 # --last-run fails loud (parseable SUITE|meta fail) on a missing/stale log.
-SUITES_OUT=$(bash "${SCRIPT_DIR}/nightly-suites.sh" --last-run 2>&1 || true)
+# #4145 — the runner owns the nightly; --last-run is its read mode. NIGHTLY_LAST_RUN_BIN is the test seam.
+SUITES_OUT=$("${NIGHTLY_LAST_RUN_BIN:-$HOME/.chorus/bin/werk-test-bin}" --nightly --last-run 2>&1 || true)
 TEST_SUMMARY=""
 KADE_FAILS=""
 SILAS_FAILS=""

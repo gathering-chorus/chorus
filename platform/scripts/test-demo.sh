@@ -6,7 +6,7 @@
 # API, smoke-check.sh). Failures here indicate /demo's contract has drifted
 # from what the substrate enforces — file follow-on cards for each gap.
 #
-# Auto-discovered by nightly-suites.sh via the test-*.sh glob.
+# Auto-discovered by the nightly runner (werk-test --nightly, #4145) via the test-*.sh glob.
 
 set -uo pipefail
 
@@ -56,7 +56,7 @@ UNDEFINED=$(echo "$CUKE_OUT" | grep -oE '[0-9]+ undefined' | head -1 | grep -oE 
 TOTAL_FAILED=$((FAILED + PENDING + UNDEFINED))
 : "${PASSED:=0}" "${TOTAL_FAILED:=0}"
 
-# Canonical summary line per #2856 contract (parsed by nightly-suites.sh).
+# Canonical summary line per #2856 contract (parsed by the nightly runner (werk-test --nightly, #4145)).
 echo "=== Results: ${PASSED} passed, ${TOTAL_FAILED} failed ==="
 
 # Exit non-zero if anything failed or cucumber itself errored.

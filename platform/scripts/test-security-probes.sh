@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-security-probes.sh (#3900) — nightly leg for the security probe suite.
 #
-# Auto-discovered by nightly-suites.sh (test-*.sh). Deliberately a LIVE-SYSTEM
+# Auto-discovered by the nightly runner (werk-test --nightly, #4145) (test-*.sh). Deliberately a LIVE-SYSTEM
 # probe suite, not a hermetic test: these are fitness functions (ADR-056) whose
 # entire job is to compare the CLAIMED security posture against the RUNNING
 # system — identity gate refusing, keys present at 0600, public surface
