@@ -7,7 +7,14 @@
 
 setup() {
   [ "${RUN_INTEGRATION:-}" = "true" ] || skip "RUN_INTEGRATION not set (integration test — live store + athena-make)"
-  URL="${ATHENA_MAKE_URL:-${OWL_URL:-http://localhost:3360}}"
+  # Which athena-make is under test: prove-live hands the werk VARIANT as OWL_URL;
+  # the nightly (WERK_TEST_NIGHTLY=1) measures canonical :3360. The werk TEST lane
+  # runs before env-up, when no variant exists and canonical does not serve this
+  # card's classes yet, so it is not measurable there: skip loudly, never fail on
+  # the wrong server (this happened on run 1, 2026-09-12 16:18).
+  if [ -n "${ATHENA_MAKE_URL:-${OWL_URL:-}}" ]; then URL="${ATHENA_MAKE_URL:-$OWL_URL}"
+  elif [ "${WERK_TEST_NIGHTLY:-}" = "1" ]; then URL="http://localhost:3360"
+  else skip "no OWL_URL/ATHENA_MAKE_URL and not the nightly: prove-live measures this against the variant"; fi
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
   ROLE="${CHORUS_ROLE:-kade}"
   TOKEN="${CHORUS_IDENTITY_TOKEN:-$("$ROOT/platform/scripts/chorus-identity-token" "$ROLE" 2>/dev/null)}"
