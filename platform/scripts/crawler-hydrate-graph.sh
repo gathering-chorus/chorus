@@ -403,7 +403,8 @@ $stale_updates"
 }
 
 # #3811 — run a class's BESPOKE hydrator. The script owns its own write
-# mechanism (the Test hydrator is tag-tests-domain.py: clear+insert, per-case
+# mechanism (#4154: tag-tests-domain.py is RETIRED — Test rows are this walker's,
+# through the generated API, parsers in testfiles.py; per-case
 # classification); the crawler owns the lifecycle: run from CHORUS_ROOT, time
 # it, emit crawler.graph.hydrated on success / crawler.graph.failed with the
 # exit code on failure — a red hydrator reds the whole run, never a silent skip.
