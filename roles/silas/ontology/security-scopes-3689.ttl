@@ -84,6 +84,13 @@ chorus:principal-chorus-sdk
 chorus:principal-nightly
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI .
 
+# #4154 — crawler: LEAST privilege, the two graphs it owns. Write / replace /
+# delete there (files leave disk, rows must follow); every other graph out of
+# reach by construction. Reads need no grant.
+chorus:principal-crawler
+    chorus:hasScope "urn:chorus:domains:code"^^xsd:anyURI ,
+                    "urn:chorus:domains:tests"^^xsd:anyURI .
+
 # ---------------------------------------------------------------------------
 # #4058 — grants RULED by Jeff 2026-09-02 08:01 ("approved — deploy the grants").
 # Live in the werk store at env-up (demo); live in prod via SECURITY_SET at land.

@@ -69,6 +69,11 @@ chorus:role-nightly a chorus:Role ;
     chorus:roleKind "automation" ;
     chorus:comment "The 03:00 automation identity — runs the suites, posts the results. Least-privilege principal (#3975); writes attributed to nightly, never to an agent." .
 
+chorus:role-crawler a chorus:Role ;
+    rdfs:label "crawler" ; chorus:label "crawler" ;
+    chorus:roleKind "automation" ;
+    chorus:comment "The code/tests walker identity — one crawler, one row shape (Jeff 2026-09-12). Least privilege: code and tests graphs only." .
+
 chorus:role-kade a chorus:Role, chorus:AgentRole ;
     chorus:roleKind "agent" ;
     rdfs:label "Kade" ; chorus:label "Kade" ;
