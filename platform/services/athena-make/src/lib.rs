@@ -1154,12 +1154,12 @@ pub fn write_routes(plural: &str) -> Vec<String> {
         format!("POST /{}/:name/has-child", plural),  // add has-child edge
         format!("DELETE /{}/:name/has-child", plural),// remove has-child edge
     ];
-    // Phase A exposes the bulk transport only for TestResult. The DAL primitive
-    // is entity-generic, but widening the HTTP mutation surface for every class
-    // is a separate contract change.
-    if plural == "testresults" {
-        routes.insert(1, format!("POST /{}/batch", plural));
-    }
+    // #4158 — the bulk transport is generated for EVERY served class, the same
+    // way the single-entity routes are. Phase A (#3573) exposed it for
+    // TestResult alone; the crawler (#4154) writes code and test rows in bulk
+    // and one POST per file measured 1.01 s (12,944 files = 3.6 h). The DAL
+    // primitive was always entity-generic; the route now is too.
+    routes.insert(1, format!("POST /{}/batch", plural));
     routes
 }
 
@@ -1214,9 +1214,7 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
     }
     match (method, parts.len()) {
         ("POST", 1) => Some(WriteOp::CreateEntity),
-        ("POST", 2) if parts[1] == "batch" && plural == "testresults" => {
-            Some(WriteOp::CreateBatch)
-        }
+        ("POST", 2) if parts[1] == "batch" => Some(WriteOp::CreateBatch),
         ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
         ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
@@ -5883,7 +5881,7 @@ mod tests {
         let r = write_routes("domains");
         // entity lifecycle
         assert!(r.contains(&"POST /domains".to_string()), "create entity");
-        assert!(!r.contains(&"POST /domains/batch".to_string()), "batch is not exposed for unrelated classes");
+        assert!(r.contains(&"POST /domains/batch".to_string()), "#4158: every served class gets the batch route");
         assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
         assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
         // per-edge add/remove (mirrors the read edges)
@@ -5918,7 +5916,9 @@ mod tests {
     #[test]
     fn parse_write_maps_method_and_shape() {
         assert_eq!(parse_write("POST", "/domains", "domains"), Some(WriteOp::CreateEntity));
-        assert_eq!(parse_write("POST", "/domains/batch", "domains"), None);
+        assert_eq!(parse_write("POST", "/domains/batch", "domains"), Some(WriteOp::CreateBatch));
+        // NEGATIVE PROOF: a two-segment POST that is not /batch is still not a write
+        assert_eq!(parse_write("POST", "/domains/notbatch", "domains"), None);
         assert_eq!(parse_write("POST", "/testresults/batch", "testresults"), Some(WriteOp::CreateBatch));
         assert_eq!(parse_write("PUT", "/domains/x", "domains"), Some(WriteOp::ReplaceEntity { name: "x".into() }));
         assert_eq!(parse_write("DELETE", "/domains/x", "domains"), Some(WriteOp::DeleteEntity { name: "x".into() }));
