@@ -309,6 +309,8 @@ pub struct RouteTable {
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
     pub tree_edges: Vec<String>, // #3660 — recursive-descent edge localnames, PROJECTED from chorus:treeEdge on the shape. Empty = no /tree read emitted.
     pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
+    pub domain: String,          // #4158 — the domain that definesVocabulary this class; the first path segment
+    pub base_path: String,       // #4158 — the generated collection path: /<domain>/<segment>. Derived, never hand-written.
     pub model_version: String,   // #3704/#3706 — PROJECTED from chorus:modelVersion on the class. "target"=reviewed-canonical, "legacy"=reviewed-strangled; transitional literals "v1"/"v2" persist until the review pass (v1≈legacy, v2≈claimed-current-unreviewed). ABSENT → "unclassified": nobody has reviewed the class, and it must never render as current (born-v2 removed 2026-07-30, Jeff's ruling).
 }
 
@@ -894,7 +896,9 @@ pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
     cs.dedup();
     let items: Vec<String> = cs
         .iter()
-        .map(|c| format!("{{ \"class\": \"{}\", \"api\": \"/{}\" }}", c, pluralize(c)))
+        // #4158 — the index advertises the domain-rooted path (/code/files), the
+        // one the generator now serves; the class-rooted path is a deprecated alias.
+        .map(|c| format!("{{ \"class\": \"{}\", \"api\": \"{}\" }}", c, domain_path(domain.trim(), c)))
         .collect();
     format!(
         "{{ \"domain\": \"{}\", \"vocab\": [{}] }}",
@@ -1082,7 +1086,31 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "unclassified".to_string());
     routes.extend(tree_routes(&plural, &tree_edges));
-    Ok(RouteTable { class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
+        // #4158 — the routes artifact is the human-readable contract, so it states the
+    // path the service actually advertises. Built above from the class plural;
+    // rewritten here onto /<domain>/<segment> now that the defining domain is
+    // known. One rule, applied in one place, never hand-edited.
+    // #4158 — the path's first segment is the class's DOMAIN. Prefer the model's
+    // definesVocabulary edge; when a shape declares chorus:instancesGraph directly
+    // (the migration override) that edge can be absent, so read the domain back
+    // out of the resolved home graph. Path and graph then agree by construction:
+    // /code/... ↔ urn:chorus:domains:code. Neither present is already refused
+    // above by resolve_instances_graph ("no instance home", ADR-051).
+    let domain_of = domain_of.or_else(|| {
+        instances_graph
+            .strip_prefix("urn:chorus:domains:")
+            .map(|d| d.to_string())
+    });
+    let base_path = domain_path(domain_of.as_deref().unwrap_or_default(), class_local);
+    let class_root = format!("/{}", pluralize(class_local));
+    let routes: Vec<String> = routes
+        .into_iter()
+        .map(|r| match r.split_once(&format!(" {}", class_root)) {
+            Some((verb, tail)) => format!("{} {}{}", verb, base_path, tail),
+            None => r,
+        })
+        .collect();
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -2398,7 +2426,7 @@ mod bounds_closedshape_tests {
     /// NEGATIVE PROOF: a body that tries to set a stamp is named and refused.
     #[test]
     fn the_door_stamps_the_write_and_refuses_a_body_stamp() {
-        let table = RouteTable {
+        let table = RouteTable { domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
@@ -2422,7 +2450,7 @@ mod bounds_closedshape_tests {
         assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
         // a class without the stamp fields gets none
-        let plain = RouteTable {
+        let plain = RouteTable { domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
@@ -2473,7 +2501,7 @@ mod bounds_closedshape_tests {
 
     #[test]
     fn verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner() {
-        let mut table = RouteTable {
+        let mut table = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec![
                 "comment|datatype:string".into(),
@@ -3180,6 +3208,72 @@ pub fn pluralize(s: &str) -> String {
         return format!("{}es", s); // class → classes, box → boxes
     }
     format!("{}s", s)
+}
+
+/// #4158 — the domain's singular Pascal prefix. The domain localname is a plural
+/// noun phrase ("code", "tests", "value-streams"); the class names inside it are
+/// Pascal and carry that noun as their prefix ("CodeFile", "TestResult",
+/// "ValueStreamStep"). Inverse of `pluralize` on the LAST hyphen word only:
+/// "tests" → "Test", "value-streams" → "ValueStream", "code" → "Code".
+pub fn domain_prefix(domain: &str) -> String {
+    let mut words: Vec<String> = domain.split('-').map(|w| w.to_string()).collect();
+    if let Some(last) = words.last_mut() {
+        *last = singularize(last);
+    }
+    words
+        .iter()
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+/// Inverse of `pluralize` for one lowercase word. Words that are not plural come
+/// back unchanged ("code" → "code"), which is what keeps the rule mechanical.
+pub fn singularize(w: &str) -> String {
+    if let Some(stem) = w.strip_suffix("ies") {
+        return format!("{}y", stem); // properties → property
+    }
+    for suf in ["ses", "xes", "zes", "ches", "shes"] {
+        if w.ends_with(suf) {
+            return w[..w.len() - 2].to_string(); // classes → class, boxes → box
+        }
+    }
+    if w.ends_with("ss") {
+        return w.to_string(); // access stays access
+    }
+    match w.strip_suffix('s') {
+        Some(stem) if !stem.is_empty() => stem.to_string(),
+        _ => w.to_string(),
+    }
+}
+
+/// #4158 — the collection segment for a class inside its defining domain: the
+/// plural of the class name with the domain's prefix stripped. ONE mechanical
+/// rule, zero special cases (Silas, gate-arch 2026-09-12 16:52): the namesake
+/// class keeps its own name, so Test in `tests` is `tests`, not the empty
+/// segment. CodeFile → files · TestResult → results · LogSource → sources ·
+/// Chunk in `board` (no prefix to strip) → chunks.
+pub fn domain_segment(domain: &str, class_local: &str) -> String {
+    let prefix = domain_prefix(domain);
+    let stem = class_local
+        .strip_prefix(&prefix)
+        .filter(|rest| !rest.is_empty() && rest.starts_with(char::is_uppercase))
+        .unwrap_or(class_local);
+    pluralize(stem)
+}
+
+/// #4158 — the generated base path for a class: `/<domain>/<segment>`. Jeff,
+/// 2026-09-12 16:50, on the first domain API he drove by hand: "i dont want an
+/// api call that starts /codefiles; the top level of the domain is code."
+/// The path and the instance graph now agree (/code/… ↔ urn:chorus:domains:code).
+pub fn domain_path(domain: &str, class_local: &str) -> String {
+    format!("/{}/{}", domain, domain_segment(domain, class_local))
 }
 
 /// #3902 — read the vocabulary semver once per process from the ontology graph
@@ -4030,6 +4124,20 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         None => path,
     };
     let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
+    // #4158 — the PUBLIC collection path is /<domain>/<segment>; every sub-route
+    // below matches the class-rooted form. Normalize once, here, so the rule lives
+    // in one place and the sub-routes (/:name, /completeness, /tree, the write
+    // verbs) inherit it instead of each learning the new shape. The class-rooted
+    // path arrives unchanged and still answers — the deprecated alias.
+    let domain_rooted;
+    let path = if !table.base_path.is_empty()
+        && (path == table.base_path || path.starts_with(&format!("{}/", table.base_path)))
+    {
+        domain_rooted = format!("{}{}", plural, &path[table.base_path.len()..]);
+        domain_rooted.as_str()
+    } else {
+        path
+    };
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
 
     // #3435 — GET /effective/:node/:key — the effective-config read. The ONLY impure
@@ -4062,7 +4170,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
+        let t = RouteTable { domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -4524,16 +4632,33 @@ pub fn dispatch_for(path: &str, tables: &[RouteTable]) -> Dispatch {
 }
 
 pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a RouteTable> {
-    let trimmed = path.trim_start_matches('/');
-    let mut segs = trimmed.split('/');
+    let bare = path.split(['?', '#']).next().unwrap_or("");
+    let trimmed = bare.trim_start_matches('/');
+    let mut segs = trimmed.split('/').filter(|s| !s.is_empty());
     let first = segs.next().unwrap_or("");
-    let resource = if first == "schema" { segs.next().unwrap_or("") } else { first };
-    if resource.is_empty() {
+    let (first, second) = if first == "schema" {
+        (segs.next().unwrap_or(""), segs.next().unwrap_or(""))
+    } else {
+        (first, segs.next().unwrap_or(""))
+    };
+    if first.is_empty() {
         return None;
     }
+    // #4158 — the generated path is /<domain>/<segment>; match it FIRST, on both
+    // segments. Matching the domain alone would serve /code/<anything> from the
+    // domain's first class: the right graph, the wrong rows, and no error.
+    if !second.is_empty() {
+        let two = format!("/{}/{}", first, second);
+        if let Some(t) = tables.iter().find(|t| t.base_path.eq_ignore_ascii_case(&two)) {
+            return Some(t);
+        }
+    }
+    // The class-rooted path stays as a DEPRECATED alias while callers move
+    // (#4158). Discovery advertises the domain-rooted path; this arm only keeps
+    // existing consumers answering until the grep guard says they are all moved.
     tables.iter().find(|t| {
         let cl = t.class.rsplit('#').next().unwrap_or("");
-        pluralize(cl).eq_ignore_ascii_case(resource) || cl.eq_ignore_ascii_case(resource)
+        pluralize(cl).eq_ignore_ascii_case(first) || cl.eq_ignore_ascii_case(first)
     })
 }
 
@@ -4917,7 +5042,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let want = rest.trim_start_matches('/');
                     if let Some(t) = tables
                         .iter()
-                        .find(|t| pluralize(t.class.rsplit('#').next().unwrap_or("")) == want)
+                        // #4158 — /<domain>/<segment>/openapi.json is the advertised
+                        // form; the class-rooted one stays as the deprecated alias.
+                        .find(|t| {
+                            t.base_path.trim_start_matches('/') == want
+                                || pluralize(t.class.rsplit('#').next().unwrap_or("")) == want
+                        })
                     {
                         let (body, ct) = if path.ends_with(".json") {
                             (openapi_json(t), "application/json")
@@ -5461,7 +5591,7 @@ mod tests {
     // codes from the same table, which is the whole defect.
     #[test]
     fn versioned_and_bare_paths_resolve_identically() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into()],
             routes: vec!["GET /domains".into()],
@@ -5694,7 +5824,7 @@ mod tests {
     fn page_html_is_a_generated_projection_on_system_css() {
         // #3420: page_html emits the SHELL of the real Athena domain page anatomy on the
         // #3415 design system; the shared /js/domain-renderer.js fills the mount points.
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into(), "status|datatype:string".into()],
             routes: vec!["GET /domains".into()],
@@ -5731,7 +5861,7 @@ mod tests {
         assert_eq!(page_html(&t), page_html(&t));
         // #3420 AC6 — the breadcrumb/title are CLASS-projected (the generalization path for
         // services/roles), not a hardcoded "Domain". Prove it with a different class.
-        let svc = page_html(&RouteTable {
+        let svc = page_html(&RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Service", NS),
             fields: vec![],
             routes: vec![],
@@ -5761,7 +5891,7 @@ mod tests {
     // === #3453 — serve the generated OpenAPI spec + human view ===
 
     fn openapi_fixture() -> RouteTable {
-        RouteTable {
+        RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
@@ -5901,6 +6031,100 @@ mod tests {
     // within_one_ttl) — the role is asked of the graph, so there is no string
     // shape left to pin.
 
+    fn t4158(domain: &str, class_local: &str) -> RouteTable {
+        RouteTable {
+            domain: domain.to_string(),
+            base_path: domain_path(domain, class_local),
+            class: format!("{}{}", NS, class_local),
+            fields: vec![], routes: vec![], secured: vec![], mandatory: vec![],
+            write_required: vec![], repo_target: String::new(), exposure: vec![],
+            instances_graph: format!("urn:chorus:domains:{}", domain),
+            tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+        }
+    }
+
+    #[test]
+    fn select_table_serves_the_domain_rooted_path() {
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult"), t4158("tests", "Test")];
+        // the generated path
+        assert_eq!(select_table("/code/files", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        assert_eq!(select_table("/tests/results", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+        // entity under the domain-rooted collection
+        assert_eq!(select_table("/code/files/abc123", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        // query string is not part of the match
+        assert_eq!(select_table("/tests/results?limit=1", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn select_table_keeps_the_class_rooted_path_as_a_deprecated_alias() {
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
+        assert_eq!(select_table("/codefiles", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        assert_eq!(select_table("/testresults/x", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn negative_proof_a_made_up_domain_root_is_not_served() {
+        // #4158 AC3 — the rule must be able to say NO. A path under a real domain
+        // whose segment names no class, and a path under no domain at all, both
+        // miss. If this ever passes, select_table is matching on the first
+        // segment alone and every /<domain>/<anything> would serve the domain's
+        // first class — a confident wrong answer against the right graph.
+        let tables = vec![t4158("code", "CodeFile")];
+        assert!(select_table("/code/widgets", &tables).is_none(), "unknown segment under a real domain");
+        assert!(select_table("/widgets/files", &tables).is_none(), "unknown domain");
+        assert!(select_table("/code", &tables).is_none(), "the bare domain root is not a collection");
+    }
+
+    #[test]
+    fn domain_path_is_the_one_rule_for_every_live_class() {
+        // #4158 — the real class→domain map from the model (62 pairs, 31 domains),
+        // sampled across every shape the rule has to handle.
+        // prefix present, stripped:
+        assert_eq!(domain_path("code", "CodeFile"), "/code/files");
+        assert_eq!(domain_path("code", "CodeKind"), "/code/kinds");
+        assert_eq!(domain_path("tests", "TestResult"), "/tests/results");
+        assert_eq!(domain_path("tests", "TestSuiteRun"), "/tests/suiteruns");
+        assert_eq!(domain_path("logs", "LogSource"), "/logs/sources");
+        assert_eq!(domain_path("value-streams", "ValueStreamStep"), "/value-streams/steps");
+        assert_eq!(domain_path("domains", "SubDomain"), "/domains/subdomains");
+        // no prefix to strip — the class is pluralized whole:
+        assert_eq!(domain_path("code", "Language"), "/code/languages");
+        assert_eq!(domain_path("board", "Chunk"), "/board/chunks");
+        assert_eq!(domain_path("identity", "Principal"), "/identity/principals");
+        assert_eq!(domain_path("security", "APISurface"), "/security/apisurfaces");
+        assert_eq!(domain_path("properties", "PropertyKey"), "/properties/keys");
+        assert_eq!(domain_path("services-domain", "ServiceInstance"), "/services-domain/serviceinstances");
+        // the namesake class is NOT a special case (Silas, gate-arch 16:52):
+        assert_eq!(domain_path("tests", "Test"), "/tests/tests");
+        assert_eq!(domain_path("cards", "Card"), "/cards/cards");
+        assert_eq!(domain_path("domains", "Domain"), "/domains/domains");
+    }
+
+    #[test]
+    fn domain_prefix_inverts_pluralize_on_the_last_word_only() {
+        assert_eq!(domain_prefix("tests"), "Test");
+        assert_eq!(domain_prefix("code"), "Code");          // not plural — unchanged
+        assert_eq!(domain_prefix("properties"), "Property");
+        assert_eq!(domain_prefix("value-streams"), "ValueStream");
+        assert_eq!(domain_prefix("services-domain"), "ServicesDomain");
+        // every live domain's prefix round-trips through pluralize on its last word
+        for d in ["alerts", "cards", "logs", "messages", "metrics", "monitors", "policies", "practices", "principles", "products", "roles", "services", "skills", "streams", "values"] {
+            let p = domain_prefix(d);
+            assert_eq!(pluralize(&p), d, "domain {d} → prefix {p} must pluralize back");
+        }
+    }
+
+    #[test]
+    fn negative_proof_a_partial_prefix_is_not_stripped() {
+        // #4158 NEGATIVE PROOF: stripping must be Pascal-boundary aware, or
+        // "Testament" in `tests` would serve as /tests/aments. The rule only
+        // strips when the remainder starts a new Pascal word.
+        assert_eq!(domain_path("tests", "Testament"), "/tests/testaments");
+        assert_eq!(domain_path("code", "Codex"), "/code/codexes");
+        // and a class whose name merely CONTAINS the prefix is untouched
+        assert_eq!(domain_path("logs", "DialogSource"), "/logs/dialogsources");
+    }
+
     #[test]
     fn kind_of_class_maps_camelcase_to_adr040_kebab() {
         // #3647 — the drill's third find: lowercasing ValueStreamStep produced
@@ -6031,7 +6255,7 @@ mod tests {
 
     #[test]
     fn routes_json_is_deterministic() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
@@ -6096,7 +6320,7 @@ mod tests {
     fn routes_json_publishes_the_mandatory_floor() {
         // AC4/AC5 — the floor is part of the published /schema contract so the page
         // meter sources completeness from the MODEL (severing the Athena-v1 dependency).
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label".into(), "comment".into()],
             routes: vec!["GET /domains".into()],
@@ -6130,7 +6354,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
+        let t = RouteTable { domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -6232,7 +6456,7 @@ mod tests {
     // shape/ontology graph (Silas's scope-trap). And it carries the new claims.
     #[test]
     fn dal_emit_scopes_to_instance_graph_and_mints_scoped_token() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Test", NS),
             fields: vec!["filePath|datatype:string".into()],
             routes: vec!["PUT /tests".into()],
@@ -6354,7 +6578,7 @@ mod dispatch_effective_3845 {
     use super::*;
 
     fn table(class: &str) -> RouteTable {
-        RouteTable {
+        RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("https://jeffbridwell.com/chorus#{class}"),
             fields: vec![],
             routes: vec![],

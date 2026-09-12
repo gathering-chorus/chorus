@@ -598,9 +598,15 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert_eq!(t.class, format!("{}Domain", NS));
     assert!(t.fields.contains(&"comment|datatype:string".to_string()));
     assert!(t.fields.contains(&"ownedBy|edge:Role".to_string()));
-    assert!(t.routes.contains(&"GET /domains".to_string()));
-    assert!(t.routes.contains(&"POST /domains/:name/partof".to_string()));
-    assert!(t.routes.contains(&"GET /domains/:name/tree".to_string()), "treeEdge opt-in emits the tree route");
+    // #4158 — the stub model's Domain class is defined by the `athena` domain, so
+    // the generated path is /athena/domains. The class-rooted /domains is a
+    // deprecated alias that still answers; it is no longer what we advertise.
+    assert_eq!(t.domain, "athena");
+    assert_eq!(t.base_path, "/athena/domains");
+    assert!(t.routes.contains(&"GET /athena/domains".to_string()), "{:?}", t.routes);
+    assert!(t.routes.contains(&"POST /athena/domains/:name/partof".to_string()), "{:?}", t.routes);
+    assert!(t.routes.contains(&"GET /athena/domains/:name/tree".to_string()), "treeEdge opt-in emits the tree route");
+    assert!(!t.routes.iter().any(|r| r.ends_with(" /domains")), "no class-rooted path is ADVERTISED: {:?}", t.routes);
     assert_eq!(t.secured, vec!["/schema/domain".to_string()]);
     assert_eq!(t.mandatory, vec!["comment".to_string()]);
     assert_eq!(t.write_required, vec!["comment".to_string()]);
@@ -616,7 +622,9 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert_eq!(w.test_result.instances_graph, "urn:chorus:domains:tests");
     assert!(w.test_result.fields.contains(&"ofTest|edge:Test".to_string()));
     assert!(w.test_result.write_required.contains(&"ofTest".to_string()));
-    assert!(w.test_result.routes.contains(&"POST /testresults/batch".to_string()));
+    // #4158 — TestResult is defined by the `tests` domain: /tests/results.
+    assert_eq!(w.test_result.base_path, "/tests/results");
+    assert!(w.test_result.routes.contains(&"POST /tests/results/batch".to_string()), "{:?}", w.test_result.routes);
 }
 
 #[test]
@@ -1173,7 +1181,7 @@ fn effective_config_read_resolves_and_coerces() {
     // unknown route lists the generated routes
     let (c, b) = athena_make::handle("/nonsense", &w.domain);
     assert_eq!(c, 404);
-    assert!(b.contains("GET /domains"), "{}", b);
+    assert!(b.contains("GET /athena/domains"), "{}", b);
 }
 
 #[test]
