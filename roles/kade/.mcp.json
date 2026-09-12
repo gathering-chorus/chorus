@@ -4,15 +4,37 @@
     "chorus-api": {
       "type": "http",
       "url": "http://localhost:3341/mcp",
-      "headers": { "X-Chorus-Role": "kade" }
+      "headers": {
+        "X-Chorus-Role": "kade"
+      }
     },
     "cclsp": {
       "command": "/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/node",
-      "args": ["/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/cclsp"],
-      "env": { "CCLSP_CONFIG_PATH": "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json" }
+      "args": [
+        "/Users/jeffbridwell/.nvm/versions/node/v20.20.2/bin/cclsp"
+      ],
+      "env": {
+        "CCLSP_CONFIG_PATH": "/Users/jeffbridwell/CascadeProjects/chorus/cclsp.json"
+      }
     },
     "ast-grep": {
       "command": "/Users/jeffbridwell/.local/bin/ast-grep-server"
+    },
+    "loki": {
+      "command": "/Users/jeffbridwell/.chorus/bin/loki-mcp",
+      "env": {
+        "LOKI_URL": "http://localhost:3102"
+      }
+    },
+    "grafana": {
+      "command": "/Users/jeffbridwell/.chorus/bin/mcp-grafana",
+      "args": [
+        "-disable-admin",
+        "-disable-write"
+      ],
+      "env": {
+        "GRAFANA_URL": "http://localhost:3100"
+      }
     }
   }
 }
