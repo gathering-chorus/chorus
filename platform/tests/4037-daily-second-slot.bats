@@ -18,21 +18,16 @@
 # that loses the single-flight lock to a live run must NUDGE, never vanish.
 
 BIN="${WERK_TEST_BIN:-$BATS_TEST_DIRNAME/../services/werk-test/target/release/werk-test}"
-PLIST="$BATS_TEST_DIRNAME/../scripts/com.chorus.nightly-suites.plist"
+# #4148: a card werk builds only its own crates, so the runner binary is absent
+# there and the lock tests died with 127 in the pipeline. The installed runner
+# is the same product; use it when the werk has no build.
+[ -x "$BIN" ] || BIN="$HOME/.chorus/bin/werk-test-bin"
 
 has() { grep -qF -- "$2" <<<"$1"; }
 
 # A process table with no nightly runner in it, and one with a runner mid-lane.
 # Format is what nightly_live_runners parses: a header row, then pid ppid etime cmd.
 
-count_slots() { # slots in a plist = Hour keys inside StartCalendarInterval
-  python3 - "$1" <<'PY'
-import plistlib,sys
-d=plistlib.load(open(sys.argv[1],'rb'))
-v=d.get('StartCalendarInterval')
-print(len(v) if isinstance(v,list) else (1 if v else 0))
-PY
-}
 
 setup() {
   TMP="$BATS_TEST_TMPDIR"
@@ -50,22 +45,9 @@ setup() {
   printf '#!/bin/bash\nexit 0\n' > "$CHORUS_LOG_BIN"; chmod +x "$CHORUS_LOG_BIN"
 }
 
-@test "the agent carries BOTH daily slots (03:00 and 13:30)" {
-  [ "$(count_slots "$PLIST")" -ge 2 ]
-}
-
-@test "negative proof: the check separates its states — a single-slot plist reads 1, not 2" {
-  cat > "$TMP/single.plist" <<'P'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key><string>x</string>
-<key>StartCalendarInterval</key><dict><key>Hour</key><integer>3</integer></dict>
-</dict></plist>
-P
-  [ "$(count_slots "$TMP/single.plist")" -eq 1 ]
-}
-
+# #4148 (Jeff, 2026-09-12): the slot-count tests are gone. They asserted the
+# plist still said what a card said; nothing here can tell whether launchd fires.
+# The 03:00 run's own log line is the proof of the schedule.
 @test "one agent only: no second com.chorus.*suites LaunchAgent in the repo" {
   run bash -c "ls '$BATS_TEST_DIRNAME/../scripts/' | grep -c 'com.chorus..*suites.*plist'"
   [ "$output" = "1" ]

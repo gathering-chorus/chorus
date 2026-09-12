@@ -13,31 +13,17 @@
         <string>--nightly</string>
         <string>--run-all</string>
     </array>
-    <!-- #4037: Jeff wants a DAILY run, not only 03:00 — one agent, two
-         calendar slots, same runner/log/lock. The afternoon slot lets a
-         noon fix see its proof the same day. -->
-    <!-- #4073 (2026-09-02): the night slot moved 03:00 -> 06:00. HYPOTHESIS under
-         test, not a finding: com.gathering.fuseki-backup (a 49 GB copy) also
-         fires at 03:00 and ran 03:00:06 -> 05:44:38 on 09-02, covering the whole
-         nightly; platform/api was cut off at its 1200s cap at 03:36 both nights
-         and finishes in 170s by day. 06:00 starts after the backup ends. If
-         platform/api completes tonight the hypothesis holds; if it is still cut
-         off, the cause is something its own tests wait on at night. -->
+    <!-- #4148 (Jeff, 2026-09-12 07:39): "3am only + our current work on demand".
+         The two daytime slots from #4037 (06:00, 13:30) are gone. One scheduled
+         run at 03:00; every other full run is launched by a role for the work in
+         hand. The Fuseki backup fires at 00:00 and is done before 03:00. -->
     <key>StartCalendarInterval</key>
-    <array>
-        <dict>
-            <key>Hour</key>
-            <integer>6</integer>
-            <key>Minute</key>
-            <integer>0</integer>
-        </dict>
-        <dict>
-            <key>Hour</key>
-            <integer>13</integer>
-            <key>Minute</key>
-            <integer>30</integer>
-        </dict>
-    </array>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
     <key>StandardOutPath</key>
     <string>/Users/jeffbridwell/Library/Logs/Chorus/nightly-suites.log</string>
     <key>StandardErrorPath</key>
