@@ -778,15 +778,34 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // 6-worker take pegged the box to 194).
     let npm_workers: usize = std::env::var("NIGHTLY_NPM_WORKERS").ok()
         .and_then(|v| v.parse().ok()).unwrap_or(nw_default);
+    // (#4152: read here, above the npm lane; the bats lane below uses the same list)
+    let iso_conf = std::fs::read_to_string(
+        Path::new(&root).join("platform/scripts/nightly-isolation.conf"))
+        .unwrap_or_default();
+    let explicit_iso: Vec<String> = iso_conf.lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .collect();
     let npm_root = root.clone();
-    let (npm_results, npm_waits) = werk_test::run_pool_gated(&ts_pkgs, npm_workers, cap, read_loadavg, gate_wait, gate_tick,
-        |p| {
-            let (ok, cases) = run_jest_with(&npm_root, p, Some(jest_workers));
-            // #4030 AC3 — stored the moment the package finishes (foreign-file
-            // cases included: they join by their own file path)
-            store_unit(p, &cases);
-            (ok, cases)
-        });
+    // #4152 — a package named in nightly-isolation.conf runs ALONE after the
+    // pool, the rule the bats lane already has. directing/products/cards
+    // mutates the live board and reads Vikunja's SQLite; beside another jest
+    // package it saw "database is locked" and read a stale status (the
+    // 2026-09-12 red). Plan order is kept: pool first, alone after.
+    let npm_plan = werk_test::plan_parallel_units(&ts_pkgs, &|u| explicit_iso.iter().any(|e| e == u));
+    println!("-- #4152 npm plan: {} packages fan out across {} workers, {} alone: {} --",
+        npm_plan.parallel.len(), npm_workers, npm_plan.serialized.len(), npm_plan.serialized.join(","));
+    let run_pkg = |p: &str| {
+        let (ok, cases) = run_jest_with(&npm_root, p, Some(jest_workers));
+        // #4030 AC3 — stored the moment the package finishes (foreign-file
+        // cases included: they join by their own file path)
+        store_unit(p, &cases);
+        (ok, cases)
+    };
+    let (mut npm_results, mut npm_waits) = werk_test::run_pool_gated(&npm_plan.parallel, npm_workers, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
+    let (alone_results, alone_waits) = werk_test::run_pool_gated(&npm_plan.serialized, 1, cap, read_loadavg, gate_wait, gate_tick, run_pkg);
+    npm_results.extend(alone_results);
+    npm_waits += alone_waits;
     for (p, (ok, cases)) in npm_results {
         let p = &p;
         let pkg_ns: Vec<String> = if stack_down.is_some() {
@@ -885,13 +904,6 @@ fn run_nightly(args: &[String]) -> Result<i32, String> {
     // is named in the isolation conf (a suite that mutates the shared stack
     // must never overlap anything). Report order stays the plan's order —
     // run_pool returns input order regardless of completion order.
-    let iso_conf = std::fs::read_to_string(
-        Path::new(&root).join("platform/scripts/nightly-isolation.conf"))
-        .unwrap_or_default();
-    let explicit_iso: Vec<String> = iso_conf.lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .collect();
     let plan = werk_test::plan_parallel_units(&bats_suites,
         &|u| werk_test::unit_is_isolated(u, &rows, &explicit_iso));
     let workers: usize = std::env::var("NIGHTLY_SUITE_WORKERS").ok()

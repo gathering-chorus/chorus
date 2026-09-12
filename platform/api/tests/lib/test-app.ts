@@ -29,6 +29,9 @@
  *   });
  */
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 
@@ -43,7 +46,21 @@ export interface TestApp {
   close: () => Promise<void>;
 }
 
+/** #4152 — the path the live chorus-api opens; the harness refuses it. */
+export function liveIndexDbPath(): string {
+  return path.join(os.homedir(), '.chorus', 'index.db');
+}
+
 export async function startTestApp(): Promise<TestApp> {
+  // #4152 — refuse the live index.db. jest globalSetup
+  // (tests/lib/index-db-global-setup.js) points CHORUS_DB_PATH at a per-run
+  // backup; a harness on the live file is the nightly's 503/500/locked red.
+  const dbPath = process.env.CHORUS_DB_PATH;
+  if (fs.existsSync(liveIndexDbPath()) && (!dbPath || path.resolve(dbPath) === path.resolve(liveIndexDbPath()))) {
+    throw new Error(
+      `#4152 test harness refuses the live index.db (${liveIndexDbPath()}); ` +
+      `CHORUS_DB_PATH=${dbPath ?? '(unset)'} — run through jest (globalSetup makes the copy) or point it at a copy`);
+  }
   // Import AFTER env is set so config-reading modules see test values.
   // The server module default-exports the Express app instance.
   const { default: app } = await import('../../src/server');
