@@ -649,6 +649,61 @@ fi
 # substrate, not about a deploy script. Silas owns the Principal half. This
 # comment exists so the gap is a stated position with an owner, not a silence.
 # =============================================================================
+# #4157 — stage + additive merge of an INSTANCE set into its domain graph, with the
+# #3726 single-request verify. Same shape as the security block below (which stays
+# as Silas wrote it); the code vocabulary rides this function, and the next domain's
+# named values should too. Args: <graph> <tag> <ttl>...
+stage_merge_set() {
+  local graph="$1" tag="$2"; shift 2
+  local staging="${graph}-staging-deploy" ttl scode mcode merge resp missing
+  for ttl in "$@"; do
+    [ -f "$ttl" ] || { echo "athena-deploy-model: ${tag} TTL not found: $ttl" >&2; return 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "athena-deploy-model: riot validate FAILED for ${tag} $ttl — NOT deploying" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="riot-invalid-${tag}" 2>/dev/null || true
+      return 1
+    fi
+  done
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+  for ttl in "$@"; do
+    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-resp.txt" -w '%{http_code}' -X POST \
+      -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$staging" 2>/dev/null) || scode="000"
+    if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
+      echo "athena-deploy-model: ${tag} staging load failed for $ttl (http $scode)" >&2
+      head -3 "/tmp/chorus-model-${tag}-resp.txt" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-staging-http-$scode" 2>/dev/null || true
+      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+      return 1
+    fi
+  done
+  merge="DELETE { GRAPH <$graph> { ?s ?p ?o } } WHERE { GRAPH <$staging> { ?s ?sp ?so } GRAPH <$graph> { ?s ?p ?o } } ; INSERT { GRAPH <$graph> { ?s ?p ?o } } WHERE { GRAPH <$staging> { ?s ?p ?o } }"
+  mcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-merge.txt" -w '%{http_code}' -X POST \
+    -H 'Content-Type: application/sparql-update' --data-binary "$merge" "$FUSEKI_UPDATE" 2>/dev/null) || mcode="000"
+  if [ "$mcode" != "200" ] && [ "$mcode" != "204" ]; then
+    echo "athena-deploy-model: ${tag} merge staging->${graph} failed (http $mcode)" >&2
+    head -3 "/tmp/chorus-model-${tag}-merge.txt" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-merge-http-$mcode" 2>/dev/null || true
+    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+    return 1
+  fi
+  resp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$staging> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$graph> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$resp" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: ${tag}-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-verify-unanswered" 2>/dev/null || true
+    return 1
+  fi
+  missing=$(printf '%s\n' "$resp" | tail -1 | tr -dc '0-9')
+  if [ "${missing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: ${tag}-VERIFY FAILED — ${missing:-?} staged subject(s) absent from <$graph> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-verify-missing" missing="${missing:-unknown}" 2>/dev/null || true
+    return 1
+  fi
+  return 0
+}
+
 if [ -z "${TTL:-}" ]; then
   SECURITY_GRAPH="${SECURITY_GRAPH:-urn:chorus:domains:security}"
   SECURITY_STAGING="${SECURITY_GRAPH}-staging-deploy"
@@ -723,6 +778,21 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
   echo "athena-deploy-model: hydrated ${#SECURITY_SET[@]} security file(s) -> <$SECURITY_GRAPH> (http $smcode, $_sn principals live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$SECURITY_GRAPH" principals="${_sn}" 2>/dev/null || true
+fi
+
+# #4157 — the code domain's named values (CodeKind, Language) land in
+# <urn:chorus:domains:code> by the same stage+merge+verify path: reproducible from
+# the repo, never hand-run, never in the ontology graph.
+if [ -z "${TTL:-}" ]; then
+  CODE_GRAPH="${CODE_GRAPH:-urn:chorus:domains:code}"
+  CODE_VOCAB_SET=( "$CHORUS_ROOT/designing/data/code-vocab.ttl" )
+  stage_merge_set "$CODE_GRAPH" code-vocab "${CODE_VOCAB_SET[@]}" || exit 1
+  _cn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?v) AS ?n) WHERE { GRAPH <$CODE_GRAPH> { ?v a ?t . FILTER(?t IN (c:CodeKind, c:Language)) } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _cn="?"
+  echo "athena-deploy-model: hydrated ${#CODE_VOCAB_SET[@]} code-vocab file(s) -> <$CODE_GRAPH> ($_cn named values live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$CODE_GRAPH" values="${_cn}" 2>/dev/null || true
 fi
 
 # =============================================================================

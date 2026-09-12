@@ -174,6 +174,13 @@ pub struct ShapeSpec<'a> {
     pub class: &'a str,
     pub required: &'a [String],
     pub target_file: &'a str,
+    /// #4157 — typed properties. `edges`: (property, target class) → sh:class;
+    /// `datatypes`: (property, xsd type) → sh:datatype; `optional`: typed but no
+    /// floor (minCount absent). Before this the verb could only say "path +
+    /// minCount 1", so a served class could not refuse a free-string edge value.
+    pub edges: &'a [(String, String)],
+    pub datatypes: &'a [(String, String)],
+    pub optional: &'a [String],
     /// #3752 rider (Wren, ADR-051 "declared on the shape, no default"): the
     /// named graph this class's INSTANCES live in. Optional — a shape without
     /// it relies on the definesVocabulary derivation; a shape WITH it is the
@@ -273,6 +280,15 @@ pub fn check_shape(spec: &ShapeSpec, deploy_set: &BTreeSet<String>) -> Vec<TboxR
     if spec.required.is_empty() {
         out.push(TboxRefusal::ShapeWithNoFloor { class: spec.class.into() });
     }
+    // #4157 — a type on a property the shape never names would be dropped on
+    // the floor silently; refuse so the caller learns the shape is narrower
+    // than they believe (the #3885 lesson, one flag over).
+    let named: Vec<&str> = spec.required.iter().chain(spec.optional.iter()).map(String::as_str).collect();
+    for (p, _) in spec.edges.iter().chain(spec.datatypes.iter()) {
+        if !named.contains(&p.as_str()) {
+            out.push(TboxRefusal::RequiredFieldMissing { subject: format!("{} (typed but not named on the shape)", p), field: "--required/--optional" });
+        }
+    }
     manifest_check(spec.target_file, deploy_set, &mut out);
     out
 }
@@ -309,26 +325,44 @@ pub fn property_turtle(spec: &PropertySpec) -> String {
     } else {
         format!("chorus:{range}")
     };
+    // #4157 — an xsd range is a literal: owl:DatatypeProperty, not ObjectProperty
+    // (the verb minted every property as an object property; a literal-ranged
+    // one then failed the DAL's edge path).
+    let kind = if range.starts_with("xsd:") { "owl:DatatypeProperty" } else { "owl:ObjectProperty" };
     format!(
-        "chorus:{name} a owl:ObjectProperty ;\n    \
+        "chorus:{name} a {kind} ;\n    \
          rdfs:label \"{name}\" ;\n    \
          rdfs:comment \"{comment}\" ;\n    \
          rdfs:domain chorus:{domain} ;\n    \
          rdfs:range {range_term} .\n",
         name = spec.name,
+        kind = kind,
         comment = esc(spec.comment.expect("checked")),
         domain = spec.domain.expect("checked"),
     )
 }
 
 pub fn shape_turtle(spec: &ShapeSpec) -> String {
+    // #4157 — every named property carries its type when one was given:
+    // sh:class for an edge (the DAL then refuses an unknown target), sh:datatype
+    // for a literal. Required properties keep the minCount 1 floor; optional
+    // ones are typed with no floor.
+    let typed = |p: &str| -> String {
+        if let Some((_, cls)) = spec.edges.iter().find(|(k, _)| k == p) {
+            format!(" ; sh:class chorus:{cls}")
+        } else if let Some((_, dt)) = spec.datatypes.iter().find(|(k, _)| k == p) {
+            let dt = if dt.contains(':') { dt.clone() } else { format!("xsd:{dt}") };
+            format!(" ; sh:datatype {dt}")
+        } else {
+            String::new()
+        }
+    };
+    let path_of = |p: &str| if p.starts_with("rdfs:") { p.to_string() } else { format!("chorus:{p}") };
     let props = spec
         .required
         .iter()
-        .map(|p| {
-            let path = if p.starts_with("rdfs:") { p.clone() } else { format!("chorus:{p}") };
-            format!("    sh:property [ sh:path {path} ; sh:minCount 1 ] ;\n")
-        })
+        .map(|p| format!("    sh:property [ sh:path {} ; sh:minCount 1{} ] ;\n", path_of(p), typed(p)))
+        .chain(spec.optional.iter().map(|p| format!("    sh:property [ sh:path {}{} ] ;\n", path_of(p), typed(p))))
         .collect::<String>();
     let ig = spec.instances_graph
         .map(|g| format!("    chorus:instancesGraph \"{g}\" ;\n"))
@@ -573,7 +607,7 @@ mod tests {
     #[test]
     fn a_shape_with_no_required_properties_is_refused() {
         let r = check_shape(
-            &ShapeSpec { class: "Widget", required: &[], target_file: ok_file(), instances_graph: None },
+            &ShapeSpec { class: "Widget", required: &[], target_file: ok_file(), instances_graph: None, edges: &[], datatypes: &[], optional: &[] },
             &manifest(),
         );
         assert!(matches!(r.as_slice(), [TboxRefusal::ShapeWithNoFloor { .. }]));
@@ -628,6 +662,63 @@ mod tests {
         );
         assert!(r.is_empty(), "empty manifest must not fabricate a refusal");
     }
+    // ── #4157 — typed shapes and datatype properties ──────────────────────
+    fn sv(v: &[(&str, &str)]) -> Vec<(String, String)> {
+        v.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+    #[test]
+    fn a_shape_edge_emits_sh_class_so_the_dal_can_refuse_a_free_string() {
+        let req = vec!["filePath".to_string(), "hasKind".to_string(), "hasLanguage".to_string()];
+        let edges = sv(&[("hasKind", "CodeKind"), ("hasLanguage", "Language")]);
+        let dts = sv(&[("filePath", "xsd:string")]);
+        let t = shape_turtle(&ShapeSpec {
+            class: "CodeFile", required: &req, target_file: ok_file(), instances_graph: Some("urn:chorus:domains:code"),
+            edges: &edges, datatypes: &dts, optional: &[],
+        });
+        assert!(t.contains("sh:path chorus:hasKind ; sh:minCount 1 ; sh:class chorus:CodeKind"), "{t}");
+        assert!(t.contains("sh:path chorus:hasLanguage ; sh:minCount 1 ; sh:class chorus:Language"), "{t}");
+        assert!(t.contains("sh:path chorus:filePath ; sh:minCount 1 ; sh:datatype xsd:string"), "{t}");
+    }
+    #[test]
+    fn an_optional_typed_property_has_no_floor_but_keeps_its_type() {
+        let req = vec!["filePath".to_string()];
+        let opt = vec!["hasDomain".to_string()];
+        let edges = sv(&[("hasDomain", "Domain")]);
+        let t = shape_turtle(&ShapeSpec {
+            class: "CodeFile", required: &req, target_file: ok_file(), instances_graph: None,
+            edges: &edges, datatypes: &[], optional: &opt,
+        });
+        assert!(t.contains("sh:path chorus:hasDomain ; sh:class chorus:Domain ]"), "{t}");
+        assert!(!t.contains("hasDomain ; sh:minCount"), "{t}");
+    }
+    #[test]
+    fn negative_proof_an_edge_on_a_property_the_shape_does_not_name_is_refused() {
+        // A typed edge for a property that is neither required nor optional
+        // would be silently dropped; the verb refuses instead.
+        let req = vec!["filePath".to_string()];
+        let edges = sv(&[("hasKind", "CodeKind")]);
+        let r = check_shape(
+            &ShapeSpec { class: "CodeFile", required: &req, target_file: ok_file(), instances_graph: None,
+                         edges: &edges, datatypes: &[], optional: &[] },
+            &manifest(),
+        );
+        assert!(r.iter().any(|x| matches!(x, TboxRefusal::RequiredFieldMissing { field: "--required/--optional", .. })), "{r:?}");
+    }
+    #[test]
+    fn an_xsd_ranged_property_is_a_datatype_property_not_an_object_property() {
+        let t = property_turtle(&PropertySpec {
+            name: "codeLines", domain: Some("CodeFile"), range: Some("xsd:integer"),
+            comment: Some("line count"), target_file: ok_file(),
+        });
+        assert!(t.contains("a owl:DatatypeProperty"), "{t}");
+        assert!(!t.contains("owl:ObjectProperty"), "{t}");
+        let o = property_turtle(&PropertySpec {
+            name: "hasKind", domain: Some("CodeFile"), range: Some("CodeKind"),
+            comment: Some("kind"), target_file: ok_file(),
+        });
+        assert!(o.contains("a owl:ObjectProperty"), "{o}");
+    }
+
 }
 
 #[cfg(test)]
@@ -693,4 +784,5 @@ mod retire_tests {
         assert_eq!(class_route("PropertyKey"), "propertykeys");
         assert_eq!(class_route("AuthBoundary"), "authboundaries");
     }
+
 }

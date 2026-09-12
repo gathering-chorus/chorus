@@ -426,8 +426,9 @@ chorus:storeStatus a owl:DatatypeProperty ;
 # --- Code Files (#1868) ---
 
 chorus:CodeFile a owl:Class ;
+    rdfs:subClassOf chorus:File ;   # #4157 — a CodeFile is a File with a kind (crawler shape, 2026-09-12); filePath is the identity it inherits
     rdfs:label "Code File" ;
-    rdfs:comment "A source file that belongs to a domain — manually populated, crawler verified." .
+    rdfs:comment "A source file that belongs to a domain — crawler populated through /v1/codefiles (#4157); kind and language are named individuals." .
 
 chorus:hasCodeFile a owl:ObjectProperty ;
     rdfs:label "has code file" ;

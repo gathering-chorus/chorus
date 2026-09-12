@@ -6,4 +6,4 @@
 # rendered projection into the store. gc-vocab-versioned reds on any mismatch
 # between the SERVED version and the ledger head (hand-edit detector).
 chorus:model a owl:Ontology ;
-    chorus:vocabVersion "1.9.0" .
+    chorus:vocabVersion "1.16.0" .

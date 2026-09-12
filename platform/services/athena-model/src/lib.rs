@@ -82,6 +82,13 @@ const KINDS: &[(&str, &str, bool)] = &[
     // already test-*-slugged). bare_grain=true reproduces exactly that IRI. The
     // DAL can now also create tests — governed, harmless; the point is edges.
     ("test", "Test", true),
+    // #4157 — the code domain served: CodeFile rows and the two vocabulary
+    // classes their edges point at. Type-prefixed (code-file-<name>,
+    // code-kind-<name>, language-<name>); the crawler writes CodeFile through
+    // /v1/codefiles, the seed writes kinds and languages once.
+    ("code-file", "CodeFile", false),
+    ("code-kind", "CodeKind", false),
+    ("language", "Language", false),
     // #3592 (Kade, Jeff-driven card 2026-07-23) — Test's run-evidence kinds. Same
     // generate-vs-write drift #3522 named: TestResult/TestSuiteRun are modeled
     // classes with SHACL shapes and athena-make already generates their write routes,
