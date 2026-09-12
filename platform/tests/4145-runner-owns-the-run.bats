@@ -34,12 +34,14 @@ EOS
   printf '#!/bin/bash\necho "NUDGE to=$1 msg=$2" >> "%s/nudges.txt"\n' "$T" > "$T/nudge.sh"
   chmod +x "$T/nudge.sh"
   python3 - "$T" <<'EOS' &
-import sys, json, http.server, socketserver
+import sys, os, json, http.server, socketserver
 T = sys.argv[1]
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(s):
         open(T + "/hits.txt", "a").write(s.path + "\n")
-        if s.path.startswith("/tests"):
+        if s.path.startswith("/tests") and os.path.exists(T + "/registry.json"):
+            body = json.load(open(T + "/registry.json"))
+        elif s.path.startswith("/tests"):
             body = {"data": [
                 {"filePath": "platform/tests/a.bats", "testName": "one", "covers": "logs"},
                 {"filePath": "platform/tests/a.bats", "testName": "two", "covers": "logs"},
@@ -112,6 +114,21 @@ EOS
   RUNNER="$T/runner2.sh" run run_all
   grep -q '^SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (3 registered, every one executed' "$T/nightly.log"
   ! grep -q '^reconcile-detail|' "$T/nightly.log"
+}
+
+@test "NEGATIVE PROOF (#4147): a registered name with an escaped quote is read whole, so the case it names joins (60 NAME MISMATCH on 2026-09-12)" {
+  cat > "$T/registry.json" <<'EOS'
+{"data": [{"filePath": "directing/clearing/tests/base-path-3872.test.ts", "testName": "has zero =\"// occurrences in index.html", "covers": "logs"}]}
+EOS
+  cat > "$T/runner3.sh" <<'EOS'
+#!/bin/bash
+echo 'nightly-case|directing/clearing/tests/base-path-3872.test.ts|has zero ="// occurrences in index.html'
+echo "nightly-unit|jest|directing/clearing|pass|1 pass, 0 fail"
+EOS
+  chmod +x "$T/runner3.sh"
+  RUNNER="$T/runner3.sh" run run_all
+  grep -q '^SUITE|reconcile|tests-domain|kade|pass|1 pass, 0 fail (1 registered, every one executed' "$T/nightly.log"
+  ! grep -q 'NAME MISMATCH' "$T/nightly.log"
 }
 
 @test "reds nudge their owner as they land, then one grouped line per owner and one TOTAL; slow is named as speed" {

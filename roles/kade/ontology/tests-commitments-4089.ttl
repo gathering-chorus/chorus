@@ -65,7 +65,7 @@ chorus:commitment-registry-is-the-only-selection-engine a chorus:Commitment ;
     rdfs:label "The registry is the only selection engine" ;
     chorus:statement "Every lane picks its tests from the registry (/tests), never from a glob; the runner refuses to run when the registry does not answer, with no fallback walker." ;
     chorus:sourceDoc "designing/docs/test-runner-service-design.html" ; chorus:sourceQuote "A test runs because a pipeline SELECTED it from the registry … never because a script's glob happened to contain it." ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-via-runner.sh" .
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4145-runner-owns-the-run.bats" .
 
 chorus:commitment-five-lists-retired a chorus:Commitment ;
     rdfs:label "The five hand-kept package lists are retired behind retirement gates" ;
@@ -96,7 +96,7 @@ chorus:commitment-hermeticity-gates-needs-stack a chorus:Commitment ;
     rdfs:label "Hermetic tests always block; needs-stack tests skip as a typed, counted state when the stack is down" ;
     chorus:statement "A test's hermeticity is independent of its layer: hermetic tests block every land; needs-stack tests run only with the live stack up and otherwise report SKIPPED as a typed, counted state, never a pass and never a red." ;
     chorus:sourceDoc "designing/docs/tests-service-design.html" ; chorus:sourceQuote "hermeticity — where it can run: hermetic (no live deps) vs needs-stack … hermetic blocks always; needs-stack blocks only when the env is up." ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-stack-gate.sh" .
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4111-hermetic-leg-runs-hermetic-tests.bats" .
 
 chorus:commitment-flake-quarantine a chorus:Commitment ;
     rdfs:label "A quarantined case cannot poison the blocking gate" ;
@@ -166,7 +166,7 @@ chorus:commitment-per-case-results-stored a chorus:Commitment ;
     rdfs:label "Every executed case stores a result under its registered identity, and a run that loses its evidence fails" ;
     chorus:statement "Each case posts one TestResult keyed to the registered Test; the stored count feeds the exit code so a run that computed verdicts and stored none exits 1 with RESULTS LOST." ;
     chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "A run that loses its evidence fails (#4015) … Before this, 2026-08-27's nightly ran 7,411 tests, stored 0, and exited 0 with a verdict." ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-nightly-results-persist.sh" .
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4145-runner-owns-the-run.bats" .
 
 chorus:commitment-nightly-least-privilege-principal a chorus:Commitment ;
     rdfs:label "The nightly writes as its own least-privilege principal" ;
@@ -197,13 +197,13 @@ chorus:commitment-red-names-its-cause a chorus:Commitment ;
     rdfs:label "Every red is labelled: product broke, test wrong, or unmeasured" ;
     chorus:statement "The readout labels each red from its own summary and history — a red that has held or first appears after steady green is product-broke; one that names the machine or flaps is test-wrong; one where the runner took no reading is unmeasured — and the census row counts as a reading." ;
     chorus:sourceDoc "JEFF 2026-09-02" ; chorus:sourceQuote "a red must mean the product broke" ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4063-red-names-itself.bats" .
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4145-runner-owns-the-run.bats" .
 
 chorus:commitment-readout-reaches-jeff a chorus:Commitment ;
     rdfs:label "A readout reaches Jeff after every run" ;
     chorus:statement "After each run Jeff gets minutes taken, suites, reds by owner with their labels, and the delta since the previous run (new, fixed, still red); if the api is down the nudge says unavailable and never invents numbers." ;
     chorus:sourceDoc "JEFF 2026-09-02" ; chorus:sourceQuote "I don't even get a readout on the nightly run" ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4060-nightly-readout-delivery.bats" .
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/4145-runner-owns-the-run.bats" .
 
 chorus:commitment-red-keeps-its-evidence a chorus:Commitment ;
     rdfs:label "A red keeps its own evidence" ;

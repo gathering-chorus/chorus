@@ -178,6 +178,61 @@ pub fn fold_unit_line(line: &str, owner: &dyn Fn(&str) -> String, box_over_load:
     Some((SuiteRow::new(kind, &path, &owner(&path), &v, &s), contradiction))
 }
 
+/// A JSON string field read WITH its escapes honoured. The registry names a
+/// case exactly as its source spells it; `has zero ="// occurrences in
+/// index.html` arrives as `"has zero =\"// occurrences in index.html"`, and a
+/// reader that stops at the first quote registers `has zero =\` — 60 rows
+/// stood as NAME MISMATCH on 2026-09-12 for names that were whole in the
+/// store. Handles `\"`, `\\`, `\/`, `\n`, `\t`, `\r`, `\b`, `\f` and
+/// `\uXXXX` (with surrogate pairs); anything else keeps the character.
+pub fn json_str_field(obj: &str, key: &str) -> Option<String> {
+    let i = obj.find(key)? + key.len();
+    let rest = obj[i..].trim_start().strip_prefix(':')?.trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let mut out = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(out),
+            '\\' => match chars.next()? {
+                '"' => out.push('"'),
+                '\\' => out.push('\\'),
+                '/' => out.push('/'),
+                'n' => out.push('\n'),
+                't' => out.push('\t'),
+                'r' => out.push('\r'),
+                'b' => out.push('\u{8}'),
+                'f' => out.push('\u{c}'),
+                'u' => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    let mut cp = u32::from_str_radix(&hex, 16).ok()?;
+                    if (0xD800..0xDC00).contains(&cp) {
+                        // surrogate pair: expect \uDC00-DFFF next
+                        let tail: String = chars.by_ref().take(6).collect();
+                        let lo = tail.strip_prefix("\\u").and_then(|h| u32::from_str_radix(h, 16).ok())?;
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    }
+                    out.push(char::from_u32(cp)?);
+                }
+                other => out.push(other),
+            },
+            _ => out.push(c),
+        }
+    }
+    None
+}
+
+/// Every object in a JSON array body that carries both `a` and `b` as string
+/// fields, as (a, b) pairs, in order. Objects are split on `},` — the bodies
+/// the registry serves are flat rows, never nested objects.
+pub fn json_rows(json: &str, a: &str, b: &str) -> Vec<(String, String)> {
+    let ka = format!("\"{}\"", a);
+    let kb = format!("\"{}\"", b);
+    json.split("},")
+        .filter_map(|obj| Some((json_str_field(obj, &ka)?, json_str_field(obj, &kb)?)))
+        .collect()
+}
+
 /// `nightly-case|filePath|testName` — one per case the runner joined and
 /// posted this run. The census below is the registry minus these, computed
 /// here from the run's own record instead of a 27-page walk of the ledger.
@@ -569,6 +624,39 @@ pub fn load_verdict(load: f64, cores: f64, per_core: f64) -> (bool, String) {
 #[cfg(test)]
 mod nightly_run_4145 {
     use super::*;
+
+    #[test]
+    fn json_str_field_keeps_an_escaped_quote_whole() {
+        let obj = r#"{"filePath": "directing/clearing/tests/base-path-3872.test.ts", "testName": "has zero =\"// occurrences in index.html", "validityClass": ""}"#;
+        assert_eq!(json_str_field(obj, "\"testName\"").as_deref(), Some(r#"has zero ="// occurrences in index.html"#));
+        assert_eq!(json_str_field(obj, "\"filePath\"").as_deref(), Some("directing/clearing/tests/base-path-3872.test.ts"));
+    }
+
+    #[test]
+    fn json_str_field_decodes_every_json_escape() {
+        let obj = r#"{"n": "a\\b\/c\n\t\u00e9\ud83d\ude00 end"}"#;
+        assert_eq!(json_str_field(obj, "\"n\"").as_deref(), Some("a\\b/c\n\t\u{e9}\u{1F600} end"));
+    }
+
+    #[test]
+    fn negative_proof_the_old_first_quote_reader_truncated_at_the_backslash() {
+        // The 2026-09-12 census: registry `has zero =\"// …` read as `has zero =\`.
+        let obj = r#"{"testName": "has zero =\"// occurrences in index.html"}"#;
+        let key = "\"testName\"";
+        let i = obj.find(key).unwrap() + key.len();
+        let rest = obj[i..].trim_start().strip_prefix(':').unwrap().trim_start().strip_prefix('"').unwrap();
+        let old = &rest[..rest.find('"').unwrap()];
+        assert_eq!(old, "has zero =\\", "the defect this test pins");
+        assert_ne!(json_str_field(obj, key).as_deref(), Some(old));
+    }
+
+    #[test]
+    fn json_rows_pairs_every_row_and_skips_rows_missing_a_field() {
+        let body = r#"{"data": [{"filePath": "a.bats", "testName": "one"}, {"filePath": "a.bats"}, {"filePath": "b.ts", "testName": "say \"hi\""}]}"#;
+        let rows = json_rows(body, "filePath", "testName");
+        assert_eq!(rows, vec![("a.bats".to_string(), "one".to_string()), ("b.ts".to_string(), "say \"hi\"".to_string())]);
+    }
+
 
     fn owner_stub(_: &str) -> String {
         "kade".into()
