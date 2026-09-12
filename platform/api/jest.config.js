@@ -76,6 +76,11 @@ module.exports = {
   //     flakes return, lower, don't re-pin to 1.
   maxWorkers: '50%',
 
+  // #4152 — one online backup of ~/.chorus/index.db per run; workers inherit
+  // CHORUS_DB_PATH so the in-process harness never opens the live file.
+  globalSetup: '<rootDir>/tests/lib/index-db-global-setup.js',
+  globalTeardown: '<rootDir>/tests/lib/index-db-global-teardown.js',
+
   projects: RUN_INTEGRATION
     ? [hermeticProject, integrationProject]
     : [hermeticProject],

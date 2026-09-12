@@ -4725,3 +4725,50 @@ mod stack_probe_4140 {
         assert!(line.contains("NOT run") && !line.contains("typed skip"), "busy is not the typed skip: {line}");
     }
 }
+
+/// #4152 — run a child under a wall-clock cap and return (rc, stdout+stderr).
+/// Both pipes are drained on threads WHILE the child runs. The old form read
+/// them only after exit, so any child writing more than the 64 KB pipe buffer
+/// (cargo llvm-cov's stderr) blocked on write, never exited, and was killed at
+/// the cap: the chorus-hooks coverage red of 2026-09-11/12. Negative proof in
+/// tests/nightly-to-zero-4152.rs.
+pub fn run_capped(mut cmd: std::process::Command, cap: std::time::Duration) -> (i32, String) {
+    use std::io::Read;
+    use std::process::Stdio;
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return (127, format!("spawn failed: {}", e)),
+    };
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            if let Some(mut p) = pipe { let _ = p.read_to_end(&mut buf); }
+            buf
+        })
+    };
+    let out_t = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let err_t = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
+    let t0 = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => {
+                let so = out_t.join().unwrap_or_default();
+                let se = err_t.join().unwrap_or_default();
+                return (st.code().unwrap_or(1), format!("{}{}", String::from_utf8_lossy(&so), String::from_utf8_lossy(&se)));
+            }
+            Ok(None) => {
+                if t0.elapsed() > cap {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    // the pipes close with the child; join so the threads never leak
+                    let _ = out_t.join();
+                    let _ = err_t.join();
+                    return (124, format!("SUITE TIMEOUT rc=124 after {}s", cap.as_secs()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(e) => return (1, format!("wait failed: {}", e)),
+        }
+    }
+}

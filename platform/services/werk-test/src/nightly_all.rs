@@ -184,31 +184,8 @@ fn acquire_lock(lockdir: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run_capped(mut cmd: Command, cap: Duration) -> (i32, String) {
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return (127, format!("spawn failed: {}", e)),
-    };
-    let t0 = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(st)) => {
-                let out = child.wait_with_output().map(|o| format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr))).unwrap_or_default();
-                return (st.code().unwrap_or(1), out);
-            }
-            Ok(None) => {
-                if t0.elapsed() > cap {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return (124, format!("SUITE TIMEOUT rc=124 after {}s", cap.as_secs()));
-                }
-                std::thread::sleep(Duration::from_secs(2));
-            }
-            Err(e) => return (1, format!("wait failed: {}", e)),
-        }
-    }
-}
+// #4152 — run_capped lives in lib.rs (drains pipes while the child runs).
+use werk_test::run_capped;
 
 fn stack_up(ctx: &Ctx) -> bool {
     let api = env_or("NIGHTLY_STACK_API_URL", &format!("{}/api/chorus/context/health", ctx.api));
