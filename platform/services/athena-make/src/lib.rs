@@ -4997,8 +4997,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let plural = pluralize(local);
                             let sv = dim_cache.get(local).map(|d| d.1.clone()).unwrap_or_default();
                             format!(
-                                "{{ \"kind\": \"{}\", \"collection\": \"/{}/{}\", \"openapi\": \"/{}/openapi.json\", \"shapeVersion\": \"{}\" }}",
-                                json_escape(local), API_VERSION, plural, plural, json_escape(&sv)
+                                // #4158 — advertise the domain-rooted path; name the
+                                // class-rooted one as deprecated so a consumer reading
+                                // discovery knows which to move to and which still answers.
+                                "{{ \"kind\": \"{}\", \"collection\": \"/{}{}\", \"openapi\": \"/{}{}/openapi.json\", \"deprecatedCollection\": \"/{}/{}\", \"shapeVersion\": \"{}\" }}",
+                                json_escape(local), API_VERSION, json_escape(&t.base_path), API_VERSION, json_escape(&t.base_path), API_VERSION, plural, json_escape(&sv)
                             )
                         })
                         .collect();
@@ -5133,7 +5136,8 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     Dispatch::NotFound => {
                         let served: Vec<String> = tables
                             .iter()
-                            .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
+                            // #4158 — the miss lists what IS served: the domain-rooted paths.
+                            .map(|t| format!("\"{}\"", t.base_path))
                             .collect();
                         let nf = format!("{{ \"error\": \"unknown route\", \"served\": [{}] }}", served.join(", "));
                         let resp = http_response_ct(status_line(404), &nf, "application/json");

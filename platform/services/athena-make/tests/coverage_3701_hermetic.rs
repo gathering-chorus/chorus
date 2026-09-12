@@ -683,9 +683,13 @@ fn serve_discovery_health_and_liveness() {
     let (c, _, b) = http("GET", "/", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"kind\": \"Discovery\""));
-    assert!(b.contains("\"collection\": \"/v1/domains\""), "{}", b);
-    assert!(b.contains("\"collection\": \"/v1/products\""), "{}", b);
-    assert!(b.contains("\"collection\": \"/v1/testresults\""), "{}", b);
+    // #4158 — discovery advertises the domain-rooted collection and NAMES the
+    // class-rooted one as deprecated, so a consumer reading discovery knows both
+    // which path to move to and which one still answers during the window.
+    assert!(b.contains("\"collection\": \"/v1/athena/domains\""), "{}", b);
+    assert!(b.contains("\"collection\": \"/v1/tests/results\""), "{}", b);
+    assert!(b.contains("\"deprecatedCollection\": \"/v1/testresults\""), "{}", b);
+    assert!(!b.contains("\"collection\": \"/v1/testresults\""), "the class-rooted path is no longer ADVERTISED: {}", b);
     let (c, _, b) = http("GET", "/v1", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"count\": 3"));
@@ -812,7 +816,7 @@ fn serve_openapi_schema_and_composed_surfaces() {
     // unknown resource → typed 404 listing the served roots
     let (c, _, b) = http("GET", "/widgets", &[], "");
     assert_eq!(c, 404);
-    for root in ["/domains", "/products", "/testresults"] {
+    for root in ["/athena/domains", "/athena/products", "/tests/results"] {
         assert!(b.contains(&format!("\"{}\"", root)), "served roots must include {}: {}", root, b);
     }
 }
