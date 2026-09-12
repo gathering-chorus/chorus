@@ -82,6 +82,10 @@ run_all() {
   grep -q '^SUITE|perf|platform/tests/p.sh|unowned|slow|' "$T/nightly.log"
   grep -q '^SUITE|shell|platform/scripts/z.sh|silas|fail|0 pass, 1 fail$' "$T/nightly.log"
   grep -qE '^RUN\|complete\|[0-9T:-]+\|suites=5$' "$T/nightly.log"
+  # NEGATIVE PROOF of the 19:16 doubling: each row is in the log exactly once, and stdout carries none
+  # (under launchd stdout IS the log file)
+  [ "$(grep -c '^SUITE|' "$T/nightly.log")" -eq 5 ]
+  ! grep -q '^SUITE|' <<<"$output"
 }
 
 @test "the registry is read ONCE per run (the wrapper read it once per row: 385 times on 2026-09-11)" {

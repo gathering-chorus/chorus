@@ -469,7 +469,6 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Ok(c) => c,
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
-            println!("{}", row.line());
             ctx.append_log(&row.line());
             return LaneResult { rows: vec![row], cases: Vec::new(), lane_text: String::new(), rc: 127 };
         }
@@ -512,7 +511,8 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
             if row.status == "fail" && nudged.insert(row.path.clone()) {
                 ctx.nudge(&row.owner, &format!("nightly RED now: {} — {} (run still going; read it now, not at the end)", row.path, row.summary));
             }
-            println!("{}", row.line());
+            // append ONLY: under launchd stdout is the log itself, so a println
+            // here doubled every row (400 duplicates on the 2026-09-11 19:16 run)
             ctx.append_log(&row.line());
             rows.push(row);
         } else {
@@ -529,7 +529,6 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
     if rows.is_empty() {
         let reason = err_text.lines().last().unwrap_or("no output").to_string();
         let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner produced no unit results rc={} — {})", rc, reason));
-        println!("{}", row.line());
         ctx.append_log(&row.line());
         rows.push(row);
     }
@@ -693,7 +692,6 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     ctx.owners = owners;
     let mut rows: Vec<SuiteRow> = Vec::new();
     let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
-        println!("{}", r.line());
         ctx.append_log(&r.line());
         rows.push(r);
     };
@@ -729,7 +727,6 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
         let (r, detail) = census(ctx, &registered, &lane.cases, &lane.lane_text, &ui);
         push(ctx, r, &mut rows);
         for d in detail {
-            println!("{}", d);
             ctx.append_log(&d);
         }
     }
