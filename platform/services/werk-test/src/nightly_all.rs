@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use werk_test::nightly_run::{
+use werk_test::nightly_run::{json_rows, 
     census_row, coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
     notify_messages, owner_for, owner_map, parse_case_line, parse_floors, pipeline_run_body, run_summary_fields,
     suite_result_fields, unit_slice, SuiteRow,
@@ -404,25 +404,8 @@ fn fetch_json(url: &str, secs: u32) -> Option<String> {
 /// array — enough for /tests (filePath, covers) and /domains (name, ownedBy)
 /// without a JSON dependency (ADR-032 §1).
 fn rows_of(json: &str, a: &str, b: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let ka = format!("\"{}\"", a);
-    let kb = format!("\"{}\"", b);
-    for obj in json.split("},").map(|s| s.to_string()) {
-        let va = str_field(&obj, &ka);
-        let vb = str_field(&obj, &kb);
-        if let (Some(x), Some(y)) = (va, vb) {
-            out.push((x, y));
-        }
-    }
-    out
-}
-
-fn str_field(obj: &str, key: &str) -> Option<String> {
-    let i = obj.find(key)? + key.len();
-    let rest = obj[i..].trim_start().strip_prefix(':')?.trim_start();
-    let rest = rest.strip_prefix('"')?;
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+    // #4147 — escapes honoured; the first-quote reader cut `has zero =\"//…` at the backslash
+    json_rows(json, a, b)
 }
 
 /// ONE read of the registry per run (the wrapper did 385): the owner map and
