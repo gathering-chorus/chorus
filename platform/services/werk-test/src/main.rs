@@ -407,12 +407,19 @@ fn run(args: &[String]) -> Result<i32, String> {
                 &[("count", &ui_set.len().to_string()), ("stack_down", down), ("lane", "ui")]);
         } else {
             let (ok, summary) = run_ui_flows(&werk, &ui_set, &quarantined);
-            println!("   {}:workspace … {}{}", kind.label(), if ok { "ok" } else { "FAIL" }, summary);
-            if !ok {
-                any_failed = true;
-                failed_count += 1;
-                emit_spine("test.failed", &role, &card, &trace,
-                    &[("check", kind.label()), ("unit", "workspace")]);
+            let word = match ok { Some(true) => "ok", Some(false) => "FAIL", None => "UNMEASURED" };
+            println!("   {}:workspace … {}{}", kind.label(), word, summary);
+            match ok {
+                Some(false) => {
+                    any_failed = true;
+                    failed_count += 1;
+                    emit_spine("test.failed", &role, &card, &trace,
+                        &[("check", kind.label()), ("unit", "workspace")]);
+                }
+                // #4154 — nothing ran and nothing crashed: typed, visible, not red.
+                None => emit_spine("test.unmeasured", &role, &card, &trace,
+                    &[("check", kind.label()), ("unit", "workspace"), ("reason", "selected-no-spec")]),
+                Some(true) => {}
             }
         }
     } else if ui_fired {
@@ -2351,7 +2358,9 @@ fn ensure_ui_service_built(werk: &str, pkg: &str, artifact: &str) {
     }
 }
 
-fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (bool, String) {
+/// #4154 — `None` = UNMEASURED (playwright selected no spec: nothing ran,
+/// nothing crashed). `Some(false)` is a real failure, `Some(true)` a pass.
+fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quarantined: &[werk_test::Quarantined]) -> (Option<bool>, String) {
     ensure_ui_service_built(werk, "directing/clearing", "dist/server.js");
     let mut cmd = Command::new("npx");
     cmd.arg("playwright").arg("test");
@@ -2392,7 +2401,7 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
                         println!("   ui-flows: {} skipped{}", skipped, why);
                         format!(", {} skipped{}", skipped, why)
                     } else { String::new() };
-                    (o.status.success() && f == 0, format!(" ({} passed, {} failed{}){}", p, f, skip_note, excluded))
+                    (Some(o.status.success() && f == 0), format!(" ({} passed, {} failed{}){}", p, f, skip_note, excluded))
                 }
                 None => {
                     let tail: Vec<&str> = text.lines().rev().take(15).collect();
@@ -2403,19 +2412,20 @@ fn run_ui_flows(werk: &str, files: &std::collections::BTreeSet<String>, quaranti
                     match werk_test::classify_playwright_no_summary(&text) {
                         werk_test::PlaywrightNoSummary::SelectedNoSpec => {
                             let asked: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
-                            (false, format!(
+                            (werk_test::no_summary_verdict(werk_test::PlaywrightNoSummary::SelectedNoSpec), format!(
                                 " (playwright selected NO spec — nothing ran, nothing crashed; \
 filters asked for: {}){}",
                                 if asked.is_empty() { "<none>".to_string() } else { asked.join(", ") },
                                 excluded))
                         }
                         werk_test::PlaywrightNoSummary::Crashed =>
-                            (false, format!(" (no playwright summary — crashed before running, fail loud){}", excluded)),
+                            (werk_test::no_summary_verdict(werk_test::PlaywrightNoSummary::Crashed),
+                             format!(" (no playwright summary — crashed before running, fail loud){}", excluded)),
                     }
                 }
             }
         }
-        Err(e) => (false, format!(" (spawn failed: {})", e)),
+        Err(e) => (Some(false), format!(" (spawn failed: {})", e)),
     }
 }
 

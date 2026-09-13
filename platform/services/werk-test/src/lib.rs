@@ -2565,6 +2565,18 @@ pub enum PlaywrightNoSummary {
     Crashed,
 }
 
+/// #4154 — the verdict for a playwright run that produced no summary.
+/// `None` = UNMEASURED: the filters selected no spec, so nothing ran and nothing
+/// crashed. That is not a failure — reporting it red made a run go red while the
+/// product was untouched (Wren, 2026-09-12 20:14), which is the "a red must mean
+/// the product broke" rule. A crash is still red: the runner fell over.
+pub fn no_summary_verdict(kind: PlaywrightNoSummary) -> Option<bool> {
+    match kind {
+        PlaywrightNoSummary::SelectedNoSpec => None,
+        PlaywrightNoSummary::Crashed => Some(false),
+    }
+}
+
 pub fn classify_playwright_no_summary(out: &str) -> PlaywrightNoSummary {
     // playwright's own wording for an empty selection, matched case-insensitively
     // because the phrasing has moved between "No tests found" and "no tests found".
@@ -4394,5 +4406,30 @@ pub fn run_capped(mut cmd: std::process::Command, cap: std::time::Duration) -> (
             }
             Err(e) => return (1, format!("wait failed: {}", e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod ui_flows_verdict_4154 {
+    use super::*;
+
+    #[test]
+    fn selecting_no_spec_is_unmeasured_not_red() {
+        assert_eq!(no_summary_verdict(PlaywrightNoSummary::SelectedNoSpec), None);
+    }
+
+    #[test]
+    fn negative_proof_a_crash_is_still_red() {
+        // The guard must separate the two states it exists for: if a crash also
+        // read as unmeasured, a runner that fell over would pass silently.
+        assert_eq!(no_summary_verdict(PlaywrightNoSummary::Crashed), Some(false));
+    }
+
+    #[test]
+    fn the_classifier_still_names_the_two_states_from_real_output() {
+        let empty = "Error: No tests found.\nmake sure the filters match";
+        let crashed = "TypeError: cannot read properties of undefined";
+        assert_eq!(no_summary_verdict(classify_playwright_no_summary(empty)), None);
+        assert_eq!(no_summary_verdict(classify_playwright_no_summary(crashed)), Some(false));
     }
 }

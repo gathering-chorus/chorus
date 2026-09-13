@@ -2203,6 +2203,16 @@
         "stack_down": "Comma-joined names of the down services that caused the skip"
       }
     },
+    "test.unmeasured": {
+      "vertebra": "proving",
+      "source": "werk",
+      "description": "#4154 — a check that could not be MEASURED, as distinct from one that failed: playwright's filters selected no spec, so nothing ran and nothing crashed. Reported UNMEASURED, never red — a red must mean the product broke.",
+      "fields": {
+        "check": "The lane the unmeasured check belongs to (ui-flows).",
+        "unit": "The unit that produced no measurement (workspace).",
+        "reason": "Why it could not be measured: selected-no-spec."
+      }
+    },
     "test.scoped": {
       "vertebra": "proving",
       "source": "werk",
