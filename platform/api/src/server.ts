@@ -1378,7 +1378,7 @@ app.get('/api/chorus/domain/:name/alerts', async (req: Request, res: Response) =
   res.status(r.status).json(r.body);
 });
 
-// #4084: /api/chorus/domain/:name/logs RETIRED — the Logs fold reads chorus:LogSource rows from the graph (/owl/logsources), harvested by log-harvest.sh.
+// #4084: /api/chorus/domain/:name/logs RETIRED — the Logs fold reads chorus:LogSource rows from the graph (/owl/logs/sources), harvested by log-harvest.sh.
 
 // GET /api/chorus/domain/:name/services — API endpoints in a domain (#2060 AC5)
 app.get('/api/chorus/domain/:name/services', async (req: Request, res: Response) => {

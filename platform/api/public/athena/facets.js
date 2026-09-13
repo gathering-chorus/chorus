@@ -40,7 +40,7 @@ async function renderFacetTables(el, fid, opts) {
     // #4084 — the FIRST fold read from the graph, not a v1 registry: chorus:LogSource rows (harvested hourly by
     // log-harvest.sh) carrying hasDomain from the authored UnitDomainMapping rows. Filtered client-side on the
     // domain edge; the query is shown in the fold so a zero is 'no rows for this domain', never a lookup miss.
-    { t: 'Logs', u: OWL + '/logsources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
+    { t: 'Logs', u: OWL + '/logs/sources?limit=500', k: 'items', graph: true, filter: r => tail(r.hasDomain || (r.links && r.links.hasDomain) || '') === dname,
       cols: ['launchdLabel', 'logStatus', 'lokiJob', 'lastWrittenAt', 'logPath'], src: 'chorus:LogSource · hasDomain = ' + dname },
     { t: 'Alerts', u: DOM + fid + '/alerts', k: 'alerts', cols: ['name', 'description', 'severity'] },
     { t: 'Integration', u: ATHENA + fid + '/integrations', k: 'integrations', cols: ['label', 'source', 'status'] },

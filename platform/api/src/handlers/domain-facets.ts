@@ -114,7 +114,7 @@ export async function fetchDomainTests(
 }
 
 // --- logs: RETIRED by #4084. LogSource rows live in urn:chorus:domains:logs, harvested by
-// log-harvest.sh and served at /owl/logsources; the domain page reads them there. ---
+// log-harvest.sh and served at /owl/logs/sources; the domain page reads them there. ---
 
 // --- services: SPARQL against urn:chorus:instances for chorus:hasEndpoint ---
 
