@@ -80,6 +80,19 @@ chorus:principal-nightly a chorus:Principal ;
     chorus:holdsRole chorus:role-nightly ;
     chorus:canSignIn "false" .
 
+# #4154 — the crawler service principal. The walker writes CodeFile / Test rows
+# through the generated API; without a machine principal the door refuses
+# (POST /codefiles → 401 authn-missing, Wren 2026-09-12 17:44). Scope grant
+# (code + tests graphs ONLY) lives in security-scopes-3689.ttl; the credential
+# VALUE is never modeled. holdsRole → role-crawler so every row says "crawler",
+# never an agent (#4026 rider).
+chorus:principal-crawler a chorus:Principal ;
+    rdfs:label "crawler (code + tests walker service principal)" ;
+    chorus:webId "https://id.lightlifeurbangardens.com/crawler/profile/card#me" ;
+    chorus:principalKind "service" ;
+    chorus:holdsRole chorus:role-crawler ;
+    chorus:canSignIn "false" .
+
 # #3653 — Jeff joins his own security model. The human is a Principal like every
 # other actor (ADR-052: one identity mechanism for human, agent, service). Root
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is

@@ -2887,25 +2887,11 @@ app.post('/api/athena/subdomains/:id/code', async (req: Request, res: Response) 
   } catch (err: unknown) { res.status(500).json(athenaEnvelope('subdomain-code-create', { error: errMsg(err) }, Date.now() - start, { error: true })); }
 });
 
-// POST /api/athena/discover-code — auto-discover code files per domain from filesystem (#1868 AC1)
-// discover-code moved to src/discover-code.ts (#2205 wave 25).
-import { createDiscoverCode } from './discover-code';
-const _discoverCode = createDiscoverCode({
-  sparqlClient: { query: (q: string) => athenaSparqlQuery(q), update: (u: string) => athenaSparqlUpdate(u) },
-  fs, path,
-  gatheringRoot: path.resolve(__dirname, '../../../../jeff-bridwell-personal-site'),
-  chorusRoot: path.resolve(__dirname, '../../..'),
-});
-app.post('/api/athena/discover-code', async (_req: Request, res: Response) => {
-  const start = Date.now();
-  try {
-    const data = await _discoverCode();
-    res.json(athenaEnvelope('discover-code', data, Date.now() - start, { count: data.total_files }));
-  } catch (err: unknown) {
-    res.status(500).json(athenaEnvelope('discover-code', { error: errMsg(err) }, Date.now() - start, { error: true }));
-  }
-});
-
+// POST /api/athena/discover-code — RETIRED by #4154 (2026-09-12). It walked the
+// filesystem and wrote chorus:CodeFile rows by raw SPARQL into urn:chorus:instances
+// (frozen by ADR-051) with a free-string fileType. Code files are crawled by the one
+// walker (crawler-hydrate-graph.sh) into urn:chorus:domains:code through the
+// generated /codefiles door, with hasKind and hasLanguage (#4157).
 
 // discover-tests moved to src/discover-tests.ts (#2205 wave 24).
 import { createDiscoverTests } from './discover-tests';

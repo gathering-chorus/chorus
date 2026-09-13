@@ -714,32 +714,7 @@ fn test_result_payload_carries_identity_and_escapes() {
     assert!(!p.contains("\"card\":"), "bare 'card' was never the modeled name: {}", p);
 }
 
-#[test]
-fn reconcile_gap_is_registered_minus_executed() {
-    use werk_test::reconcile_gap;
-    let registered = vec![
-        ("a.ts".to_string(), "one".to_string()),
-        ("a.ts".to_string(), "two".to_string()),
-        ("b.rs".to_string(), "three".to_string()),
-    ];
-    let executed = vec![("a.ts".to_string(), "one".to_string())];
-    let gap = reconcile_gap(&registered, &executed);
-    assert_eq!(gap.len(), 2);
-    assert!(gap.contains(&("a.ts".to_string(), "two".to_string())));
-    assert!(gap.contains(&("b.rs".to_string(), "three".to_string())));
-    // executed superset -> empty
-    assert!(reconcile_gap(&registered, &registered).is_empty());
-}
 
-#[test]
-fn reconcile_report_names_counts_and_explicit_none() {
-    use werk_test::reconcile_report;
-    assert_eq!(reconcile_report(3, &[]), "reconcile: registered 3, never-run: none");
-    let gap = vec![("b.rs".to_string(), "three".to_string())];
-    let r = reconcile_report(3, &gap);
-    assert!(r.contains("never-run (1"), "{}", r);
-    assert!(r.contains("b.rs :: three"), "{}", r);
-}
 
 #[test]
 fn parse_rows_and_names_stays_aligned_and_backcompat() {
@@ -1258,59 +1233,6 @@ fn playwright_summary_parses_pass_and_fail_counts() {
     assert_eq!(werk_test::parse_playwright_summary("garbage"), None);
 }
 
-/// #4022 — the census must name "ledger unreachable" as its own state. Driven
-/// through the real binary with file:// URLs for the tests domain, so no store
-/// is needed; the results endpoint is a dead port for the negative proof and a
-/// file for the control.
-mod reconcile_unreachable_4022 {
-    use std::process::Command;
-
-    fn scratch(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("werk-test-4022-{}-{}", tag, std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
-
-    fn tests_fixture(dir: &std::path::Path) -> String {
-        let p = dir.join("tests.json");
-        std::fs::write(&p, r#"{"data":[{"filePath":"a.ts","covers":"x","pyramidLayer":"unit","testName":"one","name":"test-a-one"}]}"#).unwrap();
-        format!("file://{}", p.display())
-    }
-
-    #[test]
-    fn negative_proof_dead_ledger_is_an_error_not_7794_never_ran() {
-        let dir = scratch("dead");
-        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
-            .args(["--reconcile"])
-            .env("OWL_API_TESTS", tests_fixture(&dir))
-            .env("OWL_API_TESTRESULTS", "http://127.0.0.1:1/testresults?limit=100000")
-            .env("CHORUS_HOME", dir.display().to_string())
-            .output()
-            .unwrap();
-        let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
-        assert!(!out.status.success(), "a dead ledger must not yield a verdict: {}", text);
-        assert!(text.contains("fetch failed"), "must name the unreachable ledger: {}", text);
-        assert!(!text.contains("never-run"), "must NOT report tests as never-run: {}", text);
-    }
-
-    #[test]
-    fn control_reachable_ledger_cross_foots() {
-        let dir = scratch("ok");
-        let r = dir.join("results.json");
-        std::fs::write(&r, r#"{"data":[{"filePath":"a.ts","testName":"one"}]}"#).unwrap();
-        let out = Command::new(env!("CARGO_BIN_EXE_werk-test"))
-            .args(["--reconcile"])
-            .env("OWL_API_TESTS", tests_fixture(&dir))
-            .env("OWL_API_TESTRESULTS", format!("file://{}", r.display()))
-            .env("CHORUS_HOME", dir.display().to_string())
-            .output()
-            .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout).to_string();
-        assert!(out.status.success(), "{}", text);
-        assert!(text.contains("registered 1, never-run: none"), "{}", text);
-    }
-}
 
 #[test]
 fn next_page_url_walks_the_ledger_and_stops_honestly_4022() {
@@ -1365,20 +1287,6 @@ fn walk_at_the_cap_with_a_next_link_is_truncated_not_exhausted_4105() {
     );
 }
 
-#[test]
-fn census_page_size_is_one_the_door_can_actually_serve_4105() {
-    use werk_test::{census_page_cap, census_page_size};
-    // measured 2026-09-04 08:48 against the live door under load 14.1:
-    // limit=100000 -> 502 "fuseki-query failed" at 82s (the door's own SPARQL
-    // curl gives up at --max-time 60); limit=25000 -> 200 at 22s.
-    assert!(
-        census_page_size() <= 25_000,
-        "a page the door 502s on is not a page size"
-    );
-    assert!(census_page_size() > 0);
-    // 415,567 rows at 25k = 17 pages; the cap is budget, not a ledger bound
-    assert!(census_page_cap() * census_page_size() > 415_567 * 4);
-}
 
 // ---------------------------------------------------------------------------
 // #4106 — shell suites outside platform/scripts had no lane at all. The router

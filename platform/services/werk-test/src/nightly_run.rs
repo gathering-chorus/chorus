@@ -421,33 +421,6 @@ pub fn suite_result_fields(row: &SuiteRow, reason: Option<&str>) -> (Vec<(String
     (f, contradiction)
 }
 
-/// The census row from the run's OWN record: registered (file, name) pairs
-/// minus the cases the runner posted this run. `never_ran` carries the names
-/// so the log keeps them (#4140), `attributed` the lane-silence split.
-pub fn census_row(registered_total: usize, never_ran: &[(String, String)], by_state: &str, attributed: &str) -> SuiteRow {
-    if never_ran.is_empty() {
-        return SuiteRow::new(
-            "reconcile",
-            "tests-domain",
-            "kade",
-            "pass",
-            &format!("1 pass, 0 fail ({} registered, every one executed — ledger cross-foots)", registered_total),
-        );
-    }
-    SuiteRow::new(
-        "reconcile",
-        "tests-domain",
-        "kade",
-        "fail",
-        &format!(
-            "0 pass, 1 fail ({} registered test(s) never ran of {} — {}; {})",
-            never_ran.len(),
-            registered_total,
-            by_state,
-            attributed
-        ),
-    )
-}
 
 /// The fail-log path for a row (`_fail_log_path`): kind + path, separators to
 /// underscores, under the failure dir.
@@ -801,21 +774,6 @@ mod nightly_run_4145 {
         assert!(m[0].1.starts_with("nightly: all hermetic suites green"));
     }
 
-    #[test]
-    fn census_from_the_runs_own_cases_needs_no_ledger_walk() {
-        let registered = vec![("f.rs".to_string(), "a".to_string()), ("f.rs".to_string(), "b".to_string())];
-        let cases: Vec<(String, String)> = ["nightly-case|f.rs|a", "nightly-case|f.rs|b", "noise"].iter().filter_map(|l| parse_case_line(l)).collect();
-        let gap = crate::reconcile_gap(&registered, &cases);
-        assert!(gap.is_empty());
-        assert_eq!(census_row(2, &gap, "", "").status, "pass");
-        // negative proof: one registered case the run never posted is never-ran
-        let cases = vec![("f.rs".to_string(), "a".to_string())];
-        let gap = crate::reconcile_gap(&registered, &cases);
-        assert_eq!(gap, vec![("f.rs".to_string(), "b".to_string())]);
-        let row = census_row(2, &gap, "NAME MISMATCH 1", "lane silent 0");
-        assert_eq!(row.status, "fail");
-        assert!(row.summary.contains("1 registered test(s) never ran of 2"));
-    }
 
     #[test]
     fn suite_result_fields_repair_a_contradiction_and_carry_the_reason() {

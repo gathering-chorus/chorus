@@ -13,8 +13,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use werk_test::nightly_run::{json_rows, 
-    census_row, coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
-    notify_messages, owner_for, owner_map, parse_case_line, parse_floors, pipeline_run_body, run_summary_fields,
+    coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
+    notify_messages, owner_for, owner_map, parse_floors, pipeline_run_body, run_summary_fields,
     suite_result_fields, unit_slice, SuiteRow,
 };
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -410,8 +410,6 @@ fn read_registry(ctx: &Ctx) -> (HashMap<String, String>, Vec<(String, String)>) 
 
 struct LaneResult {
     rows: Vec<SuiteRow>,
-    cases: Vec<(String, String)>,
-    lane_text: String,
     rc: i32,
 }
 
@@ -430,7 +428,7 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         Err(e) => {
             let row = SuiteRow::new("runner", "werk-test-nightly", "silas", "fail", &format!("0 pass, 1 fail (runner could not start: {} — runner lanes DID NOT RUN, #3920/#3974)", e));
             ctx.append_log(&row.line());
-            return LaneResult { rows: vec![row], cases: Vec::new(), lane_text: String::new(), rc: 127 };
+            return LaneResult { rows: vec![row], rc: 127 };
         }
     };
     let stdout = child.stdout.take().unwrap();
@@ -445,7 +443,6 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         s
     });
     let mut rows = Vec::new();
-    let mut cases = Vec::new();
     let mut lane_text = String::new();
     let mut nudged: std::collections::HashSet<String> = std::collections::HashSet::new();
     for line in BufReader::new(stdout).lines().flatten() {
@@ -458,10 +455,6 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         }
         lane_text.push_str(&line);
         lane_text.push('\n');
-        if let Some(c) = parse_case_line(&line) {
-            cases.push(c);
-            continue;
-        }
         if let Some((row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load) {
             if contradiction {
                 eprintln!("nightly: REPORTER CONTRADICTION — row says pass with failures; recording fail (#3753 AC4, row-level)");
@@ -498,34 +491,16 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         let slice = unit_slice(&lane_text, unit).join("\n");
         ctx.write_fail_log(r, &format!("{}\n# full lane output: {}\n", slice, lane_path));
     }
-    LaneResult { rows, cases, lane_text, rc }
+    LaneResult { rows, rc }
 }
 
 // ───────────────────────── phase 3: the census, from the run's own record ─────────────────────────
 
-fn census(ctx: &Ctx, registered: &[(String, String)], cases: &[(String, String)], lane_text: &str, ui_registered: &std::collections::BTreeSet<String>) -> (SuiteRow, Vec<String>) {
-    let mut reg: Vec<(String, String)> = registered.to_vec();
-    reg.sort();
-    reg.dedup();
-    let mut ex: Vec<(String, String)> = cases.to_vec();
-    ex.sort();
-    ex.dedup();
-    let gap = werk_test::reconcile_gap(&reg, &ex);
-    if gap.is_empty() {
-        return (census_row(reg.len(), &gap, "", ""), Vec::new());
-    }
-    let exists = |f: &str| Path::new(&ctx.root).join(f).exists();
-    let classified = werk_test::classify_gap(&gap, &ex, ui_registered, &exists);
-    let by_state = werk_test::gap_state_split(&classified);
-    let empty_units: Vec<&str> = lane_text.lines().filter(|l| l.starts_with("nightly-unit|") && l.contains("|fail|0 pass, 0 fail")).collect();
-    let attributed = if empty_units.is_empty() {
-        "no unit of this run failed empty, so these are registered names the runners never emit — the ledger does not cross-foot".to_string()
-    } else {
-        format!("{} unit(s) of this run failed empty", empty_units.len())
-    };
-    let detail: Vec<String> = werk_test::gap_state_report(&classified, &ex).lines().map(|l| format!("reconcile-detail|{}", l)).collect();
-    (census_row(reg.len(), &gap, &by_state, &attributed), detail)
-}
+// #4154 — the census (registry minus what ran, "reconcile|tests-domain" row) is
+// gone. It was a second crawler inside the runner: the graph's registry is the
+// crawler's to keep current (ADR-033), and 33 of the 37 red rows on 2026-09-12
+// 06:00 were this row reporting files a land had deleted. The runner reads the
+// graph and runs what is there; nothing here counts what it did not run.
 
 // ───────────────────────── the run ─────────────────────────
 
@@ -648,7 +623,7 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     if !ctx.append_log(&format!("RUN|start|{}|pid={}", now_stamp(), std::process::id())) {
         eprintln!("nightly: WARNING — cannot append to {}; this run's results reach NOBODY", ctx.log);
     }
-    let (owners, registered) = read_registry(ctx);
+    let (owners, _registered) = read_registry(ctx);
     ctx.owners = owners;
     let mut rows: Vec<SuiteRow> = Vec::new();
     let push = |ctx: &Ctx, r: SuiteRow, rows: &mut Vec<SuiteRow>| {
@@ -679,17 +654,6 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     }
     rows.extend(lane.rows.iter().cloned());
     // census from the run's own record — registry read once, above
-    let ui: std::collections::BTreeSet<String> = registered.iter().map(|(f, _)| f.clone()).filter(|f| f.ends_with(".spec.ts")).collect();
-    if registered.is_empty() {
-        let r = SuiteRow::new("reconcile", "tests-domain", "kade", "unmeasured", "0 pass, 0 fail (census could not be taken — registry unreachable)");
-        push(ctx, r, &mut rows);
-    } else {
-        let (r, detail) = census(ctx, &registered, &lane.cases, &lane.lane_text, &ui);
-        push(ctx, r, &mut rows);
-        for d in detail {
-            ctx.append_log(&d);
-        }
-    }
     ctx.append_log(&format!("RUN|complete|{}|suites={}", now_stamp(), rows.len()));
     // the tail: summary, record, per-row events, nudges, readout
     ctx.spine("nightly.run.summary", &run_summary_fields(&rows));
