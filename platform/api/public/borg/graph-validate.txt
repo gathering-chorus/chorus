@@ -1,0 +1,58 @@
+=== athena-validate — conformance sweep over GRAPH <urn:chorus:instances> ===
+1) retired predicates in use:
+  ✅ none
+2) dangling edges (object node does not exist):
+  ⚠️  1151 dangling edge(s)
+    role-wren hasProperty prop-role-wren-nudge-word-cap
+    role-wren hasProperty prop-role-wren-response-word-cap
+    observability-domain hasCodeFile observability-domain-code-chorus-platform-api-tests-observability-integration-test-ts
+    spine-service hasCodeFile spine-service-code-chorus-platform-api-tests-handlers-crawl-spine-test-ts
+    spine-service hasCodeFile spine-service-code-chorus-platform-scripts-test-library-health-probe-spine-emit-sh
+    spine-service hasCodeFile spine-service-code-chorus-platform-scripts-spine-health
+    spine-service hasCodeFile spine-service-code-chorus-platform-api-tests-spine-event-endpoint-integration-test-ts
+    spine-service hasCodeFile spine-service-code-chorus-platform-api-tests-handlers-context-spine-test-ts
+graph-issue|dangling-edge|1151 edges|object node does not exist
+3) untyped instances (data with no class):
+  ⚠️  45 untyped subject(s)
+    photos-domain
+    skills-service
+    documents-domain
+    video-domain
+    self-domain
+    search-domain
+    gates-service
+    glimmers-domain
+graph-issue|untyped-instance|45 subjects|no rdf:type the model knows
+4) governance checks (ADR-058 registry):
+  ⚠️  gc-one-home-per-subject [block] — 8 violation(s) of adr-051:
+      pulse
+      spine
+      athena
+      chorus
+      borg
+      werk
+      loom
+      convergence
+  ✅ gc-edge-follows-node — 0 violations (adr-058)
+  ✅ gc-step-implemented — 0 violations (adr-058)
+GOVBAD=8
+5) where the one-home violators actually live:
+  pulse → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|pulse|urn:chorus:ontology, urn:chorus:instances
+  spine → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|spine|urn:chorus:ontology, urn:chorus:instances
+  athena → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|athena|urn:chorus:ontology, urn:chorus:instances
+  chorus → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|chorus|urn:chorus:ontology, urn:chorus:instances
+  borg → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|borg|urn:chorus:ontology, urn:chorus:instances
+  werk → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|werk|urn:chorus:ontology, urn:chorus:instances
+  loom → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|loom|urn:chorus:ontology, urn:chorus:instances
+  convergence → urn:chorus:ontology, urn:chorus:instances
+graph-issue|one-home|convergence|urn:chorus:ontology, urn:chorus:instances
+
+OLD/BAD DATA FOUND — 1204 issue(s). The write door can't reach these; this sweep is how they surface.
+graph-summary|1204|dirty

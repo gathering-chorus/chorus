@@ -29,7 +29,12 @@ teardown() { rm -rf "$TMP"; }
 }
 
 @test "the plist runs the canonical script and captures its output" {
-  grep -q "/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/athena-validate.sh" "$PLIST"
+  # launchd needs an ABSOLUTE program path, and it must be the canonical tree —
+  # a plist pointing into a werk would run whatever branch happened to be there.
+  # Build the expected string rather than hardcoding it, so the suite still runs
+  # on another checkout (hardcoded-path-guard.bats enforces this).
+  CANON="${CHORUS_CANONICAL_HOME:-$HOME/CascadeProjects/chorus}"
+  grep -q "$CANON/platform/scripts/athena-validate.sh" "$PLIST"
   grep -q "StandardOutPath" "$PLIST"
   grep -q "StandardErrorPath" "$PLIST"
 }

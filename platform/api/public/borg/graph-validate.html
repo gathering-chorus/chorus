@@ -2,13 +2,14 @@
 <title>Graph — validate</title>
 <style>
 :root{--bg:#0f1216;--fg:#e6ecf2;--dim:#7a8794;--ok:#5fd08a;--bad:#f5827e;--warn:#e8c46a;--line:#232b34}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:14px}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:14px;overflow-x:hidden}
 h1{font-size:16px;margin:0 0 2px}
 #meta{color:var(--dim);font-size:13px;margin-bottom:12px}
-.row{padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}
+.row{padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap}
 .tag{width:150px;flex:none;font-weight:700;color:var(--bad)}
-.name{flex:1;overflow-wrap:anywhere}
-.cnt{color:var(--dim);flex:none;max-width:45%;overflow-wrap:anywhere;text-align:right}
+.name{min-width:120px}
+.name{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.cnt{color:var(--dim);flex:1 1 100%;min-width:0;overflow-wrap:anywhere;padding-left:160px}
 .ok{color:var(--ok)}.warn{color:var(--warn)}
 </style>
 <h1>Graph — validate</h1>
