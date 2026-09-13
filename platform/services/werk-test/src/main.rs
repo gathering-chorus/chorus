@@ -2032,17 +2032,30 @@ fn post_test_results(
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
-            // #4158 — stays on the class-rooted alias DELIBERATELY. Moving it to
-            // /tests/results was measured against canonical athena-make (which
-            // predates #4158) on 2026-09-13 08:20 and returned 403 "only the
-            // owning role may write this node": with no domain-rooted matching,
-            // the old dispatcher reads "tests" as the Test collection and
-            // "results" as an entity name — a confident wrong answer, and 650
-            // of 650 results lost in run 77. This caller moves AFTER #4158 is
-            // deployed to canonical, which is what the alias exists for.
+            // #4158 AC4 — this caller carries NO path shape. It ASKS the server
+            // which collection it serves for TestResult (the pattern
+            // crawl-files.py already uses) and posts there. A pre-#4158 server
+            // answers /v1/testresults, a post-#4158 one /v1/tests/results, and
+            // both are right. Hardcoding either literal is what lost 650 of 650
+            // results in run 77 (2026-09-13): the class-rooted form breaks once
+            // the rename lands, and the domain-rooted form 403s against a
+            // server that predates it. The configured default is the fallback
+            // when discovery is unreadable — degrade, never invent a route.
             let collection = std::env::var("OWL_API_TESTRESULTS")
                 .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
-            werk_test::testresult_batch_endpoint(&collection)
+            let discovered = werk_test::origin_of(&collection).and_then(|origin| {
+                let out = Command::new("curl")
+                    .args(["-sf", "--max-time", "5", &origin])
+                    .output()
+                    .ok()?;
+                if !out.status.success() {
+                    return None;
+                }
+                let body = String::from_utf8_lossy(&out.stdout);
+                let path = werk_test::advertised_collection(&body, "TestResult")?;
+                Some(format!("{}{}", origin, path))
+            });
+            werk_test::testresult_batch_endpoint(discovered.as_deref().unwrap_or(&collection))
         });
     // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first
     // full parallel nightly joined 6,712 cases and the cap silently outranked

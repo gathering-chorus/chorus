@@ -1,60 +1,100 @@
 #!/usr/bin/env bats
-# @test-type: fitness — a repo-wide ratchet over source text; no service, no store, no network.
-# #4158 — RATCHET: the number of class-rooted athena-make paths in the repo may
-# never grow. Every generated collection is /<domain>/<segment> (/code/files,
-# /tests/results, /logs/sources); the class-rooted form (/codefiles,
-# /testresults, /logsources) answers only as a deprecated alias while the
-# remaining callers move. This guard is what stops a new one being written.
+# @test-type: fitness — a repo-wide check over source text; no service, no store, no network.
+# #4158 AC4 — no CALLER may hardcode a class-rooted athena-make path.
 #
-# 2026-09-13: the ceiling ROSE 76 -> 79 over this card, which a ratchet should
-# normally refuse. Stated plainly rather than tuned away: this guard counts
-# MENTIONS, not callers, and it cannot tell a live call from an assertion that
-# names the deprecated path on purpose. The rise is entirely the latter — the
-# negative proofs must name /v1/testresults to assert it is NOT handed back.
-# Meanwhile the one real caller that moved (4157 bats) went 5 -> 1.
-# So this guard stops NEW class-rooted paths; it cannot certify that all
-# callers have moved. AC4's second half needs a call-shaped check, not this.
-# The additions are all deliberate and all in checks: the negative proofs must
-# NAME the deprecated path to assert it is not handed back, and werk-test's
-# writeback stays on the alias until #4158 reaches canonical (run 77 lost 650
-# results proving why). Deliberate mentions in assertions are not new callers.
+# This replaces a mention-counter that could not do the job. That guard grepped
+# for the bare strings and carried a ceiling that ROSE across this card
+# (76 -> 79), because every negative proof has to NAME /v1/testresults in order
+# to assert it is not handed back. A check that cannot tell an assertion from a
+# call cannot certify that callers moved — it was measuring the wrong thing, so
+# it is replaced rather than retuned.
 #
-# The count is the LIVE caller count, not zero: athena-make's own source and its
-# hermetic tests state both forms on purpose (the alias is a feature under test),
-# and werk-test's three URLs move inside #4154, which is editing that same file.
+# What a CALL looks like: a class-rooted path on a URL or URL-bearing variable
+# ("http://host:3360/testresults", "$URL/codefiles", "${BASE}/logsources") that
+# is HANDED TO AN HTTP CLIENT on the same line — curl, fetch(, requests., .get(,
+# .post(, http(. Both halves are needed. URL-shape alone was tried first and
+# flagged seven lines that are not callers: `assert_eq!(pre,
+# "http://h:1/v1/testresults/batch")` in this card's own tests, and units.rs
+# fixtures feeding a pure pagination function. Those strings are never
+# requested. A fixture that names a URL is still a mention.
+#
+# The rule callers follow instead: ASK the server which collection it serves —
+# its discovery document advertises it — the way crawl-files.py always has.
+# A pre-#4158 server answers /v1/testresults and a post-#4158 one answers
+# /v1/tests/results, so a caller that asks is right on both and needs no
+# land-ordering. Hardcoding either literal is what lost 650 of 650 test results
+# in run 77 (2026-09-13).
 
-CLASS_ROOTED='/(codefiles|codekinds|testresults|testsuiteruns|logsources)\b'
-CEILING=79
+CLASS_ROOTED='(https?://[^"'"'"' ]*|\$\{?[A-Z_]+\}?)/(codefiles|codekinds|testresults|testsuiteruns|logsources)\b'
 
-count_hits() {
+# The one caller still permitted a literal, with its reason:
+#   werk-test/src/main.rs — the FALLBACK used only when discovery is unreadable.
+#   It degrades to the alias rather than inventing a route.
+ALLOWED='platform/services/werk-test/src/main.rs'
+
+# The second half of a call: the URL reaches an HTTP client on this line.
+REQUESTED='curl|fetch\(|requests\.|\.get\(|\.post\(|http\('
+
+count_calls() {
   cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
-  grep -rnoE "$CLASS_ROOTED" \
+  grep -rnE "$CLASS_ROOTED" \
     --include='*.ts' --include='*.js' --include='*.sh' --include='*.py' \
     --include='*.rs' --include='*.bats' --include='*.yml' . 2>/dev/null \
     | grep -vE 'node_modules|/dist/|target/|chorus-werk|4158-no-new-class-rooted' \
+    | grep -E "$REQUESTED" \
+    | grep -vE "$ALLOWED" \
     | wc -l | tr -d ' '
 }
 
-@test "no new class-rooted athena-make path enters the repo" {
-  n=$(count_hits)
-  [ "$n" -le "$CEILING" ] || {
-    echo "class-rooted paths: $n, ceiling $CEILING — a new one was written."
-    echo "Use the domain-rooted path: /code/files, /tests/results, /logs/sources."
+list_calls() {
+  cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
+  grep -rnE "$CLASS_ROOTED" \
+    --include='*.ts' --include='*.js' --include='*.sh' --include='*.py' \
+    --include='*.rs' --include='*.bats' --include='*.yml' . 2>/dev/null \
+    | grep -vE 'node_modules|/dist/|target/|chorus-werk|4158-no-new-class-rooted' \
+    | grep -E "$REQUESTED" \
+    | grep -vE "$ALLOWED"
+}
+
+@test "no caller hardcodes a class-rooted athena-make path" {
+  n=$(count_calls)
+  [ "$n" -eq 0 ] || {
+    echo "hardcoded class-rooted CALLS: $n (expected 0)"
+    list_calls
+    echo "Ask the server instead: read the collection its discovery document"
+    echo "advertises for the class, the way crawl-files.py does."
     false
   }
 }
 
-@test "NEGATIVE PROOF: the guard fails when a class-rooted path is added" {
-  # Write one into a scratch file inside the tree, prove the count rises past
-  # the ceiling, then remove it. A guard that cannot go red is not a guard.
+@test "NEGATIVE PROOF: the guard fails on a real call and ignores a mere mention" {
+  # The two states this check exists to SEPARATE. The old one could not: it went
+  # red for both, so it could never reach zero and never certified anything.
   cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}"
-  before=$(count_hits)
-  probe="platform/tests/.4158-probe-$$.sh"
-  printf 'curl -s localhost:3360/codefiles\ncurl -s localhost:3360/testresults\n' > "$probe"
-  after=$(count_hits)
+  before=$(count_calls)
+  [ "$before" -eq 0 ]
+
+  # (a) a real call — must go RED
+  probe="platform/tests/.4158-probe-call-$$.sh"
+  printf 'curl -s "http://localhost:3360/testresults/x"\n' > "$probe"
+  after_call=$(count_calls)
   rm -f "$probe"
-  [ "$after" -gt "$before" ] || { echo "guard is blind: $before → $after"; false; }
-  [ "$after" -gt "$CEILING" ] || { echo "ceiling $CEILING is slack: $after still under it"; false; }
-  # and the tree is clean again
-  [ "$(count_hits)" -eq "$before" ]
+  [ "$after_call" -gt "$before" ] || { echo "guard is blind to a real call: $before -> $after_call"; false; }
+
+  # (b) a mention in a comment or an assertion — must stay GREEN. This is the
+  # half the mention-counter got wrong, and why its ceiling kept rising.
+  probe2="platform/tests/.4158-probe-mention-$$.sh"
+  {
+    printf '# the deprecated collection is /v1/testresults - do not use it\n'
+    printf 'assert_not_contains "$body" "/v1/testresults"\n'
+  } > "$probe2"
+  after_mention=$(count_calls)
+  rm -f "$probe2"
+  [ "$after_mention" -eq "$before" ] || {
+    echo "guard counts mentions, not calls: $before -> $after_mention"
+    false
+  }
+
+  # tree clean again
+  [ "$(count_calls)" -eq "$before" ]
 }

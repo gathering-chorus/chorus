@@ -19,17 +19,33 @@ setup() {
   ROLE="${CHORUS_ROLE:-kade}"
   TOKEN="${CHORUS_IDENTITY_TOKEN:-$("$ROOT/platform/scripts/chorus-identity-token" "$ROLE" 2>/dev/null)}"
   SACRIFICE="code-domain-4157-sacrificial"
+  # #4158 AC4 — ask the server which collection it serves for a class instead of
+  # hardcoding a path shape. Bare path (the server answers both forms); falls
+  # back to the class-rooted alias only if discovery is unreadable.
+  coll() { # kind fallback
+    local p
+    p=$(curl -sf --max-time 5 "$URL" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin)
+    x=next((y.get('collection') for y in d.get('primitives',[]) if y.get('kind')=='$1'),'')
+    print(x[3:] if x.startswith('/v1/') else x)
+except Exception:
+    print('')" 2>/dev/null)
+    [ -n "$p" ] && echo "$p" || echo "$2"
+  }
+  CODEFILES=$(coll CodeFile /codefiles)
+  CODEKINDS=$(coll CodeKind /codekinds)
   BODY="$BATS_TEST_TMPDIR/body.json"
 }
 
 teardown() {
-  [ -n "${URL:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL/code/files/$SACRIFICE" || true
+  [ -n "${URL:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$CODEFILES/$SACRIFICE" || true
 }
 
 post_codefile() { # language → prints http code, body in $BODY
   curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -X POST \
     -d "{\"name\":\"$SACRIFICE\",\"filePath\":\"platform/tests/4157-code-domain-served.bats\",\"hasKind\":\"test\",\"hasLanguage\":\"$1\"}" \
-    "$URL/code/files"
+    "$URL$CODEFILES"
 }
 
 @test "4157 AC2: discovery lists CodeFile, CodeKind and Language" {
@@ -40,7 +56,7 @@ post_codefile() { # language → prints http code, body in $BODY
 
 @test "4157 AC2: the deploy left every kind and language answering GET (designing/data/code-vocab.ttl)" {
   for k in code test log config doc; do
-    [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/codekinds/$k")" = 200 ]
+    [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL$CODEKINDS/$k")" = 200 ]
   done
   for l in rust typescript bash python markdown turtle; do
     [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/languages/$l")" = 200 ]
@@ -53,13 +69,13 @@ post_codefile() { # language → prints http code, body in $BODY
   ! grep -q 'unknown route' "$BODY"
   grep -q 'unknown-target' "$BODY"
   [ "$code" = 422 ]   # validation: the DAL's referential refusal, measured 2026-09-12
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/code/files/$SACRIFICE")" != 200 ]
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL$CODEFILES/$SACRIFICE")" != 200 ]
 }
 
 @test "4157 AC2: a well-formed CodeFile creates and reads back with kind and language" {
   code=$(post_codefile bash)
   [ "$code" = 201 ] || [ "$code" = 200 ]
-  run curl -s "$URL/code/files/$SACRIFICE"
+  run curl -s "$URL$CODEFILES/$SACRIFICE"
   echo "$output" | grep -q '4157-code-domain-served.bats'
   echo "$output" | grep -q '"hasKind"'
   echo "$output" | grep -q '"hasLanguage"'
