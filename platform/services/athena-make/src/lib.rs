@@ -384,6 +384,61 @@ pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), 
 /// emit routes from non-conformant input — L4 naming law enforced where the
 /// API is born, not audited after. Classes are CamelCase, properties are
 /// camelCase. A violation is a typed refusal, never a bad route.
+/// #4163 — REFUSE an edge whose target class nothing serves.
+///
+/// A field arrives as `name|edge:<Class>`. If no domain `definesVocabulary`
+/// that class, there is no collection to reference and no row a caller could
+/// name — so the edge is unsatisfiable through the door. What the generator did
+/// instead was DROP it: AuthBoundary declares betweenDomainA and betweenDomainB
+/// at `sh:class chorus:SubDomain` with minCount 1, /subdomains is 404 because
+/// SubDomain was retired, and the served contract came back
+/// `required = ['checkType','label']` — both required edges silently gone. I
+/// reported that 2026-07-02 and it was still live ten weeks later, because a
+/// weakened contract fails quietly and nobody reads a shape by hand.
+///
+/// `served` is the class list any domain claims. Refuse, naming the field and
+/// the class, so a retired target is a loud build failure instead of a smaller
+/// promise.
+///
+/// Scoped to REQUIRED edges, and that line is measured, not convenient. Seven
+/// edges on served classes point at unserved targets today (2026-09-13):
+/// Machine x3 (ServiceInstance/ScheduledJob/LogSource.onMachine), SubDomain x2
+/// (AuthBoundary), Policy (Practice.operationalizes), SourceFile (Test.inFile).
+/// Refusing all seven would stop generation for six live classes — an outage I
+/// would have caused with a check meant to prevent one. The severities are
+/// genuinely different: an OPTIONAL edge at an unserved class is already
+/// refused at write time by the DAL as unknown-target (fail-closed, measured on
+/// the variant this morning), so the caller learns. A REQUIRED one disappears
+/// from the served `required` list, and nobody learns anything — that is the
+/// AuthBoundary defect, and it is the one refused here.
+pub fn edge_target_check(
+    class_local: &str,
+    fields: &[String],
+    required: &[String],
+    served: &[String],
+) -> Result<(), String> {
+    for f in fields {
+        let target = match f.split_once("|edge:") {
+            Some((_, t)) => t,
+            None => continue,
+        };
+        if target.is_empty() || served.iter().any(|c| c == target) {
+            continue;
+        }
+        let name = f.split('|').next().unwrap_or(f);
+        // only a REQUIRED edge is silently dropped; an optional one is refused
+        // at write by the DAL, where the caller sees it.
+        if !required.iter().any(|m| m.split('|').next().unwrap_or(m) == name) {
+            continue;
+        }
+        return Err(format!(
+            "{}: field '{}' points at class '{}', which no domain definesVocabulary —              there is no collection to reference it through. Repoint the shape at a served class              or claim '{}' in a domain; the generator will not serve a weaker contract than the model declares",
+            class_local, name, target, target
+        ));
+    }
+    Ok(())
+}
+
 pub fn adr040_check(class_local: &str, fields: &[String]) -> Result<(), String> {
     let class_ok = class_local
         .chars()
@@ -1058,6 +1113,10 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .collect();
     mandatory.sort();
     mandatory.dedup();
+    // #4163 — a REQUIRED edge at a class no domain claims cannot be satisfied
+    // through the door, and today it is silently dropped from the served
+    // contract. Refuse at generate instead. Needs `mandatory`, so it runs here.
+    edge_target_check(class_local, &fields, &mandatory, &all_vocab_classes()?)?;
     // #3488 — resolve the repo land location as a PROJECTION of the class's
     // containment chain (ADR-041 recursive tree: <vs-step>/products/<product>/
     // domains/<domain>). chorus:repoTarget is the explicit override; otherwise
@@ -6161,6 +6220,51 @@ mod tests {
         assert_eq!(select_table("/code/files/abc123", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
         // query string is not part of the match
         assert_eq!(select_table("/tests/results?limit=1", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn an_edge_at_an_unserved_class_is_refused() {
+        // #4163 AC3 — the AuthBoundary case, in miniature. Its two required
+        // edges point at chorus:SubDomain, retired and unserved (/subdomains
+        // 404), and the generator dropped them from `required` instead of
+        // refusing — for ten weeks, through a report.
+        let served = vec!["Domain".to_string(), "Role".to_string()];
+        let fields = vec![
+            "label|plain".to_string(),
+            "betweenDomainA|edge:SubDomain".to_string(),
+        ];
+        let required = vec!["betweenDomainA|edge".to_string()];
+        let err = edge_target_check("AuthBoundary", &fields, &required, &served).unwrap_err();
+        assert!(err.contains("betweenDomainA"), "names the field: {err}");
+        assert!(err.contains("SubDomain"), "names the class: {err}");
+        assert!(err.contains("no collection to reference"), "says why: {err}");
+    }
+
+    #[test]
+    fn negative_proof_the_edge_check_passes_a_served_target_and_ignores_non_edges() {
+        // #3734 — two states this check must separate, and the two ways it
+        // could be hollow. If it refused a SERVED target it would block every
+        // legitimate edge (and would have gone red on this repo's 46 classes,
+        // so it would have been "fixed" by weakening it). If it inspected
+        // datatype fields it would refuse things that name no class at all.
+        let served = vec!["Domain".to_string(), "Role".to_string()];
+        let ok = vec![
+            "ownedBy|edge:Role".to_string(),
+            "hasDomain|edge:Domain".to_string(),
+            "filePath|datatype:string".to_string(),
+            "label|plain".to_string(),
+        ];
+        let required = vec!["ownedBy|edge".to_string(), "fileInDomain|edge".to_string()];
+        assert!(edge_target_check("CodeFile", &ok, &required, &served).is_ok(), "served targets and non-edges pass");
+        // and the same list with ONE target retired must go red — the states
+        // differ by exactly the thing the check exists to see
+        let mut bad = ok.clone();
+        bad.push("fileInDomain|edge:SubDomain".to_string());
+        assert!(edge_target_check("CodeFile", &bad, &required, &served).is_err(), "one retired REQUIRED target is enough to refuse");
+        // and the same edge, OPTIONAL, passes — the DAL refuses it at write,
+        // where the caller sees it. The two states this check must separate.
+        assert!(edge_target_check("CodeFile", &bad, &[], &served).is_ok(),
+            "an OPTIONAL edge at an unserved class is not a generate-time refusal");
     }
 
     #[test]
