@@ -388,13 +388,24 @@ pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), 
 ///
 /// A field arrives as `name|edge:<Class>`. If no domain `definesVocabulary`
 /// that class, there is no collection to reference and no row a caller could
-/// name — so the edge is unsatisfiable through the door. What the generator did
-/// instead was DROP it: AuthBoundary declares betweenDomainA and betweenDomainB
-/// at `sh:class chorus:SubDomain` with minCount 1, /subdomains is 404 because
-/// SubDomain was retired, and the served contract came back
-/// `required = ['checkType','label']` — both required edges silently gone. I
-/// reported that 2026-07-02 and it was still live ten weeks later, because a
-/// weakened contract fails quietly and nobody reads a shape by hand.
+/// name — so the edge is unsatisfiable through the door.
+///
+/// CORRECTION (2026-09-13, mine): I first wrote that the generator DROPPED
+/// AuthBoundary's two required edges — `AuthBoundary.required` reads
+/// `['checkType','label']` and I stated that as the defect to three people. It
+/// is not. `mandatory` deliberately excludes edges (#3468, the human
+/// completeness gauge) while `write_required` keeps them, and
+/// `AuthBoundaryCreate.required` does carry `betweenDomainA` and
+/// `betweenDomainB`. Measured: TestResult behaves identically — `ofTest` is a
+/// required edge at a SERVED class and is absent from the read schema, present
+/// in the create schema. Nothing was silently dropped, and I had looked at one
+/// schema of the two.
+///
+/// What IS real: SubDomain is retired and unserved (/subdomains 404), so those
+/// two edges name rows no caller can reference, and the create they are
+/// required by fails closed at the DAL as unknown-target. A shape asking for
+/// something unobtainable is worth refusing where it is authored, not at every
+/// write attempt.
 ///
 /// `served` is the class list any domain claims. Refuse, naming the field and
 /// the class, so a retired target is a loud build failure instead of a smaller
@@ -1106,6 +1117,13 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .filter_map(|row| row.split_once('|').map(|(name, _)| name.to_string()))
         .collect();
     write_required.sort();
+    // #4163 — a REQUIRED edge at a class no domain claims cannot be satisfied
+    // through the door: no collection exists to name a row of it, so the create
+    // that requires it fails closed at the DAL. Refuse where it is authored.
+    // Keyed on `write_required`, NOT `mandatory` — mandatory excludes edges by
+    // design (#3468, the human completeness gauge), so a check keyed there
+    // could never fire. It was keyed there until the AC4 test caught it.
+    edge_target_check(class_local, &fields, &write_required, &all_vocab_classes()?)?;
     write_required.dedup();
     let mut mandatory: Vec<String> = required_rows
         .iter()
@@ -1113,10 +1131,6 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .collect();
     mandatory.sort();
     mandatory.dedup();
-    // #4163 — a REQUIRED edge at a class no domain claims cannot be satisfied
-    // through the door, and today it is silently dropped from the served
-    // contract. Refuse at generate instead. Needs `mandatory`, so it runs here.
-    edge_target_check(class_local, &fields, &mandatory, &all_vocab_classes()?)?;
     // #3488 — resolve the repo land location as a PROJECTION of the class's
     // containment chain (ADR-041 recursive tree: <vs-step>/products/<product>/
     // domains/<domain>). chorus:repoTarget is the explicit override; otherwise

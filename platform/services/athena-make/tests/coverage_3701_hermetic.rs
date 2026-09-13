@@ -165,6 +165,13 @@ fn rows_for(q: &str) -> Vec<String> {
             } else {
                 vec![s("ownName|plain")]
             }
+        } else if q.contains("#Retired>") {
+            // #4163 AC3/AC4 — the AuthBoundary shape as it stands: a REQUIRED
+            // edge at a class no domain claims (the stub claims Domain/Product).
+            vec![s("betweenA|edge:GoneClass"), s("label|plain")]
+        } else if q.contains("#Repointed>") {
+            // the same shape after the repoint: the edge names a SERVED class
+            vec![s("betweenA|edge:Domain"), s("label|plain")]
         } else if q.contains("#Lonely>") {
             // a class with NO parent — its result is unchanged by the walk
             vec![s("ownName|plain")]
@@ -184,6 +191,8 @@ fn rows_for(q: &str) -> Vec<String> {
             vec![s("comment|field")]
         } else if q.contains("#TestResult>") {
             vec![s("filePath|field"), s("ofTest|edge"), s("result|field"), s("testName|field")]
+        } else if q.contains("#Retired>") || q.contains("#Repointed>") {
+            vec![s("betweenA|edge"), s("label|field")]
         } else {
             vec![]
         };
@@ -225,7 +234,8 @@ fn rows_for(q: &str) -> Vec<String> {
             vec![s("urn:chorus:instances")]
         } else if q.contains("#TestResult>") {
             vec![s("urn:chorus:domains:tests")]
-        } else if q.contains("#Child>") || q.contains("#Lonely>") {
+        } else if q.contains("#Child>") || q.contains("#Lonely>")
+            || q.contains("#Retired>") || q.contains("#Repointed>") {
             // #4163 — give the inheritance fixtures an instance home of their
             // OWN. instancesGraph is deliberately not inherited (a child's rows
             // must not land in the parent's graph), so the child declares one.
@@ -235,7 +245,22 @@ fn rows_for(q: &str) -> Vec<String> {
         };
     }
     if q.contains("SELECT DISTINCT ?v") && q.contains("definesVocabulary ?c") {
-        return vec![s("Domain"), s("Product")];
+        // #4163 — the CLAIMED class list. It used to name only Domain and
+        // Product, which was fine while nothing read it, but the edge-target
+        // check does: every class this fixture's shapes point an edge at must
+        // be claimed, exactly as in the real store. GoneClass is deliberately
+        // absent — it is the retired target the refusal exists to catch.
+        return vec![
+            s("Domain"),
+            s("Product"),
+            s("Role"),
+            s("Test"),
+            s("TestResult"),
+            s("Child"),
+            s("Lonely"),
+            s("Repointed"),
+            s("Retired"),
+        ];
     }
     if q.contains("definesVocabulary <") {
         return if q.contains("#Product>") || q.contains("#Domain>") {
@@ -683,7 +708,14 @@ fn product_index_and_domain_vocab_project_from_edges() {
     let tables = athena_make::generate_domain_vocab("athena").unwrap();
     assert_eq!(tables.len(), 2, "athena definesVocabulary Domain+Product");
     let vocab = athena_make::all_vocab_classes().unwrap();
-    assert_eq!(vocab, vec!["Domain".to_string(), "Product".to_string()]);
+    // #4163 — the fixture's claimed list widened (the edge-target check reads it,
+    // so every class the fixture's shapes reference must be claimed, as in the
+    // real store). What this test is actually about is that the list PROJECTS
+    // from definesVocabulary edges, so assert the projection, not a frozen
+    // literal that has to be re-typed every time a fixture class is added.
+    assert!(vocab.contains(&"Domain".to_string()) && vocab.contains(&"Product".to_string()));
+    assert!(!vocab.contains(&"GoneClass".to_string()), "an unclaimed class never appears");
+    assert!(vocab.windows(2).all(|w| w[0] <= w[1]), "ORDER BY ?v holds: {vocab:?}");
     let surfaces = athena_make::read_domain_surfaces().unwrap();
     assert_eq!(surfaces.len(), 1);
     assert_eq!(surfaces[0].mount, "borg/props");
@@ -1271,4 +1303,29 @@ fn negative_proof_inheritance_adds_nothing_to_a_class_with_no_parent() {
     assert!(!t.fields.iter().any(|f| f.starts_with("inherited|")),
         "a parentless class must gain NOTHING from the walk: {:?}", t.fields);
     assert_eq!(t.fields.len(), 1, "exactly its own field, nothing else: {:?}", t.fields);
+}
+
+#[test]
+fn a_required_edge_at_an_unserved_class_refuses_and_the_repoint_restores_it() {
+    // #4163 AC3 + AC4 — the AuthBoundary defect and its fix, end to end through
+    // generate(). Retired declares a REQUIRED edge at a class no domain claims;
+    // that is the state that served `required = ['checkType','label']` for ten
+    // weeks with both edges silently gone. Repointed is the same shape aimed at
+    // a served class: the edge comes back in `mandatory`, which is what the
+    // door publishes as required.
+    let _ = world();
+    let e = generate("Retired").unwrap_err();
+    assert!(e.contains("betweenA"), "names the field: {e}");
+    assert!(e.contains("GoneClass"), "names the unserved class: {e}");
+    assert!(e.contains("no collection to reference"), "says why: {e}");
+
+    let t = generate("Repointed").expect("the repointed shape generates");
+    // write_required, NOT mandatory. mandatory is the human completeness gauge
+    // and excludes edges by design (#3468) — the same fact that made my first
+    // reading of AuthBoundary wrong. The create contract is where a required
+    // edge is published, and that is what a caller must satisfy.
+    assert!(t.write_required.iter().any(|m| m == "betweenA"),
+        "the required edge is published on the CREATE contract after the repoint: {:?}", t.write_required);
+    assert!(!t.mandatory.iter().any(|m| m == "betweenA"),
+        "and still absent from the read gauge, by design: {:?}", t.mandatory);
 }
