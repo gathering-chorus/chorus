@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic: fixture files in $BATS_TEST_TMPDIR, the tagger's
 # --names-of / --check-shares seams, no store.
 #
@@ -15,7 +17,7 @@
 # backtick case kept here is a plain template with no substitution, which is what
 # this test was really guarding (the delimiter, not the interpolation).
 
-TAGGER="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
+TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
 
 @test "negative proof: a jest name containing quotes is registered WHOLE" {
   f="$BATS_TEST_TMPDIR/relay.test.ts"

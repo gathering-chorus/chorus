@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic: covers_for runs offline (TESTS_COVERS_OFFLINE),
 # share fixtures are authored JSON; no store, no network
 # #3996 — covers-inference precision + the share gate, proven both directions
 # (#3734): the over-share state must FAIL, the healthy state must pass, and the
 # rules must be deterministic (same path → same domain, twice).
 
-INGEST="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
+INGEST="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
 
 setup() { export TESTS_COVERS_OFFLINE=1; }
 

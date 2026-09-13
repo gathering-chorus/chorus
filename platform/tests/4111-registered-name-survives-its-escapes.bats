@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic. Drives the tagger's --names-of seam with fixture
 # files in BATS_TEST_TMPDIR. No store, no network, no runner.
 #
@@ -17,7 +19,7 @@
 # read by running it, is the full name with plain double quotes.
 
 setup() {
-  TAGGER="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
+  TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
   TMP="$BATS_TEST_TMPDIR"
 }
 names_of() { python3 "$TAGGER" --names-of "$1"; }

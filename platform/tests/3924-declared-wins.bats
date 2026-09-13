@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic: imports the tagger's pure functions, no store
 #
 # #3924 — the AUTHORED @test-type header beats the path/content heuristic.
@@ -9,7 +11,7 @@
 #   and absence still falls to the heuristic, flagged inferred.
 
 run_py() {
-  python3 - "$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py" <<'PY'
+  python3 - "$BATS_TEST_DIRNAME/../scripts/testfiles.py" <<'PY'
 import sys, importlib.util
 spec = importlib.util.spec_from_file_location("tagger", sys.argv[1])
 m = importlib.util.module_from_spec(spec)
@@ -56,7 +58,7 @@ PY
   cd "$BATS_TEST_DIRNAME/../.."
   run python3 -c "
 import importlib.util
-spec = importlib.util.spec_from_file_location('t','platform/scripts/tag-tests-domain.py')
+spec = importlib.util.spec_from_file_location('t','platform/scripts/testfiles.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 files = m.discover()
 assert any(f.startswith('proving/') for f in files), 'proving/ invisible again'

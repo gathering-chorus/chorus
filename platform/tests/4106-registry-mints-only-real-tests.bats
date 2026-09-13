@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic. Uses the tagger's --names-of seam (#4022): one
 # file in, the case names the registry WOULD hold out, no store, no network.
 #
@@ -17,7 +19,7 @@
 # and the controls show real names are still registered.
 
 setup() {
-  TAGGER="$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py"
+  TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
   TMP="$BATS_TEST_TMPDIR"
 }
 
@@ -107,7 +109,7 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
 @test "no-case files are reported, never silently dropped" {
   run python3 -c "
 import importlib.util,sys
-spec=importlib.util.spec_from_file_location('t','$BATS_TEST_DIRNAME/../scripts/tag-tests-domain.py')
+spec=importlib.util.spec_from_file_location('t','$BATS_TEST_DIRNAME/../scripts/testfiles.py')
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 print(m.no_case_report(['a/x.sh','b/y.sh','c/z.feature']))
 print(m.no_case_report([]))

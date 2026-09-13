@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit
 # The registrar's exclude regex was `/dist/`, which matched only a directory
 # named exactly "dist". platform/pulse carries dist.prev/, dist.prev-3130/ and
@@ -9,7 +11,7 @@
 
 setup() {
   ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
-  SCRIPT="$ROOT/platform/scripts/tag-tests-domain.py"
+  SCRIPT="$ROOT/platform/scripts/testfiles.py"
 }
 
 excl_matches() { # $1 = path -> prints True/False
