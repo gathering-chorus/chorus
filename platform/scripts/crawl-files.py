@@ -4,6 +4,7 @@
 Walks CHORUS_ROOT once and persists one CodeFile row per file THROUGH THE
 GENERATED API (POST /codefiles/batch), never raw SPARQL:
 
+  route       read from the server's discovery document, never hardcoded (#4158)
   name        sha1(absolute path)     ADR-040 Rule 0: the caller hands (type, name),
                                       the DAL mints the IRI. One IRI per file.
   filePath    repo-relative path
@@ -54,6 +55,30 @@ KIND_BY_EXT = {
     ".log": "log",
 }
 EXCLUDE_DIRS = {".git", "node_modules", "target", "dist", "coverage", ".venv", "__pycache__"}
+
+_COLLECTION = {}
+
+def collection(kind="CodeFile"):
+    """The collection path the SERVER advertises for a kind, read from discovery.
+
+    #4158 renames every collection (/codefiles → /code/files). A hardcoded path
+    here would 404 the night that lands and would have to be flipped by hand in
+    every caller — the drift class this card exists to remove. The server is the
+    authority on its own routes; the walker asks it once per run.
+    """
+    if kind in _COLLECTION:
+        return _COLLECTION[kind]
+    try:
+        with urllib.request.urlopen(f"{URL}/", timeout=30) as r:
+            doc = json.load(r)
+    except Exception as e:
+        sys.exit(f"crawl-files: discovery unreadable at {URL} ({e}) — refusing to guess a route")
+    for p in doc.get("primitives", []):
+        if p.get("kind") == kind:
+            # discovery advertises /v1/…; the server answers the bare path too
+            _COLLECTION[kind] = p["collection"].replace("/v1/", "/", 1)
+            return _COLLECTION[kind]
+    sys.exit(f"crawl-files: {kind} is not served at {URL} — land the model first (#4157)")
 
 def token():
     if os.environ.get("CHORUS_IDENTITY_TOKEN"):
@@ -120,7 +145,7 @@ def existing(tok):
     storm ADR-033 forbids.
     """
     out = {}
-    url = f"{URL}/codefiles?limit=50000"
+    url = f"{URL}{collection()}?limit=50000"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"} if tok else {})
     try:
         with urllib.request.urlopen(req, timeout=300) as r:
@@ -134,7 +159,7 @@ def existing(tok):
 
 def put_row(r, tok):
     req = urllib.request.Request(
-        f"{URL}/codefiles/{r['name']}",
+        f"{URL}{collection()}/{r['name']}",
         data=json.dumps(r).encode(),
         headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
         method="PUT")
@@ -148,7 +173,7 @@ def put_row(r, tok):
 
 def delete_row(name, tok):
     req = urllib.request.Request(
-        f"{URL}/codefiles/{name}",
+        f"{URL}{collection()}/{name}",
         headers={"Authorization": f"Bearer {tok}"}, method="DELETE")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -160,7 +185,7 @@ def delete_row(name, tok):
 
 def post_batch(rows, tok):
     req = urllib.request.Request(
-        f"{URL}/codefiles/batch",
+        f"{URL}{collection()}/batch",
         data=json.dumps(rows).encode(),
         headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
         method="POST")
