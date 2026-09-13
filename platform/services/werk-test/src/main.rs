@@ -2032,8 +2032,16 @@ fn post_test_results(
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
+            // #4158 — stays on the class-rooted alias DELIBERATELY. Moving it to
+            // /tests/results was measured against canonical athena-make (which
+            // predates #4158) on 2026-09-13 08:20 and returned 403 "only the
+            // owning role may write this node": with no domain-rooted matching,
+            // the old dispatcher reads "tests" as the Test collection and
+            // "results" as an entity name — a confident wrong answer, and 650
+            // of 650 results lost in run 77. This caller moves AFTER #4158 is
+            // deployed to canonical, which is what the alias exists for.
             let collection = std::env::var("OWL_API_TESTRESULTS")
-                .unwrap_or_else(|_| "http://localhost:3360/tests/results".to_string());
+                .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
             werk_test::testresult_batch_endpoint(&collection)
         });
     // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first
