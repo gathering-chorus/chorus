@@ -1564,6 +1564,26 @@ include!("../../shared/scope_units.rs");
 /// empty diff, or forced) — the caller logs the reason and runs the legacy
 /// widened plan. Same core as werk-build's scoping, so what a diff can affect
 /// is one answer asked twice.
+/// #4169 — the same scoping call, but the FULL reason is returned instead of
+/// collapsed into None. `Ok(units)` = scoped; `Err(reason)` = FULL, where the
+/// reason is "forced", "empty-diff", or "unmapped:<file>". The caller refuses
+/// on the last of those: an unmapped path is a data defect, and widening a card
+/// to the whole tree hides it (#4166 — 314 units, 61 minutes, none of the nine
+/// failures belonged to that card).
+pub fn scoped_test_reason(
+    changed: &[String],
+    units: &[ScopeUnit],
+    edges: &[(String, String)],
+) -> Result<Vec<ScopeUnit>, String> {
+    let force_full = std::env::var("WERK_TEST_FULL").map(|v| v == "1").unwrap_or(false);
+    match scope_unit_names(changed, units, edges, force_full) {
+        ScopeVerdict::Scoped(names) => Ok(
+            units.iter().filter(|u| names.contains(&u.name)).cloned().collect(),
+        ),
+        ScopeVerdict::Full(reason) => Err(reason),
+    }
+}
+
 pub fn scoped_test_units(
     changed: &[String],
     units: &[ScopeUnit],
