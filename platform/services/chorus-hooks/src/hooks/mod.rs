@@ -36,6 +36,7 @@ pub mod stop_on_error;
 // #3000 — mcp_health_gate retired (wrong-layer, never fired for MCP tools).
 // Server-side capture in chorus-mcp replaces it. Source file deleted.
 pub mod log_first_gate;
+pub mod loki_first_gate;
 pub mod quality_gate;
 pub mod memory_first;
 pub mod e2e_responder;

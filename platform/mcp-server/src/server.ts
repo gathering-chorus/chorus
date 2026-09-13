@@ -27,7 +27,7 @@ import { z } from 'zod';
 import { resolveShimPath } from './shim-path';
 import { resolveCardsPath } from './cards-path';
 import { resolvePulseSecret } from './pulse-secret';
-import { queryLogs, recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
+import { recentErrors, logsForCard, logsForTrace, logsForBranch, type LogsQueryDeps } from './handlers/logs-query';
 import { executeDesignRefresh } from './design-refresh';
 // #3443 AC7 — run-state: a chorus_werk transport drop becomes a non-event.
 import { announceRepeated, decideRunAction, patchSuperseded, type WerkRun } from './werk-run-state';
@@ -1551,14 +1551,6 @@ const DOC_CATALOG_ADD_TOOL_DEF = {
 // the substrate returns the full flow as structured rows, not blobs.
 const TimeWindowEnum = z.enum(['5m', '15m', '1h', '6h', '1d']);
 
-const LogsQueryInput = z.object({
-  query: z.string().min(1).describe('LogQL query, e.g. {job="chorus-api"} |~ "chorus_acp"'),
-  start: z.string().optional().describe('ISO 8601 timestamp; default: 1h ago'),
-  end: z.string().optional().describe('ISO 8601 timestamp; default: now'),
-  time_window: TimeWindowEnum.optional().describe('Convenience window (overrides start/end if both unset). Default 1h.'),
-  limit: z.number().int().min(1).max(1000).optional().describe('Max events. Default 100, max 1000.'),
-});
-
 const LogsRecentErrorsInput = z.object({
   role: z.string().optional().describe('Filter to events from one role. Omit for all roles.'),
   time_window: TimeWindowEnum.optional().describe('Window. Default 1h.'),
@@ -1592,28 +1584,24 @@ const PainCardInput = z.object({
 
 const TIME_WINDOW_DESC = 'Time range for the query — pick one: 5m=five minutes, 15m=fifteen minutes, 1h=one hour, 6h=six hours, 1d=one day. Larger windows scan more Loki data.';
 
-const LOGS_QUERY_TOOL_DEF = {
+// #4149 — chorus_logs_query RETIRED. It was a raw LogQL passthrough: the same
+// query string mcp-grafana's query_loki_logs takes, minus any way to discover
+// the labels. Two raw doors to one Loki, and ours was the weaker. The noun
+// tools below (card / trace / branch / recent errors) are NOT duplicates —
+// they ask in our vocabulary and need no label schema — so they stay.
+const LOGS_QUERY_RETIRED = {
   name: 'chorus_logs_query',
-  description:
-    'Use this to run a custom LogQL query against Chorus logs in Loki when none of the convenience tools fit. Returns structured rows ({ events, count, truncated }) instead of blobs. Refusal taxonomy: loki-unreachable | query-syntax-error | time-range-invalid | result-too-large | rate-limited. Do NOT use for the common cases — chorus_logs_for_trace / chorus_logs_for_card / chorus_logs_recent_errors are tighter typed wrappers; reach for this only when you need a custom LogQL filter.',
-  inputSchema: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'LogQL string, e.g. {job="chorus-api"} |~ "card.demo.started"' },
-      start: { type: 'string', description: 'ISO 8601 timestamp; default 1h ago' },
-      end: { type: 'string', description: 'ISO 8601 timestamp; default now' },
-      time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
-      limit: { type: 'integer', minimum: 1, maximum: 1000, description: 'Max events. Default 100.' },
-    },
-    required: ['query'],
-    additionalProperties: false,
-  },
+  replacement: 'query_loki_logs',
+  hint:
+    'chorus_logs_query is retired (#4149). For a raw LogQL query use the grafana MCP server: ' +
+    'query_loki_logs, with list_loki_label_names / list_loki_label_values to find the labels first. ' +
+    'For a card, trace or branch, use chorus_logs_for_card / chorus_logs_for_trace / chorus_logs_for_branch.',
 } as const;
 
 const LOGS_RECENT_ERRORS_TOOL_DEF = {
   name: 'chorus_logs_recent_errors',
   description:
-    'Use this to answer "what broke recently?" — returns recent error-level events across the spine, optionally filtered to one role. Default window 1h. Do NOT use to investigate a known card or trace_id (use chorus_logs_for_card or chorus_logs_for_trace) or to grep for specific event names (use chorus_logs_query). Same refusal taxonomy as chorus_logs_query.',
+    'Use this to answer "what broke recently?" — returns recent error-level events across the spine, optionally filtered to one role. Default window 1h. Do NOT use to investigate a known card or trace_id (use chorus_logs_for_card or chorus_logs_for_trace) or to grep for specific event names (use the grafana MCP server: query_loki_logs). Typed refusals: loki-unreachable | time-range-invalid | result-too-large | rate-limited.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1627,7 +1615,7 @@ const LOGS_RECENT_ERRORS_TOOL_DEF = {
 const LOGS_FOR_CARD_TOOL_DEF = {
   name: 'chorus_logs_for_card',
   description:
-    'Use this to retrieve every event bound to one card_id — gate emits, demo events, /acp step events, hook bites, anything that happened during work on card #N. Backed by #2838 card_id propagation. Default window 1d. Do NOT use for system events (heartbeats, health probes, canonical sync) — those are not card-bound and won t appear; for those use chorus_logs_query or chorus_logs_recent_errors.',
+    'Use this to retrieve every event bound to one card_id — gate emits, demo events, /acp step events, hook bites, anything that happened during work on card #N. Backed by #2838 card_id propagation. Default window 1d. Do NOT use for system events (heartbeats, health probes, canonical sync) — those are not card-bound and won t appear; for those use chorus_logs_recent_errors, or the grafana MCP server: query_loki_logs.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1646,7 +1634,7 @@ const LOGS_FOR_TRACE_TOOL_DEF = {
   inputSchema: {
     type: 'object',
     properties: {
-      trace_id: { type: 'string', description: 'UUIDv7 trace_id (from MCP response or chorus_logs_query result)' },
+      trace_id: { type: 'string', description: 'UUIDv7 trace_id (from an MCP response or a log line)' },
       time_window: { type: 'string', enum: ['5m', '15m', '1h', '6h', '1d'], description: TIME_WINDOW_DESC + ' Default 1h.' },
     },
     required: ['trace_id'],
@@ -1672,7 +1660,7 @@ const LOGS_FOR_BRANCH_TOOL_DEF = {
 const PAIN_ROLLUP_TOOL_DEF = {
   name: 'chorus_pain_rollup',
   description:
-    'Use this to see the team\'s pain in aggregate — spine failures grouped by class (role · event · reason), ranked by impact, split per product (Chorus / Gathering), with the cards / latest / sample-detail for each class. This is the in-session surface for the #3029 pain board (the browser page /borg/pain.html shows the same numbers). Reach for it to answer "what is hurting us most right now?" before pulling fix work. Do NOT use to investigate one known card (use chorus_pain_card) or to grep raw events (use chorus_logs_query).',
+    'Use this to see the team\'s pain in aggregate — spine failures grouped by class (role · event · reason), ranked by impact, split per product (Chorus / Gathering), with the cards / latest / sample-detail for each class. This is the in-session surface for the #3029 pain board (the browser page /borg/pain.html shows the same numbers). Reach for it to answer "what is hurting us most right now?" before pulling fix work. Do NOT use to investigate one known card (use chorus_pain_card) or to grep raw events (use the grafana MCP server: query_loki_logs).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -1685,7 +1673,7 @@ const PAIN_ROLLUP_TOOL_DEF = {
 const PAIN_CARD_TOOL_DEF = {
   name: 'chorus_pain_card',
   description:
-    'Use this to see one card\'s pipeline runs — the card broken into trace-keyed runs (pull / commit / acp / build), each pass/fail with steps + failure reason. The per-card view of the #3029 pain board. Do NOT use for the aggregate failure picture (use chorus_pain_rollup) or for arbitrary event greps (use chorus_logs_for_card / chorus_logs_query).',
+    'Use this to see one card\'s pipeline runs — the card broken into trace-keyed runs (pull / commit / acp / build), each pass/fail with steps + failure reason. The per-card view of the #3029 pain board. Do NOT use for the aggregate failure picture (use chorus_pain_rollup) or for arbitrary event greps (use chorus_logs_for_card, or the grafana MCP server: query_loki_logs).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -3324,7 +3312,6 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       WERK_REVIEW_TOOL_DEF,
           DESIGN_REFRESH_TOOL_DEF,
       DOC_CATALOG_ADD_TOOL_DEF,
-      LOGS_QUERY_TOOL_DEF,
       LOGS_RECENT_ERRORS_TOOL_DEF,
       LOGS_FOR_CARD_TOOL_DEF,
       LOGS_FOR_TRACE_TOOL_DEF,
@@ -3704,6 +3691,9 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
       // handler emits a chorus_logs.queried event so investigation paths
       // are auditable, then returns structured rows or a typed refusal.
       case 'chorus_logs_query':
+        // Retired, not removed: a caller reaching for the old name is told
+        // where the raw door went instead of getting "unknown tool" (#4149).
+        throw new Error(LOGS_QUERY_RETIRED.hint);
       case 'chorus_logs_recent_errors':
       case 'chorus_logs_for_card':
       case 'chorus_logs_for_trace':
@@ -3715,11 +3705,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         };
         const tool = req.params.name;
         let result;
-        if (tool === 'chorus_logs_query') {
-          const parsed = LogsQueryInput.safeParse(req.params.arguments);
-          if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
-          result = await queryLogs(parsed.data, lokiDeps);
-        } else if (tool === 'chorus_logs_recent_errors') {
+        if (tool === 'chorus_logs_recent_errors') {
           const parsed = LogsRecentErrorsInput.safeParse(req.params.arguments);
           if (!parsed.success) throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
           result = await recentErrors(parsed.data, lokiDeps);

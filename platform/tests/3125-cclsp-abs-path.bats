@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# @test-type: contract
 # 3125-cclsp-abs-path — gen-role-mcp.sh must bake cclsp's launch via ABSOLUTE
 # node + cclsp paths, never a bare `command: "cclsp"`. cclsp is a Node script
 # (#!/usr/bin/env node), so bare resolution depends on nvm's PATH, which a
@@ -27,10 +28,17 @@ GEN="$REPO_ROOT/platform/scripts/gen-role-mcp.sh"
 }
 
 @test "running the generator emits an absolute cclsp command" {
-  run bash "$GEN"
+  # #4149: generate into a scratch tree, NEVER the live repo. This case used to
+  # run the generator bare, so every nightly regenerated the three real role
+  # configs from whatever template was on disk — that is how the grafana server
+  # vanished from all three roles at 03:26 on 2026-09-13. A test may read the
+  # product surface; it may not write it.
+  TMP="$(mktemp -d)"
+  run env GEN_MCP_WRITE_ROOT="$TMP" bash "$GEN"
   [ "$status" -eq 0 ]
-  run python3 -c "import json; print(json.load(open('$REPO_ROOT/roles/wren/.mcp.json'))['mcpServers']['cclsp']['command'])"
+  run python3 -c "import json; print(json.load(open('$TMP/roles/wren/.mcp.json'))['mcpServers']['cclsp']['command'])"
   [ "$status" -eq 0 ]
   # Command must be an absolute path (starts with /), not a bare name.
   [[ "$output" == /* ]]
+  rm -rf "$TMP"
 }

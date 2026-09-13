@@ -15,7 +15,11 @@ set -euo pipefail
 # WRITE_ROOT = the repo this script lives in (werk when building, canonical when
 # regenerating in place). Resolve from the script's own location, NOT $CHORUS_HOME,
 # so running the werk's copy writes into the werk.
-WRITE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# GEN_MCP_WRITE_ROOT (#4149) lets a TEST point the generator at a scratch tree.
+# Without it, testing the generator meant running it against the live repo —
+# which is exactly how 3125-cclsp-abs-path.bats wiped every role's grafana
+# server at 03:26 on 2026-09-13, twelve hours after #4149 landed it.
+WRITE_ROOT="${GEN_MCP_WRITE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 # RUNTIME_HOME = where role SESSIONS actually run from (canonical). The baked
 # absolute paths (cclsp config) must point here regardless of which tree generated
@@ -38,6 +42,13 @@ ASTGREP="$(command -v ast-grep-server || echo "$HOME/.local/bin/ast-grep-server"
 NODE_BIN="$(command -v node || echo "$HOME/.nvm/versions/node/v20.20.2/bin/node")"
 CCLSP_BIN="$(command -v cclsp || echo "$HOME/.nvm/versions/node/v20.20.2/bin/cclsp")"
 
+# mcp-grafana (#4149) — Grafana Labs' official server. ONE server covers all
+# three read surfaces: Grafana dashboards, Loki logs (query_loki_logs) and
+# Prometheus metrics (query_prometheus), so there is no separate loki or
+# prometheus MCP to wire. Read-only by flag: -disable-admin -disable-write.
+MCP_GRAFANA="$(command -v mcp-grafana || echo "$HOME/.chorus/bin/mcp-grafana")"
+GRAFANA_URL_VALUE="${GRAFANA_URL:-http://localhost:3100}"
+
 ROLES=(wren silas kade)
 
 for role in "${ROLES[@]}"; do
@@ -59,6 +70,11 @@ for role in "${ROLES[@]}"; do
     },
     "ast-grep": {
       "command": "$ASTGREP"
+    },
+    "grafana": {
+      "command": "$MCP_GRAFANA",
+      "args": ["-disable-admin", "-disable-write"],
+      "env": { "GRAFANA_URL": "$GRAFANA_URL_VALUE" }
     }
   }
 }
