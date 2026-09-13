@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.athena-validate</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/athena-validate.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>DEPLOY_ROLE</key>
+    <string>system</string>
+  </dict>
+  <!-- Daily at 07:00, after the 03:00 nightly and before Jeff's day. The graph
+       moves slowly; a 15-minute cadence would be noise, and the point is that
+       nobody has to remember to type it. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>7</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/athena-validate.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/athena-validate.log</string>
+</dict>
+</plist>
