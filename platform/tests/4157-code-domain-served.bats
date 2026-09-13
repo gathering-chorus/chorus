@@ -23,13 +23,13 @@ setup() {
 }
 
 teardown() {
-  [ -n "${URL:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL/codefiles/$SACRIFICE" || true
+  [ -n "${URL:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL/code/files/$SACRIFICE" || true
 }
 
 post_codefile() { # language → prints http code, body in $BODY
   curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -X POST \
     -d "{\"name\":\"$SACRIFICE\",\"filePath\":\"platform/tests/4157-code-domain-served.bats\",\"hasKind\":\"test\",\"hasLanguage\":\"$1\"}" \
-    "$URL/codefiles"
+    "$URL/code/files"
 }
 
 @test "4157 AC2: discovery lists CodeFile, CodeKind and Language" {
@@ -53,13 +53,13 @@ post_codefile() { # language → prints http code, body in $BODY
   ! grep -q 'unknown route' "$BODY"
   grep -q 'unknown-target' "$BODY"
   [ "$code" = 422 ]   # validation: the DAL's referential refusal, measured 2026-09-12
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/codefiles/$SACRIFICE")" != 200 ]
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/code/files/$SACRIFICE")" != 200 ]
 }
 
 @test "4157 AC2: a well-formed CodeFile creates and reads back with kind and language" {
   code=$(post_codefile bash)
   [ "$code" = 201 ] || [ "$code" = 200 ]
-  run curl -s "$URL/codefiles/$SACRIFICE"
+  run curl -s "$URL/code/files/$SACRIFICE"
   echo "$output" | grep -q '4157-code-domain-served.bats'
   echo "$output" | grep -q '"hasKind"'
   echo "$output" | grep -q '"hasLanguage"'

@@ -2698,6 +2698,21 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
 pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
+    // #4158 — the WRITE door takes the domain-rooted path too. handle_inner
+    // normalizes /<domain>/<segment> → /<plural> for reads; this is that same
+    // rule on the write side. Without it POST /code/files answered 404 while
+    // POST /codefiles answered 201 (measured on the variant, 2026-09-13 07:48)
+    // — the deprecated alias was the ONLY way to write, so no caller could
+    // move off it. The class-rooted path arrives unchanged and still answers.
+    let domain_rooted;
+    let path = if !table.base_path.is_empty()
+        && (path == table.base_path || path.starts_with(&format!("{}/", table.base_path)))
+    {
+        domain_rooted = format!("/{}{}", plural, &path[table.base_path.len()..]);
+        domain_rooted.as_str()
+    } else {
+        path
+    };
     let op = match parse_write(method, path, &plural) {
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
@@ -6064,6 +6079,46 @@ mod tests {
         let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
         assert_eq!(select_table("/codefiles", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
         assert_eq!(select_table("/testresults/x", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn the_write_door_takes_the_domain_rooted_path() {
+        // #4158 — reads normalized in handle_inner, writes did NOT: measured on
+        // the variant 2026-09-13 07:48, POST /code/files -> 404 and POST
+        // /codefiles -> 201. The alias was the only writable path, so AC4's
+        // caller migration was impossible. This pins BOTH forms on the write
+        // door, through the same normalization handle_write_stamped applies.
+        let t = t4158("code", "CodeFile");
+        let plural = pluralize("CodeFile");
+        // the exact normalization handle_write_stamped performs
+        let norm = |p: &str| -> String {
+            if !t.base_path.is_empty() && (p == t.base_path || p.starts_with(&format!("{}/", t.base_path))) {
+                format!("/{}{}", plural, &p[t.base_path.len()..])
+            } else {
+                p.to_string()
+            }
+        };
+        assert!(matches!(parse_write("POST", &norm("/code/files"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("PUT", &norm("/code/files/abc"), &plural), Some(WriteOp::ReplaceEntity { .. })));
+        assert!(matches!(parse_write("DELETE", &norm("/code/files/abc"), &plural), Some(WriteOp::DeleteEntity { .. })));
+        // the deprecated alias still writes, unchanged
+        assert!(matches!(parse_write("POST", &norm("/codefiles"), &plural), Some(WriteOp::CreateEntity)));
+    }
+
+    #[test]
+    fn negative_proof_the_write_normalization_is_load_bearing() {
+        // #3734 — prove this check can go RED. Without the normalization the
+        // raw domain-rooted path reaches parse_write and matches NOTHING; that
+        // was the live 404. If parse_write ever starts accepting the raw form
+        // on its own, this fails and the normalization above is dead code
+        // claiming credit for a fix it no longer provides.
+        let plural = pluralize("CodeFile");
+        assert!(parse_write("POST", "/code/files", &plural).is_none(),
+            "the raw domain-rooted path must NOT parse — normalization is what makes it work");
+        assert!(parse_write("PUT", "/code/files/abc", &plural).is_none());
+        // and a path under the wrong domain must not write this class either
+        let t = t4158("code", "CodeFile");
+        assert!(!"/tests/files".starts_with(&format!("{}/", t.base_path)));
     }
 
     #[test]
