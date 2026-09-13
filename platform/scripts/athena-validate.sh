@@ -22,8 +22,37 @@ Q() { curl -sf --max-time 20 -H "Accept: application/sparql-results+json" --data
 count() { echo "$1" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null || echo "?"; }
 rows()  { echo "$1" | python3 -c 'import sys,json;[print("    "+" ".join(v["value"].split("#")[-1] for v in b.values())) for b in json.load(sys.stdin)["results"]["bindings"][:8]]' 2>/dev/null; }
 
+# #4166 — the sweep's answer has to reach somebody. Best-effort: a failing
+# emit must never turn a read-only audit into a failure.
+emit_spine() {
+  local ev="$1"; shift
+  local log="${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/scripts/chorus-log"
+  [ -f "$log" ] || return 0
+  bash "$log" "$ev" "${DEPLOY_ROLE:-system}" "$@" >/dev/null 2>&1 || true
+}
+
+# #4166 — the run writes its own report surface, the same way the nightly does
+# (borg/nightly-live.txt + its page). Without this the answer lives in a log
+# nobody opens, which is how this sweep went unread for weeks.
+REPORT="${ATHENA_VALIDATE_REPORT:-${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/api/public/borg/graph-validate.txt}"
+if [ -d "$(dirname "$REPORT")" ]; then exec > >(tee "$REPORT") 2>&1; fi
+
 BAD=0
 echo "=== athena-validate — conformance sweep over GRAPH <$G> ==="
+
+# #4166 — REACHABILITY FIRST. Every check below treats a failed query as zero
+# rows, so an unreachable store used to walk the whole sweep and print PROVEN
+# CLEAN. A dead sweep reading as a healthy graph is the one outcome that makes
+# this script worse than not having it. Ask once, up front, and refuse to
+# report a number we did not measure.
+if ! Q "ASK { }" >/dev/null 2>&1; then
+  echo
+  echo "UNMEASURED — the store at $FUSEKI did not answer. This is NOT zero issues;"
+  echo "nothing was swept. Fix the store, then re-run."
+  echo "graph-summary|UNMEASURED|unreachable"
+  emit_spine "graph.validate.unmeasured" "endpoint=$FUSEKI"
+  exit 2
+fi
 
 # 1. retired predicates still in use. This list is the model's OWN retired set
 # (athena-product-design.html: 409 retired-predicate) — NOT a guess. inStream /
@@ -34,7 +63,7 @@ echo "1) retired predicates in use:"
 for p in $RETIRED; do
   r=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s c:$p ?o } } LIMIT 20")
   n=$(count "$r")
-  if [ "$n" != "0" ] && [ "$n" != "?" ]; then BAD=$((BAD+n)); echo "  ⚠️  c:$p — $n subject(s)"; rows "$r"; fi
+  if [ "$n" != "0" ] && [ "$n" != "?" ]; then BAD=$((BAD+n)); echo "  ⚠️  c:$p — $n subject(s)"; rows "$r"; echo "graph-issue|retired-predicate|c:$p|$n subject(s)"; fi
 done
 [ "$BAD" = "0" ] && echo "  ✅ none"
 
@@ -50,14 +79,14 @@ RDFTYPE="http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 DANGLE=$(Q "PREFIX c: <$NS> SELECT ?s ?p ?o WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } } LIMIT 20")
 NDALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } }")
 nd=$(echo "$NDALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
-if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; else echo "  ✅ none"; fi
+if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; echo "graph-issue|dangling-edge|$nd edges|object node does not exist"; else echo "  ✅ none"; fi
 
 # 3. untyped instances — a chorus: subject with data but no rdf:type
 echo "3) untyped instances (data with no class):"
 UNTYPED=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } } GROUP BY ?s LIMIT 20")
 NUALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } }")
 nu=$(echo "$NUALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
-if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; else echo "  ✅ none"; fi
+if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; echo "graph-issue|untyped-instance|$nu subjects|no rdf:type the model knows"; else echo "  ✅ none"; fi
 
 # 4. #3846/ADR-058 — the GOVERNANCE CHECK registry: ADRs/decisions/practices as
 # checkable data (chorus:GovernanceCheck in urn:chorus:ontology). Each check's
@@ -100,15 +129,44 @@ for b in data:
         print(f"  ✅ {chk} — 0 violations ({law})")
 print(f"GOVBAD={bad}")
 ' | tee /tmp/gov-check-out.$$
-  GOVBAD=$(grep -o "GOVBAD=[0-9]*" /tmp/gov-check-out.$$ | cut -d= -f2); rm -f /tmp/gov-check-out.$$
+  GOVBAD=$(grep -o "GOVBAD=[0-9]*" /tmp/gov-check-out.$$ | cut -d= -f2)
+  # #4166 — keep the one-home subject names so section 5 can locate them.
+  ONE_HOME_SUBJECTS=$(awk '/gc-one-home-per-subject/{f=1;next} /^  (✅|⚠️)/{f=0} f&&/^      /{print $1}' /tmp/gov-check-out.$$ | tr '\n' ' ')
+  rm -f /tmp/gov-check-out.$$
   BAD=$((BAD+${GOVBAD:-0}))
+fi
+
+# 5. #4166 — name the graphs, not just the subject. "pulse is in 2 graphs" is a
+# number; "pulse is in urn:chorus:instances and urn:chorus:domains:pulse" is
+# something a person can go and fix. The governance check above reports WHICH
+# subjects break one-home-per-subject (ADR-051); this says WHERE they live.
+if [ "${GOVBAD:-0}" != "0" ]; then
+  echo "5) where the one-home violators actually live:"
+  for subj in $ONE_HOME_SUBJECTS; do
+    r=$(Q "PREFIX c: <$NS> SELECT DISTINCT ?g WHERE { GRAPH ?g { c:$subj ?p ?o } }")
+    gs=$(echo "$r" | python3 -c 'import sys,json;print(", ".join(b["g"]["value"] for b in json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null)
+    [ -n "$gs" ] && { echo "  $subj → $gs"; echo "graph-issue|one-home|$subj|$gs"; }
+  done
 fi
 
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."
+  echo "graph-summary|0|clean"
+  emit_spine "graph.validate.completed" "issues=0" "verdict=clean"
   exit 0
 else
   echo "OLD/BAD DATA FOUND — $BAD issue(s). The write door can't reach these; this sweep is how they surface."
+  echo "graph-summary|$BAD|dirty"
+  emit_spine "graph.validate.completed" "issues=$BAD" "verdict=dirty"
+  # #4166 — reach a person. A count on the stdout of a launchd job nobody opens
+  # is the same as not running: the sweep already existed and went unread for
+  # weeks. Best-effort; a nudge failure never changes the audit's verdict.
+  if [ "${ATHENA_VALIDATE_NUDGE:-1}" = "1" ]; then
+    curl -sf --max-time 10 -X POST "${CHORUS_API:-http://localhost:3340}/api/chorus/nudge" \
+      -H 'Content-Type: application/json' \
+      -d "{\"to\":\"silas\",\"from\":\"system\",\"message\":\"athena-validate: $BAD issue(s) in the graph — see ~/Library/Logs/Chorus/athena-validate.log\"}" \
+      >/dev/null 2>&1 || true
+  fi
   exit 1
 fi
