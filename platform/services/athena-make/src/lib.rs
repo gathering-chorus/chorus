@@ -2698,6 +2698,21 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
 pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
+    // #4158 — the write door takes the VERSION prefix too. #3561 fixed this for
+    // reads ("SERVE the path the discovery document ADVERTISES") and the write
+    // side never got the same rule, so discovery advertised /v1/testresults
+    // while POST there answered 404. Measured on both servers 2026-09-13 10:22:
+    // /testresults/batch 422, /v1/testresults/batch 404. A caller that follows
+    // discovery — the documented contract — could not write at all; run 86 lost
+    // 650 results to exactly this.
+    let versioned;
+    let path = match path.strip_prefix("/v1/") {
+        Some(rest) => {
+            versioned = format!("/{rest}");
+            versioned.as_str()
+        }
+        None => path,
+    };
     // #4158 — the WRITE door takes the domain-rooted path too. handle_inner
     // normalizes /<domain>/<segment> → /<plural> for reads; this is that same
     // rule on the write side. Without it POST /code/files answered 404 while
@@ -4664,7 +4679,17 @@ pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a Rout
     let bare = path.split(['?', '#']).next().unwrap_or("");
     let trimmed = bare.trim_start_matches('/');
     let mut segs = trimmed.split('/').filter(|s| !s.is_empty());
-    let first = segs.next().unwrap_or("");
+    let mut first = segs.next().unwrap_or("");
+    // #4158 — the VERSION prefix is not a collection. Discovery advertises
+    // /v1/<collection>, and dispatch matched "v1" as the first segment and
+    // answered NotFound before any handler ran — so POST /v1/testresults/batch
+    // 404'd while POST /testresults/batch worked (measured on both servers
+    // 2026-09-13 10:22; run 86 lost 650 results to it). #3561 fixed the read
+    // path downstream of here; the table lookup itself never learned. Skipping
+    // it here fixes reads and writes at one point, the way #3561 intended.
+    if first == API_VERSION {
+        first = segs.next().unwrap_or("");
+    }
     let (first, second) = if first == "schema" {
         (segs.next().unwrap_or(""), segs.next().unwrap_or(""))
     } else {
@@ -6089,6 +6114,30 @@ mod tests {
     }
 
     #[test]
+    fn select_table_skips_the_version_prefix_discovery_advertises() {
+        // #4158 — every form discovery can hand a caller must dispatch.
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
+        for p in ["/v1/tests/results", "/v1/testresults", "/v1/tests/results/abc", "/v1/code/files"] {
+            assert!(select_table(p, &tables).is_some(), "{p} must dispatch");
+        }
+        assert_eq!(select_table("/v1/tests/results", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+        assert_eq!(select_table("/v1/code/files", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+    }
+
+    #[test]
+    fn negative_proof_skipping_v1_does_not_make_everything_dispatch() {
+        // #3734 — a skip that runs unconditionally would eat the FIRST segment
+        // of every path, and /widgets/files would then dispatch as /files. The
+        // skip must fire only for the version segment, and misses must still
+        // miss.
+        let tables = vec![t4158("code", "CodeFile")];
+        assert!(select_table("/v1/widgets", &tables).is_none(), "unknown collection under /v1");
+        assert!(select_table("/v2/code/files", &tables).is_none(), "only THE version prefix is skipped");
+        assert!(select_table("/v1", &tables).is_none(), "the bare version root is not a collection");
+        assert!(select_table("/v1/code", &tables).is_none(), "the bare domain root is not a collection");
+    }
+
+    #[test]
     fn select_table_keeps_the_class_rooted_path_as_a_deprecated_alias() {
         let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
         assert_eq!(select_table("/codefiles", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
@@ -6120,6 +6169,38 @@ mod tests {
         let body = error_envelope(&t, "abc", 404, "not-found", "no such row", &[]);
         assert!(body.contains("/v1/testresults/abc"), "no domain → class-rooted fallback: {body}");
         assert!(!body.contains("/v1/tests/results/abc"));
+    }
+
+    #[test]
+    fn the_write_door_takes_the_version_prefix_discovery_advertises() {
+        // #4158 — discovery advertises /v1/<collection>; before this the write
+        // door only matched the bare form, so following the contract 404'd.
+        // Both halves of the normalization compose: version THEN domain.
+        let t = t4158("tests", "TestResult");
+        let plural = pluralize("TestResult");
+        let norm = |p: &str| -> String {
+            let p = p.strip_prefix("/v1/").map(|r| format!("/{r}")).unwrap_or_else(|| p.to_string());
+            if !t.base_path.is_empty() && (p == t.base_path || p.starts_with(&format!("{}/", t.base_path))) {
+                format!("/{}{}", plural, &p[t.base_path.len()..])
+            } else {
+                p
+            }
+        };
+        assert!(matches!(parse_write("POST", &norm("/v1/tests/results"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("POST", &norm("/v1/testresults"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("DELETE", &norm("/v1/tests/results/abc"), &plural), Some(WriteOp::DeleteEntity { .. })));
+    }
+
+    #[test]
+    fn negative_proof_the_version_strip_is_load_bearing_on_writes() {
+        // #3734 — the raw /v1 path must NOT parse on its own. If it ever does,
+        // the strip above is dead code taking credit, and this test would stop
+        // distinguishing the fixed server from the broken one it was written
+        // against (measured 404, 2026-09-13).
+        let plural = pluralize("TestResult");
+        assert!(parse_write("POST", "/v1/testresults", &plural).is_none(),
+            "raw /v1 must not parse — the strip is what makes discovery's path work");
+        assert!(parse_write("POST", "/v1/tests/results", &plural).is_none());
     }
 
     #[test]

@@ -1339,7 +1339,18 @@ pub fn advertised_collection(discovery_body: &str, kind: &str) -> Option<String>
     if path.is_empty() || !path.starts_with('/') {
         return None;
     }
-    Some(path.to_string())
+    // #4158 — discovery advertises the VERSIONED path (/v1/tests/results) but
+    // the write door only matched the bare form until this card fixed it
+    // (measured 2026-09-13 10:22: /testresults/batch 422, /v1/testresults/batch
+    // 404 on BOTH servers; run 86 lost 650 results to it). Servers predating
+    // that fix are still out there, and the bare form is served by every
+    // version, so strip the prefix here too and post to the form that always
+    // works.
+    let bare = path.strip_prefix("/v1").unwrap_or(path);
+    if bare.is_empty() || !bare.starts_with('/') {
+        return None;
+    }
+    Some(bare.to_string())
 }
 
 /// #4158 — the scheme+host of a configured endpoint, so a discovered PATH can
@@ -1622,13 +1633,13 @@ mod discovery_route_4158 {
         // #4158 AC4 — the caller carries NO path shape. The same code is right
         // against a post-#4158 server and the pre-#4158 one it will meet until
         // this lands on canonical.
-        assert_eq!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/v1/tests/results"));
-        assert_eq!(advertised_collection(PRE_4158, "TestResult").as_deref(), Some("/v1/testresults"));
+        assert_eq!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/results"));
+        assert_eq!(advertised_collection(PRE_4158, "TestResult").as_deref(), Some("/testresults"));
         // and the batch route is derived from whichever came back
         let post = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(POST_4158, "TestResult").unwrap()));
-        assert_eq!(post, "http://h:1/v1/tests/results/batch");
+        assert_eq!(post, "http://h:1/tests/results/batch");
         let pre = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(PRE_4158, "TestResult").unwrap()));
-        assert_eq!(pre, "http://h:1/v1/testresults/batch");
+        assert_eq!(pre, "http://h:1/testresults/batch");
     }
 
     #[test]
@@ -1638,8 +1649,8 @@ mod discovery_route_4158 {
         // immediately before TestResult in both documents, so a reader that
         // ran past the object boundary would hand back /v1/tests/tests for
         // TestResult — the right graph, the wrong rows, and no error.
-        assert_eq!(advertised_collection(POST_4158, "Test").as_deref(), Some("/v1/tests/tests"));
-        assert_ne!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/v1/tests/tests"));
+        assert_eq!(advertised_collection(POST_4158, "Test").as_deref(), Some("/tests/tests"));
+        assert_ne!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/tests"));
         // a class the server does not serve yields None — the caller keeps its
         // configured default instead of inventing a route
         assert_eq!(advertised_collection(POST_4158, "CodeFile"), None);
