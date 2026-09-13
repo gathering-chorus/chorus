@@ -3334,13 +3334,13 @@ mod security_lane_3922 {
     #[test]
     fn selects_only_declared_security_rows() {
         let rows = vec![
-            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/scripts/test-security-fixture.sh", "security"),
             row("platform/api/tests/a.test.ts", "ui"),
             row("platform/tests/x.bats", ""),
         ];
         let sel = security_rows(&rows);
         assert_eq!(sel.len(), 1);
-        assert!(sel[0].file_path.contains("security-manifest"));
+        assert!(sel[0].file_path.contains("security-fixture"));
         // NEGATIVE PROOF (#3734): an undeclared corpus selects NOTHING —
         // the lane can tell "no security tests declared" from "all green".
         assert!(security_rows(&[row("a.rs", ""), row("b.rs", "perf")]).is_empty());
@@ -3349,12 +3349,12 @@ mod security_lane_3922 {
     #[test]
     fn security_units_relabel_whole_suites() {
         let rows = vec![
-            row("platform/scripts/test-security-manifest-3726.sh", "security"),
+            row("platform/scripts/test-security-fixture.sh", "security"),
             row("platform/tests/authz-3977.bats", "security"),
             row("platform/tests/other.bats", ""),
         ];
         let u = security_units(&rows);
-        assert!(u.contains("platform/scripts/test-security-manifest-3726.sh"));
+        assert!(u.contains("platform/scripts/test-security-fixture.sh"));
         assert!(u.contains("platform/tests/authz-3977.bats"));
         assert!(!u.contains("platform/tests/other.bats"));
     }
