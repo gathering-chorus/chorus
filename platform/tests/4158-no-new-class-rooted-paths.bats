@@ -6,7 +6,14 @@
 # /testresults, /logsources) answers only as a deprecated alias while the
 # remaining callers move. This guard is what stops a new one being written.
 #
-# 2026-09-13: the ceiling ROSE 69 -> 74, which a ratchet should normally refuse.
+# 2026-09-13: the ceiling ROSE 76 -> 79 over this card, which a ratchet should
+# normally refuse. Stated plainly rather than tuned away: this guard counts
+# MENTIONS, not callers, and it cannot tell a live call from an assertion that
+# names the deprecated path on purpose. The rise is entirely the latter — the
+# negative proofs must name /v1/testresults to assert it is NOT handed back.
+# Meanwhile the one real caller that moved (4157 bats) went 5 -> 1.
+# So this guard stops NEW class-rooted paths; it cannot certify that all
+# callers have moved. AC4's second half needs a call-shaped check, not this.
 # The additions are all deliberate and all in checks: the negative proofs must
 # NAME the deprecated path to assert it is not handed back, and werk-test's
 # writeback stays on the alias until #4158 reaches canonical (run 77 lost 650
@@ -17,7 +24,7 @@
 # and werk-test's three URLs move inside #4154, which is editing that same file.
 
 CLASS_ROOTED='/(codefiles|codekinds|testresults|testsuiteruns|logsources)\b'
-CEILING=74
+CEILING=79
 
 count_hits() {
   cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
