@@ -523,6 +523,14 @@ async fn pre_tool_use_inner(
                 return (_last_module.clone(), r);
             }
 
+            // Loki-first gate (#4149) — refuse a text read of a live log and
+            // hand back the LogQL. Before bedroom_nfs_guard: it is a cheap
+            // pure-string check and the refusal is the more useful one.
+            _last_module = "loki_first_gate".into(); let r = hooks::loki_first_gate::check(input);
+            if r.stdout.is_some() {
+                return (_last_module.clone(), r);
+            }
+
             // bedroom NFS guard
             _last_module = "bedroom_nfs_guard".into(); let r = hooks::bedroom_nfs_guard::check(input);
             if r.stdout.is_some() {
