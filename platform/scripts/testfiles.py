@@ -13,8 +13,11 @@ persistence through the generated API; this module owns only the pure parts:
   case_names(path)        the case names a runner will actually emit, and the content
   discover(roots=None)    every test file under the tree (roots kept for callers; None = the whole tree)
 
-No network, no store, no side effects. Every regex and its receipts (#4022,
-#4106, #4111, #4135, #3872, #3974, #4131) are unchanged from the tagger.
+No store, no side effects, and no network of its own: covers_for takes an
+optional `fetch` callback, so the one lookup that CAN reach the network is the
+caller's to supply and is absent in every test (the tagger made that call at
+import and could not be exercised offline). Every regex and its receipts
+(#4022, #4106, #4111, #4135, #3872, #3974, #4131) are unchanged from it.
 """
 import json, os, re, sys, hashlib
 
