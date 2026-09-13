@@ -18,6 +18,13 @@
 # fixtures feeding a pure pagination function. Those strings are never
 # requested. A fixture that names a URL is still a mention.
 #
+# ROOT: this check measures the tree it TRAVELS WITH, from its own location —
+# deliberately NOT $CHORUS_ROOT. Run 83 (2026-09-13) failed here: prove-live set
+# CHORUS_ROOT to canonical, so the guard graded canonical's pre-land copy of the
+# callers and reported 9. A source-fitness check pointed at a different checkout
+# than the diff it guards can never pass before the land, and says nothing true
+# about the change under test.
+#
 # The rule callers follow instead: ASK the server which collection it serves —
 # its discovery document advertises it — the way crawl-files.py always has.
 # A pre-#4158 server answers /v1/testresults and a post-#4158 one answers
@@ -36,7 +43,7 @@ ALLOWED='platform/services/werk-test/src/main.rs'
 REQUESTED='curl|fetch\(|requests\.|\.get\(|\.post\(|http\('
 
 count_calls() {
-  cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
+  cd "$BATS_TEST_DIRNAME/../.." || return 1
   grep -rnE "$CLASS_ROOTED" \
     --include='*.ts' --include='*.js' --include='*.sh' --include='*.py' \
     --include='*.rs' --include='*.bats' --include='*.yml' . 2>/dev/null \
@@ -47,7 +54,7 @@ count_calls() {
 }
 
 list_calls() {
-  cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
+  cd "$BATS_TEST_DIRNAME/../.." || return 1
   grep -rnE "$CLASS_ROOTED" \
     --include='*.ts' --include='*.js' --include='*.sh' --include='*.py' \
     --include='*.rs' --include='*.bats' --include='*.yml' . 2>/dev/null \
@@ -70,7 +77,7 @@ list_calls() {
 @test "NEGATIVE PROOF: the guard fails on a real call and ignores a mere mention" {
   # The two states this check exists to SEPARATE. The old one could not: it went
   # red for both, so it could never reach zero and never certified anything.
-  cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}"
+  cd "$BATS_TEST_DIRNAME/../.."
   before=$(count_calls)
   [ "$before" -eq 0 ]
 
