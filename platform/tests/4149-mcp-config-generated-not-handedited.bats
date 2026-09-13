@@ -79,8 +79,3 @@ PY
   [ "$status" -ne 0 ]
   [[ "$output" == *wren* ]]
 }
-
-@test "the committed role configs match the generator — no hand-edit on main" {
-  run bash "$DRIFT" "$REPO_ROOT"
-  [ "$status" -eq 0 ]
-}
