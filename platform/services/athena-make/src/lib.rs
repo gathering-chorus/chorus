@@ -346,6 +346,40 @@ pub fn exposed_projection(
         .collect()
 }
 
+/// #4163 — REFUSE a field declared twice with two different kinds.
+///
+/// Shapes targeting one class already UNION: the generate query filters on
+/// `sh:targetClass <class>` with no shape identity and `select_v` keeps every
+/// binding (measured 2026-09-13 — this card did not build that). What union
+/// does NOT do is notice disagreement. `filePath|datatype:string` and
+/// `filePath|datatype:dateTime` are different strings, so the `dedup()` that
+/// came in with #3561 keeps both and the generated surface carries one field
+/// twice with two meanings. Inheritance makes that reachable from two files
+/// instead of one, so it is refused here rather than settled by a precedence
+/// rule no reader of the shapes could see.
+pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), String> {
+    let mut seen: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
+    for f in fields {
+        let (name, kind) = match f.split_once('|') {
+            Some(p) => p,
+            None => continue,
+        };
+        match seen.get(name) {
+            Some(prev) if *prev != kind => {
+                return Err(format!(
+                    "{}: field '{}' is declared twice with different kinds ('{}' and '{}') — \
+                     two shapes disagree about one property; fix the shapes, the generator will not pick a winner",
+                    class_local, name, prev, kind
+                ));
+            }
+            _ => {
+                seen.insert(name, kind);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
 /// emit routes from non-conformant input — L4 naming law enforced where the
 /// API is born, not audited after. Classes are CamelCase, properties are
@@ -940,12 +974,27 @@ pub fn generate_domain_vocab(domain_local: &str) -> R<Vec<RouteTable>> {
 
 /// GENERATE — read the shape's direct-path properties for `class` from the
 /// ontology graph and derive the route table.
+///
+/// #4163 — fields and required edges walk `rdfs:subClassOf*`, so a class that
+/// declares a parent serves the parent's properties. Before this, the query
+/// pinned `sh:targetClass <class>` and a declared parent contributed nothing:
+/// chorus:CodeFile is `rdfs:subClassOf chorus:File` and commented "filePath is
+/// the identity it inherits", while CodeFileShape hand-repeated filePath,
+/// fileSha and fileLastModified — and the copy had already drifted from the
+/// original (parent fileInDomain, child hasDomain).
+///
+/// Deliberately NOT inherited: instancesGraph, repoTarget, requiresAuth,
+/// exposure, treeEdge, treeOrder. Those answer "where do this class's rows
+/// live" and "who may read them" — per-class decisions. Inheriting a parent's
+/// instances graph would file a child's rows in the parent's home, and
+/// inheriting auth would move a security boundary as a side effect of a
+/// modelling choice. Properties describe a thing; those six place and guard it.
 pub fn generate(class_local: &str) -> R<RouteTable> {
     adr040_check(class_local, &[])?; // refuse before touching the store
     let class = format!("{}{}", NS, class_local);
     // fields WITH their kind: name|datatype:<xsd> or name|edge:<Class> or name|plain
     let q = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', COALESCE(CONCAT('datatype:', REPLACE(STR(?dt), '.*#', '')), CONCAT('edge:', REPLACE(STR(?cl), '.*#', '')), 'plain')) AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', COALESCE(CONCAT('datatype:', REPLACE(STR(?dt), '.*#', '')), CONCAT('edge:', REPLACE(STR(?cl), '.*#', '')), 'plain')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let body = sparql_json(&q)?;
@@ -956,6 +1005,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         return Err(format!("no shape found for {} in {} — land the schema first", class, ONTOLOGY_GRAPH));
     }
     adr040_check(class_local, &fields)?; // shape-sourced fields obey the law too
+    field_conflict_check(class_local, &fields)?; // #4163 — two shapes disagreeing is a refusal
     let plural = pluralize(class_local);
     let mut routes = vec![
         format!("GET /{}", plural),
@@ -992,7 +1042,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     // human completeness gauge, but retained in `write_required`: create bodies
     // must advertise the same floor the DAL enforces, including required edges.
     let mq = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?cl), 'edge', 'field')) AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?cl), 'edge', 'field')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let required_rows = select_v(&sparql_json(&mq)?);
@@ -6111,6 +6161,53 @@ mod tests {
         assert_eq!(select_table("/code/files/abc123", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
         // query string is not part of the match
         assert_eq!(select_table("/tests/results?limit=1", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn sibling_shapes_on_one_class_already_union() {
+        // #4163 — pinning a behaviour this card did NOT build, so a later
+        // refactor of the generate query cannot quietly remove it. The query
+        // filters on sh:targetClass only, so two NodeShapes on one class both
+        // contribute; select_v keeps every binding.
+        let fields = vec![
+            "fileSha|datatype:string".to_string(),   // from FileShape
+            "hasKind|edge:CodeKind".to_string(),     // from CodeFileShape
+        ];
+        assert!(field_conflict_check("CodeFile", &fields).is_ok(), "agreeing siblings union");
+    }
+
+    #[test]
+    fn field_conflict_is_refused_not_resolved() {
+        // #4163 — the real gap. Two shapes disagreeing about one property is a
+        // shape bug; picking a winner hides it behind a rule nobody reading the
+        // shapes can see.
+        let fields = vec![
+            "filePath|datatype:string".to_string(),
+            "filePath|datatype:dateTime".to_string(),
+        ];
+        let err = field_conflict_check("CodeFile", &fields).unwrap_err();
+        assert!(err.contains("filePath"), "names the field: {err}");
+        assert!(err.contains("datatype:string") && err.contains("datatype:dateTime"), "names both kinds: {err}");
+        assert!(err.contains("will not pick a winner"), "says why: {err}");
+    }
+
+    #[test]
+    fn negative_proof_the_conflict_check_is_not_a_duplicate_check() {
+        // #3734 — the failure this shape invites: writing it as "this field
+        // appears twice" instead of "twice, DISAGREEING". That check would go
+        // red on the identical-twice case, which is exactly what inheritance
+        // produces legitimately (a child repeating its parent verbatim, as
+        // CodeFileShape does for filePath today). If this ever fails, the check
+        // can no longer tell agreement from conflict and would refuse the
+        // common case.
+        let same = vec![
+            "filePath|datatype:string".to_string(),
+            "filePath|datatype:string".to_string(),
+        ];
+        assert!(field_conflict_check("CodeFile", &same).is_ok(), "identical twice is NOT a conflict");
+        // and the empty / malformed cases do not throw
+        assert!(field_conflict_check("CodeFile", &[]).is_ok());
+        assert!(field_conflict_check("CodeFile", &["noPipe".to_string()]).is_ok());
     }
 
     #[test]

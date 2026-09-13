@@ -153,6 +153,21 @@ fn rows_for(q: &str) -> Vec<String> {
                 s("result|plain"),
                 s("testName|plain"),
             ]
+        } else if q.contains("#Child>") {
+            // #4163 — the stub answers the way a STORE would, which is the
+            // whole point: the parent's property comes back ONLY if the query
+            // actually walks `rdfs:subClassOf`. A stub that returned both
+            // regardless would pass whether or not the walk exists — the first
+            // version of this fixture did exactly that, and the test stayed
+            // green with the walk deleted. Measured, not reasoned about.
+            if q.contains("subClassOf") {
+                vec![s("inherited|datatype:string"), s("ownName|plain")]
+            } else {
+                vec![s("ownName|plain")]
+            }
+        } else if q.contains("#Lonely>") {
+            // a class with NO parent — its result is unchanged by the walk
+            vec![s("ownName|plain")]
         } else if q.contains("#Orphan>") {
             vec![s("label|plain")]
         } else if q.contains("#Weird>") {
@@ -210,6 +225,11 @@ fn rows_for(q: &str) -> Vec<String> {
             vec![s("urn:chorus:instances")]
         } else if q.contains("#TestResult>") {
             vec![s("urn:chorus:domains:tests")]
+        } else if q.contains("#Child>") || q.contains("#Lonely>") {
+            // #4163 — give the inheritance fixtures an instance home of their
+            // OWN. instancesGraph is deliberately not inherited (a child's rows
+            // must not land in the parent's graph), so the child declares one.
+            vec![s("urn:chorus:instances")]
         } else {
             vec![]
         };
@@ -1223,4 +1243,32 @@ fn emitters_project_the_same_model() {
     assert!(e.contains("\"errors\": [{ \"field\": \"comment\", \"detail\": \"too long\" }]"), "{}", e);
     let e = athena_make::error_envelope(&w.domain, "x", 599, "weird", "d", &[]);
     assert!(e.contains("\"title\": \"Error\""), "{}", e);
+}
+
+#[test]
+fn child_class_serves_its_parents_properties() {
+    // #4163 AC1 — a class declaring rdfs:subClassOf gets the parent's shape
+    // properties on its generated surface. Before this, the query pinned
+    // sh:targetClass to the class alone and a declared parent contributed
+    // nothing: CodeFile's "filePath is the identity it inherits" comment was
+    // decorative, and CodeFileShape hand-repeated the parent's fields instead.
+    let _ = world();
+    let t = generate("Child").expect("Child generates");
+    assert!(t.fields.iter().any(|f| f.starts_with("ownName|")), "own field kept: {:?}", t.fields);
+    assert!(t.fields.iter().any(|f| f.starts_with("inherited|")), "PARENT field projected: {:?}", t.fields);
+}
+
+#[test]
+fn negative_proof_inheritance_adds_nothing_to_a_class_with_no_parent() {
+    // #3734 — the failure this shape invites: a walk written so that every
+    // class picks up every shape in the graph (a missing anchor, or matching
+    // ?tc unconstrained). Lonely declares no parent, so its field list must be
+    // exactly its own. If this ever fails, the walk is unanchored and every
+    // class is being served someone else's properties.
+    let _ = world();
+    let t = generate("Lonely").expect("Lonely generates");
+    assert!(t.fields.iter().any(|f| f.starts_with("ownName|")), "{:?}", t.fields);
+    assert!(!t.fields.iter().any(|f| f.starts_with("inherited|")),
+        "a parentless class must gain NOTHING from the walk: {:?}", t.fields);
+    assert_eq!(t.fields.len(), 1, "exactly its own field, nothing else: {:?}", t.fields);
 }
