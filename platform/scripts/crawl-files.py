@@ -57,6 +57,7 @@ KIND_BY_EXT = {
 EXCLUDE_DIRS = {".git", "node_modules", "target", "dist", "coverage", ".venv", "__pycache__"}
 
 _COLLECTION = {}
+_HAS_BATCH = {}
 
 def collection(kind="CodeFile"):
     """The collection path the SERVER advertises for a kind, read from discovery.
@@ -79,6 +80,40 @@ def collection(kind="CodeFile"):
             _COLLECTION[kind] = p["collection"].replace("/v1/", "/", 1)
             return _COLLECTION[kind]
     sys.exit(f"crawl-files: {kind} is not served at {URL} — land the model first (#4157)")
+
+def has_batch(kind="CodeFile"):
+    """Does the server expose POST /<collection>/batch for this kind?
+
+    #4158 generates the batch route for every served class; before it lands only
+    TestResult has one. The walker asks instead of assuming: with batch, 5,548
+    rows take 12 s; without it, one POST per row takes ~1 s each and the walker
+    says so rather than failing (measured 2026-09-12 20:22, when the variant's
+    binary predated #4158 and every batch answered 404 "no such write route").
+    """
+    if kind in _HAS_BATCH:
+        return _HAS_BATCH[kind]
+    coll = collection(kind).lstrip("/")
+    try:
+        with urllib.request.urlopen(f"{URL}/{coll}/openapi.json", timeout=30) as r:
+            doc = r.read().decode()
+        _HAS_BATCH[kind] = f"/{coll}/batch" in doc or f"/v1/{coll}/batch" in doc
+    except Exception:
+        _HAS_BATCH[kind] = False
+    return _HAS_BATCH[kind]
+
+def post_row(r, tok):
+    req = urllib.request.Request(
+        f"{URL}{collection()}",
+        data=json.dumps(r).encode(),
+        headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.status, ""
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode()[:200]
+    except Exception as e:
+        return 0, str(e)[:200]
 
 def token():
     if os.environ.get("CHORUS_IDENTITY_TOKEN"):
@@ -199,6 +234,8 @@ def post_batch(rows, tok):
 
 def main():
     tok = "" if DRY else token()
+    if not DRY and not has_batch():
+        print("crawl-files: this server has no batch route (pre-#4158) — writing one row per POST, ~1 s each")
     have = {} if DRY else existing(tok)
     sent = failed = skipped = unreadable = seen = 0
     unchanged = replaced = 0
@@ -269,11 +306,21 @@ def flush(batch, tok, sent, failed):
     if DRY:
         print(f"crawl-files: DRY {len(batch)} row(s), first={json.dumps(batch[0])[:160]}")
         return sent + len(batch), failed
-    code, body = post_batch(batch, tok)
-    if code in (200, 201):
-        return sent + len(batch), failed
-    print(f"crawl-files: batch FAILED http={code} {body}", file=sys.stderr)
-    return sent, failed + len(batch)
+    if has_batch():
+        code, body = post_batch(batch, tok)
+        if code in (200, 201):
+            return sent + len(batch), failed
+        print(f"crawl-files: batch FAILED http={code} {body}", file=sys.stderr)
+        return sent, failed + len(batch)
+    # No batch route on this server (pre-#4158): one POST per row, loudly.
+    for r in batch:
+        code, body = post_row(r, tok)
+        if code in (200, 201):
+            sent += 1
+        else:
+            failed += 1
+            print(f"crawl-files: create {r['filePath']} http={code} {body}", file=sys.stderr)
+    return sent, failed
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -53,6 +53,20 @@ teardown() {
   [ "$(row_code)" != 200 ]
 }
 
+@test "the walker writes through whichever door this server has — batch when #4158 is live, one POST per row before it" {
+  printf '@test "x" {\n  true\n}\n' > "$FAKE"
+  run walk
+  [ "$status" -eq 0 ]
+  [ "$(row_code)" = 200 ]
+  # the fallback is NAMED, never silent: either the batch route was used, or the
+  # line says it was not. A walker that silently halved its speed is the defect.
+  if curl -s "$URL/codefiles/openapi.json" | grep -q '/batch'; then
+    ! echo "$output" | grep -q 'no batch route'
+  else
+    echo "$output" | grep -q 'no batch route (pre-#4158)'
+  fi
+}
+
 @test "NEGATIVE PROOF: a file the model has no kind or language for is skipped, never written as 'code'" {
   printf 'x' > "$TREE/platform/tests/zz-4154.bin"
   run walk
