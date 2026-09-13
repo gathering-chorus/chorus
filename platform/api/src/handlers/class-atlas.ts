@@ -41,6 +41,10 @@ export interface AtlasAttribute {
 }
 export interface AtlasEdge {
   name: string; to: string; multiplicity: string; crossDomain: boolean;
+  // #4163 — min/max, so the page can band a required edge the same way it bands
+  // a required attribute. Without these the page's `m.min >= 1` test was always
+  // false for edges.
+  min: number; max: number | null;
   // #4053 — an inverse-path edge is a requirement on the OTHER end: something
   // must point at me. Domain requires EXACTLY ONE Product to claim it, and no
   // amount of authoring on Domain can satisfy that. Drawing it as a bare
@@ -121,6 +125,14 @@ function addEdgeRow(
   // an unknown home is treated as cross — an honest "elsewhere".
   entry.edges.push({
     name: spec.name, to: spec.rangeClass,
+    // #4163 — carry min/max, not only the rendered multiplicity string. The
+    // atlas page bands members with `m.min >= 1`, and attributes carried `min`
+    // while edges did not — so `undefined >= 1` was false and EVERY required
+    // edge rendered as optional. Measured 2026-09-13 on Test: inFile and covers
+    // both come back multiplicity "1..*" with no min field, which is why the
+    // class read as less rigorous than it is and why its two required edges
+    // looked absent from the model.
+    min: spec.min, max: spec.max,
     multiplicity: multiplicity(spec.min, spec.max),
     crossDomain: classHomes.get(spec.rangeClass) !== spec.dom,
     ...(definition ? { definition } : {}),

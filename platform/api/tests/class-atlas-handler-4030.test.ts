@@ -42,7 +42,12 @@ describe('GET /api/chorus/class-atlas', () => {
     expect(asked).toContain('http://store.test/pods/query');
     expect(asked).toContain('urn:chorus:ontology');
     const board = body.domains.find((d) => d.name === 'domain-board')!;
-    expect(board.classes[0].edges).toEqual([{ name: 'ownedBy', to: 'Role', multiplicity: '0..*', crossDomain: true }]);
+    // #4163 — edges now carry min/max like attributes do. The page bands a
+    // required member with `m.min >= 1`, and without these an edge's min was
+    // undefined, so every required edge in the atlas rendered as optional.
+    expect(board.classes[0].edges).toEqual([
+      { name: 'ownedBy', to: 'Role', min: 0, max: null, multiplicity: '0..*', crossDomain: true },
+    ]);
   });
 
   it('store answers non-2xx → 502 store-unreachable carrying the HTTP status, never an empty atlas', async () => {
