@@ -29,8 +29,12 @@ pub fn scope_irrelevant(f: &str) -> bool {
     let ext = [".md", ".html", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".txt", ".pdf"]
         .iter()
         .any(|e| f.ends_with(e));
+    // #4169 — platform/launchd/ joins the list for the same reason platform/scripts/
+    // and platform/tests/ are on it: a plist is a SCHEDULE, not an input to any
+    // build or test output. It was the one unmapped path in #4166's five-file diff,
+    // and it cost that card 314 units and 61 minutes.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-               "platform/scripts/", "platform/tests/", "skills/", ".claude/"]
+               "platform/scripts/", "platform/tests/", "platform/launchd/", "skills/", ".claude/"]
         .iter()
         .any(|d| f.starts_with(d));
     ext || dir || f.contains("/public/")
@@ -186,4 +190,78 @@ pub fn scope_declared_edges(root: &std::path::Path) -> Vec<(String, String)> {
     edges.sort();
     edges.dedup();
     edges
+}
+
+/// #4169 — Jeff, 2026-09-13: "we must never fall back to the whole tree that is
+/// always wrong for a card we fail immediately and fix the data".
+///
+/// FULL has two kinds of reason and they must not share a fate. `forced` and
+/// `empty-diff` are deliberate: someone asked for everything, or there is
+/// nothing to scope from. `unmapped:<file>` is a DATA DEFECT — a path the model
+/// does not know about — and widening hides it behind an hour of other people's
+/// reds. Refuse instead, and name the file so it can be mapped.
+pub fn full_reason_is_data_defect(reason: &str) -> bool {
+    reason.starts_with("unmapped:")
+}
+
+/// The file named by an `unmapped:<file>` reason. The verdict has always known
+/// it; before #4169 the caller logged the literal "unmapped-or-forced" and threw
+/// it away, so a builder could not tell WHICH path widened their run.
+pub fn unmapped_path(reason: &str) -> Option<&str> {
+    reason.strip_prefix("unmapped:")
+}
+
+#[cfg(test)]
+mod scope_refusal_4169 {
+    use super::*;
+
+    fn u(name: &str, dir: &str) -> ScopeUnit {
+        ScopeUnit { name: name.to_string(), dir: dir.to_string() }
+    }
+
+    #[test]
+    fn a_plist_is_not_a_build_or_test_input() {
+        assert!(scope_irrelevant("platform/launchd/com.chorus.athena-validate.plist"));
+    }
+
+    #[test]
+    fn the_four_1660_diff_files_all_scope_now() {
+        // #4166's exact diff. Before this card it went FULL on the plist.
+        for f in [
+            "platform/api/public/borg/graph-validate.html",
+            "platform/api/public/borg/graph-validate.txt",
+            "platform/launchd/com.chorus.athena-validate.plist",
+            "platform/scripts/athena-validate.sh",
+            "platform/tests/4166-athena-validate-scheduled.bats",
+        ] {
+            assert!(scope_irrelevant(f), "{} should not widen a card", f);
+        }
+    }
+
+    #[test]
+    fn negative_proof_an_unmapped_path_is_a_data_defect_and_names_itself() {
+        let units = [u("werk-test", "platform/services/werk-test")];
+        let verdict = scope_unit_names(
+            &["some/unknown/place/thing.rs".to_string()], &units, &[], false);
+        let ScopeVerdict::Full(reason) = verdict else { panic!("expected FULL") };
+        assert!(full_reason_is_data_defect(&reason), "reason was {}", reason);
+        assert_eq!(unmapped_path(&reason), Some("some/unknown/place/thing.rs"));
+    }
+
+    #[test]
+    fn negative_proof_a_deliberate_full_is_NOT_a_data_defect() {
+        // The check must separate the two states it exists to tell apart:
+        // asked-for-everything must never be refused as a defect.
+        let units = [u("werk-test", "platform/services/werk-test")];
+        let forced = scope_unit_names(&["x.rs".to_string()], &units, &[], true);
+        let ScopeVerdict::Full(r) = forced else { panic!("expected FULL") };
+        assert_eq!(r, "forced");
+        assert!(!full_reason_is_data_defect(&r));
+        assert_eq!(unmapped_path(&r), None);
+
+        let empty = scope_unit_names(&[], &units, &[], false);
+        let ScopeVerdict::Full(r) = empty else { panic!("expected FULL") };
+        assert_eq!(r, "empty-diff");
+        assert!(!full_reason_is_data_defect(&r));
+    }
 }

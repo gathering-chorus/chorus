@@ -15,7 +15,8 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    scope_declared_edges, scoped_test_units, suite_run_payload, test_result_payload,
+    scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
+    unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     TS_PACKAGES,
 };
@@ -130,9 +131,23 @@ fn run(args: &[String]) -> Result<i32, String> {
                 scoped_units
             }
             None => {
+                // #4169 — Jeff, 2026-09-13: "we must never fall back to the whole
+                // tree that is always wrong for a card we fail immediately and fix
+                // the data". An unmapped path is a DATA defect; widening hides it
+                // behind an hour of other people's reds (#4166: 314 units, 61 min,
+                // and not one of the nine failures was that card's change).
+                let reason = diff_scope_reason(&werk, &changed);
+                if let Some(path) = unmapped_path(&reason) {
+                    emit_spine("test.scope.refused", &role, &card, &trace,
+                        &[("reason", &reason), ("path", path)]);
+                    eprintln!("scope(diff): REFUSED — {} is claimed by no unit.", path);
+                    eprintln!("  Nothing ran. Map that path (or its directory) and re-run.");
+                    eprintln!("  A card never runs the whole tree: that is the nightly's job.");
+                    std::process::exit(2);
+                }
                 emit_spine("test.scope.full", &role, &card, &trace,
-                    &[("reason", "unmapped-or-forced"), ("units", &full_units.len().to_string())]);
-                println!("scope(diff): FULL fallback — unmapped path or WERK_TEST_FULL (loud, never silent)");
+                    &[("reason", &reason), ("units", &full_units.len().to_string())]);
+                println!("scope(diff): FULL — {} (deliberate, not a fallback)", reason);
                 full_units
             }
         }
@@ -2218,7 +2233,19 @@ fn mint_token(role: &str) -> Option<String> {
 /// Cargo.toml (lib-only crates have tests too) + the known TS packages. TS edges
 /// come back keyed by package NAME; test units key TS by DIR, so names translate
 /// through each package.json before scoping.
+/// #4169 — the FULL reason, no longer discarded. Mirrors diff_scoped_units'
+/// unit construction and asks the shared core what it actually said, so the
+/// caller can refuse a data defect ("unmapped:<file>") while letting a
+/// deliberate full run ("forced" / "empty-diff") through.
+fn diff_scope_reason(werk: &str, changed: &[String]) -> String {
+    diff_scoped_units_inner(werk, changed).1
+}
+
 fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
+    diff_scoped_units_inner(werk, changed).0
+}
+
+fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUnit>>, String) {
     let root = Path::new(werk);
     let mut units: Vec<ScopeUnit> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(root.join("platform/services")) {
@@ -2258,18 +2285,24 @@ fn diff_scoped_units(werk: &str, changed: &[String]) -> Option<Vec<TestUnit>> {
             (p2, d2)
         })
         .collect();
-    let scoped = scoped_test_units(changed, &units, &edges)?;
-    Some(
-        scoped
-            .into_iter()
-            .map(|u| {
-                if u.dir.starts_with("platform/services/") {
-                    TestUnit::RustCrate(u.name)
-                } else {
-                    TestUnit::TsPackage(u.dir)
-                }
-            })
-            .collect(),
+    let (scoped, reason) = match scoped_test_reason(changed, &units, &edges) {
+        Ok(v) => (v, "scoped".to_string()),
+        Err(r) => return (None, r),
+    };
+    (
+        Some(
+            scoped
+                .into_iter()
+                .map(|u| {
+                    if u.dir.starts_with("platform/services/") {
+                        TestUnit::RustCrate(u.name)
+                    } else {
+                        TestUnit::TsPackage(u.dir)
+                    }
+                })
+                .collect(),
+        ),
+        reason,
     )
 }
 
