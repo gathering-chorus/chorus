@@ -2033,7 +2033,7 @@ fn post_test_results(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| {
             let collection = std::env::var("OWL_API_TESTRESULTS")
-                .unwrap_or_else(|_| "http://localhost:3360/testresults".to_string());
+                .unwrap_or_else(|_| "http://localhost:3360/tests/results".to_string());
             werk_test::testresult_batch_endpoint(&collection)
         });
     // #4022 — was 2000, set when a card-scoped run posted ~200 rows. The first

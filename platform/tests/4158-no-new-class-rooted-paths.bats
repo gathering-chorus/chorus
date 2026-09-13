@@ -11,7 +11,7 @@
 # and werk-test's three URLs move inside #4154, which is editing that same file.
 
 CLASS_ROOTED='/(codefiles|codekinds|testresults|testsuiteruns|logsources)\b'
-CEILING=70
+CEILING=69
 
 count_hits() {
   cd "${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}" || return 1
