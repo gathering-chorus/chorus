@@ -3921,7 +3921,14 @@ pub fn error_envelope(
     let kind_local = table.class.rsplit('#').next().unwrap_or("Resource");
     let (shape, shape_version, commit) = shape_meta(kind_local);
     let plural = pluralize(kind_local);
-    let instance = format!("/{}/{}/{}", API_VERSION, plural, instance_name);
+    // #4158 — the error's instance link names the PUBLIC path too. A 404 that
+    // points the caller back at the deprecated collection teaches the wrong
+    // route at exactly the moment they are looking for the right one.
+    let instance = if table.base_path.is_empty() {
+        format!("/{}/{}/{}", API_VERSION, plural, instance_name)
+    } else {
+        format!("/{}{}/{}", API_VERSION, table.base_path, instance_name)
+    };
     let title = match status {
         400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found",
         409 => "Conflict", 412 => "Precondition Failed", 422 => "Unprocessable Entity",
@@ -4139,6 +4146,13 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         None => path,
     };
     let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
+    // #4158 — `plural` is the INTERNAL match key (the class-rooted form every
+    // sub-route below is written against). `public` is what we SAY: the
+    // domain-rooted path discovery advertises. They diverged in the envelope —
+    // a request to /tests/results came back self-identifying as
+    // /v1/testresults, handing the caller the deprecated path it had just
+    // moved off. Links are the contract, so they name the public form.
+    let public = if table.base_path.is_empty() { plural.as_str() } else { table.base_path.as_str() };
     // #4158 — the PUBLIC collection path is /<domain>/<segment>; every sub-route
     // below matches the class-rooted form. Normalize once, here, so the rule lives
     // in one place and the sub-routes (/:name, /completeness, /tree, the write
@@ -4312,9 +4326,9 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                     let data = format!("[\n  {}\n]", page.join(",\n  "));
                     let kind = table.class.rsplit('#').next().unwrap_or("Domain");
                     let (shape, shape_version, commit) = shape_meta(kind);
-                    let self_url = format!("/{}{}", API_VERSION, plural);
+                    let self_url = format!("/{}{}", API_VERSION, public);
                     let links = match next {
-                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, plural, n, limit),
+                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, public, n, limit),
                         None => "{}".to_string(),
                     };
                     (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
@@ -4498,7 +4512,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 // (prove-one-first: this GET /:name path is the end-to-end proof).
                 let kind = table.class.rsplit('#').next().unwrap_or("Domain");
                 let (shape, shape_version, commit) = shape_meta(kind);
-                let self_url = format!("/{}{}/{}", API_VERSION, plural, name);
+                let self_url = format!("/{}{}/{}", API_VERSION, public, name);
                 let id = format!("chorus:{}", name);
                 let body = envelope(
                     kind, Some(&id), &self_url, &shape, &shape_version, &commit,
@@ -6079,6 +6093,33 @@ mod tests {
         let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
         assert_eq!(select_table("/codefiles", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
         assert_eq!(select_table("/testresults/x", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn error_links_name_the_domain_rooted_path() {
+        // #4158 — measured on the variant 2026-09-13 08:05: a 404 from
+        // /tests/results/<n> came back "self": "/v1/testresults/<n>", handing
+        // the caller the deprecated path it had just moved off. #3561 fixed the
+        // mirror of this (advertise one path, serve another); this is the same
+        // contract on the way out.
+        let t = t4158("tests", "TestResult");
+        let body = error_envelope(&t, "abc", 404, "not-found", "no such row", &[]);
+        assert!(body.contains("/v1/tests/results/abc"), "error names the public path: {body}");
+        assert!(!body.contains("/v1/testresults/abc"), "the deprecated path must not be handed back: {body}");
+    }
+
+    #[test]
+    fn negative_proof_error_links_fall_back_when_no_domain_claims_the_class() {
+        // #3734 — prove the branch can go the other way, and that the check
+        // above is reading base_path rather than passing for any string that
+        // happens to contain a slash. A table with no defining domain keeps the
+        // class-rooted link; if this ever "passes" while base_path is ignored,
+        // the test above is vacuous.
+        let mut t = t4158("tests", "TestResult");
+        t.base_path = String::new();
+        let body = error_envelope(&t, "abc", 404, "not-found", "no such row", &[]);
+        assert!(body.contains("/v1/testresults/abc"), "no domain → class-rooted fallback: {body}");
+        assert!(!body.contains("/v1/tests/results/abc"));
     }
 
     #[test]

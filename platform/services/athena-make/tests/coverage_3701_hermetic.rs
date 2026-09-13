@@ -706,7 +706,11 @@ fn serve_collection_is_enveloped_and_paginated() {
     // page 1 of limit=1 carries the next-cursor link
     let (c, _, b) = http("GET", "/domains?limit=1", &[], "");
     assert_eq!(c, 200);
-    assert!(b.contains("\"next\": \"/v1/domains?cursor=1&limit=1\""), "{}", b);
+    // #4158 — the cursor link names the PUBLIC (domain-rooted) collection, the
+    // same path discovery advertises. It read /v1/domains before the rule, i.e.
+    // page 2 of a domain-rooted read handed back the deprecated path.
+    assert!(b.contains("\"next\": \"/v1/athena/domains?cursor=1&limit=1\""), "{}", b);
+    assert!(!b.contains("\"next\": \"/v1/domains?cursor=1&limit=1\""), "the deprecated path is not handed back: {}", b);
     let (c, _, b) = http("GET", "/domains?limit=1&cursor=1", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"name\": \"pulse\"") && !b.contains("\"name\": \"borg\""), "{}", b);
