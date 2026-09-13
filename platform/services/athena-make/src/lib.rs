@@ -309,6 +309,8 @@ pub struct RouteTable {
     pub instances_graph: String, // #3570 — the kind's instance HOME graph (the domains.* spine): chorus:instancesGraph override, else urn:chorus:domains:<domain>, else urn:chorus:instances (back-compat). Threaded into every serve read.
     pub tree_edges: Vec<String>, // #3660 — recursive-descent edge localnames, PROJECTED from chorus:treeEdge on the shape. Empty = no /tree read emitted.
     pub tree_order: Option<String>, // #3660 — sibling rank property localname (chorus:treeOrder). None = unordered (label sort fallback).
+    pub domain: String,          // #4158 — the domain that definesVocabulary this class; the first path segment
+    pub base_path: String,       // #4158 — the generated collection path: /<domain>/<segment>. Derived, never hand-written.
     pub model_version: String,   // #3704/#3706 — PROJECTED from chorus:modelVersion on the class. "target"=reviewed-canonical, "legacy"=reviewed-strangled; transitional literals "v1"/"v2" persist until the review pass (v1≈legacy, v2≈claimed-current-unreviewed). ABSENT → "unclassified": nobody has reviewed the class, and it must never render as current (born-v2 removed 2026-07-30, Jeff's ruling).
 }
 
@@ -894,7 +896,9 @@ pub fn project_domain_vocab_index(domain: &str, classes: &[&str]) -> String {
     cs.dedup();
     let items: Vec<String> = cs
         .iter()
-        .map(|c| format!("{{ \"class\": \"{}\", \"api\": \"/{}\" }}", c, pluralize(c)))
+        // #4158 — the index advertises the domain-rooted path (/code/files), the
+        // one the generator now serves; the class-rooted path is a deprecated alias.
+        .map(|c| format!("{{ \"class\": \"{}\", \"api\": \"{}\" }}", c, domain_path(domain.trim(), c)))
         .collect();
     format!(
         "{{ \"domain\": \"{}\", \"vocab\": [{}] }}",
@@ -1082,7 +1086,31 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     );
     let model_version = select_v(&sparql_json(&mvq)?).into_iter().next().unwrap_or_else(|| "unclassified".to_string());
     routes.extend(tree_routes(&plural, &tree_edges));
-    Ok(RouteTable { class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
+        // #4158 — the routes artifact is the human-readable contract, so it states the
+    // path the service actually advertises. Built above from the class plural;
+    // rewritten here onto /<domain>/<segment> now that the defining domain is
+    // known. One rule, applied in one place, never hand-edited.
+    // #4158 — the path's first segment is the class's DOMAIN. Prefer the model's
+    // definesVocabulary edge; when a shape declares chorus:instancesGraph directly
+    // (the migration override) that edge can be absent, so read the domain back
+    // out of the resolved home graph. Path and graph then agree by construction:
+    // /code/... ↔ urn:chorus:domains:code. Neither present is already refused
+    // above by resolve_instances_graph ("no instance home", ADR-051).
+    let domain_of = domain_of.or_else(|| {
+        instances_graph
+            .strip_prefix("urn:chorus:domains:")
+            .map(|d| d.to_string())
+    });
+    let base_path = domain_path(domain_of.as_deref().unwrap_or_default(), class_local);
+    let class_root = format!("/{}", pluralize(class_local));
+    let routes: Vec<String> = routes
+        .into_iter()
+        .map(|r| match r.split_once(&format!(" {}", class_root)) {
+            Some((verb, tail)) => format!("{} {}{}", verb, base_path, tail),
+            None => r,
+        })
+        .collect();
+Ok(RouteTable { domain: domain_of.clone().unwrap_or_default(), base_path, class, fields, routes, secured, mandatory, write_required, repo_target, exposure, instances_graph, tree_edges, tree_order, model_version })
 }
 
 /// #3660 — route emission for the tree read: ONE route iff the shape declares
@@ -1154,12 +1182,12 @@ pub fn write_routes(plural: &str) -> Vec<String> {
         format!("POST /{}/:name/has-child", plural),  // add has-child edge
         format!("DELETE /{}/:name/has-child", plural),// remove has-child edge
     ];
-    // Phase A exposes the bulk transport only for TestResult. The DAL primitive
-    // is entity-generic, but widening the HTTP mutation surface for every class
-    // is a separate contract change.
-    if plural == "testresults" {
-        routes.insert(1, format!("POST /{}/batch", plural));
-    }
+    // #4158 — the bulk transport is generated for EVERY served class, the same
+    // way the single-entity routes are. Phase A (#3573) exposed it for
+    // TestResult alone; the crawler (#4154) writes code and test rows in bulk
+    // and one POST per file measured 1.01 s (12,944 files = 3.6 h). The DAL
+    // primitive was always entity-generic; the route now is too.
+    routes.insert(1, format!("POST /{}/batch", plural));
     routes
 }
 
@@ -1214,9 +1242,7 @@ pub fn parse_write(method: &str, path: &str, plural: &str) -> Option<WriteOp> {
     }
     match (method, parts.len()) {
         ("POST", 1) => Some(WriteOp::CreateEntity),
-        ("POST", 2) if parts[1] == "batch" && plural == "testresults" => {
-            Some(WriteOp::CreateBatch)
-        }
+        ("POST", 2) if parts[1] == "batch" => Some(WriteOp::CreateBatch),
         ("PUT", 2) => Some(WriteOp::ReplaceEntity { name: parts[1].to_string() }),
         ("DELETE", 2) => Some(WriteOp::DeleteEntity { name: parts[1].to_string() }),
         ("POST", 3) => Some(WriteOp::AddEdge { name: parts[1].to_string(), edge: parts[2].to_string() }),
@@ -2400,7 +2426,7 @@ mod bounds_closedshape_tests {
     /// NEGATIVE PROOF: a body that tries to set a stamp is named and refused.
     #[test]
     fn the_door_stamps_the_write_and_refuses_a_body_stamp() {
-        let table = RouteTable {
+        let table = RouteTable { domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Document".into(),
             fields: vec!["docTitle".into(), "docHref".into(), "changedAt".into(), "changedIn".into(), "docState".into(), "ownedBy|edge:Role".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
@@ -2424,7 +2450,7 @@ mod bounds_closedshape_tests {
         assert_eq!(version_stamp(&vt, Some("junk")), Some(("version".to_string(), "1".to_string())));
         assert_eq!(body_sets_a_stamp(r#"{"name":"d5","version":"9"}"#).as_deref(), Some("version"));
         // a class without the stamp fields gets none
-        let plain = RouteTable {
+        let plain = RouteTable { domain: String::new(), base_path: String::new(),
             class: "https://jeffbridwell.com/chorus#Card".into(), fields: vec!["label".into()],
             routes: vec![], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![],
             instances_graph: "urn:chorus:instances".into(), tree_edges: vec![], tree_order: None, model_version: "unclassified".into(),
@@ -2475,7 +2501,7 @@ mod bounds_closedshape_tests {
 
     #[test]
     fn verified_owner_uses_the_shape_declared_edge_and_ignores_body_owner() {
-        let mut table = RouteTable {
+        let mut table = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec![
                 "comment|datatype:string".into(),
@@ -2672,6 +2698,36 @@ pub fn handle_write(method: &str, path: &str, body: &str, table: &RouteTable, ca
 pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteTable, caller_role: &str, token: &str, landed_commit: &str) -> (u16, String) {
     let class_local = table.class.rsplit('#').next().unwrap_or("");
     let plural = pluralize(class_local);
+    // #4158 — the write door takes the VERSION prefix too. #3561 fixed this for
+    // reads ("SERVE the path the discovery document ADVERTISES") and the write
+    // side never got the same rule, so discovery advertised /v1/testresults
+    // while POST there answered 404. Measured on both servers 2026-09-13 10:22:
+    // /testresults/batch 422, /v1/testresults/batch 404. A caller that follows
+    // discovery — the documented contract — could not write at all; run 86 lost
+    // 650 results to exactly this.
+    let versioned;
+    let path = match path.strip_prefix("/v1/") {
+        Some(rest) => {
+            versioned = format!("/{rest}");
+            versioned.as_str()
+        }
+        None => path,
+    };
+    // #4158 — the WRITE door takes the domain-rooted path too. handle_inner
+    // normalizes /<domain>/<segment> → /<plural> for reads; this is that same
+    // rule on the write side. Without it POST /code/files answered 404 while
+    // POST /codefiles answered 201 (measured on the variant, 2026-09-13 07:48)
+    // — the deprecated alias was the ONLY way to write, so no caller could
+    // move off it. The class-rooted path arrives unchanged and still answers.
+    let domain_rooted;
+    let path = if !table.base_path.is_empty()
+        && (path == table.base_path || path.starts_with(&format!("{}/", table.base_path)))
+    {
+        domain_rooted = format!("/{}{}", plural, &path[table.base_path.len()..]);
+        domain_rooted.as_str()
+    } else {
+        path
+    };
     let op = match parse_write(method, path, &plural) {
         Some(o) => o,
         None => return write_resp("not-found", "no such write route"),
@@ -3182,6 +3238,72 @@ pub fn pluralize(s: &str) -> String {
         return format!("{}es", s); // class → classes, box → boxes
     }
     format!("{}s", s)
+}
+
+/// #4158 — the domain's singular Pascal prefix. The domain localname is a plural
+/// noun phrase ("code", "tests", "value-streams"); the class names inside it are
+/// Pascal and carry that noun as their prefix ("CodeFile", "TestResult",
+/// "ValueStreamStep"). Inverse of `pluralize` on the LAST hyphen word only:
+/// "tests" → "Test", "value-streams" → "ValueStream", "code" → "Code".
+pub fn domain_prefix(domain: &str) -> String {
+    let mut words: Vec<String> = domain.split('-').map(|w| w.to_string()).collect();
+    if let Some(last) = words.last_mut() {
+        *last = singularize(last);
+    }
+    words
+        .iter()
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+/// Inverse of `pluralize` for one lowercase word. Words that are not plural come
+/// back unchanged ("code" → "code"), which is what keeps the rule mechanical.
+pub fn singularize(w: &str) -> String {
+    if let Some(stem) = w.strip_suffix("ies") {
+        return format!("{}y", stem); // properties → property
+    }
+    for suf in ["ses", "xes", "zes", "ches", "shes"] {
+        if w.ends_with(suf) {
+            return w[..w.len() - 2].to_string(); // classes → class, boxes → box
+        }
+    }
+    if w.ends_with("ss") {
+        return w.to_string(); // access stays access
+    }
+    match w.strip_suffix('s') {
+        Some(stem) if !stem.is_empty() => stem.to_string(),
+        _ => w.to_string(),
+    }
+}
+
+/// #4158 — the collection segment for a class inside its defining domain: the
+/// plural of the class name with the domain's prefix stripped. ONE mechanical
+/// rule, zero special cases (Silas, gate-arch 2026-09-12 16:52): the namesake
+/// class keeps its own name, so Test in `tests` is `tests`, not the empty
+/// segment. CodeFile → files · TestResult → results · LogSource → sources ·
+/// Chunk in `board` (no prefix to strip) → chunks.
+pub fn domain_segment(domain: &str, class_local: &str) -> String {
+    let prefix = domain_prefix(domain);
+    let stem = class_local
+        .strip_prefix(&prefix)
+        .filter(|rest| !rest.is_empty() && rest.starts_with(char::is_uppercase))
+        .unwrap_or(class_local);
+    pluralize(stem)
+}
+
+/// #4158 — the generated base path for a class: `/<domain>/<segment>`. Jeff,
+/// 2026-09-12 16:50, on the first domain API he drove by hand: "i dont want an
+/// api call that starts /codefiles; the top level of the domain is code."
+/// The path and the instance graph now agree (/code/… ↔ urn:chorus:domains:code).
+pub fn domain_path(domain: &str, class_local: &str) -> String {
+    format!("/{}/{}", domain, domain_segment(domain, class_local))
 }
 
 /// #3902 — read the vocabulary semver once per process from the ontology graph
@@ -3814,7 +3936,14 @@ pub fn error_envelope(
     let kind_local = table.class.rsplit('#').next().unwrap_or("Resource");
     let (shape, shape_version, commit) = shape_meta(kind_local);
     let plural = pluralize(kind_local);
-    let instance = format!("/{}/{}/{}", API_VERSION, plural, instance_name);
+    // #4158 — the error's instance link names the PUBLIC path too. A 404 that
+    // points the caller back at the deprecated collection teaches the wrong
+    // route at exactly the moment they are looking for the right one.
+    let instance = if table.base_path.is_empty() {
+        format!("/{}/{}/{}", API_VERSION, plural, instance_name)
+    } else {
+        format!("/{}{}/{}", API_VERSION, table.base_path, instance_name)
+    };
     let title = match status {
         400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found",
         409 => "Conflict", 412 => "Precondition Failed", 422 => "Unprocessable Entity",
@@ -4032,6 +4161,27 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
         None => path,
     };
     let plural = format!("/{}", pluralize(table.class.rsplit('#').next().unwrap_or("domain")));
+    // #4158 — `plural` is the INTERNAL match key (the class-rooted form every
+    // sub-route below is written against). `public` is what we SAY: the
+    // domain-rooted path discovery advertises. They diverged in the envelope —
+    // a request to /tests/results came back self-identifying as
+    // /v1/testresults, handing the caller the deprecated path it had just
+    // moved off. Links are the contract, so they name the public form.
+    let public = if table.base_path.is_empty() { plural.as_str() } else { table.base_path.as_str() };
+    // #4158 — the PUBLIC collection path is /<domain>/<segment>; every sub-route
+    // below matches the class-rooted form. Normalize once, here, so the rule lives
+    // in one place and the sub-routes (/:name, /completeness, /tree, the write
+    // verbs) inherit it instead of each learning the new shape. The class-rooted
+    // path arrives unchanged and still answers — the deprecated alias.
+    let domain_rooted;
+    let path = if !table.base_path.is_empty()
+        && (path == table.base_path || path.starts_with(&format!("{}/", table.base_path)))
+    {
+        domain_rooted = format!("{}{}", plural, &path[table.base_path.len()..]);
+        domain_rooted.as_str()
+    } else {
+        path
+    };
     let parts: Vec<&str> = path.trim_end_matches('/').split('/').filter(|s| !s.is_empty()).collect();
 
     // #3435 — GET /effective/:node/:key — the effective-config read. The ONLY impure
@@ -4064,7 +4214,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
     // GET /schema/domain
     if path.starts_with("/schema/") {
         meta.route = "schema".into();
-        let t = RouteTable { class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
+        let t = RouteTable { domain: table.domain.clone(), base_path: table.base_path.clone(), class: table.class.clone(), fields: table.fields.clone(), routes: table.routes.clone(), secured: table.secured.clone(), mandatory: table.mandatory.clone(), write_required: table.write_required.clone(), repo_target: table.repo_target.clone(), exposure: table.exposure.clone(), instances_graph: table.instances_graph.clone(), tree_edges: vec![], tree_order: None, model_version: table.model_version.clone() };
         return (200, routes_json(&t));
     }
     // GET /openapi.json — the generated OpenAPI 3.1 spec (#3453, #3520). Another
@@ -4191,9 +4341,9 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                     let data = format!("[\n  {}\n]", page.join(",\n  "));
                     let kind = table.class.rsplit('#').next().unwrap_or("Domain");
                     let (shape, shape_version, commit) = shape_meta(kind);
-                    let self_url = format!("/{}{}", API_VERSION, plural);
+                    let self_url = format!("/{}{}", API_VERSION, public);
                     let links = match next {
-                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, plural, n, limit),
+                        Some(n) => format!("{{ \"next\": \"/{}{}?cursor={}&limit={}\" }}", API_VERSION, public, n, limit),
                         None => "{}".to_string(),
                     };
                     (200, envelope(kind, None, &self_url, &shape, &shape_version, &commit, &table.instances_graph, !table.secured.is_empty(), &data, &links, Some(total), &table.model_version))
@@ -4377,7 +4527,7 @@ fn handle_inner(path: &str, table: &RouteTable, meta: &mut ReqMeta, authed: bool
                 // (prove-one-first: this GET /:name path is the end-to-end proof).
                 let kind = table.class.rsplit('#').next().unwrap_or("Domain");
                 let (shape, shape_version, commit) = shape_meta(kind);
-                let self_url = format!("/{}{}/{}", API_VERSION, plural, name);
+                let self_url = format!("/{}{}/{}", API_VERSION, public, name);
                 let id = format!("chorus:{}", name);
                 let body = envelope(
                     kind, Some(&id), &self_url, &shape, &shape_version, &commit,
@@ -4526,16 +4676,43 @@ pub fn dispatch_for(path: &str, tables: &[RouteTable]) -> Dispatch {
 }
 
 pub fn select_table<'a>(path: &str, tables: &'a [RouteTable]) -> Option<&'a RouteTable> {
-    let trimmed = path.trim_start_matches('/');
-    let mut segs = trimmed.split('/');
-    let first = segs.next().unwrap_or("");
-    let resource = if first == "schema" { segs.next().unwrap_or("") } else { first };
-    if resource.is_empty() {
+    let bare = path.split(['?', '#']).next().unwrap_or("");
+    let trimmed = bare.trim_start_matches('/');
+    let mut segs = trimmed.split('/').filter(|s| !s.is_empty());
+    let mut first = segs.next().unwrap_or("");
+    // #4158 — the VERSION prefix is not a collection. Discovery advertises
+    // /v1/<collection>, and dispatch matched "v1" as the first segment and
+    // answered NotFound before any handler ran — so POST /v1/testresults/batch
+    // 404'd while POST /testresults/batch worked (measured on both servers
+    // 2026-09-13 10:22; run 86 lost 650 results to it). #3561 fixed the read
+    // path downstream of here; the table lookup itself never learned. Skipping
+    // it here fixes reads and writes at one point, the way #3561 intended.
+    if first == API_VERSION {
+        first = segs.next().unwrap_or("");
+    }
+    let (first, second) = if first == "schema" {
+        (segs.next().unwrap_or(""), segs.next().unwrap_or(""))
+    } else {
+        (first, segs.next().unwrap_or(""))
+    };
+    if first.is_empty() {
         return None;
     }
+    // #4158 — the generated path is /<domain>/<segment>; match it FIRST, on both
+    // segments. Matching the domain alone would serve /code/<anything> from the
+    // domain's first class: the right graph, the wrong rows, and no error.
+    if !second.is_empty() {
+        let two = format!("/{}/{}", first, second);
+        if let Some(t) = tables.iter().find(|t| t.base_path.eq_ignore_ascii_case(&two)) {
+            return Some(t);
+        }
+    }
+    // The class-rooted path stays as a DEPRECATED alias while callers move
+    // (#4158). Discovery advertises the domain-rooted path; this arm only keeps
+    // existing consumers answering until the grep guard says they are all moved.
     tables.iter().find(|t| {
         let cl = t.class.rsplit('#').next().unwrap_or("");
-        pluralize(cl).eq_ignore_ascii_case(resource) || cl.eq_ignore_ascii_case(resource)
+        pluralize(cl).eq_ignore_ascii_case(first) || cl.eq_ignore_ascii_case(first)
     })
 }
 
@@ -4874,8 +5051,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             let plural = pluralize(local);
                             let sv = dim_cache.get(local).map(|d| d.1.clone()).unwrap_or_default();
                             format!(
-                                "{{ \"kind\": \"{}\", \"collection\": \"/{}/{}\", \"openapi\": \"/{}/openapi.json\", \"shapeVersion\": \"{}\" }}",
-                                json_escape(local), API_VERSION, plural, plural, json_escape(&sv)
+                                // #4158 — advertise the domain-rooted path; name the
+                                // class-rooted one as deprecated so a consumer reading
+                                // discovery knows which to move to and which still answers.
+                                "{{ \"kind\": \"{}\", \"collection\": \"/{}{}\", \"openapi\": \"/{}{}/openapi.json\", \"deprecatedCollection\": \"/{}/{}\", \"shapeVersion\": \"{}\" }}",
+                                json_escape(local), API_VERSION, json_escape(&t.base_path), API_VERSION, json_escape(&t.base_path), API_VERSION, plural, json_escape(&sv)
                             )
                         })
                         .collect();
@@ -4919,7 +5099,12 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     let want = rest.trim_start_matches('/');
                     if let Some(t) = tables
                         .iter()
-                        .find(|t| pluralize(t.class.rsplit('#').next().unwrap_or("")) == want)
+                        // #4158 — /<domain>/<segment>/openapi.json is the advertised
+                        // form; the class-rooted one stays as the deprecated alias.
+                        .find(|t| {
+                            t.base_path.trim_start_matches('/') == want
+                                || pluralize(t.class.rsplit('#').next().unwrap_or("")) == want
+                        })
                     {
                         let (body, ct) = if path.ends_with(".json") {
                             (openapi_json(t), "application/json")
@@ -5005,7 +5190,8 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                     Dispatch::NotFound => {
                         let served: Vec<String> = tables
                             .iter()
-                            .map(|t| format!("\"/{}\"", pluralize(t.class.rsplit('#').next().unwrap_or(""))))
+                            // #4158 — the miss lists what IS served: the domain-rooted paths.
+                            .map(|t| format!("\"{}\"", t.base_path))
                             .collect();
                         let nf = format!("{{ \"error\": \"unknown route\", \"served\": [{}] }}", served.join(", "));
                         let resp = http_response_ct(status_line(404), &nf, "application/json");
@@ -5463,7 +5649,7 @@ mod tests {
     // codes from the same table, which is the whole defect.
     #[test]
     fn versioned_and_bare_paths_resolve_identically() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into()],
             routes: vec!["GET /domains".into()],
@@ -5696,7 +5882,7 @@ mod tests {
     fn page_html_is_a_generated_projection_on_system_css() {
         // #3420: page_html emits the SHELL of the real Athena domain page anatomy on the
         // #3415 design system; the shared /js/domain-renderer.js fills the mount points.
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label|plain".into(), "status|datatype:string".into()],
             routes: vec!["GET /domains".into()],
@@ -5733,7 +5919,7 @@ mod tests {
         assert_eq!(page_html(&t), page_html(&t));
         // #3420 AC6 — the breadcrumb/title are CLASS-projected (the generalization path for
         // services/roles), not a hardcoded "Domain". Prove it with a different class.
-        let svc = page_html(&RouteTable {
+        let svc = page_html(&RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Service", NS),
             fields: vec![],
             routes: vec![],
@@ -5763,7 +5949,7 @@ mod tests {
     // === #3453 — serve the generated OpenAPI spec + human view ===
 
     fn openapi_fixture() -> RouteTable {
-        RouteTable {
+        RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             mandatory: vec!["label".into()], // #3520 — exercises the `required` projection
@@ -5883,7 +6069,7 @@ mod tests {
         let r = write_routes("domains");
         // entity lifecycle
         assert!(r.contains(&"POST /domains".to_string()), "create entity");
-        assert!(!r.contains(&"POST /domains/batch".to_string()), "batch is not exposed for unrelated classes");
+        assert!(r.contains(&"POST /domains/batch".to_string()), "#4158: every served class gets the batch route");
         assert!(r.contains(&"PUT /domains/:name".to_string()), "replace entity");
         assert!(r.contains(&"DELETE /domains/:name".to_string()), "delete entity");
         // per-edge add/remove (mirrors the read edges)
@@ -5903,6 +6089,223 @@ mod tests {
     // within_one_ttl) — the role is asked of the graph, so there is no string
     // shape left to pin.
 
+    fn t4158(domain: &str, class_local: &str) -> RouteTable {
+        RouteTable {
+            domain: domain.to_string(),
+            base_path: domain_path(domain, class_local),
+            class: format!("{}{}", NS, class_local),
+            fields: vec![], routes: vec![], secured: vec![], mandatory: vec![],
+            write_required: vec![], repo_target: String::new(), exposure: vec![],
+            instances_graph: format!("urn:chorus:domains:{}", domain),
+            tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string(),
+        }
+    }
+
+    #[test]
+    fn select_table_serves_the_domain_rooted_path() {
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult"), t4158("tests", "Test")];
+        // the generated path
+        assert_eq!(select_table("/code/files", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        assert_eq!(select_table("/tests/results", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+        // entity under the domain-rooted collection
+        assert_eq!(select_table("/code/files/abc123", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        // query string is not part of the match
+        assert_eq!(select_table("/tests/results?limit=1", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn select_table_skips_the_version_prefix_discovery_advertises() {
+        // #4158 — every form discovery can hand a caller must dispatch.
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
+        for p in ["/v1/tests/results", "/v1/testresults", "/v1/tests/results/abc", "/v1/code/files"] {
+            assert!(select_table(p, &tables).is_some(), "{p} must dispatch");
+        }
+        assert_eq!(select_table("/v1/tests/results", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+        assert_eq!(select_table("/v1/code/files", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+    }
+
+    #[test]
+    fn negative_proof_skipping_v1_does_not_make_everything_dispatch() {
+        // #3734 — a skip that runs unconditionally would eat the FIRST segment
+        // of every path, and /widgets/files would then dispatch as /files. The
+        // skip must fire only for the version segment, and misses must still
+        // miss.
+        let tables = vec![t4158("code", "CodeFile")];
+        assert!(select_table("/v1/widgets", &tables).is_none(), "unknown collection under /v1");
+        assert!(select_table("/v2/code/files", &tables).is_none(), "only THE version prefix is skipped");
+        assert!(select_table("/v1", &tables).is_none(), "the bare version root is not a collection");
+        assert!(select_table("/v1/code", &tables).is_none(), "the bare domain root is not a collection");
+    }
+
+    #[test]
+    fn select_table_keeps_the_class_rooted_path_as_a_deprecated_alias() {
+        let tables = vec![t4158("code", "CodeFile"), t4158("tests", "TestResult")];
+        assert_eq!(select_table("/codefiles", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
+        assert_eq!(select_table("/testresults/x", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn error_links_name_the_domain_rooted_path() {
+        // #4158 — measured on the variant 2026-09-13 08:05: a 404 from
+        // /tests/results/<n> came back "self": "/v1/testresults/<n>", handing
+        // the caller the deprecated path it had just moved off. #3561 fixed the
+        // mirror of this (advertise one path, serve another); this is the same
+        // contract on the way out.
+        let t = t4158("tests", "TestResult");
+        let body = error_envelope(&t, "abc", 404, "not-found", "no such row", &[]);
+        assert!(body.contains("/v1/tests/results/abc"), "error names the public path: {body}");
+        assert!(!body.contains("/v1/testresults/abc"), "the deprecated path must not be handed back: {body}");
+    }
+
+    #[test]
+    fn negative_proof_error_links_fall_back_when_no_domain_claims_the_class() {
+        // #3734 — prove the branch can go the other way, and that the check
+        // above is reading base_path rather than passing for any string that
+        // happens to contain a slash. A table with no defining domain keeps the
+        // class-rooted link; if this ever "passes" while base_path is ignored,
+        // the test above is vacuous.
+        let mut t = t4158("tests", "TestResult");
+        t.base_path = String::new();
+        let body = error_envelope(&t, "abc", 404, "not-found", "no such row", &[]);
+        assert!(body.contains("/v1/testresults/abc"), "no domain → class-rooted fallback: {body}");
+        assert!(!body.contains("/v1/tests/results/abc"));
+    }
+
+    #[test]
+    fn the_write_door_takes_the_version_prefix_discovery_advertises() {
+        // #4158 — discovery advertises /v1/<collection>; before this the write
+        // door only matched the bare form, so following the contract 404'd.
+        // Both halves of the normalization compose: version THEN domain.
+        let t = t4158("tests", "TestResult");
+        let plural = pluralize("TestResult");
+        let norm = |p: &str| -> String {
+            let p = p.strip_prefix("/v1/").map(|r| format!("/{r}")).unwrap_or_else(|| p.to_string());
+            if !t.base_path.is_empty() && (p == t.base_path || p.starts_with(&format!("{}/", t.base_path))) {
+                format!("/{}{}", plural, &p[t.base_path.len()..])
+            } else {
+                p
+            }
+        };
+        assert!(matches!(parse_write("POST", &norm("/v1/tests/results"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("POST", &norm("/v1/testresults"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("DELETE", &norm("/v1/tests/results/abc"), &plural), Some(WriteOp::DeleteEntity { .. })));
+    }
+
+    #[test]
+    fn negative_proof_the_version_strip_is_load_bearing_on_writes() {
+        // #3734 — the raw /v1 path must NOT parse on its own. If it ever does,
+        // the strip above is dead code taking credit, and this test would stop
+        // distinguishing the fixed server from the broken one it was written
+        // against (measured 404, 2026-09-13).
+        let plural = pluralize("TestResult");
+        assert!(parse_write("POST", "/v1/testresults", &plural).is_none(),
+            "raw /v1 must not parse — the strip is what makes discovery's path work");
+        assert!(parse_write("POST", "/v1/tests/results", &plural).is_none());
+    }
+
+    #[test]
+    fn the_write_door_takes_the_domain_rooted_path() {
+        // #4158 — reads normalized in handle_inner, writes did NOT: measured on
+        // the variant 2026-09-13 07:48, POST /code/files -> 404 and POST
+        // /codefiles -> 201. The alias was the only writable path, so AC4's
+        // caller migration was impossible. This pins BOTH forms on the write
+        // door, through the same normalization handle_write_stamped applies.
+        let t = t4158("code", "CodeFile");
+        let plural = pluralize("CodeFile");
+        // the exact normalization handle_write_stamped performs
+        let norm = |p: &str| -> String {
+            if !t.base_path.is_empty() && (p == t.base_path || p.starts_with(&format!("{}/", t.base_path))) {
+                format!("/{}{}", plural, &p[t.base_path.len()..])
+            } else {
+                p.to_string()
+            }
+        };
+        assert!(matches!(parse_write("POST", &norm("/code/files"), &plural), Some(WriteOp::CreateEntity)));
+        assert!(matches!(parse_write("PUT", &norm("/code/files/abc"), &plural), Some(WriteOp::ReplaceEntity { .. })));
+        assert!(matches!(parse_write("DELETE", &norm("/code/files/abc"), &plural), Some(WriteOp::DeleteEntity { .. })));
+        // the deprecated alias still writes, unchanged
+        assert!(matches!(parse_write("POST", &norm("/codefiles"), &plural), Some(WriteOp::CreateEntity)));
+    }
+
+    #[test]
+    fn negative_proof_the_write_normalization_is_load_bearing() {
+        // #3734 — prove this check can go RED. Without the normalization the
+        // raw domain-rooted path reaches parse_write and matches NOTHING; that
+        // was the live 404. If parse_write ever starts accepting the raw form
+        // on its own, this fails and the normalization above is dead code
+        // claiming credit for a fix it no longer provides.
+        let plural = pluralize("CodeFile");
+        assert!(parse_write("POST", "/code/files", &plural).is_none(),
+            "the raw domain-rooted path must NOT parse — normalization is what makes it work");
+        assert!(parse_write("PUT", "/code/files/abc", &plural).is_none());
+        // and a path under the wrong domain must not write this class either
+        let t = t4158("code", "CodeFile");
+        assert!(!"/tests/files".starts_with(&format!("{}/", t.base_path)));
+    }
+
+    #[test]
+    fn negative_proof_a_made_up_domain_root_is_not_served() {
+        // #4158 AC3 — the rule must be able to say NO. A path under a real domain
+        // whose segment names no class, and a path under no domain at all, both
+        // miss. If this ever passes, select_table is matching on the first
+        // segment alone and every /<domain>/<anything> would serve the domain's
+        // first class — a confident wrong answer against the right graph.
+        let tables = vec![t4158("code", "CodeFile")];
+        assert!(select_table("/code/widgets", &tables).is_none(), "unknown segment under a real domain");
+        assert!(select_table("/widgets/files", &tables).is_none(), "unknown domain");
+        assert!(select_table("/code", &tables).is_none(), "the bare domain root is not a collection");
+    }
+
+    #[test]
+    fn domain_path_is_the_one_rule_for_every_live_class() {
+        // #4158 — the real class→domain map from the model (62 pairs, 31 domains),
+        // sampled across every shape the rule has to handle.
+        // prefix present, stripped:
+        assert_eq!(domain_path("code", "CodeFile"), "/code/files");
+        assert_eq!(domain_path("code", "CodeKind"), "/code/kinds");
+        assert_eq!(domain_path("tests", "TestResult"), "/tests/results");
+        assert_eq!(domain_path("tests", "TestSuiteRun"), "/tests/suiteruns");
+        assert_eq!(domain_path("logs", "LogSource"), "/logs/sources");
+        assert_eq!(domain_path("value-streams", "ValueStreamStep"), "/value-streams/steps");
+        assert_eq!(domain_path("domains", "SubDomain"), "/domains/subdomains");
+        // no prefix to strip — the class is pluralized whole:
+        assert_eq!(domain_path("code", "Language"), "/code/languages");
+        assert_eq!(domain_path("board", "Chunk"), "/board/chunks");
+        assert_eq!(domain_path("identity", "Principal"), "/identity/principals");
+        assert_eq!(domain_path("security", "APISurface"), "/security/apisurfaces");
+        assert_eq!(domain_path("properties", "PropertyKey"), "/properties/keys");
+        assert_eq!(domain_path("services-domain", "ServiceInstance"), "/services-domain/serviceinstances");
+        // the namesake class is NOT a special case (Silas, gate-arch 16:52):
+        assert_eq!(domain_path("tests", "Test"), "/tests/tests");
+        assert_eq!(domain_path("cards", "Card"), "/cards/cards");
+        assert_eq!(domain_path("domains", "Domain"), "/domains/domains");
+    }
+
+    #[test]
+    fn domain_prefix_inverts_pluralize_on_the_last_word_only() {
+        assert_eq!(domain_prefix("tests"), "Test");
+        assert_eq!(domain_prefix("code"), "Code");          // not plural — unchanged
+        assert_eq!(domain_prefix("properties"), "Property");
+        assert_eq!(domain_prefix("value-streams"), "ValueStream");
+        assert_eq!(domain_prefix("services-domain"), "ServicesDomain");
+        // every live domain's prefix round-trips through pluralize on its last word
+        for d in ["alerts", "cards", "logs", "messages", "metrics", "monitors", "policies", "practices", "principles", "products", "roles", "services", "skills", "streams", "values"] {
+            let p = domain_prefix(d);
+            assert_eq!(pluralize(&p), d, "domain {d} → prefix {p} must pluralize back");
+        }
+    }
+
+    #[test]
+    fn negative_proof_a_partial_prefix_is_not_stripped() {
+        // #4158 NEGATIVE PROOF: stripping must be Pascal-boundary aware, or
+        // "Testament" in `tests` would serve as /tests/aments. The rule only
+        // strips when the remainder starts a new Pascal word.
+        assert_eq!(domain_path("tests", "Testament"), "/tests/testaments");
+        assert_eq!(domain_path("code", "Codex"), "/code/codexes");
+        // and a class whose name merely CONTAINS the prefix is untouched
+        assert_eq!(domain_path("logs", "DialogSource"), "/logs/dialogsources");
+    }
+
     #[test]
     fn kind_of_class_maps_camelcase_to_adr040_kebab() {
         // #3647 — the drill's third find: lowercasing ValueStreamStep produced
@@ -5918,7 +6321,9 @@ mod tests {
     #[test]
     fn parse_write_maps_method_and_shape() {
         assert_eq!(parse_write("POST", "/domains", "domains"), Some(WriteOp::CreateEntity));
-        assert_eq!(parse_write("POST", "/domains/batch", "domains"), None);
+        assert_eq!(parse_write("POST", "/domains/batch", "domains"), Some(WriteOp::CreateBatch));
+        // NEGATIVE PROOF: a two-segment POST that is not /batch is still not a write
+        assert_eq!(parse_write("POST", "/domains/notbatch", "domains"), None);
         assert_eq!(parse_write("POST", "/testresults/batch", "testresults"), Some(WriteOp::CreateBatch));
         assert_eq!(parse_write("PUT", "/domains/x", "domains"), Some(WriteOp::ReplaceEntity { name: "x".into() }));
         assert_eq!(parse_write("DELETE", "/domains/x", "domains"), Some(WriteOp::DeleteEntity { name: "x".into() }));
@@ -6031,7 +6436,7 @@ mod tests {
 
     #[test]
     fn routes_json_is_deterministic() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["comment".into(), "label".into()],
             routes: vec!["GET /domains".into()],
@@ -6096,7 +6501,7 @@ mod tests {
     fn routes_json_publishes_the_mandatory_floor() {
         // AC4/AC5 — the floor is part of the published /schema contract so the page
         // meter sources completeness from the MODEL (severing the Athena-v1 dependency).
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Domain", NS),
             fields: vec!["label".into(), "comment".into()],
             routes: vec!["GET /domains".into()],
@@ -6130,7 +6535,7 @@ mod tests {
 
     #[test]
     fn unknown_route_404s_and_teaches_routes() {
-        let t = RouteTable { class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
+        let t = RouteTable { domain: String::new(), base_path: String::new(), class: format!("{}Domain", NS), fields: vec![], routes: vec!["GET /domains".into()], secured: vec![], mandatory: vec![], write_required: vec![], repo_target: String::new(), exposure: vec![], instances_graph: INSTANCES_GRAPH.to_string(), tree_edges: vec![], tree_order: None, model_version: "unclassified".to_string() };
         let (code, body) = handle("/nope", &t);
         assert_eq!(code, 404);
         assert!(body.contains("GET /domains"));
@@ -6232,7 +6637,7 @@ mod tests {
     // shape/ontology graph (Silas's scope-trap). And it carries the new claims.
     #[test]
     fn dal_emit_scopes_to_instance_graph_and_mints_scoped_token() {
-        let t = RouteTable {
+        let t = RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("{}Test", NS),
             fields: vec!["filePath|datatype:string".into()],
             routes: vec!["PUT /tests".into()],
@@ -6354,7 +6759,7 @@ mod dispatch_effective_3845 {
     use super::*;
 
     fn table(class: &str) -> RouteTable {
-        RouteTable {
+        RouteTable { domain: String::new(), base_path: String::new(),
             class: format!("https://jeffbridwell.com/chorus#{class}"),
             fields: vec![],
             routes: vec![],

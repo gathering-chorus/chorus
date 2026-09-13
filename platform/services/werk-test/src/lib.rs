@@ -1313,6 +1313,55 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
 
 // ---- TestResult batch wire-back: bounded chunks + one token re-mint ----
 
+/// #4158 — the collection path a server ADVERTISES for a class, read from its
+/// discovery document. Same pattern crawl-files.py already uses ("route: read
+/// from the server's discovery document, never hardcoded"). A pre-#4158 server
+/// advertises `/v1/testresults`, a post-#4158 one advertises
+/// `/v1/tests/results`; following discovery is correct on both, so the caller
+/// carries no path shape and no land-ordering dependency. Hardcoding either
+/// literal is what lost 650 results in run 77 (2026-09-13).
+///
+/// Returns None when the document does not name the class — the caller keeps
+/// its configured default rather than inventing a route.
+pub fn advertised_collection(discovery_body: &str, kind: &str) -> Option<String> {
+    // Discovery is a flat list of primitives: { "kind": "TestResult",
+    // "collection": "/v1/tests/results", "deprecatedCollection": "/v1/testresults" }.
+    // Read the `collection` INSIDE the matched object only, bounded by that
+    // object's closing brace, so a neighbouring class cannot answer for it.
+    let needle = format!("\"kind\": \"{}\"", kind);
+    let start = discovery_body.find(&needle)? + needle.len();
+    let obj_end = discovery_body[start..].find('}').map(|i| start + i)?;
+    let slice = &discovery_body[start..obj_end];
+    let key = "\"collection\": \"";
+    let cstart = slice.find(key)? + key.len();
+    let cend = slice[cstart..].find('"')? + cstart;
+    let path = &slice[cstart..cend];
+    if path.is_empty() || !path.starts_with('/') {
+        return None;
+    }
+    // #4158 — discovery advertises the VERSIONED path (/v1/tests/results) but
+    // the write door only matched the bare form until this card fixed it
+    // (measured 2026-09-13 10:22: /testresults/batch 422, /v1/testresults/batch
+    // 404 on BOTH servers; run 86 lost 650 results to it). Servers predating
+    // that fix are still out there, and the bare form is served by every
+    // version, so strip the prefix here too and post to the form that always
+    // works.
+    let bare = path.strip_prefix("/v1").unwrap_or(path);
+    if bare.is_empty() || !bare.starts_with('/') {
+        return None;
+    }
+    Some(bare.to_string())
+}
+
+/// #4158 — the scheme+host of a configured endpoint, so a discovered PATH can
+/// be joined to whatever server this run was pointed at.
+pub fn origin_of(url: &str) -> Option<String> {
+    let scheme_end = url.find("://")? + 3;
+    let rest = &url[scheme_end..];
+    let host_end = rest.find('/').unwrap_or(rest.len());
+    Some(format!("{}{}", &url[..scheme_end], &rest[..host_end]))
+}
+
 /// Derive the batch-create route from the historical TestResult collection
 /// override. The old variable is also used by reconcile for GET, so callers can
 /// keep configuring one collection URL while writes append the batch suffix.
@@ -1569,6 +1618,52 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
         // "[synthetic] Delivery probe", "chorus-health: owl-api-checks-missing").
         ("CHORUS_MCP_NUDGE_URL".into(), "http://127.0.0.1:9/nudge".into()),
     ]
+}
+
+#[cfg(test)]
+mod discovery_route_4158 {
+    use super::{advertised_collection, origin_of, testresult_batch_endpoint};
+
+    // The two shapes a real server returns, verbatim in structure.
+    const POST_4158: &str = r#"{ "count": 2, "primitives": [{ "kind": "Test", "collection": "/v1/tests/tests", "deprecatedCollection": "/v1/tests" }, { "kind": "TestResult", "collection": "/v1/tests/results", "deprecatedCollection": "/v1/testresults" }] }"#;
+    const PRE_4158: &str = r#"{ "count": 2, "primitives": [{ "kind": "Test", "collection": "/v1/tests" }, { "kind": "TestResult", "collection": "/v1/testresults" }] }"#;
+
+    #[test]
+    fn the_caller_follows_whichever_path_the_server_advertises() {
+        // #4158 AC4 — the caller carries NO path shape. The same code is right
+        // against a post-#4158 server and the pre-#4158 one it will meet until
+        // this lands on canonical.
+        assert_eq!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/results"));
+        assert_eq!(advertised_collection(PRE_4158, "TestResult").as_deref(), Some("/testresults"));
+        // and the batch route is derived from whichever came back
+        let post = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(POST_4158, "TestResult").unwrap()));
+        assert_eq!(post, "http://h:1/tests/results/batch");
+        let pre = testresult_batch_endpoint(&format!("http://h:1{}", advertised_collection(PRE_4158, "TestResult").unwrap()));
+        assert_eq!(pre, "http://h:1/testresults/batch");
+    }
+
+    #[test]
+    fn negative_proof_a_neighbour_class_cannot_answer_for_the_one_asked_for() {
+        // #3734 — the defect this shape invites: scanning for "collection"
+        // after a loose match and picking up the NEXT object's path. Test sits
+        // immediately before TestResult in both documents, so a reader that
+        // ran past the object boundary would hand back /v1/tests/tests for
+        // TestResult — the right graph, the wrong rows, and no error.
+        assert_eq!(advertised_collection(POST_4158, "Test").as_deref(), Some("/tests/tests"));
+        assert_ne!(advertised_collection(POST_4158, "TestResult").as_deref(), Some("/tests/tests"));
+        // a class the server does not serve yields None — the caller keeps its
+        // configured default instead of inventing a route
+        assert_eq!(advertised_collection(POST_4158, "CodeFile"), None);
+        assert_eq!(advertised_collection("", "TestResult"), None);
+        assert_eq!(advertised_collection(r#"{"kind": "TestResult", "collection": ""}"#, "TestResult"), None);
+    }
+
+    #[test]
+    fn origin_keeps_the_server_the_run_was_pointed_at() {
+        assert_eq!(origin_of("http://localhost:3365/testresults").as_deref(), Some("http://localhost:3365"));
+        assert_eq!(origin_of("http://localhost:3360").as_deref(), Some("http://localhost:3360"));
+        assert_eq!(origin_of("not-a-url"), None);
+    }
 }
 
 #[cfg(test)]

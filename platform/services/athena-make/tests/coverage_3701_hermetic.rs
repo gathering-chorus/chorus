@@ -598,9 +598,15 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert_eq!(t.class, format!("{}Domain", NS));
     assert!(t.fields.contains(&"comment|datatype:string".to_string()));
     assert!(t.fields.contains(&"ownedBy|edge:Role".to_string()));
-    assert!(t.routes.contains(&"GET /domains".to_string()));
-    assert!(t.routes.contains(&"POST /domains/:name/partof".to_string()));
-    assert!(t.routes.contains(&"GET /domains/:name/tree".to_string()), "treeEdge opt-in emits the tree route");
+    // #4158 — the stub model's Domain class is defined by the `athena` domain, so
+    // the generated path is /athena/domains. The class-rooted /domains is a
+    // deprecated alias that still answers; it is no longer what we advertise.
+    assert_eq!(t.domain, "athena");
+    assert_eq!(t.base_path, "/athena/domains");
+    assert!(t.routes.contains(&"GET /athena/domains".to_string()), "{:?}", t.routes);
+    assert!(t.routes.contains(&"POST /athena/domains/:name/partof".to_string()), "{:?}", t.routes);
+    assert!(t.routes.contains(&"GET /athena/domains/:name/tree".to_string()), "treeEdge opt-in emits the tree route");
+    assert!(!t.routes.iter().any(|r| r.ends_with(" /domains")), "no class-rooted path is ADVERTISED: {:?}", t.routes);
     assert_eq!(t.secured, vec!["/schema/domain".to_string()]);
     assert_eq!(t.mandatory, vec!["comment".to_string()]);
     assert_eq!(t.write_required, vec!["comment".to_string()]);
@@ -616,7 +622,9 @@ fn generate_projects_the_full_route_table_from_the_stub_model() {
     assert_eq!(w.test_result.instances_graph, "urn:chorus:domains:tests");
     assert!(w.test_result.fields.contains(&"ofTest|edge:Test".to_string()));
     assert!(w.test_result.write_required.contains(&"ofTest".to_string()));
-    assert!(w.test_result.routes.contains(&"POST /testresults/batch".to_string()));
+    // #4158 — TestResult is defined by the `tests` domain: /tests/results.
+    assert_eq!(w.test_result.base_path, "/tests/results");
+    assert!(w.test_result.routes.contains(&"POST /tests/results/batch".to_string()), "{:?}", w.test_result.routes);
 }
 
 #[test]
@@ -675,9 +683,13 @@ fn serve_discovery_health_and_liveness() {
     let (c, _, b) = http("GET", "/", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"kind\": \"Discovery\""));
-    assert!(b.contains("\"collection\": \"/v1/domains\""), "{}", b);
-    assert!(b.contains("\"collection\": \"/v1/products\""), "{}", b);
-    assert!(b.contains("\"collection\": \"/v1/testresults\""), "{}", b);
+    // #4158 — discovery advertises the domain-rooted collection and NAMES the
+    // class-rooted one as deprecated, so a consumer reading discovery knows both
+    // which path to move to and which one still answers during the window.
+    assert!(b.contains("\"collection\": \"/v1/athena/domains\""), "{}", b);
+    assert!(b.contains("\"collection\": \"/v1/tests/results\""), "{}", b);
+    assert!(b.contains("\"deprecatedCollection\": \"/v1/testresults\""), "{}", b);
+    assert!(!b.contains("\"collection\": \"/v1/testresults\""), "the class-rooted path is no longer ADVERTISED: {}", b);
     let (c, _, b) = http("GET", "/v1", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"count\": 3"));
@@ -694,7 +706,11 @@ fn serve_collection_is_enveloped_and_paginated() {
     // page 1 of limit=1 carries the next-cursor link
     let (c, _, b) = http("GET", "/domains?limit=1", &[], "");
     assert_eq!(c, 200);
-    assert!(b.contains("\"next\": \"/v1/domains?cursor=1&limit=1\""), "{}", b);
+    // #4158 — the cursor link names the PUBLIC (domain-rooted) collection, the
+    // same path discovery advertises. It read /v1/domains before the rule, i.e.
+    // page 2 of a domain-rooted read handed back the deprecated path.
+    assert!(b.contains("\"next\": \"/v1/athena/domains?cursor=1&limit=1\""), "{}", b);
+    assert!(!b.contains("\"next\": \"/v1/domains?cursor=1&limit=1\""), "the deprecated path is not handed back: {}", b);
     let (c, _, b) = http("GET", "/domains?limit=1&cursor=1", &[], "");
     assert_eq!(c, 200);
     assert!(b.contains("\"name\": \"pulse\"") && !b.contains("\"name\": \"borg\""), "{}", b);
@@ -804,7 +820,7 @@ fn serve_openapi_schema_and_composed_surfaces() {
     // unknown resource → typed 404 listing the served roots
     let (c, _, b) = http("GET", "/widgets", &[], "");
     assert_eq!(c, 404);
-    for root in ["/domains", "/products", "/testresults"] {
+    for root in ["/athena/domains", "/athena/products", "/tests/results"] {
         assert!(b.contains(&format!("\"{}\"", root)), "served roots must include {}: {}", root, b);
     }
 }
@@ -1173,7 +1189,7 @@ fn effective_config_read_resolves_and_coerces() {
     // unknown route lists the generated routes
     let (c, b) = athena_make::handle("/nonsense", &w.domain);
     assert_eq!(c, 404);
-    assert!(b.contains("GET /domains"), "{}", b);
+    assert!(b.contains("GET /athena/domains"), "{}", b);
 }
 
 #[test]

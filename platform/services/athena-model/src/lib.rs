@@ -85,7 +85,7 @@ const KINDS: &[(&str, &str, bool)] = &[
     // #4157 — the code domain served: CodeFile rows and the two vocabulary
     // classes their edges point at. Type-prefixed (code-file-<name>,
     // code-kind-<name>, language-<name>); the crawler writes CodeFile through
-    // /v1/codefiles, the seed writes kinds and languages once.
+    // /v1/code/files, the seed writes kinds and languages once.
     ("code-file", "CodeFile", false),
     ("code-kind", "CodeKind", false),
     ("language", "Language", false),

@@ -1,4 +1,10 @@
 #!/usr/bin/env bats
+# #4158 AC4 — this test carries NO path shape. It ASKS the server under test
+# which collection it serves for CodeFile (COLL, below) — the same thing
+# crawl-files.py itself does. The werk TEST lane runs BEFORE deploy-werk against
+# a server that predates #4158 (run 78: "this server has no batch route"), while
+# prove-live runs against the new variant; hardcoding either path form makes one
+# of those two lanes wrong. Asking makes both right.
 # @test-type: integration — live athena-make + its store (RUN_INTEGRATION=true)
 # #4154 B2 — the one walker persists files THROUGH the generated API.
 # Proves the lifecycle Jeff asked for: a file appears, changes, and leaves.
@@ -15,11 +21,22 @@ setup() {
   export CHORUS_IDENTITY_TOKEN="$TOKEN"
   walk() { ATHENA_MAKE_URL="$URL" CHORUS_ROOT="$TREE" CRAWL_BATCH=50 \
              python3 "$ROOT/platform/scripts/crawl-files.py" 2>&1; }
-  row_code() { curl -s -o /dev/null -w '%{http_code}' "$URL/codefiles/$NAME"; }
+  # #4158 — the collection this server advertises for CodeFile, bare path (the
+  # server answers both /v1/... and the bare form). Falls back to the alias when
+  # discovery is unreadable: degrade loudly, never invent a route.
+  COLL=$(curl -sf --max-time 5 "$URL" | python3 -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+    p=next((x.get("collection") for x in d.get("primitives",[]) if x.get("kind")=="CodeFile"),"")
+    print(p[3:] if p.startswith("/v1/") else p)
+except Exception:
+    print("")' 2>/dev/null)
+  [ -n "$COLL" ] || COLL="/codefiles"
+  row_code() { curl -s -o /dev/null -w '%{http_code}' "$URL$COLL/$NAME"; }
 }
 
 teardown() {
-  [ -n "${NAME:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL/codefiles/$NAME" || true
+  [ -n "${NAME:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$COLL/$NAME" || true
 }
 
 @test "a test file on disk becomes a row with kind=test, through the API, in the code domain graph" {
@@ -27,7 +44,7 @@ teardown() {
   run walk
   [ "$status" -eq 0 ]
   [ "$(row_code)" = 200 ]
-  run curl -s "$URL/codefiles/$NAME"
+  run curl -s "$URL$COLL/$NAME"
   echo "$output" | grep -q '"servedFrom": "urn:chorus:domains:code"'
   echo "$output" | grep -q 'code-kind-test'
   echo "$output" | grep -q 'language-bash'
@@ -60,7 +77,7 @@ teardown() {
   [ "$(row_code)" = 200 ]
   # the fallback is NAMED, never silent: either the batch route was used, or the
   # line says it was not. A walker that silently halved its speed is the defect.
-  if curl -s "$URL/codefiles/openapi.json" | grep -q '/batch'; then
+  if curl -s "$URL$COLL/openapi.json" | grep -q '/batch'; then
     ! echo "$output" | grep -q 'no batch route'
   else
     echo "$output" | grep -q 'no batch route (pre-#4158)'
@@ -73,5 +90,5 @@ teardown() {
   [ "$status" -eq 0 ]
   echo "$output" | grep -qE 'skipped=[1-9]'
   N=$(python3 -c "import hashlib,sys; print(hashlib.sha1(sys.argv[1].encode()).hexdigest())" "$TREE/platform/tests/zz-4154.bin")
-  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL/codefiles/$N")" != 200 ]
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$URL$COLL/$N")" != 200 ]
 }
