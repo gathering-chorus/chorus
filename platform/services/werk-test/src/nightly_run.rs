@@ -154,10 +154,20 @@ pub fn owner_for(path: &str, map: &HashMap<String, String>, chorus_root: &str, a
     map.get(rel).cloned().unwrap_or_else(|| owner_path_rule(path, chorus_root, app_root).to_string())
 }
 
+/// Kinds whose `unit` field IS a repo-relative path, so its absence from disk
+/// is a real fact about the registry. `cargo` (a crate name) and `npm` /
+/// `coverage` (a package dir that always exists) are deliberately absent.
+pub const PATH_SHAPED_KINDS: [&str; 4] = ["bats", "shell", "security", "perf"];
+
 /// A runner `nightly-unit|kind|unit|verdict|summary` line folded to the page's
 /// row. A cargo unit's path is its crate directory; a perf row that fails is
 /// SLOW, not red (#4136).
-pub fn fold_unit_line(line: &str, owner: &dyn Fn(&str) -> String, box_over_load: bool) -> Option<(SuiteRow, bool)> {
+pub fn fold_unit_line(
+    line: &str,
+    owner: &dyn Fn(&str) -> String,
+    box_over_load: bool,
+    exists: &dyn Fn(&str) -> bool,
+) -> Option<(SuiteRow, bool)> {
     let mut it = line.splitn(5, '|');
     if it.next()? != "nightly-unit" {
         return None;
@@ -170,6 +180,21 @@ pub fn fold_unit_line(line: &str, owner: &dyn Fn(&str) -> String, box_over_load:
         return None;
     }
     let path = if kind == "cargo" { format!("platform/services/{}", unit) } else { unit.to_string() };
+    // #4168 — the registry named a file that is no longer in the repo. That is
+    // bookkeeping, not breakage: report it as its own state so the red list
+    // means what Jeff needs it to mean. Only kinds whose UNIT IS a repo path
+    // are probed — a cargo crate name or an npm package dir is not a file, and
+    // probing them would mark every unit stale.
+    if PATH_SHAPED_KINDS.contains(&kind) && !exists(&path) {
+        let row = SuiteRow::new(
+            kind,
+            &path,
+            &owner(&path),
+            "stale",
+            &format!("0 pass, 0 fail (STALE REGISTRY — {} is not in the repo; the row outlived its file)", path),
+        );
+        return Some((row, false));
+    }
     let (v, contradiction) = classify_verdict(verdict, summary, box_over_load);
     let (mut v, s) = remap_unmeasured(&v, summary);
     if kind == "perf" && v == "fail" {
@@ -328,8 +353,17 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str) -> Vec<(String, 
     let skipmsg = if skipped > 0 { format!(" — {} skipped (no live stack, #3557)", skipped) } else { String::new() };
     let reds: Vec<&SuiteRow> = rows.iter().filter(|r| r.status == "fail").collect();
     let mut out = Vec::new();
+    // #4168 — a stale row is bookkeeping, not breakage. It never counts toward
+    // the red total (the bar stays reachable) but it is always named, or a row
+    // that outlived its file would sit in the registry unseen.
+    let stale: Vec<&str> = rows.iter().filter(|r| r.status == "stale").map(|r| r.suite_name()).collect();
+    let stalemsg = if stale.is_empty() {
+        String::new()
+    } else {
+        format!(" — {} stale (deleted file, still registered: {})", stale.len(), stale.join(", "))
+    };
     if reds.is_empty() {
-        out.push(("kade".to_string(), format!("nightly: all hermetic suites green ✅{}", skipmsg)));
+        out.push(("kade".to_string(), format!("nightly: all hermetic suites green ✅{}{}", skipmsg, stalemsg)));
         return out;
     }
     let sec: Vec<&str> = reds.iter().filter(|r| r.kind == "security").map(|r| r.suite_name()).collect();
@@ -355,7 +389,7 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str) -> Vec<(String, 
     };
     out.push((
         "kade".to_string(),
-        format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}", reds.len(), per_owner.join(", "), skipmsg, slowmsg),
+        format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}{}", reds.len(), per_owner.join(", "), skipmsg, slowmsg, stalemsg),
     ));
     out
 }
@@ -374,6 +408,9 @@ pub fn run_summary_fields(rows: &[SuiteRow]) -> Vec<(String, String)> {
         ("failed".into(), failed.to_string()),
         ("skipped".into(), count("skip").to_string()),
         ("unmeasurable".into(), count("unmeasurable").to_string()),
+        // #4168 — counted on its own axis; deliberately NOT folded into failed,
+        // so zero_red stays true on a run whose only non-pass rows are stale.
+        ("stale".into(), count("stale").to_string()),
         ("red_by_owner".into(), if csv.is_empty() { "none".into() } else { csv.join(";") }),
         ("zero_red".into(), (failed == 0).to_string()),
     ]
@@ -631,6 +668,10 @@ mod nightly_run_4145 {
     }
 
 
+    fn present_stub(_: &str) -> bool {
+        true
+    }
+
     fn owner_stub(_: &str) -> String {
         "kade".into()
     }
@@ -670,7 +711,7 @@ mod nightly_run_4145 {
 
     #[test]
     fn a_unit_line_folds_to_the_page_row_unchanged_in_shape() {
-        let (row, contradiction) = fold_unit_line("nightly-unit|bats|platform/tests/x.bats|pass|3 pass, 0 fail", &owner_stub, false).unwrap();
+        let (row, contradiction) = fold_unit_line("nightly-unit|bats|platform/tests/x.bats|pass|3 pass, 0 fail", &owner_stub, false, &present_stub).unwrap();
         assert_eq!(row.line(), "SUITE|bats|platform/tests/x.bats|kade|pass|3 pass, 0 fail");
         assert!(!contradiction);
         assert_eq!(parse_suite_line(&row.line()).unwrap(), row);
@@ -678,15 +719,104 @@ mod nightly_run_4145 {
 
     #[test]
     fn a_cargo_unit_gets_its_crate_path_and_a_perf_fail_is_slow() {
-        let (row, _) = fold_unit_line("nightly-unit|cargo|werk-test|pass|245 pass, 0 fail", &owner_stub, false).unwrap();
+        let (row, _) = fold_unit_line("nightly-unit|cargo|werk-test|pass|245 pass, 0 fail", &owner_stub, false, &present_stub).unwrap();
         assert_eq!(row.path, "platform/services/werk-test");
-        let (row, _) = fold_unit_line("nightly-unit|perf|platform/tests/werk-phase-budgets.test.sh|fail|0 pass, 1 fail", &owner_stub, false).unwrap();
+        let (row, _) = fold_unit_line("nightly-unit|perf|platform/tests/werk-phase-budgets.test.sh|fail|0 pass, 1 fail", &owner_stub, false, &present_stub).unwrap();
         assert_eq!(row.status, "slow");
+    }
+
+    // #4168 — a test file that left the repo is a STALE REGISTRY row, not a
+    // product break. 2026-09-13: three of these in one day (tag-tests-domain-
+    // delete-guard.bats and test-tag-tests-validate-first.sh in the 03:00 run,
+    // test-security-manifest-3726.sh blocking Silas at 13:58). Jeff's bar is
+    // that a red means the product broke; today a red can mean someone deleted
+    // a file, and the page cannot tell the two apart.
+    #[test]
+    fn a_unit_whose_file_left_the_repo_is_stale_not_red() {
+        let gone = |_: &str| false;
+        let (row, contradiction) = fold_unit_line(
+            "nightly-unit|bats|platform/tests/deleted.bats|fail|0 pass, 1 fail",
+            &owner_stub,
+            false,
+            &gone,
+        )
+        .unwrap();
+        assert_eq!(row.status, "stale", "a row whose file is gone is not a failure");
+        assert!(row.summary.contains("STALE REGISTRY"), "the row says why in its own words: {}", row.summary);
+        assert!(row.summary.contains("platform/tests/deleted.bats"), "and names the path: {}", row.summary);
+        assert!(!contradiction);
+        assert_eq!(parse_suite_line(&row.line()).unwrap(), row, "still round-trips through the page");
+    }
+
+    // The check must separate the two states it exists to tell apart (#3734).
+    // A green here with the file PRESENT would mean the check cannot distinguish
+    // "someone deleted the test" from "the product broke" — which is the defect.
+    #[test]
+    fn negative_proof_a_file_that_exists_and_genuinely_fails_is_still_red() {
+        let present = |_: &str| true;
+        let (row, _) = fold_unit_line(
+            "nightly-unit|bats|platform/tests/deleted.bats|fail|0 pass, 1 fail",
+            &owner_stub,
+            false,
+            &present,
+        )
+        .unwrap();
+        assert_eq!(row.status, "fail", "the file is on disk — this is the product breaking");
+        assert!(!row.summary.contains("STALE"));
+    }
+
+    // A cargo crate or an npm package is not a file path; the existence probe
+    // must never be applied to it, or every cargo unit reads stale.
+    #[test]
+    fn negative_proof_a_cargo_or_npm_unit_is_never_marked_stale() {
+        let gone = |_: &str| false;
+        let (row, _) = fold_unit_line("nightly-unit|cargo|werk-test|fail|0 pass, 1 fail", &owner_stub, false, &gone).unwrap();
+        assert_eq!(row.status, "fail", "a crate name is not a path that can go missing");
+        let (row, _) = fold_unit_line("nightly-unit|npm|platform/api|fail|0 pass, 2 fail", &owner_stub, false, &gone).unwrap();
+        assert_eq!(row.status, "fail");
+    }
+
+    // #4168 AC2 — stale rows are counted and named in their own words, never
+    // folded into the red total and never silently dropped either.
+    #[test]
+    fn stale_rows_are_reported_separately_from_reds_and_counted() {
+        let rows = vec![
+            SuiteRow::new("bats", "platform/tests/gone.bats", "kade", "stale", "0 pass, 0 fail (STALE REGISTRY — platform/tests/gone.bats is not in the repo; the row outlived its file)"),
+            SuiteRow::new("bats", "platform/tests/real.bats", "wren", "fail", "0 pass, 1 fail"),
+        ];
+        let msgs = notify_messages(&rows, "silas");
+        let total = msgs.iter().find(|(who, m)| who == "kade" && m.contains("TOTAL")).expect("a total line").1.clone();
+        assert!(total.contains("1 red"), "the stale row is not counted as red: {}", total);
+        assert!(total.contains("1 stale"), "but it IS named: {}", total);
+
+        let fields = run_summary_fields(&rows);
+        let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("failed"), "1");
+        assert_eq!(get("stale"), "1");
+        assert_eq!(get("zero_red"), "false");
+    }
+
+    // The check must be able to say zero. A run with a stale row and no reds is
+    // a GREEN run — if stale leaked into the red total, zero_red could never be
+    // true while any deleted file remained in the registry.
+    #[test]
+    fn negative_proof_a_run_with_only_stale_rows_is_still_zero_red() {
+        let rows = vec![
+            SuiteRow::new("bats", "platform/tests/gone.bats", "kade", "stale", "0 pass, 0 fail (STALE REGISTRY — platform/tests/gone.bats is not in the repo; the row outlived its file)"),
+            SuiteRow::new("bats", "platform/tests/real.bats", "wren", "pass", "3 pass, 0 fail"),
+        ];
+        let fields = run_summary_fields(&rows);
+        let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
+        assert_eq!(get("zero_red"), "true");
+        assert_eq!(get("stale"), "1");
+        let msgs = notify_messages(&rows, "silas");
+        assert!(msgs.iter().any(|(_, m)| m.contains("green")), "green run still reads green");
+        assert!(msgs.iter().any(|(_, m)| m.contains("1 stale")), "and still names the stale row");
     }
 
     #[test]
     fn negative_proof_pass_with_failures_is_a_contradiction_recorded_as_fail() {
-        let (row, contradiction) = fold_unit_line("nightly-unit|npm|platform/api|pass|10 pass, 2 fail", &owner_stub, false).unwrap();
+        let (row, contradiction) = fold_unit_line("nightly-unit|npm|platform/api|pass|10 pass, 2 fail", &owner_stub, false, &present_stub).unwrap();
         assert_eq!(row.status, "fail");
         assert!(contradiction);
     }
