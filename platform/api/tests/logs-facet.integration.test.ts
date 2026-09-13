@@ -77,7 +77,7 @@ describe('AC3: Infrastructure reports a logs section', () => {
 });
 
 // AC4 retired with the route (#4084 → #4143): the Logs fold reads chorus:LogSource
-// rows from the graph (/owl/logs/sources); there is no /api/chorus/domain/:name/logs.
+// rows from the graph (/owl/logsources); there is no /api/chorus/domain/:name/logs.
 
 // AC5: when log sources exist, each carries label + location.
 describe('AC5: Log source metadata shape', () => {
