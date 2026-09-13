@@ -45,9 +45,11 @@ teardown() { rm -rf "$TMP"; }
 }
 
 @test "generator writes where told and leaves the live repo untouched" {
-  before="$(md5 -q "$REPO_ROOT/roles/silas/.mcp.json")"
+  # cksum, not md5: md5 is macOS-only and the pipeline's act container has
+  # neither it nor md5sum. The test must run wherever the pipeline runs.
+  before="$(cksum < "$REPO_ROOT/roles/silas/.mcp.json")"
   env GEN_MCP_WRITE_ROOT="$TMP" bash "$GEN" >/dev/null
-  after="$(md5 -q "$REPO_ROOT/roles/silas/.mcp.json")"
+  after="$(cksum < "$REPO_ROOT/roles/silas/.mcp.json")"
   [ "$before" = "$after" ]
   [ -f "$TMP/roles/silas/.mcp.json" ]
 }
