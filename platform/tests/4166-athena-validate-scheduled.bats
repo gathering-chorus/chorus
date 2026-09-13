@@ -51,3 +51,25 @@ teardown() { rm -rf "$TMP"; }
   # "pulse is in 2 graphs" is not actionable; "pulse is in A and B" is.
   grep -q "GRAPH ?g" "$SCRIPT"
 }
+
+@test "the run writes a report the page can read — one line per issue, plus a summary" {
+  run env ATHENA_VALIDATE_NUDGE=0 ATHENA_VALIDATE_REPORT="$TMP/gv.txt" bash "$SCRIPT"
+  [ -f "$TMP/gv.txt" ]
+  grep -qE "^graph-issue\|[^|]+\|[^|]+\|" "$TMP/gv.txt"
+  grep -qE "^graph-summary\|[0-9]+\|(clean|dirty)$" "$TMP/gv.txt"
+}
+
+@test "NEGATIVE PROOF — an unreachable store writes UNMEASURED to the report, not a count" {
+  run env ATHENA_VALIDATE_REPORT="$TMP/gv.txt" FUSEKI_QUERY="http://127.0.0.1:9/query" bash "$SCRIPT"
+  grep -q "^graph-summary|UNMEASURED|unreachable$" "$TMP/gv.txt"
+  ! grep -qE "^graph-summary\|[0-9]+\|" "$TMP/gv.txt"
+}
+
+@test "the page exists and reads the report the script writes" {
+  PAGE="$REPO_ROOT/platform/api/public/borg/graph-validate.html"
+  [ -f "$PAGE" ]
+  grep -q "graph-validate.txt" "$PAGE"
+  grep -q "graph-issue" "$PAGE"
+  # UNMEASURED must be rendered as its own state, never as zero issues.
+  grep -q "UNMEASURED" "$PAGE"
+}

@@ -1,0 +1,43 @@
+<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<title>Graph — validate</title>
+<style>
+:root{--bg:#0f1216;--fg:#e6ecf2;--dim:#7a8794;--ok:#5fd08a;--bad:#f5827e;--warn:#e8c46a;--line:#232b34}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:14px}
+h1{font-size:16px;margin:0 0 2px}
+#meta{color:var(--dim);font-size:13px;margin-bottom:12px}
+.row{padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:10px}
+.tag{width:150px;flex:none;font-weight:700;color:var(--bad)}
+.name{flex:1;overflow-wrap:anywhere}
+.cnt{color:var(--dim);flex:none;max-width:45%;overflow-wrap:anywhere;text-align:right}
+.ok{color:var(--ok)}.warn{color:var(--warn)}
+</style>
+<h1>Graph — validate</h1>
+<div id=meta>connecting…</div>
+<div id=out></div>
+<script>
+async function tick(){
+  try{
+    const r = await fetch('/borg/graph-validate.txt?t='+Date.now());
+    const t = await r.text();
+    const rows=[]; let total=null, verdict='';
+    for(const l of t.split('\n')){
+      let m = l.match(/^graph-issue\|([^|]+)\|([^|]+)\|(.*)$/);
+      if(m){ rows.push(`<div class=row><span class=tag>${m[1]}</span><span class=name>${m[2]}</span><span class=cnt>${m[3]}</span></div>`); continue; }
+      m = l.match(/^graph-summary\|([^|]+)\|(.*)$/);
+      if(m){ total=m[1]; verdict=m[2]; }
+    }
+    const meta = document.getElementById('meta');
+    if(verdict==='unreachable'){
+      meta.className='warn';
+      meta.textContent = `UNMEASURED — the store did not answer. This is NOT zero issues. · ${new Date().toLocaleTimeString()}`;
+    }else if(total!==null){
+      meta.className = total==='0' ? 'ok' : '';
+      meta.textContent = `${total} issue(s) · ${verdict} · ${new Date().toLocaleTimeString()}`;
+    }else{
+      meta.className='warn'; meta.textContent = 'no run recorded yet';
+    }
+    document.getElementById('out').innerHTML = rows.join('') || '<div class=row><span class="tag ok">CLEAN</span><span class=name>no issues found</span></div>';
+  }catch(e){ const m=document.getElementById('meta'); m.className='warn'; m.textContent='report unreachable: '+e.message; }
+}
+tick(); setInterval(tick, 10000);
+</script>

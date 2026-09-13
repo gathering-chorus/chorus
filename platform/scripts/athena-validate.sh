@@ -31,6 +31,12 @@ emit_spine() {
   bash "$log" "$ev" "${DEPLOY_ROLE:-system}" "$@" >/dev/null 2>&1 || true
 }
 
+# #4166 — the run writes its own report surface, the same way the nightly does
+# (borg/nightly-live.txt + its page). Without this the answer lives in a log
+# nobody opens, which is how this sweep went unread for weeks.
+REPORT="${ATHENA_VALIDATE_REPORT:-${CHORUS_HOME:-/Users/jeffbridwell/CascadeProjects/chorus}/platform/api/public/borg/graph-validate.txt}"
+if [ -d "$(dirname "$REPORT")" ]; then exec > >(tee "$REPORT") 2>&1; fi
+
 BAD=0
 echo "=== athena-validate — conformance sweep over GRAPH <$G> ==="
 
@@ -43,6 +49,7 @@ if ! Q "ASK { }" >/dev/null 2>&1; then
   echo
   echo "UNMEASURED — the store at $FUSEKI did not answer. This is NOT zero issues;"
   echo "nothing was swept. Fix the store, then re-run."
+  echo "graph-summary|UNMEASURED|unreachable"
   emit_spine "graph.validate.unmeasured" "endpoint=$FUSEKI"
   exit 2
 fi
@@ -56,7 +63,7 @@ echo "1) retired predicates in use:"
 for p in $RETIRED; do
   r=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s c:$p ?o } } LIMIT 20")
   n=$(count "$r")
-  if [ "$n" != "0" ] && [ "$n" != "?" ]; then BAD=$((BAD+n)); echo "  ⚠️  c:$p — $n subject(s)"; rows "$r"; fi
+  if [ "$n" != "0" ] && [ "$n" != "?" ]; then BAD=$((BAD+n)); echo "  ⚠️  c:$p — $n subject(s)"; rows "$r"; echo "graph-issue|retired-predicate|c:$p|$n subject(s)"; fi
 done
 [ "$BAD" = "0" ] && echo "  ✅ none"
 
@@ -72,14 +79,14 @@ RDFTYPE="http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 DANGLE=$(Q "PREFIX c: <$NS> SELECT ?s ?p ?o WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } } LIMIT 20")
 NDALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(?p != <$RDFTYPE>) FILTER(isIRI(?o) && STRSTARTS(STR(?o),\"$NS\")) FILTER NOT EXISTS { ?o ?anyp ?anyo } } }")
 nd=$(echo "$NDALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
-if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; else echo "  ✅ none"; fi
+if [ "$nd" != "0" ] && [ "$nd" != "?" ]; then BAD=$((BAD+nd)); echo "  ⚠️  $nd dangling edge(s)"; rows "$DANGLE"; echo "graph-issue|dangling-edge|$nd edges|object node does not exist"; else echo "  ✅ none"; fi
 
 # 3. untyped instances — a chorus: subject with data but no rdf:type
 echo "3) untyped instances (data with no class):"
 UNTYPED=$(Q "PREFIX c: <$NS> SELECT ?s WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } } GROUP BY ?s LIMIT 20")
 NUALL=$(Q "PREFIX c: <$NS> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$G> { ?s ?p ?o . FILTER(STRSTARTS(STR(?s),\"$NS\")) FILTER NOT EXISTS { ?s a ?t } } }")
 nu=$(echo "$NUALL" | python3 -c 'import sys,json; print(json.load(sys.stdin)["results"]["bindings"][0]["n"]["value"])' 2>/dev/null || echo "?")
-if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; else echo "  ✅ none"; fi
+if [ "$nu" != "0" ] && [ "$nu" != "?" ]; then BAD=$((BAD+nu)); echo "  ⚠️  $nu untyped subject(s)"; rows "$UNTYPED"; echo "graph-issue|untyped-instance|$nu subjects|no rdf:type the model knows"; else echo "  ✅ none"; fi
 
 # 4. #3846/ADR-058 — the GOVERNANCE CHECK registry: ADRs/decisions/practices as
 # checkable data (chorus:GovernanceCheck in urn:chorus:ontology). Each check's
@@ -138,17 +145,19 @@ if [ "${GOVBAD:-0}" != "0" ]; then
   for subj in $ONE_HOME_SUBJECTS; do
     r=$(Q "PREFIX c: <$NS> SELECT DISTINCT ?g WHERE { GRAPH ?g { c:$subj ?p ?o } }")
     gs=$(echo "$r" | python3 -c 'import sys,json;print(", ".join(b["g"]["value"] for b in json.load(sys.stdin)["results"]["bindings"]))' 2>/dev/null)
-    [ -n "$gs" ] && echo "  $subj → $gs"
+    [ -n "$gs" ] && { echo "  $subj → $gs"; echo "graph-issue|one-home|$subj|$gs"; }
   done
 fi
 
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."
+  echo "graph-summary|0|clean"
   emit_spine "graph.validate.completed" "issues=0" "verdict=clean"
   exit 0
 else
   echo "OLD/BAD DATA FOUND — $BAD issue(s). The write door can't reach these; this sweep is how they surface."
+  echo "graph-summary|$BAD|dirty"
   emit_spine "graph.validate.completed" "issues=$BAD" "verdict=dirty"
   # #4166 — reach a person. A count on the stdout of a launchd job nobody opens
   # is the same as not running: the sweep already existed and went unread for
