@@ -1117,13 +1117,22 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .filter_map(|row| row.split_once('|').map(|(name, _)| name.to_string()))
         .collect();
     write_required.sort();
-    // #4163 — a REQUIRED edge at a class no domain claims cannot be satisfied
-    // through the door: no collection exists to name a row of it, so the create
-    // that requires it fails closed at the DAL. Refuse where it is authored.
-    // Keyed on `write_required`, NOT `mandatory` — mandatory excludes edges by
-    // design (#3468, the human completeness gauge), so a check keyed there
-    // could never fire. It was keyed there until the AC4 test caught it.
-    edge_target_check(class_local, &fields, &write_required, &all_vocab_classes()?)?;
+    // #4163 — the edge-target REFUSAL is NOT wired here, deliberately.
+    //
+    // It refused a required edge whose target class is absent from
+    // `all_vocab_classes()` — athena-make's own claimed list. That list is not
+    // "what is served"; it is "what THIS door serves". chorus:SubDomain is
+    // served by chorus-api (47 rows at :3340/api/athena/subdomains, measured
+    // 2026-09-13 13:08) and is absent here, so the check would have refused
+    // AuthBoundary's two perfectly good edges and broken a shape it was written
+    // to protect. Silas caught it before I shipped it; my `/subdomains 404` was
+    // the wrong door, not a retired class.
+    //
+    // By the rule this card is built on: a check that cannot tell "unserved
+    // anywhere" from "served by another door" cannot separate the two states it
+    // exists to separate, so it does not gate. `edge_target_check` stays as a
+    // tested function with no caller until someone can answer "is this class
+    // served?" across doors — which nothing can today.
     write_required.dedup();
     let mut mandatory: Vec<String> = required_rows
         .iter()
@@ -5219,6 +5228,15 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
                 // every primitive documents itself, found via the discovery root above.
                 if let Some(rest) = path.strip_suffix("/openapi.json").or_else(|| path.strip_suffix("/openapi")) {
+                    // #4163 — strip the version prefix here too. #4158 taught the
+                    // collection routes and the write door that /v1 is not a
+                    // collection, but this sub-route never learned, so discovery
+                    // advertised "/v1/tests/results/openapi.json" and that exact
+                    // URL answered 400 while the bare form answered 200
+                    // (measured 2026-09-13 13:00, both servers). Kade hit it
+                    // following the advertised link, which is the whole failure
+                    // mode #3561 named: serve the path you advertise.
+                    let rest = rest.strip_prefix("/v1").unwrap_or(rest);
                     let want = rest.trim_start_matches('/');
                     if let Some(t) = tables
                         .iter()
