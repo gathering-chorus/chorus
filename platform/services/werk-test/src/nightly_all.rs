@@ -455,7 +455,14 @@ fn run_runner(ctx: &Ctx, box_over_load: bool) -> LaneResult {
         }
         lane_text.push_str(&line);
         lane_text.push('\n');
-        if let Some((row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load) {
+        // #4168 — the existence probe is the werk's own tree, resolved from the
+        // run's root. A relative path is joined to root; an absolute one is
+        // taken as given (the app_root units arrive absolute).
+        let exists = |p: &str| {
+            let abs = if p.starts_with('/') { p.to_string() } else { format!("{}/{}", ctx.root, p) };
+            std::path::Path::new(&abs).exists()
+        };
+        if let Some((row, contradiction)) = fold_unit_line(&line, &|p| ctx.owner(p), box_over_load, &exists) {
             if contradiction {
                 eprintln!("nightly: REPORTER CONTRADICTION — row says pass with failures; recording fail (#3753 AC4, row-level)");
                 ctx.spine("nightly.reporter.contradiction", &[("suite".into(), row.suite_name().into()), ("kind".into(), row.kind.clone())]);
