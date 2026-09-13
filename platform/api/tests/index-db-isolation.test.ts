@@ -4,6 +4,13 @@ import os from 'os';
 import path from 'path';
 import { liveIndexDbPath, startTestApp } from './lib/test-app';
 
+// #4163 (wren, in Kade's file with his agreement 2026-09-13): the two tests below
+// COPY the live index.db, which is 471 MB today. Jest's default per-test timeout is
+// 5s; the copy alone takes ~3.8s on a quiet box and longer under load, so these went
+// red in three separate pipeline runs while passing every time they were run alone.
+// That is a measurement of the machine, not of the product. They are NOT quarantined
+// — both are real negative proofs and must keep running — they are given a timeout
+// that fits the work they actually do.
 describe('#4152 api test harness brings its own index.db', () => {
   const live = liveIndexDbPath();
   const haveLive = fs.existsSync(live);
@@ -33,7 +40,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
-  });
+  }, 60_000);
 
   test('the copy answers freshness 200 through the harness', async () => {
     if (!haveLive) return;
@@ -44,7 +51,7 @@ describe('#4152 api test harness brings its own index.db', () => {
     } finally {
       await h.close();
     }
-  });
+  }, 60_000);
 
   test('negative proof: pointed at the live file, the harness refuses to start', async () => {
     if (!haveLive) return;
