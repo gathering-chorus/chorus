@@ -34,6 +34,7 @@ URL   = os.environ.get("ATHENA_MAKE_URL", "http://localhost:3360").rstrip("/")
 ROOT  = os.environ.get("CHORUS_ROOT", os.path.expanduser("~/CascadeProjects/chorus"))
 ROLE  = os.environ.get("CHORUS_ROLE", "crawler")
 BATCH = int(os.environ.get("CRAWL_BATCH", "200"))
+PAGE  = int(os.environ.get("CRAWL_PAGE", "10000"))   # read page size; the walker pages to exhaustion
 LIMIT = int(os.environ.get("CRAWL_LIMIT", "0"))
 DRY   = os.environ.get("CRAWL_DRY_RUN") == "1"
 
@@ -180,17 +181,26 @@ def existing(tok):
     storm ADR-033 forbids.
     """
     out = {}
-    url = f"{URL}{collection()}?limit=50000"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"} if tok else {})
-    try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            body = json.load(r)
-    except Exception as e:
-        print(f"crawl-files: could not read existing rows ({e}) — refusing to walk blind", file=sys.stderr)
-        raise SystemExit(2)
-    for row in body.get("data", []):
-        out[row.get("name", "")] = {"fileSha": row.get("fileSha", ""), "filePath": row.get("filePath", "")}
-    return out
+    offset = 0
+    # #4154 (Silas at /gate-arch, 20:34) — page until the server stops giving
+    # rows. A hardcoded ceiling silently degrades orphan detection the day the
+    # corpus outgrows it: rows past the cap look absent, and absent means delete.
+    url = f"{URL}{collection()}?limit={PAGE}"
+    while True:
+        req = urllib.request.Request(f"{url}&offset={offset}",
+                                     headers={"Authorization": f"Bearer {tok}"} if tok else {})
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                body = json.load(r)
+        except Exception as e:
+            print(f"crawl-files: could not read existing rows ({e}) — refusing to walk blind", file=sys.stderr)
+            raise SystemExit(2)
+        rows = body.get("data", [])
+        for row in rows:
+            out[row.get("name", "")] = {"fileSha": row.get("fileSha", ""), "filePath": row.get("filePath", "")}
+        if len(rows) < PAGE:
+            return out
+        offset += PAGE
 
 def put_row(r, tok):
     req = urllib.request.Request(
