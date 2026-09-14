@@ -140,6 +140,12 @@ else
     # Day-authored MODEL_SET discipline (#3654/#3686); instances ride the
     # instance-seed-manifest (pipeline / pipeline-step kinds).
     "$CHORUS_ROOT/roles/kade/ontology/pipelines-4040.ttl"
+    # #4175 — hats: the Hat/Appointment TBox + shapes + the four GovernanceCheck
+    # rows that keep the two layers from crossing. TBox ONLY — the seven hat rows
+    # and the three standing seats hydrate <urn:chorus:domains:roles> in the
+    # ROLES_SET section below, never this graph (Jeff 2026-09-13: no rows in the
+    # ontology graph). Day-authored MODEL_SET discipline (#3654/#3686).
+    "$CHORUS_ROOT/roles/wren/ontology/hats-4175.ttl"
   )
 fi
 # #4080 — a bare run from INSIDE A WERK must not default to prod. On 2026-09-03
@@ -793,6 +799,29 @@ if [ -z "${TTL:-}" ]; then
     | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _cn="?"
   echo "athena-deploy-model: hydrated ${#CODE_VOCAB_SET[@]} code-vocab file(s) -> <$CODE_GRAPH> ($_cn named values live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$CODE_GRAPH" values="${_cn}" 2>/dev/null || true
+fi
+
+# #4175 — the roles domain's own graph: the seven hat rows (each one a job
+# description) and the three standing seats. Same stage+merge+verify path as the
+# code vocabulary, for the same reason — reproducible from the repo, never
+# hand-run, never live-only, and never in the ontology graph.
+#
+# The standing seat is written on the HAT (chorus:heldStandingBy), not on the
+# Role. Roles still live in urn:chorus:instances until #4090 moves them, and
+# stage_merge_set is a per-subject additive merge: staging a Role subject here
+# would DELETE the rest of that Role row. Writing the edge from its own home
+# graph keeps the edge with its subject (gc-edge-follows-node) and touches
+# nothing that lives elsewhere.
+if [ -z "${TTL:-}" ]; then
+  ROLES_GRAPH="${ROLES_GRAPH:-urn:chorus:domains:roles}"
+  ROLES_SET=( "$CHORUS_ROOT/roles/wren/ontology/hats-instances-4175.ttl" )
+  stage_merge_set "$ROLES_GRAPH" roles "${ROLES_SET[@]}" || exit 1
+  _rn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE { GRAPH <$ROLES_GRAPH> { ?h a c:Hat } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _rn="?"
+  echo "athena-deploy-model: hydrated ${#ROLES_SET[@]} roles file(s) -> <$ROLES_GRAPH> ($_rn hats live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$ROLES_GRAPH" hats="${_rn}" 2>/dev/null || true
 fi
 
 # =============================================================================

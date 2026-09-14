@@ -1,0 +1,270 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# =============================================================================
+# Hats (#4175) — a role is not one flat label. It is one person wearing a
+# DECLARED hat over a NAMED anchor.
+#
+# Jeff, 2026-09-14 11:41: "at the chorus org level the product cos, distinguished
+# engineer, platform/enterprise architect work w me on cross cutting concerns ...
+# and then each of u has 4 hats for your products, domains and services."
+#
+# TWO LAYERS, never flattened to one set of seven:
+#
+#   standing     one per role, cross-cutting, anchored to the role itself.
+#                wren = product chief of staff, silas = platform/enterprise
+#                architect, kade = distinguished engineer. Confirmed by Jeff
+#                2026-09-14. The standing layer is a SEAT AT THE ORG TABLE with
+#                Jeff — who he convenes when a concern crosses every product.
+#
+#   per-product  four, worn by every role over the products, domains and
+#                services it owns: product manager, solutions architect,
+#                engineering lead, operations lead. Live on 2026-09-14 that is
+#                9 products + 42 domains + 13 services = 64 possible anchors.
+#
+# THE HAT IS THE JOB DESCRIPTION. Jeff, 2026-05-16: "the job description is the
+# stuff u are expected to do either as qualifications or work expectations." So
+# a hat is not a label with a JD stapled on — the JD groups below ARE the hat.
+# Seven job descriptions, not three role documents. CLAUDE.md becomes a
+# projection of these rows the way principles already are.
+#
+# JD FORMAT — Kade's requirements shape, approved by Jeff 2026-09-14 ("i like
+# the way you organized the requirements"), reused rather than re-invented. His
+# sharper reason: it "covers non functionals other sequencing concerns that the
+# ac typically will gloss over or ignore." Five groups, each answering one
+# question, RETIREMENT its own group and never a footnote:
+#
+#   jdOwns      the products, domains and services this hat answers for
+#   jdDecides   what it may call alone vs what needs another hat or Jeff
+#   jdBehaves   standing expectations - cadence, gates, what it refuses
+#   jdReports   what it owes the others and Jeff, and when
+#   jdRetires   what the role STOPS doing once this hat exists
+#
+# DECLARED, NEVER FREE STRINGS. Hats are named individuals and the edges are
+# typed at them, exactly as /code/kinds (5 rows) and /code/languages (13 rows)
+# already work with CodeFile.hasKind / hasLanguage, whose #4157 negative proof
+# REFUSES a free-string value as unknown-target and writes nothing. Nobody gets
+# to invent an eighth hat by typing it.
+#
+# GRAPH HOME. Hat and Appointment rows live in urn:chorus:domains:roles — the
+# roles domain's own graph, per Jeff 2026-09-13 ("a row's home is its domain's
+# graph, never the catch-all, never the ontology graph"). RoleShape still pins
+# urn:chorus:instances; moving the Role rows themselves is #4090's job, not a
+# fork of it, and doing it here would serve 0 rows from a graph nothing wrote.
+# This file is the roles-domain SHAPE HOME that priorities-3686.ttl held open.
+#
+# LOAD-SET: enters MODEL_SET + ROLES_SET in athena-deploy-model.sh the day
+# authored (#3675/#3587 wipe-class discipline). Never live-only.
+# =============================================================================
+
+# ── vocabulary: the hat itself ───────────────────────────────────────────────
+
+chorus:Hat a owl:Class ;
+    rdfs:label "Hat" ;
+    rdfs:comment "A declared job a role does — the JD, not a title. Two layers: standing (one per role, cross-cutting, worn at the org table with Jeff) and per-product (four, worn over a product, domain or service). Rows are named individuals so an edge can be typed at them and a free string refused (#4157 pattern)." .
+
+chorus:hatLayer a owl:DatatypeProperty ;
+    rdfs:label "hat layer" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "standing | per-product. The layer decides where the hat may attach: a standing hat anchors to the role and to nothing below it; a per-product hat anchors to a product, domain or service and is meaningless without one. Crossing the layers is refused." .
+
+chorus:jdOwns a owl:DatatypeProperty ;
+    rdfs:label "JD — what it owns" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "The products, domains and services this hat answers for." .
+
+chorus:jdDecides a owl:DatatypeProperty ;
+    rdfs:label "JD — how it decides" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "What this hat may call alone, and what needs another hat or Jeff." .
+
+chorus:jdBehaves a owl:DatatypeProperty ;
+    rdfs:label "JD — how it behaves" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "Standing expectations — cadence, gates it runs, what it refuses." .
+
+chorus:jdReports a owl:DatatypeProperty ;
+    rdfs:label "JD — how it reports" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "What this hat owes the other hats and Jeff, and when." .
+
+chorus:jdRetires a owl:DatatypeProperty ;
+    rdfs:label "JD — what it retires" ;
+    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
+    rdfs:comment "What the role STOPS doing once this hat exists. Its own group, never a footnote — the standing rule against running the old and the new at once." .
+
+chorus:HatShape a sh:NodeShape ;
+    sh:targetClass chorus:Hat ;
+    chorus:instancesGraph "urn:chorus:domains:roles" ;
+    chorus:definesVocabulary true ;
+    sh:property [ sh:path rdfs:label      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:label    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hatLayer ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:pattern "^(standing|per-product)$" ] ;
+    sh:property [ sh:path chorus:jdOwns    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdDecides ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdBehaves ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdReports ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdRetires ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:heldStandingBy ; sh:maxCount 1 ; sh:class chorus:Role ] .
+
+# =============================================================================
+# HOW A HAT ATTACHES — two edges, one per layer, and they cannot be crossed.
+#
+# WHY NOT ONE EDGE. A standing hat has no anchor by definition (it is worn at
+# the org table, over the whole portfolio) and a per-product hat is meaningless
+# without one. A single edge would have to make the anchor optional, and an
+# optional anchor is exactly how the two layers get confused — which is the
+# distinction Jeff corrected on 2026-09-14 when this was first flattened.
+#
+# WHY APPOINTMENT IS NOT A SECOND OWNERSHIP MECHANISM. chorus:ownedBy stays THE
+# answer to "whose lane is this" — nothing here changes it and nothing here can
+# contradict it: hat-holder-matches-owner (below) refuses an Appointment whose
+# appointee is not the anchor's ownedBy role. An Appointment QUALIFIES that same
+# edge with which of the four hats the owner is wearing over it. Plain RDF has
+# no way to hang a qualifier on an edge without a row, and reification is not
+# something athena-make can serve — it derives a collection from a NodeShape
+# with direct sh:property paths and nothing else.
+# =============================================================================
+
+chorus:heldStandingBy a owl:ObjectProperty ;
+    rdfs:label "held standing by" ;
+    rdfs:domain chorus:Hat ; rdfs:range chorus:Role ;
+    rdfs:comment "The role that wears this standing hat — the seat at the org table with Jeff. Exactly one per standing hat; a per-product hat must not carry it." .
+
+chorus:wearsStandingHat a owl:ObjectProperty ;
+    rdfs:label "wears standing hat" ;
+    owl:inverseOf chorus:heldStandingBy ;
+    rdfs:domain chorus:Role ; rdfs:range chorus:Hat ;
+    rdfs:comment "The role-to-hat reading of the same fact. DECLARED, NOT STORED: our store does no inference, and the seat is written on the HAT so the edge lives in its subject's home graph (urn:chorus:domains:roles) rather than reaching into the Role rows, which still sit in urn:chorus:instances until #4090 moves them. Writing it the other way would have meant either a live-only edge or a per-subject merge that wipes the rest of the Role row. Both directions are still one query — this one just needs the inverse pattern." .
+
+chorus:Appointment a owl:Class ;
+    rdfs:label "Appointment" ;
+    rdfs:comment "One role wearing one per-product hat over one anchor — a product, a domain or a service. The qualification of chorus:ownedBy, never a rival to it: an appointment whose appointee is not the anchor's owner is refused." .
+
+chorus:appointee a owl:ObjectProperty ;
+    rdfs:label "appointee" ;
+    rdfs:domain chorus:Appointment ; rdfs:range chorus:Role ;
+    rdfs:comment "Who wears the hat. Must be the anchor's chorus:ownedBy role." .
+
+chorus:appointedHat a owl:ObjectProperty ;
+    rdfs:label "appointed hat" ;
+    rdfs:domain chorus:Appointment ; rdfs:range chorus:Hat ;
+    rdfs:comment "Which hat. Layer must be per-product — a standing hat on an anchor is refused." .
+
+chorus:overAnchor a owl:ObjectProperty ;
+    rdfs:label "over anchor" ;
+    rdfs:domain chorus:Appointment ;
+    rdfs:range [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] ;
+    rdfs:comment "The product, domain or service the hat is worn over — 9 + 42 + 13 = 64 possible anchors live on 2026-09-14. Required: a per-product hat with no anchor is refused." .
+
+chorus:AppointmentShape a sh:NodeShape ;
+    sh:targetClass chorus:Appointment ;
+    chorus:instancesGraph "urn:chorus:domains:roles" ;
+    sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:appointee    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:appointedHat ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Hat ] ;
+    sh:property [ sh:path chorus:overAnchor   ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
+
+# Role.label carries a comment so the atlas stops flagging it and Role reads 3/3
+# defined — the gap the 2026-09-14 atlas screenshot showed against Identity.
+chorus:label a owl:DatatypeProperty ;
+    rdfs:label "label" ;
+    rdfs:comment "The row's display name as served by the generated API — the writable twin of rdfs:label, which the store holds but the door does not accept on a write. Every row-bearing shape carries both." .
+
+# =============================================================================
+# THE LAYERS CANNOT BE CROSSED — as GovernanceCheck rows (#3846 / ADR-058), not
+# as new verb code. A rule that is data can be added by a model write; a rule in
+# a script needs a deploy. Each row carries provenRedOn/provenRedRows: the
+# #3734 negative proof recorded AS DATA, and athena-validate refuses to gate on
+# a check that has never gone red.
+#
+# Proven red 2026-09-14 against tests/fixtures/hats-4175-violations.ttl — a
+# fixture graph holding one instance of each violation plus one compliant row
+# of the same shape, so every check is shown to separate the two states rather
+# than merely to fire.
+# =============================================================================
+
+chorus:adr-054 a chorus:ADR ;
+    rdfs:label "ADR-054 — the authN / authZ seam" ;
+    rdfs:comment "Role identity (Silas, the security domain) vs role authorization (Wren, the roles domain), and giving the roles domain its own home. Declared here because the hat checks cite it and a check must name its law; roles/silas/adr/ADR-054-role-identity-authz-seam.md is the prose." .
+
+chorus:gc-hat-layer-matches-attachment a chorus:GovernanceCheck ;
+    rdfs:label "a hat attaches only at its own layer" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 2 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat ?layer ?why WHERE {
+  { ?s c:appointedHat ?hat . ?hat c:hatLayer ?layer . FILTER(?layer != "per-product")
+    BIND("standing hat on an appointment — a standing hat anchors to the role, not to a product/domain/service" AS ?why) }
+  UNION
+  { ?s c:heldStandingBy ?who . ?s c:hatLayer ?layer . FILTER(?layer != "standing")
+    BIND(?s AS ?hat)
+    BIND("per-product hat given a standing seat — a per-product hat is meaningless without an anchor" AS ?why) }
+}""" .
+
+chorus:gc-appointment-has-anchor a chorus:GovernanceCheck ;
+    rdfs:label "a per-product hat has an anchor" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat WHERE {
+  ?s a c:Appointment ; c:appointedHat ?hat .
+  FILTER NOT EXISTS { ?s c:overAnchor ?a }
+}""" .
+
+chorus:gc-appointed-hat-is-declared a chorus:GovernanceCheck ;
+    rdfs:label "a hat is a declared row, never a free string" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 2 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?hat WHERE {
+  { ?s c:appointedHat ?hat } UNION { ?s c:heldStandingBy ?who . BIND(?s AS ?hat) }
+  FILTER NOT EXISTS { ?hat a c:Hat }
+}""" .
+
+chorus:gc-appointee-is-the-owner a chorus:GovernanceCheck ;
+    rdfs:label "an appointment never contradicts ownedBy" ;
+    chorus:boundTo chorus:adr-054 ;
+    chorus:checkSeverity "block" ;
+    chorus:provenRedOn "2026-09-14" ;
+    chorus:provenRedRows 1 ;
+    chorus:checkQuery """PREFIX c: <https://jeffbridwell.com/chorus#>
+SELECT ?s ?appointee ?owner ?anchor WHERE {
+  ?s a c:Appointment ; c:appointee ?appointee ; c:overAnchor ?anchor .
+  ?anchor c:ownedBy ?owner .
+  FILTER(?appointee != ?owner)
+}""" .
+
+# =============================================================================
+# WHAT THIS RETIRES — named, not left implicit.
+#
+# chorus:AgentRole / chorus:HumanRole are empty subclasses. They carry no
+# properties, nothing in the model uses them as a range, and priorities-3686
+# already said the enforceable form of the same fact is chorus:roleKind
+# ("agent|human|automation", pattern-constrained on RoleShape). An empty
+# subclass that exists to make a string meaningful is not carrying its weight.
+#
+# DEPRECATED here, not deleted here: the declarations live in chorus.ttl, which
+# is Silas's file, and deleting across a role boundary without the nudge is the
+# execution-mode rule we keep. The annotation is additive and says out loud what
+# the model already believes; the removal rides Silas's next pass on chorus.ttl.
+# Both individuals stay dual-typed until then, so no query breaks.
+# =============================================================================
+
+chorus:AgentRole owl:deprecated true ;
+    rdfs:comment "DEPRECATED (#4175) — use chorus:roleKind \"agent\". An empty subclass with no properties and no range use; RoleShape constrains roleKind, which is what a validator can actually check." .
+
+chorus:HumanRole owl:deprecated true ;
+    rdfs:comment "DEPRECATED (#4175) — use chorus:roleKind \"human\". Same reason as chorus:AgentRole." .
