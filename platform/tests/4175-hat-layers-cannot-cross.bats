@@ -178,3 +178,14 @@ GEN="$BATS_TEST_DIRNAME/../scripts/hats-appointments-4175.py"
     grep -q "chorus:$h a chorus:Hat" "$ROWS" || { echo "$h is not a declared row"; return 1; }
   done
 }
+
+@test "#4175 every property a served shape names carries a definition" {
+  # AC9. The atlas grades a class N-of-M defined; Role read 2/3 because its shape
+  # named rdfs:label, a W3C predicate nobody here gets to annotate. The rule the
+  # pen already follows: a shape names chorus:label, never rdfs:label.
+  run grep -n "sh:path rdfs:label" "$ROOT/roles/wren/ontology/priorities-3686.ttl" "$MODEL"
+  [ "$status" -ne 0 ] || { echo "a shape still names rdfs:label:"; echo "$output"; return 1; }
+  # And the twin it uses instead is defined, or the swap bought nothing.
+  grep -q "chorus:label a owl:DatatypeProperty" "$MODEL"
+  grep -A3 "chorus:label a owl:DatatypeProperty" "$MODEL" | grep -q "rdfs:comment"
+}

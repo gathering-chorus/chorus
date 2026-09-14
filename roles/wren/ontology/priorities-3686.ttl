@@ -110,7 +110,12 @@ chorus:pk-responseWordCap a chorus:PropertyKey ;
 chorus:RoleShape a sh:NodeShape ;
   sh:targetClass chorus:Role ;
   chorus:instancesGraph "urn:chorus:instances" ;
-  sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  # #4175 — rdfs:label REMOVED from the shape (it stays in the store; every Role
+  # row carries both spellings, verified 6/6). The atlas reported Role as 2 of 3
+  # defined because this entry has no definition and rdfs: is a W3C predicate we
+  # do not get to annotate. chorus:label below is the writable twin and carries
+  # one, which is why Hat reads 7 of 7. The pen's minted shapes never emit
+  # rdfs:label for exactly this reason; RoleShape predates it.
   sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:roleKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^(agent|human|automation)$" ] ;
