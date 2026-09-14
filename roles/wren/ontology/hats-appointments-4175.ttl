@@ -8,7 +8,13 @@
 # an appointment can never disagree with the ownership it qualifies — which is
 # what gc-appointee-is-the-owner refuses. Re-run after any ownership change.
 #
-# 65 owned anchors (41 Domain, 12 Product, 12 Service) x 4 hats = 260 appointments.
+# 62 owned anchors (41 Domain, 9 Product, 12 Service) x 4 hats = 248 appointments.
+#
+# IN THE STORE, NOT SERVED BY THE DOOR — no appointment, because
+# nothing can reach them through the generated collection:
+#   borgProduct
+#   chorusProduct
+#   gathering
 #
 # NOT APPOINTED — no chorus:ownedBy, reported rather than guessed at:
 #   logs-domain-service-loki
@@ -181,34 +187,6 @@ chorus:appt-borg-operations-lead a chorus:Appointment ;
     chorus:appointedHat chorus:hat-operations-lead ;
     chorus:overAnchor chorus:borg .
 
-chorus:appt-borgProduct-product-manager a chorus:Appointment ;
-    rdfs:label "product manager over borgProduct" ;
-    chorus:label "product manager over borgProduct" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-product-manager ;
-    chorus:overAnchor chorus:borgProduct .
-
-chorus:appt-borgProduct-solutions-architect a chorus:Appointment ;
-    rdfs:label "solutions architect over borgProduct" ;
-    chorus:label "solutions architect over borgProduct" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-solutions-architect ;
-    chorus:overAnchor chorus:borgProduct .
-
-chorus:appt-borgProduct-engineering-lead a chorus:Appointment ;
-    rdfs:label "engineering lead over borgProduct" ;
-    chorus:label "engineering lead over borgProduct" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-engineering-lead ;
-    chorus:overAnchor chorus:borgProduct .
-
-chorus:appt-borgProduct-operations-lead a chorus:Appointment ;
-    rdfs:label "operations lead over borgProduct" ;
-    chorus:label "operations lead over borgProduct" ;
-    chorus:appointee chorus:role-silas ;
-    chorus:appointedHat chorus:hat-operations-lead ;
-    chorus:overAnchor chorus:borgProduct .
-
 chorus:appt-builds-product-manager a chorus:Appointment ;
     rdfs:label "product manager over builds" ;
     chorus:label "product manager over builds" ;
@@ -292,34 +270,6 @@ chorus:appt-chorus-operations-lead a chorus:Appointment ;
     chorus:appointee chorus:role-wren ;
     chorus:appointedHat chorus:hat-operations-lead ;
     chorus:overAnchor chorus:chorus .
-
-chorus:appt-chorusProduct-product-manager a chorus:Appointment ;
-    rdfs:label "product manager over chorusProduct" ;
-    chorus:label "product manager over chorusProduct" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-product-manager ;
-    chorus:overAnchor chorus:chorusProduct .
-
-chorus:appt-chorusProduct-solutions-architect a chorus:Appointment ;
-    rdfs:label "solutions architect over chorusProduct" ;
-    chorus:label "solutions architect over chorusProduct" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-solutions-architect ;
-    chorus:overAnchor chorus:chorusProduct .
-
-chorus:appt-chorusProduct-engineering-lead a chorus:Appointment ;
-    rdfs:label "engineering lead over chorusProduct" ;
-    chorus:label "engineering lead over chorusProduct" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-engineering-lead ;
-    chorus:overAnchor chorus:chorusProduct .
-
-chorus:appt-chorusProduct-operations-lead a chorus:Appointment ;
-    rdfs:label "operations lead over chorusProduct" ;
-    chorus:label "operations lead over chorusProduct" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-operations-lead ;
-    chorus:overAnchor chorus:chorusProduct .
 
 chorus:appt-cicd-product-manager a chorus:Appointment ;
     rdfs:label "product manager over cicd" ;
@@ -544,34 +494,6 @@ chorus:appt-events-operations-lead a chorus:Appointment ;
     chorus:appointee chorus:role-wren ;
     chorus:appointedHat chorus:hat-operations-lead ;
     chorus:overAnchor chorus:events .
-
-chorus:appt-gathering-product-manager a chorus:Appointment ;
-    rdfs:label "product manager over gathering" ;
-    chorus:label "product manager over gathering" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-product-manager ;
-    chorus:overAnchor chorus:gathering .
-
-chorus:appt-gathering-solutions-architect a chorus:Appointment ;
-    rdfs:label "solutions architect over gathering" ;
-    chorus:label "solutions architect over gathering" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-solutions-architect ;
-    chorus:overAnchor chorus:gathering .
-
-chorus:appt-gathering-engineering-lead a chorus:Appointment ;
-    rdfs:label "engineering lead over gathering" ;
-    chorus:label "engineering lead over gathering" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-engineering-lead ;
-    chorus:overAnchor chorus:gathering .
-
-chorus:appt-gathering-operations-lead a chorus:Appointment ;
-    rdfs:label "operations lead over gathering" ;
-    chorus:label "operations lead over gathering" ;
-    chorus:appointee chorus:role-jeff ;
-    chorus:appointedHat chorus:hat-operations-lead ;
-    chorus:overAnchor chorus:gathering .
 
 chorus:appt-heralds-product-manager a chorus:Appointment ;
     rdfs:label "product manager over heralds" ;

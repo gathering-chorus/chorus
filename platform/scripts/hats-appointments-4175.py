@@ -4,41 +4,69 @@
 Jeff's rule, 2026-09-14: "the owner wears all 4 for their products domains and
 services." So an appointment is DERIVED, never authored by hand — every anchor
 that has an owner gets exactly four rows, one per per-product hat, appointee =
-that owner. Hand-typing 264 rows would be four chances per anchor to disagree
+that owner. Hand-typing 260 rows would be four chances per anchor to disagree
 with ownedBy; a generator has none.
 
-Reads the store (the anchors and their owners are harvested data, not ours to
-restate) and writes roles/wren/ontology/hats-appointments-4175.ttl. An anchor
-with NO owner is reported and skipped — not guessed at.
+READS THROUGH THE DOOR. Domains and Products come from the generated collections
+(/v1/domains/domains, /v1/products/products) — 42/42 and 9/9 carry ownedBy.
 
-Usage: hats-appointments-4175.py [--out FILE] [--query URL]
+SERVICES DO NOT, AND THAT IS A DEFECT, NOT A DESIGN. /v1/services/services
+declares ownedBy in its own OpenAPI schema and serves the right rows (iri
+chorus:service-observability), but ownedBy is absent from every response, list
+and single-row alike, while 12 of 13 Service rows carry it in
+urn:chorus:instances — the graph the door reports as servedFrom. Until that is
+fixed, service owners are read from the store, loudly, here and nowhere else.
+
+An anchor with NO owner is reported and skipped — not guessed at.
+
+Usage: hats-appointments-4175.py [--out FILE] [--api URL] [--query URL]
 """
-import argparse, collections, sys, urllib.parse, urllib.request
+import argparse, collections, json, sys, urllib.parse, urllib.request
 
 NS = "https://jeffbridwell.com/chorus#"
 HATS = ["hat-product-manager", "hat-solutions-architect",
         "hat-engineering-lead", "hat-operations-lead"]
-# The owner is NOT always in the same graph as the type — one domain's ownedBy
-# lives elsewhere, and an OPTIONAL nested inside GRAPH ?g silently reported it
-# as unowned. ?h is a separate graph variable for exactly that reason.
-Q = """PREFIX c: <%s>
-SELECT ?anchor ?kind ?owner WHERE {
-  GRAPH ?g { ?anchor a ?kind . FILTER(?kind IN (c:Product, c:Domain, c:Service)) }
+
+# Services only. See the module docstring for why this is not the door.
+Q_ALL_PRODUCTS = """PREFIX c: <%s>
+SELECT ?anchor WHERE { GRAPH ?g { ?anchor a c:Product } }""" % NS
+
+Q_SERVICES = """PREFIX c: <%s>
+SELECT ?anchor ?owner WHERE {
+  GRAPH ?g { ?anchor a c:Service }
   OPTIONAL { GRAPH ?h { ?anchor c:ownedBy ?owner } }
-} ORDER BY ?kind ?anchor""" % NS
+}""" % NS
 
 
-def rows(endpoint):
+def door(api, collection):
+    """One generated collection, as {iri-local: owner-local-or-None}."""
+    url = "%s/v1/%s?limit=1000" % (api.rstrip("/"), collection)
+    body = json.load(urllib.request.urlopen(url, timeout=30))
+    rows = body.get("data") or body.get("items") or []
+    out = {}
+    for r in rows:
+        name = local(r.get("iri") or "") or r.get("name")
+        owner = r.get("ownedBy")
+        if isinstance(owner, dict):
+            owner = owner.get("name") or owner.get("iri")
+        out[name] = local(owner) if owner else None
+    return out
+
+
+def sparql(endpoint, query):
     req = urllib.request.Request(
-        endpoint, data=urllib.parse.urlencode({"query": Q}).encode(),
+        endpoint, data=urllib.parse.urlencode({"query": query}).encode(),
         headers={"Accept": "text/csv"})
     body = urllib.request.urlopen(req, timeout=30).read().decode()
-    out = []
+    out = {}
     for line in body.splitlines()[1:]:
         if not line.strip():
             continue
         parts = line.split(",")
-        out.append((parts[0], parts[1], parts[2] if len(parts) > 2 else ""))
+        anchor = local(parts[0])
+        owner = local(parts[1]) if len(parts) > 1 and parts[1] else None
+        if owner or anchor not in out:
+            out[anchor] = owner
     return out
 
 
@@ -48,27 +76,32 @@ def local(iri):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--api", default="http://localhost:3360")
     ap.add_argument("--query", default="http://localhost:3030/pods/query")
     ap.add_argument("--out", default="roles/wren/ontology/hats-appointments-4175.ttl")
     a = ap.parse_args()
 
-    # An anchor can be typed in more than one graph, and only one of those rows
-    # may carry the owner. Collect first, decide after — deciding row-by-row
-    # reported a domain as unowned because its owner-less duplicate came last.
-    kinds, owners = {}, {}
-    for anchor, kind, owner in rows(a.query):
-        kinds[anchor] = local(kind)
-        if owner:
-            owners[anchor] = local(owner)
-    seen = {k: (kinds[k], owners[k]) for k in owners}
-    unowned = [k for k in kinds if k not in owners]
+    anchors = {}
+    for kind, coll in (("Domain", "domains/domains"), ("Product", "products/products")):
+        for name, owner in door(a.api, coll).items():
+            anchors[name] = (kind, owner)
+    for name, owner in sparql(a.query, Q_SERVICES).items():
+        anchors.setdefault(name, ("Service", owner))
+
+    # SILENTLY DROPPED IS THE FAILURE MODE. The door serves only what its shape
+    # admits, so a Product the store holds but the door will not serve gets no
+    # appointment. That is the right answer — an unserved row is not an anchor
+    # anyone can reach — but it must be SAID, not absorbed.
+    unserved = sorted(set(sparql(a.query, Q_ALL_PRODUCTS)) - set(anchors))
+
+    seen = {k: (kind, owner) for k, (kind, owner) in anchors.items() if owner}
+    unowned = [k for k, (_, owner) in anchors.items() if not owner]
 
     by_kind = collections.Counter(k for k, _ in seen.values())
-    # A subject typed as more than one anchor kind is counted once, under
-    # whichever type sorted last — it is still one anchor with one owner and
-    # four hats. chorus:spine is typed both Product and Domain today (#4044,
-    # "'spine' means two different things in the catalog"), which is why the
-    # Domain tally below reads 41 against 42 Domain rows in the store.
+    # A subject that appears as more than one anchor kind is counted once — it
+    # is still one anchor with one owner and four hats. chorus:spine is typed
+    # both Product and Domain today (#4044, "'spine' means two different things
+    # in the catalog").
     lines = [
         "@prefix chorus: <%s> ." % NS,
         "@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .",
@@ -84,22 +117,27 @@ def main():
             len(seen), ", ".join("%d %s" % (n, k) for k, n in sorted(by_kind.items())),
             len(seen) * 4),
     ]
+    if unserved:
+        lines += ["#",
+                  "# IN THE STORE, NOT SERVED BY THE DOOR — no appointment, because",
+                  "# nothing can reach them through the generated collection:"]
+        lines += ["#   %s" % u for u in unserved]
     if unowned:
         lines += ["#", "# NOT APPOINTED — no chorus:ownedBy, reported rather than guessed at:"]
         lines += ["#   %s" % local(u) for u in sorted(unowned)]
     lines.append("")
 
     for anchor in sorted(seen):
-        kind, owner = seen[anchor]
+        _kind, owner = seen[anchor]
         for hat in HATS:
-            name = "appt-%s-%s" % (local(anchor), hat[4:])
+            name = "appt-%s-%s" % (anchor, hat[4:])
             lines += [
                 "chorus:%s a chorus:Appointment ;" % name,
-                '    rdfs:label "%s over %s" ;' % (hat[4:].replace("-", " "), local(anchor)),
-                '    chorus:label "%s over %s" ;' % (hat[4:].replace("-", " "), local(anchor)),
+                '    rdfs:label "%s over %s" ;' % (hat[4:].replace("-", " "), anchor),
+                '    chorus:label "%s over %s" ;' % (hat[4:].replace("-", " "), anchor),
                 "    chorus:appointee chorus:%s ;" % owner,
                 "    chorus:appointedHat chorus:%s ;" % hat,
-                "    chorus:overAnchor chorus:%s ." % local(anchor),
+                "    chorus:overAnchor chorus:%s ." % anchor,
                 "",
             ]
     open(a.out, "w").write("\n".join(lines))
