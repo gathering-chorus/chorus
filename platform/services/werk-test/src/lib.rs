@@ -1656,6 +1656,59 @@ mod scope_vcs_metadata_4173 {
         );
     }
 
+    #[test]
+    fn a_source_included_shared_file_scopes_to_the_crates_that_include_it() {
+        let units = vec![
+            ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() },
+            ScopeUnit { name: "werk-build".into(), dir: "platform/services/werk-build".into() },
+            ScopeUnit { name: "werk-pull".into(), dir: "platform/services/werk-pull".into() },
+        ];
+        let edges = vec![
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-test".to_string()),
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-build".to_string()),
+            ("platform/services/shared/failure_class.rs".to_string(), "werk-pull".to_string()),
+        ];
+        let got = scoped_test_reason(
+            &["platform/services/shared/scope_units.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .expect("a source-included file is mapped, not a data defect");
+        let names: Vec<&str> = got.iter().map(|u| u.name.as_str()).collect();
+        assert_eq!(names, vec!["werk-test", "werk-build"]);
+    }
+
+    // NEGATIVE PROOF: the per-file provider must actually separate the shared
+    // files. One provider name for the whole directory would drag werk-pull in
+    // here too, and a shared file nothing includes must still refuse by name
+    // rather than scope to nothing.
+    #[test]
+    fn negative_proof_shared_files_do_not_share_one_scope_and_an_unincluded_one_refuses() {
+        let units = vec![
+            ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() },
+            ScopeUnit { name: "werk-pull".into(), dir: "platform/services/werk-pull".into() },
+        ];
+        let edges = vec![
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-test".to_string()),
+            ("platform/services/shared/failure_class.rs".to_string(), "werk-pull".to_string()),
+        ];
+        let got = scoped_test_reason(
+            &["platform/services/shared/scope_units.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .unwrap();
+        assert_eq!(got.iter().map(|u| u.name.as_str()).collect::<Vec<_>>(), vec!["werk-test"]);
+        assert_eq!(
+            scoped_test_reason(
+                &["platform/services/shared/target_repo.rs".to_string()],
+                &units,
+                &edges
+            ),
+            Err("unmapped:platform/services/shared/target_repo.rs".to_string())
+        );
+    }
+
     // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
     // inside. A file that really can change build output still forces FULL and
     // still names itself — otherwise this entry would be a hole, not a mapping.

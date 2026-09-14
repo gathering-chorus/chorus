@@ -74,6 +74,19 @@ pub fn scope_unit_names(
             names.insert(u.name.clone());
             continue;
         }
+        // #4173 — platform/services/shared/ is not a crate: its files are
+        // source-INCLUDED (`include!`) by the crates that use them, an edge the
+        // cargo/TS scanners cannot see. Without it, editing this very file
+        // refused the run as unmapped while the thing it changes is compiled
+        // into two verbs. The provider name is the file's own path, so a change
+        // to failure_class.rs does not drag in scope_units.rs's dependents.
+        if f.starts_with("platform/services/shared/") {
+            if edges.iter().any(|(p, _)| p == f) {
+                names.insert(f.clone());
+                continue;
+            }
+            return ScopeVerdict::Full(format!("unmapped:{}", f));
+        }
         if let Some(rest) = f.strip_prefix("platform/services/") {
             if let Some(crate_name) = rest.split('/').next() {
                 if edges.iter().any(|(p, _)| p == crate_name) {
@@ -169,8 +182,33 @@ pub fn scope_declared_edges(root: &std::path::Path) -> Vec<(String, String)> {
             }
         }
     }
-    // Cargo path deps among platform/services.
+    // #4173 — `include!("../../shared/x.rs")` edges: a source-included file is a
+    // real build input with no manifest entry anywhere, so it is invisible to
+    // both scanners above. Provider is the shared file's werk-relative path.
     let services = root.join("platform/services");
+    if let Ok(entries) = fs::read_dir(&services) {
+        for e in entries.flatten() {
+            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
+            let src = e.path().join("src");
+            let Ok(files) = fs::read_dir(&src) else { continue };
+            for f in files.flatten() {
+                let Ok(text) = fs::read_to_string(f.path()) else { continue };
+                for line in text.lines() {
+                    let Some(i) = line.find("include!(\"") else { continue };
+                    let rest = &line[i + "include!(\"".len()..];
+                    let Some(q) = rest.find('"') else { continue };
+                    let target = &rest[..q];
+                    let Some(name) = std::path::Path::new(target).file_name().and_then(|n| n.to_str())
+                    else { continue };
+                    if services.join("shared").join(name).is_file() {
+                        edges.push((format!("platform/services/shared/{name}"), dep_crate.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Cargo path deps among platform/services.
     if let Ok(entries) = fs::read_dir(&services) {
         for e in entries.flatten() {
             let dir = e.path();
