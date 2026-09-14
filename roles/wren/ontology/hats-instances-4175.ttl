@@ -99,9 +99,15 @@ chorus:hat-operations-lead a chorus:Hat ;
 # The three standing hats are DATA, not a guess. Jeff confirmed all three on
 # 2026-09-14 after Wren proposed Kade and Wren as inference and named Silas as
 # measured from his 2026-08-22 line, "silas is the enterprise architect".
+#
+# The seat points at chorus:role-<name>, the Role ROW in urn:chorus:instances
+# (15 predicates each). chorus:<name> is a second subject for the same role,
+# typed AgentRole in urn:chorus:ontology and carrying the old comment-blob — the
+# one-home-per-subject defect gc-one-home-per-subject already names. Pointing at
+# it would attach the hats to the duplicate.
 # =============================================================================
 
-chorus:hat-product-chief-of-staff        chorus:heldStandingBy chorus:wren .
-chorus:hat-platform-enterprise-architect chorus:heldStandingBy chorus:silas .
-chorus:hat-distinguished-engineer         chorus:heldStandingBy chorus:kade .
+chorus:hat-product-chief-of-staff        chorus:heldStandingBy chorus:role-wren .
+chorus:hat-platform-enterprise-architect chorus:heldStandingBy chorus:role-silas .
+chorus:hat-distinguished-engineer         chorus:heldStandingBy chorus:role-kade .
 

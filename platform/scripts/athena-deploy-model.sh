@@ -814,7 +814,13 @@ fi
 # nothing that lives elsewhere.
 if [ -z "${TTL:-}" ]; then
   ROLES_GRAPH="${ROLES_GRAPH:-urn:chorus:domains:roles}"
-  ROLES_SET=( "$CHORUS_ROOT/roles/wren/ontology/hats-instances-4175.ttl" )
+  ROLES_SET=(
+    "$CHORUS_ROOT/roles/wren/ontology/hats-instances-4175.ttl"
+    # GENERATED from ownedBy by platform/scripts/hats-appointments-4175.py —
+    # Jeff's rule 2026-09-14: the owner wears all four over its products,
+    # domains and services. Regenerate after any ownership change; never edit.
+    "$CHORUS_ROOT/roles/wren/ontology/hats-appointments-4175.ttl"
+  )
   stage_merge_set "$ROLES_GRAPH" roles "${ROLES_SET[@]}" || exit 1
   _rn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE { GRAPH <$ROLES_GRAPH> { ?h a c:Hat } }" \
