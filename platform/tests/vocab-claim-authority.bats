@@ -31,7 +31,13 @@ routes=json.load(sys.stdin)['served']
 irr={'properties':'Property','propertykeys':'PropertyKey','keyregistryentries':'KeyRegistryEntry','chunkmemberships':'ChunkMembership','testsuiteruns':'TestSuiteRun','valuestreams':'ValueStream','valuestreamsteps':'ValueStreamStep','securityprobes':'SecurityProbe','authboundaries':'AuthBoundary','apisurfaces':'APISurface','emitcontracts':'EmitContract','testresults':'TestResult'}
 out=[]
 for r in routes:
-    r=r.strip('/')
+    # #4175 — take the LAST segment. #4158 made every collection domain-rooted
+    # (/security/apisurfaces), and stripping only the slashes left
+    # 'security/apisurfaces' — which singularized to 'Security/apisurface' and
+    # matched no claim, so all 48 served classes reported as unclaimed at once.
+    # The route's shape changed; the mapping never learned. A whole-set failure
+    # like that is the tell: a real drift is a few classes, not every one.
+    r=r.strip('/').rsplit('/', 1)[-1]
     if r in irr: out.append(irr[r]); continue
     # #4065 — English plurals: memories -> Memory, not 'Memorie' (that misread
     # made a claimed class report as served-but-unclaimed every night).
