@@ -301,10 +301,21 @@ mod scope_refusal_4169 {
             "platform/api/public/borg/graph-validate.txt",
             "platform/launchd/com.chorus.athena-validate.plist",
             "platform/scripts/athena-validate.sh",
-            "platform/tests/4166-athena-validate-scheduled.bats",
         ] {
             assert!(scope_irrelevant(f), "{} should not widen a card", f);
         }
+        // #4173 — the .bats file moved from "irrelevant" to "a suite that runs
+        // itself" (Silas, 2026-09-14: the irrelevant list overshot to
+        // not-worth-running). The claim this test makes is that none of the
+        // five WIDEN the card, and that still holds: the suite scopes to
+        // itself, which is a scoped run, not a FULL one.
+        let bats = "platform/tests/4166-athena-validate-scheduled.bats";
+        assert!(!scope_irrelevant(bats));
+        assert!(is_test_suite_path(bats), "{} should scope to itself", bats);
+        let units = [u(bats, bats)];
+        let verdict = scope_unit_names(&[bats.to_string()], &units, &[], false);
+        let ScopeVerdict::Scoped(names) = verdict else { panic!("a suite must not go FULL") };
+        assert_eq!(names, vec![bats.to_string()]);
     }
 
     #[test]
