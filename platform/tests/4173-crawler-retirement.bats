@@ -12,6 +12,27 @@ setup() {
   GRAPH_SH="graph.sh"
   TAG_SH="tag.sh"
   DOMAIN_PY="domain.py"
+  PLIST_EXT=".plist"
+}
+
+@test "the retired unit's plist is gone from the repo too" {
+  # Silas retired com.chorus.graph-hydrate rather than repointing it (2026-09-14
+  # 11:21): chorus-crawl deserves its own unit and cadence, not one inherited
+  # from the walker it replaces. A plist left in the repo would be redeployed
+  # by the next sync and boot a script that no longer exists.
+  local unit="$ROOT/launchd/com.chorus.graph-hydrate$PLIST_EXT"
+  [ ! -e "$unit" ] || {
+    echo "RETIRED UNIT IS BACK: $unit"
+    return 1
+  }
+}
+
+@test "NEGATIVE PROOF: the plist gate fires when a unit file is present" {
+  local live
+  live="$(ls "$ROOT/launchd/"*"$PLIST_EXT" 2>/dev/null | head -1)"
+  [ -n "$live" ]
+  run bash -c "[ ! -e '$live' ]"
+  [ "$status" -ne 0 ]
 }
 
 @test "the retired walkers are gone from the tree" {
