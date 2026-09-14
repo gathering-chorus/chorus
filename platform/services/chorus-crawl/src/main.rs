@@ -419,6 +419,31 @@ fn main() {
         }
     };
 
+    // The store can be rebuilt under a surviving watermark. A delta planned
+    // against a graph that no longer holds the rows the watermark promises is
+    // not a small run — it is a run that leaves the hole in place and then
+    // advances the watermark over it. Re-scope to a full walk and say so.
+    let (scope, paths, disk, read) = if !delta_is_trustworthy(graph.len(), hashes.len())
+        && matches!(scope, Scope::Delta { .. })
+    {
+        eprintln!(
+            "chorus-crawl: the graph holds 0 rows but a watermark claims {} tracked files are already there — the store was reset; widening to a full walk",
+            hashes.len()
+        );
+        let all = match tracked_files(&root) {
+            Ok(a) => a,
+            Err(e) => {
+                eprintln!("chorus-crawl: cannot list tracked files — {e}");
+                std::process::exit(2);
+            }
+        };
+        let (d, r) = read_tree(&root, &all, &hashes, false);
+        (Scope::Full { why: "graph was reset under a live watermark" }, all, d, r)
+    } else {
+        (scope, paths, disk, read)
+    };
+    let _ = &paths;
+
     let mut actions = plan(&disk, &graph, read);
     for path in &removed_by_git {
         if graph.iter().any(|g| &g.path == path) {

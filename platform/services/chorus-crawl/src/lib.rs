@@ -423,6 +423,20 @@ pub enum Scope {
     Full { why: &'static str },
 }
 
+/// A watermark says "the graph already holds every tracked file as of this
+/// commit". An EMPTY graph cannot be in that state, so the two facts together
+/// are proof the store was reset underneath us, not proof there is nothing to do.
+///
+/// 2026-09-14: the werk store was rebuilt and every CodeFile row went with it.
+/// The watermark file survived on disk, so the next run planned a three-file
+/// delta against a graph holding zero rows and called that up to date. Only a
+/// separate failure stopped it from writing three rows into an empty graph and
+/// advancing the watermark over the hole. A delta is only meaningful against the
+/// graph the watermark describes; when the graph is gone, so is the delta.
+pub fn delta_is_trustworthy(graph_rows: usize, tracked_on_disk: usize) -> bool {
+    !(graph_rows == 0 && tracked_on_disk > 0)
+}
+
 /// One line of `git diff --name-status`, decided. Renames arrive as
 /// `R<score>\told\tnew` and are a move, never a delete-plus-add: collapsing
 /// them loses the row's history and churns the graph for nothing.
@@ -712,5 +726,20 @@ mod watermark_4173 {
             watermark_after("def456", TreeRead::Complete, 0, false),
             Watermark::Advance("def456".to_string())
         );
+    }
+
+    #[test]
+    fn an_empty_graph_under_a_watermark_is_a_reset_not_a_no_op() {
+        assert!(!delta_is_trustworthy(0, 6172));
+    }
+
+    // NEGATIVE PROOF: the guard must stay quiet in the two states that look
+    // similar but are not a reset — a populated graph, and an empty repo — or
+    // it would force a full walk on every ordinary run and mean nothing.
+    #[test]
+    fn negative_proof_the_reset_guard_does_not_fire_on_a_populated_graph_or_an_empty_tree() {
+        assert!(delta_is_trustworthy(5533, 6172));
+        assert!(delta_is_trustworthy(1, 6172));
+        assert!(delta_is_trustworthy(0, 0));
     }
 }
