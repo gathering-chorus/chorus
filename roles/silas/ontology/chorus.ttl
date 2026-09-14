@@ -939,7 +939,7 @@ chorus:pulse a owl:Class ;
     rdfs:label "pulse" ;
     chorus:comment "Agent vital signs — heartbeats, declared role states, andon, nudge-delivery health." ;
     chorus:purpose "Carry the team's vital signs — heartbeats, declared states, and delivery health — so liveness is observable, not assumed." ;
-    chorus:ownedBy chorus:role-silas ;
+    chorus:ownedBy chorus:role-wren ;   # #4175 — was role-silas; the store said role-wren and Silas ruled the store right 2026-09-14 ("coordination state, not observation"). Found by #4175's appointment check on its first real run.
     chorus:atStep chorus:Directing ; chorus:atStream chorus:chorusStream ;
     chorus:repoTarget "platform/pulse" .
     # FLAG: no real owl:Class vocab (no chorus:Heartbeat class) — omitted, not faked.

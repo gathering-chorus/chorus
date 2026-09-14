@@ -40,8 +40,27 @@ teardown() {
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=${GRAPH}-staging-deploy" -o /dev/null 2>/dev/null || true
 }
 
+# A count that could not be MEASURED must say so, not come back empty. On #4175
+# run 1 the store did not answer one of these calls under load; count() returned
+# "" and the comparison died with "integer expression expected" — reported as a
+# product break on a suite that passes by hand, 3/3, seconds later. The store
+# being busy is not this deploy script being wrong, and a test that cannot tell
+# those apart is the whack-a-mole shape. UNMEASURED fails the run loudly with
+# the reason, and never reads as the defect the suite exists to catch.
 count() {
-  curl -s "$Q" --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$GRAPH> { ?s ?p ?o } }" -H 'Accept: text/csv' | tail -1 | tr -dc '0-9'
+  local csv n
+  csv="$(curl -s --max-time 30 "$Q" --data-urlencode \
+    "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$GRAPH> { ?s ?p ?o } }" \
+    -H 'Accept: text/csv')" || csv=""
+  # A well-formed answer is the header line "n" plus a numeric row. Anything
+  # else — empty body, curl failure, an HTML error page — is unmeasured.
+  n="$(printf '%s' "$csv" | tail -1 | tr -dc '0-9')"
+  if [ -z "$n" ] || ! printf '%s' "$csv" | head -1 | grep -q '^n'; then
+    echo "UNMEASURED: the store did not answer the triple count for <$GRAPH>." >&2
+    echo "  raw response: $(printf '%s' "$csv" | head -3 | tr '\n' ' ')" >&2
+    return 1
+  fi
+  printf '%s' "$n"
 }
 
 # The assertions are on COUNTS, never on the script's exit code: with the cleanup
