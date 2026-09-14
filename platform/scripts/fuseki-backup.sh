@@ -72,10 +72,32 @@ if ! compgen -G "$SRC/Data-*" > /dev/null; then
 fi
 
 # 3. rsync the frozen store to bedroom (dated dir)
+#
+# #4171 — HARD-LINK against last night instead of writing a whole store again.
+# rsync's delta already kept the WIRE small, but with no --link-dest every
+# unchanged file was still WRITTEN into a fresh dated directory: a full store
+# per night on disk. Measured 2026-09-14 08:47 — the 00:00:12 run was still
+# copying at 08:46, 268 GB of 377 GB done, with 09-13 (407G) and 09-12 (376G)
+# already held and Bedroom at 86%. Jeff, three times since 08-09: "they start
+# at midnight and are still running", "the size increases".
+#
+# --link-dest makes every file identical to last night's copy a hard link, so a
+# night costs its delta, not the store. Each dated dir still LOOKS complete and
+# restores independently — hard links are not a chain; deleting an old snapshot
+# cannot hollow out a newer one.
 DEST="$DEST_BASE/fuseki-pods-${SNAP_DATE}"
 ssh -o ConnectTimeout=10 "$REMOTE" "mkdir -p '$DEST'"
-log "rsync → ${REMOTE}:${DEST}"
-rsync -a --partial -e "ssh -o ConnectTimeout=10" "$SRC/" "${REMOTE}:${DEST}/"
+# The most recent existing snapshot, by NAME (same ordering the prune uses —
+# #3837: never mtime, rsync -a preserves source times). Absent on a first run,
+# and then this is simply a full copy, which is correct.
+LINK_DEST="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -1d '$DEST_BASE'/fuseki-pods-* 2>/dev/null | sort -r | head -1" | tr -d '\r')"
+if [ -n "$LINK_DEST" ] && [ "$LINK_DEST" != "$DEST" ]; then
+  log "rsync → ${REMOTE}:${DEST}  (hard-linking unchanged files against $(basename "$LINK_DEST"))"
+  rsync -a --partial --link-dest="$LINK_DEST" -e "ssh -o ConnectTimeout=10" "$SRC/" "${REMOTE}:${DEST}/"
+else
+  log "rsync → ${REMOTE}:${DEST}  (no prior snapshot — full copy, expected on a first run)"
+  rsync -a --partial -e "ssh -o ConnectTimeout=10" "$SRC/" "${REMOTE}:${DEST}/"
+fi
 
 # 4. completeness check — every file landed (not just rsync exit 0; #3560 lesson: copied != restorable)
 SRC_N="$(find "$SRC" -type f | wc -l | tr -d ' ')"
