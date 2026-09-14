@@ -210,15 +210,27 @@ pub enum Action {
     Skipped { path: String },
 }
 
-/// A delete is only ever decided from a POSITIVE reading of the tree. If the
-/// walk could not be performed, "I cannot see it" must never become "it is
-/// gone" — the #4022 lesson, where absent meant delete.
+/// A delete is only ever decided from a POSITIVE reading of the WHOLE tree.
+///
+/// Two different things can make that reading incomplete, and both must refuse:
+/// a walk that failed part-way, and a walk that only ever looked at part of the
+/// tree on purpose. The second one nearly cost the graph: a delta run sees only
+/// the changed files, so every unchanged file is "absent from disk" and every
+/// row for one looks like an orphan. The first delta run after a full one
+/// planned 5,346 deletes — the entire collection minus the diff — and only the
+/// door's authz refusal stopped it.
+///
+/// "I cannot see it" must never become "it is gone" (#4022), and neither must
+/// "I did not look at it".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TreeRead {
     /// The full file list was read successfully; absence from it is real.
     Complete,
-    /// The walk failed or was partial. Deletes are refused for this run.
+    /// The walk failed part-way. Deletes are refused for this run.
     Partial,
+    /// The walk deliberately looked at a subset (a delta). Absence from this
+    /// view says nothing at all — deletes come from git's own D/R entries.
+    Scoped,
 }
 
 /// One file as the tree reports it: repo-relative path, content hash, and
@@ -345,6 +357,33 @@ mod plan_4173 {
         let actions = plan(&disk, &graph, TreeRead::Complete);
         assert_eq!(counts(&actions).deleted, 1);
         assert!(actions.contains(&Action::Delete { path: "gone.rs".into() }));
+    }
+
+    // NEGATIVE PROOF (#3734): a DELTA run must not delete the rest of the graph.
+    //
+    // This is not hypothetical. On 2026-09-14 the first delta run after a full
+    // one planned 5,346 deletes — the whole collection minus the diff — because
+    // the disk view held only the changed files while the graph view held
+    // everything. The door's authz refusal is the only thing that stopped it.
+    // The two states the check must separate: "absent because it is gone" and
+    // "absent because I did not look".
+    #[test]
+    fn negative_proof_a_scoped_delta_run_never_deletes_what_it_did_not_look_at() {
+        let changed_only = [d("changed.rs", "new")];
+        let whole_graph = [
+            g("changed.rs", "old"),
+            g("untouched-a.rs", "aaa"),
+            g("untouched-b.ts", "bbb"),
+        ];
+        let scoped = plan(&changed_only, &whole_graph, TreeRead::Scoped);
+        assert_eq!(counts(&scoped).deleted, 0, "a delta must delete nothing it did not walk: {:?}", scoped);
+        assert_eq!(counts(&scoped).replaced, 1, "it still updates what DID change");
+
+        // The control, with identical inputs: a run that claims to have read the
+        // whole tree DOES treat those rows as orphans. Without this the check
+        // could not tell the two states apart.
+        let full = plan(&changed_only, &whole_graph, TreeRead::Complete);
+        assert_eq!(counts(&full).deleted, 2, "a full walk still reconciles orphans");
     }
 
     // NEGATIVE PROOF (#3734): the #4022 lesson. When the tree could not be read
@@ -623,6 +662,8 @@ pub fn watermark_after(head: &str, read: TreeRead, failed_writes: usize, scope_w
     if read == TreeRead::Partial {
         return Watermark::Hold("the tree read was partial — deletes were refused, so orphans may remain");
     }
+    // A Scoped (delta) read is not a failure: it proved the files it walked,
+    // and the nightly full pass proves the rest.
     if !scope_was_full {
         // A delta run only proves the changed files. That is enough to move
         // forward — the nightly full pass is what proves the whole.

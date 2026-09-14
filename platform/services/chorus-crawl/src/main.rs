@@ -88,9 +88,9 @@ fn rust_declares_tests(abs: &str) -> bool {
 
 /// The file list the tree reports, classified. Returns the reading quality
 /// alongside: if any file could not be read, deletes are refused for this run.
-fn read_tree(root: &str, paths: &[String], hashes: &HashMap<String, String>) -> (Vec<OnDisk>, TreeRead) {
+fn read_tree(root: &str, paths: &[String], hashes: &HashMap<String, String>, scoped: bool) -> (Vec<OnDisk>, TreeRead) {
     let mut out = Vec::new();
-    let mut complete = TreeRead::Complete;
+    let mut complete = if scoped { TreeRead::Scoped } else { TreeRead::Complete };
     for rel in paths {
         // Only .rs files are opened at all, and only to answer "does this
         // declare tests" — every other classification is a pure path decision.
@@ -101,7 +101,8 @@ fn read_tree(root: &str, paths: &[String], hashes: &HashMap<String, String>) -> 
             Some(s) => s.clone(),
             None => {
                 // Tracked but git has no hash for it in this index. A fact
-                // about this run, not about the repo — refuse deletes.
+                // about this run, not about the repo — refuse deletes. Partial
+                // outranks Scoped: a failed read is worse than a narrow one.
                 complete = TreeRead::Partial;
                 continue;
             }
@@ -209,9 +210,15 @@ fn row_json(f: &OnDisk, kind: &str, lang: Option<&str>) -> String {
     s
 }
 
-/// Deterministic row key: the path with everything outside [a-z0-9] collapsed
-/// to a single '-'. Same path, same name, every run — which is what makes the
-/// walk idempotent rather than a row generator.
+/// Deterministic row key: a readable slug plus a digest of the EXACT path.
+///
+/// The slug alone is not injective. The first live run against 6,172 files
+/// found it in one batch: `designing/docs/LOG_RELATEDNESS.html` and
+/// `designing/docs/log-relatedness.html` are different files that lowercase to
+/// the same slug, so the door refused the batch with a duplicate-name conflict.
+/// Two files must never share a row. The suffix is FNV-1a over the raw bytes —
+/// case, punctuation and all — so distinct paths stay distinct while the name
+/// remains something a human can read in a query result.
 pub fn stable_name(rel: &str) -> String {
     let mut out = String::with_capacity(rel.len() + 8);
     let mut last_dash = false;
@@ -224,18 +231,54 @@ pub fn stable_name(rel: &str) -> String {
             last_dash = true;
         }
     }
-    format!("file-{}", out.trim_matches('-'))
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in rel.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    format!("file-{}-{:08x}", out.trim_matches('-'), (h & 0xffff_ffff) as u32)
 }
 
-/// Every CodeFile the door already serves, as path → sha. Pages to exhaustion:
-/// a row past a hardcoded ceiling would look absent, and absent means delete.
+#[cfg(test)]
+mod stable_name_4173 {
+    use super::stable_name;
+
+    // NEGATIVE PROOF (#3734): the two real paths that collided on the first live
+    // run. A slug-only key maps both to the same row; the door refused the batch
+    // with "duplicate entity name". Distinct paths must stay distinct.
+    #[test]
+    fn negative_proof_two_paths_differing_only_in_case_do_not_share_a_row() {
+        let a = stable_name("designing/docs/LOG_RELATEDNESS.html");
+        let b = stable_name("designing/docs/log-relatedness.html");
+        assert_ne!(a, b, "these are two different files and must be two rows");
+    }
+
+    // The control: the same path must answer the same name every run, or the
+    // walk would mint a fresh row each pass instead of addressing the old one.
+    #[test]
+    fn the_same_path_answers_the_same_name_every_time() {
+        assert_eq!(stable_name("platform/api/src/server.ts"), stable_name("platform/api/src/server.ts"));
+        assert!(stable_name("platform/api/src/server.ts").starts_with("file-platform-api-src-server-ts-"));
+    }
+}
+
+/// Every CodeFile the door already serves, as path → sha.
+///
+/// Pages by the CURSOR the door hands back, not by an offset we invent. The
+/// first cut incremented `offset`, which this API ignores: every page returned
+/// the same first rows, the loop never saw a short page, and the run spent ten
+/// minutes going nowhere. The response carries `links.next` — following what
+/// the server says is next is the only paging that cannot silently loop.
+///
+/// A row past the end would look absent, and absent means delete, so this walks
+/// to exhaustion rather than stopping at a ceiling.
 fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
     let coll = collection_for(api, "CodeFile")?;
     let mut out = Vec::new();
-    let mut offset = 0usize;
+    let mut next = format!("{coll}?limit=1000");
+    let mut pages = 0usize;
     loop {
-        let page = curl(api, "GET", &format!("{coll}?limit=1000&offset={offset}"), None, Some(token))?;
-        let before = out.len();
+        let page = curl(api, "GET", &next, None, Some(token))?;
         for chunk in page.split("\"filePath\"").skip(1) {
             let v = chunk.trim_start().trim_start_matches(':').trim().trim_start_matches('"');
             let path = match v.find('"') { Some(i) => &v[..i], None => continue };
@@ -248,10 +291,23 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
                 .unwrap_or_default();
             out.push(InGraph { path: path.to_string(), sha });
         }
-        if out.len() == before {
-            break;
+        pages += 1;
+        // The door's own "next", with the /v1 prefix stripped the way every
+        // other caller addresses it. No next link means this was the last page.
+        let link = page
+            .find("\"next\"")
+            .and_then(|i| {
+                let t = page[i..].trim_start_matches("\"next\"").trim_start().trim_start_matches(':').trim().trim_start_matches('"');
+                t.find('"').map(|j| t[..j].to_string())
+            })
+            .filter(|l| !l.is_empty());
+        match link {
+            Some(l) => next = l.trim_start_matches("/v1").to_string(),
+            None => break,
         }
-        offset += 1000;
+        if pages > 10_000 {
+            return Err("paging did not terminate after 10,000 pages — the door is not advancing".into());
+        }
     }
     Ok(out)
 }
@@ -259,6 +315,7 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
 fn main() {
     let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
     let dry_run = std::env::args().any(|a| a == "--dry-run");
+    let reconciling = std::env::args().any(|a| a == "--reconcile");
 
     let head = match head_commit(&root) {
         Ok(h) => h,
@@ -270,14 +327,31 @@ fn main() {
 
     // The watermark lives on the graph; until the door carries it, a full walk
     // is the honest answer and it says so.
-    let watermark: Option<String> = std::env::var("CHORUS_CRAWL_WATERMARK")
-        .ok()
-        .or_else(|| std::fs::read_to_string(format!("{root}/.chorus-crawl-watermark")).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    // --reconcile ALWAYS walks the whole tree. It ran once in delta scope and
+    // reported "clean" having compared ZERO files against 5,533 rows — a check
+    // that passes because it looked at nothing is the hollow gate #3734 exists
+    // to forbid, and this one was in the reconcile itself.
+    let watermark: Option<String> = if reconciling {
+        None
+    } else {
+        std::env::var("CHORUS_CRAWL_WATERMARK")
+            .ok()
+            .or_else(|| std::fs::read_to_string(format!("{root}/.chorus-crawl-watermark")).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
     let reachable = watermark.as_deref().map(|w| commit_is_reachable(&root, w)).unwrap_or(false);
-    let scope = scope_for(watermark.as_deref(), &head, reachable);
+    // scope_for cannot know WHY the watermark is absent; on a reconcile we
+    // cleared it ourselves, and reporting that as "first run" would have the
+    // run narrate a state it is not in.
+    let scope = match scope_for(watermark.as_deref(), &head, reachable) {
+        Scope::Full { .. } if reconciling => Scope::Full { why: "--reconcile: forced full walk" },
+        s => s,
+    };
 
+    // On a delta, the ONLY rows eligible for deletion are the ones git says
+    // were removed or renamed away. The walk never sees the rest.
+    let mut removed_by_git: Vec<String> = Vec::new();
     let paths = match (&scope, tracked_files(&root)) {
         (_, Err(e)) => {
             eprintln!("chorus-crawl: cannot list tracked files — {e}");
@@ -290,8 +364,13 @@ fn main() {
                 for c in changes {
                     match c {
                         Change::Touched(p) => touched.push(p),
-                        Change::Renamed { to, .. } => touched.push(to),
-                        Change::Removed(_) => {}
+                        // A rename is a move: the new path is walked, the old
+                        // one is removed. Never a delete-plus-add.
+                        Change::Renamed { from, to } => {
+                            touched.push(to);
+                            removed_by_git.push(from);
+                        }
+                        Change::Removed(p) => removed_by_git.push(p),
                     }
                 }
                 touched.retain(|p| all.contains(p));
@@ -311,14 +390,16 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let (disk, read) = read_tree(&root, &paths, &hashes);
+    // A delta walked only the changed files. Absence from that view says
+    // nothing about the rest of the graph — see TreeRead::Scoped.
+    let walked_subset = matches!(scope, Scope::Delta { .. });
+    let (disk, read) = read_tree(&root, &paths, &hashes, walked_subset);
 
     let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "crawler".to_string());
 
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
-    let reconciling = std::env::args().any(|a| a == "--reconcile");
     let (graph, token) = if dry_run && !reconciling {
         (Vec::new(), String::new())
     } else {
@@ -338,7 +419,12 @@ fn main() {
         }
     };
 
-    let actions = plan(&disk, &graph, read);
+    let mut actions = plan(&disk, &graph, read);
+    for path in &removed_by_git {
+        if graph.iter().any(|g| &g.path == path) {
+            actions.push(Action::Delete { path: path.clone() });
+        }
+    }
     let c = counts(&actions);
 
     println!("chorus-crawl: {} · tracked={} read={:?}", scope.label(), paths.len(), read);
@@ -357,7 +443,16 @@ fn main() {
     // `--reconcile`: the nightly pass. Compares the graph to the tree BOTH ways
     // and names the paths. Drift is not a number to log — "6,140 vs 6,175"
     // tells nobody which thirty-five.
-    if std::env::args().any(|a| a == "--reconcile") {
+    if reconciling {
+        // Refuse to grade an empty walk. "Clean" over zero files is not a pass.
+        if disk.is_empty() || read != TreeRead::Complete {
+            eprintln!(
+                "chorus-crawl: reconcile REFUSED — walked {} file(s), read={:?}. A reconcile that looked at nothing cannot say clean.",
+                disk.len(),
+                read
+            );
+            std::process::exit(2);
+        }
         let drift = reconcile(&disk, &graph);
         println!("chorus-crawl: {}", drift.report());
         std::process::exit(if drift.is_clean() { 0 } else { 1 });
