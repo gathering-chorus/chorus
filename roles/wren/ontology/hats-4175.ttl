@@ -61,56 +61,146 @@
 # authored (#3675/#3587 wipe-class discipline). Never live-only.
 # =============================================================================
 
-# ── vocabulary: the hat itself ───────────────────────────────────────────────
+# ── the TBox below is MINTED, not typed ──────────────────────────────────────
+# Every class, property and shape here came out of `athena-model class /
+# property / shape` (ADR-040 Rule 0 — the governed writer is the only pen). It
+# was hand-written first and that was the wrong path: the pen emits
+# `chorus:roles chorus:definesVocabulary chorus:Hat`, which is what MOUNTS the
+# collection. Without it the class is DECLARED and never SERVED, and the file
+# would have looked complete while /roles/hats returned nothing.
+#
+# Two things the pen would not let pass, both kept as it ruled:
+#   - a property with no range is refused, so overAnchor needed one. A union
+#     (Product | Domain | Service) is not expressible through the pen, so
+#     chorus:Anchor is declared and the three are annotated as its subclasses.
+#     #4163 taught the generator to walk rdfs:subClassOf, so this projects.
+#   - a field that is typed but not named on the shape is refused, and a
+#     defaulted field is "a judgment nobody made, recorded permanently as
+#     though someone had". heldStandingBy is declared --optional on purpose:
+#     only the three standing hats carry a seat.
+#
+# maxCount and sh:pattern are not in the pen's vocabulary, so the earlier
+# hand-written versions of both are gone rather than reinstated by hand. The
+# layer rule they were standing in for is enforced by the GovernanceCheck rows
+# below, which is stronger — those can go red and be shown to.
 
 chorus:Hat a owl:Class ;
     rdfs:label "Hat" ;
     rdfs:comment "A declared job a role does — the JD, not a title. Two layers: standing (one per role, cross-cutting, worn at the org table with Jeff) and per-product (four, worn over a product, domain or service). Rows are named individuals so an edge can be typed at them and a free string refused (#4157 pattern)." .
+chorus:roles chorus:definesVocabulary chorus:Hat .
+
+
+chorus:Appointment a owl:Class ;
+    rdfs:label "Appointment" ;
+    rdfs:comment "One role wearing one per-product hat over one anchor. The qualification of chorus:ownedBy, never a rival to it: an appointment whose appointee is not the anchor's owner is refused." .
+chorus:roles chorus:definesVocabulary chorus:Appointment .
+
+
+chorus:Anchor a owl:Class ;
+    rdfs:label "Anchor" ;
+    rdfs:comment "A thing a per-product hat can be worn over — a Product, a Domain or a Service. Declared because overAnchor needs a single range and the governed writer refuses a property without one; a union range is not expressible through the pen. Product/Domain/Service are annotated as subclasses below." .
+chorus:roles chorus:definesVocabulary chorus:Anchor .
+
 
 chorus:hatLayer a owl:DatatypeProperty ;
-    rdfs:label "hat layer" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "standing | per-product. The layer decides where the hat may attach: a standing hat anchors to the role and to nothing below it; a per-product hat anchors to a product, domain or service and is meaningless without one. Crossing the layers is refused." .
+    rdfs:label "hatLayer" ;
+    rdfs:comment "standing | per-product. The layer decides where the hat may attach: a standing hat anchors to the role and to nothing below it; a per-product hat anchors to a product, domain or service and is meaningless without one. Crossing the layers is refused." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
 
 chorus:jdOwns a owl:DatatypeProperty ;
-    rdfs:label "JD — what it owns" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "The products, domains and services this hat answers for." .
+    rdfs:label "jdOwns" ;
+    rdfs:comment "JD group — the products, domains and services this hat answers for." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
 
 chorus:jdDecides a owl:DatatypeProperty ;
-    rdfs:label "JD — how it decides" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "What this hat may call alone, and what needs another hat or Jeff." .
+    rdfs:label "jdDecides" ;
+    rdfs:comment "JD group — what this hat may call alone, and what needs another hat or Jeff." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
 
 chorus:jdBehaves a owl:DatatypeProperty ;
-    rdfs:label "JD — how it behaves" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "Standing expectations — cadence, gates it runs, what it refuses." .
+    rdfs:label "jdBehaves" ;
+    rdfs:comment "JD group — standing expectations: cadence, gates it runs, what it refuses." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
 
 chorus:jdReports a owl:DatatypeProperty ;
-    rdfs:label "JD — how it reports" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "What this hat owes the other hats and Jeff, and when." .
+    rdfs:label "jdReports" ;
+    rdfs:comment "JD group — what this hat owes the other hats and Jeff, and when." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
 
 chorus:jdRetires a owl:DatatypeProperty ;
-    rdfs:label "JD — what it retires" ;
-    rdfs:domain chorus:Hat ; rdfs:range xsd:string ;
-    rdfs:comment "What the role STOPS doing once this hat exists. Its own group, never a footnote — the standing rule against running the old and the new at once." .
+    rdfs:label "jdRetires" ;
+    rdfs:comment "JD group — what the role STOPS doing once this hat exists. Its own group, never a footnote." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range xsd:string .
+
+
+chorus:heldStandingBy a owl:ObjectProperty ;
+    rdfs:label "heldStandingBy" ;
+    rdfs:comment "The role that wears this standing hat — the seat at the org table with Jeff. Exactly one per standing hat; a per-product hat must not carry it." ;
+    rdfs:domain chorus:Hat ;
+    rdfs:range chorus:Role .
+
+
+chorus:appointee a owl:ObjectProperty ;
+    rdfs:label "appointee" ;
+    rdfs:comment "Who wears the hat. Must be the anchor's chorus:ownedBy role." ;
+    rdfs:domain chorus:Appointment ;
+    rdfs:range chorus:Role .
+
+
+chorus:appointedHat a owl:ObjectProperty ;
+    rdfs:label "appointedHat" ;
+    rdfs:comment "Which hat. Layer must be per-product — a standing hat on an anchor is refused." ;
+    rdfs:domain chorus:Appointment ;
+    rdfs:range chorus:Hat .
+
+
+chorus:overAnchor a owl:ObjectProperty ;
+    rdfs:label "overAnchor" ;
+    rdfs:comment "The product, domain or service the hat is worn over — 9 + 42 + 13 = 64 possible anchors. Required: a per-product hat with no anchor is refused." ;
+    rdfs:domain chorus:Appointment ;
+    rdfs:range chorus:Anchor .
+
 
 chorus:HatShape a sh:NodeShape ;
     sh:targetClass chorus:Hat ;
+    sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:hatLayer ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdOwns ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdDecides ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdBehaves ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdReports ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jdRetires ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:heldStandingBy ; sh:class chorus:Role ] ;
     chorus:instancesGraph "urn:chorus:domains:roles" ;
-    chorus:definesVocabulary true ;
-    sh:property [ sh:path rdfs:label      ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:label    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:hatLayer ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
-                  sh:pattern "^(standing|per-product)$" ] ;
-    sh:property [ sh:path chorus:jdOwns    ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:jdDecides ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:jdBehaves ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:jdReports ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:jdRetires ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:heldStandingBy ; sh:maxCount 1 ; sh:class chorus:Role ] .
+    chorus:generatedBy "athena-model" .
+
+
+chorus:AppointmentShape a sh:NodeShape ;
+    sh:targetClass chorus:Appointment ;
+    sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:appointee ; sh:minCount 1 ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:appointedHat ; sh:minCount 1 ; sh:class chorus:Hat ] ;
+    sh:property [ sh:path chorus:overAnchor ; sh:minCount 1 ] ;
+    chorus:instancesGraph "urn:chorus:domains:roles" ;
+    chorus:generatedBy "athena-model" .
+
+# Product, Domain and Service are what a per-product hat is worn over. Declared
+# additively here rather than edited into chorus.ttl (Silas's file) — the same
+# execution-mode line the deprecations below follow.
+chorus:Product rdfs:subClassOf chorus:Anchor .
+chorus:Domain  rdfs:subClassOf chorus:Anchor .
+chorus:Service rdfs:subClassOf chorus:Anchor .
 
 # =============================================================================
 # HOW A HAT ATTACHES — two edges, one per layer, and they cannot be crossed.
@@ -131,45 +221,11 @@ chorus:HatShape a sh:NodeShape ;
 # with direct sh:property paths and nothing else.
 # =============================================================================
 
-chorus:heldStandingBy a owl:ObjectProperty ;
-    rdfs:label "held standing by" ;
-    rdfs:domain chorus:Hat ; rdfs:range chorus:Role ;
-    rdfs:comment "The role that wears this standing hat — the seat at the org table with Jeff. Exactly one per standing hat; a per-product hat must not carry it." .
-
 chorus:wearsStandingHat a owl:ObjectProperty ;
     rdfs:label "wears standing hat" ;
     owl:inverseOf chorus:heldStandingBy ;
     rdfs:domain chorus:Role ; rdfs:range chorus:Hat ;
     rdfs:comment "The role-to-hat reading of the same fact. DECLARED, NOT STORED: our store does no inference, and the seat is written on the HAT so the edge lives in its subject's home graph (urn:chorus:domains:roles) rather than reaching into the Role rows, which still sit in urn:chorus:instances until #4090 moves them. Writing it the other way would have meant either a live-only edge or a per-subject merge that wipes the rest of the Role row. Both directions are still one query — this one just needs the inverse pattern." .
-
-chorus:Appointment a owl:Class ;
-    rdfs:label "Appointment" ;
-    rdfs:comment "One role wearing one per-product hat over one anchor — a product, a domain or a service. The qualification of chorus:ownedBy, never a rival to it: an appointment whose appointee is not the anchor's owner is refused." .
-
-chorus:appointee a owl:ObjectProperty ;
-    rdfs:label "appointee" ;
-    rdfs:domain chorus:Appointment ; rdfs:range chorus:Role ;
-    rdfs:comment "Who wears the hat. Must be the anchor's chorus:ownedBy role." .
-
-chorus:appointedHat a owl:ObjectProperty ;
-    rdfs:label "appointed hat" ;
-    rdfs:domain chorus:Appointment ; rdfs:range chorus:Hat ;
-    rdfs:comment "Which hat. Layer must be per-product — a standing hat on an anchor is refused." .
-
-chorus:overAnchor a owl:ObjectProperty ;
-    rdfs:label "over anchor" ;
-    rdfs:domain chorus:Appointment ;
-    rdfs:range [ owl:unionOf ( chorus:Product chorus:Domain chorus:Service ) ] ;
-    rdfs:comment "The product, domain or service the hat is worn over — 9 + 42 + 13 = 64 possible anchors live on 2026-09-14. Required: a per-product hat with no anchor is refused." .
-
-chorus:AppointmentShape a sh:NodeShape ;
-    sh:targetClass chorus:Appointment ;
-    chorus:instancesGraph "urn:chorus:domains:roles" ;
-    sh:property [ sh:path rdfs:label          ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:label        ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
-    sh:property [ sh:path chorus:appointee    ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ] ;
-    sh:property [ sh:path chorus:appointedHat ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Hat ] ;
-    sh:property [ sh:path chorus:overAnchor   ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ] .
 
 # Role.label carries a comment so the atlas stops flagging it and Role reads 3/3
 # defined — the gap the 2026-09-14 atlas screenshot showed against Identity.
