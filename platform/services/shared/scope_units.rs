@@ -37,7 +37,15 @@ pub fn scope_irrelevant(f: &str) -> bool {
                "platform/scripts/", "platform/tests/", "platform/launchd/", "skills/", ".claude/"]
         .iter()
         .any(|d| f.starts_with(d));
-    ext || dir || f.contains("/public/")
+    // #4173 — git's own metadata is on the list for the same reason a plist is:
+    // .gitignore decides what git TRACKS, never what a build or test produces.
+    // It was the second unmapped path in this card's diff (the first, a runtime
+    // watermark, belonged in .gitignore — which is how the two met).
+    let vcs = matches!(
+        f.rsplit('/').next().unwrap_or(f),
+        ".gitignore" | ".gitattributes" | ".gitmodules"
+    );
+    ext || dir || vcs || f.contains("/public/")
 }
 
 /// Diff → unit names + transitive DECLARED dependents. Any build/test-relevant

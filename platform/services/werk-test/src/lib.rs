@@ -1641,6 +1641,38 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod scope_vcs_metadata_4173 {
+    use super::{scope_irrelevant, scoped_test_reason, ScopeUnit};
+
+    #[test]
+    fn git_metadata_never_widens_a_card_to_the_whole_tree() {
+        assert!(scope_irrelevant(".gitignore"));
+        assert!(scope_irrelevant("platform/.gitattributes"));
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        let changed = vec![".gitignore".to_string(), "platform/services/werk-test/src/lib.rs".to_string()];
+        assert_eq!(
+            scoped_test_reason(&changed, &units, &[]),
+            Ok(vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }])
+        );
+    }
+
+    // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
+    // inside. A file that really can change build output still forces FULL and
+    // still names itself — otherwise this entry would be a hole, not a mapping.
+    #[test]
+    fn negative_proof_a_real_source_file_outside_every_unit_still_refuses_by_name() {
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        assert_eq!(
+            scoped_test_reason(&["Cargo.toml".to_string()], &units, &[]),
+            Err("unmapped:Cargo.toml".to_string())
+        );
+        assert!(!scope_irrelevant("Cargo.toml"));
+        // and a path merely CONTAINING the name is not git's metadata
+        assert!(!scope_irrelevant("platform/services/gitignore-parser/src/lib.rs"));
+    }
+}
+
+#[cfg(test)]
 mod discovery_route_4158 {
     use super::{advertised_collection, origin_of, testresult_batch_endpoint};
 
