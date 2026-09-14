@@ -18,8 +18,16 @@ describe('#4152 api test harness brings its own index.db', () => {
     expect(fs.statSync(p!).size).toBeGreaterThan(1024 * 1024);
   });
 
-  test('negative proof: an empty world index.db is seeded by globalSetup, and answers 503 until it is', async () => {
-    if (!haveLive) return;
+  // #4163 (wren, at Kade's request 2026-09-13). This proof used to call
+  // backupLiveInto(live, world) — a real copy of ~/.chorus/index.db, 471 MB
+  // today and growing. It went red in three pipeline runs at the 5s default and
+  // again at 60s, while passing alone in 3.8s: it was measuring disk throughput,
+  // not the harness contract. Any timeout large enough would expire as the file
+  // grows. Split into the two things it actually proved, neither of which needs
+  // half a gigabyte. The real seeding of the real index still happens in
+  // globalSetup, where it belongs and is not an assertion.
+
+  test('negative proof: needsSeed says yes for missing and empty, no for a seeded file', () => {
     const setup = require('./lib/index-db-global-setup');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-api-empty-world-'));
     const world = path.join(dir, 'index.db');
@@ -27,9 +35,38 @@ describe('#4152 api test harness brings its own index.db', () => {
       expect(setup.needsSeed(world)).toBe(true);            // missing → seed
       fs.writeFileSync(world, '');                          // the runner's empty world shape
       expect(setup.needsSeed(world)).toBe(true);            // empty → seed
-      await setup.backupLiveInto(live, world);
+      // a file over the 1 MB floor reads as seeded. The floor is the whole rule:
+      // an empty schema is ~36 KB, a seeded index is hundreds of MB.
+      fs.writeFileSync(world, Buffer.alloc(1024 * 1024 + 1));
       expect(setup.needsSeed(world)).toBe(false);           // seeded → leave alone
-      expect(fs.statSync(world).size).toBeGreaterThan(1024 * 1024);
+      // and the boundary is where it claims to be, not merely somewhere below
+      fs.writeFileSync(world, Buffer.alloc(1024 * 1024 - 1));
+      expect(setup.needsSeed(world)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('backupLiveInto copies a sqlite database faithfully, rows and all', async () => {
+    const setup = require('./lib/index-db-global-setup');
+    const Database = require('better-sqlite3');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'chorus-api-backup-'));
+    const src = path.join(dir, 'src.db');
+    const dest = path.join(dir, 'copy.db');
+    try {
+      const db = new Database(src);
+      db.exec('CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT)');
+      db.prepare('INSERT INTO t VALUES (?, ?)').run('seeded', 'yes');
+      db.close();
+
+      await setup.backupLiveInto(src, dest);
+
+      const copy = new Database(dest, { readonly: true, fileMustExist: true });
+      try {
+        expect(copy.prepare('SELECT v FROM t WHERE k = ?').get('seeded')).toEqual({ v: 'yes' });
+      } finally {
+        copy.close();
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
