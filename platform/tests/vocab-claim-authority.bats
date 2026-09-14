@@ -22,30 +22,44 @@ setup() {
 # Served classes: owl-api's own route table (the error envelope lists them —
 # the STORE/route truth, never a source file; DECLARED⊃CLAIMED⊃SERVED).
 served_classes() {
-  # #4065 — SERVED_ROUTES_JSON is the fixture seam (#3528): a proof feeds the
-  # route list directly instead of asking the live generator.
-  { if [ -n "${SERVED_ROUTES_JSON:-}" ]; then printf '%s' "$SERVED_ROUTES_JSON"; else curl -s -m 5 "http://localhost:3360/__nope__"; fi; } | python3 -c "
+  # #4175 — ASK THE SERVER for the class name; stop reconstructing it from the URL.
+  #
+  # This function used to turn a route back into a class by singularizing the
+  # path. That was already fragile (#4065 fixed "memories -> Memorie") and #4158
+  # broke it outright: collections became domain-rooted, so /apisurfaces became
+  # /security/apisurfaces and the whole set read as unclaimed. Taking the last
+  # segment fixes 40 of 48 and leaves 8 — /code/kinds serves CodeKind, /pipelines/runs
+  # serves PipelineRun — because the domain-rooted segment deliberately drops the
+  # prefix the class name carries. There is no rule from path to class, and every
+  # attempt to invent one has had to be patched again.
+  #
+  # The server already publishes the answer: discovery lists {kind, collection}
+  # per primitive. That is the same move #4158 asked of every caller — ask which
+  # collection is served rather than hardcoding it — applied to the reverse
+  # direction. A route that is added, renamed or re-rooted needs no change here.
+  #
+  # SERVED_ROUTES_JSON stays the fixture seam (#3528). A fixture in the old
+  # {"served":[...]} shape still works: with no discovery to read, the paths ARE
+  # the names, which is what the proofs below feed it.
+  { if [ -n "${SERVED_ROUTES_JSON:-}" ]; then printf '%s' "$SERVED_ROUTES_JSON"; else curl -s -m 5 "http://localhost:3360/"; fi; } | python3 -c "
 import json,sys
-routes=json.load(sys.stdin)['served']
-# plural route -> class name: strip slash, singularize the known irregulars
-irr={'properties':'Property','propertykeys':'PropertyKey','keyregistryentries':'KeyRegistryEntry','chunkmemberships':'ChunkMembership','testsuiteruns':'TestSuiteRun','valuestreams':'ValueStream','valuestreamsteps':'ValueStreamStep','securityprobes':'SecurityProbe','authboundaries':'AuthBoundary','apisurfaces':'APISurface','emitcontracts':'EmitContract','testresults':'TestResult'}
-out=[]
-for r in routes:
-    # #4175 — take the LAST segment. #4158 made every collection domain-rooted
-    # (/security/apisurfaces), and stripping only the slashes left
-    # 'security/apisurfaces' — which singularized to 'Security/apisurface' and
-    # matched no claim, so all 48 served classes reported as unclaimed at once.
-    # The route's shape changed; the mapping never learned. A whole-set failure
-    # like that is the tell: a real drift is a few classes, not every one.
-    r=r.strip('/').rsplit('/', 1)[-1]
-    if r in irr: out.append(irr[r]); continue
-    # #4065 — English plurals: memories -> Memory, not 'Memorie' (that misread
-    # made a claimed class report as served-but-unclaimed every night).
-    if r.endswith('ies'): s=r[:-3]+'y'
-    elif r.endswith('s'): s=r[:-1]
-    else: s=r
-    out.append(s.capitalize())
-print('\n'.join(out))"
+d=json.load(sys.stdin)
+prims=d.get('primitives')
+if prims is not None:
+    # the live server: it names the class for each collection
+    print('\n'.join(p['kind'] for p in prims if p.get('kind')))
+else:
+    # a fixture in the pre-#4175 shape: each route stands for its own class
+    irr={'properties':'Property','propertykeys':'PropertyKey','keyregistryentries':'KeyRegistryEntry','chunkmemberships':'ChunkMembership','testsuiteruns':'TestSuiteRun','valuestreams':'ValueStream','valuestreamsteps':'ValueStreamStep','securityprobes':'SecurityProbe','authboundaries':'AuthBoundary','apisurfaces':'APISurface','emitcontracts':'EmitContract','testresults':'TestResult'}
+    out=[]
+    for r in d['served']:
+        r=r.strip('/').rsplit('/',1)[-1]
+        if r in irr: out.append(irr[r]); continue
+        if r.endswith('ies'): s=r[:-3]+'y'
+        elif r.endswith('s'): s=r[:-1]
+        else: s=r
+        out.append(s.capitalize())
+    print('\n'.join(out))"
 }
 
 @test "no SERVED class has more than one claiming domain (placement authority is unambiguous)" {
