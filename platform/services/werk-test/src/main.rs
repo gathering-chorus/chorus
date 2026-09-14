@@ -15,7 +15,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     TS_PACKAGES,
@@ -2277,6 +2277,14 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             }
         }
     }
+    // #4173 — a changed suite is its own unit. Without this the scoper names it
+    // and the filter below drops it, which is the same "runs nothing" the
+    // irrelevant list used to produce.
+    for f in changed {
+        if is_test_suite_path(f) {
+            units.push(ScopeUnit { name: f.clone(), dir: f.clone() });
+        }
+    }
     let edges: Vec<(String, String)> = scope_declared_edges(root)
         .into_iter()
         .map(|(p, d)| {
@@ -2294,7 +2302,9 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             scoped
                 .into_iter()
                 .map(|u| {
-                    if u.dir.starts_with("platform/services/") {
+                    if is_test_suite_path(&u.dir) {
+                        TestUnit::BatsSuite(u.dir)
+                    } else if u.dir.starts_with("platform/services/") {
                         TestUnit::RustCrate(u.name)
                     } else {
                         TestUnit::TsPackage(u.dir)

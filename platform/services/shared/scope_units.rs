@@ -33,8 +33,12 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // and platform/tests/ are on it: a plist is a SCHEDULE, not an input to any
     // build or test output. It was the one unmapped path in #4166's five-file diff,
     // and it cost that card 314 units and 61 minutes.
+    // #4173 — platform/tests/ came OFF this list (Silas, 2026-09-14: "I overshot
+    // from not-a-build-input to not-worth-running"). A suite is not a build
+    // input, but editing one must still RUN it; is_test_suite_path below scopes
+    // a changed suite to itself instead of to nothing.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-               "platform/scripts/", "platform/tests/", "platform/launchd/", "skills/", ".claude/"]
+               "platform/scripts/", "platform/launchd/", "skills/", ".claude/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
@@ -46,6 +50,18 @@ pub fn scope_irrelevant(f: &str) -> bool {
         ".gitignore" | ".gitattributes" | ".gitmodules"
     );
     ext || dir || vcs || f.contains("/public/")
+}
+
+/// A path that IS a test suite: the runner executes the file itself, so a change
+/// to it scopes to itself and nothing else. `.bats` anywhere, and shell suites
+/// under a tests directory — the same two shapes `test_unit_for_path` resolves.
+pub fn is_test_suite_path(f: &str) -> bool {
+    if f.ends_with(".bats") {
+        return true;
+    }
+    let name = f.rsplit('/').next().unwrap_or(f);
+    let shell = f.ends_with(".sh") && (name.starts_with("test-") || name.contains(".test."));
+    shell && (f.starts_with("platform/tests/") || f.contains("/tests/"))
 }
 
 /// Diff → unit names + transitive DECLARED dependents. Any build/test-relevant
@@ -80,6 +96,13 @@ pub fn scope_unit_names(
         // refused the run as unmapped while the thing it changes is compiled
         // into two verbs. The provider name is the file's own path, so a change
         // to failure_class.rs does not drag in scope_units.rs's dependents.
+        // A changed suite runs itself. Its "unit" is its own path; a caller
+        // whose unit set has no suites simply filters it out, which is right —
+        // a test-only diff builds nothing.
+        if is_test_suite_path(f) {
+            names.insert(f.clone());
+            continue;
+        }
         if f.starts_with("platform/services/shared/") {
             if edges.iter().any(|(p, _)| p == f) {
                 names.insert(f.clone());

@@ -1642,7 +1642,7 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod scope_vcs_metadata_4173 {
-    use super::{scope_irrelevant, scoped_test_reason, ScopeUnit};
+    use super::{is_test_suite_path, scope_irrelevant, scoped_test_reason, ScopeUnit};
 
     #[test]
     fn git_metadata_never_widens_a_card_to_the_whole_tree() {
@@ -1654,6 +1654,52 @@ mod scope_vcs_metadata_4173 {
             scoped_test_reason(&changed, &units, &[]),
             Ok(vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }])
         );
+    }
+
+    #[test]
+    fn a_changed_suite_runs_itself_instead_of_nothing() {
+        // Silas, 2026-09-14: "I overshot from not-a-build-input to
+        // not-worth-running." A suite under platform/tests/ used to be
+        // scope_irrelevant, so editing a test ran no test at all.
+        assert!(!scope_irrelevant("platform/tests/4173-crawler-retirement.bats"));
+        assert!(is_test_suite_path("platform/tests/4173-crawler-retirement.bats"));
+        assert!(is_test_suite_path("proving/scripts/tests/test-enrichment-write-fileInDomain.sh"));
+        let units = vec![ScopeUnit {
+            name: "platform/tests/4173-crawler-retirement.bats".into(),
+            dir: "platform/tests/4173-crawler-retirement.bats".into(),
+        }];
+        let got = scoped_test_reason(
+            &["platform/tests/4173-crawler-retirement.bats".to_string()],
+            &units,
+            &[],
+        )
+        .expect("a changed suite is mapped");
+        assert_eq!(got.len(), 1);
+    }
+
+    // NEGATIVE PROOF (Silas's ask): widening the suite rule must not turn a
+    // real source change into a suite-only run. A changed crate still pulls its
+    // declared dependents in, and a doc still runs nothing.
+    #[test]
+    fn negative_proof_a_changed_source_still_pulls_its_dependents_and_a_doc_still_runs_nothing() {
+        let units = vec![
+            ScopeUnit { name: "chorus-oidc".into(), dir: "platform/services/chorus-oidc".into() },
+            ScopeUnit { name: "athena-make".into(), dir: "platform/services/athena-make".into() },
+        ];
+        let edges = vec![("chorus-oidc".to_string(), "athena-make".to_string())];
+        let got = scoped_test_reason(
+            &["platform/services/chorus-oidc/src/oidc.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .unwrap();
+        let mut names: Vec<&str> = got.iter().map(|u| u.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, vec!["athena-make", "chorus-oidc"]);
+        // a suite path is not a licence for every .sh: a plain script is not a suite
+        assert!(!is_test_suite_path("platform/scripts/chorus-werk"));
+        assert!(!is_test_suite_path("designing/docs/x.md"));
+        assert!(scope_irrelevant("designing/docs/x.md"));
     }
 
     #[test]
