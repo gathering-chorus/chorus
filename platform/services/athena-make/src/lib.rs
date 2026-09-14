@@ -346,10 +346,110 @@ pub fn exposed_projection(
         .collect()
 }
 
+/// #4163 — REFUSE a field declared twice with two different kinds.
+///
+/// Shapes targeting one class already UNION: the generate query filters on
+/// `sh:targetClass <class>` with no shape identity and `select_v` keeps every
+/// binding (measured 2026-09-13 — this card did not build that). What union
+/// does NOT do is notice disagreement. `filePath|datatype:string` and
+/// `filePath|datatype:dateTime` are different strings, so the `dedup()` that
+/// came in with #3561 keeps both and the generated surface carries one field
+/// twice with two meanings. Inheritance makes that reachable from two files
+/// instead of one, so it is refused here rather than settled by a precedence
+/// rule no reader of the shapes could see.
+pub fn field_conflict_check(class_local: &str, fields: &[String]) -> Result<(), String> {
+    let mut seen: std::collections::BTreeMap<&str, &str> = std::collections::BTreeMap::new();
+    for f in fields {
+        let (name, kind) = match f.split_once('|') {
+            Some(p) => p,
+            None => continue,
+        };
+        match seen.get(name) {
+            Some(prev) if *prev != kind => {
+                return Err(format!(
+                    "{}: field '{}' is declared twice with different kinds ('{}' and '{}') — \
+                     two shapes disagree about one property; fix the shapes, the generator will not pick a winner",
+                    class_local, name, prev, kind
+                ));
+            }
+            _ => {
+                seen.insert(name, kind);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// ADR-040 conformance at the source (#3364 AC1): the generator REFUSES to
 /// emit routes from non-conformant input — L4 naming law enforced where the
 /// API is born, not audited after. Classes are CamelCase, properties are
 /// camelCase. A violation is a typed refusal, never a bad route.
+/// #4163 — REFUSE an edge whose target class nothing serves.
+///
+/// A field arrives as `name|edge:<Class>`. If no domain `definesVocabulary`
+/// that class, there is no collection to reference and no row a caller could
+/// name — so the edge is unsatisfiable through the door.
+///
+/// CORRECTION (2026-09-13, mine): I first wrote that the generator DROPPED
+/// AuthBoundary's two required edges — `AuthBoundary.required` reads
+/// `['checkType','label']` and I stated that as the defect to three people. It
+/// is not. `mandatory` deliberately excludes edges (#3468, the human
+/// completeness gauge) while `write_required` keeps them, and
+/// `AuthBoundaryCreate.required` does carry `betweenDomainA` and
+/// `betweenDomainB`. Measured: TestResult behaves identically — `ofTest` is a
+/// required edge at a SERVED class and is absent from the read schema, present
+/// in the create schema. Nothing was silently dropped, and I had looked at one
+/// schema of the two.
+///
+/// What IS real: SubDomain is retired and unserved (/subdomains 404), so those
+/// two edges name rows no caller can reference, and the create they are
+/// required by fails closed at the DAL as unknown-target. A shape asking for
+/// something unobtainable is worth refusing where it is authored, not at every
+/// write attempt.
+///
+/// `served` is the class list any domain claims. Refuse, naming the field and
+/// the class, so a retired target is a loud build failure instead of a smaller
+/// promise.
+///
+/// Scoped to REQUIRED edges, and that line is measured, not convenient. Seven
+/// edges on served classes point at unserved targets today (2026-09-13):
+/// Machine x3 (ServiceInstance/ScheduledJob/LogSource.onMachine), SubDomain x2
+/// (AuthBoundary), Policy (Practice.operationalizes), SourceFile (Test.inFile).
+/// Refusing all seven would stop generation for six live classes — an outage I
+/// would have caused with a check meant to prevent one. The severities are
+/// genuinely different: an OPTIONAL edge at an unserved class is already
+/// refused at write time by the DAL as unknown-target (fail-closed, measured on
+/// the variant this morning), so the caller learns. A REQUIRED one disappears
+/// from the served `required` list, and nobody learns anything — that is the
+/// AuthBoundary defect, and it is the one refused here.
+pub fn edge_target_check(
+    class_local: &str,
+    fields: &[String],
+    required: &[String],
+    served: &[String],
+) -> Result<(), String> {
+    for f in fields {
+        let target = match f.split_once("|edge:") {
+            Some((_, t)) => t,
+            None => continue,
+        };
+        if target.is_empty() || served.iter().any(|c| c == target) {
+            continue;
+        }
+        let name = f.split('|').next().unwrap_or(f);
+        // only a REQUIRED edge is silently dropped; an optional one is refused
+        // at write by the DAL, where the caller sees it.
+        if !required.iter().any(|m| m.split('|').next().unwrap_or(m) == name) {
+            continue;
+        }
+        return Err(format!(
+            "{}: field '{}' points at class '{}', which no domain definesVocabulary —              there is no collection to reference it through. Repoint the shape at a served class              or claim '{}' in a domain; the generator will not serve a weaker contract than the model declares",
+            class_local, name, target, target
+        ));
+    }
+    Ok(())
+}
+
 pub fn adr040_check(class_local: &str, fields: &[String]) -> Result<(), String> {
     let class_ok = class_local
         .chars()
@@ -940,12 +1040,27 @@ pub fn generate_domain_vocab(domain_local: &str) -> R<Vec<RouteTable>> {
 
 /// GENERATE — read the shape's direct-path properties for `class` from the
 /// ontology graph and derive the route table.
+///
+/// #4163 — fields and required edges walk `rdfs:subClassOf*`, so a class that
+/// declares a parent serves the parent's properties. Before this, the query
+/// pinned `sh:targetClass <class>` and a declared parent contributed nothing:
+/// chorus:CodeFile is `rdfs:subClassOf chorus:File` and commented "filePath is
+/// the identity it inherits", while CodeFileShape hand-repeated filePath,
+/// fileSha and fileLastModified — and the copy had already drifted from the
+/// original (parent fileInDomain, child hasDomain).
+///
+/// Deliberately NOT inherited: instancesGraph, repoTarget, requiresAuth,
+/// exposure, treeEdge, treeOrder. Those answer "where do this class's rows
+/// live" and "who may read them" — per-class decisions. Inheriting a parent's
+/// instances graph would file a child's rows in the parent's home, and
+/// inheriting auth would move a security boundary as a side effect of a
+/// modelling choice. Properties describe a thing; those six place and guard it.
 pub fn generate(class_local: &str) -> R<RouteTable> {
     adr040_check(class_local, &[])?; // refuse before touching the store
     let class = format!("{}{}", NS, class_local);
     // fields WITH their kind: name|datatype:<xsd> or name|edge:<Class> or name|plain
     let q = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', COALESCE(CONCAT('datatype:', REPLACE(STR(?dt), '.*#', '')), CONCAT('edge:', REPLACE(STR(?cl), '.*#', '')), 'plain')) AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path . FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:datatype ?dt }} OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', COALESCE(CONCAT('datatype:', REPLACE(STR(?dt), '.*#', '')), CONCAT('edge:', REPLACE(STR(?cl), '.*#', '')), 'plain')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let body = sparql_json(&q)?;
@@ -956,6 +1071,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         return Err(format!("no shape found for {} in {} — land the schema first", class, ONTOLOGY_GRAPH));
     }
     adr040_check(class_local, &fields)?; // shape-sourced fields obey the law too
+    field_conflict_check(class_local, &fields)?; // #4163 — two shapes disagreeing is a refusal
     let plural = pluralize(class_local);
     let mut routes = vec![
         format!("GET /{}", plural),
@@ -992,7 +1108,7 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
     // human completeness gauge, but retained in `write_required`: create bodies
     // must advertise the same floor the DAL enforces, including required edges.
     let mq = format!(
-        "PREFIX sh: <http://www.w3.org/ns/shacl#> SELECT ?v WHERE {{ GRAPH <{g}> {{ ?s sh:targetClass <{c}> ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?cl), 'edge', 'field')) AS ?v) }} }} ORDER BY ?v",
+        "PREFIX sh: <http://www.w3.org/ns/shacl#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?v WHERE {{ GRAPH <{g}> {{ <{c}> rdfs:subClassOf* ?tc . ?s sh:targetClass ?tc ; sh:property ?p . ?p sh:path ?path ; sh:minCount ?mc . FILTER(?mc >= 1) FILTER(isIRI(?path)) OPTIONAL {{ ?p sh:class ?cl }} BIND(CONCAT(REPLACE(STR(?path), '.*#', ''), '|', IF(BOUND(?cl), 'edge', 'field')) AS ?v) }} }} ORDER BY ?v",
         g = ONTOLOGY_GRAPH, c = class
     );
     let required_rows = select_v(&sparql_json(&mq)?);
@@ -1001,6 +1117,22 @@ pub fn generate(class_local: &str) -> R<RouteTable> {
         .filter_map(|row| row.split_once('|').map(|(name, _)| name.to_string()))
         .collect();
     write_required.sort();
+    // #4163 — the edge-target REFUSAL is NOT wired here, deliberately.
+    //
+    // It refused a required edge whose target class is absent from
+    // `all_vocab_classes()` — athena-make's own claimed list. That list is not
+    // "what is served"; it is "what THIS door serves". chorus:SubDomain is
+    // served by chorus-api (47 rows at :3340/api/athena/subdomains, measured
+    // 2026-09-13 13:08) and is absent here, so the check would have refused
+    // AuthBoundary's two perfectly good edges and broken a shape it was written
+    // to protect. Silas caught it before I shipped it; my `/subdomains 404` was
+    // the wrong door, not a retired class.
+    //
+    // By the rule this card is built on: a check that cannot tell "unserved
+    // anywhere" from "served by another door" cannot separate the two states it
+    // exists to separate, so it does not gate. `edge_target_check` stays as a
+    // tested function with no caller until someone can answer "is this class
+    // served?" across doors — which nothing can today.
     write_required.dedup();
     let mut mandatory: Vec<String> = required_rows
         .iter()
@@ -5096,6 +5228,15 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                 // (machine) and /<plural>/openapi (browsable). Was only /borg/properties; now
                 // every primitive documents itself, found via the discovery root above.
                 if let Some(rest) = path.strip_suffix("/openapi.json").or_else(|| path.strip_suffix("/openapi")) {
+                    // #4163 — strip the version prefix here too. #4158 taught the
+                    // collection routes and the write door that /v1 is not a
+                    // collection, but this sub-route never learned, so discovery
+                    // advertised "/v1/tests/results/openapi.json" and that exact
+                    // URL answered 400 while the bare form answered 200
+                    // (measured 2026-09-13 13:00, both servers). Kade hit it
+                    // following the advertised link, which is the whole failure
+                    // mode #3561 named: serve the path you advertise.
+                    let rest = rest.strip_prefix("/v1").unwrap_or(rest);
                     let want = rest.trim_start_matches('/');
                     if let Some(t) = tables
                         .iter()
@@ -6111,6 +6252,98 @@ mod tests {
         assert_eq!(select_table("/code/files/abc123", &tables).map(|t| t.class.clone()), Some(format!("{NS}CodeFile")));
         // query string is not part of the match
         assert_eq!(select_table("/tests/results?limit=1", &tables).map(|t| t.class.clone()), Some(format!("{NS}TestResult")));
+    }
+
+    #[test]
+    fn an_edge_at_an_unserved_class_is_refused() {
+        // #4163 AC3 — the AuthBoundary case, in miniature. Its two required
+        // edges point at chorus:SubDomain, retired and unserved (/subdomains
+        // 404), and the generator dropped them from `required` instead of
+        // refusing — for ten weeks, through a report.
+        let served = vec!["Domain".to_string(), "Role".to_string()];
+        let fields = vec![
+            "label|plain".to_string(),
+            "betweenDomainA|edge:SubDomain".to_string(),
+        ];
+        let required = vec!["betweenDomainA|edge".to_string()];
+        let err = edge_target_check("AuthBoundary", &fields, &required, &served).unwrap_err();
+        assert!(err.contains("betweenDomainA"), "names the field: {err}");
+        assert!(err.contains("SubDomain"), "names the class: {err}");
+        assert!(err.contains("no collection to reference"), "says why: {err}");
+    }
+
+    #[test]
+    fn negative_proof_the_edge_check_passes_a_served_target_and_ignores_non_edges() {
+        // #3734 — two states this check must separate, and the two ways it
+        // could be hollow. If it refused a SERVED target it would block every
+        // legitimate edge (and would have gone red on this repo's 46 classes,
+        // so it would have been "fixed" by weakening it). If it inspected
+        // datatype fields it would refuse things that name no class at all.
+        let served = vec!["Domain".to_string(), "Role".to_string()];
+        let ok = vec![
+            "ownedBy|edge:Role".to_string(),
+            "hasDomain|edge:Domain".to_string(),
+            "filePath|datatype:string".to_string(),
+            "label|plain".to_string(),
+        ];
+        let required = vec!["ownedBy|edge".to_string(), "fileInDomain|edge".to_string()];
+        assert!(edge_target_check("CodeFile", &ok, &required, &served).is_ok(), "served targets and non-edges pass");
+        // and the same list with ONE target retired must go red — the states
+        // differ by exactly the thing the check exists to see
+        let mut bad = ok.clone();
+        bad.push("fileInDomain|edge:SubDomain".to_string());
+        assert!(edge_target_check("CodeFile", &bad, &required, &served).is_err(), "one retired REQUIRED target is enough to refuse");
+        // and the same edge, OPTIONAL, passes — the DAL refuses it at write,
+        // where the caller sees it. The two states this check must separate.
+        assert!(edge_target_check("CodeFile", &bad, &[], &served).is_ok(),
+            "an OPTIONAL edge at an unserved class is not a generate-time refusal");
+    }
+
+    #[test]
+    fn sibling_shapes_on_one_class_already_union() {
+        // #4163 — pinning a behaviour this card did NOT build, so a later
+        // refactor of the generate query cannot quietly remove it. The query
+        // filters on sh:targetClass only, so two NodeShapes on one class both
+        // contribute; select_v keeps every binding.
+        let fields = vec![
+            "fileSha|datatype:string".to_string(),   // from FileShape
+            "hasKind|edge:CodeKind".to_string(),     // from CodeFileShape
+        ];
+        assert!(field_conflict_check("CodeFile", &fields).is_ok(), "agreeing siblings union");
+    }
+
+    #[test]
+    fn field_conflict_is_refused_not_resolved() {
+        // #4163 — the real gap. Two shapes disagreeing about one property is a
+        // shape bug; picking a winner hides it behind a rule nobody reading the
+        // shapes can see.
+        let fields = vec![
+            "filePath|datatype:string".to_string(),
+            "filePath|datatype:dateTime".to_string(),
+        ];
+        let err = field_conflict_check("CodeFile", &fields).unwrap_err();
+        assert!(err.contains("filePath"), "names the field: {err}");
+        assert!(err.contains("datatype:string") && err.contains("datatype:dateTime"), "names both kinds: {err}");
+        assert!(err.contains("will not pick a winner"), "says why: {err}");
+    }
+
+    #[test]
+    fn negative_proof_the_conflict_check_is_not_a_duplicate_check() {
+        // #3734 — the failure this shape invites: writing it as "this field
+        // appears twice" instead of "twice, DISAGREEING". That check would go
+        // red on the identical-twice case, which is exactly what inheritance
+        // produces legitimately (a child repeating its parent verbatim, as
+        // CodeFileShape does for filePath today). If this ever fails, the check
+        // can no longer tell agreement from conflict and would refuse the
+        // common case.
+        let same = vec![
+            "filePath|datatype:string".to_string(),
+            "filePath|datatype:string".to_string(),
+        ];
+        assert!(field_conflict_check("CodeFile", &same).is_ok(), "identical twice is NOT a conflict");
+        // and the empty / malformed cases do not throw
+        assert!(field_conflict_check("CodeFile", &[]).is_ok());
+        assert!(field_conflict_check("CodeFile", &["noPipe".to_string()]).is_ok());
     }
 
     #[test]

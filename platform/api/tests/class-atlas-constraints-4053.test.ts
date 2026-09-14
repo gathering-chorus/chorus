@@ -98,3 +98,38 @@ describe('#4053 the atlas draws the rules, structurally', () => {
     expect(inverses.map((e) => e.name).sort()).toEqual(['hasDomain', 'inStream']);
   });
 });
+
+// #4163 — a REQUIRED EDGE must be bandable as required. Measured on the live
+// atlas 2026-09-13: Test's inFile and covers came back multiplicity "1..*" with
+// NO min field, while attributes carried real mins — and class-atlas.html bands
+// with `m.min >= 1`, so `undefined >= 1` was false and every required edge in
+// the model rendered as optional. That is why the tests class "read as less
+// rigorous than it is" and why its two strongest rules looked absent.
+describe('#4163 required edges carry min so the page can band them', () => {
+  const rows = [
+    { domain: uri('domain-tests'), class: uri('Test'), prop: uri('inFile'), rc: uri('SourceFile'), min: int('1') },
+    { domain: uri('domain-tests'), class: uri('Test'), prop: uri('quarantined'), dt: xsd('boolean'), min: int('0') },
+  ];
+
+  it('a required edge comes back with min >= 1, like a required attribute', () => {
+    const atlas = buildClassAtlas(rows as unknown as SparqlBinding[], new Map([['SourceFile', 'domain-code']]));
+    const test = atlas.domains[0].classes[0];
+    const inFile = test.edges.find((e) => e.name === 'inFile');
+    expect(inFile).toBeDefined();
+    expect(inFile!.min).toBe(1);
+    expect(inFile!.min >= 1).toBe(true); // the exact expression the page bands on
+  });
+
+  it('NEGATIVE PROOF: an optional edge still reads optional', () => {
+    // The two states this must separate. If min were hardcoded, or defaulted to
+    // 1, every edge would band as required and the fix would be as wrong as the
+    // bug — a page where nothing is distinguishable from everything.
+    const optional = [
+      { domain: uri('domain-tests'), class: uri('Test'), prop: uri('covers'), rc: uri('Domain'), min: int('0') },
+    ];
+    const atlas = buildClassAtlas(optional as unknown as SparqlBinding[], new Map([['Domain', 'domain-chorus']]));
+    const edge = atlas.domains[0].classes[0].edges[0];
+    expect(edge.min).toBe(0);
+    expect(edge.min >= 1).toBe(false);
+  });
+});

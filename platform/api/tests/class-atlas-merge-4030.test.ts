@@ -21,11 +21,14 @@ describe('class atlas merging (#4030)', () => {
     const atlas = buildClassAtlas(rows as any, new Map([['Role', 'domain-roles'], ['Chunk', 'domain-board']]));
     const card = atlas.domains[0].classes[0];
     expect(card.name).toBe('Card');
+    // #4163 — edges carry min/max, the same pair attributes already carried
+    // (asserted two lines down). The page bands required members on `min >= 1`,
+    // so an edge without it always read as optional.
     expect(card.edges).toEqual([
-      { name: 'ownedBy', to: 'Role', multiplicity: '0..*', crossDomain: true },
+      { name: 'ownedBy', to: 'Role', min: 0, max: null, multiplicity: '0..*', crossDomain: true },
       // #4053 — a blank-node path is now flagged `inverse`, so a reverse
       // requirement is distinguishable from a forward one.
-      { name: '(inverse path)', to: 'Chunk', multiplicity: '0..*', crossDomain: false, inverse: true },
+      { name: '(inverse path)', to: 'Chunk', min: 0, max: null, multiplicity: '0..*', crossDomain: false, inverse: true },
     ]);
     expect(card.attributes).toEqual([{ name: 'title', type: 'string', min: 0, max: null }]);
   });
