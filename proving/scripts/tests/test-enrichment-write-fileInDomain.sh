@@ -5,7 +5,7 @@
 #
 # Method:
 #   1. Seed a fixture-named graph with a handful of chorus:File instances
-#      at known paths (using crawler-hydrate-graph.sh as the seeder).
+#      at known paths (seeded inline — #4173 retired the crawler script).
 #   2. Run the enrichment writer against that graph.
 #   3. SPARQL query: assert each fixture file has the expected
 #      fileInDomain + (where applicable) fileHasOwner.
@@ -20,7 +20,6 @@ f() { FAIL=$((FAIL+1)); echo "  FAIL: $*"; }
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus-werk/kade}"
 ENRICH="$CHORUS_ROOT/platform/scripts/enrichment-write-fileInDomain.sh"
-HYDRATE="$CHORUS_ROOT/platform/scripts/crawler-hydrate-graph.sh"
 FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
 TEST_GRAPH="urn:chorus:test-enrichment-$$"
 TEST_DB=$(mktemp -t enrich.XXXXXX.db)
@@ -61,13 +60,29 @@ curl -s -X POST -H 'Content-Type: application/sparql-update' \
 
 echo "=== #2844 enrichment writer integration ==="
 
-# Seed via crawler.
-CHORUS_ROOT="$FIXTURE" \
-HYDRATION_GRAPH="$TEST_GRAPH" \
-HYDRATION_DB="$TEST_DB" \
-TTL="$FIXTURE/roles/silas/ontology/chorus.ttl" \
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log" \
-bash "$HYDRATE" >/dev/null 2>&1
+# Seed the fixture directly.
+#
+# #4173 retired the crawler shell script this test borrowed as a seeder.
+# Borrowing a walker to set up a different subject's test was always the wrong
+# coupling — it made this suite fail whenever the walker changed, for reasons
+# that had nothing to do with enrichment. The replacement, chorus-crawl, writes
+# through the generated door and cannot target an arbitrary test graph by
+# design, so the fixture seeds itself: the rows are the input to the thing under
+# test, and stating them plainly is clearer than producing them.
+SEED_INSERT="PREFIX chorus: <https://jeffbridwell.com/chorus#> INSERT DATA { GRAPH <$TEST_GRAPH> {"
+for rel in \
+  "proving/scripts/tests/test-enrichment-write-fileInDomain.sh" \
+  "platform/scripts/enrichment-write-fileInDomain.sh" \
+  "platform/scripts/chorus-log" \
+  "roles/kade/current-work.md" \
+  "roles/silas/ontology/chorus.ttl" \
+  "platform/api/src/server.ts"; do
+  uri="https://jeffbridwell.com/chorus#file-$(printf '%s' "$rel" | tr -c 'a-zA-Z0-9' '-')"
+  SEED_INSERT="$SEED_INSERT <$uri> a chorus:File ; chorus:filePath \"$rel\" ."
+done
+SEED_INSERT="$SEED_INSERT } }"
+curl -s -X POST -H 'Content-Type: application/sparql-update' \
+  --data-binary "$SEED_INSERT" "$FUSEKI_BASE/update" >/dev/null 2>&1
 
 SEED_COUNT=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?f) AS ?n) WHERE { GRAPH <'"$TEST_GRAPH"'> { ?f a chorus:File } }' \

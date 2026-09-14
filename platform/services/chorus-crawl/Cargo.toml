@@ -1,0 +1,17 @@
+[package]
+name = "chorus-crawl"
+version = "0.1.0"
+edition = "2021"
+
+# #4173 — one herald, one walk. Self-contained: ZERO external/registry
+# dependencies, std only, with `git` and `curl` as subprocesses. Same contract
+# as werk-commit / werk-pull (#3045) — the v2 verb-binary blueprint.
+[dependencies]
+
+[lib]
+name = "chorus_crawl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "chorus-crawl"
+path = "src/main.rs"
