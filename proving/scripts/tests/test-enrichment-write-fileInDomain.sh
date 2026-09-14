@@ -70,19 +70,33 @@ echo "=== #2844 enrichment writer integration ==="
 # design, so the fixture seeds itself: the rows are the input to the thing under
 # test, and stating them plainly is clearer than producing them.
 SEED_INSERT="PREFIX chorus: <https://jeffbridwell.com/chorus#> INSERT DATA { GRAPH <$TEST_GRAPH> {"
+# EXACTLY the five fixture files created above, at the paths the strip regex
+# produces. The first cut seeded a plausible-looking list of real repo paths
+# instead, so the seed passed its own count check and every assertion below
+# failed looking for rows that were never there.
 for rel in \
-  "proving/scripts/tests/test-enrichment-write-fileInDomain.sh" \
-  "platform/scripts/enrichment-write-fileInDomain.sh" \
-  "platform/scripts/chorus-log" \
+  "proving/scripts/tests/a.sh" \
+  "platform/scripts/git-helper.sh" \
   "roles/kade/current-work.md" \
-  "roles/silas/ontology/chorus.ttl" \
-  "platform/api/src/server.ts"; do
+  "skills/foo.md" \
+  "roles/silas/ontology/chorus.ttl"; do
   uri="https://jeffbridwell.com/chorus#file-$(printf '%s' "$rel" | tr -c 'a-zA-Z0-9' '-')"
   SEED_INSERT="$SEED_INSERT <$uri> a chorus:File ; chorus:filePath \"$rel\" ."
 done
 SEED_INSERT="$SEED_INSERT } }"
-curl -s -X POST -H 'Content-Type: application/sparql-update' \
-  --data-binary "$SEED_INSERT" "$FUSEKI_BASE/update" >/dev/null 2>&1
+# #3566 — Fuseki 401s a bare write. The first cut of this seed sent the INSERT
+# with no credential AND swallowed the response into /dev/null, so a refused
+# write looked identical to a successful one and only the count check three
+# lines later said anything. Carry the credential, and let the status code be
+# seen: a seed that cannot write must say so itself.
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"
+SEED_CODE=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' \
+  -X POST -H 'Content-Type: application/sparql-update' \
+  --data-binary "$SEED_INSERT" "$FUSEKI_BASE/update")
+case "$SEED_CODE" in
+  2*) ;;
+  *) f "seed write refused by the store — HTTP $SEED_CODE" ;;
+esac
 
 SEED_COUNT=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?f) AS ?n) WHERE { GRAPH <'"$TEST_GRAPH"'> { ?f a chorus:File } }' \
