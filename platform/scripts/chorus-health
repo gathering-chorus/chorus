@@ -316,11 +316,30 @@ else
   fail "chorus-api-up" "health check failed (${API_BASE}/health returned: ${api_health:-no response})"
 fi
 
-# Fuseki memory ceiling
+# Fuseki memory ceiling.
+#
+# #4170 — read the store by its EXACT label. The substring match this replaces
+# picked the first of four services whose label merely CONTAINS "fuseki", which
+# is com.gathering.fuseki-backup — a periodic job, idle at rss 0 — and reported
+# that as the store being down. It nudged Jeff four times (2026-07-21, 09-12,
+# 09-13 07:43, 09-14 05:41) while Fuseki was healthy at ~100-450MB each time.
+#
+# A missing label is UNMEASURED, never 0: "the registry has no such service" and
+# "the service is using no memory" are different states, and the check that
+# cannot separate them is the one that cried wolf for two months.
+FUSEKI_LABEL="${FUSEKI_LABEL:-com.gathering.fuseki}"
 fuseki_mem=$(curl -s --max-time 5 "${API_BASE}/api/chorus/services" 2>/dev/null | \
-  python3 -c "import json,sys; svcs=json.load(sys.stdin).get('services',[]); s=[x for x in svcs if 'fuseki' in x.get('label','')]; print(s[0].get('rss_mb',0) if s else 0)" 2>/dev/null || echo "0")
-if [ "$fuseki_mem" -eq 0 ] 2>/dev/null; then
-  warn "fuseki-memory" "Fuseki rss=0 or not found in service registry"
+  python3 -c "
+import json,sys
+label=sys.argv[1]
+svcs=json.load(sys.stdin).get('services',[])
+hit=[x for x in svcs if x.get('label')==label]
+print(hit[0].get('rss_mb') if hit and hit[0].get('rss_mb') is not None else 'ABSENT')
+" "$FUSEKI_LABEL" 2>/dev/null || echo "ABSENT")
+if [ "$fuseki_mem" = "ABSENT" ]; then
+  fail "fuseki-memory" "UNMEASURED — ${FUSEKI_LABEL} is not in the service registry (or reports no rss). This is NOT zero memory; the check could not read the store."
+elif [ "$fuseki_mem" -eq 0 ] 2>/dev/null; then
+  warn "fuseki-memory" "${FUSEKI_LABEL} reports rss=0"
 elif [ "$fuseki_mem" -gt "$FUSEKI_MEM_CEILING_MB" ] 2>/dev/null; then
   warn "fuseki-memory" "${fuseki_mem}MB exceeds ceiling ${FUSEKI_MEM_CEILING_MB}MB"
 else
