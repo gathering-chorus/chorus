@@ -15,7 +15,7 @@ before=$(count); [ -n "$before" ] || { echo "migrate-4154: could not count — r
 echo "migrate-4154: CodeFile rows in urn:chorus:instances before: $before"
 [ "${CONFIRM:-}" = "yes" ] || exit 0
 [ -n "${FUSEKI_AUTH:-}" ] || { echo "migrate-4154: FUSEKI_AUTH not set (source platform/scripts/fuseki-auth.sh)" >&2; exit 2; }
-code=$(curl -s -o /dev/null -w '%{http_code}' -u "$FUSEKI_AUTH" -X POST -H 'Content-Type: application/sparql-update' \
+code=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -u "$FUSEKI_AUTH" -X POST -H 'Content-Type: application/sparql-update' \
   --data-binary 'PREFIX c: <https://jeffbridwell.com/chorus#> DELETE { GRAPH <urn:chorus:instances> { ?s ?p ?o } } WHERE { GRAPH <urn:chorus:instances> { ?s a c:CodeFile ; ?p ?o } }' "$FUSEKI_UPDATE")
 after=$(count)
 echo "migrate-4154: delete http $code; after: $after"

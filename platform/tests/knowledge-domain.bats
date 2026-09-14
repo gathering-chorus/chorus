@@ -58,7 +58,7 @@ _token() { bash "${CHORUS_ROOT}/platform/scripts/chorus-identity-token" kade 2>/
 @test "POST /api/doc-catalog/link creates a governs edge" {
   local tok; tok=$(_token)
   [ -n "$tok" ] || skip "no identity token available on this host"
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CHORUS_API/api/doc-catalog/link" \
+  http_code=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w "%{http_code}" -X POST "$CHORUS_API/api/doc-catalog/link" \
     -H "Authorization: Bearer $tok" \
     -H "Content-Type: application/json" \
     -d '{"href": "/gathering-docs/service-design-knowledge.html", "domain": "chorus", "relationship": "governs"}' 2>/dev/null)
@@ -68,7 +68,7 @@ _token() { bash "${CHORUS_ROOT}/platform/scripts/chorus-identity-token" kade 2>/
 @test "POST /api/doc-catalog/link rejects invalid relationship" {
   local tok; tok=$(_token)
   [ -n "$tok" ] || skip "no identity token available on this host"
-  http_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$CHORUS_API/api/doc-catalog/link" \
+  http_code=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w "%{http_code}" -X POST "$CHORUS_API/api/doc-catalog/link" \
     -H "Authorization: Bearer $tok" \
     -H "Content-Type: application/json" \
     -d '{"href": "/test.html", "domain": "chorus", "relationship": "invalid"}' 2>/dev/null)

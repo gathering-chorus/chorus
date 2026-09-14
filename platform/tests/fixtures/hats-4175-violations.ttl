@@ -1,0 +1,61 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+
+# #4175 negative-proof fixture (#3734). Every check in hats-4175.ttl is run
+# against this graph. It holds, for each check, ONE violating row AND ONE
+# compliant row of the same shape — so a check that fires on everything, or on
+# nothing, fails the proof just as loudly as one that never goes red.
+#
+# Declared hats (the two layers) and two anchors with owners are the world.
+
+chorus:hat-distinguished-engineer a chorus:Hat ; chorus:hatLayer "standing" .
+chorus:hat-operations-lead        a chorus:Hat ; chorus:hatLayer "per-product" .
+
+chorus:wren a chorus:Role .
+chorus:kade a chorus:Role .
+
+chorus:domain-security a chorus:Domain ; chorus:ownedBy chorus:wren .
+chorus:domain-tests    a chorus:Domain ; chorus:ownedBy chorus:kade .
+
+# --- gc-hat-layer-matches-attachment -----------------------------------------
+# VIOLATION 1: a standing hat on an appointment.
+chorus:appt-bad-standing-on-anchor a chorus:Appointment ;
+    rdfs:label "VIOLATION — standing hat used as a per-product hat" ;
+    chorus:appointee chorus:kade ;
+    chorus:appointedHat chorus:hat-distinguished-engineer ;
+    chorus:overAnchor chorus:domain-tests .
+# VIOLATION 2: a per-product hat given a standing seat.
+chorus:hat-operations-lead chorus:heldStandingBy chorus:wren .
+# COMPLIANT twin: a per-product hat on an appointment.
+chorus:appt-good a chorus:Appointment ;
+    rdfs:label "COMPLIANT — per-product hat, right owner, real anchor" ;
+    chorus:appointee chorus:kade ;
+    chorus:appointedHat chorus:hat-operations-lead ;
+    chorus:overAnchor chorus:domain-tests .
+# COMPLIANT twin: a standing hat held by a role.
+chorus:hat-distinguished-engineer chorus:heldStandingBy chorus:kade .
+
+# --- gc-appointment-has-anchor -----------------------------------------------
+# VIOLATION: a per-product hat with no anchor. (appt-good is the compliant twin.)
+chorus:appt-bad-no-anchor a chorus:Appointment ;
+    rdfs:label "VIOLATION — per-product hat with no anchor" ;
+    chorus:appointee chorus:kade ;
+    chorus:appointedHat chorus:hat-operations-lead .
+
+# --- gc-appointed-hat-is-declared --------------------------------------------
+# VIOLATION 1: an appointment naming a hat nobody declared.
+chorus:appt-bad-undeclared-hat a chorus:Appointment ;
+    rdfs:label "VIOLATION — hat IRI that is not a chorus:Hat row" ;
+    chorus:appointee chorus:wren ;
+    chorus:appointedHat chorus:hat-chief-vibes-officer ;
+    chorus:overAnchor chorus:domain-security .
+# VIOLATION 2: a standing seat on a hat nobody declared.
+chorus:hat-invented-by-typing chorus:heldStandingBy chorus:jeff .
+
+# --- gc-appointee-is-the-owner -----------------------------------------------
+# VIOLATION: the appointment names someone who does not own the anchor.
+chorus:appt-bad-wrong-owner a chorus:Appointment ;
+    rdfs:label "VIOLATION — appointee is not the anchor's ownedBy role" ;
+    chorus:appointee chorus:kade ;
+    chorus:appointedHat chorus:hat-operations-lead ;
+    chorus:overAnchor chorus:domain-security .

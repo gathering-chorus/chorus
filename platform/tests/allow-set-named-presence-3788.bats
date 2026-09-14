@@ -1,6 +1,11 @@
 #!/usr/bin/env bats
-# @test-type: security — asserts the gate's verdict against fixture graphs; no
-# credential is exercised beyond the store's own read auth.
+# @test-type: integration:security — asserts the gate's verdict against fixture
+# graphs in a live store; no credential is exercised beyond the store's own read
+# auth. (#4175: was "@test-type: security", which is a CONCERN and not a layer,
+# so the gate read it as no declaration at all. It went unnoticed because the
+# gate only grades a file when that file changes, and this one had not — the
+# same shape as a check that cannot go red. The concern is kept, the layer is
+# now named.)
 #
 # #3788 — the allow-set gate asserts NAMED PRESENCE, not a count.
 #
@@ -32,13 +37,13 @@ setup() {
 }
 
 teardown() {
-  [ -n "${G:-}" ] && curl -s -u "$FUSEKI_ADMIN_USER:$FUSEKI_ADMIN_PASSWORD" -X POST "$UPD" \
+  [ -n "${G:-}" ] && curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -u "$FUSEKI_ADMIN_USER:$FUSEKI_ADMIN_PASSWORD" -X POST "$UPD" \
     --data-urlencode "update=DROP SILENT GRAPH <$G>" -o /dev/null 2>/dev/null || true
 }
 
 seed() {
   local triples="$1"
-  curl -s -u "$FUSEKI_ADMIN_USER:$FUSEKI_ADMIN_PASSWORD" -X POST "$UPD" \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -u "$FUSEKI_ADMIN_USER:$FUSEKI_ADMIN_PASSWORD" -X POST "$UPD" \
     --data-urlencode "update=DROP SILENT GRAPH <$G>; INSERT DATA { GRAPH <$G> { $triples } }" -o /dev/null
 }
 

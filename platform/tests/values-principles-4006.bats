@@ -32,7 +32,7 @@ count() { # $1 = graph, $2 = WHERE body
 teardown() {
   # shellcheck disable=SC1091
   source "${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}/platform/scripts/fuseki-auth.sh" 2>/dev/null || true
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$FIXTURE_GRAPH" -o /dev/null 2>/dev/null || true
 }
 
 @test "28 principles are served, split 14 pc / 14 xp" {

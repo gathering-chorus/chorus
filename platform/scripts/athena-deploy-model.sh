@@ -33,6 +33,14 @@
 
 set -uo pipefail
 
+# #4175 — every WRITE to Fuseki carries a timeout. On 2026-09-14 a compaction held
+# the store's write lock from 15:01; a bare `curl -X DELETE` against the staging
+# graph sat for 32 minutes and took a test run with it. Reads answered in 0.011s
+# the whole time — the lock, not the store. An unbounded write turns "someone else
+# is holding the lock" into a hung run nobody can read, instead of a failure in
+# seconds that names itself. FUSEKI_WRITE_TIMEOUT overrides for a deliberately
+# long deploy; the default is generous for a normal one and short against a lock.
+
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
 # #3540 — deploy the model SET, not chorus.ttl alone. werk-domains.ttl carries the
 # werk-subproduct domains incl. the tests-domain shape (Test/TestResult/pyramidLayer/
@@ -140,6 +148,12 @@ else
     # Day-authored MODEL_SET discipline (#3654/#3686); instances ride the
     # instance-seed-manifest (pipeline / pipeline-step kinds).
     "$CHORUS_ROOT/roles/kade/ontology/pipelines-4040.ttl"
+    # #4175 — hats: the Hat/Appointment TBox + shapes + the four GovernanceCheck
+    # rows that keep the two layers from crossing. TBox ONLY — the seven hat rows
+    # and the three standing seats hydrate <urn:chorus:domains:roles> in the
+    # ROLES_SET section below, never this graph (Jeff 2026-09-13: no rows in the
+    # ontology graph). Day-authored MODEL_SET discipline (#3654/#3686).
+    "$CHORUS_ROOT/roles/wren/ontology/hats-4175.ttl"
   )
 fi
 # #4080 — a bare run from INSIDE A WERK must not default to prod. On 2026-09-03
@@ -207,9 +221,9 @@ STAGING="${ONTOLOGY_GRAPH}-staging-deploy"
 # Step 1: load the model SET into a FRESH staging graph (native Turtle via GSP POST
 # — POST merges, so set members accumulate into one staging graph). Clear any
 # leftover staging from a prior aborted run first.
-curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 for ttl in "${MODEL_SET[@]}"; do
-  code=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/athena-deploy-model-resp.txt -w '%{http_code}' -X POST \
+  code=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/athena-deploy-model-resp.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: text/turtle' --data-binary "@$ttl" \
     "$FUSEKI_GSP?graph=$STAGING" 2>/dev/null) || code="000"
   if [ "$code" != "200" ] && [ "$code" != "201" ] && [ "$code" != "204" ]; then
@@ -254,7 +268,7 @@ if [ "$RETIRE_ABSENT" = "1" ]; then
   if [ "${_stag:-0}" -eq 0 ]; then
     echo "athena-deploy-model: REFUSING retire — staging has 0 domain subjects (empty/incomplete staging would delete ALL live domains; #3536 guard)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="retire-guard-empty-staging" staging=0 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   RETIRE_CLAUSE=" ; DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$ONTOLOGY_GRAPH> { ?s a ?t ; ?p ?o . FILTER(?t IN (<${NS_CHORUS}Domain>, <${NS_CHORUS}SubDomain>)) } FILTER NOT EXISTS { GRAPH <$STAGING> { ?s ?sp ?so } } }"
@@ -286,14 +300,14 @@ if [ "${DEPLOY_BNODE_CLEANUP:-1}" = "1" ]; then
   done
 fi
 MERGE_SPARQL="${BNODE_CLEANUP}DELETE { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?sp ?so } GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$ONTOLOGY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$STAGING> { ?s ?p ?o } }${RETIRE_CLAUSE}"
-ccode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
+ccode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-copy-resp.txt -w '%{http_code}' -X POST \
   -H 'Content-Type: application/sparql-update' \
   --data-binary "$MERGE_SPARQL" "$FUSEKI_UPDATE" 2>/dev/null) || ccode="000"
 if [ "$ccode" != "200" ] && [ "$ccode" != "204" ]; then
   echo "athena-deploy-model: additive merge staging->ontology failed (http $ccode)" >&2
   head -3 /tmp/chorus-model-copy-resp.txt >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="merge-http-$ccode" 2>/dev/null || true
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
 code="$ccode"
@@ -316,17 +330,17 @@ _vresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
 if ! printf '%s' "$_vresp" | head -1 | grep -q '^n'; then
   echo "athena-deploy-model: OUTPUT-VERIFY could not ask (no CSV header from the store) — refusing to pass a blind verify (#3731)" >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-unanswered" 2>/dev/null || true
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
 _missing=$(printf '%s\n' "$_vresp" | tail -1 | tr -dc '0-9')
 if [ "${_missing:-1}" -ne 0 ] 2>/dev/null; then
   echo "athena-deploy-model: OUTPUT-VERIFY FAILED — ${_missing} staged subject(s) absent from <$ONTOLOGY_GRAPH> post-merge (INSERT dropped data; #3536 AC2)" >&2
   "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$ONTOLOGY_GRAPH" reason="verify-staged-missing" missing="${_missing}" 2>/dev/null || true
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
   exit 1
 fi
-curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
+curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$STAGING" -o /dev/null 2>/dev/null || true
 
 # Verify it actually landed — count triples (proof, not assumption).
 n=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
@@ -664,32 +678,32 @@ stage_merge_set() {
       return 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
   for ttl in "$@"; do
-    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-resp.txt" -w '%{http_code}' -X POST \
+    scode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-resp.txt" -w '%{http_code}' -X POST \
       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$staging" 2>/dev/null) || scode="000"
     if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
       echo "athena-deploy-model: ${tag} staging load failed for $ttl (http $scode)" >&2
       head -3 "/tmp/chorus-model-${tag}-resp.txt" >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-staging-http-$scode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
       return 1
     fi
   done
   merge="DELETE { GRAPH <$graph> { ?s ?p ?o } } WHERE { GRAPH <$staging> { ?s ?sp ?so } GRAPH <$graph> { ?s ?p ?o } } ; INSERT { GRAPH <$graph> { ?s ?p ?o } } WHERE { GRAPH <$staging> { ?s ?p ?o } }"
-  mcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-merge.txt" -w '%{http_code}' -X POST \
+  mcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o "/tmp/chorus-model-${tag}-merge.txt" -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$merge" "$FUSEKI_UPDATE" 2>/dev/null) || mcode="000"
   if [ "$mcode" != "200" ] && [ "$mcode" != "204" ]; then
     echo "athena-deploy-model: ${tag} merge staging->${graph} failed (http $mcode)" >&2
     head -3 "/tmp/chorus-model-${tag}-merge.txt" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-merge-http-$mcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
     return 1
   fi
   resp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$staging> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$graph> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$staging" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$resp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: ${tag}-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$graph" reason="${tag}-verify-unanswered" 2>/dev/null || true
@@ -729,26 +743,26 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${SECURITY_SET[@]}"; do
-    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-resp.txt -w '%{http_code}' -X POST \
+    scode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-resp.txt -w '%{http_code}' -X POST \
       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SECURITY_STAGING" 2>/dev/null) || scode="000"
     if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
       echo "athena-deploy-model: SECURITY_SET staging load failed for $ttl (http $scode)" >&2
       head -3 /tmp/chorus-model-sec-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-staging-http-$scode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
   SECURITY_MERGE="DELETE { GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SECURITY_STAGING> { ?s ?sp ?so } GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$SECURITY_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SECURITY_STAGING> { ?s ?p ?o } }"
-  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-merge.txt -w '%{http_code}' -X POST \
+  smcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-sec-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$SECURITY_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
   if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
     echo "athena-deploy-model: SECURITY_SET merge staging->security failed (http $smcode)" >&2
     head -3 /tmp/chorus-model-sec-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-merge-http-$smcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   # #3726 — SINGLE-REQUEST TRUTH: the verify must distinguish "0 subjects missing"
@@ -760,7 +774,7 @@ if [ -z "${TTL:-}" ]; then
   _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SECURITY_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SECURITY_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SECURITY_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: SECURITY-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SECURITY_GRAPH" reason="security-verify-unanswered" 2>/dev/null || true
@@ -795,6 +809,35 @@ if [ -z "${TTL:-}" ]; then
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$CODE_GRAPH" values="${_cn}" 2>/dev/null || true
 fi
 
+# #4175 — the roles domain's own graph: the seven hat rows (each one a job
+# description) and the three standing seats. Same stage+merge+verify path as the
+# code vocabulary, for the same reason — reproducible from the repo, never
+# hand-run, never live-only, and never in the ontology graph.
+#
+# The standing seat is written on the HAT (chorus:heldStandingBy), not on the
+# Role. Roles still live in urn:chorus:instances until #4090 moves them, and
+# stage_merge_set is a per-subject additive merge: staging a Role subject here
+# would DELETE the rest of that Role row. Writing the edge from its own home
+# graph keeps the edge with its subject (gc-edge-follows-node) and touches
+# nothing that lives elsewhere.
+if [ -z "${TTL:-}" ]; then
+  ROLES_GRAPH="${ROLES_GRAPH:-urn:chorus:domains:roles}"
+  ROLES_SET=(
+    "$CHORUS_ROOT/roles/wren/ontology/hats-instances-4175.ttl"
+    # GENERATED from ownedBy by platform/scripts/hats-appointments-4175.py —
+    # Jeff's rule 2026-09-14: the owner wears all four over its products,
+    # domains and services. Regenerate after any ownership change; never edit.
+    "$CHORUS_ROOT/roles/wren/ontology/hats-appointments-4175.ttl"
+  )
+  stage_merge_set "$ROLES_GRAPH" roles "${ROLES_SET[@]}" || exit 1
+  _rn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE { GRAPH <$ROLES_GRAPH> { ?h a c:Hat } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _rn="?"
+  echo "athena-deploy-model: hydrated ${#ROLES_SET[@]} roles file(s) -> <$ROLES_GRAPH> ($_rn hats live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$ROLES_GRAPH" hats="${_rn}" 2>/dev/null || true
+fi
+
 # =============================================================================
 # INFRA_SET (#4084) — chorus:UnitDomainMapping rows into urn:chorus:domains:infrastructure,
 # the one authored place a launchd unit says which domain it belongs to. Same
@@ -817,26 +860,26 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${INFRA_SET[@]}"; do
-    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-resp.txt -w '%{http_code}' -X POST \
+    scode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-resp.txt -w '%{http_code}' -X POST \
       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$INFRA_STAGING" 2>/dev/null) || scode="000"
     if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
       echo "athena-deploy-model: INFRA_SET staging load failed for $ttl (http $scode)" >&2
       head -3 /tmp/chorus-model-infra-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-staging-http-$scode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
   SECURITY_MERGE="DELETE { GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INFRA_STAGING> { ?s ?sp ?so } GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$INFRA_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$INFRA_STAGING> { ?s ?p ?o } }"
-  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-merge.txt -w '%{http_code}' -X POST \
+  smcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-infra-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$SECURITY_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
   if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
     echo "athena-deploy-model: INFRA_SET merge staging->security failed (http $smcode)" >&2
     head -3 /tmp/chorus-model-infra-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-merge-http-$smcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   # #3726 — SINGLE-REQUEST TRUTH: the verify must distinguish "0 subjects missing"
@@ -848,7 +891,7 @@ if [ -z "${TTL:-}" ]; then
   _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$INFRA_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$INFRA_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$INFRA_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: INFRA-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$INFRA_GRAPH" reason="infra-verify-unanswered" 2>/dev/null || true
@@ -900,32 +943,32 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${PRINCIPLES_SET[@]}"; do
-    pcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-resp.txt -w '%{http_code}' -X POST \
+    pcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-resp.txt -w '%{http_code}' -X POST \
       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" 2>/dev/null) || pcode="000"
     if [ "$pcode" != "200" ] && [ "$pcode" != "201" ] && [ "$pcode" != "204" ]; then
       echo "athena-deploy-model: PRINCIPLES_SET staging load failed for $ttl (http $pcode)" >&2
       head -3 /tmp/chorus-model-prin-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-staging-http-$pcode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
   PRINCIPLES_MERGE="DELETE { GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?sp ?so } GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$PRINCIPLES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?p ?o } }"
-  pmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-merge.txt -w '%{http_code}' -X POST \
+  pmcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prin-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$PRINCIPLES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || pmcode="000"
   if [ "$pmcode" != "200" ] && [ "$pmcode" != "204" ]; then
     echo "athena-deploy-model: PRINCIPLES_SET merge staging->principles failed (http $pmcode)" >&2
     head -3 /tmp/chorus-model-prin-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-merge-http-$pmcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   _presp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$PRINCIPLES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$PRINCIPLES_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRINCIPLES_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_presp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: PRINCIPLES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRINCIPLES_GRAPH" reason="principles-verify-unanswered" 2>/dev/null || true
@@ -971,14 +1014,14 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${VALUES_SET[@]}"; do
-    vcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-val-resp.txt -w '%{http_code}' -X POST       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$VALUES_STAGING" 2>/dev/null) || vcode="000"
+    vcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-val-resp.txt -w '%{http_code}' -X POST       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$VALUES_STAGING" 2>/dev/null) || vcode="000"
     if [ "$vcode" != "200" ] && [ "$vcode" != "201" ] && [ "$vcode" != "204" ]; then
       echo "athena-deploy-model: VALUES_SET staging load failed for $ttl (http $vcode)" >&2
       head -3 /tmp/chorus-model-val-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$VALUES_GRAPH" reason="values-staging-http-$vcode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
@@ -992,31 +1035,31 @@ if [ -z "${TTL:-}" ]; then
   if ! printf '%s' "$_vdang" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: VALUES-EDGE-GATE could not ask (no CSV header) — refusing to pass a blind check (#3726)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$VALUES_GRAPH" reason="values-edge-gate-unanswered" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   _vdn=$(printf '%s\n' "$_vdang" | tail -1 | tr -dc '0-9')
   if [ "${_vdn:-1}" -ne 0 ] 2>/dev/null; then
     echo "athena-deploy-model: VALUES-EDGE-GATE FAILED — ${_vdn} expressedBy target(s) are not live Principles" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$VALUES_GRAPH" reason="values-dangling-edges" dangling="${_vdn}" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
 
   VALUES_MERGE="DELETE { GRAPH <$VALUES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$VALUES_STAGING> { ?s ?sp ?so } GRAPH <$VALUES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$VALUES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$VALUES_STAGING> { ?s ?p ?o } }"
-  vmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-val-merge.txt -w '%{http_code}' -X POST \
+  vmcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-val-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$VALUES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || vmcode="000"
   if [ "$vmcode" != "200" ] && [ "$vmcode" != "204" ]; then
     echo "athena-deploy-model: VALUES_SET merge staging->values failed (http $vmcode)" >&2
     head -3 /tmp/chorus-model-val-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$VALUES_GRAPH" reason="values-merge-http-$vmcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   _vresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$VALUES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$VALUES_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$VALUES_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_vresp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: VALUES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$VALUES_GRAPH" reason="values-verify-unanswered" 2>/dev/null || true
@@ -1062,30 +1105,30 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${SERVICES_SET[@]}"; do
-    scode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-resp.txt -w '%{http_code}' -X POST -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SERVICES_STAGING" 2>/dev/null) || scode="000"
+    scode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-resp.txt -w '%{http_code}' -X POST -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SERVICES_STAGING" 2>/dev/null) || scode="000"
     if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
       echo "athena-deploy-model: SERVICES_SET staging load failed for $ttl (http $scode)" >&2
       head -3 /tmp/chorus-model-svc-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-staging-http-$scode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
   SERVICES_MERGE="DELETE { GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SERVICES_STAGING> { ?s ?sp ?so } GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$SERVICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SERVICES_STAGING> { ?s ?p ?o } }"
-  smcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-merge.txt -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' --data-binary "$SERVICES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
+  smcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-svc-merge.txt -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' --data-binary "$SERVICES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
   if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
     echo "athena-deploy-model: SERVICES_SET merge staging->services failed (http $smcode)" >&2
     head -3 /tmp/chorus-model-svc-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-merge-http-$smcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SERVICES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SERVICES_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SERVICES_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: SERVICES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SERVICES_GRAPH" reason="services-verify-unanswered" 2>/dev/null || true
@@ -1128,32 +1171,32 @@ if [ -z "${TTL:-}" ]; then
       exit 1
     fi
   done
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
   for ttl in "${PRACTICES_SET[@]}"; do
-    pcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prac-resp.txt -w '%{http_code}' -X POST \
+    pcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prac-resp.txt -w '%{http_code}' -X POST \
       -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$PRACTICES_STAGING" 2>/dev/null) || pcode="000"
     if [ "$pcode" != "200" ] && [ "$pcode" != "201" ] && [ "$pcode" != "204" ]; then
       echo "athena-deploy-model: PRACTICES_SET staging load failed for $ttl (http $pcode)" >&2
       head -3 /tmp/chorus-model-prac-resp.txt >&2
       "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="practices-staging-http-$pcode" 2>/dev/null || true
-      curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
       exit 1
     fi
   done
   PRACTICES_MERGE="DELETE { GRAPH <$PRACTICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRACTICES_STAGING> { ?s ?sp ?so } GRAPH <$PRACTICES_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$PRACTICES_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$PRACTICES_STAGING> { ?s ?p ?o } }"
-  pmcode=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prac-merge.txt -w '%{http_code}' -X POST \
+  pmcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-prac-merge.txt -w '%{http_code}' -X POST \
     -H 'Content-Type: application/sparql-update' --data-binary "$PRACTICES_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || pmcode="000"
   if [ "$pmcode" != "200" ] && [ "$pmcode" != "204" ]; then
     echo "athena-deploy-model: PRACTICES_SET merge staging->practices failed (http $pmcode)" >&2
     head -3 /tmp/chorus-model-prac-merge.txt >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="practices-merge-http-$pmcode" 2>/dev/null || true
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
     exit 1
   fi
   _presp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
     "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$PRACTICES_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$PRACTICES_GRAPH> { ?s ?q ?r } } }" \
     -H 'Accept: text/csv' 2>/dev/null)
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$PRACTICES_STAGING" -o /dev/null 2>/dev/null || true
   if ! printf '%s' "$_presp" | head -1 | grep -q '^n'; then
     echo "athena-deploy-model: PRACTICES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726 single-request-truth)" >&2
     "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$PRACTICES_GRAPH" reason="practices-verify-unanswered" 2>/dev/null || true

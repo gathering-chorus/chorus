@@ -70,7 +70,7 @@ _drop_test_stories() {
   local g
   while IFS= read -r g; do
     [ -n "$g" ] || continue
-    curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST \
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST \
       --data-urlencode "update=DROP GRAPH <$g>" "$FUSEKI_UPDATE" >/dev/null 2>&1 || true
   done <<< "$(_story_graphs)"
   _story_graphs | grep -c . | tr -d '[:space:]'

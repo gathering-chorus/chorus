@@ -4909,7 +4909,21 @@ pub fn resolve_surface(path: &str, surfaces: &[DomainSurface]) -> Option<Surface
             let mut segs = rest.splitn(2, '/');
             let sub = segs.next().unwrap_or("");
             let tail = segs.next().map(|t| format!("/{}", t)).unwrap_or_default();
-            if let Some(cl) = s.classes.iter().find(|c| class_subresource(c) == sub) {
+            // #4175 — accept BOTH sub-resource spellings. #3494 composed a domain
+            // surface with SINGULAR sub-resources (/borg/properties/property) and
+            // #4158 made every collection domain-rooted and PLURAL (/roles/hats).
+            // Same two-segment shape, two conventions, minted a year apart. Where a
+            // domain's repoTarget is a single segment equal to its own name — roles
+            // and knowledge today, every other domain has a multi-segment path — the
+            // mount swallowed its own collections: /roles/hats, /roles/roles and
+            // /roles/hats/<name> all answered with the domain INDEX and zero rows,
+            // on canonical as well as here. Measured 2026-09-14; /domains/domains,
+            // /code/kinds and /security/apisurfaces were unaffected, which is why it
+            // stayed invisible. The plural arm rewrites to the same collection the
+            // singular one does, so no route moves and nothing new is claimed.
+            if let Some(cl) = s.classes.iter()
+                .find(|c| class_subresource(c) == sub || pluralize(c).eq_ignore_ascii_case(sub))
+            {
                 let rewritten = format!("/{}{}", pluralize(cl), tail);
                 return Some(SurfaceHit::Class { class_local: cl.clone(), rewritten_path: rewritten });
             }
@@ -6017,6 +6031,67 @@ mod tests {
         // a non-surface path falls through to the primitive select_table
         assert_eq!(resolve_surface("/products/loom", &surfaces), None);
         assert_eq!(resolve_surface("/domains/properties", &surfaces), None);
+    }
+
+    /// #4175 — a domain whose repoTarget is a single segment equal to its own
+    /// name mounts at the SAME two-segment shape #4158 gave every collection.
+    /// Before this, the mount matched, the plural sub-resource did not, and the
+    /// arm returned Index: /roles/hats served the domain index with zero rows
+    /// while /v1/roles/hats served seven. Measured on canonical too, so it was
+    /// never this card's regression — it was invisible because every other
+    /// domain's repoTarget has more than one segment.
+    #[test]
+    fn surface_serves_the_plural_collection_not_the_domain_index() {
+        let surfaces = vec![DomainSurface {
+            mount: "roles".into(),
+            domain: "roles".into(),
+            classes: vec!["Hat".into(), "Role".into(), "Appointment".into()],
+        }];
+        // The collection, plural — the #4158 spelling discovery advertises.
+        match resolve_surface("/roles/hats", &surfaces) {
+            Some(SurfaceHit::Class { class_local, rewritten_path }) => {
+                assert_eq!(class_local, "Hat");
+                assert_eq!(rewritten_path, "/hats");
+            }
+            other => panic!("plural collection must resolve to its class, got {:?}", other),
+        }
+        // One row under it keeps its tail.
+        match resolve_surface("/roles/hats/product-chief-of-staff", &surfaces) {
+            Some(SurfaceHit::Class { class_local, rewritten_path }) => {
+                assert_eq!(class_local, "Hat");
+                assert_eq!(rewritten_path, "/hats/product-chief-of-staff");
+            }
+            other => panic!("row under a plural collection must resolve, got {:?}", other),
+        }
+        // The singular #3494 spelling still answers — no route moved.
+        match resolve_surface("/roles/hat", &surfaces) {
+            Some(SurfaceHit::Class { class_local, .. }) => assert_eq!(class_local, "Hat"),
+            other => panic!("the singular sub-resource must keep working, got {:?}", other),
+        }
+        // The bare mount is still the domain index.
+        match resolve_surface("/roles", &surfaces) {
+            Some(SurfaceHit::Index { domain, .. }) => assert_eq!(domain, "roles"),
+            other => panic!("the bare mount is the index, got {:?}", other),
+        }
+    }
+
+    /// NEGATIVE PROOF (#3734) — the fix must not make the mount claim anything
+    /// that is not one of its own classes. A sub-resource naming no vocab class
+    /// still falls to the domain index, never to some other class's rows: the
+    /// "right graph, wrong rows" failure #4158 exists to prevent.
+    #[test]
+    fn surface_still_refuses_a_sub_resource_that_names_no_class() {
+        let surfaces = vec![DomainSurface {
+            mount: "roles".into(),
+            domain: "roles".into(),
+            classes: vec!["Hat".into(), "Role".into()],
+        }];
+        for bogus in ["/roles/nonsense", "/roles/hatz", "/roles/appointments"] {
+            match resolve_surface(bogus, &surfaces) {
+                Some(SurfaceHit::Index { domain, .. }) => assert_eq!(domain, "roles"),
+                other => panic!("{bogus} must not resolve to a class, got {:?}", other),
+            }
+        }
     }
 
     #[test]

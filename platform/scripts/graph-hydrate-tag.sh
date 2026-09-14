@@ -41,7 +41,7 @@ else
 fi
 
 # 2. reconcile — drop werk-path File instances (stale leftovers; canonical only)
-rc=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
+rc=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' \
   --data-binary 'PREFIX chorus: <https://jeffbridwell.com/chorus#>
   DELETE { GRAPH <'"$HYDRATION_GRAPH"'> { ?f ?p ?o } }
   WHERE  { GRAPH <'"$HYDRATION_GRAPH"'> { ?f a chorus:File ; chorus:filePath ?fp .

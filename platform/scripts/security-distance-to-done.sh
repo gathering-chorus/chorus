@@ -145,7 +145,7 @@ code=$(curl -s -o /dev/null -m 8 -w "%{http_code}" -X POST \
 case "$code" in
   401|403) item fuseki_anon_write 0 "(http $code) anon write refused" ;;
   2*)      item fuseki_anon_write 1 "(http $code) ANON WRITE ACCEPTED — hole open"
-           curl -s -m 8 -X POST "http://localhost:3030/pods/update" \
+           curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -m 8 -X POST "http://localhost:3030/pods/update" \
              --data-urlencode 'update=DROP GRAPH <urn:chorus:scratch:3716-probe>' >/dev/null 2>&1 || true ;;
   *)       item fuseki_anon_write unknown "(http ${code:-none}) store did not answer — NOT measured" ;;
 esac

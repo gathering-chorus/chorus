@@ -29,9 +29,9 @@ seed() {  # seed <graph> <principal-localnames...>
   local body="PREFIX chorus: <$NS> INSERT DATA { GRAPH <$g> {"
   for p in "$@"; do body="$body chorus:$p a chorus:Principal ."; done
   body="$body } }"
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data "$body" "$U" >/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data "$body" "$U" >/dev/null
 }
-wipe() { for g in "$SG" "$IG"; do curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data "DROP GRAPH <$g>" "$U" >/dev/null 2>&1 || true; done; }
+wipe() { for g in "$SG" "$IG"; do curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data "DROP GRAPH <$g>" "$U" >/dev/null 2>&1 || true; done; }
 trap wipe EXIT
 
 pass=0; fail=0

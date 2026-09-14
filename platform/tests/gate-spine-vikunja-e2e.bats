@@ -251,7 +251,7 @@ print('emit-path-ok')
 }
 
 @test "NEGATIVE: a route that does not exist fails the discover-pages smoke" {
-  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  CODE=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X POST \
     -H 'Content-Type: application/json' -d '{}' \
     "http://localhost:3340/api/athena/discover-pages-does-not-exist" 2>/dev/null)
   [[ "$CODE" != "200" && "$CODE" != "400" && "$CODE" != "422" ]]

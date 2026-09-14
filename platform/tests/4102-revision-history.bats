@@ -49,7 +49,7 @@ def bare(v):
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
 keep["gaps"] = (r.get("gaps") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
-  run curl -s -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/products/spine" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   after="$(revisions_of products/spine)"
   n="$(printf '%s' "$after" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
@@ -81,14 +81,14 @@ for same in ("promise", "vision", "structure", "audience"):
 @test "AC3 negative proof (#3734): a create keeps no revision, and a direct write to /revisions is refused" {
   live
   before="$(curl -sf "$OWL_URL/revisions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
-  curl -s -o /dev/null -X POST "$OWL_URL/documents" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X POST "$OWL_URL/documents" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -d '{"name":"bats-4102-fresh","docTitle":"fresh","docHref":"/fresh.html","hasDomain":"products"}'
   after="$(curl -sf "$OWL_URL/revisions" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)["data"]))')"
   [ "$after" -eq "$before" ] || { echo "a create made a revision: $before -> $after"; false; }
   # #4130 — take the fixture back out. It sat on the live store from 09-06 with
   # changedIn=unknown (a hand create), and 4101 read it as a real document.
-  curl -s -o /dev/null -X DELETE "$OWL_URL/documents/bats-4102-fresh" -H "Authorization: Bearer $TOK"
-  run curl -s -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/revisions" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X DELETE "$OWL_URL/documents/bats-4102-fresh" -H "Authorization: Bearer $TOK"
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/out" -w '%{http_code}' -X POST "$OWL_URL/revisions" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -d '{"name":"forged","ofRow":"products/spine","version":"99","snapshot":"{}","label":"x"}'
   [ "$output" = "422" ]
   grep -q 'kept by the door' "$BATS_TEST_TMPDIR/out"
@@ -147,14 +147,14 @@ def bare(v):
 keep = {k: bare(v) for k, v in r.items() if k not in drop and v not in ("", None, [])}
 keep["comment"] = (r.get("comment") or "") + " (bats-4102 touched)"
 print(json.dumps(keep))')"
-  run curl -s -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
+  run curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BATS_TEST_TMPDIR/put" -w '%{http_code}' -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d "$body"
   [ "$output" = "200" ] || { cat "$BATS_TEST_TMPDIR/put"; false; }
   n="$(revisions_of "documents/$doc" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
   [ "$n" -eq $((before + 1)) ] || { echo "document revisions before=$before after=$n"; false; }
   # #4130 — same as restore_row for products: the hand write above leaves the
   # LIVE document at changedIn=unknown, which 4101 reads as red (run 34 died on
   # athena-product-design stamped by run 33). Hand it back under a real commit.
-  curl -s -o /dev/null -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X PUT "$OWL_URL/documents/$doc" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' \
     -H "X-Landed-Commit: $(git -C "$ROOT" rev-parse HEAD)" -d "$body"
   # a document has no page of its own (Jeff, 2026-09-04: "its just a fold on the
   # main page") — its history is a second fold on the product that owns it
@@ -198,10 +198,10 @@ restore_row() {  # $1 = product name
 product_version() { curl -sf "$OWL_URL/products" | python3 -c 'import sys,json; rows=json.load(sys.stdin)["data"]; print([x for x in rows if x["name"]==sys.argv[1]][0].get("version") or "0")' "$1"; }
 put_product() {  # $1 = name, $2 = body, $3 = commit stamp ("" for a hand write)
   if [ -n "$3" ]; then
-    curl -s -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
       -H 'Content-Type: application/json' -H "X-Landed-Commit: $3" -d "$2"
   else
-    curl -s -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -w '%{http_code}' -X PUT "$OWL_URL/products/$1" -H "Authorization: Bearer $TOK" \
       -H 'Content-Type: application/json' -d "$2"
   fi
 }

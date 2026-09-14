@@ -5,7 +5,7 @@
 # to the curl write call:
 #
 #   source "$SCRIPTS/fuseki-auth.sh"
-#   curl "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST ... "$FUSEKI_UPDATE"
+#   curl --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST ... "$FUSEKI_UPDATE"
 #
 # Use the "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" form EXACTLY — macOS /bin/bash is
 # 3.2, where a plain "${FUSEKI_AUTH[@]}" on an EMPTY array under `set -u` aborts with
