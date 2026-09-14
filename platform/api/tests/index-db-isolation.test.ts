@@ -55,15 +55,26 @@ describe('#4152 api test harness brings its own index.db', () => {
     const dest = path.join(dir, 'copy.db');
     try {
       const db = new Database(src);
+      // WAL on purpose: the live index runs in WAL mode, and backupLiveInto's
+      // whole claim is that an online backup carries the WAL. better-sqlite3
+      // opens in the default journal mode, so a fixture left at the default
+      // would let that claim pass untested — Kade caught this on review.
+      db.pragma('journal_mode = WAL');
       db.exec('CREATE TABLE t (k TEXT PRIMARY KEY, v TEXT)');
       db.prepare('INSERT INTO t VALUES (?, ?)').run('seeded', 'yes');
-      db.close();
+      // written AFTER the checkpoint boundary, so this row lives in the -wal
+      // file rather than the main db when the backup runs
+      db.prepare('INSERT INTO t VALUES (?, ?)').run('in-wal', 'yes');
+      expect(fs.existsSync(src + '-wal')).toBe(true);
 
       await setup.backupLiveInto(src, dest);
+      db.close();
 
       const copy = new Database(dest, { readonly: true, fileMustExist: true });
       try {
         expect(copy.prepare('SELECT v FROM t WHERE k = ?').get('seeded')).toEqual({ v: 'yes' });
+        // the WAL-resident row is the one a naive file copy would lose
+        expect(copy.prepare('SELECT v FROM t WHERE k = ?').get('in-wal')).toEqual({ v: 'yes' });
       } finally {
         copy.close();
       }
