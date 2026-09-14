@@ -96,7 +96,7 @@ WRITERS=(
         --data-urlencode 'query=SELECT (COUNT(DISTINCT ?g) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } FILTER(STRSTARTS(STR(?g), "urn:chorus:ontology-test-bats-")) }' \
         -H "Accept: text/csv" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "http://localhost:3030/pods/data?graph=$g" -o /dev/null 2>/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "http://localhost:3030/pods/data?graph=$g" -o /dev/null 2>/dev/null
 
   [ "$n" != "0" ]
   [ -n "$n" ]

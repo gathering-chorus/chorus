@@ -49,7 +49,7 @@ envelope() {
   # that is the role, from the 03:00 nightly it is nobody — and an envelope for
   # nobody carries no Pulse, no Spine, no Athena. Green by hand, red at night.
   printf '{"hook_event_name":"UserPromptSubmit","prompt":"%s","session_id":"%s","deploy_role":"silas"}' "$prompt" "$session" | \
-    curl -s --unix-socket "$SOCKET" -X POST -H 'Content-Type: application/json' \
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" --unix-socket "$SOCKET" -X POST -H 'Content-Type: application/json' \
       --data @- http://localhost/user-prompt-submit | \
     python3 -c "
 import json,sys

@@ -149,7 +149,7 @@ VALIDATE_URL="$API_BASE/api/athena/validate"
 MALFORMED_URI="https://jeffbridwell.com/chorus#catalog-doc-shape-violation-${TS}"
 
 # Insert: CatalogDoc with no catalogHref (violates required-prop shape).
-curl -s -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
+curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
   --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 INSERT DATA { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> a chorus:CatalogDoc ; chorus:product \"chorus\" } }" \
   "$FUSEKI_UPDATE"
@@ -163,7 +163,7 @@ print(len(hits))
 check "validate surfaces malformed CatalogDoc (no catalogHref)" "1" "$([ "$VIOLATIONS" -ge 1 ] && echo 1 || echo 0)"
 
 # Cleanup
-curl -s -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
+curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' \
   --data "PREFIX chorus: <https://jeffbridwell.com/chorus#>
 DELETE WHERE { GRAPH <urn:chorus:instances> { <$MALFORMED_URI> ?p ?o } }" \
   "$FUSEKI_UPDATE"

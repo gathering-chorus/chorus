@@ -54,12 +54,12 @@ shape_graph_count() {
   A="urn:chorus:excl-test-a-$$"; B="urn:chorus:excl-test-b-$$"
   TT="$BATS_TEST_TMPDIR/dup.ttl"
   printf '@prefix chorus: <https://jeffbridwell.com/chorus#> .\n@prefix sh: <http://www.w3.org/ns/shacl#> .\nchorus:ExclDupShape a sh:NodeShape ; sh:property [ sh:path chorus:x ] .\n' > "$TT"
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$A" -o /dev/null
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$B" -o /dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$A" -o /dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X PUT -H 'Content-Type: text/turtle' --data-binary @"$TT" "$GSP?graph=$B" -o /dev/null
   n=$(shape_graph_count ExclDupShape)
   # cleanup before asserting, so a failure doesn't leave fixtures behind
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$A" -o /dev/null
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$B" -o /dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$A" -o /dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$B" -o /dev/null
   echo "duplicate shape seen in $n graphs (must be 2 — the check can SEE the violation)"
   [ "$n" = "2" ]
 }

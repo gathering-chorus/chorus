@@ -39,11 +39,11 @@ except Exception:
 }
 
 teardown() {
-  [ -n "${URL:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$CODEFILES/$SACRIFICE" || true
+  [ -n "${URL:-}" ] && curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$CODEFILES/$SACRIFICE" || true
 }
 
 post_codefile() { # language → prints http code, body in $BODY
-  curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -X POST \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -X POST \
     -d "{\"name\":\"$SACRIFICE\",\"filePath\":\"platform/tests/4157-code-domain-served.bats\",\"hasKind\":\"test\",\"hasLanguage\":\"$1\"}" \
     "$URL$CODEFILES"
 }

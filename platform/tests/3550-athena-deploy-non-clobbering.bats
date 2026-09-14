@@ -39,7 +39,7 @@ SHPFX='PREFIX sh: <http://www.w3.org/ns/shacl#>'
 # residue from a prior run is the one thing that can make the clobber-regression
 # pass while the clobber is happening.
 _drop_test_graph() {
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null || true
   curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" "$Q" -H "Accept: text/csv" \
     --data-urlencode "query=SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$TEST_GRAPH> { ?s ?p ?o } }" \
     2>/dev/null | tail -1 | tr -d '[:space:]'
@@ -61,7 +61,7 @@ teardown_file() { _drop_test_graph >/dev/null; }
 
 plant_sibling() {
   # mimic #3529: value-stream wiring loaded LIVE into the graph, NOT in any deployed TTL
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data-binary \
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X POST -H 'Content-Type: application/sparql-update' --data-binary \
     "$PFX INSERT DATA { GRAPH <$TEST_GRAPH> { chorus:vs-step-sibling-3550 a chorus:ValueStreamStep ; chorus:stepOrder 7 ; chorus:inStream chorus:vs-werk } }" "$UPD" -o /dev/null 2>/dev/null
 }
 

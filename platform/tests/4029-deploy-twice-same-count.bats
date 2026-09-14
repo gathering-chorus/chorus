@@ -36,8 +36,8 @@ TTL
 }
 
 teardown() {
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$GRAPH" -o /dev/null 2>/dev/null || true
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=${GRAPH}-staging-deploy" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$GRAPH" -o /dev/null 2>/dev/null || true
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=${GRAPH}-staging-deploy" -o /dev/null 2>/dev/null || true
 }
 
 # A count that could not be MEASURED must say so, not come back empty. On #4175

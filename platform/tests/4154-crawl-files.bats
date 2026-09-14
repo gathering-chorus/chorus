@@ -36,7 +36,7 @@ except Exception:
 }
 
 teardown() {
-  [ -n "${NAME:-}" ] && curl -s -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$COLL/$NAME" || true
+  [ -n "${NAME:-}" ] && curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" -o /dev/null -X DELETE -H "Authorization: Bearer ${TOKEN:-}" "$URL$COLL/$NAME" || true
 }
 
 @test "a test file on disk becomes a row with kind=test, through the API, in the code domain graph" {

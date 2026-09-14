@@ -76,7 +76,7 @@ _graph_triples() {
 }
 
 _drop_test_graph() {
-  curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$GSP?graph=$TEST_GRAPH" -o /dev/null 2>/dev/null
   local n
   n="$(_graph_triples)"
   if [ "${n:-0}" != "0" ]; then
