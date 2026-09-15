@@ -279,17 +279,20 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
     let mut pages = 0usize;
     loop {
         let page = curl(api, "GET", &next, None, Some(token))?;
-        for chunk in page.split("\"filePath\"").skip(1) {
-            let v = chunk.trim_start().trim_start_matches(':').trim().trim_start_matches('"');
-            let path = match v.find('"') { Some(i) => &v[..i], None => continue };
-            let sha = chunk
-                .find("\"fileSha\"")
-                .and_then(|i| {
-                    let t = chunk[i..].trim_start_matches("\"fileSha\"").trim_start().trim_start_matches(':').trim().trim_start_matches('"');
-                    t.find('"').map(|j| t[..j].to_string())
-                })
-                .unwrap_or_default();
-            out.push(InGraph { path: path.to_string(), sha });
+        // #4178 — read the WHOLE row, not two strings. An update has to put the
+        // complete entity back (the DAL is full-replace, #3345), so anything
+        // dropped here is deleted from the graph on the next content change.
+        for obj in row_objects(&page) {
+            let fields = row_fields(obj);
+            let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
+            let Some(path) = get("filePath").filter(|p| !p.is_empty()) else { continue };
+            let sha = get("fileSha").unwrap_or_default();
+            let other = fields
+                .iter()
+                .filter(|(k, _)| k != "filePath" && k != "fileSha")
+                .cloned()
+                .collect();
+            out.push(InGraph { path, sha, other });
         }
         pages += 1;
         // The door's own "next", with the /v1 prefix stripped the way every
@@ -513,15 +516,52 @@ fn main() {
         batch.clear();
     };
 
+    let in_graph: HashMap<&str, &InGraph> = graph.iter().map(|g| (g.path.as_str(), g)).collect();
+
     for a in &actions {
         match a {
-            Action::Post { path } | Action::Replace { path } => {
+            Action::Post { path } => {
                 let f = match by_path.get(path.as_str()) { Some(f) => *f, None => continue };
                 let is_rs = path.ends_with(".rs");
                 if let Verdict::Classified(k, l) = classify(path, is_rs && rust_declares_tests(&format!("{root}/{path}"))) {
                     batch.push(row_json(f, k.as_str(), l));
                     if batch.len() >= 200 {
                         flush(&mut batch, &mut failed, &mut wrote);
+                    }
+                }
+            }
+            // #4178 — an UPDATE cannot go through the create batch (409
+            // already-exists) and cannot restate only the crawler's fields
+            // (full-replace deletes the rest). It puts the complete entity:
+            // the row as served, with our four fields written over it.
+            Action::Replace { path } => {
+                let f = match by_path.get(path.as_str()) { Some(f) => *f, None => continue };
+                let is_rs = path.ends_with(".rs");
+                let Verdict::Classified(k, l) = classify(path, is_rs && rust_declares_tests(&format!("{root}/{path}"))) else { continue };
+                let existing: &[(String, String)] = match in_graph.get(path.as_str()) {
+                    Some(g) => &g.other,
+                    None => &[],
+                };
+                let mut owned = vec![
+                    ("filePath".to_string(), path.clone()),
+                    ("fileSha".to_string(), f.sha.clone()),
+                    ("hasKind".to_string(), k.as_str().to_string()),
+                ];
+                if let Some(lang) = l {
+                    owned.push(("hasLanguage".to_string(), lang.to_string()));
+                }
+                let mut fields = merge_row(existing, &owned);
+                let name = stable_name(path);
+                // The door names the prefix its mint adds; a refusal that names
+                // one is retried once with those values bared, never guessed at
+                // from a table kept in step by hand.
+                let mut attempt = 0;
+                loop {
+                    let body = fields_json(&fields);
+                    match curl(&api, "PUT", &format!("{coll}/{name}"), Some(&body), Some(&token)) {
+                        Ok(_) => { wrote += 1; break; }
+                        Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => attempt += 1,
+                        Err(e) => { failed.push(format!("update {path}: {e}")); break; }
                     }
                 }
             }
@@ -559,4 +599,14 @@ fn main() {
         eprintln!("chorus-crawl: {} write(s) failed — the run is RED, not partially green", failed.len());
         std::process::exit(1);
     }
+}
+
+
+/// A flat field map as a JSON object body.
+fn fields_json(fields: &[(String, String)]) -> String {
+    let body: Vec<String> = fields
+        .iter()
+        .map(|(k, v)| format!("\"{}\":\"{}\"", json_escape(k), json_escape(v)))
+        .collect();
+    format!("{{{}}}", body.join(","))
 }

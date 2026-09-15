@@ -247,6 +247,15 @@ pub struct OnDisk {
 pub struct InGraph {
     pub path: String,
     pub sha: String,
+    /// Every OTHER field the row carries, verbatim, as the door served it.
+    ///
+    /// #4178 — the crawler used to read a row and keep two strings. That was
+    /// fine while it could only create rows, and wrong the moment it had to
+    /// update one: the DAL is single-writer full-replace by design (#3345), so
+    /// a writer that restates only its own fields DELETES everyone else's —
+    /// `fileInDomain` and `fileHasOwner` among them. Keeping the whole row is
+    /// what lets an update put the complete entity back.
+    pub other: Vec<(String, String)>,
 }
 
 /// The whole decision, as a pure function of (tree, graph, how well we read the
@@ -317,7 +326,7 @@ mod plan_4173 {
         OnDisk { path: path.into(), sha: sha.into(), classified: true }
     }
     fn g(path: &str, sha: &str) -> InGraph {
-        InGraph { path: path.into(), sha: sha.into() }
+        InGraph { path: path.into(), sha: sha.into(), other: Vec::new() }
     }
 
     #[test]
@@ -613,7 +622,7 @@ mod reconcile_4173 {
         OnDisk { path: path.into(), sha: "s".into(), classified: true }
     }
     fn g(path: &str) -> InGraph {
-        InGraph { path: path.into(), sha: "s".into() }
+        InGraph { path: path.into(), sha: "s".into(), other: Vec::new() }
     }
 
     #[test]
@@ -742,4 +751,226 @@ mod watermark_4173 {
         assert!(delta_is_trustworthy(1, 6172));
         assert!(delta_is_trustworthy(0, 0));
     }
+}
+
+
+/// The JSON objects inside a collection response's `data` array.
+///
+/// Zero-dependency and deliberately dumb: find `"data"`, then walk braces,
+/// tracking string state so a `{` inside a value cannot open a fake object.
+/// Returns each object's body including its braces.
+pub fn row_objects(page: &str) -> Vec<&str> {
+    let Some(start) = page.find("\"data\"") else { return Vec::new() };
+    let rest = &page[start..];
+    let Some(open) = rest.find('[') else { return Vec::new() };
+    let mut out = Vec::new();
+    let bytes = rest.as_bytes();
+    let (mut depth, mut obj_start, mut in_str, mut esc) = (0usize, 0usize, false, false);
+    for i in open..bytes.len() {
+        let c = bytes[i] as char;
+        if in_str {
+            if esc { esc = false; } else if c == '\\' { esc = true; } else if c == '"' { in_str = false; }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' => { if depth == 0 { obj_start = i; } depth += 1; }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 { out.push(&rest[obj_start..=i]); }
+            }
+            ']' if depth == 0 => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Flat string key/value pairs of one row object. Non-string values are skipped
+/// — the crawler restates what it can see, and a field it cannot read is a field
+/// it must not claim to preserve.
+pub fn row_fields(obj: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let b = obj.as_bytes();
+    let mut i = 0usize;
+    while i < b.len() {
+        if b[i] != b'"' { i += 1; continue; }
+        let Some(key_end) = find_str_end(obj, i + 1) else { break };
+        let key = &obj[i + 1..key_end];
+        let mut j = key_end + 1;
+        while j < b.len() && (b[j] as char).is_whitespace() { j += 1; }
+        if j >= b.len() || b[j] != b':' { i = key_end + 1; continue; }
+        j += 1;
+        while j < b.len() && (b[j] as char).is_whitespace() { j += 1; }
+        if j < b.len() && b[j] == b'"' {
+            let Some(val_end) = find_str_end(obj, j + 1) else { break };
+            out.push((key.to_string(), obj[j + 1..val_end].to_string()));
+            i = val_end + 1;
+        } else {
+            i = j;
+        }
+    }
+    out
+}
+
+fn find_str_end(s: &str, from: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut i = from;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 2,
+            b'"' => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// The row to PUT back: everything the door served, with the crawler's own
+/// fields written over it. Server-managed keys are dropped — restating them is
+/// either refused or a lie about who changed the row.
+pub fn merge_row(existing: &[(String, String)], owned: &[(String, String)]) -> Vec<(String, String)> {
+    const SERVER_OWNED: &[&str] = &[
+        "name", "label", "iri", "type", "id", "self", "created", "modified",
+        "creator", "version", "changedAt", "changedIn", "ownedBy",
+    ];
+    let mut out: Vec<(String, String)> = existing
+        .iter()
+        .filter(|(k, v)| !SERVER_OWNED.contains(&k.as_str()) && !v.is_empty())
+        .cloned()
+        .collect();
+    for (k, v) in owned {
+        match out.iter_mut().find(|(ek, _)| ek == k) {
+            Some(slot) => slot.1 = v.clone(),
+            None => out.push((k.clone(), v.clone())),
+        }
+    }
+    out
+}
+
+/// The door refuses a value that already carries the prefix its mint adds
+/// (`double-prefix: 'code-kind-doc' already starts with 'code-kind-'`). The
+/// refusal names the prefix, so the retry is derived from the server's own
+/// words rather than from a table of prefixes kept in step by hand.
+pub fn strip_named_prefix(err: &str, fields: &mut [(String, String)]) -> bool {
+    let Some(i) = err.find("already starts with '") else { return false };
+    let tail = &err[i + "already starts with '".len()..];
+    let Some(j) = tail.find('\'') else { return false };
+    let prefix = &tail[..j];
+    if prefix.is_empty() {
+        return false;
+    }
+    let mut changed = false;
+    for (_, v) in fields.iter_mut() {
+        if let Some(bare) = v.strip_prefix(prefix) {
+            if !bare.is_empty() {
+                *v = bare.to_string();
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+#[cfg(test)]
+mod merge_4178 {
+    use super::*;
+
+    // ─────────────── #4178: an update must not delete other writers' fields ───────────────
+
+    const PAGE: &str = r#"{ "kind": "CodeFile", "data": [
+  { "name": "file-a", "filePath": "a/b.rs", "fileSha": "aaa", "hasKind": "code-kind-code",
+    "hasLanguage": "language-rust", "fileInDomain": "code-domain", "fileHasOwner": "role-kade",
+    "stale": "", "label": "file-a" },
+  { "name": "file-c", "filePath": "c/d{e}.md", "fileSha": "ccc", "hasKind": "code-kind-doc" }
+], "links": { "next": "" }, "count": 2 }"#;
+
+    #[test]
+    fn a_row_is_read_whole_not_two_strings() {
+        let objs = row_objects(PAGE);
+        assert_eq!(objs.len(), 2, "a brace inside a value must not open a fake object");
+        let f = row_fields(objs[0]);
+        let get = |k: &str| f.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("filePath"), Some("a/b.rs"));
+        assert_eq!(get("fileInDomain"), Some("code-domain"));
+        assert_eq!(get("fileHasOwner"), Some("role-kade"));
+        // the second row's path contains braces — the scanner must still split it out
+        assert_eq!(
+            row_fields(objs[1]).iter().find(|(k, _)| k == "filePath").map(|(_, v)| v.as_str()),
+            Some("c/d{e}.md")
+        );
+    }
+
+    #[test]
+    fn an_update_carries_the_other_writers_fields_through() {
+        let existing = row_fields(row_objects(PAGE)[0]);
+        let owned = vec![
+            ("filePath".to_string(), "a/b.rs".to_string()),
+            ("fileSha".to_string(), "bbb".to_string()),          // the content changed
+            ("hasKind".to_string(), "code".to_string()),
+        ];
+        let merged = merge_row(&existing, &owned);
+        let get = |k: &str| merged.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("fileSha"), Some("bbb"), "the crawler's own field wins");
+        assert_eq!(get("hasKind"), Some("code"));
+        assert_eq!(get("fileInDomain"), Some("code-domain"), "the domain tag survives");
+        assert_eq!(get("fileHasOwner"), Some("role-kade"));
+        assert_eq!(get("hasLanguage"), Some("language-rust"), "a field nobody restated survives");
+        // server-managed keys are never restated
+        assert_eq!(get("name"), None);
+        assert_eq!(get("label"), None);
+        // and an empty field is not sent back as an empty string
+        assert_eq!(get("stale"), None);
+    }
+
+    // NEGATIVE PROOF (#3734): the whole card is that a tag SURVIVES an update.
+    // A merge that quietly dropped the existing row would pass every assertion
+    // above about the crawler's own fields, so the check that matters is the
+    // one where the graph's fields are absent from the payload — it must fail.
+    #[test]
+    fn negative_proof_restating_only_the_crawlers_own_fields_loses_the_domain_tag() {
+        let existing = row_fields(row_objects(PAGE)[0]);
+        let owned = vec![
+            ("filePath".to_string(), "a/b.rs".to_string()),
+            ("fileSha".to_string(), "bbb".to_string()),
+            ("hasKind".to_string(), "code".to_string()),
+        ];
+        // what the crawler did BEFORE this card: own fields only, no merge.
+        let unmerged = owned.clone();
+        assert!(
+            !unmerged.iter().any(|(k, _)| k == "fileInDomain"),
+            "the pre-#4178 payload carries no domain tag — this is the state the merge exists to prevent"
+        );
+        // and the merge is what separates the two states
+        let merged = merge_row(&existing, &owned);
+        assert!(merged.iter().any(|(k, v)| k == "fileInDomain" && v == "code-domain"));
+        assert_ne!(merged.len(), unmerged.len());
+    }
+
+    #[test]
+    fn a_refusal_that_names_its_prefix_is_retried_bare() {
+        let err = "422 { \"error\": \"validation\", \"message\": \"athena-model: double-prefix: 'code-kind-doc' already starts with 'code-kind-' — pass the bare name\" }";
+        let mut fields = vec![
+            ("hasKind".to_string(), "code-kind-doc".to_string()),
+            ("filePath".to_string(), "x.md".to_string()),
+        ];
+        assert!(strip_named_prefix(err, &mut fields));
+        assert_eq!(fields[0].1, "doc");
+        assert_eq!(fields[1].1, "x.md", "an unrelated field is untouched");
+    }
+
+    // NEGATIVE PROOF: the retry must be driven by the server's words, not by a
+    // guess. An error that names no prefix changes nothing, and a value that IS
+    // the prefix is not stripped to empty.
+    #[test]
+    fn negative_proof_an_unnamed_prefix_changes_nothing_and_a_bare_value_is_not_emptied() {
+        let mut fields = vec![("hasKind".to_string(), "code-kind-doc".to_string())];
+        assert!(!strip_named_prefix("502 dal unavailable", &mut fields));
+        assert_eq!(fields[0].1, "code-kind-doc");
+
+        let mut exact = vec![("hasKind".to_string(), "code-kind-".to_string())];
+        assert!(!strip_named_prefix("already starts with 'code-kind-'", &mut exact));
+        assert_eq!(exact[0].1, "code-kind-");
+    }
+
 }
