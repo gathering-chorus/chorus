@@ -9,7 +9,11 @@
 # deployed and live, with Jeff's go on the witness three times, and stuck WIP.
 
 setup() {
-  REPO="${CHORUS_ROOT:-$BATS_TEST_DIRNAME/../..}"
+  # The tree this test SHIPS IN, never CHORUS_ROOT. The runner sets CHORUS_ROOT
+  # to canonical, so a werk copy of this suite was reading canonical's werk.yml
+  # — the pre-fix file — and reporting the werk's own change as absent. A test
+  # that reads a file must read the one it was committed beside.
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   YML="$REPO/.github/workflows/werk.yml"
   WITNESS="$BATS_TEST_TMPDIR/werk-demo.jsonl"
   # The grep werk.yml runs, with the event name read out of the workflow itself
