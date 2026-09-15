@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# #4159 — repointed from the retired tests tagger (retired by #4154) to its parser
 # library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic. Uses the tagger's --names-of seam (#4022): one
 # file in, the case names the registry WOULD hold out, no store, no network.

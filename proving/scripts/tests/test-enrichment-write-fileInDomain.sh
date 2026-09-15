@@ -5,7 +5,7 @@
 #
 # Method:
 #   1. Seed a fixture-named graph with a handful of chorus:File instances
-#      at known paths (using crawler-hydrate-graph.sh as the seeder).
+#      at known paths (seeded inline — #4173 retired the crawler script).
 #   2. Run the enrichment writer against that graph.
 #   3. SPARQL query: assert each fixture file has the expected
 #      fileInDomain + (where applicable) fileHasOwner.
@@ -20,7 +20,6 @@ f() { FAIL=$((FAIL+1)); echo "  FAIL: $*"; }
 
 CHORUS_ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus-werk/kade}"
 ENRICH="$CHORUS_ROOT/platform/scripts/enrichment-write-fileInDomain.sh"
-HYDRATE="$CHORUS_ROOT/platform/scripts/crawler-hydrate-graph.sh"
 FUSEKI_BASE="${FUSEKI_BASE:-http://localhost:3030/pods}"
 TEST_GRAPH="urn:chorus:test-enrichment-$$"
 TEST_DB=$(mktemp -t enrich.XXXXXX.db)
@@ -34,18 +33,33 @@ fi
 # so the strip regex (.*/chorus(-werk/<role>)?/) hits.
 FIXTURE_BASE=$(mktemp -d -t enrich-test.XXXX)
 FIXTURE="$FIXTURE_BASE/chorus"
-mkdir -p \
-  "$FIXTURE/proving/scripts/tests" \
-  "$FIXTURE/platform/scripts" \
-  "$FIXTURE/roles/kade" \
-  "$FIXTURE/roles/silas/ontology" \
-  "$FIXTURE/skills"
 
-echo "test-a" > "$FIXTURE/proving/scripts/tests/a.sh"
-echo "git-stub" > "$FIXTURE/platform/scripts/git-helper.sh"
-echo "kade-state" > "$FIXTURE/roles/kade/current-work.md"
-echo "skill" > "$FIXTURE/skills/foo.md"
-cp "$CHORUS_ROOT/roles/silas/ontology/chorus.ttl" "$FIXTURE/roles/silas/ontology/chorus.ttl"
+# The five paths BELONGS_MAP actually carries. #3021 narrowed this writer from
+# a function-based scan of every File row to five TARGETED spine files, and this
+# fixture was never updated: it kept building a.sh / git-helper.sh / foo.md and
+# asserting domains the map no longer contains, so the suite could not pass. It
+# never reported that, because a proving/ suite was not selected by any diff
+# until #4173 made a changed suite run itself.
+BELONGS_RELS=(
+  "platform/api/src/spine-event-write.ts"
+  "platform/api/tests/spine-event-endpoint.integration.test.ts"
+  "platform/api/tests/spine-event-write.test.ts"
+  "platform/tests/spine-emit-drift-audit.bats"
+  "platform/tests/spine-tick-poller-inject-resolve.bats"
+)
+for rel in "${BELONGS_RELS[@]}"; do
+  mkdir -p "$FIXTURE/$(dirname "$rel")"
+  echo "fixture" > "$FIXTURE/$rel"
+done
+
+# The writer reads CHORUS_ROOT for TWO unrelated things: the tree whose paths it
+# strips, and where its store credential lives. This suite points CHORUS_ROOT at
+# the fixture for the first, which silently removed the second — every write
+# 401'd and the run reported "5 files tagged (1 batch failure)". The fixture
+# carries the credential so the writer can reach the store it is being tested
+# against. The double duty of CHORUS_ROOT is the writer's defect, noted here.
+mkdir -p "$FIXTURE/platform/scripts"
+cp "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh" "$FIXTURE/platform/scripts/fuseki-auth.sh"
 
 cleanup() {
   curl -s -X POST -H 'Content-Type: application/sparql-update' \
@@ -61,13 +75,41 @@ curl -s -X POST -H 'Content-Type: application/sparql-update' \
 
 echo "=== #2844 enrichment writer integration ==="
 
-# Seed via crawler.
-CHORUS_ROOT="$FIXTURE" \
-HYDRATION_GRAPH="$TEST_GRAPH" \
-HYDRATION_DB="$TEST_DB" \
-TTL="$FIXTURE/roles/silas/ontology/chorus.ttl" \
-CHORUS_LOG="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log" \
-bash "$HYDRATE" >/dev/null 2>&1
+# Seed the fixture directly.
+#
+# #4173 retired the crawler shell script this test borrowed as a seeder.
+# Borrowing a walker to set up a different subject's test was always the wrong
+# coupling — it made this suite fail whenever the walker changed, for reasons
+# that had nothing to do with enrichment. The replacement, chorus-crawl, writes
+# through the generated door and cannot target an arbitrary test graph by
+# design, so the fixture seeds itself: the rows are the input to the thing under
+# test, and stating them plainly is clearer than producing them.
+SEED_INSERT="PREFIX chorus: <https://jeffbridwell.com/chorus#> INSERT DATA { GRAPH <$TEST_GRAPH> {"
+# EXACTLY the five fixture files created above, at the paths the strip regex
+# produces. The first cut seeded a plausible-looking list of real repo paths
+# instead, so the seed passed its own count check and every assertion below
+# failed looking for rows that were never there.
+# filePath is the FIXTURE-ABSOLUTE path, because the writer matches on
+# STRENDS(?p, "/<rel>") — a bare relative path ends with the rel but not with
+# "/<rel>", so a seed of relative paths matches nothing and tags 0 files.
+for rel in "${BELONGS_RELS[@]}"; do
+  uri="https://jeffbridwell.com/chorus#file-$(printf '%s' "$rel" | tr -c 'a-zA-Z0-9' '-')"
+  SEED_INSERT="$SEED_INSERT <$uri> a chorus:File ; chorus:filePath \"$FIXTURE/$rel\" ."
+done
+SEED_INSERT="$SEED_INSERT } }"
+# #3566 — Fuseki 401s a bare write. The first cut of this seed sent the INSERT
+# with no credential AND swallowed the response into /dev/null, so a refused
+# write looked identical to a successful one and only the count check three
+# lines later said anything. Carry the credential, and let the status code be
+# seen: a seed that cannot write must say so itself.
+source "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh"
+SEED_CODE=$(curl -s "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /dev/null -w '%{http_code}' \
+  -X POST -H 'Content-Type: application/sparql-update' \
+  --data-binary "$SEED_INSERT" "$FUSEKI_BASE/update")
+case "$SEED_CODE" in
+  2*) ;;
+  *) f "seed write refused by the store — HTTP $SEED_CODE" ;;
+esac
 
 SEED_COUNT=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?f) AS ?n) WHERE { GRAPH <'"$TEST_GRAPH"'> { ?f a chorus:File } }' \
@@ -103,23 +145,41 @@ ASK { GRAPH <'"$TEST_GRAPH"'> {
   fi
 }
 
-check_predicate "proving/scripts/tests/a.sh" "tests-domain"
-check_predicate "platform/scripts/git-helper.sh" "version-control-domain"
-check_predicate "roles/kade/current-work.md" "roles-domain"
-check_predicate "skills/foo.md" "skills-service"
+# The writer's real contract: the five BELONGS_MAP files carry chorus:spine.
+check_predicate "platform/api/src/spine-event-write.ts" "spine"
+check_predicate "platform/api/tests/spine-event-write.test.ts" "spine"
+check_predicate "platform/tests/spine-emit-drift-audit.bats" "spine"
+
+# NEGATIVE PROOF (#3734): the checks above pass for every file if the writer
+# tags indiscriminately. A file that is NOT in BELONGS_MAP must come back
+# untagged, or this suite cannot tell "tagged correctly" from "tagged".
+UNMAPPED="$FIXTURE/platform/scripts/not-in-the-map.sh"
+mkdir -p "$(dirname "$UNMAPPED")"; echo "fixture" > "$UNMAPPED"
+NEG_Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+ASK { GRAPH <'"$TEST_GRAPH"'> {
+  ?f chorus:filePath ?p ; chorus:fileInDomain ?d .
+  FILTER(CONTAINS(?p, "not-in-the-map.sh"))
+} }'
+NEG_RESP=$(curl -s -G -H 'Accept: application/sparql-results+json' \
+  --data-urlencode "query=$NEG_Q" "$FUSEKI_BASE/query" 2>/dev/null)
+if echo "$NEG_RESP" | grep -qE '"boolean"[[:space:]]*:[[:space:]]*false'; then
+  p "NEGATIVE PROOF: a file outside BELONGS_MAP is not tagged"
+else
+  f "a file outside BELONGS_MAP was tagged — the checks above prove nothing: $NEG_RESP"
+fi
 
 # Owner check on the kade-path file.
 OWNER_Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
 ASK { GRAPH <'"$TEST_GRAPH"'> {
-  ?f chorus:filePath ?p ; chorus:fileHasOwner chorus:kade .
-  FILTER(CONTAINS(?p, "roles/kade/current-work.md"))
+  ?f chorus:filePath ?p ; chorus:fileHasOwner chorus:role-wren .
+  FILTER(CONTAINS(?p, "spine-event-write.ts"))
 } }'
 OWNER_RESP=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode "query=$OWNER_Q" "$FUSEKI_BASE/query" 2>/dev/null)
 if echo "$OWNER_RESP" | grep -qE '"boolean"[[:space:]]*:[[:space:]]*true'; then
-  p "roles/kade/* → chorus:fileHasOwner chorus:kade"
+  p "spine files → chorus:fileHasOwner chorus:role-wren"
 else
-  f "expected fileHasOwner=kade for kade path, ASK returned: $OWNER_RESP"
+  f "expected fileHasOwner=role-wren for a spine file, ASK returned: $OWNER_RESP"
 fi
 
 # Idempotency: re-run, assert each file still has exactly one fileInDomain.
@@ -142,12 +202,18 @@ else
 fi
 
 # Spine event check.
-SPINE=$(tail -2000 ~/.chorus/chorus.log 2>/dev/null | grep -c 'enrichment.fileInDomain.written' | tr -d '[:space:]')
+# Read the log the writer actually wrote to. This grepped ~/.chorus/chorus.log
+# unconditionally, which is right by hand and wrong in the werk lane: #3892
+# hands every spawned suite CHORUS_LOG_FILE pointing into a tempdir, so the
+# event landed there and this check looked for it in the live spine — the one
+# file the runner cages the suite away from. It failed for being hermetic.
+SPINE_LOG="${CHORUS_LOG_FILE:-$HOME/.chorus/chorus.log}"
+SPINE=$(tail -2000 "$SPINE_LOG" 2>/dev/null | grep -c 'enrichment.fileInDomain.written' | tr -d '[:space:]')
 SPINE="${SPINE:-0}"
 if [ "$SPINE" -ge 1 ] 2>/dev/null; then
   p "enrichment.fileInDomain.written event(s) emitted ($SPINE in tail)"
 else
-  f "expected enrichment.fileInDomain.written event"
+  f "expected enrichment.fileInDomain.written event in $SPINE_LOG"
 fi
 
 echo ""

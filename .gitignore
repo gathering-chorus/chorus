@@ -183,3 +183,7 @@ knowledge/doc-coherence.md
 # belong out of git per ADR-041 attrition; the committed one on this branch is
 # the audit copy for the #3916 investigation.
 platform/backups/graph-retirements/
+
+# chorus-crawl runtime state: names the commit a PARTICULAR store was walked to.
+# Committing it lets a watermark outlive the graph it describes (2026-09-14).
+.chorus-crawl-watermark

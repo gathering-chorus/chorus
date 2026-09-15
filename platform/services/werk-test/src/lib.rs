@@ -1641,6 +1641,157 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod npm_lane_4173 {
+    use super::npm_test_runner_script_is_node_test;
+
+    #[test]
+    fn a_cucumber_package_is_not_this_lanes_to_grade() {
+        assert!(!npm_test_runner_script_is_node_test("cucumber-js"));
+        assert!(!npm_test_runner_script_is_node_test("cucumber-js --tags @gate"));
+    }
+
+    // NEGATIVE PROOF: the skip must not swallow a node:test package. Those are
+    // still this lane's, so an empty one has to reach the FAIL LOUD below
+    // rather than being waved through as "someone else's lane".
+    #[test]
+    fn negative_proof_a_node_test_package_is_still_this_lanes_to_grade() {
+        assert!(npm_test_runner_script_is_node_test("tsx --test tests/*.test.ts"));
+        assert!(npm_test_runner_script_is_node_test("node --test"));
+    }
+}
+
+#[cfg(test)]
+mod scope_vcs_metadata_4173 {
+    use super::{is_test_suite_path, scope_irrelevant, scoped_test_reason, ScopeUnit};
+
+    #[test]
+    fn git_metadata_never_widens_a_card_to_the_whole_tree() {
+        assert!(scope_irrelevant(".gitignore"));
+        assert!(scope_irrelevant("platform/.gitattributes"));
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        let changed = vec![".gitignore".to_string(), "platform/services/werk-test/src/lib.rs".to_string()];
+        assert_eq!(
+            scoped_test_reason(&changed, &units, &[]),
+            Ok(vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }])
+        );
+    }
+
+    #[test]
+    fn a_changed_suite_runs_itself_instead_of_nothing() {
+        // Silas, 2026-09-14: "I overshot from not-a-build-input to
+        // not-worth-running." A suite under platform/tests/ used to be
+        // scope_irrelevant, so editing a test ran no test at all.
+        assert!(!scope_irrelevant("platform/tests/4173-crawler-retirement.bats"));
+        assert!(is_test_suite_path("platform/tests/4173-crawler-retirement.bats"));
+        assert!(is_test_suite_path("proving/scripts/tests/test-enrichment-write-fileInDomain.sh"));
+        let units = vec![ScopeUnit {
+            name: "platform/tests/4173-crawler-retirement.bats".into(),
+            dir: "platform/tests/4173-crawler-retirement.bats".into(),
+        }];
+        let got = scoped_test_reason(
+            &["platform/tests/4173-crawler-retirement.bats".to_string()],
+            &units,
+            &[],
+        )
+        .expect("a changed suite is mapped");
+        assert_eq!(got.len(), 1);
+    }
+
+    // NEGATIVE PROOF (Silas's ask): widening the suite rule must not turn a
+    // real source change into a suite-only run. A changed crate still pulls its
+    // declared dependents in, and a doc still runs nothing.
+    #[test]
+    fn negative_proof_a_changed_source_still_pulls_its_dependents_and_a_doc_still_runs_nothing() {
+        let units = vec![
+            ScopeUnit { name: "chorus-oidc".into(), dir: "platform/services/chorus-oidc".into() },
+            ScopeUnit { name: "athena-make".into(), dir: "platform/services/athena-make".into() },
+        ];
+        let edges = vec![("chorus-oidc".to_string(), "athena-make".to_string())];
+        let got = scoped_test_reason(
+            &["platform/services/chorus-oidc/src/oidc.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .unwrap();
+        let mut names: Vec<&str> = got.iter().map(|u| u.name.as_str()).collect();
+        names.sort();
+        assert_eq!(names, vec!["athena-make", "chorus-oidc"]);
+        // a suite path is not a licence for every .sh: a plain script is not a suite
+        assert!(!is_test_suite_path("platform/scripts/chorus-werk"));
+        assert!(!is_test_suite_path("designing/docs/x.md"));
+        assert!(scope_irrelevant("designing/docs/x.md"));
+    }
+
+    #[test]
+    fn a_source_included_shared_file_scopes_to_the_crates_that_include_it() {
+        let units = vec![
+            ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() },
+            ScopeUnit { name: "werk-build".into(), dir: "platform/services/werk-build".into() },
+            ScopeUnit { name: "werk-pull".into(), dir: "platform/services/werk-pull".into() },
+        ];
+        let edges = vec![
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-test".to_string()),
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-build".to_string()),
+            ("platform/services/shared/failure_class.rs".to_string(), "werk-pull".to_string()),
+        ];
+        let got = scoped_test_reason(
+            &["platform/services/shared/scope_units.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .expect("a source-included file is mapped, not a data defect");
+        let names: Vec<&str> = got.iter().map(|u| u.name.as_str()).collect();
+        assert_eq!(names, vec!["werk-test", "werk-build"]);
+    }
+
+    // NEGATIVE PROOF: the per-file provider must actually separate the shared
+    // files. One provider name for the whole directory would drag werk-pull in
+    // here too, and a shared file nothing includes must still refuse by name
+    // rather than scope to nothing.
+    #[test]
+    fn negative_proof_shared_files_do_not_share_one_scope_and_an_unincluded_one_refuses() {
+        let units = vec![
+            ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() },
+            ScopeUnit { name: "werk-pull".into(), dir: "platform/services/werk-pull".into() },
+        ];
+        let edges = vec![
+            ("platform/services/shared/scope_units.rs".to_string(), "werk-test".to_string()),
+            ("platform/services/shared/failure_class.rs".to_string(), "werk-pull".to_string()),
+        ];
+        let got = scoped_test_reason(
+            &["platform/services/shared/scope_units.rs".to_string()],
+            &units,
+            &edges,
+        )
+        .unwrap();
+        assert_eq!(got.iter().map(|u| u.name.as_str()).collect::<Vec<_>>(), vec!["werk-test"]);
+        assert_eq!(
+            scoped_test_reason(
+                &["platform/services/shared/target_repo.rs".to_string()],
+                &units,
+                &edges
+            ),
+            Err("unmapped:platform/services/shared/target_repo.rs".to_string())
+        );
+    }
+
+    // NEGATIVE PROOF: the addition must not blunt the unmapped refusal it sits
+    // inside. A file that really can change build output still forces FULL and
+    // still names itself — otherwise this entry would be a hole, not a mapping.
+    #[test]
+    fn negative_proof_a_real_source_file_outside_every_unit_still_refuses_by_name() {
+        let units = vec![ScopeUnit { name: "werk-test".into(), dir: "platform/services/werk-test".into() }];
+        assert_eq!(
+            scoped_test_reason(&["Cargo.toml".to_string()], &units, &[]),
+            Err("unmapped:Cargo.toml".to_string())
+        );
+        assert!(!scope_irrelevant("Cargo.toml"));
+        // and a path merely CONTAINING the name is not git's metadata
+        assert!(!scope_irrelevant("platform/services/gitignore-parser/src/lib.rs"));
+    }
+}
+
+#[cfg(test)]
 mod discovery_route_4158 {
     use super::{advertised_collection, origin_of, testresult_batch_endpoint};
 
@@ -4547,4 +4698,12 @@ mod ui_flows_verdict_4154 {
         assert_eq!(no_summary_verdict(classify_playwright_no_summary(empty)), None);
         assert_eq!(no_summary_verdict(classify_playwright_no_summary(crashed)), Some(false));
     }
+}
+
+/// #4173 — is a package.json `test` script this lane's to grade? node:test
+/// runners name `--test`; cucumber, mocha, vitest and friends do not, and they
+/// have their own lanes. Extracted so the rule is testable without a package on
+/// disk — the shape that let "no *.test.ts files" fail a cucumber package.
+pub fn npm_test_runner_script_is_node_test(script: &str) -> bool {
+    script.contains("--test")
 }

@@ -15,7 +15,7 @@ use werk_test::{
     jest_plan, parse_rows_and_names, plan_source_label, plan_units_from_rows, quarantine_report,
     JestPlan,
     rel_path, scope_rows, scoped_requires_model, spine_args,
-    scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
+    is_test_suite_path, scope_declared_edges, scoped_test_units, scoped_test_reason, suite_run_payload, test_result_payload,
     unmapped_path,
     undeclared_gaps, CaseResult, CheckKind, Quarantined, ScopeUnit, TestRow, TestUnit,
     TS_PACKAGES,
@@ -1695,6 +1695,18 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     // Running per file is the only way to know which file a case came from.
     // It costs one process start per test file and buys a ledger that
     // cross-foots.
+    // #4173 — the runner question comes FIRST. platform/tests declares
+    // `test: cucumber-js`: its suites are .feature files owned by the bdd lane,
+    // so this lane looking for *.test.ts finds none and used to fail the card
+    // with "has a test script but no test files found" — a true sentence about
+    // the wrong lane. A package this lane cannot attribute is not this lane's
+    // to grade; the refusal below still fires for a node:test package, and an
+    // EMPTY node:test package still fails loud rather than passing vacuously.
+    let runner = npm_test_runner(&pkg_dir);
+    if runner.is_none() {
+        eprintln!("   npm:{} runs its own non-node:test runner — graded by its own lane, not here", pkg);
+        return (true, Vec::new());
+    }
     let files = npm_test_files(&pkg_dir);
     if files.is_empty() {
         eprintln!("!! npm:{} has a test script but no test files found — FAIL LOUD", pkg);
@@ -2277,6 +2289,17 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             }
         }
     }
+    // #4173 — a changed suite is its own unit. Without this the scoper names it
+    // and the filter below drops it, which is the same "runs nothing" the
+    // irrelevant list used to produce.
+    for f in changed {
+        // A DELETED suite is in the diff and has nothing to run. #4173 deletes
+        // four crawler suites with the walkers they proved; scoping them to
+        // themselves would hand the runner four paths that are not on disk.
+        if is_test_suite_path(f) && root.join(f).is_file() {
+            units.push(ScopeUnit { name: f.clone(), dir: f.clone() });
+        }
+    }
     let edges: Vec<(String, String)> = scope_declared_edges(root)
         .into_iter()
         .map(|(p, d)| {
@@ -2294,7 +2317,9 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
             scoped
                 .into_iter()
                 .map(|u| {
-                    if u.dir.starts_with("platform/services/") {
+                    if is_test_suite_path(&u.dir) {
+                        TestUnit::BatsSuite(u.dir)
+                    } else if u.dir.starts_with("platform/services/") {
                         TestUnit::RustCrate(u.name)
                     } else {
                         TestUnit::TsPackage(u.dir)

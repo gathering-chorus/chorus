@@ -32,9 +32,8 @@ setup() {
   [ "$output" = "('integration', 'api') ('integration', 'needs-stack', None)" ]
 }
 
-@test "negative proof: the retired tagger refuses to run and holds no clear_graph" {
-  run python3 "$ROOT/platform/scripts/tag-tests-domain.py"
-  [ "$status" -eq 2 ]
-  ! grep -q 'def clear_graph' "$ROOT/platform/scripts/tag-tests-domain.py"
-  ! grep -q 'DELETE WHERE' "$ROOT/platform/scripts/tag-tests-domain.py"
-}
+# #4173 — the stub this case guarded is DELETED, not stubbed. A negative proof
+# that a retired file "refuses to run" only holds while the file exists; once it
+# is gone the guard becomes vacuous. The successor lives in
+# 4173-crawler-retirement.bats: the walkers are gone from the tree, and that
+# check ships its own proof that it can go red.

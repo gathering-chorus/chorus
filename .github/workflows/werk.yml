@@ -392,12 +392,20 @@ jobs:
           # are keyed to the pre-merge patch). Record the go, verify the witness
           # holds a demo.decision go for this card, and pass proven through.
           if [ "${{ steps.provenround.outputs.already_landed }}" = "true" ]; then
-            if grep -q "\"event\":\"demo.decision\",\"role\":\"[a-z]*\",\"card_id\":${CARD_ID}," "${CHORUS_HOME}/ops/logs/werk-demo.jsonl" 2>/dev/null; then
+            # #4173 — this read demo.decision, which ONLY werk-accept writes
+            # (werk-accept/src/lib.rs:86). Accept therefore required a record
+            # that only accept produces, so any card whose content reached main
+            # before accept could never be accepted: #4175 sat merged, deployed
+            # and live but stuck WIP with Jeff's go recorded three times.
+            # demo.go is the human record #3410 demands — written by
+            # `werk-demo go <card>` when Jeff says go, never synthesized from
+            # inputs.go, which was the self-accept hole itself.
+            if grep -q "\"event\":\"demo.go\",\"role\":\"[a-z]*\",\"card_id\":${CARD_ID}," "${CHORUS_HOME}/ops/logs/werk-demo.jsonl" 2>/dev/null; then
               echo "proven=true" >> "$GITHUB_OUTPUT"
               echo "[demo] already-landed retry: content on main (merge is verdict-gated) + recorded go — deploy+accept proceed"
               exit 0
             fi
-            echo "[demo] already-landed but NO recorded demo.decision for #${CARD_ID} — refusing (no self-accept, #3410)"
+            echo "[demo] already-landed but NO recorded demo.go for #${CARD_ID} — refusing (no self-accept, #3410)"
             echo "proven=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi

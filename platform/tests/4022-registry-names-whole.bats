@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# #4159 — repointed from tag-tests-domain.py (retired by #4154) to its parser
+# #4159 — repointed from the retired tests tagger (retired by #4154) to its parser
 # library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
 # @test-type: unit — hermetic: fixture files in $BATS_TEST_TMPDIR, the tagger's
 # --names-of / --check-shares seams, no store.

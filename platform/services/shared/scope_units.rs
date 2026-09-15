@@ -33,11 +33,40 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // and platform/tests/ are on it: a plist is a SCHEDULE, not an input to any
     // build or test output. It was the one unmapped path in #4166's five-file diff,
     // and it cost that card 314 units and 61 minutes.
+    // #4173 — platform/tests/ came OFF this list (Silas, 2026-09-14: "I overshot
+    // from not-a-build-input to not-worth-running"). A suite is not a build
+    // input, but editing one must still RUN it; is_test_suite_path below scopes
+    // a changed suite to itself instead of to nothing.
+    // #4173 — .github/workflows/ is the pipeline's own definition. Changing it
+    // changes how a run is ORCHESTRATED, not what any unit builds or tests, and
+    // there is no unit it could scope to; the workflow is proven by the run it
+    // drives plus the bats that read it.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-               "platform/scripts/", "platform/tests/", "platform/launchd/", "skills/", ".claude/"]
+               "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
+               ".github/"]
         .iter()
         .any(|d| f.starts_with(d));
-    ext || dir || f.contains("/public/")
+    // #4173 — git's own metadata is on the list for the same reason a plist is:
+    // .gitignore decides what git TRACKS, never what a build or test produces.
+    // It was the second unmapped path in this card's diff (the first, a runtime
+    // watermark, belonged in .gitignore — which is how the two met).
+    let vcs = matches!(
+        f.rsplit('/').next().unwrap_or(f),
+        ".gitignore" | ".gitattributes" | ".gitmodules"
+    );
+    ext || dir || vcs || f.contains("/public/")
+}
+
+/// A path that IS a test suite: the runner executes the file itself, so a change
+/// to it scopes to itself and nothing else. `.bats` anywhere, and shell suites
+/// under a tests directory — the same two shapes `test_unit_for_path` resolves.
+pub fn is_test_suite_path(f: &str) -> bool {
+    if f.ends_with(".bats") {
+        return true;
+    }
+    let name = f.rsplit('/').next().unwrap_or(f);
+    let shell = f.ends_with(".sh") && (name.starts_with("test-") || name.contains(".test."));
+    shell && (f.starts_with("platform/tests/") || f.contains("/tests/"))
 }
 
 /// Diff → unit names + transitive DECLARED dependents. Any build/test-relevant
@@ -65,6 +94,26 @@ pub fn scope_unit_names(
         if let Some(u) = units.iter().find(|u| f.starts_with(&format!("{}/", u.dir))) {
             names.insert(u.name.clone());
             continue;
+        }
+        // #4173 — platform/services/shared/ is not a crate: its files are
+        // source-INCLUDED (`include!`) by the crates that use them, an edge the
+        // cargo/TS scanners cannot see. Without it, editing this very file
+        // refused the run as unmapped while the thing it changes is compiled
+        // into two verbs. The provider name is the file's own path, so a change
+        // to failure_class.rs does not drag in scope_units.rs's dependents.
+        // A changed suite runs itself. Its "unit" is its own path; a caller
+        // whose unit set has no suites simply filters it out, which is right —
+        // a test-only diff builds nothing.
+        if is_test_suite_path(f) {
+            names.insert(f.clone());
+            continue;
+        }
+        if f.starts_with("platform/services/shared/") {
+            if edges.iter().any(|(p, _)| p == f) {
+                names.insert(f.clone());
+                continue;
+            }
+            return ScopeVerdict::Full(format!("unmapped:{}", f));
         }
         if let Some(rest) = f.strip_prefix("platform/services/") {
             if let Some(crate_name) = rest.split('/').next() {
@@ -161,8 +210,33 @@ pub fn scope_declared_edges(root: &std::path::Path) -> Vec<(String, String)> {
             }
         }
     }
-    // Cargo path deps among platform/services.
+    // #4173 — `include!("../../shared/x.rs")` edges: a source-included file is a
+    // real build input with no manifest entry anywhere, so it is invisible to
+    // both scanners above. Provider is the shared file's werk-relative path.
     let services = root.join("platform/services");
+    if let Ok(entries) = fs::read_dir(&services) {
+        for e in entries.flatten() {
+            let Some(dep_crate) = e.file_name().to_str().map(|s| s.to_string()) else { continue };
+            let src = e.path().join("src");
+            let Ok(files) = fs::read_dir(&src) else { continue };
+            for f in files.flatten() {
+                let Ok(text) = fs::read_to_string(f.path()) else { continue };
+                for line in text.lines() {
+                    let Some(i) = line.find("include!(\"") else { continue };
+                    let rest = &line[i + "include!(\"".len()..];
+                    let Some(q) = rest.find('"') else { continue };
+                    let target = &rest[..q];
+                    let Some(name) = std::path::Path::new(target).file_name().and_then(|n| n.to_str())
+                    else { continue };
+                    if services.join("shared").join(name).is_file() {
+                        edges.push((format!("platform/services/shared/{name}"), dep_crate.clone()));
+                    }
+                }
+            }
+        }
+    }
+
+    // Cargo path deps among platform/services.
     if let Ok(entries) = fs::read_dir(&services) {
         for e in entries.flatten() {
             let dir = e.path();
@@ -232,10 +306,21 @@ mod scope_refusal_4169 {
             "platform/api/public/borg/graph-validate.txt",
             "platform/launchd/com.chorus.athena-validate.plist",
             "platform/scripts/athena-validate.sh",
-            "platform/tests/4166-athena-validate-scheduled.bats",
         ] {
             assert!(scope_irrelevant(f), "{} should not widen a card", f);
         }
+        // #4173 — the .bats file moved from "irrelevant" to "a suite that runs
+        // itself" (Silas, 2026-09-14: the irrelevant list overshot to
+        // not-worth-running). The claim this test makes is that none of the
+        // five WIDEN the card, and that still holds: the suite scopes to
+        // itself, which is a scoped run, not a FULL one.
+        let bats = "platform/tests/4166-athena-validate-scheduled.bats";
+        assert!(!scope_irrelevant(bats));
+        assert!(is_test_suite_path(bats), "{} should scope to itself", bats);
+        let units = [u(bats, bats)];
+        let verdict = scope_unit_names(&[bats.to_string()], &units, &[], false);
+        let ScopeVerdict::Scoped(names) = verdict else { panic!("a suite must not go FULL") };
+        assert_eq!(names, vec![bats.to_string()]);
     }
 
     #[test]

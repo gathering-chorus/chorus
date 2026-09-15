@@ -862,7 +862,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         // Phase 3: smoke. Both services advertise a known endpoint.
         let url = format!("http://localhost:{}{}", port, svc.smoke_path);
         let port_s = port.to_string();
-        if let Err(e) = wait_for_smoke(&url, &svc.smoke_kind, Duration::from_secs(30)) {
+        if let Err(e) = wait_for_smoke(&url, &svc.smoke_kind, smoke_timeout()) {
             // #3215: a smoke fail is the per-service truth Borg needs — emit
             // result=fail on the spine BEFORE the terminal Err so the trace
             // shows which variant didn't come up, not a silent env.up.failed.
@@ -1268,5 +1268,54 @@ mod store_4047 {
         let without = generate_plist(&svc, "kade", "/tmp/werk", 3343, &[]);
         assert!(!without.contains("CSS_ISSUER"), "fixture bogus: issuer appears unpassed");
         assert!(!without.contains("CHORUS_JWKS_URL"), "fixture bogus: jwks appears unpassed");
+    }
+}
+
+/// #4173 — how long env-up waits for a variant to answer.
+///
+/// This was a bare 30s. athena-make's boot enumerates every domain surface in
+/// the store, so its duration is a function of how many rows the store holds —
+/// and this card puts 5,533 CodeFile rows in it. Measured 2026-09-14: the
+/// variant finished booting in 33s and answered /health immediately after, but
+/// the gate had already given up at 30 and reported the service as down. Three
+/// runs today died on a service that was starting normally.
+///
+/// A ceiling that is a function of the data must not be a constant in the code.
+/// `CHORUS_ENV_SMOKE_TIMEOUT_S` overrides it, the same seam the MCP smoke
+/// already has; the default is raised to leave real headroom rather than to
+/// clear today's 33s by a second.
+pub fn smoke_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("CHORUS_ENV_SMOKE_TIMEOUT_S")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|n| *n > 0)
+            .unwrap_or(120),
+    )
+}
+
+#[cfg(test)]
+mod smoke_timeout_4173 {
+    use super::smoke_timeout;
+
+    #[test]
+    fn the_default_clears_a_measured_boot_with_headroom() {
+        std::env::remove_var("CHORUS_ENV_SMOKE_TIMEOUT_S");
+        // 33s measured; 30 was the constant that failed three runs.
+        assert!(smoke_timeout().as_secs() >= 90, "default must not sit near the measured boot");
+    }
+
+    // NEGATIVE PROOF: a raised ceiling must still BE a ceiling. If a junk or
+    // zero value silently became "wait forever", this would have replaced a
+    // gate that fired too early with one that can never fire at all.
+    #[test]
+    fn negative_proof_the_ceiling_is_still_a_ceiling_and_junk_does_not_disable_it() {
+        std::env::set_var("CHORUS_ENV_SMOKE_TIMEOUT_S", "5");
+        assert_eq!(smoke_timeout().as_secs(), 5);
+        for junk in ["0", "", "forever", "-1"] {
+            std::env::set_var("CHORUS_ENV_SMOKE_TIMEOUT_S", junk);
+            assert_eq!(smoke_timeout().as_secs(), 120, "junk {junk:?} must fall back, never disable");
+        }
+        std::env::remove_var("CHORUS_ENV_SMOKE_TIMEOUT_S");
     }
 }
