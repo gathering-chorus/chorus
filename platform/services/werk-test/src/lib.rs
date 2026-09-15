@@ -1641,6 +1641,26 @@ pub fn suite_world_env(tmp: &str) -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod npm_lane_4173 {
+    use super::npm_test_runner_script_is_node_test;
+
+    #[test]
+    fn a_cucumber_package_is_not_this_lanes_to_grade() {
+        assert!(!npm_test_runner_script_is_node_test("cucumber-js"));
+        assert!(!npm_test_runner_script_is_node_test("cucumber-js --tags @gate"));
+    }
+
+    // NEGATIVE PROOF: the skip must not swallow a node:test package. Those are
+    // still this lane's, so an empty one has to reach the FAIL LOUD below
+    // rather than being waved through as "someone else's lane".
+    #[test]
+    fn negative_proof_a_node_test_package_is_still_this_lanes_to_grade() {
+        assert!(npm_test_runner_script_is_node_test("tsx --test tests/*.test.ts"));
+        assert!(npm_test_runner_script_is_node_test("node --test"));
+    }
+}
+
+#[cfg(test)]
 mod scope_vcs_metadata_4173 {
     use super::{is_test_suite_path, scope_irrelevant, scoped_test_reason, ScopeUnit};
 
@@ -4678,4 +4698,12 @@ mod ui_flows_verdict_4154 {
         assert_eq!(no_summary_verdict(classify_playwright_no_summary(empty)), None);
         assert_eq!(no_summary_verdict(classify_playwright_no_summary(crashed)), Some(false));
     }
+}
+
+/// #4173 — is a package.json `test` script this lane's to grade? node:test
+/// runners name `--test`; cucumber, mocha, vitest and friends do not, and they
+/// have their own lanes. Extracted so the rule is testable without a package on
+/// disk — the shape that let "no *.test.ts files" fail a cucumber package.
+pub fn npm_test_runner_script_is_node_test(script: &str) -> bool {
+    script.contains("--test")
 }

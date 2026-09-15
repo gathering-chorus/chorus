@@ -1695,6 +1695,18 @@ fn run_npm_test(werk: &str, pkg: &str) -> (bool, Vec<CaseResult>) {
     // Running per file is the only way to know which file a case came from.
     // It costs one process start per test file and buys a ledger that
     // cross-foots.
+    // #4173 — the runner question comes FIRST. platform/tests declares
+    // `test: cucumber-js`: its suites are .feature files owned by the bdd lane,
+    // so this lane looking for *.test.ts finds none and used to fail the card
+    // with "has a test script but no test files found" — a true sentence about
+    // the wrong lane. A package this lane cannot attribute is not this lane's
+    // to grade; the refusal below still fires for a node:test package, and an
+    // EMPTY node:test package still fails loud rather than passing vacuously.
+    let runner = npm_test_runner(&pkg_dir);
+    if runner.is_none() {
+        eprintln!("   npm:{} runs its own non-node:test runner — graded by its own lane, not here", pkg);
+        return (true, Vec::new());
+    }
     let files = npm_test_files(&pkg_dir);
     if files.is_empty() {
         eprintln!("!! npm:{} has a test script but no test files found — FAIL LOUD", pkg);
