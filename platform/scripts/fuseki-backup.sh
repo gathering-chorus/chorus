@@ -124,8 +124,31 @@ RSIZE="$(ssh -o ConnectTimeout=10 "$REMOTE" "stat -f %z '$DEST_BASE/dumps/$(base
 # on 2026-08-28 an `ls -t` prune ranked five fresh snapshots as older than
 # 08-22 and deleted every backup from 08-24 through 08-28 while logging "OK".
 # Names are ISO-dated, so a lexical sort IS chronological.
-ssh -o ConnectTimeout=10 "$REMOTE" \
-  "ls -1 '$DEST_BASE/dumps'/${DATASET}_*.nq.gz 2>/dev/null | sort -r | tail -n +$((KEEP+1)) | xargs -I{} rm -f '$DEST_BASE/dumps/'{}" 2>/dev/null || true
+#
+# BASENAMES, and the prune SPEAKS. The first version globbed a path, so `ls -1`
+# printed full paths and `rm -f "$DEST/dumps/"{}` prepended the directory a
+# second time — /dumps//Volumes/... matched nothing, `|| true` swallowed it, and
+# a KEEP=2 run finished holding 4 dumps while logging OK (measured 05:22:41).
+# A retention rule that silently keeps everything is the same defect as one that
+# silently deletes everything: you cannot tell from the outside that it ran.
+#
+# And never the restore-proven copy. The oldest dump is the one retention wants
+# to drop and also the one the drill has actually verified — dropping it leaves
+# a shelf of copies nobody has ever opened.
+PROVEN="$(ssh -o ConnectTimeout=10 "$REMOTE" "cat '$DEST_BASE/restore-proven.txt' 2>/dev/null" | tr -d '\r')"
+PROVEN="$(basename "${PROVEN:-__none__}")"
+DOOMED="$(ssh -o ConnectTimeout=10 "$REMOTE" \
+  "cd '$DEST_BASE/dumps' && ls -1 ${DATASET}_*.nq.gz 2>/dev/null | sort -r | tail -n +$((KEEP+1))" | tr -d '\r' | grep -v -F -x "$PROVEN" || true)"
+if [ -n "$DOOMED" ]; then
+  for f in $DOOMED; do
+    ssh -o ConnectTimeout=10 "$REMOTE" "rm -f '$DEST_BASE/dumps/$f'" \
+      || die "could not prune $f" prune-failed
+    log "pruned $f"
+  done
+else
+  log "prune: nothing over the keep limit of $KEEP"
+fi
+[ "$PROVEN" = "__none__" ] || log "prune: kept $PROVEN (restore-proven)"
 ls -1t "$BACKUP_DIR"/${DATASET}_*.nq.gz 2>/dev/null | tail -n +3 | xargs -I{} rm -f {} 2>/dev/null || true
 # The stubs from the corrupt era are not backups; clear them so the directory
 # stops advertising four recovery points that never held a triple.
