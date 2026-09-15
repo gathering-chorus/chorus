@@ -33,18 +33,33 @@ fi
 # so the strip regex (.*/chorus(-werk/<role>)?/) hits.
 FIXTURE_BASE=$(mktemp -d -t enrich-test.XXXX)
 FIXTURE="$FIXTURE_BASE/chorus"
-mkdir -p \
-  "$FIXTURE/proving/scripts/tests" \
-  "$FIXTURE/platform/scripts" \
-  "$FIXTURE/roles/kade" \
-  "$FIXTURE/roles/silas/ontology" \
-  "$FIXTURE/skills"
 
-echo "test-a" > "$FIXTURE/proving/scripts/tests/a.sh"
-echo "git-stub" > "$FIXTURE/platform/scripts/git-helper.sh"
-echo "kade-state" > "$FIXTURE/roles/kade/current-work.md"
-echo "skill" > "$FIXTURE/skills/foo.md"
-cp "$CHORUS_ROOT/roles/silas/ontology/chorus.ttl" "$FIXTURE/roles/silas/ontology/chorus.ttl"
+# The five paths BELONGS_MAP actually carries. #3021 narrowed this writer from
+# a function-based scan of every File row to five TARGETED spine files, and this
+# fixture was never updated: it kept building a.sh / git-helper.sh / foo.md and
+# asserting domains the map no longer contains, so the suite could not pass. It
+# never reported that, because a proving/ suite was not selected by any diff
+# until #4173 made a changed suite run itself.
+BELONGS_RELS=(
+  "platform/api/src/spine-event-write.ts"
+  "platform/api/tests/spine-event-endpoint.integration.test.ts"
+  "platform/api/tests/spine-event-write.test.ts"
+  "platform/tests/spine-emit-drift-audit.bats"
+  "platform/tests/spine-tick-poller-inject-resolve.bats"
+)
+for rel in "${BELONGS_RELS[@]}"; do
+  mkdir -p "$FIXTURE/$(dirname "$rel")"
+  echo "fixture" > "$FIXTURE/$rel"
+done
+
+# The writer reads CHORUS_ROOT for TWO unrelated things: the tree whose paths it
+# strips, and where its store credential lives. This suite points CHORUS_ROOT at
+# the fixture for the first, which silently removed the second — every write
+# 401'd and the run reported "5 files tagged (1 batch failure)". The fixture
+# carries the credential so the writer can reach the store it is being tested
+# against. The double duty of CHORUS_ROOT is the writer's defect, noted here.
+mkdir -p "$FIXTURE/platform/scripts"
+cp "$CHORUS_ROOT/platform/scripts/fuseki-auth.sh" "$FIXTURE/platform/scripts/fuseki-auth.sh"
 
 cleanup() {
   curl -s -X POST -H 'Content-Type: application/sparql-update' \
@@ -74,14 +89,12 @@ SEED_INSERT="PREFIX chorus: <https://jeffbridwell.com/chorus#> INSERT DATA { GRA
 # produces. The first cut seeded a plausible-looking list of real repo paths
 # instead, so the seed passed its own count check and every assertion below
 # failed looking for rows that were never there.
-for rel in \
-  "proving/scripts/tests/a.sh" \
-  "platform/scripts/git-helper.sh" \
-  "roles/kade/current-work.md" \
-  "skills/foo.md" \
-  "roles/silas/ontology/chorus.ttl"; do
+# filePath is the FIXTURE-ABSOLUTE path, because the writer matches on
+# STRENDS(?p, "/<rel>") — a bare relative path ends with the rel but not with
+# "/<rel>", so a seed of relative paths matches nothing and tags 0 files.
+for rel in "${BELONGS_RELS[@]}"; do
   uri="https://jeffbridwell.com/chorus#file-$(printf '%s' "$rel" | tr -c 'a-zA-Z0-9' '-')"
-  SEED_INSERT="$SEED_INSERT <$uri> a chorus:File ; chorus:filePath \"$rel\" ."
+  SEED_INSERT="$SEED_INSERT <$uri> a chorus:File ; chorus:filePath \"$FIXTURE/$rel\" ."
 done
 SEED_INSERT="$SEED_INSERT } }"
 # #3566 — Fuseki 401s a bare write. The first cut of this seed sent the INSERT
@@ -132,23 +145,41 @@ ASK { GRAPH <'"$TEST_GRAPH"'> {
   fi
 }
 
-check_predicate "proving/scripts/tests/a.sh" "tests-domain"
-check_predicate "platform/scripts/git-helper.sh" "version-control-domain"
-check_predicate "roles/kade/current-work.md" "roles-domain"
-check_predicate "skills/foo.md" "skills-service"
+# The writer's real contract: the five BELONGS_MAP files carry chorus:spine.
+check_predicate "platform/api/src/spine-event-write.ts" "spine"
+check_predicate "platform/api/tests/spine-event-write.test.ts" "spine"
+check_predicate "platform/tests/spine-emit-drift-audit.bats" "spine"
+
+# NEGATIVE PROOF (#3734): the checks above pass for every file if the writer
+# tags indiscriminately. A file that is NOT in BELONGS_MAP must come back
+# untagged, or this suite cannot tell "tagged correctly" from "tagged".
+UNMAPPED="$FIXTURE/platform/scripts/not-in-the-map.sh"
+mkdir -p "$(dirname "$UNMAPPED")"; echo "fixture" > "$UNMAPPED"
+NEG_Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
+ASK { GRAPH <'"$TEST_GRAPH"'> {
+  ?f chorus:filePath ?p ; chorus:fileInDomain ?d .
+  FILTER(CONTAINS(?p, "not-in-the-map.sh"))
+} }'
+NEG_RESP=$(curl -s -G -H 'Accept: application/sparql-results+json' \
+  --data-urlencode "query=$NEG_Q" "$FUSEKI_BASE/query" 2>/dev/null)
+if echo "$NEG_RESP" | grep -qE '"boolean"[[:space:]]*:[[:space:]]*false'; then
+  p "NEGATIVE PROOF: a file outside BELONGS_MAP is not tagged"
+else
+  f "a file outside BELONGS_MAP was tagged — the checks above prove nothing: $NEG_RESP"
+fi
 
 # Owner check on the kade-path file.
 OWNER_Q='PREFIX chorus: <https://jeffbridwell.com/chorus#>
 ASK { GRAPH <'"$TEST_GRAPH"'> {
-  ?f chorus:filePath ?p ; chorus:fileHasOwner chorus:kade .
-  FILTER(CONTAINS(?p, "roles/kade/current-work.md"))
+  ?f chorus:filePath ?p ; chorus:fileHasOwner chorus:role-wren .
+  FILTER(CONTAINS(?p, "spine-event-write.ts"))
 } }'
 OWNER_RESP=$(curl -s -G -H 'Accept: application/sparql-results+json' \
   --data-urlencode "query=$OWNER_Q" "$FUSEKI_BASE/query" 2>/dev/null)
 if echo "$OWNER_RESP" | grep -qE '"boolean"[[:space:]]*:[[:space:]]*true'; then
-  p "roles/kade/* → chorus:fileHasOwner chorus:kade"
+  p "spine files → chorus:fileHasOwner chorus:role-wren"
 else
-  f "expected fileHasOwner=kade for kade path, ASK returned: $OWNER_RESP"
+  f "expected fileHasOwner=role-wren for a spine file, ASK returned: $OWNER_RESP"
 fi
 
 # Idempotency: re-run, assert each file still has exactly one fileInDomain.
