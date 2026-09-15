@@ -101,5 +101,11 @@ chorus:CodeFileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:hasDomain ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:fileSha ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:fileLastModified ; sh:datatype xsd:dateTime ] ;
+    # #4178 — ownedBy is WRITTEN on every row (the door stamps it from the caller)
+    # and was served on none of 5,548, so the one fact that decides whether a write
+    # is allowed could not be read by anyone. Ownership had to be checked with raw
+    # SPARQL against the store — the bypass this whole programme exists to end, and
+    # a migration nobody can verify through the door cannot be called done.
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Role ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .
