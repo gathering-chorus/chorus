@@ -36,3 +36,21 @@ setup() {
   [ "$output" != "crawler" ]
   [ "$output" = "kade" ]
 }
+
+@test "the on-land delta also runs as the crawler and cannot fail the land" {
+  YML="$REPO/.github/workflows/werk.yml"
+  run grep -A 12 '\- name: crawl-delta' "$YML"
+  [[ "$output" == *"CHORUS_ROLE: crawler"* ]]
+  [[ "$output" == *"continue-on-error: true"* ]]
+}
+
+# NEGATIVE PROOF: "cannot fail the land" has to be a property of the step, not a
+# hope. Strip continue-on-error and the check must go red — otherwise a crawl
+# that cannot reach the door would take a merged, deployed land down with it.
+@test "NEGATIVE PROOF: without continue-on-error the step would fail the land" {
+  YML="$REPO/.github/workflows/werk.yml"
+  bad="$BATS_TEST_TMPDIR/werk.yml"
+  grep -v 'continue-on-error: true' "$YML" > "$bad"
+  run grep -A 12 '\- name: crawl-delta' "$bad"
+  [[ "$output" != *"continue-on-error: true"* ]]
+}
