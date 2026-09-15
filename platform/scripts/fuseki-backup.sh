@@ -1,105 +1,159 @@
 #!/usr/bin/env bash
-# fuseki-backup.sh — consistent, recurring off-machine backup of the shared Fuseki TDB2 store (#3560 AC#1).
+# fuseki-backup.sh — nightly off-machine backup of the Fuseki TDB2 store.
 #
-# Proven path (2026-06-22): APFS local snapshot (atomic point-in-time) → rsync FROM the frozen
-# snapshot → bedroom. This is the repeatable form of the by-hand backup that was verified restorable
-# (62 GB copied, opened with tdb2.tdbquery, counted 31,032,717 triples, recovery-on-open clean).
+# #4171. Jeff, three times since 2026-08-09: "they start at midnight and are
+# still running", "the size increases", "fix the backups". Measured 09-14 08:12:
+# 377 GB copied per night, finishing 11:53 and 13:19 — into his working day.
 #
-# Why this and not the alternatives:
-#   - Fuseki `$/backup` (Thrift dump): FAILS on this store ("Unrecognized type 0", NodeTableTRDF) — broken path.
-#   - tdb2.tdbbackup on the live dir: a 2nd process opening the live TDB2 fights Fuseki's lock — corruption risk.
-#   - raw rsync of the LIVE dir: multi-minute copy of a store being written = a smeared/torn copy.
-#   - APFS snapshot: atomic point-in-time; rsync just copies bytes from a frozen, read-only view — no lock,
-#     no torn copy, no contact with the running store. TDB2 recovers-on-open from a point-in-time snapshot.
+# WHAT THIS IS NOW: ask Fuseki for a dump, copy one file. That is the whole job.
+#
+#   2026-09-14 19:32:12 -> 19:36:37   4m25s   299 MB gzipped N-Quads
+#
+# WHAT IT REPLACED, and why the old shape existed. Until today the native dump
+# could not run: the node table was corrupt, so `$/backup` died on its first
+# read and left 20-byte .tmp stubs (Jun 25 x2, Jul 1 x2 — still on disk). The
+# same corruption killed compaction and tdb2.tdbdump. With the dump door shut,
+# the only way out was to copy the STORE, and copying a live TDB2 safely needs
+# an APFS snapshot, a mount, and an rsync — ~450 lines of machinery whose real
+# purpose was working around a broken database.
+#
+# The store was rebuilt 2026-09-14 (432 GB -> 15 GB, 39,687,538 triples, exact)
+# and compaction succeeded at 16:19 for the first time since 08-29. The dump
+# works again, so the machinery goes.
+#
+# MEASURED ALTERNATIVES, so nobody re-derives them:
+#   rsync --link-dest      run added 16.3 GB. --link-dest links only when size
+#                          AND mtime match; Fuseki rewrites every index mtime
+#                          nightly (GOSP.dat, same 70,908,903,424 bytes, mtime
+#                          09-12 23:59:51 -> 09-14 09:36:53).
+#   hard-linked snapshots  run added 14.8 GB. rsync's delta saves the WIRE; on
+#                          the destination it writes a whole new file and
+#                          renames, so any changed file costs its full size.
+#   APFS clones+--inplace  run consumed 240 MB, 8m30s. Works, and still copies
+#                          index files that no restore needs.
+#   native dump            299 MB, 4m25s, and restores into any generation.
+#
+# A dump is also the only form that does not care about generations, index
+# layout, or mtimes — the three things that broke every previous approach.
 set -euo pipefail
-
-# OFF-MACHINE target = BEDROOM. `Jeffs-Mac-mini.local` resolves to 192.168.86.242 (bedroom, the M2 Pro) —
-# NOT this box (Library = `Jeffs-Mac-Mini-M1-3` / 192.168.86.36, where Fuseki + this script run). The two
-# hostnames are near-identical; verify with `ping Jeffs-Mac-mini.local` (→ .242) before assuming it's local.
-# #4043 — the lot's home is chorus-env-setup.sh; the plist env still overrides.
 . "$(dirname "${BASH_SOURCE[0]}")/chorus-env-setup.sh" >/dev/null 2>&1 || true
+. "$(dirname "${BASH_SOURCE[0]}")/fuseki-auth.sh" >/dev/null 2>&1 || true
+
 REMOTE="${FUSEKI_BACKUP_REMOTE:-Jeffs-Mac-mini.local}"
-STORE_VOL="/System/Volumes/Data"
-SNAP_REL="Users/jeffbridwell/.gathering/data/fuseki-pods"   # path to the TDB2 dir within the snapshot
 DEST_BASE="${FUSEKI_BACKUP_DEST:?FUSEKI_BACKUP_DEST unset — chorus-env-setup.sh missing?}"
-# #3799 — was 3 fulls; each full is ~450G (store not yet right-sized), so 3-4
-# copies = 1.4-1.7T and Bedroom fills (tomorrow FAILS, measured 2026-08-13).
-# Drop to 2 recovery points until the compact fix (AC1) shrinks the store ~7x.
-# Prune (step 5) enforces this; tonight's 3AM run self-prunes to 2.
-KEEP="${FUSEKI_BACKUP_KEEP:-2}"
-MNT="$(mktemp -d /tmp/fuseki-backup-snap.XXXXXX)"
+DATASET="${FUSEKI_DATASET:-pods}"
+FUSEKI="${FUSEKI_URL:-http://localhost:3030}"
+BACKUP_DIR="${FUSEKI_BACKUP_LOCAL:-$HOME/.gathering/data/backups}"
+KEEP="${FUSEKI_BACKUP_KEEP:-7}"     # a dump is ~300 MB, so a week costs ~2 GB
+TIMEOUT="${FUSEKI_BACKUP_TIMEOUT:-3600}"
 LOG_TAG="fuseki-backup"
-CHORUS_LOG="${CHORUS_LOG:-/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/chorus-log}"
+CHORUS_LOG="${CHORUS_LOG:-$HOME/CascadeProjects/chorus/platform/scripts/chorus-log}"
 
 log(){ echo "$(date '+%F %T') [$LOG_TAG] $*"; }
 spine(){ "$CHORUS_LOG" "$1" silas "${@:2}" 2>/dev/null || true; }
-cleanup(){ sudo -n umount "$MNT" 2>/dev/null || true; rmdir "$MNT" 2>/dev/null || true; }
-trap cleanup EXIT
+die(){ log "ERROR: $*"; spine ops.backup.fuseki.failed reason="$2" detail="$1"; exit 1; }
 
-# 0. bedroom reachable (read is free; this is the precondition)
-if ! ssh -o ConnectTimeout=10 "$REMOTE" true 2>/dev/null; then
-  log "ERROR: bedroom ($REMOTE) unreachable — backup skipped"; spine ops.backup.fuseki.failed reason=bedroom-unreachable; exit 1
-fi
+# 0. Bedroom reachable. Read is free; this is the precondition.
+ssh -o ConnectTimeout=10 "$REMOTE" true 2>/dev/null \
+  || die "$REMOTE unreachable" unreachable
 
-# 1. atomic point-in-time snapshot of the volume
-SNAP_DATE="$(tmutil localsnapshot / 2>/dev/null | sed -n 's/.*date: *//p' | tr -d ' ')"
-[ -n "$SNAP_DATE" ] || { log "ERROR: tmutil localsnapshot produced no date"; spine ops.backup.fuseki.failed reason=snapshot-failed; exit 1; }
-SNAP="com.apple.TimeMachine.${SNAP_DATE}.local"
-log "snapshot: $SNAP"
+# 1. Ask Fuseki for the dump.
+#
+# A dump takes a READ lock, so the roles keep writing while it runs — unlike
+# compaction, which held every writer for 78 minutes on 09-14 and blocked two
+# roles who had no way to know why.
+# The POST returns this run's taskId. Keep it: the wait below must follow THIS
+# dump, not "the newest Backup task". Measured 2026-09-14 20:37:56 — without the
+# id, the loop found the previous run's FINISHED task, skipped waiting entirely,
+# and shipped an hour-old dump as tonight's backup, in 28 seconds, reporting OK.
+# A backup that can ship yesterday's file is not a backup.
+STARTED_MARK="$(mktemp)"; trap 'rm -f "$STARTED_MARK"' EXIT
+log "requesting a dump of '$DATASET'"
+TASK_ID="$(curl -fsS -X POST --max-time 60 ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} \
+  "$FUSEKI/\$/backup/$DATASET" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("taskId",""))')" \
+  || die "Fuseki refused the backup request" request-refused
+[ -n "$TASK_ID" ] || die "Fuseki accepted the request but returned no taskId" no-task-id
+log "dump task $TASK_ID"
 
-# 2. mount it read-only and locate the TDB2 dir
-# #3582/#3586 — retry + CAPTURE the error. ROOT CAUSE (corrected): the scheduled LaunchAgent
-# context lacks the Full Disk Access an interactive Terminal has, so plain mount_apfs returns
-# "Operation not permitted". An interactive mount succeeds (Terminal has FDA) — which is why
-# the "transient" theory was wrong. Fix (#3586): `sudo -n mount_apfs` via the NOPASSWD
-# /etc/sudoers.d/fuseki-backup grant (mount_apfs + umount only). The retry + captured stderr
-# remain as a safety net for genuinely-transient mount hiccups.
-mount_ok=0; mount_err=""
-for attempt in 1 2 3 4 5; do
-  if mount_err="$(sudo -n mount_apfs -o ro -s "$SNAP" "$STORE_VOL" "$MNT" 2>&1)"; then mount_ok=1; break; fi
-  log "mount_apfs attempt $attempt/5 failed: $mount_err"
-  sudo -n umount "$MNT" 2>/dev/null || true   # #3582 (Kade DE-review): clear any partial mount so the next attempt's error isn't masked by an already-mounted path
-  sleep 3
+# 2. Wait for the task, and READ ITS SUCCESS FLAG.
+#
+# The compaction bug this repeats: our old weekly script POSTed to $/compact and
+# never read `success`, so tasks that failed in 90 seconds with a node-table
+# exception were logged as done for eleven weeks. A task that is finished is not
+# a task that worked.
+log "waiting for the dump task"
+deadline=$(( $(date +%s) + TIMEOUT ))
+while :; do
+  read -r fin ok < <(curl -fsS --max-time 30 ${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"} "$FUSEKI/\$/tasks" \
+    | TASK_ID="$TASK_ID" python3 -c '
+import sys, json, os
+want = os.environ["TASK_ID"]
+t = [x for x in json.load(sys.stdin) if str(x.get("taskId")) == want]
+t = t[0] if t else {}
+print(t.get("finished") or "-", t.get("success"))') || die "could not read the task list" task-unreadable
+  [ "$fin" != "-" ] && break
+  [ "$(date +%s)" -lt "$deadline" ] || die "dump did not finish within ${TIMEOUT}s" timeout
+  sleep 10
 done
-[ "$mount_ok" = 1 ] || { log "ERROR: mount_apfs failed after 5 attempts for $SNAP: $mount_err"; spine ops.backup.fuseki.failed reason=mount-failed detail="$mount_err"; exit 1; }
-SRC="$MNT/$SNAP_REL"
-# #3888 — TDB2 presence, not a hardcoded generation: the old check required
-# Data-0003 (a compaction-count coincidence of the bloated store) and failed
-# the FIRST post-#3799 right-sized backup, whose fresh store is Data-0001.
-# Any Data-* generation counts; an empty/absent store still fails loud.
-if ! compgen -G "$SRC/Data-*" > /dev/null; then
-  log "ERROR: snapshot missing TDB2 Data-* dir at $SRC"; spine ops.backup.fuseki.failed reason=no-tdb2-in-snapshot; exit 1;
+[ "$ok" = "True" ] || die "Fuseki reported the dump FAILED (success=$ok)" dump-failed
+
+# 3. Find it, and require it to be a plausible size.
+#
+# The four backups before today's were 20 BYTES each — a gzip header and
+# nothing else, because the read died immediately. Every one of them sat in the
+# backup directory looking like a backup. A floor is what separates "a file
+# exists" from "the data is in it".
+# Newest AND newer than this run started. "Newest" alone is how the 20:37 run
+# shipped an hour-old file: the newest dump is not necessarily OUR dump.
+DUMP="$(ls -1t "$BACKUP_DIR"/${DATASET}_*.nq.gz 2>/dev/null | head -1)"
+[ -n "$DUMP" ] && [ -f "$DUMP" ] || die "no dump file appeared in $BACKUP_DIR" no-dump
+[ "$DUMP" -nt "$STARTED_MARK" ] || die "newest dump $(basename "$DUMP") predates this run — the dump we asked for never landed" stale-dump
+SIZE=$(stat -f %z "$DUMP")
+MIN=$(( ${FUSEKI_BACKUP_MIN_MB:-50} * 1024 * 1024 ))
+[ "$SIZE" -ge "$MIN" ] || die "dump is only $SIZE bytes (floor $MIN) — refusing to ship a stub" dump-too-small
+
+# 4. Ship it off the machine.
+log "copying $(basename "$DUMP") ($(( SIZE / 1024 / 1024 )) MB) to $REMOTE"
+ssh -o ConnectTimeout=10 "$REMOTE" "mkdir -p '$DEST_BASE/dumps'" || die "could not create the remote directory" remote-mkdir
+scp -q -o ConnectTimeout=10 "$DUMP" "${REMOTE}:${DEST_BASE}/dumps/" || die "scp failed" copy-failed
+RSIZE="$(ssh -o ConnectTimeout=10 "$REMOTE" "stat -f %z '$DEST_BASE/dumps/$(basename "$DUMP")'" | tr -d '\r')"
+[ "$RSIZE" = "$SIZE" ] || die "copy is $RSIZE bytes, source is $SIZE — incomplete" size-mismatch
+
+# 5. Retention, by NAME. Never by mtime: scp and rsync carry source times, and
+# on 2026-08-28 an `ls -t` prune ranked five fresh snapshots as older than
+# 08-22 and deleted every backup from 08-24 through 08-28 while logging "OK".
+# Names are ISO-dated, so a lexical sort IS chronological.
+#
+# BASENAMES, and the prune SPEAKS. The first version globbed a path, so `ls -1`
+# printed full paths and `rm -f "$DEST/dumps/"{}` prepended the directory a
+# second time — /dumps//Volumes/... matched nothing, `|| true` swallowed it, and
+# a KEEP=2 run finished holding 4 dumps while logging OK (measured 05:22:41).
+# A retention rule that silently keeps everything is the same defect as one that
+# silently deletes everything: you cannot tell from the outside that it ran.
+#
+# And never the restore-proven copy. The oldest dump is the one retention wants
+# to drop and also the one the drill has actually verified — dropping it leaves
+# a shelf of copies nobody has ever opened.
+PROVEN="$(ssh -o ConnectTimeout=10 "$REMOTE" "cat '$DEST_BASE/restore-proven.txt' 2>/dev/null" | tr -d '\r')"
+PROVEN="$(basename "${PROVEN:-__none__}")"
+DOOMED="$(ssh -o ConnectTimeout=10 "$REMOTE" \
+  "cd '$DEST_BASE/dumps' && ls -1 ${DATASET}_*.nq.gz 2>/dev/null | sort -r | tail -n +$((KEEP+1))" | tr -d '\r' | grep -v -F -x "$PROVEN" || true)"
+if [ -n "$DOOMED" ]; then
+  for f in $DOOMED; do
+    ssh -o ConnectTimeout=10 "$REMOTE" "rm -f '$DEST_BASE/dumps/$f'" \
+      || die "could not prune $f" prune-failed
+    log "pruned $f"
+  done
+else
+  log "prune: nothing over the keep limit of $KEEP"
 fi
+[ "$PROVEN" = "__none__" ] || log "prune: kept $PROVEN (restore-proven)"
+ls -1t "$BACKUP_DIR"/${DATASET}_*.nq.gz 2>/dev/null | tail -n +3 | xargs -I{} rm -f {} 2>/dev/null || true
+# The stubs from the corrupt era are not backups; clear them so the directory
+# stops advertising four recovery points that never held a triple.
+find "$BACKUP_DIR" -name "${DATASET}_*.nq.gz*.tmp" -size -1k -delete 2>/dev/null || true
 
-# 3. rsync the frozen store to bedroom (dated dir)
-DEST="$DEST_BASE/fuseki-pods-${SNAP_DATE}"
-ssh -o ConnectTimeout=10 "$REMOTE" "mkdir -p '$DEST'"
-log "rsync → ${REMOTE}:${DEST}"
-rsync -a --partial -e "ssh -o ConnectTimeout=10" "$SRC/" "${REMOTE}:${DEST}/"
-
-# 4. completeness check — every file landed (not just rsync exit 0; #3560 lesson: copied != restorable)
-SRC_N="$(find "$SRC" -type f | wc -l | tr -d ' ')"
-DST_N="$(ssh -o ConnectTimeout=10 "$REMOTE" "find '$DEST' -type f | wc -l" | tr -d ' ')"
-if [ "$SRC_N" != "$DST_N" ]; then
-  log "ERROR: incomplete copy — src=$SRC_N dst=$DST_N"; spine ops.backup.fuseki.failed reason=incomplete src="$SRC_N" dst="$DST_N"; exit 1
-fi
-
-# 5. release the snapshot + prune old remote backups (keep last $KEEP)
-sudo -n umount "$MNT" 2>/dev/null || true
-tmutil deletelocalsnapshots "$SNAP_DATE" 2>/dev/null || true
-# #3837 (2026-08-28) — prune by NAME, never by mtime: rsync -a preserves the source
-# directory's mtime, so `ls -t` ranked five fresh snapshots as OLDER than 08-22/23 and
-# deleted every backup from 08-24 through 08-28 while the log said "OK: 43 files".
-# The day the model graph was wiped, the 03:00 snapshot was already gone.
-# Names are ISO-dated, so lexical sort IS chronological.
-ssh -o ConnectTimeout=10 "$REMOTE" "ls -1d '$DEST_BASE'/fuseki-pods-* 2>/dev/null | sort -r | tail -n +$((KEEP+1)) | xargs -I{} rm -rf {}" 2>/dev/null || true
-
-log "OK: $SRC_N files → ${REMOTE}:${DEST}"
-spine ops.backup.fuseki.completed files="$SRC_N" dest="$DEST"
-
-# --- RESTORE (proven 2026-06-22) ---
-# 1. Pull the backup back to a scratch (or the live path while Fuseki is stopped):
-#      rsync -a Jeffs-Mac-mini.local:/Users/jeffbridwell/Backups/library/fuseki/fuseki-pods-<date>/ <target>/
-# 2. Open-and-count to prove restorable (TDB2 recovers-on-open; a clean count = restorable):
-#      tdb2.tdbquery --loc=<target> 'SELECT (COUNT(*) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } }'   # expect ~31M
-# 3. To go live: stop com.gathering.fuseki, replace ~/.gathering/data/fuseki-pods with <target>, restart.
+HELD="$(ssh -o ConnectTimeout=10 "$REMOTE" "ls -1 '$DEST_BASE/dumps'/${DATASET}_*.nq.gz 2>/dev/null | wc -l" | tr -d ' \r')"
+log "OK: $(basename "$DUMP") — $(( SIZE / 1024 / 1024 )) MB on $REMOTE, $HELD dumps held"
+spine ops.backup.fuseki.completed bytes="$SIZE" dest="$DEST_BASE/dumps/$(basename "$DUMP")" held="$HELD"
