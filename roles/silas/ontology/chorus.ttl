@@ -3730,9 +3730,9 @@ chorus:fileLastModified a owl:DatatypeProperty ;
 
 chorus:fileInDomain a owl:ObjectProperty ;
     rdfs:label "in domain" ;
-    rdfs:comment "Athena subdomain this file belongs to. Derived: enrichment maps the path against the subdomain registry." ;
+    rdfs:comment "Domain this file belongs to. Derived: enrichment maps the path against the domain registry. #4178 — the range was chorus:SubDomain, the class Jeff retired 2026-06-19, so the DAL could not mint it and PUT answered 502 unknown-kind: 'sub-domain'. Nobody could tag a file with its domain, and we read that absence as the class being dead. 21 of the 47 SubDomain rows were the same referent as a Domain row under a -domain/-service spelling; Domain is live, served and 42/42 owned." ;
     rdfs:domain chorus:File ;
-    rdfs:range chorus:SubDomain ;
+    rdfs:range chorus:Domain ;
     chorus:writeOwner chorus:enrichment .
 
 chorus:fileHasOwner a owl:ObjectProperty ;
@@ -3769,7 +3769,7 @@ chorus:FileShape a sh:NodeShape ;
     sh:property [ sh:path chorus:filePath         ; sh:minCount 1 ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:fileSha          ; sh:datatype xsd:string ] ;
     sh:property [ sh:path chorus:fileLastModified ; sh:datatype xsd:dateTime ] ;
-    sh:property [ sh:path chorus:fileInDomain     ; sh:class chorus:SubDomain ] ;
+    sh:property [ sh:path chorus:fileInDomain     ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:fileHasOwner     ; sh:class chorus:Role ] ;
     sh:property [ sh:path chorus:fileDependsOn    ; sh:class chorus:Domain ] ;
     sh:property [ sh:path chorus:stale            ; sh:datatype xsd:boolean ] .

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  #4178 — the crawler's nightly full pass.
+
+  CHORUS_ROLE is the load-bearing line, not boilerplate. The door stamps ownedBy
+  from the caller and only the owner may update a row, so whoever runs this TAKES
+  every row it writes. Wired as anything but `crawler`, the first run reassigns
+  5,500 rows to a person and every run after that is refused — measured on the
+  variant 2026-09-15: one pass as `wren` left {crawler 5547, wren 1}.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chorus.crawl-nightly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jeffbridwell/.chorus/bin/chorus-crawl</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CHORUS_ROLE</key>
+    <string>crawler</string>
+    <key>CHORUS_ROOT</key>
+    <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
+    <key>CHORUS_OWL_API</key>
+    <string>http://localhost:3360</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>4</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/crawl-nightly.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/jeffbridwell/Library/Logs/Chorus/crawl-nightly.log</string>
+</dict>
+</plist>
