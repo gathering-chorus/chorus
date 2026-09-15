@@ -1147,6 +1147,73 @@ if [ -z "${TTL:-}" ]; then
   echo "athena-deploy-model: hydrated ${#SERVICES_SET[@]} services file(s) -> <$SERVICES_GRAPH> (http $smcode, $_sn services live)"
   "$CHORUS_LOG" model.deployed "$ROLE" graph="$SERVICES_GRAPH" services="${_sn}" 2>/dev/null || true
 fi
+# SUBDOMAINS_SET (#4178) — the 47 SubDomain rows into urn:chorus:domains:domains.
+#
+# WHY THIS SECTION EXISTS. The rows lived in chorus.ttl, which deploys into
+# urn:chorus:ontology. That graph is DBA-only on the write side
+# (athena-model:916), so /subdomains served 0 while the store held 47 — and this
+# team concluded twice, in writing, that the class was retired. It was misfiled.
+# Jeff, 2026-09-03: "no rows in the ontology graph, never have."
+#
+# Identical move to SERVICES_SET (#4010) and for the identical reason. The TBox
+# stays in chorus.ttl; only the rows moved.
+# =============================================================================
+if [ -z "${TTL:-}" ]; then
+  SUBDOMAINS_GRAPH="${SUBDOMAINS_GRAPH:-urn:chorus:domains:domains}"
+  SUBDOMAINS_STAGING="${SUBDOMAINS_GRAPH}-staging-deploy"
+  SUBDOMAINS_SET=(
+    "$CHORUS_ROOT/roles/silas/ontology/subdomain-instances.ttl"
+  )
+  for ttl in "${SUBDOMAINS_SET[@]}"; do
+    [ -f "$ttl" ] || { echo "athena-deploy-model: SUBDOMAINS_SET TTL not found: $ttl" >&2; exit 1; }
+    if command -v riot >/dev/null 2>&1 && ! riot --validate "$ttl" >/dev/null 2>&1; then
+      echo "athena-deploy-model: riot validate FAILED for SUBDOMAINS_SET $ttl — NOT deploying subdomains" >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SUBDOMAINS_GRAPH" reason="riot-invalid-services" 2>/dev/null || true
+      exit 1
+    fi
+  done
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SUBDOMAINS_STAGING" -o /dev/null 2>/dev/null || true
+  for ttl in "${SUBDOMAINS_SET[@]}"; do
+    scode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-subdom-resp.txt -w '%{http_code}' -X POST -H 'Content-Type: text/turtle' --data-binary "@$ttl" "$FUSEKI_GSP?graph=$SUBDOMAINS_STAGING" 2>/dev/null) || scode="000"
+    if [ "$scode" != "200" ] && [ "$scode" != "201" ] && [ "$scode" != "204" ]; then
+      echo "athena-deploy-model: SUBDOMAINS_SET staging load failed for $ttl (http $scode)" >&2
+      head -3 /tmp/chorus-model-subdom-resp.txt >&2
+      "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SUBDOMAINS_GRAPH" reason="subdomains-staging-http-$scode" 2>/dev/null || true
+      curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SUBDOMAINS_STAGING" -o /dev/null 2>/dev/null || true
+      exit 1
+    fi
+  done
+  SUBDOMAINS_MERGE="DELETE { GRAPH <$SUBDOMAINS_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SUBDOMAINS_STAGING> { ?s ?sp ?so } GRAPH <$SUBDOMAINS_GRAPH> { ?s ?p ?o } } ; INSERT { GRAPH <$SUBDOMAINS_GRAPH> { ?s ?p ?o } } WHERE { GRAPH <$SUBDOMAINS_STAGING> { ?s ?p ?o } }"
+  smcode=$(curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -o /tmp/chorus-model-subdom-merge.txt -w '%{http_code}' -X POST -H 'Content-Type: application/sparql-update' --data-binary "$SUBDOMAINS_MERGE" "$FUSEKI_UPDATE" 2>/dev/null) || smcode="000"
+  if [ "$smcode" != "200" ] && [ "$smcode" != "204" ]; then
+    echo "athena-deploy-model: SUBDOMAINS_SET merge staging->subdomains failed (http $smcode)" >&2
+    head -3 /tmp/chorus-model-subdom-merge.txt >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SUBDOMAINS_GRAPH" reason="subdomains-merge-http-$smcode" 2>/dev/null || true
+    curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SUBDOMAINS_STAGING" -o /dev/null 2>/dev/null || true
+    exit 1
+  fi
+  _sresp=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SUBDOMAINS_STAGING> { ?s ?p ?o } FILTER NOT EXISTS { GRAPH <$SUBDOMAINS_GRAPH> { ?s ?q ?r } } }" \
+    -H 'Accept: text/csv' 2>/dev/null)
+  curl -s --max-time "${FUSEKI_WRITE_TIMEOUT:-120}" "${FUSEKI_AUTH[@]+"${FUSEKI_AUTH[@]}"}" -X DELETE "$FUSEKI_GSP?graph=$SUBDOMAINS_STAGING" -o /dev/null 2>/dev/null || true
+  if ! printf '%s' "$_sresp" | head -1 | grep -q '^n'; then
+    echo "athena-deploy-model: SERVICES-VERIFY could not ask (no CSV header) — refusing to pass a blind verify (#3726)" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SUBDOMAINS_GRAPH" reason="services-verify-unanswered" 2>/dev/null || true
+    exit 1
+  fi
+  _smissing=$(printf '%s\n' "$_sresp" | tail -1 | tr -dc '0-9')
+  if [ "${_smissing:-1}" -ne 0 ] 2>/dev/null; then
+    echo "athena-deploy-model: SERVICES-VERIFY FAILED — ${_smissing:-?} staged subject(s) absent from <$SUBDOMAINS_GRAPH> post-merge" >&2
+    "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$SUBDOMAINS_GRAPH" reason="services-verify-missing" missing="${_smissing:-unknown}" 2>/dev/null || true
+    exit 1
+  fi
+  _sn=$(curl -s "$FUSEKI_QUERY" --data-urlencode \
+    "query=PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH <$SUBDOMAINS_GRAPH> { ?s a c:Service } }" \
+    -H "Accept: application/sparql-results+json" 2>/dev/null \
+    | python3 -c "import sys,json;print(json.load(sys.stdin)['results']['bindings'][0]['n']['value'])" 2>/dev/null) || _sn="?"
+  echo "athena-deploy-model: hydrated ${#SUBDOMAINS_SET[@]} subdomain file(s) -> <$SUBDOMAINS_GRAPH> (http $smcode, $_sn subdomains live)"
+  "$CHORUS_LOG" model.deployed "$ROLE" graph="$SUBDOMAINS_GRAPH" subdomains="${_sn}" 2>/dev/null || true
+fi
 # PRACTICES_SET (#3754) — practice v2 instances into their ADR-051 home
 # urn:chorus:domains:practices, declared on PracticeShape's instancesGraph so
 # reader = writer = one canonical graph (the #3749 rule, applied to leg 3).

@@ -157,6 +157,12 @@ const KINDS: &[(&str, &str, bool)] = &[
     ("security-probe", "SecurityProbe", false),
     ("emit-contract", "EmitContract", false),
     ("metric", "Metric", false),
+    // #4178 — SubDomain is the RANGE of chorus:fileInDomain (chorus.ttl:3772)
+    // and was missing here, so `PUT /code/files/<n>` with a domain tag answered
+    // 502 unknown-kind: 'sub-domain'. Nobody could tag a file with its domain —
+    // which read as "nobody has" and got mistaken for the class being retired.
+    // Same hand-kept-copy drift as ValueStream (#3522).
+    ("sub-domain", "SubDomain", true),
     ("property", "Property", false),
     ("property-key", "PropertyKey", false),
 ];
@@ -615,6 +621,28 @@ fn create_only_stamp() -> String {
         // `date` is a required production utility; this branch retains the
         // old fail-soft behavior but cannot claim xsd:dateTime syntax.
         format!("epoch:{}.{}", clock.as_secs(), suffix)
+    }
+}
+
+#[cfg(test)]
+mod subdomain_mintable_4178 {
+    use super::*;
+
+    #[test]
+    fn subdomain_is_mintable_because_a_served_shape_ranges_on_it() {
+        // chorus.ttl:3772 — sh:path chorus:fileInDomain ; sh:class chorus:SubDomain
+        assert!(kind_entry("sub-domain").is_ok(), "a class the model ranges on must be mintable");
+    }
+
+    // NEGATIVE PROOF (#3734): the allowlist is a GATE, and adding an entry must
+    // not turn it into a pass-through. A kind the model does not declare still
+    // has to be refused, by name, with the list in the message — otherwise this
+    // change traded one silent failure for a louder one.
+    #[test]
+    fn negative_proof_an_undeclared_kind_is_still_refused_and_names_itself() {
+        let e = kind_entry("not-a-real-kind").unwrap_err();
+        assert!(e.contains("unknown-kind: 'not-a-real-kind'"), "{e}");
+        assert!(e.contains("sub-domain"), "the refusal lists what IS allowed: {e}");
     }
 }
 

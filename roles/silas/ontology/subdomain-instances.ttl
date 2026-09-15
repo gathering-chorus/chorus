@@ -1,0 +1,332 @@
+# subdomain-instances.ttl — the 47 SubDomain ROWS, out of the ontology graph.
+#
+# #4178. These lived in chorus.ttl, which athena-deploy-model deploys into
+# urn:chorus:ontology. That graph is DBA-only on the write side
+# (athena-model:916), so /subdomains served 0 while the store held 47 and every
+# consumer read the class as retired — including this team, twice, in writing.
+#
+# Exactly the move #4010 made for service-instances.ttl, for the same reason and
+# with the same shape: rows hydrate into their own domain graph
+# (urn:chorus:domains:domains), never the schema graph. Jeff, 2026-09-03: "no
+# rows in the ontology graph, never have."
+#
+# The TBox for SubDomain stays in chorus.ttl. Only the rows moved.
+
+@prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:      <http://www.w3.org/2002/07/owl#> .
+@prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
+@prefix chorus:   <https://jeffbridwell.com/chorus#> .
+
+chorus:heralds-domain a chorus:SubDomain ;
+    rdfs:label "Heralds" ;
+    rdfs:comment "Discovery agents that scan surfaces and write to the instances graph. Five heralds: code, tests, pages, endpoints, services. The system seeing itself." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:observability-domain a chorus:SubDomain ;
+    rdfs:label "Observability" ;
+    rdfs:comment "The system seeing itself. Aggregated health lens: metrics, logs, dashboards, instrumentation, infrastructure, security, pulse (agent vital signs). The domain that makes Borg a product." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:borgProduct .
+
+chorus:toolchain-domain a chorus:SubDomain ;
+    rdfs:label "Toolchain" ;
+    rdfs:comment "Engines the system uses — Fuseki, Node, Prometheus, MySQL, Ollama. Versions, configs, known issues." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:infrastructure-domain a chorus:SubDomain ;
+    rdfs:label "Infrastructure" ;
+    rdfs:comment "Where engines run. Three surfaces: compute (services, processes), storage (databases, volumes), network (ports, tunnels, routes). Today: home cloud." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:version-control-domain a chorus:SubDomain ;
+    rdfs:label "Version Control" ;
+    rdfs:comment "How code is versioned across its full lifecycle: branch, commit, push, pull, rebase, merge, tag. Adapter is git driven by the zero-dep Rust verb binaries (werk-commit/push/merge/sync/unpull); checks run inside the verbs; werks are ephemeral per-card worktrees (#2913). Refined in kade/ontology/werk-domains.ttl (#3340)." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:build-domain a chorus:SubDomain ;
+    rdfs:label "Build" ;
+    rdfs:comment "Source → artifact. Build is invariant: same source commit produces the same artifact, every machine, every time. Adapter is build-signed.sh + chorus-bin-install; verification is the build-invariance contract test (test-build-invariance.sh) which builds the same target twice from a clean tree at the same commit and asserts identical sha256." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:deploys-domain a chorus:SubDomain ;
+    rdfs:label "Deploys" ;
+    rdfs:comment "How code gets running. app-state.sh, bind mounts vs full deploys, rollback paths, freeze rules, deploy targets. Deploy is invariant: same artifact reaches the same running state. Verified by the deploy-invariance contract test (test-deploy-invariance.sh) which installs the same artifact twice and asserts identical cdhash + on-disk sha256." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:pipelines-domain a chorus:SubDomain ;
+    rdfs:label "Pipelines" ;
+    rdfs:comment "End-to-end release flow. Four stages: Pre-Commit (write-scrubber, lint, sensitive-path), Pre-Push (git-queue lock, rebase, conflict), Deploy (app-state.sh, bind mounts, rollback), Health Verify (deep-health, smoke-check, liveness)." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Operating ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:alerts-monitors-domain a chorus:SubDomain ;
+    rdfs:label "Alerts & Monitors" ;
+    rdfs:comment "What's watched and what fires. Alert coverage is to failure modes what test coverage is to code paths." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:athena-domain a chorus:SubDomain ;
+    rdfs:label "Athena" ;
+    rdfs:comment "CMDB visibility — API endpoints, UI pages, SPARQL queries that surface the canonical model." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing ;
+    chorus:runsOn chorus:library .
+
+chorus:loom-principles a chorus:SubDomain ;
+    rdfs:label "Principles" ;
+    rdfs:comment "Shared values that explain why. Stable. Patterns derive from principles." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-practices a chorus:SubDomain ;
+    rdfs:label "Practices" ;
+    rdfs:comment "Repeatable disciplines that apply across domains." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-decisions a chorus:SubDomain ;
+    rdfs:label "Decisions" ;
+    rdfs:comment "DEC-NNN — governing choices that constrain future behavior." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-rcas a chorus:SubDomain ;
+    rdfs:label "RCAs" ;
+    rdfs:comment "Root cause analyses — post-incident learning." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:loom-metrics a chorus:SubDomain ;
+    rdfs:label "Metrics" ;
+    rdfs:comment "Team and system health metrics — cost, velocity, quality." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:loom-analytics a chorus:SubDomain ;
+    rdfs:label "Analytics" ;
+    rdfs:comment "Usage trends, value stream analysis, pattern detection." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:logs-domain a chorus:SubDomain ;
+    rdfs:label "Logs" ;
+    rdfs:comment "Loki log aggregation. Structured logging pipeline." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:belongsTo chorus:observability-domain .
+
+chorus:cards-service a chorus:SubDomain ;
+    rdfs:label "Cards (Service)" ;
+    rdfs:comment "Vikunja board + board-ts CLI. Coordination primitive — all three roles stall if broken." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Directing ;
+    chorus:runsOn chorus:library .
+
+chorus:skills-service a chorus:SubDomain ;
+    rdfs:label "Skills" ;
+    rdfs:comment "Slash-command skills. 36 skills, symlinked to all roles." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library .
+
+chorus:gates-service a chorus:SubDomain ;
+    rdfs:label "Gates" ;
+    rdfs:comment "PreToolUse/PostToolUse hooks — Rust binary. Quality enforcement." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Building ;
+    chorus:runsOn chorus:library .
+
+chorus:spine-service a chorus:SubDomain ;
+    rdfs:label "Spine" ;
+    rdfs:comment "Event bus — chorus-log.sh, spine-events.json. Vertical integration across all layers." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library .
+
+chorus:time-domain a chorus:SubDomain ;
+    rdfs:label "Time" ;
+    rdfs:comment "Timestamp conversion, timezone consistency, display formatting. One conversion point — Boston time for Jeff, UTC for storage." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving ;
+    chorus:runsOn chorus:library, chorus:bedroom .
+
+chorus:roles-domain a chorus:SubDomain ;
+    rdfs:label "Roles" ;
+    rdfs:comment "Three AI roles and one human coordinate across two products. Identity, state, permissions, and communication — the operating model everything else is shaped around." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping ;
+    chorus:runsOn chorus:library, chorus:bedroom ;
+    chorus:contains chorus:jeff, chorus:wren, chorus:silas, chorus:kade .
+
+chorus:code-domain a chorus:SubDomain ;
+    rdfs:label "Code" ;
+    rdfs:comment "Source code, build artifacts, TypeScript/Rust compilation." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:tests-domain a chorus:SubDomain ;
+    rdfs:label "Tests" ;
+    rdfs:comment "Test files, coverage, pyramid, validity (#3324 taxonomy). Least graph-ready werk domain — per-test identity is the ingestion prerequisite (see kade/ontology/werk-domains.ttl #3340)." ;
+    chorus:ownedBy chorus:role-kade ;
+    chorus:primaryStep chorus:Building .
+
+chorus:messages-domain a chorus:SubDomain ;
+    rdfs:label "Messages" ;
+    rdfs:comment "Bridge messaging, nudge delivery, inter-role communication." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:streams-domain a chorus:SubDomain ;
+    rdfs:label "Streams" ;
+    rdfs:comment "Event streams, spine event flow, Loki log streams." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:knowledge-domain a chorus:SubDomain ;
+    rdfs:label "Knowledge" ;
+    rdfs:comment "Chorus index, doc catalog, semantic search." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:integrations-domain a chorus:SubDomain ;
+    rdfs:label "Integrations" ;
+    rdfs:comment "ICDs, cross-domain data contracts, harvester interfaces." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:loom-policies a chorus:SubDomain ;
+    rdfs:label "Policies" ;
+    rdfs:comment "Team policies — working hours, WIP limits, response windows." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Shaping .
+
+chorus:domains-domain a chorus:SubDomain ;
+    rdfs:label "Domains" ;
+    rdfs:comment "Domain definitions, BDD specs, domain context files." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:services-domain a chorus:SubDomain ;
+    rdfs:label "Services" ;
+    rdfs:comment "Service definitions, service registry, service design docs." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:chorus-domain a chorus:SubDomain ;
+    rdfs:label "Chorus (Domain)" ;
+    rdfs:comment "The coordination protocol itself — skills, hooks, gates, spine, dashboards." ;
+    chorus:ownedBy chorus:role-silas ;
+    chorus:primaryStep chorus:Proving .
+
+chorus:convergence-domain a chorus:SubDomain ;
+    rdfs:label "Convergence (Domain)" ;
+    rdfs:comment "Cross-domain integration patterns, ICD enforcement, data pipeline contracts." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Designing .
+
+chorus:music-domain a chorus:SubDomain ;
+    rdfs:label "Music" ;
+    rdfs:comment "Music library, album reviews, listening history, playlists." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:photos-domain a chorus:SubDomain ;
+    rdfs:label "Photos" ;
+    rdfs:comment "Photo library, albums, metadata enrichment, semantic search." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:books-domain a chorus:SubDomain ;
+    rdfs:label "Books" ;
+    rdfs:comment "Book collection, reading history, notes, reviews." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:notes-domain a chorus:SubDomain ;
+    rdfs:label "Notes" ;
+    rdfs:comment "Personal notes, journal entries, captured thoughts." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:documents-domain a chorus:SubDomain ;
+    rdfs:label "Documents" ;
+    rdfs:comment "Document metadata, iCloud imports, Drive routing." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:blog-domain a chorus:SubDomain ;
+    rdfs:label "Blog" ;
+    rdfs:comment "WordPress blog content, posts, categories." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:seeds-domain a chorus:SubDomain ;
+    rdfs:label "Seeds" ;
+    rdfs:comment "SMS-captured seeds, glimmers, intentions — raw inputs." ;
+    chorus:ownedBy chorus:role-wren ;
+    chorus:primaryStep chorus:Sowing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:property-domain a chorus:SubDomain ;
+    rdfs:label "Property" ;
+    rdfs:comment "Home, garden, zones, beds, plantings, maintenance." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Growing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:people-domain a chorus:SubDomain ;
+    rdfs:label "People" ;
+    rdfs:comment "Relationships, social connections, interaction patterns." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:social-domain a chorus:SubDomain ;
+    rdfs:label "Social" ;
+    rdfs:comment "Social media presence, external connections." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Practicing ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:sexuality-domain a chorus:SubDomain ;
+    rdfs:label "Sexuality" ;
+    rdfs:comment "Intimate self-knowledge, practices, reflection." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:stories-domain a chorus:SubDomain ;
+    rdfs:label "Stories" ;
+    rdfs:comment "Personal narratives, family stories, oral history." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Reflecting ;
+    chorus:belongsTo chorus:gatheringStream .
+
+chorus:video-domain a chorus:SubDomain ;
+    rdfs:label "Video" ;
+    rdfs:comment "Video library, home movies, captures." ;
+    chorus:ownedBy chorus:role-jeff ;
+    chorus:primaryStep chorus:Harvesting ;
+    chorus:belongsTo chorus:gatheringStream .
