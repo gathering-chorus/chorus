@@ -202,12 +202,18 @@ else
 fi
 
 # Spine event check.
-SPINE=$(tail -2000 ~/.chorus/chorus.log 2>/dev/null | grep -c 'enrichment.fileInDomain.written' | tr -d '[:space:]')
+# Read the log the writer actually wrote to. This grepped ~/.chorus/chorus.log
+# unconditionally, which is right by hand and wrong in the werk lane: #3892
+# hands every spawned suite CHORUS_LOG_FILE pointing into a tempdir, so the
+# event landed there and this check looked for it in the live spine — the one
+# file the runner cages the suite away from. It failed for being hermetic.
+SPINE_LOG="${CHORUS_LOG_FILE:-$HOME/.chorus/chorus.log}"
+SPINE=$(tail -2000 "$SPINE_LOG" 2>/dev/null | grep -c 'enrichment.fileInDomain.written' | tr -d '[:space:]')
 SPINE="${SPINE:-0}"
 if [ "$SPINE" -ge 1 ] 2>/dev/null; then
   p "enrichment.fileInDomain.written event(s) emitted ($SPINE in tail)"
 else
-  f "expected enrichment.fileInDomain.written event"
+  f "expected enrichment.fileInDomain.written event in $SPINE_LOG"
 fi
 
 echo ""
