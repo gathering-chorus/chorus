@@ -872,6 +872,26 @@ pub fn strip_named_prefix(err: &str, fields: &mut [(String, String)]) -> bool {
     changed
 }
 
+/// #4178 — the identity a scheduled run must present.
+///
+/// The door stamps `ownedBy` from the caller, and only the owner may update or
+/// delete a row. So whoever runs the crawler TAKES every row it creates: a
+/// hand-run by a person silently reassigns ownership away from the automation,
+/// and the next scheduled pass is then refused on those rows. Measured
+/// 2026-09-15 on the variant: one pass run as `wren` left {crawler 5547,
+/// wren 1}.
+///
+/// The scheduled identity is therefore not a detail of the plist — it is the
+/// thing that decides whether tomorrow's run can write at all.
+pub const SCHEDULED_ROLE: &str = "crawler";
+
+/// Is this run allowed to be the scheduled one? A scheduled pass must present
+/// the automation identity; anything else is a hand-run, which is fine to do
+/// and must never be wired to a timer.
+pub fn scheduled_identity_ok(role: &str) -> bool {
+    role == SCHEDULED_ROLE
+}
+
 #[cfg(test)]
 mod merge_4178 {
     use super::*;
@@ -973,4 +993,21 @@ mod merge_4178 {
         assert_eq!(exact[0].1, "code-kind-");
     }
 
+
+    #[test]
+    fn the_scheduled_run_presents_the_automation_identity() {
+        assert!(scheduled_identity_ok("crawler"));
+        assert_eq!(SCHEDULED_ROLE, "crawler");
+    }
+
+    // NEGATIVE PROOF (#3734): the check exists to separate a scheduled pass from
+    // a hand-run. If it admitted a person's identity it would pass on the very
+    // state it is meant to catch — the one that reassigns ownership and locks
+    // tomorrow's run out of the rows it just took.
+    #[test]
+    fn negative_proof_a_person_is_not_a_scheduled_identity() {
+        for who in ["kade", "wren", "silas", "jeff", ""] {
+            assert!(!scheduled_identity_ok(who), "{who} must not be wired to a timer");
+        }
+    }
 }
