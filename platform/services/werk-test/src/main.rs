@@ -2293,7 +2293,10 @@ fn diff_scoped_units_inner(werk: &str, changed: &[String]) -> (Option<Vec<TestUn
     // and the filter below drops it, which is the same "runs nothing" the
     // irrelevant list used to produce.
     for f in changed {
-        if is_test_suite_path(f) {
+        // A DELETED suite is in the diff and has nothing to run. #4173 deletes
+        // four crawler suites with the walkers they proved; scoping them to
+        // themselves would hand the runner four paths that are not on disk.
+        if is_test_suite_path(f) && root.join(f).is_file() {
             units.push(ScopeUnit { name: f.clone(), dir: f.clone() });
         }
     }

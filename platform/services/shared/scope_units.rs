@@ -37,8 +37,13 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // from not-a-build-input to not-worth-running"). A suite is not a build
     // input, but editing one must still RUN it; is_test_suite_path below scopes
     // a changed suite to itself instead of to nothing.
+    // #4173 — .github/workflows/ is the pipeline's own definition. Changing it
+    // changes how a run is ORCHESTRATED, not what any unit builds or tests, and
+    // there is no unit it could scope to; the workflow is proven by the run it
+    // drives plus the bats that read it.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
-               "platform/scripts/", "platform/launchd/", "skills/", ".claude/"]
+               "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
+               ".github/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
