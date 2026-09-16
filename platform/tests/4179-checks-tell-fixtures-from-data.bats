@@ -65,3 +65,27 @@ declaration_hits() {
   run bash -c "grep -rnE '/product-manager(/|\"|'\"'\"'|\$)' '$T/platform/scripts'/ || true"
   [ -n "$output" ]
 }
+
+@test "#4179 a shape never requires an undeclared predicate" {
+  # Silas, gate-arch 2026-09-16: "RoleShape floor restore via chorus:comment is
+  # architecturally sound IF the predicate is declared in the chorus vocab."
+  # It was not — chorus:comment carried 6 Role rows, 40 Domains and 22 Documents
+  # in the live store and appeared in no .ttl at all. A shape requiring a
+  # predicate nobody declared is the undefined-symbol class (#3584), and this
+  # card would have introduced one while fixing another.
+  SHAPE="$BATS_TEST_DIRNAME/../../roles/wren/ontology/priorities-3686.ttl"
+  [ -f "$SHAPE" ]
+  # every sh:path this shape REQUIRES must be a declared property somewhere in
+  # the repo's ttl — checked against the tree this test travels with.
+  ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
+  missing=""
+  while read -r prop; do
+    [ -z "$prop" ] && continue
+    case "$prop" in rdfs:*|sh:*) continue ;; esac
+    local_name="${prop#chorus:}"
+    grep -rqE "^chorus:${local_name} a owl:(Datatype|Object|Annotation)Property" \
+      --include='*.ttl' "$ROOT" || missing="$missing $prop"
+  done < <(grep -oE 'sh:path (chorus|rdfs):[A-Za-z]+ ; sh:minCount 1' "$SHAPE" \
+            | awk '{print $2}')
+  [ -z "$missing" ] || { echo "required but undeclared:$missing"; return 1; }
+}

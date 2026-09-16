@@ -140,3 +140,9 @@ chorus:roleKind a owl:DatatypeProperty ;
     rdfs:range xsd:string ;
     rdfs:label "role kind" ;
     rdfs:comment "agent|human. Retires the string \"kind=agent\" that lived inside a comment field — the type system existed to express this and was not being used. Paired with dual-typing on the individual (chorus:Role + chorus:AgentRole) because our store does no inference." .
+
+chorus:comment a owl:DatatypeProperty ;
+    rdfs:label "comment" ;
+    rdfs:comment "The row's own prose description as served by the generated API — the writable twin of rdfs:comment, which the store holds but the door does not accept on a write. Declared on Role because #4179 made RoleShape require it and a shape must not require an undeclared predicate (Silas, gate-arch 2026-09-16). It is used far more widely — Domain 40, Document 22, Product 9, Role 6, measured 2026-09-16 — and every one of those is equally undeclared; widening the domain needs a class those share, which does not exist yet. Narrow and true here beats broad and invented." ;
+    rdfs:domain chorus:Role ;
+    rdfs:range xsd:string .
