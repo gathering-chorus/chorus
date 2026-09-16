@@ -74,8 +74,12 @@ chorus:PrincipleShape a sh:NodeShape ;
                   sh:message "a principle without its technical reading cannot be traced to a practice" ] ;
     sh:property [ sh:path dcterms:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:message "every principle names where it came from (Hemenway, Beck, or a Chorus decision)" ] ;
-    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Role ;
-                  sh:message "a principle is kept by exactly one role" ] ;
+    # Jeff, 2026-09-16 17:16 (on #4183): the owner of a row is a PRINCIPAL, not a role;
+    # ownedBy's range moves Role → Principal in the authz step that follows this card.
+    # So this shape asks for exactly one IRI owner and does not name the class, or the
+    # range change would have to fight its own shape.
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+                  sh:message "a principle has exactly one owner (an IRI: a role today, a principal after the authz step)" ] ;
     sh:property [ sh:path chorus:isPermacultureParent ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
     sh:property [ sh:path chorus:order ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 14 ;
                   sh:message "order is the Hemenway numbering, 1 to 14" ] ;

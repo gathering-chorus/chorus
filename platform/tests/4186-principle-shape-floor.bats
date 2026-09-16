@@ -30,14 +30,14 @@ setup() {
   riot --output=ttl "$PC" "$XP" "$ROLES" > "$T/data.ttl"
   run shacl validate --shapes "$SHAPE" --data "$T/data.ttl"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"sh:conforms  true"* ]] || [[ "$output" == *"sh:conforms true"* ]]
+  echo "$output" | grep -qE 'sh:conforms +true'  # simple command: a failing [[ off the last line passes on bash 3.2
   n=$(grep -c 'a chorus:Principle' "$PC" "$XP" | awk -F: '{s+=$2} END{print s}')
   [ "$n" -eq 28 ]
 }
 
 @test "NEGATIVE PROOF — a fixture violating every new rule is REFUSED, and each violation is named" {
   run shacl validate --shapes "$SHAPE" --data "$FIXTURE"
-  [[ "$output" == *"sh:conforms  false"* ]] || [[ "$output" == *"sh:conforms false"* ]]
+  echo "$output" | grep -qE 'sh:conforms +false'
   for needle in \
     "a principle without Jeff's reading is a quotation" \
     "a principle without its technical reading" \
@@ -63,5 +63,5 @@ t=t.replace('chorus:principleKind "zen" ; chorus:order 15 .','chorus:principleKi
 open(sys.argv[2],'w').write(t)
 PY
   run shacl validate --shapes "$SHAPE" --data "$T/fixed.ttl"
-  [[ "$output" == *"sh:conforms  true"* ]] || [[ "$output" == *"sh:conforms true"* ]]
+  echo "$output" | grep -qE 'sh:conforms +true'  # simple command: a failing [[ off the last line passes on bash 3.2
 }

@@ -623,11 +623,72 @@ fn drop_werk_store(role: &str) -> String {
                 Err(e) => format!("store_drop_failed={}", e) }
 }
 
+/// #4186 — what env_up does about the store BEFORE it boots the variant athena-make,
+/// which exits "no classes generated — nothing to serve" on a store without shapes
+/// (run 83 and run 87, 2026-09-16: a 120s smoke timeout with no name). Pure; unit-tested.
+///   Ready     = shapes are there; boot.
+///   Bootstrap = no shapes, but the card's named bootstrap marker exists: run
+///               athena.yml werk-model here, loudly, because the CANONICAL werk.yml
+///               this card runs under has no athena-model step yet (#3197 class).
+///   Refuse    = no shapes and no marker: name the step that owns the store and stop.
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoreReadiness { Ready, Bootstrap, Refuse }
+pub fn store_readiness(shape_count: Option<u64>, bootstrap_marker: bool) -> StoreReadiness {
+    match (shape_count, bootstrap_marker) {
+        (Some(n), _) if n > 0 => StoreReadiness::Ready,
+        (_, true) => StoreReadiness::Bootstrap,
+        _ => StoreReadiness::Refuse,
+    }
+}
+pub fn store_refusal(ds: &str, shape_count: Option<u64>) -> String {
+    format!("env_up: store {} has no shapes (NodeShape count={}) — the variant athena-make would exit 'no classes generated'. athena.yml target=werk-model (werk.yml's athena-model step) creates the store and deploys the model BEFORE env-up; env_up neither creates nor fills it (#4186)",
+        ds, shape_count.map(|n| n.to_string()).unwrap_or_else(|| "unreadable".into()))
+}
+fn count_shapes(role: &str) -> Option<u64> {
+    let ds = werk_dataset_name(role);
+    let base = werk_fuseki_for(role);
+    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
+    let q = "SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:ontology> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }";
+    let out = Command::new("curl").args(&fuseki_admin_auth())
+        .args(["-s", "-m", "10", "-H", "Accept: text/csv", "--data-urlencode", &format!("query={}", q), &format!("{}/{}/query", base, ds)])
+        .output().ok()?;
+    if !out.status.success() { return None; }
+    let body = String::from_utf8_lossy(&out.stdout);
+    body.lines().nth(1).and_then(|l| l.trim().parse::<u64>().ok())
+}
+fn require_model_in_store(role: &str, werk_root: &str, card: u64) -> R<String> {
+    let ds = werk_dataset_name(role);
+    let marker = format!("{}/.chorus/athena-bootstrap-{}", std::env::var("HOME").unwrap_or_default(), card);
+    let n = count_shapes(role);
+    match store_readiness(n, Path::new(&marker).exists()) {
+        StoreReadiness::Ready => Ok(format!("store={} shapes={}", ds, n.unwrap_or(0))),
+        StoreReadiness::Refuse => Err(store_refusal(&ds, n)),
+        StoreReadiness::Bootstrap => {
+            eprintln!("::warning::env_up: BOOTSTRAP — {} present and store {} has no shapes; running athena.yml target=werk-model directly (canonical werk.yml has no athena-model step until this card lands)", marker, ds);
+            let act = std::env::var("CHORUS_ACT_BIN").unwrap_or_else(|_| "act".into());
+            let wf = format!("{}/.github/workflows/athena.yml", werk_root);
+            let st = Command::new(&act)
+                .args(["workflow_dispatch", "-W", &wf, "-P", "macos-latest=-self-hosted",
+                       "--input", &format!("card_id={}", card), "--input", &format!("role={}", role),
+                       "--input", "target=werk-model", "--input", "landed_commit="])
+                .status().map_err(|e| format!("env_up: bootstrap act: {}", e))?;
+            if !st.success() { return Err(format!("env_up: bootstrap athena.yml werk-model failed ({})", st)); }
+            let n2 = count_shapes(role);
+            match store_readiness(n2, false) {
+                StoreReadiness::Ready => Ok(format!("store={} shapes={} (BOOTSTRAP: werk-model ran from env_up)", ds, n2.unwrap_or(0))),
+                _ => Err(store_refusal(&ds, n2)),
+            }
+        }
+    }
+}
+
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
     // #4186 — the store and the model in it are athena.yml's (target=werk-model),
-    // which werk.yml runs before this. Nothing about the dataset happens here.
+    // which werk.yml runs before this. Nothing about the dataset happens here;
+    // env_up only checks the model is there before it boots against it.
+    summary.push(require_model_in_store(role, werk_root, card)?);
     for svc in env_services() {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
@@ -935,6 +996,20 @@ pub fn css_issuer_for_variant() -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn store_readiness_refuses_an_empty_store_and_names_the_owning_step_4186() {
+        use super::{store_readiness, store_refusal, StoreReadiness};
+        assert_eq!(store_readiness(Some(0), false), StoreReadiness::Refuse, "negative proof: no shapes, no marker → refuse, never boot");
+        assert_eq!(store_readiness(None, false), StoreReadiness::Refuse, "unreadable store is not ready");
+        assert_eq!(store_readiness(Some(0), true), StoreReadiness::Bootstrap, "the named marker is the ONLY escape");
+        assert_eq!(store_readiness(None, true), StoreReadiness::Bootstrap);
+        assert_eq!(store_readiness(Some(28), false), StoreReadiness::Ready);
+        assert_eq!(store_readiness(Some(1), true), StoreReadiness::Ready, "a marker never re-runs the model over a store that has it");
+        let msg = store_refusal("werk-wren", Some(0));
+        assert!(msg.contains("werk-model") && msg.contains("athena-model") && msg.contains("werk-wren"), "{}", msg);
+        assert!(store_refusal("werk-wren", None).contains("unreadable"));
+    }
+
     /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
     /// way prod's launch script does; the bare-binary default is the 401.
     #[test]
