@@ -1031,3 +1031,24 @@ fn negative_proof_the_old_per_unit_rule_fails_this_invariant() {
         "the old per-unit rule must NOT satisfy the once-per-deploy invariant"
     );
 }
+
+
+// #4186 — NEGATIVE PROOF: the model and seed legs have left werk-deploy. deploy_canonical
+// may only HAND OFF (witnessed) to athena.yml; if either engine call returns to this
+// verb, this test goes red and names the line.
+#[test]
+fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
+    let src = include_str!("../src/lib.rs");
+    let start = src.find("fn deploy_canonical(").expect("deploy_canonical exists");
+    let end = src[start..].find("\n}\n").map(|i| start + i).unwrap_or(src.len());
+    let body = &src[start..end];
+    for forbidden in ["athena-deploy-model.sh", "seed\", \"--post\"", "com.chorus.athena-make"] {
+        assert!(!body.contains(forbidden), "deploy_canonical still carries `{}` — the model/seed leg belongs to athena.yml (#4186)", forbidden);
+    }
+    assert!(body.contains("model.handoff.athena"), "the hand-off must be witnessed on the spine");
+    let yml = include_str!("../../../../.github/workflows/athena.yml");
+    for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: seed", "name: prove"] {
+        assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
+    }
+    assert!(yml.contains("athena-serve com.chorus.athena-make"), "serve leg must use athena-serve, never launchd liveness");
+}

@@ -14,6 +14,12 @@ name: athena
 #
 # ONE JOB, ONE RUN — same contract as werk.yml. No forks, no cross-run witness.
 #
+# #4186 (Jeff, 2026-09-16: "athena and werk are conjoined twins we need to separate
+# them"): the LAND legs joined this file as the `land` job (target=canonical). Until
+# then the model rode inside werk-deploy's land step, which restarted athena-make
+# and seeded rows against it before it answered (POST → 0 on six lands across
+# #4175 and #4179). werk.yml's `athena-land` step now runs this file instead.
+#
 # THE STEP THAT EARNS THIS FILE IS deploy-served, NOT deploy. A model can deploy
 # and never be SERVED: athena-make answers from the snapshot it loaded at startup,
 # so a class can sit in Fuseki and be absent from the API indefinitely (#3577).
@@ -24,9 +30,20 @@ on:
   workflow_dispatch:
     inputs:
       class:
-        description: "Model class this run is about (e.g. StreamEvent). The trace key end-to-end."
-        required: true
+        description: "Model class this run is about (e.g. StreamEvent). The trace key end-to-end. Not used by target=canonical."
+        required: false
         type: string
+        default: ""
+      target:
+        description: "class (default: the per-class prove run below) | canonical (#4186: the LAND legs — scope, validate, deploy, serve, seed, prove)"
+        required: false
+        type: string
+        default: "class"
+      landed_commit:
+        description: "target=canonical: the merged origin/main sha the store must attest (empty = ungated hand run)"
+        required: false
+        type: string
+        default: ""
       role:
         description: "Role whose werk holds the model change (kade / silas / wren)."
         required: true
@@ -39,6 +56,7 @@ on:
 
 jobs:
   athena:
+    if: ${{ inputs.target != 'canonical' }}
     runs-on: macos-latest
     # CHORUS_HOME / CHORUS_WERK_BASE / PATH inherited from the local shell act runs
     # in (chorus-env-setup.sh provides them). The workflow MUST NOT hardcode them.
@@ -219,3 +237,108 @@ jobs:
         if: success()
         run: |
           echo "athena: ${CLASS} shaped, made, deployed, SERVED and validated"
+
+  # #4186 — THE LAND LEGS (target=canonical). Model and seed sources that a land
+  # merged are deployed, served, seeded and proven HERE, not inside werk-deploy.
+  #   scope     which model / seed sources the landed diff touched (none → said out loud)
+  #   validate  riot on every changed TTL; absent riot REFUSES (never a silent unvalidated deploy)
+  #   deploy    athena-deploy-model.sh — additive per-subject merge (+ INSTANCE_SET)
+  #   serve     athena-serve — kickstart athena-make, wait for /health healthy (never launchd liveness)
+  #   seed      athena-model seed --post through the door, as the land role, only after serve
+  #   prove     store attests deployedFromCommit == landed; athena-validate as a RATCHET
+  #             (issues may never rise; the floor only goes down — Jeff: "get and stay at 0")
+  # Patch 2: target=werk (variant store + rows out of env_up) and a chorus_athena MCP verb.
+  # Patch 3: Rust athena-deploy at parity with the bash engine; the bash retires.
+  land:
+    if: ${{ inputs.target == 'canonical' }}
+    runs-on: macos-latest
+    env:
+      CARD_ID: ${{ inputs.card_id }}
+      ROLE: ${{ inputs.role }}
+      TARGET: ${{ inputs.target }}
+      LANDED: ${{ inputs.landed_commit }}
+      CHORUS_CONTEXT: prod
+    steps:
+      - name: scope
+        id: scope
+        run: |
+          set -euo pipefail
+          ROOT="${CHORUS_HOME}"
+          if [ -n "$LANDED" ]; then
+            DIFF=$(git -C "$ROOT" diff --name-only "${LANDED}^" "${LANDED}" 2>/dev/null || true)
+          else
+            DIFF=$(git -C "$ROOT" diff --name-only HEAD~1 HEAD 2>/dev/null || true)
+          fi
+          # the same two predicates werk-deploy used (changed_model_sources / changed_seed_sources)
+          MODEL=$(printf '%s\n' "$DIFF" | grep -E '^roles/[^/]+/ontology/.*\.ttl$|^designing/schemas/model-retirements\.jsonl$' || true)
+          SEED=$(printf '%s\n' "$DIFF" | grep -E '^designing/data/.*\.ttl$|^platform/config/instance-seed-manifest\.txt$' || true)
+          printf 'model files:\n%s\nseed files:\n%s\n' "${MODEL:-  (none)}" "${SEED:-  (none)}"
+          { echo "model<<EOF"; echo "$MODEL"; echo "EOF"; echo "seed<<EOF"; echo "$SEED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          if [ -z "$MODEL$SEED" ]; then echo "nothing=true" >> "$GITHUB_OUTPUT"; echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"; fi
+          chorus-log athena.pipeline.started "$ROLE" card="$CARD_ID" target="$TARGET" model="$(printf '%s' "$MODEL" | wc -l | tr -d ' ')" seed="$(printf '%s' "$SEED" | wc -l | tr -d ' ')" >/dev/null 2>&1 || true
+
+      - name: validate
+        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        run: |
+          set -euo pipefail
+          if ! command -v riot >/dev/null 2>&1; then
+            if [ "${ALLOW_UNVALIDATED:-0}" = "1" ]; then echo "::warning::athena: riot absent, ALLOW_UNVALIDATED=1 — proceeding LOUDLY unvalidated"; exit 0; fi
+            echo "::error::athena: riot is not installed — REFUSING to deploy an unvalidated model (ALLOW_UNVALIDATED=1 overrides, loudly)" >&2; exit 1
+          fi
+          rc=0
+          while IFS= read -r f; do [ -n "$f" ] || continue
+            case "$f" in *.ttl) riot --validate "${CHORUS_HOME}/$f" && echo "valid: $f" || { echo "::error::athena: riot rejects $f" >&2; rc=1; } ;; esac
+          done <<< "${{ steps.scope.outputs.model }}"
+          exit $rc
+
+      - name: deploy
+        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        run: |
+          set -euo pipefail
+          chorus-log athena.deploy.started "$ROLE" card="$CARD_ID" target=canonical >/dev/null 2>&1 || true
+          CHORUS_TRACE_ID="${CHORUS_TRACE_ID:-}" DEPLOY_ROLE="$ROLE" CHORUS_ROLE="$ROLE" bash "${CHORUS_HOME}/platform/scripts/athena-deploy-model.sh"
+
+      - name: serve
+        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        # athena-make reads the shapes at boot; a model change is served only after a
+        # restart, and rows may post only after /health says healthy (the six-land defect).
+        run: |
+          set -euo pipefail
+          DEPLOY_ROLE="$ROLE" athena-serve com.chorus.athena-make "${ATHENA_MAKE_URL:-http://localhost:3360}/health" --kickstart --timeout 90
+
+      - name: seed
+        if: ${{ steps.scope.outputs.nothing != 'true' }}
+        # a seed-only card seeds too (#4096); a model card seeds AFTER serve
+        run: |
+          set -euo pipefail
+          # the store must be answering before a single row is posted — serve proved it for a
+          # model change; a seed-only change asks here, the same way
+          DEPLOY_ROLE="$ROLE" athena-serve com.chorus.athena-make "${ATHENA_MAKE_URL:-http://localhost:3360}/health" --timeout 30
+          TOKEN=$(bash "${CHORUS_HOME}/platform/scripts/chorus-identity-token" "$ROLE")
+          [ -n "$TOKEN" ] || { echo "::error::athena: no identity token for $ROLE — rows NOT posted" >&2; exit 1; }
+          SEED_BIN="${HOME}/.chorus/bin/athena-model"; [ -x "$SEED_BIN" ] || SEED_BIN=athena-model
+          CHORUS_ROOT="${CHORUS_HOME}" CHORUS_IDENTITY_TOKEN="$TOKEN" CHORUS_LANDED_COMMIT="$LANDED" \
+            "$SEED_BIN" seed --post --api "${ATHENA_MAKE_URL:-http://localhost:3360}" --unowned load
+          chorus-log athena.seed.completed "$ROLE" card="$CARD_ID" target=canonical >/dev/null 2>&1 || true
+
+      - name: prove
+        if: ${{ steps.scope.outputs.nothing != 'true' }}
+        run: |
+          set -euo pipefail
+          rc=0
+          if [ -n "${{ steps.scope.outputs.model }}" ] && [ -n "$LANDED" ]; then
+            STAMP=$(curl -s -m 10 http://localhost:3030/pods/query --data-urlencode 'query=SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
+            if [ "$STAMP" = "$LANDED" ]; then echo "stamp: store attests $STAMP == landed"; else echo "::error::athena: store attests '$STAMP', landed is '$LANDED' — the model deploy ran but the store does not say so" >&2; rc=1; fi
+          fi
+          # the sweep, as a ratchet: the issue count may never rise; a lower count becomes the new floor
+          BASE_FILE="${HOME}/.chorus/athena-validate.baseline"
+          OUT=$(ATHENA_VALIDATE_NUDGE=0 bash "${CHORUS_HOME}/platform/scripts/athena-validate.sh" 2>&1 || true)
+          N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1)
+          if [ -z "$N" ]; then echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
+          else
+            BASE=$(cat "$BASE_FILE" 2>/dev/null || echo "$N")
+            if [ "$N" -gt "$BASE" ]; then echo "::error::athena-validate: $N issues, baseline $BASE — this land ADDED gaps" >&2; rc=1
+            else echo "athena-validate: $N issues (baseline $BASE → $N)"; echo "$N" > "$BASE_FILE"; fi
+          fi
+          chorus-log athena.pipeline.completed "$ROLE" card="$CARD_ID" target=canonical verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}" >/dev/null 2>&1 || true
+          exit $rc

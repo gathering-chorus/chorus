@@ -532,6 +532,23 @@ jobs:
             sleep 90
           done
 
+      # #4186 — the MODEL pipeline is its own file. werk-deploy ships code only and
+      # hands off; this step runs athena.yml (scope → validate → deploy → serve →
+      # seed → prove) against canonical when the landed diff carried model or seed
+      # sources. BLOCKING: a land whose model is in the repo but not served or not
+      # attested by the store is not a land.
+      - name: athena-land
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        run: |
+          set -euo pipefail
+          LC="${LANDED_COMMIT:-}"
+          [ -n "$LC" ] || LC=$(git -C "${CHORUS_HOME}" rev-parse origin/main)
+          if ! git -C "${CHORUS_HOME}" diff --name-only "${LC}^" "${LC}" | grep -qE '^roles/[^/]+/ontology/.*\.ttl$|^designing/schemas/model-retirements\.jsonl$|^designing/data/.*\.ttl$|^platform/config/instance-seed-manifest\.txt$'; then
+            echo "athena-land: no model or seed source in ${LC} — the athena pipeline has nothing to run (explicit absence)"; exit 0
+          fi
+          "${CHORUS_ACT_BIN:-act}" workflow_dispatch -W "${CHORUS_HOME}/.github/workflows/athena.yml" -P macos-latest=-self-hosted \
+            --input card_id="${CARD_ID}" --input role="${ROLE}" --input target=canonical --input landed_commit="${LC}"
+
       # #4178 — the on-land delta. A land changes files; the graph follows in the
       # same breath instead of waiting for 04:30, so "what is in the repo" is
       # never a day stale. Runs as `crawler` for the same reason the nightly
