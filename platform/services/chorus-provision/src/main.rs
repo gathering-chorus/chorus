@@ -109,10 +109,14 @@ impl Kind {
         }
         None
     }
-    /// The `principalKind` value written to the row.
+    /// The `principalKind` value written to the row. The same two words Role
+    /// already uses for `roleKind` (#4175 retired HumanRole/AgentRole in their
+    /// favour) — one vocabulary for "which kind of user", on both classes.
+    /// The store's older spellings (person, service, worker) are a migration,
+    /// not a third and fourth answer to write.
     fn stored(self) -> &'static str {
         match self {
-            Kind::Human => "person",
+            Kind::Human => "human",
             Kind::Agent => "agent",
         }
     }

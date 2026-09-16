@@ -101,7 +101,13 @@ chorus:principal-jeff a chorus:Principal ;
     rdfs:label "jeff (human principal - root authority)" ;
     chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" ;
     chorus:principalKind "person" ;
-    chorus:canSignIn "true" .
+    chorus:canSignIn "true" ;
+    # #3830 — jeff holds the security-graph write scope (he provisions users),
+    # and the door refuses any writer with no model-resolved role. Scope without
+    # a role is the state #4026's daytime check exists to catch; it went red the
+    # minute the grant landed (11:16). role-jeff already existed in Wren's
+    # role-instances-3838; this is the edge that was missing.
+    chorus:holdsRole chorus:role-jeff .
 
 # #3726 — marknakib (external human principal, joined via #3669/#3679) was live in
 # the store but never in source; brought in here so a fresh load reproduces the
