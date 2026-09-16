@@ -28,7 +28,7 @@ EOS
   cat > "$T/bin/claude" <<EOS
 #!/bin/bash
 echo "claude \$*" >> "$T/claude.log"
-if [ "\$1" = "agents" ]; then cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
+if [ "\$1" = "agents" ]; then [ -f "$T/agents-fail" ] && { echo "boom: unknown option --cwd" >&2; exit 1; }; cat "$T/agents.json" 2>/dev/null || echo '[]'; fi
 exit 0
 EOS
   chmod +x "$T/bin/"*
@@ -126,4 +126,12 @@ EOS
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
   ! grep -qE "claude'? Enter|claude agents" "$T/tmux.log"
+}
+
+@test "NEGATIVE PROOF — the background-session list cannot be read → REFUSED, nothing sent (never guess -c)" {
+  touch "$T/agents-fail"
+  run "$SCRIPT" kade
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"REFUSED"*"could not list kade's background sessions"*"unknown option --cwd"* ]]
+  [ ! -f "$T/tmux.log" ]
 }
