@@ -109,7 +109,15 @@ TTL
 @test "ownership edges point at exactly one spelling of a role" {
   cd "$REPO"
   # No ownership edge may name the retired IRIs.
-  run bash -c "grep -rhoE 'chorus:(ownedBy|ownerRole|gatekeeper|assignedTo) chorus:(wren|silas|kade|jeff)\b' --include='*.ttl' . | wc -l | tr -d ' '"
+  #
+  # #4179 — fixture data is EXCLUDED BY PATH. platform/tests/fixtures/ holds
+  # negative-proof fixtures whose whole job is to carry violating rows so a
+  # check can be shown to fire (#3734). A repo-wide grep cannot tell a fixture
+  # from a declaration, so before this it read hats-4175-violations.ttl as a
+  # real ownership edge and went red for two nightlies. The exclusion is by
+  # DIRECTORY, not by pattern: a pattern exception would also hide a real
+  # violation that happened to look like test data.
+  run bash -c "grep -rhoE 'chorus:(ownedBy|ownerRole|gatekeeper|assignedTo) chorus:(wren|silas|kade|jeff)\b' --include='*.ttl' --exclude-dir=fixtures . | wc -l | tr -d ' '"
   [ "$output" -eq 0 ]
 }
 
@@ -131,7 +139,9 @@ TTL
   # A check that cannot tell prose from a declaration would make recording the
   # decision impossible — and an undocumented retirement is how someone
   # reintroduces the spelling in six weeks.
-  run bash -c "grep -rh --include='*.ttl' -v '^[[:space:]]*#' . | grep -cE 'chorus:(wren|silas|kade|jeff) a chorus:Role\\b|chorus:(wren|silas)-owner' || true"
+  # #4179 — same exclusion, same reason: the negative-proof fixture declares a
+  # retired spelling ON PURPOSE so the check can be shown to catch one.
+  run bash -c "grep -rh --include='*.ttl' --exclude-dir=fixtures -v '^[[:space:]]*#' . | grep -cE 'chorus:(wren|silas|kade|jeff) a chorus:Role\\b|chorus:(wren|silas)-owner' || true"
   [ "$output" -eq 0 ]
 }
 
