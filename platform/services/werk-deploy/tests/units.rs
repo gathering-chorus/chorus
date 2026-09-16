@@ -1081,6 +1081,8 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     let werk = include_str!("../../../../.github/workflows/werk.yml");
     assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
     assert!(werk.contains("chorus_athena"), "werk.yml runs the model pipeline through the chorus_athena verb, not by calling act inside act");
-    assert!(!werk.contains("${CHORUS_HOME}/.github/workflows/athena.yml"), "no nested act on the canonical file; the only direct run is the named bootstrap on the card's own file");
-    assert!(werk.contains("athena-bootstrap-${CARD_ID}"), "the bootstrap escape is named, never silent");
+    assert!(!werk.contains("workflows/athena.yml"), "no act inside act: werk.yml reaches athena only through the verb");
+    for gone in ["athena-model", "athena-rows", "athena-werk", "werk-model", "werk-rows", "athena-bootstrap"] {
+        assert!(!werk.contains(gone), "#4186 (Jeff): the demo reads the live store; werk.yml has no variant model step: found {}", gone);
+    }
 }

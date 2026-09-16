@@ -596,102 +596,12 @@ fn fuseki_admin_creds() -> Option<(String, String)> {
     Some((user, pw))
 }
 
-fn fuseki_admin_auth() -> Vec<String> {
-    match fuseki_admin_creds() {
-        Some((user, pw)) => vec!["-u".to_string(), format!("{}:{}", user, pw)],
-        None => Vec::new(),
-    }
-}
-
-// #4186 — env_up no longer creates the werk dataset: the STORE is athena's.
-// athena.yml (target=werk-model, run by werk.yml BEFORE env-up) creates it fresh
-// via `athena-deploy store` and deploys the model set into it, so the variant
-// athena-make boots against shapes (it exits "no classes generated — nothing to
-// serve" on an empty store: run 83, 2026-09-16). env_down still drops it.
-/// #4047 — drop the werk's dataset at env-down so no per-card store outlives
-/// its demo. In-memory, so the drop is the whole cleanup.
-fn drop_werk_store(role: &str) -> String {
-    let ds = werk_dataset_name(role);
-    let base = werk_fuseki_for(role);
-    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
-    let out = Command::new("curl")
-        .args(&fuseki_admin_auth())
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE",
-               &format!("{}/$/datasets/{}", base, ds)])
-        .output();
-    match out { Ok(o) => format!("store_dropped={} http={}", ds, String::from_utf8_lossy(&o.stdout).trim()),
-                Err(e) => format!("store_drop_failed={}", e) }
-}
-
-/// #4186 — what env_up does about the store BEFORE it boots the variant athena-make,
-/// which exits "no classes generated — nothing to serve" on a store without shapes
-/// (run 83 and run 87, 2026-09-16: a 120s smoke timeout with no name). Pure; unit-tested.
-///   Ready     = shapes are there; boot.
-///   Bootstrap = no shapes, but the card's named bootstrap marker exists: run
-///               athena.yml werk-model here, loudly, because the CANONICAL werk.yml
-///               this card runs under has no athena-model step yet (#3197 class).
-///   Refuse    = no shapes and no marker: name the step that owns the store and stop.
-#[derive(Debug, PartialEq, Eq)]
-pub enum StoreReadiness { Ready, Bootstrap, Refuse }
-pub fn store_readiness(shape_count: Option<u64>, bootstrap_marker: bool) -> StoreReadiness {
-    match (shape_count, bootstrap_marker) {
-        (Some(n), _) if n > 0 => StoreReadiness::Ready,
-        (_, true) => StoreReadiness::Bootstrap,
-        _ => StoreReadiness::Refuse,
-    }
-}
-pub fn store_refusal(ds: &str, shape_count: Option<u64>) -> String {
-    format!("env_up: store {} has no shapes (NodeShape count={}) — the variant athena-make would exit 'no classes generated'. athena.yml target=werk-model (werk.yml's athena-model step) creates the store and deploys the model BEFORE env-up; env_up neither creates nor fills it (#4186)",
-        ds, shape_count.map(|n| n.to_string()).unwrap_or_else(|| "unreadable".into()))
-}
-fn count_shapes(role: &str) -> Option<u64> {
-    let ds = werk_dataset_name(role);
-    let base = werk_fuseki_for(role);
-    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
-    let q = "SELECT (COUNT(*) AS ?n) WHERE { GRAPH <urn:chorus:ontology> { ?s a <http://www.w3.org/ns/shacl#NodeShape> } }";
-    let out = Command::new("curl").args(&fuseki_admin_auth())
-        .args(["-s", "-m", "10", "-H", "Accept: text/csv", "--data-urlencode", &format!("query={}", q), &format!("{}/{}/query", base, ds)])
-        .output().ok()?;
-    if !out.status.success() { return None; }
-    let body = String::from_utf8_lossy(&out.stdout);
-    body.lines().nth(1).and_then(|l| l.trim().parse::<u64>().ok())
-}
-fn require_model_in_store(role: &str, werk_root: &str, card: u64) -> R<String> {
-    let ds = werk_dataset_name(role);
-    let marker = format!("{}/.chorus/athena-bootstrap-{}", std::env::var("HOME").unwrap_or_default(), card);
-    let n = count_shapes(role);
-    match store_readiness(n, Path::new(&marker).exists()) {
-        StoreReadiness::Ready => Ok(format!("store={} shapes={}", ds, n.unwrap_or(0))),
-        StoreReadiness::Refuse => Err(store_refusal(&ds, n)),
-        StoreReadiness::Bootstrap => {
-            eprintln!("::warning::env_up: BOOTSTRAP — {} present and store {} has no shapes; running athena.yml target=werk-model directly (canonical werk.yml has no athena-model step until this card lands)", marker, ds);
-            // the mcp daemon's PATH may not carry act; resolve like a shell would, then homebrew
-            let act = std::env::var("CHORUS_ACT_BIN").ok()
-                .or_else(|| ["/opt/homebrew/bin/act", "/usr/local/bin/act"].iter().find(|p| Path::new(p).exists()).map(|s| s.to_string()))
-                .unwrap_or_else(|| "act".into());
-            let wf = format!("{}/.github/workflows/athena.yml", werk_root);
-            let st = Command::new(&act)
-                .args(["workflow_dispatch", "-W", &wf, "-P", "macos-latest=-self-hosted",
-                       "--input", &format!("card_id={}", card), "--input", &format!("role={}", role),
-                       "--input", "target=werk-model", "--input", "landed_commit="])
-                .status().map_err(|e| format!("env_up: bootstrap act: {}", e))?;
-            if !st.success() { return Err(format!("env_up: bootstrap athena.yml werk-model failed ({})", st)); }
-            let n2 = count_shapes(role);
-            match store_readiness(n2, false) {
-                StoreReadiness::Ready => Ok(format!("store={} shapes={} (BOOTSTRAP: werk-model ran from env_up)", ds, n2.unwrap_or(0))),
-                _ => Err(store_refusal(&ds, n2)),
-            }
-        }
-    }
-}
-
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
-    // #4186 — the store and the model in it are athena.yml's (target=werk-model),
-    // which werk.yml runs before this. Nothing about the dataset happens here;
-    // env_up only checks the model is there before it boots against it.
-    summary.push(require_model_in_store(role, werk_root, card)?);
+    // #4186 (Jeff, 2026-09-16 17:41: "our demo env must rely on our prod data") —
+    // the variant reads the LIVE store. Nothing here creates, fills, checks or
+    // drops a dataset; a model change is athena's own pipeline, never a demo copy.
     for svc in env_services() {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service
@@ -750,7 +660,7 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
         let css_issuer = css_issuer_for_variant();
         let jwks_url = jwks_url_for_variant();
         let model_bin = format!("{}/athena-model", werk_bin_dir(role));
-        let werk_fuseki = werk_fuseki_for(role);
+        let werk_fuseki = live_fuseki();
         let variant_path = variant_path_for(role);
         let chorus_home = std::env::var("CHORUS_HOME")
             .unwrap_or_else(|_| "/Users/jeffbridwell/CascadeProjects/chorus".to_string());
@@ -803,10 +713,8 @@ pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trac
             // every batch. The variant now names its DAL explicitly (the same
             // deploy-werk bin slot its own binary runs from) and carries prod's
             // PATH shape so subprocesses (curl, jq, node) resolve the same way.
-            // #4047 — CHORUS_FUSEKI points the variant at the WERK's own
-            // dataset (athena-make/lib.rs:41 reads exactly this var, defaulting
-            // to prod's /pods). This is what makes a model change demonstrable
-            // before it lands.
+            // #4186 — CHORUS_FUSEKI names the LIVE store explicitly (athena-make
+            // lib.rs:41 reads exactly this var): the demo relies on prod data.
             "athena-make" => vec![
                 ("CSS_ISSUER", css_issuer.as_str()),
                 ("CHORUS_HOME", chorus_home.as_str()),
@@ -942,9 +850,7 @@ pub fn env_down(role: &str, canonical_root: &str, card: u64, trace: &str) -> R<S
             &[("svc", &svc.name), ("label", &label)]);
         stopped.push(label);
     }
-    // #4047 — the werk's store dies with its env; nothing per-card outlives the demo.
-    let dropped = drop_werk_store(role);
-    Ok(format!("env_down role={} stopped={} {}", role, stopped.join(","), dropped))
+    Ok(format!("env_down role={} stopped={}", role, stopped.join(",")))
 }
 
 // --- unit tests for the pure helpers (no IO, no subprocess) ---
@@ -961,21 +867,15 @@ pub fn variant_path_for(role: &str) -> String {
     format!("{}:{}/.chorus/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin", werk_bin_dir(role), home)
 }
 
-/// #4047 — the werk's OWN Fuseki dataset. Until this, the demo variant ran its
-/// own athena-make but pointed it at prod's `/pods`, so a card that CHANGES THE
-/// MODEL could never be demonstrated: the variant served yesterday's shapes and
-/// the only way to see the change was to land it. That is the gap Jeff's
-/// 2026-08-26 rule ("no go if you cannot show it working in demo") kept hitting.
-/// One in-memory dataset per role, created at env-up and dropped at env-down —
-/// isolated by construction, so a model deploy into it can never touch prod.
-pub fn werk_dataset_name(role: &str) -> String {
-    format!("werk-{}", role)
-}
-
-pub fn werk_fuseki_for(role: &str) -> String {
-    let base = std::env::var("CHORUS_FUSEKI_BASE")
-        .unwrap_or_else(|_| "http://localhost:3030".to_string());
-    format!("{}/{}", base.trim_end_matches('/'), werk_dataset_name(role))
+/// #4186 — the store every variant reads: the LIVE one, the same value and
+/// default athena-make (lib.rs:41) and chorus-api resolve in prod. #4047 gave
+/// each role a throwaway in-memory dataset and redeployed the whole model into
+/// it every run; that copy was the cord between werk and athena (three runs on
+/// 2026-09-16 died on it empty) and a demo of a copy proves the copy. Jeff:
+/// "our demo env must rely on our prod data." Writes during a demo go through
+/// the door with a real identity, like any write; isolation is the door's job.
+pub fn live_fuseki() -> String {
+    std::env::var("CHORUS_FUSEKI").unwrap_or_else(|_| "http://localhost:3030/pods".to_string())
 }
 
 /// The local JWKS the verifier fetches. Same default chorus-env-setup.sh uses;
@@ -999,19 +899,6 @@ pub fn css_issuer_for_variant() -> String {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn store_readiness_refuses_an_empty_store_and_names_the_owning_step_4186() {
-        use super::{store_readiness, store_refusal, StoreReadiness};
-        assert_eq!(store_readiness(Some(0), false), StoreReadiness::Refuse, "negative proof: no shapes, no marker → refuse, never boot");
-        assert_eq!(store_readiness(None, false), StoreReadiness::Refuse, "unreadable store is not ready");
-        assert_eq!(store_readiness(Some(0), true), StoreReadiness::Bootstrap, "the named marker is the ONLY escape");
-        assert_eq!(store_readiness(None, true), StoreReadiness::Bootstrap);
-        assert_eq!(store_readiness(Some(28), false), StoreReadiness::Ready);
-        assert_eq!(store_readiness(Some(1), true), StoreReadiness::Ready, "a marker never re-runs the model over a store that has it");
-        let msg = store_refusal("werk-wren", Some(0));
-        assert!(msg.contains("werk-model") && msg.contains("athena-model") && msg.contains("werk-wren"), "{}", msg);
-        assert!(store_refusal("werk-wren", None).contains("unreadable"));
-    }
 
     /// #4022 — the athena variant carries the CSS issuer (and CHORUS_HOME) the
     /// way prod's launch script does; the bare-binary default is the 401.
@@ -1154,18 +1041,25 @@ mod tests {
 }
 
 #[cfg(test)]
-mod store_4047 {
+mod store_4186 {
     use super::*;
 
-    /// #4047 — the variant must point at the WERK's dataset, never prod's
-    /// /pods. This is the whole reason a model change can be demoed.
+    /// #4186 — every role's variant reads the ONE live store (Jeff, 2026-09-16:
+    /// "our demo env must rely on our prod data"). Negative proof of the #4047
+    /// shape: no per-role dataset name can come out of this function.
     #[test]
-    fn werk_fuseki_is_per_role_and_never_pods() {
-        let u = werk_fuseki_for("kade");
-        assert!(u.ends_with("/werk-kade"), "{}", u);
-        assert!(!u.contains("/pods"), "a werk store must never be prod's dataset: {}", u);
-        assert_ne!(werk_fuseki_for("kade"), werk_fuseki_for("silas"),
-            "two roles demoing at once must not share a store");
+    fn every_variant_reads_the_live_store_never_a_per_role_copy_4186() {
+        let u = live_fuseki();
+        assert!(!u.contains("werk-"), "a per-role dataset is the retired #4047 shape: {}", u);
+        assert!(u.ends_with("/pods") || std::env::var("CHORUS_FUSEKI").is_ok(), "{}", u);
+        let src = include_str!("demo_env.rs");
+        // the needles are split so this test's own text cannot satisfy them (the #3725 trap)
+        let needles = [format!("{}{}", "$/", "datasets"), format!("{}{}", "dbType", "=mem"),
+                       format!("fn {}", "drop_werk_store"), format!("fn {}", "prepare_werk_store"),
+                       format!("fn {}", "werk_dataset_name"), format!("{}{}", "athena-bootstrap", "-")];
+        for forbidden in &needles {
+            assert!(!src.contains(forbidden.as_str()), "env_up/env_down touch no dataset and run no model pipeline: found {}", forbidden);
+        }
     }
 
     /// #3734 negative proof: if the athena-make env block ever loses
@@ -1173,7 +1067,7 @@ mod store_4047 {
     /// failure this card exists to end. The plist must carry it.
     #[test]
     fn plist_carries_chorus_fuseki_or_the_variant_reads_prod() {
-        let f = werk_fuseki_for("kade");
+        let f = live_fuseki();
         let with = generate_plist(
             &env_services().into_iter().find(|s| s.name == "athena-make").unwrap(),
             "kade", "/tmp/werk", 3364,
@@ -1194,9 +1088,9 @@ mod store_4047 {
     /// athena-make got the werk one. A demo env that cannot refuse proves
     /// nothing, so both belong on the plist.
     #[test]
-    fn api_variant_plist_carries_the_envelope_flag_and_the_werk_store() {
+    fn api_variant_plist_carries_the_envelope_flag_and_the_live_store() {
         let svc = env_services().into_iter().find(|s| s.name == "chorus-api").unwrap();
-        let f = werk_fuseki_for("kade");
+        let f = live_fuseki();
         let with = generate_plist(&svc, "kade", "/tmp/werk", 3343,
             &[("CHORUS_SECURITY_ENVELOPE_ENABLE", "1"), ("CHORUS_FUSEKI", f.as_str())]);
         assert!(with.contains("<key>CHORUS_SECURITY_ENVELOPE_ENABLE</key>"), "{}", with);

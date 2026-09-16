@@ -506,19 +506,19 @@ const WerkRunInput = z.object({
 const AthenaRunInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card the model change belongs to.'),
-  target: z.enum(['werk-model', 'werk-rows', 'canonical']).describe('werk-model = before env-up: fresh variant store + model set; werk-rows = after env-up: serve, seed, prove; canonical = the live store after a land.'),
+  target: z.enum(['canonical']).describe('canonical = the live store, after a land. There is no variant target: the demo env reads the live store (Jeff, 2026-09-16), a model change is this pipeline, never a demo copy.'),
   landed_commit: z.string().optional().describe('target=canonical: the merged origin/main sha the store must attest. Empty = ungated hand run.'),
 });
 
 const ATHENA_RUN_TOOL_DEF = {
   name: 'chorus_athena',
-  description: 'THE model pipeline trigger (#4186) — runs athena.yml\'s land job for one target: scope → validate → deploy → serve → seed → prove. target=werk-model creates the card\'s variant store fresh and deploys the model set (werk.yml runs it BEFORE env-up, so the variant athena-make boots against shapes); target=werk-rows waits for the variant, posts the rows and sweeps (after env-up); target=canonical does the same against the live store after a land and requires the landed sha, which the store must attest. Synchronous: returns the run\'s verdict and log path. Never lands code; werk owns code, athena owns the model.',
+  description: 'THE model pipeline trigger (#4186) — runs athena.yml\'s land job for one target: scope → validate → deploy → serve → seed → prove. target=canonical does the same against the live store after a land and requires the landed sha, which the store must attest. Synchronous: returns the run\'s verdict and log path. Never lands code; werk owns code, athena owns the model.',
   inputSchema: {
     type: 'object',
     properties: {
       role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role.' },
       card_id: { type: 'integer', minimum: 1, description: 'Card the model change belongs to.' },
-      target: { type: 'string', enum: ['werk-model', 'werk-rows', 'canonical'], description: 'werk-model (variant store + model, before env-up) | werk-rows (serve, seed, prove, after env-up) | canonical (live, after a land).' },
+      target: { type: 'string', enum: ['canonical'], description: 'canonical (the live store, after a land). No variant target: the demo reads the live store.' },
       landed_commit: { type: 'string', description: 'canonical only: the merged sha the store must attest.' },
     },
     required: ['role', 'card_id', 'target'],
