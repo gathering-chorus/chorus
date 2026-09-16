@@ -51,7 +51,18 @@ chorus:principal-silas
                     # would have silently dropped both. Measured on the store:
                     # both sit on principal-silas and nowhere else.
                     "urn:chorus:domains:alerts"^^xsd:anyURI ,
-                    "urn:chorus:domains:monitors"^^xsd:anyURI .
+                    "urn:chorus:domains:monitors"^^xsd:anyURI ,
+                    # #3830 — chorus-provision writes the Principal row through
+                    # the door as the caller, and Principals live in the
+                    # security graph. Measured 2026-09-16 09:46: 40 grants in
+                    # the store, NONE naming urn:chorus:domains:security, so no
+                    # caller could write a Principal through the door at all —
+                    # every Principal row so far was typed by hand. Least
+                    # privilege (Wren, navigating): only the role that
+                    # provisions. Silas owns the security domain (authN side,
+                    # ADR-054); the grant sits on principal-silas and nowhere
+                    # else. jeff stays ungranted here — see the header.
+                    "urn:chorus:domains:security"^^xsd:anyURI .
 
 chorus:principal-wren
     chorus:hasScope "urn:chorus:domains:tests"^^xsd:anyURI ,
@@ -148,3 +159,10 @@ chorus:principal-nightly
 
 chorus:principal-chorus-sdk
     chorus:hasScope "urn:chorus:nudge-read"^^xsd:anyURI .
+
+# #3830 — jeff provisions users too (Wren, navigating: security scope to the
+# roles that provision, silas + jeff, nobody else). jeff's FIRST grant in this
+# file; the header's "jeff gets NO grants" stood until a door needed him as a
+# writer. One graph, the one Principals live in.
+chorus:principal-jeff
+    chorus:hasScope "urn:chorus:domains:security"^^xsd:anyURI .

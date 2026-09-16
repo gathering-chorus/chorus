@@ -549,7 +549,15 @@ import sys
 c = sys.stdin.read().strip().lower()
 irr = {"property":"properties","propertykey":"propertykeys"}
 print(irr.get(c, c[:-1]+"ies" if c.endswith("y") else c+"s"))')
-      if printf '%s' "$_served_resp" | grep -q "\"/$_rroute_now\""; then
+      # Match the route ANYWHERE in its collection path, not as a bare "/name".
+      #
+      # Routes carry a version and a domain now — Credential is served at
+      # /v1/security/credentials, and the discovery document contains no bare
+      # "/credentials" at all. The old needle could therefore never match, so
+      # NO staged claim retirement could be refused for being served: the guard
+      # that exists to stop you retiring a live surface had gone vacuous, and
+      # this suite has been red about it since #4166 while I read it as noise.
+      if printf '%s' "$_served_resp" | grep -qE "\"(/v1)?(/[a-z0-9-]+)*/$_rroute_now\""; then
         echo "athena-deploy-model: RETIREMENT REFUSED — class $_rcls is SERVED at /$_rroute_now RIGHT NOW (surface came up since staging); unserve first (#3752)" >&2
         "$CHORUS_LOG" model.deploy.failed "$ROLE" graph="$_rg" reason="retirement-claim-served-at-execute" route="$_rroute_now" 2>/dev/null || true
         exit 1

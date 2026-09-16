@@ -98,10 +98,17 @@ chorus:principal-crawler a chorus:Principal ;
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is
 # the authority the roles serve.
 chorus:principal-jeff a chorus:Principal ;
-    rdfs:label "jeff (human principal - root authority)" ;
+    rdfs:label "Jeff Bridwell" ;   # #3830 — the name field holds the name; "jeff (human principal - root authority)" was a description
     chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" ;
     chorus:principalKind "person" ;
     chorus:canSignIn "true" .
+    # #3830 — jeff holds the security-graph write scope (a PERMISSION, in
+    # security-scopes-3689) and deliberately NO holdsRole edge: role-jeff's own
+    # comment says so, and Jeff on 2026-09-16 11:35 — "isnt the deleting users
+    # an authz not a user or role". An edge was committed here at 11:26 and
+    # pulled at 11:38. The door still refuses a write from a caller with no
+    # model-resolved role, so a permission depends on a hat; that coupling is
+    # the defect (ADR-054 seam), not this row.
 
 # #3726 — marknakib (external human principal, joined via #3669/#3679) was live in
 # the store but never in source; brought in here so a fresh load reproduces the
@@ -136,18 +143,13 @@ chorus:principal-flow-probe a chorus:Principal ;
 # principalKind/canSignIn added to every principal in this file: a worker never
 # signs in, and the shape now REFUSES a worker that claims it can.
 # ============================================================================
-chorus:principal-crawler-index a chorus:Principal ;
-    rdfs:label "crawler-index worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/crawler-index/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
-chorus:principal-reindex-worker a chorus:Principal ;
-    rdfs:label "reindex worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/reindex-worker/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
-chorus:principal-embed-worker a chorus:Principal ;
-    rdfs:label "embed worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/embed-worker/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
+# #3830 — RETIRED 2026-09-16: principal-crawler-index, principal-reindex-worker,
+# principal-embed-worker. Measured against the register: all three profile
+# cards answer 401 — no pod was ever made. Wren, navigating, checked the other
+# direction: nothing authenticates as them, no plist or script carries their
+# webId. They were process names typed into this file as identities. A row
+# that names a pod nobody made is the half-user this card exists to prevent,
+# and a ghost is retired, not completed. The store rows are deleted through
+# the write door (athena-model delete, as silas) once the security-graph
+# scope in security-scopes-3689 is live; this file no longer re-asserts them.
+
