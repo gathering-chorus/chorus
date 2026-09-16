@@ -48,7 +48,15 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("census") => cmd_census(),
         Some("create") => match args.get(1) {
-            Some(n) => cmd_create(n),
+            Some(n) => match Kind::from_args(&args[2..]) {
+                Some(k) => cmd_create(n, k),
+                None => {
+                    eprintln!("chorus-provision: REFUSED — '{n}' has no kind. Say --kind human or --kind agent.");
+                    eprintln!("  nothing was written. A human and an agent are provisioned differently");
+                    eprintln!("  (sign-in vs client credential), so the kind is decided at the door.");
+                    2
+                }
+            },
             None => {
                 eprintln!("chorus-provision: create needs a user name");
                 2
@@ -73,6 +81,55 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+/// Jeff, 2026-09-16: "it shapes the experience and the hx needs are different
+/// than ax." Two kinds, decided at the door. The store already spells this as
+/// `principalKind` with four values (person, agent, service, worker — measured
+/// 09:38 today); this writes the two that mean something and the census will
+/// say which rows still carry the other spellings.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Kind {
+    Human,
+    Agent,
+}
+
+impl Kind {
+    fn from_args(rest: &[String]) -> Option<Kind> {
+        let mut it = rest.iter();
+        while let Some(a) = it.next() {
+            let v = match a.strip_prefix("--kind=") {
+                Some(v) => v.to_string(),
+                None if a == "--kind" => it.next()?.to_string(),
+                None => continue,
+            };
+            return match v.as_str() {
+                "human" => Some(Kind::Human),
+                "agent" => Some(Kind::Agent),
+                _ => None,
+            };
+        }
+        None
+    }
+    /// The `principalKind` value written to the row.
+    fn stored(self) -> &'static str {
+        match self {
+            Kind::Human => "person",
+            Kind::Agent => "agent",
+        }
+    }
+    fn can_sign_in(self) -> &'static str {
+        match self {
+            Kind::Human => "true",
+            Kind::Agent => "false",
+        }
+    }
+    fn word(self) -> &'static str {
+        match self {
+            Kind::Human => "human",
+            Kind::Agent => "agent",
+        }
+    }
+}
+
 /// One curl, output as a string. Returns None when curl itself could not run —
 /// which is NOT the same as an HTTP error and is never reported as one.
 ///
@@ -82,24 +139,41 @@ fn env_or(key: &str, default: &str) -> String {
 /// no reason to inherit that here.
 fn curl(args: &[&str]) -> Option<String> {
     let secret = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|s| !s.is_empty());
+    let cfg = secret.map(|pw| {
+        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".into());
+        format!("user = \"{user}:{}\"\n", cfg_escape(&pw))
+    });
+    curl_cfg(cfg, args)
+}
+
+/// The same, carrying the caller's token. The header goes in on stdin as a
+/// curl config, never in argv — a token in argv is a token in `ps`.
+fn curl_bearer(token: &str, args: &[&str]) -> Option<String> {
+    let cfg = format!("header = \"Authorization: Bearer {}\"\n", cfg_escape(token));
+    curl_cfg(Some(cfg), args)
+}
+
+/// curl config quoting: a literal backslash or quote in the value would break
+/// the line, so both are escaped rather than assumed absent.
+fn cfg_escape(v: &str) -> String {
+    v.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn curl_cfg(cfg: Option<String>, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new("curl");
-    if secret.is_some() {
+    if cfg.is_some() {
         cmd.args(["-K", "-"]);
     }
     cmd.args(args);
     let mut child = cmd
-        .stdin(if secret.is_some() { Stdio::piped() } else { Stdio::null() })
+        .stdin(if cfg.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
-    if let Some(pw) = secret {
-        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".into());
+    if let Some(text) = cfg {
         let mut si = child.stdin.take()?;
-        // curl config quoting: a literal backslash or quote in the value would
-        // break the line, so both are escaped rather than assumed absent.
-        let esc = pw.replace('\\', "\\\\").replace('"', "\\\"");
-        let _ = writeln!(si, "user = \"{user}:{esc}\"");
+        let _ = si.write_all(text.as_bytes());
     }
     let out = child.wait_with_output().ok()?;
     Some(String::from_utf8_lossy(&out.stdout).to_string())
@@ -229,7 +303,7 @@ fn cmd_census() -> i32 {
 fn cmd_plan(name: &str) -> i32 {
     let css = env_or("CSS_URL", "http://localhost:3001");
     let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
-    let api = env_or("CHORUS_API", "http://localhost:3340");
+    let api = env_or("ATHENA_MAKE_URL", "http://localhost:3360");
 
     println!("plan: provision user '{name}'");
     println!();
@@ -239,18 +313,25 @@ fn cmd_plan(name: &str) -> i32 {
     println!("        you get two of someone (Jeff, relay, 2026-08-11).");
     println!("  2. POST {css}/.account/account/<id>/client-credentials/");
     println!("     -> bound to the webId from step 1, never to a rebuilt string");
-    println!("  3. POST {api}/v1/identity/principals");
-    println!("     -> chorus:Principal in urn:chorus:domains:security, webId from step 1");
+    println!("  3. POST {api}<Principal collection from the discovery document>");
+    println!("     -> chorus:Principal in urn:chorus:domains:security, webId from step 1,");
+    println!("        principalKind + canSignIn from --kind, written as the caller");
     println!();
     println!("  all three, or none. A failure after step 1 removes the pod.");
     println!();
 
-    let existing = principals();
-    if let Some((n, w)) = existing.iter().find(|(n, _)| n == &format!("principal-{name}") || n == name) {
-        let card = w.split('#').next().unwrap_or(w);
-        println!("ALREADY EXISTS: {n} -> {w} (profile card {})", status_of(card));
-        println!("provisioning would be a no-op returning this webId, never a second identity.");
-        return 0;
+    match existing(name) {
+        Existing::Whole(w) => {
+            println!("ALREADY EXISTS: {w} — the register serves its profile card.");
+            println!("provisioning would be a no-op returning this webId, never a second identity.");
+            return 0;
+        }
+        Existing::RowWithoutPod(w) => {
+            println!("HALF-PROVISIONED: a principal row names {w} but the register does not serve it.");
+            println!("provisioning would complete the missing half: pod, credential, row replaced.");
+            return 0;
+        }
+        Existing::None => {}
     }
     println!("no principal named '{name}' today. Issuer for reference: {issuer}");
     0
@@ -274,11 +355,11 @@ struct Ledger {
 }
 
 impl Ledger {
-    fn rollback(&self, css: &str, acct: &str, api: &str) {
+    fn rollback(&self, css: &str, acct: &str, api: &str, token: &str, collection: &str) {
         if let Some(id) = &self.principal {
             eprintln!("  rollback: removing principal {id}");
-            let _ = curl(&["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
-                           &format!("{api}/v1/identity/principals/{id}")]);
+            let _ = curl_bearer(token, &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
+                           &format!("{api}{collection}/{id}")]);
         }
         if let Some(id) = &self.credential {
             eprintln!("  rollback: removing credential {id}");
@@ -297,42 +378,111 @@ impl Ledger {
     }
 }
 
+/// What the REGISTER says about a name, asked before anything is written.
+///
+/// The first version decided "exists" from the principal ROW and returned its
+/// webId. For crawler-index that is a webId with no pod behind it — the exact
+/// defect this card exists to kill, handed back with "already exists" on it.
+/// A row is a projection; only the register can say who exists.
+enum Existing {
+    /// Register has the pod and a row names it: the user exists. No-op.
+    Whole(String),
+    /// A row names a webId whose profile card the register does not serve
+    /// (crawler-index, reindex-worker, embed-worker today). Half a user.
+    RowWithoutPod(String),
+    /// Nothing anywhere.
+    None,
+}
+
+fn existing(name: &str) -> Existing {
+    let rows = principals();
+    let row = rows
+        .iter()
+        .find(|(n, _)| n == &format!("principal-{name}") || n == name)
+        .map(|(_, w)| w.clone());
+    match row {
+        None => Existing::None,
+        Some(w) => {
+            let card = w.split('#').next().unwrap_or(&w).to_string();
+            if status_of(&card) == "200" {
+                Existing::Whole(w)
+            } else {
+                Existing::RowWithoutPod(w)
+            }
+        }
+    }
+}
+
 /// AC1 + AC3. One command; all of it or none of it.
-fn cmd_create(name: &str) -> i32 {
+fn cmd_create(name: &str, kind: Kind) -> i32 {
     let css = env_or("CSS_URL", "http://localhost:3001");
-    let api = env_or("CHORUS_API", "http://localhost:3340");
 
     // Idempotence BEFORE anything is written (AC "provisioning twice does not
     // create a second identity"). Two Jeffs on the relay is the bug this
     // guards, and it has to run first: a check after the POST is a check that
-    // already made the second one.
-    for (n, w) in principals() {
-        if n == format!("principal-{name}") || n == name {
+    // already made the second one. The REGISTER answers, not the row.
+    let half = match existing(name) {
+        Existing::Whole(w) => {
             println!("{w}");
-            eprintln!("chorus-provision: '{name}' already exists — returning the existing webId, nothing created");
+            eprintln!("chorus-provision: '{name}' already exists — the register serves its profile card. Nothing created.");
             return 0;
         }
-    }
+        Existing::RowWithoutPod(w) => {
+            eprintln!("chorus-provision: '{name}' is HALF-PROVISIONED — a principal row names {w}");
+            eprintln!("  but the register does not serve that profile card. Completing the missing half.");
+            Some(w)
+        }
+        Existing::None => None,
+    };
 
     // The roles-side gate (Wren, ADR-054 authZ half). A user who holds no role
     // gets a credential that 403s on its first write — a principal that exists
     // and cannot do anything, which is a half-provisioned user wearing a whole
-    // one's clothes. Wren measured 8 of 13 existing users failing this today;
-    // that is a backfill list, and this check governs NEW provisioning only.
+    // one's clothes. A human acts for themself; the gate is for agents.
     //
     // Runs BEFORE the register is even contacted. Two reasons: a rollback that
     // cannot delete a pod (CSS has no pod-delete) makes every late refusal a
     // permanent half-state; and a POLICY refusal must not depend on the
-    // register being up — ordered the other way, as I first wrote it, this gate
-    // never ran at all, because the reachability check returned first.
-    if !holds_role(name) {
-        eprintln!("chorus-provision: REFUSED — '{name}' holds no role");
-        eprintln!("  nothing was written. A credential minted for a role-less user");
-        eprintln!("  403s on its first write; the user would exist and be unable to act.");
-        eprintln!("  Give them a role in the roles domain first — an empty answer is still a role.");
-        return 2;
+    // register being up.
+    if kind == Kind::Agent {
+        match holds_role(name) {
+            Some(true) => {}
+            Some(false) => {
+                eprintln!("chorus-provision: REFUSED — agent '{name}' holds no role");
+                eprintln!("  nothing was written. A credential minted for a role-less agent");
+                eprintln!("  403s on its first write; the agent would exist and be unable to act.");
+                eprintln!("  Give it a role in the roles domain first — an empty answer is still a role.");
+                return 2;
+            }
+            None => {
+                eprintln!("chorus-provision: REFUSED — the roles domain could not be read, so whether '{name}' holds a role is UNMEASURED, not no-role");
+                eprintln!("  nothing was written. Unmeasured is not yes: minting on a failed read would");
+                eprintln!("  turn every store outage into a role-less credential.");
+                return 2;
+            }
+        }
     }
 
+    // The caller's identity for the write door — the same contract athena-model
+    // enforces, from the same single minter. Resolved before the register is
+    // touched so a missing identity refuses with nothing to roll back.
+    let token = match identity_token() {
+        Some(t) => t,
+        None => {
+            eprintln!("chorus-provision: REFUSED — no verified identity for the write door");
+            eprintln!("  nothing was written. Set CHORUS_IDENTITY_TOKEN, or set CHORUS_ROLE so it can be");
+            eprintln!("  minted by platform/scripts/chorus-identity-token — the one minter, shared with athena-model.");
+            return 2;
+        }
+    };
+    let (api, collection) = match principals_collection() {
+        Some(c) => c,
+        None => {
+            eprintln!("chorus-provision: REFUSED — the write API's discovery document does not name a Principal collection");
+            eprintln!("  nothing was written. Asked {}/ ; set ATHENA_MAKE_URL if it lives elsewhere.", env_or("ATHENA_MAKE_URL", "http://localhost:3360"));
+            return 2;
+        }
+    };
 
     let jar = format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id());
     let acct = match css_login(&css, &jar) {
@@ -365,48 +515,127 @@ fn cmd_create(name: &str) -> i32 {
     led.pod = Some(name.to_string());
     eprintln!("  1/3 pod created, webId from the register: {webid}");
 
-    // 2. the credential, bound to the webId we were GIVEN — never a rebuilt one.
-    let cc = curl(&["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
-                    &format!("{css}/.account/account/{acct}/client-credentials/"),
-                    "-H", "Content-Type: application/json",
-                    "--data", &format!("{{\"name\":\"chorus-agent-{name}\",\"webId\":\"{webid}\"}}")])
-        .unwrap_or_default();
-    match between(&cc, "\"id\":\"", "\"") {
-        Some(id) if !id.is_empty() => {
-            led.credential = Some(id);
-            eprintln!("  2/3 credential minted for {webid}");
-        }
-        _ => {
-            eprintln!("chorus-provision: FAILED at step 2 (credential) — rolling back");
-            led.rollback(&css, &acct, &api);
+    // Completing a half: the row's webId must be the one the register just
+    // issued. If they differ, the row was typed from a template that guessed
+    // wrong, and binding a credential to the register's webId while the row
+    // keeps the guessed one would leave two identities for one name.
+    if let Some(row_w) = &half {
+        if row_w != &webid {
+            eprintln!("chorus-provision: REFUSED — the row names {row_w}");
+            eprintln!("  but the register issued {webid} for '{name}'. Two identities for one name;");
+            eprintln!("  not binding either. Fix the row to the register's webId, then rerun.");
+            led.rollback(&css, &acct, &api, &token, &collection);
             return 1;
         }
     }
 
-    // 3. the principal — a PROJECTION of the register, written only here.
+    // 2. the credential, bound to the webId we were GIVEN — never a rebuilt one.
+    // Agents hold one and never sign in. Humans sign in; a client credential
+    // for a human is a second way in nobody asked for, so they do not get one.
+    if kind == Kind::Agent {
+        let cc = curl(&["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
+                        &format!("{css}/.account/account/{acct}/client-credentials/"),
+                        "-H", "Content-Type: application/json",
+                        "--data", &format!("{{\"name\":\"chorus-agent-{name}\",\"webId\":\"{webid}\"}}")])
+            .unwrap_or_default();
+        match between(&cc, "\"id\":\"", "\"") {
+            Some(id) if !id.is_empty() => {
+                led.credential = Some(id);
+                eprintln!("  2/3 credential minted for {webid}");
+            }
+            _ => {
+                eprintln!("chorus-provision: FAILED at step 2 (credential) — rolling back");
+                led.rollback(&css, &acct, &api, &token, &collection);
+                return 1;
+            }
+        }
+    } else {
+        eprintln!("  2/3 human: no client credential — sign-in is the door (email + password on the CSS account)");
+    }
+
+    // 3. the principal — a PROJECTION of the register, written only here,
+    // through the generated door as the caller. A half gets its row REPLACED
+    // (PUT on the item); a new user gets a row POSTed to the collection.
+    let id = format!("principal-{name}");
     let body = format!(
-        "{{\"id\":\"principal-{name}\",\"webId\":\"{webid}\",\"principalKind\":\"agent\",\"canSignIn\":\"false\"}}"
+        "{{\"name\":\"{name}\",\"label\":\"{name} {}\",\"webId\":\"{webid}\",\"principalKind\":\"{}\",\"canSignIn\":\"{}\"}}",
+        kind.word(), kind.stored(), kind.can_sign_in()
     );
-    let pr = curl(&["-s", "-w", "\n%{http_code}", "--max-time", "30", "-X", "POST",
-                    &format!("{api}/v1/identity/principals"),
-                    "-H", "Content-Type: application/json", "--data", &body])
+    let (method, url) = if half.is_some() {
+        ("PUT", format!("{api}{collection}/{id}"))
+    } else {
+        ("POST", format!("{api}{collection}"))
+    };
+    let pr = curl_bearer(&token, &["-s", "-w", "\n%{http_code}", "--max-time", "30", "-X", method, &url,
+                                   "-H", "Content-Type: application/json", "--data", &body])
         .unwrap_or_default();
     let code = pr.lines().last().unwrap_or("").trim().to_string();
     if code != "200" && code != "201" {
-        eprintln!("chorus-provision: FAILED at step 3 (principal) — HTTP {code} — rolling back");
-        led.rollback(&css, &acct, &api);
+        let detail = pr.lines().next().unwrap_or("").chars().take(300).collect::<String>();
+        eprintln!("chorus-provision: FAILED at step 3 (principal) — {method} {url} → HTTP {code} — rolling back");
+        if !detail.is_empty() {
+            eprintln!("  {detail}");
+        }
+        led.rollback(&css, &acct, &api, &token, &collection);
         return 1;
     }
-    led.principal = Some(format!("principal-{name}"));
-    eprintln!("  3/3 principal-{name} bound to {webid}");
+    if half.is_none() {
+        led.principal = Some(id.clone());
+    }
+    eprintln!("  3/3 {id} bound to {webid} ({} — principalKind={}, canSignIn={})", kind.word(), kind.stored(), kind.can_sign_in());
 
     println!("{webid}");
+    let caller = env_or("CHORUS_ROLE", &env_or("DEPLOY_ROLE", "unknown"));
     let _ = Command::new("chorus-log")
-        .args(["identity.provisioned", "silas", &format!("user={name}"), &format!("webid={webid}")])
+        .args(["identity.provisioned", &caller, &format!("user={name}"), &format!("kind={}", kind.word()), &format!("webid={webid}")])
         .status();
-    eprintln!("chorus-provision: '{name}' provisioned — pod, credential, principal");
+    eprintln!("chorus-provision: '{name}' provisioned as {} — {}", kind.word(),
+        if kind == Kind::Agent { "pod, credential, principal" } else { "pod, principal (signs in)" });
     let _ = std::fs::remove_file(&jar);
     0
+}
+
+/// The caller's verified token for the write door. The SAME contract
+/// athena-model enforces (lib.rs:680): CHORUS_IDENTITY_TOKEN if the caller
+/// already holds one, else minted for the caller's role by the one script that
+/// mints — platform/scripts/chorus-identity-token. This binary does not mint.
+/// Two minters would be two identities, which is the 2026-08-11 bug in a new
+/// coat. Real session login for a CLI is a separate card.
+fn identity_token() -> Option<String> {
+    if let Ok(t) = std::env::var("CHORUS_IDENTITY_TOKEN") {
+        if !t.trim().is_empty() {
+            return Some(t.trim().to_string());
+        }
+    }
+    let role = std::env::var("CHORUS_ROLE").or_else(|_| std::env::var("DEPLOY_ROLE")).ok()?;
+    let root = env_or("CHORUS_ROOT", &format!("{}/CascadeProjects/chorus", env_or("HOME", "")));
+    let out = Command::new(format!("{root}/platform/scripts/chorus-identity-token"))
+        .arg(&role)
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let t = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if t.is_empty() { None } else { Some(t) }
+}
+
+/// Ask the write API where principals live. No port or path literal here: the
+/// discovery document at the service root names every collection it serves,
+/// and #4175 showed what deriving a route from a class name costs.
+fn principals_collection() -> Option<(String, String)> {
+    let api = env_or("ATHENA_MAKE_URL", "http://localhost:3360");
+    let doc = curl(&["-s", "--max-time", "10", &format!("{api}/")])?;
+    for chunk in doc.split("\"kind\":").skip(1) {
+        let kind = between(chunk, "\"", "\"").unwrap_or_default();
+        if kind == "Principal" {
+            let coll = between(chunk, "\"collection\":\"", "\"")
+                .or_else(|| between(chunk, "\"collection\": \"", "\""))?;
+            return Some((api, coll));
+        }
+    }
+    None
 }
 
 /// Log in to CSS and return the account id, carrying a cookie jar.
@@ -463,7 +692,11 @@ fn css_login(css: &str, jar: &str) -> Option<String> {
 
 /// Does this user hold a role? The roles domain answers; the security domain
 /// enforces. ADR-054's line, landing at the one place it bites.
-fn holds_role(name: &str) -> bool {
+///
+/// None is UNMEASURED: the store could not be read. It is neither yes nor no,
+/// and the caller refuses on it — the first version returned TRUE here, which
+/// turned every Fuseki outage into a minted credential.
+fn holds_role(name: &str) -> Option<bool> {
     let q = format!(
         "PREFIX c: <https://jeffbridwell.com/chorus#> ASK {{ GRAPH ?g {{ c:principal-{name} c:holdsRole ?r }} }}"
     );
@@ -474,12 +707,13 @@ fn holds_role(name: &str) -> bool {
         "-H", "Accept: application/sparql-results+json",
     ])
     .unwrap_or_default();
-    // A read that FAILED is not a FALSE. An unreachable store must not read as
-    // "holds no role" — that would refuse every provision for the wrong reason
-    // and call it a policy decision.
-    if !body.contains("\"boolean\"") {
-        eprintln!("chorus-provision: WARN — could not read the roles domain; treating as UNMEASURED, not as no-role");
-        return true;
+    // Whitespace-blind on purpose: Jena writes `"boolean" : true`, the test
+    // world writes `"boolean": true`, and a reader that knows one spelling
+    // reads the other as no-role — a refusal for the wrong reason, which the
+    // fixture caught on its first run.
+    let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    if !flat.contains("\"boolean\"") {
+        return None;
     }
-    body.contains("\"boolean\":true") || body.contains("\"boolean\" : true")
+    Some(flat.contains("\"boolean\":true"))
 }
