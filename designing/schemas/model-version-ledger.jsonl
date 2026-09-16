@@ -15,3 +15,4 @@
 {"version": "1.14.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "#4157", "date": "2026-09-12"}
 {"version": "1.15.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "#4157", "date": "2026-09-12"}
 {"version": "1.16.0", "bump": "minor", "verb": "shape", "target": "shape:roles/kade/ontology/domains-kade-3581.ttl", "by": "kade", "card": "#4157", "date": "2026-09-12"}
+{"version": "1.17.0", "bump": "minor", "verb": "property", "target": "property:roles/wren/ontology/priorities-3686.ttl", "by": "wren", "card": "", "date": "2026-09-16"}
