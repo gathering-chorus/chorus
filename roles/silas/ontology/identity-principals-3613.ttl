@@ -136,18 +136,13 @@ chorus:principal-flow-probe a chorus:Principal ;
 # principalKind/canSignIn added to every principal in this file: a worker never
 # signs in, and the shape now REFUSES a worker that claims it can.
 # ============================================================================
-chorus:principal-crawler-index a chorus:Principal ;
-    rdfs:label "crawler-index worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/crawler-index/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
-chorus:principal-reindex-worker a chorus:Principal ;
-    rdfs:label "reindex worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/reindex-worker/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
-chorus:principal-embed-worker a chorus:Principal ;
-    rdfs:label "embed worker" ;
-    chorus:webId "https://id.lightlifeurbangardens.com/embed-worker/profile/card#me" ;
-    chorus:principalKind "worker" ;
-    chorus:canSignIn "false" .
+# #3830 — RETIRED 2026-09-16: principal-crawler-index, principal-reindex-worker,
+# principal-embed-worker. Measured against the register: all three profile
+# cards answer 401 — no pod was ever made. Wren, navigating, checked the other
+# direction: nothing authenticates as them, no plist or script carries their
+# webId. They were process names typed into this file as identities. A row
+# that names a pod nobody made is the half-user this card exists to prevent,
+# and a ghost is retired, not completed. The store rows are deleted through
+# the write door (athena-model delete, as silas) once the security-graph
+# scope in security-scopes-3689 is live; this file no longer re-asserts them.
+

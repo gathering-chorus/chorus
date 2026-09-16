@@ -159,3 +159,10 @@ chorus:principal-nightly
 
 chorus:principal-chorus-sdk
     chorus:hasScope "urn:chorus:nudge-read"^^xsd:anyURI .
+
+# #3830 — jeff provisions users too (Wren, navigating: security scope to the
+# roles that provision, silas + jeff, nobody else). jeff's FIRST grant in this
+# file; the header's "jeff gets NO grants" stood until a door needed him as a
+# writer. One graph, the one Principals live in.
+chorus:principal-jeff
+    chorus:hasScope "urn:chorus:domains:security"^^xsd:anyURI .
