@@ -1895,17 +1895,17 @@ chorus:PermissionShape a sh:NodeShape ;
         sh:datatype xsd:string ;
     ] ;
     sh:property [
-        sh:path acl:agent ;
+        sh:path chorus:agent ;
         sh:minCount 1 ; sh:maxCount 1 ;
         sh:class chorus:Principal ;
     ] ;
     sh:property [
-        sh:path acl:accessTo ;
+        sh:path chorus:accessTo ;
         sh:minCount 1 ; sh:maxCount 1 ;
         sh:datatype xsd:anyURI ;
     ] ;
     sh:property [
-        sh:path acl:mode ;
+        sh:path chorus:mode ;
         sh:minCount 1 ;
         sh:in ( acl:Read acl:Write acl:Append acl:Control ) ;
     ] ;

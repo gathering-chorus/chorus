@@ -39,12 +39,12 @@ fi
 ok "$total Permission rows"
 
 # 1. every agent is a real principal
-dangling=$(q "$P SELECT ?r WHERE { GRAPH <$SECURITY_GRAPH> { ?r a c:Permission ; acl:agent ?p . FILTER NOT EXISTS { ?p a c:Principal ; c:webId ?w } } }")
+dangling=$(q "$P SELECT ?r WHERE { GRAPH <$SECURITY_GRAPH> { ?r a c:Permission ; c:agent ?p . FILTER NOT EXISTS { ?p a c:Principal ; c:webId ?w } } }")
 if [ -z "$dangling" ]; then ok "every row's agent is a Principal with a webId"; else
   bad "rows granted to nobody (agent is not a Principal with a webId):"; echo "$dangling" | sed 's/^/        /'; fi
 
 # 2. write rows name a urn:chorus:* graph
-unknown=$(q "$P SELECT ?r ?g WHERE { GRAPH <$SECURITY_GRAPH> { ?r a c:Permission ; acl:mode acl:Write ; acl:accessTo ?g . FILTER(!STRSTARTS(STR(?g), \"urn:chorus:\")) } }")
+unknown=$(q "$P SELECT ?r ?g WHERE { GRAPH <$SECURITY_GRAPH> { ?r a c:Permission ; c:mode acl:Write ; c:accessTo ?g . FILTER(!STRSTARTS(STR(?g), \"urn:chorus:\")) } }")
 if [ -z "$unknown" ]; then ok "every Write row names a urn:chorus:* graph"; else
   bad "Write rows naming a graph outside urn:chorus:*:"; echo "$unknown" | sed 's/^/        /'; fi
 
@@ -53,7 +53,7 @@ literals=$(q "$P SELECT (COUNT(*) AS ?n) WHERE { GRAPH <$SECURITY_GRAPH> { ?p c:
 if [ "${literals:-0}" -eq 0 ]; then
   ok "hasScope literals: 0 (retired) — nothing left to twin, which is the target state"
 else
-  orphan=$(q "$P SELECT ?p ?s WHERE { GRAPH <$SECURITY_GRAPH> { ?p c:hasScope ?s . FILTER NOT EXISTS { ?r a c:Permission ; acl:agent ?p ; acl:accessTo ?s2 . FILTER(STR(?s2) = STR(?s)) } } }")
+  orphan=$(q "$P SELECT ?p ?s WHERE { GRAPH <$SECURITY_GRAPH> { ?p c:hasScope ?s . FILTER NOT EXISTS { ?r a c:Permission ; c:agent ?p ; c:accessTo ?s2 . FILTER(STR(?s2) = STR(?s)) } } }")
   if [ -z "$orphan" ]; then ok "$literals hasScope literals still live, every one has a Permission-row twin (retire them with the #4183 DBA step)"; else
     bad "hasScope literals with NO Permission-row twin — a grant the door no longer honours:"; echo "$orphan" | sed 's/^/        /'; fi
 fi

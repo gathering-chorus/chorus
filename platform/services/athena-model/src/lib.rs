@@ -691,7 +691,7 @@ pub fn set_granted_write_graphs(graphs: Vec<String>) {
 pub fn write_grants_for_webid(store: &dyn Store, webid: &str) -> R<Vec<String>> {
     store.select_v(&format!(
         "PREFIX chorus: <{ns}> PREFIX acl: <http://www.w3.org/ns/auth/acl#> \
-         SELECT ?v WHERE {{ GRAPH <{g}> {{ ?perm a chorus:Permission ; acl:agent ?p ; acl:accessTo ?s ; acl:mode acl:Write . \
+         SELECT ?v WHERE {{ GRAPH <{g}> {{ ?perm a chorus:Permission ; chorus:agent ?p ; chorus:accessTo ?s ; chorus:mode acl:Write . \
          ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(STR(?s) AS ?v) }} }}",
         ns = NS, g = SECURITY_GRAPH, w = webid
     ))

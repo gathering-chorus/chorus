@@ -52,9 +52,9 @@ rows() { arq --results csv --query "$T/q.rq" "$@" 2>/dev/null | tail -n +2 | gre
 @prefix acl:    <http://www.w3.org/ns/auth/acl#> .
 @prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
 chorus:permission-ghost a chorus:Permission ;
-    acl:agent chorus:principal-ghost ;
-    acl:accessTo "urn:chorus:domains:security"^^xsd:anyURI ;
-    acl:mode acl:Write .
+    chorus:agent chorus:principal-ghost ;
+    chorus:accessTo "urn:chorus:domains:security"^^xsd:anyURI ;
+    chorus:mode acl:Write .
 TTL
   n=$(rows --data "$T/ghost.ttl")
   [ "$n" -eq 0 ]
@@ -62,7 +62,7 @@ TTL
 
 @test "return gate — the query no longer mentions hasScope, and reads acl:accessTo" {
   ! grep -q "hasScope" "$RQ"
-  grep -q "acl:accessTo" "$RQ"
+  grep -q "chorus:accessTo" "$RQ"
   grep -q "acl:Write" "$RQ"
 }
 
