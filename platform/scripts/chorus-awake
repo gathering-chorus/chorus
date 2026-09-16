@@ -1,0 +1,136 @@
+#!/bin/bash
+# chorus-awake <role> — wake a role the same way every time (#4184).
+#
+# Jeff, 2026-09-16: "i feel like i need a standard script to start each of u
+# that initalizes u and makes sure i do the steps". The hand sequence (exit,
+# claude, the background-sessions picker, "hi wren") put Kade's pane on the
+# `claude agents` screen for 2.5 hours, spawned a second Wren, and left Kade's
+# real conversation detached in the background — three wrong states from one
+# restart. This script is the one path.
+#
+# What it does, in order:
+#   1. one tmux session per role (chorus-<role>), the role dir as cwd, role env
+#   2. find the role's real conversation: a detached background one is
+#      attached (claude attach <id>); otherwise the last one continues
+#      (claude -c). NEVER the picker, NEVER a fresh conversation by accident.
+#   3. prove it: a live registry entry for the role with host=tmux and a pane
+#      (that is what nudge routing needs, ADR-039). One line, always.
+#   4. refuse a duplicate: two live sessions for one role → exit 1, both named
+#   5. list background agents for the role older than AWAKE_STALE_HOURS (24);
+#      end them only with AWAKE_END_STALE=1. Never silently.
+#   6. idempotent: an awake role prints the same line and nothing is sent.
+#
+# Tests bring their own world (#3528): every outside thing is an env override.
+#   CLAUDE_BIN  TMUX_BIN  AWAKE_PS  CHORUS_SESSIONS_DIR  AWAKE_WAIT
+#   AWAKE_NO_ATTACH=1 (don't attach the terminal)  AWAKE_ROLE_DIR (override cwd)
+set -euo pipefail
+
+ROLE="${1:?usage: chorus-awake <role>   (wren | silas | kade)}"
+case "$ROLE" in wren|silas|kade) ;; *) echo "chorus-awake: unknown role '$ROLE' (wren | silas | kade)" >&2; exit 2 ;; esac
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+CHORUS_ROOT="${CHORUS_ROOT:-$(cd "$HERE/../.." && pwd -P)}"
+ROLE_DIR="${AWAKE_ROLE_DIR:-$CHORUS_ROOT/roles/$ROLE}"
+SESSIONS_DIR="${CHORUS_SESSIONS_DIR:-$HOME/.chorus/sessions}"
+CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
+TMUX_BIN="${TMUX_BIN:-$(command -v tmux || echo /opt/homebrew/bin/tmux)}"
+PS_BIN="${AWAKE_PS:-ps}"
+WAIT="${AWAKE_WAIT:-20}"
+STALE_HOURS="${AWAKE_STALE_HOURS:-24}"
+TMUX_SESSION="chorus-$ROLE"
+
+alive() { "$PS_BIN" -p "$1" >/dev/null 2>&1; }
+
+# --- 1. live sessions for this role, from the registry (routing ground truth) ---
+live_entries() {
+  local f pid tty pane
+  for f in "$SESSIONS_DIR"/"$ROLE"-*.json; do
+    [ -f "$f" ] || continue
+    pid="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("pid",""))' "$f" 2>/dev/null || true)"
+    [ -n "$pid" ] || continue
+    alive "$pid" || continue
+    tty="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("tty",""))' "$f")"
+    pane="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("tmux","") or "-")' "$f")"
+    host="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(d.get("host",""))' "$f")"
+    echo "$pid|$tty|$host|$pane"
+  done
+}
+
+proof_line() { # $1=pid|tty|host|pane  $2=how
+  local pid tty host pane
+  IFS='|' read -r pid tty host pane <<<"$1"
+  local reg="yes"; [ "$host" = "tmux" ] || reg="yes-but-host=$host (nudges need tmux)"
+  echo "awake: $ROLE  pid $pid  tty $tty  pane $pane  registered $reg  via $2"
+}
+
+LIVE="$(live_entries || true)"
+N=0; [ -n "$LIVE" ] && N="$(printf '%s\n' "$LIVE" | grep -c .)"
+if [ "$N" -ge 2 ]; then
+  echo "chorus-awake: REFUSED — $N live sessions for $ROLE; one role, one session:" >&2
+  printf '%s\n' "$LIVE" | while IFS='|' read -r pid tty host pane; do echo "  pid $pid  tty $tty  host $host  pane $pane" >&2; done
+  echo "  end one of them (exit in its pane), then run again." >&2
+  exit 1
+fi
+if [ "$N" -eq 1 ]; then
+  proof_line "$LIVE" "already awake"
+  exit 0
+fi
+
+# --- 2. the real conversation: detached background → attach; else continue ---
+AGENTS_JSON="$("$CLAUDE_BIN" agents --json --cwd "$ROLE_DIR" 2>/dev/null || echo '[]')"
+read -r ATTACH_ID STALE_LIST <<<"$(python3 - "$AGENTS_JSON" "$STALE_HOURS" <<'PY'
+import json, sys, time
+try: d = json.loads(sys.argv[1])
+except Exception: d = []
+stale_h = float(sys.argv[2]); now = time.time()*1000
+bg = [s for s in d if s.get("kind") == "background" and s.get("pid") and s.get("state") not in ("exited","stopped")]
+bg.sort(key=lambda s: int(s.get("startedAt", 0)), reverse=True)
+attach = bg[0]["id"] if bg else "-"
+stale = [s["id"] for s in d if s.get("kind") == "background" and now - int(s.get("startedAt", now)) > stale_h*3600*1000 and s.get("id") != attach]
+print(attach, ",".join(stale) if stale else "-")
+PY
+)"
+if [ "$ATTACH_ID" != "-" ]; then
+  CMD="$CLAUDE_BIN attach $ATTACH_ID"; HOW="attach $ATTACH_ID (was detached in the background)"
+else
+  CMD="$CLAUDE_BIN -c"; HOW="claude -c (last conversation)"
+fi
+
+# --- 5. stale background agents: name them; end only on AWAKE_END_STALE=1 ---
+if [ "$STALE_LIST" != "-" ]; then
+  IFS=',' read -r -a STALE <<<"$STALE_LIST"
+  if [ "${AWAKE_END_STALE:-0}" = "1" ]; then
+    for id in "${STALE[@]}"; do "$CLAUDE_BIN" rm "$id" >/dev/null 2>&1 && echo "ended stale agent $id" || echo "could not end $id" >&2; done
+  else
+    echo "stale: ${#STALE[@]} background agent(s) for $ROLE older than ${STALE_HOURS}h (${STALE_LIST}); AWAKE_END_STALE=1 ends them"
+  fi
+fi
+
+# --- 1/2. the pane: one tmux session per role, launch inside it ---
+if ! "$TMUX_BIN" has-session -t "$TMUX_SESSION" 2>/dev/null; then
+  "$TMUX_BIN" new-session -d -s "$TMUX_SESSION" -c "$ROLE_DIR"
+fi
+"$TMUX_BIN" send-keys -t "$TMUX_SESSION" "cd '$ROLE_DIR' && source '$CHORUS_ROOT/platform/scripts/chorus-env-setup.sh' && $CMD" Enter
+
+# --- 3. prove it: a live tmux-hosted registry entry appears ---
+i=0; FOUND=""
+while :; do
+  FOUND="$(live_entries | head -1 || true)"
+  [ -n "$FOUND" ] && break
+  [ "$i" -ge "$WAIT" ] && break
+  sleep 1; i=$((i+1))
+done
+if [ -z "$FOUND" ]; then
+  echo "awake: $ROLE  registered NO after ${WAIT}s  via $HOW — look at the pane: $TMUX_BIN attach -t $TMUX_SESSION" >&2
+  exit 1
+fi
+proof_line "$FOUND" "$HOW"
+
+# --- hand the terminal to the pane (unless we are already in it, or told not to) ---
+if [ "${AWAKE_NO_ATTACH:-0}" != "1" ]; then
+  if [ -n "${TMUX:-}" ]; then
+    "$TMUX_BIN" switch-client -t "$TMUX_SESSION" 2>/dev/null || true
+  else
+    exec "$TMUX_BIN" attach -t "$TMUX_SESSION"
+  fi
+fi
