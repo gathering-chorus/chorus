@@ -56,7 +56,7 @@ on:
 
 jobs:
   athena:
-    if: ${{ inputs.target != 'canonical' }}
+    if: ${{ inputs.target == 'class' }}
     runs-on: macos-latest
     # CHORUS_HOME / CHORUS_WERK_BASE / PATH inherited from the local shell act runs
     # in (chorus-env-setup.sh provides them). The workflow MUST NOT hardcode them.
@@ -250,7 +250,7 @@ jobs:
   # Patch 2: target=werk (variant store + rows out of env_up) and a chorus_athena MCP verb.
   # Patch 3: Rust athena-deploy at parity with the bash engine; the bash retires.
   land:
-    if: ${{ inputs.target == 'canonical' }}
+    if: ${{ inputs.target == 'canonical' || inputs.target == 'werk' }}
     runs-on: macos-latest
     env:
       CARD_ID: ${{ inputs.card_id }}
@@ -259,86 +259,145 @@ jobs:
       LANDED: ${{ inputs.landed_commit }}
       CHORUS_CONTEXT: prod
     steps:
-      - name: scope
-        id: scope
+      - name: resolve
+        id: resolve
+        # One place decides WHERE for each target. canonical = the live store, the
+        # com.chorus.athena-make service, the canonical tree. werk = the role's own
+        # in-memory dataset (created by env-up), the variant athena-make (port from the
+        # one table that assigns them), the card's werk tree.
         run: |
           set -euo pipefail
-          ROOT="${CHORUS_HOME}"
-          if [ -n "$LANDED" ]; then
-            DIFF=$(git -C "$ROOT" diff --name-only "${LANDED}^" "${LANDED}" 2>/dev/null || true)
+          case "$TARGET" in
+            canonical)
+              ROOT="${CHORUS_HOME}"
+              STORE="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods"
+              API="${ATHENA_MAKE_URL:-http://localhost:3360}"
+              LABEL="com.chorus.athena-make" ;;
+            werk)
+              ROOT="${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}"
+              STORE="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/werk-${ROLE}"
+              API="http://127.0.0.1:$(werk-deploy env-port athena-make "${ROLE}")"
+              LABEL="com.chorus.athena-make.werk.${ROLE}" ;;
+            *) echo "::error::athena: target must be canonical or werk, got '$TARGET'" >&2; exit 2 ;;
+          esac
+          [ -d "$ROOT" ] || { echo "::error::athena: tree $ROOT does not exist" >&2; exit 2; }
+          { echo "root=$ROOT"; echo "store=$STORE"; echo "api=$API"; echo "label=$LABEL"; } >> "$GITHUB_OUTPUT"
+          echo "athena target=$TARGET root=$ROOT store=$STORE api=$API label=$LABEL"
+
+      - name: scope
+        id: scope
+        # `athena-deploy scope` is the ONE definition of model / seed sources (shared/model_scope.rs).
+        # canonical: the landed commit's diff. werk: the card's diff against origin/main, for the
+        # record only — a fresh variant store always gets the WHOLE model set and all the rows.
+        run: |
+          set -euo pipefail
+          ROOT="${{ steps.resolve.outputs.root }}"
+          if [ "$TARGET" = "canonical" ]; then
+            [ -n "$LANDED" ] && RANGE="${LANDED}^..${LANDED}" || RANGE="HEAD~1..HEAD"
           else
-            DIFF=$(git -C "$ROOT" diff --name-only HEAD~1 HEAD 2>/dev/null || true)
+            git -C "$ROOT" fetch -q origin main 2>/dev/null || true
+            RANGE="origin/main...HEAD"
           fi
-          # the same two predicates werk-deploy used (changed_model_sources / changed_seed_sources)
-          MODEL=$(printf '%s\n' "$DIFF" | grep -E '^roles/[^/]+/ontology/.*\.ttl$|^designing/schemas/model-retirements\.jsonl$' || true)
-          SEED=$(printf '%s\n' "$DIFF" | grep -E '^designing/data/.*\.ttl$|^platform/config/instance-seed-manifest\.txt$' || true)
-          printf 'model files:\n%s\nseed files:\n%s\n' "${MODEL:-  (none)}" "${SEED:-  (none)}"
+          LIST=$(athena-deploy scope "$ROOT" "$RANGE")
+          MODEL=$(printf '%s\n' "$LIST" | grep '^model|' | cut -d'|' -f2- || true)
+          SEED=$(printf '%s\n' "$LIST" | grep '^seed|' | cut -d'|' -f2- || true)
+          printf 'range: %s\nmodel files:\n%s\nseed files:\n%s\n' "$RANGE" "${MODEL:-  (none)}" "${SEED:-  (none)}"
           { echo "model<<EOF"; echo "$MODEL"; echo "EOF"; echo "seed<<EOF"; echo "$SEED"; echo "EOF"; } >> "$GITHUB_OUTPUT"
-          if [ -z "$MODEL$SEED" ]; then echo "nothing=true" >> "$GITHUB_OUTPUT"; echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"; fi
-          chorus-log athena.pipeline.started "$ROLE" card="$CARD_ID" target="$TARGET" model="$(printf '%s' "$MODEL" | wc -l | tr -d ' ')" seed="$(printf '%s' "$SEED" | wc -l | tr -d ' ')" >/dev/null 2>&1 || true
+          if [ "$TARGET" = "canonical" ] && [ -z "$MODEL$SEED" ]; then
+            echo "nothing=true" >> "$GITHUB_OUTPUT"
+            echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"
+          fi
+          chorus-log athena.pipeline.started "$ROLE" card="$CARD_ID" target="$TARGET" model="$(printf '%s' "$MODEL" | grep -c . || true)" seed="$(printf '%s' "$SEED" | grep -c . || true)" >/dev/null 2>&1 || true
 
       - name: validate
         if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
         run: |
           set -euo pipefail
+          ROOT="${{ steps.resolve.outputs.root }}"
           if ! command -v riot >/dev/null 2>&1; then
             if [ "${ALLOW_UNVALIDATED:-0}" = "1" ]; then echo "::warning::athena: riot absent, ALLOW_UNVALIDATED=1 — proceeding LOUDLY unvalidated"; exit 0; fi
             echo "::error::athena: riot is not installed — REFUSING to deploy an unvalidated model (ALLOW_UNVALIDATED=1 overrides, loudly)" >&2; exit 1
           fi
           rc=0
           while IFS= read -r f; do [ -n "$f" ] || continue
-            case "$f" in *.ttl) riot --validate "${CHORUS_HOME}/$f" && echo "valid: $f" || { echo "::error::athena: riot rejects $f" >&2; rc=1; } ;; esac
+            case "$f" in *.ttl) riot --validate "$ROOT/$f" && echo "valid: $f" || { echo "::error::athena: riot rejects $f" >&2; rc=1; } ;; esac
           done <<< "${{ steps.scope.outputs.model }}"
           exit $rc
 
       - name: deploy
-        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
+        # canonical: only when the land carried model sources. werk: always — the variant
+        # store was created empty by env-up and needs the whole set.
+        if: ${{ steps.scope.outputs.nothing != 'true' && (steps.scope.outputs.model != '' || inputs.target == 'werk') }}
         run: |
           set -euo pipefail
-          chorus-log athena.deploy.started "$ROLE" card="$CARD_ID" target=canonical >/dev/null 2>&1 || true
-          CHORUS_TRACE_ID="${CHORUS_TRACE_ID:-}" DEPLOY_ROLE="$ROLE" CHORUS_ROLE="$ROLE" bash "${CHORUS_HOME}/platform/scripts/athena-deploy-model.sh"
+          ROOT="${{ steps.resolve.outputs.root }}"; STORE="${{ steps.resolve.outputs.store }}"
+          chorus-log athena.deploy.started "$ROLE" card="$CARD_ID" target="$TARGET" >/dev/null 2>&1 || true
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          CHORUS_ROOT="$ROOT" FUSEKI_GSP="$STORE/data" FUSEKI_QUERY="$STORE/query" FUSEKI_UPDATE="$STORE/update" \
+            CHORUS_TRACE_ID="${CHORUS_TRACE_ID:-}" DEPLOY_ROLE="$ROLE" CHORUS_ROLE="$ROLE" \
+            bash "${CHORUS_HOME}/platform/scripts/athena-deploy-model.sh"
 
       - name: serve
-        if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
         # athena-make reads the shapes at boot; a model change is served only after a
         # restart, and rows may post only after /health says healthy (the six-land defect).
+        if: ${{ steps.scope.outputs.nothing != 'true' && (steps.scope.outputs.model != '' || inputs.target == 'werk') }}
         run: |
           set -euo pipefail
-          DEPLOY_ROLE="$ROLE" athena-serve com.chorus.athena-make "${ATHENA_MAKE_URL:-http://localhost:3360}/health" --kickstart --timeout 90
+          DEPLOY_ROLE="$ROLE" athena-serve "${{ steps.resolve.outputs.label }}" "${{ steps.resolve.outputs.api }}/health" --kickstart --timeout 90
 
       - name: seed
         if: ${{ steps.scope.outputs.nothing != 'true' }}
-        # a seed-only card seeds too (#4096); a model card seeds AFTER serve
         run: |
           set -euo pipefail
-          # the store must be answering before a single row is posted — serve proved it for a
-          # model change; a seed-only change asks here, the same way
-          DEPLOY_ROLE="$ROLE" athena-serve com.chorus.athena-make "${ATHENA_MAKE_URL:-http://localhost:3360}/health" --timeout 30
-          TOKEN=$(bash "${CHORUS_HOME}/platform/scripts/chorus-identity-token" "$ROLE")
+          ROOT="${{ steps.resolve.outputs.root }}"; API="${{ steps.resolve.outputs.api }}"; STORE="${{ steps.resolve.outputs.store }}"
+          # the store must be answering before a single row is posted
+          DEPLOY_ROLE="$ROLE" athena-serve "${{ steps.resolve.outputs.label }}" "$API/health" --timeout 30
+          TOKEN=$(bash "$ROOT/platform/scripts/chorus-identity-token" "$ROLE")
           [ -n "$TOKEN" ] || { echo "::error::athena: no identity token for $ROLE — rows NOT posted" >&2; exit 1; }
-          SEED_BIN="${HOME}/.chorus/bin/athena-model"; [ -x "$SEED_BIN" ] || SEED_BIN=athena-model
-          CHORUS_ROOT="${CHORUS_HOME}" CHORUS_IDENTITY_TOKEN="$TOKEN" CHORUS_LANDED_COMMIT="$LANDED" \
-            "$SEED_BIN" seed --post --api "${ATHENA_MAKE_URL:-http://localhost:3360}" --unowned load
-          chorus-log athena.seed.completed "$ROLE" card="$CARD_ID" target=canonical >/dev/null 2>&1 || true
+          if [ "$TARGET" = "werk" ]; then
+            SEED_BIN="${CHORUS_WERK_BASE}/${ROLE}-bin/athena-model"; [ -x "$SEED_BIN" ] || SEED_BIN="${HOME}/.chorus/bin/athena-model"
+            HEAD_SHA=$(git -C "$ROOT" rev-parse HEAD)
+          else
+            SEED_BIN="${HOME}/.chorus/bin/athena-model"; [ -x "$SEED_BIN" ] || SEED_BIN=athena-model
+            HEAD_SHA="$LANDED"
+          fi
+          CHORUS_ROOT="$ROOT" CHORUS_FUSEKI="$STORE" CHORUS_IDENTITY_TOKEN="$TOKEN" CHORUS_LANDED_COMMIT="$HEAD_SHA" \
+            "$SEED_BIN" seed --post --api "$API" --unowned load
+          chorus-log athena.seed.completed "$ROLE" card="$CARD_ID" target="$TARGET" >/dev/null 2>&1 || true
 
       - name: prove
         if: ${{ steps.scope.outputs.nothing != 'true' }}
+        # canonical: the store attests the landed sha, and the sweep is a RATCHET whose
+        # baseline lives IN THE STORE (<urn:chorus:model-deploy> vocab:validateIssues), not
+        # in a file on one Mac. werk: the sweep runs against the variant store and is held
+        # to the canonical baseline (a card may not add gaps); the baseline is never written.
         run: |
           set -euo pipefail
+          STORE="${{ steps.resolve.outputs.store }}"; CANON="${CHORUS_FUSEKI_BASE:-http://localhost:3030}/pods"
+          # shellcheck disable=SC1091
+          source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
+          AUTH=(); [ -n "${FUSEKI_ADMIN_PASSWORD:-}" ] && AUTH=(-u "${FUSEKI_ADMIN_USER:-admin}:${FUSEKI_ADMIN_PASSWORD}")
           rc=0
-          if [ -n "${{ steps.scope.outputs.model }}" ] && [ -n "$LANDED" ]; then
-            STAMP=$(curl -s -m 10 http://localhost:3030/pods/query --data-urlencode 'query=SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
+          if [ "$TARGET" = "canonical" ] && [ -n "${{ steps.scope.outputs.model }}" ] && [ -n "$LANDED" ]; then
+            STAMP=$(curl -s -m 10 "${AUTH[@]}" "$STORE/query" --data-urlencode 'query=SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
             if [ "$STAMP" = "$LANDED" ]; then echo "stamp: store attests $STAMP == landed"; else echo "::error::athena: store attests '$STAMP', landed is '$LANDED' — the model deploy ran but the store does not say so" >&2; rc=1; fi
           fi
-          # the sweep, as a ratchet: the issue count may never rise; a lower count becomes the new floor
-          BASE_FILE="${HOME}/.chorus/athena-validate.baseline"
-          OUT=$(ATHENA_VALIDATE_NUDGE=0 bash "${CHORUS_HOME}/platform/scripts/athena-validate.sh" 2>&1 || true)
+          OUT=$(ATHENA_VALIDATE_NUDGE=0 FUSEKI_QUERY="$STORE/query" ATHENA_VALIDATE_REPORT=/dev/null bash "${CHORUS_HOME}/platform/scripts/athena-validate.sh" 2>&1 || true)
           N=$(printf '%s\n' "$OUT" | grep -oE '^graph-summary\|[0-9]+\|' | cut -d'|' -f2 | tail -1)
-          if [ -z "$N" ]; then echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
+          if [ -z "$N" ]; then
+            echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
           else
-            BASE=$(cat "$BASE_FILE" 2>/dev/null || echo "$N")
-            if [ "$N" -gt "$BASE" ]; then echo "::error::athena-validate: $N issues, baseline $BASE — this land ADDED gaps" >&2; rc=1
-            else echo "athena-validate: $N issues (baseline $BASE → $N)"; echo "$N" > "$BASE_FILE"; fi
+            BASE=$(curl -s -m 10 "${AUTH[@]}" "$CANON/query" --data-urlencode 'query=SELECT ?n WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> ?n } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
+            [ -n "$BASE" ] || { BASE="$N"; echo "athena-validate: no baseline in the store yet; this run sets it to $N"; }
+            if [ "$N" -gt "$BASE" ]; then echo "::error::athena-validate: $N issues, baseline $BASE — this ${TARGET} ADDED gaps" >&2; rc=1
+            else
+              echo "athena-validate ($TARGET): $N issues (baseline $BASE → $N)"
+              if [ "$TARGET" = "canonical" ]; then
+                curl -s -m 10 "${AUTH[@]}" -o /dev/null -w 'baseline write http %{http_code}\n' "$CANON/update" -H 'Content-Type: application/sparql-update' \
+                  --data-binary "DELETE WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> ?o } }; INSERT DATA { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> $N } }"
+              fi
+            fi
           fi
-          chorus-log athena.pipeline.completed "$ROLE" card="$CARD_ID" target=canonical verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}" >/dev/null 2>&1 || true
+          chorus-log athena.pipeline.completed "$ROLE" card="$CARD_ID" target="$TARGET" verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}" >/dev/null 2>&1 || true
           exit $rc

@@ -312,6 +312,16 @@ jobs:
           post pending
           if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
+      # #4186 — the MODEL side of the variant. env-up created an EMPTY store and booted
+      # the services; athena.yml (target=werk) deploys the model set into it, restarts
+      # the variant athena-make so it serves the shapes, posts the rows through the
+      # door, and sweeps. Runs through the chorus_athena verb like every other step.
+      - name: athena-werk
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
+        run: |
+          set -euo pipefail
+          chorus-mcp-call.sh "${ROLE}" chorus_athena "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
+
       - name: prove-live
         id: prove_live
         # #4102 — the card's own integration bats, run against the card's VARIANT,
@@ -543,11 +553,10 @@ jobs:
           set -euo pipefail
           LC="${LANDED_COMMIT:-}"
           [ -n "$LC" ] || LC=$(git -C "${CHORUS_HOME}" rev-parse origin/main)
-          if ! git -C "${CHORUS_HOME}" diff --name-only "${LC}^" "${LC}" | grep -qE '^roles/[^/]+/ontology/.*\.ttl$|^designing/schemas/model-retirements\.jsonl$|^designing/data/.*\.ttl$|^platform/config/instance-seed-manifest\.txt$'; then
+          if [ -z "$(athena-deploy scope "${CHORUS_HOME}" "${LC}^..${LC}")" ]; then
             echo "athena-land: no model or seed source in ${LC} — the athena pipeline has nothing to run (explicit absence)"; exit 0
           fi
-          "${CHORUS_ACT_BIN:-act}" workflow_dispatch -W "${CHORUS_HOME}/.github/workflows/athena.yml" -P macos-latest=-self-hosted \
-            --input card_id="${CARD_ID}" --input role="${ROLE}" --input target=canonical --input landed_commit="${LC}"
+          chorus-mcp-call.sh "${ROLE}" chorus_athena "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landed_commit":"%s"}' "${ROLE}" "${CARD_ID}" "${LC}")"
 
       # #4178 — the on-land delta. A land changes files; the graph follows in the
       # same breath instead of waiting for 04:30, so "what is in the repo" is

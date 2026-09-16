@@ -1729,32 +1729,11 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// inside it — never seeded canonical. #4080 landed green at 11:30 with canonical
 /// serving 0 of 9 sections for eight products until a hand run at 11:47. PURE —
 /// unit-tested, negative-proven (a .ttl elsewhere, a docs html, do NOT fire).
-pub fn changed_seed_sources(diff: &str) -> Vec<String> {
-    diff.lines()
-        .map(str::trim)
-        .filter(|l| {
-            (l.starts_with("designing/data/") && l.ends_with(".ttl"))
-                || *l == "platform/config/instance-seed-manifest.txt"
-        })
-        .map(str::to_string)
-        .collect()
-}
-
-pub fn changed_model_sources(diff: &str) -> Vec<String> {
-    diff.lines()
-        .map(str::trim)
-        .filter(|l| {
-            (l.ends_with(".ttl")
-                && l.starts_with("roles/")
-                && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/")))
-                // #3752 — staged retirements ARE model changes: landing a card
-                // that stages one must run the model deploy so the retirement
-                // section executes it (the land is the execution moment).
-                || *l == "designing/schemas/model-retirements.jsonl"
-        })
-        .map(str::to_string)
-        .collect()
-}
+// #4186 — ONE home for the model/seed predicates (shared/model_scope.rs); athena-deploy
+// `scope` and both workflows read the same definition, so the rule cannot drift.
+#[path = "../../shared/model_scope.rs"]
+mod model_scope;
+pub use model_scope::{changed_model_sources, changed_seed_sources, is_model_source, is_seed_source};
 
 /// #3736 — read the store's model stamp (single-request truth): which commit the live
 /// ontology graph's model was deployed from. Empty string = no stamp / store unreachable

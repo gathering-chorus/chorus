@@ -1058,5 +1058,28 @@ fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
     for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: seed", "name: prove"] {
         assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
     }
-    assert!(yml.contains("athena-serve com.chorus.athena-make"), "serve leg must use athena-serve, never launchd liveness");
+    assert!(yml.contains("athena-serve \"${{ steps.resolve.outputs.label }}\""), "serve leg must use athena-serve on the resolved label, never launchd liveness");
+    assert!(yml.contains("com.chorus.athena-make.werk.${ROLE}") && yml.contains("LABEL=\"com.chorus.athena-make\""), "resolve names both targets' labels");
+}
+
+
+// #4186 — NEGATIVE PROOF, variant side: env_up creates the store and boots the
+// services; it does NOT deploy the model set or post rows any more. Both moved to
+// athena.yml (target=werk). If either engine call returns to demo_env.rs this is red.
+#[test]
+fn env_up_carries_no_model_deploy_or_row_post_4186() {
+    let src = include_str!("../src/demo_env.rs");
+    for forbidden in ["athena-deploy-model.sh", "\"seed\", \"--post\"", "fn post_werk_rows"] {
+        assert!(!src.contains(forbidden), "demo_env.rs still carries `{}` — the variant model legs belong to athena.yml target=werk (#4186)", forbidden);
+    }
+    // the one home for the scope rule is the shared module, and both crates read it
+    assert!(include_str!("../src/lib.rs").contains("#[path = \"../../shared/model_scope.rs\"]"));
+    assert!(include_str!("../../athena-deploy/src/lib.rs").contains("#[path = \"../../shared/model_scope.rs\"]"));
+    let yml = include_str!("../../../../.github/workflows/athena.yml");
+    assert!(!yml.contains("grep -E '^roles/"), "athena.yml must call `athena-deploy scope`, not carry its own copy of the rule");
+    assert!(yml.contains("athena-deploy scope"));
+    let werk = include_str!("../../../../.github/workflows/werk.yml");
+    assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
+    assert!(werk.contains("chorus_athena"), "werk.yml runs the model pipeline through the chorus_athena verb, not by calling act inside act");
+    assert!(!werk.contains("workflows/athena.yml\" -P"), "no nested act");
 }

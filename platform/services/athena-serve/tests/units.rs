@@ -27,6 +27,8 @@ fn args_refuse_missing_or_unknown() {
 fn healthy_needs_200_and_a_status_field() {
     assert!(healthy("200", r#"{"status":"healthy","uptime":3}"#));
     assert!(healthy("200", r#"{ "status" : "ok" }"#));
+    assert!(healthy("200", r#"{ "ok": true, "service": "athena-make" }"#), "athena-make's own health body (first live run refused it)");
+    assert!(!healthy("200", r#"{ "ok": false, "service": "athena-make" }"#));
     assert!(!healthy("503", r#"{"status":"healthy"}"#), "a 503 is not served, whatever the body says");
     assert!(!healthy("200", r#"{"latency":"6.401ms","note":"ok"}"#), "ok buried in another field is not a status");
     assert!(!healthy("000", ""), "no answer is not healthy");

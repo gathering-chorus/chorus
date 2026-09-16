@@ -19,6 +19,26 @@ fn env_or(key: &str, default: &str) -> String {
 
 /// The model SET to deploy: an explicit `TTL` override (single member) else the
 /// default set (chorus.ttl + werk-domains.ttl). Pure — unit-tested.
+// #4186 — the one home for the model/seed predicates; `athena-deploy scope` prints them.
+#[path = "../../shared/model_scope.rs"]
+pub mod model_scope;
+
+/// `athena-deploy scope <root> <git range>` — list the model and seed sources a diff
+/// touched, one per line as `model|<path>` / `seed|<path>`. Exit 0 with no lines when
+/// the range carries neither. Exit 2 when git cannot read the range (never a silent
+/// empty: an unreadable range must not read as "nothing to deploy").
+pub fn scope(root: &str, range: &str) -> Result<String, String> {
+    let out = Command::new("git").args(["-C", root, "diff", "--name-only", range]).output()
+        .map_err(|e| format!("scope: git: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("scope: git diff --name-only {range} failed in {root}: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let diff = String::from_utf8_lossy(&out.stdout);
+    let mut lines: Vec<String> = model_scope::changed_model_sources(&diff).into_iter().map(|p| format!("model|{p}")).collect();
+    lines.extend(model_scope::changed_seed_sources(&diff).into_iter().map(|p| format!("seed|{p}")));
+    Ok(lines.join("\n"))
+}
+
 pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     match ttl_override {
         Some(t) if !t.is_empty() => vec![t],
@@ -172,6 +192,21 @@ fn riot_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scope_predicates_are_the_shared_definition_4186() {
+        use super::model_scope::*;
+        assert!(is_model_source("roles/wren/ontology/principles-3749.ttl"));
+        assert!(is_model_source("designing/schemas/model-retirements.jsonl"));
+        assert!(!is_model_source("roles/wren/notes/x.ttl"), "a TTL outside ontology/ is not a model source");
+        assert!(!is_model_source("platform/tests/fixtures/principles-4186-violations.ttl"), "a fixture is never a model source");
+        assert!(is_seed_source("designing/data/pipelines.ttl"));
+        assert!(is_seed_source("platform/config/instance-seed-manifest.txt"));
+        assert!(!is_seed_source("designing/docs/x.ttl"));
+        let diff = "roles/wren/ontology/a.ttl\nplatform/services/x/src/lib.rs\ndesigning/data/b.ttl\n";
+        assert_eq!(changed_model_sources(diff), vec!["roles/wren/ontology/a.ttl".to_string()]);
+        assert_eq!(changed_seed_sources(diff), vec!["designing/data/b.ttl".to_string()]);
+    }
 
     #[test]
     fn model_set_default_is_the_two_member_set() {

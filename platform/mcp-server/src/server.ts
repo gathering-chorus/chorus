@@ -498,6 +498,34 @@ const WerkRunInput = z.object({
   represent: z.boolean().optional().describe('Explicitly start a fresh demo round on a presented card. Without this, re-invoking a presented run only reports state.'),
 });
 
+// #4186 — the MODEL pipeline as its own MCP verb (Jeff: "get athena out of werk").
+// Runs athena.yml's `land` job SYNCHRONOUSLY via act (deploy → serve → seed → prove is
+// minutes, never a human wait) for one target: canonical (after a land, the landed
+// sha) or werk (the card's variant store, right after env-up). werk.yml calls this
+// verb from its athena-werk / athena-land steps, so act never runs inside act.
+const AthenaRunInput = z.object({
+  role: RoleEnum,
+  card_id: z.number().int().min(1).describe('Card the model change belongs to.'),
+  target: z.enum(['werk', 'canonical']).describe('werk = the card\'s variant store and athena-make; canonical = the live store after a land.'),
+  landed_commit: z.string().optional().describe('target=canonical: the merged origin/main sha the store must attest. Empty = ungated hand run.'),
+});
+
+const ATHENA_RUN_TOOL_DEF = {
+  name: 'chorus_athena',
+  description: 'THE model pipeline trigger (#4186) — runs athena.yml\'s land job for one target: scope → validate → deploy → serve → seed → prove. target=werk deploys the model set into the card\'s variant store, restarts the variant athena-make and posts the rows (werk.yml runs it after env-up); target=canonical does the same against the live store after a land and requires the landed sha, which the store must attest. Synchronous: returns the run\'s verdict and log path. Never lands code; werk owns code, athena owns the model.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      role: { type: 'string', enum: ['kade', 'wren', 'silas'], description: 'Builder role.' },
+      card_id: { type: 'integer', minimum: 1, description: 'Card the model change belongs to.' },
+      target: { type: 'string', enum: ['werk', 'canonical'], description: 'werk (variant) | canonical (live, after a land).' },
+      landed_commit: { type: 'string', description: 'canonical only: the merged sha the store must attest.' },
+    },
+    required: ['role', 'card_id', 'target'],
+    additionalProperties: false,
+  },
+} as const;
+
 const SERVICE_STATUS_TOOL_DEF = {
   name: 'chorus_service_status',
   description: 'Use this to read the current launchd state of a chorus service — PID, exit code, running cdhash. Wraps `agent-state.sh status <svc>`. Refusal taxonomy: service-not-found | label-resolve-fail. Read-only verb, open to any role. Do NOT use to mutate state (start/stop/restart/deploy/rollback are write verbs) or to query historical lifecycle events (chorus_logs_for_card is the trace surface).',
@@ -2809,6 +2837,52 @@ async function executeChorusWerk(
   );
 }
 
+// #4186 — run athena.yml's land job for one target and wait for it. act is the same
+// runner werk uses (-W the canonical file, -P host-native, --input wiring, the runner
+// PATH); the caller never sees the CLI. The log is per run under runsDir.
+const ATHENA_RUN_TIMEOUT_MS = 15 * 60_000;
+async function executeChorusAthena(
+  args: z.infer<typeof AthenaRunInput>,
+  runsDir?: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const { pathMod, home, werkBase, runnerPath, actBin } = werkRunPaths();
+  const fsMod = require('fs') as typeof import('fs');
+  const workflow = pathMod.join(home, '.github', 'workflows', 'athena.yml');
+  const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
+  try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+  const log = pathMod.join(dir, `athena-${args.card_id}-${args.target}-${Date.now()}.log`);
+  const actArgs = [
+    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
+    '--input', `card_id=${args.card_id}`, '--input', `role=${args.role}`,
+    '--input', `target=${args.target}`, '--input', `landed_commit=${args.landed_commit ?? ''}`,
+  ];
+  const execFileP = promisify(execFile);
+  let stdout = ''; let stderr = ''; let exitCode = 0;
+  let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
+  try {
+    const r = await execFileP(actBin, actArgs, {
+      env: werkRunnerEnv(home, werkBase, args.role, runnerPath),
+      timeout: ATHENA_RUN_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    stdout = r.stdout || ''; stderr = r.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number; stdout?: string; stderr?: string };
+    stdout = e.stdout || ''; stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+    failure = e;
+  }
+  try { fsMod.writeFileSync(log, stdout + stderr + `\nATHENA_EXIT=${exitCode}\n`); } catch { /* best-effort */ }
+  const tail = (stdout + stderr).trim().split('\n').slice(-12).join('\n');
+  if (exitCode === 0) {
+    return mcpJson({ ok: true, verb: 'chorus_athena', role: args.role, card_id: args.card_id, target: args.target, phase: 'proven', log, tail });
+  }
+  const { reason, timedOut, detail } = classifyExecFailure(
+    failure ?? {}, stderr + stdout, /::error::athena[^:]*:\s*([^\n]{0,80})/i, exitCode, ATHENA_RUN_TIMEOUT_MS,
+  );
+  throw new Error(`chorus_athena-fail — target=${args.target} reason=${reason} exit=${exitCode}${timedOut ? ' ' + detail : ''} log=${log} tail=${tail.slice(-400)}`);
+}
+
 // #3279/#3193 — Half B: THE GO. Runs werk.yml's go-gated `land` job synchronously (merge → ff-sync →
 // deploy-prod → finalize). Short — no human pause inside — so the call returns in
 // minutes and cannot drop. Invoked on Jeff's go after he has seen the presented variant.
@@ -3260,6 +3334,7 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       NUDGE_TOOL_DEF,
+      ATHENA_RUN_TOOL_DEF,
       SERVICE_STATUS_TOOL_DEF,
       SERVICE_START_TOOL_DEF,
       SERVICE_STOP_TOOL_DEF,
@@ -3402,6 +3477,13 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           return executeChorusWerkLand(parsed.data, spawnFn, runsDir);
         }
         return executeChorusWerk(parsed.data, spawnFn, runsDir);
+      }
+      case 'chorus_athena': {
+        const parsed = AthenaRunInput.safeParse(req.params.arguments);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
+        }
+        return executeChorusAthena(parsed.data, runsDir);
       }
       case 'chorus_service_status':
       case 'chorus_service_start':

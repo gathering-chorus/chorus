@@ -57,8 +57,12 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
 /// not count (the 6.401ms substring class, werk-deploy health_body_ok).
 pub fn healthy(code: &str, body: &str) -> bool {
     if code.trim() != "200" { return false; }
-    let b = body.replace(' ', "");
-    b.contains("\"status\":\"healthy\"") || b.contains("\"status\":\"ok\"")
+    let b = body.replace(' ', "").replace('\n', "");
+    // chorus-api / pulse / clearing answer {"status":"healthy"|"ok"}; athena-make
+    // answers {"ok":true,"service":"athena-make"} (first live run of #4186 refused
+    // a healthy variant for 90s over exactly this). Both are a status field at the
+    // top of the body, never a word buried in another field.
+    b.contains("\"status\":\"healthy\"") || b.contains("\"status\":\"ok\"") || b.starts_with("{\"ok\":true")
 }
 
 /// The refusal line: what was polled, how long, and the LAST answer, so the
