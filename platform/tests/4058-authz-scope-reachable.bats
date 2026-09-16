@@ -77,3 +77,11 @@ setup() {
   [[ "$output" == *"UNMEASURED"* ]] || { echo "$output"; return 1; }
   [[ "$output" != *"UNREACHABLE_SURFACES=0"* ]] || { echo "PASSED VACUOUSLY on an empty model: $output"; return 1; }
 }
+
+@test "#4194 return gate — the check reads Permission rows and never the retired hasScope literal" {
+  # After #4183 the store holds 0 hasScope literals; a check still reading them
+  # reports every surface unreachable for a reason that is not true (17:40 today).
+  ! grep -qE 'c:hasScope' "$SCRIPT"
+  grep -q 'a c:Permission' "$SCRIPT"
+  grep -q 'c:accessTo' "$SCRIPT"
+}
