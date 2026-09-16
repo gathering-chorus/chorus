@@ -25,6 +25,13 @@
     <string>/Users/jeffbridwell/CascadeProjects/chorus</string>
     <key>CHORUS_OWL_API</key>
     <string>http://localhost:3360</string>
+    <!-- #4180 — the nightly is the FULL pass. Without this it reads the on-disk
+         watermark and runs a delta over whatever landed since 04:30 yesterday,
+         which the on-land step already did; the first launchd-started pass
+         walked 0 files. An empty watermark forces the full walk that repairs
+         graph-side drift a delta cannot see. -->
+    <key>CHORUS_CRAWL_WATERMARK</key>
+    <string></string>
   </dict>
   <key>StartCalendarInterval</key>
   <dict>
