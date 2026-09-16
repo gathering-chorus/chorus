@@ -31,6 +31,7 @@
 @prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
 @prefix sh:   <http://www.w3.org/ns/shacl#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
 # ----------------------------------------------------------------------------
 # 1. THE DOMAIN — chorus:security (renamed from chorus:security-trust, #3587)
@@ -98,6 +99,13 @@ chorus:identity a owl:Class, chorus:Domain ;
 # ----------------------------------------------------------------------------
 
 chorus:Principal a owl:Class ;
+    # #3830 — Jeff, 2026-09-16: "isnt there some sort of base person class
+    # that is well known we can leverage". FOAF: the register (CSS) already
+    # types every WebID profile card `a foaf:Person`, so the row and the pod
+    # speak the same vocabulary. A Principal is a foaf:Agent; a human one is
+    # additionally a foaf:Person and carries foaf:name. SKOS was considered
+    # and is for concept schemes, not people.
+    rdfs:subClassOf foaf:Agent ;
     rdfs:label "Principal" ;
     rdfs:comment "An authenticatable actor: an agent session, a service, a herald job, or Jeff. The thing a token asserts. A Principal HOLDS roles (roles domain) and OWNS credentials — a role is something an identity holds, not something it is. The nudge-registry poisoning (#3608) was the collapse of this distinction. #3618." .
 
@@ -303,6 +311,14 @@ chorus:PrincipalShape a sh:NodeShape ;
     sh:property chorus:PrincipalShape-principalKind ;
     sh:property chorus:PrincipalShape-canSignIn ;
     sh:property chorus:PrincipalShape-holdsRole .
+# #3830 — where a person's NAME goes: rdfs:label, the one required text field,
+# which Jeff's row had carried a description in for three months ("jeff (human
+# principal - root authority)") because nothing said otherwise. foaf:name is
+# NOT added to this shape: its local name collides with the generated door's
+# "name" key (the row's local identifier), and FOAF's home is the WebID
+# profile card in the pod, which the register already types foaf:Person.
+# chorus-provision writes the full name to the label; writing foaf:name into
+# the profile card is the follow-on.
 # OPTIONAL, deliberately: only a principal that signs in needs a WebID. That
 # requirement now lives in the person-must-have-one rule below, scoped to where
 # it is actually true, rather than in a blanket minCount that misdescribed eight

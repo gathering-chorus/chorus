@@ -72,10 +72,29 @@ world() {
 @test "a human is not gated on a role — they act for themself" {
   # Same dead roles store, --kind human: the role gate does not fire. The run
   # gets as far as the identity check, which refuses for its own reason.
-  run "$BIN" create somebody-new --kind human
+  run "$BIN" create somebody-new --kind human --name "Some Body" --email somebody@example.org
   [ "$status" -eq 2 ]
   [[ "$output" != *"UNMEASURED"* ]]
   [[ "$output" == *"no verified identity"* ]]
+}
+
+@test "NEGATIVE PROOF — a human with no name or no email is REFUSED at the door" {
+  run "$BIN" create somebody-new --kind human --email somebody@example.org
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"needs --name"* ]]
+  run "$BIN" create somebody-new --kind human --name "Some Body"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"needs --name"* ]]
+}
+
+@test "a human gets their OWN account — the register unreachable refuses before anything, account included" {
+  world 401 200
+  export CHORUS_IDENTITY_TOKEN="test-token"
+  run "$BIN" create somebody-new --kind human --name "Some Body" --email somebody@example.org
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"could not reach the CSS accounts API"* ]]
+  [[ "$output" == *"nothing was written"* ]]
+  [ ! -e "$HOME/.chorus/identity/somebody-new/initial-password" ]
 }
 
 @test "NEGATIVE PROOF — a user with no kind is REFUSED at the door, not minted" {

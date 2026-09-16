@@ -49,7 +49,16 @@ fn main() {
         Some("census") => cmd_census(),
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
-                Some(k) => cmd_create(n, k),
+                Some(Kind::Human) => match Person::from_args(&args[2..]) {
+                    Some(p) => cmd_create(n, Kind::Human, Some(p)),
+                    None => {
+                        eprintln!("chorus-provision: REFUSED — a human needs --name \"Full Name\" and --email <address>");
+                        eprintln!("  nothing was written. The name is what the row is labelled and the email is");
+                        eprintln!("  how they sign in; a human without either is a pod with nobody behind it.");
+                        2
+                    }
+                },
+                Some(k) => cmd_create(n, k, None),
                 None => {
                     eprintln!("chorus-provision: REFUSED — '{n}' has no kind. Say --kind human or --kind agent.");
                     eprintln!("  nothing was written. A human and an agent are provisioned differently");
@@ -141,12 +150,73 @@ impl Kind {
 /// shell caller in this repo writes `-u "admin:$FUSEKI_ADMIN_PASSWORD"`, which
 /// puts the secret where `ps` can read it for the life of the request. There is
 /// no reason to inherit that here.
+/// CSS behind the tunnel only answers for its logical issuer host: on the local
+/// hairpin every call carries Host + X-Forwarded-* for that issuer, exactly as
+/// chorus-identity-token does. Without them the accounts API answers 500
+/// "outside the configured identifier space" (measured 2026-09-16 13:31).
+fn css_headers() -> Vec<String> {
+    let host = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+    let host = host.split("://").nth(1).unwrap_or(&host).trim_end_matches('/').to_string();
+    vec![
+        "-H".into(), format!("Host: {host}"),
+        "-H".into(), "X-Forwarded-Proto: https".into(),
+        "-H".into(), format!("X-Forwarded-Host: {host}"),
+    ]
+}
+
+/// curl against CSS: the forwarded headers, plus any config on stdin.
+fn curl_css(cfg: Option<String>, args: &[&str]) -> Option<String> {
+    let h = css_headers();
+    let mut all: Vec<&str> = h.iter().map(String::as_str).collect();
+    all.extend_from_slice(args);
+    curl_cfg(cfg, &all)
+}
+
+/// A human user: the name FOAF would call foaf:name, and the sign-in email.
+struct Person {
+    full_name: String,
+    email: String,
+}
+
+impl Person {
+    fn from_args(rest: &[String]) -> Option<Person> {
+        let mut name = None;
+        let mut email = None;
+        let mut it = rest.iter();
+        while let Some(a) = it.next() {
+            match a.as_str() {
+                "--name" => name = it.next().cloned(),
+                "--email" => email = it.next().cloned(),
+                _ => {}
+            }
+        }
+        let full_name = name.filter(|n| !n.trim().is_empty())?;
+        let email = email.filter(|e| e.contains('@'))?;
+        Some(Person { full_name, email })
+    }
+}
+
+/// The store's writer credential, BY REFERENCE: the env if set, else the same
+/// file platform/scripts/fuseki-auth.sh reads. Never printed, never in argv.
+fn fuseki_secret() -> Option<(String, String)> {
+    let user_env = std::env::var("FUSEKI_ADMIN_USER").ok().filter(|s| !s.is_empty());
+    if let Some(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|s| !s.is_empty()) {
+        return Some((user_env.unwrap_or_else(|| "admin".into()), pw));
+    }
+    let f = env_or("FUSEKI_WRITE_ENV", &format!("{}/.gathering/data/fuseki-write.env", env_or("HOME", "")));
+    let text = std::fs::read_to_string(f).ok()?;
+    let read = |k: &str| {
+        text.lines()
+            .find(|l| l.starts_with(&format!("{k}=")))
+            .map(|l| l[k.len() + 1..].trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let pw = read("FUSEKI_ADMIN_PASSWORD")?;
+    Some((user_env.or_else(|| read("FUSEKI_ADMIN_USER")).unwrap_or_else(|| "admin".into()), pw))
+}
+
 fn curl(args: &[&str]) -> Option<String> {
-    let secret = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|s| !s.is_empty());
-    let cfg = secret.map(|pw| {
-        let user = std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".into());
-        format!("user = \"{user}:{}\"\n", cfg_escape(&pw))
-    });
+    let cfg = fuseki_secret().map(|(user, pw)| format!("user = \"{user}:{}\"\n", cfg_escape(&pw)));
     curl_cfg(cfg, args)
 }
 
@@ -353,6 +423,8 @@ fn cmd_plan(name: &str) -> i32 {
 /// whether the previous one counted.
 #[derive(Default)]
 struct Ledger {
+    account: Option<String>,
+    account_token: String,
     pod: Option<String>,
     credential: Option<String>,
     principal: Option<String>,
@@ -362,13 +434,39 @@ impl Ledger {
     fn rollback(&self, css: &str, acct: &str, api: &str, token: &str, collection: &str) {
         if let Some(id) = &self.principal {
             eprintln!("  rollback: removing principal {id}");
-            let _ = curl_bearer(token, &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
-                           &format!("{api}{collection}/{id}")]);
+            let _ = (api, collection, token);
+            let _ = curl(&["-s", "-o", "/dev/null", "--max-time", "20", "-X", "POST",
+                           &format!("{}/pods/update", env_or("FUSEKI_URL", "http://localhost:3030")),
+                           "-H", "Content-Type: application/sparql-update",
+                           "--data-binary", &format!("PREFIX c: <https://jeffbridwell.com/chorus#> DELETE WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{id} ?p ?o }} }}")]);
         }
         if let Some(id) = &self.credential {
             eprintln!("  rollback: removing credential {id}");
-            let _ = curl(&["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
+            let _ = curl_css(None, &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
+                           "-b", &format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id()),
                            &format!("{css}/.account/account/{acct}/client-credentials/{id}/")]);
+        }
+        if let Some(acct) = &self.account {
+            // A human's own account CAN be deleted, pod and all — the accounts
+            // API has DELETE on the account. So a human rollback is whole.
+            eprintln!("  rollback: removing CSS account {acct} (and its pod)");
+            let code = curl_css(Some(format!("header = \"Authorization: CSS-Account-Token {}\"\n", cfg_escape(&self.account_token))),
+                &["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "DELETE", "--max-time", "20",
+                  &format!("{css}/.account/account/{acct}/")]).unwrap_or_default();
+            // Verified, not assumed: on 2026-09-16 13:36 the account delete
+            // answered and the pod's profile card was still served afterwards.
+            if let Some(name) = &self.pod {
+                let card = format!("{}/{name}/profile/card", env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").trim_end_matches('/'));
+                let st = status_of(&card);
+                if st == "200" {
+                    eprintln!("  rollback: account delete answered HTTP {code}, but the register STILL serves {card}");
+                    eprintln!("            This user is NOT fully rolled back: the pod name '{name}' is burned until");
+                    eprintln!("            the DBA path removes that card. A rerun under this name will be refused.");
+                } else {
+                    eprintln!("  rollback: account delete HTTP {code}; profile card now {st} — clean");
+                }
+            }
+            return;
         }
         if let Some(name) = &self.pod {
             // CSS has no pod-delete in the accounts API. Saying so is the honest
@@ -418,7 +516,7 @@ fn existing(name: &str) -> Existing {
 }
 
 /// AC1 + AC3. One command; all of it or none of it.
-fn cmd_create(name: &str, kind: Kind) -> i32 {
+fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     let css = env_or("CSS_URL", "http://localhost:3001");
 
     // Idempotence BEFORE anything is written (AC "provisioning twice does not
@@ -426,6 +524,17 @@ fn cmd_create(name: &str, kind: Kind) -> i32 {
     // guards, and it has to run first: a check after the POST is a check that
     // already made the second one. The REGISTER answers, not the row.
     let half = match existing(name) {
+        Existing::None if status_of(&format!("{}/{name}/profile/card", env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").trim_end_matches('/'))) == "200" => {
+            // The register serves a profile card for this name and no row
+            // names it: a pod with nobody behind it. Measured 13:38 today on
+            // debmajumdar — an account rollback CSS honoured for the account
+            // and not for the card. Refuse and name it; a second account
+            // under the same pod name is a second identity.
+            eprintln!("chorus-provision: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
+            eprintln!("  nothing was written. Either a rollback left the card behind, or someone made the pod");
+            eprintln!("  by hand. Pick another name, or have the DBA path remove the card, then rerun.");
+            return 2;
+        }
         Existing::Whole(w) => {
             println!("{w}");
             eprintln!("chorus-provision: '{name}' already exists — the register serves its profile card. Nothing created.");
@@ -489,20 +598,39 @@ fn cmd_create(name: &str, kind: Kind) -> i32 {
     };
 
     let jar = format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id());
-    let acct = match css_login(&css, &jar) {
-        Some(a) => a,
-        None => {
-            eprintln!("chorus-provision: REFUSED — could not reach the CSS accounts API at {css}");
-            eprintln!("  nothing was written. The register is the only source of a webId,");
-            eprintln!("  so with the register unreachable there is nothing honest to write.");
-            return 2;
-        }
-    };
-
     let mut led = Ledger::default();
 
+    // The account. An agent's pod hangs off the ONE service account (it never
+    // signs in). A human gets their OWN account: email + password, so the
+    // browser sign-in is theirs and nobody else's. Jeff, 09:00 today: "the hx
+    // needs are different than ax".
+    let acct = match &person {
+        None => match css_login(&css, &jar) {
+            Some(a) => a,
+            None => {
+                eprintln!("chorus-provision: REFUSED — could not reach the CSS accounts API at {css}");
+                eprintln!("  nothing was written. The register is the only source of a webId,");
+                eprintln!("  so with the register unreachable there is nothing honest to write.");
+                return 2;
+            }
+        },
+        Some(p) => match css_create_account(&css, &jar, name, p) {
+            Ok(a) => {
+                led.account = Some(a.clone());
+                led.account_token = ACCOUNT_TOKEN.with(|t| t.borrow().clone());
+                eprintln!("  0/3 CSS account created for {} — password written once to ~/.chorus/identity/{name}/initial-password (mode 600)", p.email);
+                a
+            }
+            Err(why) => {
+                eprintln!("chorus-provision: REFUSED — {why}");
+                eprintln!("  nothing was written.");
+                return 2;
+            }
+        },
+    };
+
     // 1. the pod. The response carries the webId, or this refuses.
-    let resp = curl(&["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
+    let resp = curl_css(css_auth_cfg(), &["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
                       &format!("{css}/.account/account/{acct}/pod/"),
                       "-H", "Content-Type: application/json",
                       "--data", &format!("{{\"name\":\"{name}\"}}")])
@@ -537,7 +665,7 @@ fn cmd_create(name: &str, kind: Kind) -> i32 {
     // Agents hold one and never sign in. Humans sign in; a client credential
     // for a human is a second way in nobody asked for, so they do not get one.
     if kind == Kind::Agent {
-        let cc = curl(&["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
+        let cc = curl_css(css_auth_cfg(), &["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
                         &format!("{css}/.account/account/{acct}/client-credentials/"),
                         "-H", "Content-Type: application/json",
                         "--data", &format!("{{\"name\":\"chorus-agent-{name}\",\"webId\":\"{webid}\"}}")])
@@ -557,29 +685,51 @@ fn cmd_create(name: &str, kind: Kind) -> i32 {
         eprintln!("  2/3 human: no client credential — sign-in is the door (email + password on the CSS account)");
     }
 
-    // 3. the principal — a PROJECTION of the register, written only here,
-    // through the generated door as the caller. A half gets its row REPLACED
-    // (PUT on the item); a new user gets a row POSTed to the collection.
+    // 3. the principal — a PROJECTION of the register, written only here.
+    //
+    // NOT through the door. Measured 2026-09-16 13:36: athena-make delegates
+    // every write to the pen, and the pen refuses the security graph by design
+    // (#3356 AC4: "a writer minting itself a Principal" is the priv-esc the
+    // design names; the Principal registry is bootstrap/DBA only). Provisioning
+    // IS that bootstrap — the one place a Principal is minted, from the
+    // register's own webId, by a caller who holds the security-graph scope
+    // (the token + discovery checks above still gate who may run this). Jeff,
+    // 13:50: "we need to fix this right? go ahead". The row goes in the way
+    // the SECURITY_SET deploy puts rows in: a governed write to the store,
+    // writer credential by reference, spine event, read back before claimed.
+    // Moving this behind the door is #4183 (permissions as rows).
     let id = format!("principal-{name}");
-    let body = format!(
-        "{{\"name\":\"{name}\",\"label\":\"{name} {}\",\"webId\":\"{webid}\",\"principalKind\":\"{}\",\"canSignIn\":\"{}\"}}",
-        kind.word(), kind.stored(), kind.can_sign_in()
-    );
-    let (method, url) = if half.is_some() {
-        ("PUT", format!("{api}{collection}/{id}"))
-    } else {
-        ("POST", format!("{api}{collection}"))
+    // The label IS the name field (PrincipalShape: rdfs:label, the one required
+    // text). A human's is their full name, as FOAF would name them; an agent's
+    // is what it is called plus what it is.
+    let label = match &person {
+        Some(p) => p.full_name.clone(),
+        None => format!("{name} {}", kind.word()),
     };
-    let pr = curl_bearer(&token, &["-s", "-w", "\n%{http_code}", "--max-time", "30", "-X", method, &url,
-                                   "-H", "Content-Type: application/json", "--data", &body])
-        .unwrap_or_default();
-    let code = pr.lines().last().unwrap_or("").trim().to_string();
-    if code != "200" && code != "201" {
-        let detail = pr.lines().next().unwrap_or("").chars().take(300).collect::<String>();
-        eprintln!("chorus-provision: FAILED at step 3 (principal) — {method} {url} → HTTP {code} — rolling back");
-        if !detail.is_empty() {
-            eprintln!("  {detail}");
-        }
+    let esc = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
+    let update = format!(
+        "PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
+         DELETE WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{id} ?p ?o }} }} ; \
+         INSERT DATA {{ GRAPH <urn:chorus:domains:security> {{ \
+           c:{id} a c:Principal ; rdfs:label \"{}\" ; c:webId \"{}\" ; c:principalKind \"{}\" ; c:canSignIn \"{}\" }} }}",
+        esc(&label), esc(&webid), kind.stored(), kind.can_sign_in()
+    );
+    let _ = (&api, &collection, &token);
+    let fuseki = env_or("FUSEKI_URL", "http://localhost:3030");
+    let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
+                      &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
+                      "--data-binary", &update])
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if code != "200" && code != "204" {
+        eprintln!("chorus-provision: FAILED at step 3 (principal) — the store answered HTTP {code} — rolling back");
+        led.rollback(&css, &acct, &api, &token, &collection);
+        return 1;
+    }
+    // Written is not readable until read: ask the store back before claiming it.
+    if !principals().iter().any(|(n, w)| n == &id && w == &webid) {
+        eprintln!("chorus-provision: FAILED at step 3 (principal) — the store accepted the write but does not read back {id} → {webid} — rolling back");
         led.rollback(&css, &acct, &api, &token, &collection);
         return 1;
     }
@@ -642,6 +792,88 @@ fn principals_collection() -> Option<(String, String)> {
     None
 }
 
+/// Create a human's OWN CSS account: account → password login (email + a
+/// generated password) → account id. The password is written once, mode 600,
+/// to ~/.chorus/identity/<name>/initial-password for Jeff to hand over; it is
+/// never printed and never in argv. The account token rides a curl config on
+/// stdin. A refusal at any step deletes the account (the API has DELETE), so a
+/// human never half-exists in the register.
+fn css_create_account(css: &str, jar: &str, name: &str, p: &Person) -> Result<String, String> {
+    let created = curl_css(None, &["-s", "--max-time", "30", "-c", jar, "-X", "POST",
+                         &format!("{css}/.account/account/"), "-H", "Content-Type: application/json",
+                         "-H", "Accept: application/json", "--data", "{}"])
+        .ok_or("could not reach the CSS accounts API")?;
+    let token = between(&created, "\"authorization\":\"", "\"")
+        .ok_or_else(|| format!("the register did not create an account (no authorization in the reply: {})", created.chars().take(160).collect::<String>()))?;
+    let auth = format!("header = \"Authorization: CSS-Account-Token {}\"\n", cfg_escape(&token));
+    // The create reply carries ONLY the token. The controls (which name the
+    // account id) come from GET /.account/ as that account. The first version
+    // looked for a pod control in the create reply, found none, and returned
+    // without deleting — one orphan account (no login, no pod) on 2026-09-16
+    // 13:34 is the cost of that; it cannot be listed or reached again.
+    let index = curl_css(Some(auth.clone()), &["-s", "--max-time", "20", "-H", "Accept: application/json",
+                                                &format!("{css}/.account/")]).unwrap_or_default();
+    let pod_url = match between(&index, "\"pod\":\"", "\"") {
+        Some(u) => u,
+        None => {
+            // no controls = no id = nothing we can even delete by id; say so
+            return Err(format!("account created but its controls could not be read ({}); the register holds an account with no login — nothing else exists",
+                index.chars().take(160).collect::<String>()));
+        }
+    };
+    let acct = pod_url.split("/account/").nth(1).and_then(|r| r.split('/').next()).map(String::from)
+        .ok_or("account created but its id could not be read")?;
+
+    let password = random_password();
+    let esc = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
+    let body = format!("{{\"email\":\"{}\",\"password\":\"{}\"}}", esc(&p.email), esc(&password));
+    let cfg = format!("{auth}header = \"Content-Type: application/json\"\ndata = \"{}\"\n", cfg_escape(&body));
+    let login = curl_css(Some(cfg), &["-s", "-w", "\n%{http_code}", "--max-time", "30", "-X", "POST",
+                                     &format!("{css}/.account/account/{acct}/login/password/")])
+        .unwrap_or_default();
+    let code = login.lines().last().unwrap_or("").trim().to_string();
+    if code != "200" && code != "201" {
+        let _ = curl_css(Some(auth.clone()), &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
+                                              &format!("{css}/.account/account/{acct}/")]);
+        let detail = login.lines().next().unwrap_or("").chars().take(200).collect::<String>();
+        return Err(format!("the register refused the sign-in for {} (HTTP {code}: {detail}); account removed", p.email));
+    }
+    let dir = format!("{}/.chorus/identity/{name}", env_or("HOME", ""));
+    let _ = std::fs::create_dir_all(&dir);
+    let path = format!("{dir}/initial-password");
+    if std::fs::write(&path, format!("{password}\n")).is_err() {
+        let _ = curl_css(Some(auth), &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
+                                      &format!("{css}/.account/account/{acct}/")]);
+        return Err("could not write the initial password file; account removed".into());
+    }
+    let _ = Command::new("chmod").args(["600", &path]).status();
+    // the pod + credential steps read the account from the cookie jar the way
+    // the service path does; the token is also valid, so both paths converge.
+    ACCOUNT_TOKEN.with(|t| *t.borrow_mut() = token);
+    Ok(acct)
+}
+
+thread_local! {
+    static ACCOUNT_TOKEN: std::cell::RefCell<String> = std::cell::RefCell::new(String::new());
+}
+
+/// The account token as a curl config line, when a human's own account is in
+/// play; None on the service path (the cookie jar carries that session).
+fn css_auth_cfg() -> Option<String> {
+    let t = ACCOUNT_TOKEN.with(|t| t.borrow().clone());
+    if t.is_empty() { None } else { Some(format!("header = \"Authorization: CSS-Account-Token {}\"\n", cfg_escape(&t))) }
+}
+
+fn random_password() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; 24];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        let _ = f.read_exact(&mut bytes);
+    }
+    const A: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    bytes.iter().map(|b| A[(*b as usize) % A.len()] as char).collect()
+}
+
 /// Log in to CSS and return the account id, carrying a cookie jar.
 ///
 /// None means the register is unreachable or refused us — which is a REFUSAL,
@@ -673,6 +905,9 @@ fn css_login(css: &str, jar: &str) -> Option<String> {
     let mut child = Command::new("curl")
         .args([
             "-s", "-o", "/dev/null", "--max-time", "20", "-c", jar,
+            "-H", &format!("Host: {}", env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").split("://").nth(1).unwrap_or("").trim_end_matches('/')),
+            "-H", "X-Forwarded-Proto: https",
+            "-H", &format!("X-Forwarded-Host: {}", env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").split("://").nth(1).unwrap_or("").trim_end_matches('/')),
             "-X", "POST", &format!("{css}/.account/login/password/"),
             "-H", "Content-Type: application/json",
             "--data", "@-",
@@ -688,7 +923,7 @@ fn css_login(css: &str, jar: &str) -> Option<String> {
     }
     child.wait().ok()?;
 
-    let acct = curl(&["-s", "--max-time", "20", "-b", jar, &format!("{css}/.account/")])?;
+    let acct = curl_css(None, &["-s", "--max-time", "20", "-b", jar, &format!("{css}/.account/")])?;
     let pod = between(&acct, "\"pod\":\"", "\"")?;
     pod.split("/account/").nth(1)?.split('/').next().map(String::from)
 }

@@ -98,7 +98,7 @@ chorus:principal-crawler a chorus:Principal ;
 # authority on the CSS account; no holdsRole — Jeff is not a chorus:Role, he is
 # the authority the roles serve.
 chorus:principal-jeff a chorus:Principal ;
-    rdfs:label "jeff (human principal - root authority)" ;
+    rdfs:label "Jeff Bridwell" ;   # #3830 — the name field holds the name; "jeff (human principal - root authority)" was a description
     chorus:webId "https://id.lightlifeurbangardens.com/jeff/profile/card#me" ;
     chorus:principalKind "person" ;
     chorus:canSignIn "true" .
