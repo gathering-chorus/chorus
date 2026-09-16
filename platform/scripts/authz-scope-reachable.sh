@@ -48,7 +48,11 @@ else
   FUSEKI_AUTH=()
   # shellcheck disable=SC1090
   source "$(dirname "${BASH_SOURCE[0]}")/fuseki-auth.sh" 2>/dev/null || true
-  HELD_JSON=$(_q "$PREFIX SELECT DISTINCT ?s WHERE { GRAPH ?g { ?p c:hasScope ?s } }")
+  # #4183 — a held scope is a Permission ROW (acl:Authorization: agent +
+  # accessTo + mode), not a hasScope literal on a principal. This check was the
+  # last reader of hasScope: after the 16:48 land it read 0 held scopes and
+  # called every surface unreachable (chorus-health 17:40).
+  HELD_JSON=$(_q "$PREFIX SELECT DISTINCT ?s WHERE { GRAPH ?g { ?perm a c:Permission ; c:agent ?p ; c:accessTo ?s } }")
   REQ_JSON=$(_q "$PREFIX SELECT ?s ?x WHERE { GRAPH ?g { ?x c:requiresScope ?s } }")
   # A store that did not answer is UNMEASURED, never "zero unreachable". The
   # benign default is exactly how the eight weeks happened.
@@ -57,7 +61,7 @@ import json,sys
 try: d=json.load(sys.stdin)
 except Exception: sys.exit(3)
 for b in d["results"]["bindings"]: print(b["s"]["value"])
-') || { echo "UNREACHABLE_SURFACES=UNMEASURED"; echo "store did not answer (hasScope)"; exit 2; }
+') || { echo "UNREACHABLE_SURFACES=UNMEASURED"; echo "store did not answer (Permission rows)"; exit 2; }
   REQ=$(printf '%s' "$REQ_JSON" | python3 -c '
 import json,sys
 try: d=json.load(sys.stdin)
