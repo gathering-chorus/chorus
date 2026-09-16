@@ -41,11 +41,26 @@ class H(BaseHTTPRequestHandler):
 # worse than one that fails: a hang has no verdict and takes the other 349 units
 # of the lane down with it.
 srv = HTTPServer(('127.0.0.1', port), H)
-srv.timeout = 10
-srv.handle_request()   # returns after 10s having served nothing; the test then fails loudly
+srv.timeout = 2
+# Serve until the POST lands or 10s pass. One handle_request() was not enough
+# once the test probed the port for readiness: the probe's empty connection was
+# the one request, served and gone, and the real call found nobody listening.
+import os, time
+deadline = time.time() + 10
+while not os.path.exists(out) and time.time() < deadline:
+    srv.handle_request()
 PY
   local stub=$!
-  sleep 0.4
+  # Wait for the stub to LISTEN, up to 8s, instead of a fixed 0.4s. By hand this
+  # suite is 3/3; in the 2026-09-16 03:48 nightly (43 min, box under load) the
+  # control went red: python had not bound the port 0.4s in, curl got refused,
+  # and a load-dependent race reported as a product failure. A control that
+  # depends on how fast the box is that night cannot separate its states.
+  local i
+  for i in $(seq 1 80); do
+    (echo > "/dev/tcp/127.0.0.1/$port") 2>/dev/null && break
+    sleep 0.1
+  done
   run env CHORUS_MCP_NUDGE_URL="http://127.0.0.1:$port/nudge" bash "$OPS_NUDGE" silas "stub probe"
   wait "$stub" 2>/dev/null || true
   [ "$status" -eq 0 ]
