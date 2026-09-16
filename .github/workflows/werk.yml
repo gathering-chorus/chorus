@@ -560,34 +560,28 @@ jobs:
             esac
           done
 
-      # #4178 — the on-land delta. A land changes files; the graph follows in the
-      # same breath instead of waiting for 04:30, so "what is in the repo" is
-      # never a day stale. Runs as `crawler` for the same reason the nightly
-      # does: the door stamps ownedBy from the caller, so a pass run as the
-      # builder would take every row it writes and lock the next run out.
-      #
-      # Deliberately NOT gated on success — a crawl that cannot reach the door
-      # must not fail a land that already merged and deployed. It is RED in its
-      # own log and the nightly full pass repairs it; the reconcile names any
-      # row it missed. The land's proof is the merge, not the crawl.
-      - name: crawl-delta
-        if: ${{ steps.demo.outputs.proven == 'true' }}
-        continue-on-error: true
-        env:
-          CHORUS_ROLE: crawler
-        run: |
-          if command -v chorus-crawl >/dev/null 2>&1; then
-            chorus-crawl || echo "::warning::crawl-delta: the graph is stale until the nightly full pass"
-          else
-            echo "::warning::crawl-delta: chorus-crawl not installed — skipped"
-          fi
-
       - name: accept
         id: accept
         if: ${{ steps.demo.outputs.proven == 'true' }}
         # #3311 GO=ACCEPT: the GO given at invoke IS the acceptance. werk-accept's DEC-048 authority
         # gate runs INSIDE the verb (ACCEPTER is the authorizing identity; a builder can't self-accept).
         run: DEPLOY_ROLE="${ACCEPTER}" werk-accept "${CARD_ID}" "${ROLE}"
+
+      # #4178 — the on-land delta. A land changes files; the graph follows in the
+      # same breath instead of waiting for 04:30. Runs as `crawler` (the door
+      # stamps ownedBy from the caller — #4178).
+      #
+      # #4192 — DETACHED, and after accept. Jeff, 2026-09-16 18:11: "i did not
+      # want an extra 10 minutes on every werk." The step starts the crawler in
+      # its own process group with its own log and returns at once; the land's
+      # proof is the merge, the crawl reports in its log and on the nightly's
+      # TOTAL line. Never gated on success for the same reason as before.
+      - name: crawl-delta
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        continue-on-error: true
+        env:
+          CHORUS_ROLE: crawler
+        run: bash "${CHORUS_HOME}/platform/scripts/crawl-detached.sh"
 
       - name: outcome
         if: success()
