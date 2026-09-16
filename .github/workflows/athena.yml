@@ -337,7 +337,7 @@ jobs:
       - name: deploy
         # canonical: only when the land carried model sources. werk-model: always — the
         # fresh variant store needs the whole set before the variant athena-make boots.
-        if: ${{ steps.scope.outputs.nothing != 'true' && (steps.scope.outputs.model != '' || inputs.target == 'werk-model') }}
+        if: ${{ steps.scope.outputs.nothing != 'true' && (steps.scope.outputs.model != '' || inputs.target == 'werk-model') && inputs.target != 'werk-rows' }}
         run: |
           set -euo pipefail
           ROOT="${{ steps.resolve.outputs.root }}"; STORE="${{ steps.resolve.outputs.store }}"
@@ -356,8 +356,10 @@ jobs:
         if: ${{ steps.scope.outputs.nothing != 'true' && (steps.scope.outputs.model != '' || inputs.target == 'werk-rows') && inputs.target != 'werk-model' }}
         run: |
           set -euo pipefail
-          KICK=(--kickstart); [ "$TARGET" = "werk-rows" ] && KICK=()
-          DEPLOY_ROLE="$ROLE" athena-serve "${{ steps.resolve.outputs.label }}" "${{ steps.resolve.outputs.api }}/health" "${KICK[@]}" --timeout 90
+          # (a string, not an array: macOS bash 3.2 + set -u refuses an empty array expansion)
+          KICK="--kickstart"; [ "$TARGET" = "werk-rows" ] && KICK=""
+          # shellcheck disable=SC2086
+          DEPLOY_ROLE="$ROLE" athena-serve "${{ steps.resolve.outputs.label }}" "${{ steps.resolve.outputs.api }}/health" $KICK --timeout 90
 
       - name: seed
         if: ${{ steps.scope.outputs.nothing != 'true' && inputs.target != 'werk-model' }}
