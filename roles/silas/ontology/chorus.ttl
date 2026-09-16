@@ -1,5 +1,6 @@
 @prefix rdf:      <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
 @prefix rdfs:     <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
 @prefix owl:      <http://www.w3.org/2002/07/owl#> .
 @prefix xsd:      <http://www.w3.org/2001/XMLSchema#> .
 @prefix dcterms:  <http://purl.org/dc/terms/> .
@@ -1698,8 +1699,14 @@ chorus:Credential a owl:Class ;
 
 
 chorus:Permission a owl:Class ;
+    # #4183 — a Permission IS a WAC authorization: agent + accessTo + mode.
+    # Jeff, 2026-09-16: "isnt the deleting users an authz not a user or role"
+    # and "i dont want to reinvent the wheel". The 2026-05 shape (subject /
+    # action / resource / explicitGrant / conditions) never got a row; it is
+    # deprecated below, not deleted, so the store can tell old from new.
+    rdfs:subClassOf acl:Authorization ;
     rdfs:label "Permission" ;
-    rdfs:comment "An authorization rule binding a subject (role or domain) to an action on a resource. Explicit-grant true = whitelist (allow); false = denial (blacklist). Conditions narrow the rule (env, time-of-day, resource pattern). #2659." .
+    rdfs:comment "A WAC authorization (acl:Authorization): which Principal (acl:agent) may Read / Write / Append / Control (acl:mode) which graph (acl:accessTo). Rows in the security graph, written and revoked through the generated security API; the door resolves a caller's write scope from these rows. Absence denies. #4183 (was #2659's rule shape, deprecated)." .
 
 chorus:SecurityProbe a owl:Class ;
     rdfs:label "Security Probe" ;
@@ -1743,30 +1750,35 @@ chorus:ownerRole a owl:ObjectProperty ;
 
 chorus:subject a owl:ObjectProperty ;
     rdfs:label "subject" ;
+    owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "The actor (role or sub-domain) the permission applies to." ;
     rdfs:domain chorus:Permission ;
     rdfs:range [ owl:unionOf ( chorus:Role chorus:SubDomain ) ] .
 
 chorus:action a owl:DatatypeProperty ;
     rdfs:label "action" ;
+    owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "The verb the permission grants or denies (e.g., 'read', 'write', 'deploy', 'kickstart', 'commit-to-main')." ;
     rdfs:domain chorus:Permission ;
     rdfs:range xsd:string .
 
 chorus:resource a owl:DatatypeProperty ;
     rdfs:label "resource" ;
+    owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "The object the permission binds to. URI when graph-resolvable (a SubDomain, Service); string when a path glob, env name, or external resource." ;
     rdfs:domain chorus:Permission ;
     rdfs:range xsd:string .
 
 chorus:conditions a owl:DatatypeProperty ;
     rdfs:label "conditions" ;
+    owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "Free-text predicates that narrow the rule (env=='prod', requires-mfa, branch=='main')." ;
     rdfs:domain chorus:Permission ;
     rdfs:range xsd:string .
 
 chorus:explicitGrant a owl:DatatypeProperty ;
     rdfs:label "explicit grant" ;
+    owl:deprecated true ;   # #4183 — replaced by acl:agent / acl:mode / acl:accessTo; 0 rows ever carried it
     rdfs:comment "Boolean. true = whitelist (rule allows); false = blacklist (rule denies). Default closed-world: absence of an explicit grant denies." ;
     rdfs:domain chorus:Permission ;
     rdfs:range xsd:boolean .
@@ -1874,29 +1886,28 @@ chorus:CredentialShape a sh:NodeShape ;
 
 chorus:PermissionShape a sh:NodeShape ;
     sh:targetClass chorus:Permission ;
+    # #4183 — rows live with the principals they govern; the door serves and
+    # writes them at /v1/security/permissions.
+    chorus:instancesGraph "urn:chorus:domains:security" ;
     sh:property [
         sh:path rdfs:label ;
         sh:minCount 1 ;
         sh:datatype xsd:string ;
     ] ;
     sh:property [
-        sh:path chorus:subject ;
-        sh:minCount 1 ;
+        sh:path chorus:agent ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:class chorus:Principal ;
     ] ;
     sh:property [
-        sh:path chorus:action ;
-        sh:minCount 1 ;
-        sh:datatype xsd:string ;
+        sh:path chorus:accessTo ;
+        sh:minCount 1 ; sh:maxCount 1 ;
+        sh:datatype xsd:anyURI ;
     ] ;
     sh:property [
-        sh:path chorus:resource ;
+        sh:path chorus:mode ;
         sh:minCount 1 ;
-        sh:datatype xsd:string ;
-    ] ;
-    sh:property [
-        sh:path chorus:explicitGrant ;
-        sh:minCount 1 ;
-        sh:datatype xsd:boolean ;
+        sh:in ( acl:Read acl:Write acl:Append acl:Control ) ;
     ] ;
     sh:property [
         sh:path chorus:ownedBy ;

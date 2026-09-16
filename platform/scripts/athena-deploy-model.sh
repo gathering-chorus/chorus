@@ -731,7 +731,11 @@ if [ -z "${TTL:-}" ]; then
   SECURITY_STAGING="${SECURITY_GRAPH}-staging-deploy"
   SECURITY_SET=(
     "$CHORUS_ROOT/roles/silas/ontology/identity-principals-3613.ttl"
-    "$CHORUS_ROOT/roles/silas/ontology/security-scopes-3689.ttl"
+    # #4183 — permissions are rows (acl:Authorization). security-scopes-3689
+    # (42 hasScope literals) LEFT this set: the door no longer reads hasScope,
+    # so re-asserting the literals would be a grant nothing honours. Its live
+    # triples are retired by the one-time DBA step on #4183's land.
+    "$CHORUS_ROOT/roles/silas/ontology/permissions-4183.ttl"
     # #3729 — posture ABox: SecurityProbe rows mirror probes.d/ one-to-one;
     # AuthBoundary rows name the verify doors AND their bypass paths. Serve
     # reads resolve these classes to urn:chorus:domains:security (#3570), so
