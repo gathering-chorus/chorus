@@ -12,7 +12,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use werk_test::nightly_run::{json_rows, 
+use werk_test::nightly_run::{crawl_line, json_rows, 
     coverage_row, denominator_row, fail_log_name, fold_unit_line, last_run_rows, load_verdict,
     notify_messages, owner_for, owner_map, parse_floors, pipeline_run_body, run_summary_fields,
     suite_result_fields, unit_slice, SuiteRow,
@@ -685,7 +685,12 @@ fn run_locked(ctx: &mut Ctx, _args: &[String]) -> Result<i32, String> {
     }
     if !ctx.no_nudge {
         let sec_owner = env_or("NIGHTLY_SECURITY_OWNER", "silas");
-        for (to, msg) in notify_messages(&rows, &sec_owner) {
+        // #4180 — the crawler's last scheduled pass rides the TOTAL line, so a
+        // nightly that never fired or fired red is seen where the reds are.
+        let crawl_log = env_or("CRAWL_NIGHTLY_LOG", &format!("{}/Library/Logs/Chorus/crawl-nightly.log", env_or("HOME", "/tmp")));
+        let crawl_text = std::fs::read_to_string(&crawl_log).ok();
+        let crawl = crawl_line(crawl_text.as_deref());
+        for (to, msg) in notify_messages(&rows, &sec_owner, &crawl) {
             ctx.nudge(&to, &msg);
         }
         deliver_readout(ctx);

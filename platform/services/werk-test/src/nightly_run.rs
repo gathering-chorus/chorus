@@ -348,7 +348,31 @@ pub fn denominator_row(configured: usize, present: usize, unconfigured: &[String
 /// the wrapper sent them. All green → one line to the nightly owner. Reds →
 /// one grouped line per owner, the security lane's own line when it has reds,
 /// then the TOTAL line with slow rows named as speed, not breakage (#4136).
-pub fn notify_messages(rows: &[SuiteRow], security_owner: &str) -> Vec<(String, String)> {
+/// #4180 — the crawler's last scheduled pass, as one clause on the TOTAL line.
+///
+/// The on-land delta deliberately cannot fail a land (`continue-on-error`), and
+/// the nightly writes to a log nobody opens. That is how a crawler that never
+/// ran shipped as "self-maintaining": nothing a person reads said otherwise.
+/// This reads the log the plist writes and says, every morning, one of three
+/// things — it never ran, it ran red, or it ran and what it did.
+pub fn crawl_line(log: Option<&str>) -> String {
+    let Some(text) = log else { return " — crawl: NEVER RAN (no log)".to_string() };
+    // last pass = from the last "chorus-crawl: full|delta" header to the end
+    let start = text.rmatch_indices("chorus-crawl: full").chain(text.rmatch_indices("chorus-crawl: delta")).map(|(i, _)| i).max().unwrap_or(0);
+    let last = &text[start..];
+    if last.trim().is_empty() {
+        return " — crawl: NEVER RAN (empty log)".to_string();
+    }
+    let field = |k: &str| last.split_whitespace().find_map(|w| w.strip_prefix(k).and_then(|v| v.parse::<usize>().ok()));
+    let (wrote, failed) = (field("wrote=").unwrap_or(0), field("failed=").unwrap_or(0));
+    if failed > 0 || last.contains("the run is RED") || last.contains("watermark HELD") {
+        format!(" — crawl: RED ({} write(s) failed, watermark held)", failed)
+    } else {
+        format!(" — crawl: {} written, clean", wrote)
+    }
+}
+
+pub fn notify_messages(rows: &[SuiteRow], security_owner: &str, crawl: &str) -> Vec<(String, String)> {
     let skipped = rows.iter().filter(|r| r.status == "skip").count();
     let skipmsg = if skipped > 0 { format!(" — {} skipped (no live stack, #3557)", skipped) } else { String::new() };
     let reds: Vec<&SuiteRow> = rows.iter().filter(|r| r.status == "fail").collect();
@@ -389,7 +413,7 @@ pub fn notify_messages(rows: &[SuiteRow], security_owner: &str) -> Vec<(String, 
     };
     out.push((
         "kade".to_string(),
-        format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}{}", reds.len(), per_owner.join(", "), skipmsg, slowmsg, stalemsg),
+        format!("nightly TOTAL: {} red across the board ({}) — bar is zero{}{}{}{}", reds.len(), per_owner.join(", "), skipmsg, slowmsg, stalemsg, crawl),
     ));
     out
 }
@@ -784,7 +808,7 @@ mod nightly_run_4145 {
             SuiteRow::new("bats", "platform/tests/gone.bats", "kade", "stale", "0 pass, 0 fail (STALE REGISTRY — platform/tests/gone.bats is not in the repo; the row outlived its file)"),
             SuiteRow::new("bats", "platform/tests/real.bats", "wren", "fail", "0 pass, 1 fail"),
         ];
-        let msgs = notify_messages(&rows, "silas");
+        let msgs = notify_messages(&rows, "silas", "");
         let total = msgs.iter().find(|(who, m)| who == "kade" && m.contains("TOTAL")).expect("a total line").1.clone();
         assert!(total.contains("1 red"), "the stale row is not counted as red: {}", total);
         assert!(total.contains("1 stale"), "but it IS named: {}", total);
@@ -809,7 +833,7 @@ mod nightly_run_4145 {
         let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone()).unwrap_or_default();
         assert_eq!(get("zero_red"), "true");
         assert_eq!(get("stale"), "1");
-        let msgs = notify_messages(&rows, "silas");
+        let msgs = notify_messages(&rows, "silas", "");
         assert!(msgs.iter().any(|(_, m)| m.contains("green")), "green run still reads green");
         assert!(msgs.iter().any(|(_, m)| m.contains("1 stale")), "and still names the stale row");
     }
@@ -887,7 +911,7 @@ mod nightly_run_4145 {
             SuiteRow::new("perf", "platform/tests/p.sh", "silas", "slow", "0 pass, 1 fail"),
             SuiteRow::new("bats", "platform/tests/c.bats", "kade", "pass", "1 pass, 0 fail"),
         ];
-        let m = notify_messages(&rows, "silas");
+        let m = notify_messages(&rows, "silas", "");
         assert_eq!(m[0].0, "silas");
         assert!(m[0].1.starts_with("SECURITY lane: 1 red — s.bats"));
         assert!(m.iter().any(|(to, msg)| to == "wren" && msg == "nightly: 2 suite(s) red — a.bats, b.bats"));
@@ -899,7 +923,7 @@ mod nightly_run_4145 {
     #[test]
     fn negative_proof_all_green_is_one_line_to_the_owner_never_silence() {
         let rows = vec![SuiteRow::new("bats", "platform/tests/c.bats", "kade", "pass", "1 pass, 0 fail")];
-        let m = notify_messages(&rows, "silas");
+        let m = notify_messages(&rows, "silas", "");
         assert_eq!(m.len(), 1);
         assert!(m[0].1.starts_with("nightly: all hermetic suites green"));
     }
@@ -941,4 +965,31 @@ mod nightly_run_4145 {
         let body = pipeline_run_body(&rows, "nightly-x", "t", 5);
         assert!(body.contains("\"runOutcome\":\"red\"") && body.contains("\"testsRun\":\"2\"") && body.contains("\"testsStored\":\"3\""));
     }
+
+#[cfg(test)]
+mod crawl_line_4180 {
+    use super::crawl_line;
+
+    #[test]
+    fn a_clean_pass_and_a_missing_log_read_as_what_they_are() {
+        let ok = "chorus-crawl: full (no watermark) · tracked=6190 read=Complete\nchorus-crawl: posted=4 replaced=0 unchanged=5547 deleted=0 skipped=639\nchorus-crawl: wrote=4 failed=0\nchorus-crawl: watermark -> ad5b6182b\n";
+        assert_eq!(crawl_line(Some(ok)), " — crawl: 4 written, clean");
+        assert_eq!(crawl_line(None), " — crawl: NEVER RAN (no log)");
+        // only the LAST pass counts — an old red must not haunt a clean morning
+        let two = format!("chorus-crawl: full\nchorus-crawl: wrote=0 failed=3\nchorus-crawl: 3 write(s) failed — the run is RED\n{ok}");
+        assert_eq!(crawl_line(Some(&two)), " — crawl: 4 written, clean");
+    }
+
+    // NEGATIVE PROOF (#3734): the clause exists to make a silent red loud. A red
+    // pass — failed writes, a held watermark — must NOT read as clean, and the
+    // exact log shape the 2026-09-15 refusal produced is the fixture.
+    #[test]
+    fn negative_proof_a_red_pass_is_named_red_not_clean() {
+        let red = "chorus-crawl: full (--reconcile) · tracked=6190 read=Complete\nchorus-crawl: posted=0 replaced=3 unchanged=5547 deleted=0 skipped=639\nchorus-crawl: wrote=0 failed=3\nchorus-crawl: watermark HELD — a write failed — the graph does not match this commit\nchorus-crawl: 3 write(s) failed — the run is RED, not partially green\n";
+        let line = crawl_line(Some(red));
+        assert!(line.contains("RED"), "{line}");
+        assert!(line.contains("3 write(s) failed"), "{line}");
+        assert!(!line.contains("clean"), "{line}");
+    }
+}
 }
