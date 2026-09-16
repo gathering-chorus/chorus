@@ -16,7 +16,13 @@
 # we are leaving.
 
 setup() {
-  REPO="${CHORUS_ROOT:-$(cd "$BATS_TEST_DIRNAME/../.." && pwd)}"
+  # #4179 — this suite measures the tree it TRAVELS WITH, never $CHORUS_ROOT.
+  # prove-live sets CHORUS_ROOT to canonical, so test 5 graded canonical's
+  # pre-land copy of the shape and reported the floor still at 2 while the fix
+  # sat in the werk beside it. Identical to the #4158 ratchet trap: a source
+  # check pointed at a different checkout than the diff it guards can never
+  # pass before the land, and says nothing true about the change under test.
+  REPO="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   ROLES_TTL="$REPO/roles/wren/ontology/role-instances-3838.ttl"
   SHAPE_TTL="$REPO/roles/wren/ontology/priorities-3686.ttl"
   SEC_TTL="$REPO/roles/silas/ontology/security-model-3618.ttl"
