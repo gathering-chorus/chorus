@@ -1040,8 +1040,16 @@ fn negative_proof_the_old_per_unit_rule_fails_this_invariant() {
 fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
     let src = include_str!("../src/lib.rs");
     let start = src.find("fn deploy_canonical(").expect("deploy_canonical exists");
-    let end = src[start..].find("\n}\n").map(|i| start + i).unwrap_or(src.len());
+    // the body runs to the NEXT top-level item (Silas, #4186 gate: a column-0
+    // close brace inside the body would have ended the search early and let a
+    // forbidden call after it pass — so bound on the next `fn`/`pub fn`/`impl`
+    // at column 0, and prove the bound found the real end by requiring it to
+    // contain the hand-off marker AND the one-sha gate that follows the legs).
+    let rest = &src[start + 1..];
+    let end = ["\nfn ", "\npub fn ", "\nimpl ", "\n#[cfg(test)]"].iter()
+        .filter_map(|m| rest.find(m)).min().map(|i| start + 1 + i).unwrap_or(src.len());
     let body = &src[start..end];
+    assert!(body.contains("the one-sha invariant GATE"), "body bound did not reach deploy_canonical's tail — the search window is wrong, not the code");
     for forbidden in ["athena-deploy-model.sh", "seed\", \"--post\"", "com.chorus.athena-make"] {
         assert!(!body.contains(forbidden), "deploy_canonical still carries `{}` — the model/seed leg belongs to athena.yml (#4186)", forbidden);
     }
