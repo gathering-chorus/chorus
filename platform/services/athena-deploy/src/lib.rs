@@ -20,8 +20,7 @@ fn env_or(key: &str, default: &str) -> String {
 /// The model SET to deploy: an explicit `TTL` override (single member) else the
 /// default set (chorus.ttl + werk-domains.ttl). Pure — unit-tested.
 // #4186 — the one home for the model/seed predicates; `athena-deploy scope` prints them.
-#[path = "../../shared/model_scope.rs"]
-pub mod model_scope;
+pub mod model_scope { include!("../../shared/model_scope.rs"); }
 
 /// `athena-deploy scope <root> <git range>` — list the model and seed sources a diff
 /// touched, one per line as `model|<path>` / `seed|<path>`. Exit 0 with no lines when

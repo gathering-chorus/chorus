@@ -1,8 +1,8 @@
-//! model_scope — the ONE definition of "which changed files are model sources and
-//! which are seed sources" (#4186, Kade's cold-eyes finding: the rule had grown
-//! three copies — werk-deploy, werk.yml, athena.yml — and would drift silently).
-//! Included by `#[path]` into werk-deploy (the witnessed hand-off) and athena-deploy
-//! (the `scope` verb the workflows call). Pure; unit-tested in both crates.
+// model_scope — the ONE definition of "which changed files are model sources and
+// which are seed sources" (#4186, Kade's cold-eyes finding: the rule had grown
+// three copies — werk-deploy, werk.yml, athena.yml — and would drift silently).
+// Included by `#[path]` into werk-deploy (the witnessed hand-off) and athena-deploy
+// (the `scope` verb the workflows call). Pure; unit-tested in both crates.
 
 /// Model sources: any TTL under a role's ontology dir, plus the staged
 /// retirements file (#3752 — landing a card that stages one must run the model

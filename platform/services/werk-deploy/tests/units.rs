@@ -1073,8 +1073,8 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
         assert!(!src.contains(forbidden), "demo_env.rs still carries `{}` — the variant model legs belong to athena.yml target=werk (#4186)", forbidden);
     }
     // the one home for the scope rule is the shared module, and both crates read it
-    assert!(include_str!("../src/lib.rs").contains("#[path = \"../../shared/model_scope.rs\"]"));
-    assert!(include_str!("../../athena-deploy/src/lib.rs").contains("#[path = \"../../shared/model_scope.rs\"]"));
+    assert!(include_str!("../src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
+    assert!(include_str!("../../athena-deploy/src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
     let yml = include_str!("../../../../.github/workflows/athena.yml");
     assert!(!yml.contains("grep -E '^roles/"), "athena.yml must call `athena-deploy scope`, not carry its own copy of the rule");
     assert!(yml.contains("athena-deploy scope"));

@@ -1731,8 +1731,7 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// unit-tested, negative-proven (a .ttl elsewhere, a docs html, do NOT fire).
 // #4186 — ONE home for the model/seed predicates (shared/model_scope.rs); athena-deploy
 // `scope` and both workflows read the same definition, so the rule cannot drift.
-#[path = "../../shared/model_scope.rs"]
-mod model_scope;
+mod model_scope { include!("../../shared/model_scope.rs"); }
 pub use model_scope::{changed_model_sources, changed_seed_sources, is_model_source, is_seed_source};
 
 /// #3736 — read the store's model stamp (single-request truth): which commit the live
