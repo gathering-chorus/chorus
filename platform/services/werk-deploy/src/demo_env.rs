@@ -665,7 +665,10 @@ fn require_model_in_store(role: &str, werk_root: &str, card: u64) -> R<String> {
         StoreReadiness::Refuse => Err(store_refusal(&ds, n)),
         StoreReadiness::Bootstrap => {
             eprintln!("::warning::env_up: BOOTSTRAP — {} present and store {} has no shapes; running athena.yml target=werk-model directly (canonical werk.yml has no athena-model step until this card lands)", marker, ds);
-            let act = std::env::var("CHORUS_ACT_BIN").unwrap_or_else(|_| "act".into());
+            // the mcp daemon's PATH may not carry act; resolve like a shell would, then homebrew
+            let act = std::env::var("CHORUS_ACT_BIN").ok()
+                .or_else(|| ["/opt/homebrew/bin/act", "/usr/local/bin/act"].iter().find(|p| Path::new(p).exists()).map(|s| s.to_string()))
+                .unwrap_or_else(|| "act".into());
             let wf = format!("{}/.github/workflows/athena.yml", werk_root);
             let st = Command::new(&act)
                 .args(["workflow_dispatch", "-W", &wf, "-P", "macos-latest=-self-hosted",
