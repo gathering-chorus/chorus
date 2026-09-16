@@ -482,6 +482,16 @@ fn main() {
             std::process::exit(2);
         }
         let drift = reconcile(&disk, &graph);
+        // #4180 — the counts line above reads exactly like a run's outcome, and
+        // --reconcile writes NOTHING: it exited here with "posted=1" on the line
+        // and the row still absent, and I read that as work done. Say what the
+        // numbers are.
+        if c.posted + c.replaced + c.deleted > 0 {
+            println!(
+                "chorus-crawl: reconcile is read-only — the {} post / {} replace / {} delete above are what a write pass WOULD do, not what happened",
+                c.posted, c.replaced, c.deleted
+            );
+        }
         println!("chorus-crawl: {}", drift.report());
         std::process::exit(if drift.is_clean() { 0 } else { 1 });
     }
