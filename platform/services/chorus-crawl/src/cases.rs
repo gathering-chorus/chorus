@@ -649,6 +649,13 @@ pub fn case_names(path: &str, content: &str) -> Vec<String> {
         jest_case_names(content)
     } else if path.ends_with(".sh") {
         vec![b.to_string()]
+    } else if b.ends_with(".spec.cjs") || b.ends_with(".spec.mjs") {
+        // #4185 — a playwright spec is ONE case named by its file: that is the
+        // identity the ui lane stores and quarantines by (werk-test lib.rs,
+        // #4045: "the tests domain registers ui specs at FILE granularity with
+        // testName = the file's basename"). testfiles.py returned nothing here,
+        // which is why 13 browser flows had no row at all.
+        vec![b.to_string()]
     } else {
         Vec::new()
     }
@@ -1297,9 +1304,15 @@ mod cases_4185 {
     #[test]
     fn negative_proof_a_kind_with_no_extractor_and_no_lane_mints_nothing() {
         assert!(case_names("helper.py", "def helper():\n    return 1\n").is_empty());
+        // a playwright spec IS registered — at file grain, the ui lane's identity (#4045)
+        assert_eq!(
+            case_names("proving/flows/flow.spec.cjs", "test('x', () => {});"),
+            vec!["flow.spec.cjs"]
+        );
         assert!(
-            case_names("flow.spec.cjs", "test('x', () => {});").is_empty(),
-            "playwright specs have no case lane (#4106)"
+            !case_names("proving/flows/flow.spec.cjs", "test('x', () => {});")
+                .contains(&"x".to_string()),
+            "never the inner title — the lane does not emit it"
         );
     }
     #[test]

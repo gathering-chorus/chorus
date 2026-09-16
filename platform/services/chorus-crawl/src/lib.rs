@@ -1293,6 +1293,58 @@ mod batch_budget_4185 {
     }
 }
 
+/// #4185 — the mass-delete guard.
+///
+/// A full walk over a tree that is NOT the tree the graph describes reads every
+/// row as an orphan. Measured 2026-09-16 on the variant: a three-file fixture
+/// repo pointed at a store holding the whole repo's rows planned 5,338 case
+/// deletes and 5,561 file deletes, and spent ten minutes issuing them one at a
+/// time. The same shape in production is one wrong `CHORUS_ROOT` — a launchd
+/// unit started in the wrong directory, a hand run from a scratch checkout —
+/// and it empties the registry the runner selects from.
+///
+/// A real full pass never deletes half the graph: the tree and the graph differ
+/// by a land's worth of files. So a plan whose deletes exceed the share below,
+/// over a graph big enough for the share to mean anything, is refused whole and
+/// said out loud. Under the floor (a fixture-sized graph) the guard stands down:
+/// a three-row graph losing two rows is a test, not a wipe.
+pub const MASS_DELETE_SHARE: f64 = 0.50;
+pub const MASS_DELETE_FLOOR: usize = 100;
+
+/// Should this run's deletes be refused as a mass delete?
+pub fn mass_delete_refused(planned_deletes: usize, graph_rows: usize) -> bool {
+    graph_rows >= MASS_DELETE_FLOOR
+        && (planned_deletes as f64) > (graph_rows as f64) * MASS_DELETE_SHARE
+}
+
+#[cfg(test)]
+mod mass_delete_4185 {
+    use super::*;
+
+    // NEGATIVE PROOF (#3734): the state measured on the variant — a fixture tree
+    // against a whole-repo graph — is refused.
+    #[test]
+    fn negative_proof_a_fixture_tree_against_a_whole_repo_graph_is_refused() {
+        assert!(mass_delete_refused(5_338, 8_187));
+        assert!(mass_delete_refused(5_561, 5_564));
+    }
+
+    // The controls: a land's worth of deletes is not a wipe, and a tiny graph
+    // (the fixture suites) is below the floor so its own deletes still happen.
+    #[test]
+    fn a_lands_worth_of_deletes_passes_and_a_fixture_sized_graph_is_below_the_floor() {
+        assert!(
+            !mass_delete_refused(33, 8_187),
+            "a land that removed 33 cases is normal"
+        );
+        assert!(
+            !mass_delete_refused(2, 3),
+            "a three-row fixture graph losing two rows is a test, not a wipe"
+        );
+        assert!(!mass_delete_refused(0, 8_187));
+    }
+}
+
 /// #4178 — the identity a scheduled run must present.
 ///
 /// The door stamps `ownedBy` from the caller, and only the owner may update or

@@ -52,7 +52,6 @@ cls() { printf '%s' "$2" > "$BATS_TEST_TMPDIR/$1"; "$BIN" --classify "$BATS_TEST
   run env CHORUS_ROOT="$PWD" "$BIN" --dry-run
   [ "$status" -eq 0 ]
   has "cases posted="
-  # a no-case kind (playwright has no case lane, #4106) is REPORTED, not silent
+  # files that yield no runnable case (#4106) are REPORTED on their own line, not silent
   has "no-case files:"
-  has "cjs"
 }

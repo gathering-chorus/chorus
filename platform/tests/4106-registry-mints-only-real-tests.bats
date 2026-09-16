@@ -118,11 +118,19 @@ names_of() { "$BIN" --names-of "$1"; }
 # test in src/cases.rs); here the seam shows the file is registered with NO case
 # rather than silently skipped or given an invented one.
 @test "no-case files yield nothing at the seam, never an invented basename" {
+  f="$TMP/helper_test.py"
+  printf '%s\n' "def test_helper():" "    assert 1" > "$f"
+  run names_of "$f"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "a playwright spec is registered at file grain — the ui lane's identity (#4045), not its inner titles" {
   f="$TMP/flow.spec.cjs"
   printf '%s\n' "test('a playwright flow', async () => {});" > "$f"
   run names_of "$f"
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  [ "$output" = "flow.spec.cjs" ]
 }
 
 @test "negative proof: an @test written inside a string fixture is not a test declaration" {

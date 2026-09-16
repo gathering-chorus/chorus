@@ -55,7 +55,7 @@ for r in rows:
 }
 # every served row of a class whose filePath names our fixture tag, as JSON lines
 rows_for() { # $1 = collection
-  curl -s --max-time 30 -H "Authorization: Bearer $TC" "$OWL_URL$1?limit=5000" | python3 -c "
+  curl -s --max-time 30 -H "Authorization: Bearer $TC" "$OWL_URL$1?limit=20000" | python3 -c "
 import sys,json
 for r in json.load(sys.stdin)['data']:
     if '$TAG' in r.get('filePath',''): print(json.dumps(r))"

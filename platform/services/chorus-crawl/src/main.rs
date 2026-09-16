@@ -748,6 +748,21 @@ fn main() {
             actions.push(Action::Delete { path: path.clone() });
         }
     }
+    // #4185 — a plan that would delete most of the graph is not a plan, it is a
+    // wrong CHORUS_ROOT. Refuse every delete, say so, hold the watermark.
+    let file_deletes = actions
+        .iter()
+        .filter(|a| matches!(a, Action::Delete { .. }))
+        .count();
+    let mut mass_delete = mass_delete_refused(file_deletes, graph.len());
+    if mass_delete {
+        eprintln!(
+            "chorus-crawl: MASS DELETE REFUSED — the plan would delete {} of {} file rows. A full pass never removes half the graph; this tree is not the tree the graph describes (wrong CHORUS_ROOT?). No row is deleted this run.",
+            file_deletes,
+            graph.len()
+        );
+        actions.retain(|a| !matches!(a, Action::Delete { .. }));
+    }
     let c = counts(&actions);
 
     // #4185 — the case pass: every kind=test file this run walked, parsed.
@@ -779,6 +794,20 @@ fn main() {
         &case_graph,
         case_read,
     );
+    let case_deletes = case_actions
+        .iter()
+        .filter(|a| matches!(a, CaseAction::Delete { .. }))
+        .count();
+    let mut case_actions = case_actions;
+    if mass_delete_refused(case_deletes, case_graph.len()) {
+        eprintln!(
+            "chorus-crawl: MASS DELETE REFUSED — the plan would delete {} of {} case rows. A full pass never removes half the registry; this tree is not the tree the graph describes (wrong CHORUS_ROOT?). No case row is deleted this run.",
+            case_deletes,
+            case_graph.len()
+        );
+        case_actions.retain(|a| !matches!(a, CaseAction::Delete { .. }));
+        mass_delete = true;
+    }
     let cc = cases::case_counts(&case_actions);
 
     println!(
@@ -1107,7 +1136,13 @@ fn main() {
 
     // The watermark moves only when this run earned it.
     let scope_was_full = matches!(scope, Scope::Full { .. });
-    match watermark_after(&head, case_read, failed.len(), scope_was_full) {
+    // a refused mass delete means this graph does NOT match this commit
+    let read_for_watermark = if mass_delete {
+        TreeRead::Partial
+    } else {
+        case_read
+    };
+    match watermark_after(&head, read_for_watermark, failed.len(), scope_was_full) {
         Watermark::Advance(sha) => {
             println!("chorus-crawl: watermark -> {}", &sha[..sha.len().min(9)]);
             if let Err(e) = std::fs::write(format!("{root}/.chorus-crawl-watermark"), &sha) {
