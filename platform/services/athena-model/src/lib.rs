@@ -664,6 +664,39 @@ fn witness(event: &str, kvs: &[(&str, &str)]) {
 #[derive(Debug)]
 pub struct Identity(String);
 
+thread_local! {
+    /// #4183 — the graphs the verified identity holds a WRITE permission for
+    /// (acl:Authorization rows, mode acl:Write), resolved once at
+    /// `verify_identity_token` from the security graph. Read by
+    /// `assert_dal_writable` so the security graph opens for a caller who
+    /// holds a row for it and stays shut for everyone else. Thread-local
+    /// because identity resolves exactly once per CLI run, before any write.
+    static GRANTED_WRITE_GRAPHS: std::cell::RefCell<Vec<String>> = std::cell::RefCell::new(Vec::new());
+}
+
+/// The graphs the current verified identity may write, as the security graph
+/// says (acl:Authorization rows). Empty until an identity is verified.
+pub fn granted_write_graphs() -> Vec<String> {
+    GRANTED_WRITE_GRAPHS.with(|g| g.borrow().clone())
+}
+
+/// The one setter: `verify_identity_token` and tests.
+pub fn set_granted_write_graphs(graphs: Vec<String>) {
+    GRANTED_WRITE_GRAPHS.with(|g| *g.borrow_mut() = graphs);
+}
+
+/// #4183 — the write grants a verified WebID holds, read from Permission rows
+/// (acl:Authorization: agent → this principal, mode acl:Write). None = the
+/// store could not be read (the caller fails closed); Some(empty) = no grants.
+pub fn write_grants_for_webid(store: &dyn Store, webid: &str) -> R<Vec<String>> {
+    store.select_v(&format!(
+        "PREFIX chorus: <{ns}> PREFIX acl: <http://www.w3.org/ns/auth/acl#> \
+         SELECT ?v WHERE {{ GRAPH <{g}> {{ ?perm a chorus:Permission ; acl:agent ?p ; acl:accessTo ?s ; acl:mode acl:Write . \
+         ?p a chorus:Principal ; chorus:webId ?wid . FILTER(STR(?wid) = \"{w}\") BIND(STR(?s) AS ?v) }} }}",
+        ns = NS, g = SECURITY_GRAPH, w = webid
+    ))
+}
+
 impl Identity {
     pub fn role(&self) -> &str {
         &self.0
@@ -789,7 +822,16 @@ pub fn verify_identity_token(
         .next();
     match claim {
         // Reuse the existing syntax + registry gate — one identity door, two entrances.
-        Some(c) => verify_identity(Some(&c), store),
+        Some(c) => {
+            let id = verify_identity(Some(&c), store)?;
+            // #4183 — what this identity may WRITE is a row, not a role: the
+            // acl:Authorization rows naming its WebID. Resolved here, once,
+            // so assert_dal_writable can open the security graph for a
+            // permission holder without a second store contact per write.
+            let grants = write_grants_for_webid(store, &webid)?;
+            set_granted_write_graphs(grants);
+            Ok(id)
+        }
         None => {
             witness("model.refused", &[("reason", "identity-webid-unregistered"), ("webid", &webid)]);
             Err(format!(
@@ -948,12 +990,25 @@ fn fuseki_query_json(endpoint: &str, sparql: &str) -> R<String> {
 /// "which graph?". Applied at every mutation choke point (write/delete/edges/batch)
 /// so the guard can't be bypassed by picking a different verb.
 fn assert_dal_writable(graph: &str) -> R<()> {
+    // #4183 — the security graph is no longer DBA-only by name: it opens for a
+    // verified identity that holds an acl:Authorization row (mode Write) for
+    // it, and for nobody else. Jeff, 2026-09-16: "isnt the deleting users an
+    // authz not a user or role" / "we need to fix this right? go ahead". The
+    // priv-esc #3356 named (a writer minting itself a Principal) is now a
+    // permission somebody granted through the same door, revocable as a row,
+    // instead of a graph nobody could write through any door. The ontology
+    // graph stays DBA-only: the schema is athena-make's.
+    if graph == SECURITY_GRAPH && granted_write_graphs().iter().any(|g| g == SECURITY_GRAPH) {
+        witness("model.write.permitted", &[("graph", graph), ("reason", "acl-authorization-row")]);
+        return Ok(());
+    }
     if graph == ONTOLOGY_GRAPH || graph == SECURITY_GRAPH {
         witness("model.refused", &[("graph", graph), ("reason", "graph-dba-only")]);
         return Err(format!(
             "graph-dba-only: <{}> is a DBA-path graph — the instances DAL is refused write \
-             (per-graph authz, fail closed, #3356 AC4)",
-            graph
+             (per-graph authz, fail closed, #3356 AC4{})",
+            graph,
+            if graph == SECURITY_GRAPH { "; #4183: a Permission row with acl:mode acl:Write for this graph opens it" } else { "" }
         ));
     }
     Ok(())
@@ -2956,6 +3011,38 @@ mod tests {
             mint("pipeline-run", "nightly-2026-09-01").unwrap(),
             format!("{}pipeline-run-nightly-2026-09-01", NS)
         );
+    }
+
+    // #4183 — the security graph opens for a permission holder and for nobody
+    // else; the ontology graph opens for nobody. Both states reachable here.
+    #[test]
+    fn security_graph_refuses_without_a_permission_row() {
+        set_granted_write_graphs(vec![]);
+        let e = assert_dal_writable(SECURITY_GRAPH).unwrap_err();
+        assert!(e.contains("graph-dba-only"), "{e}");
+        assert!(e.contains("#4183"), "the refusal names the way in: {e}");
+    }
+
+    #[test]
+    fn security_graph_opens_for_a_permission_holder() {
+        set_granted_write_graphs(vec![SECURITY_GRAPH.to_string()]);
+        assert!(assert_dal_writable(SECURITY_GRAPH).is_ok());
+        set_granted_write_graphs(vec![]);
+    }
+
+    #[test]
+    fn negative_proof_a_permission_for_another_graph_does_not_open_security() {
+        set_granted_write_graphs(vec!["urn:chorus:domains:tests".to_string()]);
+        assert!(assert_dal_writable(SECURITY_GRAPH).is_err());
+        set_granted_write_graphs(vec![]);
+    }
+
+    #[test]
+    fn negative_proof_the_ontology_graph_stays_shut_even_with_every_permission() {
+        set_granted_write_graphs(vec![SECURITY_GRAPH.to_string(), ONTOLOGY_GRAPH.to_string()]);
+        let e = assert_dal_writable(ONTOLOGY_GRAPH).unwrap_err();
+        assert!(e.contains("graph-dba-only"), "{e}");
+        set_granted_write_graphs(vec![]);
     }
 
     #[test]

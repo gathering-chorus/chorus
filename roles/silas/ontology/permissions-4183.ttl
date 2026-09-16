@@ -1,0 +1,346 @@
+# permissions-4183.ttl — #4183: permissions are ROWS, in the vocabulary Solid
+# already has an opinion about.
+#
+# Jeff, 2026-09-16 15:05: "are we overcomplicating this i imagine solid has an
+# opinion that css implements i dont want to reinvent the wheel." It does: Web
+# Access Control. CSS enforces acl:Authorization on every pod resource. Our
+# graphs are not pod resources, so the DOOR (athena-make) keeps enforcing —
+# but the ROW is an acl:Authorization: who (acl:agent, a Principal), to what
+# (acl:accessTo, a graph URI), how (acl:mode: Read / Write / Append / Control).
+# Borrow the vocabulary, keep our door — the same move as foaf:Agent on
+# Principal in #3830.
+#
+# WHAT THIS REPLACES. security-scopes-3689 hung 42 chorus:hasScope literals on
+# principals. A literal on a principal is not a row: nobody can POST, GET or
+# DELETE one through the door, so every grant was a DBA hand (the 11:10
+# bootstrap on #3830 was the last). These 42 rows are those 42 grants, one
+# each, same agent, same graph, mode Write — except nudge-read, which is what
+# it says. Backfill count is the truth-teller: 42 → 42.
+#
+# HOME graph: urn:chorus:domains:security (PermissionShape's instancesGraph).
+# Owner: role-silas (security domain, ADR-054 authN half; Wren's authz half
+# says what a role may do, this says which door a principal may write).
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix acl:    <http://www.w3.org/ns/auth/acl#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# The three WAC properties as this tree USES them (#4179: a property a shape
+# requires must be declared in the tree it travels with). Declared here with
+# our domain; their meaning is WAC's — https://www.w3.org/ns/auth/acl.
+acl:agent a owl:ObjectProperty ;
+    rdfs:label "agent" ;
+    rdfs:comment "WAC: the agent this authorization applies to. Here: the chorus:Principal (a foaf:Agent) whose token the door verifies. #4183." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range chorus:Principal .
+acl:accessTo a owl:DatatypeProperty ;
+    rdfs:label "access to" ;
+    rdfs:comment "WAC: the resource the authorization covers. Here: a graph URI the door serves (urn:chorus:domains:security, urn:chorus:ops, ...). Kept as xsd:anyURI, not a node, because graphs are not resources in our store. #4183." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range xsd:anyURI .
+acl:mode a owl:ObjectProperty ;
+    rdfs:label "mode" ;
+    rdfs:comment "WAC: what the agent may do — acl:Read, acl:Write, acl:Append, acl:Control. The door honours Write for writes; Read is recorded where the old scope meant read (nudge-read). #4183." ;
+    rdfs:domain chorus:Permission ;
+    rdfs:range acl:Access .
+acl:Access a owl:Class ; rdfs:label "Access mode" ; rdfs:comment "WAC access mode class; its four members below. #4183." .
+acl:Read a acl:Access ; rdfs:label "Read" .
+acl:Write a acl:Access ; rdfs:label "Write" .
+acl:Append a acl:Access ; rdfs:label "Append" .
+acl:Control a acl:Access ; rdfs:label "Control" .
+
+# ---- the 42 grants, as rows ----
+chorus:permission-silas-tests a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:tests" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:tests"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-ops a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:ops" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:ops"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-ontology a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:ontology" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:ontology"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-instances a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:instances" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:instances"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-documents a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:documents" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:documents"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-alerts a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:alerts" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:alerts"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-monitors a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:monitors" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:monitors"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-security a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:security" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:security"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-code a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:domains:code" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:domains:code"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-icd a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:icd" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:icd"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-cards a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:cards" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-catalog a chorus:Permission ;
+    rdfs:label "silas may write urn:chorus:catalog" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:catalog"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-silas-nudge-read a chorus:Permission ;
+    rdfs:label "silas may read urn:chorus:nudge-read" ;
+    acl:agent chorus:principal-silas ;
+    acl:accessTo "urn:chorus:nudge-read"^^xsd:anyURI ;
+    acl:mode acl:Read ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-tests a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:tests" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:domains:tests"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-ops a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:ops" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:ops"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-ontology a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:ontology" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:ontology"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-instances a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:instances" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:instances"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-documents a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:documents" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:domains:documents"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-principles a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:principles" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:domains:principles"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-code a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:domains:code" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:domains:code"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-icd a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:icd" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:icd"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-cards a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:cards" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-catalog a chorus:Permission ;
+    rdfs:label "wren may write urn:chorus:catalog" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:catalog"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-wren-nudge-read a chorus:Permission ;
+    rdfs:label "wren may read urn:chorus:nudge-read" ;
+    acl:agent chorus:principal-wren ;
+    acl:accessTo "urn:chorus:nudge-read"^^xsd:anyURI ;
+    acl:mode acl:Read ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-tests a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:tests" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:domains:tests"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-ops a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:ops" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:ops"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-ontology a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:ontology" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:ontology"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-instances a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:instances" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:instances"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-documents a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:documents" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:domains:documents"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-code a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:domains:code" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:domains:code"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-icd a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:icd" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:icd"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-cards a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:cards" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:cards"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-catalog a chorus:Permission ;
+    rdfs:label "kade may write urn:chorus:catalog" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:catalog"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-kade-nudge-read a chorus:Permission ;
+    rdfs:label "kade may read urn:chorus:nudge-read" ;
+    acl:agent chorus:principal-kade ;
+    acl:accessTo "urn:chorus:nudge-read"^^xsd:anyURI ;
+    acl:mode acl:Read ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-chorus-sdk-ops a chorus:Permission ;
+    rdfs:label "chorus-sdk may write urn:chorus:ops" ;
+    acl:agent chorus:principal-chorus-sdk ;
+    acl:accessTo "urn:chorus:ops"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-chorus-sdk-nudge-read a chorus:Permission ;
+    rdfs:label "chorus-sdk may read urn:chorus:nudge-read" ;
+    acl:agent chorus:principal-chorus-sdk ;
+    acl:accessTo "urn:chorus:nudge-read"^^xsd:anyURI ;
+    acl:mode acl:Read ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-nightly-tests a chorus:Permission ;
+    rdfs:label "nightly may write urn:chorus:domains:tests" ;
+    acl:agent chorus:principal-nightly ;
+    acl:accessTo "urn:chorus:domains:tests"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-nightly-index a chorus:Permission ;
+    rdfs:label "nightly may write urn:chorus:index" ;
+    acl:agent chorus:principal-nightly ;
+    acl:accessTo "urn:chorus:index"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-nightly-nudge-read a chorus:Permission ;
+    rdfs:label "nightly may read urn:chorus:nudge-read" ;
+    acl:agent chorus:principal-nightly ;
+    acl:accessTo "urn:chorus:nudge-read"^^xsd:anyURI ;
+    acl:mode acl:Read ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-crawler-code a chorus:Permission ;
+    rdfs:label "crawler may write urn:chorus:domains:code" ;
+    acl:agent chorus:principal-crawler ;
+    acl:accessTo "urn:chorus:domains:code"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-crawler-tests a chorus:Permission ;
+    rdfs:label "crawler may write urn:chorus:domains:tests" ;
+    acl:agent chorus:principal-crawler ;
+    acl:accessTo "urn:chorus:domains:tests"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
+
+chorus:permission-jeff-security a chorus:Permission ;
+    rdfs:label "jeff may write urn:chorus:domains:security" ;
+    acl:agent chorus:principal-jeff ;
+    acl:accessTo "urn:chorus:domains:security"^^xsd:anyURI ;
+    acl:mode acl:Write ;
+    chorus:ownedBy chorus:role-silas .
