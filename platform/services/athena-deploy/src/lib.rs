@@ -38,6 +38,44 @@ pub fn scope(root: &str, range: &str) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
+/// What to do with the register's answer to "create dataset": the store is
+/// athena's, and a demo store is fresh or it is not a demo (#4096: a 409 means a
+/// store from an earlier round is still here; rows it holds were written by that
+/// round). Pure; unit-tested.
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoreAction { Created, Recreate, Refuse }
+pub fn store_action(create_http: &str) -> StoreAction {
+    match create_http.trim() { "200" => StoreAction::Created, "409" => StoreAction::Recreate, _ => StoreAction::Refuse }
+}
+
+/// `athena-deploy store <fuseki base> <dataset>` (#4186): create the dataset fresh
+/// (in-memory), dropping an earlier one first. Auth from FUSEKI_ADMIN_USER /
+/// FUSEKI_ADMIN_PASSWORD (athena.yml sources fuseki-auth.sh). CURL_BIN is the
+/// test seam. Refuses loudly on anything but created / recreated.
+pub fn store(base: &str, dataset: &str) -> Result<String, String> {
+    let curl = std::env::var("CURL_BIN").unwrap_or_else(|_| "curl".to_string());
+    let admin = format!("{}/$/datasets", base.trim_end_matches('/'));
+    let mut auth: Vec<String> = Vec::new();
+    if let Ok(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD") { if !pw.is_empty() {
+        auth.push("-u".into()); auth.push(format!("{}:{}", std::env::var("FUSEKI_ADMIN_USER").unwrap_or_else(|_| "admin".into()), pw));
+    } }
+    let create = || -> Result<String, String> {
+        let o = Command::new(&curl).args(&auth).args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin, "--data", &format!("dbName={dataset}&dbType=mem")]).output().map_err(|e| format!("store: curl: {e}"))?;
+        Ok(String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    let first = create()?;
+    match store_action(&first) {
+        StoreAction::Created => Ok(format!("store={dataset} http={first} created")),
+        StoreAction::Recreate => {
+            let _ = Command::new(&curl).args(&auth).args(["-s", "-o", "/dev/null", "-X", "DELETE", &format!("{admin}/{dataset}")]).output();
+            let second = create()?;
+            if store_action(&second) == StoreAction::Created { Ok(format!("store={dataset} http={second} recreated fresh (an earlier round's store was dropped)")) }
+            else { Err(format!("store: {dataset} could not be recreated after drop (http {second}) — no store, nothing to deploy into")) }
+        }
+        StoreAction::Refuse => Err(format!("store: {dataset} NOT created (http {first}) — admin auth missing or refused; nothing to deploy into")),
+    }
+}
+
 pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     match ttl_override {
         Some(t) if !t.is_empty() => vec![t],
@@ -191,6 +229,15 @@ fn riot_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_action_is_fresh_or_recreated_never_a_guess_4186() {
+        assert_eq!(store_action("200"), StoreAction::Created);
+        assert_eq!(store_action("409"), StoreAction::Recreate, "an earlier round's store is dropped and made again");
+        assert_eq!(store_action("401"), StoreAction::Refuse);
+        assert_eq!(store_action("405"), StoreAction::Refuse, "405 is what seeding into a missing dataset answers; refuse here, never there");
+        assert_eq!(store_action("000"), StoreAction::Refuse);
+    }
 
     #[test]
     fn scope_predicates_are_the_shared_definition_4186() {

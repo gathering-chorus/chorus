@@ -297,6 +297,29 @@ jobs:
           case "$rc" in 0) exit 0 ;; 2) exit 1 ;; esac
           chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
 
+      # #4186 — the MODEL side of the variant, in two halves around env-up:
+      #   athena-model (before): fresh variant store + the model set, so athena-make boots
+      #                          against shapes (it exits "nothing to serve" on an empty store)
+      #   athena-rows  (after):  wait for the variant, post the rows through the door, sweep
+      # Both run through the chorus_athena verb. The card's OWN chorus-mcp serves the
+      # second (test-in-demo); the first runs before that mcp exists, so canonical's.
+      # BOOTSTRAP (#3197 class — a card that repairs the pipeline cannot ship through
+      # it): while the canonical chorus-mcp does not yet carry chorus_athena, the file
+      # ~/.chorus/athena-bootstrap-<card> makes the step run athena.yml directly and say
+      # so loudly. It exists for exactly that card's own present and is deleted at land.
+      - name: athena-model
+        if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
+        run: |
+          set -euo pipefail
+          ARGS="$(printf '{"role":"%s","card_id":%s,"target":"werk-model"}' "${ROLE}" "${CARD_ID}")"
+          if [ -f "${HOME}/.chorus/athena-bootstrap-${CARD_ID}" ]; then
+            echo "::warning::athena-model: BOOTSTRAP — running athena.yml directly; chorus_athena is not on canonical chorus-mcp until this card lands"
+            "${CHORUS_ACT_BIN:-act}" workflow_dispatch -W "${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}/.github/workflows/athena.yml" -P macos-latest=-self-hosted \
+              --input card_id="${CARD_ID}" --input role="${ROLE}" --input target=werk-model --input landed_commit=""
+          else
+            chorus-mcp-call.sh "${ROLE}" chorus_athena "$ARGS"
+          fi
+
       - name: env-up
         id: env_up
         # posts chorus/env-up/<card>; fails the job if the slot doesn't come up.
@@ -312,17 +335,19 @@ jobs:
           post pending
           if chorus-mcp-call.sh "${ROLE}" werk-deploy "$(printf '{"role":"%s","card_id":%s,"env_up":true}' "${ROLE}" "${CARD_ID}")"; then post success; else post failure; exit 1; fi
 
-      # #4186 — the MODEL side of the variant. env-up created an EMPTY store and booted
-      # the services; athena.yml (target=werk) deploys the model set into it, restarts
-      # the variant athena-make so it serves the shapes, posts the rows through the
-      # door, and sweeps. Runs through the chorus_athena verb like every other step.
-      - name: athena-werk
+      - name: athena-rows
         if: ${{ steps.provenround.outputs.skip_prove != 'true' }}
         run: |
           set -euo pipefail
-          # the card's OWN chorus-mcp (test-in-demo): the verb runs from the code the card ships
-          CHORUS_MCP_PORT="$(werk-deploy env-port chorus-mcp "${ROLE}")" \
-            chorus-mcp-call.sh "${ROLE}" chorus_athena "$(printf '{"role":"%s","card_id":%s,"target":"werk"}' "${ROLE}" "${CARD_ID}")"
+          ARGS="$(printf '{"role":"%s","card_id":%s,"target":"werk-rows"}' "${ROLE}" "${CARD_ID}")"
+          if [ -f "${HOME}/.chorus/athena-bootstrap-${CARD_ID}" ]; then
+            echo "::warning::athena-rows: BOOTSTRAP — running athena.yml directly"
+            "${CHORUS_ACT_BIN:-act}" workflow_dispatch -W "${CHORUS_WERK_BASE}/${ROLE}-${CARD_ID}/.github/workflows/athena.yml" -P macos-latest=-self-hosted \
+              --input card_id="${CARD_ID}" --input role="${ROLE}" --input target=werk-rows --input landed_commit=""
+          else
+            # the card's OWN chorus-mcp (test-in-demo): the verb runs from the code the card ships
+            CHORUS_MCP_PORT="$(werk-deploy env-port chorus-mcp "${ROLE}")" chorus-mcp-call.sh "${ROLE}" chorus_athena "$ARGS"
+          fi
 
       - name: prove-live
         id: prove_live

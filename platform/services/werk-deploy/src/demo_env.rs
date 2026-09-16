@@ -603,58 +603,11 @@ fn fuseki_admin_auth() -> Vec<String> {
     }
 }
 
-fn prepare_werk_store(role: &str, _werk_root: &str) -> String {
-    let ds = werk_dataset_name(role);
-    let base = werk_fuseki_for(role);
-    let base = base.trim_end_matches(&format!("/{}", ds)).to_string();
-    let admin = format!("{}/$/datasets", base);
-    let auth = fuseki_admin_auth();
-    let out = Command::new("curl")
-        .args(&auth)
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
-               "--data", &format!("dbName={}&dbType=mem", ds)])
-        .output();
-    let mut created = match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        Err(e) => format!("curl-failed:{}", e),
-    };
-    // #4096 — a 409 means a store from an earlier round is still here (a failed
-    // env-up never reaches env-down). Rows it holds were written by that round's
-    // code and data — loom sat there owned by role-jeff across four rounds and
-    // every later PUT was refused against it. A demo store is fresh or it is
-    // not a demo: drop it and create it again.
-    if created == "409" {
-        let _ = Command::new("curl")
-            .args(&auth)
-            .args(["-s", "-o", "/dev/null", "-X", "DELETE", &format!("{}/{}", admin, ds)])
-            .output();
-        created = match Command::new("curl")
-            .args(&auth)
-            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "POST", &admin,
-                   "--data", &format!("dbName={}&dbType=mem", ds)])
-            .output()
-        {
-            Ok(o) => format!("{} (recreated fresh)", String::from_utf8_lossy(&o.stdout).trim()),
-            Err(e) => format!("curl-failed:{}", e),
-        };
-    }
-    // 200 = created, 409 = already there; both are usable. Anything else means
-    // there is no dataset, and seeding into one that does not exist answers 405
-    // — a code that sends the reader looking at the wrong thing. Say it here.
-    if !(created.starts_with("200") || created == "409") {
-        return format!(
-            "store={} create_http={} — dataset NOT created (admin auth missing or refused); \
-no model seed attempted",
-            ds, created
-        );
-    }
-    // #4186 — the store is env's; the MODEL is athena's. Deploying the model set
-    // and posting the rows moved to athena.yml's land job (target=werk), which
-    // werk.yml runs right after env-up: deploy → serve (kickstart the variant so it
-    // reloads the shapes) → seed → prove. env_up creates an EMPTY dataset and stops.
-    format!("store={} create_http={} model=athena.yml", ds, created)
-}
-
+// #4186 — env_up no longer creates the werk dataset: the STORE is athena's.
+// athena.yml (target=werk-model, run by werk.yml BEFORE env-up) creates it fresh
+// via `athena-deploy store` and deploys the model set into it, so the variant
+// athena-make boots against shapes (it exits "no classes generated — nothing to
+// serve" on an empty store: run 83, 2026-09-16). env_down still drops it.
 /// #4047 — drop the werk's dataset at env-down so no per-card store outlives
 /// its demo. In-memory, so the drop is the whole cleanup.
 fn drop_werk_store(role: &str) -> String {
@@ -673,9 +626,8 @@ fn drop_werk_store(role: &str) -> String {
 pub fn env_up(role: &str, werk_root: &str, canonical_root: &str, card: u64, trace: &str) -> R<String> {
     let home_p = Path::new(canonical_root);
     let mut summary = Vec::new();
-    // #4047 — the werk's own store, prepared BEFORE the services boot so
-    // athena-make finds a seeded dataset on first query.
-    summary.push(prepare_werk_store(role, werk_root));
+    // #4186 — the store and the model in it are athena.yml's (target=werk-model),
+    // which werk.yml runs before this. Nothing about the dataset happens here.
     for svc in env_services() {
         // Phase 1: build dist for this service in the werk. ~2s for TS.
         // Surfacing per-service so a failure points at exactly which service

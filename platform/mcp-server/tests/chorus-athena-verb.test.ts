@@ -61,8 +61,8 @@ test('chorus_athena runs athena.yml with the target and landed sha as inputs, ho
 test('NEGATIVE PROOF — a red athena run is a thrown, named failure, never ok:true', async () => {
   await withServer(async (client) => {
     await assert.rejects(
-      client.callTool({ name: 'chorus_athena', arguments: { role: 'wren', card_id: 4186, target: 'werk' } }),
-      (e: Error) => /chorus_athena-fail/.test(e.message) && /target=werk/.test(e.message) && /stub says no/.test(e.message),
+      client.callTool({ name: 'chorus_athena', arguments: { role: 'wren', card_id: 4186, target: 'werk-rows' } }),
+      (e: Error) => /chorus_athena-fail/.test(e.message) && /target=werk-rows/.test(e.message) && /stub says no/.test(e.message),
       'a red run is a thrown, named failure carrying the workflow\'s own error line',
     );
   }, 1);

@@ -20,6 +20,15 @@ fn main() {
             _ => { eprintln!("usage: athena-deploy scope <root> <git-range>"); std::process::exit(2); }
         }
     }
+    if args.get(1).map(String::as_str) == Some("store") {
+        match (args.get(2), args.get(3)) {
+            (Some(base), Some(ds)) => match athena_deploy::store(base, ds) {
+                Ok(s) => { println!("{}", s); std::process::exit(0); }
+                Err(e) => { eprintln!("athena-deploy: {}", e); std::process::exit(1); }
+            },
+            _ => { eprintln!("usage: athena-deploy store <fuseki-base> <dataset>"); std::process::exit(2); }
+        }
+    }
     match run_athena_deploy() {
         Ok(summary) => {
             println!("{}", summary);

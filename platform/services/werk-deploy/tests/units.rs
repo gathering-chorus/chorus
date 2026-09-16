@@ -1069,7 +1069,7 @@ fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
 #[test]
 fn env_up_carries_no_model_deploy_or_row_post_4186() {
     let src = include_str!("../src/demo_env.rs");
-    for forbidden in ["athena-deploy-model.sh", "\"seed\", \"--post\"", "fn post_werk_rows"] {
+    for forbidden in ["athena-deploy-model.sh", "\"seed\", \"--post\"", "fn post_werk_rows", "dbType=mem", "fn prepare_werk_store"] {
         assert!(!src.contains(forbidden), "demo_env.rs still carries `{}` — the variant model legs belong to athena.yml target=werk (#4186)", forbidden);
     }
     // the one home for the scope rule is the shared module, and both crates read it
@@ -1081,5 +1081,6 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     let werk = include_str!("../../../../.github/workflows/werk.yml");
     assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
     assert!(werk.contains("chorus_athena"), "werk.yml runs the model pipeline through the chorus_athena verb, not by calling act inside act");
-    assert!(!werk.contains("workflows/athena.yml\" -P"), "no nested act");
+    assert!(!werk.contains("${CHORUS_HOME}/.github/workflows/athena.yml"), "no nested act on the canonical file; the only direct run is the named bootstrap on the card's own file");
+    assert!(werk.contains("athena-bootstrap-${CARD_ID}"), "the bootstrap escape is named, never silent");
 }
