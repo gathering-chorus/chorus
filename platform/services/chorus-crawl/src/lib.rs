@@ -573,11 +573,16 @@ pub struct Drift {
     pub missing_from_graph: Vec<String>,
     /// A row whose path the tree does not have.
     pub missing_from_tree: Vec<String>,
+    /// #4180 — a row that exists but carries the WRONG content hash. The first
+    /// reconcile only compared path sets, so three rows with stale shas read as
+    /// "clean — the graph matches the tree" while the graph described a file that
+    /// no longer existed in that form. A row that is present and wrong is drift.
+    pub stale_sha: Vec<String>,
 }
 
 impl Drift {
     pub fn is_clean(&self) -> bool {
-        self.missing_from_graph.is_empty() && self.missing_from_tree.is_empty()
+        self.missing_from_graph.is_empty() && self.missing_from_tree.is_empty() && self.stale_sha.is_empty()
     }
     /// The morning line. Clean says so in one sentence; dirty names paths.
     pub fn report(&self) -> String {
@@ -590,6 +595,9 @@ impl Drift {
         }
         if !self.missing_from_tree.is_empty() {
             parts.push(format!("{} rows with no file: {}", self.missing_from_tree.len(), self.missing_from_tree.join(", ")));
+        }
+        if !self.stale_sha.is_empty() {
+            parts.push(format!("{} rows with a stale sha: {}", self.stale_sha.len(), self.stale_sha.join(", ")));
         }
         format!("reconcile: DRIFT — {}", parts.join(" · "))
     }
@@ -605,18 +613,49 @@ pub fn reconcile(disk: &[OnDisk], graph: &[InGraph]) -> Drift {
         }
     }
     for g in graph {
-        if !disk.iter().any(|f| f.path == g.path) {
-            d.missing_from_tree.push(g.path.clone());
+        match disk.iter().find(|f| f.path == g.path) {
+            None => d.missing_from_tree.push(g.path.clone()),
+            Some(f) if f.classified && f.sha != g.sha => d.stale_sha.push(g.path.clone()),
+            Some(_) => {}
         }
     }
     d.missing_from_graph.sort();
     d.missing_from_tree.sort();
+    d.stale_sha.sort();
     d
 }
 
 #[cfg(test)]
 mod reconcile_4173 {
     use super::*;
+
+    #[test]
+    fn a_row_with_the_wrong_sha_is_drift_not_clean() {
+        // #4180 — three prod rows carried stale hashes and reconcile said clean.
+        let disk = [OnDisk { path: "a.rs".into(), sha: "new".into(), classified: true }];
+        let graph = [InGraph { path: "a.rs".into(), sha: "old".into(), other: Vec::new() }];
+        let r = reconcile(&disk, &graph);
+        assert!(!r.is_clean());
+        assert_eq!(r.stale_sha, vec!["a.rs".to_string()]);
+        assert!(r.report().contains("1 rows with a stale sha: a.rs"));
+    }
+
+    // NEGATIVE PROOF (#3734): the sha check must not fire on the states that are
+    // NOT drift — a matching sha, and an unclassified file the crawler never
+    // writes — or every reconcile would be red and the word would mean nothing.
+    #[test]
+    fn negative_proof_a_matching_sha_and_an_unclassified_file_are_not_sha_drift() {
+        let disk = [
+            OnDisk { path: "a.rs".into(), sha: "same".into(), classified: true },
+            OnDisk { path: "x.bin".into(), sha: "disk".into(), classified: false },
+        ];
+        let graph = [
+            InGraph { path: "a.rs".into(), sha: "same".into(), other: Vec::new() },
+            InGraph { path: "x.bin".into(), sha: "graph".into(), other: Vec::new() },
+        ];
+        let r = reconcile(&disk, &graph);
+        assert!(r.stale_sha.is_empty(), "{:?}", r.stale_sha);
+    }
 
     fn d(path: &str) -> OnDisk {
         OnDisk { path: path.into(), sha: "s".into(), classified: true }

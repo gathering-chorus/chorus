@@ -54,3 +54,21 @@ setup() {
   run grep -A 12 '\- name: crawl-delta' "$bad"
   [[ "$output" != *"continue-on-error: true"* ]]
 }
+
+# #4180 — the nightly must be a FULL pass. The first launchd-started run walked
+# 0 files: it read the watermark and did a delta, which the on-land step had
+# already done. A nightly that repeats the delta never sees graph-side drift.
+@test "the nightly forces a full walk, not a delta" {
+  run /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$PLIST"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# NEGATIVE PROOF: a unit without the override is the one that ran a delta —
+# the check must fail on it.
+@test "NEGATIVE PROOF: a unit without the full-walk override is caught" {
+  bad="$BATS_TEST_TMPDIR/bad.plist"; cp "$PLIST" "$bad"
+  /usr/libexec/PlistBuddy -c 'Delete :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$bad"
+  run /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:CHORUS_CRAWL_WATERMARK' "$bad"
+  [ "$status" -ne 0 ]
+}
