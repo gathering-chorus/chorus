@@ -1,0 +1,42 @@
+# #4186 — NEGATIVE PROOF fixture for chorus:PrincipleShape and the two kind shapes.
+# Every row here VIOLATES the shape on purpose; the bats asserts each violation is
+# reported. If this file ever validates clean, the shape has gone shallow again.
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+
+chorus:role-fixture a chorus:Role ; rdfs:label "fixture role" .
+
+# 1. a quotation, not one of ours: no jeffReading, no techReading, no source
+chorus:fixture-quotation a chorus:Principle ;
+    chorus:ownedBy chorus:role-fixture ;
+    rdfs:label "Observe" ; rdfs:comment "Use protracted and thoughtful observation." ;
+    chorus:principleKind "pc" ; chorus:order 1 ; chorus:isPermacultureParent true .
+
+# 2. a permaculture root with no number and no parent flag
+chorus:fixture-unnumbered-root a chorus:Principle ;
+    chorus:ownedBy chorus:role-fixture ;
+    rdfs:label "Connect" ; rdfs:comment "Use relative location." ;
+    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:techReading "Place elements so they create useful relationships among all parts." ;
+    chorus:jeffReading "Jeff draws the map before he places the bed; adjacency is the design." ;
+    chorus:principleKind "pc" .
+
+# 3. an XP principle that claims a Hemenway number
+chorus:fixture-numbered-xp a chorus:Principle ;
+    chorus:ownedBy chorus:role-fixture ;
+    rdfs:label "Humanity" ; rdfs:comment "Software is written by people." ;
+    dcterms:source "Beck, K. Extreme Programming Explained, 2nd ed., ch. 3." ;
+    chorus:techReading "Roles are not interchangeable executors; the attention contract exists for this." ;
+    chorus:jeffReading "Tone is product. When tone drops his budget goes to stabilising, not creating." ;
+    chorus:principleKind "xp" ; chorus:order 3 .
+
+# 4. an order outside 1..14 and an unknown kind
+chorus:fixture-out-of-range a chorus:Principle ;
+    chorus:ownedBy chorus:role-fixture ;
+    rdfs:label "Fifteenth" ; rdfs:comment "There is no fifteenth Hemenway principle." ;
+    dcterms:source "nowhere" ;
+    chorus:techReading "A number past the set is a number nobody can look up in the book." ;
+    chorus:jeffReading "Jeff keeps the Gaia's Garden list; fourteen, not fifteen." ;
+    chorus:principleKind "zen" ; chorus:order 15 .
