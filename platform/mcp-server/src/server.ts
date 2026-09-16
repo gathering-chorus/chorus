@@ -2857,7 +2857,7 @@ async function executeChorusAthena(
     '--input', `target=${args.target}`, '--input', `landed_commit=${args.landed_commit ?? ''}`,
   ];
   const execFileP = promisify(execFile);
-  let stdout = ''; let stderr = ''; let exitCode = 0;
+  let stdout: string; let stderr: string; let exitCode = 0;
   let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
   try {
     const r = await execFileP(actBin, actArgs, {
