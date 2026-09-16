@@ -36,6 +36,8 @@ EOS
   export CLAUDE_BIN="$T/bin/claude" TMUX_BIN="$T/bin/tmux" AWAKE_PS="$T/bin/ps"
   export CHORUS_SESSIONS_DIR="$T/sessions" AWAKE_ROLE_DIR="$T/roles/kade" CHORUS_ROOT="$ROOT"
   export AWAKE_NO_ATTACH=1 AWAKE_WAIT=1
+  mkdir -p "$T/projects"; export AWAKE_PROJECTS_DIR="$T/projects"
+  unset TMUX
 }
 
 reg() { # reg <pid> [pane]
@@ -86,6 +88,7 @@ reg() { # reg <pid> [pane]
   cat > "$T/agents.json" <<EOS
 [{"pid":"87866","id":"79906dc2","cwd":"$T/roles/kade","kind":"background","startedAt":"$(( $(date +%s) * 1000 - 60000 ))","sessionId":"79906dc2-1681","name":"test-verification-workflow","state":"working"}]
 EOS
+  touch "$T/projects/79906dc2-1681.jsonl"
   ( sleep 0.3; reg 88 %2 ) &
   run "$SCRIPT" kade
   [ "$status" -eq 0 ]
@@ -134,4 +137,17 @@ EOS
   [ "$status" -eq 1 ]
   [[ "$output" == *"REFUSED"*"could not list kade's background sessions"*"unknown option --cwd"* ]]
   [ ! -f "$T/tmux.log" ]
+}
+
+@test "NEGATIVE PROOF — an OLDER background helper is never attached when a newer conversation exists (first live run defect)" {
+  cat > "$T/agents.json" <<EOS
+[{"pid":"1","id":"8faa3fa4","cwd":"$T/roles/kade","kind":"background","startedAt":"$(( $(date +%s) * 1000 - 3600000 ))","sessionId":"8faa3fa4-80ae","name":"old-helper","state":"working"}]
+EOS
+  touch "$T/projects/8faa3fa4-80ae.jsonl"; sleep 1; touch "$T/projects/38b6cebe-6041.jsonl"
+  ( sleep 0.3; reg 44 %0 ) &
+  run "$SCRIPT" kade
+  [ "$status" -eq 0 ]
+  ! grep -q -- "claude attach" "$T/tmux.log"
+  grep -q -- "claude -c" "$T/tmux.log"
+  [[ "$output" == *"via claude -c"* ]]
 }

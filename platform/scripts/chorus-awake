@@ -77,7 +77,13 @@ if [ "$N" -eq 1 ]; then
   exit 0
 fi
 
-# --- 2. the real conversation: detached background → attach; else continue ---
+# --- 2. the real conversation: claude's own rule is "the most recent
+# conversation in this directory". If THAT one is detached in the background,
+# attach it; otherwise continue it. An older background agent is never the
+# role's conversation (first live run, 2026-09-16: a stale 08:25 helper was
+# attached instead of the 13:00 conversation). Two reads, both loud on failure.
+PROJECTS_DIR="${AWAKE_PROJECTS_DIR:-$HOME/.claude/projects/$(printf '%s' "$ROLE_DIR" | tr '/' '-')}"
+LATEST_SESSION="$(ls -t "$PROJECTS_DIR"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null | sed 's/\.jsonl$//' || true)"
 # A failed read is not "no background session" — guessing here would start a
 # second conversation on top of a detached one. Unmeasured → refuse, named.
 if ! AGENTS_JSON="$("$CLAUDE_BIN" agents --json --cwd "$ROLE_DIR" 2>"$TMPDIR_ERR")"; then
@@ -85,20 +91,20 @@ if ! AGENTS_JSON="$("$CLAUDE_BIN" agents --json --cwd "$ROLE_DIR" 2>"$TMPDIR_ERR
   echo "  nothing was started; without that list a detached conversation cannot be told from none." >&2
   exit 1
 fi
-read -r ATTACH_ID STALE_LIST <<<"$(python3 - "$AGENTS_JSON" "$STALE_HOURS" <<'PY'
+read -r ATTACH_ID STALE_LIST <<<"$(python3 - "$AGENTS_JSON" "$STALE_HOURS" "$LATEST_SESSION" <<'PY'
 import json, sys, time
 try: d = json.loads(sys.argv[1])
 except Exception: d = []
-stale_h = float(sys.argv[2]); now = time.time()*1000
+stale_h = float(sys.argv[2]); latest = sys.argv[3]; now = time.time()*1000
 bg = [s for s in d if s.get("kind") == "background" and s.get("pid") and s.get("state") not in ("exited","stopped")]
-bg.sort(key=lambda s: int(s.get("startedAt", 0)), reverse=True)
-attach = bg[0]["id"] if bg else "-"
+# attach ONLY the background session that IS the most recent conversation
+attach = next((s["id"] for s in bg if latest and s.get("sessionId","").startswith(latest)), "-")
 stale = [s["id"] for s in d if s.get("kind") == "background" and now - int(s.get("startedAt", now)) > stale_h*3600*1000 and s.get("id") != attach]
 print(attach, ",".join(stale) if stale else "-")
 PY
 )"
 if [ "$ATTACH_ID" != "-" ]; then
-  CMD="$CLAUDE_BIN attach $ATTACH_ID"; HOW="attach $ATTACH_ID (was detached in the background)"
+  CMD="$CLAUDE_BIN attach $ATTACH_ID"; HOW="attach $ATTACH_ID (the last conversation, detached in the background)"
 else
   CMD="$CLAUDE_BIN -c"; HOW="claude -c (last conversation)"
 fi
@@ -117,7 +123,15 @@ fi
 if ! "$TMUX_BIN" has-session -t "$TMUX_SESSION" 2>/dev/null; then
   "$TMUX_BIN" new-session -d -s "$TMUX_SESSION" -c "$ROLE_DIR"
 fi
-"$TMUX_BIN" send-keys -t "$TMUX_SESSION" "cd '$ROLE_DIR' && source '$CHORUS_ROOT/platform/scripts/chorus-env-setup.sh' && $CMD" Enter
+LAUNCH="cd '$ROLE_DIR' && source '$CHORUS_ROOT/platform/scripts/chorus-env-setup.sh' && $CMD"
+if [ -n "${TMUX:-}" ] && [ "$("$TMUX_BIN" display-message -p '#S' 2>/dev/null)" = "$TMUX_SESSION" ] && [ "${AWAKE_NO_ATTACH:-0}" != "1" ]; then
+  # we ARE the pane: run it here, foreground; the proof line prints when it exits
+  echo "awake: $ROLE  starting here via $HOW"
+  bash -c "$LAUNCH"
+  FOUND="$(live_entries | head -1 || true)"; [ -n "$FOUND" ] && proof_line "$FOUND" "$HOW"
+  exit 0
+fi
+"$TMUX_BIN" send-keys -t "$TMUX_SESSION" "$LAUNCH" Enter
 
 # --- 3. prove it: a live tmux-hosted registry entry appears ---
 i=0; FOUND=""
