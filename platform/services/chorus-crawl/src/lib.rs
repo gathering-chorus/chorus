@@ -1076,13 +1076,109 @@ pub fn row_fields(obj: &str) -> Vec<(String, String)> {
             let Some(val_end) = find_str_end(obj, j + 1) else {
                 break;
             };
-            out.push((key.to_string(), obj[j + 1..val_end].to_string()));
+            out.push((json_unescape(key), json_unescape(&obj[j + 1..val_end])));
             i = val_end + 1;
         } else {
             i = j;
         }
     }
     out
+}
+
+/// A JSON string body's VALUE: `\"` `\\` `\/` `\n` `\t` `\r` `\b` `\f` and
+/// `\uXXXX` (surrogate pairs joined) decoded; an unknown escape passes through.
+///
+/// #4185 — row_fields used to hand back the raw spelling. A served testName
+/// `has zero =\"// occurrences` compared raw against the parsed name never
+/// matched: 125 quoted cases were deleted and re-posted on every full pass, and
+/// the reconcile read them as drift in both directions. fields_json re-escapes
+/// on the way out, so the value is the only honest thing to hold in between.
+pub fn json_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('/') => out.push('/'),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some('u') => {
+                let hex: String = it.by_ref().take(4).collect();
+                let Ok(code) = u32::from_str_radix(&hex, 16) else {
+                    out.push_str("\\u");
+                    out.push_str(&hex);
+                    continue;
+                };
+                if (0xD800..0xDC00).contains(&code) {
+                    let mut peek = it.clone();
+                    if peek.next() == Some('\\') && peek.next() == Some('u') {
+                        let low: String = peek.by_ref().take(4).collect();
+                        if let Ok(lo) = u32::from_str_radix(&low, 16) {
+                            if (0xDC00..0xE000).contains(&lo) {
+                                let cp = 0x10000 + ((code - 0xD800) << 10) + (lo - 0xDC00);
+                                if let Some(ch) = char::from_u32(cp) {
+                                    out.push(ch);
+                                    it = peek;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    out.push('\u{FFFD}');
+                } else {
+                    out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+                }
+            }
+            Some(o) => {
+                out.push('\\');
+                out.push(o);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod row_values_4185 {
+    use super::*;
+
+    // NEGATIVE PROOF (#3734): the served spelling and the parsed name must be
+    // ONE value, or every quoted case is re-posted every run (125 on the variant).
+    #[test]
+    fn negative_proof_a_served_name_with_an_escaped_quote_reads_as_its_value() {
+        let obj = r#"{"name": "t-1", "filePath": "a.test.ts", "testName": "has zero =\"// occurrences in index.html"}"#;
+        let f = row_fields(obj);
+        let case = f
+            .iter()
+            .find(|(k, _)| k == "testName")
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(case, "has zero =\"// occurrences in index.html");
+        assert_ne!(
+            case, r#"has zero =\"// occurrences in index.html"#,
+            "the raw JSON spelling is not the value"
+        );
+    }
+
+    #[test]
+    fn json_unescape_decodes_every_escape() {
+        assert_eq!(json_unescape(r"a\nb\tc\\d\/eé😀"), "a\nb\tc\\d/eé😀");
+        assert_eq!(json_unescape("plain"), "plain");
+        assert_eq!(
+            json_unescape(r"\x"),
+            r"\x",
+            "an unknown escape passes through"
+        );
+    }
 }
 
 fn find_str_end(s: &str, from: usize) -> Option<usize> {
@@ -1160,6 +1256,41 @@ pub fn strip_named_prefix(err: &str, fields: &mut [(String, String)]) -> bool {
         }
     }
     changed
+}
+
+/// #4185 — the door caps a write body at 65,536 bytes. A CodeFile row is
+/// small enough that 200 of them fit; a Test row carries a path, a case name
+/// and a minted name, so 200 of them do not: the first full pass on the
+/// variant sent 40 batches of 68,814 bytes and every one came back 422. A
+/// batch is bounded by BYTES as well as rows, and the bound is measured
+/// against what the door said, with headroom for the brackets and commas.
+pub const DOOR_BODY_CAP: usize = 65_536;
+pub const BATCH_BODY_BUDGET: usize = 60_000;
+
+/// Would adding a row of `next_len` bytes to a batch currently `body_len`
+/// bytes (joined) still fit under the budget?
+pub fn batch_accepts(body_len: usize, next_len: usize, budget: usize) -> bool {
+    // "+ 1" for the comma this row adds; "+ 2" for the enclosing brackets
+    body_len + next_len + 1 + 2 <= budget
+}
+
+#[cfg(test)]
+mod batch_budget_4185 {
+    use super::*;
+
+    #[test]
+    fn a_batch_under_the_budget_accepts_the_next_row() {
+        assert!(batch_accepts(1_000, 340, BATCH_BODY_BUDGET));
+    }
+
+    // NEGATIVE PROOF (#3734): the state that went 422 on the variant — a
+    // batch that WOULD cross the door's cap — is refused before it is sent.
+    #[test]
+    fn negative_proof_a_row_that_would_cross_the_cap_does_not_join_the_batch() {
+        assert!(!batch_accepts(59_800, 340, BATCH_BODY_BUDGET));
+        // and the budget itself sits under the door's cap
+        assert!(BATCH_BODY_BUDGET < DOOR_BODY_CAP);
+    }
 }
 
 /// #4178 — the identity a scheduled run must present.

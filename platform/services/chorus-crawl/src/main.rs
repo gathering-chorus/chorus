@@ -903,7 +903,11 @@ fn main() {
                     path,
                     is_rs && rust_declares_tests(&format!("{root}/{path}")),
                 ) {
-                    batch.push(row_json(f, k.as_str(), l));
+                    let row = row_json(f, k.as_str(), l);
+                    if !batch_accepts(batch_bytes(&batch), row.len(), BATCH_BODY_BUDGET) {
+                        flush(&mut batch, &mut failed, &mut wrote);
+                    }
+                    batch.push(row);
                     if batch.len() >= 200 {
                         flush(&mut batch, &mut failed, &mut wrote);
                     }
@@ -1038,10 +1042,11 @@ fn main() {
         for a in &case_actions {
             match a {
                 CaseAction::Post(row) => {
-                    cbatch.push(case_row_json(
-                        &cases::case_row_name(&row.file, &row.case),
-                        row,
-                    ));
+                    let body = case_row_json(&cases::case_row_name(&row.file, &row.case), row);
+                    if !batch_accepts(batch_bytes(&cbatch), body.len(), BATCH_BODY_BUDGET) {
+                        cflush(&mut cbatch, &mut failed, &mut wrote);
+                    }
+                    cbatch.push(body);
                     if cbatch.len() >= 200 {
                         cflush(&mut cbatch, &mut failed, &mut wrote);
                     }
@@ -1126,6 +1131,11 @@ fn main() {
         );
         std::process::exit(1);
     }
+}
+
+/// The joined size of a batch body so far (rows plus the commas between them).
+fn batch_bytes(batch: &[String]) -> usize {
+    batch.iter().map(|b| b.len()).sum::<usize>() + batch.len().saturating_sub(1)
 }
 
 fn scope_was_full_walk(scope: &Scope) -> bool {
