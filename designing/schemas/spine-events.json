@@ -3856,6 +3856,86 @@
         "elapsed_secs": "Wall-clock seconds for the whole run",
         "bar_secs": "The bar in seconds"
       }
+    },
+    "model.handoff.athena": {
+      "vertebra": "building",
+      "source": "werk-deploy",
+      "description": "werk-deploy canonical leg (#4186): the landed diff carried model or seed sources; werk-deploy ships code only and HANDS OFF to athena.yml's land job (scope → validate → deploy → serve → seed → prove). Witnessed so the hand-off is never assumed.",
+      "fields": {
+        "target": "Always canonical",
+        "modelFiles": "Comma-joined changed model sources",
+        "seedFiles": "Comma-joined changed seed sources",
+        "pipeline": "athena.yml"
+      }
+    },
+    "athena.pipeline.started": {
+      "vertebra": "building",
+      "source": "athena.yml",
+      "description": "athena.yml land job (#4186) scope leg: the model pipeline started for a land; counts of model and seed sources it will carry.",
+      "fields": {
+        "card": "Card id",
+        "target": "canonical",
+        "model": "Count of changed model sources",
+        "seed": "Count of changed seed sources"
+      }
+    },
+    "athena.pipeline.completed": {
+      "vertebra": "building",
+      "source": "athena.yml",
+      "description": "athena.yml land job (#4186) prove leg: verdict of the whole model pipeline for a land. issues = the athena-validate sweep count; it may never rise above the recorded baseline (the ratchet toward 0).",
+      "fields": {
+        "card": "Card id",
+        "target": "canonical",
+        "verdict": "pass | fail",
+        "issues": "Sweep issue count, or unmeasured"
+      }
+    },
+    "athena.deploy.started": {
+      "vertebra": "building",
+      "source": "athena.yml",
+      "description": "athena.yml land job (#4186) deploy leg: athena-deploy-model.sh invoked against canonical for the landed model sources.",
+      "fields": {
+        "card": "Card id",
+        "target": "canonical"
+      }
+    },
+    "athena.seed.completed": {
+      "vertebra": "building",
+      "source": "athena.yml",
+      "description": "athena.yml land job (#4186) seed leg: athena-model seed --post finished through the door, AFTER athena-serve proved the server answers.",
+      "fields": {
+        "card": "Card id",
+        "target": "canonical"
+      }
+    },
+    "athena.serve.kickstarted": {
+      "vertebra": "building",
+      "source": "athena-serve",
+      "description": "athena-serve (#4186): the model server was restarted (launchctl kickstart -k) so it reloads the shapes it serves.",
+      "fields": {
+        "service": "launchd label"
+      }
+    },
+    "athena.serve.ready": {
+      "vertebra": "building",
+      "source": "athena-serve",
+      "description": "athena-serve (#4186): the health endpoint answered 200 with a healthy status body; downstream legs (seed) may run.",
+      "fields": {
+        "service": "launchd label",
+        "url": "health url",
+        "waited_s": "seconds until healthy"
+      }
+    },
+    "athena.serve.refused": {
+      "vertebra": "building",
+      "source": "athena-serve",
+      "description": "athena-serve (#4186): the model server did not answer healthy within the timeout (or the kickstart failed); the pipeline stops here, nothing downstream runs. The six-lands-POST→0 defect, refused at its door.",
+      "fields": {
+        "service": "launchd label",
+        "url": "health url",
+        "last_http": "last HTTP code seen",
+        "reason": "kickstart-failed when the restart itself failed"
+      }
     }
   }
 }

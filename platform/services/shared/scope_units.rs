@@ -222,10 +222,18 @@ pub fn scope_declared_edges(root: &std::path::Path) -> Vec<(String, String)> {
             for f in files.flatten() {
                 let Ok(text) = fs::read_to_string(f.path()) else { continue };
                 for line in text.lines() {
-                    let Some(i) = line.find("include!(\"") else { continue };
-                    let rest = &line[i + "include!(\"".len()..];
-                    let Some(q) = rest.find('"') else { continue };
-                    let target = &rest[..q];
+                    // #4186 — `#[path = "../../shared/x.rs"] mod x;` is the same build
+                    // input as `include!` and was invisible here: a card that used it
+                    // failed its own test leg "unmapped:platform/services/shared/…".
+                    let target = if let Some(i) = line.find("include!(\"") {
+                        let rest = &line[i + "include!(\"".len()..];
+                        let Some(q) = rest.find('"') else { continue };
+                        &rest[..q]
+                    } else if let Some(i) = line.find("#[path = \"") {
+                        let rest = &line[i + "#[path = \"".len()..];
+                        let Some(q) = rest.find('"') else { continue };
+                        &rest[..q]
+                    } else { continue };
                     let Some(name) = std::path::Path::new(target).file_name().and_then(|n| n.to_str())
                     else { continue };
                     if services.join("shared").join(name).is_file() {
@@ -321,6 +329,26 @@ mod scope_refusal_4169 {
         let verdict = scope_unit_names(&[bats.to_string()], &units, &[], false);
         let ScopeVerdict::Scoped(names) = verdict else { panic!("a suite must not go FULL") };
         assert_eq!(names, vec![bats.to_string()]);
+    }
+
+    #[test]
+    fn a_path_attribute_include_maps_the_shared_file_like_include_bang_4186() {
+        let tmp = std::env::temp_dir().join(format!("scope-4186-{}", std::process::id()));
+        let services = tmp.join("platform/services");
+        std::fs::create_dir_all(services.join("shared")).unwrap();
+        std::fs::create_dir_all(services.join("crate-a/src")).unwrap();
+        std::fs::create_dir_all(services.join("crate-b/src")).unwrap();
+        std::fs::write(services.join("shared/thing.rs"), "// shared").unwrap();
+        std::fs::write(services.join("crate-a/src/lib.rs"), "#[path = \"../../shared/thing.rs\"]\nmod thing;\n").unwrap();
+        std::fs::write(services.join("crate-b/src/lib.rs"), "mod t { include!(\"../../shared/thing.rs\"); }\n").unwrap();
+        // NEGATIVE: a #[path] to a file that is NOT under shared/ must add no edge
+        std::fs::write(services.join("crate-a/src/other.rs"), "#[path = \"local/helper.rs\"]\nmod h;\n").unwrap();
+        let edges = scope_declared_edges(&tmp);
+        let shared: Vec<_> = edges.iter().filter(|(p, _)| p == "platform/services/shared/thing.rs").map(|(_, c)| c.clone()).collect();
+        assert!(shared.contains(&"crate-a".to_string()), "#[path] include maps: {:?}", edges);
+        assert!(shared.contains(&"crate-b".to_string()), "include! still maps: {:?}", edges);
+        assert!(!edges.iter().any(|(p, _)| p.contains("helper.rs")), "a non-shared #[path] adds nothing: {:?}", edges);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

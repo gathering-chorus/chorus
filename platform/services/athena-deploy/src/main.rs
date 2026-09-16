@@ -8,6 +8,18 @@
 use athena_deploy::run_athena_deploy;
 
 fn main() {
+    // #4186 — `athena-deploy scope <root> <range>`: the one place the workflows
+    // ask "did this land touch the model or the seed?"
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("scope") {
+        match (args.get(2), args.get(3)) {
+            (Some(root), Some(range)) => match athena_deploy::scope(root, range) {
+                Ok(s) => { if !s.is_empty() { println!("{}", s); } std::process::exit(0); }
+                Err(e) => { eprintln!("athena-deploy: {}", e); std::process::exit(2); }
+            },
+            _ => { eprintln!("usage: athena-deploy scope <root> <git-range>"); std::process::exit(2); }
+        }
+    }
     match run_athena_deploy() {
         Ok(summary) => {
             println!("{}", summary);

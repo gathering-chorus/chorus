@@ -1,0 +1,13 @@
+[package]
+name = "athena-serve"
+version = "0.1.0"
+edition = "2021"
+
+# The Athena pipeline's SERVE leg (#4186): restart the model server and refuse
+# to continue until it answers healthy. Zero deps, std only; shells launchctl
+# and curl like the other verbs (ADR-032).
+[dependencies]
+
+[[bin]]
+name = "athena-serve"
+path = "src/main.rs"

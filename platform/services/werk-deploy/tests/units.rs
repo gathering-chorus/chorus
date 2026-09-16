@@ -1031,3 +1031,58 @@ fn negative_proof_the_old_per_unit_rule_fails_this_invariant() {
         "the old per-unit rule must NOT satisfy the once-per-deploy invariant"
     );
 }
+
+
+// #4186 — NEGATIVE PROOF: the model and seed legs have left werk-deploy. deploy_canonical
+// may only HAND OFF (witnessed) to athena.yml; if either engine call returns to this
+// verb, this test goes red and names the line.
+#[test]
+fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
+    let src = include_str!("../src/lib.rs");
+    let start = src.find("fn deploy_canonical(").expect("deploy_canonical exists");
+    // the body runs to the NEXT top-level item (Silas, #4186 gate: a column-0
+    // close brace inside the body would have ended the search early and let a
+    // forbidden call after it pass — so bound on the next `fn`/`pub fn`/`impl`
+    // at column 0, and prove the bound found the real end by requiring it to
+    // contain the hand-off marker AND the one-sha gate that follows the legs).
+    let rest = &src[start + 1..];
+    let end = ["\nfn ", "\npub fn ", "\nimpl ", "\n#[cfg(test)]"].iter()
+        .filter_map(|m| rest.find(m)).min().map(|i| start + 1 + i).unwrap_or(src.len());
+    let body = &src[start..end];
+    assert!(body.contains("the one-sha invariant GATE"), "body bound did not reach deploy_canonical's tail — the search window is wrong, not the code");
+    for forbidden in ["athena-deploy-model.sh", "seed\", \"--post\"", "com.chorus.athena-make"] {
+        assert!(!body.contains(forbidden), "deploy_canonical still carries `{}` — the model/seed leg belongs to athena.yml (#4186)", forbidden);
+    }
+    assert!(body.contains("model.handoff.athena"), "the hand-off must be witnessed on the spine");
+    let yml = include_str!("../../../../.github/workflows/athena.yml");
+    for leg in ["name: scope", "name: validate", "name: deploy", "name: serve", "name: seed", "name: prove"] {
+        assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
+    }
+    assert!(yml.contains("athena-serve \"${{ steps.resolve.outputs.label }}\""), "serve leg must use athena-serve on the resolved label, never launchd liveness");
+    assert!(yml.contains("com.chorus.athena-make.werk.${ROLE}") && yml.contains("LABEL=\"com.chorus.athena-make\""), "resolve names both targets' labels");
+}
+
+
+// #4186 — NEGATIVE PROOF, variant side: env_up creates the store and boots the
+// services; it does NOT deploy the model set or post rows any more. Both moved to
+// athena.yml (target=werk). If either engine call returns to demo_env.rs this is red.
+#[test]
+fn env_up_carries_no_model_deploy_or_row_post_4186() {
+    let src = include_str!("../src/demo_env.rs");
+    for forbidden in ["athena-deploy-model.sh", "\"seed\", \"--post\"", "fn post_werk_rows", "dbType=mem", "fn prepare_werk_store"] {
+        assert!(!src.contains(forbidden), "demo_env.rs still carries `{}` — the variant model legs belong to athena.yml target=werk (#4186)", forbidden);
+    }
+    // the one home for the scope rule is the shared module, and both crates read it
+    assert!(include_str!("../src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
+    assert!(include_str!("../../athena-deploy/src/lib.rs").contains("include!(\"../../shared/model_scope.rs\")"));
+    let yml = include_str!("../../../../.github/workflows/athena.yml");
+    assert!(!yml.contains("grep -E '^roles/"), "athena.yml must call `athena-deploy scope`, not carry its own copy of the rule");
+    assert!(yml.contains("athena-deploy scope"));
+    let werk = include_str!("../../../../.github/workflows/werk.yml");
+    assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
+    assert!(werk.contains("chorus_athena"), "werk.yml runs the model pipeline through the chorus_athena verb, not by calling act inside act");
+    assert!(!werk.contains("workflows/athena.yml"), "no act inside act: werk.yml reaches athena only through the verb");
+    for gone in ["athena-model", "athena-rows", "athena-werk", "werk-model", "werk-rows", "athena-bootstrap"] {
+        assert!(!werk.contains(gone), "#4186 (Jeff): the demo reads the live store; werk.yml has no variant model step: found {}", gone);
+    }
+}

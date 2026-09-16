@@ -532,6 +532,34 @@ jobs:
             sleep 90
           done
 
+      # #4186 — the MODEL pipeline is its own file. werk-deploy ships code only and
+      # hands off; this step runs athena.yml (scope → validate → deploy → serve →
+      # seed → prove) against canonical when the landed diff carried model or seed
+      # sources. BLOCKING: a land whose model is in the repo but not served or not
+      # attested by the store is not a land.
+      - name: athena-land
+        if: ${{ steps.demo.outputs.proven == 'true' }}
+        run: |
+          set -euo pipefail
+          LC="${LANDED_COMMIT:-}"
+          [ -n "$LC" ] || LC=$(git -C "${CHORUS_HOME}" rev-parse origin/main)
+          if [ -z "$(athena-deploy scope "${CHORUS_HOME}" "${LC}^..${LC}")" ]; then
+            echo "athena-land: no model or seed source in ${LC} — the athena pipeline has nothing to run (explicit absence)"; exit 0
+          fi
+          # deploy-canonical redeploys chorus-mcp DETACHED (#3320), so the verb may be a few
+          # seconds from live; retry only on "unknown tool", never on a real refusal.
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            rc=0; out=$(chorus-mcp-call.sh "${ROLE}" chorus_athena "$(printf '{"role":"%s","card_id":%s,"target":"canonical","landed_commit":"%s"}' "${ROLE}" "${CARD_ID}" "${LC}")" 2>&1) || rc=$?
+            echo "$out"
+            if [ "$rc" = "0" ]; then exit 0; fi
+            case "$out" in
+              *"Unknown tool"*|*"unknown tool"*|*"not found"*|*"no MCP session"*)
+                [ "$attempt" = "12" ] && { echo "::error::athena-land: chorus_athena not reachable on canonical chorus-mcp after 12 tries" >&2; exit 1; }
+                echo "athena-land: canonical chorus-mcp not serving chorus_athena yet (attempt $attempt/12) — waiting 10s"; sleep 10 ;;
+              *) exit "$rc" ;;
+            esac
+          done
+
       # #4178 — the on-land delta. A land changes files; the graph follows in the
       # same breath instead of waiting for 04:30, so "what is in the repo" is
       # never a day stale. Runs as `crawler` for the same reason the nightly

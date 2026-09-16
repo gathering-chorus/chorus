@@ -1729,46 +1729,15 @@ pub fn changed_ts_services(diff: &str) -> Vec<String> {
 /// inside it — never seeded canonical. #4080 landed green at 11:30 with canonical
 /// serving 0 of 9 sections for eight products until a hand run at 11:47. PURE —
 /// unit-tested, negative-proven (a .ttl elsewhere, a docs html, do NOT fire).
-pub fn changed_seed_sources(diff: &str) -> Vec<String> {
-    diff.lines()
-        .map(str::trim)
-        .filter(|l| {
-            (l.starts_with("designing/data/") && l.ends_with(".ttl"))
-                || *l == "platform/config/instance-seed-manifest.txt"
-        })
-        .map(str::to_string)
-        .collect()
-}
-
-pub fn changed_model_sources(diff: &str) -> Vec<String> {
-    diff.lines()
-        .map(str::trim)
-        .filter(|l| {
-            (l.ends_with(".ttl")
-                && l.starts_with("roles/")
-                && l.splitn(3, '/').nth(2).is_some_and(|rest| rest.starts_with("ontology/")))
-                // #3752 — staged retirements ARE model changes: landing a card
-                // that stages one must run the model deploy so the retirement
-                // section executes it (the land is the execution moment).
-                || *l == "designing/schemas/model-retirements.jsonl"
-        })
-        .map(str::to_string)
-        .collect()
-}
+// #4186 — ONE home for the model/seed predicates (shared/model_scope.rs); athena-deploy
+// `scope` and both workflows read the same definition, so the rule cannot drift.
+mod model_scope { include!("../../shared/model_scope.rs"); }
+pub use model_scope::{changed_model_sources, changed_seed_sources, is_model_source, is_seed_source};
 
 /// #3736 — read the store's model stamp (single-request truth): which commit the live
 /// ontology graph's model was deployed from. Empty string = no stamp / store unreachable
 /// (both fail the gate via landed_commit_ok's non-empty rule on pipeline lands).
-fn read_model_stamp(root: &str) -> String {
-    let query = "SELECT ?c WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#deployedFromCommit> ?c } }";
-    run_env(Some(root), &[], "curl",
-        &["-s", "-m", "10", "http://localhost:3030/pods/query",
-          "--data-urlencode", &format!("query={}", query),
-          "-H", "Accept: text/csv"])
-        .ok()
-        .and_then(|csv| csv.lines().nth(1).map(|l| l.trim().trim_matches('"').to_string()))
-        .unwrap_or_default()
-}
+// #4186 — read_model_stamp moved to athena.yml's prove leg (the store attests deployedFromCommit there).
 
 /// #3222 — target=canonical: build the card's crate(s) from CANONICAL ff-synced to
 /// origin/main (werk-build --target canonical --only), then install/verify/kickstart each
@@ -1921,107 +1890,19 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
         labels.push(if is_detached_ack(&out) { format!("{}(detached)", c) } else { c.clone() });
     }
 
-    // #3736 — model leg: the landed diff touched MODEL_SET-home sources, so run the
-    // governed model deploy from synced canonical (ff-sync above / werk-build already
-    // synced), then verify the STORE's stamp — never the file (the landed≠live class).
-    if !model_files.is_empty() {
-        let root_m = canonical_root_path(home);
-        jsonl(home, role, card, trace, "model.deploy.started",
-            &format!(",\"target\":\"canonical\",\"files\":\"{}\"", model_files.join(",")));
-        run_env(
-            Some(root_m.as_str()),
-            &[("CHORUS_TRACE_ID", trace), ("DEPLOY_ROLE", role), ("CHORUS_ROLE", role)],
-            "bash",
-            &[&format!("{}/platform/scripts/athena-deploy-model.sh", root_m)],
-        )
-        .map_err(|e| died(home, role, card, trace, "model-deploy-fail",
-            format!("athena-deploy-model.sh failed — model changes are landed but NOT live: {}", e)))?;
-        // #4096/#4101 — a shape is a deploy too, and it must be SERVED before the rows
-        // post: #4101's land posted rows carrying the new docState to an athena-make
-        // still holding the old shape table (restart sat after the seed leg) and was
-        // refused "off-model property". Restart first, then post. athena-make reads the shapes at boot and
-        // serves that schema until restarted: #4045 (09-02) and #4094 (09-03) both
-        // landed a new Product property and /products kept serving the old columns
-        // until a hand restart. Kickstart it, wait for liveness, say so on the
-        // spine; a restart that fails dies loudly — never a silent "landed but
-        // not serving".
-        let svc = "com.chorus.athena-make";
-        run_env(None, &[], "launchctl", &["kickstart", "-k", &format!("gui/{}/{}", uid(), svc)])
-            .and_then(|_| wait_for_service_up(svc))
-            .map_err(|e| {
-                emit_spine(home, "model.serve.restart_failed", role, card, trace,
-                    &[("service", svc), ("files", &model_files.join(",")), ("reason", &e.to_string().replace('"', "'"))]);
-                died(home, role, card, trace, "model-serve-restart-fail",
-                    format!("{} did not come back after the model deploy — the new shape is in the store but NOT served: {}", svc, e))
-            })?;
-        emit_spine(home, "model.serve.restarted", role, card, trace,
-            &[("service", svc), ("files", &model_files.join(",")), ("deploy_target", "canonical")]);
-    }
-    // #4096 — the seed leg runs for a model change OR a seed-only change. It used to
-    // sit inside the model branch above, so a card that changed only designing/data
-    // seed files (#4080) landed with canonical never seeded.
+    // #4186 — the MODEL and SEED legs left this verb. Jeff, 2026-09-16: "athena and
+    // werk are conjoined twins we need to separate them". They ran here from #3736
+    // (model) and #4096 (seed), restarting athena-make and seeding against it before
+    // it answered: POST → 0 on six lands across #4175 and #4179. They now run as
+    // .github/workflows/athena.yml (scope → validate → deploy → serve → seed →
+    // prove), triggered by werk.yml's `athena-land` step after this deploy. This
+    // verb ships CODE only; it says so on the spine when the diff carried model or
+    // seed sources so the hand-off is witnessed, never assumed.
     if !model_files.is_empty() || !seed_files.is_empty() {
-        let root_m = canonical_root_path(home);
-        jsonl(home, role, card, trace, "model.seed.started",
-            &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\",\"modelFiles\":\"{}\"", seed_files.join(","), model_files.join(",")));
-        // #4096 — the rows go through the API, not around it (Jeff, 2026-09-03:
-        // "only agents write a working api then dont use it 'just because'").
-        // athena-model seed --post reads the manifest, turns every subject into
-        // the door's own write body, and POSTs/PUTs it to canonical athena-make
-        // signed by the row's owner. Fails CLOSED — a land whose rows were
-        // refused dies loudly with the API's words, never lands them stale.
-        let seed_bin = {
-            let installed = format!("{}/.chorus/bin/athena-model",
-                env::var("HOME").unwrap_or_default());
-            if std::path::Path::new(&installed).is_file() { installed } else { "athena-model".to_string() }
-        };
-        let api = env::var("ATHENA_MAKE_URL").unwrap_or_else(|_| "http://localhost:3360".to_string());
-        // The land role's identity is still needed for the ownerless kinds
-        // (value streams, steps, roles, pipelines, cards — shapes with no owner),
-        // which `--unowned load` sends through the file loader, said out loud.
-        let seed_token = run_env(
-            Some(root_m.as_str()),
-            &[],
-            "bash",
-            &[&format!("{}/platform/scripts/chorus-identity-token", root_m), role],
-        )
-        .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("cannot mint a CSS identity token for '{}' — rows NOT posted (DAL fails closed): {}", role, e)))?
-        .trim()
-        .to_string();
-        run_env(
-            Some(root_m.as_str()),
-            &[("CHORUS_TRACE_ID", trace), ("CHORUS_ROOT", root_m.as_str()),
-              ("CHORUS_IDENTITY_TOKEN", seed_token.as_str()),
-              ("CHORUS_LANDED_COMMIT", landed_commit.unwrap_or(""))],   // #4101 — the door stamps changedIn from this
-            &seed_bin,
-            &["seed", "--post", "--api", &api, "--unowned", "load"],
-        )
-        .map_err(|e| died(home, role, card, trace, "instance-seed-fail",
-            format!("athena-model seed --post refused — rows are landed but NOT live: {}", e)))?;
-        jsonl(home, role, card, trace, "model.seed.completed",
-            &format!(",\"target\":\"canonical\",\"seedFiles\":\"{}\"", seed_files.join(",")));
-        if model_files.is_empty() { labels.push(format!("seed[{}]", seed_files.len())); }
-    }
-    if !model_files.is_empty() {
-        let root_m = canonical_root_path(home);
-        // Single-request truth: the store attests which commit its model came from
-        // (#3736 stamp, written by the script). Gate stamp == landedCommit on pipeline lands.
-        let stamp = read_model_stamp(root_m.as_str());
-        let stamp_ok = match landed_commit {
-            None => true, // manual/recovery deploy — ungated, mirrors the one-sha gate
-            Some(landed) => landed_commit_ok(&stamp, landed),
-        };
-        jsonl(home, role, card, trace, "model.deploy.completed",
-            &format!(",\"target\":\"canonical\",\"files\":\"{}\",\"storeStamp\":\"{}\",\"stampVerified\":{}",
-                model_files.join(","), stamp, stamp_ok));
-        labels.push(format!("model[{}]", model_files.len()));
-        if !stamp_ok {
-            return Err(format!(
-                "model-stamp gate RED: store deployedFromCommit '{}' != landedCommit '{}' — model deploy ran but the store does not attest the landed sha",
-                stamp, landed_commit.unwrap_or("")
-            ));
-        }
+        jsonl(home, role, card, trace, "model.handoff.athena",
+            &format!(",\"target\":\"canonical\",\"modelFiles\":\"{}\",\"seedFiles\":\"{}\",\"pipeline\":\"athena.yml\"",
+                model_files.join(","), seed_files.join(",")));
+        labels.push(format!("athena-handoff[model={},seed={}]", model_files.len(), seed_files.len()));
     }
 
     let only = labels.join(",");

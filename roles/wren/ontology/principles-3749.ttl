@@ -17,6 +17,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
 
 
 # #4006 — principleKind as a declared property. athena-make projects DECLARED
@@ -56,6 +57,51 @@ chorus:PrincipleShape a sh:NodeShape ;
     # (principles-api, principles-graph, the book page) were red on an edge
     # that exists. order is the same story for the 14 PC parents (#2314).
     sh:property [ sh:path chorus:rhymesWith ; sh:class chorus:Principle ] ;
-    sh:property [ sh:path chorus:order ; sh:maxCount 1 ; sh:datatype xsd:integer ] ;
+    # #4186 — Jeff, 2026-09-16: "use principles, the class and shacl is shallow".
+    # Measured that day: all 28 rows carry jeffReading, techReading, dcterms:source
+    # and ownedBy; the 14 permaculture roots carry order 1..14 and
+    # isPermacultureParent; NONE of that was in the shape. A shape that describes
+    # less than the rows is a floor nobody can fall through. The two readings ARE
+    # the principle (a bare Hemenway or Beck sentence is a quotation, not one of
+    # ours), so they are required; the source is where it came from, required;
+    # the owner is the role that keeps it, required. order is bounded to the 14
+    # roots. Negative proof: platform/tests/fixtures/principles-4186-violations.ttl
+    # must FAIL this shape (4186-principle-shape-floor.bats).
+    sh:property [ sh:path rdfs:label ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    sh:property [ sh:path chorus:jeffReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
+                  sh:message "a principle without Jeff's reading is a quotation, not one of ours" ] ;
+    sh:property [ sh:path chorus:techReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
+                  sh:message "a principle without its technical reading cannot be traced to a practice" ] ;
+    sh:property [ sh:path dcterms:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+                  sh:message "every principle names where it came from (Hemenway, Beck, or a Chorus decision)" ] ;
+    # Jeff, 2026-09-16 17:16 (on #4183): the owner of a row is a PRINCIPAL, not a role;
+    # ownedBy's range moves Role → Principal in the authz step that follows this card.
+    # So this shape asks for exactly one IRI owner and does not name the class, or the
+    # range change would have to fight its own shape.
+    sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:nodeKind sh:IRI ;
+                  sh:message "a principle has exactly one owner (an IRI: a role today, a principal after the authz step)" ] ;
+    sh:property [ sh:path chorus:isPermacultureParent ; sh:maxCount 1 ; sh:datatype xsd:boolean ] ;
+    sh:property [ sh:path chorus:order ; sh:maxCount 1 ; sh:datatype xsd:integer ; sh:minInclusive 1 ; sh:maxInclusive 14 ;
+                  sh:message "order is the Hemenway numbering, 1 to 14" ] ;
     chorus:instancesGraph "urn:chorus:domains:principles" ;
     chorus:generatedBy "athena-model" .
+
+# #4186 — the 14 permaculture roots are the ordered set the whole principle stack
+# hangs from (why-and-how-of-chorus: every Chorus principle carries a parent edge
+# up to one of them). A root without its number, or a numbered principle that is
+# not a root, breaks that ordering silently. SPARQL target: SHACL-AF, which Jena's
+# validator (the one the pipeline and the bats run) implements.
+chorus:PermacultureRootShape a sh:NodeShape ;
+    sh:target [ a sh:SPARQLTarget ;
+        sh:select """PREFIX chorus: <https://jeffbridwell.com/chorus#>
+            SELECT ?this WHERE { ?this a chorus:Principle ; chorus:principleKind "pc" . }""" ] ;
+    sh:property [ sh:path chorus:order ; sh:minCount 1 ; sh:message "a permaculture root carries its Hemenway number" ] ;
+    sh:property [ sh:path chorus:isPermacultureParent ; sh:minCount 1 ; sh:hasValue true ;
+                  sh:message "a permaculture root says so: isPermacultureParent true" ] .
+
+chorus:XpPrincipleShape a sh:NodeShape ;
+    sh:target [ a sh:SPARQLTarget ;
+        sh:select """PREFIX chorus: <https://jeffbridwell.com/chorus#>
+            SELECT ?this WHERE { ?this a chorus:Principle ; chorus:principleKind "xp" . }""" ] ;
+    sh:property [ sh:path chorus:order ; sh:maxCount 0 ; sh:message "only the 14 permaculture roots are numbered" ] ;
+    sh:property [ sh:path chorus:isPermacultureParent ; sh:maxCount 0 ; sh:message "an XP principle is not a permaculture root" ] .
