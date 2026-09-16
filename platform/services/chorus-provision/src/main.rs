@@ -523,19 +523,71 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     // create a second identity"). Two Jeffs on the relay is the bug this
     // guards, and it has to run first: a check after the POST is a check that
     // already made the second one. The REGISTER answers, not the row.
+    // A pod this tool already made whose row never landed: (account id, webId
+    // the register links). Set only when the register itself proves it.
+    let mut resume: Option<(String, String)> = None;
     let half = match existing(name) {
         Existing::None if status_of(&format!("{}/{name}/profile/card", env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").trim_end_matches('/'))) == "200" => {
             // The register serves a profile card for this name and no row
             // names it: a pod with nobody behind it. Measured 13:38 today on
-            // debmajumdar — an account rollback CSS honoured for the account
-            // and not for the card. Refuse and name it; a second account
-            // under the same pod name is a second identity.
-            eprintln!("chorus-provision: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
-            eprintln!("  nothing was written. Either a rollback left the card behind, or someone made the pod");
-            eprintln!("  by hand. Pick another name, or have the DBA path remove the card, then rerun.");
-            return 2;
+            // debmajumdar — this tool made the account, pod and login, its row
+            // write was refused, and its "rollback" turned out to be a 404 that
+            // deleted nothing. If THIS tool made it, it can prove so: sign in
+            // with the password it saved and read the register's own webId
+            // link. Then the missing half is the row, and it is completed.
+            // Anything else is refused — a second account under the same pod
+            // name is a second identity.
+            match (&person, saved_password(name)) {
+                (Some(p), Some(pw)) => match css_login_person(&css, &jar_path(), &p.email, &pw) {
+                    Some((acct, webid)) if webid.contains(&format!("/{name}/")) => {
+                        eprintln!("chorus-provision: '{name}' is HALF-PROVISIONED — this tool made the account and pod ({acct}),");
+                        eprintln!("  the register links {webid}, and no row names it. Completing the missing half.");
+                        resume = Some((acct, webid));
+                    }
+                    _ => {
+                        eprintln!("chorus-provision: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
+                        eprintln!("  and signing in with the password this tool saved for {} did not reach a pod of that name.", p.email);
+                        eprintln!("  nothing was written. Pick another name, or have the DBA path remove the card.");
+                        return 2;
+                    }
+                },
+                _ => {
+                    eprintln!("chorus-provision: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
+                    eprintln!("  nothing was written. Either a rollback left the card behind, or someone made the pod");
+                    eprintln!("  by hand. Pick another name, or have the DBA path remove the card, then rerun.");
+                    return 2;
+                }
+            }
+            None
         }
         Existing::Whole(w) => {
+            // Whole. One thing may still be wrong: the NAME. The first live run
+            // for Deb Majumdar stored the label `"Deb` because a shell split a
+            // quoted argument; a user who exists keeps their identity and gets
+            // their name corrected, never a second row.
+            if let Some(p) = &person {
+                let current = label_of(&format!("principal-{name}"));
+                if current.as_deref() != Some(p.full_name.as_str()) {
+                    let esc = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
+                    let fuseki = env_or("FUSEKI_URL", "http://localhost:3030");
+                    let update = format!(
+                        "PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
+                         DELETE WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:principal-{name} rdfs:label ?l }} }} ; \
+                         INSERT DATA {{ GRAPH <urn:chorus:domains:security> {{ c:principal-{name} rdfs:label \"{}\" }} }}",
+                        esc(&p.full_name)
+                    );
+                    let code = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
+                                      &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
+                                      "--data-binary", &update]).unwrap_or_default();
+                    if label_of(&format!("principal-{name}")).as_deref() == Some(p.full_name.as_str()) {
+                        eprintln!("chorus-provision: '{name}' already exists — name corrected from {:?} to {:?}", current.unwrap_or_default(), p.full_name);
+                    } else {
+                        eprintln!("chorus-provision: '{name}' already exists — name correction FAILED (store HTTP {code}); label still {:?}", current.unwrap_or_default());
+                        println!("{w}");
+                        return 1;
+                    }
+                }
+            }
             println!("{w}");
             eprintln!("chorus-provision: '{name}' already exists — the register serves its profile card. Nothing created.");
             return 0;
@@ -597,15 +649,16 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
         }
     };
 
-    let jar = format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id());
+    let jar = jar_path();
     let mut led = Ledger::default();
 
     // The account. An agent's pod hangs off the ONE service account (it never
     // signs in). A human gets their OWN account: email + password, so the
     // browser sign-in is theirs and nobody else's. Jeff, 09:00 today: "the hx
-    // needs are different than ax".
-    let acct = match &person {
-        None => match css_login(&css, &jar) {
+    // needs are different than ax". A resumed half already has both.
+    let acct = match (&person, &resume) {
+        (_, Some((a, _))) => a.clone(),
+        (None, _) => match css_login(&css, &jar) {
             Some(a) => a,
             None => {
                 eprintln!("chorus-provision: REFUSED — could not reach the CSS accounts API at {css}");
@@ -614,7 +667,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
                 return 2;
             }
         },
-        Some(p) => match css_create_account(&css, &jar, name, p) {
+        (Some(p), None) => match css_create_account(&css, &jar, name, p) {
             Ok(a) => {
                 led.account = Some(a.clone());
                 led.account_token = ACCOUNT_TOKEN.with(|t| t.borrow().clone());
@@ -629,23 +682,34 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
         },
     };
 
-    // 1. the pod. The response carries the webId, or this refuses.
-    let resp = curl_css(css_auth_cfg(), &["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
-                      &format!("{css}/.account/account/{acct}/pod/"),
-                      "-H", "Content-Type: application/json",
-                      "--data", &format!("{{\"name\":\"{name}\"}}")])
-        .unwrap_or_default();
-    let webid = between(&resp, "\"webId\":\"", "\"").unwrap_or_default();
-    if webid.is_empty() {
-        eprintln!("chorus-provision: REFUSED — the register returned no webId for '{name}'");
-        eprintln!("  It is NOT constructed from a template. seed-css.sh:75 does that:");
-        eprintln!("      [ -n \"$WEBID\" ] || WEBID=\"$ISSUER_URL/$AGENT/profile/card#me\"");
-        eprintln!("  That line cannot fail, which is how crawler-index, reindex-worker");
-        eprintln!("  and embed-worker ended up as principals for pods nobody made.");
-        return 2;
-    }
-    led.pod = Some(name.to_string());
-    eprintln!("  1/3 pod created, webId from the register: {webid}");
+    // 1. the pod. The response carries the webId, or this refuses. A resumed
+    // half already has its pod; the webId is the one the register LINKS.
+    let webid = match &resume {
+        Some((_, w)) => {
+            eprintln!("  1/3 pod already exists, webId from the register's link: {w}");
+            w.clone()
+        }
+        None => {
+            let resp = curl_css(css_auth_cfg(), &["-s", "--max-time", "60", "-b", &jar, "-X", "POST",
+                              &format!("{css}/.account/account/{acct}/pod/"),
+                              "-H", "Content-Type: application/json",
+                              "--data", &format!("{{\"name\":\"{name}\"}}")])
+                .unwrap_or_default();
+            let webid = between(&resp, "\"webId\":\"", "\"").unwrap_or_default();
+            if webid.is_empty() {
+                eprintln!("chorus-provision: REFUSED — the register returned no webId for '{name}'");
+                eprintln!("  It is NOT constructed from a template. seed-css.sh:75 does that:");
+                eprintln!("      [ -n \"$WEBID\" ] || WEBID=\"$ISSUER_URL/$AGENT/profile/card#me\"");
+                eprintln!("  That line cannot fail, which is how crawler-index, reindex-worker");
+                eprintln!("  and embed-worker ended up as principals for pods nobody made.");
+                led.rollback(&css, &acct, &api, &token, &collection);
+                return 2;
+            }
+            led.pod = Some(name.to_string());
+            eprintln!("  1/3 pod created, webId from the register: {webid}");
+            webid
+        }
+    };
 
     // Completing a half: the row's webId must be the one the register just
     // issued. If they differ, the row was typed from a template that guessed
@@ -790,6 +854,71 @@ fn principals_collection() -> Option<(String, String)> {
         }
     }
     None
+}
+
+/// The rdfs:label of a principal row, as the store holds it. None = no row or no label.
+fn label_of(id: &str) -> Option<String> {
+    let q = format!(
+        "PREFIX c: <https://jeffbridwell.com/chorus#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> \
+         SELECT ?l WHERE {{ GRAPH <urn:chorus:domains:security> {{ c:{id} rdfs:label ?l }} }} LIMIT 1"
+    );
+    let body = curl(&["-s", "--max-time", "20", "-G",
+                      &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
+                      "--data-urlencode", &format!("query={q}"),
+                      "-H", "Accept: application/sparql-results+json"])?;
+    let flat: String = {
+        let mut f = String::with_capacity(body.len());
+        let mut in_str = false;
+        let mut prev_esc = false;
+        for ch in body.chars() {
+            if ch == '"' && !prev_esc { in_str = !in_str; }
+            prev_esc = ch == '\\' && !prev_esc;
+            if !in_str && ch.is_whitespace() { continue; }
+            f.push(ch);
+        }
+        f
+    };
+    let i = flat.find("\"l\":")?;
+    between(&flat[i..], "\"value\":\"", "\"").map(|v| v.replace("\\\"", "\""))
+}
+
+fn jar_path() -> String {
+    format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id())
+}
+
+/// The password this tool saved for a human it made, if any. Read only to
+/// prove a half-made user is OURS; never printed.
+fn saved_password(name: &str) -> Option<String> {
+    let p = format!("{}/.chorus/identity/{name}/initial-password", env_or("HOME", ""));
+    std::fs::read_to_string(p).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Sign in as a human with email + password and return (account id, the webId
+/// the register LINKS to that account). Both come from the register's own
+/// answers; nothing is constructed. Leaves the account token set for the
+/// calls that follow.
+fn css_login_person(css: &str, jar: &str, email: &str, password: &str) -> Option<(String, String)> {
+    let esc = |v: &str| v.replace('\\', "\\\\").replace('"', "\\\"");
+    let body = format!("{{\"email\":\"{}\",\"password\":\"{}\"}}", esc(email), esc(password));
+    let cfg = format!("header = \"Content-Type: application/json\"\nheader = \"Accept: application/json\"\ndata = \"{}\"\n", cfg_escape(&body));
+    let login = curl_css(Some(cfg), &["-s", "--max-time", "30", "-c", jar, "-X", "POST",
+                                     &format!("{css}/.account/login/password/")])?;
+    let token = between(&login, "\"authorization\":\"", "\"")?;
+    let auth = format!("header = \"Authorization: CSS-Account-Token {}\"\n", cfg_escape(&token));
+    let index = curl_css(Some(auth.clone()), &["-s", "--max-time", "20", "-H", "Accept: application/json",
+                                                &format!("{css}/.account/")])?;
+    let webid_ctl = between(&index, "\"webId\":\"", "\"")?;
+    let acct = webid_ctl.split("/account/").nth(1)?.split('/').next()?.to_string();
+    let local = webid_ctl.replacen(&env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com").trim_end_matches('/').to_string(), css, 1);
+    let links = curl_css(Some(auth), &["-s", "--max-time", "20", "-H", "Accept: application/json", &local])?;
+    // {"webIdLinks":{"<webid>":"<link url>", ...}}
+    let after = &links[links.find("\"webIdLinks\":{")? + "\"webIdLinks\":{".len()..];
+    let webid = between(after, "\"", "\"")?;
+    if webid.is_empty() {
+        return None;
+    }
+    ACCOUNT_TOKEN.with(|t| *t.borrow_mut() = token);
+    Some((acct, webid))
 }
 
 /// Create a human's OWN CSS account: account → password login (email + a
