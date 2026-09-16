@@ -26,7 +26,7 @@
 # about the change under test.
 #
 # The rule callers follow instead: ASK the server which collection it serves —
-# its discovery document advertises it — the way crawl-files.py always has.
+# its discovery document advertises it — the way the crawler (chorus-crawl) always has.
 # A pre-#4158 server answers /v1/testresults and a post-#4158 one answers
 # /v1/tests/results, so a caller that asks is right on both and needs no
 # land-ordering. Hardcoding either literal is what lost 650 of 650 test results
@@ -69,7 +69,7 @@ list_calls() {
     echo "hardcoded class-rooted CALLS: $n (expected 0)"
     list_calls
     echo "Ask the server instead: read the collection its discovery document"
-    echo "advertises for the class, the way crawl-files.py does."
+    echo "advertises for the class, the way chorus-crawl does."
     false
   }
 }

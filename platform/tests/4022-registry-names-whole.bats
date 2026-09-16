@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
-# #4159 — repointed from the retired tests tagger (retired by #4154) to its parser
-# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
+# #4185 — repointed again: the parsers moved from the Python library (#4159)
+# into the crawler crate (chorus-crawl, src/cases.rs). Same behaviour, same
+# asserts, third home — the seams are the binary's own (--names-of, --covers-of,
+# --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic: fixture files in $BATS_TEST_TMPDIR, the tagger's
 # --names-of / --check-shares seams, no store.
 #
@@ -17,7 +19,17 @@
 # backtick case kept here is a plain template with no substitution, which is what
 # this test was really guarding (the delimiter, not the interpolation).
 
-TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
+# bash 3.2 (this Mac) never fires errexit on a failing `[[ ]]`, so a `[[` assert
+# that is not the LAST line of a test can fail and the test still passes (#4185,
+# measured 2026-09-16: `[[ "a" == *"b"* ]]; true` → ok). Every assert here is a
+# simple command, which bash 3.2 does honour.
+has()   { grep -qF -- "$1" <<<"${2-$output}"; }
+lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2; return 1; fi; }
+eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
+
+setup() {
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../services/chorus-crawl/target/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
+}
 
 @test "negative proof: a jest name containing quotes is registered WHOLE" {
   f="$BATS_TEST_TMPDIR/relay.test.ts"
@@ -29,7 +41,7 @@ describe('#3696 relay framing (pure)', () => {
   test.only('plain name', () => {});
 });
 TS
-  run python3 "$TAGGER" --names-of "$f"
+  run "$BIN" --names-of "$f"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = 'eventFrame is NIP-01 ["EVENT", event]' ]
   [ "${lines[1]}" = 'has zero rows' ]
@@ -40,17 +52,17 @@ TS
 
 @test "control: bats and rust names are untouched" {
   b="$BATS_TEST_TMPDIR/x.bats"; printf '@test "one thing" {\n  true\n}\n' > "$b"
-  run python3 "$TAGGER" --names-of "$b"; [ "${lines[0]}" = "one thing" ]
+  run "$BIN" --names-of "$b"; [ "${lines[0]}" = "one thing" ]
   r="$BATS_TEST_TMPDIR/x.rs"; printf '#[test]\nfn does_x() {}\n' > "$r"
-  run python3 "$TAGGER" --names-of "$r"; [ "${lines[0]}" = "does_x" ]
+  run "$BIN" --names-of "$r"; [ "${lines[0]}" = "does_x" ]
 }
 
 @test "share gate stands down below the corpus floor, still fires above it" {
   echo '{"services": 1}' > "$BATS_TEST_TMPDIR/one.json"
-  run python3 "$TAGGER" --check-shares "$BATS_TEST_TMPDIR/one.json"
+  run "$BIN" --check-shares "$BATS_TEST_TMPDIR/one.json"
   [ "$status" -eq 0 ]
   echo '{"services": 40, "x": 5}' > "$BATS_TEST_TMPDIR/big.json"
-  run python3 "$TAGGER" --check-shares "$BATS_TEST_TMPDIR/big.json"
+  run "$BIN" --check-shares "$BATS_TEST_TMPDIR/big.json"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"covers-share gate RED"* ]]
+  has "covers-share gate RED"
 }

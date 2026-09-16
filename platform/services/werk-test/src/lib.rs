@@ -1314,7 +1314,7 @@ pub fn run_lint_ratchet(werk: &str) -> bool {
 // ---- TestResult batch wire-back: bounded chunks + one token re-mint ----
 
 /// #4158 — the collection path a server ADVERTISES for a class, read from its
-/// discovery document. Same pattern crawl-files.py already uses ("route: read
+/// discovery document. Same pattern chorus-crawl already uses ("route: read
 /// from the server's discovery document, never hardcoded"). A pre-#4158 server
 /// advertises `/v1/testresults`, a post-#4158 one advertises
 /// `/v1/tests/results`; following discovery is correct on both, so the caller

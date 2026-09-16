@@ -8,6 +8,7 @@
 //! is I/O and reporting only — so the rules are testable without a repo, a
 //! server, or a clock.
 
+use chorus_crawl::cases::{self, CaseAction, CaseInGraph, CaseRow};
 use chorus_crawl::*;
 use std::collections::HashMap;
 use std::process::Command;
@@ -19,7 +20,12 @@ fn sh(cmd: &str, args: &[&str], cwd: &str) -> Result<String, String> {
         .output()
         .map_err(|e| format!("{cmd}: {e}"))?;
     if !out.status.success() {
-        return Err(format!("{cmd} {:?} exited {}: {}", args, out.status.code().unwrap_or(-1), String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "{cmd} {:?} exited {}: {}",
+            args,
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -43,11 +49,20 @@ fn head_commit(root: &str) -> Result<String, String> {
 /// (rebase, force-push, shallow clone) must force a full walk, not a crash and
 /// not a silent empty delta.
 fn commit_is_reachable(root: &str, sha: &str) -> bool {
-    sh("git", &["cat-file", "-e", &format!("{sha}^{{commit}}")], root).is_ok()
+    sh(
+        "git",
+        &["cat-file", "-e", &format!("{sha}^{{commit}}")],
+        root,
+    )
+    .is_ok()
 }
 
 fn changes_since(root: &str, from: &str, to: &str) -> Result<Vec<Change>, String> {
-    let raw = sh("git", &["diff", "--name-status", "-M", &format!("{from}..{to}")], root)?;
+    let raw = sh(
+        "git",
+        &["diff", "--name-status", "-M", &format!("{from}..{to}")],
+        root,
+    )?;
     let mut out = Vec::new();
     for line in raw.lines().filter(|l| !l.is_empty()) {
         match parse_name_status(line) {
@@ -83,14 +98,25 @@ fn tree_hashes(root: &str) -> Result<HashMap<String, String>, String> {
 }
 
 fn rust_declares_tests(abs: &str) -> bool {
-    std::fs::read_to_string(abs).map(|s| s.contains("#[test]") || s.contains("#[cfg(test)]")).unwrap_or(false)
+    std::fs::read_to_string(abs)
+        .map(|s| s.contains("#[test]") || s.contains("#[cfg(test)]"))
+        .unwrap_or(false)
 }
 
 /// The file list the tree reports, classified. Returns the reading quality
 /// alongside: if any file could not be read, deletes are refused for this run.
-fn read_tree(root: &str, paths: &[String], hashes: &HashMap<String, String>, scoped: bool) -> (Vec<OnDisk>, TreeRead) {
+fn read_tree(
+    root: &str,
+    paths: &[String],
+    hashes: &HashMap<String, String>,
+    scoped: bool,
+) -> (Vec<OnDisk>, TreeRead) {
     let mut out = Vec::new();
-    let mut complete = if scoped { TreeRead::Scoped } else { TreeRead::Complete };
+    let mut complete = if scoped {
+        TreeRead::Scoped
+    } else {
+        TreeRead::Complete
+    };
     for rel in paths {
         // Only .rs files are opened at all, and only to answer "does this
         // declare tests" — every other classification is a pure path decision.
@@ -107,11 +133,14 @@ fn read_tree(root: &str, paths: &[String], hashes: &HashMap<String, String>, sco
                 continue;
             }
         };
-        out.push(OnDisk { path: rel.clone(), sha, classified });
+        out.push(OnDisk {
+            path: rel.clone(),
+            sha,
+            classified,
+        });
     }
     (out, complete)
 }
-
 
 // ─────────────────────────── the door ───────────────────────────
 
@@ -124,7 +153,9 @@ fn collection_for(api: &str, kind: &str) -> Result<String, String> {
     // discovery advertises /v1/<domain>/<segment>; the server answers the bare
     // path too, and the bare one is what every other caller uses.
     let needle = format!("\"kind\": \"{kind}\"");
-    let at = doc.find(&needle).ok_or_else(|| format!("discovery does not serve {kind} — refusing to guess a route"))?;
+    let at = doc
+        .find(&needle)
+        .ok_or_else(|| format!("discovery does not serve {kind} — refusing to guess a route"))?;
     let tail = &doc[at..];
     let key = "\"collection\": \"";
     let cs = tail.find(key).ok_or("discovery row has no collection")? + key.len();
@@ -149,12 +180,22 @@ fn identity_token(root: &str, role: &str) -> Result<String, String> {
     Ok(t)
 }
 
-fn curl(api: &str, method: &str, path: &str, body: Option<&str>, token: Option<&str>) -> Result<String, String> {
+fn curl(
+    api: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    token: Option<&str>,
+) -> Result<String, String> {
     let url = format!("{api}{path}");
     let mut args: Vec<String> = vec![
-        "-s".into(), "--max-time".into(), "180".into(),
-        "-X".into(), method.into(),
-        "-w".into(), "\n%{http_code}".into(),
+        "-s".into(),
+        "--max-time".into(),
+        "180".into(),
+        "-X".into(),
+        method.into(),
+        "-w".into(),
+        "\n%{http_code}".into(),
     ];
     if let Some(t) = token {
         args.push("-H".into());
@@ -167,11 +208,18 @@ fn curl(api: &str, method: &str, path: &str, body: Option<&str>, token: Option<&
         args.push(b.into());
     }
     args.push(url.clone());
-    let out = Command::new("curl").args(&args).output().map_err(|e| format!("curl: {e}"))?;
+    let out = Command::new("curl")
+        .args(&args)
+        .output()
+        .map_err(|e| format!("curl: {e}"))?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let (payload, code) = text.rsplit_once('\n').unwrap_or(("", "000"));
     if !code.trim().starts_with('2') {
-        return Err(format!("{method} {path} -> HTTP {} {}", code.trim(), payload.chars().take(200).collect::<String>()));
+        return Err(format!(
+            "{method} {path} -> HTTP {} {}",
+            code.trim(),
+            payload.chars().take(200).collect::<String>()
+        ));
     }
     Ok(payload.to_string())
 }
@@ -236,7 +284,11 @@ pub fn stable_name(rel: &str) -> String {
         h ^= *b as u64;
         h = h.wrapping_mul(0x1000_0000_01b3);
     }
-    format!("file-{}-{:08x}", out.trim_matches('-'), (h & 0xffff_ffff) as u32)
+    format!(
+        "file-{}-{:08x}",
+        out.trim_matches('-'),
+        (h & 0xffff_ffff) as u32
+    )
 }
 
 #[cfg(test)]
@@ -257,8 +309,12 @@ mod stable_name_4173 {
     // walk would mint a fresh row each pass instead of addressing the old one.
     #[test]
     fn the_same_path_answers_the_same_name_every_time() {
-        assert_eq!(stable_name("platform/api/src/server.ts"), stable_name("platform/api/src/server.ts"));
-        assert!(stable_name("platform/api/src/server.ts").starts_with("file-platform-api-src-server-ts-"));
+        assert_eq!(
+            stable_name("platform/api/src/server.ts"),
+            stable_name("platform/api/src/server.ts")
+        );
+        assert!(stable_name("platform/api/src/server.ts")
+            .starts_with("file-platform-api-src-server-ts-"));
     }
 }
 
@@ -273,7 +329,54 @@ mod stable_name_4173 {
 /// A row past the end would look absent, and absent means delete, so this walks
 /// to exhaustion rather than stopping at a ceiling.
 fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
-    let coll = collection_for(api, "CodeFile")?;
+    let mut out = Vec::new();
+    for fields in fetch_rows(api, token, "CodeFile")? {
+        let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
+        let Some(path) = get("filePath").filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        let sha = get("fileSha").unwrap_or_default();
+        let other = fields
+            .iter()
+            .filter(|(k, _)| k != "filePath" && k != "fileSha")
+            .cloned()
+            .collect();
+        out.push(InGraph { path, sha, other });
+    }
+    Ok(out)
+}
+
+/// #4185 — every Test (case) row the door serves. Identity is filePath +
+/// testName (the model's word, and the runner's join); `name` is whatever the
+/// row was minted as, legacy or ours, and is only used to address it.
+fn existing_case_rows(api: &str, token: &str) -> Result<Vec<CaseInGraph>, String> {
+    let mut out = Vec::new();
+    for fields in fetch_rows(api, token, "Test")? {
+        let get = |k: &str| {
+            fields
+                .iter()
+                .find(|(f, _)| f == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        let (name, file, case) = (get("name"), get("filePath"), get("testName"));
+        if name.is_empty() || file.is_empty() {
+            continue;
+        }
+        out.push(CaseInGraph {
+            name,
+            file,
+            case,
+            fields,
+        });
+    }
+    Ok(out)
+}
+
+/// Every row of one served class, as flat field maps — paged by the door's own
+/// `links.next`, to exhaustion (see the note on existing_rows' first cut).
+fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
+    let coll = collection_for(api, kind)?;
     let mut out = Vec::new();
     let mut next = format!("{coll}?limit=1000");
     let mut pages = 0usize;
@@ -283,16 +386,7 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
         // complete entity back (the DAL is full-replace, #3345), so anything
         // dropped here is deleted from the graph on the next content change.
         for obj in row_objects(&page) {
-            let fields = row_fields(obj);
-            let get = |k: &str| fields.iter().find(|(f, _)| f == k).map(|(_, v)| v.clone());
-            let Some(path) = get("filePath").filter(|p| !p.is_empty()) else { continue };
-            let sha = get("fileSha").unwrap_or_default();
-            let other = fields
-                .iter()
-                .filter(|(k, _)| k != "filePath" && k != "fileSha")
-                .cloned()
-                .collect();
-            out.push(InGraph { path, sha, other });
+            out.push(row_fields(obj));
         }
         pages += 1;
         // The door's own "next", with the /v1 prefix stripped the way every
@@ -300,7 +394,12 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
         let link = page
             .find("\"next\"")
             .and_then(|i| {
-                let t = page[i..].trim_start_matches("\"next\"").trim_start().trim_start_matches(':').trim().trim_start_matches('"');
+                let t = page[i..]
+                    .trim_start_matches("\"next\"")
+                    .trim_start()
+                    .trim_start_matches(':')
+                    .trim()
+                    .trim_start_matches('"');
                 t.find('"').map(|j| t[..j].to_string())
             })
             .filter(|l| !l.is_empty());
@@ -309,13 +408,182 @@ fn existing_rows(api: &str, token: &str) -> Result<Vec<InGraph>, String> {
             None => break,
         }
         if pages > 10_000 {
-            return Err("paging did not terminate after 10,000 pages — the door is not advancing".into());
+            return Err(
+                "paging did not terminate after 10,000 pages — the door is not advancing".into(),
+            );
         }
     }
     Ok(out)
 }
 
+/// A Test row as the create batch expects it.
+fn case_row_json(name: &str, row: &CaseRow) -> String {
+    let mut fields = vec![("name".to_string(), name.to_string())];
+    fields.extend(row.owned_fields());
+    fields_json(&fields)
+}
+
+/// #4131 — platform/services/shared/ is a SOURCE directory other crates include,
+/// not a crate; its #[test] fns run under the including crate's names, so a row
+/// registered here is a name no lane can ever emit.
+fn registers_cases(path: &str) -> bool {
+    !path.contains("platform/services/shared/")
+}
+
+#[cfg(test)]
+mod registers_cases_4131 {
+    use super::registers_cases;
+
+    // #4131 — a source dir other crates include is not a crate; its #[test] fns
+    // run under the including crate's names. Registering them minted three rows
+    // no lane could ever emit (LANE SILENT every night).
+    #[test]
+    fn negative_proof_the_shared_source_dir_registers_no_cases_and_a_crate_does() {
+        assert!(!registers_cases("platform/services/shared/scope_units.rs"));
+        assert!(
+            registers_cases("platform/services/werk-test/src/lib.rs"),
+            "control: a real crate's file does register"
+        );
+    }
+}
+
+/// #4185 — the case pass over one set of test files: parse each, decide the
+/// rows. Returns (desired rows, files parsed, no-case files, declared, inferred,
+/// whether every file could be read).
+struct Parsed {
+    desired: Vec<CaseRow>,
+    parsed_files: Vec<String>,
+    no_case: Vec<String>,
+    declared: usize,
+    inferred: usize,
+    complete: bool,
+}
+
+fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
+    let mut p = Parsed {
+        desired: Vec::new(),
+        parsed_files: Vec::new(),
+        no_case: Vec::new(),
+        declared: 0,
+        inferred: 0,
+        complete: true,
+    };
+    for path in test_files {
+        if !registers_cases(path) {
+            continue;
+        }
+        let content = match std::fs::read_to_string(format!("{root}/{path}")) {
+            Ok(c) => c,
+            Err(_) => {
+                // A file we could not read is a fact about this run, not about the
+                // repo: its rows are left alone and deletes are refused (#4022).
+                p.complete = false;
+                continue;
+            }
+        };
+        p.parsed_files.push(path.to_string());
+        let names = cases::case_names(path, &content);
+        if names.is_empty() {
+            p.no_case.push(path.to_string());
+            continue;
+        }
+        let fc = cases::file_class(path, &content);
+        if fc.declared {
+            p.declared += 1
+        } else {
+            p.inferred += 1
+        }
+        let covers = cases::covers_with_concern(path, fc.concern).to_string();
+        let in_file = stable_name(path);
+        for case in names {
+            p.desired.push(CaseRow {
+                file: path.to_string(),
+                case,
+                covers: covers.clone(),
+                layer: fc.layer.to_string(),
+                hermeticity: fc.hermeticity.to_string(),
+                concern: fc.concern.map(|c| c.to_string()),
+                in_file: in_file.clone(),
+            });
+        }
+    }
+    p
+}
+
+/// The share gate's cap and floor, from env (MAX_DOMAIN_SHARE, MIN_CORPUS_FOR_SHARES)
+/// with testfiles.py's defaults.
+fn share_limits() -> (f64, usize) {
+    let cap = std::env::var("MAX_DOMAIN_SHARE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.30);
+    let floor = std::env::var("MIN_CORPUS_FOR_SHARES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
+    (cap, floor)
+}
+
+/// The hermetic seams the bats suites drive (#4022 #4106 #4111 #3924 #3996):
+/// one file in, the answer out, no store, no network. Returns true if one ran.
+fn seam(args: &[String]) -> bool {
+    let arg = |i: usize| args.get(i).cloned().unwrap_or_default();
+    match arg(1).as_str() {
+        "--names-of" => {
+            let path = arg(2);
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            for n in cases::case_names(&path, &content) {
+                println!("{n}");
+            }
+        }
+        "--covers-of" => {
+            let path = arg(2);
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            println!(
+                "{}",
+                cases::covers_with_concern(&path, cases::file_class(&path, &content).concern)
+            );
+        }
+        "--classify" => {
+            let path = arg(2);
+            let content = std::fs::read_to_string(&path).unwrap_or_default();
+            let fc = cases::file_class(&path, &content);
+            println!(
+                "{} {} {} {}",
+                fc.layer,
+                fc.hermeticity,
+                fc.concern.unwrap_or("-"),
+                if fc.declared { "declared" } else { "inferred" }
+            );
+        }
+        "--check-shares" => {
+            let json = std::fs::read_to_string(arg(2)).unwrap_or_default();
+            let counts = match cases::parse_count_object(&json) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("chorus-crawl: {e}");
+                    std::process::exit(2);
+                }
+            };
+            let (cap, floor) = share_limits();
+            match cases::check_shares(&counts, cap, floor) {
+                Ok(()) => println!("shares ok"),
+                Err(e) => {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
 fn main() {
+    let argv: Vec<String> = std::env::args().collect();
+    if seam(&argv) {
+        return;
+    }
     let root = std::env::var("CHORUS_ROOT").unwrap_or_else(|_| ".".to_string());
     let dry_run = std::env::args().any(|a| a == "--dry-run");
     let reconciling = std::env::args().any(|a| a == "--reconcile");
@@ -343,12 +611,17 @@ fn main() {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
     };
-    let reachable = watermark.as_deref().map(|w| commit_is_reachable(&root, w)).unwrap_or(false);
+    let reachable = watermark
+        .as_deref()
+        .map(|w| commit_is_reachable(&root, w))
+        .unwrap_or(false);
     // scope_for cannot know WHY the watermark is absent; on a reconcile we
     // cleared it ourselves, and reporting that as "first run" would have the
     // run narrate a state it is not in.
     let scope = match scope_for(watermark.as_deref(), &head, reachable) {
-        Scope::Full { .. } if reconciling => Scope::Full { why: "--reconcile: forced full walk" },
+        Scope::Full { .. } if reconciling => Scope::Full {
+            why: "--reconcile: forced full walk",
+        },
         s => s,
     };
 
@@ -398,7 +671,8 @@ fn main() {
     let walked_subset = matches!(scope, Scope::Delta { .. });
     let (disk, read) = read_tree(&root, &paths, &hashes, walked_subset);
 
-    let api = std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
+    let api =
+        std::env::var("CHORUS_OWL_API").unwrap_or_else(|_| "http://localhost:3360".to_string());
     let role = std::env::var("CHORUS_ROLE").unwrap_or_else(|_| "crawler".to_string());
 
     // What the graph already holds. Read BEFORE deciding anything — the walk is
@@ -417,6 +691,20 @@ fn main() {
             Ok(g) => (g, t),
             Err(e) => {
                 eprintln!("chorus-crawl: cannot read existing rows ({e}) — refusing to plan against an unknown graph");
+                std::process::exit(2);
+            }
+        }
+    };
+
+    // #4185 — the case registry, read under the same identity and the same
+    // "read before deciding" rule. Empty in a token-less dry run, like `graph`.
+    let case_graph: Vec<CaseInGraph> = if token.is_empty() {
+        Vec::new()
+    } else {
+        match existing_case_rows(&api, &token) {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("chorus-crawl: cannot read existing Test rows ({e}) — refusing to plan against an unknown registry");
                 std::process::exit(2);
             }
         }
@@ -441,7 +729,14 @@ fn main() {
             }
         };
         let (d, r) = read_tree(&root, &all, &hashes, false);
-        (Scope::Full { why: "graph was reset under a live watermark" }, all, d, r)
+        (
+            Scope::Full {
+                why: "graph was reset under a live watermark",
+            },
+            all,
+            d,
+            r,
+        )
     } else {
         (scope, paths, disk, read)
     };
@@ -455,7 +750,43 @@ fn main() {
     }
     let c = counts(&actions);
 
-    println!("chorus-crawl: {} · tracked={} read={:?}", scope.label(), paths.len(), read);
+    // #4185 — the case pass: every kind=test file this run walked, parsed.
+    let test_files: Vec<&str> = disk
+        .iter()
+        .filter(|f| f.classified)
+        .filter(|f| {
+            matches!(
+                classify(
+                    &f.path,
+                    f.path.ends_with(".rs") && rust_declares_tests(&format!("{root}/{}", f.path))
+                ),
+                Verdict::Classified(Kind::Test, _)
+            )
+        })
+        .map(|f| f.path.as_str())
+        .collect();
+    let parsed = parse_cases(&root, &test_files);
+    // A test file we could not read outranks a clean tree read: no deletes.
+    let case_read = if parsed.complete {
+        read
+    } else {
+        TreeRead::Partial
+    };
+    let case_actions = cases::plan_cases(
+        &parsed.desired,
+        &parsed.parsed_files,
+        &removed_by_git,
+        &case_graph,
+        case_read,
+    );
+    let cc = cases::case_counts(&case_actions);
+
+    println!(
+        "chorus-crawl: {} · tracked={} read={:?}",
+        scope.label(),
+        paths.len(),
+        read
+    );
     println!(
         "chorus-crawl: posted={} replaced={} unchanged={} deleted={} skipped={}{}",
         c.posted,
@@ -463,10 +794,25 @@ fn main() {
         c.unchanged,
         c.deleted,
         c.skipped,
+        if dry_run {
+            "  (dry-run — nothing written)"
+        } else {
+            ""
+        }
+    );
+    println!(
+        "chorus-crawl: cases posted={} replaced={} unchanged={} deleted={} · test files parsed={} declared={} inferred={} no-case={}{}",
+        cc.posted, cc.replaced, cc.unchanged, cc.deleted,
+        parsed.parsed_files.len(), parsed.declared, parsed.inferred, parsed.no_case.len(),
         if dry_run { "  (dry-run — nothing written)" } else { "" }
     );
+    if !parsed.no_case.is_empty() {
+        println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
+    }
     if read == TreeRead::Partial {
         println!("chorus-crawl: tree read was PARTIAL — deletes refused this run (#4022: absent must not mean delete)");
+    } else if case_read == TreeRead::Partial {
+        println!("chorus-crawl: a test file could not be read — case read was PARTIAL, case deletes refused this run (#4022: absent must not mean delete)");
     }
     // `--reconcile`: the nightly pass. Compares the graph to the tree BOTH ways
     // and names the paths. Drift is not a number to log — "6,140 vs 6,175"
@@ -493,7 +839,18 @@ fn main() {
             );
         }
         println!("chorus-crawl: {}", drift.report());
-        std::process::exit(if drift.is_clean() { 0 } else { 1 });
+        let all_test_files: Vec<String> = test_files
+            .iter()
+            .map(|s| s.to_string())
+            .filter(|p| registers_cases(p))
+            .collect();
+        let case_drift = cases::reconcile_cases(&parsed.desired, &all_test_files, &case_graph);
+        println!("chorus-crawl: {}", case_drift.report());
+        std::process::exit(if drift.is_clean() && case_drift.is_clean() {
+            0
+        } else {
+            1
+        });
     }
 
     if dry_run {
@@ -519,7 +876,13 @@ fn main() {
             return;
         }
         let body = format!("[{}]", batch.join(","));
-        match curl(&api, "POST", &format!("{coll}/batch"), Some(&body), Some(&token)) {
+        match curl(
+            &api,
+            "POST",
+            &format!("{coll}/batch"),
+            Some(&body),
+            Some(&token),
+        ) {
             Ok(_) => *wrote += batch.len(),
             Err(e) => failed.push(format!("batch of {}: {e}", batch.len())),
         }
@@ -531,9 +894,15 @@ fn main() {
     for a in &actions {
         match a {
             Action::Post { path } => {
-                let f = match by_path.get(path.as_str()) { Some(f) => *f, None => continue };
+                let f = match by_path.get(path.as_str()) {
+                    Some(f) => *f,
+                    None => continue,
+                };
                 let is_rs = path.ends_with(".rs");
-                if let Verdict::Classified(k, l) = classify(path, is_rs && rust_declares_tests(&format!("{root}/{path}"))) {
+                if let Verdict::Classified(k, l) = classify(
+                    path,
+                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
+                ) {
                     batch.push(row_json(f, k.as_str(), l));
                     if batch.len() >= 200 {
                         flush(&mut batch, &mut failed, &mut wrote);
@@ -545,9 +914,17 @@ fn main() {
             // (full-replace deletes the rest). It puts the complete entity:
             // the row as served, with our four fields written over it.
             Action::Replace { path } => {
-                let f = match by_path.get(path.as_str()) { Some(f) => *f, None => continue };
+                let f = match by_path.get(path.as_str()) {
+                    Some(f) => *f,
+                    None => continue,
+                };
                 let is_rs = path.ends_with(".rs");
-                let Verdict::Classified(k, l) = classify(path, is_rs && rust_declares_tests(&format!("{root}/{path}"))) else { continue };
+                let Verdict::Classified(k, l) = classify(
+                    path,
+                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
+                ) else {
+                    continue;
+                };
                 let existing: &[(String, String)] = match in_graph.get(path.as_str()) {
                     Some(g) => &g.other,
                     None => &[],
@@ -568,16 +945,36 @@ fn main() {
                 let mut attempt = 0;
                 loop {
                     let body = fields_json(&fields);
-                    match curl(&api, "PUT", &format!("{coll}/{name}"), Some(&body), Some(&token)) {
-                        Ok(_) => { wrote += 1; break; }
-                        Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => attempt += 1,
-                        Err(e) => { failed.push(format!("update {path}: {e}")); break; }
+                    match curl(
+                        &api,
+                        "PUT",
+                        &format!("{coll}/{name}"),
+                        Some(&body),
+                        Some(&token),
+                    ) {
+                        Ok(_) => {
+                            wrote += 1;
+                            break;
+                        }
+                        Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => {
+                            attempt += 1
+                        }
+                        Err(e) => {
+                            failed.push(format!("update {path}: {e}"));
+                            break;
+                        }
                     }
                 }
             }
             Action::Delete { path } => {
                 let name = stable_name(path);
-                if let Err(e) = curl(&api, "DELETE", &format!("{coll}/{name}"), None, Some(&token)) {
+                if let Err(e) = curl(
+                    &api,
+                    "DELETE",
+                    &format!("{coll}/{name}"),
+                    None,
+                    Some(&token),
+                ) {
                     failed.push(format!("delete {path}: {e}"));
                 }
             }
@@ -586,15 +983,132 @@ fn main() {
     }
     flush(&mut batch, &mut failed, &mut wrote);
 
+    // ── #4185: the case rows. Files first, cases second: a case's inFile edge
+    // names the CodeFile row the batch above just created.
+    // The share gate (#3996) judges CORPUS shape, so it only has meaning on a
+    // full walk; a delta's handful of files is below the floor by construction.
+    if scope_was_full_walk(&scope) {
+        let mut per_domain: Vec<(String, usize)> = Vec::new();
+        let mut seen_files: Vec<&str> = Vec::new();
+        for r in &parsed.desired {
+            if seen_files.contains(&r.file.as_str()) {
+                continue;
+            }
+            seen_files.push(&r.file);
+            match per_domain.iter_mut().find(|(d, _)| *d == r.covers) {
+                Some(e) => e.1 += 1,
+                None => per_domain.push((r.covers.clone(), 1)),
+            }
+        }
+        let (cap, floor) = share_limits();
+        if let Err(e) = cases::check_shares(&per_domain, cap, floor) {
+            eprintln!("chorus-crawl: {e}");
+            eprintln!("chorus-crawl: case rows NOT written this run — the file rows above stand");
+            failed.push("covers-share gate refused the case pass".to_string());
+        }
+    }
+    if !failed.iter().any(|f| f.contains("covers-share")) {
+        let case_coll = match collection_for(&api, "Test") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("chorus-crawl: {e}");
+                std::process::exit(2);
+            }
+        };
+        let case_in_graph: HashMap<&str, &CaseInGraph> =
+            case_graph.iter().map(|g| (g.name.as_str(), g)).collect();
+        let mut cbatch: Vec<String> = Vec::new();
+        let cflush = |cbatch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
+            if cbatch.is_empty() {
+                return;
+            }
+            let body = format!("[{}]", cbatch.join(","));
+            match curl(
+                &api,
+                "POST",
+                &format!("{case_coll}/batch"),
+                Some(&body),
+                Some(&token),
+            ) {
+                Ok(_) => *wrote += cbatch.len(),
+                Err(e) => failed.push(format!("case batch of {}: {e}", cbatch.len())),
+            }
+            cbatch.clear();
+        };
+        for a in &case_actions {
+            match a {
+                CaseAction::Post(row) => {
+                    cbatch.push(case_row_json(
+                        &cases::case_row_name(&row.file, &row.case),
+                        row,
+                    ));
+                    if cbatch.len() >= 200 {
+                        cflush(&mut cbatch, &mut failed, &mut wrote);
+                    }
+                }
+                CaseAction::Replace { name, row } => {
+                    let existing: &[(String, String)] = case_in_graph
+                        .get(name.as_str())
+                        .map(|g| g.fields.as_slice())
+                        .unwrap_or(&[]);
+                    let mut fields = merge_row(existing, &row.owned_fields());
+                    // testConcern is OPTIONAL: an absent one must not survive as the old value
+                    if row.concern.is_none() {
+                        fields.retain(|(k, _)| k != "testConcern");
+                    }
+                    let mut attempt = 0;
+                    loop {
+                        let body = fields_json(&fields);
+                        match curl(
+                            &api,
+                            "PUT",
+                            &format!("{case_coll}/{name}"),
+                            Some(&body),
+                            Some(&token),
+                        ) {
+                            Ok(_) => {
+                                wrote += 1;
+                                break;
+                            }
+                            Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => {
+                                attempt += 1
+                            }
+                            Err(e) => {
+                                failed
+                                    .push(format!("update case {} :: {}: {e}", row.file, row.case));
+                                break;
+                            }
+                        }
+                    }
+                }
+                CaseAction::Delete { name, file, case } => {
+                    if let Err(e) = curl(
+                        &api,
+                        "DELETE",
+                        &format!("{case_coll}/{name}"),
+                        None,
+                        Some(&token),
+                    ) {
+                        failed.push(format!("delete case {file} :: {case}: {e}"));
+                    }
+                }
+                CaseAction::Unchanged { .. } => {}
+            }
+        }
+        cflush(&mut cbatch, &mut failed, &mut wrote);
+    }
+
     println!("chorus-crawl: wrote={} failed={}", wrote, failed.len());
 
     // The watermark moves only when this run earned it.
     let scope_was_full = matches!(scope, Scope::Full { .. });
-    match watermark_after(&head, read, failed.len(), scope_was_full) {
+    match watermark_after(&head, case_read, failed.len(), scope_was_full) {
         Watermark::Advance(sha) => {
             println!("chorus-crawl: watermark -> {}", &sha[..sha.len().min(9)]);
             if let Err(e) = std::fs::write(format!("{root}/.chorus-crawl-watermark"), &sha) {
-                eprintln!("chorus-crawl: could not record the watermark ({e}) — next run walks full");
+                eprintln!(
+                    "chorus-crawl: could not record the watermark ({e}) — next run walks full"
+                );
             }
         }
         Watermark::Hold(why) => {
@@ -606,11 +1120,17 @@ fn main() {
         for f in failed.iter().take(5) {
             eprintln!("chorus-crawl: FAILED {f}");
         }
-        eprintln!("chorus-crawl: {} write(s) failed — the run is RED, not partially green", failed.len());
+        eprintln!(
+            "chorus-crawl: {} write(s) failed — the run is RED, not partially green",
+            failed.len()
+        );
         std::process::exit(1);
     }
 }
 
+fn scope_was_full_walk(scope: &Scope) -> bool {
+    matches!(scope, Scope::Full { .. })
+}
 
 /// A flat field map as a JSON object body.
 fn fields_json(fields: &[(String, String)]) -> String {

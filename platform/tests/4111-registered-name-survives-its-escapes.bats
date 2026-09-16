@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
-# #4159 — repointed from the retired tests tagger (retired by #4154) to its parser
-# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
+# #4185 — repointed again: the parsers moved from the Python library (#4159)
+# into the crawler crate (chorus-crawl, src/cases.rs). Same behaviour, same
+# asserts, third home — the seams are the binary's own (--names-of, --covers-of,
+# --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic. Drives the tagger's --names-of seam with fixture
 # files in BATS_TEST_TMPDIR. No store, no network, no runner.
 #
@@ -18,11 +20,19 @@
 # — a string no runner will ever emit. The real bats TAP line for that case,
 # read by running it, is the full name with plain double quotes.
 
+# bash 3.2 (this Mac) never fires errexit on a failing `[[ ]]`, so a `[[` assert
+# that is not the LAST line of a test can fail and the test still passes (#4185,
+# measured 2026-09-16: `[[ "a" == *"b"* ]]; true` → ok). Every assert here is a
+# simple command, which bash 3.2 does honour.
+has()   { grep -qF -- "$1" <<<"${2-$output}"; }
+lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2; return 1; fi; }
+eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
+
 setup() {
-  TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../services/chorus-crawl/target/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   TMP="$BATS_TEST_TMPDIR"
 }
-names_of() { python3 "$TAGGER" --names-of "$1"; }
+names_of() { "$BIN" --names-of "$1"; }
 
 @test "a bats name keeps everything after an escaped quote" {
   f="$TMP/locks.bats"
@@ -38,8 +48,8 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
   f="$TMP/locks.bats"
   printf '%s\n' '@test "lock: no direct Command::new(\"osascript\") — route via inject" {' '  true' '}' > "$f"
   run names_of "$f"
-  [[ "$output" != 'lock: no direct Command::new(\' ]]
-  [[ "$output" != *'\"'* ]]
+  [ "$output" != 'lock: no direct Command::new(\' ]
+  lacks '\"'
 }
 
 @test "a bats name unescapes \$ the way bash prints it" {
@@ -60,7 +70,7 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
   f="$TMP/esc.test.ts"
   printf '%s\n' "it('escapes newlines to literal \\\\n', () => {});" > "$f"
   run names_of "$f"
-  [[ "$output" != *'\\n'* ]]
+  lacks '\\n'
 }
 
 @test "control: a name with no escapes is unchanged" {
