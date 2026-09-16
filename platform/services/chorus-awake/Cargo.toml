@@ -1,0 +1,13 @@
+[package]
+name = "chorus-awake"
+version = "0.1.0"
+edition = "2021"
+
+# One command wakes a role the same way every time (#4184). Jeff, 2026-09-16:
+# "i dont want a shell script for this it must be rust". std + serde_json only.
+[dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "chorus-awake"
+path = "src/main.rs"
