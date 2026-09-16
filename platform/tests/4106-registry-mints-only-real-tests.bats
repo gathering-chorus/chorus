@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
-# #4159 — repointed from the retired tests tagger (retired by #4154) to its parser
-# library platform/scripts/testfiles.py. Same behaviour, same asserts, new home.
+# #4185 — repointed again: the parsers moved from the Python library (#4159)
+# into the crawler crate (chorus-crawl, src/cases.rs). Same behaviour, same
+# asserts, third home — the seams are the binary's own (--names-of, --covers-of,
+# --check-shares, --classify), no store, no network.
 # @test-type: unit — hermetic. Uses the tagger's --names-of seam (#4022): one
 # file in, the case names the registry WOULD hold out, no store, no network.
 #
@@ -18,12 +20,20 @@
 # Negative proofs (#3734): each violating fixture is shown to mint nothing,
 # and the controls show real names are still registered.
 
+# bash 3.2 (this Mac) never fires errexit on a failing `[[ ]]`, so a `[[` assert
+# that is not the LAST line of a test can fail and the test still passes (#4185,
+# measured 2026-09-16: `[[ "a" == *"b"* ]]; true` → ok). Every assert here is a
+# simple command, which bash 3.2 does honour.
+has()   { grep -qF -- "$1" <<<"${2-$output}"; }
+lacks() { if grep -qF -- "$1" <<<"${2-$output}"; then echo "unexpected: $1" >&2; return 1; fi; }
+eq()    { [ "$1" = "$2" ] || { echo "expected [$2] got [$1]" >&2; return 1; }; }
+
 setup() {
-  TAGGER="$BATS_TEST_DIRNAME/../scripts/testfiles.py"
+  BIN="${CHORUS_CRAWL_BIN:-$BATS_TEST_DIRNAME/../services/chorus-crawl/target/release/chorus-crawl}"; [ -x "$BIN" ] || BIN="$BATS_TEST_DIRNAME/../services/chorus-crawl/target/debug/chorus-crawl"; [ -x "$BIN" ] || skip "chorus-crawl not built at $BIN"
   TMP="$BATS_TEST_TMPDIR"
 }
 
-names_of() { python3 "$TAGGER" --names-of "$1"; }
+names_of() { "$BIN" --names-of "$1"; }
 
 @test "negative proof: a regex .test('...') call is not a test declaration" {
   f="$TMP/dotcall.test.ts"
@@ -36,9 +46,9 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
     "});" > "$f"
   run names_of "$f"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"no page ships the words Log in"* ]]
-  [[ "$output" != *"<button>"* ]]
-  [[ "$output" != *"handleAuthLogin"* ]]
+  has "no page ships the words Log in"
+  lacks "<button>"
+  lacks "handleAuthLogin"
   [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
 }
 
@@ -49,8 +59,8 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
     "it('a plain name that does match', () => {});" > "$f"
   run names_of "$f"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"a plain name that does match"* ]]
-  [[ "$output" != *'${TEST_PORT}'* ]]
+  has "a plain name that does match"
+  lacks '${TEST_PORT}'
   [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
 }
 
@@ -85,39 +95,42 @@ names_of() { python3 "$TAGGER" --names-of "$1"; }
     "it('eventFrame is NIP-01 [\"EVENT\", event]', () => {});" \
     "it(\"a double-quoted name with 'inner' quotes\", () => {});" > "$f"
   run names_of "$f"
-  [[ "$output" == *'eventFrame is NIP-01 ["EVENT", event]'* ]]
-  [[ "$output" == *"a double-quoted name with 'inner' quotes"* ]]
+  has 'eventFrame is NIP-01 ["EVENT", event]'
+  has "a double-quoted name with 'inner' quotes"
 }
 
 @test "control: bats @test names are still registered, escapes and all" {
   f="$TMP/guard.bats"
   printf '%s\n' '@test "no file hardcodes /Users/<name>/ (use \$CHORUS_ROOT)" {' '  true' '}' > "$f"
   run names_of "$f"
-  [[ "$output" == *"no file hardcodes /Users/<name>/"* ]]
+  has "no file hardcodes /Users/<name>/"
 }
 
 @test "control: a rust test fn is still registered" {
   f="$TMP/units.rs"
   printf '%s\n' '#[test]' 'fn walks_the_ledger() { }' > "$f"
   run names_of "$f"
-  [[ "$output" == *"walks_the_ledger"* ]]
+  has "walks_the_ledger"
 }
 
 # The other half of dropping the invented name: the files must not become
-# invisible. Before #4106 they were counted as tests that never ran; the fix
-# must state them, not silence them.
-@test "no-case files are reported, never silently dropped" {
-  run python3 -c "
-import importlib.util,sys
-spec=importlib.util.spec_from_file_location('t','$BATS_TEST_DIRNAME/../scripts/testfiles.py')
-m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print(m.no_case_report(['a/x.sh','b/y.sh','c/z.feature']))
-print(m.no_case_report([]))
-"
+# invisible. The crawler names them on its report line (no_case_report, a unit
+# test in src/cases.rs); here the seam shows the file is registered with NO case
+# rather than silently skipped or given an invented one.
+@test "no-case files yield nothing at the seam, never an invented basename" {
+  f="$TMP/helper_test.py"
+  printf '%s\n' "def test_helper():" "    assert 1" > "$f"
+  run names_of "$f"
   [ "$status" -eq 0 ]
-  [[ "${lines[0]}" == *"3 registered file(s) yield no runnable case"* ]]
-  [[ "${lines[0]}" == *"sh 2, feature 1"* ]]
-  [[ "${lines[1]}" == *"none"* ]]
+  [ -z "$output" ]
+}
+
+@test "a playwright spec is registered at file grain — the ui lane's identity (#4045), not its inner titles" {
+  f="$TMP/flow.spec.cjs"
+  printf '%s\n' "test('a playwright flow', async () => {});" > "$f"
+  run names_of "$f"
+  [ "$status" -eq 0 ]
+  [ "$output" = "flow.spec.cjs" ]
 }
 
 @test "negative proof: an @test written inside a string fixture is not a test declaration" {
@@ -128,7 +141,7 @@ print(m.no_case_report([]))
     '}' > "$f"
   run names_of "$f"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"the real case"* ]]
-  [[ "$output" != *"a fixture case"* ]]
+  has "the real case"
+  lacks "a fixture case"
   [ "$(printf '%s\n' "$output" | grep -c .)" -eq 1 ]
 }

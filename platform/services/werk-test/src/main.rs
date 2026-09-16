@@ -2061,7 +2061,7 @@ fn post_test_results(
         .unwrap_or_else(|| {
             // #4158 AC4 — this caller carries NO path shape. It ASKS the server
             // which collection it serves for TestResult (the pattern
-            // crawl-files.py already uses) and posts there. A pre-#4158 server
+            // chorus-crawl already uses) and posts there. A pre-#4158 server
             // answers /v1/testresults, a post-#4158 one /v1/tests/results, and
             // both are right. Hardcoding either literal is what lost 650 of 650
             // results in run 77 (2026-09-13): the class-rooted form breaks once

@@ -9,6 +9,9 @@
 //! This module is the pure decision core — classification and planning — with
 //! no I/O, so every rule below is unit-testable without a repo or a server.
 
+/// #4185 — test CASE rows: parsers, covers, the share gate, the case plan.
+pub mod cases;
+
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,18 +132,44 @@ pub fn classify(rel: &str, has_rust_test_attr: bool) -> Verdict {
 mod classify_4173 {
     use super::*;
 
+    // #3872 / #4185 — the zero-browser-tests hole: a playwright spec under
+    // proving/ is a test file. The crawler walks git, so discovery IS the tree;
+    // this is the one rule that decides whether that tree's .spec.cjs is seen.
+    #[test]
+    fn a_playwright_spec_under_proving_is_a_test_file() {
+        assert!(is_test_path(
+            "proving/flows/clearing-base-path-3872.spec.cjs"
+        ));
+        assert_eq!(
+            classify("proving/flows/clearing-base-path-3872.spec.cjs", false),
+            Verdict::Classified(Kind::Test, Some("javascript"))
+        );
+    }
+
     // AC: kind and language come from the model's named values, never free strings.
     #[test]
     fn every_kind_the_model_serves_is_reachable_and_named_exactly() {
         let cases = [
-            ("platform/services/werk-test/src/main.rs", Kind::Code, Some("rust")),
+            (
+                "platform/services/werk-test/src/main.rs",
+                Kind::Code,
+                Some("rust"),
+            ),
             ("platform/api/src/server.ts", Kind::Code, Some("typescript")),
             ("platform/tests/4145-runner.bats", Kind::Test, Some("bash")),
-            ("platform/api/tests/index-db.test.ts", Kind::Test, Some("typescript")),
+            (
+                "platform/api/tests/index-db.test.ts",
+                Kind::Test,
+                Some("typescript"),
+            ),
             ("designing/docs/crawler.html", Kind::Doc, None),
             ("roles/kade/current-work.md", Kind::Doc, Some("markdown")),
             ("platform/api/package.json", Kind::Config, None),
-            ("roles/silas/ontology/chorus.ttl", Kind::Config, Some("turtle")),
+            (
+                "roles/silas/ontology/chorus.ttl",
+                Kind::Config,
+                Some("turtle"),
+            ),
             ("platform/logs/chorus.log", Kind::Log, None),
             ("platform/data/drives.csv", Kind::Data, None),
         ];
@@ -160,7 +189,12 @@ mod classify_4173 {
     // defect this card removes, so the check must show the skip happening.
     #[test]
     fn negative_proof_a_file_the_model_cannot_name_is_skipped_not_called_code() {
-        for path in ["roles/silas/ontology/chorus.ttl.png", "designing/diagrams/flow.svg", "platform/api/public/font.woff2", "LICENSE"] {
+        for path in [
+            "roles/silas/ontology/chorus.ttl.png",
+            "designing/diagrams/flow.svg",
+            "platform/api/public/font.woff2",
+            "LICENSE",
+        ] {
             assert_eq!(classify(path, false), Verdict::Skip, "{} must skip", path);
         }
     }
@@ -170,8 +204,14 @@ mod classify_4173 {
     // them apart would mark the whole workspace one or the other.
     #[test]
     fn negative_proof_a_rust_file_is_test_or_code_by_its_content_not_its_folder() {
-        assert_eq!(classify("platform/services/werk-test/src/lib.rs", true), Verdict::Classified(Kind::Test, Some("rust")));
-        assert_eq!(classify("platform/services/werk-test/src/lib.rs", false), Verdict::Classified(Kind::Code, Some("rust")));
+        assert_eq!(
+            classify("platform/services/werk-test/src/lib.rs", true),
+            Verdict::Classified(Kind::Test, Some("rust"))
+        );
+        assert_eq!(
+            classify("platform/services/werk-test/src/lib.rs", false),
+            Verdict::Classified(Kind::Code, Some("rust"))
+        );
     }
 
     // AC: deterministic. Same path, same answer — no clock, no cwd, no order.
@@ -179,7 +219,10 @@ mod classify_4173 {
     fn deterministic_same_path_answers_the_same_twice() {
         let p = "platform/scripts/test-nightly.sh";
         assert_eq!(classify(p, false), classify(p, false));
-        assert_eq!(classify(p, false), Verdict::Classified(Kind::Test, Some("bash")));
+        assert_eq!(
+            classify(p, false),
+            Verdict::Classified(Kind::Test, Some("bash"))
+        );
     }
 
     // A dotfile has no extension to key on and must not be mistaken for one:
@@ -187,7 +230,10 @@ mod classify_4173 {
     #[test]
     fn negative_proof_a_dotfile_is_not_read_as_an_extension() {
         assert_eq!(classify(".gitignore", false), Verdict::Skip);
-        assert_eq!(classify("platform/api/.eslintrc.json", false), Verdict::Classified(Kind::Config, None));
+        assert_eq!(
+            classify("platform/api/.eslintrc.json", false),
+            Verdict::Classified(Kind::Config, None)
+        );
     }
 }
 
@@ -264,13 +310,21 @@ pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
     let mut out = Vec::new();
     for f in disk {
         if !f.classified {
-            out.push(Action::Skipped { path: f.path.clone() });
+            out.push(Action::Skipped {
+                path: f.path.clone(),
+            });
             continue;
         }
         match graph.iter().find(|g| g.path == f.path) {
-            None => out.push(Action::Post { path: f.path.clone() }),
-            Some(g) if g.sha != f.sha => out.push(Action::Replace { path: f.path.clone() }),
-            Some(_) => out.push(Action::Unchanged { path: f.path.clone() }),
+            None => out.push(Action::Post {
+                path: f.path.clone(),
+            }),
+            Some(g) if g.sha != f.sha => out.push(Action::Replace {
+                path: f.path.clone(),
+            }),
+            Some(_) => out.push(Action::Unchanged {
+                path: f.path.clone(),
+            }),
         }
     }
     // Orphans: a row whose path the tree no longer has. Only decidable when the
@@ -278,7 +332,9 @@ pub fn plan(disk: &[OnDisk], graph: &[InGraph], read: TreeRead) -> Vec<Action> {
     if read == TreeRead::Complete {
         for g in graph {
             if !disk.iter().any(|f| f.path == g.path) {
-                out.push(Action::Delete { path: g.path.clone() });
+                out.push(Action::Delete {
+                    path: g.path.clone(),
+                });
             }
         }
     }
@@ -313,9 +369,12 @@ pub fn counts(actions: &[Action]) -> Counts {
 /// Does this plan write anything? A second run over an unchanged tree must
 /// answer false — that is idempotence, proven rather than asserted.
 pub fn writes_anything(actions: &[Action]) -> bool {
-    actions
-        .iter()
-        .any(|a| matches!(a, Action::Post { .. } | Action::Replace { .. } | Action::Delete { .. }))
+    actions.iter().any(|a| {
+        matches!(
+            a,
+            Action::Post { .. } | Action::Replace { .. } | Action::Delete { .. }
+        )
+    })
 }
 
 #[cfg(test)]
@@ -323,10 +382,18 @@ mod plan_4173 {
     use super::*;
 
     fn d(path: &str, sha: &str) -> OnDisk {
-        OnDisk { path: path.into(), sha: sha.into(), classified: true }
+        OnDisk {
+            path: path.into(),
+            sha: sha.into(),
+            classified: true,
+        }
     }
     fn g(path: &str, sha: &str) -> InGraph {
-        InGraph { path: path.into(), sha: sha.into(), other: Vec::new() }
+        InGraph {
+            path: path.into(),
+            sha: sha.into(),
+            other: Vec::new(),
+        }
     }
 
     #[test]
@@ -334,9 +401,15 @@ mod plan_4173 {
         let disk = [d("a.rs", "aaa"), d("b.rs", "NEW"), d("c.rs", "ccc")];
         let graph = [g("a.rs", "aaa"), g("b.rs", "old")];
         let actions = plan(&disk, &graph, TreeRead::Complete);
-        assert!(actions.contains(&Action::Unchanged { path: "a.rs".into() }));
-        assert!(actions.contains(&Action::Replace { path: "b.rs".into() }));
-        assert!(actions.contains(&Action::Post { path: "c.rs".into() }));
+        assert!(actions.contains(&Action::Unchanged {
+            path: "a.rs".into()
+        }));
+        assert!(actions.contains(&Action::Replace {
+            path: "b.rs".into()
+        }));
+        assert!(actions.contains(&Action::Post {
+            path: "c.rs".into()
+        }));
     }
 
     // AC: idempotent — a second run writes NOTHING. Proven by running the plan
@@ -346,7 +419,11 @@ mod plan_4173 {
         let disk = [d("a.rs", "aaa"), d("b.ts", "bbb")];
         let graph = [g("a.rs", "aaa"), g("b.ts", "bbb")];
         let actions = plan(&disk, &graph, TreeRead::Complete);
-        assert!(!writes_anything(&actions), "a no-op walk must write nothing: {:?}", actions);
+        assert!(
+            !writes_anything(&actions),
+            "a no-op walk must write nothing: {:?}",
+            actions
+        );
         assert_eq!(counts(&actions).unchanged, 2);
     }
 
@@ -365,7 +442,9 @@ mod plan_4173 {
         let graph = [g("a.rs", "aaa"), g("gone.rs", "xxx")];
         let actions = plan(&disk, &graph, TreeRead::Complete);
         assert_eq!(counts(&actions).deleted, 1);
-        assert!(actions.contains(&Action::Delete { path: "gone.rs".into() }));
+        assert!(actions.contains(&Action::Delete {
+            path: "gone.rs".into()
+        }));
     }
 
     // NEGATIVE PROOF (#3734): a DELTA run must not delete the rest of the graph.
@@ -385,14 +464,27 @@ mod plan_4173 {
             g("untouched-b.ts", "bbb"),
         ];
         let scoped = plan(&changed_only, &whole_graph, TreeRead::Scoped);
-        assert_eq!(counts(&scoped).deleted, 0, "a delta must delete nothing it did not walk: {:?}", scoped);
-        assert_eq!(counts(&scoped).replaced, 1, "it still updates what DID change");
+        assert_eq!(
+            counts(&scoped).deleted,
+            0,
+            "a delta must delete nothing it did not walk: {:?}",
+            scoped
+        );
+        assert_eq!(
+            counts(&scoped).replaced,
+            1,
+            "it still updates what DID change"
+        );
 
         // The control, with identical inputs: a run that claims to have read the
         // whole tree DOES treat those rows as orphans. Without this the check
         // could not tell the two states apart.
         let full = plan(&changed_only, &whole_graph, TreeRead::Complete);
-        assert_eq!(counts(&full).deleted, 2, "a full walk still reconciles orphans");
+        assert_eq!(
+            counts(&full).deleted,
+            2,
+            "a full walk still reconciles orphans"
+        );
     }
 
     // NEGATIVE PROOF (#3734): the #4022 lesson. When the tree could not be read
@@ -404,15 +496,27 @@ mod plan_4173 {
         let graph = [g("a.rs", "aaa"), g("gone.rs", "xxx")];
         let complete = plan(&disk, &graph, TreeRead::Complete);
         let partial = plan(&disk, &graph, TreeRead::Partial);
-        assert_eq!(counts(&complete).deleted, 1, "control: a complete read DOES delete");
-        assert_eq!(counts(&partial).deleted, 0, "a partial read must delete nothing");
+        assert_eq!(
+            counts(&complete).deleted,
+            1,
+            "control: a complete read DOES delete"
+        );
+        assert_eq!(
+            counts(&partial).deleted,
+            0,
+            "a partial read must delete nothing"
+        );
     }
 
     // An unclassifiable file is reported, never silently dropped and never
     // posted as "code" — the plan carries it so the run can name it.
     #[test]
     fn an_unnameable_file_is_counted_as_skipped_not_posted() {
-        let disk = [OnDisk { path: "logo.png".into(), sha: "p".into(), classified: false }];
+        let disk = [OnDisk {
+            path: "logo.png".into(),
+            sha: "p".into(),
+            classified: false,
+        }];
         let actions = plan(&disk, &[], TreeRead::Complete);
         assert_eq!(counts(&actions).skipped, 1);
         assert_eq!(counts(&actions).posted, 0);
@@ -467,7 +571,10 @@ pub fn parse_name_status(line: &str) -> Option<Change> {
     match code {
         'A' | 'M' | 'C' | 'T' => Some(Change::Touched(a.to_string())),
         'D' => Some(Change::Removed(a.to_string())),
-        'R' => it.next().map(|b| Change::Renamed { from: a.to_string(), to: b.to_string() }),
+        'R' => it.next().map(|b| Change::Renamed {
+            from: a.to_string(),
+            to: b.to_string(),
+        }),
         _ => None,
     }
 }
@@ -477,13 +584,23 @@ pub fn parse_name_status(line: &str) -> Option<Change> {
 /// to swallow: it is a full walk that SAYS why.
 pub fn scope_for(watermark: Option<&str>, head: &str, watermark_is_reachable: bool) -> Scope {
     match watermark {
-        None => Scope::Full { why: "no watermark on the graph — first run" },
-        Some(w) if w.trim().is_empty() => Scope::Full { why: "watermark is empty" },
-        Some(_) if !watermark_is_reachable => {
-            Scope::Full { why: "watermark commit is not in this clone (rebase, force-push or shallow)" }
-        }
-        Some(w) if w == head => Scope::Delta { from: w.to_string(), to: head.to_string() },
-        Some(w) => Scope::Delta { from: w.to_string(), to: head.to_string() },
+        None => Scope::Full {
+            why: "no watermark on the graph — first run",
+        },
+        Some(w) if w.trim().is_empty() => Scope::Full {
+            why: "watermark is empty",
+        },
+        Some(_) if !watermark_is_reachable => Scope::Full {
+            why: "watermark commit is not in this clone (rebase, force-push or shallow)",
+        },
+        Some(w) if w == head => Scope::Delta {
+            from: w.to_string(),
+            to: head.to_string(),
+        },
+        Some(w) => Scope::Delta {
+            from: w.to_string(),
+            to: head.to_string(),
+        },
     }
 }
 
@@ -505,9 +622,18 @@ mod delta_4173 {
 
     #[test]
     fn name_status_reads_adds_edits_and_removals() {
-        assert_eq!(parse_name_status("A\tplatform/a.rs"), Some(Change::Touched("platform/a.rs".into())));
-        assert_eq!(parse_name_status("M\tplatform/a.rs"), Some(Change::Touched("platform/a.rs".into())));
-        assert_eq!(parse_name_status("D\tplatform/gone.rs"), Some(Change::Removed("platform/gone.rs".into())));
+        assert_eq!(
+            parse_name_status("A\tplatform/a.rs"),
+            Some(Change::Touched("platform/a.rs".into()))
+        );
+        assert_eq!(
+            parse_name_status("M\tplatform/a.rs"),
+            Some(Change::Touched("platform/a.rs".into()))
+        );
+        assert_eq!(
+            parse_name_status("D\tplatform/gone.rs"),
+            Some(Change::Removed("platform/gone.rs".into()))
+        );
     }
 
     // A rename is a MOVE. Read as delete+add it would drop the row and re-mint
@@ -516,7 +642,10 @@ mod delta_4173 {
     fn a_rename_is_a_move_not_a_delete_plus_an_add() {
         assert_eq!(
             parse_name_status("R096\tplatform/old.rs\tplatform/new.rs"),
-            Some(Change::Renamed { from: "platform/old.rs".into(), to: "platform/new.rs".into() })
+            Some(Change::Renamed {
+                from: "platform/old.rs".into(),
+                to: "platform/new.rs".into()
+            })
         );
     }
 
@@ -527,7 +656,11 @@ mod delta_4173 {
     fn negative_proof_an_unknown_status_refuses_rather_than_guessing() {
         assert_eq!(parse_name_status("U\tplatform/conflicted.rs"), None);
         assert_eq!(parse_name_status("garbage"), None);
-        assert_eq!(parse_name_status("R096\tplatform/old.rs"), None, "a rename missing its target is not a rename");
+        assert_eq!(
+            parse_name_status("R096\tplatform/old.rs"),
+            None,
+            "a rename missing its target is not a rename"
+        );
     }
 
     // AC: a full walk happens only when the watermark is unusable — and the run
@@ -541,7 +674,12 @@ mod delta_4173 {
             (Some("deadbeef"), false, "not in this clone"),
         ] {
             match scope_for(mark, head, reachable) {
-                Scope::Full { why } => assert!(why.contains(expect), "why should mention {}: {}", expect, why),
+                Scope::Full { why } => assert!(
+                    why.contains(expect),
+                    "why should mention {}: {}",
+                    expect,
+                    why
+                ),
                 Scope::Delta { .. } => panic!("watermark {:?} should force a full walk", mark),
             }
         }
@@ -558,7 +696,9 @@ mod delta_4173 {
             }
             Scope::Full { why } => panic!("a reachable watermark must not go full: {}", why),
         }
-        assert!(scope_for(Some("abc123def"), "999fff000", true).label().starts_with("delta abc123def"));
+        assert!(scope_for(Some("abc123def"), "999fff000", true)
+            .label()
+            .starts_with("delta abc123def"));
     }
 }
 
@@ -582,7 +722,9 @@ pub struct Drift {
 
 impl Drift {
     pub fn is_clean(&self) -> bool {
-        self.missing_from_graph.is_empty() && self.missing_from_tree.is_empty() && self.stale_sha.is_empty()
+        self.missing_from_graph.is_empty()
+            && self.missing_from_tree.is_empty()
+            && self.stale_sha.is_empty()
     }
     /// The morning line. Clean says so in one sentence; dirty names paths.
     pub fn report(&self) -> String {
@@ -591,13 +733,25 @@ impl Drift {
         }
         let mut parts = Vec::new();
         if !self.missing_from_graph.is_empty() {
-            parts.push(format!("{} in the tree with no row: {}", self.missing_from_graph.len(), self.missing_from_graph.join(", ")));
+            parts.push(format!(
+                "{} in the tree with no row: {}",
+                self.missing_from_graph.len(),
+                self.missing_from_graph.join(", ")
+            ));
         }
         if !self.missing_from_tree.is_empty() {
-            parts.push(format!("{} rows with no file: {}", self.missing_from_tree.len(), self.missing_from_tree.join(", ")));
+            parts.push(format!(
+                "{} rows with no file: {}",
+                self.missing_from_tree.len(),
+                self.missing_from_tree.join(", ")
+            ));
         }
         if !self.stale_sha.is_empty() {
-            parts.push(format!("{} rows with a stale sha: {}", self.stale_sha.len(), self.stale_sha.join(", ")));
+            parts.push(format!(
+                "{} rows with a stale sha: {}",
+                self.stale_sha.len(),
+                self.stale_sha.join(", ")
+            ));
         }
         format!("reconcile: DRIFT — {}", parts.join(" · "))
     }
@@ -632,8 +786,16 @@ mod reconcile_4173 {
     #[test]
     fn a_row_with_the_wrong_sha_is_drift_not_clean() {
         // #4180 — three prod rows carried stale hashes and reconcile said clean.
-        let disk = [OnDisk { path: "a.rs".into(), sha: "new".into(), classified: true }];
-        let graph = [InGraph { path: "a.rs".into(), sha: "old".into(), other: Vec::new() }];
+        let disk = [OnDisk {
+            path: "a.rs".into(),
+            sha: "new".into(),
+            classified: true,
+        }];
+        let graph = [InGraph {
+            path: "a.rs".into(),
+            sha: "old".into(),
+            other: Vec::new(),
+        }];
         let r = reconcile(&disk, &graph);
         assert!(!r.is_clean());
         assert_eq!(r.stale_sha, vec!["a.rs".to_string()]);
@@ -646,22 +808,46 @@ mod reconcile_4173 {
     #[test]
     fn negative_proof_a_matching_sha_and_an_unclassified_file_are_not_sha_drift() {
         let disk = [
-            OnDisk { path: "a.rs".into(), sha: "same".into(), classified: true },
-            OnDisk { path: "x.bin".into(), sha: "disk".into(), classified: false },
+            OnDisk {
+                path: "a.rs".into(),
+                sha: "same".into(),
+                classified: true,
+            },
+            OnDisk {
+                path: "x.bin".into(),
+                sha: "disk".into(),
+                classified: false,
+            },
         ];
         let graph = [
-            InGraph { path: "a.rs".into(), sha: "same".into(), other: Vec::new() },
-            InGraph { path: "x.bin".into(), sha: "graph".into(), other: Vec::new() },
+            InGraph {
+                path: "a.rs".into(),
+                sha: "same".into(),
+                other: Vec::new(),
+            },
+            InGraph {
+                path: "x.bin".into(),
+                sha: "graph".into(),
+                other: Vec::new(),
+            },
         ];
         let r = reconcile(&disk, &graph);
         assert!(r.stale_sha.is_empty(), "{:?}", r.stale_sha);
     }
 
     fn d(path: &str) -> OnDisk {
-        OnDisk { path: path.into(), sha: "s".into(), classified: true }
+        OnDisk {
+            path: path.into(),
+            sha: "s".into(),
+            classified: true,
+        }
     }
     fn g(path: &str) -> InGraph {
-        InGraph { path: path.into(), sha: "s".into(), other: Vec::new() }
+        InGraph {
+            path: path.into(),
+            sha: "s".into(),
+            other: Vec::new(),
+        }
     }
 
     #[test]
@@ -679,7 +865,11 @@ mod reconcile_4173 {
         let drift = reconcile(&[d("a.rs")], &[g("a.rs"), g("ghost.rs")]);
         assert!(!drift.is_clean(), "a row with no file is drift");
         assert_eq!(drift.missing_from_tree, vec!["ghost.rs".to_string()]);
-        assert!(drift.report().contains("ghost.rs"), "the report names the path: {}", drift.report());
+        assert!(
+            drift.report().contains("ghost.rs"),
+            "the report names the path: {}",
+            drift.report()
+        );
     }
 
     // The other direction: 6,175 files and 0 rows is the state as of today, and
@@ -696,7 +886,11 @@ mod reconcile_4173 {
     // make every run red forever over .png files and train everyone to ignore it.
     #[test]
     fn a_file_the_model_cannot_name_is_not_drift() {
-        let disk = [OnDisk { path: "logo.png".into(), sha: "p".into(), classified: false }];
+        let disk = [OnDisk {
+            path: "logo.png".into(),
+            sha: "p".into(),
+            classified: false,
+        }];
         assert!(reconcile(&disk, &[]).is_clean());
     }
 }
@@ -717,12 +911,19 @@ pub enum Watermark {
     Hold(&'static str),
 }
 
-pub fn watermark_after(head: &str, read: TreeRead, failed_writes: usize, scope_was_full: bool) -> Watermark {
+pub fn watermark_after(
+    head: &str,
+    read: TreeRead,
+    failed_writes: usize,
+    scope_was_full: bool,
+) -> Watermark {
     if failed_writes > 0 {
         return Watermark::Hold("a write failed — the graph does not match this commit");
     }
     if read == TreeRead::Partial {
-        return Watermark::Hold("the tree read was partial — deletes were refused, so orphans may remain");
+        return Watermark::Hold(
+            "the tree read was partial — deletes were refused, so orphans may remain",
+        );
     }
     // A Scoped (delta) read is not a failure: it proved the files it walked,
     // and the nightly full pass proves the rest.
@@ -753,7 +954,9 @@ mod watermark_4173 {
     fn negative_proof_a_failed_write_holds_the_watermark_where_it_was() {
         match watermark_after("abc123", TreeRead::Complete, 1, true) {
             Watermark::Hold(why) => assert!(why.contains("write failed"), "{why}"),
-            Watermark::Advance(_) => panic!("a run with a failed write must not advance the watermark"),
+            Watermark::Advance(_) => {
+                panic!("a run with a failed write must not advance the watermark")
+            }
         }
     }
 
@@ -792,31 +995,47 @@ mod watermark_4173 {
     }
 }
 
-
 /// The JSON objects inside a collection response's `data` array.
 ///
 /// Zero-dependency and deliberately dumb: find `"data"`, then walk braces,
 /// tracking string state so a `{` inside a value cannot open a fake object.
 /// Returns each object's body including its braces.
 pub fn row_objects(page: &str) -> Vec<&str> {
-    let Some(start) = page.find("\"data\"") else { return Vec::new() };
+    let Some(start) = page.find("\"data\"") else {
+        return Vec::new();
+    };
     let rest = &page[start..];
-    let Some(open) = rest.find('[') else { return Vec::new() };
+    let Some(open) = rest.find('[') else {
+        return Vec::new();
+    };
     let mut out = Vec::new();
     let bytes = rest.as_bytes();
     let (mut depth, mut obj_start, mut in_str, mut esc) = (0usize, 0usize, false, false);
     for i in open..bytes.len() {
         let c = bytes[i] as char;
         if in_str {
-            if esc { esc = false; } else if c == '\\' { esc = true; } else if c == '"' { in_str = false; }
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '"' {
+                in_str = false;
+            }
             continue;
         }
         match c {
             '"' => in_str = true,
-            '{' => { if depth == 0 { obj_start = i; } depth += 1; }
+            '{' => {
+                if depth == 0 {
+                    obj_start = i;
+                }
+                depth += 1;
+            }
             '}' => {
                 depth = depth.saturating_sub(1);
-                if depth == 0 { out.push(&rest[obj_start..=i]); }
+                if depth == 0 {
+                    out.push(&rest[obj_start..=i]);
+                }
             }
             ']' if depth == 0 => break,
             _ => {}
@@ -833,23 +1052,133 @@ pub fn row_fields(obj: &str) -> Vec<(String, String)> {
     let b = obj.as_bytes();
     let mut i = 0usize;
     while i < b.len() {
-        if b[i] != b'"' { i += 1; continue; }
-        let Some(key_end) = find_str_end(obj, i + 1) else { break };
+        if b[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        let Some(key_end) = find_str_end(obj, i + 1) else {
+            break;
+        };
         let key = &obj[i + 1..key_end];
         let mut j = key_end + 1;
-        while j < b.len() && (b[j] as char).is_whitespace() { j += 1; }
-        if j >= b.len() || b[j] != b':' { i = key_end + 1; continue; }
+        while j < b.len() && (b[j] as char).is_whitespace() {
+            j += 1;
+        }
+        if j >= b.len() || b[j] != b':' {
+            i = key_end + 1;
+            continue;
+        }
         j += 1;
-        while j < b.len() && (b[j] as char).is_whitespace() { j += 1; }
+        while j < b.len() && (b[j] as char).is_whitespace() {
+            j += 1;
+        }
         if j < b.len() && b[j] == b'"' {
-            let Some(val_end) = find_str_end(obj, j + 1) else { break };
-            out.push((key.to_string(), obj[j + 1..val_end].to_string()));
+            let Some(val_end) = find_str_end(obj, j + 1) else {
+                break;
+            };
+            out.push((json_unescape(key), json_unescape(&obj[j + 1..val_end])));
             i = val_end + 1;
         } else {
             i = j;
         }
     }
     out
+}
+
+/// A JSON string body's VALUE: `\"` `\\` `\/` `\n` `\t` `\r` `\b` `\f` and
+/// `\uXXXX` (surrogate pairs joined) decoded; an unknown escape passes through.
+///
+/// #4185 — row_fields used to hand back the raw spelling. A served testName
+/// `has zero =\"// occurrences` compared raw against the parsed name never
+/// matched: 125 quoted cases were deleted and re-posted on every full pass, and
+/// the reconcile read them as drift in both directions. fields_json re-escapes
+/// on the way out, so the value is the only honest thing to hold in between.
+pub fn json_unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('"') => out.push('"'),
+            Some('\\') => out.push('\\'),
+            Some('/') => out.push('/'),
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('r') => out.push('\r'),
+            Some('b') => out.push('\u{8}'),
+            Some('f') => out.push('\u{c}'),
+            Some('u') => {
+                let hex: String = it.by_ref().take(4).collect();
+                let Ok(code) = u32::from_str_radix(&hex, 16) else {
+                    out.push_str("\\u");
+                    out.push_str(&hex);
+                    continue;
+                };
+                if (0xD800..0xDC00).contains(&code) {
+                    let mut peek = it.clone();
+                    if peek.next() == Some('\\') && peek.next() == Some('u') {
+                        let low: String = peek.by_ref().take(4).collect();
+                        if let Ok(lo) = u32::from_str_radix(&low, 16) {
+                            if (0xDC00..0xE000).contains(&lo) {
+                                let cp = 0x10000 + ((code - 0xD800) << 10) + (lo - 0xDC00);
+                                if let Some(ch) = char::from_u32(cp) {
+                                    out.push(ch);
+                                    it = peek;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                    out.push('\u{FFFD}');
+                } else {
+                    out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+                }
+            }
+            Some(o) => {
+                out.push('\\');
+                out.push(o);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod row_values_4185 {
+    use super::*;
+
+    // NEGATIVE PROOF (#3734): the served spelling and the parsed name must be
+    // ONE value, or every quoted case is re-posted every run (125 on the variant).
+    #[test]
+    fn negative_proof_a_served_name_with_an_escaped_quote_reads_as_its_value() {
+        let obj = r#"{"name": "t-1", "filePath": "a.test.ts", "testName": "has zero =\"// occurrences in index.html"}"#;
+        let f = row_fields(obj);
+        let case = f
+            .iter()
+            .find(|(k, _)| k == "testName")
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(case, "has zero =\"// occurrences in index.html");
+        assert_ne!(
+            case, r#"has zero =\"// occurrences in index.html"#,
+            "the raw JSON spelling is not the value"
+        );
+    }
+
+    #[test]
+    fn json_unescape_decodes_every_escape() {
+        assert_eq!(json_unescape(r"a\nb\tc\\d\/eé😀"), "a\nb\tc\\d/eé😀");
+        assert_eq!(json_unescape("plain"), "plain");
+        assert_eq!(
+            json_unescape(r"\x"),
+            r"\x",
+            "an unknown escape passes through"
+        );
+    }
 }
 
 fn find_str_end(s: &str, from: usize) -> Option<usize> {
@@ -868,10 +1197,24 @@ fn find_str_end(s: &str, from: usize) -> Option<usize> {
 /// The row to PUT back: everything the door served, with the crawler's own
 /// fields written over it. Server-managed keys are dropped — restating them is
 /// either refused or a lie about who changed the row.
-pub fn merge_row(existing: &[(String, String)], owned: &[(String, String)]) -> Vec<(String, String)> {
+pub fn merge_row(
+    existing: &[(String, String)],
+    owned: &[(String, String)],
+) -> Vec<(String, String)> {
     const SERVER_OWNED: &[&str] = &[
-        "name", "label", "iri", "type", "id", "self", "created", "modified",
-        "creator", "version", "changedAt", "changedIn", "ownedBy",
+        "name",
+        "label",
+        "iri",
+        "type",
+        "id",
+        "self",
+        "created",
+        "modified",
+        "creator",
+        "version",
+        "changedAt",
+        "changedIn",
+        "ownedBy",
     ];
     let mut out: Vec<(String, String)> = existing
         .iter()
@@ -892,9 +1235,13 @@ pub fn merge_row(existing: &[(String, String)], owned: &[(String, String)]) -> V
 /// refusal names the prefix, so the retry is derived from the server's own
 /// words rather than from a table of prefixes kept in step by hand.
 pub fn strip_named_prefix(err: &str, fields: &mut [(String, String)]) -> bool {
-    let Some(i) = err.find("already starts with '") else { return false };
+    let Some(i) = err.find("already starts with '") else {
+        return false;
+    };
     let tail = &err[i + "already starts with '".len()..];
-    let Some(j) = tail.find('\'') else { return false };
+    let Some(j) = tail.find('\'') else {
+        return false;
+    };
     let prefix = &tail[..j];
     if prefix.is_empty() {
         return false;
@@ -909,6 +1256,93 @@ pub fn strip_named_prefix(err: &str, fields: &mut [(String, String)]) -> bool {
         }
     }
     changed
+}
+
+/// #4185 — the door caps a write body at 65,536 bytes. A CodeFile row is
+/// small enough that 200 of them fit; a Test row carries a path, a case name
+/// and a minted name, so 200 of them do not: the first full pass on the
+/// variant sent 40 batches of 68,814 bytes and every one came back 422. A
+/// batch is bounded by BYTES as well as rows, and the bound is measured
+/// against what the door said, with headroom for the brackets and commas.
+pub const DOOR_BODY_CAP: usize = 65_536;
+pub const BATCH_BODY_BUDGET: usize = 60_000;
+
+/// Would adding a row of `next_len` bytes to a batch currently `body_len`
+/// bytes (joined) still fit under the budget?
+pub fn batch_accepts(body_len: usize, next_len: usize, budget: usize) -> bool {
+    // "+ 1" for the comma this row adds; "+ 2" for the enclosing brackets
+    body_len + next_len + 1 + 2 <= budget
+}
+
+#[cfg(test)]
+mod batch_budget_4185 {
+    use super::*;
+
+    #[test]
+    fn a_batch_under_the_budget_accepts_the_next_row() {
+        assert!(batch_accepts(1_000, 340, BATCH_BODY_BUDGET));
+    }
+
+    // NEGATIVE PROOF (#3734): the state that went 422 on the variant — a
+    // batch that WOULD cross the door's cap — is refused before it is sent.
+    #[test]
+    fn negative_proof_a_row_that_would_cross_the_cap_does_not_join_the_batch() {
+        assert!(!batch_accepts(59_800, 340, BATCH_BODY_BUDGET));
+        // and the budget itself sits under the door's cap
+        assert!(BATCH_BODY_BUDGET < DOOR_BODY_CAP);
+    }
+}
+
+/// #4185 — the mass-delete guard.
+///
+/// A full walk over a tree that is NOT the tree the graph describes reads every
+/// row as an orphan. Measured 2026-09-16 on the variant: a three-file fixture
+/// repo pointed at a store holding the whole repo's rows planned 5,338 case
+/// deletes and 5,561 file deletes, and spent ten minutes issuing them one at a
+/// time. The same shape in production is one wrong `CHORUS_ROOT` — a launchd
+/// unit started in the wrong directory, a hand run from a scratch checkout —
+/// and it empties the registry the runner selects from.
+///
+/// A real full pass never deletes half the graph: the tree and the graph differ
+/// by a land's worth of files. So a plan whose deletes exceed the share below,
+/// over a graph big enough for the share to mean anything, is refused whole and
+/// said out loud. Under the floor (a fixture-sized graph) the guard stands down:
+/// a three-row graph losing two rows is a test, not a wipe.
+pub const MASS_DELETE_SHARE: f64 = 0.50;
+pub const MASS_DELETE_FLOOR: usize = 100;
+
+/// Should this run's deletes be refused as a mass delete?
+pub fn mass_delete_refused(planned_deletes: usize, graph_rows: usize) -> bool {
+    graph_rows >= MASS_DELETE_FLOOR
+        && (planned_deletes as f64) > (graph_rows as f64) * MASS_DELETE_SHARE
+}
+
+#[cfg(test)]
+mod mass_delete_4185 {
+    use super::*;
+
+    // NEGATIVE PROOF (#3734): the state measured on the variant — a fixture tree
+    // against a whole-repo graph — is refused.
+    #[test]
+    fn negative_proof_a_fixture_tree_against_a_whole_repo_graph_is_refused() {
+        assert!(mass_delete_refused(5_338, 8_187));
+        assert!(mass_delete_refused(5_561, 5_564));
+    }
+
+    // The controls: a land's worth of deletes is not a wipe, and a tiny graph
+    // (the fixture suites) is below the floor so its own deletes still happen.
+    #[test]
+    fn a_lands_worth_of_deletes_passes_and_a_fixture_sized_graph_is_below_the_floor() {
+        assert!(
+            !mass_delete_refused(33, 8_187),
+            "a land that removed 33 cases is normal"
+        );
+        assert!(
+            !mass_delete_refused(2, 3),
+            "a three-row fixture graph losing two rows is a test, not a wipe"
+        );
+        assert!(!mass_delete_refused(0, 8_187));
+    }
 }
 
 /// #4178 — the identity a scheduled run must present.
@@ -947,7 +1381,11 @@ mod merge_4178 {
     #[test]
     fn a_row_is_read_whole_not_two_strings() {
         let objs = row_objects(PAGE);
-        assert_eq!(objs.len(), 2, "a brace inside a value must not open a fake object");
+        assert_eq!(
+            objs.len(),
+            2,
+            "a brace inside a value must not open a fake object"
+        );
         let f = row_fields(objs[0]);
         let get = |k: &str| f.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
         assert_eq!(get("filePath"), Some("a/b.rs"));
@@ -955,7 +1393,10 @@ mod merge_4178 {
         assert_eq!(get("fileHasOwner"), Some("role-kade"));
         // the second row's path contains braces — the scanner must still split it out
         assert_eq!(
-            row_fields(objs[1]).iter().find(|(k, _)| k == "filePath").map(|(_, v)| v.as_str()),
+            row_fields(objs[1])
+                .iter()
+                .find(|(k, _)| k == "filePath")
+                .map(|(_, v)| v.as_str()),
             Some("c/d{e}.md")
         );
     }
@@ -965,16 +1406,24 @@ mod merge_4178 {
         let existing = row_fields(row_objects(PAGE)[0]);
         let owned = vec![
             ("filePath".to_string(), "a/b.rs".to_string()),
-            ("fileSha".to_string(), "bbb".to_string()),          // the content changed
+            ("fileSha".to_string(), "bbb".to_string()), // the content changed
             ("hasKind".to_string(), "code".to_string()),
         ];
         let merged = merge_row(&existing, &owned);
         let get = |k: &str| merged.iter().find(|(a, _)| a == k).map(|(_, v)| v.as_str());
         assert_eq!(get("fileSha"), Some("bbb"), "the crawler's own field wins");
         assert_eq!(get("hasKind"), Some("code"));
-        assert_eq!(get("fileInDomain"), Some("code-domain"), "the domain tag survives");
+        assert_eq!(
+            get("fileInDomain"),
+            Some("code-domain"),
+            "the domain tag survives"
+        );
         assert_eq!(get("fileHasOwner"), Some("role-kade"));
-        assert_eq!(get("hasLanguage"), Some("language-rust"), "a field nobody restated survives");
+        assert_eq!(
+            get("hasLanguage"),
+            Some("language-rust"),
+            "a field nobody restated survives"
+        );
         // server-managed keys are never restated
         assert_eq!(get("name"), None);
         assert_eq!(get("label"), None);
@@ -1002,7 +1451,9 @@ mod merge_4178 {
         );
         // and the merge is what separates the two states
         let merged = merge_row(&existing, &owned);
-        assert!(merged.iter().any(|(k, v)| k == "fileInDomain" && v == "code-domain"));
+        assert!(merged
+            .iter()
+            .any(|(k, v)| k == "fileInDomain" && v == "code-domain"));
         assert_ne!(merged.len(), unmerged.len());
     }
 
@@ -1028,10 +1479,12 @@ mod merge_4178 {
         assert_eq!(fields[0].1, "code-kind-doc");
 
         let mut exact = vec![("hasKind".to_string(), "code-kind-".to_string())];
-        assert!(!strip_named_prefix("already starts with 'code-kind-'", &mut exact));
+        assert!(!strip_named_prefix(
+            "already starts with 'code-kind-'",
+            &mut exact
+        ));
         assert_eq!(exact[0].1, "code-kind-");
     }
-
 
     #[test]
     fn the_scheduled_run_presents_the_automation_identity() {
@@ -1046,7 +1499,10 @@ mod merge_4178 {
     #[test]
     fn negative_proof_a_person_is_not_a_scheduled_identity() {
         for who in ["kade", "wren", "silas", "jeff", ""] {
-            assert!(!scheduled_identity_ok(who), "{who} must not be wired to a timer");
+            assert!(
+                !scheduled_identity_ok(who),
+                "{who} must not be wired to a timer"
+            );
         }
     }
 }
