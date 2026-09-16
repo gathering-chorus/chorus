@@ -117,6 +117,19 @@ chorus:RoleShape a sh:NodeShape ;
   # one, which is why Hat reads 7 of 7. The pen's minted shapes never emit
   # rdfs:label for exactly this reason; RoleShape predates it.
   sh:property [ sh:path chorus:label ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+  # #4179 — the floor restored to THREE required properties. #4175 dropped
+  # rdfs:label (rightly: a W3C predicate we cannot annotate, so the atlas could
+  # never read Role as fully defined) but did not weigh what that cost — the
+  # shape silently fell from 3 required to 2, which 3838-roles-model caught two
+  # nightlies running. A write contract must not loosen as a side effect of a
+  # rendering fix.
+  #
+  # chorus:comment takes the third slot because the DATA already carries it:
+  # all 6 Role rows have it today, measured in the live store, so this requires
+  # nothing that is not already true. (rdfs:comment is on only 4 of 6, and is
+  # the same un-annotatable W3C predicate #4175 removed — using it would rebuild
+  # the defect under another name.)
+  sh:property [ sh:path chorus:comment ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:roleKind ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                 sh:pattern "^(agent|human|automation)$" ] ;
   sh:property [ sh:path chorus:rolePriority ; sh:maxCount 1 ; sh:datatype xsd:integer ;
