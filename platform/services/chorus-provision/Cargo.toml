@@ -1,0 +1,14 @@
+[package]
+name = "chorus-provision"
+version = "0.1.0"
+edition = "2021"
+
+# Self-contained: ZERO dependencies (ADR-032 §1). std only, with `curl` as a
+# subprocess — the same shape werk-pull and athena-model use. Nothing here
+# handles a secret in a shell variable: the CSS account password is read by
+# reference from the env file and piped, never interpolated into an argv.
+[dependencies]
+
+[[bin]]
+name = "chorus-provision"
+path = "src/main.rs"

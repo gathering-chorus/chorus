@@ -26,13 +26,21 @@ set -euo pipefail
 CSS="${CSS_URL:-http://localhost:3001}"
 CSS_HOST="${CSS_HOST:-}"
 # Host-override headers for the strict-host cutover (empty = unchanged behavior).
+# #3830 — bash 3.2 (/bin/bash on macOS) treats "${arr[@]}" on an EMPTY array as
+# unbound under set -u, so every curl below died before sending. Expansions use
+# ${HOSTARGS[@]+...} so an empty array expands to nothing instead of exiting.
 HOSTARGS=()
 [ -n "$CSS_HOST" ] && HOSTARGS=(-H "Host: ${CSS_HOST}" -H "X-Forwarded-Proto: https" -H "X-Forwarded-Host: ${CSS_HOST}")
 # Logical issuer/token-endpoint base: the public origin when overriding, else the URL.
 ISSUER_URL="$CSS"
 [ -n "$CSS_HOST" ] && ISSUER_URL="https://${CSS_HOST}"
-EMAIL="${CSS_EMAIL:-jeff@jeffbridwell.com}"
 ENV_FILE="${GATHERING_APP_ENV:-$HOME/CascadeProjects/jeff-bridwell-personal-site/.env}"
+# #3830 — the account email comes from the SAME .env the password does. It was
+# defaulting to a hardcoded address CSS does not have an account for, so every
+# login returned 403 "Invalid email/password combination" and the seeder could
+# never mint anything. The password was read by reference and the email was not.
+EMAIL="${CSS_EMAIL:-$(grep -m1 '^CSS_EMAIL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"')}"
+EMAIL="${EMAIL:-jeff@jeffbridwell.com}"
 IDENTITY_HOME="$HOME/.chorus/identity"
 AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk nightly crawler}"  # nightly: #3975 machine principal for the 03:00 runner; crawler: #4154 machine principal for the code/tests walker
 CK="$(mktemp -t css-seed-XXXXXX)"
@@ -46,9 +54,9 @@ PW="$(grep -m1 '^CSS_ACCOUNT_PASSWORD=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')"
 [ -n "$PW" ] || { echo "ERROR: CSS_ACCOUNT_PASSWORD not in $ENV_FILE" >&2; exit 1; }
 
 echo "seed-css: logging in to $CSS${CSS_HOST:+ (Host: $CSS_HOST)} as $EMAIL ..." >&2
-curl -s "${HOSTARGS[@]}" -c "$CK" -X POST "$CSS/.account/login/password/" -H "Content-Type: application/json" \
+curl -s ${HOSTARGS[@]+"${HOSTARGS[@]}"} -c "$CK" -X POST "$CSS/.account/login/password/" -H "Content-Type: application/json" \
   --data "$(jkv email "$EMAIL" password "$PW")" >/dev/null
-ACCT="$(curl -s "${HOSTARGS[@]}" -b "$CK" "$CSS/.account/" | python3 -c 'import sys,json
+ACCT="$(curl -s ${HOSTARGS[@]+"${HOSTARGS[@]}"} -b "$CK" "$CSS/.account/" | python3 -c 'import sys,json
 a=json.load(sys.stdin).get("controls",{}).get("account",{})
 print(a.get("pod","").split("/account/")[1].split("/")[0] if a.get("pod") else "")')"
 [ -n "$ACCT" ] || { echo "ERROR: login failed (no account control)" >&2; exit 1; }
@@ -56,7 +64,7 @@ POD_EP="$CSS/.account/account/$ACCT/pod/"
 CC_EP="$CSS/.account/account/$ACCT/client-credentials/"
 WEBID_EP="$CSS/.account/account/$ACCT/webid/"
 
-EXISTING_WEBIDS="$(curl -s "${HOSTARGS[@]}" -b "$CK" "$WEBID_EP" | python3 -c 'import sys,json
+EXISTING_WEBIDS="$(curl -s ${HOSTARGS[@]+"${HOSTARGS[@]}"} -b "$CK" "$WEBID_EP" | python3 -c 'import sys,json
 d=json.load(sys.stdin);w=d.get("webIdLinks") or d.get("webIds") or {}
 print("\n".join(w.keys()) if isinstance(w,dict) else "")')"
 
@@ -65,7 +73,7 @@ mkdir -p "$IDENTITY_HOME"; chmod 700 "$IDENTITY_HOME"
 for AGENT in $AGENTS; do
   echo "seed-css: [$AGENT] ..." >&2
   # 1. create pod (idempotent) — CSS pods live at /<name>/, WebID /<name>/profile/card#me
-  POD_RESP="$(curl -s "${HOSTARGS[@]}" -b "$CK" -X POST "$POD_EP" -H "Content-Type: application/json" \
+  POD_RESP="$(curl -s ${HOSTARGS[@]+"${HOSTARGS[@]}"} -b "$CK" -X POST "$POD_EP" -H "Content-Type: application/json" \
     --data "$(jkv name "$AGENT")" || true)"
   WEBID="$(printf '%s' "$POD_RESP" | python3 -c 'import sys,json
 try: print(json.load(sys.stdin).get("webId",""))
@@ -79,7 +87,7 @@ except Exception: print("")')"
   fi
 
   # 2. mint client_credentials for THIS agent's WebID (distinct cred = isolation)
-  CC_RESP="$(curl -s "${HOSTARGS[@]}" -b "$CK" -X POST "$CC_EP" -H "Content-Type: application/json" \
+  CC_RESP="$(curl -s ${HOSTARGS[@]+"${HOSTARGS[@]}"} -b "$CK" -X POST "$CC_EP" -H "Content-Type: application/json" \
     --data "$(jkv name "chorus-agent-$AGENT" webId "$WEBID")")"
 
   # 3. write cred.json (0600) — the ONLY place the secret lands; secret stays in the
