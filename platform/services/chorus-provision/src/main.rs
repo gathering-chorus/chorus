@@ -1085,3 +1085,64 @@ fn holds_role(name: &str) -> Option<bool> {
     }
     Some(flat.contains("\"boolean\":true"))
 }
+
+// The door is the bats suite (platform/tests/3830-provision-user.bats): every
+// refusal against a stub world. These are the pure parts — what the door
+// decides from its arguments — and the run 69 lesson: a crate with no tests
+// reads as a red, not as a nothing.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn kind_is_required_and_only_two_words_are_kinds() {
+        assert_eq!(Kind::from_args(&args(&["--kind", "human"])), Some(Kind::Human));
+        assert_eq!(Kind::from_args(&args(&["--kind=agent"])), Some(Kind::Agent));
+        // NEGATIVE: no kind, or a third word, is not a kind
+        assert_eq!(Kind::from_args(&args(&[])), None);
+        assert_eq!(Kind::from_args(&args(&["--kind", "person"])), None);
+        assert_eq!(Kind::from_args(&args(&["--kind", "service"])), None);
+    }
+
+    #[test]
+    fn kind_decides_what_the_row_says_and_whether_they_sign_in() {
+        assert_eq!(Kind::Human.stored(), "human");
+        assert_eq!(Kind::Human.can_sign_in(), "true");
+        assert_eq!(Kind::Agent.stored(), "agent");
+        assert_eq!(Kind::Agent.can_sign_in(), "false");
+    }
+
+    #[test]
+    fn a_human_needs_a_name_and_an_email_that_is_one() {
+        let p = Person::from_args(&args(&["--kind", "human", "--name", "Deb Majumdar", "--email", "d@example.org"])).unwrap();
+        assert_eq!(p.full_name, "Deb Majumdar");
+        // NEGATIVE: half a person is not a person
+        assert!(Person::from_args(&args(&["--name", "Deb Majumdar"])).is_none());
+        assert!(Person::from_args(&args(&["--email", "d@example.org"])).is_none());
+        assert!(Person::from_args(&args(&["--name", " ", "--email", "d@example.org"])).is_none());
+        assert!(Person::from_args(&args(&["--name", "Deb", "--email", "not-an-address"])).is_none());
+    }
+
+    #[test]
+    fn curl_config_escaping_survives_quotes_and_backslashes() {
+        // a password with a quote in it must not end the config line early
+        assert_eq!(cfg_escape(r#"a"b\c"#), r#"a\"b\\c"#);
+    }
+
+    #[test]
+    fn between_reads_the_first_span_and_nothing_when_absent() {
+        assert_eq!(between(r#"{"webId":"https://x/y#me","z":1}"#, "\"webId\":\"", "\"").as_deref(), Some("https://x/y#me"));
+        assert_eq!(between("nothing here", "\"webId\":\"", "\""), None);
+    }
+
+    #[test]
+    fn a_generated_password_is_long_and_never_empty() {
+        let p = random_password();
+        assert_eq!(p.chars().count(), 24);
+        assert_ne!(p, random_password());
+    }
+}
