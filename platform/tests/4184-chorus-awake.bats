@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# @test-type: integration — drives platform/scripts/chorus-awake with stub claude, stub tmux, stub ps and a temp session registry; no live tmux, no live claude.
+# @test-type: integration — drives the built chorus-awake binary (Rust, #4184) with stub claude, stub tmux, stub ps and a temp session registry; no live tmux, no live claude.
 #
 # #4184 — Jeff: "a standard script to start each of u that initalizes u and
 # makes sure i do the steps". Every outside thing is stubbed and RECORDS its
@@ -7,7 +7,8 @@
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/../.." && pwd)"
-  SCRIPT="$ROOT/platform/scripts/chorus-awake"
+  SCRIPT="${CHORUS_AWAKE_BIN:-$ROOT/platform/services/chorus-awake/target/release/chorus-awake}"
+  [ -x "$SCRIPT" ] || skip "chorus-awake not built at $SCRIPT"
   T="$BATS_TEST_TMPDIR"
   mkdir -p "$T/sessions" "$T/bin" "$T/roles/kade"
   touch "$T/alive-pids"
