@@ -106,6 +106,6 @@ chorus:CodeFileShape a sh:NodeShape ;
     # is allowed could not be read by anyone. Ownership had to be checked with raw
     # SPARQL against the store — the bypass this whole programme exists to end, and
     # a migration nobody can verify through the door cannot be called done.
-    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Role ] ;
+    sh:property [ sh:path chorus:ownedBy ; sh:class chorus:Principal ] ;
     chorus:instancesGraph "urn:chorus:domains:code" ;
     chorus:generatedBy "athena-model" .

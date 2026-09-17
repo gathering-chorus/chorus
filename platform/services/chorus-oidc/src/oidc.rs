@@ -83,6 +83,18 @@ struct ScopeState {
     last_attempt: u64,
 }
 
+/// #4196 — webId → the Principal's local name (`principal-silas` → `silas`),
+/// resolved from the same allow-set graph. This is WHO the caller is, as a
+/// name the door can stamp on a row and compare to a row's owner. Jeff,
+/// 2026-09-16 17:16: a row's owner is a principal, a user — not a role. Before
+/// this the door only knew the caller's HAT (`agent_id`, from holdsRole), so a
+/// user with a permission and no hat could not own or write anything.
+struct PrincipalState {
+    pairs: Vec<(String, String)>,
+    fetched_at: u64,
+    last_attempt: u64,
+}
+
 /// The ES256 verifier: expected issuer, the Principal allow-set (boot-resolved
 /// from the model, ADR-052 §5), the kid-keyed JWKS cache, and an injected
 /// fetcher (prod: curl to CSS; tests: a stub — cases 7/8 toggle reachability
@@ -98,10 +110,15 @@ pub struct OidcVerifier {
     /// webId → scopes resolver over `chorus:hasScope` (#3689). Same split.
     resolve_scopes: Box<dyn Fn() -> Option<Vec<(String, Vec<String>)>> + Send + Sync>,
     fetch: Box<dyn Fn() -> Option<String> + Send + Sync>,
+    /// #4196 — webId → principal local name. Opt-in via `with_principal_names`
+    /// so the eighteen existing constructors keep their shape; absent, the
+    /// door falls back to the hat (`agent_id`), which is the pre-#4196 world.
+    resolve_principals: Option<Box<dyn Fn() -> Option<Vec<(String, String)>> + Send + Sync>>,
     state: Mutex<JwksState>,
     allow: Mutex<AllowState>,
     roles: Mutex<RoleState>,
     scopes: Mutex<ScopeState>,
+    principals: Mutex<PrincipalState>,
 }
 
 impl OidcVerifier {
@@ -118,11 +135,46 @@ impl OidcVerifier {
             resolve_roles: Box::new(resolve_roles),
             resolve_scopes: Box::new(resolve_scopes),
             fetch: Box::new(fetch),
+            resolve_principals: None,
             state: Mutex::new(JwksState { keys: HashMap::new(), last_attempt: 0 }),
             allow: Mutex::new(AllowState { webids: Vec::new(), fetched_at: 0, last_attempt: 0 }),
             roles: Mutex::new(RoleState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
             scopes: Mutex::new(ScopeState { grants: Vec::new(), fetched_at: 0, last_attempt: 0 }),
+            principals: Mutex::new(PrincipalState { pairs: Vec::new(), fetched_at: 0, last_attempt: 0 }),
         }
+    }
+
+    /// #4196 — wire the webId → principal-name resolver (prod: the model query;
+    /// tests: a stub). Same None-vs-Some(empty) split as the other three.
+    pub fn with_principal_names(
+        mut self,
+        resolve: impl Fn() -> Option<Vec<(String, String)>> + Send + Sync + 'static,
+    ) -> Self {
+        self.resolve_principals = Some(Box::new(resolve));
+        self
+    }
+
+    /// #4196 — the caller's NAME as a Principal (`silas`, `jeff`, `crawler`),
+    /// asked of the graph on the ALLOW_TTL cadence. None when no resolver is
+    /// wired, the graph is unreachable, or the WebID owns no Principal; the
+    /// caller decides the fail-closed posture. Never parsed out of the WebID.
+    pub fn principal_for(&self, web_id: &str, now_secs: u64) -> Option<String> {
+        let resolve = self.resolve_principals.as_ref()?;
+        let mut pl = self.principals.lock().unwrap_or_else(|e| e.into_inner());
+        let stale = now_secs.saturating_sub(pl.fetched_at) >= ALLOW_TTL_SECS;
+        let can_retry = now_secs.saturating_sub(pl.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
+            || pl.last_attempt == 0;
+        if stale && can_retry {
+            pl.last_attempt = now_secs;
+            match resolve() {
+                Some(v) => {
+                    pl.pairs = v;
+                    pl.fetched_at = now_secs;
+                }
+                None => pl.pairs.clear(),
+            }
+        }
+        pl.pairs.iter().find(|(w, _)| w == web_id).map(|(_, p)| p.clone())
     }
 
     /// Boot-prime the allow-set (same posture as warm_fetch: loud on failure,
@@ -446,6 +498,37 @@ pub fn principal_allow_query() -> String {
 /// Some(empty) = reachable and genuinely nobody allowed.
 pub fn resolve_principal_webids(query: impl Fn(&str) -> Option<String>) -> Option<Vec<String>> {
     query(&principal_allow_query()).map(|body| crate::select_v(&body))
+}
+
+/// #4196 — webId → the Principal's LOCAL NAME, one `?v` row per principal as
+/// `"<webid> <name>"` (a WebID carries no space, so the first one separates).
+/// The name is the IRI's local part minus the `principal-` prefix the mint
+/// adds (ADR-040), so it is the same token `chorus-identity-token <name>`
+/// mints for and the same string the door stamps as a row's owner.
+pub fn principal_name_query() -> String {
+    format!(
+        "PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT ?v WHERE {{ GRAPH <{}> {{ ?p a chorus:Principal ; chorus:webId ?w }} BIND(CONCAT(STR(?w), \" \", REPLACE(REPLACE(STR(?p), \".*[#/]\", \"\"), \"^principal-\", \"\")) AS ?v) }}",
+        allow_set_graph()
+    )
+}
+
+/// None = graph unreachable (caller fails closed); Some(empty) = no principals.
+/// Rows without a separator are dropped and said, like the role resolver.
+pub fn resolve_principal_names(
+    query: impl Fn(&str) -> Option<String>,
+) -> Option<Vec<(String, String)>> {
+    query(&principal_name_query()).map(|body| {
+        let mut pairs: Vec<(String, String)> = Vec::new();
+        for row in crate::select_v(&body) {
+            let Some((w, n)) = row.split_once(' ') else {
+                eprintln!("chorus-oidc: WARNING — unreadable principal-name row {:?}; that principal has no name at the door until fixed (#4196)", row);
+                continue;
+            };
+            if w.is_empty() || n.is_empty() { continue; }
+            pairs.push((w.to_string(), n.to_string()));
+        }
+        pairs
+    })
 }
 
 /// ADR-054 §3.3 — resolve webId→role from `chorus:holdsRole`, the edge that
@@ -1108,6 +1191,27 @@ mod tests {
 
     /// The query asks the holdsRole EDGE in the security graph, and unreachable
     /// stays distinct from empty.
+    // #4196 — the caller's NAME as a Principal comes from the graph, not the WebID.
+    #[test]
+    fn principal_names_resolve_from_rows_and_a_missing_resolver_yields_no_name() {
+        let body = r#"{"results":{"bindings":[
+            {"v":{"value":"https://id.example/silas/profile/card#me silas"}},
+            {"v":{"value":"https://id.example/jeff/profile/card#me jeff"}},
+            {"v":{"value":"unreadable-row-with-no-space"}}
+        ]}}"#;
+        let pairs = resolve_principal_names(|_| Some(body.to_string())).unwrap();
+        assert_eq!(pairs.len(), 2, "the unreadable row is dropped, not guessed");
+        assert_eq!(pairs[1], ("https://id.example/jeff/profile/card#me".to_string(), "jeff".to_string()));
+        // NEGATIVE: unreachable graph → None (caller fails closed), not an empty list
+        assert!(resolve_principal_names(|_| None).is_none());
+        // NEGATIVE: a verifier with no resolver wired names nobody
+        let v = OidcVerifier::new("https://id.example/", || Some(vec![]), || Some(vec![]), || Some(vec![]), || None);
+        assert_eq!(v.principal_for("https://id.example/jeff/profile/card#me", 0), None);
+        let v = v.with_principal_names(move || resolve_principal_names(|_| Some(body.to_string())));
+        assert_eq!(v.principal_for("https://id.example/jeff/profile/card#me", 0).as_deref(), Some("jeff"));
+        assert_eq!(v.principal_for("https://id.example/nobody/profile/card#me", 0), None);
+    }
+
     #[test]
     fn principal_role_query_asks_the_holds_role_edge() {
         let body = format!(

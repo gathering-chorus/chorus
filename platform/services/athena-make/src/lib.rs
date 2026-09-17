@@ -2059,7 +2059,14 @@ fn query_owned_by(class: &str, entity: &str, instances_graph: &str) -> Option<St
 /// the verifier's comparison form so a newly created edge-owned entity remains
 /// writable by its owner.
 fn normalize_owned_role(owner: &str) -> String {
-    owner.strip_prefix("role-").unwrap_or(owner).to_string()
+    // #4196 — an owner is a Principal (`principal-silas`); the store still
+    // carries the two older spellings (`role-silas`, bare `silas`) until the
+    // backfill lands. All three name the same user; compare by the name.
+    owner
+        .strip_prefix("principal-")
+        .or_else(|| owner.strip_prefix("role-"))
+        .unwrap_or(owner)
+        .to_string()
 }
 
 /// Does the entity already have a partOf parent? (single-parent → 2nd add is 409).
@@ -5069,7 +5076,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         }
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
         },
-    );
+    )
+    // #4196 — WHO the caller is, as a Principal name, from the same graph on
+    // the same cadence. The door stamps this on rows it creates and compares
+    // it to a row's owner; the hat (agent_id) no longer gates a write.
+    .with_principal_names(|| oidc::resolve_principal_names(|q| sparql_json(q).ok()));
     let boot_now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -5315,13 +5326,13 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                     403u16,
                                     format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
                                 )
-                            } else if !resolved_write_role(&claims.agent_id) {
-                                (
-                                    403u16,
-                                    "{ \"error\": \"authz-role\", \"message\": \"batch writes require a model-resolved role\" }".to_string(),
-                                )
                             } else {
-                                let role = claims.agent_id.clone();
+                                // #4196 — no hat required: the scope row above is the
+                                // permission. The caller is stamped by NAME (a Principal),
+                                // falling back to the hat only where no name resolves.
+                                let role = oidc_verifier
+                                    .principal_for(&claims.web_id, now_secs)
+                                    .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                                 handle_batch(&target_graph, body_str, &role, token)
                             }
@@ -5390,10 +5401,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             // graph, but can never substitute a different in-scope graph
                             // as an authorization decoy for the real write target.
                             let effective_target = table.instances_graph.as_str();
-                            if !resolved_write_role(&claims.agent_id) {
-                                ((403u16, "{ \"error\": \"authz-role\", \"message\": \"writes require a model-resolved role\" }".to_string()),
-                                 ReqMeta { route: "write-authz-role".into(), ..Default::default() })
-                            } else if !target_graph.is_empty() && target_graph != effective_target {
+                            // #4196 — the "writes require a model-resolved role" gate is
+                            // gone: a role is a hat, a permission is a row (Jeff, 11:35 and
+                            // 17:16 today). What may write is decided below by the scope row
+                            // or the row's owner, never by whether the caller wears a hat.
+                            if !target_graph.is_empty() && target_graph != effective_target {
                                 ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
                                  ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
                             } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
@@ -5402,7 +5414,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                                 ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
                                  ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                             } else {
-                                let role = claims.agent_id.clone();
+                                // #4196 — the caller by NAME (a Principal), stamped as the row's
+                                // owner and compared to owners; the hat only where no name resolves.
+                                let role = oidc_verifier
+                                    .principal_for(&claims.web_id, now_secs)
+                                    .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                                 // (POST /batch is handled by the cross-class pre-table block above,
                                 // which `continue`s — it can't reach here. One site, no drift.)
@@ -6646,6 +6662,19 @@ mod tests {
         assert!(authz_allows("wren", Some("wren")));
         assert!(!authz_allows("wren", Some("silas")));
         assert!(!authz_allows("wren", None));        // absent ownedBy → FAIL-CLOSED
+    }
+
+    // #4196 — an owner is a Principal; the three live spellings of one user
+    // compare equal, and two different users never do, whatever the prefix.
+    #[test]
+    fn owner_is_a_principal_and_the_old_spellings_still_name_the_same_user() {
+        assert_eq!(normalize_owned_role("principal-crawler"), "crawler");
+        assert_eq!(normalize_owned_role("role-crawler"), "crawler");
+        assert_eq!(normalize_owned_role("crawler"), "crawler");
+        assert!(authz_allows("crawler", Some(&normalize_owned_role("principal-crawler"))));
+        // NEGATIVE: a different principal, in any spelling, is refused
+        assert!(!authz_allows("crawler", Some(&normalize_owned_role("principal-silas"))));
+        assert!(!authz_allows("crawler", Some(&normalize_owned_role("role-silas"))));
         assert!(!authz_allows("wren", Some("")));
         assert_eq!(normalize_owned_role("role-wren"), "wren");
         assert_eq!(normalize_owned_role("wren"), "wren");

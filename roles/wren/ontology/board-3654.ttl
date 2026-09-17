@@ -105,14 +105,14 @@ chorus:CardShape a sh:NodeShape ;
   # anyone — which is exactly what stopped #4102's land: the model declared the
   # owner, the live row carried none, and the replace 403'd. Requiring it at the
   # shape means the mint cannot produce that row in the first place.
-  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ] .
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] .
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;
   chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
-  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Role ] ;
+  sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
   sh:property [ sh:path chorus:roleSequence ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:ownedBy ] ;
   sh:property [ sh:path chorus:loomSequence ; sh:datatype xsd:integer ; chorus:uniqueGlobal true ] .
 
