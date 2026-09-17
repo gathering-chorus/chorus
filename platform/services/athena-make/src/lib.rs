@@ -2842,7 +2842,7 @@ fn build_revision(table: &RouteTable, name: &str, caller_role: &str) -> R<Prepar
     for k in ["changedAt", "changedIn"] {
         if let Some(v) = json_field(&fields[3].1, k) { fields.push((k.to_string(), v)); }
     }
-    let edges = vec![("ownedBy".to_string(), "role".to_string(), caller_role.to_string())];
+    let edges = vec![("ownedBy".to_string(), "principal".to_string(), caller_role.to_string())];
     // Every row in its own domain graph, never a catch-all (Jeff, 2026-09-03):
     // for a Revision that is the home of chorus:Revision, which is also the graph
     // /revisions reads — so a document's history is served by the same route as a
@@ -6694,6 +6694,17 @@ mod tests {
         assert!(body.contains("chorus:agent principal-kade") && body.contains("<urn:chorus:domains:security>"), "{body}");
         // NEGATIVE: an ordinary pen error is not an authz refusal
         assert!(pen_refusal_resp("athena-model: add-batch: shape-violation: x", "kade", "urn:g").is_none());
+    }
+
+    #[test]
+    fn a_revision_row_is_owned_by_a_principal_not_a_role() {
+        // #4196 — the revision minted on replace carries the caller as a Principal edge
+        // (found live 10:39: every REPLACE on prod was 422 because the revision row
+        // still minted role-<name> against the Principal shape).
+        // NEGATIVE: the door mints no "role"-kind owner edge anywhere any more.
+        let src = include_str!("lib.rs");
+        assert_eq!(src.matches("\"ownedBy\".to_string(), \"role\".to_string()").count(), 0, "a role-kind owner edge is still minted somewhere");
+        assert!(src.contains("\"ownedBy\".to_string(), \"principal\".to_string(), caller_role.to_string()"));
     }
 
     #[test]
