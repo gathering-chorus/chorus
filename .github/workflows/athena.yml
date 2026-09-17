@@ -259,6 +259,26 @@ jobs:
       LANDED: ${{ inputs.landed_commit }}
       CHORUS_CONTEXT: prod
     steps:
+      - name: trace
+        # #4195 (Jeff: "i want to see an athena trace that is just athena"). This run
+        # mints its OWN trace, always. If a caller (werk.yml's athena-land) handed one
+        # in, it is recorded as the parent on athena.pipeline.started, never reused, so
+        # a werk trace holds no athena event and an athena trace holds nothing else.
+        # CHORUS_LOG is resolved by path: chorus-log is not on a login shell's PATH, and
+        # before this every emit in this job failed silently behind `|| true` (measured
+        # 2026-09-16 18:00–18:06: a full canonical run left zero athena.* events).
+        run: |
+          set -euo pipefail
+          parent="${CHORUS_TRACE_ID:-}"
+          trace="athena-$(date +%s%N)-$$"
+          log="${CHORUS_HOME}/platform/scripts/chorus-log"
+          [ -x "$log" ] || { echo "::error::athena: no spine emitter at $log — a run that cannot emit does not run" >&2; exit 1; }
+          # CHORUS_CARD_ID rides every subprocess emit (chorus-log's env bridge, #2857), so the
+          # deploy script's and the seed's events carry the card too: the by-card view of the
+          # trace reader shows the whole athena run, not 4 of 159 (measured 2026-09-17 06:59).
+          { echo "CHORUS_TRACE_ID=$trace"; echo "ATHENA_PARENT_TRACE=$parent"; echo "CHORUS_LOG=$log"; echo "CHORUS_CARD_ID=${CARD_ID}"; } >> "$GITHUB_ENV"
+          echo "trace: $trace (parent: ${parent:-none})"
+
       - name: resolve
         id: resolve
         # One place decides WHERE: the live store, the com.chorus.athena-make service,
@@ -295,7 +315,7 @@ jobs:
             echo "nothing=true" >> "$GITHUB_OUTPUT"
             echo "athena: the landed diff touches no model or seed source — nothing to deploy (explicit absence, not a pass)"
           fi
-          chorus-log athena.pipeline.started "$ROLE" card="$CARD_ID" target="$TARGET" model="$(printf '%s' "$MODEL" | grep -c . || true)" seed="$(printf '%s' "$SEED" | grep -c . || true)" >/dev/null 2>&1 || true
+          "$CHORUS_LOG" athena.pipeline.started "$ROLE" card="$CARD_ID" target="$TARGET" landed="${LANDED:-}" parent="${ATHENA_PARENT_TRACE:-none}" model="$(printf '%s' "$MODEL" | grep -c . || true)" seed="$(printf '%s' "$SEED" | grep -c . || true)"
 
       - name: validate
         if: ${{ steps.scope.outputs.nothing != 'true' && steps.scope.outputs.model != '' }}
@@ -318,7 +338,7 @@ jobs:
         run: |
           set -euo pipefail
           ROOT="${{ steps.resolve.outputs.root }}"; STORE="${{ steps.resolve.outputs.store }}"
-          chorus-log athena.deploy.started "$ROLE" card="$CARD_ID" target="$TARGET" >/dev/null 2>&1 || true
+          "$CHORUS_LOG" athena.deploy.started "$ROLE" card="$CARD_ID" target="$TARGET"
           # shellcheck disable=SC1091
           source "${CHORUS_HOME}/platform/scripts/fuseki-auth.sh"
           CHORUS_ROOT="$ROOT" FUSEKI_GSP="$STORE/data" FUSEKI_QUERY="$STORE/query" FUSEKI_UPDATE="$STORE/update" \
@@ -347,7 +367,7 @@ jobs:
           HEAD_SHA="$LANDED"
           CHORUS_ROOT="$ROOT" CHORUS_FUSEKI="$STORE" CHORUS_IDENTITY_TOKEN="$TOKEN" CHORUS_LANDED_COMMIT="$HEAD_SHA" \
             "$SEED_BIN" seed --post --api "$API" --unowned load
-          chorus-log athena.seed.completed "$ROLE" card="$CARD_ID" target="$TARGET" >/dev/null 2>&1 || true
+          "$CHORUS_LOG" athena.seed.completed "$ROLE" card="$CARD_ID" target="$TARGET"
 
       - name: prove
         if: ${{ steps.scope.outputs.nothing != 'true' }}
@@ -382,5 +402,19 @@ jobs:
               fi
             fi
           fi
-          chorus-log athena.pipeline.completed "$ROLE" card="$CARD_ID" target="$TARGET" verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}" >/dev/null 2>&1 || true
+          "$CHORUS_LOG" athena.pipeline.completed "$ROLE" card="$CARD_ID" target="$TARGET" verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}"
           exit $rc
+
+      - name: traceable
+        # #4195 — the run counts its own events on its trace and refuses when a leg ran
+        # without leaving a record. Zero events is the loudest failure, never a pass.
+        # The floor is the legs that ran: started + completed, +1 for a seed leg, +2 for
+        # a model leg (deploy.started and athena-serve's ready). Negative proofs live in
+        # athena-deploy's prove-trace tests and platform/tests/4195-athena-trace.bats.
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          want=2
+          [ -n "${{ steps.scope.outputs.seed }}" ] && want=$((want+1))
+          [ -n "${{ steps.scope.outputs.model }}" ] && want=$((want+2))
+          athena-deploy prove-trace "$CHORUS_TRACE_ID" "$want" --spine "${CHORUS_SPINE:-$HOME/.chorus/chorus.log}"

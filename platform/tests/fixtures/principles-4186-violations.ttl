@@ -18,7 +18,7 @@ chorus:fixture-quotation a chorus:Principle ;
 chorus:fixture-unnumbered-root a chorus:Principle ;
     chorus:ownedBy chorus:role-fixture ;
     rdfs:label "Connect" ; rdfs:comment "Use relative location." ;
-    dcterms:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
+    chorus:source "Hemenway, T. Gaia's Garden, 2nd ed., p. 6." ;
     chorus:techReading "Place elements so they create useful relationships among all parts." ;
     chorus:jeffReading "Jeff draws the map before he places the bed; adjacency is the design." ;
     chorus:principleKind "pc" .
@@ -27,7 +27,7 @@ chorus:fixture-unnumbered-root a chorus:Principle ;
 chorus:fixture-numbered-xp a chorus:Principle ;
     chorus:ownedBy chorus:role-fixture ;
     rdfs:label "Humanity" ; rdfs:comment "Software is written by people." ;
-    dcterms:source "Beck, K. Extreme Programming Explained, 2nd ed., ch. 3." ;
+    chorus:source "Beck, K. Extreme Programming Explained, 2nd ed., ch. 3." ;
     chorus:techReading "Roles are not interchangeable executors; the attention contract exists for this." ;
     chorus:jeffReading "Tone is product. When tone drops his budget goes to stabilising, not creating." ;
     chorus:principleKind "xp" ; chorus:order 3 .
@@ -36,7 +36,7 @@ chorus:fixture-numbered-xp a chorus:Principle ;
 chorus:fixture-out-of-range a chorus:Principle ;
     chorus:ownedBy chorus:role-fixture ;
     rdfs:label "Fifteenth" ; rdfs:comment "There is no fifteenth Hemenway principle." ;
-    dcterms:source "nowhere" ;
+    chorus:source "nowhere" ;
     chorus:techReading "A number past the set is a number nobody can look up in the book." ;
     chorus:jeffReading "Jeff keeps the Gaia's Garden list; fourteen, not fifteen." ;
     chorus:principleKind "zen" ; chorus:order 15 .

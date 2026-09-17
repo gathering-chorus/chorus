@@ -20,6 +20,17 @@ fn main() {
             _ => { eprintln!("usage: athena-deploy scope <root> <git-range>"); std::process::exit(2); }
         }
     }
+    if args.get(1).map(String::as_str) == Some("prove-trace") {
+        let trace = args.get(2).cloned().unwrap_or_default();
+        let want: usize = args.get(3).and_then(|w| w.parse().ok()).unwrap_or(0);
+        let spine = args.iter().position(|a| a == "--spine").and_then(|i| args.get(i + 1)).cloned()
+            .unwrap_or_else(|| format!("{}/.chorus/chorus.log", std::env::var("HOME").unwrap_or_default()));
+        if trace.is_empty() || want == 0 { eprintln!("usage: athena-deploy prove-trace <trace> <want> [--spine <path>]"); std::process::exit(2); }
+        match athena_deploy::prove_trace(&trace, want, &spine) {
+            Ok(s) => { println!("{}", s); std::process::exit(0); }
+            Err(e) => { eprintln!("athena-deploy: {}", e); std::process::exit(1); }
+        }
+    }
     match run_athena_deploy() {
         Ok(summary) => {
             println!("{}", summary);
