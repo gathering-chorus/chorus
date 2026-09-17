@@ -46,7 +46,10 @@ chorus:commitment-registry-validates-before-clear a chorus:Commitment ;
     rdfs:label "The whole corpus validates before the old registry is cleared" ;
     chorus:statement "A hydration that fails validation leaves the previous registry intact; the registry is never half-replaced, and no domain may hold more than 30% of the corpus." ;
     chorus:sourceDoc "https://claude.ai/code/artifact/695310c7-2e14-441d-ab09-15c28088c9f1" ; chorus:sourceQuote "The whole corpus VALIDATES before the old one is cleared (#3970), and no domain may hold >30% of the corpus (#3996 share gate)." ;
-    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/scripts/test-tag-tests-validate-first.sh" .
+    # #4197 — the probe named test-tag-tests-validate-first.sh, deleted with the tagger by #4154. The promise is kept today by
+    # the crawler: the share gate refuses an over-broad corpus (3996-covers-shares.bats, runnable), and a pass that cannot
+    # read the tree or would remove half the graph refuses to delete (chorus-crawl unit tests, mass_delete_4185 / plan_4173).
+    chorus:status "closed" ; chorus:ownedBy chorus:role-kade ; chorus:ofService chorus:service-tests ; chorus:probe "platform/tests/3996-covers-shares.bats" .
 
 chorus:commitment-value-axis-governed a chorus:Commitment ;
     rdfs:label "A test's value is a governed property" ;

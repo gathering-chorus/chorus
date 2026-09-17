@@ -1,53 +1,35 @@
-# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
-# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — Jeff:
-# "i have doubts about the function of crawler-index in current state".
-# This check is SILENCED while the crawler is retired: a staleness alert for
-# a deliberately-stopped service is a tombstone page, not a signal (it fired
-# 4x on 2026-06-12 after the retirement, each one a Jeff-screen tax).
-# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
-# (#3185/#3242 — facet-heralds through the DAL) and re-enables its own
-# monitoring. Restore the original check below by removing this short-circuit.
-# crawler-error.yml — Alert when chorus crawler reports persistent failures
-# Card #2817 (#2861 — bash-only check; #2871 — tune to consecutive>=2)
+# crawler-error.yml — the live crawler's last pass failed writes or refused a
+# mass delete.
 #
-# index-crawler-snapshots.sh emits crawler.domain.failed when a domain's
-# /api/chorus/crawl/:domain call returns non-200. Tracks consecutive
-# failures per domain in /tmp/crawler-domain-status.json. Sustained
-# failure on any domain (consecutive >= 2) means the crawl-API or the
-# domain's source is broken; the graph for that domain falls behind
-# silently.
+# History: #2817 for com.chorus.crawler-index (consecutive domain failures);
+# #3380 tombstoned it when that loop was retired; #4197 re-pointed it at the
+# crawler that runs now (chorus-crawl, #4173). The old check counted
+# crawler.domain.failed spine events; the new one reads the run line the
+# crawler prints, the same line the nightly TOTAL reads (#4180 crawl_line).
 #
-# Why consecutive>=2 (not raw event count): a chorus-api kickstart causes
-# 5-10 events in one second across multiple domains, all consecutive=1.
-# The next polling pass clears those (consecutive resets to 0). Firing
-# on raw event count makes a single transient kickstart cycle look like
-# ongoing failure for the next 10 min. The consecutive>=2 threshold fires
-# only when the same domain fails twice in a row — actual persistence,
-# not transient burst.
+# Fires when the LAST pass carries failed=N with N>0, "MASS DELETE REFUSED"
+# (#4185: the tree is not the tree the graph describes — wrong CHORUS_ROOT), or
+# "the run is RED". Seam CRAWL_LOG for the live test's fixtures.
 #
-# alert-runner contract (proving/scripts/alert-runner.sh:39-41):
-# stdout must equal literal "ok" for success; anything else fires.
+# alert-runner contract: stdout must equal literal "ok" for success.
 
 name: crawler-error
-description: chorus crawler has reported persistent (consecutive>=2) domain failures
+description: chorus-crawl's last pass failed writes or refused a mass delete
 severity: warning
 owner: kade
 schedule: "*/5 * * * *"
 
 check: |
-  # tombstone short-circuit — see header; original check preserved below, inert
-  echo "ok"
-  exit 0
-  # ORIGINAL CHECK (inert while retired):
-  SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-error-check.py"
-  MAX_CONSEC=$(python3 "$SIBLING" 2>/dev/null || echo 0)
-  if [ "$MAX_CONSEC" -ge 2 ] 2>/dev/null; then
-    echo "persistent-failures:max_consecutive=$MAX_CONSEC"
-    exit 1
-  fi
+  LOG="${CRAWL_LOG:-$HOME/Library/Logs/Chorus/crawl-nightly.log}"
+  if [ ! -f "$LOG" ]; then echo "ok"; exit 0; fi   # absence is crawler-stale's to say, not this alert's
+  LAST=$(awk '/^chorus-crawl: (full|delta)/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$LOG")
+  FAILED=$(printf '%s' "$LAST" | grep -o 'failed=[0-9]*' | tail -1 | cut -d= -f2)
+  if [ -n "$FAILED" ] && [ "$FAILED" -gt 0 ] 2>/dev/null; then echo "write-failures:$FAILED"; exit 1; fi
+  if printf '%s' "$LAST" | grep -q "MASS DELETE REFUSED"; then echo "mass-delete-refused:wrong-tree-or-wrong-store"; exit 1; fi
+  if printf '%s' "$LAST" | grep -q "the run is RED"; then echo "run-red"; exit 1; fi
   echo "ok"
   exit 0
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" kade "crawler-error: domain crawl failing persistently (consecutive>=2). Check /tmp/crawler-domain-status.json for failing domain(s)." 2>/dev/null || true
+  "$OPS_NUDGE" kade "crawler-error: chorus-crawl's last pass failed writes or refused a mass delete. Read the last pass in ~/Library/Logs/Chorus/crawl-nightly.log" 2>/dev/null || true
