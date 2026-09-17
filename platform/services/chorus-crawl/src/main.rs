@@ -923,6 +923,46 @@ fn seam(args: &[String]) -> bool {
     true
 }
 
+/// #4201 — a run that cannot write must say so ON the count line, not in a
+/// footnote. `--reconcile` is read-only, but its `posted/replaced/deleted`
+/// line was byte-identical to a write pass's, and the disclaimer sat eleven
+/// lines below. On 2026-09-17 that cost an afternoon: two reconciles were read
+/// as data changes, and the store never moved. The counts a run did not make
+/// carry the reason on the same line.
+fn wrote_nothing(dry_run: bool, reconciling: bool) -> &'static str {
+    match (dry_run, reconciling) {
+        (true, _) => "  (dry-run — NOTHING WRITTEN)",
+        (_, true) => "  (--reconcile is read-only — NOTHING WRITTEN, this is what a write pass would do)",
+        _ => "",
+    }
+}
+
+#[cfg(test)]
+mod wrote_nothing_4201 {
+    use super::wrote_nothing;
+
+    /// Negative proof: the state that cost the afternoon — a reconcile whose
+    /// counts read as writes. The line must name itself read-only.
+    #[test]
+    fn a_reconcile_line_says_nothing_was_written() {
+        let s = wrote_nothing(false, true);
+        assert!(s.contains("NOTHING WRITTEN"), "{s}");
+        assert!(s.contains("read-only"), "{s}");
+    }
+
+    #[test]
+    fn a_dry_run_line_says_nothing_was_written() {
+        assert!(wrote_nothing(true, false).contains("NOTHING WRITTEN"));
+    }
+
+    /// Control: a real write pass carries no disclaimer, so the marker never
+    /// becomes noise that stops being read.
+    #[test]
+    fn a_write_pass_carries_no_disclaimer() {
+        assert_eq!(wrote_nothing(false, false), "");
+    }
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().collect();
     if seam(&argv) {
@@ -1222,17 +1262,13 @@ fn main() {
         c.unchanged,
         c.deleted,
         c.skipped,
-        if dry_run {
-            "  (dry-run — nothing written)"
-        } else {
-            ""
-        }
+        wrote_nothing(dry_run, reconciling)
     );
     println!(
         "chorus-crawl: cases posted={} replaced={} unchanged={} deleted={} · test files parsed={} declared={} inferred={} no-case={}{}",
         cc.posted, cc.replaced, cc.unchanged, cc.deleted,
         parsed.parsed_files.len(), parsed.declared, parsed.inferred, parsed.no_case.len(),
-        if dry_run { "  (dry-run — nothing written)" } else { "" }
+        wrote_nothing(dry_run, reconciling)
     );
     if !parsed.no_case.is_empty() {
         println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
