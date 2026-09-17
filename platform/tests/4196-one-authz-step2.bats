@@ -53,3 +53,11 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
   rm -rf "$T"
   [ "$bad" -eq 1 ]
 }
+
+@test "req 6 — every write refusal names the Permission row that would open the door" {
+  # three refusal sites (batch scope, entity scope, row owner) call the one namer
+  n=$(grep -c 'row_that_would_open(' "$DOOR" || true)
+  [ "$n" -ge 4 ]
+  ! grep -q 'only the owning role may write this node' "$DOOR"
+  ! grep -q 'batch requires a scoped token whose scope names' "$DOOR"
+}

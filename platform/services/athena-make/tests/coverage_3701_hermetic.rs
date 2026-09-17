@@ -987,7 +987,7 @@ fn write_lifecycle_create_replace_edge_delete() {
     // REPLACE a node with no ownedBy on record → 403 fail-closed
     let (c, _, b) = http("PUT", "/domains/ghost", hdrs, "{\"comment\":\"x\"}");
     assert_eq!(c, 403);
-    assert!(b.contains("only the owning role"), "{}", b);
+    assert!(b.contains("not this row's owner") && b.contains("chorus:agent principal-"), "{}", b);
     // REPLACE owned-but-absent → 404
     let (c, _, b) = http("PUT", "/domains/phantom", hdrs, "{\"comment\":\"x\"}");
     assert_eq!(c, 404);
@@ -1066,7 +1066,7 @@ fn testresult_batch_reuses_auth_prepares_all_and_delegates_one_exact_ndjson_call
         http("POST", "/testresults/batch", &unscoped_headers, &valid_batch);
     assert_eq!((batch_code, &batch_body), (single_code, &single_body));
     assert_eq!(batch_code, 403);
-    assert!(batch_body.contains("not in this token's scope"), "{}", batch_body);
+    assert!(batch_body.contains("no Permission row opens this write") && batch_body.contains("chorus:agent principal-unscoped-role"), "{}", batch_body);
 
     // #4196 — a permission is a row, a role is a hat. A registered and scoped
     // Principal who wears NO hat (jeff's shape) creates rows on both routes,
@@ -1197,7 +1197,7 @@ fn batch_route_is_gated_and_delegates_typed_slots() {
         "INS\turn:s\turn:p\to",
     );
     assert_eq!(c, 403);
-    assert!(b.contains("scoped token"), "{}", b);
+    assert!(b.contains("no Permission row opens this write") && b.contains("chorus:agent principal-nobody"), "{}", b);
     // #4196 — scope IS write authority: a scoped Principal wearing no hat
     // (jeff's shape) applies the batch through the DAL.
     let tok = mint_token(ROLELESS_SCOPED_WEBID, None);

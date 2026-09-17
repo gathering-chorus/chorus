@@ -707,6 +707,15 @@ pub fn generate_verb(verb_local: &str) -> R<String> {
 /// miss), not decoration: today verify() does sig + aud + exp but carries no scope.
 /// Empty scope = deny-all (fail-closed). Pure + unit-pinned — the Claims.scope read
 /// wires into verify() separately (mirrors project_secured / field_exposed).
+/// #4196 req 6 — a refusal names the row that would open the door: the caller
+/// as a Principal, the graph, and the mode. Pure; the three refusal sites use it.
+pub fn row_that_would_open(principal: &str, graph: &str) -> String {
+    format!(
+        "no Permission row opens this write; the row that would: chorus:agent principal-{} ; chorus:accessTo <{}> ; chorus:mode acl:Write",
+        principal, graph
+    )
+}
+
 pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
     scope.iter().any(|g| g == target_graph)
 }
@@ -2901,7 +2910,8 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
         let owned = query_owned_by(&table.class, e, &table.instances_graph);
         if !authz_allows(caller_role, owned.as_deref()) {
             emit_write_spine(caller_role, method, e, "", "authz");
-            return write_resp("authz", "only the owning role may write this node (ownedBy)");
+            // #4196 req 6 — name the owner that holds the row and the Permission row that would open it.
+            return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent"), row_that_would_open(caller_role, &table.instances_graph)));
         }
     }
     match &op {
@@ -5318,13 +5328,17 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         ),
                         Ok(claims) => {
                             let target_graph = header("x-target-graph");
+                            let caller_name = oidc_verifier
+                                .principal_for(&claims.web_id, now_secs)
+                                .unwrap_or_else(|| claims.agent_id.clone());
                             // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
                             // entity writes (which allow legacy/unscoped mixed-state), batch is the
                             // most destructive op; a legacy allow-all token has no business here.
+                            // #4196 req 6 — the refusal names the row that would open it.
                             if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
                                 (
                                     403u16,
-                                    format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
+                                    format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch write to '{}' refused: {}\" }}", json_escape(&target_graph), json_escape(&row_that_would_open(&caller_name, &target_graph))),
                                 )
                             } else {
                                 // #4196 — no hat required: the scope row above is the
@@ -5401,6 +5415,9 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             // graph, but can never substitute a different in-scope graph
                             // as an authorization decoy for the real write target.
                             let effective_target = table.instances_graph.as_str();
+                            let caller_name = oidc_verifier
+                                .principal_for(&claims.web_id, now_secs)
+                                .unwrap_or_else(|| claims.agent_id.clone());
                             // #4196 — the "writes require a model-resolved role" gate is
                             // gone: a role is a hat, a permission is a row (Jeff, 11:35 and
                             // 17:16 today). What may write is decided below by the scope row
@@ -5411,7 +5428,7 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
                                 // #4096 — an owned class is governed by the row's owner (checked in
                                 // handle_write); only an ownerless class needs the graph in scope.
-                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
+                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"write to '{}' refused (this class carries no row owner): {}\" }}", json_escape(effective_target), json_escape(&row_that_would_open(&caller_name, effective_target)))),
                                  ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                             } else {
                                 // #4196 — the caller by NAME (a Principal), stamped as the row's
@@ -6655,6 +6672,16 @@ mod tests {
         assert_eq!(parse_write("DELETE", "/domains/x/partof", "domains"), Some(WriteOp::RemoveEdge { name: "x".into(), edge: "partof".into() }));
         assert_eq!(parse_write("POST", "/widgets", "domains"), None);
         assert_eq!(parse_write("POST", "/domains/x/y/z", "domains"), None);
+    }
+
+    #[test]
+    fn a_refusal_names_the_row_that_would_open_the_door() {
+        // #4196 req 6 — principal, graph, mode; and a different caller names a different row
+        let m = row_that_would_open("jeff", "urn:chorus:domains:security");
+        assert!(m.contains("chorus:agent principal-jeff"), "{m}");
+        assert!(m.contains("chorus:accessTo <urn:chorus:domains:security>"), "{m}");
+        assert!(m.contains("chorus:mode acl:Write"), "{m}");
+        assert_ne!(m, row_that_would_open("silas", "urn:chorus:domains:security"));
     }
 
     #[test]
