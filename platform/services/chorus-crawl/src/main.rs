@@ -166,18 +166,89 @@ fn collection_for(api: &str, kind: &str) -> Result<String, String> {
 /// This run's identity. The crawler holds its own credential (principal-crawler,
 /// #4154) — it never reaches for shared admin, which is the thing that makes a
 /// write attributable at all.
-fn identity_token(root: &str, role: &str) -> Result<String, String> {
-    if let Ok(t) = std::env::var("CHORUS_IDENTITY_TOKEN") {
-        if !t.trim().is_empty() {
-            return Ok(t);
-        }
-    }
-    let script = format!("{root}/platform/scripts/chorus-identity-token");
+///
+/// #4192 — the identity lives 600 s and a full pass over the registry does not.
+/// The token is re-minted inside the run: before any write that would land
+/// within a minute of `exp`, and once more on a 401. A run that cannot re-mint
+/// goes RED — it never keeps writing with a token it knows is dead.
+struct Identity {
+    root: String,
+    role: String,
+    token: String,
+    exp: Option<u64>,
+    mints: usize,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn mint_token(root: &str, role: &str) -> Result<String, String> {
+    let script = std::env::var("CHORUS_IDENTITY_MINT")
+        .unwrap_or_else(|_| format!("{root}/platform/scripts/chorus-identity-token"));
     let t = sh(&script, &[role], root)?.trim().to_string();
     if t.is_empty() {
         return Err(format!("no identity token for {role}"));
     }
     Ok(t)
+}
+
+impl Identity {
+    /// The first token: the environment's if one is set (a test's fixture, a
+    /// caller's hand), else a fresh mint.
+    fn open(root: &str, role: &str) -> Result<Identity, String> {
+        let token = match std::env::var("CHORUS_IDENTITY_TOKEN") {
+            Ok(t) if !t.trim().is_empty() => t,
+            _ => mint_token(root, role)?,
+        };
+        let exp = token_exp(&token);
+        Ok(Identity {
+            root: root.to_string(),
+            role: role.to_string(),
+            token,
+            exp,
+            mints: 0,
+        })
+    }
+    /// A token good for at least the next minute, minting if not.
+    fn bearer(&mut self) -> Result<String, String> {
+        if token_needs_mint(self.exp, now_secs(), 60) {
+            self.remint()?;
+        }
+        Ok(self.token.clone())
+    }
+    fn remint(&mut self) -> Result<(), String> {
+        let t = mint_token(&self.root, &self.role).map_err(|e| {
+            format!("identity re-mint failed ({e}) — refusing to keep writing with a dead token")
+        })?;
+        self.exp = token_exp(&t);
+        self.token = t;
+        self.mints += 1;
+        Ok(())
+    }
+}
+
+/// One write through the door under a live identity: mints when the token is
+/// about to expire, and retries exactly once on a 401 after a fresh mint.
+fn write(
+    ident: &std::cell::RefCell<Identity>,
+    api: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+) -> Result<String, String> {
+    let token = ident.borrow_mut().bearer()?;
+    match curl(api, method, path, body, Some(&token)) {
+        Err(e) if e.contains("HTTP 401") => {
+            ident.borrow_mut().remint()?;
+            let token = ident.borrow().token.clone();
+            curl(api, method, path, body, Some(&token))
+        }
+        r => r,
+    }
 }
 
 fn curl(
@@ -677,18 +748,33 @@ fn main() {
 
     // What the graph already holds. Read BEFORE deciding anything — the walk is
     // idempotent by diff, not by luck.
-    let (graph, token) = if dry_run && !reconciling {
-        (Vec::new(), String::new())
+    let started = std::time::Instant::now();
+    let ident: Option<std::cell::RefCell<Identity>> = if dry_run && !reconciling {
+        None
     } else {
-        let t = match identity_token(&root, &role) {
-            Ok(t) => t,
+        match Identity::open(&root, &role) {
+            Ok(i) => Some(std::cell::RefCell::new(i)),
             Err(e) => {
                 eprintln!("chorus-crawl: {e} — refusing to write without an identity");
                 std::process::exit(2);
             }
-        };
-        match existing_rows(&api, &t) {
-            Ok(g) => (g, t),
+        }
+    };
+    let token: String = match &ident {
+        Some(i) => match i.borrow_mut().bearer() {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("chorus-crawl: {e}");
+                std::process::exit(2);
+            }
+        },
+        None => String::new(),
+    };
+    let graph = if token.is_empty() {
+        Vec::new()
+    } else {
+        match existing_rows(&api, &token) {
+            Ok(g) => g,
             Err(e) => {
                 eprintln!("chorus-crawl: cannot read existing rows ({e}) — refusing to plan against an unknown graph");
                 std::process::exit(2);
@@ -900,18 +986,14 @@ fn main() {
     let mut failed: Vec<String> = Vec::new();
     let mut batch: Vec<String> = Vec::new();
 
+    let ident = ident.as_ref().expect("writes happen only with an identity");
+    let mut prefixes = PrefixMemory::default();
     let flush = |batch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
         if batch.is_empty() {
             return;
         }
         let body = format!("[{}]", batch.join(","));
-        match curl(
-            &api,
-            "POST",
-            &format!("{coll}/batch"),
-            Some(&body),
-            Some(&token),
-        ) {
+        match write(ident, &api, "POST", &format!("{coll}/batch"), Some(&body)) {
             Ok(_) => *wrote += batch.len(),
             Err(e) => failed.push(format!("batch of {}: {e}", batch.len())),
         }
@@ -974,22 +1056,22 @@ fn main() {
                 let name = stable_name(path);
                 // The door names the prefix its mint adds; a refusal that names
                 // one is retried once with those values bared, never guessed at
-                // from a table kept in step by hand.
+                // from a table kept in step by hand — and once learned, the
+                // prefix is stripped from every later row BEFORE its first PUT (#4192).
+                prefixes.apply(&mut fields);
                 let mut attempt = 0;
                 loop {
                     let body = fields_json(&fields);
-                    match curl(
-                        &api,
-                        "PUT",
-                        &format!("{coll}/{name}"),
-                        Some(&body),
-                        Some(&token),
-                    ) {
+                    match write(ident, &api, "PUT", &format!("{coll}/{name}"), Some(&body)) {
                         Ok(_) => {
                             wrote += 1;
                             break;
                         }
-                        Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => {
+                        Err(e)
+                            if attempt == 0
+                                && prefixes.learn(&e)
+                                && prefixes.apply(&mut fields) =>
+                        {
                             attempt += 1
                         }
                         Err(e) => {
@@ -1001,13 +1083,7 @@ fn main() {
             }
             Action::Delete { path } => {
                 let name = stable_name(path);
-                if let Err(e) = curl(
-                    &api,
-                    "DELETE",
-                    &format!("{coll}/{name}"),
-                    None,
-                    Some(&token),
-                ) {
+                if let Err(e) = write(ident, &api, "DELETE", &format!("{coll}/{name}"), None) {
                     failed.push(format!("delete {path}: {e}"));
                 }
             }
@@ -1056,12 +1132,12 @@ fn main() {
                 return;
             }
             let body = format!("[{}]", cbatch.join(","));
-            match curl(
+            match write(
+                ident,
                 &api,
                 "POST",
                 &format!("{case_coll}/batch"),
                 Some(&body),
-                Some(&token),
             ) {
                 Ok(_) => *wrote += cbatch.len(),
                 Err(e) => failed.push(format!("case batch of {}: {e}", cbatch.len())),
@@ -1090,21 +1166,26 @@ fn main() {
                     if row.concern.is_none() {
                         fields.retain(|(k, _)| k != "testConcern");
                     }
+                    prefixes.apply(&mut fields);
                     let mut attempt = 0;
                     loop {
                         let body = fields_json(&fields);
-                        match curl(
+                        match write(
+                            ident,
                             &api,
                             "PUT",
                             &format!("{case_coll}/{name}"),
                             Some(&body),
-                            Some(&token),
                         ) {
                             Ok(_) => {
                                 wrote += 1;
                                 break;
                             }
-                            Err(e) if attempt == 0 && strip_named_prefix(&e, &mut fields) => {
+                            Err(e)
+                                if attempt == 0
+                                    && prefixes.learn(&e)
+                                    && prefixes.apply(&mut fields) =>
+                            {
                                 attempt += 1
                             }
                             Err(e) => {
@@ -1116,13 +1197,9 @@ fn main() {
                     }
                 }
                 CaseAction::Delete { name, file, case } => {
-                    if let Err(e) = curl(
-                        &api,
-                        "DELETE",
-                        &format!("{case_coll}/{name}"),
-                        None,
-                        Some(&token),
-                    ) {
+                    if let Err(e) =
+                        write(ident, &api, "DELETE", &format!("{case_coll}/{name}"), None)
+                    {
                         failed.push(format!("delete case {file} :: {case}: {e}"));
                     }
                 }
@@ -1132,7 +1209,20 @@ fn main() {
         cflush(&mut cbatch, &mut failed, &mut wrote);
     }
 
-    println!("chorus-crawl: wrote={} failed={}", wrote, failed.len());
+    let elapsed = started.elapsed().as_secs_f64();
+    let attempted = wrote + failed.len();
+    println!(
+        "chorus-crawl: wrote={} failed={} · elapsed={:.0}s rate={:.1}/s mints={}",
+        wrote,
+        failed.len(),
+        elapsed,
+        if elapsed > 0.0 {
+            attempted as f64 / elapsed
+        } else {
+            0.0
+        },
+        ident.borrow().mints
+    );
 
     // The watermark moves only when this run earned it.
     let scope_was_full = matches!(scope, Scope::Full { .. });

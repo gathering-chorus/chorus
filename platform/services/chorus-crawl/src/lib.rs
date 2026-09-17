@@ -1286,6 +1286,7 @@ mod batch_budget_4185 {
     // NEGATIVE PROOF (#3734): the state that went 422 on the variant — a
     // batch that WOULD cross the door's cap — is refused before it is sent.
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn negative_proof_a_row_that_would_cross_the_cap_does_not_join_the_batch() {
         assert!(!batch_accepts(59_800, 340, BATCH_BODY_BUDGET));
         // and the budget itself sits under the door's cap
@@ -1342,6 +1343,195 @@ mod mass_delete_4185 {
             "a three-row fixture graph losing two rows is a test, not a wipe"
         );
         assert!(!mass_delete_refused(0, 8_187));
+    }
+}
+
+// ─────────────────────────── identity that outlives ten minutes (#4192) ───────────────────────────
+
+/// The `exp` claim of a JWT, read from its payload without a library: the
+/// middle segment, base64url, then the first `"exp":<digits>`. None when the
+/// token is not a JWT or carries no exp — the caller then mints fresh rather
+/// than guessing a lifetime.
+pub fn token_exp(token: &str) -> Option<u64> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64url_decode(payload)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let at = text.find("\"exp\"")?;
+    let rest = text[at + 5..].trim_start().strip_prefix(':')?.trim_start();
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok()
+}
+
+fn base64url_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'-' | b'+' => 62,
+            b'_' | b'/' => 63,
+            b'=' => break,
+            _ => return None,
+        } as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+/// Must the run mint a new identity before its next write? Yes when the token
+/// has no readable expiry (nothing to trust) or expires within `margin`
+/// seconds. #4192: the crawler identity lives 600 s and the run minted it once,
+/// so a pass over 7,858 rows was refused from minute ten on (6,807 failures on
+/// 2026-09-16 17:41).
+pub fn token_needs_mint(exp: Option<u64>, now: u64, margin: u64) -> bool {
+    match exp {
+        None => true,
+        Some(e) => now + margin >= e,
+    }
+}
+
+/// The kind prefixes the door has named in its refusals this run. A served
+/// edge value carries its target kind's prefix (`code-file-file-…`) and the
+/// door refuses that spelling on write with `double-prefix: '…' already
+/// starts with '<prefix>'`. Learned once, the prefix is stripped from every
+/// later row BEFORE the first PUT — one round trip per update instead of two
+/// (measured 2.9 s each at load 9.6, 2026-09-16).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PrefixMemory {
+    known: Vec<String>,
+}
+
+impl PrefixMemory {
+    /// Remember the prefix a refusal names. True if it named one we did not know.
+    pub fn learn(&mut self, err: &str) -> bool {
+        let Some(p) = named_prefix(err) else {
+            return false;
+        };
+        if self.known.iter().any(|k| k == p) {
+            return false;
+        }
+        self.known.push(p.to_string());
+        true
+    }
+    /// Strip every known prefix from every value that carries it. True if any changed.
+    pub fn apply(&self, fields: &mut [(String, String)]) -> bool {
+        let mut changed = false;
+        for p in &self.known {
+            for (_, v) in fields.iter_mut() {
+                if let Some(bare) = v.strip_prefix(p.as_str()) {
+                    if !bare.is_empty() {
+                        *v = bare.to_string();
+                        changed = true;
+                    }
+                }
+            }
+        }
+        changed
+    }
+    pub fn is_empty(&self) -> bool {
+        self.known.is_empty()
+    }
+}
+
+/// The prefix a door refusal names, if any.
+pub fn named_prefix(err: &str) -> Option<&str> {
+    let i = err.find("already starts with '")?;
+    let tail = &err[i + "already starts with '".len()..];
+    let j = tail.find('\'')?;
+    let p = &tail[..j];
+    if p.is_empty() {
+        None
+    } else {
+        Some(p)
+    }
+}
+
+#[cfg(test)]
+mod identity_4192 {
+    use super::*;
+
+    fn jwt_with_exp(exp: u64) -> String {
+        // header.payload.sig — only the payload matters here
+        let payload = format!("{{\"sub\":\"crawler\",\"iat\":1,\"exp\":{exp}}}");
+        format!("eyJhbGciOiJub25lIn0.{}.sig", b64url(payload.as_bytes()))
+    }
+    fn b64url(b: &[u8]) -> String {
+        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let mut s = String::new();
+        for chunk in b.chunks(3) {
+            let n = chunk.len();
+            let v = (chunk[0] as u32) << 16
+                | (*chunk.get(1).unwrap_or(&0) as u32) << 8
+                | *chunk.get(2).unwrap_or(&0) as u32;
+            s.push(T[(v >> 18) as usize & 63] as char);
+            s.push(T[(v >> 12) as usize & 63] as char);
+            if n > 1 {
+                s.push(T[(v >> 6) as usize & 63] as char);
+            }
+            if n > 2 {
+                s.push(T[v as usize & 63] as char);
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn the_exp_claim_is_read_from_the_payload() {
+        assert_eq!(token_exp(&jwt_with_exp(1_789_591_876)), Some(1_789_591_876));
+        assert_eq!(token_exp("not-a-jwt"), None);
+    }
+
+    // NEGATIVE PROOF (#3734): an expired or expiring token demands a mint; a
+    // fresh one does not; a token with no readable exp is never trusted.
+    #[test]
+    fn negative_proof_an_expiring_token_demands_a_mint_and_a_fresh_one_does_not() {
+        let exp = Some(1_000_600);
+        assert!(token_needs_mint(exp, 1_000_600, 60), "already expired");
+        assert!(token_needs_mint(exp, 1_000_550, 60), "inside the margin");
+        assert!(
+            !token_needs_mint(exp, 1_000_000, 60),
+            "control: nine minutes of life left"
+        );
+        assert!(token_needs_mint(None, 0, 60), "no exp → mint, never guess");
+    }
+
+    #[test]
+    fn a_prefix_learned_on_row_one_is_stripped_from_row_two_before_any_round_trip() {
+        let mut m = PrefixMemory::default();
+        assert!(m.learn("PUT /code/files/x -> HTTP 422 double-prefix: 'code-kind-doc' already starts with 'code-kind-'"));
+        assert!(
+            !m.learn("PUT … already starts with 'code-kind-'"),
+            "known once"
+        );
+        let mut row2 = vec![
+            ("hasKind".to_string(), "code-kind-test".to_string()),
+            ("filePath".to_string(), "a.rs".to_string()),
+        ];
+        assert!(m.apply(&mut row2));
+        assert_eq!(row2[0].1, "test");
+        assert_eq!(row2[1].1, "a.rs");
+    }
+
+    // NEGATIVE PROOF: a value that does not carry the prefix is left alone, and
+    // a refusal that names no prefix teaches nothing.
+    #[test]
+    fn negative_proof_values_without_the_prefix_are_untouched_and_nameless_refusals_teach_nothing()
+    {
+        let mut m = PrefixMemory::default();
+        assert!(!m.learn("PUT … -> HTTP 403 authz"));
+        assert!(m.is_empty());
+        m.learn("x already starts with 'code-file-'");
+        let mut row = vec![("inFile".to_string(), "file-platform-x-abc".to_string())];
+        assert!(!m.apply(&mut row));
+        assert_eq!(row[0].1, "file-platform-x-abc");
     }
 }
 
