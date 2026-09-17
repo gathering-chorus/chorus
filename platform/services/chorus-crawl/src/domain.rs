@@ -18,6 +18,7 @@ pub enum Rule {
     Binary,
     Class,
     Module,
+    Unit,
     Card,
 }
 
@@ -28,6 +29,7 @@ impl Rule {
             Rule::Binary => "binary",
             Rule::Class => "class",
             Rule::Module => "module",
+            Rule::Unit => "unit",
             Rule::Card => "card",
         }
     }
@@ -205,6 +207,61 @@ const CLASSES: &[(&str, &str)] = &[
 //
 // Matched against import / require / use lines only, so a word in a comment
 // never fires it.
+/// #4201 — the unit a source file DECLARES it belongs to, and that unit's
+/// domain. This rule exists for the file shape the other four cannot read: a
+/// crate source file carrying its own `#[cfg(test)] mod tests`. Such a file
+/// imports nothing external because it IS the unit, so route/binary/class/
+/// module all stay silent — 89 chorus-hooks files and 14 more sat on the
+/// `tests` fallback for exactly this reason (measured 2026-09-17).
+///
+/// The name is read from the unit's own manifest (`Cargo.toml` / `package.json`
+/// `name`), never from the directory it happens to sit in: a renamed folder
+/// keeps the unit's identity, a renamed package changes it, which is the
+/// difference the card's title asks for.
+///
+/// Placements here are Jeff's rulings, not inferences:
+///   hooks and injection are the spine's runtime  (2026-09-03: "hooks + mcp =
+///   spine/events; the hook is the grain"), and the werk verbs are the build
+///   lane's own records (the builds domain: verb runs, werk slots, demo
+///   verdicts, gate results).
+const UNITS: &[(&str, &str)] = &[
+    ("chorus-hooks", "spine"),
+    ("chorus-inject", "spine"),
+    ("chorus-awake", "spine"),
+    ("werk-", "builds"),
+    ("properties-resolver", "Properties"),
+];
+
+/// The unit name declared by the nearest manifest above `path`, if any.
+pub fn declared_unit(path: &str, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    let mut dir: Vec<&str> = path.split('/').collect();
+    dir.pop();
+    while !dir.is_empty() {
+        let base = dir.join("/");
+        if let Some(t) = read(&format!("{base}/Cargo.toml")) {
+            if let Some(n) = manifest_name(&t, "name = ") {
+                return Some(n);
+            }
+        }
+        if let Some(t) = read(&format!("{base}/package.json")) {
+            if let Some(n) = manifest_name(&t, "\"name\": ") {
+                return Some(n);
+            }
+        }
+        dir.pop();
+    }
+    None
+}
+
+fn manifest_name(text: &str, key: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with(key))
+        .and_then(|l| l.split(&['"', '\''][..]).nth(1))
+        .map(|n| n.trim().to_string())
+        .filter(|n| !n.is_empty())
+}
+
 const MODULES: &[(&str, &str)] = &[
     ("logs-query", "logs"),
     ("log-reader", "logs"),
@@ -335,6 +392,16 @@ pub fn place(
     valid: &[String],
     card_domain: &dyn Fn(u32) -> Option<String>,
 ) -> Placement {
+    place_in_unit(content, None, valid, card_domain)
+}
+
+/// `place`, plus the unit the file declares itself part of (rule 4b, #4201).
+pub fn place_in_unit(
+    content: &str,
+    unit: Option<&str>,
+    valid: &[String],
+    card_domain: &dyn Fn(u32) -> Option<String>,
+) -> Placement {
     let mut signals: Vec<Signal> = Vec::new();
     if let Some(s) = fire(Rule::Route, ROUTES, content, valid) {
         signals.push(s);
@@ -348,6 +415,15 @@ pub fn place(
     let imports = import_lines(content);
     if let Some(s) = fire(Rule::Module, MODULES, &imports, valid) {
         signals.push(s);
+    }
+    // Only when nothing external was named: a file that imports a unit is
+    // testing THAT unit, and must not be overridden by the crate it lives in.
+    if signals.is_empty() {
+        if let Some(u) = unit {
+            if let Some(s) = fire(Rule::Unit, UNITS, u, valid) {
+                signals.push(s);
+            }
+        }
     }
     for card in header_cards(content) {
         if let Some(d) = card_domain(card) {
@@ -460,6 +536,56 @@ mod tests_4201 {
     fn an_unrelated_import_is_still_unplaced() {
         let c = "use std::collections::HashMap;\nimport fs from 'node:fs';";
         assert_eq!(place(c, &valid(), &no_card), Placement::Unplaced);
+    }
+
+    /// #4201 negative proof: a crate source file with inline tests. It imports
+    /// only its own crate, so route/binary/class/module all stay silent — the
+    /// shape that left 89 chorus-hooks files on the `tests` fallback. With the
+    /// unit it declares, it places; without it, it is still unplaced.
+    #[test]
+    fn a_crate_source_file_places_by_its_declared_unit() {
+        let c = "use crate::types::Payload;\n#[cfg(test)]\nmod tests {\n#[test] fn t() {}\n}";
+        assert_eq!(place(c, &valid(), &no_card), Placement::Unplaced);
+        assert_eq!(
+            place_in_unit(c, Some("chorus-hooks"), &valid(), &no_card).domain(),
+            Some("spine")
+        );
+    }
+
+    /// Control: an imported unit still wins — a file that names what it tests
+    /// is never overridden by the crate it happens to live in.
+    #[test]
+    fn an_imported_unit_beats_the_crate_it_lives_in() {
+        let c = "use athena_make::http_response;";
+        assert_eq!(
+            place_in_unit(c, Some("chorus-hooks"), &valid(), &no_card).domain(),
+            Some("domains")
+        );
+    }
+
+    /// Control: an unknown unit invents nothing.
+    #[test]
+    fn an_unknown_unit_stays_unplaced() {
+        let c = "use crate::types::Payload;";
+        assert_eq!(
+            place_in_unit(c, Some("some-new-crate"), &valid(), &no_card),
+            Placement::Unplaced
+        );
+    }
+
+    #[test]
+    fn declared_unit_reads_the_manifest_not_the_folder() {
+        let read = |p: &str| match p {
+            "platform/services/renamed-dir/Cargo.toml" => {
+                Some("[package]\nname = \"chorus-hooks\"\n".to_string())
+            }
+            _ => None,
+        };
+        assert_eq!(
+            declared_unit("platform/services/renamed-dir/src/x.rs", &read).as_deref(),
+            Some("chorus-hooks")
+        );
+        assert_eq!(declared_unit("platform/tests/x.bats", &|_| None), None);
     }
 
     #[test]

@@ -805,7 +805,13 @@ fn parse_cases(
             p.inferred += 1
         }
         // #4201 — the domain comes from the file, never the folder
-        let placement = domain::place(&content, valid_domains, card_domain);
+        // #4201 — the unit the file declares (nearest manifest), for the rule
+        // that reads a crate source file's own identity.
+        let unit = domain::declared_unit(path, &|p: &str| {
+            std::fs::read_to_string(std::path::Path::new(&root).join(p)).ok()
+        });
+        let placement =
+            domain::place_in_unit(&content, unit.as_deref(), valid_domains, card_domain);
         p.tags.read += 1;
         match &placement {
             domain::Placement::Tagged { .. } => p.tags.placed += 1,
@@ -870,7 +876,11 @@ fn seam(args: &[String]) -> bool {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
-            let placement = domain::place(&content, &valid, &|_| None);
+            // #4201 — the seam must answer with the SAME rules the crawl runs,
+            // unit rule included, or it reports a file unplaced that the pass
+            // places (seen 2026-09-17 on chorus-hooks).
+            let unit = domain::declared_unit(&path, &|p: &str| std::fs::read_to_string(p).ok());
+            let placement = domain::place_in_unit(&content, unit.as_deref(), &valid, &|_| None);
             let concern = cases::file_class(&path, &content).concern;
             let covers = cases::covers_from(placement.domain(), concern);
             match domain::listing(&path, &placement) {
