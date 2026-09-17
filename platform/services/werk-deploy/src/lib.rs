@@ -2012,11 +2012,23 @@ fn deploy_rust_service(
         });
         if all_match {
             if crate_source_changed(werk_s, crate_name) {
-                // All binaries match the installed cdhash but source changed this card →
-                // the rebuild didn't take. Refuse rather than ship stale.
+                // All binaries match the installed cdhash but source changed this card.
+                // #4200 (Jeff 2026-09-17, "do whatever"): the question is whether the
+                // REBUILD TOOK, not whether source changed. A test-only or comment-only
+                // change relinks to a byte-identical binary; that is the compiler proving
+                // the change has no effect, and the deploy is a no-op. A built binary
+                // OLDER than the newest changed source file means cargo never relinked:
+                // that is the stale build this guard exists for. Refuse only then.
+                let built_mtime = bins.iter().filter_map(|(b, _)| file_mtime(&built_path(b))).max();
+                let source_mtime = newest_changed_source_mtime(werk_s, crate_name);
+                if rebuild_took(built_mtime, source_mtime) {
+                    jsonl(home, role, card, trace, "deploy.skipped",
+                        &format!(",\"name\":\"{}\",\"kind\":\"rust-service\",\"reason\":\"identical-rebuild\",\"cdhash\":\"{}\"", crate_name, built_summary_cdhash));
+                    return Ok(());
+                }
                 jsonl(home, role, card, trace, "deploy.refused", &fail_extra("cdhash-divergence"));
                 return Err(format!(
-                    "cdhash-divergence: rebuild of {} matches the installed cdhash but its source changed this card — stale build, refusing (werk-build invariance suspect)",
+                    "cdhash-divergence: rebuild of {} matches the installed cdhash and the built binary is older than its changed source — cargo never relinked, stale build, refusing",
                     crate_name
                 ));
             }
@@ -2836,12 +2848,43 @@ fn deploy_ts_package(
     Ok(())
 }
 
-/// Did this card change the crate's source (vs origin/main)? Drives the AC2
-/// stale-build guard: source-changed + rebuild-cdhash == running-cdhash => stale.
-fn crate_source_changed(werk_s: &str, crate_name: &str) -> bool {
+/// The crate's files this card changed (vs origin/main), as paths under `werk_s`.
+fn crate_changed_files(werk_s: &str, crate_name: &str) -> Vec<String> {
     let diff = run_env(Some(werk_s), &[], "git", &["-C", werk_s, "diff", "origin/main", "--name-only"]).unwrap_or_default();
     let prefix = format!("platform/services/{}/", crate_name);
-    diff.lines().any(|l| l.trim().starts_with(&prefix))
+    diff.lines().map(|l| l.trim().to_string()).filter(|l| l.starts_with(&prefix)).collect()
+}
+
+/// Did this card change the crate's source (vs origin/main)? Drives the AC2
+/// stale-build guard together with `rebuild_took` (#4200).
+fn crate_source_changed(werk_s: &str, crate_name: &str) -> bool {
+    !crate_changed_files(werk_s, crate_name).is_empty()
+}
+
+/// #4200 — the newest mtime among the crate's changed source files (None when none exist on disk).
+fn newest_changed_source_mtime(werk_s: &str, crate_name: &str) -> Option<std::time::SystemTime> {
+    crate_changed_files(werk_s, crate_name)
+        .iter()
+        .filter_map(|rel| file_mtime(&format!("{}/{}", werk_s, rel)))
+        .max()
+}
+
+fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
+    fs::metadata(path).ok().and_then(|m| m.modified().ok())
+}
+
+/// #4200 — pure: did cargo relink after the source changed? A built binary at least
+/// as new as the newest changed source file means the rebuild took, so an identical
+/// cdhash is the compiler's proof of no effect (test-only, comment-only, doc-only
+/// changes). A built binary older than the changed source means the rebuild never
+/// happened: the stale build the guard exists for. No changed source on disk (files
+/// deleted) → treated as took, there is nothing newer to have missed.
+pub fn rebuild_took(built: Option<std::time::SystemTime>, newest_source: Option<std::time::SystemTime>) -> bool {
+    match (built, newest_source) {
+        (None, _) => false,
+        (Some(_), None) => true,
+        (Some(b), Some(s)) => b >= s,
+    }
 }
 
 fn uid() -> u32 {
@@ -3063,4 +3106,33 @@ pub fn empty_summary_is_config_only(diff: &str) -> bool {
     changed_service_crates(&buildable).is_empty()
         && changed_ts_services(&buildable).is_empty()
         && changed_model_sources(&buildable).is_empty()
+}
+
+
+#[cfg(test)]
+mod rebuild_took_tests {
+    use super::rebuild_took;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn a_fresh_relink_with_an_identical_binary_is_not_stale() {
+        let src = UNIX_EPOCH + Duration::from_secs(1_000);
+        let built = UNIX_EPOCH + Duration::from_secs(1_060);
+        assert!(rebuild_took(Some(built), Some(src)), "binary newer than its changed source: the rebuild took");
+        assert!(rebuild_took(Some(src), Some(src)), "same second counts as took");
+    }
+
+    #[test]
+    fn negative_proof_a_binary_older_than_its_changed_source_is_stale() {
+        let src = UNIX_EPOCH + Duration::from_secs(1_000);
+        let built = UNIX_EPOCH + Duration::from_secs(940);
+        assert!(!rebuild_took(Some(built), Some(src)), "cargo never relinked: refuse");
+        assert!(!rebuild_took(None, Some(src)), "no built binary at all: refuse");
+    }
+
+    #[test]
+    fn changed_source_that_no_longer_exists_cannot_make_a_build_stale() {
+        let built = UNIX_EPOCH + Duration::from_secs(1);
+        assert!(rebuild_took(Some(built), None));
+    }
 }
