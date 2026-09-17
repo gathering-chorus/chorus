@@ -85,26 +85,27 @@ fi
 # REDEFINED by #3689/#3719: the old item measured a --scope mint flag we decided
 # NEVER to build (CSS can't issue scoped client_credentials — spiked live; a
 # self-declared scope claim was the disease). The decided mechanism is
-# chorus:hasScope grants resolved at the door. Two legs, both required:
+# grants resolved at the door: since #4183 a grant is a chorus:Permission row
+# (agent + accessTo + mode acl:Write), not a hasScope literal. Two legs, both required:
 # the resolver in the verify path (code) AND live grant edges (model).
 OIDC_RS="$C/platform/services/chorus-oidc/src/oidc.rs"
 if [ ! -r "$OIDC_RS" ]; then
   item model_scope_missing unknown "oidc.rs unreadable — NOT measured"
 elif ! grep -q "resolve_principal_scopes" "$OIDC_RS"; then
-  item model_scope_missing 1 "door has no chorus:hasScope resolver (the #3689 mechanism)"
+  item model_scope_missing 1 "door has no scope resolver (the #3689 mechanism)"
 else
   # single-request truth: the CSV header proves THIS query was answered
   sresp=$(curl -s -m 15 "${FUSEKI_QUERY_URL:-http://localhost:3030/pods/query}" \
-    --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> SELECT (COUNT(?s) AS ?n) WHERE { GRAPH <urn:chorus:domains:security> { ?p chorus:hasScope ?s } }' \
+    --data-urlencode 'query=PREFIX chorus: <https://jeffbridwell.com/chorus#> PREFIX acl: <http://www.w3.org/ns/auth/acl#> SELECT (COUNT(?perm) AS ?n) WHERE { GRAPH <urn:chorus:domains:security> { ?perm a chorus:Permission ; chorus:agent ?p ; chorus:accessTo ?s ; chorus:mode acl:Write } }' \
     -H "Accept: text/csv" 2>/dev/null)
   if ! printf '%s' "$sresp" | head -1 | grep -q '^n'; then
     item model_scope_missing unknown "no CSV header — grant query not answered"
   else
     edges=$(printf '%s\n' "$sresp" | sed -n '2p' | tr -dc '0-9')
     if [ "${edges:-0}" -gt 0 ]; then
-      item model_scope_missing 0 "door resolves chorus:hasScope; $edges live grant edges"
+      item model_scope_missing 0 "door resolves Permission rows; $edges live Write grants"
     else
-      item model_scope_missing 1 "resolver present but ZERO grant edges in the security graph"
+      item model_scope_missing 1 "resolver present but ZERO Write Permission rows in the security graph"
     fi
   fi
 fi

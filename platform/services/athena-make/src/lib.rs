@@ -707,6 +707,15 @@ pub fn generate_verb(verb_local: &str) -> R<String> {
 /// miss), not decoration: today verify() does sig + aud + exp but carries no scope.
 /// Empty scope = deny-all (fail-closed). Pure + unit-pinned — the Claims.scope read
 /// wires into verify() separately (mirrors project_secured / field_exposed).
+/// #4196 req 6 — a refusal names the row that would open the door: the caller
+/// as a Principal, the graph, and the mode. Pure; the three refusal sites use it.
+pub fn row_that_would_open(principal: &str, graph: &str) -> String {
+    format!(
+        "no Permission row opens this write; the row that would: chorus:agent principal-{} ; chorus:accessTo <{}> ; chorus:mode acl:Write",
+        principal, graph
+    )
+}
+
 pub fn scope_allows(target_graph: &str, scope: &[String]) -> bool {
     scope.iter().any(|g| g == target_graph)
 }
@@ -1968,6 +1977,18 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
 }
 
 /// Map a DAL refusal string onto athena-make's typed write response.
+/// #4196 req 6 — the pen refuses a create when the caller holds no Write row on
+/// the graph (graph-dba-only). That is an authorization refusal, not an upstream
+/// error: 403, naming the row that would open the door. Anything else is None
+/// and falls through to the ordinary pen-error mapping.
+pub fn pen_refusal_resp(e: &str, caller: &str, graph: &str) -> Option<(u16, String)> {
+    if e.contains("graph-dba-only") {
+        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
+    } else {
+        None
+    }
+}
+
 fn dal_err_resp(e: &str) -> (u16, String) {
     if e.contains("conflict") || e.contains("already-exists") || e.contains("duplicate-identity") {
         write_resp("conflict", e)
@@ -2059,7 +2080,14 @@ fn query_owned_by(class: &str, entity: &str, instances_graph: &str) -> Option<St
 /// the verifier's comparison form so a newly created edge-owned entity remains
 /// writable by its owner.
 fn normalize_owned_role(owner: &str) -> String {
-    owner.strip_prefix("role-").unwrap_or(owner).to_string()
+    // #4196 — an owner is a Principal (`principal-silas`); the store still
+    // carries the two older spellings (`role-silas`, bare `silas`) until the
+    // backfill lands. All three name the same user; compare by the name.
+    owner
+        .strip_prefix("principal-")
+        .or_else(|| owner.strip_prefix("role-"))
+        .unwrap_or(owner)
+        .to_string()
 }
 
 /// Does the entity already have a partOf parent? (single-parent → 2nd add is 409).
@@ -2319,7 +2347,7 @@ fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str,
                 "error"
             };
             emit_write_spine(caller_role, "create", &req.name, "", outcome);
-            dal_err_resp(&e)
+            pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
 }
@@ -2372,7 +2400,7 @@ fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token:
         }
         Err(e) => {
             emit_write_spine(caller_role, "create-batch", &reqs.len().to_string(), "", "error");
-            dal_err_resp(&e)
+            pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
 }
@@ -2894,7 +2922,8 @@ pub fn handle_write_stamped(method: &str, path: &str, body: &str, table: &RouteT
         let owned = query_owned_by(&table.class, e, &table.instances_graph);
         if !authz_allows(caller_role, owned.as_deref()) {
             emit_write_spine(caller_role, method, e, "", "authz");
-            return write_resp("authz", "only the owning role may write this node (ownedBy)");
+            // #4196 req 6 — name the owner that holds the row and the Permission row that would open it.
+            return write_resp("authz", &format!("not this row's owner (ownedBy {}); {}", owned.as_deref().unwrap_or("absent"), row_that_would_open(caller_role, &table.instances_graph)));
         }
     }
     match &op {
@@ -5069,7 +5098,11 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
         }
         Some(String::from_utf8_lossy(&out.stdout).into_owned())
         },
-    );
+    )
+    // #4196 — WHO the caller is, as a Principal name, from the same graph on
+    // the same cadence. The door stamps this on rows it creates and compares
+    // it to a row's owner; the hat (agent_id) no longer gates a write.
+    .with_principal_names(|| oidc::resolve_principal_names(|q| sparql_json(q).ok()));
     let boot_now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -5307,21 +5340,25 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                         ),
                         Ok(claims) => {
                             let target_graph = header("x-target-graph");
+                            let caller_name = oidc_verifier
+                                .principal_for(&claims.web_id, now_secs)
+                                .unwrap_or_else(|| claims.agent_id.clone());
                             // #3573 Wren gate — /batch REQUIRES a non-empty scope claim. Unlike
                             // entity writes (which allow legacy/unscoped mixed-state), batch is the
                             // most destructive op; a legacy allow-all token has no business here.
+                            // #4196 req 6 — the refusal names the row that would open it.
                             if claims.scope.is_empty() || !scope_allows(&target_graph, &claims.scope) {
                                 (
                                     403u16,
-                                    format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch requires a scoped token whose scope names target graph '{}'\" }}", json_escape(&target_graph)),
-                                )
-                            } else if !resolved_write_role(&claims.agent_id) {
-                                (
-                                    403u16,
-                                    "{ \"error\": \"authz-role\", \"message\": \"batch writes require a model-resolved role\" }".to_string(),
+                                    format!("{{ \"error\": \"out-of-scope\", \"message\": \"batch write to '{}' refused: {}\" }}", json_escape(&target_graph), json_escape(&row_that_would_open(&caller_name, &target_graph))),
                                 )
                             } else {
-                                let role = claims.agent_id.clone();
+                                // #4196 — no hat required: the scope row above is the
+                                // permission. The caller is stamped by NAME (a Principal),
+                                // falling back to the hat only where no name resolves.
+                                let role = oidc_verifier
+                                    .principal_for(&claims.web_id, now_secs)
+                                    .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                                 handle_batch(&target_graph, body_str, &role, token)
                             }
@@ -5390,19 +5427,27 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
                             // graph, but can never substitute a different in-scope graph
                             // as an authorization decoy for the real write target.
                             let effective_target = table.instances_graph.as_str();
-                            if !resolved_write_role(&claims.agent_id) {
-                                ((403u16, "{ \"error\": \"authz-role\", \"message\": \"writes require a model-resolved role\" }".to_string()),
-                                 ReqMeta { route: "write-authz-role".into(), ..Default::default() })
-                            } else if !target_graph.is_empty() && target_graph != effective_target {
+                            let caller_name = oidc_verifier
+                                .principal_for(&claims.web_id, now_secs)
+                                .unwrap_or_else(|| claims.agent_id.clone());
+                            // #4196 — the "writes require a model-resolved role" gate is
+                            // gone: a role is a hat, a permission is a row (Jeff, 11:35 and
+                            // 17:16 today). What may write is decided below by the scope row
+                            // or the row's owner, never by whether the caller wears a hat.
+                            if !target_graph.is_empty() && target_graph != effective_target {
                                 ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"x-target-graph '{}' does not match this class's write graph '{}'\" }}", json_escape(&target_graph), json_escape(effective_target))),
                                  ReqMeta { route: "write-authz-graph-mismatch".into(), ..Default::default() })
                             } else if !scope_allows(effective_target, &claims.scope) && !row_owner_governed(&table.fields) {
                                 // #4096 — an owned class is governed by the row's owner (checked in
                                 // handle_write); only an ownerless class needs the graph in scope.
-                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"target graph '{}' is not in this token's scope and this class carries no row owner (#3573/#3689, #4096)\" }}", json_escape(effective_target))),
+                                ((403u16, format!("{{ \"error\": \"out-of-scope\", \"message\": \"write to '{}' refused (this class carries no row owner): {}\" }}", json_escape(effective_target), json_escape(&row_that_would_open(&caller_name, effective_target)))),
                                  ReqMeta { route: "write-authz-scope".into(), ..Default::default() })
                             } else {
-                                let role = claims.agent_id.clone();
+                                // #4196 — the caller by NAME (a Principal), stamped as the row's
+                                // owner and compared to owners; the hat only where no name resolves.
+                                let role = oidc_verifier
+                                    .principal_for(&claims.web_id, now_secs)
+                                    .unwrap_or_else(|| claims.agent_id.clone());
                                 let body_str = req.splitn(2, "\r\n\r\n").nth(1).unwrap_or("");
                                 // (POST /batch is handled by the cross-class pre-table block above,
                                 // which `continue`s — it can't reach here. One site, no drift.)
@@ -6642,10 +6687,43 @@ mod tests {
     }
 
     #[test]
+    fn a_pen_graph_grant_refusal_is_a_403_naming_the_row_and_nothing_else_is() {
+        // #4196 req 6 — the create path: the pen's graph-dba-only is authz (403, row named)
+        let (code, body) = pen_refusal_resp("athena-model: add-batch: graph-dba-only: <urn:chorus:domains:security> is a DBA-path graph", "kade", "urn:chorus:domains:security").expect("mapped");
+        assert_eq!(code, 403, "{body}");
+        assert!(body.contains("chorus:agent principal-kade") && body.contains("<urn:chorus:domains:security>"), "{body}");
+        // NEGATIVE: an ordinary pen error is not an authz refusal
+        assert!(pen_refusal_resp("athena-model: add-batch: shape-violation: x", "kade", "urn:g").is_none());
+    }
+
+    #[test]
+    fn a_refusal_names_the_row_that_would_open_the_door() {
+        // #4196 req 6 — principal, graph, mode; and a different caller names a different row
+        let m = row_that_would_open("jeff", "urn:chorus:domains:security");
+        assert!(m.contains("chorus:agent principal-jeff"), "{m}");
+        assert!(m.contains("chorus:accessTo <urn:chorus:domains:security>"), "{m}");
+        assert!(m.contains("chorus:mode acl:Write"), "{m}");
+        assert_ne!(m, row_that_would_open("silas", "urn:chorus:domains:security"));
+    }
+
+    #[test]
     fn authz_allows_is_fail_closed() {
         assert!(authz_allows("wren", Some("wren")));
         assert!(!authz_allows("wren", Some("silas")));
         assert!(!authz_allows("wren", None));        // absent ownedBy → FAIL-CLOSED
+    }
+
+    // #4196 — an owner is a Principal; the three live spellings of one user
+    // compare equal, and two different users never do, whatever the prefix.
+    #[test]
+    fn owner_is_a_principal_and_the_old_spellings_still_name_the_same_user() {
+        assert_eq!(normalize_owned_role("principal-crawler"), "crawler");
+        assert_eq!(normalize_owned_role("role-crawler"), "crawler");
+        assert_eq!(normalize_owned_role("crawler"), "crawler");
+        assert!(authz_allows("crawler", Some(&normalize_owned_role("principal-crawler"))));
+        // NEGATIVE: a different principal, in any spelling, is refused
+        assert!(!authz_allows("crawler", Some(&normalize_owned_role("principal-silas"))));
+        assert!(!authz_allows("crawler", Some(&normalize_owned_role("role-silas"))));
         assert!(!authz_allows("wren", Some("")));
         assert_eq!(normalize_owned_role("role-wren"), "wren");
         assert_eq!(normalize_owned_role("wren"), "wren");

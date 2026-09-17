@@ -31,23 +31,26 @@ assert() {
 assert "chorus-inject exists at ~/.chorus/bin/" test -x "$BIN"
 assert "chorus-inject is executable" test -f "$BIN"
 
-# Verify it's signed by the Chorus Local Signing identity (stable cdhash
-# across rebuilds is the whole point — ad-hoc-signed binaries don't
-# survive TCC AppleEvents grant after rebuild).
+# #2804 retired chorus-inject as a direct primitive: since 2026-08-29 the
+# deploy artifact at ~/.chorus/bin/ is a small shell stub that refuses direct
+# invocation and names the one supported path (the chorus_nudge_message MCP
+# tool). The Rust binary is the pulse worker's delivery primitive and is no
+# longer what lives at this path, so a codesign/Usage assertion here asserted
+# a retired product (nightly red 2026-09-17, read on #4196). What Jeff needs
+# from this path: it exists, it runs, and it points a caller at the real door.
 if [ -x "$BIN" ]; then
-  AUTHORITY=$(codesign -dvvv "$BIN" 2>&1 | grep "^Authority=" | head -1)
-  assert "chorus-inject signed by Chorus Local Signing" \
-    grep -q "Chorus Local Signing" <<< "$AUTHORITY"
-
-  IDENTIFIER=$(codesign -dvvv "$BIN" 2>&1 | grep "^Identifier=" | head -1)
-  assert "chorus-inject identifier=com.chorus.inject" \
-    grep -q "com.chorus.inject" <<< "$IDENTIFIER"
-
-  # Smoke: the binary actually runs and prints its usage banner. If the
-  # deploy artifact is corrupt or wrong-arch, this catches it.
-  USAGE=$("$BIN" 2>&1 || true)
-  assert "chorus-inject prints Usage banner when called with no args" \
-    grep -q "Usage:" <<< "$USAGE"
+  OUT=$("$BIN" 2>&1 || true)
+  assert "chorus-inject refuses direct invocation (not-canonical-caller)" \
+    grep -q "not-canonical-caller" <<< "$OUT"
+  assert "chorus-inject names the supported path (chorus_nudge_message)" \
+    grep -q "chorus_nudge_message" <<< "$OUT"
+  # NEGATIVE: a banner-less stub (empty output) must fail both asserts
+  EMPTY=""
+  if grep -q "not-canonical-caller" <<< "$EMPTY"; then
+    FAIL=$((FAIL + 1)); echo "FAIL: negative proof — an empty stub passed the refusal assert"
+  else
+    PASS=$((PASS + 1)); echo "PASS: negative proof — an empty stub fails the refusal assert"
+  fi
 fi
 
 echo "---"

@@ -108,10 +108,14 @@ function makeVerify(overrides: {
 }
 
 describe('#3728 — es256-identity parity with the Rust door', () => {
-  test('the canonical scope query is ONE source: the .rq file carries the shared security-graph/hasScope shape', () => {
+  test('the canonical scope query is ONE source: the .rq file carries the shared security-graph/Permission-row shape', () => {
     expect(fs.existsSync(CANONICAL_RQ)).toBe(true);
     expect(BULK_QUERY).toContain('urn:chorus:domains:security');
-    expect(BULK_QUERY).toContain('chorus:hasScope');
+    // #4183 — a held scope is a Permission row (agent + accessTo + mode acl:Write);
+    // the hasScope literal is retired and the one query never asks for it (#4196)
+    expect(BULK_QUERY).toContain('chorus:Permission');
+    expect(BULK_QUERY).toContain('chorus:accessTo');
+    expect(BULK_QUERY).not.toContain('chorus:hasScope');
     expect(BULK_QUERY).toContain('chorus:Principal');
   });
 
