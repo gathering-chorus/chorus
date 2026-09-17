@@ -1977,6 +1977,18 @@ fn handle_batch(graph: &str, body: &str, caller_role: &str, token: &str) -> (u16
 }
 
 /// Map a DAL refusal string onto athena-make's typed write response.
+/// #4196 req 6 — the pen refuses a create when the caller holds no Write row on
+/// the graph (graph-dba-only). That is an authorization refusal, not an upstream
+/// error: 403, naming the row that would open the door. Anything else is None
+/// and falls through to the ordinary pen-error mapping.
+pub fn pen_refusal_resp(e: &str, caller: &str, graph: &str) -> Option<(u16, String)> {
+    if e.contains("graph-dba-only") {
+        Some(write_resp("authz", &format!("no Write row for '{}' on <{}>; {}", caller, graph, row_that_would_open(caller, graph))))
+    } else {
+        None
+    }
+}
+
 fn dal_err_resp(e: &str) -> (u16, String) {
     if e.contains("conflict") || e.contains("already-exists") || e.contains("duplicate-identity") {
         write_resp("conflict", e)
@@ -2335,7 +2347,7 @@ fn handle_create(body: &str, table: &RouteTable, caller_role: &str, token: &str,
                 "error"
             };
             emit_write_spine(caller_role, "create", &req.name, "", outcome);
-            dal_err_resp(&e)
+            pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
 }
@@ -2388,7 +2400,7 @@ fn handle_create_batch(body: &str, table: &RouteTable, caller_role: &str, token:
         }
         Err(e) => {
             emit_write_spine(caller_role, "create-batch", &reqs.len().to_string(), "", "error");
-            dal_err_resp(&e)
+            pen_refusal_resp(&e, caller_role, &table.instances_graph).unwrap_or_else(|| dal_err_resp(&e))
         }
     }
 }
@@ -6672,6 +6684,16 @@ mod tests {
         assert_eq!(parse_write("DELETE", "/domains/x/partof", "domains"), Some(WriteOp::RemoveEdge { name: "x".into(), edge: "partof".into() }));
         assert_eq!(parse_write("POST", "/widgets", "domains"), None);
         assert_eq!(parse_write("POST", "/domains/x/y/z", "domains"), None);
+    }
+
+    #[test]
+    fn a_pen_graph_grant_refusal_is_a_403_naming_the_row_and_nothing_else_is() {
+        // #4196 req 6 — the create path: the pen's graph-dba-only is authz (403, row named)
+        let (code, body) = pen_refusal_resp("athena-model: add-batch: graph-dba-only: <urn:chorus:domains:security> is a DBA-path graph", "kade", "urn:chorus:domains:security").expect("mapped");
+        assert_eq!(code, 403, "{body}");
+        assert!(body.contains("chorus:agent principal-kade") && body.contains("<urn:chorus:domains:security>"), "{body}");
+        // NEGATIVE: an ordinary pen error is not an authz refusal
+        assert!(pen_refusal_resp("athena-model: add-batch: shape-violation: x", "kade", "urn:g").is_none());
     }
 
     #[test]
