@@ -18,7 +18,9 @@ name: athena
 # them"): the LAND legs joined this file as the `land` job (target=canonical). Until
 # then the model rode inside werk-deploy's land step, which restarted athena-make
 # and seeded rows against it before it answered (POST → 0 on six lands across
-# #4175 and #4179). werk.yml's `athena-land` step now runs this file instead.
+# #4175 and #4179). #4177: the land EVENT runs this file — chorus-mcp's werk-merge
+# case starts it detached when the landed sha carried model or seed sources.
+# werk.yml names no model step.
 #
 # THE STEP THAT EARNS THIS FILE IS deploy-served, NOT deploy. A model can deploy
 # and never be SERVED: athena-make answers from the snapshot it loaded at startup,
@@ -41,6 +43,11 @@ on:
         default: "class"
       landed_commit:
         description: "target=canonical: the merged origin/main sha the store must attest (empty = ungated hand run)"
+        required: false
+        type: string
+        default: ""
+      parent_trace:
+        description: "#4177: the trace of the run that triggered this one (a werk land). Recorded as parent on athena.pipeline.started; this run still mints its own trace."
         required: false
         type: string
         default: ""
@@ -261,7 +268,7 @@ jobs:
     steps:
       - name: trace
         # #4195 (Jeff: "i want to see an athena trace that is just athena"). This run
-        # mints its OWN trace, always. If a caller (werk.yml's athena-land) handed one
+        # mints its OWN trace, always. If a caller (the land trigger, #4177) handed one
         # in, it is recorded as the parent on athena.pipeline.started, never reused, so
         # a werk trace holds no athena event and an athena trace holds nothing else.
         # CHORUS_LOG is resolved by path: chorus-log is not on a login shell's PATH, and
@@ -269,7 +276,8 @@ jobs:
         # 2026-09-16 18:00–18:06: a full canonical run left zero athena.* events).
         run: |
           set -euo pipefail
-          parent="${CHORUS_TRACE_ID:-}"
+          parent="${{ inputs.parent_trace }}"
+          [ -n "$parent" ] || parent="${CHORUS_TRACE_ID:-}"
           trace="athena-$(date +%s%N)-$$"
           log="${CHORUS_HOME}/platform/scripts/chorus-log"
           [ -x "$log" ] || { echo "::error::athena: no spine emitter at $log — a run that cannot emit does not run" >&2; exit 1; }
@@ -402,8 +410,21 @@ jobs:
               fi
             fi
           fi
-          "$CHORUS_LOG" athena.pipeline.completed "$ROLE" card="$CARD_ID" target="$TARGET" verdict="$([ $rc = 0 ] && echo pass || echo fail)" issues="${N:-unmeasured}"
+          echo "issues=${N:-unmeasured}" >> "$GITHUB_OUTPUT"
           exit $rc
+
+      - name: complete
+        # #4177 — the run's last word is emitted on EVERY run, including one with nothing
+        # to deploy (verdict=noop) and one whose prove leg went red (verdict=fail). Before
+        # this the emit lived inside prove, so a no-op run left one event and the
+        # traceable floor of 2 turned it red (cold eyes on #4195; live 2026-09-17 11:17).
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.scope.outputs.nothing }}" = "true" ]; then verdict=noop
+          elif [ "${{ steps.prove.outcome }}" = "success" ]; then verdict=pass
+          else verdict=fail; fi
+          "$CHORUS_LOG" athena.pipeline.completed "$ROLE" card="$CARD_ID" target="$TARGET" verdict="$verdict" issues="${{ steps.prove.outputs.issues }}"
 
       - name: traceable
         # #4195 — the run counts its own events on its trace and refuses when a leg ran

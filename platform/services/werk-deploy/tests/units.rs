@@ -1084,8 +1084,15 @@ fn env_up_carries_no_model_deploy_or_row_post_4186() {
     assert!(yml.contains("athena-deploy scope"));
     let werk = include_str!("../../../../.github/workflows/werk.yml");
     assert!(!werk.contains("grep -qE '^roles/"), "werk.yml must call `athena-deploy scope`, not carry its own copy of the rule");
-    assert!(werk.contains("chorus_athena"), "werk.yml runs the model pipeline through the chorus_athena verb, not by calling act inside act");
-    assert!(!werk.contains("workflows/athena.yml"), "no act inside act: werk.yml reaches athena only through the verb");
+    // #4177 (Jeff: "what is athena-land why is that part of this flow!") — werk.yml has NO
+    // model step and NO athena call. The land event triggers athena from chorus-mcp's
+    // werk-merge case; that is where the trigger must live.
+    for gone in ["chorus_athena", "athena-land", "workflows/athena.yml", "name: athena"] {
+        assert!(!werk.contains(gone), "#4177: werk.yml is werk only; found `{}`", gone);
+    }
+    let mcp = include_str!("../../../mcp-server/src/server.ts");
+    assert!(mcp.contains("case 'werk-merge': {") && mcp.contains("triggerAthenaOnLand(parsed.data.role"), "#4177: the merge case must trigger athena on the land event");
+    assert!(mcp.contains("detached: true, stdio: ['ignore', fd, fd]"), "#4177: the model run starts detached; the land never waits on it");
     for gone in ["athena-model", "athena-rows", "athena-werk", "werk-model", "werk-rows", "athena-bootstrap"] {
         assert!(!werk.contains(gone), "#4186 (Jeff): the demo reads the live store; werk.yml has no variant model step: found {}", gone);
     }

@@ -5535,6 +5535,18 @@ pub fn serve(port: u16, tables: &[RouteTable]) -> R<()> {
 
 #[cfg(test)]
 mod tests {
+    /// #4177 NEGATIVE PROOF — the two-kind label that kept /principles 404 for a day is
+    /// refused by name, and the one-kind pair (the fix) is accepted. The fixture is the
+    /// exact pair the live door logged on 2026-09-17: 'datatype:string' vs 'plain'.
+    #[test]
+    fn two_shapes_disagreeing_on_one_field_are_refused_by_name_4177() {
+        let bad = vec!["label|datatype:string".to_string(), "label|plain".to_string()];
+        let e = super::field_conflict_check("Principle", &bad).unwrap_err();
+        assert!(e.contains("field 'label' is declared twice with different kinds"), "{}", e);
+        let fixed = vec!["label|plain".to_string(), "label|plain".to_string(), "source|datatype:string".to_string()];
+        assert!(super::field_conflict_check("Principle", &fixed).is_ok());
+    }
+
     use super::*;
 
     // #3551 — the Generation-Gap drift gate. The trait seam is projected from the

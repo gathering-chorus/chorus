@@ -52,10 +52,41 @@ pub fn trace_verdict(trace: &str, count: usize, want: usize) -> Result<String, S
 /// that carry the trace (as `"trace":"…"`, `"trace_id":"…"` or `trace_id=…`) and refuse
 /// below the floor. An unreadable spine is a refusal, never a skip.
 pub fn prove_trace(trace: &str, want: usize, spine: &str) -> Result<String, String> {
-    let text = std::fs::read_to_string(spine).map_err(|e| format!("prove-trace: spine {} not readable ({}) — this run left no legible record", spine, e))?;
+    let (count, read) = count_trace_from_tail(trace, spine, 4 << 20, 512 << 20)?;
+    trace_verdict(trace, count, want).map(|s| format!("{} ({} bytes read from the tail)", s, read))
+}
+
+/// #4177 — count the spine lines carrying `trace`, reading the file BACKWARDS in
+/// `chunk`-byte pieces and stopping early: a run's events sit at the tail of the spine,
+/// so once matches have been seen and three whole chunks pass with none, the run's
+/// start is behind us. `cap` bounds the read no matter what. The whole-file read this
+/// replaces took 12m50 on a 2.56 GB spine (2026-09-17 11:17). Returns (count, bytes read).
+pub fn count_trace_from_tail(trace: &str, spine: &str, chunk: usize, cap: usize) -> Result<(usize, usize), String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(spine).map_err(|e| format!("prove-trace: spine {} not readable ({}) — this run left no legible record", spine, e))?;
+    let len = f.metadata().map_err(|e| format!("prove-trace: {}", e))?.len() as usize;
     let needles = [format!("\"trace\":\"{}\"", trace), format!("\"trace_id\":\"{}\"", trace), format!("trace_id={}", trace)];
-    let count = text.lines().filter(|l| needles.iter().any(|n| l.contains(n.as_str()))).count();
-    trace_verdict(trace, count, want)
+    let mut end = len; let mut count = 0usize; let mut read = 0usize; let mut carry: Vec<u8> = Vec::new();
+    let mut seen_any = false; let mut empty_since_match = 0usize;
+    while end > 0 && read < cap {
+        let start = end.saturating_sub(chunk);
+        let mut buf = vec![0u8; end - start];
+        f.seek(SeekFrom::Start(start as u64)).map_err(|e| format!("prove-trace: {}", e))?;
+        f.read_exact(&mut buf).map_err(|e| format!("prove-trace: {}", e))?;
+        read += buf.len();
+        buf.extend_from_slice(&carry);
+        // the first line of this chunk may be cut; keep it as carry for the next (earlier) chunk
+        let cut = if start > 0 { buf.iter().position(|&b| b == b'\n').map(|i| i + 1).unwrap_or(buf.len()) } else { 0 };
+        let (head, body) = buf.split_at(cut);
+        let text = String::from_utf8_lossy(body);
+        let here = text.lines().filter(|l| needles.iter().any(|n| l.contains(n.as_str()))).count();
+        count += here;
+        if here > 0 { seen_any = true; empty_since_match = 0; } else if seen_any { empty_since_match += 1; }
+        carry = head.to_vec();
+        end = start;
+        if seen_any && empty_since_match >= 3 { break; }
+    }
+    Ok((count, read))
 }
 
 pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
@@ -221,6 +252,22 @@ mod tests {
         assert!(trace_verdict("athena-1-2", 4, 4).is_ok());
         // the spine reader: an unreadable spine refuses; a fixture with the trace counts
         assert!(prove_trace("athena-1-2", 1, "/nonexistent/spine.log").is_err());
+        // #4177 NEGATIVE PROOF: the run's events sit at the tail of a big spine and the
+        // reader must NOT read it whole — 40 MB of other lines in front, 4 MB chunks.
+        let big = std::env::temp_dir().join(format!("prove-trace-big-{}", std::process::id()));
+        {
+            use std::io::Write;
+            let mut w = std::io::BufWriter::new(std::fs::File::create(&big).unwrap());
+            let filler = "{\"event\":\"other.noise\",\"trace\":\"werk-0\",\"pad\":\"".to_string() + &"x".repeat(200) + "\"}\n";
+            for _ in 0..(40 * 1024 * 1024 / filler.len()) { w.write_all(filler.as_bytes()).unwrap(); }
+            for _ in 0..7 { w.write_all(b"{\"event\":\"athena.x\",\"trace\":\"athena-9-9\"}\n").unwrap(); }
+        }
+        let (n, read) = count_trace_from_tail("athena-9-9", &big.to_string_lossy(), 4 << 20, 512 << 20).unwrap();
+        assert_eq!(n, 7);
+        assert!(read < 20 * 1024 * 1024, "read {} bytes of a 40 MB spine — the tail reader is reading the whole file", read);
+        let (n0, _) = count_trace_from_tail("athena-none", &big.to_string_lossy(), 4 << 20, 8 << 20).unwrap();
+        assert_eq!(n0, 0, "an absent trace stops at the cap, never reads forever");
+        let _ = std::fs::remove_file(&big);
         let dir = std::env::temp_dir().join(format!("prove-trace-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let f = dir.join("spine.log");

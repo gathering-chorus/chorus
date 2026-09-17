@@ -1895,7 +1895,7 @@ fn deploy_canonical(home: &Path, werk_s: &str, role: &str, card: u64, trace: &st
     // (model) and #4096 (seed), restarting athena-make and seeding against it before
     // it answered: POST → 0 on six lands across #4175 and #4179. They now run as
     // .github/workflows/athena.yml (scope → validate → deploy → serve → seed →
-    // prove), triggered by werk.yml's `athena-land` step after this deploy. This
+    // prove), triggered by the land event in chorus-mcp's werk-merge case (#4177). This
     // verb ships CODE only; it says so on the spine when the diff carried model or
     // seed sources so the hand-off is witnessed, never assumed.
     if !model_files.is_empty() || !seed_files.is_empty() {
