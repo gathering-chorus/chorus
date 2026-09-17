@@ -1535,6 +1535,309 @@ mod identity_4192 {
     }
 }
 
+// ─────────────────────────── graph vs project (#4199) ───────────────────────────
+//
+// Jeff, 2026-09-17: "a high level of consistency and completeness between the
+// graph and project as we make changes at a high rate — these can't be lossy."
+// One line a morning answers it for code, tests and logs together. Everything
+// here is pure so each verdict has a fixture that turns it red.
+
+/// The files the model has no kind for, summarised by extension: the count and
+/// the top few, so "642 skipped" becomes "png 233, none 180, nt 37 …" and the
+/// model can be asked for each one.
+pub fn no_kind_summary(paths: &[String]) -> (usize, String) {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for p in paths {
+        let base = p.rsplit('/').next().unwrap_or(p);
+        let ext = match base.rfind('.') {
+            Some(i) if i > 0 => base[i + 1..].to_ascii_lowercase(),
+            _ => "none".to_string(),
+        };
+        match counts.iter_mut().find(|(e, _)| *e == ext) {
+            Some(c) => c.1 += 1,
+            None => counts.push((ext, 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let top: Vec<String> = counts
+        .iter()
+        .take(6)
+        .map(|(e, n)| format!("{e} {n}"))
+        .collect();
+    (paths.len(), top.join(", "))
+}
+
+/// Log files the box writes, read from a launchd plist's StandardOutPath and
+/// StandardErrorPath. No plist library: the two keys are followed by one
+/// `<string>` each.
+pub fn log_paths_in_plist(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in ["StandardOutPath", "StandardErrorPath"] {
+        let needle = format!("<key>{key}</key>");
+        let mut from = 0;
+        while let Some(i) = text[from..].find(&needle) {
+            let at = from + i + needle.len();
+            let rest = &text[at..];
+            if let Some(s) = rest.find("<string>") {
+                if let Some(e) = rest[s + 8..].find("</string>") {
+                    let p = rest[s + 8..s + 8 + e].trim().to_string();
+                    if !p.is_empty() && !out.contains(&p) {
+                        out.push(p);
+                    }
+                }
+            }
+            from = at;
+        }
+    }
+    out
+}
+
+/// Log files vs LogSource rows, both ways.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LogDrift {
+    /// A log file the box writes with no LogSource row.
+    pub files_without_rows: Vec<String>,
+    /// A LogSource row whose file is not on the box.
+    pub rows_without_files: Vec<String>,
+}
+
+impl LogDrift {
+    pub fn is_clean(&self) -> bool {
+        self.files_without_rows.is_empty() && self.rows_without_files.is_empty()
+    }
+    pub fn report(&self) -> String {
+        if self.is_clean() {
+            return "reconcile logs: clean — every log file the box writes has its row and every row has its file".to_string();
+        }
+        let mut parts = Vec::new();
+        if !self.files_without_rows.is_empty() {
+            parts.push(format!(
+                "{} log file(s) with no row: {}",
+                self.files_without_rows.len(),
+                self.files_without_rows.join(", ")
+            ));
+        }
+        if !self.rows_without_files.is_empty() {
+            parts.push(format!(
+                "{} row(s) with no file: {}",
+                self.rows_without_files.len(),
+                self.rows_without_files.join(", ")
+            ));
+        }
+        format!("reconcile logs: DRIFT — {}", parts.join(" · "))
+    }
+}
+
+/// `exists` answers whether a row's path is a file on this box: a row may name a
+/// log outside the directories we sweep (a worker's own log under ~/.chorus) and
+/// still be true. Only a row whose file is gone is drift.
+pub fn reconcile_logs(
+    files_on_box: &[String],
+    row_paths: &[String],
+    exists: &dyn Fn(&str) -> bool,
+) -> LogDrift {
+    let mut d = LogDrift::default();
+    for f in files_on_box {
+        if !row_paths.contains(f) {
+            d.files_without_rows.push(f.clone());
+        }
+    }
+    for r in row_paths {
+        if !exists(r) {
+            d.rows_without_files.push(r.clone());
+        }
+    }
+    d.files_without_rows.sort();
+    d.rows_without_files.sort();
+    d
+}
+
+/// Every `watermark -> <sha>` a crawl log recorded, in order.
+pub fn passes_watermarks(log: &str) -> Vec<String> {
+    log.lines()
+        .filter_map(|l| l.split("watermark -> ").nth(1))
+        .map(|s| s.split_whitespace().next().unwrap_or("").to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Lands (first-parent commits on main) that no crawl pass ever covered. A land
+/// is covered when some later pass's watermark has it as an ancestor — a pass
+/// that walked HEAD after the land saw its files. The relation is injected so
+/// the rule is testable without a repo.
+pub fn uncovered_lands(
+    lands: &[String],
+    watermarks: &[String],
+    is_ancestor: &dyn Fn(&str, &str) -> bool,
+) -> Vec<String> {
+    lands
+        .iter()
+        .filter(|land| {
+            !watermarks
+                .iter()
+                .any(|w| land.as_str() == w.as_str() || is_ancestor(land, w))
+        })
+        .cloned()
+        .collect()
+}
+
+/// The morning line, one field per verdict.
+pub struct ProjectLine {
+    pub file_rows: usize,
+    pub tracked: usize,
+    pub no_kind: usize,
+    pub no_kind_top: String,
+    pub case_rows: usize,
+    pub no_case: usize,
+    pub log_rows: usize,
+    pub log_files: usize,
+    pub lag_commits: usize,
+    pub files_drift: usize,
+    pub cases_drift: usize,
+    pub logs_drift: usize,
+    pub lands: usize,
+    pub uncovered: Vec<String>,
+}
+
+impl ProjectLine {
+    pub fn render(&self) -> String {
+        let verdict = |n: usize| {
+            if n == 0 {
+                "clean".to_string()
+            } else {
+                format!("DRIFT {n}")
+            }
+        };
+        let lossless = if self.uncovered.is_empty() {
+            format!("lossless lands={} all covered", self.lands)
+        } else {
+            format!(
+                "LOSSY lands={} uncovered={} ({})",
+                self.lands,
+                self.uncovered.len(),
+                self.uncovered.join(",")
+            )
+        };
+        format!(
+            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
+            self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.log_rows, self.log_files,
+            self.lag_commits, verdict(self.files_drift), verdict(self.cases_drift), verdict(self.logs_drift), lossless
+        )
+    }
+    pub fn is_clean(&self) -> bool {
+        self.lag_commits == 0
+            && self.files_drift == 0
+            && self.cases_drift == 0
+            && self.logs_drift == 0
+            && self.uncovered.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod project_4199 {
+    use super::*;
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn no_kind_files_are_named_by_extension_most_first() {
+        let (n, top) = no_kind_summary(&s(&["a.png", "b.png", "c.lock", "Makefile", "d.png"]));
+        assert_eq!(n, 5);
+        assert_eq!(top, "png 3, lock 1, none 1");
+    }
+
+    #[test]
+    fn plist_log_paths_are_read_from_both_keys_once() {
+        let p = "<dict><key>StandardOutPath</key><string>/x/a.log</string><key>StandardErrorPath</key><string>/x/a.log</string><key>Label</key><string>com.x</string></dict>";
+        assert_eq!(log_paths_in_plist(p), vec!["/x/a.log".to_string()]);
+        assert!(log_paths_in_plist("<dict></dict>").is_empty());
+    }
+
+    #[test]
+    fn logs_that_match_reconcile_clean() {
+        let on_disk = |p: &str| p == "/l/a.log" || p == "/l/b.log" || p == "/w/worker.log";
+        let d = reconcile_logs(
+            &s(&["/l/a.log", "/l/b.log"]),
+            &s(&["/l/b.log", "/l/a.log", "/w/worker.log"]),
+            &on_disk,
+        );
+        assert!(
+            d.is_clean(),
+            "a row outside the swept directories whose file exists is not drift: {}",
+            d.report()
+        );
+    }
+    // NEGATIVE PROOF (#3734): a log file with no row is red and named; so is a row with no file.
+    #[test]
+    fn negative_proof_a_log_file_without_a_row_is_red_and_named() {
+        let d = reconcile_logs(
+            &s(&["/l/a.log", "/l/new.log"]),
+            &s(&["/l/a.log", "/l/gone.log"]),
+        );
+        assert!(!d.is_clean());
+        assert!(d.report().contains("/l/new.log"), "{}", d.report());
+        assert!(d.report().contains("/l/gone.log"), "{}", d.report());
+    }
+
+    #[test]
+    fn watermarks_are_read_from_a_crawl_log_in_order() {
+        let log = "chorus-crawl: full\nchorus-crawl: watermark -> aaa111\nchorus-crawl: delta\nchorus-crawl: watermark HELD — x\nchorus-crawl: watermark -> bbb222\n";
+        assert_eq!(passes_watermarks(log), s(&["aaa111", "bbb222"]));
+    }
+
+    // NEGATIVE PROOF (#3734): a land after the last pass is uncovered and named;
+    // a land an earlier or equal watermark descends from is covered.
+    #[test]
+    fn negative_proof_a_land_no_pass_walked_is_uncovered() {
+        // linear history: L1 -> W1 -> L2 -> L3 ; passes recorded W1 and L2
+        let order = ["L1", "W1", "L2", "L3"];
+        let anc = |a: &str, b: &str| {
+            let ia = order.iter().position(|x| *x == a);
+            let ib = order.iter().position(|x| *x == b);
+            matches!((ia, ib), (Some(x), Some(y)) if x < y)
+        };
+        let missing = uncovered_lands(&s(&["L1", "L2", "L3"]), &s(&["W1", "L2"]), &anc);
+        assert_eq!(missing, s(&["L3"]));
+        assert!(
+            uncovered_lands(&s(&["L1", "L2"]), &s(&["W1", "L2"]), &anc).is_empty(),
+            "control: both covered"
+        );
+    }
+
+    #[test]
+    fn the_morning_line_says_clean_or_names_the_red() {
+        let mut p = ProjectLine {
+            file_rows: 5575,
+            tracked: 6214,
+            no_kind: 642,
+            no_kind_top: "png 233, none 180".into(),
+            case_rows: 8236,
+            no_case: 9,
+            log_rows: 90,
+            log_files: 40,
+            lag_commits: 0,
+            files_drift: 0,
+            cases_drift: 0,
+            logs_drift: 0,
+            lands: 3,
+            uncovered: vec![],
+        };
+        assert!(p.is_clean());
+        let line = p.render();
+        assert!(
+            line.contains("complete files=5575/6214 no-kind=642 (png 233, none 180)"),
+            "{line}"
+        );
+        assert!(line.contains("lossless lands=3 all covered"), "{line}");
+        p.lag_commits = 2;
+        p.uncovered = s(&["abc1234"]);
+        assert!(!p.is_clean());
+        assert!(p.render().contains("current lag=2"));
+        assert!(p.render().contains("LOSSY lands=3 uncovered=1 (abc1234)"));
+    }
+}
+
 /// #4178 — the identity a scheduled run must present.
 ///
 /// The door stamps `ownedBy` from the caller, and only the owner may update or

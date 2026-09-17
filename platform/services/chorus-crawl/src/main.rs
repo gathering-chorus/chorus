@@ -942,7 +942,6 @@ fn main() {
             );
             std::process::exit(2);
         }
-        let drift = reconcile(&disk, &graph);
         // #4180 — the counts line above reads exactly like a run's outcome, and
         // --reconcile writes NOTHING: it exited here with "posted=1" on the line
         // and the row still absent, and I read that as work done. Say what the
@@ -953,19 +952,28 @@ fn main() {
                 c.posted, c.replaced, c.deleted
             );
         }
-        println!("chorus-crawl: {}", drift.report());
         let all_test_files: Vec<String> = test_files
             .iter()
             .map(|s| s.to_string())
             .filter(|p| registers_cases(p))
             .collect();
-        let case_drift = cases::reconcile_cases(&parsed.desired, &all_test_files, &case_graph);
-        println!("chorus-crawl: {}", case_drift.report());
-        std::process::exit(if drift.is_clean() && case_drift.is_clean() {
-            0
-        } else {
-            1
-        });
+        let wm_file = std::fs::read_to_string(format!("{root}/.chorus-crawl-watermark"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let clean = print_graph_vs_project(
+            &root,
+            &api,
+            &token,
+            &disk,
+            &graph,
+            &parsed.desired,
+            &all_test_files,
+            &case_graph,
+            &head,
+            wm_file.as_deref(),
+        );
+        std::process::exit(if clean { 0 } else { 1 });
     }
 
     if dry_run {
@@ -1226,6 +1234,40 @@ fn main() {
 
     // The watermark moves only when this run earned it.
     let scope_was_full = matches!(scope, Scope::Full { .. });
+    // #4199 — a FULL pass that wrote clean re-reads the graph and prints the
+    // morning line, so the nightly log carries complete / current / consistent /
+    // lossless and the readout's TOTAL can quote it. A pass with failures says so
+    // above and skips the grading — a red run does not also grade itself clean.
+    if scope_was_full && failed.is_empty() && !mass_delete {
+        let all_test_files: Vec<String> = test_files
+            .iter()
+            .map(|s| s.to_string())
+            .filter(|p| registers_cases(p))
+            .collect();
+        match (
+            existing_rows(&api, &token),
+            existing_case_rows(&api, &token),
+        ) {
+            (Ok(g2), Ok(cg2)) => {
+                print_graph_vs_project(
+                    &root,
+                    &api,
+                    &token,
+                    &disk,
+                    &g2,
+                    &parsed.desired,
+                    &all_test_files,
+                    &cg2,
+                    &head,
+                    Some(&head),
+                );
+            }
+            (Err(e), _) | (_, Err(e)) => println!(
+                "chorus-crawl: graph vs project: UNMEASURED — re-read after the pass failed ({e})"
+            ),
+        }
+    }
+
     // a refused mass delete means this graph does NOT match this commit
     let read_for_watermark = if mass_delete {
         TreeRead::Partial
@@ -1261,6 +1303,164 @@ fn main() {
 /// The joined size of a batch body so far (rows plus the commas between them).
 fn batch_bytes(batch: &[String]) -> usize {
     batch.iter().map(|b| b.len()).sum::<usize>() + batch.len().saturating_sub(1)
+}
+
+/// #4199 — the graph-vs-project verdicts, printed after a FULL read of tree and
+/// graph. Read-only: nothing here writes. Returns whether everything was clean.
+#[allow(clippy::too_many_arguments)]
+fn print_graph_vs_project(
+    root: &str,
+    api: &str,
+    token: &str,
+    disk: &[OnDisk],
+    graph: &[InGraph],
+    desired: &[CaseRow],
+    test_files: &[String],
+    case_graph: &[CaseInGraph],
+    head: &str,
+    watermark: Option<&str>,
+) -> bool {
+    let drift = reconcile(disk, graph);
+    println!("chorus-crawl: {}", drift.report());
+    let case_drift = cases::reconcile_cases(desired, test_files, case_graph);
+    println!("chorus-crawl: {}", case_drift.report());
+
+    // logs: what the box writes vs what the logs domain holds
+    let mut log_files: Vec<String> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(format!("{root}/platform/launchd")) {
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.extension().map(|x| x == "plist").unwrap_or(false) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    for l in log_paths_in_plist(&text) {
+                        if std::path::Path::new(&l).exists() && !log_files.contains(&l) {
+                            log_files.push(l);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // the directories this box writes logs into: launchd's, the app's, the spine's
+    if let Ok(home) = std::env::var("HOME") {
+        for dir in [
+            format!("{home}/Library/Logs/Chorus"),
+            format!("{home}/Library/Logs/Gathering"),
+            format!("{home}/.chorus"),
+            format!("{home}/.chorus/logs"),
+        ] {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if (name.ends_with(".log") || name.ends_with(".err")) && p.is_file() {
+                        let s = p.to_string_lossy().to_string();
+                        if !log_files.contains(&s) {
+                            log_files.push(s);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    log_files.sort();
+    let log_rows: Vec<String> = match fetch_rows(api, token, "LogSource") {
+        Ok(rows) => rows
+            .into_iter()
+            .filter_map(|f| f.into_iter().find(|(k, _)| k == "logPath").map(|(_, v)| v))
+            .filter(|v| !v.is_empty())
+            .collect(),
+        Err(e) => {
+            println!("chorus-crawl: reconcile logs: UNMEASURED — cannot read LogSource rows ({e})");
+            Vec::new()
+        }
+    };
+    let on_disk = |p: &str| std::path::Path::new(p).is_file();
+    let log_drift = reconcile_logs(&log_files, &log_rows, &on_disk);
+    println!("chorus-crawl: {}", log_drift.report());
+
+    // current: commits between the watermark and HEAD
+    let lag = match watermark {
+        Some(w) => sh(
+            "git",
+            &["rev-list", "--count", &format!("{w}..{head}")],
+            root,
+        )
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0),
+        None => 0,
+    };
+    // lossless: every land since the first pass in the nightly log is covered by a pass
+    let crawl_log = std::env::var("CRAWL_LOG").unwrap_or_else(|_| {
+        format!(
+            "{}/Library/Logs/Chorus/crawl-nightly.log",
+            std::env::var("HOME").unwrap_or_default()
+        )
+    });
+    let log_text = std::fs::read_to_string(&crawl_log).unwrap_or_default();
+    let wms = passes_watermarks(&log_text);
+    let (lands, uncovered) = match wms.first() {
+        Some(first) => {
+            let raw = sh(
+                "git",
+                &[
+                    "log",
+                    "--first-parent",
+                    "--format=%h %s",
+                    &format!("{first}..{head}"),
+                ],
+                root,
+            )
+            .unwrap_or_default();
+            let lands: Vec<String> = raw
+                .lines()
+                .filter(|l| {
+                    l.split_once(' ')
+                        .map(|(_, s)| s.starts_with('#'))
+                        .unwrap_or(false)
+                })
+                .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+                .collect();
+            let anc =
+                |a: &str, b: &str| sh("git", &["merge-base", "--is-ancestor", a, b], root).is_ok();
+            let unc = uncovered_lands(&lands, &wms, &anc);
+            (lands.len(), unc)
+        }
+        None => (0, Vec::new()),
+    };
+    let skipped: Vec<String> = disk
+        .iter()
+        .filter(|f| !f.classified)
+        .map(|f| f.path.clone())
+        .collect();
+    let (no_kind, top) = no_kind_summary(&skipped);
+    let line = ProjectLine {
+        file_rows: graph.len(),
+        tracked: disk.len(),
+        no_kind,
+        no_kind_top: top,
+        case_rows: case_graph.len(),
+        no_case: test_files
+            .iter()
+            .filter(|f| !desired.iter().any(|d| &d.file == *f))
+            .count(),
+        log_rows: log_rows.len(),
+        log_files: log_files.len(),
+        lag_commits: lag,
+        files_drift: drift.missing_from_graph.len()
+            + drift.missing_from_tree.len()
+            + drift.stale_sha.len(),
+        cases_drift: case_drift.rows_without_file.len()
+            + case_drift.files_without_rows.len()
+            + case_drift.cases_without_rows.len()
+            + case_drift.rows_without_case.len(),
+        logs_drift: log_drift.files_without_rows.len() + log_drift.rows_without_files.len(),
+        lands,
+        uncovered,
+    };
+    println!("chorus-crawl: {}", line.render());
+    drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean()
 }
 
 fn scope_was_full_walk(scope: &Scope) -> bool {
