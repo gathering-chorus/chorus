@@ -469,6 +469,90 @@ fn existing_case_rows(api: &str, token: &str) -> Result<Vec<CaseInGraph>, String
     Ok(out)
 }
 
+/// #4199 — every log file this box writes: the StandardOut/ErrPath of every
+/// plist under platform/launchd (with the job's Label), plus every *.log / *.err
+/// in the directories launchd, the app and the spine write into.
+fn box_log_files(root: &str) -> Vec<LogFile> {
+    let mut out: Vec<LogFile> = Vec::new();
+    let mut push = |path: String, label: Option<String>| {
+        let Ok(md) = std::fs::metadata(&path) else { return };
+        if !md.is_file() {
+            return;
+        }
+        if let Some(e) = out.iter_mut().find(|f| f.path == path) {
+            if e.launchd_label.is_none() {
+                e.launchd_label = label;
+            }
+            return;
+        }
+        let written = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        out.push(LogFile {
+            path,
+            launchd_label: label,
+            size: md.len(),
+            written_secs: written,
+        });
+    };
+    if let Ok(rd) = std::fs::read_dir(format!("{root}/platform/launchd")) {
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.extension().map(|x| x == "plist").unwrap_or(false) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    let label = plist_label(&text);
+                    for l in log_paths_in_plist(&text) {
+                        push(l, label.clone());
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        for dir in [
+            format!("{home}/Library/Logs/Chorus"),
+            format!("{home}/Library/Logs/Gathering"),
+            format!("{home}/.chorus"),
+            format!("{home}/.chorus/logs"),
+        ] {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.ends_with(".log") || name.ends_with(".err") {
+                        push(p.to_string_lossy().to_string(), None);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
+/// #4199 — every LogSource row the door serves, whole, addressed by its name.
+fn existing_log_rows(api: &str, token: &str) -> Result<Vec<LogInGraph>, String> {
+    let mut out = Vec::new();
+    for fields in fetch_rows(api, token, "LogSource")? {
+        let get = |k: &str| {
+            fields
+                .iter()
+                .find(|(f, _)| f == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        let (name, path) = (get("name"), get("logPath"));
+        if name.is_empty() {
+            continue;
+        }
+        out.push(LogInGraph { name, path, fields });
+    }
+    Ok(out)
+}
+
 /// Every row of one served class, as flat field maps — paged by the door's own
 /// `links.next`, to exhaustion (see the note on existing_rows' first cut).
 fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
@@ -923,6 +1007,33 @@ fn main() {
     }
     let cc = cases::case_counts(&case_actions);
 
+    // #4199 — the log leg: every log file the box writes has a LogSource row.
+    // A full pass refreshes the rows it owns; a delta adds and retires only.
+    let log_files = box_log_files(&root);
+    let log_graph = match existing_log_rows(&api, &token) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read existing LogSource rows ({e}) — refusing to plan the log leg against an unknown registry");
+            std::process::exit(2);
+        }
+    };
+    let on_box = |p: &str| std::path::Path::new(p).is_file();
+    let mut log_actions = plan_logs(&log_files, &log_graph, scope_was_full_walk(&scope), &on_box);
+    let log_deletes = log_actions
+        .iter()
+        .filter(|a| matches!(a, LogAction::Delete { .. }))
+        .count();
+    if mass_delete_refused(log_deletes, log_graph.len()) {
+        eprintln!(
+            "chorus-crawl: MASS DELETE REFUSED — the plan would delete {} of {} log rows. No log row is deleted this run.",
+            log_deletes,
+            log_graph.len()
+        );
+        log_actions.retain(|a| !matches!(a, LogAction::Delete { .. }));
+        mass_delete = true;
+    }
+    let lc = log_counts(&log_actions);
+
     println!(
         "chorus-crawl: {} · tracked={} read={:?}",
         scope.label(),
@@ -951,6 +1062,11 @@ fn main() {
     if !parsed.no_case.is_empty() {
         println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
     }
+    println!(
+        "chorus-crawl: logs posted={} replaced={} unchanged={} deleted={} · log files={} rows={}{}",
+        lc.posted, lc.replaced, lc.unchanged, lc.deleted, log_files.len(), log_graph.len(),
+        if dry_run { "  (dry-run — nothing written)" } else { "" }
+    );
     if read == TreeRead::Partial {
         println!("chorus-crawl: tree read was PARTIAL — deletes refused this run (#4022: absent must not mean delete)");
     } else if case_read == TreeRead::Partial {
@@ -973,10 +1089,10 @@ fn main() {
         // --reconcile writes NOTHING: it exited here with "posted=1" on the line
         // and the row still absent, and I read that as work done. Say what the
         // numbers are.
-        if c.posted + c.replaced + c.deleted > 0 {
+        if c.posted + c.replaced + c.deleted + lc.posted + lc.replaced + lc.deleted > 0 {
             println!(
-                "chorus-crawl: reconcile is read-only — the {} post / {} replace / {} delete above are what a write pass WOULD do, not what happened",
-                c.posted, c.replaced, c.deleted
+                "chorus-crawl: reconcile is read-only — the {} post / {} replace / {} delete above (logs {} / {} / {}) are what a write pass WOULD do, not what happened",
+                c.posted, c.replaced, c.deleted, lc.posted, lc.replaced, lc.deleted
             );
         }
         let all_test_files: Vec<String> = test_files
@@ -1237,6 +1353,99 @@ fn main() {
         cflush(&mut cbatch, &mut failed, &mut wrote);
     }
 
+    // ── #4199: the log rows. Same identity, same refusals, same door.
+    {
+        let log_coll = match collection_for(&api, "LogSource") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("chorus-crawl: {e}");
+                std::process::exit(2);
+            }
+        };
+        let log_in_graph: HashMap<&str, &LogInGraph> =
+            log_graph.iter().map(|g| (g.name.as_str(), g)).collect();
+        let observed = now_secs();
+        let machine = std::env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+        let mut lbatch: Vec<String> = Vec::new();
+        let lflush = |lbatch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
+            if lbatch.is_empty() {
+                return;
+            }
+            let body = format!("[{}]", lbatch.join(","));
+            match write(
+                ident,
+                &api,
+                "POST",
+                &format!("{log_coll}/batch"),
+                Some(&body),
+            ) {
+                Ok(_) => *wrote += lbatch.len(),
+                Err(e) => failed.push(format!("log batch of {}: {e}", lbatch.len())),
+            }
+            lbatch.clear();
+        };
+        for a in &log_actions {
+            match a {
+                LogAction::Post(row) => {
+                    let mut fields = vec![("name".to_string(), log_row_name(&row.path))];
+                    fields.extend(row.owned_fields(&machine, observed));
+                    let body = fields_json(&fields);
+                    if !batch_accepts(batch_bytes(&lbatch), body.len(), BATCH_BODY_BUDGET) {
+                        lflush(&mut lbatch, &mut failed, &mut wrote);
+                    }
+                    lbatch.push(body);
+                    if lbatch.len() >= 200 {
+                        lflush(&mut lbatch, &mut failed, &mut wrote);
+                    }
+                }
+                LogAction::Replace { name, row } => {
+                    let existing: &[(String, String)] = log_in_graph
+                        .get(name.as_str())
+                        .map(|g| g.fields.as_slice())
+                        .unwrap_or(&[]);
+                    let mut fields = merge_row(existing, &row.owned_fields(&machine, observed));
+                    prefixes.apply(&mut fields);
+                    let mut attempt = 0;
+                    loop {
+                        let body = fields_json(&fields);
+                        match write(
+                            ident,
+                            &api,
+                            "PUT",
+                            &format!("{log_coll}/{name}"),
+                            Some(&body),
+                        ) {
+                            Ok(_) => {
+                                wrote += 1;
+                                break;
+                            }
+                            Err(e)
+                                if attempt == 0
+                                    && prefixes.learn(&e)
+                                    && prefixes.apply(&mut fields) =>
+                            {
+                                attempt += 1
+                            }
+                            Err(e) => {
+                                failed.push(format!("update log {}: {e}", row.path));
+                                break;
+                            }
+                        }
+                    }
+                }
+                LogAction::Delete { name, path } => {
+                    if let Err(e) =
+                        write(ident, &api, "DELETE", &format!("{log_coll}/{name}"), None)
+                    {
+                        failed.push(format!("delete log {path}: {e}"));
+                    }
+                }
+                LogAction::Unchanged { .. } => {}
+            }
+        }
+        lflush(&mut lbatch, &mut failed, &mut wrote);
+    }
+
     let elapsed = started.elapsed().as_secs_f64();
     let attempted = wrote + failed.len();
     println!(
@@ -1347,45 +1556,8 @@ fn print_graph_vs_project(
     let case_drift = cases::reconcile_cases(desired, test_files, case_graph);
     println!("chorus-crawl: {}", case_drift.report());
 
-    // logs: what the box writes vs what the logs domain holds
-    let mut log_files: Vec<String> = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(format!("{root}/platform/launchd")) {
-        for e in rd.flatten() {
-            let path = e.path();
-            if path.extension().map(|x| x == "plist").unwrap_or(false) {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    for l in log_paths_in_plist(&text) {
-                        if std::path::Path::new(&l).exists() && !log_files.contains(&l) {
-                            log_files.push(l);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // the directories this box writes logs into: launchd's, the app's, the spine's
-    if let Ok(home) = std::env::var("HOME") {
-        for dir in [
-            format!("{home}/Library/Logs/Chorus"),
-            format!("{home}/Library/Logs/Gathering"),
-            format!("{home}/.chorus"),
-            format!("{home}/.chorus/logs"),
-        ] {
-            if let Ok(rd) = std::fs::read_dir(&dir) {
-                for e in rd.flatten() {
-                    let p = e.path();
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if (name.ends_with(".log") || name.ends_with(".err")) && p.is_file() {
-                        let s = p.to_string_lossy().to_string();
-                        if !log_files.contains(&s) {
-                            log_files.push(s);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    log_files.sort();
+    // logs: what the box writes vs what the logs domain holds (the same walk the log leg writes from)
+    let log_files: Vec<String> = box_log_files(root).into_iter().map(|f| f.path).collect();
     let log_rows: Vec<String> = match fetch_rows(api, token, "LogSource") {
         Ok(rows) => rows
             .into_iter()

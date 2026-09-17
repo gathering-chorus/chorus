@@ -2197,3 +2197,293 @@ mod merge_4178 {
         }
     }
 }
+
+// ── #4199 — the log leg: every log file the box writes is a LogSource row ────
+//
+// Jeff, 2026-09-17 11:51: "the core crawler does the log writes". The crawler
+// already walks the plists and the log directories to judge the drift; the same
+// walk now writes the rows. Identity is the file's path. Row names are door
+// names (`log-<slug>-<fnv8>`); the old harvester's `urn:` ids cannot be
+// addressed through the door at all, so the crawler never touches them — they
+// show as drift until a DBA retires them, and that is the honest reading.
+
+/// The `Label` of a launchd plist, if it has one.
+pub fn plist_label(text: &str) -> Option<String> {
+    let needle = "<key>Label</key>";
+    let at = text.find(needle)? + needle.len();
+    let rest = &text[at..];
+    let s = rest.find("<string>")? + 8;
+    let e = rest[s..].find("</string>")?;
+    let label = rest[s..s + e].trim();
+    (!label.is_empty()).then(|| label.to_string())
+}
+
+/// One log file on this box, as the walk found it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogFile {
+    pub path: String,
+    /// The launchd job whose plist names this file, when one does.
+    pub launchd_label: Option<String>,
+    pub size: u64,
+    /// mtime, seconds since the epoch
+    pub written_secs: u64,
+}
+
+/// A log file with no launchd job behind it: a script's or a service's own.
+pub const UNMANAGED: &str = "unmanaged";
+/// A log nobody wrote to for this long is silent, not active.
+pub const SILENT_AFTER_SECS: u64 = 7 * 86_400;
+
+/// The row the crawler owns for one log file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogRow {
+    pub path: String,
+    pub launchd_label: String,
+    pub size: u64,
+    pub written_secs: u64,
+}
+
+impl LogRow {
+    pub fn from_file(f: &LogFile) -> LogRow {
+        LogRow {
+            path: f.path.clone(),
+            launchd_label: f.launchd_label.clone().unwrap_or_else(|| UNMANAGED.to_string()),
+            size: f.size,
+            written_secs: f.written_secs,
+        }
+    }
+    pub fn status_at(&self, observed_secs: u64) -> &'static str {
+        if observed_secs.saturating_sub(self.written_secs) > SILENT_AFTER_SECS {
+            "silent"
+        } else {
+            "active"
+        }
+    }
+    /// The fields the crawler asserts. `machine` is the bare onMachine value;
+    /// the door's own prefix is learned on the first refusal (PrefixMemory).
+    pub fn owned_fields(&self, machine: &str, observed_secs: u64) -> Vec<(String, String)> {
+        let base = self.path.rsplit('/').next().unwrap_or(&self.path);
+        vec![
+            ("label".to_string(), format!("{base} ({machine})")),
+            ("logPath".to_string(), self.path.clone()),
+            ("launchdLabel".to_string(), self.launchd_label.clone()),
+            ("logStatus".to_string(), self.status_at(observed_secs).to_string()),
+            ("lastObserved".to_string(), iso_from_secs(observed_secs)),
+            ("lastWrittenAt".to_string(), iso_from_secs(self.written_secs)),
+            ("sizeBytes".to_string(), self.size.to_string()),
+            ("onMachine".to_string(), machine.to_string()),
+        ]
+    }
+}
+
+/// A LogSource row as the door serves it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogInGraph {
+    pub name: String,
+    pub path: String,
+    pub fields: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogAction {
+    Post(LogRow),
+    Replace { name: String, row: LogRow },
+    Unchanged { path: String },
+    Delete { name: String, path: String },
+}
+
+/// A name the door will address: its own minted shape, not a `urn:` id.
+pub fn door_addressable(name: &str) -> bool {
+    !name.is_empty() && !name.contains(':') && !name.contains('/')
+}
+
+/// Deterministic door name for a log file: slug of the path + fnv8 of the exact path.
+pub fn log_row_name(path: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for c in path.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-');
+    let mut end = slug.len().min(100);
+    while !slug.is_char_boundary(end) {
+        end -= 1;
+    }
+    let slug = slug[..end].trim_end_matches('-');
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in path.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("log-{slug}-{:08x}", (h & 0xffff_ffff) as u32)
+}
+
+/// What one pass does to the logs domain. A full pass refreshes every row it
+/// owns (size, last write, status); a delta only adds and retires. Rows the
+/// door cannot address are never planned against.
+pub fn plan_logs(
+    files: &[LogFile],
+    rows: &[LogInGraph],
+    full: bool,
+    exists: &dyn Fn(&str) -> bool,
+) -> Vec<LogAction> {
+    let mut out = Vec::new();
+    for f in files {
+        let row = LogRow::from_file(f);
+        match rows.iter().find(|r| r.path == f.path && door_addressable(&r.name)) {
+            None => out.push(LogAction::Post(row)),
+            Some(r) if full => out.push(LogAction::Replace { name: r.name.clone(), row }),
+            Some(_) => out.push(LogAction::Unchanged { path: f.path.clone() }),
+        }
+    }
+    for r in rows {
+        if !r.path.is_empty() && door_addressable(&r.name) && !exists(&r.path) {
+            out.push(LogAction::Delete { name: r.name.clone(), path: r.path.clone() });
+        }
+    }
+    out
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LogCounts {
+    pub posted: usize,
+    pub replaced: usize,
+    pub unchanged: usize,
+    pub deleted: usize,
+}
+
+pub fn log_counts(actions: &[LogAction]) -> LogCounts {
+    let mut c = LogCounts::default();
+    for a in actions {
+        match a {
+            LogAction::Post(_) => c.posted += 1,
+            LogAction::Replace { .. } => c.replaced += 1,
+            LogAction::Unchanged { .. } => c.unchanged += 1,
+            LogAction::Delete { .. } => c.deleted += 1,
+        }
+    }
+    c
+}
+
+/// Seconds since the epoch as `YYYY-MM-DDTHH:MM:SSZ`, no clock library.
+pub fn iso_from_secs(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // civil-from-days (Howard Hinnant)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
+#[cfg(test)]
+mod logs_4199 {
+    use super::*;
+
+    fn file(path: &str, label: Option<&str>, written: u64) -> LogFile {
+        LogFile {
+            path: path.to_string(),
+            launchd_label: label.map(|s| s.to_string()),
+            size: 10,
+            written_secs: written,
+        }
+    }
+    fn row(name: &str, path: &str) -> LogInGraph {
+        LogInGraph {
+            name: name.to_string(),
+            path: path.to_string(),
+            fields: vec![],
+        }
+    }
+
+    #[test]
+    fn plist_label_reads_the_label_string() {
+        let t = "<dict><key>Label</key>\n<string>com.chorus.x</string><key>StandardOutPath</key><string>/l.log</string></dict>";
+        assert_eq!(plist_label(t).as_deref(), Some("com.chorus.x"));
+        assert_eq!(plist_label("<dict></dict>"), None);
+    }
+
+    #[test]
+    fn iso_from_secs_is_civil_utc() {
+        assert_eq!(iso_from_secs(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso_from_secs(1_700_000_000), "2023-11-14T22:13:20Z");
+        assert_eq!(iso_from_secs(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn row_name_is_a_door_name_and_distinguishes_case() {
+        let a = log_row_name("/Users/j/Library/Logs/Chorus/a.log");
+        let b = log_row_name("/Users/j/Library/Logs/Chorus/A.log");
+        assert!(a.starts_with("log-users-j-library-logs-chorus-a-log-"));
+        assert_ne!(a, b);
+        assert!(door_addressable(&a));
+        assert!(!door_addressable("urn:chorus:logsource-library-x"));
+    }
+
+    #[test]
+    fn a_file_with_no_row_is_posted_even_when_a_urn_row_names_it() {
+        let files = [file("/l/a.log", Some("com.a"), 100)];
+        let rows = [row("urn:chorus:logsource-library-com.a", "/l/a.log")];
+        let plan = plan_logs(&files, &rows, true, &|_| true);
+        assert_eq!(plan.len(), 1);
+        assert!(matches!(&plan[0], LogAction::Post(r) if r.launchd_label == "com.a"));
+    }
+
+    #[test]
+    fn a_present_row_is_refreshed_on_full_and_left_on_delta() {
+        let files = [file("/l/a.log", None, 100)];
+        let rows = [row("log-l-a-log-00000001", "/l/a.log")];
+        let full = plan_logs(&files, &rows, true, &|_| true);
+        assert!(matches!(&full[0], LogAction::Replace { name, row } if name == "log-l-a-log-00000001" && row.launchd_label == UNMANAGED));
+        let delta = plan_logs(&files, &rows, false, &|_| true);
+        assert!(matches!(&delta[0], LogAction::Unchanged { .. }));
+    }
+
+    #[test]
+    fn a_door_row_whose_file_is_gone_is_deleted_and_a_urn_row_never_is() {
+        let rows = [
+            row("log-l-gone-log-00000002", "/l/gone.log"),
+            row("urn:chorus:logsource-library-gone", "/l/gone2.log"),
+        ];
+        let plan = plan_logs(&[], &rows, true, &|_| false);
+        assert_eq!(plan.len(), 1);
+        assert!(matches!(&plan[0], LogAction::Delete { name, .. } if name == "log-l-gone-log-00000002"));
+    }
+
+    #[test]
+    fn negative_proof_a_present_file_is_not_deleted() {
+        let files = [file("/l/a.log", None, 100)];
+        let rows = [row("log-l-a-log-00000001", "/l/a.log")];
+        let plan = plan_logs(&files, &rows, false, &|p| p == "/l/a.log");
+        assert_eq!(log_counts(&plan).deleted, 0);
+    }
+
+    #[test]
+    fn status_is_silent_after_a_week() {
+        let r = LogRow::from_file(&file("/l/a.log", None, 1_000_000));
+        assert_eq!(r.status_at(1_000_000 + SILENT_AFTER_SECS), "active");
+        assert_eq!(r.status_at(1_000_000 + SILENT_AFTER_SECS + 1), "silent");
+        let f = r.owned_fields("library", 1_000_100);
+        assert!(f.contains(&("label".to_string(), "a.log (library)".to_string())));
+        assert!(f.contains(&("onMachine".to_string(), "library".to_string())));
+        assert!(f.contains(&("launchdLabel".to_string(), UNMANAGED.to_string())));
+    }
+}
