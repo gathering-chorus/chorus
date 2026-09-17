@@ -149,6 +149,40 @@ if [ "${GOVBAD:-0}" != "0" ]; then
   done
 fi
 
+# 6. #4187 — rows still living in the two v1 graphs. Jeff, 2026-09-16 13:47:
+# "no more chorus:ontology or chorus:instances urns"; 13:58: "goal is to get and
+# stay at 0". A row's home is its domain graph (Jeff 09-13). Every typed subject
+# in urn:chorus:instances is a row; so is every subject in urn:chorus:ontology
+# whose type is not schema vocabulary (owl / rdfs / sh). Counted per class so the
+# burn-down is a table, not a number. A failed count is a violation, never a 0.
+echo "6) rows still in the v1 graphs (#4187 — the goal is 0 and stay at 0):"
+V1=$(Q "SELECT ?g ?c (COUNT(DISTINCT ?s) AS ?n) WHERE { VALUES ?g { <urn:chorus:instances> <urn:chorus:ontology> } GRAPH ?g { ?s a ?c } FILTER(!STRSTARTS(STR(?c), 'http://www.w3.org/2002/07/owl#') && !STRSTARTS(STR(?c), 'http://www.w3.org/ns/shacl#') && !STRSTARTS(STR(?c), 'http://www.w3.org/2000/01/rdf-schema#')) } GROUP BY ?g ?c ORDER BY ?g DESC(?n)")
+if [ -z "$V1" ]; then
+  echo "  ⚠️  v1-row count FAILED — counted as a violation, never as 0"
+  echo "graph-issue|v1-row|UNMEASURED|?|1"
+  BAD=$((BAD+1))
+else
+  NV1=$(echo "$V1" | python3 -c '
+import sys, json
+rows = json.load(sys.stdin)["results"]["bindings"]
+total = 0
+for b in rows:
+    g = b["g"]["value"]; c = b["c"]["value"].split("#")[-1].split("/")[-1]; n = int(b["n"]["value"])
+    total += n
+    print(f"  ⚠️  {g} {c} {n}")
+    print(f"graph-issue|v1-row|{g}|{c}|{n}")
+print(f"V1TOTAL={total}")
+' 2>/dev/null | tee /tmp/v1-rows-out.$$ | grep -o "V1TOTAL=[0-9]*" | cut -d= -f2)
+  grep -v "^V1TOTAL=" /tmp/v1-rows-out.$$; rm -f /tmp/v1-rows-out.$$
+  if [ -z "$NV1" ]; then
+    echo "  ⚠️  v1-row count unparseable — counted as a violation"; echo "graph-issue|v1-row|UNMEASURED|?|1"; BAD=$((BAD+1))
+  elif [ "$NV1" = "0" ]; then
+    echo "  ✅ both v1 graphs hold 0 rows"
+  else
+    echo "  ⚠️  $NV1 row(s) still in the v1 graphs"; BAD=$((BAD+NV1))
+  fi
+fi
+
 echo
 if [ "$BAD" = "0" ]; then
   echo "PROVEN CLEAN — no old/bad data in the instance graph."

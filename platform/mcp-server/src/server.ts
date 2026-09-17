@@ -2486,6 +2486,46 @@ async function executeWerkVerb(
   );
 }
 
+// #4187 — athena-validate's three answers are clean (0) / dirty (1) / unmeasured (2).
+// All three come back as content with the report attached; only a crash (spawn
+// failure, kill) is thrown. The verdict is parsed from the script's own
+// `graph-summary|<n>|<state>` line, never inferred from the exit code alone.
+export function parseValidateSummary(stdout: string): { issues: number | null; state: string } {
+  const m = stdout.match(/^graph-summary\|([^|\n]+)\|([^|\n]+)$/m);
+  if (!m) return { issues: null, state: 'unparsed' };
+  const n = Number(m[1]);
+  return { issues: Number.isFinite(n) ? n : null, state: m[2].trim() };
+}
+
+async function executeAthenaValidate(
+  args: string[], role: string,
+): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
+  const pathMod = require('path') as typeof import('path');
+  const binDir = process.env.CHORUS_BIN || pathMod.join(process.env.HOME || '', '.chorus/bin');
+  const execFileP = promisify(execFile);
+  let stdout = ''; let stderr = ''; let exitCode = 0; let killed = false;
+  try {
+    const r = await execFileP(pathMod.join(binDir, 'athena-validate'), args, {
+      env: { ...process.env, DEPLOY_ROLE: role, CHORUS_ROLE: role, ATHENA_VALIDATE_NUDGE: '0',
+        CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME },
+      timeout: VERB_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024,
+    });
+    stdout = r.stdout || ''; stderr = r.stderr || '';
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string; killed?: boolean; signal?: string | null };
+    stdout = e.stdout || ''; stderr = e.stderr || '';
+    exitCode = typeof e.code === 'number' ? e.code : 1;
+    killed = Boolean(e.killed || e.signal);
+    if (typeof e.code === 'string' || killed) {
+      throw new Error(`athena-validate-fail — reason=${killed ? 'killed after ' + VERB_TIMEOUT_MS + 'ms' : String(e.code)}${stderr.trim() ? ' stderr=' + stderr.trim().slice(0, 400) : ''}`);
+    }
+  }
+  const { issues, state } = parseValidateSummary(stdout);
+  const verdict = exitCode === 2 || state === 'unreachable' ? 'unmeasured' : exitCode === 0 ? 'clean' : 'dirty';
+  const report = stdout.split('\n').filter((l) => l.startsWith('graph-issue|') || l.startsWith('graph-summary|'));
+  return mcpJson({ ok: verdict === 'clean', verb: 'athena-validate', role, verdict, issues, exit: exitCode, report, tail: stdout.trim().split('\n').slice(-6).join('\n') });
+}
+
 async function executeChorusBuild(
   args: z.infer<typeof BuildInput>,
 ): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
@@ -3729,7 +3769,10 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         if (!parsed.success) {
           return { content: [{ type: 'text', text: `${req.params.name}: invalid arguments — ${parsed.error.message}` }] };
         }
-        return await executeWerkVerb(req.params.name as 'athena-model' | 'athena-make' | 'athena-deploy' | 'athena-validate', parsed.data.args, parsed.data.role, undefined, {});
+        // #4187 — a red sweep is the sweep's ANSWER, not a tool failure. Before this,
+        // exit 1 threw "work-fail exit=1" and the report (the gap list Jeff asked for)
+        // was lost with it (measured 2026-09-16 14:03: the tool exits 1 with no report).
+        return await executeAthenaValidate(parsed.data.args, parsed.data.role);
       }
       case 'werk-pull': {
         const parsed = PullCardInput.safeParse(req.params.arguments);

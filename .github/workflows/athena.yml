@@ -380,8 +380,11 @@ jobs:
       - name: prove
         if: ${{ steps.scope.outputs.nothing != 'true' }}
         # canonical: the store attests the landed sha, and the sweep is a RATCHET whose
-        # baseline lives IN THE STORE (<urn:chorus:model-deploy> vocab:validateIssues), not
-        # in a file on one Mac. werk: the sweep runs against the variant store and is held
+        # baseline lives IN THE STORE (<urn:chorus:model-validate> vocab:validateIssues), not
+        # in a file on one Mac. #4187: its OWN subject. It used to sit on
+        # <urn:chorus:model-deploy>, whose stamp is rewritten with DELETE WHERE { <s> ?p ?o }
+        # on every deploy, so every deploy wiped the baseline and the ratchet restarted
+        # (measured 2026-09-17: 1,204 at 07:56 → "no baseline" → 10,684 at 12:52). werk: the sweep runs against the variant store and is held
         # to the canonical baseline (a card may not add gaps); the baseline is never written.
         run: |
           set -euo pipefail
@@ -399,14 +402,14 @@ jobs:
           if [ -z "$N" ]; then
             echo "::error::athena-validate reported no count (unmeasured store?) — refusing to call the graph proven" >&2; printf '%s\n' "$OUT" | tail -5; rc=1
           else
-            BASE=$(curl -s -m 10 "${AUTH[@]}" "$CANON/query" --data-urlencode 'query=SELECT ?n WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> ?n } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
+            BASE=$(curl -s -m 10 "${AUTH[@]}" "$CANON/query" --data-urlencode 'query=SELECT ?n WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> ?n } }' -H 'Accept: text/csv' | sed -n 2p | tr -d '"\r')
             [ -n "$BASE" ] || { BASE="$N"; echo "athena-validate: no baseline in the store yet; this run sets it to $N"; }
             if [ "$N" -gt "$BASE" ]; then echo "::error::athena-validate: $N issues, baseline $BASE — this ${TARGET} ADDED gaps" >&2; rc=1
             else
               echo "athena-validate ($TARGET): $N issues (baseline $BASE → $N)"
               if [ "$TARGET" = "canonical" ]; then
                 curl -s -m 10 "${AUTH[@]}" -o /dev/null -w 'baseline write http %{http_code}\n' "$CANON/update" -H 'Content-Type: application/sparql-update' \
-                  --data-binary "DELETE WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> ?o } }; INSERT DATA { GRAPH <urn:chorus:ontology> { <urn:chorus:model-deploy> <urn:chorus:vocab#validateIssues> $N } }"
+                  --data-binary "DELETE WHERE { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> ?o } }; INSERT DATA { GRAPH <urn:chorus:ontology> { <urn:chorus:model-validate> <urn:chorus:vocab#validateIssues> $N } }"
               fi
             fi
           fi
