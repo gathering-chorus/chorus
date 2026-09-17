@@ -1,56 +1,43 @@
-# ── TOMBSTONE (#3380, Jeff's ruling 2026-06-12 on #3379) ──────────────────
-# The crawler (com.chorus.crawler-index) is RETIRED-UNTIL-REWRITE — Jeff:
-# "i have doubts about the function of crawler-index in current state".
-# This check is SILENCED while the crawler is retired: a staleness alert for
-# a deliberately-stopped service is a tombstone page, not a signal (it fired
-# 4x on 2026-06-12 after the retirement, each one a Jeff-screen tax).
-# UN-SILENCE CONDITION: the owlapi-fanout crawler-rewrite leg lands
-# (#3185/#3242 — facet-heralds through the DAL) and re-enables its own
-# monitoring. Restore the original check below by removing this short-circuit.
-# crawler-stale.yml — Alert when chorus crawler hasn't indexed recently
-# Card #2817 (#2861 — bash-only check; python moved to sibling)
+# crawler-stale.yml — the live crawler (chorus-crawl, #4173) has not completed a
+# full pass in a day, or its last pass could not vouch for the graph.
 #
-# #3068 (2026-05-24): crawler on StartInterval=1800 (30 min).
-# #3138 (2026-05-30): THRESHOLD_SEC 1800→3000 (50 min). 1800 == the interval left
-# ZERO grace, and a run spans ~5 min (last-indexed = the last domain to finish), so
-# AGE crossed 1800 right before each tick → guaranteed false page. 3000 = interval +
-# run duration + */5 poll jitter. (The old business/off-hours if/else was dead — both
-# arms set 1800 — so it's collapsed to one value.)
+# History: #2817 wrote this for com.chorus.crawler-index; #3380 tombstoned it
+# when that loop was retired (2026-06-12); #4154/#4173 made a new crawler live
+# and left the tombstone in place, so the alert stayed silent for three months
+# while the thing it guards ran nightly (found by the 2026-09-17 nightly, #4197).
+#
+# What it reads — the crawler's own evidence, nothing else:
+#   CRAWL_LOG        ~/Library/Logs/Chorus/crawl-nightly.log (the 04:30 launchd pass)
+#   .chorus-crawl-watermark  at CHORUS_ROOT — the commit the graph is known to match
+# Stale when: no log · the log has not been written in 26 h · the last pass held
+# its watermark ("watermark HELD" — deletes refused or a write failed) · no
+# watermark file at all. Seams CRAWL_LOG / CHORUS_ROOT exist so the live test can
+# hand the check a fixture (test-crawler-alerts-live.sh).
 #
 # alert-runner contract: stdout must equal literal "ok" for success.
 
 name: crawler-stale
-description: chorus crawler has not emitted crawler.domain.indexed in expected window
+description: chorus-crawl has not completed a full pass in 26h, or its last pass held the watermark
 severity: warning
 owner: kade
 schedule: "*/5 * * * *"
 
 check: |
-  # tombstone short-circuit — see header; original check preserved below, inert
-  echo "ok"
-  exit 0
-  # ORIGINAL CHECK (inert while retired):
-  SIBLING="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}/proving/domains/alerts/crawler-stale-check.py"
-  THRESHOLD_SEC=3000
-  LAST=$(grep "crawler.domain.indexed" "$HOME/.chorus/chorus.log" 2>/dev/null | tail -1)
-  if [ -z "$LAST" ]; then
-    echo "no-indexed-events-in-log"
-    exit 1
-  fi
-  LAST_EPOCH=$(echo "$LAST" | python3 "$SIBLING" 2>/dev/null)
-  if [ -z "$LAST_EPOCH" ] || ! [[ "$LAST_EPOCH" =~ ^[0-9]+$ ]]; then
-    echo "parse-fail:could-not-extract-timestamp"
-    exit 1
-  fi
-  NOW=$(date +%s)
-  AGE=$((NOW - LAST_EPOCH))
-  if [ "$AGE" -gt "$THRESHOLD_SEC" ]; then
-    echo "stale:${AGE}s>threshold:${THRESHOLD_SEC}s"
-    exit 1
-  fi
+  LOG="${CRAWL_LOG:-$HOME/Library/Logs/Chorus/crawl-nightly.log}"
+  ROOT="${CHORUS_ROOT:-/Users/jeffbridwell/CascadeProjects/chorus}"
+  MAX_AGE_SEC=93600
+  if [ ! -f "$LOG" ]; then echo "no-crawl-log:$LOG"; exit 1; fi
+  NOW=$(date +%s); MT=$(stat -f %m "$LOG" 2>/dev/null || stat -c %Y "$LOG")
+  AGE=$((NOW - MT))
+  if [ "$AGE" -gt "$MAX_AGE_SEC" ]; then echo "stale:last-pass-${AGE}s-ago>${MAX_AGE_SEC}s"; exit 1; fi
+  # the LAST pass = from the last "chorus-crawl: full|delta" header to the end
+  LAST=$(awk '/^chorus-crawl: (full|delta)/{buf=""} {buf=buf $0 "\n"} END{printf "%s", buf}' "$LOG")
+  if [ -z "$LAST" ]; then echo "no-pass-in-log"; exit 1; fi
+  if printf '%s' "$LAST" | grep -q "watermark HELD"; then echo "held:last-pass-could-not-vouch-for-the-graph"; exit 1; fi
+  if [ ! -s "$ROOT/.chorus-crawl-watermark" ]; then echo "no-watermark:$ROOT/.chorus-crawl-watermark"; exit 1; fi
   echo "ok"
   exit 0
 
 action: |
   OPS_NUDGE="/Users/jeffbridwell/CascadeProjects/chorus/platform/scripts/ops-nudge"
-  "$OPS_NUDGE" kade "crawler-stale: no crawler.domain.indexed in expected window. Hydration loop stalled. Check launchctl list com.chorus.crawler-index + tail ~/Library/Logs/Chorus/crawler-index.log" 2>/dev/null || true
+  "$OPS_NUDGE" kade "crawler-stale: chorus-crawl has no fresh full pass or held its watermark. Read ~/Library/Logs/Chorus/crawl-nightly.log (last pass) and launchctl list com.chorus.crawl-nightly" 2>/dev/null || true
