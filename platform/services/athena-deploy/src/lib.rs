@@ -38,6 +38,26 @@ pub fn scope(root: &str, range: &str) -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
+/// #4195 — the verdict on a run's own legibility: `count` spine lines carry its trace,
+/// `want` is the floor for the legs that ran. Pure; the negative proofs are the tests.
+pub fn trace_verdict(trace: &str, count: usize, want: usize) -> Result<String, String> {
+    if trace.trim().is_empty() { return Err("prove-trace: empty trace id — the run never minted one".into()); }
+    if count < want {
+        return Err(format!("prove-trace: {} event(s) on trace {} but {} leg(s) ran — a step ran without leaving a record; the run is unreconstructable from the spine", count, trace, want));
+    }
+    Ok(format!("traceable: {} event(s) on {} (floor {}) — the run can be replayed from the spine", count, trace, want))
+}
+
+/// `athena-deploy prove-trace <trace> <want> [--spine <path>]`: count the spine lines
+/// that carry the trace (as `"trace":"…"`, `"trace_id":"…"` or `trace_id=…`) and refuse
+/// below the floor. An unreadable spine is a refusal, never a skip.
+pub fn prove_trace(trace: &str, want: usize, spine: &str) -> Result<String, String> {
+    let text = std::fs::read_to_string(spine).map_err(|e| format!("prove-trace: spine {} not readable ({}) — this run left no legible record", spine, e))?;
+    let needles = [format!("\"trace\":\"{}\"", trace), format!("\"trace_id\":\"{}\"", trace), format!("trace_id={}", trace)];
+    let count = text.lines().filter(|l| needles.iter().any(|n| l.contains(n.as_str()))).count();
+    trace_verdict(trace, count, want)
+}
+
 pub fn model_set(root: &str, ttl_override: Option<String>) -> Vec<String> {
     match ttl_override {
         Some(t) if !t.is_empty() => vec![t],
@@ -191,6 +211,26 @@ fn riot_available() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn prove_trace_refuses_a_run_that_left_no_record_4195() {
+        // NEGATIVE PROOF (#3734): fewer events than legs is red and names both numbers
+        let e = trace_verdict("athena-1-2", 1, 4).unwrap_err();
+        assert!(e.contains("1 event(s)") && e.contains("4 leg(s)") && e.contains("athena-1-2"), "{}", e);
+        assert!(trace_verdict("", 9, 2).is_err(), "no trace id is a refusal, never a pass");
+        assert!(trace_verdict("athena-1-2", 4, 4).is_ok());
+        // the spine reader: an unreadable spine refuses; a fixture with the trace counts
+        assert!(prove_trace("athena-1-2", 1, "/nonexistent/spine.log").is_err());
+        let dir = std::env::temp_dir().join(format!("prove-trace-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("spine.log");
+        std::fs::write(&f, "{\"event\":\"athena.pipeline.started\",\"trace\":\"athena-1-2\"}\n{\"event\":\"other\",\"trace\":\"werk-9\"}\n{\"event\":\"athena.pipeline.completed\",\"trace_id\":\"athena-1-2\"}\n").unwrap();
+        let p = f.to_string_lossy().to_string();
+        assert!(prove_trace("athena-1-2", 2, &p).is_ok());
+        let e = prove_trace("athena-1-2", 3, &p).unwrap_err();
+        assert!(e.contains("2 event(s)"), "a werk line must not count toward an athena trace: {}", e);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn scope_predicates_are_the_shared_definition_4186() {
