@@ -14,6 +14,16 @@ chorus:code-kind-test   a chorus:CodeKind ; rdfs:label "test"   ; dct:creator "a
 chorus:code-kind-log    a chorus:CodeKind ; rdfs:label "log"    ; dct:creator "athena-deploy-model" .
 chorus:code-kind-config a chorus:CodeKind ; rdfs:label "config" ; dct:creator "athena-deploy-model" .
 chorus:code-kind-doc    a chorus:CodeKind ; rdfs:label "doc"    ; dct:creator "athena-deploy-model" .
+# #4173 — data files (csv, nt, tsv, jsonl). #4199 — the kinds the crawler skipped 642 tracked
+# files for lacking (Jeff: every tracked file has a row). asset = images, icons, PDFs, app bundles;
+# query = SPARQL the code runs; template = views rendered, not executed; marker = a tracked file
+# with no type of its own (.done, .consumed, .bak, extension-less non-scripts) — named as noise
+# rather than left absent.
+chorus:code-kind-data     a chorus:CodeKind ; rdfs:label "data"     ; dct:creator "athena-deploy-model" .
+chorus:code-kind-asset    a chorus:CodeKind ; rdfs:label "asset"    ; dct:creator "athena-deploy-model" .
+chorus:code-kind-query    a chorus:CodeKind ; rdfs:label "query"    ; dct:creator "athena-deploy-model" .
+chorus:code-kind-template a chorus:CodeKind ; rdfs:label "template" ; dct:creator "athena-deploy-model" .
+chorus:code-kind-marker   a chorus:CodeKind ; rdfs:label "marker"   ; dct:creator "athena-deploy-model" .
 
 chorus:language-rust       a chorus:Language ; rdfs:label "rust"       ; chorus:adoptedFrom "otel:telemetry.sdk.language=rust"   ; dct:creator "athena-deploy-model" .
 chorus:language-python     a chorus:Language ; rdfs:label "python"     ; chorus:adoptedFrom "otel:telemetry.sdk.language=python" ; dct:creator "athena-deploy-model" .

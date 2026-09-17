@@ -105,6 +105,37 @@ fn rust_declares_tests(abs: &str) -> bool {
 
 /// The file list the tree reports, classified. Returns the reading quality
 /// alongside: if any file could not be read, deletes are refused for this run.
+/// First bytes of a file, for the extension-less rule (#4199). None when unreadable.
+fn head_of(abs: &str) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(abs).ok()?;
+    let mut buf = [0u8; 160];
+    let n = f.read(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf[..n]).into_owned())
+}
+
+/// The verdict for one tracked path, opening the file only when the rule needs
+/// its content: a .rs (does it declare tests) or an extension-less name (shebang).
+fn verdict_for(root: &str, rel: &str) -> Verdict {
+    let is_rs = rel.ends_with(".rs");
+    let no_ext = {
+        let base = rel.rsplit('/').next().unwrap_or(rel);
+        !base[1.min(base.len())..].contains('.')
+    };
+    let head = if no_ext {
+        head_of(&format!("{root}/{rel}"))
+    } else {
+        None
+    };
+    classify_with_head(
+        rel,
+        is_rs && rust_declares_tests(&format!("{root}/{rel}")),
+        head.as_deref(),
+    )
+}
+
+/// The file list the tree reports, classified. Returns the reading quality
+/// alongside: if any file could not be read, deletes are refused for this run.
 fn read_tree(
     root: &str,
     paths: &[String],
@@ -118,17 +149,11 @@ fn read_tree(
         TreeRead::Complete
     };
     for rel in paths {
-        // Only .rs files are opened at all, and only to answer "does this
-        // declare tests" — every other classification is a pure path decision.
-        let is_rs = rel.ends_with(".rs");
-        let verdict = classify(rel, is_rs && rust_declares_tests(&format!("{root}/{rel}")));
+        let verdict = verdict_for(root, rel);
         let classified = matches!(verdict, Verdict::Classified(..));
         let sha = match hashes.get(rel) {
             Some(s) => s.clone(),
             None => {
-                // Tracked but git has no hash for it in this index. A fact
-                // about this run, not about the repo — refuse deletes. Partial
-                // outranks Scoped: a failed read is worse than a narrow one.
                 complete = TreeRead::Partial;
                 continue;
             }
@@ -525,6 +550,8 @@ struct Parsed {
     desired: Vec<CaseRow>,
     parsed_files: Vec<String>,
     no_case: Vec<String>,
+    /// #4199 — why each no-case file has none (cases::no_case_bucket), parallel to no_case.
+    no_case_buckets: Vec<&'static str>,
     declared: usize,
     inferred: usize,
     complete: bool,
@@ -535,6 +562,7 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         desired: Vec::new(),
         parsed_files: Vec::new(),
         no_case: Vec::new(),
+        no_case_buckets: Vec::new(),
         declared: 0,
         inferred: 0,
         complete: true,
@@ -556,6 +584,8 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         let names = cases::case_names(path, &content);
         if names.is_empty() {
             p.no_case.push(path.to_string());
+            p.no_case_buckets
+                .push(cases::no_case_bucket(path, &content));
             continue;
         }
         let fc = cases::file_class(path, &content);
@@ -857,10 +887,7 @@ fn main() {
         .filter(|f| f.classified)
         .filter(|f| {
             matches!(
-                classify(
-                    &f.path,
-                    f.path.ends_with(".rs") && rust_declares_tests(&format!("{root}/{}", f.path))
-                ),
+                verdict_for(&root, &f.path),
                 Verdict::Classified(Kind::Test, _)
             )
         })
@@ -972,6 +999,7 @@ fn main() {
             &case_graph,
             &head,
             wm_file.as_deref(),
+            &parsed.no_case_buckets,
         );
         std::process::exit(if clean { 0 } else { 1 });
     }
@@ -1017,11 +1045,7 @@ fn main() {
                     Some(f) => *f,
                     None => continue,
                 };
-                let is_rs = path.ends_with(".rs");
-                if let Verdict::Classified(k, l) = classify(
-                    path,
-                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
-                ) {
+                if let Verdict::Classified(k, l) = verdict_for(&root, path) {
                     let row = row_json(f, k.as_str(), l);
                     if !batch_accepts(batch_bytes(&batch), row.len(), BATCH_BODY_BUDGET) {
                         flush(&mut batch, &mut failed, &mut wrote);
@@ -1041,11 +1065,7 @@ fn main() {
                     Some(f) => *f,
                     None => continue,
                 };
-                let is_rs = path.ends_with(".rs");
-                let Verdict::Classified(k, l) = classify(
-                    path,
-                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
-                ) else {
+                let Verdict::Classified(k, l) = verdict_for(&root, path) else {
                     continue;
                 };
                 let existing: &[(String, String)] = match in_graph.get(path.as_str()) {
@@ -1260,6 +1280,7 @@ fn main() {
                     &cg2,
                     &head,
                     Some(&head),
+                    &parsed.no_case_buckets,
                 );
             }
             (Err(e), _) | (_, Err(e)) => println!(
@@ -1319,6 +1340,7 @@ fn print_graph_vs_project(
     case_graph: &[CaseInGraph],
     head: &str,
     watermark: Option<&str>,
+    no_case_buckets: &[&str],
 ) -> bool {
     let drift = reconcile(disk, graph);
     println!("chorus-crawl: {}", drift.report());
@@ -1435,16 +1457,15 @@ fn print_graph_vs_project(
         .map(|f| f.path.clone())
         .collect();
     let (no_kind, top) = no_kind_summary(&skipped);
+    let (no_case_missing, no_case_detail) = cases::no_case_summary(no_case_buckets);
     let line = ProjectLine {
         file_rows: graph.len(),
         tracked: disk.len(),
         no_kind,
         no_kind_top: top,
         case_rows: case_graph.len(),
-        no_case: test_files
-            .iter()
-            .filter(|f| !desired.iter().any(|d| &d.file == *f))
-            .count(),
+        no_case: no_case_missing,
+        no_case_detail: no_case_detail.clone(),
         log_rows: log_rows.len(),
         log_files: log_files.len(),
         lag_commits: lag,

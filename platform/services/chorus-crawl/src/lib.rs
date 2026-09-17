@@ -22,6 +22,16 @@ pub enum Kind {
     Log,
     Test,
     Data,
+    /// #4199 — images, icons, PDFs, app bundles: the repo's media, not its text.
+    Asset,
+    /// #4199 — SPARQL files (.sparql, .rq): queries the code runs against the graph.
+    Query,
+    /// #4199 — view templates (.ejs, .hbs): rendered, not executed.
+    Template,
+    /// #4199 — a tracked file with no type of its own: .done/.consumed/.bak/.pid
+    /// markers and extension-less non-scripts. Named so the graph can say which
+    /// files are noise rather than pretend they are not there.
+    Marker,
 }
 
 impl Kind {
@@ -33,6 +43,10 @@ impl Kind {
             Kind::Log => "log",
             Kind::Test => "test",
             Kind::Data => "data",
+            Kind::Asset => "asset",
+            Kind::Query => "query",
+            Kind::Template => "template",
+            Kind::Marker => "marker",
         }
     }
 }
@@ -47,7 +61,12 @@ pub enum Verdict {
 }
 
 /// extension → language, mirroring code-vocab.ttl's named individuals (#4157).
-const LANG: [(&str, &str); 13] = [
+const LANG: [(&str, &str); 18] = [
+    (".json", "json"),
+    (".css", "css"),
+    (".scss", "css"),
+    (".html", "html"),
+    (".htm", "html"),
     (".rs", "rust"),
     (".ts", "typescript"),
     (".tsx", "typescript"),
@@ -64,7 +83,44 @@ const LANG: [(&str, &str); 13] = [
 ];
 
 /// extension → kind, for files whose extension decides it outright.
-const KIND_BY_EXT: [(&str, Kind); 12] = [
+const KIND_BY_EXT: [(&str, Kind); 49] = [
+    (".heic", Kind::Asset),
+    (".owl", Kind::Config),
+    (".png", Kind::Asset),
+    (".jpg", Kind::Asset),
+    (".jpeg", Kind::Asset),
+    (".gif", Kind::Asset),
+    (".svg", Kind::Asset),
+    (".ico", Kind::Asset),
+    (".icns", Kind::Asset),
+    (".pdf", Kind::Asset),
+    (".car", Kind::Asset),
+    (".rsrc", Kind::Asset),
+    (".scpt", Kind::Asset),
+    (".sparql", Kind::Query),
+    (".rq", Kind::Query),
+    (".nt", Kind::Data),
+    (".tsv", Kind::Data),
+    (".jsonl", Kind::Data),
+    (".b64", Kind::Data),
+    (".ejs", Kind::Template),
+    (".hbs", Kind::Template),
+    (".mmd", Kind::Doc),
+    (".txt", Kind::Doc),
+    (".feature", Kind::Test),
+    (".css", Kind::Code),
+    (".scss", Kind::Code),
+    (".swift", Kind::Code),
+    (".ini", Kind::Config),
+    (".xml", Kind::Config),
+    (".lock", Kind::Config),
+    (".done", Kind::Marker),
+    (".consumed", Kind::Marker),
+    (".bak", Kind::Marker),
+    (".backup", Kind::Marker),
+    (".backup-shm", Kind::Marker),
+    (".backup-wal", Kind::Marker),
+    (".pid", Kind::Marker),
     (".md", Kind::Doc),
     (".html", Kind::Doc),
     (".htm", Kind::Doc),
@@ -106,6 +162,7 @@ pub fn is_test_path(rel: &str) -> bool {
         || base.ends_with(".spec.js")
         || base.ends_with(".spec.cjs")
         || base.ends_with(".test.sh")
+        || base.ends_with(".feature")
         || (base.starts_with("test_") && base.ends_with(".py"))
         || (base.starts_with("test-") && base.ends_with(".sh"))
 }
@@ -114,6 +171,34 @@ pub fn is_test_path(rel: &str) -> bool {
 /// time. Order matters — test wins over extension, extension over language,
 /// and anything the model has no name for is SKIPPED rather than guessed.
 pub fn classify(rel: &str, has_rust_test_attr: bool) -> Verdict {
+    classify_with_head(rel, has_rust_test_attr, None)
+}
+
+/// #4199 — the language a shebang names, or None.
+fn lang_of_shebang(head: &str) -> Option<&'static str> {
+    let first = head.lines().next().unwrap_or("");
+    if !first.starts_with("#!") {
+        return None;
+    }
+    if first.contains("bash") || first.contains("/sh") || first.contains("zsh") {
+        Some("bash")
+    } else if first.contains("python") {
+        Some("python")
+    } else if first.contains("node") {
+        Some("javascript")
+    } else {
+        Some("bash")
+    }
+}
+
+/// The whole rule with the file's first bytes for extension-less names. Order
+/// matters — test wins over extension, extension over language — and a name
+/// nobody can type is still SKIPPED, never guessed: an unknown EXTENSION is the
+/// model's to add. An extension-LESS file is decided by what it is: a shebang
+/// script is code, a dotfile is config, an app bundle's insides are assets, a
+/// well-known bare name (Makefile, LICENSE) is what it says, and anything else
+/// is a marker — a file the graph names as noise rather than pretends is absent.
+pub fn classify_with_head(rel: &str, has_rust_test_attr: bool, head: Option<&str>) -> Verdict {
     let ext = ext_of(rel);
     let lang = lang_of(&ext);
     if is_test_path(rel) || (ext == ".rs" && has_rust_test_attr) {
@@ -125,12 +210,114 @@ pub fn classify(rel: &str, has_rust_test_attr: bool) -> Verdict {
     if lang.is_some() {
         return Verdict::Classified(Kind::Code, lang);
     }
+    if ext.is_empty() {
+        let base = rel.rsplit('/').next().unwrap_or(rel);
+        if let Some(l) = head.and_then(lang_of_shebang) {
+            return Verdict::Classified(Kind::Code, Some(l));
+        }
+        if base.starts_with('.') {
+            return Verdict::Classified(Kind::Config, None);
+        }
+        if rel.contains(".app/") {
+            return Verdict::Classified(Kind::Asset, None);
+        }
+        if matches!(base, "Makefile" | "Dockerfile" | "Justfile" | "Procfile") {
+            return Verdict::Classified(Kind::Code, None);
+        }
+        if matches!(
+            base,
+            "LICENSE" | "README" | "CHANGELOG" | "NOTICE" | "AUTHORS"
+        ) {
+            return Verdict::Classified(Kind::Doc, None);
+        }
+        return Verdict::Classified(Kind::Marker, None);
+    }
     Verdict::Skip
 }
 
 #[cfg(test)]
 mod classify_4173 {
     use super::*;
+
+    // #4199 — Jeff: every tracked file has a row. The kinds the model gained,
+    // and the extension-less rule. NEGATIVE PROOF: an unknown EXTENSION is still
+    // skipped, never guessed — widening the set stays a model edit.
+    #[test]
+    fn the_4199_kinds_name_what_was_skipped_and_an_unknown_extension_still_skips() {
+        assert_eq!(
+            classify("designing/x.png", false),
+            Verdict::Classified(Kind::Asset, None)
+        );
+        assert_eq!(
+            classify("platform/q/owners.rq", false),
+            Verdict::Classified(Kind::Query, None)
+        );
+        assert_eq!(
+            classify("platform/api/views/x.ejs", false),
+            Verdict::Classified(Kind::Template, None)
+        );
+        assert_eq!(
+            classify("docs/diagrams/x.mmd", false),
+            Verdict::Classified(Kind::Doc, None)
+        );
+        assert_eq!(
+            classify("proving/flows/x.feature", false),
+            Verdict::Classified(Kind::Test, None)
+        );
+        assert_eq!(
+            classify("platform/api/package-lock.json", false),
+            Verdict::Classified(Kind::Config, Some("json"))
+        );
+        assert_eq!(
+            classify("Cargo.lock", false),
+            Verdict::Classified(Kind::Config, None)
+        );
+        assert_eq!(
+            classify("platform/state/x.done", false),
+            Verdict::Classified(Kind::Marker, None)
+        );
+        assert_eq!(
+            classify("data/x.nt", false),
+            Verdict::Classified(Kind::Data, None)
+        );
+        assert_eq!(
+            classify("weird/file.xyz", false),
+            Verdict::Skip,
+            "an unknown extension is the model's to add, not ours to guess"
+        );
+    }
+
+    #[test]
+    fn extension_less_files_are_decided_by_what_they_are() {
+        assert_eq!(
+            classify_with_head(
+                "platform/scripts/werk",
+                false,
+                Some("#!/usr/bin/env bash\nset -u")
+            ),
+            Verdict::Classified(Kind::Code, Some("bash"))
+        );
+        assert_eq!(
+            classify_with_head("skills/x/run", false, Some("#!/usr/bin/env python3\n")),
+            Verdict::Classified(Kind::Code, Some("python"))
+        );
+        assert_eq!(
+            classify_with_head(".gitignore", false, Some("target/")),
+            Verdict::Classified(Kind::Config, None)
+        );
+        assert_eq!(
+            classify_with_head("platform/apps/X.app/Contents/PkgInfo", false, Some("APPL")),
+            Verdict::Classified(Kind::Asset, None)
+        );
+        assert_eq!(
+            classify_with_head("Makefile", false, Some("all:")),
+            Verdict::Classified(Kind::Code, None)
+        );
+        assert_eq!(
+            classify_with_head("designing/claudemd/PROTOCOL_VERSION", false, Some("1.6.0")),
+            Verdict::Classified(Kind::Marker, None)
+        );
+    }
 
     // #3872 / #4185 — the zero-browser-tests hole: a playwright spec under
     // proving/ is a test file. The crawler walks git, so discovery IS the tree;
@@ -162,9 +349,9 @@ mod classify_4173 {
                 Kind::Test,
                 Some("typescript"),
             ),
-            ("designing/docs/crawler.html", Kind::Doc, None),
+            ("designing/docs/crawler.html", Kind::Doc, Some("html")),
             ("roles/kade/current-work.md", Kind::Doc, Some("markdown")),
-            ("platform/api/package.json", Kind::Config, None),
+            ("platform/api/package.json", Kind::Config, Some("json")),
             (
                 "roles/silas/ontology/chorus.ttl",
                 Kind::Config,
@@ -189,11 +376,12 @@ mod classify_4173 {
     // defect this card removes, so the check must show the skip happening.
     #[test]
     fn negative_proof_a_file_the_model_cannot_name_is_skipped_not_called_code() {
+        // #4199 widened the kinds (png/svg are assets, LICENSE is doc); the proof
+        // keeps the property on extensions the model still has no name for.
         for path in [
-            "roles/silas/ontology/chorus.ttl.png",
-            "designing/diagrams/flow.svg",
             "platform/api/public/font.woff2",
-            "LICENSE",
+            "weird/file.xyz",
+            "a/b.woff",
         ] {
             assert_eq!(classify(path, false), Verdict::Skip, "{} must skip", path);
         }
@@ -229,10 +417,16 @@ mod classify_4173 {
     // ".gitignore" is not an extension of a file called "".
     #[test]
     fn negative_proof_a_dotfile_is_not_read_as_an_extension() {
-        assert_eq!(classify(".gitignore", false), Verdict::Skip);
+        // ".gitignore" is not a file called "" with extension ".gitignore": it is an
+        // extension-less dotfile, which #4199 names config. Had the dot been read as
+        // an extension, the verdict would be Skip (no kind for ".gitignore").
+        assert_eq!(
+            classify(".gitignore", false),
+            Verdict::Classified(Kind::Config, None)
+        );
         assert_eq!(
             classify("platform/api/.eslintrc.json", false),
-            Verdict::Classified(Kind::Config, None)
+            Verdict::Classified(Kind::Config, Some("json"))
         );
     }
 }
@@ -1689,6 +1883,7 @@ pub struct ProjectLine {
     pub no_kind_top: String,
     pub case_rows: usize,
     pub no_case: usize,
+    pub no_case_detail: String,
     pub log_rows: usize,
     pub log_files: usize,
     pub lag_commits: usize,
@@ -1719,8 +1914,8 @@ impl ProjectLine {
             )
         };
         format!(
-            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
-            self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.log_rows, self.log_files,
+            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
+            self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.no_case_detail, self.log_rows, self.log_files,
             self.lag_commits, verdict(self.files_drift), verdict(self.cases_drift), verdict(self.logs_drift), lossless
         )
     }
@@ -1815,7 +2010,8 @@ mod project_4199 {
             no_kind: 642,
             no_kind_top: "png 233, none 180".into(),
             case_rows: 8236,
-            no_case: 9,
+            no_case: 2,
+            no_case_detail: "unextracted 2 · no-lane 3".into(),
             log_rows: 90,
             log_files: 40,
             lag_commits: 0,

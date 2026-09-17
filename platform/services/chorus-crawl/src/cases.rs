@@ -513,12 +513,20 @@ pub fn jest_case_names(source: &str) -> Vec<String> {
     let mut out = Vec::new();
     let b = source.as_bytes();
     let mut i = 0;
+    // #4199 — a file may declare its cases through an ALIAS of test/it:
+    // `const testWhenWritable = storeWritable ? test : test.skip;` (two api
+    // integration suites, 2026-09-17). The alias is a declaration keyword too.
+    let aliases = test_aliases(source);
     while i < b.len() {
         if !source.is_char_boundary(i) {
             i += 1;
             continue;
         }
-        let kw = if source[i..].starts_with("it") {
+        // an alias is checked FIRST: `testWhenWritable(` starts with `test`, and
+        // the shorter match would read it as `test` followed by junk
+        let kw = if let Some(a) = aliases.iter().find(|a| source[i..].starts_with(a.as_str())) {
+            a.len()
+        } else if source[i..].starts_with("it") {
             2
         } else if source[i..].starts_with("test") {
             4
@@ -556,6 +564,42 @@ pub fn jest_case_names(source: &str) -> Vec<String> {
             }
         }
         i += kw;
+    }
+    out
+}
+
+/// Names bound to `test` / `it` (or their `.skip` / `.only` forms) by a const:
+/// `const X = cond ? test : test.skip;` — X declares cases like `test` does.
+pub fn test_aliases(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in source.lines() {
+        let l = line.trim_start();
+        let Some(rest) = l.strip_prefix("const ") else {
+            continue;
+        };
+        let Some((name, rhs)) = rest.split_once('=') else {
+            continue;
+        };
+        let name = name.trim();
+        if name.is_empty()
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+        {
+            continue;
+        }
+        let rhs = rhs.trim();
+        let mentions_test = rhs
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+            .any(|tok| {
+                matches!(
+                    tok,
+                    "test" | "it" | "test.skip" | "it.skip" | "test.only" | "it.only"
+                )
+            });
+        if mentions_test && name != "test" && name != "it" {
+            out.push(name.to_string());
+        }
     }
     out
 }
@@ -659,6 +703,42 @@ pub fn case_names(path: &str, content: &str) -> Vec<String> {
     } else {
         Vec::new()
     }
+}
+
+/// #4199 — WHY a test file yields no runnable case. The morning line counts
+/// only `unextracted` as missing; the rest are what they are:
+///   ignored-only   .rs whose every #[test] is #[ignore]d — nothing to run
+///   no-tests       .rs that declares test modules or mentions #[test] in prose, no fn
+///   no-lane        .py / .feature no runner lane executes by case
+///   unextracted    a real suite whose cases the extractors cannot read yet
+pub fn no_case_bucket(path: &str, content: &str) -> &'static str {
+    if path.ends_with(".rs") {
+        let has_attr = content.contains("#[test]") || content.contains("#[tokio::test]");
+        let has_ignore = content.contains("#[ignore");
+        if has_attr && has_ignore {
+            return "ignored-only";
+        }
+        return "no-tests";
+    }
+    if path.ends_with(".py") || path.ends_with(".feature") {
+        return "no-lane";
+    }
+    "unextracted"
+}
+
+/// The buckets summarised: `unextracted 2 · ignored-only 2 · no-tests 2 · no-lane 3`.
+pub fn no_case_summary(buckets: &[&str]) -> (usize, String) {
+    let order = ["unextracted", "ignored-only", "no-tests", "no-lane"];
+    let parts: Vec<String> = order
+        .iter()
+        .map(|k| (k, buckets.iter().filter(|b| *b == k).count()))
+        .filter(|(_, n)| *n > 0)
+        .map(|(k, n)| format!("{k} {n}"))
+        .collect();
+    (
+        buckets.iter().filter(|b| **b == "unextracted").count(),
+        parts.join(" · "),
+    )
 }
 
 /// #4106 — one line naming the files that yield no runnable case, by kind.
@@ -1381,6 +1461,40 @@ mod cases_4185 {
         );
         assert_eq!(case_names("c.rs", "#[test]\nfn keeps() {}\n#[test]\n#[ignore]\nfn skipped() {}\n#[tokio::test]\nasync fn async_one() {}\n"), vec!["keeps", "async_one"]);
     }
+    // #4199 — an alias of `test` declares cases; NEGATIVE PROOF: a const that
+    // does not bind test/it is not an alias, and a plain call to it mints nothing.
+    #[test]
+    fn a_const_alias_of_test_declares_cases_and_an_unrelated_const_does_not() {
+        let src = "const storeWritable = process.env.X === '1';\nconst testWhenWritable = storeWritable ? test : test.skip;\nconst helper = (x) => x;\ntestWhenWritable('POST /api/x returns count > 0', async () => {});\nhelper('not a case');\n";
+        assert_eq!(test_aliases(src), vec!["testWhenWritable".to_string()]);
+        assert_eq!(
+            case_names("a.integration.test.ts", src),
+            vec!["POST /api/x returns count > 0"]
+        );
+    }
+
+    #[test]
+    fn no_case_buckets_say_why_a_test_file_has_no_case() {
+        assert_eq!(
+            no_case_bucket("t/live.rs", "#[test]\n#[ignore]\nfn x() {}"),
+            "ignored-only"
+        );
+        assert_eq!(
+            no_case_bucket("src/mod.rs", "#[cfg(test)]\nmod a_test;"),
+            "no-tests"
+        );
+        assert_eq!(
+            no_case_bucket("tests/test_x.py", "def test_a(): pass"),
+            "no-lane"
+        );
+        assert_eq!(no_case_bucket("f.feature", "Feature: x"), "no-lane");
+        assert_eq!(no_case_bucket("a.spec.ts", "weird()"), "unextracted");
+        let (missing, summary) =
+            no_case_summary(&["unextracted", "no-lane", "no-lane", "ignored-only"]);
+        assert_eq!(missing, 1);
+        assert_eq!(summary, "unextracted 1 · ignored-only 1 · no-lane 2");
+    }
+
     #[test]
     fn no_case_report_names_the_kinds() {
         let r = no_case_report(&["a/x.sh".into(), "b/y.sh".into(), "c/z.feature".into()]);
