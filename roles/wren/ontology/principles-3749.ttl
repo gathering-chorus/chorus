@@ -24,6 +24,16 @@
 # vocabulary; an undeclared predicate sits in the store and never reaches the
 # read surface, which is exactly what "served 14, principleKind on zero" meant
 # — the value was there, the declaration was not.
+# #4195 (2026-09-17 03:09, Silas): the door refused Principle since #4186 landed, because
+# the shape asked for dcterms:source and the ADR-040 camelCase gate (athena-make
+# lib.rs:476) reads a non-chorus property's full IRI. /principles was 404 for nine hours.
+# chorus:source is the camelCase name; declared a subproperty of dcterms:source so the
+# meaning is kept (the same move #4183 made for acl:agent → chorus:agent).
+chorus:source a owl:DatatypeProperty ;
+    rdfs:subPropertyOf dcterms:source ;
+    rdfs:label "source" ;
+    rdfs:comment "Where the principle came from: Hemenway, Beck, or a Chorus decision." .
+
 chorus:principleKind a owl:DatatypeProperty ;
     rdfs:label "principle kind" ;
     rdfs:domain chorus:Principle ;
@@ -58,7 +68,7 @@ chorus:PrincipleShape a sh:NodeShape ;
     # that exists. order is the same story for the 14 PC parents (#2314).
     sh:property [ sh:path chorus:rhymesWith ; sh:class chorus:Principle ] ;
     # #4186 — Jeff, 2026-09-16: "use principles, the class and shacl is shallow".
-    # Measured that day: all 28 rows carry jeffReading, techReading, dcterms:source
+    # Measured that day: all 28 rows carry jeffReading, techReading, chorus:source (was dcterms:source, #4195)
     # and ownedBy; the 14 permaculture roots carry order 1..14 and
     # isPermacultureParent; NONE of that was in the shape. A shape that describes
     # less than the rows is a floor nobody can fall through. The two readings ARE
@@ -72,7 +82,7 @@ chorus:PrincipleShape a sh:NodeShape ;
                   sh:message "a principle without Jeff's reading is a quotation, not one of ours" ] ;
     sh:property [ sh:path chorus:techReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
                   sh:message "a principle without its technical reading cannot be traced to a practice" ] ;
-    sh:property [ sh:path dcterms:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:property [ sh:path chorus:source ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
                   sh:message "every principle names where it came from (Hemenway, Beck, or a Chorus decision)" ] ;
     # Jeff, 2026-09-16 17:16 (on #4183): the owner of a row is a PRINCIPAL, not a role;
     # ownedBy's range moves Role → Principal in the authz step that follows this card.

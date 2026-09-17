@@ -56,7 +56,7 @@ setup() {
 import sys,re
 t=open(sys.argv[1]).read()
 t=t.replace('chorus:principleKind "pc" ; chorus:order 1 ; chorus:isPermacultureParent true .',
- 'chorus:principleKind "pc" ; chorus:order 1 ; chorus:isPermacultureParent true ;\n    dcterms:source "Hemenway p.6" ; chorus:techReading "Watch a role work before directing it, read the board first." ; chorus:jeffReading "Jeff reads the board and listens before committing to a move." .')
+ 'chorus:principleKind "pc" ; chorus:order 1 ; chorus:isPermacultureParent true ;\n    chorus:source "Hemenway p.6" ; chorus:techReading "Watch a role work before directing it, read the board first." ; chorus:jeffReading "Jeff reads the board and listens before committing to a move." .')
 t=t.replace('chorus:principleKind "pc" .','chorus:principleKind "pc" ; chorus:order 2 ; chorus:isPermacultureParent true .')
 t=t.replace('chorus:principleKind "xp" ; chorus:order 3 .','chorus:principleKind "xp" .')
 t=t.replace('chorus:principleKind "zen" ; chorus:order 15 .','chorus:principleKind "pc" ; chorus:order 14 ; chorus:isPermacultureParent true .')
