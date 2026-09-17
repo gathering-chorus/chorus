@@ -41,9 +41,14 @@ pub fn scope_irrelevant(f: &str) -> bool {
     // changes how a run is ORCHESTRATED, not what any unit builds or tests, and
     // there is no unit it could scope to; the workflow is proven by the run it
     // drives plus the bats that read it.
+    // #4197 — proving/domains/ holds the alert RULES (yml + their sibling
+    // scripts) the alert-runner reads at tick time. A rule is not an input to
+    // any build or test output; it is proven by the shell suites under
+    // proving/scripts/tests/, which scope to themselves (is_test_suite_path).
+    // Without this, re-pointing crawler-error.yml refused the run as unmapped.
     let dir = ["designing/", "roles/", "docs/", "knowledge/", "dashboards/", "messages/",
                "platform/scripts/", "platform/launchd/", "skills/", ".claude/",
-               ".github/"]
+               ".github/", "proving/domains/"]
         .iter()
         .any(|d| f.starts_with(d));
     // #4173 — git's own metadata is on the list for the same reason a plist is:
@@ -304,6 +309,24 @@ mod scope_refusal_4169 {
     #[test]
     fn a_plist_is_not_a_build_or_test_input() {
         assert!(scope_irrelevant("platform/launchd/com.chorus.athena-validate.plist"));
+    }
+
+    // #4197 — an alert rule is not a build or test input; the suite that reads
+    // it scopes to itself. NEGATIVE PROOF: that suite is NOT irrelevant, or a
+    // rule change would run nothing.
+    #[test]
+    fn an_alert_rule_does_not_widen_a_card_and_its_suite_still_runs() {
+        assert!(scope_irrelevant("proving/domains/alerts/crawler-error.yml"));
+        assert!(scope_irrelevant("proving/domains/alerts/crawler-stale-check.py"));
+        let suite = "proving/scripts/tests/test-crawler-alerts-live.sh";
+        assert!(!scope_irrelevant(suite));
+        assert!(is_test_suite_path(suite), "{} scopes to itself", suite);
+        let units = [u(suite, suite)];
+        let changed = ["proving/domains/alerts/crawler-error.yml".to_string(), suite.to_string()];
+        let ScopeVerdict::Scoped(names) = scope_unit_names(&changed, &units, &[], false) else {
+            panic!("an alert rule + its suite must not go FULL")
+        };
+        assert_eq!(names, vec![suite.to_string()]);
     }
 
     #[test]
