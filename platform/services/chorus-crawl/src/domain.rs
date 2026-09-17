@@ -294,6 +294,14 @@ fn import_lines(content: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+        // #4201 — a Rust crate imports as `use athena_make::…` while the module
+        // table (and every path, package and binary name in this repo) spells
+        // the same unit `athena-make`. Underscores are the crate-name spelling
+        // of the hyphen, so the table never matched a single `use` line: 109 of
+        // the 503 unplaced files on 2026-09-17 were service tests whose only
+        // signal was the crate they exercise. Normalise the separator so one
+        // table serves both spellings.
+        .replace('_', "-")
 }
 
 /// Card numbers named in the file's first 20 lines (`#4201`).
@@ -427,6 +435,31 @@ mod tests_4201 {
         let c = "import request from 'supertest';\nit('lists', async () => { await request(app).get('/api/chorus/cards'); });";
         let p = place(c, &valid(), &no_card);
         assert_eq!(p.domain(), Some("cards"));
+    }
+
+    /// #4201 negative proof: the Rust spelling of a unit name. Before the
+    /// separator was normalised this file fired NO rule — `use athena_make::`
+    /// could not match the table's `athena-`, so every service test in the
+    /// repo landed on the `tests` fallback.
+    #[test]
+    fn a_rust_crate_import_tags_the_file() {
+        let c = "//! #3373 cors\nuse athena_make::http_response;\n#[test]\nfn t() {}";
+        assert_eq!(place(c, &valid(), &no_card).domain(), Some("domains"));
+    }
+
+    /// Control: the hyphen spelling still tags, so the fix widened nothing.
+    #[test]
+    fn the_hyphen_spelling_still_tags() {
+        let c = "import { q } from '../src/logs-query';";
+        assert_eq!(place(c, &valid(), &no_card).domain(), Some("logs"));
+    }
+
+    /// Control: normalising the separator must not invent a signal where the
+    /// file names no unit at all.
+    #[test]
+    fn an_unrelated_import_is_still_unplaced() {
+        let c = "use std::collections::HashMap;\nimport fs from 'node:fs';";
+        assert_eq!(place(c, &valid(), &no_card), Placement::Unplaced);
     }
 
     #[test]
