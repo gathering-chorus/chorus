@@ -1,4 +1,4 @@
-//! chorus-provision — create a USER everywhere, or nowhere.
+//! chorus-principal — create a USER everywhere, or nowhere.
 //!
 //! Jeff, 2026-08-11: "we need a user provisioning automation — we cant keep
 //! rolling our own here." Jeff, 2026-09-15: "we are creating users not persons
@@ -31,11 +31,11 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 const USAGE: &str = "\
-chorus-provision — create a user everywhere, or nowhere
+chorus-principal — create a user everywhere, or nowhere
 
-  chorus-provision census            who exists incompletely
-  chorus-provision plan <name>       what would be created, writes nothing
-  chorus-provision create <name>     create the user, all of it or none of it
+  chorus-principal census            who exists incompletely
+  chorus-principal plan <name>       what would be created, writes nothing
+  chorus-principal create <name>     create the user, all of it or none of it
 
 Environment:
   CSS_URL        CSS origin to talk to        (default http://localhost:3001)
@@ -50,31 +50,45 @@ fn main() {
         Some("create") => match args.get(1) {
             Some(n) => match Kind::from_args(&args[2..]) {
                 Some(Kind::Human) => match Person::from_args(&args[2..]) {
-                    Some(p) => cmd_create(n, Kind::Human, Some(p)),
+                    Some(p) => cmd_create(n, Kind::Human, Some(p), None),
                     None => {
-                        eprintln!("chorus-provision: REFUSED — a human needs --name \"Full Name\" and --email <address>");
+                        eprintln!("chorus-principal: REFUSED — a human needs --name \"Full Name\" and --email <address>");
                         eprintln!("  nothing was written. The name is what the row is labelled and the email is");
                         eprintln!("  how they sign in; a human without either is a pod with nobody behind it.");
                         2
                     }
                 },
-                Some(k) => cmd_create(n, k, None),
+                // #4202 — an agent's role is REQUIRED, not a flag it might
+                // carry. Wren's ruling, 2026-09-17: "a principal holding no
+                // role must never exist, not even briefly." Refusing at a gate
+                // after the fact is the same half-made state read backwards.
+                Some(Kind::Agent) => match flag(&args[2..], "--role") {
+                    Some(r) if !r.is_empty() => cmd_create(n, Kind::Agent, None, Some(&r)),
+                    _ => {
+                        eprintln!("chorus-principal: REFUSED — agent '{n}' has no --role");
+                        eprintln!("  nothing was written. An agent holding no role is refused its first");
+                        eprintln!("  write, so it would exist and be unable to act. Name the role it holds;");
+                        eprintln!("  a test agent can hold its own, e.g. --role role-{n}.");
+                        2
+                    }
+                },
+                Some(k) => cmd_create(n, k, None, None),
                 None => {
-                    eprintln!("chorus-provision: REFUSED — '{n}' has no kind. Say --kind human or --kind agent.");
+                    eprintln!("chorus-principal: REFUSED — '{n}' has no kind. Say --kind human or --kind agent.");
                     eprintln!("  nothing was written. A human and an agent are provisioned differently");
                     eprintln!("  (sign-in vs client credential), so the kind is decided at the door.");
                     2
                 }
             },
             None => {
-                eprintln!("chorus-provision: create needs a user name");
+                eprintln!("chorus-principal: create needs a user name");
                 2
             }
         },
         Some("plan") => match args.get(1) {
             Some(n) => cmd_plan(n),
             None => {
-                eprintln!("chorus-provision: plan needs a user name");
+                eprintln!("chorus-principal: plan needs a user name");
                 2
             }
         },
@@ -84,6 +98,21 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+/// `--name value` or `--name=value`, the same shape Kind and Person read.
+fn flag(rest: &[String], name: &str) -> Option<String> {
+    let eq = format!("{name}=");
+    let mut it = rest.iter();
+    while let Some(a) = it.next() {
+        if let Some(v) = a.strip_prefix(&eq) {
+            return Some(v.to_string());
+        }
+        if a == name {
+            return it.next().cloned();
+        }
+    }
+    None
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -196,6 +225,26 @@ impl Person {
     }
 }
 
+/// Whose home this tool reads its own configuration from.
+///
+/// #4202 — creating an agent's account needs root, and under sudo HOME becomes
+/// root's, where none of this exists. Trusting HOME made the caller responsible
+/// for typing `sudo env HOME=...`: the tool asking a person to carry a fact it
+/// already has. SUDO_USER names who invoked it and the directory service knows
+/// their home. Off root, HOME is simply right.
+fn owner_home() -> String {
+    if is_root() {
+        if let Ok(who) = std::env::var("SUDO_USER") {
+            if !who.is_empty() {
+                if let Some(h) = account_home(&who) {
+                    return h;
+                }
+            }
+        }
+    }
+    env_or("HOME", "")
+}
+
 /// The store's writer credential, BY REFERENCE: the env if set, else the same
 /// file platform/scripts/fuseki-auth.sh reads. Never printed, never in argv.
 fn fuseki_secret() -> Option<(String, String)> {
@@ -203,7 +252,7 @@ fn fuseki_secret() -> Option<(String, String)> {
     if let Some(pw) = std::env::var("FUSEKI_ADMIN_PASSWORD").ok().filter(|s| !s.is_empty()) {
         return Some((user_env.unwrap_or_else(|| "admin".into()), pw));
     }
-    let f = env_or("FUSEKI_WRITE_ENV", &format!("{}/.gathering/data/fuseki-write.env", env_or("HOME", "")));
+    let f = env_or("FUSEKI_WRITE_ENV", &format!("{}/.gathering/data/fuseki-write.env", owner_home()));
     let text = std::fs::read_to_string(f).ok()?;
     let read = |k: &str| {
         text.lines()
@@ -337,7 +386,7 @@ fn between(s: &str, a: &str, b: &str) -> Option<String> {
 fn cmd_census() -> i32 {
     let rows = principals();
     if rows.is_empty() {
-        eprintln!("chorus-provision: census read NO principals — refusing to report a clean census over an empty read");
+        eprintln!("chorus-principal: census read NO principals — refusing to report a clean census over an empty read");
         return 2;
     }
     let mut incomplete = Vec::new();
@@ -428,10 +477,18 @@ struct Ledger {
     pod: Option<String>,
     credential: Option<String>,
     principal: Option<String>,
+    /// #4202 — the credential file this run wrote into the agent's own account.
+    /// On the ledger like everything else, so a later failure takes it back out
+    /// rather than leaving a live secret in a home nobody finished making.
+    home_cred: Option<String>,
 }
 
 impl Ledger {
     fn rollback(&self, css: &str, acct: &str, api: &str, token: &str, collection: &str) {
+        if let Some(path) = &self.home_cred {
+            eprintln!("  rollback: removing credential file {path}");
+            let _ = std::fs::remove_file(path);
+        }
         if let Some(id) = &self.principal {
             eprintln!("  rollback: removing principal {id}");
             let _ = (api, collection, token);
@@ -443,7 +500,7 @@ impl Ledger {
         if let Some(id) = &self.credential {
             eprintln!("  rollback: removing credential {id}");
             let _ = curl_css(None, &["-s", "-o", "/dev/null", "-X", "DELETE", "--max-time", "20",
-                           "-b", &format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id()),
+                           "-b", &format!("{}/chorus-principal-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id()),
                            &format!("{css}/.account/account/{acct}/client-credentials/{id}/")]);
         }
         if let Some(acct) = &self.account {
@@ -516,7 +573,7 @@ fn existing(name: &str) -> Existing {
 }
 
 /// AC1 + AC3. One command; all of it or none of it.
-fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
+fn cmd_create(name: &str, kind: Kind, person: Option<Person>, role: Option<&str>) -> i32 {
     let css = env_or("CSS_URL", "http://localhost:3001");
 
     // Idempotence BEFORE anything is written (AC "provisioning twice does not
@@ -540,19 +597,19 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
             match (&person, saved_password(name)) {
                 (Some(p), Some(pw)) => match css_login_person(&css, &jar_path(), &p.email, &pw) {
                     Some((acct, webid)) if webid.contains(&format!("/{name}/")) => {
-                        eprintln!("chorus-provision: '{name}' is HALF-PROVISIONED — this tool made the account and pod ({acct}),");
+                        eprintln!("chorus-principal: '{name}' is HALF-PROVISIONED — this tool made the account and pod ({acct}),");
                         eprintln!("  the register links {webid}, and no row names it. Completing the missing half.");
                         resume = Some((acct, webid));
                     }
                     _ => {
-                        eprintln!("chorus-provision: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
+                        eprintln!("chorus-principal: REFUSED — the register serves a profile card for '{name}' and no principal row names it,");
                         eprintln!("  and signing in with the password this tool saved for {} did not reach a pod of that name.", p.email);
                         eprintln!("  nothing was written. Pick another name, or have the DBA path remove the card.");
                         return 2;
                     }
                 },
                 _ => {
-                    eprintln!("chorus-provision: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
+                    eprintln!("chorus-principal: REFUSED — the register already serves a profile card for '{name}' and no principal row names it");
                     eprintln!("  nothing was written. Either a rollback left the card behind, or someone made the pod");
                     eprintln!("  by hand. Pick another name, or have the DBA path remove the card, then rerun.");
                     return 2;
@@ -580,20 +637,20 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
                                       &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
                                       "--data-binary", &update]).unwrap_or_default();
                     if label_of(&format!("principal-{name}")).as_deref() == Some(p.full_name.as_str()) {
-                        eprintln!("chorus-provision: '{name}' already exists — name corrected from {:?} to {:?}", current.unwrap_or_default(), p.full_name);
+                        eprintln!("chorus-principal: '{name}' already exists — name corrected from {:?} to {:?}", current.unwrap_or_default(), p.full_name);
                     } else {
-                        eprintln!("chorus-provision: '{name}' already exists — name correction FAILED (store HTTP {code}); label still {:?}", current.unwrap_or_default());
+                        eprintln!("chorus-principal: '{name}' already exists — name correction FAILED (store HTTP {code}); label still {:?}", current.unwrap_or_default());
                         println!("{w}");
                         return 1;
                     }
                 }
             }
             println!("{w}");
-            eprintln!("chorus-provision: '{name}' already exists — the register serves its profile card. Nothing created.");
+            eprintln!("chorus-principal: '{name}' already exists — the register serves its profile card. Nothing created.");
             return 0;
         }
         Existing::RowWithoutPod(w) => {
-            eprintln!("chorus-provision: '{name}' is HALF-PROVISIONED — a principal row names {w}");
+            eprintln!("chorus-principal: '{name}' is HALF-PROVISIONED — a principal row names {w}");
             eprintln!("  but the register does not serve that profile card. Completing the missing half.");
             Some(w)
         }
@@ -609,18 +666,18 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     // cannot delete a pod (CSS has no pod-delete) makes every late refusal a
     // permanent half-state; and a POLICY refusal must not depend on the
     // register being up.
-    if kind == Kind::Agent {
+    if kind == Kind::Agent && role.is_none() {
         match holds_role(name) {
             Some(true) => {}
             Some(false) => {
-                eprintln!("chorus-provision: REFUSED — agent '{name}' holds no role");
+                eprintln!("chorus-principal: REFUSED — agent '{name}' holds no role");
                 eprintln!("  nothing was written. A credential minted for a role-less agent");
                 eprintln!("  403s on its first write; the agent would exist and be unable to act.");
                 eprintln!("  Give it a role in the roles domain first — an empty answer is still a role.");
                 return 2;
             }
             None => {
-                eprintln!("chorus-provision: REFUSED — the roles domain could not be read, so whether '{name}' holds a role is UNMEASURED, not no-role");
+                eprintln!("chorus-principal: REFUSED — the roles domain could not be read, so whether '{name}' holds a role is UNMEASURED, not no-role");
                 eprintln!("  nothing was written. Unmeasured is not yes: minting on a failed read would");
                 eprintln!("  turn every store outage into a role-less credential.");
                 return 2;
@@ -634,7 +691,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     let token = match identity_token() {
         Some(t) => t,
         None => {
-            eprintln!("chorus-provision: REFUSED — no verified identity for the write door");
+            eprintln!("chorus-principal: REFUSED — no verified identity for the write door");
             eprintln!("  nothing was written. Set CHORUS_IDENTITY_TOKEN, or set CHORUS_ROLE so it can be");
             eprintln!("  minted by platform/scripts/chorus-identity-token — the one minter, shared with athena-model.");
             return 2;
@@ -643,7 +700,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     let (api, collection) = match principals_collection() {
         Some(c) => c,
         None => {
-            eprintln!("chorus-provision: REFUSED — the write API's discovery document does not name a Principal collection");
+            eprintln!("chorus-principal: REFUSED — the write API's discovery document does not name a Principal collection");
             eprintln!("  nothing was written. Asked {}/ ; set ATHENA_MAKE_URL if it lives elsewhere.", env_or("ATHENA_MAKE_URL", "http://localhost:3360"));
             return 2;
         }
@@ -661,7 +718,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
         (None, _) => match css_login(&css, &jar) {
             Some(a) => a,
             None => {
-                eprintln!("chorus-provision: REFUSED — could not reach the CSS accounts API at {css}");
+                eprintln!("chorus-principal: REFUSED — could not reach the CSS accounts API at {css}");
                 eprintln!("  nothing was written. The register is the only source of a webId,");
                 eprintln!("  so with the register unreachable there is nothing honest to write.");
                 return 2;
@@ -675,7 +732,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
                 a
             }
             Err(why) => {
-                eprintln!("chorus-provision: REFUSED — {why}");
+                eprintln!("chorus-principal: REFUSED — {why}");
                 eprintln!("  nothing was written.");
                 return 2;
             }
@@ -697,7 +754,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
                 .unwrap_or_default();
             let webid = between(&resp, "\"webId\":\"", "\"").unwrap_or_default();
             if webid.is_empty() {
-                eprintln!("chorus-provision: REFUSED — the register returned no webId for '{name}'");
+                eprintln!("chorus-principal: REFUSED — the register returned no webId for '{name}'");
                 eprintln!("  It is NOT constructed from a template. seed-css.sh:75 does that:");
                 eprintln!("      [ -n \"$WEBID\" ] || WEBID=\"$ISSUER_URL/$AGENT/profile/card#me\"");
                 eprintln!("  That line cannot fail, which is how crawler-index, reindex-worker");
@@ -717,7 +774,7 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     // keeps the guessed one would leave two identities for one name.
     if let Some(row_w) = &half {
         if row_w != &webid {
-            eprintln!("chorus-provision: REFUSED — the row names {row_w}");
+            eprintln!("chorus-principal: REFUSED — the row names {row_w}");
             eprintln!("  but the register issued {webid} for '{name}'. Two identities for one name;");
             eprintln!("  not binding either. Fix the row to the register's webId, then rerun.");
             led.rollback(&css, &acct, &api, &token, &collection);
@@ -736,11 +793,32 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
             .unwrap_or_default();
         match between(&cc, "\"id\":\"", "\"") {
             Some(id) if !id.is_empty() => {
-                led.credential = Some(id);
+                led.credential = Some(id.clone());
                 eprintln!("  2/3 credential minted for {webid}");
+                // A credential that exists only at the register is a credential
+                // the agent cannot use. It goes into the agent's own account,
+                // now, in this run — not into whoever happened to run this.
+                let secret = between(&cc, "\"secret\":\"", "\"").unwrap_or_default();
+                if secret.is_empty() {
+                    eprintln!("chorus-principal: FAILED at step 2 (credential) — the register returned no secret — rolling back");
+                    led.rollback(&css, &acct, &api, &token, &collection);
+                    return 1;
+                }
+                let issuer = env_or("CSS_ISSUER", "https://id.lightlifeurbangardens.com");
+                match place_credential(name, &id, &secret, &webid, issuer.trim_end_matches('/')) {
+                    Ok(path) => {
+                        led.home_cred = Some(path.clone());
+                        eprintln!("  2/3 credential written to {path} (owned by {}, 0600)", agent_account(name));
+                    }
+                    Err(why) => {
+                        eprintln!("chorus-principal: FAILED at step 2 (credential placement) — {why} — rolling back");
+                        led.rollback(&css, &acct, &api, &token, &collection);
+                        return 1;
+                    }
+                }
             }
             _ => {
-                eprintln!("chorus-provision: FAILED at step 2 (credential) — rolling back");
+                eprintln!("chorus-principal: FAILED at step 2 (credential) — rolling back");
                 led.rollback(&css, &acct, &api, &token, &collection);
                 return 1;
             }
@@ -787,18 +865,78 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
         .trim()
         .to_string();
     if code != "200" && code != "204" {
-        eprintln!("chorus-provision: FAILED at step 3 (principal) — the store answered HTTP {code} — rolling back");
+        eprintln!("chorus-principal: FAILED at step 3 (principal) — the store answered HTTP {code} — rolling back");
         led.rollback(&css, &acct, &api, &token, &collection);
         return 1;
     }
     // Written is not readable until read: ask the store back before claiming it.
     if !principals().iter().any(|(n, w)| n == &id && w == &webid) {
-        eprintln!("chorus-provision: FAILED at step 3 (principal) — the store accepted the write but does not read back {id} → {webid} — rolling back");
+        eprintln!("chorus-principal: FAILED at step 3 (principal) — the store accepted the write but does not read back {id} → {webid} — rolling back");
         led.rollback(&css, &acct, &api, &token, &collection);
         return 1;
     }
     if half.is_none() {
         led.principal = Some(id.clone());
+    }
+
+    // 3b — ATTACH the role, in the SAME run. Jeff, 2026-09-17: "we attach
+    // roles." Provisioning binds a user to a role that already exists; it does
+    // not invent one. A role says what someone may do — that is an org decision
+    // authored in the roles domain, and a tool that conjures one to satisfy its
+    // own check writes a row that means nothing (role-abby-normal landed with a
+    // type and a label and no job at all). So: the role must be there, and the
+    // edge is written onto the principal row that now exists.
+    if let Some(r) = role {
+        let r = r.trim_start_matches("chorus:");
+        if !role_exists(r) {
+            eprintln!("chorus-principal: FAILED at step 3b — no role '{r}' to attach — rolling back");
+            eprintln!("  a role is authored in the roles domain and says what its holder may do;");
+            eprintln!("  this creates users, not roles. Author '{r}' first, then rerun.");
+            led.rollback(&css, &acct, &api, &token, &collection);
+            return 1;
+        }
+        let edge = format!(
+            "PREFIX c: <https://jeffbridwell.com/chorus#> \
+             INSERT DATA {{ GRAPH <urn:chorus:domains:roles> {{ c:{id} c:holdsRole c:{r} }} }}"
+        );
+        let rc = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
+                        &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
+                        "--data-binary", &edge])
+            .unwrap_or_default().trim().to_string();
+        // Asked back, never assumed: the gate's own question is the check.
+        if holds_role(name) != Some(true) {
+            eprintln!("chorus-principal: FAILED at step 3b (role) — the store answered HTTP {rc} but '{name}' still holds no role — rolling back");
+            led.rollback(&css, &acct, &api, &token, &collection);
+            return 1;
+        }
+        eprintln!("  3/3 {id} attached to {r}");
+    }
+
+    // 3c — the four hats, ON THE PRINCIPAL. Jeff 2026-09-17: "principals have
+    // hats regardless of appointments." The hat is what the user IS — product
+    // manager, solutions architect, engineering lead, operations lead — and it
+    // holds whether or not anyone has been put over anything. Appointments are a
+    // separate row about scope; they are not how a principal gets a hat, and
+    // routing the hat through one made a user's identity depend on an org chart.
+    if kind == Kind::Agent {
+        let hats = ["product-manager", "solutions-architect", "engineering-lead", "operations-lead"];
+        let worn: String = hats.iter()
+            .map(|h| format!("c:{id} c:wearsHat c:hat-{h} . "))
+            .collect();
+        let up = format!(
+            "PREFIX c: <https://jeffbridwell.com/chorus#> \
+             INSERT DATA {{ GRAPH <urn:chorus:domains:roles> {{ {worn} }} }}"
+        );
+        let hc = curl(&["-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "30", "-X", "POST",
+                        &format!("{fuseki}/pods/update"), "-H", "Content-Type: application/sparql-update",
+                        "--data-binary", &up]).unwrap_or_default().trim().to_string();
+        let got = hats_held(name);
+        if got != 4 {
+            eprintln!("chorus-principal: FAILED at step 3c (hats) — store answered HTTP {hc} but '{name}' wears {got} of 4 — rolling back");
+            led.rollback(&css, &acct, &api, &token, &collection);
+            return 1;
+        }
+        eprintln!("  3/3 {id} wears all four hats");
     }
     eprintln!("  3/3 {id} bound to {webid} ({} — principalKind={}, canSignIn={})", kind.word(), kind.stored(), kind.can_sign_in());
 
@@ -807,10 +945,118 @@ fn cmd_create(name: &str, kind: Kind, person: Option<Person>) -> i32 {
     let _ = Command::new("chorus-log")
         .args(["identity.provisioned", &caller, &format!("user={name}"), &format!("kind={}", kind.word()), &format!("webid={webid}")])
         .status();
-    eprintln!("chorus-provision: '{name}' provisioned as {} — {}", kind.word(),
+    eprintln!("chorus-principal: '{name}' provisioned as {} — {}", kind.word(),
         if kind == Kind::Agent { "pod, credential, principal" } else { "pod, principal (signs in)" });
     let _ = std::fs::remove_file(&jar);
     0
+}
+
+// ── the agent's own account ────────────────────────────────────────────────
+//
+// #4202. An agent's credential used to be written into whoever ran the seeder —
+// in practice Jeff's home, holding every role's credential at once. Anything
+// running as him could then mint a token as any role, so a write could never
+// prove which agent made it. The credential belongs in the account the agent
+// runs as, readable by nobody else, and that account is part of provisioning a
+// user rather than a separate step somebody remembers to do.
+
+/// The account an agent runs as. One name, formed here, never typed twice.
+fn agent_account(name: &str) -> String {
+    format!("chorus-{name}")
+}
+
+/// That account's home, as the directory service reports it. None = no account.
+fn account_home(acct: &str) -> Option<String> {
+    let out = Command::new("dscl")
+        .args([".", "-read", &format!("/Users/{acct}"), "NFSHomeDirectory"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    s.split_whitespace().nth(1).map(|h| h.to_string())
+}
+
+/// Create the account if it is not there yet. Standard user, no keychain, and a
+/// password nobody keeps: nothing signs in to these accounts interactively, work
+/// reaches them through `sudo -u`, and a password nobody holds is a password
+/// nobody leaks. Keychain commands are deliberately absent — running them under
+/// sudo on 2026-09-17 rewrote Jeff's own login session and cost him the machine.
+fn ensure_account(acct: &str) -> Result<String, String> {
+    if let Some(home) = account_home(acct) {
+        return Ok(home);
+    }
+    if !is_root() {
+        return Err(format!(
+            "no account '{acct}' and creating one needs root — rerun under sudo"
+        ));
+    }
+    let pw = Command::new("openssl").args(["rand", "-base64", "24"]).output()
+        .map_err(|e| format!("cannot generate a password: {e}"))?;
+    let pw = String::from_utf8_lossy(&pw.stdout).trim().to_string();
+    // "chorus-silas" → "Chorus Silas", without indexing into a string that may
+    // be shorter than the prefix.
+    let bare = acct.strip_prefix("chorus-").unwrap_or(acct);
+    let mut cs = bare.chars();
+    let full = match cs.next() {
+        Some(first) => format!("Chorus {}{}", first.to_uppercase(), cs.as_str()),
+        None => return Err("an account name with nothing after 'chorus-'".to_string()),
+    };
+    let st = Command::new("sysadminctl")
+        .args(["-addUser", acct, "-fullName", &full, "-shell", "/bin/zsh",
+               "-home", &format!("/Users/{acct}"), "-password", &pw])
+        .output()
+        .map_err(|e| format!("sysadminctl did not run: {e}"))?;
+    if !st.status.success() {
+        return Err(format!(
+            "sysadminctl refused to create '{acct}': {}",
+            String::from_utf8_lossy(&st.stderr).trim()
+        ));
+    }
+    account_home(acct).ok_or_else(|| format!("created '{acct}' but it has no home directory"))
+}
+
+fn is_root() -> bool {
+    Command::new("id").arg("-u").output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
+}
+
+/// The credential file's contents. Separate from writing it so the shape can be
+/// checked without root — `hostAccount` in particular, which is the field
+/// chorus-identity-token refuses on when it names an account it is not running as.
+/// A credential written without it is usable by anyone who can read the file.
+fn cred_body(name: &str, id: &str, secret: &str, webid: &str, issuer: &str, acct: &str) -> String {
+    format!(
+        "{{\n  \"agent\": \"{name}\",\n  \"webId\": \"{webid}\",\n  \"issuer\": \"{issuer}/\",\n  \"tokenEndpoint\": \"{issuer}/.oidc/token\",\n  \"hostAccount\": \"{acct}\",\n  \"id\": \"{id}\",\n  \"secret\": \"{secret}\"\n}}\n"
+    )
+}
+
+/// Write the credential into the agent's own home, owned by it, 0600.
+///
+/// Returns the path so the ledger can take it back out on a later failure.
+fn place_credential(name: &str, id: &str, secret: &str, webid: &str, issuer: &str)
+    -> Result<String, String>
+{
+    let acct = agent_account(name);
+    let home = ensure_account(&acct)?;
+    if !is_root() {
+        return Err(format!(
+            "writing inside {home} needs root — that home is the agent's alone, which is the point; rerun under sudo"
+        ));
+    }
+    let dir = format!("{home}/.chorus/identity/{name}");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot make {dir}: {e}"))?;
+    let path = format!("{dir}/cred.json");
+    let body = cred_body(name, id, secret, webid, issuer, &acct);
+    std::fs::write(&path, body).map_err(|e| format!("cannot write {path}: {e}"))?;
+    // Owner and mode before anyone else can look: the secret is on disk now.
+    let _ = Command::new("chmod").args(["600", &path]).status();
+    let _ = Command::new("chown").args(["-R", &format!("{acct}:staff"), &format!("{home}/.chorus")]).status();
+    // hostAccount is what chorus-identity-token checks (#4202): a credential
+    // carrying an account it is not running as is refused before the mint.
+    Ok(path)
 }
 
 /// The caller's verified token for the write door. The SAME contract
@@ -883,7 +1129,7 @@ fn label_of(id: &str) -> Option<String> {
 }
 
 fn jar_path() -> String {
-    format!("{}/chorus-provision-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id())
+    format!("{}/chorus-principal-{}.jar", env_or("TMPDIR", "/tmp").trim_end_matches('/'), std::process::id())
 }
 
 /// The password this tool saved for a human it made, if any. Read only to
@@ -1016,7 +1262,7 @@ fn random_password() -> String {
 fn css_login(css: &str, jar: &str) -> Option<String> {
     let env_file = env_or(
         "GATHERING_APP_ENV",
-        &format!("{}/CascadeProjects/jeff-bridwell-personal-site/.env", env_or("HOME", "")),
+        &format!("{}/CascadeProjects/jeff-bridwell-personal-site/.env", owner_home()),
     );
     let text = std::fs::read_to_string(&env_file).ok()?;
     let read = |key: &str| -> Option<String> {
@@ -1145,4 +1391,103 @@ mod tests {
         assert_eq!(p.chars().count(), 24);
         assert_ne!(p, random_password());
     }
+
+    // ── #4202: the credential belongs to the agent's own account ────────────
+
+    #[test]
+    fn an_agent_account_is_the_name_with_one_prefix() {
+        assert_eq!(agent_account("silas"), "chorus-silas");
+        assert_eq!(agent_account("wren"), "chorus-wren");
+    }
+
+    /// NEGATIVE PROOF. The whole point is a credential only one account can
+    /// read; a body without hostAccount is the state this exists to prevent,
+    /// because chorus-identity-token has nothing to refuse on.
+    #[test]
+    fn the_credential_body_names_the_account_that_may_use_it() {
+        let b = cred_body("silas", "cid", "csecret", "https://id.example/silas/profile/card#me",
+                          "https://id.example", "chorus-silas");
+        assert!(b.contains("\"hostAccount\": \"chorus-silas\""), "body must bind the account: {b}");
+        assert!(b.contains("\"webId\": \"https://id.example/silas/profile/card#me\""));
+        assert!(b.contains("\"tokenEndpoint\": \"https://id.example/.oidc/token\""));
+        // The secret is in the file and nowhere else; if this ever stops being
+        // true the file is not a credential.
+        assert!(b.contains("\"secret\": \"csecret\""));
+    }
+
+    /// NEGATIVE PROOF. Without root this cannot write inside another account's
+    /// home — and must say so rather than silently landing the credential in
+    /// the caller's own home, which is the 2026-09-17 defect exactly.
+    #[test]
+    fn placing_a_credential_without_root_refuses_and_says_why() {
+        if is_root() {
+            return; // the refusal under test only exists off-root
+        }
+        let err = place_credential("silas", "cid", "csecret",
+                                   "https://id.example/silas/profile/card#me", "https://id.example")
+            .expect_err("must refuse without root");
+        assert!(err.contains("root"), "the refusal names what is missing: {err}");
+    }
+
+    /// An account nobody has created cannot be conjured without root either.
+    #[test]
+    fn a_missing_account_off_root_refuses_rather_than_guessing() {
+        if is_root() {
+            return;
+        }
+        let err = ensure_account("chorus-nobody-4202").expect_err("must refuse");
+        assert!(err.contains("sudo"), "the refusal names the way forward: {err}");
+    }
+
+    /// NEGATIVE PROOF — off root the owner is simply whoever is running, and
+    /// SUDO_USER must NOT be able to redirect where secrets are read from.
+    /// A tool that honoured it unprivileged would read another person's files
+    /// on the say-so of an environment variable.
+    #[test]
+    fn sudo_user_does_not_redirect_config_when_not_root() {
+        if is_root() { return; }
+        let home = std::env::var("HOME").unwrap_or_default();
+        // A REAL account whose home differs from ours. "nobody-4202" would not
+        // resolve at all, so the check would pass for the wrong reason — it
+        // could not tell "ignored SUDO_USER" from "looked it up and found
+        // nothing", which are the two states this separates.
+        let other = "chorus-silas";
+        if account_home(other).is_none() { return; }
+        assert_ne!(account_home(other).unwrap(), home, "the fixture account must have a different home");
+        std::env::set_var("SUDO_USER", other);
+        assert_eq!(owner_home(), home, "off root, SUDO_USER must not move the config home");
+        std::env::remove_var("SUDO_USER");
+    }
+}
+
+/// Does this role exist to be attached? #4202 — asked of the store, never
+/// assumed from the name. An unreadable store answers no, which refuses the
+/// create rather than attaching to something that may not be there.
+fn role_exists(role: &str) -> bool {
+    let q = format!("PREFIX c: <https://jeffbridwell.com/chorus#> ASK {{ GRAPH ?g {{ c:{role} a c:Role }} }}");
+    let body = curl(&[
+        "-s", "--max-time", "30", "-G",
+        &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
+        "--data-urlencode", &format!("query={q}"),
+        "-H", "Accept: application/sparql-results+json",
+    ]).unwrap_or_default();
+    let flat: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+    flat.contains("\"boolean\":true")
+}
+
+/// How many of the four hats this principal wears. Counted from the store,
+/// never assumed — the check that the appointments landed is the same question
+/// anyone else would ask of the graph.
+fn hats_held(name: &str) -> usize {
+    let q = format!(
+        "PREFIX c: <https://jeffbridwell.com/chorus#> SELECT (COUNT(DISTINCT ?h) AS ?n) WHERE {{ \
+         GRAPH ?g {{ c:principal-{name} c:wearsHat ?h }} }}"
+    );
+    let body = curl(&[
+        "-s", "--max-time", "30", "-G",
+        &format!("{}/pods/query", env_or("FUSEKI_URL", "http://localhost:3030")),
+        "--data-urlencode", &format!("query={q}"),
+        "-H", "Accept: application/sparql-results+json",
+    ]).unwrap_or_default();
+    between(&body, "\"value\":\"", "\"").and_then(|v| v.parse().ok()).unwrap_or(0)
 }

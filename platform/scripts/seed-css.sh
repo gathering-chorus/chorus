@@ -41,10 +41,7 @@ ENV_FILE="${GATHERING_APP_ENV:-$HOME/CascadeProjects/jeff-bridwell-personal-site
 # never mint anything. The password was read by reference and the email was not.
 EMAIL="${CSS_EMAIL:-$(grep -m1 '^CSS_EMAIL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"')}"
 EMAIL="${EMAIL:-jeff@jeffbridwell.com}"
-# #4202 — the destination is overridable so a credential can be seeded straight
-# into the account that will own it, instead of landing in Jeff's home and being
-# moved afterwards. Default unchanged.
-IDENTITY_HOME="${CHORUS_IDENTITY_DIR:-$HOME/.chorus/identity}"
+IDENTITY_HOME="$HOME/.chorus/identity"
 AGENTS="${AGENTS:-silas wren kade bridge chorus-sdk nightly crawler}"  # nightly: #3975 machine principal for the 03:00 runner; crawler: #4154 machine principal for the code/tests walker
 CK="$(mktemp -t css-seed-XXXXXX)"
 trap 'rm -f "$CK"' EXIT

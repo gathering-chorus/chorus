@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # @test-type: contract
-# #3830 — chorus-provision. Every test here is a REFUSAL, because the card is
+# #3830 — chorus-principal. Every test here is a REFUSAL, because the card is
 # about the states a half-provisioned user can be left in, and each refusal is
 # one of them made unreachable.
 #
@@ -10,12 +10,12 @@
 # seed-css.sh's AGENTS list decided which pods actually got made. Two lists,
 # nothing reconciling them.
 
-BIN="${BATS_TEST_DIRNAME}/../services/chorus-provision/target/release/chorus-provision"
+BIN="${BATS_TEST_DIRNAME}/../services/chorus-principal/target/release/chorus-principal"
 
 STUB="${BATS_TEST_DIRNAME}/3830-stub.py"
 
 setup() {
-  [ -x "$BIN" ] || skip "chorus-provision not built"
+  [ -x "$BIN" ] || skip "chorus-principal not built"
   T="$(mktemp -d)"
   export FUSEKI_URL="http://127.0.0.1:59998"        # nothing listens
   export CSS_URL="http://127.0.0.1:59999"           # nothing listens — the REGISTER is dead in every test
@@ -153,7 +153,7 @@ world() {
   run "$BIN" create somebody-new --kind agent
   [ "$status" -eq 2 ]
   [[ "$output" == *"discovery document does not name a Principal collection"* ]]
-  ! grep -q '"/v1/identity/principals"' "${BATS_TEST_DIRNAME}/../services/chorus-provision/src/main.rs"
+  ! grep -q '"/v1/identity/principals"' "${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs"
 }
 
 @test "the register being unreachable REFUSES before anything is written" {
@@ -180,7 +180,7 @@ world() {
   # It cannot fail, so it always yields a plausible WebID with nothing behind
   # it. A grep is the right shape of check: the defect is the EXISTENCE of a
   # construction path, and a behavioural test cannot prove absence.
-  src="${BATS_TEST_DIRNAME}/../services/chorus-provision/src/main.rs"
+  src="${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs"
   run grep -nE '^\s*(let|.*=)\s*format!\("\{issuer\}/\{name\}/profile/card' "$src"
   [ "$status" -ne 0 ]
 }
@@ -196,7 +196,7 @@ world() {
   # A boolean that switches between writing and not writing is one wrong
   # default away from provisioning during a test run. This card exists because
   # identities got made by accident.
-  src="${BATS_TEST_DIRNAME}/../services/chorus-provision/src/main.rs"
+  src="${BATS_TEST_DIRNAME}/../services/chorus-principal/src/main.rs"
   run grep -cE '\-\-dry-run|dry_run' "$src"
   [ "$output" = "0" ]
 }

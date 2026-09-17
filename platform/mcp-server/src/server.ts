@@ -2393,6 +2393,25 @@ async function executeServiceLifecycle(
 // {ok, stdout, stderr, exit} on success or throwing a typed-refusal-shaped
 // error on non-zero exit. Parses reason= markers from stderr/stdout so the
 // refusal taxonomy on the tool def remains meaningful at the caller side.
+/// #4202 — the session's token, if this pane has one.
+///
+/// Exported so the two states can be told apart in a test: a real token rides
+/// along, and anything else — no file, no path, a truncated or non-JWT body —
+/// yields nothing at all. Substituting a plausible value here would recreate
+/// the thing this replaces, where the caller's typed role name WAS the identity.
+export function sessionTokenEnv(tokenFile: string | undefined): Record<string, string> {
+  if (!tokenFile) return {};
+  try {
+    const fsMod = require('fs') as typeof import('fs');
+    const tok = fsMod.readFileSync(tokenFile, 'utf-8').trim();
+    return tok.split('.').length === 3 && tok.length > 0
+      ? { CHORUS_IDENTITY_TOKEN: tok }
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 async function executeWerkVerb(
   // #3561 — the athena family joins the same exec path. These are verbs in
   // ~/.chorus/bin exactly like werk-*, and were reachable ONLY by a role shelling
@@ -2414,12 +2433,22 @@ async function executeWerkVerb(
   let stderr: string;
   let exitCode = 0;
   let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
+  // #4202 — the caller's identity comes from the session this server runs in,
+  // not from the `role` argument. That argument is typed by whoever called the
+  // tool, so a verb trusting it lets any caller write as any role; athena-model
+  // refuses env-trust for exactly that reason (#3687), and with no token
+  // attached here it refused every governed write through MCP. The session's
+  // token file is written at login and named by CHORUS_SESSION_TOKEN_FILE.
+  // When it is absent nothing is invented — the verb runs tokenless and fails
+  // closed, which is the honest state of a pane that never logged in.
+  const sessionEnv = sessionTokenEnv(process.env.CHORUS_SESSION_TOKEN_FILE);
   try {
     const result = await execFileP(binPath, args, {
       env: {
         ...process.env,
         DEPLOY_ROLE: role,
         CHORUS_ROLE: role,
+        ...sessionEnv,
         CHORUS_HOME: process.env.CHORUS_HOME || DEFAULT_CHORUS_HOME,
         CHORUS_WERK_BASE: process.env.CHORUS_WERK_BASE || '/Users/jeffbridwell/CascadeProjects/chorus-werk',
         // #3320 — name the invoker so werk-deploy can detect the self-deploy case
