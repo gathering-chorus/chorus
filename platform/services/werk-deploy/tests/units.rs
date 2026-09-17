@@ -1059,7 +1059,11 @@ fn deploy_canonical_carries_no_model_or_seed_engine_4186() {
         assert!(yml.contains(leg), "athena.yml is missing leg `{}`", leg);
     }
     assert!(yml.contains("athena-serve \"${{ steps.resolve.outputs.label }}\""), "serve leg must use athena-serve on the resolved label, never launchd liveness");
-    assert!(yml.contains("com.chorus.athena-make.werk.${ROLE}") && yml.contains("LABEL=\"com.chorus.athena-make\""), "resolve names both targets' labels");
+    // the cut (Jeff 2026-09-16 17:41): ONE target, the live service; a variant label in
+    // athena.yml would mean a demo store copy came back. (Caught red in the 09-17 nightly:
+    // this line still asked for both labels after the cut — test-wrong, #4195.)
+    assert!(yml.contains("LABEL=\"com.chorus.athena-make\""), "resolve names the live service label");
+    assert!(!yml.contains("athena-make.werk."), "athena.yml names no variant service: the demo reads the live store");
 }
 
 
