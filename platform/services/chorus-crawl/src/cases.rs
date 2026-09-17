@@ -765,153 +765,18 @@ pub fn no_case_report(paths: &[String]) -> String {
 
 // ─────────────────────────── covers ───────────────────────────
 
-const HANDMAP: &[(&str, &str)] = &[
-    ("failure_class", "builds"),
-    ("ac-autocheck", "cicd"),
-    ("api-fragile-endpoints", "services"),
-    ("chorus-inject-signed-stable", "messages"),
-    ("chorus-ops-triage", "alerts-monitors"),
-    ("close-out", "roles"),
-    ("daily-signal-scan", "alerts-monitors"),
-    ("domain-detail-retired", "domains"),
-    ("execsync-audit", "security"),
-    ("ownership-partof-chain", "domains"),
-    ("regression-locks", "cicd"),
-    ("write-story", "cards"),
-];
+// #4201 — the folder rule (HANDMAP / PREFIX / KW / covers_for) is retired. The
+// domain a test covers is read from the FILE by the five rules in domain.rs;
+// the folder is never a rule and "services" is never a default.
 
-/// Longest prefix first, as testfiles.py sorted them.
-const PREFIX: &[(&str, &str)] = &[
-    ("platform/services/properties-resolver", "properties"),
-    ("platform/services/chorus-hooks", "cicd"),
-    ("platform/services/athena-deploy", "deploys"),
-    ("platform/services/chorus-inject", "messages"),
-    ("platform/services/athena-model", "domains"),
-    ("platform/services/chorus-model", "domains"),
-    ("platform/services/pair-heartbeat", "roles"),
-    ("platform/services/athena-make", "domains"),
-    ("platform/services/chorus-oidc", "identity"),
-    ("platform/services/pulse-gather", "messages"),
-    ("platform/services/loom-gemba", "alerts-monitors"),
-    ("directing/products/cards", "cards"),
-    ("platform/services/owl-api", "domains"),
-    ("platform/workflow-engine", "pipelines"),
-    ("platform/services/werk-", "builds"),
-    ("directing/clearing", "messages"),
-    ("platform/mcp-server", "services"),
-    ("platform/chorus-sdk", "services"),
-    ("platform/scripts", "toolchain"),
-    ("proving/flows", "builds"),
-    ("platform/apps", "products"),
-    ("platform/pulse", "messages"),
-    ("platform/api", "services"),
-];
-
-/// Basename keywords, in testfiles.py's order (first match wins). Every
-/// pattern there is a literal alternation, so this is the same table.
-const KW: &[(&[&str], &str)] = &[
-    (
-        &[
-            "secret",
-            "gitleaks",
-            "scrubber",
-            "sensitive",
-            "credential",
-            "leak",
-        ],
-        "security",
-    ),
-    (&["alert"], "alerts-monitors"),
-    (
-        &[
-            "health",
-            "probe",
-            "heartbeat",
-            "monitor",
-            "andon",
-            "watchdog",
-        ],
-        "alerts-monitors",
-    ),
-    (&["doc", "catalog"], "knowledge"),
-    (&["knowledge"], "knowledge"),
-    (&["principle"], "principles"),
-    (&["skill", "standards"], "skills"),
-    (&["clippy", "lint"], "code"),
-    (&["decision"], "decisions"),
-    (&["perf", "baseline"], "metrics"),
-    (&["infrastructure"], "infrastructure"),
-    (&["nudge", "bridge", "message", "clearing"], "messages"),
-    (&["pulse"], "messages"),
-    (&["role-state", "alias"], "roles"),
-    (&["context-inject", "inject-lock", "shim", "spine"], "spine"),
-    (&["ci-", "nightly"], "cicd"),
-    (&["hook", "gate", "guard", "bouncer"], "cicd"),
-    (
-        &["demo", "werk", "run-tests", "manifest", "jest-randomize"],
-        "builds",
-    ),
-    (&["env-setup", "building", "pipeline", "act-"], "builds"),
-    (&["deploy", "launch"], "deploys"),
-    (&["promtail"], "logs"),
-    (&["search", "fts"], "search"),
-    (&["force-push"], "version-control"),
-    (&["filedependson", "fileindomain"], "search"),
-    (&["crawl", "index", "convergence"], "search"),
-    (&["session", "correlation", "frustration"], "messages"),
-    (&["operating-model", "reference-model"], "domains"),
-    (&["git", "commit", "merge", "branch"], "version-control"),
-];
-
-fn kw_domain(base: &str) -> Option<&'static str> {
-    KW.iter()
-        .find(|(pats, _)| pats.iter().any(|p| base.contains(p)))
-        .map(|(_, d)| *d)
-        .filter(|d| !d.is_empty())
-}
-
-/// Which Domain a test file covers (#3996 rules, #4159 home). The card lookup
-/// testfiles.py took as an injected `fetch` was never supplied by any caller —
-/// 83 of 88 platform/tests/NNNN files read `services` today — so the rule here
-/// is the one that actually ran: a card-numbered suite falls to `services`.
-pub fn covers_for(path: &str) -> &'static str {
-    let b = basename(path).to_ascii_lowercase();
-    for (sub, dom) in HANDMAP.iter().copied() {
-        if b.contains(sub) {
-            return dom;
-        }
-    }
-    if path.starts_with("platform/api/tests/handlers/") {
-        return "domains";
-    }
-    if let Some(rest) = path.strip_prefix("platform/tests/") {
-        let digits = rest.chars().take_while(|c| c.is_ascii_digit()).count();
-        if (3..=4).contains(&digits) && rest[digits..].starts_with('-') {
-            return "services";
-        }
-        return kw_domain(&b).unwrap_or("services");
-    }
-    if let Some(d) = kw_domain(&b) {
-        return d;
-    }
-    for (pre, dom) in PREFIX.iter().copied() {
-        if path.starts_with(pre) {
-            return dom;
-        }
-    }
-    "services"
-}
-
-/// The domain a case row COVERS, given the file and its concern. The security
-/// lane (#3922) selects its rows by `covers=security`, and the registry today
-/// carries exactly that: 27 of 28 files whose covers disagreed with the path
-/// rules were security-concern files pinned to `security` (2026-09-16). Keep
-/// the lane whole: a security concern covers the security domain.
-pub fn covers_with_concern(path: &str, concern: Option<&str>) -> &'static str {
+/// The domain a case row COVERS: the security lane (#3922) selects its rows by
+/// `covers=security`, so a declared security concern pins it; otherwise the
+/// five rules' placement, or nothing when the file is unplaced or in conflict.
+pub fn covers_from(placement: Option<&str>, concern: Option<&str>) -> String {
     if concern == Some("security") {
-        return "security";
+        return "security".to_string();
     }
-    covers_for(path)
+    placement.unwrap_or("").to_string()
 }
 
 // ─────────────────────────── the share gate ───────────────────────────
@@ -964,10 +829,13 @@ impl CaseRow {
             ("filePath".to_string(), self.file.clone()),
             ("testName".to_string(), self.case.clone()),
             ("inFile".to_string(), self.in_file.clone()),
-            ("covers".to_string(), self.covers.clone()),
             ("pyramidLayer".to_string(), self.layer.clone()),
             ("hermeticity".to_string(), self.hermeticity.clone()),
         ];
+        // #4201 — an unplaced or conflicted file carries NO covers, never a guess
+        if !self.covers.is_empty() {
+            v.push(("covers".to_string(), self.covers.clone()));
+        }
         if let Some(c) = &self.concern {
             v.push(("testConcern".to_string(), c.clone()));
         }
@@ -1506,63 +1374,28 @@ mod cases_4185 {
         assert!(no_case_report(&[]).contains("none"));
     }
 
-    // ── covers (#3996, ported from 3996-covers-shares.bats) ──
-    #[test]
-    fn the_former_services_bucket_trees_map_to_their_real_domains() {
-        assert_eq!(
-            covers_for("directing/products/cards/tests/card-lifecycle-flow.test.ts"),
-            "cards"
-        );
-        assert_eq!(
-            covers_for("directing/clearing/tests/router.test.ts"),
-            "messages"
-        );
-        assert_eq!(
-            covers_for("platform/services/athena-make/tests/reconcile.rs"),
-            "domains"
-        );
-        assert_eq!(
-            covers_for("platform/services/chorus-oidc/tests/token.rs"),
-            "identity"
-        );
-    }
+    // ── covers (#4201: from the file, never the folder) ──
     #[test]
     fn a_security_concern_covers_the_security_domain_so_the_lane_keeps_its_rows() {
-        assert_eq!(
-            covers_with_concern("directing/clearing/tests/account.test.ts", Some("security")),
-            "security"
-        );
-        assert_eq!(
-            covers_with_concern("directing/clearing/tests/router.test.ts", None),
-            "messages",
-            "control: no concern, the path rules answer"
-        );
-        assert_eq!(
-            covers_with_concern("directing/clearing/tests/router.test.ts", Some("api")),
-            "messages",
-            "control: only security re-homes"
-        );
+        assert_eq!(covers_from(Some("messages"), Some("security")), "security");
+        assert_eq!(covers_from(Some("messages"), None), "messages");
+        assert_eq!(covers_from(Some("messages"), Some("api")), "messages");
     }
     #[test]
-    fn basename_keywords_beat_package_prefixes() {
-        assert_eq!(
-            covers_for("platform/api/tests/eventloop-alert.test.ts"),
-            "alerts-monitors"
-        );
-        assert_eq!(
-            covers_for("platform/api/tests/search-meta.test.ts"),
-            "search"
-        );
-        assert_eq!(
-            covers_for("platform/api/tests/server-unit.test.ts"),
-            "services"
-        );
-        assert_eq!(
-            covers_for("platform/tests/4185-crawler-writes-test-cases.bats"),
-            "services",
-            "a card-numbered suite falls to services — the lookup no caller supplied"
-        );
-        assert_eq!(covers_for("platform/tests/gitleaks-guard.bats"), "security");
+    fn negative_proof_an_unplaced_file_carries_no_covers_field() {
+        assert_eq!(covers_from(None, None), "");
+        let row = CaseRow {
+            file: "platform/tests/4099-x.bats".into(),
+            case: "a".into(),
+            covers: String::new(),
+            layer: "integration".into(),
+            hermeticity: "hermetic".into(),
+            concern: None,
+            in_file: "file-x".into(),
+        };
+        assert!(!row.owned_fields().iter().any(|(k, _)| k == "covers"));
+        let tagged = CaseRow { covers: "cards".into(), ..row };
+        assert!(tagged.owned_fields().contains(&("covers".to_string(), "cards".to_string())));
     }
 
     // ── the share gate ──

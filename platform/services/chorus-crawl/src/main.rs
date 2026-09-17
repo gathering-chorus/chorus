@@ -9,6 +9,7 @@
 //! server, or a clock.
 
 use chorus_crawl::cases::{self, CaseAction, CaseInGraph, CaseRow};
+use chorus_crawl::domain;
 use chorus_crawl::*;
 use std::collections::HashMap;
 use std::process::Command;
@@ -639,9 +640,18 @@ struct Parsed {
     declared: usize,
     inferred: usize,
     complete: bool,
+    /// #4201 — how the five rules placed the files that have cases
+    tags: domain::TagCounts,
+    /// one line per conflicted or unplaced file
+    tag_lines: Vec<String>,
 }
 
-fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
+fn parse_cases(
+    root: &str,
+    test_files: &[&str],
+    valid_domains: &[String],
+    card_domain: &dyn Fn(u32) -> Option<String>,
+) -> Parsed {
     let mut p = Parsed {
         desired: Vec::new(),
         parsed_files: Vec::new(),
@@ -650,6 +660,8 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         declared: 0,
         inferred: 0,
         complete: true,
+        tags: domain::TagCounts::default(),
+        tag_lines: Vec::new(),
     };
     for path in test_files {
         if !registers_cases(path) {
@@ -678,7 +690,18 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         } else {
             p.inferred += 1
         }
-        let covers = cases::covers_with_concern(path, fc.concern).to_string();
+        // #4201 — the domain comes from the file, never the folder
+        let placement = domain::place(&content, valid_domains, card_domain);
+        p.tags.read += 1;
+        match &placement {
+            domain::Placement::Tagged { .. } => p.tags.placed += 1,
+            domain::Placement::Conflict { .. } => p.tags.conflicts += 1,
+            domain::Placement::Unplaced => p.tags.unplaced += 1,
+        }
+        if let Some(line) = domain::listing(path, &placement) {
+            p.tag_lines.push(line);
+        }
+        let covers = cases::covers_from(placement.domain(), fc.concern);
         let in_file = stable_name(path);
         for case in names {
             p.desired.push(CaseRow {
@@ -722,12 +745,25 @@ fn seam(args: &[String]) -> bool {
             }
         }
         "--covers-of" => {
+            // #4201 — hermetic: the valid Domain list comes from CHORUS_VALID_DOMAINS
+            // (comma-separated) since no store is in reach; prints the domain, or
+            // "conflict: ..." / "unplaced".
             let path = arg(2);
             let content = std::fs::read_to_string(&path).unwrap_or_default();
-            println!(
-                "{}",
-                cases::covers_with_concern(&path, cases::file_class(&path, &content).concern)
-            );
+            let valid: Vec<String> = std::env::var("CHORUS_VALID_DOMAINS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let placement = domain::place(&content, &valid, &|_| None);
+            let concern = cases::file_class(&path, &content).concern;
+            let covers = cases::covers_from(placement.domain(), concern);
+            if !covers.is_empty() {
+                println!("{covers}");
+            } else {
+                println!("{}", domain::listing(&path, &placement).unwrap_or_default());
+            }
         }
         "--classify" => {
             let path = arg(2);
@@ -977,7 +1013,23 @@ fn main() {
         })
         .map(|f| f.path.as_str())
         .collect();
-    let parsed = parse_cases(&root, &test_files);
+    // #4201 — only a real Domain row can be a tag; read them from the API.
+    let valid_domains: Vec<String> = match fetch_rows(&api, &token, "Domain") {
+        Ok(rows) => rows
+            .into_iter()
+            .filter_map(|f| f.into_iter().find(|(k, _)| k == "name").map(|(_, v)| v))
+            .filter(|v| !v.is_empty())
+            .collect(),
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read Domain rows ({e}) — refusing to tag tests against an unknown domain list");
+            std::process::exit(2);
+        }
+    };
+    // rule 5: a card's labels name a real Domain. Today the board carries
+    // sequence/subproduct labels (athena, werk, borg), not Domain rows, so this
+    // answers None for every card; the rule is wired and inert until a label does.
+    let card_domain = |_card: u32| -> Option<String> { None };
+    let parsed = parse_cases(&root, &test_files, &valid_domains, &card_domain);
     // A test file we could not read outranks a clean tree read: no deletes.
     let case_read = if parsed.complete {
         read
@@ -1062,6 +1114,10 @@ fn main() {
     if !parsed.no_case.is_empty() {
         println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
     }
+    println!("chorus-crawl: tags: {}", parsed.tags.render());
+    for l in &parsed.tag_lines {
+        println!("chorus-crawl: {l}");
+    }
     println!(
         "chorus-crawl: logs posted={} replaced={} unchanged={} deleted={} · log files={} rows={}{}",
         lc.posted, lc.replaced, lc.unchanged, lc.deleted, log_files.len(), log_graph.len(),
@@ -1116,6 +1172,7 @@ fn main() {
             &head,
             wm_file.as_deref(),
             &parsed.no_case_buckets,
+            &parsed.tags,
         );
         std::process::exit(if clean { 0 } else { 1 });
     }
@@ -1244,7 +1301,7 @@ fn main() {
         let mut per_domain: Vec<(String, usize)> = Vec::new();
         let mut seen_files: Vec<&str> = Vec::new();
         for r in &parsed.desired {
-            if seen_files.contains(&r.file.as_str()) {
+            if r.covers.is_empty() || seen_files.contains(&r.file.as_str()) {
                 continue;
             }
             seen_files.push(&r.file);
@@ -1309,6 +1366,10 @@ fn main() {
                     // testConcern is OPTIONAL: an absent one must not survive as the old value
                     if row.concern.is_none() {
                         fields.retain(|(k, _)| k != "testConcern");
+                    }
+                    // #4201 — an untagged file must not keep a folder-era covers
+                    if row.covers.is_empty() {
+                        fields.retain(|(k, _)| k != "covers");
                     }
                     prefixes.apply(&mut fields);
                     let mut attempt = 0;
@@ -1490,6 +1551,7 @@ fn main() {
                     &head,
                     Some(&head),
                     &parsed.no_case_buckets,
+            &parsed.tags,
                 );
             }
             (Err(e), _) | (_, Err(e)) => println!(
@@ -1550,6 +1612,7 @@ fn print_graph_vs_project(
     head: &str,
     watermark: Option<&str>,
     no_case_buckets: &[&str],
+    tags: &domain::TagCounts,
 ) -> bool {
     let drift = reconcile(disk, graph);
     println!("chorus-crawl: {}", drift.report());
@@ -1651,6 +1714,9 @@ fn print_graph_vs_project(
         logs_drift: log_drift.files_without_rows.len() + log_drift.rows_without_files.len(),
         lands,
         uncovered,
+        tag_placed: tags.placed,
+        tag_conflicts: tags.conflicts,
+        tag_unplaced: tags.unplaced,
     };
     println!("chorus-crawl: {}", line.render());
     drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean()

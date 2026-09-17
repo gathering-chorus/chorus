@@ -11,6 +11,7 @@
 
 /// #4185 — test CASE rows: parsers, covers, the share gate, the case plan.
 pub mod cases;
+pub mod domain;
 
 /// What a file is, from the model's served CodeKind individuals (#4157):
 /// code · config · doc · log · test, plus `data` (#4173). Never a free string.
@@ -1876,6 +1877,7 @@ pub fn uncovered_lands(
 }
 
 /// The morning line, one field per verdict.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectLine {
     pub file_rows: usize,
     pub tracked: usize,
@@ -1892,6 +1894,10 @@ pub struct ProjectLine {
     pub logs_drift: usize,
     pub lands: usize,
     pub uncovered: Vec<String>,
+    /// #4201 — test files the five rules placed, left in conflict, left unplaced
+    pub tag_placed: usize,
+    pub tag_conflicts: usize,
+    pub tag_unplaced: usize,
 }
 
 impl ProjectLine {
@@ -1914,8 +1920,9 @@ impl ProjectLine {
             )
         };
         format!(
-            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
+            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · tagged placed={} conflicts={} unplaced={} · current lag={} · consistent files={} cases={} logs={} · {}",
             self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.no_case_detail, self.log_rows, self.log_files,
+            self.tag_placed, self.tag_conflicts, self.tag_unplaced,
             self.lag_commits, verdict(self.files_drift), verdict(self.cases_drift), verdict(self.logs_drift), lossless
         )
     }
@@ -1925,6 +1932,8 @@ impl ProjectLine {
             && self.cases_drift == 0
             && self.logs_drift == 0
             && self.uncovered.is_empty()
+            && self.tag_conflicts == 0
+            && self.tag_unplaced == 0
     }
 }
 
@@ -2020,8 +2029,16 @@ mod project_4199 {
             logs_drift: 0,
             lands: 3,
             uncovered: vec![],
+            tag_placed: 1000,
+            tag_conflicts: 0,
+            tag_unplaced: 0,
         };
         assert!(p.is_clean());
+        // #4201 — an unplaced test file is not clean, and the line says so
+        let mut q = p.clone();
+        q.tag_unplaced = 1;
+        assert!(!q.is_clean());
+        assert!(q.render().contains("tagged placed=1000 conflicts=0 unplaced=1"), "{}", q.render());
         let line = p.render();
         assert!(
             line.contains("complete files=5575/6214 no-kind=642 (png 233, none 180)"),
