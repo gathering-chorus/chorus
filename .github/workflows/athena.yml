@@ -273,7 +273,10 @@ jobs:
           trace="athena-$(date +%s%N)-$$"
           log="${CHORUS_HOME}/platform/scripts/chorus-log"
           [ -x "$log" ] || { echo "::error::athena: no spine emitter at $log — a run that cannot emit does not run" >&2; exit 1; }
-          { echo "CHORUS_TRACE_ID=$trace"; echo "ATHENA_PARENT_TRACE=$parent"; echo "CHORUS_LOG=$log"; } >> "$GITHUB_ENV"
+          # CHORUS_CARD_ID rides every subprocess emit (chorus-log's env bridge, #2857), so the
+          # deploy script's and the seed's events carry the card too: the by-card view of the
+          # trace reader shows the whole athena run, not 4 of 159 (measured 2026-09-17 06:59).
+          { echo "CHORUS_TRACE_ID=$trace"; echo "ATHENA_PARENT_TRACE=$parent"; echo "CHORUS_LOG=$log"; echo "CHORUS_CARD_ID=${CARD_ID}"; } >> "$GITHUB_ENV"
           echo "trace: $trace (parent: ${parent:-none})"
 
       - name: resolve
