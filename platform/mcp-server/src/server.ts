@@ -2870,7 +2870,7 @@ async function triggerAthenaOnLand(
   const fsMod = require('fs') as typeof import('fs');
   const execFileP = promisify(execFile);
   const scopeBin = pathMod.join(binDir, 'athena-deploy');
-  let scope = '';
+  let scope: string;
   try {
     const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
     scope = (r.stdout || '').trim();
@@ -3762,7 +3762,8 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
         const merged = await executeWerkVerb('werk-merge', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
         // #4177 — the land event triggers athena; werk.yml names no model step.
         const body = JSON.parse(merged.content[0].text) as Record<string, unknown>;
-        const sha = (String(body.stdout ?? '').match(/[0-9a-f]{40}/g) || []).pop();
+        const out = typeof body.stdout === 'string' ? body.stdout : '';
+        const sha = (out.match(/[0-9a-f]{40}/g) || []).pop();
         body.athena = sha
           ? await triggerAthenaOnLand(parsed.data.role, parsed.data.card_id, sha, runsDir)
           : { triggered: false, reason: 'no-landed-sha' };
