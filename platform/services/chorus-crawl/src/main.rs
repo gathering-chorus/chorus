@@ -259,6 +259,120 @@ impl Identity {
 
 /// One write through the door under a live identity: mints when the token is
 /// about to expire, and retries exactly once on a 401 after a fresh mint.
+/// #4201 — one queued full-replace, written after the planning loops.
+struct PendingPut {
+    kind: &'static str,
+    label: String,
+    path: String,
+    fields: Vec<(String, String)>,
+}
+
+/// CHORUS_CRAWL_WRITERS, clamped to 1..=8; unset or unparsable is 4.
+fn writers_from_env(v: Option<&str>) -> usize {
+    v.and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(4)
+        .clamp(1, 8)
+}
+
+/// Write the queued PUTs `writers` at a time. The FIRST goes alone through
+/// `write()` so the door's prefix is learned and the token minted; the rest go
+/// in chunks of 200 under one token (a chunk is well inside the 600 s TTL), and
+/// any 401 in a chunk is retried once, alone, after a re-mint. Order within a
+/// chunk does not matter: every PUT is a full replace of its own row.
+fn flush_puts(
+    puts: &mut Vec<PendingPut>,
+    ident: &std::cell::RefCell<Identity>,
+    api: &str,
+    prefixes: &mut PrefixMemory,
+    writers: usize,
+    failed: &mut Vec<String>,
+    wrote: &mut usize,
+) {
+    if puts.is_empty() {
+        return;
+    }
+    let mut queue: std::collections::VecDeque<PendingPut> = puts.drain(..).collect();
+    // the first one, alone: learn the prefix, mint the token
+    if let Some(mut first) = queue.pop_front() {
+        let mut attempt = 0;
+        loop {
+            let body = fields_json(&first.fields);
+            match write(ident, api, "PUT", &first.path, Some(&body)) {
+                Ok(_) => {
+                    *wrote += 1;
+                    break;
+                }
+                Err(e) if attempt == 0 && prefixes.learn(&e) && prefixes.apply(&mut first.fields) => {
+                    attempt += 1
+                }
+                Err(e) => {
+                    failed.push(format!("update {} {}: {e}", first.kind, first.label));
+                    break;
+                }
+            }
+        }
+    }
+    for p in queue.iter_mut() {
+        prefixes.apply(&mut p.fields);
+    }
+    while !queue.is_empty() {
+        let chunk: Vec<PendingPut> = queue.drain(..queue.len().min(200)).collect();
+        let token = match ident.borrow_mut().bearer() {
+            Ok(t) => t,
+            Err(e) => {
+                for p in chunk {
+                    failed.push(format!("update {} {}: {e}", p.kind, p.label));
+                }
+                continue;
+            }
+        };
+        let work = std::sync::Mutex::new(std::collections::VecDeque::from(chunk));
+        let results: std::sync::Mutex<Vec<(PendingPut, Result<(), String>)>> =
+            std::sync::Mutex::new(Vec::new());
+        std::thread::scope(|s| {
+            for _ in 0..writers {
+                s.spawn(|| loop {
+                    let next = work.lock().ok().and_then(|mut q| q.pop_front());
+                    let Some(p) = next else { break };
+                    let body = fields_json(&p.fields);
+                    let r = curl(api, "PUT", &p.path, Some(&body), Some(&token)).map(|_| ());
+                    if let Ok(mut v) = results.lock() {
+                        v.push((p, r));
+                    }
+                });
+            }
+        });
+        let results = results.into_inner().unwrap_or_default();
+        for (p, r) in results {
+            match r {
+                Ok(()) => *wrote += 1,
+                Err(e) if e.contains("HTTP 401") => {
+                    // token died mid-chunk: once more, alone, after a re-mint
+                    let body = fields_json(&p.fields);
+                    match write(ident, api, "PUT", &p.path, Some(&body)) {
+                        Ok(_) => *wrote += 1,
+                        Err(e2) => failed.push(format!("update {} {}: {e2}", p.kind, p.label)),
+                    }
+                }
+                Err(e) => failed.push(format!("update {} {}: {e}", p.kind, p.label)),
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod writers_4201 {
+    use super::writers_from_env;
+    #[test]
+    fn writers_default_four_and_clamp() {
+        assert_eq!(writers_from_env(None), 4);
+        assert_eq!(writers_from_env(Some("x")), 4);
+        assert_eq!(writers_from_env(Some("1")), 1);
+        assert_eq!(writers_from_env(Some("0")), 1);
+        assert_eq!(writers_from_env(Some("64")), 8);
+    }
+}
+
 fn write(
     ident: &std::cell::RefCell<Identity>,
     api: &str,
@@ -1196,6 +1310,9 @@ fn main() {
 
     let ident = ident.as_ref().expect("writes happen only with an identity");
     let mut prefixes = PrefixMemory::default();
+    // #4201 — updates are queued and written `writers` at a time (CHORUS_CRAWL_WRITERS, default 4)
+    let writers = writers_from_env(std::env::var("CHORUS_CRAWL_WRITERS").ok().as_deref());
+    let mut puts: Vec<PendingPut> = Vec::new();
     let flush = |batch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
         if batch.is_empty() {
             return;
@@ -1259,27 +1376,13 @@ fn main() {
                 // from a table kept in step by hand — and once learned, the
                 // prefix is stripped from every later row BEFORE its first PUT (#4192).
                 prefixes.apply(&mut fields);
-                let mut attempt = 0;
-                loop {
-                    let body = fields_json(&fields);
-                    match write(ident, &api, "PUT", &format!("{coll}/{name}"), Some(&body)) {
-                        Ok(_) => {
-                            wrote += 1;
-                            break;
-                        }
-                        Err(e)
-                            if attempt == 0
-                                && prefixes.learn(&e)
-                                && prefixes.apply(&mut fields) =>
-                        {
-                            attempt += 1
-                        }
-                        Err(e) => {
-                            failed.push(format!("update {path}: {e}"));
-                            break;
-                        }
-                    }
-                }
+                // #4201 — queued; flushed writers at a time after the loop
+                puts.push(PendingPut {
+                    kind: "file",
+                    label: path.clone(),
+                    path: format!("{coll}/{name}"),
+                    fields,
+                });
             }
             Action::Delete { path } => {
                 let name = stable_name(path);
@@ -1373,34 +1476,12 @@ fn main() {
                         fields.retain(|(k, _)| k != "covers");
                     }
                     prefixes.apply(&mut fields);
-                    let mut attempt = 0;
-                    loop {
-                        let body = fields_json(&fields);
-                        match write(
-                            ident,
-                            &api,
-                            "PUT",
-                            &format!("{case_coll}/{name}"),
-                            Some(&body),
-                        ) {
-                            Ok(_) => {
-                                wrote += 1;
-                                break;
-                            }
-                            Err(e)
-                                if attempt == 0
-                                    && prefixes.learn(&e)
-                                    && prefixes.apply(&mut fields) =>
-                            {
-                                attempt += 1
-                            }
-                            Err(e) => {
-                                failed
-                                    .push(format!("update case {} :: {}: {e}", row.file, row.case));
-                                break;
-                            }
-                        }
-                    }
+                    puts.push(PendingPut {
+                        kind: "case",
+                        label: format!("{} :: {}", row.file, row.case),
+                        path: format!("{case_coll}/{name}"),
+                        fields,
+                    });
                 }
                 CaseAction::Delete { name, file, case } => {
                     if let Err(e) =
@@ -1467,33 +1548,12 @@ fn main() {
                         .unwrap_or(&[]);
                     let mut fields = merge_row(existing, &row.owned_fields(&machine, observed));
                     prefixes.apply(&mut fields);
-                    let mut attempt = 0;
-                    loop {
-                        let body = fields_json(&fields);
-                        match write(
-                            ident,
-                            &api,
-                            "PUT",
-                            &format!("{log_coll}/{name}"),
-                            Some(&body),
-                        ) {
-                            Ok(_) => {
-                                wrote += 1;
-                                break;
-                            }
-                            Err(e)
-                                if attempt == 0
-                                    && prefixes.learn(&e)
-                                    && prefixes.apply(&mut fields) =>
-                            {
-                                attempt += 1
-                            }
-                            Err(e) => {
-                                failed.push(format!("update log {}: {e}", row.path));
-                                break;
-                            }
-                        }
-                    }
+                    puts.push(PendingPut {
+                        kind: "log",
+                        label: row.path.clone(),
+                        path: format!("{log_coll}/{name}"),
+                        fields,
+                    });
                 }
                 LogAction::Delete { name, path } => {
                     if let Err(e) =
@@ -1507,6 +1567,8 @@ fn main() {
         }
         lflush(&mut lbatch, &mut failed, &mut wrote);
     }
+
+    flush_puts(&mut puts, ident, &api, &mut prefixes, writers, &mut failed, &mut wrote);
 
     let elapsed = started.elapsed().as_secs_f64();
     let attempted = wrote + failed.len();
