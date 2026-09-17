@@ -105,6 +105,37 @@ fn rust_declares_tests(abs: &str) -> bool {
 
 /// The file list the tree reports, classified. Returns the reading quality
 /// alongside: if any file could not be read, deletes are refused for this run.
+/// First bytes of a file, for the extension-less rule (#4199). None when unreadable.
+fn head_of(abs: &str) -> Option<String> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(abs).ok()?;
+    let mut buf = [0u8; 160];
+    let n = f.read(&mut buf).ok()?;
+    Some(String::from_utf8_lossy(&buf[..n]).into_owned())
+}
+
+/// The verdict for one tracked path, opening the file only when the rule needs
+/// its content: a .rs (does it declare tests) or an extension-less name (shebang).
+fn verdict_for(root: &str, rel: &str) -> Verdict {
+    let is_rs = rel.ends_with(".rs");
+    let no_ext = {
+        let base = rel.rsplit('/').next().unwrap_or(rel);
+        !base[1.min(base.len())..].contains('.')
+    };
+    let head = if no_ext {
+        head_of(&format!("{root}/{rel}"))
+    } else {
+        None
+    };
+    classify_with_head(
+        rel,
+        is_rs && rust_declares_tests(&format!("{root}/{rel}")),
+        head.as_deref(),
+    )
+}
+
+/// The file list the tree reports, classified. Returns the reading quality
+/// alongside: if any file could not be read, deletes are refused for this run.
 fn read_tree(
     root: &str,
     paths: &[String],
@@ -118,17 +149,11 @@ fn read_tree(
         TreeRead::Complete
     };
     for rel in paths {
-        // Only .rs files are opened at all, and only to answer "does this
-        // declare tests" — every other classification is a pure path decision.
-        let is_rs = rel.ends_with(".rs");
-        let verdict = classify(rel, is_rs && rust_declares_tests(&format!("{root}/{rel}")));
+        let verdict = verdict_for(root, rel);
         let classified = matches!(verdict, Verdict::Classified(..));
         let sha = match hashes.get(rel) {
             Some(s) => s.clone(),
             None => {
-                // Tracked but git has no hash for it in this index. A fact
-                // about this run, not about the repo — refuse deletes. Partial
-                // outranks Scoped: a failed read is worse than a narrow one.
                 complete = TreeRead::Partial;
                 continue;
             }
@@ -444,6 +469,90 @@ fn existing_case_rows(api: &str, token: &str) -> Result<Vec<CaseInGraph>, String
     Ok(out)
 }
 
+/// #4199 — every log file this box writes: the StandardOut/ErrPath of every
+/// plist under platform/launchd (with the job's Label), plus every *.log / *.err
+/// in the directories launchd, the app and the spine write into.
+fn box_log_files(root: &str) -> Vec<LogFile> {
+    let mut out: Vec<LogFile> = Vec::new();
+    let mut push = |path: String, label: Option<String>| {
+        let Ok(md) = std::fs::metadata(&path) else { return };
+        if !md.is_file() {
+            return;
+        }
+        if let Some(e) = out.iter_mut().find(|f| f.path == path) {
+            if e.launchd_label.is_none() {
+                e.launchd_label = label;
+            }
+            return;
+        }
+        let written = md
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        out.push(LogFile {
+            path,
+            launchd_label: label,
+            size: md.len(),
+            written_secs: written,
+        });
+    };
+    if let Ok(rd) = std::fs::read_dir(format!("{root}/platform/launchd")) {
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.extension().map(|x| x == "plist").unwrap_or(false) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
+                    let label = plist_label(&text);
+                    for l in log_paths_in_plist(&text) {
+                        push(l, label.clone());
+                    }
+                }
+            }
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        for dir in [
+            format!("{home}/Library/Logs/Chorus"),
+            format!("{home}/Library/Logs/Gathering"),
+            format!("{home}/.chorus"),
+            format!("{home}/.chorus/logs"),
+        ] {
+            if let Ok(rd) = std::fs::read_dir(&dir) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if name.ends_with(".log") || name.ends_with(".err") {
+                        push(p.to_string_lossy().to_string(), None);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.path.cmp(&b.path));
+    out
+}
+
+/// #4199 — every LogSource row the door serves, whole, addressed by its name.
+fn existing_log_rows(api: &str, token: &str) -> Result<Vec<LogInGraph>, String> {
+    let mut out = Vec::new();
+    for fields in fetch_rows(api, token, "LogSource")? {
+        let get = |k: &str| {
+            fields
+                .iter()
+                .find(|(f, _)| f == k)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default()
+        };
+        let (name, path) = (get("name"), get("logPath"));
+        if name.is_empty() {
+            continue;
+        }
+        out.push(LogInGraph { name, path, fields });
+    }
+    Ok(out)
+}
+
 /// Every row of one served class, as flat field maps — paged by the door's own
 /// `links.next`, to exhaustion (see the note on existing_rows' first cut).
 fn fetch_rows(api: &str, token: &str, kind: &str) -> Result<Vec<Vec<(String, String)>>, String> {
@@ -525,6 +634,8 @@ struct Parsed {
     desired: Vec<CaseRow>,
     parsed_files: Vec<String>,
     no_case: Vec<String>,
+    /// #4199 — why each no-case file has none (cases::no_case_bucket), parallel to no_case.
+    no_case_buckets: Vec<&'static str>,
     declared: usize,
     inferred: usize,
     complete: bool,
@@ -535,6 +646,7 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         desired: Vec::new(),
         parsed_files: Vec::new(),
         no_case: Vec::new(),
+        no_case_buckets: Vec::new(),
         declared: 0,
         inferred: 0,
         complete: true,
@@ -556,6 +668,8 @@ fn parse_cases(root: &str, test_files: &[&str]) -> Parsed {
         let names = cases::case_names(path, &content);
         if names.is_empty() {
             p.no_case.push(path.to_string());
+            p.no_case_buckets
+                .push(cases::no_case_bucket(path, &content));
             continue;
         }
         let fc = cases::file_class(path, &content);
@@ -857,10 +971,7 @@ fn main() {
         .filter(|f| f.classified)
         .filter(|f| {
             matches!(
-                classify(
-                    &f.path,
-                    f.path.ends_with(".rs") && rust_declares_tests(&format!("{root}/{}", f.path))
-                ),
+                verdict_for(&root, &f.path),
                 Verdict::Classified(Kind::Test, _)
             )
         })
@@ -896,6 +1007,33 @@ fn main() {
     }
     let cc = cases::case_counts(&case_actions);
 
+    // #4199 — the log leg: every log file the box writes has a LogSource row.
+    // A full pass refreshes the rows it owns; a delta adds and retires only.
+    let log_files = box_log_files(&root);
+    let log_graph = match existing_log_rows(&api, &token) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("chorus-crawl: cannot read existing LogSource rows ({e}) — refusing to plan the log leg against an unknown registry");
+            std::process::exit(2);
+        }
+    };
+    let on_box = |p: &str| std::path::Path::new(p).is_file();
+    let mut log_actions = plan_logs(&log_files, &log_graph, scope_was_full_walk(&scope), &on_box);
+    let log_deletes = log_actions
+        .iter()
+        .filter(|a| matches!(a, LogAction::Delete { .. }))
+        .count();
+    if mass_delete_refused(log_deletes, log_graph.len()) {
+        eprintln!(
+            "chorus-crawl: MASS DELETE REFUSED — the plan would delete {} of {} log rows. No log row is deleted this run.",
+            log_deletes,
+            log_graph.len()
+        );
+        log_actions.retain(|a| !matches!(a, LogAction::Delete { .. }));
+        mass_delete = true;
+    }
+    let lc = log_counts(&log_actions);
+
     println!(
         "chorus-crawl: {} · tracked={} read={:?}",
         scope.label(),
@@ -924,6 +1062,11 @@ fn main() {
     if !parsed.no_case.is_empty() {
         println!("chorus-crawl: {}", cases::no_case_report(&parsed.no_case));
     }
+    println!(
+        "chorus-crawl: logs posted={} replaced={} unchanged={} deleted={} · log files={} rows={}{}",
+        lc.posted, lc.replaced, lc.unchanged, lc.deleted, log_files.len(), log_graph.len(),
+        if dry_run { "  (dry-run — nothing written)" } else { "" }
+    );
     if read == TreeRead::Partial {
         println!("chorus-crawl: tree read was PARTIAL — deletes refused this run (#4022: absent must not mean delete)");
     } else if case_read == TreeRead::Partial {
@@ -942,30 +1085,39 @@ fn main() {
             );
             std::process::exit(2);
         }
-        let drift = reconcile(&disk, &graph);
         // #4180 — the counts line above reads exactly like a run's outcome, and
         // --reconcile writes NOTHING: it exited here with "posted=1" on the line
         // and the row still absent, and I read that as work done. Say what the
         // numbers are.
-        if c.posted + c.replaced + c.deleted > 0 {
+        if c.posted + c.replaced + c.deleted + lc.posted + lc.replaced + lc.deleted > 0 {
             println!(
-                "chorus-crawl: reconcile is read-only — the {} post / {} replace / {} delete above are what a write pass WOULD do, not what happened",
-                c.posted, c.replaced, c.deleted
+                "chorus-crawl: reconcile is read-only — the {} post / {} replace / {} delete above (logs {} / {} / {}) are what a write pass WOULD do, not what happened",
+                c.posted, c.replaced, c.deleted, lc.posted, lc.replaced, lc.deleted
             );
         }
-        println!("chorus-crawl: {}", drift.report());
         let all_test_files: Vec<String> = test_files
             .iter()
             .map(|s| s.to_string())
             .filter(|p| registers_cases(p))
             .collect();
-        let case_drift = cases::reconcile_cases(&parsed.desired, &all_test_files, &case_graph);
-        println!("chorus-crawl: {}", case_drift.report());
-        std::process::exit(if drift.is_clean() && case_drift.is_clean() {
-            0
-        } else {
-            1
-        });
+        let wm_file = std::fs::read_to_string(format!("{root}/.chorus-crawl-watermark"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        let clean = print_graph_vs_project(
+            &root,
+            &api,
+            &token,
+            &disk,
+            &graph,
+            &parsed.desired,
+            &all_test_files,
+            &case_graph,
+            &head,
+            wm_file.as_deref(),
+            &parsed.no_case_buckets,
+        );
+        std::process::exit(if clean { 0 } else { 1 });
     }
 
     if dry_run {
@@ -1009,11 +1161,7 @@ fn main() {
                     Some(f) => *f,
                     None => continue,
                 };
-                let is_rs = path.ends_with(".rs");
-                if let Verdict::Classified(k, l) = classify(
-                    path,
-                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
-                ) {
+                if let Verdict::Classified(k, l) = verdict_for(&root, path) {
                     let row = row_json(f, k.as_str(), l);
                     if !batch_accepts(batch_bytes(&batch), row.len(), BATCH_BODY_BUDGET) {
                         flush(&mut batch, &mut failed, &mut wrote);
@@ -1033,11 +1181,7 @@ fn main() {
                     Some(f) => *f,
                     None => continue,
                 };
-                let is_rs = path.ends_with(".rs");
-                let Verdict::Classified(k, l) = classify(
-                    path,
-                    is_rs && rust_declares_tests(&format!("{root}/{path}")),
-                ) else {
+                let Verdict::Classified(k, l) = verdict_for(&root, path) else {
                     continue;
                 };
                 let existing: &[(String, String)] = match in_graph.get(path.as_str()) {
@@ -1209,6 +1353,99 @@ fn main() {
         cflush(&mut cbatch, &mut failed, &mut wrote);
     }
 
+    // ── #4199: the log rows. Same identity, same refusals, same door.
+    {
+        let log_coll = match collection_for(&api, "LogSource") {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("chorus-crawl: {e}");
+                std::process::exit(2);
+            }
+        };
+        let log_in_graph: HashMap<&str, &LogInGraph> =
+            log_graph.iter().map(|g| (g.name.as_str(), g)).collect();
+        let observed = now_secs();
+        let machine = std::env::var("CHORUS_MACHINE").unwrap_or_else(|_| "library".to_string());
+        let mut lbatch: Vec<String> = Vec::new();
+        let lflush = |lbatch: &mut Vec<String>, failed: &mut Vec<String>, wrote: &mut usize| {
+            if lbatch.is_empty() {
+                return;
+            }
+            let body = format!("[{}]", lbatch.join(","));
+            match write(
+                ident,
+                &api,
+                "POST",
+                &format!("{log_coll}/batch"),
+                Some(&body),
+            ) {
+                Ok(_) => *wrote += lbatch.len(),
+                Err(e) => failed.push(format!("log batch of {}: {e}", lbatch.len())),
+            }
+            lbatch.clear();
+        };
+        for a in &log_actions {
+            match a {
+                LogAction::Post(row) => {
+                    let mut fields = vec![("name".to_string(), log_row_name(&row.path))];
+                    fields.extend(row.owned_fields(&machine, observed));
+                    let body = fields_json(&fields);
+                    if !batch_accepts(batch_bytes(&lbatch), body.len(), BATCH_BODY_BUDGET) {
+                        lflush(&mut lbatch, &mut failed, &mut wrote);
+                    }
+                    lbatch.push(body);
+                    if lbatch.len() >= 200 {
+                        lflush(&mut lbatch, &mut failed, &mut wrote);
+                    }
+                }
+                LogAction::Replace { name, row } => {
+                    let existing: &[(String, String)] = log_in_graph
+                        .get(name.as_str())
+                        .map(|g| g.fields.as_slice())
+                        .unwrap_or(&[]);
+                    let mut fields = merge_row(existing, &row.owned_fields(&machine, observed));
+                    prefixes.apply(&mut fields);
+                    let mut attempt = 0;
+                    loop {
+                        let body = fields_json(&fields);
+                        match write(
+                            ident,
+                            &api,
+                            "PUT",
+                            &format!("{log_coll}/{name}"),
+                            Some(&body),
+                        ) {
+                            Ok(_) => {
+                                wrote += 1;
+                                break;
+                            }
+                            Err(e)
+                                if attempt == 0
+                                    && prefixes.learn(&e)
+                                    && prefixes.apply(&mut fields) =>
+                            {
+                                attempt += 1
+                            }
+                            Err(e) => {
+                                failed.push(format!("update log {}: {e}", row.path));
+                                break;
+                            }
+                        }
+                    }
+                }
+                LogAction::Delete { name, path } => {
+                    if let Err(e) =
+                        write(ident, &api, "DELETE", &format!("{log_coll}/{name}"), None)
+                    {
+                        failed.push(format!("delete log {path}: {e}"));
+                    }
+                }
+                LogAction::Unchanged { .. } => {}
+            }
+        }
+        lflush(&mut lbatch, &mut failed, &mut wrote);
+    }
+
     let elapsed = started.elapsed().as_secs_f64();
     let attempted = wrote + failed.len();
     println!(
@@ -1226,6 +1463,41 @@ fn main() {
 
     // The watermark moves only when this run earned it.
     let scope_was_full = matches!(scope, Scope::Full { .. });
+    // #4199 — a FULL pass that wrote clean re-reads the graph and prints the
+    // morning line, so the nightly log carries complete / current / consistent /
+    // lossless and the readout's TOTAL can quote it. A pass with failures says so
+    // above and skips the grading — a red run does not also grade itself clean.
+    if scope_was_full && failed.is_empty() && !mass_delete {
+        let all_test_files: Vec<String> = test_files
+            .iter()
+            .map(|s| s.to_string())
+            .filter(|p| registers_cases(p))
+            .collect();
+        match (
+            existing_rows(&api, &token),
+            existing_case_rows(&api, &token),
+        ) {
+            (Ok(g2), Ok(cg2)) => {
+                print_graph_vs_project(
+                    &root,
+                    &api,
+                    &token,
+                    &disk,
+                    &g2,
+                    &parsed.desired,
+                    &all_test_files,
+                    &cg2,
+                    &head,
+                    Some(&head),
+                    &parsed.no_case_buckets,
+                );
+            }
+            (Err(e), _) | (_, Err(e)) => println!(
+                "chorus-crawl: graph vs project: UNMEASURED — re-read after the pass failed ({e})"
+            ),
+        }
+    }
+
     // a refused mass delete means this graph does NOT match this commit
     let read_for_watermark = if mass_delete {
         TreeRead::Partial
@@ -1261,6 +1533,127 @@ fn main() {
 /// The joined size of a batch body so far (rows plus the commas between them).
 fn batch_bytes(batch: &[String]) -> usize {
     batch.iter().map(|b| b.len()).sum::<usize>() + batch.len().saturating_sub(1)
+}
+
+/// #4199 — the graph-vs-project verdicts, printed after a FULL read of tree and
+/// graph. Read-only: nothing here writes. Returns whether everything was clean.
+#[allow(clippy::too_many_arguments)]
+fn print_graph_vs_project(
+    root: &str,
+    api: &str,
+    token: &str,
+    disk: &[OnDisk],
+    graph: &[InGraph],
+    desired: &[CaseRow],
+    test_files: &[String],
+    case_graph: &[CaseInGraph],
+    head: &str,
+    watermark: Option<&str>,
+    no_case_buckets: &[&str],
+) -> bool {
+    let drift = reconcile(disk, graph);
+    println!("chorus-crawl: {}", drift.report());
+    let case_drift = cases::reconcile_cases(desired, test_files, case_graph);
+    println!("chorus-crawl: {}", case_drift.report());
+
+    // logs: what the box writes vs what the logs domain holds (the same walk the log leg writes from)
+    let log_files: Vec<String> = box_log_files(root).into_iter().map(|f| f.path).collect();
+    let log_rows: Vec<String> = match fetch_rows(api, token, "LogSource") {
+        Ok(rows) => rows
+            .into_iter()
+            .filter_map(|f| f.into_iter().find(|(k, _)| k == "logPath").map(|(_, v)| v))
+            .filter(|v| !v.is_empty())
+            .collect(),
+        Err(e) => {
+            println!("chorus-crawl: reconcile logs: UNMEASURED — cannot read LogSource rows ({e})");
+            Vec::new()
+        }
+    };
+    let on_disk = |p: &str| std::path::Path::new(p).is_file();
+    let log_drift = reconcile_logs(&log_files, &log_rows, &on_disk);
+    println!("chorus-crawl: {}", log_drift.report());
+
+    // current: commits between the watermark and HEAD
+    let lag = match watermark {
+        Some(w) => sh(
+            "git",
+            &["rev-list", "--count", &format!("{w}..{head}")],
+            root,
+        )
+        .ok()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .unwrap_or(0),
+        None => 0,
+    };
+    // lossless: every land since the first pass in the nightly log is covered by a pass
+    let crawl_log = std::env::var("CRAWL_LOG").unwrap_or_else(|_| {
+        format!(
+            "{}/Library/Logs/Chorus/crawl-nightly.log",
+            std::env::var("HOME").unwrap_or_default()
+        )
+    });
+    let log_text = std::fs::read_to_string(&crawl_log).unwrap_or_default();
+    let wms = passes_watermarks(&log_text);
+    let (lands, uncovered) = match wms.first() {
+        Some(first) => {
+            let raw = sh(
+                "git",
+                &[
+                    "log",
+                    "--first-parent",
+                    "--format=%h %s",
+                    &format!("{first}..{head}"),
+                ],
+                root,
+            )
+            .unwrap_or_default();
+            let lands: Vec<String> = raw
+                .lines()
+                .filter(|l| {
+                    l.split_once(' ')
+                        .map(|(_, s)| s.starts_with('#'))
+                        .unwrap_or(false)
+                })
+                .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+                .collect();
+            let anc =
+                |a: &str, b: &str| sh("git", &["merge-base", "--is-ancestor", a, b], root).is_ok();
+            let unc = uncovered_lands(&lands, &wms, &anc);
+            (lands.len(), unc)
+        }
+        None => (0, Vec::new()),
+    };
+    let skipped: Vec<String> = disk
+        .iter()
+        .filter(|f| !f.classified)
+        .map(|f| f.path.clone())
+        .collect();
+    let (no_kind, top) = no_kind_summary(&skipped);
+    let (no_case_missing, no_case_detail) = cases::no_case_summary(no_case_buckets);
+    let line = ProjectLine {
+        file_rows: graph.len(),
+        tracked: disk.len(),
+        no_kind,
+        no_kind_top: top,
+        case_rows: case_graph.len(),
+        no_case: no_case_missing,
+        no_case_detail: no_case_detail.clone(),
+        log_rows: log_rows.len(),
+        log_files: log_files.len(),
+        lag_commits: lag,
+        files_drift: drift.missing_from_graph.len()
+            + drift.missing_from_tree.len()
+            + drift.stale_sha.len(),
+        cases_drift: case_drift.rows_without_file.len()
+            + case_drift.files_without_rows.len()
+            + case_drift.cases_without_rows.len()
+            + case_drift.rows_without_case.len(),
+        logs_drift: log_drift.files_without_rows.len() + log_drift.rows_without_files.len(),
+        lands,
+        uncovered,
+    };
+    println!("chorus-crawl: {}", line.render());
+    drift.is_clean() && case_drift.is_clean() && log_drift.is_clean() && line.is_clean()
 }
 
 fn scope_was_full_walk(scope: &Scope) -> bool {

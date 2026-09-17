@@ -365,10 +365,18 @@ pub fn crawl_line(log: Option<&str>) -> String {
     }
     let field = |k: &str| last.split_whitespace().find_map(|w| w.strip_prefix(k).and_then(|v| v.parse::<usize>().ok()));
     let (wrote, failed) = (field("wrote=").unwrap_or(0), field("failed=").unwrap_or(0));
+    // #4199 — the pass grades the graph against the project after it writes;
+    // the morning line carries that verdict verbatim when the log has it.
+    let project = last
+        .lines()
+        .filter_map(|l| l.split_once("graph vs project · ").map(|(_, v)| v.trim()))
+        .last()
+        .map(|v| format!(" — graph vs project: {v}"))
+        .unwrap_or_default();
     if failed > 0 || last.contains("the run is RED") || last.contains("watermark HELD") {
-        format!(" — crawl: RED ({} write(s) failed, watermark held)", failed)
+        format!(" — crawl: RED ({} write(s) failed, watermark held){project}", failed)
     } else {
-        format!(" — crawl: {} written, clean", wrote)
+        format!(" — crawl: {} written, clean{project}", wrote)
     }
 }
 
@@ -978,6 +986,17 @@ mod crawl_line_4180 {
         // only the LAST pass counts — an old red must not haunt a clean morning
         let two = format!("chorus-crawl: full\nchorus-crawl: wrote=0 failed=3\nchorus-crawl: 3 write(s) failed — the run is RED\n{ok}");
         assert_eq!(crawl_line(Some(&two)), " — crawl: 4 written, clean");
+    }
+
+    // #4199 — the morning line rides along when the pass printed it, verbatim;
+    // NEGATIVE PROOF: a LOSSY verdict is not hidden behind "clean".
+    #[test]
+    fn the_graph_vs_project_verdict_rides_the_crawl_clause() {
+        let log = "chorus-crawl: full · tracked=6214 read=Complete\nchorus-crawl: wrote=0 failed=0\nchorus-crawl: graph vs project · complete files=5575/6214 no-kind=642 (png 233) cases=8236 no-case=9 logs=90 rows/40 files · current lag=0 · consistent files=clean cases=clean logs=DRIFT 12 · LOSSY lands=3 uncovered=1 (abc1234)\nchorus-crawl: watermark -> 8f8ade821\n";
+        let line = crawl_line(Some(log));
+        assert!(line.starts_with(" — crawl: 0 written, clean — graph vs project: complete files=5575/6214"), "{line}");
+        assert!(line.contains("LOSSY lands=3 uncovered=1 (abc1234)"), "{line}");
+        assert!(line.contains("logs=DRIFT 12"), "{line}");
     }
 
     // NEGATIVE PROOF (#3734): the clause exists to make a silent red loud. A red

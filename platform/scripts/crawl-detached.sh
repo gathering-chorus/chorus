@@ -1,29 +1,23 @@
 #!/usr/bin/env bash
-# crawl-detached.sh (#4192) — start the crawler's on-land delta OFF the land's
-# critical path.
+# crawl-detached.sh (#4192, #4199) — start the on-land crawl OFF the land's
+# critical path, owned by launchd.
 #
 # Jeff, 2026-09-16 18:11: "i did not want an extra 10 minutes on every werk."
-# The land step used to run `chorus-crawl` inline; a pass that had to touch the
-# whole registry held #4186 in WIP for 11 minutes after its code was live. This
-# starts the crawler in its own process group with its own log and returns at
-# once. The land reports landed; the crawl reports in its log and on the
-# nightly's TOTAL line (#4180 crawl_line reads the same log shape).
+# #4192 started the crawler with nohup from the step; under act the step's end
+# killed it (Wren's #4195 land left an EMPTY crawl log, 2026-09-17 07:56). A
+# process the job owns dies with the job. launchd owns com.chorus.crawl-nightly,
+# so the land KICKSTARTS that unit: one process owner, one log (the nightly's),
+# one set of alerts reading it (crawler-stale, crawler-error). `-k` restarts a
+# pass already running, so two lands in a row still end with a pass that walked
+# the latest tree; the killed pass never advanced its watermark.
 #
-# Env: CARD_ID, ROLE (names the log); CHORUS_ROLE defaults to crawler (the door
-# stamps ownedBy from the caller — #4178). CHORUS_CRAWL_BIN overrides the binary
-# (tests hand a stub). CHORUS_CRAWL_LOG_DIR overrides ~/.chorus/werk-runs.
+# Seam: CRAWL_KICKSTART_CMD replaces the launchctl call (tests hand a stub).
 set -u
-BIN="${CHORUS_CRAWL_BIN:-$(command -v chorus-crawl || true)}"
-if [ -z "$BIN" ] || [ ! -x "$BIN" ]; then
-  echo "crawl-detached: chorus-crawl not installed — skipped (the nightly full pass repairs the graph)"
-  exit 0
+UNIT="com.chorus.crawl-nightly"
+CMD="${CRAWL_KICKSTART_CMD:-launchctl kickstart -k gui/$(id -u)/$UNIT}"
+if out=$($CMD 2>&1); then
+  echo "crawl-detached: kickstarted $UNIT (launchd owns the pass; log ~/Library/Logs/Chorus/crawl-nightly.log) ${out}"
+else
+  echo "crawl-detached: kickstart of $UNIT failed rc=$? — ${out}. The nightly full pass repairs the graph; the reconcile names what it missed."
 fi
-LOG_DIR="${CHORUS_CRAWL_LOG_DIR:-$HOME/.chorus/werk-runs}"
-mkdir -p "$LOG_DIR"
-LOG="$LOG_DIR/${CARD_ID:-nocard}-${ROLE:-norole}-crawl-$(date +%s).log"
-export CHORUS_ROLE="${CHORUS_ROLE:-crawler}"
-# a subshell + nohup + & puts the crawler outside this step's job control so the
-# step (and the act runner behind it) ending does not end the crawl
-( nohup "$BIN" >"$LOG" 2>&1 & echo $! >"$LOG.pid" )
-echo "crawl-detached: started chorus-crawl (pid $(cat "$LOG.pid")) → $LOG"
 exit 0

@@ -22,6 +22,16 @@ pub enum Kind {
     Log,
     Test,
     Data,
+    /// #4199 — images, icons, PDFs, app bundles: the repo's media, not its text.
+    Asset,
+    /// #4199 — SPARQL files (.sparql, .rq): queries the code runs against the graph.
+    Query,
+    /// #4199 — view templates (.ejs, .hbs): rendered, not executed.
+    Template,
+    /// #4199 — a tracked file with no type of its own: .done/.consumed/.bak/.pid
+    /// markers and extension-less non-scripts. Named so the graph can say which
+    /// files are noise rather than pretend they are not there.
+    Marker,
 }
 
 impl Kind {
@@ -33,6 +43,10 @@ impl Kind {
             Kind::Log => "log",
             Kind::Test => "test",
             Kind::Data => "data",
+            Kind::Asset => "asset",
+            Kind::Query => "query",
+            Kind::Template => "template",
+            Kind::Marker => "marker",
         }
     }
 }
@@ -47,7 +61,12 @@ pub enum Verdict {
 }
 
 /// extension → language, mirroring code-vocab.ttl's named individuals (#4157).
-const LANG: [(&str, &str); 13] = [
+const LANG: [(&str, &str); 18] = [
+    (".json", "json"),
+    (".css", "css"),
+    (".scss", "css"),
+    (".html", "html"),
+    (".htm", "html"),
     (".rs", "rust"),
     (".ts", "typescript"),
     (".tsx", "typescript"),
@@ -64,7 +83,44 @@ const LANG: [(&str, &str); 13] = [
 ];
 
 /// extension → kind, for files whose extension decides it outright.
-const KIND_BY_EXT: [(&str, Kind); 12] = [
+const KIND_BY_EXT: [(&str, Kind); 49] = [
+    (".heic", Kind::Asset),
+    (".owl", Kind::Config),
+    (".png", Kind::Asset),
+    (".jpg", Kind::Asset),
+    (".jpeg", Kind::Asset),
+    (".gif", Kind::Asset),
+    (".svg", Kind::Asset),
+    (".ico", Kind::Asset),
+    (".icns", Kind::Asset),
+    (".pdf", Kind::Asset),
+    (".car", Kind::Asset),
+    (".rsrc", Kind::Asset),
+    (".scpt", Kind::Asset),
+    (".sparql", Kind::Query),
+    (".rq", Kind::Query),
+    (".nt", Kind::Data),
+    (".tsv", Kind::Data),
+    (".jsonl", Kind::Data),
+    (".b64", Kind::Data),
+    (".ejs", Kind::Template),
+    (".hbs", Kind::Template),
+    (".mmd", Kind::Doc),
+    (".txt", Kind::Doc),
+    (".feature", Kind::Test),
+    (".css", Kind::Code),
+    (".scss", Kind::Code),
+    (".swift", Kind::Code),
+    (".ini", Kind::Config),
+    (".xml", Kind::Config),
+    (".lock", Kind::Config),
+    (".done", Kind::Marker),
+    (".consumed", Kind::Marker),
+    (".bak", Kind::Marker),
+    (".backup", Kind::Marker),
+    (".backup-shm", Kind::Marker),
+    (".backup-wal", Kind::Marker),
+    (".pid", Kind::Marker),
     (".md", Kind::Doc),
     (".html", Kind::Doc),
     (".htm", Kind::Doc),
@@ -106,6 +162,7 @@ pub fn is_test_path(rel: &str) -> bool {
         || base.ends_with(".spec.js")
         || base.ends_with(".spec.cjs")
         || base.ends_with(".test.sh")
+        || base.ends_with(".feature")
         || (base.starts_with("test_") && base.ends_with(".py"))
         || (base.starts_with("test-") && base.ends_with(".sh"))
 }
@@ -114,6 +171,34 @@ pub fn is_test_path(rel: &str) -> bool {
 /// time. Order matters — test wins over extension, extension over language,
 /// and anything the model has no name for is SKIPPED rather than guessed.
 pub fn classify(rel: &str, has_rust_test_attr: bool) -> Verdict {
+    classify_with_head(rel, has_rust_test_attr, None)
+}
+
+/// #4199 — the language a shebang names, or None.
+fn lang_of_shebang(head: &str) -> Option<&'static str> {
+    let first = head.lines().next().unwrap_or("");
+    if !first.starts_with("#!") {
+        return None;
+    }
+    if first.contains("bash") || first.contains("/sh") || first.contains("zsh") {
+        Some("bash")
+    } else if first.contains("python") {
+        Some("python")
+    } else if first.contains("node") {
+        Some("javascript")
+    } else {
+        Some("bash")
+    }
+}
+
+/// The whole rule with the file's first bytes for extension-less names. Order
+/// matters — test wins over extension, extension over language — and a name
+/// nobody can type is still SKIPPED, never guessed: an unknown EXTENSION is the
+/// model's to add. An extension-LESS file is decided by what it is: a shebang
+/// script is code, a dotfile is config, an app bundle's insides are assets, a
+/// well-known bare name (Makefile, LICENSE) is what it says, and anything else
+/// is a marker — a file the graph names as noise rather than pretends is absent.
+pub fn classify_with_head(rel: &str, has_rust_test_attr: bool, head: Option<&str>) -> Verdict {
     let ext = ext_of(rel);
     let lang = lang_of(&ext);
     if is_test_path(rel) || (ext == ".rs" && has_rust_test_attr) {
@@ -125,12 +210,114 @@ pub fn classify(rel: &str, has_rust_test_attr: bool) -> Verdict {
     if lang.is_some() {
         return Verdict::Classified(Kind::Code, lang);
     }
+    if ext.is_empty() {
+        let base = rel.rsplit('/').next().unwrap_or(rel);
+        if let Some(l) = head.and_then(lang_of_shebang) {
+            return Verdict::Classified(Kind::Code, Some(l));
+        }
+        if base.starts_with('.') {
+            return Verdict::Classified(Kind::Config, None);
+        }
+        if rel.contains(".app/") {
+            return Verdict::Classified(Kind::Asset, None);
+        }
+        if matches!(base, "Makefile" | "Dockerfile" | "Justfile" | "Procfile") {
+            return Verdict::Classified(Kind::Code, None);
+        }
+        if matches!(
+            base,
+            "LICENSE" | "README" | "CHANGELOG" | "NOTICE" | "AUTHORS"
+        ) {
+            return Verdict::Classified(Kind::Doc, None);
+        }
+        return Verdict::Classified(Kind::Marker, None);
+    }
     Verdict::Skip
 }
 
 #[cfg(test)]
 mod classify_4173 {
     use super::*;
+
+    // #4199 — Jeff: every tracked file has a row. The kinds the model gained,
+    // and the extension-less rule. NEGATIVE PROOF: an unknown EXTENSION is still
+    // skipped, never guessed — widening the set stays a model edit.
+    #[test]
+    fn the_4199_kinds_name_what_was_skipped_and_an_unknown_extension_still_skips() {
+        assert_eq!(
+            classify("designing/x.png", false),
+            Verdict::Classified(Kind::Asset, None)
+        );
+        assert_eq!(
+            classify("platform/q/owners.rq", false),
+            Verdict::Classified(Kind::Query, None)
+        );
+        assert_eq!(
+            classify("platform/api/views/x.ejs", false),
+            Verdict::Classified(Kind::Template, None)
+        );
+        assert_eq!(
+            classify("docs/diagrams/x.mmd", false),
+            Verdict::Classified(Kind::Doc, None)
+        );
+        assert_eq!(
+            classify("proving/flows/x.feature", false),
+            Verdict::Classified(Kind::Test, None)
+        );
+        assert_eq!(
+            classify("platform/api/package-lock.json", false),
+            Verdict::Classified(Kind::Config, Some("json"))
+        );
+        assert_eq!(
+            classify("Cargo.lock", false),
+            Verdict::Classified(Kind::Config, None)
+        );
+        assert_eq!(
+            classify("platform/state/x.done", false),
+            Verdict::Classified(Kind::Marker, None)
+        );
+        assert_eq!(
+            classify("data/x.nt", false),
+            Verdict::Classified(Kind::Data, None)
+        );
+        assert_eq!(
+            classify("weird/file.xyz", false),
+            Verdict::Skip,
+            "an unknown extension is the model's to add, not ours to guess"
+        );
+    }
+
+    #[test]
+    fn extension_less_files_are_decided_by_what_they_are() {
+        assert_eq!(
+            classify_with_head(
+                "platform/scripts/werk",
+                false,
+                Some("#!/usr/bin/env bash\nset -u")
+            ),
+            Verdict::Classified(Kind::Code, Some("bash"))
+        );
+        assert_eq!(
+            classify_with_head("skills/x/run", false, Some("#!/usr/bin/env python3\n")),
+            Verdict::Classified(Kind::Code, Some("python"))
+        );
+        assert_eq!(
+            classify_with_head(".gitignore", false, Some("target/")),
+            Verdict::Classified(Kind::Config, None)
+        );
+        assert_eq!(
+            classify_with_head("platform/apps/X.app/Contents/PkgInfo", false, Some("APPL")),
+            Verdict::Classified(Kind::Asset, None)
+        );
+        assert_eq!(
+            classify_with_head("Makefile", false, Some("all:")),
+            Verdict::Classified(Kind::Code, None)
+        );
+        assert_eq!(
+            classify_with_head("designing/claudemd/PROTOCOL_VERSION", false, Some("1.6.0")),
+            Verdict::Classified(Kind::Marker, None)
+        );
+    }
 
     // #3872 / #4185 — the zero-browser-tests hole: a playwright spec under
     // proving/ is a test file. The crawler walks git, so discovery IS the tree;
@@ -162,9 +349,9 @@ mod classify_4173 {
                 Kind::Test,
                 Some("typescript"),
             ),
-            ("designing/docs/crawler.html", Kind::Doc, None),
+            ("designing/docs/crawler.html", Kind::Doc, Some("html")),
             ("roles/kade/current-work.md", Kind::Doc, Some("markdown")),
-            ("platform/api/package.json", Kind::Config, None),
+            ("platform/api/package.json", Kind::Config, Some("json")),
             (
                 "roles/silas/ontology/chorus.ttl",
                 Kind::Config,
@@ -189,11 +376,12 @@ mod classify_4173 {
     // defect this card removes, so the check must show the skip happening.
     #[test]
     fn negative_proof_a_file_the_model_cannot_name_is_skipped_not_called_code() {
+        // #4199 widened the kinds (png/svg are assets, LICENSE is doc); the proof
+        // keeps the property on extensions the model still has no name for.
         for path in [
-            "roles/silas/ontology/chorus.ttl.png",
-            "designing/diagrams/flow.svg",
             "platform/api/public/font.woff2",
-            "LICENSE",
+            "weird/file.xyz",
+            "a/b.woff",
         ] {
             assert_eq!(classify(path, false), Verdict::Skip, "{} must skip", path);
         }
@@ -229,10 +417,16 @@ mod classify_4173 {
     // ".gitignore" is not an extension of a file called "".
     #[test]
     fn negative_proof_a_dotfile_is_not_read_as_an_extension() {
-        assert_eq!(classify(".gitignore", false), Verdict::Skip);
+        // ".gitignore" is not a file called "" with extension ".gitignore": it is an
+        // extension-less dotfile, which #4199 names config. Had the dot been read as
+        // an extension, the verdict would be Skip (no kind for ".gitignore").
+        assert_eq!(
+            classify(".gitignore", false),
+            Verdict::Classified(Kind::Config, None)
+        );
         assert_eq!(
             classify("platform/api/.eslintrc.json", false),
-            Verdict::Classified(Kind::Config, None)
+            Verdict::Classified(Kind::Config, Some("json"))
         );
     }
 }
@@ -1535,6 +1729,313 @@ mod identity_4192 {
     }
 }
 
+// ─────────────────────────── graph vs project (#4199) ───────────────────────────
+//
+// Jeff, 2026-09-17: "a high level of consistency and completeness between the
+// graph and project as we make changes at a high rate — these can't be lossy."
+// One line a morning answers it for code, tests and logs together. Everything
+// here is pure so each verdict has a fixture that turns it red.
+
+/// The files the model has no kind for, summarised by extension: the count and
+/// the top few, so "642 skipped" becomes "png 233, none 180, nt 37 …" and the
+/// model can be asked for each one.
+pub fn no_kind_summary(paths: &[String]) -> (usize, String) {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for p in paths {
+        let base = p.rsplit('/').next().unwrap_or(p);
+        let ext = match base.rfind('.') {
+            Some(i) if i > 0 => base[i + 1..].to_ascii_lowercase(),
+            _ => "none".to_string(),
+        };
+        match counts.iter_mut().find(|(e, _)| *e == ext) {
+            Some(c) => c.1 += 1,
+            None => counts.push((ext, 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let top: Vec<String> = counts
+        .iter()
+        .take(6)
+        .map(|(e, n)| format!("{e} {n}"))
+        .collect();
+    (paths.len(), top.join(", "))
+}
+
+/// Log files the box writes, read from a launchd plist's StandardOutPath and
+/// StandardErrorPath. No plist library: the two keys are followed by one
+/// `<string>` each.
+pub fn log_paths_in_plist(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in ["StandardOutPath", "StandardErrorPath"] {
+        let needle = format!("<key>{key}</key>");
+        let mut from = 0;
+        while let Some(i) = text[from..].find(&needle) {
+            let at = from + i + needle.len();
+            let rest = &text[at..];
+            if let Some(s) = rest.find("<string>") {
+                if let Some(e) = rest[s + 8..].find("</string>") {
+                    let p = rest[s + 8..s + 8 + e].trim().to_string();
+                    if !p.is_empty() && !out.contains(&p) {
+                        out.push(p);
+                    }
+                }
+            }
+            from = at;
+        }
+    }
+    out
+}
+
+/// Log files vs LogSource rows, both ways.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LogDrift {
+    /// A log file the box writes with no LogSource row.
+    pub files_without_rows: Vec<String>,
+    /// A LogSource row whose file is not on the box.
+    pub rows_without_files: Vec<String>,
+}
+
+impl LogDrift {
+    pub fn is_clean(&self) -> bool {
+        self.files_without_rows.is_empty() && self.rows_without_files.is_empty()
+    }
+    pub fn report(&self) -> String {
+        if self.is_clean() {
+            return "reconcile logs: clean — every log file the box writes has its row and every row has its file".to_string();
+        }
+        let mut parts = Vec::new();
+        if !self.files_without_rows.is_empty() {
+            parts.push(format!(
+                "{} log file(s) with no row: {}",
+                self.files_without_rows.len(),
+                self.files_without_rows.join(", ")
+            ));
+        }
+        if !self.rows_without_files.is_empty() {
+            parts.push(format!(
+                "{} row(s) with no file: {}",
+                self.rows_without_files.len(),
+                self.rows_without_files.join(", ")
+            ));
+        }
+        format!("reconcile logs: DRIFT — {}", parts.join(" · "))
+    }
+}
+
+/// `exists` answers whether a row's path is a file on this box: a row may name a
+/// log outside the directories we sweep (a worker's own log under ~/.chorus) and
+/// still be true. Only a row whose file is gone is drift.
+pub fn reconcile_logs(
+    files_on_box: &[String],
+    row_paths: &[String],
+    exists: &dyn Fn(&str) -> bool,
+) -> LogDrift {
+    let mut d = LogDrift::default();
+    for f in files_on_box {
+        if !row_paths.contains(f) {
+            d.files_without_rows.push(f.clone());
+        }
+    }
+    for r in row_paths {
+        if !exists(r) {
+            d.rows_without_files.push(r.clone());
+        }
+    }
+    d.files_without_rows.sort();
+    d.rows_without_files.sort();
+    d
+}
+
+/// Every `watermark -> <sha>` a crawl log recorded, in order.
+pub fn passes_watermarks(log: &str) -> Vec<String> {
+    log.lines()
+        .filter_map(|l| l.split("watermark -> ").nth(1))
+        .map(|s| s.split_whitespace().next().unwrap_or("").to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Lands (first-parent commits on main) that no crawl pass ever covered. A land
+/// is covered when some later pass's watermark has it as an ancestor — a pass
+/// that walked HEAD after the land saw its files. The relation is injected so
+/// the rule is testable without a repo.
+pub fn uncovered_lands(
+    lands: &[String],
+    watermarks: &[String],
+    is_ancestor: &dyn Fn(&str, &str) -> bool,
+) -> Vec<String> {
+    lands
+        .iter()
+        .filter(|land| {
+            !watermarks
+                .iter()
+                .any(|w| land.as_str() == w.as_str() || is_ancestor(land, w))
+        })
+        .cloned()
+        .collect()
+}
+
+/// The morning line, one field per verdict.
+pub struct ProjectLine {
+    pub file_rows: usize,
+    pub tracked: usize,
+    pub no_kind: usize,
+    pub no_kind_top: String,
+    pub case_rows: usize,
+    pub no_case: usize,
+    pub no_case_detail: String,
+    pub log_rows: usize,
+    pub log_files: usize,
+    pub lag_commits: usize,
+    pub files_drift: usize,
+    pub cases_drift: usize,
+    pub logs_drift: usize,
+    pub lands: usize,
+    pub uncovered: Vec<String>,
+}
+
+impl ProjectLine {
+    pub fn render(&self) -> String {
+        let verdict = |n: usize| {
+            if n == 0 {
+                "clean".to_string()
+            } else {
+                format!("DRIFT {n}")
+            }
+        };
+        let lossless = if self.uncovered.is_empty() {
+            format!("lossless lands={} all covered", self.lands)
+        } else {
+            format!(
+                "LOSSY lands={} uncovered={} ({})",
+                self.lands,
+                self.uncovered.len(),
+                self.uncovered.join(",")
+            )
+        };
+        format!(
+            "graph vs project · complete files={}/{} no-kind={} ({}) cases={} no-case={} ({}) logs={} rows/{} files · current lag={} · consistent files={} cases={} logs={} · {}",
+            self.file_rows, self.tracked, self.no_kind, self.no_kind_top, self.case_rows, self.no_case, self.no_case_detail, self.log_rows, self.log_files,
+            self.lag_commits, verdict(self.files_drift), verdict(self.cases_drift), verdict(self.logs_drift), lossless
+        )
+    }
+    pub fn is_clean(&self) -> bool {
+        self.lag_commits == 0
+            && self.files_drift == 0
+            && self.cases_drift == 0
+            && self.logs_drift == 0
+            && self.uncovered.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod project_4199 {
+    use super::*;
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn no_kind_files_are_named_by_extension_most_first() {
+        let (n, top) = no_kind_summary(&s(&["a.png", "b.png", "c.lock", "Makefile", "d.png"]));
+        assert_eq!(n, 5);
+        assert_eq!(top, "png 3, lock 1, none 1");
+    }
+
+    #[test]
+    fn plist_log_paths_are_read_from_both_keys_once() {
+        let p = "<dict><key>StandardOutPath</key><string>/x/a.log</string><key>StandardErrorPath</key><string>/x/a.log</string><key>Label</key><string>com.x</string></dict>";
+        assert_eq!(log_paths_in_plist(p), vec!["/x/a.log".to_string()]);
+        assert!(log_paths_in_plist("<dict></dict>").is_empty());
+    }
+
+    #[test]
+    fn logs_that_match_reconcile_clean() {
+        let on_disk = |p: &str| p == "/l/a.log" || p == "/l/b.log" || p == "/w/worker.log";
+        let d = reconcile_logs(
+            &s(&["/l/a.log", "/l/b.log"]),
+            &s(&["/l/b.log", "/l/a.log", "/w/worker.log"]),
+            &on_disk,
+        );
+        assert!(
+            d.is_clean(),
+            "a row outside the swept directories whose file exists is not drift: {}",
+            d.report()
+        );
+    }
+    // NEGATIVE PROOF (#3734): a log file with no row is red and named; so is a row with no file.
+    #[test]
+    fn negative_proof_a_log_file_without_a_row_is_red_and_named() {
+        let on_disk = |p: &str| p == "/l/a.log" || p == "/l/new.log";
+        let d = reconcile_logs(
+            &s(&["/l/a.log", "/l/new.log"]),
+            &s(&["/l/a.log", "/l/gone.log"]),
+            &on_disk,
+        );
+        assert!(!d.is_clean());
+        assert!(d.report().contains("/l/new.log"), "{}", d.report());
+        assert!(d.report().contains("/l/gone.log"), "{}", d.report());
+    }
+
+    #[test]
+    fn watermarks_are_read_from_a_crawl_log_in_order() {
+        let log = "chorus-crawl: full\nchorus-crawl: watermark -> aaa111\nchorus-crawl: delta\nchorus-crawl: watermark HELD — x\nchorus-crawl: watermark -> bbb222\n";
+        assert_eq!(passes_watermarks(log), s(&["aaa111", "bbb222"]));
+    }
+
+    // NEGATIVE PROOF (#3734): a land after the last pass is uncovered and named;
+    // a land an earlier or equal watermark descends from is covered.
+    #[test]
+    fn negative_proof_a_land_no_pass_walked_is_uncovered() {
+        // linear history: L1 -> W1 -> L2 -> L3 ; passes recorded W1 and L2
+        let order = ["L1", "W1", "L2", "L3"];
+        let anc = |a: &str, b: &str| {
+            let ia = order.iter().position(|x| *x == a);
+            let ib = order.iter().position(|x| *x == b);
+            matches!((ia, ib), (Some(x), Some(y)) if x < y)
+        };
+        let missing = uncovered_lands(&s(&["L1", "L2", "L3"]), &s(&["W1", "L2"]), &anc);
+        assert_eq!(missing, s(&["L3"]));
+        assert!(
+            uncovered_lands(&s(&["L1", "L2"]), &s(&["W1", "L2"]), &anc).is_empty(),
+            "control: both covered"
+        );
+    }
+
+    #[test]
+    fn the_morning_line_says_clean_or_names_the_red() {
+        let mut p = ProjectLine {
+            file_rows: 5575,
+            tracked: 6214,
+            no_kind: 642,
+            no_kind_top: "png 233, none 180".into(),
+            case_rows: 8236,
+            no_case: 2,
+            no_case_detail: "unextracted 2 · no-lane 3".into(),
+            log_rows: 90,
+            log_files: 40,
+            lag_commits: 0,
+            files_drift: 0,
+            cases_drift: 0,
+            logs_drift: 0,
+            lands: 3,
+            uncovered: vec![],
+        };
+        assert!(p.is_clean());
+        let line = p.render();
+        assert!(
+            line.contains("complete files=5575/6214 no-kind=642 (png 233, none 180)"),
+            "{line}"
+        );
+        assert!(line.contains("lossless lands=3 all covered"), "{line}");
+        p.lag_commits = 2;
+        p.uncovered = s(&["abc1234"]);
+        assert!(!p.is_clean());
+        assert!(p.render().contains("current lag=2"));
+        assert!(p.render().contains("LOSSY lands=3 uncovered=1 (abc1234)"));
+    }
+}
+
 /// #4178 — the identity a scheduled run must present.
 ///
 /// The door stamps `ownedBy` from the caller, and only the owner may update or
@@ -1694,5 +2195,295 @@ mod merge_4178 {
                 "{who} must not be wired to a timer"
             );
         }
+    }
+}
+
+// ── #4199 — the log leg: every log file the box writes is a LogSource row ────
+//
+// Jeff, 2026-09-17 11:51: "the core crawler does the log writes". The crawler
+// already walks the plists and the log directories to judge the drift; the same
+// walk now writes the rows. Identity is the file's path. Row names are door
+// names (`log-<slug>-<fnv8>`); the old harvester's `urn:` ids cannot be
+// addressed through the door at all, so the crawler never touches them — they
+// show as drift until a DBA retires them, and that is the honest reading.
+
+/// The `Label` of a launchd plist, if it has one.
+pub fn plist_label(text: &str) -> Option<String> {
+    let needle = "<key>Label</key>";
+    let at = text.find(needle)? + needle.len();
+    let rest = &text[at..];
+    let s = rest.find("<string>")? + 8;
+    let e = rest[s..].find("</string>")?;
+    let label = rest[s..s + e].trim();
+    (!label.is_empty()).then(|| label.to_string())
+}
+
+/// One log file on this box, as the walk found it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogFile {
+    pub path: String,
+    /// The launchd job whose plist names this file, when one does.
+    pub launchd_label: Option<String>,
+    pub size: u64,
+    /// mtime, seconds since the epoch
+    pub written_secs: u64,
+}
+
+/// A log file with no launchd job behind it: a script's or a service's own.
+pub const UNMANAGED: &str = "unmanaged";
+/// A log nobody wrote to for this long is silent, not active.
+pub const SILENT_AFTER_SECS: u64 = 7 * 86_400;
+
+/// The row the crawler owns for one log file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogRow {
+    pub path: String,
+    pub launchd_label: String,
+    pub size: u64,
+    pub written_secs: u64,
+}
+
+impl LogRow {
+    pub fn from_file(f: &LogFile) -> LogRow {
+        LogRow {
+            path: f.path.clone(),
+            launchd_label: f.launchd_label.clone().unwrap_or_else(|| UNMANAGED.to_string()),
+            size: f.size,
+            written_secs: f.written_secs,
+        }
+    }
+    pub fn status_at(&self, observed_secs: u64) -> &'static str {
+        if observed_secs.saturating_sub(self.written_secs) > SILENT_AFTER_SECS {
+            "silent"
+        } else {
+            "active"
+        }
+    }
+    /// The fields the crawler asserts. `machine` is the bare onMachine value;
+    /// the door's own prefix is learned on the first refusal (PrefixMemory).
+    pub fn owned_fields(&self, machine: &str, observed_secs: u64) -> Vec<(String, String)> {
+        let base = self.path.rsplit('/').next().unwrap_or(&self.path);
+        vec![
+            ("label".to_string(), format!("{base} ({machine})")),
+            ("logPath".to_string(), self.path.clone()),
+            ("launchdLabel".to_string(), self.launchd_label.clone()),
+            ("logStatus".to_string(), self.status_at(observed_secs).to_string()),
+            ("lastObserved".to_string(), iso_from_secs(observed_secs)),
+            ("lastWrittenAt".to_string(), iso_from_secs(self.written_secs)),
+            ("sizeBytes".to_string(), self.size.to_string()),
+            ("onMachine".to_string(), machine.to_string()),
+        ]
+    }
+}
+
+/// A LogSource row as the door serves it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogInGraph {
+    pub name: String,
+    pub path: String,
+    pub fields: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogAction {
+    Post(LogRow),
+    Replace { name: String, row: LogRow },
+    Unchanged { path: String },
+    Delete { name: String, path: String },
+}
+
+/// A name the door will address: its own minted shape, not a `urn:` id.
+pub fn door_addressable(name: &str) -> bool {
+    !name.is_empty() && !name.contains(':') && !name.contains('/')
+}
+
+/// Deterministic door name for a log file: slug of the path + fnv8 of the exact path.
+pub fn log_row_name(path: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for c in path.chars() {
+        if c.is_ascii_alphanumeric() {
+            slug.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-');
+    let mut end = slug.len().min(100);
+    while !slug.is_char_boundary(end) {
+        end -= 1;
+    }
+    let slug = slug[..end].trim_end_matches('-');
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in path.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("log-{slug}-{:08x}", (h & 0xffff_ffff) as u32)
+}
+
+/// What one pass does to the logs domain. A full pass refreshes every row it
+/// owns (size, last write, status); a delta only adds and retires. Rows the
+/// door cannot address are never planned against.
+pub fn plan_logs(
+    files: &[LogFile],
+    rows: &[LogInGraph],
+    full: bool,
+    exists: &dyn Fn(&str) -> bool,
+) -> Vec<LogAction> {
+    let mut out = Vec::new();
+    for f in files {
+        let row = LogRow::from_file(f);
+        match rows.iter().find(|r| r.path == f.path && door_addressable(&r.name)) {
+            None => out.push(LogAction::Post(row)),
+            Some(r) if full => out.push(LogAction::Replace { name: r.name.clone(), row }),
+            Some(_) => out.push(LogAction::Unchanged { path: f.path.clone() }),
+        }
+    }
+    for r in rows {
+        if !r.path.is_empty() && door_addressable(&r.name) && !exists(&r.path) {
+            out.push(LogAction::Delete { name: r.name.clone(), path: r.path.clone() });
+        }
+    }
+    out
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LogCounts {
+    pub posted: usize,
+    pub replaced: usize,
+    pub unchanged: usize,
+    pub deleted: usize,
+}
+
+pub fn log_counts(actions: &[LogAction]) -> LogCounts {
+    let mut c = LogCounts::default();
+    for a in actions {
+        match a {
+            LogAction::Post(_) => c.posted += 1,
+            LogAction::Replace { .. } => c.replaced += 1,
+            LogAction::Unchanged { .. } => c.unchanged += 1,
+            LogAction::Delete { .. } => c.deleted += 1,
+        }
+    }
+    c
+}
+
+/// Seconds since the epoch as `YYYY-MM-DDTHH:MM:SSZ`, no clock library.
+pub fn iso_from_secs(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // civil-from-days (Howard Hinnant)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
+#[cfg(test)]
+mod logs_4199 {
+    use super::*;
+
+    fn file(path: &str, label: Option<&str>, written: u64) -> LogFile {
+        LogFile {
+            path: path.to_string(),
+            launchd_label: label.map(|s| s.to_string()),
+            size: 10,
+            written_secs: written,
+        }
+    }
+    fn row(name: &str, path: &str) -> LogInGraph {
+        LogInGraph {
+            name: name.to_string(),
+            path: path.to_string(),
+            fields: vec![],
+        }
+    }
+
+    #[test]
+    fn plist_label_reads_the_label_string() {
+        let t = "<dict><key>Label</key>\n<string>com.chorus.x</string><key>StandardOutPath</key><string>/l.log</string></dict>";
+        assert_eq!(plist_label(t).as_deref(), Some("com.chorus.x"));
+        assert_eq!(plist_label("<dict></dict>"), None);
+    }
+
+    #[test]
+    fn iso_from_secs_is_civil_utc() {
+        assert_eq!(iso_from_secs(0), "1970-01-01T00:00:00Z");
+        assert_eq!(iso_from_secs(1_700_000_000), "2023-11-14T22:13:20Z");
+        assert_eq!(iso_from_secs(951_782_400), "2000-02-29T00:00:00Z");
+    }
+
+    #[test]
+    fn row_name_is_a_door_name_and_distinguishes_case() {
+        let a = log_row_name("/Users/j/Library/Logs/Chorus/a.log");
+        let b = log_row_name("/Users/j/Library/Logs/Chorus/A.log");
+        assert!(a.starts_with("log-users-j-library-logs-chorus-a-log-"));
+        assert_ne!(a, b);
+        assert!(door_addressable(&a));
+        assert!(!door_addressable("urn:chorus:logsource-library-x"));
+    }
+
+    #[test]
+    fn a_file_with_no_row_is_posted_even_when_a_urn_row_names_it() {
+        let files = [file("/l/a.log", Some("com.a"), 100)];
+        let rows = [row("urn:chorus:logsource-library-com.a", "/l/a.log")];
+        let plan = plan_logs(&files, &rows, true, &|_| true);
+        assert_eq!(plan.len(), 1);
+        assert!(matches!(&plan[0], LogAction::Post(r) if r.launchd_label == "com.a"));
+    }
+
+    #[test]
+    fn a_present_row_is_refreshed_on_full_and_left_on_delta() {
+        let files = [file("/l/a.log", None, 100)];
+        let rows = [row("log-l-a-log-00000001", "/l/a.log")];
+        let full = plan_logs(&files, &rows, true, &|_| true);
+        assert!(matches!(&full[0], LogAction::Replace { name, row } if name == "log-l-a-log-00000001" && row.launchd_label == UNMANAGED));
+        let delta = plan_logs(&files, &rows, false, &|_| true);
+        assert!(matches!(&delta[0], LogAction::Unchanged { .. }));
+    }
+
+    #[test]
+    fn a_door_row_whose_file_is_gone_is_deleted_and_a_urn_row_never_is() {
+        let rows = [
+            row("log-l-gone-log-00000002", "/l/gone.log"),
+            row("urn:chorus:logsource-library-gone", "/l/gone2.log"),
+        ];
+        let plan = plan_logs(&[], &rows, true, &|_| false);
+        assert_eq!(plan.len(), 1);
+        assert!(matches!(&plan[0], LogAction::Delete { name, .. } if name == "log-l-gone-log-00000002"));
+    }
+
+    #[test]
+    fn negative_proof_a_present_file_is_not_deleted() {
+        let files = [file("/l/a.log", None, 100)];
+        let rows = [row("log-l-a-log-00000001", "/l/a.log")];
+        let plan = plan_logs(&files, &rows, false, &|p| p == "/l/a.log");
+        assert_eq!(log_counts(&plan).deleted, 0);
+    }
+
+    #[test]
+    fn status_is_silent_after_a_week() {
+        let r = LogRow::from_file(&file("/l/a.log", None, 1_000_000));
+        assert_eq!(r.status_at(1_000_000 + SILENT_AFTER_SECS), "active");
+        assert_eq!(r.status_at(1_000_000 + SILENT_AFTER_SECS + 1), "silent");
+        let f = r.owned_fields("library", 1_000_100);
+        assert!(f.contains(&("label".to_string(), "a.log (library)".to_string())));
+        assert!(f.contains(&("onMachine".to_string(), "library".to_string())));
+        assert!(f.contains(&("launchdLabel".to_string(), UNMANAGED.to_string())));
     }
 }
