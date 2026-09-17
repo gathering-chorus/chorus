@@ -67,3 +67,79 @@ fn garbage_or_empty_session_list_means_continue_and_nothing_stale() {
 fn projects_dir_is_the_role_dir_with_slashes_as_dashes() {
     assert_eq!(projects_dir_for("/Users/j", "/Users/j/CascadeProjects/chorus/roles/kade").to_string_lossy(), "/Users/j/.claude/projects/-Users-j-CascadeProjects-chorus-roles-kade");
 }
+
+// ---------------------------------------------------------------- #4202 login
+
+mod login_4202 {
+    use chorus_awake::*;
+
+    fn tok(webid: &str, jti: &str, iat: u64, exp: u64) -> String {
+        let payload = format!(r#"{{"webid":"{}","jti":"{}","iat":{},"exp":{}}}"#, webid, jti, iat, exp);
+        // base64url, no padding
+        const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+        let b = payload.as_bytes();
+        let mut out = String::new();
+        for ch in b.chunks(3) {
+            let n = ((ch[0] as u32) << 16) | ((*ch.get(1).unwrap_or(&0) as u32) << 8) | (*ch.get(2).unwrap_or(&0) as u32);
+            out.push(T[((n >> 18) & 63) as usize] as char);
+            out.push(T[((n >> 12) & 63) as usize] as char);
+            if ch.len() > 1 { out.push(T[((n >> 6) & 63) as usize] as char); }
+            if ch.len() > 2 { out.push(T[(n & 63) as usize] as char); }
+        }
+        format!("eyJhbGciOiJFUzI1NiJ9.{}.sig", out)
+    }
+    const KADE: &str = "https://id.lightlifeurbangardens.com/kade/profile/card#me";
+
+    #[test]
+    fn b64url_round_trips_a_payload() {
+        assert_eq!(b64url_decode("eyJhIjoxfQ").unwrap(), b"{\"a\":1}");
+        assert_eq!(b64url_decode("eyJhIjoxfQ==").unwrap(), b"{\"a\":1}");
+        assert!(b64url_decode("not base64!").is_none());
+    }
+
+    #[test]
+    fn a_token_naming_the_role_is_a_login() {
+        let l = login_check("kade", &tok(KADE, "jti-1", 100, 700), 200).unwrap();
+        assert_eq!(l.webid, KADE);
+        assert_eq!(l.jti, "jti-1");
+        assert_eq!((l.iat, l.exp), (100, 700));
+    }
+
+    /// NEGATIVE PROOF — a valid token for ANOTHER role is not this role's login.
+    #[test]
+    fn another_roles_token_is_refused_as_wrong_principal() {
+        let e = login_check("kade", &tok("https://id.lightlifeurbangardens.com/silas/profile/card#me", "j", 1, 999), 2).unwrap_err();
+        assert!(e.starts_with("wrong principal"), "{e}");
+        assert!(e.contains("silas"), "{e}");
+    }
+
+    /// NEGATIVE PROOF — an expired token is not a login, even for the right role.
+    #[test]
+    fn an_expired_token_is_refused() {
+        let e = login_check("kade", &tok(KADE, "j", 1, 50), 60).unwrap_err();
+        assert!(e.starts_with("expired"), "{e}");
+    }
+
+    /// NEGATIVE PROOF — garbage is "no session", not a panic and not a login.
+    #[test]
+    fn garbage_is_no_session() {
+        assert!(login_check("kade", "garbage", 1).unwrap_err().starts_with("no session"));
+        assert!(login_check("kade", "", 1).unwrap_err().starts_with("no session"));
+        let no_jti = login_check("kade", &tok(KADE, "", 1, 999), 2).unwrap_err();
+        assert!(no_jti.contains("jti"), "{no_jti}");
+    }
+
+    #[test]
+    fn the_session_row_is_owned_by_the_principal_and_never_carries_the_token() {
+        let l = login_check("kade", &tok(KADE, "abc-jti-0001", 1758124800, 1758125400), 1758124801).unwrap();
+        let (name, body) = session_row("kade", &l, "chorus-kade");
+        assert_eq!(name, "session-kade-jti-0001");
+        assert_eq!(body["ownedBy"], "principal-kade");
+        assert_eq!(body["tokenId"], "abc-jti-0001");
+        assert_eq!(body["sessionState"], "open");
+        assert_eq!(body["hostAccount"], "chorus-kade");
+        assert_eq!(body["issuedAt"], "2025-09-17T16:00:00Z");
+        assert_eq!(body["expiresAt"], "2025-09-17T16:10:00Z");
+        assert!(!body.to_string().contains("eyJ"));
+    }
+}

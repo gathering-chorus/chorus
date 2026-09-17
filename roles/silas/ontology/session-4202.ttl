@@ -1,0 +1,84 @@
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix owl:    <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs:   <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh:     <http://www.w3.org/ns/shacl#> .
+@prefix xsd:    <http://www.w3.org/2001/XMLSchema#> .
+
+# #4202 — agents log in to Chorus. Jeff, 2026-09-17: "to me chorus-awake must
+# include authn for agents"; "agents must login to chorus"; "and then follow
+# authz rules"; "its mandatory that all principals follow the same security
+# model". A Session is the receipt of a login: which Principal, when, until
+# when, under which token id, and on which host account. "Who is logged in"
+# is rows in the security graph, read by pulse and /sup, never a declared
+# state. Rows are written by chorus-awake at boot through the generated
+# security API and served at /v1/security/sessions.
+
+chorus:identity chorus:definesVocabulary chorus:Session .
+
+chorus:Session a owl:Class ;
+    rdfs:label "Session" ;
+    rdfs:comment "One login of a Principal to Chorus: the token chorus-awake obtained for the role before its first turn, with issue and expiry times and the macOS account the process runs as. Open until the session ends or the token expires. A Principal with no open Session is not logged in and cannot write. #4202." .
+
+chorus:tokenId a owl:DatatypeProperty ;
+    rdfs:label "token id" ;
+    rdfs:comment "The jti claim of the login token. The token itself never enters the graph. #4202." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:issuedAt a owl:DatatypeProperty ;
+    rdfs:label "issued at" ;
+    rdfs:comment "When the login token was issued (the iat claim), ISO-8601 UTC. #4202." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:expiresAt a owl:DatatypeProperty ;
+    rdfs:label "expires at" ;
+    rdfs:comment "When the login token expires (the exp claim), ISO-8601 UTC. #4202." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:sessionState a owl:DatatypeProperty ;
+    rdfs:label "session state" ;
+    rdfs:comment "open | closed. #4202." ;
+    rdfs:domain chorus:Session ;
+    rdfs:range xsd:string .
+
+chorus:hostAccount a owl:DatatypeProperty ;
+    rdfs:label "host account" ;
+    rdfs:comment "The macOS account a process runs as. On a Principal: the account that role is bound to, so a token request from a process running as any other account is refused. On a Session: the account the login actually came from. Spike 2026-09-17: a key readable only by the role's account is unreadable from Jeff's shell and readable by a process started from his terminal as that account. #4202." ;
+    rdfs:range xsd:string .
+
+chorus:SessionShape a sh:NodeShape ;
+    sh:targetClass chorus:Session ;
+    chorus:instancesGraph "urn:chorus:domains:security" ;
+    sh:property chorus:SessionShape-label ;
+    sh:property chorus:SessionShape-ownedBy ;
+    sh:property chorus:SessionShape-tokenId ;
+    sh:property chorus:SessionShape-issuedAt ;
+    sh:property chorus:SessionShape-expiresAt ;
+    sh:property chorus:SessionShape-sessionState ;
+    sh:property chorus:SessionShape-hostAccount .
+chorus:SessionShape-label a sh:PropertyShape ;
+    sh:path rdfs:label ; sh:minCount 1 .
+chorus:SessionShape-ownedBy a sh:PropertyShape ;
+    # the Principal who logged in — the row's owner, as every row's owner is a Principal (#4196)
+    sh:path chorus:ownedBy ; sh:minCount 1 ; sh:maxCount 1 ; sh:class chorus:Principal .
+chorus:SessionShape-tokenId a sh:PropertyShape ;
+    sh:path chorus:tokenId ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    chorus:uniqueGlobal true .
+chorus:SessionShape-issuedAt a sh:PropertyShape ;
+    sh:path chorus:issuedAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionShape-expiresAt a sh:PropertyShape ;
+    sh:path chorus:expiresAt ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+chorus:SessionShape-sessionState a sh:PropertyShape ;
+    sh:path chorus:sessionState ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ;
+    sh:pattern "^(open|closed)$" .
+chorus:SessionShape-hostAccount a sh:PropertyShape ;
+    sh:path chorus:hostAccount ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string .
+
+# A Principal may be bound to one host account. Optional: services and Jeff
+# are not bound today; the three role principals are bound when the account
+# split lands.
+chorus:PrincipalShape sh:property chorus:PrincipalShape-hostAccount .
+chorus:PrincipalShape-hostAccount a sh:PropertyShape ;
+    sh:path chorus:hostAccount ; sh:maxCount 1 ; sh:datatype xsd:string .

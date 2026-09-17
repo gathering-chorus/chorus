@@ -120,6 +120,10 @@ else
     # 5 credentials were live, but the shape was never deployed, so nothing
     # enforced it (the DECLARED-but-not-SERVED gap the 2026-08-02 audit named).
     "$CHORUS_ROOT/roles/silas/ontology/nostr-credential-shape-3691.ttl"
+    # #4202 — Session class + shape + the identity domain's claim of it: the
+    # receipt of an agent login written by chorus-awake, served at
+    # /v1/security/sessions. Schema only; rows land in the security graph.
+    "$CHORUS_ROOT/roles/silas/ontology/session-4202.ttl"
     # #3733 — the graph-status registry: which graphs are sanctioned model
     # content is model DATA, queried by reconcile (allowlist retired).
     "$CHORUS_ROOT/roles/silas/ontology/graph-status-3733.ttl"

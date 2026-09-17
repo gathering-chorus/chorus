@@ -36,6 +36,20 @@ REFRESH_MARGIN_S="${CHORUS_TOKEN_REFRESH_MARGIN_S:-120}" # re-mint this long bef
 
 [ -f "$CRED" ] || { echo "chorus-identity-token: no credential for '$ROLE' at $CRED (seed via #3613 seed-css.sh)" >&2; exit 3; }
 
+# ── #4202: a credential bound to a host account is usable ONLY by a process
+# running as that account. Jeff, 2026-09-17: "we need a key that we can trust";
+# "its mandatory that all principals follow the same security model". The OS
+# already keeps the file from other accounts (mode 600 in that account's home);
+# this check makes the refusal NAMED when the file is readable anyway (a shared
+# home, a copied cred), and it runs before the cache so a cached token cannot
+# bypass it. No hostAccount in the cred = unbound (services, Jeff) = no check.
+BOUND="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("hostAccount",""))' "$CRED" 2>/dev/null || true)"
+ME="$(id -un)"
+if [ -n "$BOUND" ] && [ "$BOUND" != "$ME" ]; then
+  echo "chorus-identity-token: refused — '$ROLE' is bound to account '$BOUND'; this process runs as '$ME'" >&2
+  exit 6
+fi
+
 # ── cache hit? valid iff present, non-empty, and exp - now > margin ──
 if [ -f "$CACHE" ]; then
   cached="$(cat "$CACHE" 2>/dev/null || true)"
