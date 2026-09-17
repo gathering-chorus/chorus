@@ -97,6 +97,11 @@ const KINDS: &[(&str, &str, bool)] = &[
     // ADR-040/OWL-DBA blessing (nudged 2026-07-23).
     ("test-result", "TestResult", false),
     ("test-suite-run", "TestSuiteRun", false),
+    // #4199 (Kade, Jeff 2026-09-17 11:51 "the core crawler does the log writes") —
+    // LogSource is a generated door surface (/logs/sources) whose rows were only
+    // ever written by a DBA harvester under urn: ids; the crawler creates them
+    // through the door. Type-prefixed like the rest (mints log-source-<name>).
+    ("log-source", "LogSource", false),
     // #3654 (Wren, Jeff-driven 2026-07-24) — the board domain's kinds. Chunk +
     // ChunkMembership are board-native; Card is a THIN FK stub (Vikunja SoR until
     // #2159 — the board mints id+label only so a membership resolves). All three
