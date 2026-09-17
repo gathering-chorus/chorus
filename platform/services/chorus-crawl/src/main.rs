@@ -759,10 +759,9 @@ fn seam(args: &[String]) -> bool {
             let placement = domain::place(&content, &valid, &|_| None);
             let concern = cases::file_class(&path, &content).concern;
             let covers = cases::covers_from(placement.domain(), concern);
-            if !covers.is_empty() {
-                println!("{covers}");
-            } else {
-                println!("{}", domain::listing(&path, &placement).unwrap_or_default());
+            match domain::listing(&path, &placement) {
+                Some(l) => println!("{covers} ({l})"),
+                None => println!("{covers}"),
             }
         }
         "--classify" => {
@@ -1301,7 +1300,9 @@ fn main() {
         let mut per_domain: Vec<(String, usize)> = Vec::new();
         let mut seen_files: Vec<&str> = Vec::new();
         for r in &parsed.desired {
-            if r.covers.is_empty() || seen_files.contains(&r.file.as_str()) {
+            // #4201 — the tests domain is the explicit home of the unplaced, counted
+            // on the line as unplaced/conflicts; it is not a corpus share to gate
+            if r.covers == cases::UNPLACED_HOME || seen_files.contains(&r.file.as_str()) {
                 continue;
             }
             seen_files.push(&r.file);

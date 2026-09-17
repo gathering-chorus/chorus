@@ -769,14 +769,20 @@ pub fn no_case_report(paths: &[String]) -> String {
 // domain a test covers is read from the FILE by the five rules in domain.rs;
 // the folder is never a rule and "services" is never a default.
 
+/// The home of a test the five rules cannot place, or place two ways. Jeff,
+/// 2026-09-17 14:09: "we have a tests domain" — the set of all tests is a real
+/// Domain row, so an unplaced test covers `tests`, never a folder, never a guess.
+pub const UNPLACED_HOME: &str = "tests";
+
 /// The domain a case row COVERS: the security lane (#3922) selects its rows by
 /// `covers=security`, so a declared security concern pins it; otherwise the
-/// five rules' placement, or nothing when the file is unplaced or in conflict.
+/// five rules' placement, or the tests domain when the file is unplaced or in
+/// conflict (both still listed by name on the line).
 pub fn covers_from(placement: Option<&str>, concern: Option<&str>) -> String {
     if concern == Some("security") {
         return "security".to_string();
     }
-    placement.unwrap_or("").to_string()
+    placement.unwrap_or(UNPLACED_HOME).to_string()
 }
 
 // ─────────────────────────── the share gate ───────────────────────────
@@ -1382,20 +1388,19 @@ mod cases_4185 {
         assert_eq!(covers_from(Some("messages"), Some("api")), "messages");
     }
     #[test]
-    fn negative_proof_an_unplaced_file_carries_no_covers_field() {
-        assert_eq!(covers_from(None, None), "");
+    fn negative_proof_an_unplaced_file_covers_the_tests_domain_never_a_folder() {
+        assert_eq!(covers_from(None, None), "tests");
+        assert_ne!(covers_from(None, None), "services");
         let row = CaseRow {
             file: "platform/tests/4099-x.bats".into(),
             case: "a".into(),
-            covers: String::new(),
+            covers: covers_from(None, None),
             layer: "integration".into(),
             hermeticity: "hermetic".into(),
             concern: None,
             in_file: "file-x".into(),
         };
-        assert!(!row.owned_fields().iter().any(|(k, _)| k == "covers"));
-        let tagged = CaseRow { covers: "cards".into(), ..row };
-        assert!(tagged.owned_fields().contains(&("covers".to_string(), "cards".to_string())));
+        assert!(row.owned_fields().contains(&("covers".to_string(), "tests".to_string())));
     }
 
     // ── the share gate ──
