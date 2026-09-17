@@ -52,3 +52,21 @@ teardown() { rm -rf "$T"; }
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "2 event(s) on athena-7-7"
 }
+
+@test "the trace reader tells werk rows from athena rows: a pipeline pill per row, traces counted per pipeline" {
+  # Jeff 2026-09-17 07:27: "if a card involves athena and werk i expect to see both traces via card;
+  # visually how do i differentiate werk and athena rows". Shape proof on the served file.
+  H="$ROOT/platform/api/public/borg/trace.html"
+  grep -q "function pipelineOf(ev, fullTrace)" "$H"
+  grep -q "startsWith('athena-')" "$H"
+  grep -q 'PIPE_COLOR\[e.pipe\]' "$H"
+  grep -q 'byPipe.athena.size' "$H"
+  # NEGATIVE PROOF: an event outside the athena vocabulary on a non-athena trace is werk, never 'other'
+  n=$(node -e "
+    const src=require('fs').readFileSync('$H','utf8');
+    const m=src.match(/function pipelineOf[\s\S]*?\n}/)[0];
+    const pipelineOf=new Function(m+'; return pipelineOf;')();
+    const r=[pipelineOf('merge.landed','1789595964146650000-65927'),pipelineOf('model.seed.posted','1789595964146650000-65927'),pipelineOf('werk.started','athena-1-2')];
+    console.log(r.join(','))")
+  [ "$n" = "werk,athena,athena" ]
+}
