@@ -61,3 +61,44 @@ MODEL="$ROOT/roles/silas/ontology/chorus.ttl"
   ! grep -q 'only the owning role may write this node' "$DOOR"
   ! grep -q 'batch requires a scoped token whose scope names' "$DOOR"
 }
+
+# --- the door writes a Permission row with its mode as a STRING (the shape types
+# chorus:mode as anyURI, and the pen has no IRI-valued plain field), so the grant
+# query must accept either spelling. Found live 08:24 on the fdc00b2 round: jeff's
+# door-created row granted nothing. Proven offline with arq, as #4183 does.
+RQ="$ROOT/platform/api/src/sparql/principal-scope.rq"
+arq_rows() {
+  command -v arq >/dev/null 2>&1 || skip "arq (Jena) not installed — UNMEASURED here, not green"
+  local q; q="$(sed 's/GRAPH <urn:chorus:domains:security> //' "$RQ")"
+  printf '%s\n' "$q" > "$T/q.rq"
+  arq --results csv --query "$T/q.rq" --data "$T/rows.ttl" 2>/dev/null | tail -n +2 | grep -c . || true
+}
+fixture() {
+  T="$(mktemp -d)"
+  cat > "$T/rows.ttl" <<TTL
+@prefix chorus: <https://jeffbridwell.com/chorus#> .
+@prefix acl: <http://www.w3.org/ns/auth/acl#> .
+chorus:principal-jeff a chorus:Principal ; chorus:webId <https://id.example/jeff/profile/card#me> .
+chorus:permission-jeff-security a chorus:Permission ; chorus:agent chorus:principal-jeff ;
+  chorus:accessTo <urn:chorus:domains:security> ; chorus:mode $1 .
+TTL
+}
+
+@test "a door-created row (mode stored as a string) grants through the scope query" {
+  fixture '"http://www.w3.org/ns/auth/acl#Write"'
+  n=$(arq_rows); rm -rf "$T"
+  [ "$n" -eq 1 ]
+}
+
+@test "an authored row (mode as the acl IRI) still grants" {
+  fixture 'acl:Write'
+  n=$(arq_rows); rm -rf "$T"
+  [ "$n" -eq 1 ]
+}
+
+@test "NEGATIVE PROOF — a Read row grants no write, in either spelling" {
+  fixture 'acl:Read'; a=$(arq_rows); rm -rf "$T"
+  fixture '"http://www.w3.org/ns/auth/acl#Read"'; b=$(arq_rows); rm -rf "$T"
+  [ "$a" -eq 0 ]
+  [ "$b" -eq 0 ]
+}
