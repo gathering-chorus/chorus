@@ -1771,9 +1771,11 @@ mod project_4199 {
     // NEGATIVE PROOF (#3734): a log file with no row is red and named; so is a row with no file.
     #[test]
     fn negative_proof_a_log_file_without_a_row_is_red_and_named() {
+        let on_disk = |p: &str| p == "/l/a.log" || p == "/l/new.log";
         let d = reconcile_logs(
             &s(&["/l/a.log", "/l/new.log"]),
             &s(&["/l/a.log", "/l/gone.log"]),
+            &on_disk,
         );
         assert!(!d.is_clean());
         assert!(d.report().contains("/l/new.log"), "{}", d.report());
