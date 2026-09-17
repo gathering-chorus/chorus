@@ -102,6 +102,9 @@ const KINDS: &[(&str, &str, bool)] = &[
     // ever written by a DBA harvester under urn: ids; the crawler creates them
     // through the door. Type-prefixed like the rest (mints log-source-<name>).
     ("log-source", "LogSource", false),
+    // #4199 — a LogSource's onMachine edge targets a Machine; the two rows
+    // (library, bedroom) are bare IRIs, so bare_grain reproduces them exactly.
+    ("machine", "Machine", true),
     // #3654 (Wren, Jeff-driven 2026-07-24) — the board domain's kinds. Chunk +
     // ChunkMembership are board-native; Card is a THIN FK stub (Vikunja SoR until
     // #2159 — the board mints id+label only so a membership resolves). All three
