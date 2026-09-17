@@ -161,7 +161,8 @@ impl OidcVerifier {
     pub fn principal_for(&self, web_id: &str, now_secs: u64) -> Option<String> {
         let resolve = self.resolve_principals.as_ref()?;
         let mut pl = self.principals.lock().unwrap_or_else(|e| e.into_inner());
-        let stale = now_secs.saturating_sub(pl.fetched_at) >= ALLOW_TTL_SECS;
+        // never fetched (fetched_at == 0) is stale by definition, not fresh
+        let stale = pl.fetched_at == 0 || now_secs.saturating_sub(pl.fetched_at) >= ALLOW_TTL_SECS;
         let can_retry = now_secs.saturating_sub(pl.last_attempt) >= ALLOW_RETRY_COOLDOWN_SECS
             || pl.last_attempt == 0;
         if stale && can_retry {
@@ -1348,13 +1349,16 @@ mod tests {
     /// The query asks the hasScope edge in the security graph; unreachable is
     /// distinct from empty; rows without a separator are dropped and said.
     #[test]
-    fn principal_scope_query_asks_the_has_scope_edge() {
+    fn principal_scope_query_asks_the_permission_rows_not_the_has_scope_edge() {
         let body = format!(
             r#"{{"head":{{"vars":["v"]}},"results":{{"bindings":[{{"v":{{"type":"literal","value":"{} urn:chorus:domains:tests"}}}},{{"v":{{"type":"literal","value":"{} urn:chorus:ontology"}}}}]}}}}"#,
             wren_webid(), wren_webid()
         );
         let got = resolve_principal_scopes(|q| {
-            assert!(q.contains("chorus:hasScope"), "asks the hasScope edge");
+            // #4183 — a held scope is a Permission row (agent + accessTo + mode
+            // acl:Write); the hasScope literal is retired and must never be asked.
+            assert!(q.contains("chorus:Permission") && q.contains("chorus:accessTo"), "asks the Permission rows");
+            assert!(!q.contains("chorus:hasScope"), "never asks the retired hasScope edge");
             assert!(q.contains("urn:chorus:domains:security"), "scoped to the security graph");
             Some(body.clone())
         });
