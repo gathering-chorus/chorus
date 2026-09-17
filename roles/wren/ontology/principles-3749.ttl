@@ -77,7 +77,10 @@ chorus:PrincipleShape a sh:NodeShape ;
     # the owner is the role that keeps it, required. order is bounded to the 14
     # roots. Negative proof: platform/tests/fixtures/principles-4186-violations.ttl
     # must FAIL this shape (4186-principle-shape-floor.bats).
-    sh:property [ sh:path rdfs:label ; sh:maxCount 1 ; sh:datatype xsd:string ] ;
+    # #4177 — one label rule: line 46's shape declares rdfs:label plain; this one said
+    # xsd:string, and the door refuses a class whose two shapes disagree about one field
+    # ("declared twice with different kinds"). /principles was 404 from 2026-09-16 17:59.
+    sh:property [ sh:path rdfs:label ; sh:maxCount 1 ] ;
     sh:property [ sh:path chorus:jeffReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;
                   sh:message "a principle without Jeff's reading is a quotation, not one of ours" ] ;
     sh:property [ sh:path chorus:techReading ; sh:minCount 1 ; sh:maxCount 1 ; sh:datatype xsd:string ; sh:minLength 20 ;

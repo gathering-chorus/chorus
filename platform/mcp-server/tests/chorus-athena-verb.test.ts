@@ -1,6 +1,6 @@
 // @test-type: unit — signal is fixture-data: in-memory MCP transport + a stub act on CHORUS_ACT_BIN + tmp runsDir (no live act/werk/store)
-// #4186 — the MODEL pipeline as one MCP verb (chorus_athena). werk.yml's athena-werk
-// and athena-land steps call it, so act never runs inside act, and a role can run
+// #4186 — the MODEL pipeline as one MCP verb (chorus_athena). #4177: werk.yml no longer
+// calls it; the land event triggers it from the werk-merge case. A role can still run
 // the model pipeline alone. The stub act records its argv and answers 0 or 1.
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';

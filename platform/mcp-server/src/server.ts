@@ -501,13 +501,17 @@ const WerkRunInput = z.object({
 // #4186 — the MODEL pipeline as its own MCP verb (Jeff: "get athena out of werk").
 // Runs athena.yml's `land` job SYNCHRONOUSLY via act (deploy → serve → seed → prove is
 // minutes, never a human wait) for one target: canonical (after a land, the landed
-// sha) or werk (the card's variant store, right after env-up). werk.yml calls this
-// verb from its athena-werk / athena-land steps, so act never runs inside act.
+// sha). #4177 (Jeff, 2026-09-17 07:51: "what is athena-land why is that part of
+// this flow!"): werk.yml no longer calls this verb at all. The land EVENT triggers
+// athena — the werk-merge case below scopes the landed sha and, when it carried
+// model or seed sources, starts this same run DETACHED (triggerAthenaOnLand). The
+// verb remains the hand-run door; act never runs inside act either way.
 const AthenaRunInput = z.object({
   role: RoleEnum,
   card_id: z.number().int().min(1).describe('Card the model change belongs to.'),
   target: z.enum(['canonical']).describe('canonical = the live store, after a land. There is no variant target: the demo env reads the live store (Jeff, 2026-09-16), a model change is this pipeline, never a demo copy.'),
   landed_commit: z.string().optional().describe('target=canonical: the merged origin/main sha the store must attest. Empty = ungated hand run.'),
+  parent_trace: z.string().optional().describe('#4177: the caller\'s trace, recorded as parent on athena.pipeline.started; the run still mints its own trace.'),
 });
 
 const ATHENA_RUN_TOOL_DEF = {
@@ -2841,6 +2845,64 @@ async function executeChorusWerk(
 // runner werk uses (-W the canonical file, -P host-native, --input wiring, the runner
 // PATH); the caller never sees the CLI. The log is per run under runsDir.
 const ATHENA_RUN_TIMEOUT_MS = 15 * 60_000;
+function athenaActArgs(args: z.infer<typeof AthenaRunInput>, workflow: string): string[] {
+  return [
+    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
+    '--input', `card_id=${args.card_id}`, '--input', `role=${args.role}`,
+    '--input', `target=${args.target}`, '--input', `landed_commit=${args.landed_commit ?? ''}`,
+    '--input', `parent_trace=${args.parent_trace ?? ''}`,
+  ];
+}
+
+// #4177 — the land event triggers the model pipeline. Called from the werk-merge case
+// once the merge verb has returned the landed origin/main sha. Scopes that one commit
+// with `athena-deploy scope` (the single owner of "is this a model or seed source");
+// nothing in scope = nothing to run, said on the spine. Something in scope = the
+// canonical athena run starts in its own process group and this returns at once:
+// the land is proven by the merge, the model run reports on its own trace
+// (athena.pipeline.started … completed, card=<card>) and in its log. Never fails the
+// merge: the code landed either way, and a merge reply that lied about that would
+// be worse than a model run that has to be read from the spine.
+async function triggerAthenaOnLand(
+  role: string, cardId: number, landedCommit: string, runsDir?: string,
+): Promise<Record<string, unknown>> {
+  const { pathMod, home, werkBase, runnerPath, actBin, binDir } = werkRunPaths();
+  const fsMod = require('fs') as typeof import('fs');
+  const execFileP = promisify(execFile);
+  const scopeBin = pathMod.join(binDir, 'athena-deploy');
+  let scope = '';
+  try {
+    const r = await execFileP(scopeBin, ['scope', home, `${landedCommit}^..${landedCommit}`], { env: process.env, timeout: 60_000, maxBuffer: 4 * 1024 * 1024 });
+    scope = (r.stdout || '').trim();
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stderr?: string; killed?: boolean; signal?: string | null };
+    // a kill is named as a kill (the exec-timeout-is-named class), never read as a scope refusal
+    const detail = (e.killed || e.signal)
+      ? `athena-deploy scope killed after 60000ms (${e.signal ?? 'timeout'})`
+      : (e.stderr || e.message || String(err)).trim().slice(0, 200);
+    await appendChorusLog('athena.trigger.failed', role, { card_id: cardId, landedCommit, reason: 'scope-failed', detail });
+    return { triggered: false, reason: 'scope-failed', detail };
+  }
+  if (!scope) {
+    await appendChorusLog('athena.trigger.skipped', role, { card_id: cardId, landedCommit, reason: 'no-model-source' });
+    return { triggered: false, reason: 'no-model-source' };
+  }
+  const files = scope.split('\n').filter(Boolean).length;
+  const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
+  try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+  const log = pathMod.join(dir, `athena-${cardId}-canonical-${Date.now()}.log`);
+  const workflow = pathMod.join(home, '.github', 'workflows', 'athena.yml');
+  const args = { role: role as z.infer<typeof RoleEnum>, card_id: cardId, target: 'canonical' as const, landed_commit: landedCommit, parent_trace: process.env.CHORUS_TRACE_ID };
+  const fd = fsMod.openSync(log, 'a');
+  const child = spawn(actBin, athenaActArgs(args, workflow), {
+    env: werkRunnerEnv(home, werkBase, role, runnerPath), detached: true, stdio: ['ignore', fd, fd],
+  });
+  child.unref();
+  fsMod.closeSync(fd);
+  await appendChorusLog('athena.trigger.started', role, { card_id: cardId, landedCommit, files, pid: child.pid ?? 0, log });
+  return { triggered: true, files, pid: child.pid ?? 0, log };
+}
+
 async function executeChorusAthena(
   args: z.infer<typeof AthenaRunInput>,
   runsDir?: string,
@@ -2851,11 +2913,7 @@ async function executeChorusAthena(
   const dir = runsDir || pathMod.join(process.env.HOME || '', '.chorus', 'werk-runs');
   try { fsMod.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
   const log = pathMod.join(dir, `athena-${args.card_id}-${args.target}-${Date.now()}.log`);
-  const actArgs = [
-    'workflow_dispatch', '-W', workflow, '-P', 'macos-latest=-self-hosted',
-    '--input', `card_id=${args.card_id}`, '--input', `role=${args.role}`,
-    '--input', `target=${args.target}`, '--input', `landed_commit=${args.landed_commit ?? ''}`,
-  ];
+  const actArgs = athenaActArgs(args, workflow);
   const execFileP = promisify(execFile);
   let stdout: string; let stderr: string; let exitCode = 0;
   let failure: { killed?: boolean; signal?: string | null; code?: number | string | null } | undefined;
@@ -3701,7 +3759,14 @@ export function buildMcpServer(getCallerRole: () => string, deps: McpServerDeps 
           throw new Error(`Invalid arguments: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
         }
         // #3175: thin skin → rust werk-merge (resolve open PR by HEAD oid, squash, content-verify).
-        return executeWerkVerb('werk-merge', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+        const merged = await executeWerkVerb('werk-merge', [String(parsed.data.card_id), parsed.data.role], parsed.data.role, parsed.data.card_id, {});
+        // #4177 — the land event triggers athena; werk.yml names no model step.
+        const body = JSON.parse(merged.content[0].text) as Record<string, unknown>;
+        const sha = (String(body.stdout ?? '').match(/[0-9a-f]{40}/g) || []).pop();
+        body.athena = sha
+          ? await triggerAthenaOnLand(parsed.data.role, parsed.data.card_id, sha, runsDir)
+          : { triggered: false, reason: 'no-landed-sha' };
+        return { content: [{ type: 'text' as const, text: JSON.stringify(body) }] };
       }
       case 'werk-accept': {
         const parsed = WerkAcceptInput.safeParse(req.params.arguments);

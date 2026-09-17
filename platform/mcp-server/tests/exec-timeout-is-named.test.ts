@@ -121,13 +121,21 @@ test('a NEW exec timeout cannot be added without deciding about this class', () 
   // 120s). They are opaque on a kill rather than actively misleading, and they
   // are NOT converted here — recorded so they are visible rather than lost.
   //
-  // This count is the tripwire. A ninth timeout site fails this test, and
+  // This count is the tripwire. A tenth timeout site fails this test, and
   // whoever adds it has to say which bucket it is in.
+  //
+  // #4186 added the ninth without saying so here (executeChorusAthena's
+  // ATHENA_RUN_TIMEOUT_MS): converted — it goes through classifyExecFailure. This
+  // test was red on main from 2026-09-16 17:59 until #4177; recorded, not hidden.
+  // #4177 added the tenth: triggerAthenaOnLand's `athena-deploy scope` call (60s).
+  // Bucket: converted in place — its catch names a kill as a kill
+  // ("killed after 60000ms") and reports it as reason=scope-failed on the spine
+  // and in the merge reply; it never fails the merge.
   const src = readFileSync(join(__dirname, '..', 'src', 'server.ts'), 'utf8');
   const sites = (src.match(/timeout: [A-Za-z0-9_]+,?/g) || []).length;
   assert.equal(
     sites,
-    8,
+    10,
     'exec timeout sites changed — convert the new one to classifyExecFailure or add it to the unconverted list above',
   );
 });
