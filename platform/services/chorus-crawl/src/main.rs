@@ -1750,14 +1750,20 @@ fn main() {
 fn failure_classes(failed: &[String]) -> Vec<(String, usize)> {
     let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for f in failed {
-        let verb_route = f
-            .split_whitespace()
-            .position(|w| matches!(w, "POST" | "PUT" | "DELETE" | "PATCH"))
-            .and_then(|i| {
-                let w: Vec<&str> = f.split_whitespace().collect();
-                let route = w.get(i + 1)?;
-                let family: String = route.split('/').take(3).collect::<Vec<_>>().join("/");
-                Some(format!("{} {}", w[i], family))
+        // The verb must be followed by an actual path. A case NAME can contain
+        // the word DELETE ("a DELETE fires the guard") and did, inventing five
+        // one-off classes in the first run that used this.
+        let w: Vec<&str> = f.split_whitespace().collect();
+        let verb_route = w
+            .iter()
+            .enumerate()
+            .position(|(i, x)| {
+                matches!(*x, "POST" | "PUT" | "DELETE" | "PATCH")
+                    && w.get(i + 1).is_some_and(|r| r.starts_with('/'))
+            })
+            .map(|i| {
+                let family: String = w[i + 1].split('/').take(3).collect::<Vec<_>>().join("/");
+                format!("{} {}", w[i], family)
             })
             .unwrap_or_else(|| "(no route in line)".to_string());
         let status = f
@@ -1942,6 +1948,22 @@ mod failure_classes_4201 {
 
     /// CONTROL: a line with no route still counts, and says so, rather than
     /// vanishing from the total.
+    /// NEGATIVE PROOF: a case NAME containing the word DELETE. The first run
+    /// that used these classes invented five one-off entries from lines like
+    /// "a DELETE fires the guard" — the verb was real, the next word was not a
+    /// route.
+    #[test]
+    fn a_verb_inside_a_case_name_is_not_a_route() {
+        let failed = vec![
+            "delete case a.ts :: a DELETE fires the guard: DELETE /tests/tests/x -> HTTP 403 "
+                .to_string(),
+        ];
+        assert_eq!(
+            failure_classes(&failed),
+            vec![("DELETE /tests/tests -> HTTP 403".to_string(), 1)]
+        );
+    }
+
     #[test]
     fn a_line_with_no_route_is_still_counted() {
         let failed = vec!["could not serialise row".to_string()];
