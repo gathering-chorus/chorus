@@ -114,7 +114,8 @@ chorus:CardShape a sh:NodeShape ;
 
 chorus:ChunkShape a sh:NodeShape ;
   sh:targetClass chorus:Chunk ;
-  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
+  # #4187 — pin removed; the board domain claims Chunk, and all 21 rows are in
+  # urn:chorus:domains:board (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path rdfs:label ; sh:minCount 1 ; sh:datatype xsd:string ] ;
   sh:property [ sh:path chorus:slug ; sh:minCount 1 ; sh:datatype xsd:string ; chorus:immutable true ] ;
   sh:property [ sh:path chorus:ownedBy ; sh:minCount 1 ; sh:class chorus:Principal ] ;
@@ -123,7 +124,8 @@ chorus:ChunkShape a sh:NodeShape ;
 
 chorus:ChunkMembershipShape a sh:NodeShape ;
   sh:targetClass chorus:ChunkMembership ;
-  chorus:instancesGraph "urn:chorus:instances" ;  # #3686: same as CardShape
+  # #4187 — pin removed; all 218 rows are in urn:chorus:domains:board
+  # (copied and verified 2026-09-18 12:47).
   sh:property [ sh:path chorus:inChunk ; sh:minCount 1 ; sh:class chorus:Chunk ] ;
   sh:property [ sh:path chorus:hasCard ; sh:minCount 1 ; sh:class chorus:Card ] ;
   sh:property [ sh:path chorus:rank ; sh:minCount 1 ; sh:datatype xsd:integer ; chorus:uniqueWithin chorus:inChunk ] .
